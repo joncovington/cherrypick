@@ -301,7 +301,6 @@ def test_derive_full_suite_job_table():
         "watchdog",
         "streamer-health",
         "trade-notify",
-        "desk-notify",
         "status-digest",
         "status-digest-close",
         "flies-payoff-post",

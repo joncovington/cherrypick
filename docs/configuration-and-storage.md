@@ -25,7 +25,6 @@ wholesale with **`$CHERRYPICK_HOME`**. Nothing runtime lands in a source checkou
   config/gex.json                 # GEX engine config
   config/streamer.json            # standalone streamer config
   config/console.json             # console UI config
-  config/desk.json                # manual desk config (experimental; not installed by default)
   data/marketdata/stream_cache.db # the canonical shared DXLink stream cache (quotes/greeks/OI) —
                                   #   written ONLY by the standalone streamer, read by every module
   data/meic/paper_trades.db       # MEIC paper ledger (ic_trades)   ← orchestrator reads this
@@ -78,7 +77,7 @@ configure their own engine and nothing else:
 
 | Config | Owned by | Sets |
 |---|---|---|
-| `~/.cherrypick/config.json` | Orchestrator | `capabilities` (`claude`, `dolt` — see below); which modules are enabled + their `path` and `live_db`; the per-module `paper` block (`paper_db`, `trade_schema`, tick argv and cadence, entry/exit times) and `calibration`; the top-level `streamer` (the standalone producer), `services` (background daemons like the gex recorder) and `console`; `watchdog`, `eval_activity`, `trade_notify`, `desk_notify`, `status_digest`, `flies_payoff_post`, `notify`; `review`, `morning` (the overview), `technicals`, `market_report`; `data_epoch`, `log_archive`, `backup`, `config_backup`; `advisor`, `reconcile`; timezone. |
+| `~/.cherrypick/config.json` | Orchestrator | `capabilities` (`claude`, `dolt` — see below); which modules are enabled + their `path` and `live_db`; the per-module `paper` block (`paper_db`, `trade_schema`, tick argv and cadence, entry/exit times) and `calibration`; the top-level `streamer` (the standalone producer), `services` (background daemons like the gex recorder) and `console`; `watchdog`, `eval_activity`, `trade_notify`, `status_digest`, `flies_payoff_post`, `notify`; `review`, `morning` (the overview), `technicals`, `market_report`; `data_epoch`, `log_archive`, `backup`, `config_backup`; `advisor`, `reconcile`; timezone. |
 | `~/.cherrypick/config/meic.json` | MEIC | `symbols`, delta/VIX bands, wing widths, credit floors, entry/exit windows, stop policy, regime thresholds, cash-settled set, deploy-limit pct, and the `live` block for the live loop (armed per day via `/live-meic-start`; `live.symbol`, `live.arm`, its caps and breakers). |
 | `~/.cherrypick/config/meic.risk.json` | MEIC | The arm registry (`active_profile`, `profiles`). Read from `$MEIC_RISK_CONFIG` if set, else this file, else the shipped control-only `packages/meic/config.risk.example.json`; a machine's arms are its own configuration, never the repo's. |
 | `~/.cherrypick/config/earnings.json` | Earnings | `available_capital_paper_mode`, position caps, entry/close windows, correlation block list, liquidity gates, per-strategy tuning, named profiles. |
@@ -95,7 +94,6 @@ configure their own engine and nothing else:
 | *(orchestrator `morning`, `technicals` blocks)* | Overview, Technicals | Neither has a config file of its own: the orchestrator's `morning` block schedules the overview's fact pack (and its optional narrative), and `technicals` schedules the end-of-day landing and report. Technicals reads the Dolt clones the earnings module's `paper.dolt_service` serves. |
 | `~/.cherrypick/config/streamer.json` | Streamer | Broker session settings and the stream-cache path it writes; the symbol set is not configured here — it is the union of every module's `state/stream_requests/` file. |
 | `~/.cherrypick/config/console.json` | Console | Serve host/port (`127.0.0.1:5070`), which modules' read models to surface, and `update_check` (default on; `false` stops the six-hourly request to GitHub for the latest release that the status bar's version chip shows). No credential of its own — it reads the shared suite entry and never writes one. |
-| `~/.cherrypick/config/desk.json` | Desk | Its own authorization for discretionary live orders — which module's keyring service to borrow a session from (`broker_keyring_service`), the allowed accounts, and the policy gates (defined-risk requirement, per-order cap). It stores no broker secrets; the PIN is kept only as a salted verifier. Deliberately independent of every module's `enable_live_trading`. |
 
 **Resolution rules:**
 - A module `path` in the orchestrator config is resolved **relative to the config file's directory** /
@@ -127,8 +125,8 @@ when the record and the machine disagree.
 
 ### Notifications
 
-**Push channels are off by default.** The template's `notify.channels`, `notify.trade_channels`,
-`desk_notify.channels` and `status_digest.channels` are all `["log"]`, and so are the code fallbacks.
+**Push channels are off by default.** The template's `notify.channels`, `notify.trade_channels`
+and `status_digest.channels` are all `["log"]`, and so are the code fallbacks.
 Desktop, Slack, Discord and Telegram are opt-in: add the channel to the list, and for Slack or Discord
 store the webhook with `run.py secrets-set --channel slack|discord` — for Telegram, store the bot token
 and chat ID with `run.py secrets-set --channel telegram` (prompted separately, never a URL). The `log`
@@ -165,7 +163,6 @@ effect on the next pass, with no `install` step and no scheduled task to registe
 | `market_report` | **off** (`collector`, `universe`) | `report-edition`, `report-edition-retry`, `report-charts`, `universe-*` |
 | `advisor` | **off twice** (suite + per-module `advice` bounds), and needs `claude` | `advisor-deep` (17:00 ET) |
 | `status_digest` | **off** | `status-digest` (hourly), `status-digest-close` 16:35 ET |
-| `desk_notify` | **off** | `desk-notify` |
 | `flies_payoff_post` | **off**; its `intraday` block is off separately | `flies-payoff-post`, `flies-payoff-intraday` (hourly, 10:01–15:30 ET) |
 | `backup` | **on**, daily 01:30 | `suite-backup` |
 | `config_backup` | **off** (opt in; `run.py config-backup --init --enable`, the installer, or the Config page) | `config-backup` |

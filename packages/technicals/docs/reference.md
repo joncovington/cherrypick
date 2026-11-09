@@ -374,8 +374,8 @@ overview stays credential-free and network-free.
   fills names the map lacks.
 - **The asset-class benchmark is AOR**, not VBINX: Dolt carries it and it is an ETF like every other
   rotation entry. Its stock sleeve is global where a 60/40 built from SPY and AGG would be US-only.
-- **No trade ideas.** The report is read-side; the suite's only discretionary order path is
-  `packages/desk`, and a report that suggests a trade would say so.
+- **No trade ideas.** The report is read-side and places nothing; a report that suggests a trade
+  would say so.
 - **Not run:** the vendor-fed collectors (editions, chart pages, screeners; `market_report.collector`,
   off) and everything scored against them are described in the engines' entries above. Large options
   trades (flow) are not part of the report (issue #998).
@@ -471,8 +471,8 @@ whether the by-expiry band's closer short-dated strikes skate at their implied r
 extra premium per day survives the extra tests. The reading is `skate/record.json` beside the bands,
 with the rows in `record.db`.
 
-**What the screen leaves out.** Placing, rolling or closing anything (the desk is the only discretionary
-order path, and nothing automated may import it); support and resistance levels, which the technicals
+**What the screen leaves out.** Placing, rolling or closing anything (the suite places no discretionary
+order); support and resistance levels, which the technicals
 do not reproduce; and what a breach costs, since a skate rate is a frequency and weighing the loss needs
 licensed option prices that stay local.
 

@@ -60,7 +60,6 @@ STRATEGY = {
     "cherrypick.weeklyput",
     "cherrypick.gex",
     "cherrypick.advisor",
-    "cherrypick.desk",
 }
 
 

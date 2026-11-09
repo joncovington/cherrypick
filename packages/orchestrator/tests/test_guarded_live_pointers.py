@@ -25,10 +25,8 @@ REPO = Path(__file__).resolve().parents[3]
 # Every package's config example, found rather than listed (2026-09-18): the hand-kept dict this
 # replaced named five modules while bwb and curve had each declared a `live.enabled` placeholder
 # that nothing guarded -- the exact gap a guard driven off what the system declares cannot have.
-# desk is deliberately excluded: it is the discretionary live path, authorized entirely on its own
-# (own config, own PIN kept as a salted verifier, per-order ticket) and never through this surface.
-# It has no `enable_live_trading` to guard -- borrowing credentials is not borrowing permissions.
-_EXCLUDED = {"desk", "orchestrator"}
+# The orchestrator is excluded: it places no order and has no live gate of its own.
+_EXCLUDED = {"orchestrator"}
 
 
 def _discover_module_configs() -> dict[str, str]:
@@ -188,7 +186,7 @@ def test_bwb_keeps_every_live_sizing_and_admission_rule_guarded():
 def test_discovery_finds_every_module_with_a_live_gate():
     """The discovery itself, pinned: the five the hand-kept list named plus the two it missed."""
     assert {"meic", "earnings", "flies", "calendars", "pmcc", "bwb", "curve"} <= set(MODULE_CONFIGS)
-    assert "desk" not in MODULE_CONFIGS and "orchestrator" not in MODULE_CONFIGS
+    assert "orchestrator" not in MODULE_CONFIGS
 
 
 _ENV_ARMING = re.compile(r"environ\b[^\n]*LIVE", re.IGNORECASE)
@@ -227,8 +225,8 @@ def test_a_shipped_config_only_spells_its_registry_a_way_the_suite_reads(module:
     write exactly that.
 
     Driven off the examples rather than a list of modules, so a module that grows a registry is
-    covered the day it declares one. A module with no registry is not a failure: desk has no loop,
-    and meic keeps its arms in `config.risk.json` beside this file.
+    covered the day it declares one. A module with no registry is not a failure: meic keeps its
+    arms in `config.risk.json` beside this file.
     """
     doc = _doc(rel)
     present = [k for k in ARM_REGISTRY_KEYS if k in doc]

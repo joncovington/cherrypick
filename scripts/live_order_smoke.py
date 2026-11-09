@@ -14,8 +14,7 @@ later. Buying power is held for those seconds and released on the cancel.
 
 Refuses to run without `--confirm`, while the suite halt flag is present, or outside a window of
 regular hours. It bypasses the flies module's own live gates on purpose -- the pilot stays
-unarmed -- and is the discretionary, human-scheduled exception the desk exists for, except that
-what is under test here is the shared seam itself, which the desk deliberately does not use.
+unarmed -- because what is under test here is the shared seam itself, run by a person, not a loop.
 
 Writes `~/.cherrypick/state/live_order_smoke-<date>.json` and prints the same report.
 """

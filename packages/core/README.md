@@ -3,7 +3,7 @@
 Shared core library for the **cherrypick** trading suite. Every other Python package in this monorepo
 depends on it — the strategy modules (meic, earnings, calendars, contango, weeklyput, and the retired
 flies, bwb, pmcc and curve), the streamer, gex, the orchestrator, review, advisor, overview,
-technicals, fundamentals, manage, backtest and desk — so the auth,
+technicals, fundamentals, manage and backtest — so the auth,
 market-data, fee, risk, calendar, GEX, ledger and reporting concerns are implemented **once**.
 
 > Distribution name is `cherrypick-core`; it imports as the **`cherrypick.core`** namespace package,

@@ -199,7 +199,7 @@ CATCHUP_MINUTES = {
 }
 
 # Quiet-hours cadences (2026-10-12). The interval jobs below ran at their session cadence around the
-# clock -- trade-notify every 30 s, desk-notify, power-watch and the paper ticks every minute -- which
+# clock -- trade-notify every 30 s, power-watch and the paper ticks every minute -- which
 # came to ~18,000 process launches on a Sunday that traded nothing. Each pair is (quiet cadence,
 # active window ET); outside the window on a trading day, and all day on any other, the job runs at
 # the quiet cadence instead. The windows are wide on purpose: settlements and the MEIC digest land
@@ -208,8 +208,6 @@ QUIET_CADENCE = {
     # Fills and settlements reach the user within 5 min off hours; the watchdog tick (10 min) also
     # runs the notifier, and its freshness check allows 30 min.
     "trade-notify": (300, ("09:00", "17:00")),
-    # A desk order is a person at the keyboard; its submit card can wait 10 min outside the session.
-    "desk-notify": (600, ("09:00", "16:30")),
     # The script keeps its own 15-min repeat; this only bounds how late a first alert can be.
     "power-watch": (300, ("08:30", "17:00")),
     # ensure-dolt: the 05:30 pull and the 06:30 scan are inside the active window.
@@ -848,22 +846,7 @@ def derive_jobs(
     # moved to the standalone follow-feed-notifier repo, scheduled by the OS Task Scheduler.
     # `_prune_retired` drops their registry rows once config stops carrying the blocks.
 
-    # --- desk-notify (broker call + webhook → its own job, never on the watchdog tick)
-    dn = cfgmod.desk_notify_settings(cfg)
-    add(
-        "desk-notify",
-        lambda: JobSpec(
-            id="desk-notify",
-            argv=_run_py(pythonw, launcher, "notify-desk"),
-            kind=KIND_INTERVAL,
-            interval_seconds=int(dn["interval_minutes"]) * 60,
-            **_quiet("desk-notify", int(dn["interval_minutes"]) * 60),
-            enabled=dn["enabled"],
-            enabled_reason="" if dn["enabled"] else "disabled in config (desk_notify)",
-        ),
-    )
-
-    # --- status-digest (webhook push → its own job, never on the watchdog tick, like desk-notify)
+    # --- status-digest (webhook push → its own job, never on the watchdog tick)
     sd = cfgmod.status_digest_settings(cfg)
     add(
         "status-digest",

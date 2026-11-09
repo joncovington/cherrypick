@@ -208,12 +208,6 @@ filename; override with `paper.sla_state_prefix`.
   same way. Any network-touching notifier gets its own scheduled job, never a call from the watchdog
   tick, every request wrapped, an outage degrading to "no notifications". Best-effort side calls on
   the tick (e.g. `trade_notifier.run`) sit inside `try/except`. Nothing EOD-shaped touches the tick.
-- **`desk_notifier.py`** (`notify-desk`, the `desk-notify` job) cards each manual-desk order on submit
-  and at a terminal state. Fill detection is **poll-first**: the broker's status is authoritative and
-  an unreachable broker means "ask again", never "nothing happened". It **reads the desk's audit
-  journal as a file and never imports `cherrypick.desk`**, so the submit path is never reachable from
-  scheduled code. Its first pass seeds from the journal rather than backfilling cards (today's orders
-  still join the watch list).
 - **Read surfaces read files, never the broker**, and this package serves **no HTTP read surface**
   (the console is the one). `liveops.py` is the live gate surface: each module's `enable_live_trading`
   (home config first, then in-repo), its designated live account (masked, via keyring), and the suite
@@ -269,7 +263,7 @@ filename; override with `paper.sla_state_prefix`.
   `secretsops.py` to `CredentialStore.set_secret` / `notify.secrets.set_webhook` and is dropped —
   never logged, written or echoed; GET responses carry only status booleans and masked accounts. It
   places no order and runs only when a human starts it in the foreground (`--organize` is its only
-  other job). `packages/desk` is outside all of this.
+  other job).
 - **`configcli.py`** is the same two modules for non-Python callers (the console): one JSON request on
   stdin, one response on stdout. Dispatch only — every guarantee above is inherited, `secretsops` is
   deliberately NOT wired in, and a refusal is data (`ok: false` plus a `code`) on exit 0 so a caller

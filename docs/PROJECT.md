@@ -51,8 +51,6 @@ console's **Config** page, or `modules.<name>.enabled` in `~/.cherrypick/config.
 - **The advisor** — paper A/B experiments proposed by an AI model and judged against the same control.
   Needs Claude Code, and is off by default.
 - **The console** — the web page at <http://127.0.0.1:5070> where you look at all of it.
-- **The desk** — an EXPERIMENTAL manual trading desk, not installed by default and not a strategy. It is
-  the only discretionary path that can place a live order; read its README before going near it.
 
 By default everything runs in **paper mode**: simulated fills, none of your money. Live trading is off
 everywhere; see [Paper and live modes](#paper-and-live-modes).
@@ -87,7 +85,7 @@ Use the one-command installer: double-click **`install.cmd`** on Windows, or run
 macOS and Linux. [QUICKSTART.md](../QUICKSTART.md) walks through it in plain language, and
 [INSTALL.md](../INSTALL.md) says exactly what each step does and lists the options. In short, it asks
 you to accept the disclaimer, creates a Python environment in the checkout (`.venv`), installs every
-package (except the experimental desk), builds the console, writes your config, offers the optional
+package, builds the console, writes your config, offers the optional
 Dolt download, asks for your tastytrade login, and starts the suite.
 
 Running the installer again is always safe — it never overwrites your settings — and it is how you add
@@ -265,17 +263,13 @@ next.
 
 > ### ⚠️ If you are thinking about trading live
 >
-> **Know every way an order can be placed.** There are four: **MEIC**, **flies** and
-> **bwb** (retired, off by default) each have a live loop behind gates of their own, and the **desk** is the manual one. The
-> three loops trade on their own once started, without asking again: they are
+> **Know every way an order can be placed.** There are three: **MEIC**, **flies** and
+> **bwb** (retired, off by default) each have a live loop behind gates of their own. The
+> loops trade on their own once started, without asking again: they are
 > supervisor jobs that run for as long as that day's arm is valid. Earnings is paper-only since
 > v0.12.0. The orchestrator never places an order
 > itself, but "the automation won't trade for me" stops being true the moment one of those gates is
 > open.
->
-> **`packages/desk` is an EXPERIMENTAL prototype for educational purposes only**, not installed or
-> enabled by default. Read [its documentation](../packages/desk/README.md) in full before going near
-> it.
 >
 > **Nothing in this suite has been validated as profitable.** The paper experiments exist because the
 > answer is not known yet, and a good number of the recorded results so far are negative. Simulated

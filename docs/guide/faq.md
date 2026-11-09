@@ -13,8 +13,7 @@ whether they make money after costs, and helps you manage the trades in your own
 
 No. Everything is paper unless you turn live trading on for a module, and even then it only trades
 on a day you arm it by typing YES. Each arm switches itself off at 5 pm Eastern by default (the
-module's `disarm_time` setting). Only MEIC, flies and bwb carry live code, plus the experimental
-desk, which a person starts by hand.
+module's `disarm_time` setting). Only MEIC, flies and bwb carry live code.
 
 ### What do I need?
 

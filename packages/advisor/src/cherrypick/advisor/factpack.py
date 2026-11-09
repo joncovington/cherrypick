@@ -1099,20 +1099,11 @@ def _live(session: str) -> dict[str, Any]:
         "_note": "computed here with the advisor's own read-only SQL; see the docstring on why",
     }
 
-    desk_journal = state / "desk" / "journal.jsonl"
-    try:
-        desk_events = sum(1 for _ in desk_journal.open(encoding="utf-8", errors="replace"))
-    except OSError:
-        desk_events = None
-
     return {
         "_note": _NOTE_LIVE,
         "halt_flag_present": _home.halt_flag_path().exists(),
         "posture": posture,
         "flies_live": live_vs_paper,
-        # Presence and count only. The desk is a human's discretionary path; what it did is not the
-        # advisor's business, but whether it was used today is context for an unexplained position.
-        "desk": {"journal_present": desk_journal.exists(), "events": desk_events},
     }
 
 

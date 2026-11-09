@@ -5,8 +5,7 @@ can decide which one(s) fit your goals before diving into an individual module's
 ships these strategy modules: MEIC, and Earnings (paper-only), which are on in a fresh install
 (Earnings only where Dolt is set up); Calendars, Contango and Weeklyput, which are
 **EXPERIMENTAL and off by default**; and Flies, BWB, PMCC and Curve, which are **retired and off by default** (kept so each can be reinstated) — plus the GEX engine the console renders. MEIC, Earnings and Flies get a full
-section below; the others a short one. (The experimental manual desk, `packages/desk`, is not a strategy
-engine and has no section here; see its README.) Each module's own docs (linked) are the source of truth for its
+section below; the others a short one. Each module's own docs (linked) are the source of truth for its
 internals.
 
 | Module | Structure | Default | Live path |

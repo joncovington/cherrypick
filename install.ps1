@@ -8,7 +8,7 @@
 #               with -AcceptDisclaimer)
 #   -AcceptDisclaimer   you have read DISCLAIMER.md and accept it
 #   -SkipDolt   do not offer the Dolt setup (earnings and technicals stay off)
-#   -WithDesk   also install the EXPERIMENTAL manual desk (packages/desk)
+#   -WithDesk   accepted and ignored: the manual desk was removed in v0.12.0
 #   -NoStart    install only; do not start the suite
 #   -ConfigHistory [-ConfigRemote <url>]   keep a git history of your settings (see below)
 
@@ -112,13 +112,15 @@ Run $VPy @("-m", "pip", "install", "--quiet", "-e", (Join-Path $Root "packages\c
 Run $VPy @("-m", "pip", "install", "--quiet", "-e", (Join-Path $Root "packages\technicals")) "Installing packages/technicals"
 $packages = Get-ChildItem (Join-Path $Root "packages") -Directory |
     Where-Object { $_.Name -notin @("core", "technicals") -and (Test-Path (Join-Path $_.FullName "pyproject.toml")) } |
-    Where-Object { $WithDesk -or $_.Name -ne "desk" } |
     Sort-Object Name
 foreach ($pkg in $packages) {
     Note $pkg.Name
     Run $VPy @("-m", "pip", "install", "--quiet", "-e", $pkg.FullName) "Installing packages/$($pkg.Name)"
 }
-if (-not $WithDesk) { Note "desk skipped (EXPERIMENTAL manual live orders; re-run with -WithDesk to include it)" }
+# The manual desk was removed in v0.12.0. An older .venv may still hold it; take it out.
+& $VPy -c "import importlib.metadata as m, sys; sys.exit(0 if any(d.metadata['Name'] == 'cherrypick-desk' for d in m.distributions()) else 1)"
+if ($LASTEXITCODE -eq 0) { Run $VPy @("-m", "pip", "uninstall", "--quiet", "-y", "cherrypick-desk") "Removing the retired manual desk" }
+if ($WithDesk) { Note "-WithDesk does nothing now: the manual desk was removed in v0.12.0" }
 
 # ---------------------------------------------------------------------------------- console
 Step "Building the console (the web page you will use)"

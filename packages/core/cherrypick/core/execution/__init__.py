@@ -29,10 +29,6 @@ The module keeps: its order-spec builders (a butterfly and a condor are differen
 gates (`readiness` / `live_gates` -- paper/live isolation is a per-module contract), its ledger
 schema, and its loop. Nothing here reads a module's config, and nothing here imports a module:
 the session, the account, the gate and the serializer are handed in.
-
-The desk is deliberately NOT built on this. Its authorization is per order and human -- a PIN and
-a single-use ticket -- and `packages/desk/tests/test_isolation.py` forbids any automated package
-from importing it. This layer is for loops the desk exists to keep separate from.
 """
 
 from __future__ import annotations

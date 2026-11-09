@@ -68,7 +68,6 @@ Subcommands:
                        dollar volume, security list, IV rank, liquidity), as the installer does.
   notify-test          Fire a test notification through all configured channels.
   notify-trades        Push new paper entries/exits to the trade channels (also runs on each watchdog tick).
-  notify-desk          Card manual-desk orders and watch them to fill (own task, broker + network call).
   notify-status        Post the hourly suite-status digest card (own job, webhook push). --close posts
                        the day's CLOSE card (the daily 16:35 job); --force posts on a non-trading day too.
   notify-send          Post a hand-written message (--channel, --file; --kind correction|note,
@@ -132,7 +131,6 @@ from cherrypick.orchestrator import (
     calibrate,
     configedit,
     connect,
-    desk_notifier,
     doctor,
     execution,
     hypotheses,
@@ -1734,10 +1732,6 @@ def cmd_notify_trades(cfg, dry_run: bool = False) -> None:
     _emit(trade_notifier.run(cfg, dry_run=dry_run))
 
 
-def cmd_notify_desk(cfg) -> None:
-    _emit(desk_notifier.run(cfg))
-
-
 def cmd_queue_add(args) -> None:
     """Queue one research task (orchestrator/researchqueue.py). Refused rows are never added."""
     from cherrypick.orchestrator import researchqueue as rq
@@ -2550,7 +2544,6 @@ def build_parser() -> argparse.ArgumentParser:
             "dolt-sql",
             "notify-test",
             "notify-trades",
-            "notify-desk",
             "notify-status",
             "notify-send",
             "sent",
@@ -2952,7 +2945,6 @@ def main() -> None:
         "study-report": lambda: cmd_study_report(args),
         "retests": lambda: cmd_retests(args),
         "notify-trades": lambda: cmd_notify_trades(cfg, dry_run=args.dry_run),
-        "notify-desk": lambda: cmd_notify_desk(cfg),
         "notify-status": lambda: cmd_notify_status(cfg, force=args.force, close=args.close),
         "power-watch": lambda: cmd_power_watch(cfg),
         "live-positions": lambda: cmd_live_positions(cfg),

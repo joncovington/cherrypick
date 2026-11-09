@@ -117,15 +117,8 @@ what it may write. The package's own CLAUDE.md holds the detail.
   `~/.cherrypick` and never enter this public repo, a PR, an issue or a published artifact; the data
   must stay purgeable (a marked directory the backup skips). The network is reached by the fetch only,
   the key lives in the keyring only, and a run is a pure function of the local store. No AI, no broker.
-- **packages/desk** — ⚠️ **EXPERIMENTAL.** The suite's only *discretionary* live-order path (meic,
-  flies and bwb each have a live loop behind their own gate: `enable_live_trading` for meic, flies'
-  and bwb's own `live` gates and per-day arm; earnings is paper-only since v0.12.0). A
-  foreground, human-initiated CLI, authorized entirely on its own (own config, own PIN, per-order
-  ticket, own policy gates). Stores no broker secrets — it borrows a module's keyring session, because
-  borrowing credentials is not borrowing permissions. No loop, no schedule, no ledger, never scheduled,
-  and **no automated package may import it**.
 
 `cherrypick.core` is **`packages/core`**, an editable dependency of every package. A user installs with
-the root `install.cmd`/`install.ps1`/`install.sh` (a `.venv`, every package but desk, the console, the
+the root `install.cmd`/`install.ps1`/`install.sh` (a `.venv`, every package, the console, the
 supervisor); a developer runs `scripts/dev-install.ps1`/`.sh` (editable, with `[dev]` extras), or
 `pip install -e packages/core` first by hand.

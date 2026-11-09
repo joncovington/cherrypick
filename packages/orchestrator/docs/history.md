@@ -127,16 +127,6 @@ module's SLA under another's name and the watchdog raised a CRITICAL titled for 
   notifiers that established this rule — the tastylive Follow Feed and Lossdog pushes — moved
   wholesale to the standalone `follow-feed-notifier` repo on 2026-08-21, scheduled by the OS Task
   Scheduler and entirely outside this suite; the rule outlives them here.)
-  `desk_notifier.py` (`cherrypick notify-desk`, the `desk-notify` job) is the network-calling
-  notifier this package still owns, and it earns the treatment for two reasons rather than one —
-  it pushes a Discord card *and* asks the broker for order status. It cards each manual-desk order on submit and again when that order reaches
-  a terminal state (filled / cancelled / rejected / expired). Fill detection is **poll-first**: the
-  broker's own status is authoritative and an unreachable broker means "ask again next pass", never
-  "nothing happened". Critically it **reads the desk's audit journal as a file and never imports
-  `cherrypick.desk`** — observing desk orders must not make the submit path reachable from scheduled
-  code, which is the desk's own load-bearing invariant. Its first pass seeds from the existing journal
-  rather than backfilling a card per historical order (today's orders still join the watch list, since
-  an order placed minutes before the switch was flipped is exactly the one whose fill matters).
 - **Read surfaces read files, never the broker.** `report`/`calibrate` read paper DBs (SQLite
   read-only), watchdog state, and logs. This package serves **no HTTP read surface at all** since
   2026-08-12 — `dashboard.py`, `serve.py`, `embeds.py` and `sections.py` were deleted and the console
@@ -206,8 +196,7 @@ module's SLA under another's name and the watchdog raised a CRITICAL titled for 
   does not refuse. Do not re-enumerate it here or in a module's own file: this paragraph listed three of
   the five until 2026-08-20, which is how a prose promise decays into a partial one. Those fields
   render read-only with a pointer to their real CLI path, so this surface can never arm or de-risk
-  live trading. (`packages/desk` is deliberately outside all of this — it is the discretionary live
-  path, authorized on its own config and PIN, and never through this surface.) This is also the one
+  live trading. This is also the one
   place a bearer secret transits an orchestrator process: a POST body reaches `secretsops.py`, is
   passed straight to `CredentialStore.set_secret` / `notify.secrets.set_webhook`, and is dropped —
   never logged, never written to any file, never echoed in any response. Every GET response contains

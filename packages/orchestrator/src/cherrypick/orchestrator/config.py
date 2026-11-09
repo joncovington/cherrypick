@@ -992,28 +992,10 @@ def preopen_settings(cfg: dict[str, Any]) -> dict[str, Any]:
 # entries. Nothing in this suite reads a `follow_feed` or `lossdog` config block any more.
 
 
-def desk_notify_settings(cfg: dict[str, Any]) -> dict[str, Any]:
-    """Resolved manual-desk order notifier config. OFF by default. Its own job, never a watchdog-tick
-    call: it both pushes to Discord and asks the broker for order status, and the reliability path
-    stays free of network calls. It reads the desk's audit journal as a file and never imports
-    `cherrypick.desk` -- observing desk orders must not make the submit path reachable from
-    scheduled code. `account_number` None means the broker's default account for those credentials."""
-    dn = cfg.get("desk_notify", {}) or {}
-    return {
-        "enabled": dn.get("enabled", False),
-        "task_name": dn.get("task_name", "cherrypick-desk-notify"),
-        "interval_minutes": dn.get("interval_minutes", 1),
-        "channels": dn.get("channels") or ["log"],
-        "journal_path": dn.get("journal_path"),
-        "broker_keyring_service": dn.get("broker_keyring_service", "meicagent"),
-        "account_number": dn.get("account_number"),
-    }
-
-
 def status_digest_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     """Resolved hourly suite-status digest config (status_digest.py -> Discord). OFF by default.
     Its own supervisor job, never a watchdog-tick call: it pushes to a webhook, and the reliability
-    path stays free of network calls (the desk-notify rule). Everything it reads is a file another
+    path stays free of network calls. Everything it reads is a file another
     job already writes; the one subprocess is an extra provisional review build, which is the same
     idempotent operation the 16:30 review-provisional job performs."""
     sd = cfg.get("status_digest", {}) or {}

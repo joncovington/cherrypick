@@ -14,9 +14,9 @@ never by import, and an extra provisional build is the same idempotent operation
 review-provisional job performs.
 
 Posture: a network-calling notifier gets its own supervisor job (`status-digest`), never a
-watchdog-tick call — the desk-notify rule. Every input is a file another job wrote, read-only; a
-failed pass costs a Discord post and nothing else. The broker is never called: the broker's view
-is whatever the last reconcile wrote, with its age.
+watchdog-tick call: the reliability path makes no network calls. Every input is a file another
+job wrote, read-only; a failed pass costs a Discord post and nothing else. The broker is never
+called: the broker's view is whatever the last reconcile wrote, with its age.
 
 Two suite conventions this module must never regress on:
 - **Null is never zero.** An unmeasured figure renders as an em dash, not $0 — a broken input has

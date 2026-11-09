@@ -338,8 +338,7 @@ async def replace_order(
     Added 2026-09-17. A replace is a live submission like any other -- it can widen a working
     order's size or move its price -- and meic's adjust-order command had been making it through
     `account.replace_order(dry_run=False)` directly, outside this module, with an inline preflight
-    and no deploy governor. The desk had refused to build a replace command for exactly that
-    reason. Every live submit now goes through `_preflight_then_submit`, and
+    and no deploy governor. Every live submit now goes through `_preflight_then_submit`, and
     `packages/core/tests/test_broker.py` scans every package for a `dry_run=False` outside here.
     """
 

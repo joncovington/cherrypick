@@ -189,10 +189,6 @@ Every surface binds to loopback only.
   be re-armed by hand every trading day (`/live-meic-start`, `/live-flies-start`, `/live-bwb-start`, or `python -m cherrypick.<module>.live_loop --arm --confirm YES` from a terminal; flies and bwb are retired and refuse while switched off),
   one arm at a time, under a buying-power cap; while armed, the supervisor runs their live loop as a job
   ([the flies plan](packages/flies/docs/live-trading-plan.md)).
-- **The manual desk — ⚠️ EXPERIMENTAL.**
-  [packages/desk](packages/desk) is an EXPERIMENTAL prototype for educational purposes only, not
-  installed or enabled by default: a foreground CLI for placing one discretionary order by hand.
-  **Read [its documentation](packages/desk/README.md) and the warning below before going near it.**
 
 Credentials live in your operating system's secure keyring — never in a file — and paper and live books are
 kept strictly separate.
@@ -205,17 +201,13 @@ kept strictly separate.
 > been validated as profitable — the paper experiments exist precisely because the answer is not yet
 > known, and several of the suite's own recorded results are *negative*.
 >
-> **There are four ways real orders can be placed**, and it is worth knowing all of them before you open
+> **There are three ways real orders can be placed**, and it is worth knowing all of them before you open
 > any of them: **MEIC**, **flies** and **bwb** (the last two retired and off by default) each have a live path behind gates of their
-> own, and **desk** is the manual one. The first three are *loops* — once the gate is open, they act on
+> own. They are *loops* — once the gate is open, they act on
 > their own schedule without asking again (as supervisor jobs while that day's
 > arm is valid). A person arms each loop for one day, with its slash command or with `--arm --confirm YES` on the module's live loop; flies and bwb refuse to arm while the module is off (both ship retired and off). Earnings is paper-only since v0.12.0. The orchestrator itself
 > never places an order, but "the automation won't trade for you" stops being true the moment you open
 > one of those gates.
->
-> **`packages/desk` is an EXPERIMENTAL prototype for educational purposes only**, not installed or
-> enabled by default. It has no meaningful track record. Read [its documentation](packages/desk/README.md)
-> in full before going near it.
 >
 > **The MEIC, flies and bwb live pilots are deliberately small** (one arm, re-armed by hand each day,
 > under a buying-power cap) because that is the responsible size for something still being measured — not because
@@ -246,7 +238,6 @@ read them.
 | [packages/manage](packages/manage) | The daily position-management evaluation of the real account against a configurable ruleset: an action, a rule and a confidence for every trade. Advice only. |
 | [packages/backtest](packages/backtest) | Backtests of the suite's own rules over licensed vendor history (ThetaData). Off by default; the vendor data and its results never leave your machine's cherrypick home. |
 | [packages/advisor](packages/advisor) | The deterministic half of the AI advisor — fact packs, reply validation, and paper A/B experiments. Contains no AI itself; off by default, and needs Claude Code. |
-| [packages/desk](packages/desk) | ⚠️ **EXPERIMENTAL** prototype for educational purposes only, not installed or enabled by default — the manual trading desk. [Read the warning](#before-you-go-anywhere-near-live-trading). |
 
 ## Requirements
 
@@ -280,8 +271,7 @@ git checkout "$(git describe --tags --abbrev=0 origin/main)"   # the latest rele
 ```
 
 The installer asks you to accept [DISCLAIMER.md](DISCLAIMER.md) by typing `YES`, checks Python and
-Node, creates a virtual environment at `.venv` in the checkout, installs every package except the
-experimental desk, builds the console, writes `~/.cherrypick/config.json`, detects capabilities, offers
+Node, creates a virtual environment at `.venv` in the checkout, installs every package, builds the console, writes `~/.cherrypick/config.json`, detects capabilities, offers
 the optional Dolt download, asks for your tastytrade login, starts the suite, and opens the console at
 <http://127.0.0.1:5070>. It is safe to run again, never overwrites your settings, and is how you add
 Dolt or Claude Code later. [QUICKSTART.md](QUICKSTART.md) is the same thing in plain language;
@@ -375,7 +365,7 @@ holds against what your broker actually shows, and flags anything a paper-only s
 ## Staying in the loop
 
 **Push notifications are off by default.** The template's `notify.channels` and
-`notify.trade_channels` (and the desk and status-digest channel lists) are all `["log"]`, so out of the
+`notify.trade_channels` (and the status-digest channel list) are all `["log"]`, so out of the
 box every alert lands only in the suite's log, and the console shows its own on-screen trade toasts,
 which are always on and need no setting. Add `desktop`, `discord`, `slack` or `telegram` to a channel list
 in `~/.cherrypick/config.json` to be told elsewhere (Discord and Slack also need their webhook stored with
@@ -421,8 +411,7 @@ ones. Paper and live ledgers are separate files, never queryable through one con
 - **Paper by default.** Every engine ships with live trading off, and the orchestrator that schedules
   them never places, cancels, or closes an order itself. Opening a module's live gate is on you — and
   once open, that module's loop trades within its own limits without asking again.
-- **Experimental and retired modules are off.** Calendars, contango and weeklyput (experimental) and flies, bwb, PMCC and curve (retired) ship switched off, and the desk is not
-  installed at all unless you ask for it.
+- **Experimental and retired modules are off.** Calendars, contango and weeklyput (experimental) and flies, bwb, PMCC and curve (retired) ship switched off.
 - **Your data stays yours.** Trades and credentials live on your machine (credentials in your operating
   system's secure keyring — never in a plain file).
 - **Set-and-forget.** Once installed, it runs on a schedule and recovers from common hiccups by itself.

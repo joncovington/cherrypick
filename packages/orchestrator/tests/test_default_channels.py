@@ -27,5 +27,4 @@ def test_the_template_ships_every_channel_list_log_only():
 
 
 def test_the_code_fallbacks_are_log_only_too():
-    assert cfgmod.desk_notify_settings({})["channels"] == ["log"]
     assert cfgmod.status_digest_settings({})["channels"] == ["log"]

@@ -9,7 +9,7 @@
 #   --accept-disclaimer  you have read DISCLAIMER.md and accept it
 #   --skip-dolt          do not offer the Dolt setup (earnings and technicals stay off)
 #   --skip-bootstrap     do not build the income lists' universe now (it builds this evening)
-#   --with-desk          also install the EXPERIMENTAL manual desk (packages/desk)
+#   --with-desk          accepted and ignored: the manual desk was removed in v0.12.0
 #   --no-start           install only; do not start the suite
 #   --config-history [--config-remote URL]  keep a git history of your settings
 #
@@ -108,11 +108,15 @@ step "Installing the cherrypick packages (a few minutes the first time)"
 for proj in "$ROOT"/packages/*/pyproject.toml; do
     pkg="$(basename "$(dirname "$proj")")"
     { [ "$pkg" = core ] || [ "$pkg" = technicals ]; } && continue
-    if [ "$pkg" = desk ] && [ "$WITH_DESK" != 1 ]; then continue; fi
     note "$pkg"
     "$VPY" -m pip install --quiet -e "$ROOT/packages/$pkg"
 done
-[ "$WITH_DESK" = 1 ] || note "desk skipped (EXPERIMENTAL manual live orders; re-run with --with-desk to include it)"
+# The manual desk was removed in v0.12.0. An older .venv may still hold it; take it out.
+if "$VPY" -m pip show --quiet cherrypick-desk >/dev/null 2>&1; then
+    note "removing the retired manual desk"
+    "$VPY" -m pip uninstall --quiet -y cherrypick-desk
+fi
+[ "$WITH_DESK" = 1 ] && note "--with-desk does nothing now: the manual desk was removed in v0.12.0"
 
 # ------------------------------------------------------------------------------- console
 step "Building the console (the web page you will use)"
