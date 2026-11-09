@@ -5,7 +5,7 @@
  * the recorder and flies' wall-clear arm read are still `netWalls`.
  *
  * The copied panel defines none of its levels, so each is stated here, from the common usage
- * (2026-10-31 research): walls as SpotGamma defines them, the expected move as the 1-sigma move to
+ * (2026-10-31 research): call and put walls as they are commonly defined, the expected move as the 1-sigma move to
  * expiry both off IV and off the straddle, max pain as standard. The magnet has no standard
  * definition; ours is stated on it.
  */
@@ -55,7 +55,7 @@ export type WallBasis = "oi" | "volume";
 
 /**
  * Up to `WALLS_PER_SIDE` call walls above spot, ranked by CALL gamma (call gamma x call OI, or x
- * call volume), and put walls below it, ranked by PUT gamma: SpotGamma's call and put wall, not the
+ * call volume), and put walls below it, ranked by PUT gamma: the common call and put wall, not the
  * net walls. Ranking on net (call minus put) left a put-heavy chain with no call wall at all (SPX,
  * 2026-10-30). Above and below spot, as the copied panel lists them.
  */

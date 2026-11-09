@@ -996,6 +996,11 @@ Change each pair together or not at all. `wallAlternates` (`contestedWalls`: a r
 above `WALL_NEAR_TIE`, 80%, of the wall's) is display only; the recorded walls and the wall-clear arm's read are
 unchanged by it.
 
+**No streaming open interest** (both GEX pages): tastytrade offers no level 2 data, so open interest is
+the broker's once-a-day count as of the open and never moves intraday. GEX by volume is the intraday
+read and the default (the panel's walls open on `walls by volume`); `components/GexOiNote.tsx` holds the
+one note both pages show, and the GEX card's help repeats it.
+
 **GEX panel** (`/gexpanel`, 2026-10-31, experimental, SPX only) copies a third-party 0DTE walls panel
 over the GEX page's own profile (`GET /api/gex/panel` → `services/gexPanel.ts`, which calls
 `buildGexProfile` and adds the chain's straddles from `stream_quotes`), beside today's spot trail with
@@ -1008,7 +1013,7 @@ chipped, with its greeks' time; the GEX page keeps the last session's. The last 
 close had every wall on the strikes beside spot and no move left. Without the next session's chain
 (a holiday, or nothing streaming it) the last session's shows, as before.
 
-- **Walls** are SpotGamma's: the three largest call-gamma strikes above spot and put-gamma strikes below
+- **Walls** are the common call and put walls: the three largest call-gamma strikes above spot and put-gamma strikes below
   it, with the side's volume over its OI. Ranking on net left a put-heavy chain with no call wall. A
   toggle weights the gamma by **open interest** (the broker's once-a-day count) or **the session's
   volume** (the GEX page's flow basis): a 0DTE chain trades many times its OI (SPX 2026-10-30's walls

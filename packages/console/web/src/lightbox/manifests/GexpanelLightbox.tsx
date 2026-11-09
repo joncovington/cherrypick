@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { fmtGexDollars } from "../../pages/Gex/GexProfileChart";
 import { LevelsChart, type Level } from "../../pages/GexPanel/LevelsChart";
 import { asOfIsToday, formatAsOf } from "./GexLightbox";
+import { GexOiNote } from "../../components/GexOiNote";
 import { ModuleFrame } from "../ModuleFrame";
 import type { SlideDef } from "../types";
 
@@ -259,15 +260,16 @@ function Panel({ p, basis, setBasis }: { p: GexPanelPayload; basis: Basis; setBa
       </div>
 
       <div className="mode-toggle gexp-basis" role="group" aria-label="wall basis">
-        {(["oi", "volume"] as const).map((b) => (
+        {(["volume", "oi"] as const).map((b) => (
           <button key={b} type="button" className={basis === b ? "mode-btn active" : "mode-btn"} aria-pressed={basis === b} title={BASIS_TITLE[b]} onClick={() => setBasis(b)}>
             walls by {b === "oi" ? "OI" : "volume"}
           </button>
         ))}
       </div>
-      <h3 className="gexp-section pnl-pos" title={`ranked by call gamma (call gamma x call ${by}), SpotGamma's call wall`}>call walls (above spot)</h3>
+      <GexOiNote />
+      <h3 className="gexp-section pnl-pos" title={`ranked by call gamma (call gamma x call ${by}): the call wall, not the net wall`}>call walls (above spot)</h3>
       <WallRows walls={walls?.call ?? []} side="call" />
-      <h3 className="gexp-section pnl-neg" title={`ranked by put gamma (put gamma x put ${by}), SpotGamma's put wall`}>put walls (below spot)</h3>
+      <h3 className="gexp-section pnl-neg" title={`ranked by put gamma (put gamma x put ${by}): the put wall, not the net wall`}>put walls (below spot)</h3>
       <WallRows walls={walls?.put ?? []} side="put" />
 
       <div className="gexp-grid gexp-levels">
@@ -332,7 +334,8 @@ function Panel({ p, basis, setBasis }: { p: GexPanelPayload; basis: Basis; setBa
 export function GexpanelLightbox({ slide }: { slide: string }) {
   const q = useGexPanel();
   const p = q.data;
-  const [basis, setBasis] = useState<Basis>("oi");
+  // Volume first: open interest does not stream from the broker (GexOiNote), so it is the open's count all day.
+  const [basis, setBasis] = useState<Basis>("volume");
   const levels = useMemo(() => (p?.ok ? levelsOf(p, basis) : []), [p, basis]);
   const sigma = p?.moves?.straddle ?? p?.moves?.iv ?? null;
   const fit = sigma !== null ? sigma.move * 1.5 : (p?.spot ?? 0) * 0.01;
