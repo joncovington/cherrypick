@@ -21,13 +21,13 @@ risk-adjusted for how differently these strategies pay off (defined vs.
 undefined risk, credit vs. debit), deferred until there's real trade data
 to calibrate a risk adjustment against.
 
-NOT wired into the live/paper trading loop's Step 4b in this pass --
+NOT wired into any trading loop --
 get_ranked_symbols is a standalone tool, fully usable on its own, same
 state double_calendar/expected_move_butterfly's entries are already in
 (built, not loop-wired) until that's explicitly asked for separately.
 
-Every run also writes an audit trail via db.py/db_paper.py's existing
-scan_log (per config's paper_mode) -- one row per (symbol, strategy)
+Every run also writes an audit trail via db_paper.py's existing
+scan_log -- one row per (symbol, strategy)
 evaluated, plus one summary row per symbol (strategy = "_ranked", a
 reserved name no real strategy uses) capturing both why the winning
 strategy beat its within-symbol runner-up and where the symbol landed
@@ -195,13 +195,13 @@ STRATEGY_REGISTRY = [
 ]
 
 
-def _call_db(args_list: list[str], paper_mode: bool) -> dict:
-    """Shells out to db_paper.py/db.py, matching scanner.call_tt's
+def _call_db(args_list: list[str]) -> dict:
+    """Shells out to db_paper.py, matching scanner.call_tt's
     documented CLI-tool architecture -- this tool stays decoupled from
-    either database module's own setup, same reasoning as scanner.py's
-    relationship to tt.py.
+    the database module's own setup, same reasoning as scanner.py's
+    relationship to tt.py. Paper only: earnings has placed no live order since v0.12.0.
     """
-    db_module = "db_paper" if paper_mode else "db"
+    db_module = "db_paper"
     result = subprocess.run(
         [sys.executable, "-m", f"cherrypick.earnings.{db_module}", *args_list],
         capture_output=True,
@@ -404,7 +404,7 @@ def reverify_symbol(
     """Re-runs a single strategy's own fetch/tiering (fully fresh -- avg_volume/
     iv_rv_ratio/winrate are re-fetched here too, not reused from an earlier
     scan) and confirms it is still accepted. Used by the loop's entry-time
-    re-verification step (CLAUDE.md Step 4b) instead of hand-rolled per-
+    re-verification step instead of hand-rolled per-
     criterion prose -- the strategy's own apply_tiering already knows its own
     thresholds, so re-verification is just "run the same check again, right
     now," not a second, separately-maintained description of what to check.
@@ -453,7 +453,7 @@ def reverify_symbol(
     return {"ok": True, "criteria": criteria}
 
 
-def _log_symbol_decision(scan_date: str, symbol_result: dict, paper_mode: bool) -> None:
+def _log_symbol_decision(scan_date: str, symbol_result: dict) -> None:
     """Writes one scan_log row per (symbol, strategy) evaluated plus one
     "_ranked" summary row per symbol, via the existing log_scan command --
     no schema change, just persisting what get_candidates already computes
@@ -486,8 +486,7 @@ def _log_symbol_decision(scan_date: str, symbol_result: dict, paper_mode: bool) 
                     },
                     default=str,
                 ),
-            ],
-            paper_mode,
+            ]
         )
 
     _call_db(
@@ -504,15 +503,14 @@ def _log_symbol_decision(scan_date: str, symbol_result: dict, paper_mode: bool) 
                     "logged_at": time.time(),
                 }
             ),
-        ],
-        paper_mode,
+        ]
     )
 
 
-def _save_entry_review(scan_date: str, symbol_result: dict, paper_mode: bool) -> None:
+def _save_entry_review(scan_date: str, symbol_result: dict) -> None:
     """Persists one entry_reviews row for a symbol -- the richest per-strategy criteria plus
     the cross-strategy accept/reject decision (see scanner.build_entry_review_spec) -- via
-    the paper/live-routed save_entry_review command, mirroring strat_test_harness.py's own
+    the paper ledger's save_entry_review command, mirroring strat_test_harness.py's own
     _save_entry_review for the automated forced-sampling harness. Called for every symbol on
     the entry-window calendar, selected or not, so a screen's full metric vector is recorded
     whether the symbol was ultimately traded. Best-effort: a recording failure must never
@@ -532,7 +530,7 @@ def _save_entry_review(scan_date: str, symbol_result: dict, paper_mode: bool) ->
         timing_assumed=symbol_result.get("timing_assumed"),
     )
     try:
-        _call_db(["save_entry_review", "--data", json.dumps(spec, default=str)], paper_mode)
+        _call_db(["save_entry_review", "--data", json.dumps(spec, default=str)])
     except Exception as e:
         print(f"Failed to save entry review for {symbol_result['symbol']}: {e}", file=sys.stderr)
 
@@ -562,7 +560,6 @@ def cmd_get_ranked_symbols(args) -> dict:
         return {"ok": False, "error": "tastytrade connection failed"}
 
     config = scanner._load_config()
-    paper_mode = not config.get("enable_live_trading", False)
     # This morning's forward scan no longer bounds which unannotated calendar rows are
     # admissible as AMC -- every unannotated row is admitted (see
     # scanner.fetch_entry_window_calendar). It still orders the scan, so a budget that binds
@@ -660,8 +657,8 @@ def cmd_get_ranked_symbols(args) -> dict:
     scan_date = str(scanner.et_today())
     for s in per_symbol:
         s["timing_assumed"] = timing_assumed_by_symbol.get(s["symbol"])
-        _log_symbol_decision(scan_date, s, paper_mode)
-        _save_entry_review(scan_date, s, paper_mode)
+        _log_symbol_decision(scan_date, s)
+        _save_entry_review(scan_date, s)
 
     return {
         "ok": True,

@@ -1,4 +1,8 @@
-"""SQLite persistence for EarningsAgent's real (non-paper) trades.
+"""SQLite persistence for EarningsAgent's historic live ledger (`earnings_trades.db`).
+
+Earnings placed real orders until v0.12.0 and is paper-only now: nothing in the package opens a
+position here any more. The ledger and this module stay so the closed history remains readable
+(reports, the console) and the schema stays in step with db_paper.py.
 
 Schema is strategy-agnostic: `trades.strategy` identifies which strategy
 opened a position (e.g. "iron_fly"), and `legs_json` holds that
@@ -32,12 +36,11 @@ for the position as a whole.
 
 `open_leg_symbols` (added 2026-09-17) is the flat streamer-symbol set the market-data producer
 subscribes from, the same table `db_paper.py` keeps; `save_trade` fills it from the order's legs
-(see `leg_streamer_symbols`) and `save_close` clears it, so a hand-recorded live position is
-declared to the streamer by the act of recording it, with no extra step for the human to forget.
+(see `leg_streamer_symbols`) and `save_close` clears it.
 
 `profile`/`quantity`/`capital_at_risk`/`entry_cost`/`exit_cost`/`entry_context`/`entry_iv`/
 `exit_iv` exist for schema parity with db_paper.py's paper-mode profile testing (see
-docs/strat-test-portfolios.md) -- live trading doesn't select a profile today, so these
+docs/strat-test-portfolios.md) -- this ledger never selected a profile, so these
 default to 'default'/NULL, but the two databases' `trades`/`scan_log` tables never drift
 apart as a result.
 """
@@ -172,7 +175,7 @@ CREATE TABLE IF NOT EXISTS entry_reviews (
 
 # Schema-parity migration with db_paper.py (see that module's own _MIGRATIONS docstring) --
 # kept identical so the two databases' trades/scan_log tables never drift apart, even though
-# live trading doesn't use named profiles/sizing/cost attribution today.
+# this ledger never used named profiles/sizing/cost attribution.
 _MIGRATIONS = [
     ("trades", "arm", "ALTER TABLE trades ADD COLUMN arm TEXT NOT NULL DEFAULT 'default'"),
     ("trades", "quantity", "ALTER TABLE trades ADD COLUMN quantity INTEGER"),
@@ -249,9 +252,8 @@ def leg_streamer_symbols(spec: dict) -> list[str]:
     A leg that already carries ``streamer_symbol`` (the chain's own, as the paper harness stamps)
     keeps it; one that carries only the OCC ``symbol`` the order was placed with is converted through
     ``cherrypick.core.streamcache.occ_to_streamer_symbol``, which is pinned to the SDK's converter --
-    the live path is a human running ``tt.py execute_trade --live`` and then ``save_trade`` with the
-    order's legs verbatim, and asking that path to also copy a chain field by hand is how the paper
-    table sat empty for 64 trades. Unconvertible legs are dropped, never raised on: a subscription
+    a caller passing an order's legs verbatim does not copy a chain field along, and asking it to
+    is how the paper table sat empty for 64 trades. Unconvertible legs are dropped, never raised on: a subscription
     record must not fail the trade that was already placed.
     """
     legs: list = []

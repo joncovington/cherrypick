@@ -8,9 +8,9 @@ Runs the real earnings-candidate scan for tonight's/tomorrow-morning's entry win
 
 ## Description
 
-Runs `cherrypick.earnings.late_day_earnings_ranked`, a thin CLI over `rank_strategies get_ranked_symbols` — the production cross-strategy ranking engine (see CLAUDE.md's Loop Step 4b): fetches today's real AMC + tomorrow's real BMO earnings calendar from DoltHub, evaluates every registered strategy against live tastytrade/DoltHub data per symbol, and picks each symbol's single best-ranked viable strategy. For each selected symbol, builds a concrete tradeable order via that strategy's own `get_order`.
+Runs `cherrypick.earnings.late_day_earnings_ranked`, a thin CLI over `rank_strategies get_ranked_symbols` — the production cross-strategy ranking engine (`rank_strategies.py`): fetches today's real AMC + tomorrow's real BMO earnings calendar from DoltHub, evaluates every registered strategy against live tastytrade/DoltHub data per symbol, and picks each symbol's single best-ranked viable strategy. For each selected symbol, builds a concrete tradeable order via that strategy's own `get_order`.
 
-This is a **one-shot analysis**, not the trading loop — it does not check today's account status, does not submit orders, and does not schedule any wakeup. Use `/earnings-start` to start the actual continuous loop.
+This is a **one-shot analysis**, not the trading loop — it does not check today's account status, does not submit orders, and does not schedule any wakeup. Earnings is paper-only since v0.12.0: the supervisor's own jobs run the paper book.
 
 ## Usage
 
@@ -72,20 +72,18 @@ If any are selected, each shows:
 
 1. Run command → see selected candidates (if any) with score and strategy
 2. Review the built order for each (credit, strikes, legs)
-3. Execute manually in your broker during the entry window, or let `/earnings-start`'s loop handle Step 4b automatically
+3. Nothing is placed from here; the supervisor's paper loop opens the paper book on its own clock
 
 ## Files Generated
 
 No trades. `get_ranked_symbols` does log every evaluation to `scan_log` (one row per symbol ×
-strategy, plus a `_ranked` summary) and upserts `entry_reviews`, in the paper or live ledger per
-`enable_live_trading`. Real trade persistence (for the actual loop, not this standalone scan) goes
-through `db_paper.py save_trade` into the shared `paper_trades.db`, per CLAUDE.md's Step 4b. The
+strategy, plus a `_ranked` summary) and upserts `entry_reviews` in the paper ledger. The paper
+loop's trades go through `db_paper.py save_trade` into the shared `paper_trades.db`. The
 session is reported by the suite review (`packages/review`).
 
 ## Related Commands
 
 - `/paper-start` — Forced-sampling strategy test (opens the per-strategy `strat_test` books)
-- `/earnings-start` — Starts the actual continuous trading loop (Steps 0-5, self-scheduling)
 
 ## Common Issues
 

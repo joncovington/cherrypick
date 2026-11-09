@@ -172,6 +172,6 @@ verdict) · `--month` / `--dry-run` (archive) · `--dry-run` / `--list` / `--ver
 ## Slash-command equivalents (Claude Code)
 
 Some workflows are also exposed as checked-in slash commands for interactive sessions:
-`/install`, `/uninstall`, `/console`, `/desktop`, `/meic-start`, `/earnings-start`. These are dev
+`/install`, `/uninstall`, `/console`, `/desktop`, `/meic-start`. These are dev
 conveniences, never a runtime dependency. The per-day live arms `/live-meic-start`,
 `/live-flies-start` and `/live-bwb-start` are not conveniences: they are the deliberate arming path.

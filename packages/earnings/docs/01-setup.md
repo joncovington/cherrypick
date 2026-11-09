@@ -88,8 +88,8 @@ cp config/config.example.json config/config.json
 > (see `cherrypick/earnings/paths.py`); `cherrypick migrate-home` moves an in-repo config up to the home. The keys are the
 > same either way — edit whichever `paths.config_path()` resolves to.
 
-The example ships with sane, documented defaults (`enable_live_trading: false`, i.e. paper mode,
-and an `available_capital_paper_mode` simulated capital basis rather than a real balance). Open
+The example ships with sane, documented defaults (earnings is paper-only since v0.12.0,
+with an `available_capital_paper_mode` simulated capital basis rather than a real balance). Open
 your config and review at minimum:
 
 - `available_capital_paper_mode` — simulated NLV for paper mode's risk-cap checks.
@@ -118,8 +118,8 @@ python -m cherrypick.earnings.tt secrets_status
 python -m cherrypick.earnings.tt get_connection_status
 ```
 
-`get_connection_status` should report `"connected": true`. This step is required in both paper
-and live mode — see `CLAUDE.md`'s Loop Step 0 for the paper/live distinction.
+`get_connection_status` should report `"connected": true`. This step is required even for paper:
+quotes and chains come from the real session.
 
 ---
 
@@ -162,12 +162,12 @@ normal and not a bug.
 
 ## Step 7: Run the forced-sampling strategy test (recommended first)
 
-Before running the live/paper trading loop, use `/paper-start` (see
+Before relying on the supervisor's paper loop, use `/paper-start` (see
 `docs/strategy-testing-plan.md`) to force-sample every open strategy nightly (the two calendars are
 retired from 2026-10-15) into isolated
 per-strategy strat_test paper books — this validates the whole pipeline end-to-end (scan, screen,
 size, cost-adjust, persist, close) and starts building the sample size needed to evaluate each
-strategy, without affecting the real paper/live trading book:
+strategy, without touching the main paper book:
 
 ```
 /paper-start
@@ -193,23 +193,17 @@ python -m cherrypick.earnings.strategy_report
 > `earnings-paper` job. The loop runs the forward scan, the marking, the managed exits and the 15:35
 > entry scan from its own clock, writing into the per-strategy `strat_test` books. The orchestrator then
 > surfaces the results through `cherrypick report`, the console and `calibrate`. It
-> drives this module by subprocess only — it never places live orders or edits this config. Running
+> drives this module by subprocess only — it places no order and never edits this config. Running
 > `/paper-start` here is the standalone equivalent, minus the watchdog and notifications.
 
 ---
 
-## Step 8: Run the actual paper/live trading loop
+## Step 8: Let the supervisor run it
 
-Once you're comfortable with the candidates it's finding, start the real loop (paper mode by
-default, since `enable_live_trading` is `false` in the example config):
-
-```
-/earnings-start
-```
-
-This executes `CLAUDE.md`'s Loop Steps continuously through the day's entry and close windows.
-Only flip `enable_live_trading: true` in `config/config.json` after you've validated results in
-paper mode — live mode submits real orders via `tt.py execute_trade --live`.
+Earnings is paper-only since v0.12.0. Once `cherrypick install` has registered the supervisor, its
+`earnings-paper` job runs the whole day from its own clock; there is no separate agent session to
+start. A leftover `enable_live_trading` or `live` key in your config is ignored, and
+`python run.py doctor` says it can be deleted.
 
 ---
 
@@ -236,10 +230,10 @@ tastytrade connection — if a failure mentions either, check `tests/conftest.py
 ## Next Steps
 
 1. **Read** [Quick Reference](./02-quick-reference.md) for daily CLI workflows.
-2. **Read** `CLAUDE.md` in full — it's the authoritative operational spec (loop steps, database
+2. **Read** `CLAUDE.md` in full — it's the authoritative operational spec (how it runs, database
    schema) — and [reference.md](./reference.md) for the tool reference and config options.
 3. **Study** [Strategy Guide](./05-strategies.md) for how each of the 7 strategies works.
-4. **Run** `/paper-start` daily for a few weeks before considering live trading.
+4. **Run** `/paper-start` daily for a few weeks if the supervisor is not running it for you.
 
 ---
 

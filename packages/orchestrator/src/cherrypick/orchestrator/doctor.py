@@ -9,6 +9,7 @@ Read-only: it never installs, restarts, or trades.
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
 import subprocess
 import sys
@@ -423,6 +424,32 @@ def module_streamer_checks(name: str, mcfg: dict[str, Any]) -> list[Check]:
     ]
 
 
+def earnings_live_leftover_check(config_path: Path | None) -> Check | None:
+    """A WARN for an earnings config that still carries the live keys. Pure but for the one read.
+
+    Earnings live trading was removed in v0.12.0: the module is paper-only and ignores
+    `enable_live_trading` and the `live` block wherever they appear. They do nothing, so they
+    mislead, and the warning says they can go. Silent when the file is absent or unreadable, or
+    carries neither key (a value of false counts as carrying it)."""
+    if config_path is None:
+        return None
+    try:
+        doc = json.loads(Path(config_path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(doc, dict):
+        return None
+    found = [k for k in ("enable_live_trading", "live") if k in doc]
+    if not found:
+        return None
+    return Check(
+        "earnings.live_config",
+        WARN,
+        f"earnings live trading was removed in v0.12.0; the {' and '.join(f'`{k}`' for k in found)} "
+        "key in your earnings config does nothing and can be deleted",
+    )
+
+
 def run(cfg: dict[str, Any] | None = None, fast: bool = False) -> list[Check]:
     """Run the readiness checks. `fast=True` skips the broker/keyring check — the only one that makes
     an authenticated broker round-trip (a 35s-timeout subprocess) — so it's safe to poll on a short
@@ -581,6 +608,10 @@ def run(cfg: dict[str, Any] | None = None, fast: bool = False) -> list[Check]:
         else:
             config_check = Check(f"{name}.config", WARN, "module config not found (home, in-repo or example)")
         checks.append(config_check)
+        if name == "earnings":
+            leftover = earnings_live_leftover_check(mc)
+            if leftover:
+                checks.append(leftover)
 
         paper = mcfg.get("paper", {})
         # paper DB dir writable (resolved the same way every read surface resolves it, so this checks

@@ -11,7 +11,7 @@ internals.
 | Module | Structure | Default | Live path |
 |---|---|---|---|
 | MEIC | 0DTE iron condors, multiple entries | on | per-day armed loop (`/live-meic-start`, the `meic-live` job) behind `enable_live_trading`; also an agent session |
-| Earnings | defined-risk earnings plays, held overnight | on with the `dolt` capability | `enable_live_trading` |
+| Earnings | defined-risk earnings plays, held overnight | on with the `dolt` capability | none: paper-only since v0.12.0 |
 | Flies | 0DTE net-credit butterflies | on | per-day armed pilot |
 | BWB | ~7 DTE SPX put broken-wing butterflies, laddered daily | on | per-day armed pilot |
 | Calendars | weekly SPY double calendars | **off** (experimental) | none |

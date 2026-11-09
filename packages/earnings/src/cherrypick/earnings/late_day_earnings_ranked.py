@@ -5,7 +5,7 @@ morning's entry window, ranked by strategy conviction. Thin CLI wrapper
 around rank_strategies.py get_ranked_symbols (cross-strategy ranking) and
 each winning strategy's own get_order (concrete tradeable order) -- no
 mock/fixture data, this is the live production path (see CLAUDE.md's
-Loop Step 4b).
+the ranked entry path).
 
 Usage:
     python late_day_earnings_ranked.py

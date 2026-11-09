@@ -315,7 +315,7 @@ def fetch_iron_condor_order(
 
 def evaluate_position(position: dict, quotes: dict, config: dict, *, now=None) -> dict:
     """Decide whether to close an open iron condor position early
-    (CLAUDE.md Step 3c) ahead of Step 3's unconditional close-window
+    (the early-exit check) ahead of the unconditional close-window
     sweep. Identical pattern to iron_fly.py's evaluate_position() -- same
     credit-spread shape, same shared scanner.evaluate_credit_spread_exit
     thresholds (config: profit_target_pct, stop_loss_credit_multiple), plus

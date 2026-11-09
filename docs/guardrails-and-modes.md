@@ -16,7 +16,7 @@ incident history behind them. If you extend the suite, preserve them.
   of your money**. With every live gate closed, the orchestrator only invokes paper engines and paper
   DBs, and it **never places, cancels, closes, or adjusts a live order** itself — by design it can't
   sit on a trading decision. The one way it ever launches a live process is the armed live-loop job
-  described [below](#the-five-live-order-paths-and-what-actually-gates-each).
+  described [below](#the-four-live-order-paths-and-what-actually-gates-each).
 - **Live (your account, connected — but you drive it).** You link a real tastytrade account so the engines
   use *your* live market data and can be **reconciled** against your real positions. Trading for real is
   a **deliberate, manual** action you take per module — the automation never does it for you, and if you
@@ -25,21 +25,20 @@ incident history behind them. If you extend the suite, preserve them.
 Paper and live books are strictly separated: separate SQLite files. Even a paper "dry-run" never calls
 `execute_trade` (a dry-run performs a real margin check).
 
-### The five live-order paths, and what actually gates each
+### The four live-order paths, and what actually gates each
 
-Know all five before opening any of them. **They do not share one gate**, and "gated behind
-`enable_live_trading`" — which earlier versions of this page said — is true of only two (MEIC and
-earnings):
+Know all four before opening any of them. **They do not share one gate**, and "gated behind
+`enable_live_trading`" — which earlier versions of this page said — is true of only one (MEIC).
+Earnings had a fifth, hand-placed path; it was removed in v0.12.0 and earnings is paper-only:
 
 | Path | Code | What gates it |
 |---|---|---|
 | **MEIC** | `meic/live_loop.py`, `live_orders.py` | `enable_live_trading` in MEIC's config **and** `live.symbol` **and** `live.gate0_confirmed` **and** a per-day arm record written by `/live-meic-start` **and** a designated account **and** the halt flag. Sized from the config's `live` block (which may name one arm via `live.arm`) under `max_open_bp_dollars` and `live.max_structures_per_day`, plus its daily-loss breaker. Self-disarms at 17:00 ET. The interactive agent session (`/meic-start`) remains a second, unscheduled path behind `enable_live_trading`. |
-| **Earnings** | `earnings/tt.py execute_trade --live` | `enable_live_trading` in the earnings config. |
 | **Flies** | `flies/live_loop.py`, `live_orders.py` | **Not** `enable_live_trading`. A separate `live.enabled` **and** `live.gate0_confirmed` attestation, **and** a per-day arm record written by `/live-flies-start`, **and** a designated account, **and** the halt flag. Self-disarms every evening. |
 | **BWB** | `bwb/live_loop.py`, `live_orders.py` | The flies posture (2026-09-18): `live.enabled` **and** `live.gate0_confirmed` **and** a per-day arm record written by `/live-bwb-start` **and** a designated account **and** the halt flag, plus `live.arm` naming one of the four base books. Self-disarms every evening. Trades the full daily ladder under a worst-case margin cap (with a firing arm's future add-on reserved), one structure per day, a cost-derived credit floor, and a mark-drawdown breaker that blocks entries only. No closing orders: SPX cash-settles, on an official print or not at all. |
 | **Desk** | `packages/desk` | ⚠️ **EXPERIMENTAL** prototype for educational purposes only, not installed or enabled by default (see [its README](../packages/desk/README.md)). **Never reads `enable_live_trading` at all** — deliberately. Its own config `enabled` together with the `CHERRYPICK_DESK_EXPERIMENTAL=1` environment variable, an account allowlist, a PIN, a per-order ticket you confirm, and its own `policy.py` gates. |
 
-The first four are **loops**: once the gate is open they act on their own schedule without asking
+The first three are **loops**: once the gate is open they act on their own schedule without asking
 again. The desk is the only discretionary one — it acts because you typed a confirmation.
 
 **What "the orchestrator never places an order" does and doesn't mean.** The orchestrator process
@@ -49,7 +48,7 @@ armed — so it is the thing that launches the process that trades. Flies, bwb a
 the mechanism is not module-specific, and what the arm record means lives in `cherrypick.core.live`
 (the filename, the two disarm reasons, the rule that under a supervisor arming is a record write).
 
-**The flies pilot is the most tightly bounded of the four loops** — one arm, one symbol, re-armed by
+**The flies pilot is the most tightly bounded of the three loops** — one arm, one symbol, re-armed by
 hand each trading day. Note the precise concurrency rule: at most one *incomplete* position at a time.
 An open short vertical always blocks a new entry; a **completed** fly blocks only while its floor is
 negative, so several completed flies can be open at once. See
@@ -57,7 +56,7 @@ negative, so several completed flies can be open at once. See
 complete rulebook.
 
 Every other guardrail on this page — masked accounts, keyring-only credentials, no AI/network on a
-decision path — applies to all five paths in full.
+decision path — applies to all four paths in full.
 
 ## The one live-config boundary: `connect` / `account`
 
@@ -65,13 +64,13 @@ The **only** live-adjacent action the orchestrator performs is onboarding *confi
 
 - `connect --module <m>` runs the module's **own** hidden-input credential tool for the OAuth bearer
   secrets — the orchestrator never sees or stores `client_secret` / `refresh_token`.
-- `account --module <m>` selects **which account** a module trades in when live, writing that account's
+- `account --module <m>` selects **which account** a module trades in when live (meic, flies, bwb; earnings is paper-only), writing that account's
   `ACCOUNT_NUMBER` into the module's keyring (service = its `keyring_service`).
 
 The boundary is strict: it still **never** places/cancels/closes/adjusts an order, never flips
 `enable_live_trading`, never writes an arm record, and never edits a module's code/config files. (It
 does *run* an armed module's live loop as a supervisor job — see
-[above](#the-five-live-order-paths-and-what-actually-gates-each) — but only because a human wrote that
+[above](#the-four-live-order-paths-and-what-actually-gates-each) — but only because a human wrote that
 day's arm record through the module's own command.)
 Account writes are human-confirmed. `reconcile` honours the designation — a designated live account is
 *expected* to hold positions (not flagged as drift).

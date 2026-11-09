@@ -1,6 +1,6 @@
 """Forced-sampling paper-trading harness for thoroughly testing every
 strategy (see docs/strategy-testing-plan.md). `rank_strategies.py` opens
-only the single best strategy per symbol per night -- fine for the live
+only the single best strategy per symbol per night -- fine for a one-structure
 loop, but candidates are scarce enough that most strategies would starve
 under natural selection and never reach a statistically meaningful sample
 in weeks. This module instead opens a **separate strat_test paper book**
@@ -14,12 +14,10 @@ own portfolio with its own P&L/equity curve (and a newly added strategy
 automatically gets its own stream); "combined" keeps a single `strat_test`
 book (see docs/paper-trading.md and _book_tag).
 
-This is entirely separate from the live/paper trading loop (CLAUDE.md's
-Loop Steps, rank_strategies.py's own get_ranked_symbols) -- it never
+This is entirely separate from rank_strategies.py's own get_ranked_symbols -- it never
 selects a single "best" strategy, never respects max_concurrent_earnings_
 positions or the correlation block list (the test book intentionally holds
-many overlapping positions at once), and never calls tt.py execute_trade.
-Always paper-only, regardless of config's enable_live_trading.
+many overlapping positions at once). Always paper-only.
 
 Sizing basis is config's available_capital_paper_mode (each per-strategy
 book draws on the full basis, as independent paper accounts). Fills are
@@ -98,7 +96,7 @@ _ORDER_FNS = {
 # verdict -- profit target, stop, leg stop, or its own time_exit backstop ahead of
 # front expiration. Force-closing them the morning after entry (the old behavior)
 # measured a one-night structure nobody intends to trade. The five overnight
-# strategies keep the unconditional sweep: that IS their Step 3 close-window design
+# strategies keep the unconditional sweep: that IS their close-window design
 # ("IV crush already happened overnight; no more edge from holding").
 _MULTI_DAY = {
     "atm_calendar": atm_calendar,
@@ -108,9 +106,9 @@ _MULTI_DAY = {
     "expected_move_butterfly": expected_move_butterfly,
 }
 
-# Overnight-hold strategies keep Step 3's unconditional close-window backstop --
+# Overnight-hold strategies keep the unconditional close-window backstop --
 # unlike _MULTI_DAY, a "hold" verdict here never skips the close. But before falling
-# through to that backstop, consult the strategy's own Step 3c evaluate_position so a
+# through to that backstop, consult the strategy's own evaluate_position so a
 # profit target, stop loss, or backstop that already fired gets its real reason (and
 # the config's own thresholds, not just "close_window") recorded instead of masking it.
 _OVERNIGHT_MANAGED = {

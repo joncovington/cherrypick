@@ -115,16 +115,3 @@ def test_compute_position_size_unverified_max_loss():
     result = sizing.compute_position_size(order, STRATEGY_CONFIG, BASE_CONFIG)
     assert result["ok"] is False
     assert result["reason"] == "max_loss_unverified"
-
-
-def test_live_mode_uses_injected_nlv_not_paper_capital():
-    config = {
-        "enable_live_trading": True,
-        "_live_nlv": 50000,
-        "risk_pct_multiplier": 1.0,
-        "max_contracts_per_leg": 20,
-        "available_capital_paper_mode": 999999,
-    }
-    order = {"strategy": "atm_calendar", "debit": 3.12}
-    result = sizing.compute_position_size(order, STRATEGY_CONFIG, config, live=True)
-    assert result["risk_budget"] == pytest.approx(50000 * 0.05)

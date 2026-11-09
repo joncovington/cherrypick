@@ -29,20 +29,6 @@ The query reads ``open_leg_symbols`` (the flat table maintained at entry and cle
 joins ``trades`` and filters on ``closed_at``, so a close that failed to clear its rows cannot leave
 symbols subscribed forever. It is one statement, which the producer requires.
 
-**Both ledgers are declared, from the one file (2026-09-17).** This module has no live loop: a live
-position is opened by a human running ``tt.py execute_trade --live`` and recorded with
-``db.py save_trade``, and nothing on that path ever ran a registration. So until 2026-09-17 a live
-position's legs were never declared at all, and — since the underlying is declared here only for
-paper's open positions — neither was its spot. Rather than add a registration step to a manual path
-(the step that gets skipped), the paper loop's existing per-session write now carries THREE leg
-sources: the paper legs query, the same query against the live ledger, and a spot query over the
-live ledger's open ``trades.symbol`` rows. Legs are re-run every subscription poll, so a live trade
-opened at 15:50 by hand is subscribed on the producer's next poll with no loop tick and no restart —
-the request file only has to exist, and the paper loop rewrites it every session. The live ledger
-gained its own ``open_leg_symbols`` table the same day (``db.py``), written by ``save_trade`` from
-the order's legs (OCC converted through core's pinned converter when the chain's own streamer symbol
-was not copied along), so the one query runs unchanged against either file.
-
 Best-effort by design: a failed write must never break the loop. An unregistered symbol is a
 data-availability problem the provider already surfaces — it refuses on stale or missing quotes rather
 than guessing — not a reason to fail a scheduled run.
@@ -70,30 +56,13 @@ LEG_QUERY = (
 )
 
 
-# A live position's underlying, declared the same way its legs are: an equity's streamer symbol is
-# its ticker, and the producer treats a dotless leg cell as a cash symbol (Trade + Quote + Summary).
-# This is the live twin of the `legs` list `write` builds from paper's open positions -- paper has a
-# loop to rebuild that list every tick; live has only its ledger, so the ledger is what gets asked.
-LIVE_UNDERLYING_QUERY = "SELECT symbol FROM trades WHERE closed_at IS NULL"
+def leg_sources(db_path: Path | None = None) -> list[dict]:
+    """The producer's dynamic subscription spec for this module's open legs: the paper book's
+    ``open_leg_symbols``. Earnings is paper-only since v0.12.0, so there is no second ledger."""
+    return [_sr.leg_source(db_path or _paths.paper_db_path(), LEG_QUERY)]
 
 
-def leg_sources(db_path: Path | None = None, live_db_path: Path | None = None) -> list[dict]:
-    """The producer's dynamic subscription specs for this module's open legs, on BOTH ledgers.
-
-    ``db_path`` is the paper book (unchanged since 2026-08-25); ``live_db_path`` the live ledger,
-    which contributes its open legs through the identical query plus its open underlyings through
-    ``LIVE_UNDERLYING_QUERY``. Each is a separate spec, so a missing or not-yet-created live ledger
-    contributes nothing on its own without affecting the paper source (the producer skips a source
-    it cannot open, per source)."""
-    live = live_db_path or _paths.live_db_path()
-    return [
-        _sr.leg_source(db_path or _paths.paper_db_path(), LEG_QUERY),
-        _sr.leg_source(live, LEG_QUERY),
-        _sr.leg_source(live, LIVE_UNDERLYING_QUERY),
-    ]
-
-
-def write(symbols, db_path: Path | None = None, live_db_path: Path | None = None) -> Path:
+def write(symbols, db_path: Path | None = None) -> Path:
     """Atomically (over)write this module's request file — delegated to core, write-then-rename, so a
     concurrent reader in the producer never sees a partial file.
 
@@ -121,12 +90,11 @@ def write(symbols, db_path: Path | None = None, live_db_path: Path | None = None
     shapes `paper_loop.refresh_stream_request` simply stops applying to it.
     """
     underlyings = sorted({str(s).strip().upper() for s in symbols if str(s).strip()})
-    return _sr.write_request(_MODULE, (), legs=underlyings, leg_sources=leg_sources(db_path, live_db_path))
+    return _sr.write_request(_MODULE, (), legs=underlyings, leg_sources=leg_sources(db_path))
 
 
-def register(symbols, db_path: Path | None = None, live_db_path: Path | None = None) -> None:
-    """Best-effort: declare the open positions' underlyings and the leg queries (paper AND live
-    ledgers). Never raises into the caller — registration is advisory, and a loop that refused to
-    run because it could not write a request file would trade a data-quality problem for an
+def register(symbols, db_path: Path | None = None) -> None:
+    """Best-effort: declare the open positions' underlyings and the leg query. Never raises into the caller —
+    registration is advisory, and a loop that refused to run because it could not write a request file would trade a data-quality problem for an
     outage."""
-    _sr.register_best_effort(write, symbols, db_path, live_db_path, log=_log)
+    _sr.register_best_effort(write, symbols, db_path, log=_log)
