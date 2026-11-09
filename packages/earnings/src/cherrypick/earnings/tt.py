@@ -390,7 +390,6 @@ async def cmd_get_option_chain(args) -> dict:
         return _error(exc)
 
 
-
 def cmd_secrets_status(_args) -> dict:
     status = _creds.secrets_status()
     return {
