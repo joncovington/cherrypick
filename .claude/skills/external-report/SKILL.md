@@ -24,7 +24,7 @@ how to use them well.
 
 ## When to use one, and when not
 
-Use one for data the user owns or may use, shown as tables or short text, refreshed by a script. Do not
+Use one for data that is theirs to use, shown as tables or short text, refreshed by a script. Do not
 use one to change what a trading module does, to place or suggest orders, or for anything that needs
 charts beyond the bars the schema offers. If the user wants a real console page, say that is a change to
 `packages/console` and not an external report.
