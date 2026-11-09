@@ -105,6 +105,13 @@ the rail once its module's live switch is off and nothing is open, working or ow
   gross it says so: the `mark P&L (gross, before fees)` tile is gross, and each card's P&L is net.
 - **A mark is a mid, not a fill.** Open positions are valued at the middle of bid and ask. A closing
   order listed on a card is what you would enter, not what will fill.
+- **After a trade the page updates by itself.** Prices move every minute. A fill starts a new
+  evaluation about a minute after the last leg (several legs or orders close together are one run), and
+  the account's held positions are checked every five minutes, so an assignment, an exercise or a
+  transfer shows up too. No run starts within two minutes of the last one. The Discord post follows the
+  list: it goes out when the trades needing action change (and on the day's first run), not on every
+  run, and the post says what started the run. `manage.on_change` in the config turns this off or tunes
+  it.
 - **Check the age.** The evaluation runs every 30 minutes. If the newest is much older, the header
   turns red and says a run looks to have been missed. A snapshot taken before 9:30 uses the last
   close. A dash instead of a live mark means a leg has no fresh quote.

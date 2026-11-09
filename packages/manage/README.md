@@ -702,7 +702,7 @@ are the comparison. A book that keeps far less than it collects is paying for it
   reads off the stale spot. The evaluation says so (`pre_open`: the New York time it was taken, and
   the trades with an unpriced leg expiring today); a run after 09:30 reprices.
 - **A snapshot older than the code leaves later views empty.** The wheel, PMCC and time-spread views
-  need fields only a newer snapshot carries. Manage snapshots every 30 minutes from 10:00 to 16:35 ET,
+  need fields only a newer snapshot carries. Manage snapshots every 30 minutes from 10:00 to 16:35 ET (and again after a fill or a change in held positions),
   so only a merge after the day's last run leaves a stale one, and only until 10:00. The watchdog's
   `manage.snapshot_version` WARNs while the newest snapshot is older than the installed
   `SNAPSHOT_VERSION`, and the console's manage tabs show that finding as it states it.

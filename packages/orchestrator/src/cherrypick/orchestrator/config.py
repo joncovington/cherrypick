@@ -456,6 +456,7 @@ def manage_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     ro = mg.get("roll_out") if isinstance(mg.get("roll_out"), dict) else {}
     mk = mg.get("marks") if isinstance(mg.get("marks"), dict) else {}
     ts = mg.get("time_spreads") if isinstance(mg.get("time_spreads"), dict) else {}
+    oc = mg.get("on_change") if isinstance(mg.get("on_change"), dict) else {}
     return {
         # The time-spread scanner (`run.py time-spreads`): a read-only
         # scan of the tradable names' term structure and the shortlist's chains, then one full snapshot
@@ -491,6 +492,20 @@ def manage_settings(cfg: dict[str, Any]) -> dict[str, Any]:
         # minute after a fill (managerefresh.py); the evaluation marks 09:30-10:00 early, so the list
         # still waits for the first run past `early.verdicts_from`. It stands down after the close,
         # when the cache holds no fresh quote.
+        # Evaluating when the account changes, not only at the scheduled times (the `manage-marks` job
+        # takes the full snapshot; it needs `marks` on): after a fill once it has been quiet for
+        # `settle_seconds` (a roll's legs or a burst of orders are one run), and when the broker's
+        # positions differ from the stored snapshot's (an assignment, exercise or transfer, which
+        # arrive as no order), read at most every `positions_check_seconds`. No such run starts within
+        # `min_gap_seconds` of the last snapshot. A run then posts only when the trades needing action
+        # differ from the last post's (the day's first run always posts), `notify_every_minutes`
+        # staying a floor between posts. Off, a fill waits 30 s and a post follows the timer alone.
+        "on_change": {
+            "enabled": bool(mg.get("enabled", False)) and bool(oc.get("enabled", True)),
+            "settle_seconds": _int_or(oc.get("settle_seconds"), 60),
+            "min_gap_seconds": _int_or(oc.get("min_gap_seconds"), 120),
+            "positions_check_seconds": max(60, _int_or(oc.get("positions_check_seconds"), 300)),
+        },
         "marks": {
             "enabled": bool(mg.get("enabled", False)) and bool(mk.get("enabled", True)),
             "interval_seconds": max(30, _int_or(mk.get("interval_seconds"), 60)),
