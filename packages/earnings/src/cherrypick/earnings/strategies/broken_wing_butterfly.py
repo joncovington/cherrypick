@@ -345,7 +345,7 @@ def evaluate_position(
     position: dict, quotes: dict, config: dict, is_first_check_of_day: bool = False
 ) -> dict:
     """Decide whether to close an open broken wing butterfly position early
-    (CLAUDE.md Step 3c) ahead of Step 3's unconditional close-window sweep.
+    (the early-exit check) ahead of the unconditional close-window sweep.
 
     Broken wing butterfly enters for a net credit, holds through earnings
     announcement (the binary event), and closes post-announcement when IV crush

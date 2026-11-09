@@ -88,7 +88,7 @@ def _live_enabled(name: str, root: Path) -> tuple[bool | None, str | None]:
     for p in candidates:
         if p.exists():
             try:
-                flag = cfgmod.live_trading_enabled(json.loads(p.read_text(encoding="utf-8")))
+                flag = cfgmod.live_trading_enabled(json.loads(p.read_text(encoding="utf-8")), name)
             except (OSError, ValueError):
                 return None, cfgmod.portable_path(p)
             return flag, cfgmod.portable_path(p)

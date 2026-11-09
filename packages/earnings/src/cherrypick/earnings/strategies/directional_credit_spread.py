@@ -375,7 +375,7 @@ def fetch_directional_credit_spread_order(
 
 def evaluate_position(position: dict, quotes: dict, config: dict, *, now=None) -> dict:
     """Decide whether to close an open directional credit spread position
-    early (CLAUDE.md Step 3c) ahead of Step 3's unconditional close-window
+    early (the early-exit check) ahead of the unconditional close-window
     sweep. Identical pattern to iron_fly.py's/iron_condor.py's
     evaluate_position() -- same credit-spread shape, same shared
     scanner.evaluate_credit_spread_exit thresholds (config: profit_target_pct,

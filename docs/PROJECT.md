@@ -263,11 +263,11 @@ next.
 
 > ### ⚠️ If you are thinking about trading live
 >
-> **Know every way an order can be placed.** There are five: **MEIC**, **earnings**, **flies** and
+> **Know every way an order can be placed.** There are four: **MEIC**, **flies** and
 > **bwb** each have a live loop behind gates of their own, and the **desk** is the manual one. The
-> four loops trade on their own once started, without asking again: MEIC's, flies' and bwb's are
-> supervisor jobs that run for as long as that day's arm is valid, and earnings' runs in an agent
-> session you start (`/earnings-start`). The orchestrator never places an order
+> three loops trade on their own once started, without asking again: they are
+> supervisor jobs that run for as long as that day's arm is valid. Earnings is paper-only since
+> v0.12.0. The orchestrator never places an order
 > itself, but "the automation won't trade for me" stops being true the moment one of those gates is
 > open.
 >

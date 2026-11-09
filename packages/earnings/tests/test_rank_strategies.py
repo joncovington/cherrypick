@@ -97,9 +97,7 @@ def test_reverify_symbol_succeeds_when_still_accepted(monkeypatch):
 
 def test_save_entry_review_calls_call_db_with_richest_criteria(monkeypatch):
     calls = []
-    monkeypatch.setattr(
-        rank_strategies, "_call_db", lambda args, paper_mode: calls.append((args, paper_mode))
-    )
+    monkeypatch.setattr(rank_strategies, "_call_db", lambda args: calls.append(args))
 
     symbol_result = {
         "symbol": "AAPL",
@@ -115,12 +113,11 @@ def test_save_entry_review_calls_call_db_with_richest_criteria(monkeypatch):
             },
         ],
     }
-    rank_strategies._save_entry_review("2026-08-07", symbol_result, paper_mode=True)
+    rank_strategies._save_entry_review("2026-08-07", symbol_result)
 
     assert len(calls) == 1
-    args, paper_mode = calls[0]
+    args = calls[0]
     assert args[0] == "save_entry_review"
-    assert paper_mode is True
     spec = json.loads(args[2])
     assert spec["scan_date"] == "2026-08-07"
     assert spec["symbol"] == "AAPL"
@@ -131,7 +128,7 @@ def test_save_entry_review_calls_call_db_with_richest_criteria(monkeypatch):
 
 
 def test_save_entry_review_never_raises_on_call_db_failure(monkeypatch):
-    def boom(args, paper_mode):
+    def boom(args):
         raise RuntimeError("db subprocess failed")
 
     monkeypatch.setattr(rank_strategies, "_call_db", boom)
@@ -142,7 +139,7 @@ def test_save_entry_review_never_raises_on_call_db_failure(monkeypatch):
         "reason": "no edge",
         "strategies": [],
     }
-    rank_strategies._save_entry_review("2026-08-07", symbol_result, paper_mode=True)  # must not raise
+    rank_strategies._save_entry_review("2026-08-07", symbol_result)  # must not raise
 
 
 def test_reverify_symbol_fails_when_rejected(monkeypatch):

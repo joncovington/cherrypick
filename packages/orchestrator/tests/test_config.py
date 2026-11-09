@@ -113,10 +113,17 @@ def test_broker_tool_defaults_to_tt_and_is_overridable():
 
 
 def test_live_trading_enabled_top_level_convention():
-    """meic/earnings shape: a top-level bool."""
+    """meic shape: a top-level bool."""
     assert c.live_trading_enabled({"enable_live_trading": True}) is True
     assert c.live_trading_enabled({"enable_live_trading": False}) is False
     assert c.live_trading_enabled({}) is False
+
+
+def test_an_earnings_file_with_a_leftover_live_switch_is_never_live():
+    """Earnings is paper-only since v0.12.0 and ignores the key, so no surface may show it as live."""
+    assert c.live_trading_enabled({"enable_live_trading": True}, "earnings") is False
+    assert c.live_trading_enabled({"live": {"enabled": True}}, "earnings") is False
+    assert c.live_trading_enabled({"enable_live_trading": True}, "meic") is True
 
 
 def test_live_trading_enabled_nested_live_convention():

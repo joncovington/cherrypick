@@ -1,17 +1,7 @@
 {
-  "live_header": "===== Live Gate & Capital (guarded) =====",
-  "enable_live_trading": false,
-  "live": {
-    "_kill_note": "B1 (2026-10-25): the live arm's frozen kill criteria, written by hand and dated. tt.py refuses every live opening order while it is null; see the module CLAUDE.md.",
-    "kill": null
-  },
-  "account_deploy_limit_pct": 0,
-  "_account_deploy_limit_pct_note": "Account-level deploy cap (via cherrypit.risk). 0 = OFF (default). A positive value (e.g. 50) blocks a LIVE execute_trade whose buying power would push total deployed BP above that percent of account capacity (used + available derivative buying power). Fail-closed: if account state can't be read, the live order is blocked. Enforced only on live submits; a dry-run reports the governor verdict without blocking. Does not affect paper trading.",
-
   "costs_header": "===== Costs & Sizing =====",
-  "_position_sizing_note": "available_capital_paper_mode is the simulated capital basis for paper mode's risk-cap checks (max_risk_per_trade_pct) -- no real broker balance is consulted in paper mode. Live mode always sources NLV/buying power from tastytrade directly via tt.py get_account_info.",
+  "_position_sizing_note": "available_capital_paper_mode is the simulated capital basis for the risk-cap checks (max_risk_per_trade_pct); no real broker balance is consulted. Earnings is paper-only since v0.12.0.",
   "available_capital_paper_mode": 10000,
-  "available_capital_live_mode_source": "tastytrade",
   "max_contracts_per_leg": 1,
 
   "_tastytrade_costs_note": "Models tastytrade's real commission schedule (source: tastytrade.com/pricing, 'Commissions & Fees' doc last updated 2026-04-06) for paper-mode cost-adjusted P&L -- see src/costs.py. commission_close_per_contract is 0 by design (tastytrade's distinctive open-only model). clearing/regulatory rates are approximations of pass-through exchange/ORF/FINRA-TAF/SEC fees and change periodically -- re-check the source doc periodically. slippage_frac_of_spread is the fraction of each leg's bid-ask conceded from mid per fill (0.125 = a quarter of the way from mid to the far touch, a worked-combo-limit assumption; was 0.25); slippage_cap_frac_of_mid caps a leg's slippage at that fraction of its mid so deep-OTM junk wings don't dominate.",
@@ -110,9 +100,6 @@
   "correlation_block_list": [
     ["AAPL", "MSFT", "AMZN", "META", "GOOGL", "GOOG", "NVDA", "AVGO", "TSLA"]
   ],
-
-  "reprice_interval_s": 10,
-  "reprice_step": 0.05,
 
   "strategies_header": "===== Strategies =====",
   "strategies": {

@@ -1,7 +1,7 @@
 """Per-module live-trading account selection.
 
-When a module (MEIC, earnings, …) is flipped to live, it resolves the account to trade in from its OWN
-keyring secret `ACCOUNT_NUMBER` (service `meicagent` / `earningsagent`, via the shared
+When a module (MEIC, …) is flipped to live, it resolves the account to trade in from its OWN
+keyring secret `ACCOUNT_NUMBER` (service `meicagent`, via the shared
 `cherrypick.core.auth.CredentialStore`). tastytrade returns multiple accounts per login, so an unset
 `ACCOUNT_NUMBER` silently falls back to "the first account" — not a deliberate choice. This lets the user
 list the login's accounts and **designate** which one a module trades in when it goes live.
@@ -25,6 +25,8 @@ from cherrypick.core.auth import ACCOUNT_NUMBER, SHARED_SERVICE, CredentialError
 from . import config as cfgmod
 from .reconcile import _tt  # module tt.py invocation (doctor._run + first_json), reused
 from .util import mask_account
+
+PAPER_ONLY_REFUSAL = "{module} is paper-only since v0.12.0; it needs no trading account."
 
 
 def keyring_store(cfg: dict[str, Any], module: str) -> CredentialStore | None:
@@ -60,7 +62,7 @@ def _live_enabled(root: Path, module: str | None = None) -> bool | None:
     for p in candidates:
         if p.exists():
             try:
-                return cfgmod.live_trading_enabled(json.loads(p.read_text(encoding="utf-8")))
+                return cfgmod.live_trading_enabled(json.loads(p.read_text(encoding="utf-8")), module)
             except (OSError, ValueError):
                 return None
     return None
@@ -280,7 +282,10 @@ def list_accounts(cfg: dict[str, Any], module: str) -> dict[str, Any]:
 
 def set_account(cfg: dict[str, Any], module: str, selector: str) -> dict[str, Any]:
     """Designate the account this module trades in when live: write `ACCOUNT_NUMBER` to its keyring.
-    The full number is used only for the write; only the masked form is returned."""
+    The full number is used only for the write; only the masked form is returned. A paper-only
+    module (`config.PAPER_ONLY_MODULES`) refuses and writes nothing."""
+    if module in cfgmod.PAPER_ONLY_MODULES:
+        return {"ok": False, "error": PAPER_ONLY_REFUSAL.format(module=module)}
     _mcfg, root, store, err = _context(cfg, module)
     if err:
         return err

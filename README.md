@@ -179,9 +179,9 @@ Every surface binds to loopback only.
   read-only safety check that flags anything a paper-only suite shouldn't be holding). Turning live
   trading *on* is always a deliberate, manual, per-module act — the orchestrator will never do it for you
   and never places an order itself. But note what that means: **once a module's live gate is open, that
-  module's own loop can place orders without asking again.** MEIC, earnings, flies, and bwb each have a live
-  path, each behind its own gate (`enable_live_trading` for MEIC and earnings; flies and bwb have their
-  own `live` gates instead). MEIC, flies and bwb are the most tightly bounded of them — loops that must
+  module's own loop can place orders without asking again.** MEIC, flies, and bwb each have a live
+  path, each behind its own gate (`enable_live_trading` for MEIC; flies and bwb have their
+  own `live` gates instead). They are loops that must
   be re-armed by hand every trading day (`/live-meic-start`, `/live-flies-start`, `/live-bwb-start`),
   one arm at a time, under a buying-power cap; while armed, the supervisor runs their live loop as a job
   ([the flies plan](packages/flies/docs/live-trading-plan.md)).
@@ -201,11 +201,11 @@ kept strictly separate.
 > been validated as profitable — the paper experiments exist precisely because the answer is not yet
 > known, and several of the suite's own recorded results are *negative*.
 >
-> **There are five ways real orders can be placed**, and it is worth knowing all of them before you open
-> any of them: **MEIC**, **earnings**, **flies**, and **bwb** each have a live path behind gates of their
-> own, and **desk** is the manual one. The first four are *loops* — once the gate is open, they act on
-> their own schedule without asking again (MEIC's, flies' and bwb's as supervisor jobs while that day's
-> arm is valid; earnings' in an agent session you start). The orchestrator itself
+> **There are four ways real orders can be placed**, and it is worth knowing all of them before you open
+> any of them: **MEIC**, **flies**, and **bwb** each have a live path behind gates of their
+> own, and **desk** is the manual one. The first three are *loops* — once the gate is open, they act on
+> their own schedule without asking again (as supervisor jobs while that day's
+> arm is valid). Earnings is paper-only since v0.12.0. The orchestrator itself
 > never places an order, but "the automation won't trade for you" stops being true the moment you open
 > one of those gates.
 >
@@ -231,7 +231,7 @@ read them.
 |---|---|
 | [packages/orchestrator](packages/orchestrator) | The supervisor, watchdog, notifications, and the read side (report / calibrate / EOD). Drives the engines by subprocess. |
 | [packages/core](packages/core) | The shared `cherrypick.core` library — calendar, fees, profiles, GEX math, broker, auth. Install it first. |
-| [packages/meic](packages/meic) · [packages/earnings](packages/earnings) · [packages/flies](packages/flies) · [packages/calendars](packages/calendars) · [packages/pmcc](packages/pmcc) · [packages/curve](packages/curve) · [packages/contango](packages/contango) · [packages/weeklyput](packages/weeklyput) · [packages/bwb](packages/bwb) | The nine strategy engines. Calendars, pmcc and curve are EXPERIMENTAL, paper-only and off by default, as are contango and weeklyput; bwb is paper by default with a narrow live path; earnings needs the optional Dolt data. |
+| [packages/meic](packages/meic) · [packages/earnings](packages/earnings) · [packages/flies](packages/flies) · [packages/calendars](packages/calendars) · [packages/pmcc](packages/pmcc) · [packages/curve](packages/curve) · [packages/contango](packages/contango) · [packages/weeklyput](packages/weeklyput) · [packages/bwb](packages/bwb) | The nine strategy engines. Calendars, pmcc and curve are EXPERIMENTAL, paper-only and off by default, as are contango and weeklyput; bwb is paper by default with a narrow live path; earnings is paper-only and needs the optional Dolt data. |
 | [packages/streamer](packages/streamer) | The single market-data producer. Everything else reads the cache it writes; nothing else writes it. |
 | [packages/gex](packages/gex) | The GEX engine and spot-trail recorder; the console renders it. |
 | [packages/console](packages/console) | The unified web console (`127.0.0.1:5070`) — every module's read models plus research and screening, in one app. Read-only. |
@@ -253,7 +253,7 @@ read them.
 | **[Node.js](https://nodejs.org) 22+** | The console — the suite's one read surface — is a Node/TypeScript package. The installer adds **pnpm 11** for you. |
 | A computer that stays awake during market hours | cherrypick runs on your machine, so it has to be on to capture a session. **Windows is recommended** — the scheduler and self-healing are most proven there; the macOS/Linux crontab backend is newer and less proven. |
 | **[Dolt](https://github.com/dolthub/dolt)** *(optional)* | The **earnings** module and the **technicals** report read three public DoltHub datasets from a local `dolt sql-server` (`stocks` about 3 GB, `earnings` about 1.35 GB, `options` larger still). Without it, both are switched off and hidden. |
-| **[Claude Code](https://docs.claude.com/en/docs/claude-code)** *(optional)* | Anthropic's agentic CLI. The AI advisor, the agent-written end-of-day and morning narratives, and the repo's slash commands (`/meic-start`, `/earnings-start`, `/console`, …) need it. Without it, those features are switched off and hidden; the paper automation runs on its own. |
+| **[Claude Code](https://docs.claude.com/en/docs/claude-code)** *(optional)* | Anthropic's agentic CLI. The AI advisor, the agent-written end-of-day and morning narratives, and the repo's slash commands (`/meic-start`, `/console`, …) need it. Without it, those features are switched off and hidden; the paper automation runs on its own. |
 
 Whether this machine has the two optional pieces is recorded as **capabilities** in
 `~/.cherrypick/config.json` (`capabilities: {claude, dolt}`, absent means no). The installer detects

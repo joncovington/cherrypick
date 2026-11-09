@@ -15,7 +15,7 @@ Packages: `packages/orchestrator`, `packages/meic`, `packages/earnings`, `packag
 
 ## Limits most tasks run into
 
-- **Live orders** exist only in meic, earnings, flies and bwb, each behind its own gate and a per-day
+- **Live orders** exist only in meic, flies and bwb, each behind its own gate and a per-day
   arm, and in desk (experimental, foreground, started by a human; no automated package may import it).
   Every other package is paper-only or read-only.
 - **orchestrator** drives modules by subprocess, never by import. It places no order and never flips

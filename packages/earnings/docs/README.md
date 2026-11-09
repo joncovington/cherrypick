@@ -1,11 +1,10 @@
 # cherrypick Earnings — documentation
 
 Guides for the cherrypick **Earnings** engine — automated, defined-risk earnings option trades built on
-a multi-strategy decision framework. Paper by default; its live path (`enable_live_trading`) is
-experimental, off by default and at your own risk.
+a multi-strategy decision framework. Paper-only since v0.12.0; it places no order.
 
 > **Part of the [cherrypick](../../../README.md) suite.** This is the `cherrypick-earnings` module
-> (`packages/earnings`). It runs standalone from this folder for live / interactive trading, and is driven
+> (`packages/earnings`). It runs standalone from this folder for by-hand paper work, and is driven
 > unattended by the [orchestrator](../../orchestrator) for paper collection (by subprocess, never by
 > import). Shared logic (`cherrypick.core`) lives in `packages/core`, a sibling in-repo package. See the
 > [package README](../README.md#how-this-fits-the-suite) for how the two roles fit together, and the
@@ -47,9 +46,9 @@ The two calendars stay registered but open nothing in the forced-sampling books 
 - **IV-Crush Capture**: the whole edge is the IV collapse that happens once the earnings
   uncertainty resolves overnight.
 - **Profit Target / Stop**: per strategy (table above), checked from the first morning after entry.
-- **Holding Period**: in the agent-driven loop (`/earnings-start`), an unconditional close-window
+- **Holding Period**: in the original design, an unconditional close-window
   backstop the next morning (default `09:45` ET) closes whatever is still open regardless of P&L.
-  The unattended paper loop manages positions instead (since 2026-08-12): a loser closes on the
+  The paper loop manages positions instead (since 2026-08-12): a loser closes on the
   first morning, a winner short of target may be carried up to three trading sessions
   (`management.hold_winners_max_days`), nothing acts on the entry session but the expiry close and
   the pin guard, nothing is held through a leg's expiration (the 15:20 expiry close), and an expired
@@ -79,7 +78,7 @@ remaining files keep the numbers they were written with, so existing links stay 
 - [Trading Workflow](./08-trading-workflow.md) — Day-to-day execution
 - [Exit Strategy Guide](./10-exits.md) — Profit targets, backstops, repairs
 - [Examples & Case Studies](./11-examples.md) — Real-world scenarios
-- [Paper Trading](./paper-trading.md) — How paper mode works, data separation from live
+- [Paper Trading](./paper-trading.md) — How paper works, data separation from the old live ledger
 - [Strat-Test Portfolios](./strat-test-portfolios.md) — Per-strategy paper books for the forced-sampling test
 - [Strategy Testing Plan](./strategy-testing-plan.md) — Forced-sampling validation program
 - [Control Book Plan](./control-book-plan.md) — Widening the control so entry screening becomes
@@ -140,7 +139,7 @@ Every strategy (paper loop): held on its entry session; closed from
 
 In the agent-driven loop every strategy closes by the next morning's close window regardless of
 P&L. The unattended paper loop carries a winner up to three sessions instead (see Key Metrics
-above). See `CLAUDE.md`'s Loop Steps and [Exit Strategy Guide](./10-exits.md) for the exact
+above). See the [Exit Strategy Guide](./10-exits.md) for the exact
 mechanics.
 
 ### Risk Framework
@@ -176,7 +175,7 @@ cherrypick/
     │   ├── sizing.py            # Code-enforced risk-cap sizing
     │   ├── costs.py             # Cost model over cherrypick.core.fees
     │   ├── tt.py                # tastytrade broker interface
-    │   ├── db.py                # Persistence, live ledger (db_paper.py is the paper twin)
+    │   ├── db.py                # Persistence, historic live ledger (db_paper.py is the paper twin)
     │   ├── paths.py             # Resolves the data home (~/.cherrypick/data/earnings)
     │   ├── paper_loop.py        # The managed paper loop the supervisor ticks every 60 s
     │   ├── management.py        # Exit decisions for open paper positions (hold, carry, close)
@@ -214,8 +213,8 @@ Position holds through the earnings reaction — no same-day exit.
 
 ### Next Morning (agent-driven loop)
 ```
-Step 3c (market open -> close_window_start): profit-target/stop-loss check against live quotes
-Step 3 (close_window_start, unconditional): whatever's still open closes regardless of P&L
+Early exit (market open -> close_window_start): profit-target/stop-loss check against live quotes
+Close window (close_window_start, unconditional): whatever's still open closes regardless of P&L
 ```
 
 The unattended paper loop instead acts from 09:40 ET on the management rules above.

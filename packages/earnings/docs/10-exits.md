@@ -311,12 +311,12 @@ These two are the only strategies that might still be open during regular market
 day other than the entry/exit day, since they're held across multiple expirations rather than
 closed the next morning by default.
 
-**`atm_calendar`** (Step 3d): a single 2-leg position (short front-month ATM call, long
+**`atm_calendar`** (intraday): a single 2-leg position (short front-month ATM call, long
 back-month same strike). Each check during session hours calls `atm_calendar.evaluate_position()`
 with live greeks — `action: hold` does nothing, `action: close_all` closes both legs together
 and calls `save_close`.
 
-**`double_calendar`** (Step 3b): the only strategy where each side (call side, put side) can
+**`double_calendar`** (intraday): the only strategy where each side (call side, put side) can
 close independently, tracked leg-by-leg in the `trade_legs` table instead of `legs_json`.
 `double_calendar.evaluate_position()` returns `action: hold`, `action: close_side` (closes just
 the threatened side's 2 legs via `save_leg_close`, keeps the other side open), or
@@ -338,7 +338,7 @@ otherwise stand.
 Entry (day 1, 15:32 ET): AAPL iron_fly, entry credit $5.10 for 3 contracts
 Overnight: unmonitored, earnings announced after close
 
-Next morning, 09:15 ET (Step 3c check):
+Next morning, 09:15 ET (early-exit check):
   Live quotes pulled, exit_debit computed at $2.10
   profit = $5.10 - $2.10 = $3.00 ≥ $5.10 * 0.25 ($1.28) → close_all, reason: profit_target
   Position closed, save_close records the trade
@@ -350,13 +350,13 @@ caught the profit target.
 And a case where the early-exit check doesn't fire:
 
 ```
-Next morning, 09:15 ET (Step 3c check):
+Next morning, 09:15 ET (early-exit check):
   exit_debit computed at $4.00
   profit = $5.10 - $4.00 = $1.10, below the $1.28 target
   exit_debit ($4.00) below the $7.65 stop-loss threshold (1.5x $5.10)
   → hold
 
-09:45 ET (Step 3, unconditional):
+09:45 ET (unconditional close):
   Still open → close regardless of the current $1.10 unrealized profit
 ```
 

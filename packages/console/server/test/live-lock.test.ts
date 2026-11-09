@@ -52,7 +52,7 @@ beforeEach(() => {
 });
 
 describe("module live gates", () => {
-  it("reads the top-level switch meic and earnings use", () => {
+  it("reads the top-level switch meic uses", () => {
     writeModuleConfig("meic", { enable_live_trading: true });
     expect(readModuleGate(config, "meic")).toMatchObject({ liveEnabled: true });
   });
@@ -69,8 +69,13 @@ describe("module live gates", () => {
 
   it("an unreadable config is unknown, never a reassuring off", () => {
     expect(readModuleGate(config, "meic").liveEnabled).toBeNull();
-    writeModuleConfig("earnings", "not an object");
-    expect(readModuleGate(config, "earnings").liveEnabled).toBeNull();
+    writeModuleConfig("pmcc", "not an object");
+    expect(readModuleGate(config, "pmcc").liveEnabled).toBeNull();
+  });
+
+  it("earnings is never live, whatever a leftover switch in its file says", () => {
+    writeModuleConfig("earnings", { enable_live_trading: true, live: { enabled: true } });
+    expect(readModuleGate(config, "earnings")).toEqual({ id: "earnings", liveEnabled: false });
   });
 
   it("calendars and pmcc carry the same nested live.enabled placeholder as flies", () => {

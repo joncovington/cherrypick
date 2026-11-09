@@ -41,8 +41,7 @@ that then picks a bucket. Instead:
 python -m cherrypick.earnings.rank_strategies get_ranked_symbols --date MM/DD/YYYY
 ```
 
-This is what the live/paper loop's Step 4b actually calls at entry time (see `CLAUDE.md`'s Loop
-Steps) — there's no separate, hand-maintained routing table to keep in sync with it.
+This is the ranking tool `/paper-trading-start` runs — there's no separate, hand-maintained routing table to keep in sync with it.
 
 ---
 
@@ -106,8 +105,8 @@ trail for a specific past night, not just tonight's console output.
 The scan that produces tonight's ranked list typically runs earlier in the afternoon; by the
 time the entry window actually opens, prices and IV may have moved. `rank_strategies.reverify_symbol()`
 re-runs the winning strategy's own `apply_tiering()` fresh, immediately before order submission,
-and rejects if it's no longer accepted since the scan. This is Step 4b's re-verification
-check in `CLAUDE.md`'s Loop Steps, and Layer 2 of [Screening Criteria](./screening-criteria.md#layer-2--entry-time-re-verification-immediately-before-order-submission-not-at-scan-time) —
+and rejects if it's no longer accepted since the scan. This is the re-verification
+check, and Layer 2 of [Screening Criteria](./screening-criteria.md#layer-2--entry-time-re-verification-immediately-before-order-submission-not-at-scan-time) —
 same liquidity/term-structure/expected-move checks, just re-run live rather than trusted from
 the earlier scan.
 

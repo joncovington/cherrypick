@@ -12,11 +12,9 @@ books, then runs the next morning's close pass (overnight strategies close;
 the calendars and `expected_move_butterfly` may hold on their own verdict). Used both for the
 initial Week 0 validation (confirm every strategy constructs, sizes,
 cost-adjusts, persists, and closes with no error) and for every day of the
-Weeks 1-8 accumulation phase — re-invoke it daily. This is a **separate
-program** from the live/paper trading loop (`/earnings-start`) — it never
-touches `db.py`, never calls `tt.py execute_trade`, and writes only to the
-isolated strat_test books in the shared paper database, so it's safe to
-run alongside `/earnings-start` the same day.
+Weeks 1-8 accumulation phase — re-invoke it daily. It never touches
+`db.py`, places no order, and writes only to the isolated strat_test books
+in the shared paper database. Earnings is paper-only since v0.12.0.
 
 ## What to do when this command runs
 
@@ -24,9 +22,7 @@ run alongside `/earnings-start` the same day.
 already runs this same harness every minute, so `/paper-start` is for a machine where it is not; if
 the harness reports `busy`, the supervisor's loop holds it, so stop rather than forcing a second run.
 Then check `.claude/strategy_test_lock` for a live PID.
-This is a **separate lock from `.claude/scheduled_tasks.lock`** (the
-live-loop's own) — the two can run concurrently, since this only ever
-writes strat_test rows (`arm='strat_test:<strategy>'`). If another `/paper-start` session
+It only ever writes strat_test rows (`arm='strat_test:<strategy>'`). If another `/paper-start` session
 already holds this lock, stop and tell the user instead of starting a
 second one (double-entries into the same test book would corrupt the
 sample).
@@ -35,8 +31,7 @@ sample).
    get_connection_status` (tastytrade OAuth session) and confirm dolt
    sql-server is reachable (`rank_strategies._ensure_dolt_running()` does
    this automatically inside `run_entries`, but fail fast and tell the
-   user here if the account/session itself isn't ready — same account-gate
-   discipline as `/earnings-start`'s Step 4a).
+   user here if the account/session itself isn't ready).
 
 2. **If invoked before today's entry window** (`entry_window_start` in
    config.json, typically 15:30 ET) — including first thing in the
@@ -100,7 +95,7 @@ open→close cycle, then ends. Invoke it:
 ## Common issues
 
 **"dolt sql-server not available" / "tastytrade connection failed"**
-- Same account-gate checks the live loop uses. Run
+- The broker session is the real one (quotes come from it). Run
   `python -m cherrypick.earnings.tt get_connection_status` directly to diagnose.
 
 **Everything skipped with `screen_rejected` or no candidates at all**
@@ -117,4 +112,3 @@ open→close cycle, then ends. Invoke it:
 
 - `docs/strategy-testing-plan.md` — full multi-week plan this cycle feeds
 - `docs/strat-test-portfolios.md` — the per-strategy paper-book model this writes into
-- `/earnings-start` — the actual live/paper trading loop (separate program, separate lock)

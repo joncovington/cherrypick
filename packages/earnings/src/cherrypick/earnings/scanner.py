@@ -116,12 +116,12 @@ def fetch_entry_window_calendar(
     """Merges today's After-market-close earnings with the NEXT TRADING DAY's
     Before-market-open earnings into one entry-window candidate list --
     generalizes the merge that previously only existed as CLAUDE.md prose
-    (Step 4b's "merge two calendar dates" bullet, iron_fly-specific) into
+    (the old "merge two calendar dates" rule, iron_fly-specific) into
     shared, testable code any strategy/orchestrator can call.
 
     A same-day BMO report already happened this morning and must not be
     re-entered; a report on the next session's morning is still ahead of us
-    this afternoon -- same reasoning CLAUDE.md's Step 4b already documented,
+    this afternoon -- same reasoning the earlier entry rules documented,
     just executable now instead of hand-derived each time.
 
     **Next trading day, not `today + 1`.** A calendar day was silently wrong every

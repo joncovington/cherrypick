@@ -1653,6 +1653,9 @@ def cmd_account(cfg, args) -> None:
         _emit(accounts.clear_account(cfg, module))
         return
     if args.set:
+        if module in cfgmod.PAPER_ONLY_MODULES:
+            _emit(accounts.set_account(cfg, module, args.set))  # the refusal; nothing is written
+            sys.exit(1)
         # Setting the destination for LIVE orders — confirm unless --yes.
         if not args.yes:
             print(

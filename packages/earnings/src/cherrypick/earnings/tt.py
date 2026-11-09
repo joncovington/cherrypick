@@ -13,12 +13,10 @@ Usage:
   python src/tt.py get_market_metrics --symbol AAPL
   python src/tt.py get_liquid_symbols
   python src/tt.py get_watch_universe
-  python src/tt.py execute_trade --order '<JSON>' [--account_number X] [--live]
 
-A broker API wrapper with tightly coupled session/auth/order functions;
-splitting it would complicate credential handling. The shared read-side primitives (account resolution, option-chain strike
-helpers) now live in cherrypick.core.broker; the order write path and
-CLI response shaping stay here.
+A read-only broker API wrapper (earnings has placed no live order since v0.12.0); it places and
+cancels nothing. The shared read-side primitives (account resolution, option-chain strike
+helpers) live in cherrypick.core.broker; the CLI response shaping stays here.
 
 Adapted from MEICAgent's src/tt.py, with the stream-cache layer removed --
 this project has no persistent streamer daemon (its scan cadence is once a
@@ -36,19 +34,13 @@ import json
 import os
 
 # Allow running as `python src/tt.py` from any working directory.
-import time
-import uuid
 from datetime import date
 from typing import Any
 
 from cherrypick.core import broker as _broker
 from cherrypick.core import dxfeed as _dx
-from cherrypick.core import execution as _execution
-from cherrypick.core import home as _home
-from cherrypick.core import killcriteria as _kill
-from cherrypick.core import ledgers as _ledgers
 from cherrypick.core.broker import cli as _broker_cli
-from cherrypick.core.redact import mask_account, redact_accounts
+from cherrypick.core.redact import redact_accounts
 
 from cherrypick.earnings import credentials as _creds
 from cherrypick.earnings import paths as _paths
@@ -62,21 +54,6 @@ def _load_config() -> dict:
         with open(path) as f:
             return json.load(f)
     return {}
-
-
-def live_arm_refusal() -> str | None:
-    """Why an opening live order is refused for want of today's arm (`live_arm.py`), else None."""
-    from cherrypick.earnings import live_arm
-
-    return live_arm.refusal()
-
-
-def _live_trading_enabled() -> bool:
-    """Live is armed by the config key and nothing else (2026-09-17). Until then an absent key fell
-    back to an ENABLE_LIVE_TRADING environment variable -- a live-arming path outside the guarded
-    config surface (orchestrator `configedit.GUARDED`, which refuses to write this key in either
-    direction) and outside any attestation. An absent key is off."""
-    return bool(_load_config().get("enable_live_trading", False))
 
 
 # The verbs whose output carries FULL account numbers on purpose: the orchestrator's designation
@@ -108,37 +85,6 @@ async def _get_account(account_number: str | None = None):
         account_number,
         default_number=_creds.get_secret(_creds.ACCOUNT_NUMBER),
     )
-
-
-def _designated_account() -> str | None:
-    """This module's designated live account (`cherrypick account --module earnings --set <last4>`),
-    or None when it is unset or the keyring cannot be read. A seam, so tests never read a real
-    keyring."""
-    return _creds.store.designated_account()
-
-
-async def _trading_account(account_number: str | None = None):
-    """The account `execute_trade` acts on: the DESIGNATED one, or a refusal (2026-10-12).
-
-    `_get_account` resolves through `core.broker.resolve_account`, whose last resort is the first
-    account on the login -- right for a read, wrong for an order: with the designation unset or the
-    keyring unreadable, an order would have gone to whichever account the broker listed first. It now
-    refuses, as `core.execution.Broker` does (`AccountNotDesignated`). An explicit `--account_number`
-    must BE the designated one, or typing a number would walk around the refusal. The dry run refuses
-    too: a preflight against an account that is not the one the order would trade in validates
-    nothing (paper never calls this command). Read-only commands keep the fallback."""
-    designated = _designated_account()
-    if not designated:
-        raise _execution.AccountNotDesignated(
-            "no designated account (unset or unreadable) -- run `cherrypick account --module earnings "
-            "--set <last4>`; refusing rather than default to the login's first account"
-        )
-    if account_number and account_number.strip() != designated:
-        raise _execution.AccountNotDesignated(
-            f"--account_number {mask_account(account_number)} is not the designated account "
-            f"{mask_account(designated)}"
-        )
-    return await _get_account(designated)
 
 
 # Thin re-exports of the shared option-chain helpers now implemented in cherrypick.core.broker.
@@ -195,7 +141,7 @@ async def cmd_get_connection_status(_args) -> dict:
     return await _broker_cli.connection_check(
         lambda: get_session(),
         credentials_present=_creds.secrets_present(),
-        live_trading_enabled=_live_trading_enabled(),
+        live_trading_enabled=False,
         hint="Run `python src/tt.py secrets_set` to store credentials.",
     )
 
@@ -444,204 +390,6 @@ async def cmd_get_option_chain(args) -> dict:
         return _error(exc)
 
 
-def _build_order(spec: dict):
-    # Delegates to cherrypick.core.broker: pure order construction (dict spec -> NewOrder),
-    # no submission. cmd_execute_trade below still owns the dry-run/live place_order call.
-    return _broker.build_order(spec)
-
-
-def _opens(spec: dict) -> bool:
-    """Whether any leg opens a position. A closing order is never held back by the kill criteria."""
-    return any("open" in str(leg.get("action", "")).lower() for leg in spec.get("legs") or [])
-
-
-def kill_refusal(spec: dict, config: dict, db_path=None) -> str | None:
-    """B1 for earnings: the live arm's written kill criteria (`live.kill`), checked before a live
-    order that opens anything. None lets the order through; every doubt refuses (2026-10-25):
-
-    - a block refuses, and latches (`state/kill/earnings.json`) until a person clears it;
-    - a live ledger that is missing or unreadable refuses: it cannot show the arm is inside its
-      criteria. A missing one is not read as an empty book -- `db.py init_db` creates the empty
-      ledger a genuine first trade starts from, so that trade still goes, one deliberate step later;
-    - a closed live trade since the criteria were written with no net refuses. `save_close` records
-      `pnl` and leaves `exit_cost` to the caller, so a live close can carry no net, and the verdict
-      skips a row with no net (n/r is not a zero) -- the loss would be invisible to the drawdown.
-      It does not latch: recording the row's `entry_cost` and `exit_cost` is the fix;
-    - an opening leg larger than the verdict allows (`core.killcriteria.sized`) refuses. A reduced
-      verdict halves an entry, and this command cannot see the entry's full size, so a reduced
-      order carries one contract a leg, as an order under a hand-written limit does (earnings'
-      structures are 1:1)."""
-    import sqlite3
-
-    if not _opens(spec):
-        return None
-    criteria = (config.get("live") or {}).get("kill")
-    path = db_path or _paths.live_db_path()
-    if not os.path.exists(path):
-        held = _kill.gate("earnings", "live", [], criteria)
-        prior = held["reasons"] if held["state"] == _kill.BLOCKED else []
-        missing = (
-            f"live ledger missing ({path}); run `python -m cherrypick.earnings.db init_db` to start an"
-            " empty one before the first live order"
-        )
-        return "kill criteria: " + "; ".join([*prior, missing])
-    try:
-        con = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
-        con.row_factory = sqlite3.Row
-        try:
-            records = [{**r, "arm": "live"} for r in _ledgers.READERS["earnings"](con)]
-        finally:
-            con.close()
-    except Exception as exc:  # noqa: BLE001 -- any failure to read the book refuses, never allows
-        return f"kill criteria: live ledger unreadable ({exc})"
-    verdict = _kill.gate("earnings", "live", records, criteria)
-    if verdict["state"] == _kill.BLOCKED:
-        return "kill criteria: " + "; ".join(verdict["reasons"])
-    blind = _kill.unrecorded(records, "live", criteria)
-    if blind:
-        ids = ", ".join(str(r.get("position_id") or "?") for r in blind)
-        return (
-            f"kill criteria: {len(blind)} closed live trade(s) since the criteria were written have no net"
-            f" (pnl, entry_cost or exit_cost unrecorded: {ids}); record them before another opening order"
-        )
-    for leg in spec.get("legs") or []:
-        if "open" not in str(leg.get("action", "")).lower():
-            continue
-        try:
-            quantity = int(leg.get("quantity") or 1)
-        except (TypeError, ValueError):
-            return f"kill criteria: an opening leg's quantity is unreadable ({leg.get('quantity')!r})"
-        if quantity > _kill.sized(quantity, verdict, criteria):
-            if verdict["state"] == _kill.REDUCED:
-                return (
-                    "kill criteria: reduced (" + "; ".join(verdict["reasons"]) + "); a reduced live"
-                    " earnings order carries one contract a leg"
-                )
-            return (
-                "kill criteria: under a hand-written limit a live earnings order carries one contract a leg"
-            )
-    return None
-
-
-async def cmd_execute_trade(args) -> dict:
-    live = getattr(args, "live", False)
-    if live and not _live_trading_enabled():
-        return {
-            "ok": False,
-            "error": "Live trading is disabled. Set enable_live_trading=true in config.json.",
-        }
-    spec = json.loads(args.order)
-    if live:
-        refusal = kill_refusal(spec, _load_config())
-        if refusal:
-            return {"ok": False, "error": refusal}
-        # The suite-wide halt stops new positions on this door too (2026-10-27); a close goes through.
-        if _broker.opens_position(spec) and _home.halt_flag_path().exists():
-            return {
-                "ok": False,
-                "error": "halt flag present -- no new live position while the suite is halted (closes are unaffected)",
-            }
-        # The per-day arm (2026-11-06): an opening order needs today's human-written arm record, as
-        # every other live module does. A close is never held back.
-        if _broker.opens_position(spec):
-            not_armed = live_arm_refusal()
-            if not_armed:
-                return {
-                    "ok": False,
-                    "error": f"earnings live is not armed for today ({not_armed}); arm with "
-                    "`python -m cherrypick.earnings.live_arm arm --confirm YES` (closes are unaffected)",
-                }
-    # The submission's own identity (2026-09-17): tastytrade does not deduplicate retries, and this
-    # is a one-shot command a human re-runs on an error. Sent as the order's external identifier
-    # and reported back, so a timeout after the broker accepted is recovered below by reading
-    # today's orders for it -- never re-placed. A caller may supply its own.
-    ext = str(spec.get("external_identifier") or f"earnings-{uuid.uuid4().hex}")
-    spec["external_identifier"] = ext
-    account = None
-    try:
-        account = await _trading_account(getattr(args, "account_number", None))
-        order = _build_order(spec)
-        # cherrypick.core.broker owns the preflight-then-optionally-live submission core; it
-        # places a live order only when live=True, the dry-run preflight had no errors, and (when
-        # configured) the account deploy-limit governor allows it. account_deploy_limit_pct defaults
-        # to 0/off; a positive value caps deployed buying power at that % of account capacity.
-        result = await _broker.place_order(
-            account,
-            get_session(),
-            order,
-            live=live,
-            serialize=_serialize,
-            deploy_limit_pct=_load_config().get("account_deploy_limit_pct") or None,
-        )
-        result["external_identifier"] = ext
-        oid = _execution.order_id_of(result)
-        if oid is not None:
-            result["order_id"] = oid
-        # Fill confirmation (2026-09-17). This module has no live loop -- a live order is placed by
-        # a human running this command and then recorded with `db.py save_trade` -- so until now
-        # the price recorded was whatever the human typed, which in practice was the limit asked
-        # for. A live submit now waits up to `--wait` seconds for the broker's answer and reports
-        # it as `fill`: {state, price, polls}. `state` is 'filled' (with the ACTUAL price),
-        # 'working' (still resting when the wait ran out -- record it pending and ask again with
-        # `order_status`), or the terminal state the broker gave. Never a dependency: a status
-        # call that fails leaves `fill` as 'working' with the error, and the placement stands.
-        wait = float(getattr(args, "wait", 0) or 0)
-        if live and result.get("ok") and oid is not None and wait > 0:
-            result["fill"] = await _confirm_fill(account, oid, wait, fallback_price=spec.get("price"))
-        return result
-    except Exception as exc:
-        if live and account is not None:
-            found = await _recover_by_identifier(account, ext)
-            if found is not None:
-                return {
-                    "ok": True,
-                    "dry_run": False,
-                    "recovered": True,
-                    "order_id": str(found["order_id"]),
-                    "external_identifier": ext,
-                    "response": found,
-                    "error": (
-                        f"submit raised {type(exc).__name__}: {exc}; order found at the broker by its identifier"
-                    ),
-                }
-        out = _error(exc)
-        out["external_identifier"] = ext
-        return out
-
-
-async def _recover_by_identifier(account, external_identifier: str) -> dict | None:
-    """Today's order carrying `external_identifier`, terminal ones included, or None. A recovery
-    that fails reports None, so the caller sees the original error and never a phantom success."""
-    try:
-        for o in await _broker.orders_today(account, get_session()):
-            if o.get("external_identifier") == external_identifier and o.get("order_id") is not None:
-                return o
-    except Exception:  # noqa: BLE001
-        return None
-    return None
-
-
-async def _confirm_fill(
-    account, order_id: str, wait_seconds: float, *, fallback_price=None, poll=2.0
-) -> dict:
-    """Poll the order until it fills, dies, or `wait_seconds` elapses. Fail-open on the STATUS
-    call only: the order was already placed, so a failed poll must never read as a failed order."""
-    deadline = time.monotonic() + wait_seconds
-    polls, last_error = 0, None
-    while True:
-        polls += 1
-        try:
-            status = await _broker.order_status(account, get_session(), order_id)
-        except Exception as exc:  # noqa: BLE001 -- see docstring
-            status, last_error = None, f"{type(exc).__name__}: {exc}"
-        state, price = _execution.fill_state(status, fallback_price=fallback_price)
-        if state != "working" or time.monotonic() >= deadline:
-            out = {"state": state, "price": price, "polls": polls, "order_id": order_id}
-            if last_error:
-                out["error"] = last_error
-            return out
-        await asyncio.sleep(min(poll, max(0.0, deadline - time.monotonic())))
-
 
 def cmd_secrets_status(_args) -> dict:
     status = _creds.secrets_status()
@@ -689,7 +437,6 @@ _ASYNC_COMMANDS = {
     "get_account_info",
     "get_quote",
     "get_option_chain",
-    "execute_trade",
     "get_market_metrics",
     "get_liquid_symbols",
     "get_watch_universe",
@@ -729,17 +476,6 @@ def main() -> None:
     sub.add_parser("get_liquid_symbols")
     sub.add_parser("get_watch_universe")
 
-    p_exec = sub.add_parser("execute_trade")
-    p_exec.add_argument("--order", required=True)
-    p_exec.add_argument("--account_number", default=None)
-    p_exec.add_argument("--live", action="store_true")
-    p_exec.add_argument(
-        "--wait",
-        type=float,
-        default=30.0,
-        help="live only: seconds to wait for the fill before reporting (0 = report the placement only)",
-    )
-
     args = parser.parse_args()
     dispatch = {
         "get_connection_status": cmd_get_connection_status,
@@ -749,7 +485,6 @@ def main() -> None:
         "get_account_info": cmd_get_account_info,
         "get_quote": cmd_get_quote,
         "get_option_chain": cmd_get_option_chain,
-        "execute_trade": cmd_execute_trade,
         "get_market_metrics": cmd_get_market_metrics,
         "get_liquid_symbols": cmd_get_liquid_symbols,
         "get_watch_universe": cmd_get_watch_universe,

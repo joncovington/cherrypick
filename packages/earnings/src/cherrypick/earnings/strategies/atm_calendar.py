@@ -312,7 +312,7 @@ def evaluate_position(
     there is no `open_legs` parameter and no `close_side` action -- this
     strategy always closes both legs of `position["legs_json"]` together,
     same single-unit-close convention as iron_fly/iron_condor/
-    expected_move_butterfly's Step 3c.
+    expected_move_butterfly's early-exit check.
 
     `position` has at least `entry_credit` (stored negative -- see
     fetch_atm_calendar_order's `debit` field), `legs_json` (the entry legs

@@ -31,7 +31,7 @@ wholesale with **`$CHERRYPICK_HOME`**. Nothing runtime lands in a source checkou
   data/meic/paper_trades.db       # MEIC paper ledger (ic_trades)   ← orchestrator reads this
   data/meic/meic_trades.db        # MEIC live ledger (read only by `report --live`)
   data/earnings/paper_trades.db   # Earnings paper ledger (trades)  ← orchestrator reads this
-  data/earnings/earnings_trades.db# Earnings live ledger
+  data/earnings/earnings_trades.db# Earnings historic live ledger (orders before v0.12.0)
   data/earnings/{earnings,options,stocks}/  # the optional Dolt clones (the `dolt` capability)
   data/flies/paper_trades.db      # Flies paper ledger (fly_positions / fly_books)
   data/flies/live_trades.db       # Flies live ledger (the live pilot writes here; armed per day)
@@ -194,8 +194,8 @@ quantity, capital_at_risk (defined max loss), entry_cost/exit_cost, entry_contex
 `daily_summary`, `market_context`.
 
 > **Two couplings the orchestrator depends on — don't change silently:** each module's **paper DB path**
-> + **schema** (read through the `meic_ic` / `earnings` adapter), and its **keyring service** + live
-> account designation (used by `connect`/`account`/`reconcile`). Renaming a DB or altering a schema
+> + **schema** (read through the `meic_ic` / `earnings` adapter), and its **keyring service** + account
+> designation (used by `connect`/`account`/`reconcile`; earnings has no live account to designate). Renaming a DB or altering a schema
 > breaks cross-module `report`/`calibrate`.
 
 ## The settings surface
@@ -214,7 +214,7 @@ are conservative by design:
 - **Every write is backed up first.** A timestamped copy of the previous file goes to
   `state/config-backups/<target>.<timestamp>.json` before the new version replaces it (atomic
   tmp-then-`os.replace`).
-- **Guarded fields are read-only, in both directions.** `enable_live_trading` (meic/earnings),
+- **Guarded fields are read-only, in both directions.** `enable_live_trading` (meic),
   flies' and bwb's `live.enabled` and `live.gate0_confirmed` (a human attestation string), bwb's
   `live.arm`, floor, caps and breakers, MEIC's `live.symbol`, `live.gate0_confirmed`, `live.arm`, caps
   and breakers, and every live loss/deploy-limit field cannot be changed from this surface — arming or

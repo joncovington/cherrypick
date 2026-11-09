@@ -167,7 +167,7 @@ def kill_verdict(config: dict, db_path: str, *, latch: bool = True) -> dict:
     2026-06-29 stop was recorded that way) also blocks, from 2026-10-25: the verdict skips a row with
     no net (n/r is not a zero), so its loss would be invisible to the drawdown and the streak. It
     does not latch -- recording the row's `pnl` and `fees` is the fix -- and, like every kill verdict,
-    it stops new entries only. Earnings refuses on the same rows (`tt.kill_refusal`)."""
+    it stops new entries only."""
     import sqlite3
 
     try:

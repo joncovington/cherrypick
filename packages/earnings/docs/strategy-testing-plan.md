@@ -6,10 +6,10 @@ Multi-week forward-test of the implemented (defined-risk) strategies (`iron_fly`
 `double_calendar`, `iron_condor`, `atm_calendar`, `directional_credit_spread`,
 `broken_wing_butterfly`, and from 2026-10-14 `expected_move_butterfly`; the two calendars are
 retired from 2026-10-15), until each has enough cost-adjusted evidence to
-decide: enable live, keep paper, or retire.
+decide: keep or retire.
 
-This is a **separate program** from the live/paper trading loop (CLAUDE.md's Loop Steps).
-It never touches `db.py`, never calls `tt.py execute_trade`, and never respects
+This is a **separate program** from the ranked path (`rank_strategies.py`).
+It never touches `db.py`, places no order, and never respects
 `max_concurrent_earnings_positions` or the correlation block list — its whole point is to
 open more than the loop ever would, on purpose, so every strategy accumulates a usable
 sample.
@@ -97,9 +97,9 @@ entry-tick closes 2026-09-16..10-15 and the stranded-expiry cohort opened 2026-0
 `--include-flagged` keeps them.
 
 **Live vs paper (`--mode`)**: the report defaults to `--mode paper` (this whole program is a
-paper test, and `enable_live_trading` is off). `--mode live` points it at
-`earnings_trades.db` instead of `paper_trades.db` (both in the cherrypick data home) — useful once live trading is
-enabled and you want the same views over real fills. In live mode the report header reads
+paper test). `--mode live` points it at
+`earnings_trades.db` instead of `paper_trades.db` (both in the cherrypick data home) — the history of the
+live orders placed before v0.12.0. In live mode the report header reads
 `MODE: LIVE`, and `--profile` defaults to `default` (live trades aren't tagged
 `strat_test`). In paper mode `--profile` defaults to the whole strat_test family — the combined
 `strat_test` book plus every `strat_test:<strategy>` sub-book. `--db PATH` overrides the DB path
@@ -145,17 +145,14 @@ rare-regime and may only ever reach a directional read within a reasonable horiz
   and may only reach a directional read (30) rather than full significance (100) in the tested
   window.
 
-## Evaluation & promotion
+## Evaluation
 
-Per strategy, decide **enable live / keep paper / retire** based on:
+Per strategy, decide **keep / retire** based on:
 - Cost-adjusted expectancy > 2x average cost per trade
 - Profit factor > 1.5
 - Max drawdown < 20% of capital basis
 - Paper win rate roughly agreeing with the historical `scanner.compute_winrate` backtest
   (see `strategy_metrics.winrate_backtest_agreement`)
-
-Promotion copies the validated strategy's exact parameters into the live config path;
-`enable_live_trading` flips only after separate review.
 
 ## Caveats (always read alongside the numbers)
 

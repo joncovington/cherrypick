@@ -2,8 +2,6 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { TradingMode } from "@console/shared";
 import { useEarnings } from "../../lib/api";
-import { useMode } from "../../lib/useMode";
-import { ModeToggle } from "../../components/ModeToggle";
 import { IntegrityStrip } from "../../pages/Earnings/IntegrityStrip";
 import { PaperLiveBadge } from "../../components/shell/PaperLiveBadge";
 import { DataCard, fmtMoney, fmtNum } from "../../components/DataTable";
@@ -95,7 +93,8 @@ function EraScope({ era, onChange }: { era: string | null; onChange: (v: string 
  * 2026-10-23: `strategies` is the verdict board, `screening` holds the forward scan and the funnel).
  */
 export function EarningsLightbox({ slide }: { slide: string }) {
-  const [mode, setMode] = useMode();
+  // Paper only since v0.12.0: earnings places no live order, so the page has no mode toggle.
+  const mode: TradingMode = "paper";
   const [era, setEra] = useState<string | null>(null);
   // The history's date range, in the page address; it bounds the history table and its totals only.
   const range = useUrlDateRange();
@@ -264,13 +263,10 @@ export function EarningsLightbox({ slide }: { slide: string }) {
       module="earnings"
       slide={slide}
       slides={slides}
-      badge={<PaperLiveBadge mode={mode} />}
+      badge={<PaperLiveBadge mode="paper" />}
       session={null}
       headerControls={
-        <>
-          <ModeToggle mode={mode} onChange={setMode} />
-          <EraScope era={era} onChange={setEra} />
-        </>
+        <EraScope era={era} onChange={setEra} />
       }
       integrity={<IntegrityStrip data={data} updatedAt={dataUpdatedAt} />}
       integrityAttention={(data?.integrity.measurementBreaks.length ?? 0) > 0 || (data?.integrity.schemaDrift.length ?? 0) > 0}

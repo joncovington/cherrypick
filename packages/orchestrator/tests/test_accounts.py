@@ -322,3 +322,24 @@ def test_list_accounts_reads_flies_nested_live_convention(fallback_env):
     )
     out = accounts.list_accounts(cfg, "flies")
     assert out["live_enabled"] is True
+
+
+def test_earnings_refuses_an_account_designation_and_writes_nothing(env):
+    _, cfg = env
+    before = json.dumps(_FakeStore._mem, sort_keys=True)
+    out = accounts.set_account(cfg, "earnings", "8569")
+    assert out == {"ok": False, "error": "earnings is paper-only since v0.12.0; it needs no trading account."}
+    assert json.dumps(_FakeStore._mem, sort_keys=True) == before
+
+
+def test_the_account_command_exits_non_zero_for_earnings(env, capsys):
+    from types import SimpleNamespace
+
+    from cherrypick import cli
+
+    _, cfg = env
+    args = SimpleNamespace(module="earnings", set="8569", clear=False, yes=True)
+    with pytest.raises(SystemExit) as exc:
+        cli.cmd_account(cfg, args)
+    assert exc.value.code == 1
+    assert "paper-only since v0.12.0; it needs no trading account." in capsys.readouterr().out

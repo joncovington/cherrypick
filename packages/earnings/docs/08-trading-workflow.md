@@ -12,25 +12,23 @@ IV crush, not an intraday move.
 
 ## The Slash Commands
 
-Three slash commands cover the actual day-to-day operation; which one you reach for depends on
+Two slash commands cover the by-hand side; which one you reach for depends on
 what you're trying to accomplish:
 
 | Command | What it does |
 |---|---|
 | `/paper-start` | Forced-sampling strategy test — opens a paper trade for every strategy that clears the screen on every viable symbol (not just each symbol's best) into per-strategy strat_test books, then runs the next morning's close pass. Use this daily while you're still building a track record for each strategy. |
-| `/paper-trading-start` | One-shot production-ranking analysis — runs `rank_strategies.py get_ranked_symbols` and shows what the real loop would pick tonight, without opening anything. Good for a quick look at tonight's candidates without committing to a full cycle. |
-| `/earnings-start` | The actual continuous trading loop (paper or live, depending on `enable_live_trading`) — runs through a full entry window and the next morning's close window, following `CLAUDE.md`'s Loop Steps. |
+| `/paper-trading-start` | One-shot production-ranking analysis — runs `rank_strategies.py get_ranked_symbols` and shows what the ranking would pick tonight, without opening anything. Good for a quick look at tonight's candidates without committing to a full cycle. |
 
 Everything below walks through what's actually happening underneath these commands, in case you
 want to run the pieces by hand or understand what a slash command is doing on your behalf.
 
-These slash commands are the **interactive / live** side you drive yourself from this package. The
-day-to-day paper collection runs the other way: the [orchestrator](../../orchestrator)'s supervisor
+These slash commands are the **interactive** side you drive yourself from this package. Earnings is
+paper-only since v0.12.0 and has no agent session. The day-to-day paper collection runs unattended: the [orchestrator](../../orchestrator)'s supervisor
 runs the managed paper loop (`paper_loop once`) **unattended** every 60 seconds as its
 `earnings-paper` job. The loop runs the same forced-sampling program's entry scan at 15:35 and
-manages exits itself. This module has no scheduler of its own, and the orchestrator never places
-live orders. See the [package README](../README.md#how-this-fits-the-suite) for how the two roles
-divide up.
+manages exits itself. This module has no scheduler of its own, and nothing in the suite places an
+order for it. See the [package README](../README.md#how-this-fits-the-suite).
 
 ---
 
@@ -70,10 +68,8 @@ Inside the entry window, for each selected symbol the loop:
 python -m cherrypick.earnings.strategies.iron_fly get_order --symbol AAPL --earnings_date 2026-07-15 --earnings_timing "After market close"
 ```
 
-5. In paper mode, records the order via `db_paper.py save_trade` and stops there — no order is
-   ever submitted, but the credit/debit and sizing are computed from real live quotes. In live
-   mode, submits via `tt.py execute_trade --live` and reprices toward zero credit on a timer
-   while working the fill.
+5. Records the order via `db_paper.py save_trade` and stops there — no order is ever submitted,
+   but the credit/debit and sizing are computed from real live quotes.
 
 No new entries happen after `entry_window_end` (default `15:55` ET) — the position, once
 opened, is simply held overnight. There's nothing to actively manage between the entry window
@@ -92,8 +88,7 @@ against you by an amount that isn't capped, which is why naked strategies were r
 this system entirely.
 
 Two of the strategies (`double_calendar`, `atm_calendar`) do get intraday management
-during *regular session hours* if a position happens to still be open then (Step 3b/3d in
-`CLAUDE.md`'s Loop Steps) — but this doesn't apply overnight, only during market hours the
+during *regular session hours* if a position happens to still be open then — but this doesn't apply overnight, only during market hours the
 position is open across a multi-day hold.
 
 ---
@@ -155,7 +150,7 @@ python -m cherrypick.earnings.strategy_report
 
 ---
 
-## A Realistic Day, End to End (agent-driven loop)
+## A Realistic Day, End to End (the original design)
 
 **Afternoon (before 15:30 ET):**
 ```
@@ -172,7 +167,7 @@ $ python -m cherrypick.earnings.rank_strategies get_ranked_symbols --date 07/15/
 ```
 Re-verify AAPL → still accepted, risk cap OK, no correlation conflict
 Build iron_fly order for AAPL → credit $5.10, 3 contracts, max loss $840
-Paper mode: save_trade, done. (Live mode: execute_trade --live, then save_trade.)
+save_trade, done.
 
 Re-verify JPM → still accepted, risk cap OK
 Build directional_credit_spread order for JPM → credit $1.20, 5 contracts
@@ -182,13 +177,13 @@ save_trade
 **Overnight:** both positions held, unmonitored, through the earnings reactions and the market
 close/reopen.
 
-**Next morning, market open to 09:45 ET (Step 3c):**
+**Next morning, market open to 09:45 ET:**
 ```
 AAPL iron_fly: current value implies 55% of max profit captured → close, log win
 JPM directional_credit_spread: still holding a loss, hasn't hit stop → hold
 ```
 
-**09:45 ET, close window (Step 3):**
+**09:45 ET, close window (close window):**
 ```
 JPM directional_credit_spread still open → close unconditionally regardless of P&L
 ```

@@ -206,7 +206,7 @@ it opens nothing in the forced-sampling books.
 **Structure:** An ATM calendar run on both the call and put side simultaneously — sell
 front-month calls and puts at the expected-move boundaries, buy the same two strikes in a later
 monthly expiration. The only strategy whose two sides can close independently (`trade_legs`
-persistence, not just `legs_json`), managed via Step 3b's intraday `evaluate_position()` check.
+persistence, not just `legs_json`), managed by the intraday `evaluate_position()` check.
 
 **Entry gate:** stricter liquidity/volume floors than every other strategy — execution cost
 matters more across two expirations, and a tail-risk surprise hurts a debit trade worse than a
@@ -215,7 +215,7 @@ consistent the underlying's historical earnings moves have been), since this str
 the expected-move assumption more than a single-expiration credit spread does.
 
 **Exit:** the same 15% / 50% of debit target/stop and 5-day time-stop as `atm_calendar`, plus a per-side
-delta stop (`leg_stop_delta_abs`, default 0.45) checked during Step 3b — a side crossing this
+delta stop (`leg_stop_delta_abs`, default 0.45) checked intraday — a side crossing this
 threshold gets closed independently while the other side, likely still healthy, stays open.
 
 ```

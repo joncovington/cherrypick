@@ -35,13 +35,15 @@ export interface LockStatus {
 
 /**
  * A module's live gate, covering BOTH conventions the suite uses: a top-level
- * `enable_live_trading` (meic, earnings) and the nested `live.enabled` (flies, and now calendars/
+ * `enable_live_trading` (meic) and the nested `live.enabled` (flies, and now calendars/
  * pmcc as inert placeholders — see their config `_live_note`: no loop reads the field yet, it exists
  * only so this surface can report "paper only" instead of blurring "no live path built" with "gate
  * file missing"). Reading only the top-level form reports a nested-gate module as paper-only even
  * while armed — the same trap `liveops._live_enabled` documents on the Python side.
  */
 export function readModuleGate(config: ConsoleConfig, id: string): ModuleGate {
+  // Earnings is paper-only since v0.12.0 and ignores a leftover switch in its file, so it is never live.
+  if (id === "earnings") return { id, liveEnabled: false };
   const doc = readJson(path.join(config.paths.cherrypick, "config", `${id}.json`));
   if (doc === null) return { id, liveEnabled: null };
   const top = doc["enable_live_trading"];

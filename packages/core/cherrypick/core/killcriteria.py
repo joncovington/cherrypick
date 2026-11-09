@@ -191,7 +191,7 @@ def live_nets(records: list[dict], arm: str, criteria) -> list[float]:
 def unrecorded(records: list[dict], arm: str, criteria) -> list[dict]:
     """The closed rows `live_nets` skips: the arm's trades since its criteria were written that carry
     no net. The verdict cannot see them, so it cannot show the arm is inside its criteria while any
-    remain; an entry path that can produce them refuses on them (earnings' `tt.kill_refusal`)."""
+    remain; an entry path that can produce them refuses on them (MEIC's live loop does)."""
     return [r for r in _since_written(records, arm, criteria) if r.get("net_pnl") is None]
 
 

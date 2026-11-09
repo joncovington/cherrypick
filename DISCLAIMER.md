@@ -28,7 +28,7 @@ which your broker is required to give you.
 
 ## Live trading places real, irreversible orders
 
-The live paths — MEIC, flies, BWB and earnings each have a live loop, and the manual desk places
+The live paths — MEIC, flies and BWB each have a live loop, and the manual desk places
 orders by hand — send **real orders to a real brokerage account with real money**. They are **off by
 default** and each needs its own deliberate switch. If you turn one on:
 

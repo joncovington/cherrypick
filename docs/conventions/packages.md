@@ -9,7 +9,10 @@ what it may write. The package's own CLAUDE.md holds the detail.
   loop is armed per day by `/live-meic-start` (the supervisor's `meic-live` job while that day's arm
   record is valid, self-disarming at 17:00) and sized from the config's `live` block, which may name
   one arm (`live.arm`).
-- **packages/earnings** — earnings-play trading module (defined-risk strategies).
+- **packages/earnings** — earnings-play trading module (defined-risk strategies). **Paper-only since
+  v0.12.0:** it places no order and has no live gate; the supervisor's `earnings-paper` job runs it
+  (no agent session). A leftover `enable_live_trading` or `live` key in its config is ignored and
+  `run.py doctor` flags it. `earnings_trades.db` is the history of the earlier live orders.
 - **packages/gex** — the live GEX engine and spot-trail recorder; it computes and records, the console
   renders.
 - **packages/streamer** — the **single** producer of the shared stream cache every module reads.
@@ -109,9 +112,7 @@ what it may write. The package's own CLAUDE.md holds the detail.
   the key lives in the keyring only, and a run is a pure function of the local store. No AI, no broker.
 - **packages/desk** — ⚠️ **EXPERIMENTAL.** The suite's only *discretionary* live-order path (meic,
   flies and bwb each have a live loop behind their own gate: `enable_live_trading` for meic, flies'
-  and bwb's own `live` gates and per-day arm; earnings has no live loop, and its hand-placed
-  `tt.py execute_trade --live` orders sit behind `enable_live_trading` and, from 2026-11-06, a
-  per-day arm for any order that opens). A
+  and bwb's own `live` gates and per-day arm; earnings is paper-only since v0.12.0). A
   foreground, human-initiated CLI, authorized entirely on its own (own config, own PIN, per-order
   ticket, own policy gates). Stores no broker secrets — it borrows a module's keyring session, because
   borrowing credentials is not borrowing permissions. No loop, no schedule, no ledger, never scheduled,

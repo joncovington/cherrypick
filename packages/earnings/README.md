@@ -1,18 +1,16 @@
 # cherrypick-earnings
 
 > **⚠️ Experimental, educational software — not financial advice.** cherrypick is a prototype for
-> learning about and researching options strategies. Its live-trading paths place **real,
-> irreversible orders** at your own risk; options trading involves substantial risk of loss and is
-> not suitable for all investors. Paper results are simulated and do not represent actual trading.
-> Provided "as is", without warranty. This module has a live-trading path (`enable_live_trading`, off by default)
-> that places real orders through your broker account. **Read [DISCLAIMER.md](../../DISCLAIMER.md) before use.**
+> learning about and researching options strategies. This module is **paper-only** (since v0.12.0): it
+> places no order. Paper results are simulated and do not represent actual trading; options trading
+> involves substantial risk of loss and is not suitable for all investors. Provided "as is", without
+> warranty. **Read [DISCLAIMER.md](../../DISCLAIMER.md) before use.**
 
 **What this module does:** earnings trades defined-risk options strategies around company
 earnings announcements — opening a position the afternoon before a report and managing it after
 the announcement. It picks from seven different structures each night based on which one fits that
-stock's setup best, and it can run as **paper trading** (simulated) or **live** trading, gated
-behind a setting you turn on yourself. Live trading is experimental, off by default and at your own
-risk. It's one strategy module in the
+stock's setup best. It runs as **paper trading** (simulated) only; live trading was removed in
+v0.12.0. It's one strategy module in the
 cherrypick suite, alongside the 0DTE iron-condor module, the butterfly module, and the GEX
 engine. Most of what you do here is run terminal commands, or ask Claude to run a
 `/`-prefixed command for you — no coding required.
@@ -22,7 +20,7 @@ engine. Most of what you do here is run terminal commands, or ask Claude to run 
 > earnings-play engine; its siblings are [`packages/meic`](../meic) (0DTE iron condors),
 > [`packages/gex`](../gex) (the gamma-exposure engine, shown on the console's GEX page), and
 > [`packages/orchestrator`](../orchestrator) (the orchestrator). It can run standalone from this folder for
-> live / interactive trading, or unattended for paper collection — where the orchestrator's supervisor
+> by hand for paper work, or unattended for paper collection — where the orchestrator's supervisor
 > drives it by subprocess (`cherrypick install`), never by import. See [How this fits the suite](#how-this-fits-the-suite) below, this module's own
 > [docs/](docs/README.md), and the suite-wide [documentation index](../../docs/README.md).
 
@@ -102,14 +100,8 @@ Full setup details, troubleshooting, and the first-trade walkthrough are in
 ## How this fits the suite
 
 This package is self-contained — everything else in this README works from `packages/earnings` on its
-own. Inside the cherrypick suite it plays two roles:
+own. Inside the cherrypick suite it runs one way:
 
-- **Live / interactive (this package, standalone).** You drive the trading loop and the `/`-commands
-  yourself — `/earnings-start` runs `CLAUDE.md`'s Loop Steps, `rank_strategies.py` picks each symbol's
-  single best strategy. This is the only path that can place live orders, and only when you set
-  `enable_live_trading: true` — experimental, off by default, at your own risk. Started from the repo
-  root, `/earnings-start` shows the disclaimer verbatim and stops unless you answer an explicit YES
-  whenever live trading is on. The orchestrator never touches it.
 - **Unattended paper (orchestrator-orchestrated).** The [orchestrator](../orchestrator)'s supervisor runs
   this module's managed paper loop (`cherrypick.earnings.paper_loop once`) as a short-lived process every
   60 seconds, as its `earnings-paper` job. It runs only when `modules.earnings.enabled` is true AND the
@@ -119,9 +111,8 @@ own. Inside the cherrypick suite it plays two roles:
   lives in the shared cherrypick data home (`~/.cherrypick/data/earnings` by default) — for
   cross-module reporting. This module has no scheduler of its own. The orchestrator drives it **by
   subprocess only** — it never edits this code or config, never places, cancels, adjusts, or closes an
-  order, and never flips `enable_live_trading`. Its one live-config action is onboarding
-  (`cherrypick connect` / `account`), which delegates to this module's own credential tool and writes the
-  chosen account into this module's `earningsagent` keyring service.
+  order. Its one config action is onboarding (`cherrypick connect`), which delegates to this
+  module's own credential tool for this module's `earningsagent` keyring service.
 
 You can run the paper harness here directly too (`/paper-start`, on a machine where the supervisor
 isn't already running it); letting the orchestrator manage it just
@@ -166,8 +157,8 @@ sees it.
   touching the shared engine.
 - **`cherrypick/earnings/rank_strategies.py`** evaluates every enabled strategy against every candidate on the
   merged today-AMC/tomorrow-BMO earnings calendar, and picks each symbol's single best strategy.
-- **`cherrypick/earnings/tt.py`** is the tastytrade broker interface — quotes, chains, greeks, account info, and
-  (in live mode only) order execution.
+- **`cherrypick/earnings/tt.py`** is the tastytrade broker interface — quotes, chains, greeks, and
+  account info. It is read-only: it places no order.
 - **`packages/core`** is the shared **`cherrypick.core`** library, an in-repo sibling package, used here
   for the market calendar and the tastytrade fee schedule (via `cherrypick/earnings/costs.py`). Install it before this
   package (`pip install -e ../core`).
@@ -178,32 +169,28 @@ sees it.
   reports and config all live under `~/.cherrypick` (config at `~/.cherrypick/config/earnings.json`,
   else a legacy in-repo `config/config.json`, else the shipped `config/config.example.json`).
 
-Full operational detail — loop steps and database schema — lives in `CLAUDE.md`, the authoritative
+Full operational detail — how it runs and the database schema — lives in `CLAUDE.md`, the authoritative
 spec this system runs against; commands and config options are in [docs/reference.md](docs/reference.md).
 
 ---
 
-## Paper vs. Live Mode
+## Paper only
 
-Controlled by `enable_live_trading` in the module's config (`~/.cherrypick/config/earnings.json`;
-`false` by default). Live trading is experimental and at your own risk:
+Earnings is paper-only since v0.12.0. Persistence is `cherrypick/earnings/db_paper.py`, and nothing
+submits an order: the module builds the order spec and records the simulated fill. It still sources
+live quotes, chains and greeks from the real tastytrade session (needed to size and price orders
+realistically). A leftover `enable_live_trading` or `live` key in `~/.cherrypick/config/earnings.json`
+is ignored; `python run.py doctor` flags it and it can be deleted. The old `earnings_trades.db` is the
+history of the orders placed before the change; nothing writes it now.
 
-- **Paper mode**: persistence via `cherrypick/earnings/db_paper.py`, order handling stops at building the order
-  spec — no order is ever submitted. Paper mode still sources live quotes/chains/greeks from the
-  real tastytrade session (needed to size and price orders realistically); it just never trades.
-- **Live mode**: persistence via `cherrypick/earnings/db.py`, and entries submit real orders via
-  `tt.py execute_trade --live`.
-
-Three commands, writing to isolated books:
+Two commands, writing to isolated books:
 
 - **`/paper-start`** — forced-sampling strategy validation (`cherrypick/earnings/strat_test_harness.py`):
   opens every strategy that clears the screen on every viable symbol, not just each symbol's
   single best, so every strategy accumulates a usable sample size quickly. Writes to per-strategy
   strat_test books (`arm='strat_test:<strategy>'`, per `strat_test_portfolio`).
 - **`/paper-trading-start`** — one-shot production-ranking analysis (`rank_strategies.py`): what
-  the real loop would pick tonight, without submitting anything.
-- **`/earnings-start`** — the actual continuous trading loop (paper or live per
-  `enable_live_trading`), run through a full market session.
+  the ranking would pick tonight, without submitting anything.
 
 The module's own EOD reports were retired 2026-08-13 — the suite review covers every module in one
 place: `python -m cherrypick.review build --session <date>`. Track accumulated (multi-day) results
@@ -228,7 +215,7 @@ pytest
 - [docs/05-strategies.md](./docs/05-strategies.md) — strategy-by-strategy structure and rules
 - [docs/screening-criteria.md](./docs/screening-criteria.md) — hard filters and the accept/reject screen (source
   of truth for what gates a candidate)
-- `CLAUDE.md` — the authoritative operational spec (loop steps, database schema); its tool
+- `CLAUDE.md` — the authoritative operational spec (how it runs, database schema); its tool
   reference and config options are in [docs/reference.md](docs/reference.md)
 
 **Suite-level:** [cherrypick README](../../README.md) · [suite user guide](../../docs/PROJECT.md) ·
@@ -239,8 +226,7 @@ pytest
 ## Disclaimer
 
 This is a research/personal trading tool, not investment advice. Options trading involves
-substantial risk of loss. Paper trade extensively before considering live capital, and never
-risk more than you can afford to lose.
+substantial risk of loss. Paper results are simulated, and never risk more than you can afford to lose.
 
 ---
 
