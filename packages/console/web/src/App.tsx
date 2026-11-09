@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate, useLocation } from "react-router-dom";
+import { Routes, Route, Navigate, useLocation, useParams } from "react-router-dom";
 import { Shell } from "./components/shell/Shell";
 import { ModuleRoute } from "./pages/ModuleRoute";
 import { NotFoundPage } from "./pages/NotFoundPage";
@@ -7,6 +7,11 @@ import { NotFoundPage } from "./pages/NotFoundPage";
 function MovedTo({ to }: { to: string }) {
   const { search } = useLocation();
   return <Navigate to={`${to}${search}`} replace />;
+}
+
+function HelpRoute() {
+  const { slug } = useParams();
+  return <ModuleRoute forced={{ module: "help", slide: slug === "faq" ? "faq" : "guides" }} />;
 }
 
 export default function App() {
@@ -37,6 +42,9 @@ export default function App() {
             (`ModuleRoute`, `registry.ts`). An unknown name 404s. */}
         {/* One report of External reports (data-driven tab, `ExternalReportsPage`): the frame is Reports / external. */}
         <Route path="reports/external/:reportId" element={<ModuleRoute forced={{ module: "reports", slide: "external" }} />} />
+        {/* One guide page (`/help/<slug>`), inside Help's `guides` tab; `/help/faq` is the FAQ tab. A guide's
+            slug is not a tab id, so the generic route would rewrite it to the first tab. */}
+        <Route path="help/:slug" element={<HelpRoute />} />
         <Route path=":module" element={<ModuleRoute />} />
         <Route path=":module/:slide" element={<ModuleRoute />} />
         {/* Catch-all. Without it an unmatched path renders NOTHING — a blank screen that reads as

@@ -71,6 +71,8 @@ import type {
   SystemModulesPayload,
   SystemSupervisorPayload,
   VersionPayload,
+  HelpIndexPayload,
+  HelpPagePayload,
 } from "@console/shared";
 
 async function getJson<T>(url: string): Promise<T> {
@@ -117,6 +119,25 @@ export function useVersion() {
     queryKey: ["version"],
     queryFn: () => getJson<VersionPayload>("/api/version"),
     refetchInterval: 60_000,
+  });
+}
+
+/** The Help page's guide index. The files change only with the checkout, so no polling. */
+export function useHelpIndex() {
+  return useQuery<HelpIndexPayload>({
+    queryKey: ["help", "index"],
+    queryFn: () => getJson<HelpIndexPayload>("/api/help/index"),
+    staleTime: 60_000,
+  });
+}
+
+export function useHelpPage(slug: string | null) {
+  return useQuery<HelpPagePayload>({
+    queryKey: ["help", "page", slug],
+    queryFn: () => getJson<HelpPagePayload>(`/api/help/page/${encodeURIComponent(slug ?? "")}`),
+    enabled: slug !== null,
+    staleTime: 60_000,
+    retry: false,
   });
 }
 

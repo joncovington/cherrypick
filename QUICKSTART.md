@@ -147,6 +147,8 @@ What you will see:
 - The console opens on **Live**. Each strategy has its own page in the icon rail on the left; the
   **»** button at the bottom of the rail expands it to show names.
 - **Config** turns strategies on and off. Strategies marked **experimental** are off by default.
+- **Help**, near the bottom of the rail, has the guide and the FAQ (the same pages as
+  [docs/guide](docs/guide/README.md)).
 - A small **read-only** badge at the bottom means your tastytrade key has the read scope only. That
   is right for paper mode.
 

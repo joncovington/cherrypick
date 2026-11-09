@@ -32,7 +32,7 @@ describe("the rail's order (2026-10-18)", () => {
 
   it("puts research and the suite's own pages below the modules", () => {
     const { below } = railHalves(SUITE_LINKS);
-    expect(below.map((l) => l.to)).toEqual(["/compare", "/backtest", "/advisor", "/system"]);
+    expect(below.map((l) => l.to)).toEqual(["/compare", "/backtest", "/advisor", "/system", "/help"]);
   });
 
   it("lists the suite pages in the frame's own order, Config last", () => {
