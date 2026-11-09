@@ -12,6 +12,7 @@ import { ago, etMs, etNowMs } from "./QueueTab";
 import { HealthChecks, MonthGrid, settingsLine } from "./RunCards";
 import { EquityLines, controlScale, fmtTrades, tradesPerSession } from "./StudyCards";
 import { indexStudies, splitTitle, studyHref, useStudies, verdictChip, type StudyIndex } from "./studyIndex";
+import { GuideLink } from "../../components/GuideLink";
 
 /**
  * The Backtest page's runs tab as cards (2026-11-03): one tile per replay, newest first and the
@@ -450,6 +451,7 @@ export function BacktestRunsTab() {
                     </p>
                     <p>The switch in the card head lists the runs as rows, one line a run; a row opens the same run.</p>
                   </HelpSection>
+                  <GuideLink to="/help/research-and-backtests#fetching-validating-and-running" />
                 </>
               ),
             }}

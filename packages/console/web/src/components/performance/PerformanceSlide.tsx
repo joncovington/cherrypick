@@ -12,6 +12,7 @@ import { ExcursionsCard } from "./ExcursionsCard";
 import { CumulativeCard } from "./CumulativeCard";
 import { PairedABCard } from "./PairedABCard";
 import { TradeNetHistogram } from "./TradeNetHistogram";
+import { GuideLink } from "../GuideLink";
 
 /** A row's win rate as a fraction, or null for an empty row. */
 export function exitWinRate(r: ExitReasonRow): number | null {
@@ -85,6 +86,7 @@ export function armHelp(underpowered: boolean): CardHelpContent {
             the sample it was computed over. The histogram is each trade&apos;s net.
           </p>
         </HelpSection>
+        <GuideLink to="/help/reading-results#provisional-and-the-minimum-number-of-sessions" />
       </>
     ),
   };
@@ -128,6 +130,7 @@ export function cumulativeHelp(live: boolean, era: EraStamp, arm: string | null,
             )}
           </p>
         </HelpSection>
+        <GuideLink to="/help/reading-results#measurement-boundaries-never-pool-across-one" />
       </>
     ),
   };

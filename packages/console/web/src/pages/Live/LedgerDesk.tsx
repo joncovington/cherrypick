@@ -16,6 +16,7 @@ import {
   type SortOption,
 } from "../../components/FilterSort";
 import { CardLightbox, LightboxFrame, useOpenParam, type LightboxTab } from "../Backtest/CardLightbox";
+import { GuideLink } from "../../components/GuideLink";
 
 /**
  * Live → wheel's ledger (2026-11-04): what each name has earned over the account's whole history, read
@@ -257,6 +258,7 @@ export function ledgerHelp(ledger: Pick<ManageLedger, "scope" | "historyFrom" | 
         <HelpSection title="Left out">
           <p>0DTE legs (the live loops' and the hand's own books, on their pages), and spans the history entered mid-position.</p>
         </HelpSection>
+        <GuideLink to="/help/live#wheel" />
       </>
     ),
   };

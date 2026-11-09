@@ -11,6 +11,7 @@ import { writePref } from "../../lib/prefs";
 import { TradeCards, dayMonth, type TradeCardModel } from "../Live/TradeCard";
 import { ScreenerCard, ScreenerLayout, SessionSelect, SymbolSearch, Tabs, useParamState } from "./ScreenerParts";
 import { Section } from "../../components/Section";
+import { GuideLink } from "../../components/GuideLink";
 
 /**
  * Our own short-put and covered-call lists (2026-10-19): one row a name from the suite's universe,
@@ -272,6 +273,7 @@ export function incomeHelp(list: IncomeList, calls: boolean, dropped: [string, n
             <p>No row for: {dropped.map(([k, v]) => `${v} (${k})`).join(", ")}.</p>
           </HelpSection>
         ) : null}
+        <GuideLink to="/help/screeners#the-income-lists" />
       </>
     ),
   };

@@ -4,6 +4,7 @@ import { Card, PnlCell } from "../../components/DataTable";
 import { HelpSection, HelpWarn, type CardHelpContent } from "../../components/CardHelp";
 import { fmtMoney } from "../../lib/format";
 import { BoxButton, BoxButtons } from "./portfolioBoxContext";
+import { GuideLink } from "../../components/GuideLink";
 
 /**
  * MEIC live against paper: each live condor beside its paper
@@ -50,6 +51,7 @@ const GAP_HELP: CardHelpContent = {
       <HelpSection title="Execution by week">
         <p>The orchestrator&apos;s record: fills against the mid at submit and every human override, beside each week&apos;s net. Its gap counts every session live was working, so it also counts paper&apos;s entries live missed.</p>
       </HelpSection>
+      <GuideLink to="/help/live#meic-and-flies" />
     </>
   ),
 };

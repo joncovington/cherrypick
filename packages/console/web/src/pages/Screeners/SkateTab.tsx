@@ -11,6 +11,7 @@ import { PanelChoice, ScreenerCard, ScreenerLayout, SessionSelect, SymbolSearch,
 import { Section } from "../../components/Section";
 import { SkateRecordSection } from "./SkateRecord";
 import { beatsMonthly, otherBand, skateCounts, skateViews, type SkateView } from "./skateRows";
+import { GuideLink } from "../../components/GuideLink";
 
 /**
  * The Skate tab: covered calls above a name's recent range
@@ -243,6 +244,7 @@ export function skateHelp(c: SkateConfig | null): CardHelpContent {
             cover it is marked. The best expiry, the ranking and the forward record all stay on the gross.
           </p>
         </HelpSection>
+        <GuideLink to="/help/income-trades#step-1-the-skate-screen" />
       </>
     ),
   };

@@ -4,6 +4,7 @@ import type { AdvisedPair, ModulePerformanceGroup } from "../../lib/api";
 import { Card } from "../DataTable";
 import { HelpSection, HelpWarn, type CardHelpContent } from "../CardHelp";
 import { canvasPalette as _pal } from "../chart/cssvars";
+import { GuideLink } from "../GuideLink";
 
 const PAL = _pal();
 
@@ -35,6 +36,7 @@ function pairedHelp(pair: AdvisedPair): CardHelpContent {
             both books traded; above zero the overlay is ahead.
           </p>
         </HelpSection>
+        <GuideLink to="/help/experimenting-with-arms#reading-an-arm" />
       </>
     ),
   };

@@ -8,6 +8,7 @@ import { TileGrid } from "../performance/TileGrid";
 import { useOpenParam } from "../../pages/Backtest/CardLightbox";
 import { BoxOpen, FliesBoxHost, type FliesBox } from "../../pages/Flies/FliesBoxes";
 import { fmtMoney } from "../../lib/format";
+import { GuideLink } from "../GuideLink";
 
 /**
  * A module's costs page body (curve 2026-10-05, pmcc 2026-10-06): where the premium went, and how
@@ -93,6 +94,7 @@ function premiumHelp(premiumNote: string, slippageInGross: boolean): CardHelpCon
         <HelpSection title="Premium collected">
           <p>{premiumNote}.</p>
         </HelpSection>
+        <GuideLink to="/help/reading-results#the-money-layout" />
       </>
     ),
   };

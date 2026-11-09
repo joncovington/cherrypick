@@ -63,6 +63,17 @@ live safely*). It stops any new live entry at once. Anything already open is sti
 and closed, so nothing is left unwatched. It stops live risk only; paper keeps running. To stop the
 whole suite, run `uninstall.cmd` or `./uninstall.sh`, which keeps your history and settings.
 
+### Can I arm live trading without Claude Code?
+
+Yes. From a terminal, `python -m cherrypick.meic.live_loop --arm --confirm YES` arms MEIC for today:
+it prints the disclaimer first and arms nothing without the word `YES`. `--disarm` stops new entries
+for the day, and `--status` shows where you stand. See [Going live safely](going-live.md).
+
+### Does disarming close my positions?
+
+No. Disarming stops new entries for the rest of the day. Anything already open is still managed and
+closed by its own rules, so nothing is left unwatched.
+
 ### What happens if my computer crashes mid-trade?
 
 Live positions still exist at your broker. When the suite comes back, it settles overdue live
@@ -97,6 +108,13 @@ One version of a strategy with its own settings, for example the same condor wit
 run side by side so you can compare them fairly. (The same word is used for something else when you
 "arm" live trading for a day; the context makes it clear.)
 
+### How do I try an arm of my own?
+
+Add it to the module's config file beside the control, changing one setting at a time, and compare
+the two on Compare. Most modules read their config each minute. Calendars runs continuously, so
+restart its job after the edit. [Experimenting with arms](experimenting-with-arms.md) walks through
+it.
+
 ### What does "provisional" mean on a result?
 
 There aren't enough trades or sessions yet to trust it, so treat it as a hint, not a verdict. (On
@@ -122,6 +140,12 @@ The open-interest figures are still there, as positioning at the open. See
 
 No. You place them yourself. The suite reads your account (it can't change it) and tells you what
 its rules suggest.
+
+### Is the position evaluation on out of the box?
+
+No, because it reads your real account. Switch on **Daily position evaluation** on Config's `rules`
+tab. It then runs at 10:00 ET on trading days, at any further times you add, and whenever the account
+changes.
 
 ### My put was assigned. Where did it go?
 
@@ -195,6 +219,13 @@ Only if you set them up:
   `data/outbound/`, and `python packages/orchestrator/run.py sent` reads it back.
 - If you use Claude Code with the advisor or the written narratives switched on, a summary of the
   day's numbers is sent to Claude to write about.
+
+### Can I share a backtest result, or a screenshot of the Backtest page?
+
+No. Backtests run on licensed ThetaData history, and that data and anything worked out from it stay
+on your machine, under `~/.cherrypick`. That includes results, charts and screenshots, so keep them
+out of posts, issues and chats. A pass or fail verdict in words is fine. See
+[Research and backtests](research-and-backtests.md).
 
 ### Where are my passwords kept?
 

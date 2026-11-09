@@ -22,6 +22,7 @@ import { GEX_OI_NOTE, GexOiNote } from "../../components/GexOiNote";
 import { ModuleFrame } from "../ModuleFrame";
 import { GEX_SLIDES, type GexSlideId } from "../navGroups";
 import type { SlideDef } from "../types";
+import { GuideLink } from "../../components/GuideLink";
 
 interface GexProfilePayload {
   ok: boolean;
@@ -238,6 +239,7 @@ const GEX_HELP: CardHelpContent = {
     <HelpSection title="Why volume">
       <p>{GEX_OI_NOTE}</p>
     </HelpSection>
+      <GuideLink to="/help/charts-and-gex#how-to-read-it-1" />
     </>
   ),
 };
@@ -245,9 +247,12 @@ const GEX_HELP: CardHelpContent = {
 const OI_HELP: CardHelpContent = {
   title: "Open interest by strike",
   body: (
-    <HelpSection title="Reading the bars">
-      <p>Calls draw to the right and puts to the left; volume is the lighter bar beside the open interest.</p>
-    </HelpSection>
+    <>
+      <HelpSection title="Reading the bars">
+        <p>Calls draw to the right and puts to the left; volume is the lighter bar beside the open interest.</p>
+      </HelpSection>
+      <GuideLink to="/help/charts-and-gex#how-to-read-it-1" />
+    </>
   ),
 };
 

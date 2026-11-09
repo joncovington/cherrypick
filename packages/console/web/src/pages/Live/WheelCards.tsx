@@ -38,6 +38,7 @@ import {
   tone,
   yesNo,
 } from "./manageParts";
+import { GuideLink } from "../../components/GuideLink";
 
 /**
  * Live → wheel: each wheel cycle packages/manage follows on the account (`wheel.py`),
@@ -446,6 +447,7 @@ function cycleHelp(): CardHelpContent {
         <HelpSection title="Skate yield">
           <p>A comparison figure, a year time-weighted; never a forecast, none under seven days. It is under money &amp; P&amp;L.</p>
         </HelpSection>
+        <GuideLink to="/help/income-trades#step-3-the-wheel-view" />
       </>
     ),
   };

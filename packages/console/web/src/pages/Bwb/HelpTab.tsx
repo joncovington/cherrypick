@@ -1,6 +1,7 @@
 import type { BwbPayload } from "@console/shared";
 import { Card } from "../../components/DataTable";
 import { Section } from "../../components/Section";
+import { GuideLink } from "../../components/GuideLink";
 
 /**
  * What this experiment is, in the module's own terms -- the pmcc/curve HelpTab precedent: bwb's
@@ -11,6 +12,7 @@ import { Section } from "../../components/Section";
 export function HelpTab({ data: _data }: { data: BwbPayload | undefined }) {
   return (
     <div className="pf-layout">
+      <GuideLink to="/help/strategy-pages#retired-modules" />
       <Section concept="stand" tag="the experiment" question="What is bwb?">
         <Card title="what bwb is" collapseKey="bwb-help-what" className="view-fade">
           <div className="pmcc-prose">

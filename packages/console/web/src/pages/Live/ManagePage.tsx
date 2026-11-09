@@ -25,6 +25,7 @@ import {
   liveMarks,
   useManageLive,
 } from "./LiveMarks";
+import { GuideLink } from "../../components/GuideLink";
 
 /**
  * The daily position evaluation (packages/manage), read-only. Every trade in the live account judged
@@ -439,6 +440,7 @@ const POSITIONS_HELP: CardHelpContent = {
       <HelpSection title="Sorts">
         <p>P&amp;L by default; then days to the nearest short, capture, needs action first, and downside. Never credit or yield: nothing tested says either ranks a trade.</p>
       </HelpSection>
+      <GuideLink to="/help/live#positions" />
     </>
   ),
 };

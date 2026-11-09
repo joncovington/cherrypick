@@ -16,6 +16,7 @@ import { HandCard, handHasTrades } from "./HandToday";
 import { LoopOrders } from "./LiveTodayOrders";
 import { Section } from "../../components/Section";
 import { Meter, StateLine } from "./liveParts";
+import { GuideLink } from "../../components/GuideLink";
 
 /**
  * The Live page's `today` tab (2026-10-15): every live loop's day on one page -- what is armed,
@@ -366,6 +367,7 @@ const NET_HELP: CardHelpContent = {
       <HelpSection title="Armed and halt">
         <p>A loop is armed when its arm record is dated today and the disarm time has not passed. The halt flag is suite-wide and blocks new entries on every loop; clearing it arms nothing.</p>
       </HelpSection>
+      <GuideLink to="/help/live#today" />
     </>
   ),
 };
@@ -386,6 +388,7 @@ const LOOP_HELP: CardHelpContent = {
       <HelpSection title="Orders and detail">
         <p>Opens the loop&apos;s orders today, one chain per position, and every field the card leaves out: the gate, the counts and the net&apos;s parts.</p>
       </HelpSection>
+      <GuideLink to="/help/live#today" />
     </>
   ),
 };

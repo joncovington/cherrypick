@@ -117,6 +117,14 @@ plugin, so a guide's HTML is shown as text. Headings carry GitHub's anchor ids, 
 guide stays in the app while a link to any other repo file opens it on GitHub. `tools/check_guide.py`
 (CI) keeps the index, links, anchors, images, the FAQ's shape and the quoted commands true.
 
+**Guide links.** A card's ? box, a module's help tab, the Backtest licence flag and the Config page's
+halt control end in "Read the guide →" (`components/GuideLink.tsx`), a link to the guide section that
+explains the card. The address is a string literal at each call site, `<GuideLink to="/help/live#today" />`,
+never built from parts, because `tools/check_guide.py` (rule 2) reads every `/help/<slug>#<anchor>`
+literal in the web source and fails when that guide page or heading does not exist, so renaming a
+heading breaks the build rather than the link. `web/test/guideLink.test.tsx` pins the rendered href and
+that every use is a literal. Link only where a guide section really explains the card.
+
 **System page** (`/system`): the suite's own health, read-only, from the files the suite writes
 (supervisor registry and heartbeat, watchdog and its renotify memory, holds, pid files, stamps).
 A tile's level is the suite's verdict (a watchdog finding, or the supervisor's own heartbeat rule),

@@ -10,6 +10,7 @@ import { fmtCount } from "../../lib/format";
 import { WithOverview, fmtBytes, mainTable, measure } from "./BacktestPage";
 import { CardLightbox, LightboxFrame, useOpenParam, type LightboxTab } from "./CardLightbox";
 import { verdictChip } from "./studyIndex";
+import { GuideLink } from "../../components/GuideLink";
 
 /**
  * The Backtest page's data tab as cards (2026-11-03): "is history trusted?" first and large, one row
@@ -698,6 +699,7 @@ export function BacktestDataTab() {
                   <HelpSection title="Cards or rows">
                     <p>The switch in the card head lists the stores as rows, one line a store; a row opens the same store.</p>
                   </HelpSection>
+                  <GuideLink to="/help/research-and-backtests#where-the-data-and-results-live" />
                 </>
               ),
             }}

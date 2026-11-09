@@ -7,6 +7,7 @@ import { fmtUsd } from "../../components/summary/kit";
 import { etToday } from "../../components/table/DateRange";
 import { CardHelpButton, HelpSection, type CardHelpContent } from "../../components/CardHelp";
 import { Section } from "../../components/Section";
+import { GuideLink } from "../../components/GuideLink";
 
 /**
  * The Experiments page: the five paper-only
@@ -46,6 +47,7 @@ function experimentHelp(what: string): CardHelpContent {
             is written.
           </p>
         </HelpSection>
+        <GuideLink to="/help/strategy-pages#experiments-experiments" />
       </>
     ),
   };

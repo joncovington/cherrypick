@@ -28,6 +28,7 @@ import {
   etStamp,
   share,
 } from "./manageParts";
+import { GuideLink } from "../../components/GuideLink";
 
 /**
  * Live → pmcc: each poor man's covered call packages/manage reads on the account (`pmcc.py`),
@@ -669,6 +670,7 @@ function pmccHelp(p: ManagePmccPosition): CardHelpContent {
         <HelpSection title="A roll">
           <p>Proposed from today's quotes and sent only for a net credit; check-roll prices it again before you send. Nothing here places an order.</p>
         </HelpSection>
+        <GuideLink to="/help/income-trades#step-6-the-pmcc-step" />
       </>
     ),
   };

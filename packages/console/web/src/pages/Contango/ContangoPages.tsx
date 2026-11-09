@@ -27,6 +27,7 @@ import {
 } from "../../components/nav/NavViews";
 import { FIXED_STRESS_WINDOWS, inversionWindows, rebase } from "../../lib/navSeries";
 import { fmtCash, fmtMoney } from "../../lib/format";
+import { GuideLink } from "../../components/GuideLink";
 
 /**
  * contango's pages (packages/contango): the VIX/VIX3M switch held in shares. The judged series is
@@ -697,6 +698,7 @@ export function ContangoHelp({ data }: { data: ContangoPayload | undefined }) {
   const arms = data?.params.arms ?? [];
   return (
     <div className="pf-layout">
+      <GuideLink to="/help/strategy-pages#contango-contango" />
       <Section concept="stand" tag="the idea" question="What is contango?">
       <Card title="what contango is" collapseKey="contango-help-what">
         <div className="pmcc-prose">
