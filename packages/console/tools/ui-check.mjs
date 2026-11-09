@@ -25,6 +25,9 @@
  * `--card <text>` crops `--shot` to the first grid card whose title contains the text (case-folded)
  * and that has drawn a chart; no such card is a missing expectation, never a whole-page fallback.
  *
+ * `--selector <css>` crops `--shot` to the first element matching the selector (`.mf-slide` is a tab's whole
+ * content, without the rail, header and footer); give a viewport tall enough that the page does not scroll.
+ *
  * `--fixture <scenario.json>` draws the page in a state the live data has not got (2026-11-07): the
  * file's `api` object maps an API path (`/api/live/meic`, or a path with its query) to the JSON the
  * page is answered with, so an open condor with its mark or a halted loop can be looked at on a
@@ -131,6 +134,7 @@ function parseArgs(argv) {
     else if (a === "--full") out.full = true;
     else if (a === "--links") out.links = true;
     else if (a === "--card") out.card = next();
+    else if (a === "--selector") out.selector = next();
     else if (a === "--fixture") out.fixture = next();
     else if (a === "--scale") out.scale = Number(next());
     else if (a === "--viewport") out.viewport = next();
@@ -326,6 +330,20 @@ async function main() {
         fs.mkdirSync(path.dirname(path.resolve(args.shot)), { recursive: true });
         await card.screenshot({ path: args.shot });
         console.log(`ui-check: card screenshot -> ${args.shot}`);
+      }
+    } else if (args.selector !== undefined) {
+      // The first element matching the selector, with the shell around it left out. The app scrolls an
+      // inner container, so a tall element is whole only in a viewport tall enough not to scroll it.
+      const el = await page.waitForSelector(args.selector, { timeout: args.timeout }).catch(() => null);
+      if (el === null) {
+        console.error(`ui-check: no element matches ${JSON.stringify(args.selector)}.`);
+        return FAIL_EXPECT;
+      }
+      await new Promise((r) => setTimeout(r, 1500));
+      if (args.shot !== undefined) {
+        fs.mkdirSync(path.dirname(path.resolve(args.shot)), { recursive: true });
+        await el.screenshot({ path: args.shot });
+        console.log(`ui-check: element screenshot -> ${args.shot}`);
       }
     } else if (args.shot !== undefined) {
       fs.mkdirSync(path.dirname(path.resolve(args.shot)), { recursive: true });
