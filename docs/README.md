@@ -23,6 +23,7 @@ understand *how* a part of the suite works or *why* it's built the way it is.
 | [orchestrator-cli.md](orchestrator-cli.md) | Every `cherrypick` / `run.py` command, what it does, and its flags — the operational surface. |
 | [reporting-and-dashboard.md](reporting-and-dashboard.md) | The read side: unified P&L report, calibration, the cross-module suite review (one fact set per session + its renders), the console, and end-of-month log/report archiving. |
 | [strategy-engines.md](strategy-engines.md) | Every strategy module at a suite level — MEIC, Earnings, Flies, BWB, and the experimental Calendars, PMCC, Curve and Contango — plus GEX and the arm **variance testing** method, with pointers into each module's own docs. |
+| [demo-home.md](demo-home.md) | A fake suite home and how to serve the console on it, for documentation screenshots only. |
 | [configuration-and-storage.md](configuration-and-storage.md) | The config model (orchestrator + per-module), the managed-home layout, environment overrides, and the databases / logs / report files each module reads and writes. |
 | [guardrails-and-modes.md](guardrails-and-modes.md) | Paper vs. live isolation, the load-bearing invariants (no AI/network on the reliability path, masked accounts, defined-risk, correlation), credentials, and the one narrow live-config boundary. |
 | [releasing.md](releasing.md) | How a release is cut: `main` is development, a tag on `main` plus its GitHub Release is what installs get, versions, the changelog's `[Unreleased]` section, and the release workflow. |
