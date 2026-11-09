@@ -19,6 +19,7 @@ import {
 import { TradeCards, timeSpreadModel, type TradeCardModel } from "../Live/TradeCard";
 import { PanelChoice, ScreenerCard, ScreenerLayout, SessionSelect, useParamState } from "./ScreenerParts";
 import { Section } from "../../components/Section";
+import { GuideLink } from "../../components/GuideLink";
 
 /**
  * The time-spread scanner: the day's calendars and diagonals on the
@@ -175,6 +176,7 @@ export function scanHelp(d: TimeSpreadsPayload): CardHelpContent {
             </ul>
           </HelpSection>
         ) : null}
+        <GuideLink to="/help/screeners#the-income-lists" />
       </>
     ),
   };

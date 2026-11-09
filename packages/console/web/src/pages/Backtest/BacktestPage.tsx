@@ -16,6 +16,7 @@ import { signTone, useBridged } from "../../lib/bridged";
 import { fmtCash, fmtCount, fmtNum } from "../../lib/format";
 import { RunCards } from "./RunCards";
 import { studyHref } from "./studyIndex";
+import { GuideLink } from "../../components/GuideLink";
 
 /**
  * The Backtest page (2026-10-17): `packages/backtest`'s replays over licensed vendor history, read
@@ -35,12 +36,15 @@ import { studyHref } from "./studyIndex";
 export const LICENCE_HELP: CardHelpContent = {
   title: "Licensed vendor data",
   body: (
-    <HelpWarn title="Never shared">
-      <p>
-        Everything on this page is computed from historical data licensed to this machine&apos;s owner. It stays on this console: do not
-        screenshot, export, copy or share it. Never in the repo, a PR, an issue or a published page.
-      </p>
-    </HelpWarn>
+    <>
+      <HelpWarn title="Never shared">
+        <p>
+          Everything on this page is computed from historical data licensed to this machine&apos;s owner. It stays on this console: do not
+          screenshot, export, copy or share it. Never in the repo, a PR, an issue or a published page.
+        </p>
+      </HelpWarn>
+      <GuideLink to="/help/research-and-backtests#the-licence-rule" />
+    </>
   ),
 };
 

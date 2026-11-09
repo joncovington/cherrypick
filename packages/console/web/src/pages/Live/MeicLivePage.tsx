@@ -14,6 +14,7 @@ import { MeicReadinessCard } from "./MeicReadinessCard";
 import type { Box } from "./PortfolioBox";
 import { Section } from "../../components/Section";
 import { TradeCards, type TradeCardModel } from "./TradeCard";
+import { GuideLink } from "../../components/GuideLink";
 
 /**
  * MEIC's live loop, read-only (2026-10-15): the flies Live tab's arming strip and trade tables, cut
@@ -167,6 +168,7 @@ const OPEN_HELP: CardHelpContent = {
           there is no mark and no bar; the live loop keeps no marks of its own.
         </p>
       </HelpSection>
+      <GuideLink to="/help/live#meic-and-flies" />
     </>
   ),
 };

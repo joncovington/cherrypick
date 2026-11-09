@@ -8,6 +8,7 @@ import { useBridged } from "../../lib/bridged";
 import { MiniMarkdown } from "../../lib/miniMarkdown";
 import { StudyCards, notesHref, notesName, planUrl } from "./StudyCards";
 import { resultLabel, statusWord, studyHref, useStudies } from "./studyIndex";
+import { GuideLink } from "../../components/GuideLink";
 
 /**
  * The Backtest page's studies tab (as cards): what
@@ -159,6 +160,7 @@ export function BacktestStudiesTab() {
               <p>A card opens to its run&apos;s figures, pass test, rivals, per-arm verdicts, queue rows and links.</p>
               <p>The switch in the card head lists the studies as rows, one line a study; a row opens the same card.</p>
             </HelpSection>
+            <GuideLink to="/help/research-and-backtests#reading-a-studys-report" />
           </>
         ),
       }}

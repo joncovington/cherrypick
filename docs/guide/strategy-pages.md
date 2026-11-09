@@ -28,7 +28,7 @@ The four tiles across the top are net on the session, positions, costs and evalu
 
 ### Arms
 
-An **arm** is one configured variant of a module: the same strategy with one setting changed, run side by side. Almost every module has a `control` arm, the plain version, and other arms that each change one thing. The point of arms is to find out whether the change helps, and `arms` shows each one beside its control. Do not read one arm in isolation.
+An **arm** is one configured variant of a module: the same strategy with one setting changed, run side by side. Almost every module has a `control` arm, the plain version, and other arms that each change one thing. The point of arms is to find out whether the change helps, and `arms` shows each one beside its control. Do not read one arm in isolation. To add or change one, see [experimenting-with-arms.md](experimenting-with-arms.md).
 
 ### Decisions
 

@@ -7,6 +7,7 @@ import { etClock } from "../../lib/etTime";
 import { Tile } from "../Flies/PerformanceTab";
 import { StateLine } from "./liveParts";
 import { TradeCards, type TradeCardModel } from "./TradeCard";
+import { GuideLink } from "../../components/GuideLink";
 
 /**
  * Live → today's hand row and card (2026-11-03): the 0DTE trades placed by hand, which no loop
@@ -130,6 +131,7 @@ export const HAND_HELP: CardHelpContent = {
           still lists are not counted.
         </p>
       </HelpSection>
+      <GuideLink to="/help/live#today" />
     </>
   ),
 };

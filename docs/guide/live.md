@@ -13,8 +13,10 @@ to meic.
 The tabs answer two different questions, and the difference matters.
 
 - **Your real account.** `positions`, `portfolio`, `wheel` and `pmcc` are four views of one thing: the
-  daily evaluation of every trade in your broker account, written by the manage package every 30
-  minutes from 10:00 to 16:35 ET on trading days. The console only reads that file. The verdicts, the
+  daily evaluation of every trade in your broker account, written by the manage package on trading
+  days. It is off until you switch on "Daily position evaluation" on Config's `rules` tab. It runs at
+  `manage.at` (10:00 ET) and at any further times in `manage.also_at`, and again when the account
+  changes. The console only reads that file. The verdicts, the
   levels and the prices are the evaluation's; the page shows them. `today` also reads it, for its
   "what to do today" list.
 - **The suite's own live loops.** `meic` (and the retired `flies`) show one module's live loop: whether
@@ -112,7 +114,7 @@ the rail once its module's live switch is off and nothing is open, working or ow
   list: it goes out when the trades needing action change (and on the day's first run), not on every
   run, and the post says what started the run. `manage.on_change` in the config turns this off or tunes
   it.
-- **Check the age.** The evaluation runs every 30 minutes. If the newest is much older, the header
+- **Check the age.** The evaluation runs at its scheduled times and whenever the account changes. If the newest is much older than the last scheduled time, the header
   turns red and says a run looks to have been missed. A snapshot taken before 9:30 uses the last
   close. A dash instead of a live mark means a leg has no fresh quote.
 - **Net today is realised.** It counts only positions resolved today. The worst case is each loop's

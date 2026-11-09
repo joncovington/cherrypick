@@ -123,3 +123,4 @@ A fund, a bank or a REIT reads "no fair value".
 - Do nothing about an empty tab on a new install. It fills after its job has run.
 - Do not read a long list as a lot of opportunity. None of these lists has a tested edge, so position size
   and risk limits matter more than the pick.
+- To follow one skate trade from the screen to the finished wheel, see [income-trades.md](income-trades.md).

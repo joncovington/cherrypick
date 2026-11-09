@@ -3,6 +3,7 @@ import type { ExperimentGuide, ExperimentGuideEntry, GuideNote, TradingMode } fr
 import { Card } from "./DataTable";
 import { HelpSection, type CardHelpContent } from "./CardHelp";
 import { Section } from "./Section";
+import { GuideLink } from "./GuideLink";
 
 /**
  * What each experiment arm (flies) or risk profile (MEIC) is, and why it isn't one of the others.
@@ -192,12 +193,15 @@ export function BookArmGuide({ module }: { module: "calendars" | "pmcc" | "curve
 const BREAKS_HELP: CardHelpContent = {
   title: "Measurement breaks",
   body: (
-    <HelpSection title="Why they matter">
-      <p>
-        Sessions either side of these dates are not comparable. The module records them itself, so a comparison spanning one is a known-bad
-        reading rather than a surprise.
-      </p>
-    </HelpSection>
+    <>
+      <HelpSection title="Why they matter">
+        <p>
+          Sessions either side of these dates are not comparable. The module records them itself, so a comparison spanning one is a known-bad
+          reading rather than a surprise.
+        </p>
+      </HelpSection>
+      <GuideLink to="/help/reading-results#measurement-boundaries-never-pool-across-one" />
+    </>
   ),
 };
 
@@ -224,6 +228,7 @@ export function ExperimentGuideView({ url, mode, intro }: { url: string; mode: T
     <div className="arm-help pf-layout">
       {/* A guide is reading matter, so its text stays where it is; the questions only say what each part answers. */}
       <p className="arm-intro muted">{intro}</p>
+      <GuideLink to="/help/experimenting-with-arms#what-an-arm-is" />
 
       {(data?.breaks ?? []).length > 0 && (
         <Section concept="risk" tag="breaks" question={`Which sessions can I not compare across?`}>

@@ -5,6 +5,7 @@ import { TileGrid } from "../../components/performance/TileGrid";
 import { useSkateRecord } from "../../lib/api";
 import { ScreenerCard } from "./ScreenerParts";
 import { Section } from "../../components/Section";
+import { GuideLink } from "../../components/GuideLink";
 
 /**
  * The skate screen's forward record on the Skate tab. `technicals.skate_record`
@@ -79,6 +80,7 @@ export function recordHelp(t: SkateRecordTest | null, ok: boolean): CardHelpCont
         <HelpWarn title="No tone before decision-grade">
           <p>A z score or a rate above implied is shown plainly until the record has the expiries the test was declared against: an early lead is noise.</p>
         </HelpWarn>
+        <GuideLink to="/help/screeners#the-screens" />
       </>
     ),
   };

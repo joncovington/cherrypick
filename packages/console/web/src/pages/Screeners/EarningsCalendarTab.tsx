@@ -21,6 +21,7 @@ import { writePref } from "../../lib/prefs";
 import { TradeCards, dayMonth, type TradeCardLeg, type TradeCardModel } from "../Live/TradeCard";
 import { ScreenerLayout } from "./ScreenerParts";
 import { Section } from "../../components/Section";
+import { GuideLink } from "../../components/GuideLink";
 
 /**
  * The earnings calendar (2026-10-17; docs/history/earnings-screener-plan.md (tag archive/docs-2026-11)): every announcement in the
@@ -279,6 +280,7 @@ export const calendarHelp = (ivRankCut: number): CardHelpContent => ({
           to trade within 10% of its price (or a nickel), 100 open a leg.
         </p>
       </HelpSection>
+      <GuideLink to="/help/screeners#the-screens" />
     </>
   ),
 });

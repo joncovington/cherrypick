@@ -1,6 +1,7 @@
 import type { PmccPayload } from "@console/shared";
 import { Card, fmtMoney, fmtPct } from "../../components/DataTable";
 import { Section } from "../../components/Section";
+import { GuideLink } from "../../components/GuideLink";
 
 /**
  * What this experiment is, in the module's own terms.
@@ -19,6 +20,7 @@ export function HelpTab({ data }: { data: PmccPayload | undefined }) {
   const cashSymbols = symbols.filter((s) => settlementStyle[s] === "cash");
   return (
     <div className="pf-layout">
+      <GuideLink to="/help/income-trades#step-6-the-pmcc-step" />
       <Section concept="stand" tag="the idea" question="What is PMCC?">
       <Card title="what PMCC is" collapseKey="pmcc-help-what" defaultCollapsed className="view-fade">
         <div className="pmcc-prose">

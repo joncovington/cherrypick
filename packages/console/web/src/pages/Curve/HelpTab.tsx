@@ -1,6 +1,7 @@
 import type { CurvePayload } from "@console/shared";
 import { Card, fmtMoney, fmtPct } from "../../components/DataTable";
 import { Section } from "../../components/Section";
+import { GuideLink } from "../../components/GuideLink";
 
 /**
  * What this experiment is, in the module's own terms -- the pmcc HelpTab precedent: curve's four
@@ -11,6 +12,7 @@ export function HelpTab({ data }: { data: CurvePayload | undefined }) {
   const p = data?.params;
   return (
     <div className="pf-layout">
+      <GuideLink to="/help/strategy-pages#retired-modules" />
       <Section concept="stand" tag="the idea" question="What is curve?">
       <Card title="what curve is" collapseKey="curve-help-what" defaultCollapsed className="view-fade">
         <div className="pmcc-prose">

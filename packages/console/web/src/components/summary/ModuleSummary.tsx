@@ -22,6 +22,7 @@ import {
 import { Section } from "../Section";
 import { etToday } from "../table/DateRange";
 import { Gauge, NetHero, RangeToolbar, TsCard, TsEmpty, WinRateArcs, fmtUsd, fmtUsdPlain, sessionLabel, useFace, useSummaryRange } from "./kit";
+import { GuideLink } from "../GuideLink";
 
 /**
  * A module's simplified-view summary: the MEIC summary's pattern over `/api/summary/:module`.
@@ -101,6 +102,7 @@ function netHelp(unit: string | null): CardHelpContent {
         <HelpSection title="The figure">
           <p>Click the big figure to swap the window&apos;s total for net per trade, with its median, average win and loss, worst trade and interval.</p>
         </HelpSection>
+        <GuideLink to="/help/reading-results#the-money-layout" />
       </>
     ),
   };

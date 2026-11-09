@@ -18,6 +18,7 @@ import { HelpSection, type CardHelpContent } from "../../components/CardHelp";
 import { FilterGroup } from "../../components/FilterSort";
 import { Section } from "../../components/Section";
 import { useFilterPanel } from "../useFilterPanel";
+import { GuideLink } from "../../components/GuideLink";
 
 /**
  * The System page's tabs. Every figure is the server's reading of a file the suite wrote, and every
@@ -320,12 +321,15 @@ export function HealthTab() {
 const CHECKS_HELP: CardHelpContent = {
   title: "The subsystem checks",
   body: (
-    <HelpSection title="Where the levels come from">
-      <p>
-        Every figure is the server's reading of a file the suite wrote, and every colour is a level the server attached from the suite's
-        own verdict. Hover a tile for the source its level came from. This page decides layout, never health.
-      </p>
-    </HelpSection>
+    <>
+      <HelpSection title="Where the levels come from">
+        <p>
+          Every figure is the server's reading of a file the suite wrote, and every colour is a level the server attached from the suite's
+          own verdict. Hover a tile for the source its level came from. This page decides layout, never health.
+        </p>
+      </HelpSection>
+      <GuideLink to="/help/troubleshooting#ask-the-suite-first" />
+    </>
   ),
 };
 
@@ -536,12 +540,15 @@ export function SupervisorTab() {
 const SUPERVISOR_HELP: CardHelpContent = {
   title: "The supervisor",
   body: (
-    <HelpSection title="What the tiles say">
-      <p>
-        The supervisor's heartbeat, how long it has been up, how many jobs it runs, whether its anchor task is relaunching it, and when the job
-        registry was last written. A derive error, a held job or a pending restart appears under them.
-      </p>
-    </HelpSection>
+    <>
+      <HelpSection title="What the tiles say">
+        <p>
+          The supervisor's heartbeat, how long it has been up, how many jobs it runs, whether its anchor task is relaunching it, and when the job
+          registry was last written. A derive error, a held job or a pending restart appears under them.
+        </p>
+      </HelpSection>
+      <GuideLink to="/help/troubleshooting#the-supervisor-is-down" />
+    </>
   ),
 };
 
