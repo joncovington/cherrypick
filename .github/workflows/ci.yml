@@ -50,6 +50,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          # The screenshot check diffs the pull request against its base branch, so it needs the history.
+          fetch-depth: 0
       - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
@@ -70,6 +73,13 @@ jobs:
       # the guides quote must still match the code (tools/check_guide.py).
       - name: Check the user guide
         run: python tools/check_guide.py
+      # The console screenshots in docs/images/console/ match docs/images/shots.json (a fault fails), and a
+      # pull request that changes the code behind a screenshot without retaking it is warned, not failed,
+      # unless it carries the `screenshots-ok` label (tools/check_shots.py; scripts/reshoot.py retakes them).
+      - name: Check console screenshots
+        env:
+          PR_LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+        run: python tools/check_shots.py "origin/${{ github.base_ref || 'main' }}"
       # The repo-root scripts/ belong to no package, so no package job linted them, and 17 findings
       # and 8 unformatted files built up unseen (cleared 2026-10-05). The ruff version is read from
       # core's own pin, so this can never lint scripts/ under a different ruff than the packages.

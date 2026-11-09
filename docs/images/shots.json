@@ -1,0 +1,413 @@
+{
+  "version": 1,
+  "shots": [
+    {
+      "path": "docs/images/console/live-today.png",
+      "route": "live/today",
+      "card": null,
+      "scale": 1,
+      "full_page": true,
+      "seed": 7,
+      "day": "2026-11-06",
+      "sources": [
+        "packages/console/web/src/lightbox/manifests/LiveLightbox.tsx",
+        "packages/console/web/src/pages/Live/LiveTodayPage.tsx",
+        "packages/console/web/src/pages/Live/WhatToDo.tsx"
+      ],
+      "caption": "Live, today: what needs a person, with the evaluation's verdicts on each position."
+    },
+    {
+      "path": "docs/images/console/live-positions.png",
+      "route": "live/positions",
+      "card": null,
+      "scale": 1,
+      "full_page": true,
+      "seed": 7,
+      "day": "2026-11-06",
+      "sources": [
+        "packages/console/web/src/lightbox/manifests/LiveLightbox.tsx",
+        "packages/console/web/src/pages/Live/ManagePage.tsx",
+        "packages/console/web/src/pages/Live/PositionCards.tsx",
+        "packages/console/web/src/pages/Live/TradeCard.tsx"
+      ],
+      "caption": "Live, positions: one card per trade with its order chain, its marks and the rule that fired (take profit, roll, review, hold)."
+    },
+    {
+      "path": "docs/images/console/live-portfolio.png",
+      "route": "live/portfolio",
+      "card": null,
+      "scale": 1,
+      "full_page": true,
+      "seed": 7,
+      "day": "2026-11-06",
+      "sources": [
+        "packages/console/web/src/lightbox/manifests/LiveLightbox.tsx",
+        "packages/console/web/src/pages/Live/ManagePage.tsx",
+        "packages/console/web/src/pages/Live/PortfolioLayout.tsx",
+        "packages/console/web/src/pages/Live/PortfolioCards.tsx",
+        "packages/console/web/src/pages/Live/PortfolioBox.tsx"
+      ],
+      "caption": "Live, portfolio: net liquidation, guidance on concentration and expiry, income and direction against their bands.",
+      "crop": [
+        0,
+        0,
+        1404,
+        1180
+      ]
+    },
+    {
+      "path": "docs/images/console/live-wheel.png",
+      "route": "live/wheel",
+      "card": null,
+      "scale": 1,
+      "full_page": true,
+      "seed": 7,
+      "day": "2026-11-06",
+      "sources": [
+        "packages/console/web/src/lightbox/manifests/LiveLightbox.tsx",
+        "packages/console/web/src/pages/Live/ManagePage.tsx",
+        "packages/console/web/src/pages/Live/WheelCards.tsx"
+      ],
+      "caption": "Live, wheel: each cycle by name, a put assigned into shares and the call not yet written against them."
+    },
+    {
+      "path": "docs/images/console/live-pmcc.png",
+      "route": "live/pmcc",
+      "card": null,
+      "scale": 1,
+      "full_page": true,
+      "seed": 7,
+      "day": "2026-11-06",
+      "sources": [
+        "packages/console/web/src/lightbox/manifests/LiveLightbox.tsx",
+        "packages/console/web/src/pages/Live/ManagePage.tsx",
+        "packages/console/web/src/pages/Live/PmccCards.tsx"
+      ],
+      "caption": "Live, PMCC: the long call's delta, its width check and the short call sold against it."
+    },
+    {
+      "path": "docs/images/console/meic-today.png",
+      "route": "meic/summary",
+      "card": null,
+      "scale": 1,
+      "full_page": true,
+      "seed": 7,
+      "day": "2026-11-06",
+      "sources": [
+        "packages/console/web/src/lightbox/manifests/MeicLightbox.tsx",
+        "packages/console/web/src/pages/Meic/SummarySlide.tsx",
+        "packages/console/web/src/components/summary/ModuleSummary.tsx"
+      ],
+      "caption": "MEIC, today: the session's net, what it cost and how much of the premium was kept.",
+      "crop": [
+        0,
+        0,
+        1404,
+        830
+      ]
+    },
+    {
+      "path": "docs/images/console/meic-condor-arms.png",
+      "route": "meic/arms",
+      "card": null,
+      "scale": 1,
+      "full_page": true,
+      "seed": 7,
+      "day": "2026-11-06",
+      "sources": [
+        "packages/console/web/src/lightbox/manifests/MeicLightbox.tsx",
+        "packages/console/web/src/pages/Meic/MeicArmCards.tsx"
+      ],
+      "caption": "MEIC, arms: one card per arm with the payoff of its condors at expiry, and the book of every arm together."
+    },
+    {
+      "path": "docs/images/console/meic-performance.png",
+      "route": "meic/performance",
+      "card": null,
+      "scale": 1,
+      "full_page": true,
+      "seed": 7,
+      "day": "2026-11-06",
+      "sources": [
+        "packages/console/web/src/lightbox/manifests/MeicLightbox.tsx",
+        "packages/console/web/src/pages/Meic/MeicPerformanceTab.tsx"
+      ],
+      "caption": "MEIC, performance: net, drawdown and the equity curve across the sessions on file.",
+      "crop": [
+        0,
+        0,
+        1404,
+        1250
+      ]
+    },
+    {
+      "path": "docs/images/console/earnings-summary.png",
+      "route": "earnings/summary",
+      "card": null,
+      "scale": 1,
+      "full_page": true,
+      "seed": 7,
+      "day": "2026-11-06",
+      "sources": [
+        "packages/console/web/src/lightbox/manifests/EarningsLightbox.tsx",
+        "packages/console/web/src/pages/Earnings/EarningsSession.tsx",
+        "packages/console/web/src/components/summary/ModuleSummary.tsx"
+      ],
+      "caption": "Earnings, summary: open positions, the era's net, expectancy and the weekly net.",
+      "crop": [
+        0,
+        0,
+        1404,
+        620
+      ]
+    },
+    {
+      "path": "docs/images/console/calendars-plan.png",
+      "route": "calendars/plan",
+      "card": null,
+      "scale": 1,
+      "full_page": true,
+      "seed": 7,
+      "day": "2026-11-06",
+      "sources": [
+        "packages/console/web/src/lightbox/manifests/CalendarsLightbox.tsx",
+        "packages/console/web/src/pages/Calendars/WeekCards.tsx"
+      ],
+      "caption": "Calendars, plan: the week's entry plan, fixed in advance, and what the entry window did on its day."
+    },
+    {
+      "path": "docs/images/console/contango-regime.png",
+      "route": "contango/regime",
+      "card": null,
+      "scale": 1,
+      "full_page": true,
+      "seed": 7,
+      "day": "2026-11-06",
+      "sources": [
+        "packages/console/web/src/lightbox/manifests/ContangoLightbox.tsx",
+        "packages/console/web/src/pages/Contango/ContangoPages.tsx"
+      ],
+      "caption": "Contango, regime: the VIX to VIX3M ratio against the module's two thresholds, and what each arm did on each reading.",
+      "crop": [
+        0,
+        0,
+        1404,
+        700
+      ]
+    },
+    {
+      "path": "docs/images/console/weeklyput-cycles.png",
+      "route": "weeklyput/cycles",
+      "card": null,
+      "scale": 1,
+      "full_page": true,
+      "seed": 7,
+      "day": "2026-11-06",
+      "sources": [
+        "packages/console/web/src/lightbox/manifests/WeeklyputLightbox.tsx",
+        "packages/console/web/src/pages/Weeklyput/WeeklyputPages.tsx"
+      ],
+      "caption": "Weekly put, cycles: one expiry is the unit judged, by name, with a missed name listed beside it."
+    },
+    {
+      "path": "docs/images/console/screeners-skate.png",
+      "route": "screeners/skate",
+      "card": null,
+      "scale": 1,
+      "full_page": true,
+      "seed": 7,
+      "day": "2026-11-06",
+      "sources": [
+        "packages/console/web/src/lightbox/manifests/ScreenersLightbox.tsx",
+        "packages/console/web/src/pages/Screeners/SkateTab.tsx"
+      ],
+      "caption": "Screeners, skate: short-put candidates by price band and delta."
+    },
+    {
+      "path": "docs/images/console/screeners-income.png",
+      "route": "screeners/income",
+      "card": null,
+      "scale": 1,
+      "full_page": true,
+      "seed": 7,
+      "day": "2026-11-06",
+      "sources": [
+        "packages/console/web/src/lightbox/manifests/ScreenersLightbox.tsx",
+        "packages/console/web/src/pages/Screeners/OwnListTab.tsx"
+      ],
+      "caption": "Screeners, puts and calls: the income lists, with the leg quotes behind each row."
+    },
+    {
+      "path": "docs/images/console/screeners-credit-spreads.png",
+      "route": "screeners/credit-spreads",
+      "card": null,
+      "scale": 1,
+      "full_page": true,
+      "seed": 7,
+      "day": "2026-11-06",
+      "sources": [
+        "packages/console/web/src/lightbox/manifests/ScreenersLightbox.tsx",
+        "packages/console/web/src/pages/Screeners/CreditSpreadTab.tsx"
+      ],
+      "caption": "Screeners, credit spreads: put and call spreads on listed strikes, priced at the mid and at the natural fill."
+    },
+    {
+      "path": "docs/images/console/screeners-earnings-calendar.png",
+      "route": "screeners/earnings",
+      "card": null,
+      "scale": 1,
+      "full_page": true,
+      "seed": 7,
+      "day": "2026-11-06",
+      "sources": [
+        "packages/console/web/src/lightbox/manifests/ScreenersLightbox.tsx",
+        "packages/console/web/src/pages/Screeners/EarningsCalendarTab.tsx"
+      ],
+      "caption": "Screeners, earnings: who reports soon, our direction read, the expected move and the suggested spread."
+    },
+    {
+      "path": "docs/images/console/charts-technicals.png",
+      "route": "charts/technicals?symbol=KOBA",
+      "card": null,
+      "scale": 1,
+      "full_page": true,
+      "seed": 7,
+      "day": "2026-11-06",
+      "sources": [
+        "packages/console/web/src/lightbox/manifests/ChartsLightbox.tsx",
+        "packages/console/web/src/pages/Morning/ChartPage.tsx",
+        "packages/console/web/src/pages/Morning/TechnicalsCards.tsx"
+      ],
+      "caption": "Charts, technicals: one name's bars, moving averages, support and resistance, RSI and trend score.",
+      "crop": [
+        0,
+        0,
+        1404,
+        1000
+      ]
+    },
+    {
+      "path": "docs/images/console/reports-morning.png",
+      "route": "reports/morning",
+      "card": null,
+      "scale": 1,
+      "full_page": true,
+      "seed": 7,
+      "day": "2026-11-06",
+      "sources": [
+        "packages/console/web/src/lightbox/manifests/ReportsLightbox.tsx",
+        "packages/console/web/src/pages/Morning/MorningPage.tsx"
+      ],
+      "caption": "Reports, morning: the pre-open read of the market and the gates the day's entries are judged against.",
+      "crop": [
+        0,
+        0,
+        1404,
+        1200
+      ]
+    },
+    {
+      "path": "docs/images/console/reports-eod.png",
+      "route": "reports/eod",
+      "card": null,
+      "scale": 1,
+      "full_page": true,
+      "seed": 7,
+      "day": "2026-11-06",
+      "sources": [
+        "packages/console/web/src/lightbox/manifests/ReportsLightbox.tsx",
+        "packages/console/web/src/pages/Review/ReviewPage.tsx"
+      ],
+      "caption": "Reports, end of day: the day's review of what traded and what the rules said.",
+      "crop": [
+        0,
+        310,
+        700,
+        1190
+      ]
+    },
+    {
+      "path": "docs/images/console/reports-external-overview.png",
+      "route": "reports/external",
+      "card": null,
+      "scale": 1,
+      "full_page": true,
+      "seed": 7,
+      "day": "2026-11-06",
+      "sources": [
+        "packages/console/web/src/lightbox/manifests/ReportsLightbox.tsx",
+        "packages/console/web/src/pages/External/ExternalReportsPage.tsx"
+      ],
+      "caption": "Reports, external: the overview of every report file a person's own script has written, with its state."
+    },
+    {
+      "path": "docs/images/console/reports-external-premium-flow.png",
+      "route": "reports/external/premium-flow",
+      "card": null,
+      "scale": 1,
+      "full_page": true,
+      "seed": 7,
+      "day": "2026-11-06",
+      "sources": [
+        "packages/console/web/src/lightbox/manifests/ReportsLightbox.tsx",
+        "packages/console/web/src/pages/External/ExternalReportsPage.tsx"
+      ],
+      "caption": "Reports, external, one report: formatted columns, a signed tone, a scaled bar, a stacked bar, a key and a footnote, all from presentation hints."
+    },
+    {
+      "path": "docs/images/console/compare-arms.png",
+      "route": "compare/arms",
+      "card": null,
+      "scale": 1,
+      "full_page": true,
+      "seed": 7,
+      "day": "2026-11-06",
+      "sources": [
+        "packages/console/web/src/lightbox/manifests/CompareLightbox.tsx",
+        "packages/console/web/src/pages/Compare/ComparePage.tsx"
+      ],
+      "caption": "Compare, arms: every arm of every module on the same measures, after costs.",
+      "crop": [
+        0,
+        285,
+        1404,
+        500
+      ]
+    },
+    {
+      "path": "docs/images/console/system-health.png",
+      "route": "system/health",
+      "card": null,
+      "scale": 1,
+      "full_page": true,
+      "seed": 7,
+      "day": "2026-11-06",
+      "sources": [
+        "packages/console/web/src/lightbox/manifests/SystemLightbox.tsx",
+        "packages/console/web/src/pages/System/SystemTabs.tsx"
+      ],
+      "caption": "System, health: the supervisor, its jobs, the watchdog and each module's heartbeat and ledger.",
+      "crop": [
+        0,
+        0,
+        1404,
+        730
+      ]
+    },
+    {
+      "path": "docs/images/console/config-timing.png",
+      "route": "config/timing",
+      "card": null,
+      "scale": 1,
+      "full_page": true,
+      "seed": 7,
+      "day": "2026-11-06",
+      "sources": [
+        "packages/console/web/src/lightbox/manifests/ConfigLightbox.tsx",
+        "packages/console/web/src/pages/Config/ConfigSection.tsx",
+        "packages/console/web/src/pages/Config/fieldMeta.ts"
+      ],
+      "caption": "Config, timing: entry windows and loop pacing, edited through the orchestrator's config editor."
+    }
+  ]
+}

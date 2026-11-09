@@ -22,7 +22,7 @@ ROOT = Path(__file__).resolve().parents[3]
 SCRIPT = ROOT / "scripts" / "demo_home.py"
 ARGS = ["--days", "12"]
 
-ALLOWED_TRADE_NAMES = {"SPX", "XSP", "SPY", "QQQ", "IWM", "AAA", "BBB", "CCC", "DDD"}
+ALLOWED_TRADE_NAMES = {"SPX", "XSP", "SPY", "QQQ", "IWM", "KOBA", "TOVA", "ZELV", "VYNT"}
 
 
 def generate(out: Path, *extra: str) -> None:
@@ -117,6 +117,72 @@ def test_the_screener_files_name_only_the_demo_symbols(homes):
     )
     names = {r["symbol"] for rows in income["lists"].values() for r in rows}
     assert names and names <= ALLOWED_TRADE_NAMES
+
+
+def test_the_demo_names_are_not_real_listed_symbols():
+    """The single names must read as invented: none may be in technicals' seed universe of real tickers."""
+    seed = json.loads(
+        (
+            ROOT / "packages" / "technicals" / "src" / "cherrypick" / "technicals" / "seed_universe.json"
+        ).read_text(encoding="utf-8")
+    )
+    real = set(seed["symbols"])
+    names = set(load_script("demo_home").SINGLE_NAMES)
+    assert names and not names & real, names & real
+
+
+def read(home: Path, *parts: str) -> dict:
+    return json.loads(home.joinpath(*parts).read_text(encoding="utf-8"))
+
+
+def test_the_market_pages_are_populated(homes):
+    """Each page the user guides need has its file, and the figures in it hang together."""
+    home = homes[0]
+    day = "2026-11-06"
+    cal = read(home, "data", "technicals", "earnings-calendar", f"{day}.json")
+    assert {r["symbol"] for r in cal["rows"]} <= ALLOWED_TRADE_NAMES and len(cal["rows"]) >= 3
+    record = read(home, "data", "technicals", "earnings-calendar", "record.json")
+    assert record["summary"]["announcements"] == len(record["rows"]) > 0
+    for r in record["rows"]:
+        assert 0 <= r["move_over_em"] and r["inside_em"] == (abs(r["move_pct"]) <= r["em_move_pct"])
+    scan = read(home, "data", "time-spreads", f"{day}.json")
+    assert scan["shortlist"] and scan["structures"] and scan["passing"] == len(scan["shortlist"])
+    fair = read(home, "data", "fundamentals", "valuation", f"{day}.json")
+    for row in fair["rows"].values():
+        if row["state"] != "valued":
+            continue
+        b = row["bridge"]
+        assert b["pv_forecast"] + b["pv_terminal"] == pytest.approx(b["ev"], abs=2)
+        assert b["ev"] - b["debt"] + b["cash"] == pytest.approx(b["equity"], abs=2)
+        assert b["equity"] / b["shares"] == pytest.approx(row["fair_value"], abs=0.01)
+    charts = read(home, "data", "technicals", "charts", "index.json")
+    assert {s["symbol"] for s in charts["symbols"]} >= set(load_script("demo_home").SINGLE_NAMES)
+    assert read(home, "data", "technicals", "charts", "setups-index.json")["rows"]
+    assert (home / "data" / "meic" / "regime_cuts.json").is_file()
+
+
+def test_the_earnings_control_arms_add_up(homes):
+    con = sqlite3.connect(homes[0] / "data" / "earnings" / "paper_trades.db")
+    rows = con.execute(
+        "SELECT arm, entry_credit, exit_debit, pnl, entry_cost, exit_cost FROM trades "
+        "WHERE arm LIKE 'strat_test:%' AND closed_at IS NOT NULL"
+    ).fetchall()
+    con.close()
+    assert {r[0] for r in rows} == {"strat_test:iron_fly", "strat_test:expected_move_butterfly"}
+    for _, credit, debit, pnl, *_costs in rows:
+        assert pnl == pytest.approx((credit - debit) * 100, abs=0.011)
+
+
+def test_the_external_reports_pass_the_suites_own_check(homes):
+    from cherrypick.core import external_report
+
+    for name in ("premium-flow", "sector-tally"):
+        checked = external_report.check_file(homes[0] / "data" / "external" / f"{name}.json")
+        assert checked.valid, checked.problems
+    hints = set(external_report.hints_used(read(homes[0], "data", "external", "premium-flow.json")))
+    assert {"numbered", "footnote", "key of 2", "1 stacked bar", "1 bar column", "toned cells"} <= hints, (
+        hints
+    )
 
 
 def test_the_ledgers_add_up(homes):
