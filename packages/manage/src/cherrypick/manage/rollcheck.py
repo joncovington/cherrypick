@@ -130,6 +130,8 @@ def check(
     pr = rules["pricing"]
     rate = float(pr["rate"])
     legs = {_key(leg): dict(leg) for leg in trade["legs"] if leg.get("right")}
+    # The name's dividend yield, as the evaluation modelled its legs at (none before 2026-11-07: 0).
+    q = next((float(leg.get("div_yield") or 0.0) for leg in legs.values()), 0.0)
     problems: list[str] = []
     notes: list[str] = []
 
@@ -156,7 +158,7 @@ def check(
             )
         cash -= o["quantity"] * o["price"] * pricing.MULTIPLIER  # sell to open: +; buy to open: -
         years = max((date.fromisoformat(o["expiration"]) - session).days, 0) / 365.0
-        iv = pricing.implied_vol(spot, o["strike"], years, o["price"], o["right"], rate)
+        iv = pricing.implied_vol(spot, o["strike"], years, o["price"], o["right"], rate, q)
         extrinsic = o["price"] - pricing.intrinsic(spot, o["strike"], o["right"])
         if iv and iv <= _ev._IV_FLOOR and extrinsic > _ev._NO_EXTRINSIC:
             iv = None  # a price under the model's floor, as the evaluation reads it: left unmodelled
@@ -168,6 +170,7 @@ def check(
             "mid": o["price"],
             "years": years,
             "iv": iv,
+            "div_yield": q,
         }
         prior = legs.get(_key(new))
         if prior:

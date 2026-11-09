@@ -188,11 +188,14 @@ function leg(v: unknown): ManageLeg {
     delta: num(l["delta"]),
     iv: num(l["iv"]),
     ivSource: IV_SOURCES.find((s) => s === l["iv_source"]) ?? null,
+    divYield: num(l["div_yield"]),
+    divSource: DIV_SOURCES.find((s) => s === l["div_source"]) ?? null,
     wide: flag(l["wide"]),
   };
 }
 
 const IV_SOURCES = ["mid", "broker", "unpriceable"] as const;
+const DIV_SOURCES = ["history", "none"] as const;
 
 function fired(v: unknown): ManageFired {
   const f = rec(v);

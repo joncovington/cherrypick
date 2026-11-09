@@ -21,6 +21,8 @@ function leg(over: Partial<ManageLeg> = {}): ManageLeg {
     delta: 0.31,
     iv: 0.1907,
     ivSource: "mid",
+    divYield: null,
+    divSource: null,
     wide: false,
     ...over,
   };
@@ -38,10 +40,19 @@ describe("a leg's IV says where it came from", () => {
     expect(mid).toBe("19%");
   });
 
-  it("says a leg no IV prices is unpriceable, with the model's missing dividend as the reason", () => {
+  it("says a leg no IV prices is unpriceable, and why", () => {
     const out = html(leg({ iv: null, ivSource: "unpriceable", delta: null }));
     expect(out).toContain("— unpriceable");
-    expect(out).toContain("no dividend");
+    expect(out).toContain("under the model&#x27;s least possible value");
+  });
+
+  it("names the dividend yield the leg was modelled at, and a name with no record", () => {
+    const paid = html(leg({ divYield: 0.0435, divSource: "history" }));
+    expect(paid).toContain(">19%<");
+    expect(paid).toContain("modelled at the name&#x27;s 4.35% dividend yield");
+    expect(html(leg({ divYield: 0, divSource: "none" }))).toContain("no dividend record for the name");
+    // An evaluation from before the yield was carried shows the IV alone, as it did.
+    expect(html(leg())).toBe("19%");
   });
 
   it("marks a wide quote solved from its own mid anyway", () => {
