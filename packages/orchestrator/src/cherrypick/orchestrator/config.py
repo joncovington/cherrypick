@@ -467,7 +467,7 @@ def manage_settings(cfg: dict[str, Any]) -> dict[str, Any]:
         "enabled": bool(mg.get("enabled", False)),
         # ET. 10:00 leaves the open's first half hour to settle the marks the rules are judged on.
         "at": mg.get("at", "10:00"),
-        # Further runs the same day (ET), each its own `manage-eval-HHMM` job. Each rewrites the day's
+        # Further runs the same day (ET), more times of the same `manage-eval` job. Each rewrites the day's
         # evaluation, so the console shows the latest; one after the close leaves the day's final word.
         "also_at": sorted({str(t) for t in (mg.get("also_at") or [])} - {mg.get("at", "10:00")}),
         # Every run posts the trades needing action (or that none does): the notification is the

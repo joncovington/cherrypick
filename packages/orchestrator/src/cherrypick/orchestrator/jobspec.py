@@ -40,6 +40,9 @@ KIND_RESIDENT = "resident"
 # Per-job catchup windows (minutes) for daily/monthly jobs — how late a missed fixed-time fire may
 # still fire after wake/restart. Entry is tight (aligned under the 35-min entry-SLA grace so the
 # watchdog still owns that alarm); archive is a week (idempotent, only touches finished months).
+# A job that runs at several times (`JobSpec.times_et`) takes one entry per time: `manage-eval` and
+# `manage-eval-also`, and the numbered or `-retry`/`-late` keys of the others, each the catch-up of
+# that slot (`_slots`). A slot's catch-up also ends at the next slot.
 CATCHUP_MINUTES = {
     "entry": 30,
     "exit": 120,
@@ -261,7 +264,6 @@ NOTIFIES_OWN_FAILURE = frozenset(
     {
         "suite-backup",  # "Nightly backup FAILED"
         "market-files",  # "Market files incomplete"
-        "market-files-retry",
         "report-edition",  # the vendor collector's own warnings
         "report-edition-retry",
         "report-charts",
@@ -275,8 +277,9 @@ NOTIFIES_OWN_FAILURE = frozenset(
 
 
 def notifies_own_failure(job_id: str) -> bool:
-    """`NOTIFIES_OWN_FAILURE`, plus the `manage-eval-HHMM` runs named by config (`manage.also_at`)."""
-    return job_id in NOTIFIES_OWN_FAILURE or job_id.startswith("manage-eval-")
+    """Whether a failure of `job_id` is announced by the job itself (`NOTIFIES_OWN_FAILURE`). A job that
+    runs at several times (`manage-eval`) is one id, so every one of its runs is covered."""
+    return job_id in NOTIFIES_OWN_FAILURE
 
 
 # Fixed-time jobs that may run again after a failure, inside their catch-up window: fetchers that
@@ -285,7 +288,6 @@ def notifies_own_failure(job_id: str) -> bool:
 RETRY_ON_FAILURE = {
     "earnings-dolt-pull": 2,
     "market-files": 2,
-    "market-files-retry": 2,
     "technicals-index-bars": 2,
     "vol-curve-bars": 2,
     "technicals-iv-rank": 2,
@@ -374,6 +376,12 @@ class JobSpec:
     # `retry_delay_seconds`, and never past `catchup_minutes`. 0 falls back to `RETRY_ON_FAILURE`.
     retries: int = 0
     retry_delay_seconds: int | None = None
+    # A daily job that runs several times a day: every time, ascending, "HH:MM" ET. `at_et` is the first
+    # (and is filled from it when left out), so a reader of `at_et` still sees the day's first run.
+    # `slot_catchup_minutes`, when given, is each time's own catch-up (same order); a time without one
+    # uses `catchup_minutes`. See `_slot_decision` for how the slot that matters is chosen.
+    times_et: tuple[str, ...] = ()
+    slot_catchup_minutes: tuple[int, ...] = ()
 
     def __post_init__(self) -> None:
         """Validate at construction so a malformed config block fails inside `derive_jobs`'s
@@ -382,6 +390,20 @@ class JobSpec:
             raise ValueError(f"unknown job kind {self.kind!r}")
         if self.kind in (KIND_INTERVAL, KIND_RESIDENT) and int(self.interval_seconds) <= 0:
             raise ValueError(f"{self.id}: interval_seconds must be positive")
+        if self.times_et:
+            if self.kind != KIND_DAILY:
+                raise ValueError(f"{self.id}: times_et applies to daily jobs only")
+            parsed = [_hhmm(str(t)) for t in self.times_et]
+            if parsed != sorted(set(parsed)):
+                raise ValueError(f"{self.id}: times_et must be ascending and distinct")
+            if self.at_et is None:
+                object.__setattr__(self, "at_et", self.times_et[0])
+            elif self.at_et != self.times_et[0]:
+                raise ValueError(f"{self.id}: at_et must be the first of times_et")
+            if self.slot_catchup_minutes and len(self.slot_catchup_minutes) != len(self.times_et):
+                raise ValueError(f"{self.id}: slot_catchup_minutes must give one value per time")
+        elif self.slot_catchup_minutes:
+            raise ValueError(f"{self.id}: slot_catchup_minutes needs times_et")
         if self.kind in (KIND_DAILY, KIND_MONTHLY):
             _hhmm(str(self.at_et or ""))
         if self.kind == KIND_MONTHLY and not 1 <= int(self.day_of_month) <= 28:
@@ -413,7 +435,7 @@ class JobSpec:
         if self.kind == KIND_INTERVAL:
             base = f"every {self.interval_seconds}s"
         elif self.kind == KIND_DAILY:
-            base = f"daily {self.at_et} ET"
+            base = f"daily {', '.join(self.times_et or (self.at_et or '',))} ET"
         elif self.kind == KIND_MONTHLY:
             base = f"monthly day {self.day_of_month} {self.at_et} ET"
         else:
@@ -527,6 +549,8 @@ def should_start(
         return True, "due", {"next_run_epoch": now_epoch + spec.interval_seconds}
 
     if spec.kind == KIND_DAILY:
+        if spec.times_et:
+            return _slot_decision(spec, state, now)
         return _fixed_time_decision(spec, state, now, key=now.strftime("%Y-%m-%d"), key_field="last_fire_day")
 
     if spec.kind == KIND_MONTHLY:
@@ -565,6 +589,61 @@ def _fixed_time_decision(
             {key_field: key, "missed": now.isoformat()},
         )
     return True, "due", {key_field: key, "missed": None}
+
+
+def slot_catchup(spec: JobSpec, index: int) -> int:
+    """Catch-up minutes of the `index`th time of a multi-time daily job (0 means no limit)."""
+    if spec.slot_catchup_minutes:
+        return int(spec.slot_catchup_minutes[index])
+    return int(spec.catchup_minutes)
+
+
+def _stamp_covers(state: dict[str, Any], day: str, slot: datetime) -> bool:
+    """A stamp written before the job ran several times a day is the bare date. It covers the slots
+    that had already begun when the job last started that day, so the first pass after the upgrade
+    does not run today again; with no start recorded it covers the whole day."""
+    if state.get("last_fire_day") != day:
+        return False
+    started = state.get("last_start")
+    if not started:
+        return True
+    try:
+        at = datetime.fromisoformat(str(started))
+    except ValueError:
+        return True
+    if at.tzinfo is None:
+        return True
+    return slot <= at.astimezone(slot.tzinfo)
+
+
+def _slot_decision(spec: JobSpec, state: dict[str, Any], now: datetime) -> tuple[bool, str, dict[str, Any]]:
+    """A daily job with several times: the slot that matters at `now` is the latest time already
+    passed today. It fires once, stamped `last_fire_day` = "YYYY-MM-DD@HH:MM", inside its own catch-up;
+    past that the slot is stamped missed. An earlier slot that never fired is not run late once a later
+    one has begun, so the later one overtakes it and a slot's catch-up never reaches past the next
+    slot."""
+    day = now.strftime("%Y-%m-%d")
+    slots = []
+    for t in spec.times_et:
+        h, m = _hhmm(t)
+        slots.append(now.replace(hour=h, minute=m, second=0, microsecond=0))
+    passed = [i for i, sched in enumerate(slots) if now >= sched]
+    if not passed:
+        return False, f"before {spec.times_et[0]} ET", {}
+    i = passed[-1]
+    slot, label = slots[i], spec.times_et[i]
+    key = f"{day}@{label}"
+    stamp = state.get("last_fire_day")
+    if stamp == key or (stamp == day and _stamp_covers(state, day, slot)):
+        return False, "already fired", {}
+    catchup = slot_catchup(spec, i)
+    if catchup and now > slot + timedelta(minutes=catchup):
+        return (
+            False,
+            f"missed ({label} + {catchup}m catchup passed)",
+            {"last_fire_day": key, "missed": now.isoformat()},
+        )
+    return True, "due", {"last_fire_day": key, "missed": None}
 
 
 def resident_should_run(spec: JobSpec, now: datetime, holidays: set[str] | None = None) -> tuple[bool, str]:
@@ -635,6 +714,23 @@ def _minutes_before(hhmm: str, minutes: int) -> str:
     h, m = (int(x) for x in str(hhmm).split(":"))
     total = (h * 60 + m - minutes) % (24 * 60)
     return f"{total // 60:02d}:{total % 60:02d}"
+
+
+def _slots(*pairs: tuple[str, int]) -> dict[str, Any]:
+    """JobSpec keywords for a daily job that runs at each of `pairs` ((HH:MM, catch-up minutes)):
+    ordered by time, a repeated time kept once. One distinct time is an ordinary single-time job."""
+    ordered: dict[str, int] = {}
+    for at, catchup in sorted(pairs, key=lambda p: _hhmm(str(p[0]))):
+        ordered.setdefault(str(at), int(catchup))
+    times = tuple(ordered)
+    if len(times) == 1:
+        return {"at_et": times[0], "catchup_minutes": ordered[times[0]]}
+    return {
+        "at_et": times[0],
+        "times_et": times,
+        "slot_catchup_minutes": tuple(ordered.values()),
+        "catchup_minutes": ordered[times[0]],
+    }
 
 
 def _vendor_collector_script(launcher: str) -> str:
@@ -1636,28 +1732,24 @@ def derive_jobs(
             enabled_reason="" if tc_free else "disabled in config (technicals)",
         ),
     )
-    for job_id, at_key in (
-        ("technicals-earnings-calendar", "earnings_calendar_at"),
-        ("technicals-earnings-calendar-late", "earnings_calendar_late_at"),
-    ):
-        add(
-            job_id,
-            lambda job_id=job_id, at_key=at_key: JobSpec(
-                id=job_id,
-                # A package command: every announcement in the next 30 days, joined from local data
-                # and the local Dolt (earnings-screener-plan (archived)), for the console's earnings tab.
-                # The late pass catches a security list saved after the first.
-                argv=(pythonw, "-m", "cherrypick.technicals", "earnings-calendar"),
-                kind=KIND_DAILY,
-                at_et=tc[at_key],
-                catchup_minutes=CATCHUP_MINUTES[job_id],
-                trading_days_only=True,
-                enabled=tc_on,
-                enabled_reason=""
-                if tc_on
-                else "disabled in config (technicals), or no dolt sql-server to read",
+    add(
+        "technicals-earnings-calendar",
+        lambda: JobSpec(
+            id="technicals-earnings-calendar",
+            # A package command: every announcement in the next 30 days, joined from local data
+            # and the local Dolt (earnings-screener-plan (archived)), for the console's earnings tab.
+            # The second time is the late pass, which catches a security list saved after the first.
+            argv=(pythonw, "-m", "cherrypick.technicals", "earnings-calendar"),
+            kind=KIND_DAILY,
+            **_slots(
+                (tc["earnings_calendar_at"], CATCHUP_MINUTES["technicals-earnings-calendar"]),
+                (tc["earnings_calendar_late_at"], CATCHUP_MINUTES["technicals-earnings-calendar-late"]),
             ),
-        )
+            trading_days_only=True,
+            enabled=tc_on,
+            enabled_reason="" if tc_on else "disabled in config (technicals), or no dolt sql-server to read",
+        ),
+    )
     add(
         "technicals-earnings-record",
         lambda: JobSpec(
@@ -1715,22 +1807,24 @@ def derive_jobs(
     )
     mv = cfgmod.morning_settings(cfg)
     files_on = mv["enabled"] and mv["files"]
-    for job_id, at in (("market-files", mv["files_at"]), ("market-files-retry", mv["files_retry_at"])):
-        add(
-            job_id,
-            lambda job_id=job_id, at=at: JobSpec(
-                id=job_id,
-                # A script, not a package: overview is network-free, so the files it reads are
-                # fetched out here and a failed fetch leaves yesterday's files, never a broken one.
-                argv=(pythonw, _market_files_script(launcher), "fetch"),
-                kind=KIND_DAILY,
-                at_et=at,
-                catchup_minutes=CATCHUP_MINUTES[job_id],
-                trading_days_only=True,
-                enabled=files_on,
-                enabled_reason="" if files_on else "disabled in config (morning.files)",
+    add(
+        "market-files",
+        lambda: JobSpec(
+            id="market-files",
+            # A script, not a package: overview is network-free, so the files it reads are
+            # fetched out here and a failed fetch leaves yesterday's files, never a broken one.
+            # Two times: the evening fetch, and the next morning's retry before the pack builds.
+            argv=(pythonw, _market_files_script(launcher), "fetch"),
+            kind=KIND_DAILY,
+            **_slots(
+                (mv["files_at"], CATCHUP_MINUTES["market-files"]),
+                (mv["files_retry_at"], CATCHUP_MINUTES["market-files-retry"]),
             ),
-        )
+            trading_days_only=True,
+            enabled=files_on,
+            enabled_reason="" if files_on else "disabled in config (morning.files)",
+        ),
+    )
     hl_on = mv["enabled"] and mv["headlines"]
     add(
         "fetch-headlines",
@@ -1768,28 +1862,17 @@ def derive_jobs(
             id="manage-eval",
             argv=_run_py(pythonw, launcher, "manage"),
             kind=KIND_DAILY,
-            at_et=mg["at"],
-            catchup_minutes=CATCHUP_MINUTES["manage-eval"],
+            # `manage.at` and each `manage.also_at` time are slots of this one job; the first keeps the
+            # full-run catch-up and the further ones the refresh's.
+            **_slots(
+                (mg["at"], CATCHUP_MINUTES["manage-eval"]),
+                *((at, CATCHUP_MINUTES["manage-eval-also"]) for at in mg["also_at"]),
+            ),
             trading_days_only=True,
             enabled=mg["enabled"],
             enabled_reason="" if mg["enabled"] else "disabled in config (manage)",
         ),
     )
-    for at in mg["also_at"]:
-        job_id = f"manage-eval-{at.replace(':', '')}"
-        add(
-            job_id,
-            lambda job_id=job_id, at=at: JobSpec(
-                id=job_id,
-                argv=_run_py(pythonw, launcher, "manage"),
-                kind=KIND_DAILY,
-                at_et=at,
-                catchup_minutes=CATCHUP_MINUTES["manage-eval-also"],
-                trading_days_only=True,
-                enabled=mg["enabled"],
-                enabled_reason="" if mg["enabled"] else "disabled in config (manage)",
-            ),
-        )
     # --- manage-time-spreads: the time-spread scanner. Read-only REST
     # (the script refuses outside regular hours), then one full manage snapshot so the portfolio page
     # sizes the rows. No tested edge: the rows say so.
@@ -2117,24 +2200,28 @@ def derive_jobs(
             enabled_reason=sg_reason,
         ),
     )
-    for i, at in enumerate(mr["screener_measure_at"][:2], 1):
-        add(
-            f"report-screener-measure-{i}",
-            lambda i=i, at=at: JobSpec(
-                id=f"report-screener-measure-{i}",
-                # The earnings calendar's suggested spreads and their forward-record marks, quoted in
-                # regular hours, and -- only while the collector is on (the script's own check) -- the
-                # vendor's listed names' ATM monthly spreads. Read-only REST quotes; the script refuses
-                # outside its window, so a late catch-up cannot record an after-hours book.
-                argv=(pythonw, _suite_script(launcher, "fetch_screener_greeks.py"), "measure"),
-                kind=KIND_DAILY,
-                at_et=at,
-                catchup_minutes=CATCHUP_MINUTES[f"report-screener-measure-{i}"],
-                trading_days_only=True,
-                enabled=mr["screener_greeks"],
-                enabled_reason=sg_reason,
+    add(
+        "report-screener-measure",
+        lambda: JobSpec(
+            id="report-screener-measure",
+            # The earnings calendar's suggested spreads and their forward-record marks, quoted in
+            # regular hours, and -- only while the collector is on (the script's own check) -- the
+            # vendor's listed names' ATM monthly spreads. Read-only REST quotes; the script refuses
+            # outside its window, so a late catch-up cannot record an after-hours book. Run at each
+            # of `market_report.screener_measure_at` (the first two).
+            argv=(pythonw, _suite_script(launcher, "fetch_screener_greeks.py"), "measure"),
+            kind=KIND_DAILY,
+            **_slots(
+                *(
+                    (at, CATCHUP_MINUTES[f"report-screener-measure-{i}"])
+                    for i, at in enumerate(mr["screener_measure_at"][:2], 1)
+                )
             ),
-        )
+            trading_days_only=True,
+            enabled=mr["screener_greeks"],
+            enabled_reason=sg_reason,
+        ),
+    )
     add(
         "report-income-chains",
         lambda: JobSpec(
@@ -2156,42 +2243,53 @@ def derive_jobs(
         ),
     )
     skate_q_on = mr["screener_greeks"] and skate_on
-    for i, at in enumerate(mr["skate_quotes_at"][:2], 1):
-        add(
-            f"report-skate-quotes-{i}",
-            lambda i=i, at=at: JobSpec(
-                id=f"report-skate-quotes-{i}",
-                # The skate screen's strikes: the morning's bands snapped to listed
-                # strikes, quoted in regular hours and scored -- every name-side on its cycle monthly,
-                # every weekly for the widest history-minus-implied gaps. Read-only REST; the script
-                # refuses outside the measuring window.
-                argv=(pythonw, _suite_script(launcher, "fetch_screener_greeks.py"), "skate"),
-                kind=KIND_DAILY,
-                at_et=at,
-                catchup_minutes=CATCHUP_MINUTES[f"report-skate-quotes-{i}"],
-                trading_days_only=True,
-                enabled=skate_q_on,
-                enabled_reason=""
-                if skate_q_on
-                else "disabled in config (market_report.screener_greeks, or technicals-skate is off)",
+    add(
+        "report-skate-quotes",
+        lambda: JobSpec(
+            id="report-skate-quotes",
+            # The skate screen's strikes: the morning's bands snapped to listed
+            # strikes, quoted in regular hours and scored -- every name-side on its cycle monthly,
+            # every weekly for the widest history-minus-implied gaps. Read-only REST; the script
+            # refuses outside the measuring window. Run at each of `market_report.skate_quotes_at`.
+            argv=(pythonw, _suite_script(launcher, "fetch_screener_greeks.py"), "skate"),
+            kind=KIND_DAILY,
+            **_slots(
+                *(
+                    (at, CATCHUP_MINUTES[f"report-skate-quotes-{i}"])
+                    for i, at in enumerate(mr["skate_quotes_at"][:2], 1)
+                )
             ),
-        )
+            trading_days_only=True,
+            enabled=skate_q_on,
+            enabled_reason=""
+            if skate_q_on
+            else "disabled in config (market_report.screener_greeks, or technicals-skate is off)",
+        ),
+    )
     uv_reason = "" if mr["universe"] else "disabled in config (market_report.universe)"
-    uv_jobs = [
-        (f"universe-measure-{i}", at, "measure") for i, at in enumerate(mr["universe_measure_at"][:2], 1)
-    ]
-    for job_id, at, sub in (*uv_jobs, ("universe-daily", mr["universe_daily_at"], "daily")):
+
+    def uv_measure() -> dict[str, Any]:
+        pairs = enumerate(mr["universe_measure_at"][:2], 1)
+        return _slots(*((at, CATCHUP_MINUTES[f"universe-measure-{i}"]) for i, at in pairs))
+
+    def uv_daily() -> dict[str, Any]:
+        return {"at_et": mr["universe_daily_at"], "catchup_minutes": CATCHUP_MINUTES["universe-daily"]}
+
+    for job_id, sub, when in (
+        ("universe-measure", "measure", uv_measure),
+        ("universe-daily", "daily", uv_daily),
+    ):
         add(
             job_id,
-            lambda job_id=job_id, at=at, sub=sub: JobSpec(
+            lambda job_id=job_id, sub=sub, when=when: JobSpec(
                 id=job_id,
                 # A script, not a package: it reads the broker (REST snapshots, never the streamer,
                 # whose budget cannot carry several hundred names) and the tastylive follow feed.
-                # Read-only; it paces itself and refuses to measure outside regular hours.
+                # Read-only; it paces itself and refuses to measure outside regular hours. The
+                # measurement runs at each of `market_report.universe_measure_at` (the first two).
                 argv=(pythonw, _universe_script(launcher), sub),
                 kind=KIND_DAILY,
-                at_et=at,
-                catchup_minutes=CATCHUP_MINUTES[job_id],
+                **when(),
                 trading_days_only=True,
                 enabled=mr["universe"],
                 enabled_reason=uv_reason,

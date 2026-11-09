@@ -157,7 +157,7 @@ effect on the next pass, with no `install` step and no scheduled task to registe
 | module `paper.regime_cuts_at` | on (flies, MEIC) | `<module>-regime-cuts` 16:40 ET |
 | `console` | **on** | `console` (resident) |
 | `review` | **on** | `review-provisional` 16:30 ET, `review-final` 10:15 next morning, trading days only; `review-narrative` **off** (needs `claude`) |
-| `morning` | **on** | `morning-factpack` 08:30 ET, the market files (`market-files`, `market-files-retry`, `earnings-moves`, `fetch-headlines`); `morning-narrative` **off** (needs `claude`) |
+| `morning` | **on** | `morning-factpack` 08:30 ET, the market files (`market-files`, `earnings-moves`, `fetch-headlines`); `morning-narrative` **off** (needs `claude`) |
 | `technicals` | on in config; the jobs reading the Dolt clones need `dolt` (not the earnings module, from 2026-10-19), and `technicals-dollar-volume`, `-securities`, `-liquidity` and `-iv-rank` need only the block's switch | `technicals-land`, `technicals-report`, `technicals-dividends`, `technicals-index-bars`, `technicals-iv-rank`, `technicals-dollar-volume` |
 | `external_reports` | **empty** (a list of entries: `id`, `script`, `at_et`, `trading_days_only`, `post`, `enabled`, and for a script that does its own work `args`, `timeout_minutes`, `writes_report`, `retries`, `retry_delay_minutes`) | one `external-<id>` job per entry, at its `at_et`; a script outside the suite home is refused (the job is listed off, with the reason). See [the guide](guide/external-reports.md). A `quikoptions` block left in config.json is ignored (removed in v0.12.0; `doctor` warns) |
 | `market_report` | **off** (`collector`, `universe`) | `report-edition`, `report-edition-retry`, `report-charts`, `universe-*` |
@@ -168,7 +168,7 @@ effect on the next pass, with no `install` step and no scheduled task to registe
 | `config_backup` | **off** (opt in; `run.py config-backup --init --enable`, the installer, or the Config page) | `config-backup` |
 | `log_archive` | **on**, day 1 @ 03:30 | `log-archive` (monthly) |
 | `reconcile.schedule` | **off** by default, daily 16:30 when enabled — worth turning on once any module trades live, since it diffs the live ledger against the broker | `reconcile` |
-| `manage` | **off** (`enabled`), daily at `at` (10:00 ET), and at each `also_at` time; the minute re-mark (`marks`) follows it | `manage-eval`, `manage-eval-HHMM`, `manage-marks` |
+| `manage` | **off** (`enabled`), daily at `at` (10:00 ET), and at each `also_at` time; the minute re-mark (`marks`) follows it | `manage-eval`, `manage-marks` |
 | `backtest` | **off** (`fetch`), daily at `fetch_at` (18:45 ET); the store count follows `fetch` unless `inventory` is set | `backtest-fetch`, `backtest-inventory` |
 | `live_positions` | **on** | `live-positions` |
 | `account_alerts` | **on** whenever a module has a live loop and a keyring service; trading days 09:00–18:00, armed or not | `account-alerts` |

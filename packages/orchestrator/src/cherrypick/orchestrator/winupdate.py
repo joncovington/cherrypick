@@ -87,16 +87,18 @@ def exposed_minutes(span_et: tuple[int, int], active: dict[str, Any], et_minus_l
 
 def job_times(jobs: dict[str, dict[str, Any]]) -> list[str]:
     """The ET start ("HH:MM") of every enabled daily or monthly job a restart would cost, from the
-    supervisor's registry rows (`schedule`: "daily 07:00 ET, ..." / "monthly day 1 03:30 ET"). Pure."""
+    supervisor's registry rows (`schedule`: "daily 07:00 ET", "daily 10:00, 10:30 ET" -- every time of a
+    job that runs several -- or "monthly day 1 03:30 ET"). Pure."""
     import re
 
     out = []
     for jid, st in jobs.items():
         if jid in RESTART_TOLERANT or not st.get("enabled", True):
             continue
-        m = re.match(r"(?:daily|monthly day \d+) (\d{2}:\d{2}) ET", str(st.get("schedule") or ""))
+        pattern = r"(?:daily|monthly day \d+) (\d{2}:\d{2}(?:, \d{2}:\d{2})*) ET"
+        m = re.match(pattern, str(st.get("schedule") or ""))
         if m:
-            out.append(m.group(1))
+            out.extend(m.group(1).split(", "))
     return out
 
 
@@ -104,9 +106,10 @@ def times_from_specs(specs) -> list[str]:
     """`job_times` from derived JobSpecs instead of registry rows -- for a first install, before
     the supervisor has written its registry. Pure."""
     return [
-        s.at_et
+        t
         for s in specs
         if s.kind in ("daily", "monthly") and s.enabled and s.at_et and s.id not in RESTART_TOLERANT
+        for t in (s.times_et or (s.at_et,))
     ]
 
 

@@ -37,12 +37,23 @@ fake clocks) and spawns short-lived headless ticks, recording per-job state in
 `state/supervisor-jobs.json` and its heartbeat in `state/supervisor.last.json` (atomic writes). It is
 stdlib + local files only — no broker, network or AI.
 
+**A daily job that runs several times is one job with `JobSpec.times_et`** (`manage-eval`,
+`market-files`, `report-screener-measure`, `report-skate-quotes`, `universe-measure`,
+`technicals-earnings-calendar`); `at_et` is the first time, so a reader of `at_et` still sees the day's
+first run. The slot that matters at `now` is the latest time already passed, and `last_fire_day` holds
+`YYYY-MM-DD@HH:MM` for it. A slot's catch-up (`slot_catchup_minutes`, one per time, else
+`catchup_minutes`) ends at the earlier of its own limit and the next slot, so a missed slot is stamped
+missed but never run late once a later slot has begun. A failed run's retries are counted per slot.
+Jobs that differ in argv, gate or trigger stay separate jobs. A bare-date stamp from before a job had
+several times covers the slots that had begun when it last started, so the first pass after a restart
+does not run the day again.
+
 **A job fed only by the vendor follows `market_report.collector`** (`cherrypick.core.vendor`, the
 switch every vendor reader shares): the collector itself, the two greeks runs over the vendor's list
 rows, and `technicals-screeners`. With it off they are disabled with that reason rather
 than left to no-op every night. A job that only *partly* reads a vendor file keeps running and drops
 that part itself: `technicals-stage-lists` (its score against the vendor's watchlists),
-`technicals-securities` (the comparison with the vendor's list) and `report-screener-measure-*`,
+`technicals-securities` (the comparison with the vendor's list) and `report-screener-measure`,
 which quotes the vendor's list rows only while the collector is on and the earnings spreads always.
 
 **A child's stderr goes to `logs/jobs/<job-id>.stderr.log`** (a file, never a pipe: a child that
@@ -140,7 +151,7 @@ ledgers copy through SQLite's online backup API and are quick_checked, a night w
 
 **This package holds no AI and no review or advisor logic; it only schedules them.**
 - The position evaluation is `packages/manage`: job `manage-eval` (10:00 ET, trading days, OFF until
-  `manage.enabled`), plus a `manage-eval-HHMM` job per `manage.also_at` time, runs `run.py manage`, whose one job here is the snapshot (`managesnap.py`: the
+  `manage.enabled`), which also runs at each `manage.also_at` time, runs `run.py manage`, whose one job here is the snapshot (`managesnap.py`: the
   `positions` read with the account's margin-or-cash kind, each underlying's market metrics with the
   broker's beta, SPY's metrics whether held or not, and each underlying's trade history, all
   read-only). The rules and verdicts are manage's; the evaluation runs by subprocess. Between the full

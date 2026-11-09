@@ -87,7 +87,7 @@ removed in v0.12.0; your own scheduled reports are the `external-<id>` jobs belo
 | `review-provisional` | daily **16:30**, trading days | `run.py review --provisional` | on | see below |
 | `review-final` | daily **10:15**, trading days | `run.py review --final` | on | finalises the prior session and re-runs reconciliation |
 | `review-narrative` | daily **10:45**, trading days | `scripts/eod_narrative.py` | off, needs `claude` | the agent-written note, beside the facts, never inside them |
-| `market-files` / `market-files-retry` | daily **18:45** / **07:45**, trading days | `scripts/fetch_market_files.py fetch` | on | the files the morning pack reads, OCC's option volume included |
+| `market-files` | daily at **18:45** and again at **07:45** (the retry before the pack), trading days | `scripts/fetch_market_files.py fetch` | on | the files the morning pack reads, OCC's option volume included |
 | `earnings-moves` | daily **18:40**, trading days | `scripts/fetch_earnings_moves.py` | on | |
 | `fetch-headlines` | daily **08:45**, trading days | `scripts/fetch_headlines.py` | on | |
 | `futures-contracts` | daily **08:45**, trading days | `scripts/refresh_futures_contracts.py` | on | |
@@ -103,12 +103,11 @@ removed in v0.12.0; your own scheduled reports are the `external-<id>` jobs belo
 | `technicals-dividends` | daily **19:30** | `scripts/fetch_dividends.py` | on with `dolt` | |
 | `report-edition` / `-retry`, `report-charts` | daily 07:00 / 08:15, 17:15, trading days | `scripts/fetch_vendor_edition.py` | off | `market_report.collector`; needs both vendor keys set |
 | `external-<id>` (one per `external_reports` entry) | daily at the entry's `at_et` (default trading days only), 240 min catch-up | `run.py external-run <id>`, which runs the entry's own script under `~/.cherrypick` | none until listed | `external_reports` in config.json ([guide](guide/external-reports.md)); a refused entry (script outside the home, bad id or time) is listed off with the reason; the report lands in `data/external/<id>.json` |
-| `universe-measure-1` / `-2`, `universe-daily`, `universe-watchlist` | daily 11:00 / 14:00, 18:00, 18:30, trading days | `scripts/build_stock_universe.py` | off | `market_report.universe` / `universe_watchlist` |
+| `universe-measure` (at 11:00 and 14:00), `universe-daily`, `universe-watchlist` | daily 18:00, 18:30, trading days | `scripts/build_stock_universe.py` | off | `market_report.universe` / `universe_watchlist` |
 | `advisor-deep` | daily **17:00**, trading days | `scripts/advisor_checkpoint.py --slot deep` | off, needs `claude` | the post-close run, after `review-provisional`, on the strong model. It also ISSUES the next session's advice, even when the AI call failed. Catchup 300 min |
 | `advisor-<slot>` | as configured — **none by default** | `scripts/advisor_checkpoint.py --slot <s>` | off | optional light intraday checkpoints, declared in `advisor.checkpoints` |
 | `reconcile` | daily **16:30** | `run.py reconcile --scheduled` | off | worth turning on once anything trades live |
-| `manage-eval` | daily **10:00** (`manage.at`), trading days | `run.py manage` | off (`manage.enabled`) | the read-only snapshot of the real account and its evaluation, for Live → positions and Live → portfolio; posts the trades needing action |
-| `manage-eval-HHMM` | daily at each `manage.also_at` time, trading days | `run.py manage` | off (`manage.enabled`) | the same evaluation again, rewriting the day's file; catches up for an hour |
+| `manage-eval` | daily **10:00** (`manage.at`) and at each `manage.also_at` time, trading days | `run.py manage` | off (`manage.enabled`) | the read-only snapshot of the real account and its evaluation, for Live → positions and Live → portfolio; posts the trades needing action |
 | `manage-marks` | every **60 s** within 10:01-16:10 (`manage.marks`), trading days | `run.py manage-marks` | follows `manage.enabled` (`manage.marks.enabled` turns it off alone) | between the full runs: the day's stored snapshot moved to the stream cache's quotes and evaluated again. No broker call and no post; stands down until the day's first snapshot is stored |
 | `backtest-fetch` | daily **18:45** (`backtest.fetch_at`), trading days | `-m cherrypick.backtest fetch` | off (`backtest.fetch`) | the licensed vendor's recent sessions into the backtest store; holds the vendor account's one session while it runs |
 | `backtest-inventory` | every **10 min** (`backtest.inventory_interval_minutes`) | `-m cherrypick.backtest inventory` | follows `backtest.fetch` (`backtest.inventory` overrides) | counts each vendor store that changed, for the Backtest page's Data tab; local files only. The console's read never counts (a cold count outlasts its 30 s), so a changed store shows "count pending" until this runs |
@@ -125,12 +124,18 @@ removed in v0.12.0; your own scheduled reports are the `external-<id>` jobs belo
 | `report-income-chains` | daily **14:45**, trading days | `scripts/fetch_screener_greeks.py income` | on (`market_report.income`) | every tradable name's cycle-monthly chain and the covered call's 30-45 day monthly, for our income lists and manage's candidates |
 
 Research and screener collectors (the other `technicals-*` jobs, `report-screener-*`,
-`report-skate-quotes-*`, `report-earnings-strikes`, `pmcc-earnings-refresh`,
+`report-skate-quotes`, `report-earnings-strikes`, `pmcc-earnings-refresh`,
 `flies-intraday-agent`) are derived the same way; `run.py status` lists them with their schedules.
 The ones fed only by the vendor -- `report-screener-greeks` / `-late` and `technicals-screeners` --
 are off with `market_report.collector`, as the collector is (the subscription ended 2026-10-24).
-`report-screener-measure-1` / `-2` stay on for the earnings calendar's spreads and quote the
+`report-screener-measure` stays on for the earnings calendar's spreads and quote the
 vendor's list rows only while the collector is on.
+
+A job that runs several times a day is one row: `manage-eval`, `market-files`, `report-screener-measure`,
+`report-skate-quotes`, `universe-measure` and `technicals-earnings-calendar` list every time in their
+schedule (System page and `run.py status`). Each time catches up on its own, and only until the next
+time: a run missed while the machine slept is not made up once the next one has begun, and the
+newer run is the one that fires. The page shows the last run as `fired MM-DD@HH:MM`.
 
 Missed-fire policy after sleep/hibernate: interval jobs fire once immediately and resume cadence
 (never a burst); daily/monthly jobs fire inside their catchup window, else record `missed` and skip.

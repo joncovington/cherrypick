@@ -37,3 +37,22 @@ def test_wrapping_hours_and_smart_hours():
     smart = w.check(DAY, active={"start": 3, "end": 21, "smart": True}, et_minus_local_h=2)
     assert smart["status"] == "warn" and "adjust automatically" in smart["detail"]
     assert w.check(DAY, active=None)["status"] in ("unknown", "ok", "warn")  # this machine, whatever it says
+
+
+def test_a_job_with_several_times_counts_every_one():
+    jobs = {
+        "manage-eval": {"schedule": "daily 10:00, 13:00, 16:35 ET, trading days", "enabled": True},
+        "report-edition": {"schedule": "daily 07:00 ET, trading days", "enabled": True},
+    }
+    assert sorted(w.job_times(jobs)) == ["07:00", "10:00", "13:00", "16:35"]
+    assert w.protected_span_et(w.job_times(jobs)) == (420, 16 * 60 + 35 + 30)
+
+
+def test_times_from_specs_reads_every_time_of_a_slotted_job():
+    from cherrypick.orchestrator import jobspec
+
+    slotted = jobspec.JobSpec(
+        id="m", argv=("py",), kind="daily", times_et=("07:45", "18:45"), catchup_minutes=10
+    )
+    single = jobspec.JobSpec(id="s", argv=("py",), kind="daily", at_et="09:00", catchup_minutes=10)
+    assert w.times_from_specs([slotted, single]) == ["07:45", "18:45", "09:00"]
