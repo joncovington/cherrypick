@@ -1,3 +1,5 @@
+> **Status (2026-11-08): closed 2026-10-03: run 1 found nothing. Mentions the retired modules flies and bwb.**
+
 **What this covers:** the frozen contract for the daily range-features study: what is measured,
 against what baseline, which way each effect should point, and what result would close the study.
 Declared **2026-10-03**. This file is the declaration and does not change except to record results

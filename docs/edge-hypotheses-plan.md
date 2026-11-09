@@ -1,5 +1,7 @@
 # Edge hypotheses: what the 2026-10 video review left worth testing
 
+> **Status (2026-11-08): ongoing. This is the register of research items, 69 so far (`hypotheses.json` holds each one's status); every item has a declared test and a recorded verdict or is still queued. Many items concern the retired modules flies, bwb, pmcc and curve.**
+
 *Drafted 2026-10-17. No module change is built from it; five of the eight tests have run (see
 Status). It follows a review of twenty public options-trading interviews
 (YouTube, 2024-09 to 2026-06; credited in [strategy-sources.md](strategy-sources.md)) and asks one question of each idea before anything else: **where does

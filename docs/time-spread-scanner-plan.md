@@ -1,5 +1,7 @@
 # Time-spread scanner plan
 
+> **Status (2026-11-08): built in `packages/manage` (`timespreads`) on 2026-11-06 and shown on Screeners and the portfolio candidates; the test of its ratio (research item 54) ran and failed, so it stays labelled "no tested edge".**
+
 Agreed 2026-11-06. A daily scan for calendars and diagonals: which names have a front week priced rich
 to the back month, which structures on them are worth a look, and which fit the account. It turns a
 screen that had been run by hand, a name at a time, into one reading the positions page can show.

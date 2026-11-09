@@ -1,5 +1,7 @@
 # Job progress, the queue tab, and arm cards — plan
 
+> **Status (2026-11-08): done 2026-10-27. Job progress files (`core.progress`), the rebuilt queue tab and the arm cards are built (CHANGELOG, 2026-10-27). Moved to history/ once fully landed.**
+
 Agreed 2026-10-26. Three console surfaces that share one complaint: long work and the arms it measures
 are hard to read from the console.
 

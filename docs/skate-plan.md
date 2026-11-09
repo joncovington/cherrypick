@@ -1,5 +1,7 @@
 # Skate screener, wheel and PMCC views — plan
 
+> **Status (2026-11-08): mostly built (2026-10-18 on): the range bands, the score, the Skate tab, the forward record, and the wheel and PMCC views in `manage`. The PMCC parts now serve a retired module (pmcc, retired 2026-11-08, off by default).**
+
 Status: plan, 2026-10-18; steps 1–2 and the score are built (table below). The study it rests on was run by hand on 2026-10-18
 (results below); the scripts were scratch files and are not in the repo. The three open questions
 were decided by the user on 2026-10-18 (see "Decisions").

@@ -170,11 +170,7 @@ confirmation, a current status readout, and a visible way to stop.
 
 ## Escape hatch
 
-A single manual live tick (no task, no watcher respawn beyond this tick's own) is:
-```bash
-python -m cherrypick.flies.live_loop --once --live
-```
-The rung-0 dry-run smoke (preflights against the real account, places nothing) remains:
-```bash
-python -m cherrypick.flies.live_loop --once
-```
+A single manual live tick (no task, no watcher respawn beyond this tick's own) is
+`python -m cherrypick.flies.live_loop --once --live`.
+The rung-0 dry-run smoke (preflights against the real account, places nothing) remains
+`python -m cherrypick.flies.live_loop --once`.

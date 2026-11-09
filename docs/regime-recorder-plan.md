@@ -1,5 +1,7 @@
 # The market-regime recorder — a proposal
 
+> **Status (2026-11-08): partial. Phase 1 and the admitted readings are built (2026-08-23/24) in the gex recorder; what is still open is listed in the text. Mentions the retired modules flies, bwb, pmcc and curve.**
+
 *Drafted 2026-08-23. **Phase 1 landed the same day**: `market_regime_history` + `daily_closes` in
 the gex recorder (`packages/gex/src/cherrypick/gex/regime.py`, 60s cadence), the recorder's own
 quote-only legs declaration with `history_days: 270`, and the `cherrypick.core.regime.regime_at`

@@ -1,5 +1,7 @@
 # Earnings screener plan
 
+> **Status (2026-11-08): done 2026-10-17. The calendar, pricing, console tabs and forward record are built (technicals and the Screeners tabs); the history step found no edge after costs, so it ships as a calendar. The earnings module itself is paper-only since v0.12.0. Moved to history/ once fully landed.**
+
 Status: plan, 2026-10-16. Step 1 (history) done 2026-10-17: no edge after costs (below). Shipping
 anyway as an earnings calendar laid out like the vendor's (decided 2026-10-17).
 

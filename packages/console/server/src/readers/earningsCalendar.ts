@@ -1,6 +1,6 @@
 /**
  * The earnings calendar for the Screeners page's earnings tab (2026-10-17;
- * docs/earnings-screener-plan.md).
+ * docs/history/earnings-screener-plan.md).
  *
  * `python -m cherrypick.technicals earnings-calendar` writes one file a session to
  * `technicals/earnings-calendar/<day>.json`, already joined: dates and times, our direction and

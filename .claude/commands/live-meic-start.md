@@ -153,12 +153,6 @@ holds is refused.
 ## Escape hatch
 
 A manual live tick without today's arm record manages what the book holds and opens nothing (with
-nothing held it ends at once):
-```bash
-python -m cherrypick.meic.live_loop --once --live
-```
+nothing held it ends at once): `python -m cherrypick.meic.live_loop --once --live`.
 The dry-run tick (preflights against the real account, places nothing, records nothing) needs no
-arm:
-```bash
-python -m cherrypick.meic.live_loop --once
-```
+arm: `python -m cherrypick.meic.live_loop --once`.

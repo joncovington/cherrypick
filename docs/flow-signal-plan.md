@@ -1,5 +1,7 @@
 # Large options orders as a signal-board method — plan
 
+> **Status (2026-11-08): done, closed 2026-10-17. The ThetaData flow fetch is built in `packages/backtest` and the declared test ran and failed (research item 32, `failed` in `hypotheses.json`); no signal was built.**
+
 *Drafted 2026-10-17. A build plan and a declared test. Step 1, the ThetaData flow fetch
 (`backtest fetch-flow`, `flow.py`, `flowfetch.py`), was built the same evening; the declared test and
 the broker's nightly feed are not yet run or built. 2026-10-24: the fetched sessions declared,

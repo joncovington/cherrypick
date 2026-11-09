@@ -3,7 +3,7 @@
 A validation, a replay check, a backtest run or a chain fetch can run for an hour. Until 2026-10-26
 the only one the console could measure was a chain fetch, and only by `queue-list` starting a
 counting subprocess per row on every poll; the first MEIC validation ran an hour with an empty log
-and no way to tell how far it had got (docs/progress-queue-arms-plan.md, phase 1).
+and no way to tell how far it had got (docs/history/progress-queue-arms-plan.md, phase 1).
 
 **One file per job** under ``state/progress/``, written atomically and at most once a second:
 

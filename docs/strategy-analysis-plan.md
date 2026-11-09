@@ -1,5 +1,7 @@
 # Strategy analysis — a per-arm overview for every module
 
+> **Status (2026-11-08): partial. `core.analysis`, the analysis tab and Compare's risk, calendar and portfolio tabs landed 2026-10-16/17; conversion of the remaining modules is incomplete. Covers the retired modules flies, bwb, pmcc and curve (all off by default).**
+
 *Drafted 2026-10-16; built in large part 2026-10-16/17 (`core.analysis`, the analysis tab on every
 module, Compare's risk and portfolio tabs; dated notes in each section). The plan follows a review of eleven videos from a
 vendor's weekly series on running a portfolio of automated options strategies (weeks 1–10 and a

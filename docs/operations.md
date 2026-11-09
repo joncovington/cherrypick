@@ -1,9 +1,10 @@
 # Operations — startup, supervision, and the daily checklist
 
 How the suite runs day to day: what is installed, what starts when, what "healthy" looks like at
-09:00 ET, and which warnings are noise. Everything here was verified against the running suite on
-2026-07-29 (the fork cutover); each table cites its source so it can be re-verified rather than
-trusted.
+09:00 ET, and which warnings are noise. Each table cites its source so it can be re-verified rather
+than trusted; `tools/check_docs.py` checks the job and port tables against the code. The record of the
+2026-07-29 cutover, the old rollback note and the gaps that have since been fixed are in
+[history/operations-2026-07-29-cutover.md](history/operations-2026-07-29-cutover.md).
 
 ## The model, in one paragraph
 
@@ -74,6 +75,11 @@ shows and which is healthy. "Default" means what `config.example.json` ships.
 | `contango-paper` | every **60 s** | `-m cherrypick.contango.paper_loop --once` | **off** (experimental) | the SVXY/SHV switch: one decision per arm ten minutes before the close |
 | `weeklyput-paper` | every **60 s** | `-m cherrypick.weeklyput.paper_loop --once` | **off** (experimental) | item 57's unhedged index put: sells the 10-delta put in the last quarter hour seven days before each non-monthly weekly expiry; settles it at the expiry's posted close, often the next morning |
 | `meic-live` | every 60 s — **armed: all day; unarmed: trading days 09:30 to the disarm cutoff, to manage what the book holds** | `-m cherrypick.meic.live_loop --once --live` | manage-only (unarmed) | armed by `/live-meic-start` (or the loop's `--arm --confirm YES`) writing `state/meic-live-arm.json`; the arm gates new ICs only. Unarmed, a tick with a flat book ends without a broker call, and one holding an IC confirms fills, stops and settles it. The same self-disarm at `live.disarm_time` (17:00 ET) and watchdog backstop as flies, through `cherrypick.core.live` |
+
+The flies, bwb, pmcc and curve jobs above are derived only while that module is switched back on
+(`modules.<name>.enabled`); with the module off they do not appear in `status` at all, and a retired
+live module refuses to arm. Earnings has no live job: it is paper-only. The QuikOptions jobs were
+removed in v0.12.0; your own scheduled reports are the `external-<id>` jobs below.
 
 **Reports, data and the AI**
 
@@ -149,11 +155,6 @@ experiment. That step runs **unconditionally**, after a timeout, a parse failure
 CRITICAL, and name the manual re-run command. Nothing here can reach a live account. The console's
 Advisor page is the read surface. Since 2026-09-15 a model `kill` verdict is actioned on admission
 (`advisor.kill_on_verdict`); the console button is for stopping one the model has not.
-
-**Rollback** (documented for one transition window): `git tag pre-supervisor` marks the last
-schtasks-driven commit. To roll back: `run.py uninstall` (new code), check out the tag, `run.py
-install` (old code re-registers every per-job task; the module `--install-task` helpers exist
-there, though they were removed from current code on 2026-10-08). The old and new mechanisms never coexist — each `install` deletes the other's registrations.
 
 ## Inventory — daemons (not tasks)
 
@@ -241,7 +242,7 @@ Time constants, each with its source:
 
 ## The 09:00 ET checklist
 
-Five commands; what "good" looks like is quoted from real runs (2026-07-29).
+Five commands; what "good" looks like is quoted from real runs.
 
 1. **`python run.py doctor`** (from `packages/orchestrator`) — expect `Result: ALL GREEN`. Read the
    `clock/tz` line (`trading_day=True` on a session day) and `onboarding` (each module's credential
@@ -255,8 +256,7 @@ Five commands; what "good" looks like is quoted from real runs (2026-07-29).
    down — `run.py ensure-supervisor` starts it (the anchor task does the same within 2 min).
 3. **`python packages/streamer/run.py --status`** — require **both** `"running": true **and** a small
    `oldest_event_age_s`** during market hours. Liveness alone is insufficient — the whole lesson of
-   the 2026-07-01 34-hour stall is a socket that is connected and silent. Caveat observed at cutover:
-   right after a restart the status row can still show the *previous* run's `connected_since` /
+   the 2026-07-01 34-hour stall is a socket that is connected and silent. Caveat: right after a restart the status row can still show the *previous* run's `connected_since` /
    `last_event_at` until the new connection populates, so read it a minute after any restart.
 4. **Dolt** (only with the `dolt` capability): reachable on 3306 *and serving* `earnings`, `options`,
    `stocks` — `doctor` checks the databases, not just the port (a server rooted at the wrong data dir
@@ -331,47 +331,3 @@ Each open gap below is tracked as an issue — the entry here is the operator-fa
   longer invisible: `python -m cherrypick.meic.gate_health` reports which gates are armed, which have
   stood down and why, and how many sessions ATR is still missing. Read-only and file-only.
   **Remaining:** it is a command, not a console page, so it still has to be asked.
-- ~~**Thin pre-open margin.**~~ **Fixed 2026-08-06** ([#64](https://github.com/joncovington/cherrypick/issues/64)),
-  **superseded 2026-08-09**: the dedicated `cherrypick-preopen` task (streamer liveness every 2 min,
-  09:00–09:35) became the supervisor's `streamer-health` job — same check (`_check_streamer_health`
-  reused, never copied; no heartbeat write; stops at the door on a non-trading day), every 60 s
-  across the whole 09:00–16:00 session. The original reasoning survives intact: the full watchdog
-  tick still never speeds up to protect the streamer — the check just has its own cadence now that
-  per-job cadences are free.
-- ~~**`doctor` coverage holes.**~~ **Mostly fixed 2026-08-06** ([#65](https://github.com/joncovington/cherrypick/issues/65)).
-  `doctor` now checks every orchestrator-owned task — `trade-notify`, `log-archive`, `reconcile`
-  and `preopen` — resolving each name through the same settings helper `install` uses,
-  so a config-driven rename can't desync the check. Opted-out-and-absent reports as healthy; enabled-
-  but-missing, and disabled-but-still-registered, both warn. **Still open:** nothing cross-checks that
-  `stream_requests/*.json` cover the symbols the modules actually trade — that half is better done
-  alongside [#62](https://github.com/joncovington/cherrypick/issues/62), which introduces the notion of
-  a request the producer has not served.
-- ~~**`holidays_loaded=0`.**~~ **Fixed 2026-08-05.** `timeutil.load_holidays` was scanning MEIC's
-  config for `nyse_holidays_<year>` keys that had been retired when the calendar moved into
-  `cherrypick.core` — so the scan matched nothing and every caller, the watchdog included, ran with an
-  empty set and treated market holidays as ordinary sessions. It now reads
-  `cherrypick.core.calendar.nyse_holidays` (this year and next; `doctor` shows 20 rather than 0), and
-  degrades to weekday-only gating if that lookup ever fails.
-
-## The 2026-07-29 cutover (record)
-
-The previous production checkout was retired and this fork became the live instance — the shadow-mode
-plan (task prefixes, port offsets, side-by-side A/B) was superseded by direct inheritance of
-`~/.cherrypick` with `CHERRYPICK_HOME` unset. What the cutover did, for the record:
-
-- `install` run from the fork checkout — same task names, commands re-baked at fork paths.
-- Home configs updated to the fork's shape; stale pre-monorepo `repo` keys removed so a path miss can
-  never clone retired code; **`data_epoch.date = 2026-07-29`** set (calibrate uses only post-epoch
-  sessions; production's last partial session was 07-28); the hardened promotion checks
-  (`min_return_on_capital: 0.02`, `require_slippage_survival: true`) enabled in MEIC's
-  `calibration.rule` — pending since phase 2.
-- `state/stream_requests/meic.json` corrected (it was hand-written at the 2026-07-21 streamer cutover:
-  seven retired symbols, leg query against the live ledger) and the MEIC writer added so it can never
-  go stale again; streamer restarted once so the XSP/QQQ underlying set bound.
-- Two live defects caught in verification: a gex-recorder surviving from the retired checkout
-  ("already running" at install — stop it so the relaunch runs current code), and the streamer's
-  credential chain missing the shared `cherrypick-broker` fallback after the keyring migration
-  (fixed; regression-tested).
-- The paper `drawdown` alert remains **deliberately disabled** in the home config (paper drawdown
-  noise is unwanted; live drawdown is the live module's concern) — note a forced-sampling study arm's
-  volume would trip any floors sized for ladder volume anyway.

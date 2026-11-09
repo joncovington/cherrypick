@@ -1,5 +1,7 @@
 # Our own daily market report — research and plan
 
+> **Status (2026-11-08): partial. Phase 1 and the technicals store landed in 2026-09; the vendor-fed parts went off when the subscription ended on 2026-10-24 (see [operations.md](operations.md)). The later phases stay a plan.**
+
 *Drafted 2026-09-27. A research record and a build plan; Phase 1 and the technicals store landed the
 same week (see Plan). The subject is a
 third-party pre-open report (the 2026-09-25 edition of a commercial vendor's daily report), read

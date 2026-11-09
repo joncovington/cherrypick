@@ -70,6 +70,17 @@ and state (relocatable with `$CHERRYPICK_HOME`).
 **Paper mode** — Simulation: live market data in, modelled fills + costs out, no real orders. The default
 and what all automation runs.
 
+**Research item** — One numbered question in the suite's research queue (for example item 57, the weekly
+index put). Each is declared with a pass test before it is run, then recorded as pass, fail or open, and
+the verdicts decide which arms a module carries. They are tracked in
+[edge-hypotheses-plan.md](edge-hypotheses-plan.md) and its [`hypotheses.json`](hypotheses.json).
+
+**Advised twin** — An arm the optional AI advisor proposes (`advised:<base>`), run in paper beside its
+control and judged by the same qualification gate as any other arm. It never touches a live loop.
+
+**Shield arms** — PMCC's arms (`shield`, `shield_hold`, `shield_guard`): a deep-in-the-money long call held
+for about a year against a weekly short call. PMCC is retired and off by default.
+
 **Risk profile** — MEIC's older name for an arm; see **Arm**.
 
 **Section 1256** — U.S. tax treatment for broad-based cash-settled **index** options (SPX/XSP/NDX/RUT):
