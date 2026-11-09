@@ -10,20 +10,20 @@ describe("an experiment switched off", () => {
     ({
       ok: true,
       capabilities: {},
-      modules: Object.fromEntries(["pmcc", "calendars", "curve", "contango"].map((m) => [m, { configured: true, enabled: m === "pmcc" ? pmcc : true, missing: [] }])),
+      modules: Object.fromEntries(["pmcc", "calendars", "curve", "contango", "weeklyput"].map((m) => [m, { configured: true, enabled: m === "pmcc" ? pmcc : true, missing: [] }])),
       services: {},
       features: {},
     }) as unknown as Parameters<typeof shownExperiments>[0];
 
   it("loses its card with its pages, and an unread answer shows every card", () => {
-    expect(shownExperiments(on(false)).map((e) => e.id)).toEqual(["calendars", "curve", "contango"]);
-    expect(shownExperiments(on(true)).map((e) => e.id)).toEqual(["pmcc", "calendars", "curve", "contango"]);
-    expect(shownExperiments(undefined)).toHaveLength(4);
+    expect(shownExperiments(on(false)).map((e) => e.id)).toEqual(["calendars", "curve", "contango", "weeklyput"]);
+    expect(shownExperiments(on(true)).map((e) => e.id)).toEqual(["pmcc", "calendars", "curve", "contango", "weeklyput"]);
+    expect(shownExperiments(undefined)).toHaveLength(5);
   });
 });
 
 /**
- * Batch 4 of docs/console-review-plan.md: the four paper-only experiments and the retired flies on
+ * Batch 4 of docs/console-review-plan.md: the paper-only experiments and the retired flies on
  * one page, a card each, every figure the module's own summary read.
  */
 

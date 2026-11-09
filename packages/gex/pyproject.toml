@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "cherrypick-gex"
 version = "0.1.0"
-description = "Live GEX (gamma exposure) dashboard — a simple self-hosted gexbot/SpotGamma/MenthorQ"
+description = "Live GEX (gamma exposure) engine and recorder — a simple self-hosted take on commercial GEX services"
 requires-python = ">=3.11"
 license = "MIT"
 # cherrypick-core is a sibling in-repo package (packages/core), installed editable alongside this one.

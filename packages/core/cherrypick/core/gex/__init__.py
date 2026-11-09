@@ -77,7 +77,7 @@ def interpolate_zero_gamma(strikes: list[dict]) -> float | None:
 def nearest_zero_gamma(strikes: list[dict], spot: float, key: str = "net_gex") -> float | None:
     """Interpolated strike where per-strike `key` changes sign, **nearest to `spot`**.
 
-    This is gexbot's zero-gamma definition (confirmed empirically): the LOCAL per-strike sign
+    This is the local zero-gamma definition (confirmed empirically): the LOCAL per-strike sign
     change closest to price. It is deliberately distinct from `interpolate_zero_gamma`, which
     returns the single strike where the CUMULATIVE running sum crosses zero (where aggregate
     dealer exposure flips). Use the cumulative form for a whole-book regime read; use this for
@@ -215,13 +215,13 @@ def compute_gex_profile(
 ) -> dict:
     """Rich per-strike GEX profile with BOTH an OI ("positioning") and a volume ("flow") series.
 
-    This is the "gexbot-lite" aggregation — the pure math behind the dashboard GEX panel, extracted
+    This is the per-strike GEX aggregation — the pure math behind the dashboard GEX panel, extracted
     from MEIC's dashboard `_build_gex_data` so the umbrella's GEX module and MEIC's own dashboard draw
     from one implementation (the drift the GEX math was extracted to prevent). Pure: the caller supplies
     an already-fetched snapshot (chain + greeks + OI + volume + spot); no DB, no streamer, no network.
 
     Unlike `compute_gex` (OI only, the trading-loop contract — left untouched), this returns the full
-    per-strike detail SpotGamma/MenthorQ-style views need. Puts are stored **negated** so a chart draws
+    per-strike detail a GEX profile view needs. Puts are stored **negated** so a chart draws
     calls up / puts down and the walls fall out as max(call_gex) / min(put_gex).
 
     Args:
@@ -344,7 +344,7 @@ def compute_gex_profile(
 
 
 def net_walls(strikes: list[dict], key: str = "net_gex") -> tuple[float | None, float | None]:
-    """(call_wall, put_wall) = strikes of **max / min** `key` — gexbot's "major positive /
+    """(call_wall, put_wall) = strikes of **max / min** `key`: the "major positive /
     major negative" net-GEX walls.
 
     Distinct from the raw call/put gamma-peak walls in `compute_gex` / `compute_gex_profile`

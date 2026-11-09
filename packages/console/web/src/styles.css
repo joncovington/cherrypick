@@ -10385,3 +10385,11 @@ button.chip[aria-pressed][data-hue="special"],
     max-height: none;
   }
 }
+
+/* The GEX pages explain why volume leads: no streaming open interest from the broker (GexOiNote). */
+.gex-oi-note {
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 0 0 0.6rem;
+  max-width: 110ch;
+}
