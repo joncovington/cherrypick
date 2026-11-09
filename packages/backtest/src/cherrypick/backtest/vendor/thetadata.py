@@ -166,10 +166,20 @@ def _transient(exc: Exception) -> bool:
     return STREAM_REMOVED not in text and "UNAUTHENTICATED" not in text and any(t in text for t in _TRANSIENT)
 
 
+#: The vendor's two environments. PROD is the account's one session, which the lock guards. STAGE is
+#: a second, independent login: checked 2026-11-08, it left a PROD session answering throughout,
+#: served the same quotes, and computed greeks and IV slightly differently from PROD. So it
+#: suits a check by hand while a fetch holds PROD, and never builds a store. It takes no lock.
+ENVS = ("PROD", "STAGE")
+
+
 class ThetaDataClient:
     name = "thetadata"
 
-    def __init__(self, settings: dict):
+    def __init__(self, settings: dict, *, env: str = "PROD"):
+        if env not in ENVS:
+            raise VendorRefusal("unknown_env", f"{env!r}; one of {', '.join(ENVS)}")
+        self.env = env
         vendor = settings["vendor"]
         if vendor["transport"] != "python":
             raise VendorRefusal("transport_not_built", "only transport 'python' is implemented")
@@ -183,13 +193,18 @@ class ThetaDataClient:
                 "library_missing", f'{exc}; install it with pip install -e "packages/backtest[thetadata]"'
             ) from None
 
-        # Before the login, never after: a refused second client must not have ended the first.
-        self._session_lock = take_session(log=lambda line: print(line, file=sys.stderr, flush=True))
+        # Before the login, never after: a refused second client must not have ended the first. A
+        # STAGE login cannot end the PROD session, so it neither takes nor waits for the lock.
+        self._session_lock = (
+            take_session(log=lambda line: print(line, file=sys.stderr, flush=True)) if env == "PROD" else None
+        )
         self._client_class = ThetaClient
         try:
-            self._client = ThetaClient(api_key=key, dataframe_type="pandas")
+            # The environment always goes explicitly: left out, the library reads it from
+            # THETADATA_MDDS_TYPE, and a stray variable would move a fetch onto STAGE.
+            self._client = ThetaClient(api_key=key, dataframe_type="pandas", mdds_type=env)
         except Exception:
-            release_session(self._session_lock)
+            self.close()
             raise
         # The library sets no deadline on its calls, and a stalled reply waits forever (2026-10-17:
         # both workers of a history fetch sat on one for over ten minutes). Every call goes out
@@ -199,8 +214,12 @@ class ThetaDataClient:
         self.on_retry = lambda _line: None
 
     def close(self) -> None:
-        """Give the session up before the process ends (it is released at exit regardless)."""
-        release_session(getattr(self, "_session_lock", None))
+        """Give the session up before the process ends (it is released at exit regardless). A
+        client without a lock (STAGE) releases nothing: `release_session(None)` means the default
+        lock, which a PROD client in the same process may hold."""
+        lock = getattr(self, "_session_lock", None)
+        if lock is not None:
+            release_session(lock)
 
     def _reconnect(self) -> None:
         """A fresh channel on the same authenticated session (the library's own
