@@ -298,6 +298,28 @@ def _earnings_path(conn, position_id: str) -> dict:
     return _recorded_path(conn, sql, position_id, "gross_as_recorded", entry_at, exit_at, row["pnl"])
 
 
+def _weeklyput_path(conn, position_id: str) -> dict:
+    """The short put's gross at mid on each usable mark (the credit plus the signed cost to close),
+    from the entry (0) to the gross at the expiry's posted close."""
+    if not _cols(conn, "weeklyput_marks"):
+        return {"recorded": False, "reason": "this ledger keeps no position marks"}
+    row = conn.execute(
+        "SELECT entry_time, settle_time, gross_pnl FROM weeklyput_positions WHERE position_id = ?",
+        (position_id,),
+    ).fetchone()
+    if row is None:
+        return {"recorded": False, "reason": f"no position {position_id!r}"}
+    sql = (
+        "SELECT m.ts, CASE WHEN m.usable = 1 AND m.mark_value IS NOT NULL "
+        "THEN p.entry_value + m.mark_value END "
+        "FROM weeklyput_marks m JOIN weeklyput_positions p ON p.position_id = m.position_id "
+        "WHERE m.position_id = ? ORDER BY m.ts, m.id"
+    )
+    return _recorded_path(
+        conn, sql, position_id, "gross_at_mid", row["entry_time"], row["settle_time"], row["gross_pnl"]
+    )
+
+
 def _flies_path(conn, position_id: str) -> dict:
     if not _cols(conn, "fly_live_marks"):
         return {"recorded": False, "reason": "this ledger keeps no position marks"}
@@ -499,6 +521,8 @@ def excursion(conn, schema: str, position_id: str, *, history_db=None) -> dict:
         return _leg_path(conn, schema, position_id)
     if schema == "earnings":
         return _earnings_path(conn, position_id)
+    if schema == "weeklyput_put":
+        return _weeklyput_path(conn, position_id)
     if schema == "fly_book":
         recorded = _flies_path(conn, position_id)
         return recorded if recorded["recorded"] else _flies_from_quotes(conn, position_id, history_db)

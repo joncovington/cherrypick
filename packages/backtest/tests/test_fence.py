@@ -54,6 +54,7 @@ STRATEGY = {
     "cherrypick.pmcc",
     "cherrypick.curve",
     "cherrypick.contango",
+    "cherrypick.weeklyput",
     "cherrypick.gex",
     "cherrypick.advisor",
     "cherrypick.desk",

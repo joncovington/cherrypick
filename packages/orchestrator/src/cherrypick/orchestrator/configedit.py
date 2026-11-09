@@ -114,6 +114,7 @@ _MODULE_TARGETS: tuple[str, ...] = (
     "meic",
     "pmcc",
     "streamer",
+    "weeklyput",
 )
 
 # Each target's config.example.json, relative to the orchestrator checkout (cfgmod.ROOT). Used by
@@ -132,6 +133,7 @@ _EXAMPLE_REL: dict[str, str] = {
     "meic-risk": "../meic/config.risk.example.json",
     "pmcc": "../pmcc/config.example.json",
     "streamer": "../streamer/config.example.json",
+    "weeklyput": "../weeklyput/config.example.json",
 }
 
 

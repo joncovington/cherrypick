@@ -50,6 +50,13 @@ what it may write. The package's own CLAUDE.md holds the detail.
   `control` (out at 0.97) and `flipexit` (out at 1.0) differ only in thresholds. Nothing fills
   after the decision window. Validated against `scripts/contango_replay.py`, which runs the loop's
   own rule. Trade schema `contango_etf`; off by default in the example. No live path.
+- **packages/weeklyput** — ⚠️ EXPERIMENTAL. Research item 57's passing arm in paper: the put
+  nearest 10 delta on SPX (SPXW), SPY, QQQ and IWM, sold in the last minutes of the session seven
+  days before each weekly expiry that is not a standard monthly, held to the expiry's posted close,
+  unhedged. **Paper-only, credential-free**, a stream-cache consumer; declared as item 69, which
+  reads paper against item 57's replay. Settles only on a posted close (`stream_summary`), never a
+  last trade. Early assignment of the ETF puts is measured, never modelled (an upper bound). Off by
+  default in the example. No live path.
 - **packages/bwb** — daily-laddered SPX put broken-wing butterflies, ~7 DTE, held to expiry; paper by
   default and credential-free. Four books differ only in whether/when a reversal-triggered put credit
   spread add-on fires; trigger latches persist on the position row. **A narrow live path exists** in

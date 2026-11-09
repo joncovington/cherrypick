@@ -31,6 +31,7 @@ export interface ConsoleConfig {
     pmccDir: string;
     curveDir: string;
     contangoDir: string;
+    weeklyputDir: string;
     bwbDir: string;
     gexDir: string;
     reviewDir: string;
@@ -103,6 +104,7 @@ export function loadConfig(): ConsoleConfig {
       pmccDir: path.join(data, "pmcc"),
       curveDir: path.join(data, "curve"),
       contangoDir: path.join(data, "contango"),
+      weeklyputDir: path.join(data, "weeklyput"),
       bwbDir: path.join(data, "bwb"),
       gexDir: path.join(data, "gex"),
       reviewDir: path.join(data, "review"),

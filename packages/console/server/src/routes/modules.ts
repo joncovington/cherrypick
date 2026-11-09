@@ -57,6 +57,8 @@ import {
 import { readCurve, readCurveHistory, readCurveMeta, resolveCurveSession } from "../readers/curve.js";
 import { readContangoMetrics, readCurveEquity, readPmccEquity } from "../services/navBridge.js";
 import { readContango, readContangoHistory } from "../readers/contango.js";
+import { readWeeklyput, readWeeklyputHistory, weeklyputDbPath } from "../readers/weeklyput.js";
+import { readWeeklyputCycles, readWeeklyputStatus, readWeeklyputSummary } from "../services/weeklyputBridge.js";
 import path from "node:path";
 import { readBwb, readBwbHistory, readBwbMeta } from "../readers/bwb.js";
 import { readCalendars, readCalendarsWeek, readCalendarsWeeks } from "../readers/calendars.js";
@@ -467,6 +469,19 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
   app.get("/api/contango/metrics", async () =>
     readContangoMetrics(path.join(config.paths.contangoDir, "paper_trades.db")),
   );
+  // weeklyput (item 57's unhedged put, paper). The ledger read, the settled puts, and the module's own
+  // calendar and per-cycle derivation (`status`, `cycles`, `summary`): the page never re-derives them.
+  app.get("/api/weeklyput", async () => readWeeklyput(config));
+  app.get("/api/weeklyput/history", async (req) => {
+    const q = (req.query ?? {}) as Record<string, unknown>;
+    const arm = typeof q["arm"] === "string" && q["arm"] !== "" && q["arm"].length <= 40 ? q["arm"] : null;
+    const symbol = typeof q["symbol"] === "string" && /^[A-Z]{1,5}$/.test(q["symbol"]) ? q["symbol"] : null;
+    return readWeeklyputHistory(config, { arm, symbol, range: parseDateRange(q) });
+  });
+  app.get("/api/weeklyput/decisions", async () => readDecisions(config, "weeklyput", null));
+  app.get("/api/weeklyput/status", async () => readWeeklyputStatus(weeklyputDbPath(config)));
+  app.get("/api/weeklyput/cycles", async () => readWeeklyputCycles(weeklyputDbPath(config)));
+  app.get("/api/weeklyput/summary", async () => readWeeklyputSummary(weeklyputDbPath(config)));
   app.get("/api/curve/history", async (req) => {
     const q = (req.query ?? {}) as Record<string, unknown>;
     const pick = (k: string, max: number): string | null => {

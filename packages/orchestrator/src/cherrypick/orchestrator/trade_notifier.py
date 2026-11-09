@@ -1640,6 +1640,74 @@ def _contango_process(conn, st: dict, notifier: Notifier, name: str) -> dict:
     return _run_stages(conn, st, notifier, name, stages)
 
 
+# cherrypick-weeklyput keys on a text `position_id`, one short put per (arm, name, expiry), with two
+# notifiable moments: it is sold (seven days before the expiry) and it settles at the expiry's
+# posted close, which is also its close. There is no management in between.
+def _weeklyput_seed(conn) -> dict:
+    rows = conn.execute("SELECT position_id, status FROM weeklyput_positions").fetchall()
+    return {
+        "notified_entry_ids": [r["position_id"] for r in rows],
+        "notified_exit_ids": [r["position_id"] for r in rows if r["status"] == "closed"],
+    }
+
+
+def _weeklyput_leg(r) -> str:
+    return f"{r['symbol']} {r['expiration']} {r['strike']:g}P"
+
+
+def _fmt_weeklyput_entry(r) -> str:
+    delta = f", delta {abs(r['entry_delta']):.3f}" if r["entry_delta"] is not None else ""
+    return (
+        f"🟢 Weeklyput paper SOLD — {r['quantity']} {_weeklyput_leg(r)} @ {r['entry_mid']:.2f} "
+        f"(credit ${r['entry_value']:.2f}{delta}) [{_arm(r)}]"
+    )
+
+
+def _embed_weeklyput_entry(r) -> dict:
+    delta = f" · delta {abs(r['entry_delta']):.3f}" if r["entry_delta"] is not None else ""
+    details = f"{r['quantity']} @ {r['entry_mid']:.2f} · credit ${r['entry_value']:.2f}{delta}"
+    return _embed(COLOR_ENTRY, f"SOLD · {_weeklyput_leg(r)}"[:256], details, footer=_arm(r))
+
+
+def _fmt_weeklyput_exit(r) -> str:
+    return (
+        f"🏁 Weeklyput paper SETTLED — {_weeklyput_leg(r)} at {r['settle_price']:.2f}, "
+        f"net {_signed(_net('weeklyput_put', r))} ({r['exit_reason']}) [{_arm(r)}]"
+    )
+
+
+def _embed_weeklyput_exit(r) -> dict:
+    details = (
+        f"net {_signed(_net('weeklyput_put', r))} (gross {_signed(r['gross_pnl'])}, "
+        f"fees ${r['fees'] or 0:.2f}, settlement ${r['settlement'] or 0:.2f}, "
+        f"slippage ${r['slippage'] or 0:.2f}) · {r['exit_reason']} at {r['settle_price']:.2f} · "
+        f"sold {r['entry_session']}"
+    )
+    return _embed(COLOR_EXIT, f"SETTLED · {_weeklyput_leg(r)}"[:256], details, footer=_arm(r))
+
+
+def _weeklyput_process(conn, st: dict, notifier: Notifier, name: str) -> dict:
+    stages = [
+        (
+            "notified_exit_ids",
+            "exit",
+            "Paper closed",
+            _fmt_weeklyput_exit,
+            _embed_weeklyput_exit,
+            "SELECT * FROM weeklyput_positions WHERE status = 'closed'",
+        ),
+        (
+            "notified_entry_ids",
+            "entry",
+            "Paper entry",
+            _fmt_weeklyput_entry,
+            _embed_weeklyput_entry,
+            "SELECT * FROM weeklyput_positions",
+        ),
+    ]
+    return _run_stages(conn, st, notifier, name, stages)
+
+
 # cherrypick-bwb keys on a text `position_id` and ladders daily like pmcc, with four notifiable
 # moments: it opens (the base 1-3-2 put broken-wing fly), its add-on may FIRE (the reversal
 # trigger — keyed by position_id since only one add-on ever fires per position), its short legs
@@ -1769,6 +1837,7 @@ _SCHEMAS = {
     "curve_vx": (_curve_seed, _curve_process),
     "bwb_132": (_bwb_seed, _bwb_process),
     "contango_etf": (_contango_seed, _contango_process),
+    "weeklyput_put": (_weeklyput_seed, _weeklyput_process),
 }
 
 

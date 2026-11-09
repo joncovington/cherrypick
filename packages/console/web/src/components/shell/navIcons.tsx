@@ -89,6 +89,17 @@ function ContangoIcon() {
   );
 }
 
+/* A short put's payoff hinge with a week tick row beneath — the weekly index put. */
+function WeeklyputIcon() {
+  return (
+    <Svg>
+      <path d="M3 6h8l6 9h4" />
+      <path d="M4 19h16" opacity="0.45" />
+      <path d="M6 19v-1.5M10 19v-1.5M14 19v-1.5M18 19v-1.5" opacity="0.45" />
+    </Svg>
+  );
+}
+
 /* A ladder of long puts stepped downward — the daily put broken-wing butterfly. */
 /* A butterfly at rest, side profile — the insect on the name (broken-wing butterfly). One
    wing up, one drooped short: the asymmetry is the broken wing itself, and the pose keeps it
@@ -270,6 +281,7 @@ const ICONS: Record<string, (p: NavIconProps) => ReactNode> = {
   "/pmcc": PmccIcon,
   "/curve": CurveIcon,
   "/contango": ContangoIcon,
+  "/weeklyput": WeeklyputIcon,
   "/bwb": BwbIcon,
   "/calendars": CalendarsIcon,
   "/earnings": EarningsIcon,

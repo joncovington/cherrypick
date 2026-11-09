@@ -99,6 +99,9 @@ MODULES = {
     "curve": {"schema": "curve_vx", "settles_intraday": False},
     # contango (2026-10-06) always holds one fund per arm overnight; a stint closes only on a switch.
     "contango": {"schema": "contango_etf", "settles_intraday": False},
+    # weeklyput (2026-11-08) sells seven days before an expiry and holds to its posted close, which
+    # arrives the next morning when the expiry is a Friday; the ledger books it to the expiry.
+    "weeklyput": {"schema": "weeklyput_put", "settles_intraday": False},
 }
 
 
@@ -353,6 +356,36 @@ def _contango_health(conn, session: str) -> dict:
     }
 
 
+def _weeklyput_health(conn, session: str) -> dict:
+    """weeklyput acts on an entry session only: each (arm, name) the calendar asked it to sell is a
+    `weeklyput_entries` row, so the finding is names entered against names due. A name that
+    `missed` (with the refusal that last stopped it) is the failure signal; `pending` on a closed
+    session means the loop never reached the end of the window. No row at all is simply a session
+    that is not an entry session, and is not a finding."""
+    rows = _rows(
+        conn,
+        "SELECT arm, symbol, outcome, refusal FROM weeklyput_entries WHERE entry_session = ?",
+        (session,),
+    )
+    iterations = _scalar(
+        conn, "SELECT COUNT(*) FROM weeklyput_loop_iterations WHERE session_date = ?", (session,)
+    )
+    return {
+        "loop_ticked": bool(iterations),
+        "iterations": iterations,
+        "due": len(rows) or None,
+        "entered": sum(1 for r in rows if r["outcome"] == "entered") if rows else None,
+        "missed": {f"{r['arm']}:{r['symbol']}": r["refusal"] for r in rows if r["outcome"] == "missed"}
+        or None,
+        "pending": sum(1 for r in rows if r["outcome"] == "pending") or None,
+        "settled": _scalar(
+            conn,
+            "SELECT COUNT(*) FROM weeklyput_positions WHERE status = 'closed' AND settle_session = ?",
+            (session,),
+        ),
+    }
+
+
 HEALTH_READERS = {
     "meic": _meic_health,
     "flies": _flies_health,
@@ -362,6 +395,7 @@ HEALTH_READERS = {
     "bwb": _bwb_health,
     "curve": _curve_health,
     "contango": _contango_health,
+    "weeklyput": _weeklyput_health,
 }
 
 
@@ -590,6 +624,19 @@ def _contango_expected(conn, session: str) -> dict:
     }
 
 
+def _weeklyput_expected(conn, session: str) -> dict:
+    """weeklyput's expectation is that every name the calendar asked it to sell on an entry session
+    is sold: the rule is deterministic given the chain, so what can go wrong is a name that could
+    not be entered in the window (a stale feed, an unbracketed 10-delta). Expected = names due,
+    observed = names entered. The money is the closed puts', read from the ledger."""
+    rows = _rows(conn, "SELECT outcome FROM weeklyput_entries WHERE entry_session = ?", (session,))
+    return {
+        "basis": "names_due_vs_entered",
+        "expected": len(rows) or None,
+        "observed": sum(1 for r in rows if r["outcome"] == "entered") if rows else None,
+    }
+
+
 EXPECTED_READERS = {
     "meic": _meic_expected,
     "flies": _flies_expected,
@@ -599,6 +646,7 @@ EXPECTED_READERS = {
     "bwb": _bwb_expected,
     "curve": _curve_expected,
     "contango": _contango_expected,
+    "weeklyput": _weeklyput_expected,
 }
 
 

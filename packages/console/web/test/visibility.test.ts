@@ -151,7 +151,7 @@ describe("fail open", () => {
     expect(isFeatureOn("technicals", undefined)).toBe(true);
     expect(offReason("earnings", undefined)).toBeNull();
     expect(visibleNavLinks(undefined).modules).toHaveLength(4);
-    expect(visibleNavLinks(undefined).experiments).toHaveLength(5);
+    expect(visibleNavLinks(undefined).experiments).toHaveLength(6);
     expect(visibleNavLinks(undefined).suite.map((l) => l.to)).toContain("/gex");
   });
 
@@ -162,7 +162,7 @@ describe("fail open", () => {
     expect(isSlideVisible("charts", "technicals", failed)).toBe(true);
     expect(offReason("earnings", failed)).toBeNull();
     expect(visibleNavLinks(failed).modules).toHaveLength(4);
-    expect(visibleNavLinks(failed).experiments).toHaveLength(5);
+    expect(visibleNavLinks(failed).experiments).toHaveLength(6);
   });
 });
 
@@ -192,7 +192,7 @@ describe("the nav lists", () => {
       ["/earnings", "3"],
       ["/experiments", "4"],
     ]);
-    expect(experiments.map((l) => l.to)).toEqual(["/calendars", "/curve", "/contango", "/flies"]);
+    expect(experiments.map((l) => l.to)).toEqual(["/calendars", "/curve", "/contango", "/weeklyput", "/flies"]);
   });
 
   it("drop the advisor from the suite links when it is off", () => {

@@ -3063,6 +3063,58 @@
       "retest": null,
       "retests": [],
       "outcome": null
+    },
+    {
+      "id": 69,
+      "study": "item69",
+      "title": "Item 57's unhedged arm in paper: does a close-of-session fill track the replay?",
+      "status": "declared",
+      "legacy": false,
+      "setup": "variance-premium",
+      "side": "bullish",
+      "structure": "short-put",
+      "window": "weekly",
+      "measure": "per paper trade of packages/weeklyput (arm unhedged), against item 57's trade_pair on the same name and expiry from the chain-path store: same strike or not, the credit gap in $ and the net gap in bp of the entry forward notional; per cycle, both equal-weight means; the forward per-cycle net reported beside",
+      "expected": "paper tracks the replay within the replay's own costs; item 57's verdict describes what the arm does",
+      "sample": "every finished paper cycle from the module's first entry, read at 40 finished cycles (about a year of non-monthly weeklies); fewer than 30 replayed trades = no verdict",
+      "rule": "mean net gap (paper minus replay, bp) no worse than minus the replay's mean cost in bp; the same strike on at least 80% of replayed trades; missed names under 10% of name-cycles",
+      "mechanism": "execution, not the premium: a close-of-session fill off the stream cache, the stream window's reach and the posted-close settlement against item 57's end-of-day quotes and expiry forward",
+      "rivals": [
+        {
+          "explanation": "a close-of-session quote is not an end-of-day quote",
+          "check": "credit and net gaps per trade; the same-strike share"
+        },
+        {
+          "explanation": "the stream window misses the 10-delta strike",
+          "check": "delta_not_bracketed refusals and missed names reported; the band holds a 10-delta 7-day put up to about 65% implied vol"
+        },
+        {
+          "explanation": "the settlement print differs from the expiry forward",
+          "check": "the per-trade net gap includes it; SPX (cash) read beside the ETFs"
+        },
+        {
+          "explanation": "early assignment on the ETF puts",
+          "check": "assignment-exposed flags counted; the ETF names stay an upper bound"
+        },
+        {
+          "explanation": "a calm forward year",
+          "check": "this item judges tracking, not the mean; the forward mean is reported only"
+        }
+      ],
+      "pointer": "docs/edge-hypotheses-plan.md#69-item-57s-unhedged-arm-in-paper-does-a-close-of-session-fill-track-the-replay",
+      "scripts": [
+        "scripts/weeklyput_item69.py"
+      ],
+      "tests": [
+        "packages/weeklyput/tests/test_item69_script.py"
+      ],
+      "results": [
+        "{home}/data/backtest/results/research/item69/tracking.json"
+      ],
+      "retest": null,
+      "retest_note": "No yearly re-test: the item reads the module's own forward ledger as it grows.",
+      "retests": [],
+      "outcome": null
     }
   ],
   "rule_changes": []

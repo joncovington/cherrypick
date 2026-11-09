@@ -6,6 +6,11 @@ import type {
   ContangoMetrics,
   ContangoHistory,
   ContangoPayload,
+  WeeklyputCycles,
+  WeeklyputHistory,
+  WeeklyputPayload,
+  WeeklyputStatus,
+  WeeklyputSummary,
   CurveEquity,
   OverviewPayload,
   StatusPayload,
@@ -1189,6 +1194,58 @@ export function useContangoHistory(filter: { arm: string | null; from: string | 
   return useQuery<ContangoHistory>({
     queryKey: ["contango-history", filter],
     queryFn: () => getJson<ContangoHistory>(`/api/contango/history?${params.toString()}`),
+    refetchInterval: 60_000,
+    placeholderData: (prev) => prev,
+  });
+}
+
+/** weeklyput's ledger: every put, the cycle register, the loop's last run. */
+export function useWeeklyput() {
+  return useQuery<WeeklyputPayload>({
+    queryKey: ["weeklyput"],
+    queryFn: () => getJson<WeeklyputPayload>("/api/weeklyput"),
+    refetchInterval: 30_000,
+  });
+}
+
+/** The module's own calendar (`weeklyput status`): today's entry session, the window, the next cycle. */
+export function useWeeklyputStatus() {
+  return useQuery<WeeklyputStatus>({
+    queryKey: ["weeklyput-status"],
+    queryFn: () => getJson<WeeklyputStatus>("/api/weeklyput/status"),
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+  });
+}
+
+/** One row per expiry with the cycle's equal-weight mean, as the module derives it. */
+export function useWeeklyputCycles() {
+  return useQuery<WeeklyputCycles>({
+    queryKey: ["weeklyput-cycles"],
+    queryFn: () => getJson<WeeklyputCycles>("/api/weeklyput/cycles"),
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+  });
+}
+
+/** The forward read per arm (`weeklyput summary`). */
+export function useWeeklyputSummary() {
+  return useQuery<WeeklyputSummary>({
+    queryKey: ["weeklyput-summary"],
+    queryFn: () => getJson<WeeklyputSummary>("/api/weeklyput/summary"),
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+  });
+}
+
+/** Settled puts over the date range (by expiry), with totals over all of them. */
+export function useWeeklyputHistory(filter: { arm: string | null; from: string | null; to: string | null }) {
+  const params = new URLSearchParams();
+  if (filter.arm !== null) params.set("arm", filter.arm);
+  rangeParams(params, filter);
+  return useQuery<WeeklyputHistory>({
+    queryKey: ["weeklyput-history", filter],
+    queryFn: () => getJson<WeeklyputHistory>(`/api/weeklyput/history?${params.toString()}`),
     refetchInterval: 60_000,
     placeholderData: (prev) => prev,
   });
