@@ -1,5 +1,6 @@
-"""Hypothesis 55's study (scripts/index_collar_item55.py): the entry session, the three hedges and the
-collar's strike, the sizing, the fills and the declared decision rules. Invented chains only, no store.
+"""Hypothesis 55's study (packages/backtest/scripts/index_collar_item55.py): the entry session, the three
+hedges and the collar's strike, the sizing, the fills and the declared decision rules. Invented chains only,
+no store.
 
 Each rule is shown firing and failing, because a check that cannot fire reads as coverage it is not.
 """
@@ -14,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-SCRIPTS = Path(__file__).resolve().parents[3] / "scripts"
+SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 _spec = importlib.util.spec_from_file_location("index_collar_item55", SCRIPTS / "index_collar_item55.py")
 s55 = importlib.util.module_from_spec(_spec)
 sys.modules["index_collar_item55"] = s55

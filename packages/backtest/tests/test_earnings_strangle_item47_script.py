@@ -1,5 +1,5 @@
-"""Hypothesis 47's study (scripts/earnings_strangle_item47.py): the expiry, the past moves, the selector,
-the strikes and the fills. Invented chains and bars only, no store.
+"""Hypothesis 47's study (packages/backtest/scripts/earnings_strangle_item47.py): the expiry, the past moves,
+the selector, the strikes and the fills. Invented chains and bars only, no store.
 
 Each rule is shown firing and failing, because a check that cannot fire reads as coverage it is not.
 """
@@ -12,7 +12,7 @@ import sys
 from datetime import date
 from pathlib import Path
 
-SCRIPTS = Path(__file__).resolve().parents[3] / "scripts"
+SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 _spec = importlib.util.spec_from_file_location(
     "earnings_strangle_item47", SCRIPTS / "earnings_strangle_item47.py"
 )

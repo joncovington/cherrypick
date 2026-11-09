@@ -21,10 +21,14 @@ def test_a_study_names_its_scripts_and_tests():
 def test_chain_paths_must_exist_under_their_folder():
     problems = hy.check({"hypotheses": [{**NEW, "scripts": ["scripts/no_such_item18.py"]}]})
     assert any("does not exist" in p for p in problems)
-    problems = hy.check({"hypotheses": [{**NEW, "tests": ["scripts/credit_spread_item17.py"]}]})
+    problems = hy.check({"hypotheses": [{**NEW, "tests": ["scripts/weeklyput_item69.py"]}]})
     assert any("must sit under packages/" in p for p in problems)
     problems = hy.check({"hypotheses": [{**NEW, "scripts": ["scripts/../docs/hypotheses.json"]}]})
     assert any("must sit under" in p for p in problems)
+    # A package's own code is not a study script, though the backtest's scripts folder is.
+    src = "packages/backtest/src/cherrypick/backtest/stores.py"
+    problems = hy.check({"hypotheses": [{**NEW, "scripts": [src]}]})
+    assert any("must sit under scripts/ or packages/backtest/scripts/" in p for p in problems)
 
 
 def test_legacy_and_retired_rows_may_leave_the_chain_out():

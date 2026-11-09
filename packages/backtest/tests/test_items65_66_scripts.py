@@ -12,7 +12,7 @@ from pathlib import Path
 
 from cherrypick.core import bs
 
-ROOT = Path(__file__).resolve().parents[3] / "scripts"
+ROOT = Path(__file__).resolve().parents[1] / "scripts"
 
 
 def _load(name):

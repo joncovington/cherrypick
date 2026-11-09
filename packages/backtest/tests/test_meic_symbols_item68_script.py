@@ -1,5 +1,5 @@
-"""Hypothesis 68's study (scripts/meic_symbols_item68.py): the arms it declares, its coverage reads and
-its verdict. Invented sessions and quotes only, no store.
+"""Hypothesis 68's study (packages/backtest/scripts/meic_symbols_item68.py): the arms it declares, its
+coverage reads and its verdict. Invented sessions and quotes only, no store.
 
 Each bar is shown firing and failing, because a check that cannot fire reads as coverage it is not.
 """
@@ -14,7 +14,7 @@ import pytest
 
 from cherrypick.backtest import store
 
-SCRIPTS = Path(__file__).resolve().parents[3] / "scripts"
+SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 _spec = importlib.util.spec_from_file_location("meic_symbols_item68", SCRIPTS / "meic_symbols_item68.py")
 st = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(st)

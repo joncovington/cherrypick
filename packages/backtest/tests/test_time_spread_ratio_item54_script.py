@@ -1,5 +1,6 @@
-"""Hypothesis 54's study (scripts/time_spread_ratio_item54.py): the entry calendar, the expiries, the
-requests, the trade's settlement and the declared decision rules. Invented chains and trades only.
+"""Hypothesis 54's study (packages/backtest/scripts/time_spread_ratio_item54.py): the entry calendar, the
+expiries, the requests, the trade's settlement and the declared decision rules. Invented chains and trades
+only.
 
 Each rule is shown firing and failing, because a check that cannot fire reads as coverage it is not.
 """
@@ -14,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-SCRIPTS = Path(__file__).resolve().parents[3] / "scripts"
+SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 _spec = importlib.util.spec_from_file_location(
     "time_spread_ratio_item54", SCRIPTS / "time_spread_ratio_item54.py"
 )

@@ -1,5 +1,5 @@
-"""Hypothesis 30's study (scripts/gex_walls_item30.py): the target expiry, the walls, their distance,
-each wall-day's d and the verdict. Invented chains and paths only, no store.
+"""Hypothesis 30's study (packages/backtest/scripts/gex_walls_item30.py): the target expiry, the walls, their
+distance, each wall-day's d and the verdict. Invented chains and paths only, no store.
 
 Each rule is shown firing and failing, because a check that cannot fire reads as coverage it is not.
 """
@@ -11,7 +11,7 @@ import sys
 from datetime import date, timedelta
 from pathlib import Path
 
-SCRIPTS = Path(__file__).resolve().parents[3] / "scripts"
+SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 _spec = importlib.util.spec_from_file_location("gex_walls_item30", SCRIPTS / "gex_walls_item30.py")
 s30 = importlib.util.module_from_spec(_spec)
 sys.modules["gex_walls_item30"] = s30

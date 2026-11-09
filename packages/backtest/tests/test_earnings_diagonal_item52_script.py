@@ -1,6 +1,6 @@
-"""Hypothesis 52's study (scripts/earnings_diagonal_item52.py): the structure, the requests, the delta
-strikes, the fills and costs, the control pairing, Holm, the verdict floors, arm C's side, the cheap cut
-and the refusal. Invented chains, bars and stores only: no vendor data, no real figure.
+"""Hypothesis 52's study (packages/backtest/scripts/earnings_diagonal_item52.py): the structure, the requests,
+the delta strikes, the fills and costs, the control pairing, Holm, the verdict floors, arm C's side, the cheap
+cut and the refusal. Invented chains, bars and stores only: no vendor data, no real figure.
 
 Each rule is shown firing and failing, because a check that cannot fire reads as coverage it is not.
 """
@@ -20,7 +20,7 @@ from cherrypick.core import calendar as cal
 
 from cherrypick.backtest import chainfetch
 
-SCRIPTS = Path(__file__).resolve().parents[3] / "scripts"
+SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 _spec = importlib.util.spec_from_file_location(
     "earnings_diagonal_item52", SCRIPTS / "earnings_diagonal_item52.py"
 )

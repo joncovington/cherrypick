@@ -1,6 +1,6 @@
-"""Hypothesis 33's study (scripts/meic_fomc_item33.py): the calendar parse, the permutation test, the
-halves, the holdout reading, the no-verdict floor and the unlock check. Invented sessions only, no store
-and no real net.
+"""Hypothesis 33's study (packages/backtest/scripts/meic_fomc_item33.py): the calendar parse, the permutation
+test, the halves, the holdout reading, the no-verdict floor and the unlock check. Invented sessions only, no
+store and no real net.
 
 Each guard is shown firing and failing, because a check that cannot fire reads as coverage it is not.
 """
@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-SCRIPTS = Path(__file__).resolve().parents[3] / "scripts"
+SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 _spec = importlib.util.spec_from_file_location("meic_fomc_item33", SCRIPTS / "meic_fomc_item33.py")
 st = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(st)

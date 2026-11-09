@@ -11,6 +11,9 @@ Prints three lines:
 
 The rules, in the order they apply to each changed path:
   - packages/core/**              everything: every package imports core.
+  - packages/backtest/scripts/**  everything: the studies there are scripts like scripts/'s, and
+                                  other packages' tests load them by path (bwb, core, orchestrator,
+                                  technicals, weeklyput; moved from scripts/ 2026-11-08).
   - packages/console/**           the console job.
   - packages/orchestrator/**      orchestrator, and the console (its Config page bridges the
                                   orchestrator's config editor).
@@ -72,7 +75,7 @@ def plan(paths: list[str], *, all_jobs: bool = False, root: Path = ROOT) -> dict
         parts = path.split("/")
         if parts[0] == "packages" and len(parts) > 2:
             name = parts[1]
-            if name == "core":
+            if name == "core" or parts[1:3] == ["backtest", "scripts"]:
                 return everything
             if name == "console":
                 console = True

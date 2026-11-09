@@ -9,7 +9,7 @@ The calendar is item 57's (docs/edge-hypotheses-plan.md), the sample the unhedge
   study left it out (a holiday Thursday expiry pulls its entry back into the monthly's week);
 - the entry session is the first session on or after the expiry minus 7 calendar days.
 
-`scripts/index_put_weekly_item57.py` holds the same rule for the backtest; the test
+`packages/backtest/scripts/index_put_weekly_item57.py` holds the same rule for the backtest; the test
 `test_clock.py::test_calendar_matches_item57` checks the two agree on every week from 2016-03 to
 2026-10. A change here is a different rule from the one judged, so it is a declared boundary.
 

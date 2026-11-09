@@ -72,7 +72,7 @@ def test_a_result_is_stale_once_the_log_grows_past_its_stamp():
 
 def test_every_research_script_s_log_parses():
     """A malformed log would hide a correction from the board, so each one in the repo must read."""
-    scripts = sorted((rq.repo_root() / "scripts").glob("*.py"))
+    scripts = sorted(p for d in rq.SCRIPT_DIRS for p in (rq.repo_root() / d).glob("*.py"))
     assert scripts
     logged = {p.name: sv.corrections(p) for p in scripts}
     assert len(logged["pmcc_item36.py"]) >= 4 and logged["earnings_item31.py"]
@@ -81,8 +81,10 @@ def test_every_research_script_s_log_parses():
 def test_the_queue_stamps_a_script_row_s_output(tmp_path, monkeypatch):
     out = tmp_path / "results.json"
     out.write_text("{}", encoding="utf-8")
-    row = {"args": json.dumps({"path": "scripts/pmcc_item36.py"}), "output": str(out)}
-    assert rq.stamp_output(row) == len(sv.corrections(rq.repo_root() / "scripts/pmcc_item36.py"))
-    assert sv.read_stamp(out)["script"] == "scripts/pmcc_item36.py"
+    row = {"args": json.dumps({"path": "packages/backtest/scripts/pmcc_item36.py"}), "output": str(out)}
+    assert rq.stamp_output(row) == len(
+        sv.corrections(rq.repo_root() / "packages/backtest/scripts/pmcc_item36.py")
+    )
+    assert sv.read_stamp(out)["script"] == "packages/backtest/scripts/pmcc_item36.py"
     monkeypatch.setattr(sv, "stamp", lambda *a, **k: (_ for _ in ()).throw(OSError("disk full")))
     assert rq.stamp_output(row) == "not stamped: disk full"

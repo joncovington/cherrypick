@@ -1,5 +1,5 @@
 # ruff: noqa: E501
-"""Item 38, the calendars module's own rule at real quotes (scripts/calendars_item38.py): the weeks and
+"""Item 38, the calendars module's own rule at real quotes (packages/backtest/scripts/calendars_item38.py): the weeks and
 their tags, the ex-dividend skip, the request list, the listing step and the pilot's seeded draw and
 basis rule, the entry and exit rules at stored bars (gate, noon, fall-throughs, settlement of
 delivered shares, the Friday regime's ordering), the 30-day reading and its rank, and the verdict.
@@ -25,7 +25,7 @@ from cherrypick.calendars import engine  # noqa: E402
 
 from cherrypick.backtest import intradayfetch as ix  # noqa: E402
 
-SCRIPT = Path(__file__).resolve().parents[3] / "scripts" / "calendars_item38.py"
+SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "calendars_item38.py"
 
 
 def _module():

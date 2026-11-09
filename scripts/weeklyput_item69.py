@@ -28,7 +28,8 @@ from datetime import date
 from pathlib import Path
 
 _spec = importlib.util.spec_from_file_location(
-    "index_put_weekly_item57", Path(__file__).with_name("index_put_weekly_item57.py")
+    "index_put_weekly_item57",
+    Path(__file__).resolve().parents[1] / "packages" / "backtest" / "scripts" / "index_put_weekly_item57.py",
 )
 i57 = importlib.util.module_from_spec(_spec)
 sys.modules.setdefault("index_put_weekly_item57", i57)

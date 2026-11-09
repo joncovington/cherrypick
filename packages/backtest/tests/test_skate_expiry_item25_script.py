@@ -1,5 +1,5 @@
-"""Hypothesis 25's study (scripts/skate_expiry_item25.py): its entry rules, its management and its
-verdict. Invented chains only, priced flat at 30% vol, no store.
+"""Hypothesis 25's study (packages/backtest/scripts/skate_expiry_item25.py): its entry rules, its management
+and its verdict. Invented chains only, priced flat at 30% vol, no store.
 
 Each rule is shown firing and failing, because a check that cannot fire reads as coverage it is not.
 """
@@ -11,7 +11,7 @@ import sys
 from datetime import date, timedelta
 from pathlib import Path
 
-SCRIPTS = Path(__file__).resolve().parents[3] / "scripts"
+SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 _spec = importlib.util.spec_from_file_location("skate_expiry_item25", SCRIPTS / "skate_expiry_item25.py")
 st = importlib.util.module_from_spec(_spec)
 sys.modules["skate_expiry_item25"] = st  # its dataclasses look their module up by name

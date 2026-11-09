@@ -3,7 +3,8 @@
 `docs/flow-signal-plan.md` declares the method and `docs/edge-hypotheses-plan.md` item 32 records
 what was settled before the first read. This module is the arithmetic only: plain rows in, plain
 numbers out, no store and no network, so every rule can be shown firing and failing on invented
-data. `scripts/flow_signal_item32.py` reads the stores, builds a `Scan` and calls `evaluate`.
+data. `packages/backtest/scripts/flow_signal_item32.py` reads the stores, builds a `Scan` and calls
+`evaluate`.
 
 **What a tag is.** A name has a tag on a session when at least one of its orders that session is
 large and opened (`flow.opened`: the next session's open interest rose by half the order), read

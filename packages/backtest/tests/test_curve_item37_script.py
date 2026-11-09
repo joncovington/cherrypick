@@ -1,4 +1,5 @@
-"""Hypothesis 37's study (scripts/curve_item37.py): curve's own rule run on invented end-of-day chains.
+"""Hypothesis 37's study (packages/backtest/scripts/curve_item37.py): curve's own rule run on invented
+end-of-day chains.
 
 Entry gating, each refusal, each arm's exits, the split, the costs and settlement, the pass rule and the
 files it writes. Invented chains only, no store. Each rule is shown firing and failing, and each guard is
@@ -23,7 +24,9 @@ from cherrypick.core import bs  # noqa: E402
 from cherrypick.core import calendar as cal  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[3]
-_spec = importlib.util.spec_from_file_location("curve_item37", ROOT / "scripts" / "curve_item37.py")
+_spec = importlib.util.spec_from_file_location(
+    "curve_item37", Path(__file__).resolve().parents[1] / "scripts" / "curve_item37.py"
+)
 s37 = importlib.util.module_from_spec(_spec)
 sys.modules["curve_item37"] = s37
 _spec.loader.exec_module(s37)

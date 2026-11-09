@@ -1,5 +1,5 @@
-"""Item 34's rules (cherrypick.backtest.ratiostudy) and its script (scripts/option_stock_ratio_item34.py),
-on invented data only: no store, no vendor figure.
+"""Item 34's rules (cherrypick.backtest.ratiostudy) and its script
+(packages/backtest/scripts/option_stock_ratio_item34.py), on invented data only: no store, no vendor figure.
 
 Each rule is shown firing and failing, because a check that cannot fire reads as coverage it is not.
 """
@@ -18,7 +18,7 @@ from cherrypick.core import robustness
 from cherrypick.backtest import flow, ratiostudy
 from cherrypick.backtest.ratiostudy import Scan
 
-SCRIPTS = Path(__file__).resolve().parents[3] / "scripts"
+SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 _spec = importlib.util.spec_from_file_location(
     "option_stock_ratio_item34", SCRIPTS / "option_stock_ratio_item34.py"

@@ -53,7 +53,7 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "packages" / "backtest" / "scripts"))
 import box_touch_history as _box  # noqa: E402
 from cherrypick.core import home as _home  # noqa: E402
 from cherrypick.core.quotehistory import profile_surface  # noqa: E402

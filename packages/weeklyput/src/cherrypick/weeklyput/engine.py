@@ -1,6 +1,7 @@
 """The trade: pick the put, price the sale, settle it. Pure over the quotes it is handed.
 
-Item 57's unhedged arm, as item 46's script computes it (`scripts/variance_premium_item46.py`):
+Item 57's unhedged arm, as item 46's script computes it
+(`packages/backtest/scripts/variance_premium_item46.py`):
 
 - **The forward** is put-call parity at the strike where the call and put mids are closest.
 - **The leg** is the put whose Black delta, on that forward at zero rate, is nearest 0.10, among the

@@ -24,8 +24,8 @@ A request is written whole or not at all, in one transaction. Only the rows insi
 window are kept.
 
 Which requests the client should send, and what a complete one is (the pilot's coverage test), are
-the study's: `scripts/earnings_item31.py`. This module records what the vendor answered and nothing
-more.
+the study's: `packages/backtest/scripts/earnings_item31.py`. This module records what the vendor answered and
+nothing more.
 """
 
 from __future__ import annotations

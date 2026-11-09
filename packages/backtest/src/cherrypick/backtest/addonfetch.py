@@ -6,7 +6,8 @@ and edge-hypotheses item 35 (the bwb module's whole rule at real quotes).
 also reads; ``start`` and ``end`` are taken for ``first`` and ``last``). A request is one expiry and a
 span of sessions, ``first`` through ``last``, both no later than the expiry. The sessions an expiry's
 positions need are the entry days the module's ladder enters it (``clock.target_expiration``) through
-its expiry day; `scripts/fetch_addon_weeklies.py requests` works out which of them the store lacks.
+its expiry day; `packages/backtest/scripts/fetch_addon_weeklies.py requests` works out which of them the store
+lacks.
 
 **The store** is ``addon_weeklies.db`` in the licensed vendor directory, the file the add-on study
 read since 2026-10-23, unchanged in shape: ``q`` holds the rows (``right`` ``P`` for puts at every

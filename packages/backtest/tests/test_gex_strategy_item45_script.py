@@ -1,5 +1,5 @@
-"""Hypothesis 45's inputs (scripts/gex_strategy_item45.py): the cells, the probe and the chain requests.
-Invented expiry lists only, no store.
+"""Hypothesis 45's inputs (packages/backtest/scripts/gex_strategy_item45.py): the cells, the probe and the
+chain requests. Invented expiry lists only, no store.
 
 Each rule is shown firing and failing, because a check that cannot fire reads as coverage it is not.
 """
@@ -12,7 +12,7 @@ import sys
 from datetime import date
 from pathlib import Path
 
-SCRIPTS = Path(__file__).resolve().parents[3] / "scripts"
+SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 _spec = importlib.util.spec_from_file_location("gex_strategy_item45", SCRIPTS / "gex_strategy_item45.py")
 s45 = importlib.util.module_from_spec(_spec)
 sys.modules["gex_strategy_item45"] = s45

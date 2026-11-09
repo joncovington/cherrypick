@@ -171,7 +171,7 @@ chosen before any outcome was read:
 - **plus the 10 sessions before each report's reaction day**, for the earnings test below, on the
   sessions the name passes the universe bar (7,377 reports; 153,577 name-days in all).
 
-`scripts/flow_fetch_plan.py` writes that list from the local stores; `backtest fetch-flow --plan`
+`packages/backtest/scripts/flow_fetch_plan.py` writes that list from the local stores; `backtest fetch-flow --plan`
 reads it, several requests at a time on the one session, and `--stop-by` keeps it clear of the
 nightly fetch's login. The tag test above reads the grid sessions only; with a 5-session outcome
 they do not overlap.
