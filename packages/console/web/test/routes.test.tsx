@@ -257,7 +257,7 @@ describe("the suite surfaces are on the frame", () => {
     });
   }
 
-  // Folded 2026-10-30 (docs/console-review-plan.md, batch 2): each old address lands on the tab
+  // Folded 2026-10-30: each old address lands on the tab
   // that holds it now, never on the page's first tab by accident.
   const folded: Array<[string, string]> = [
     ["/gex/volume", "GEX / iv skew"],

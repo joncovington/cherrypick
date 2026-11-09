@@ -1,4 +1,4 @@
-"""Write the flow fetch's plan: which names on which sessions, as `docs/flow-signal-plan.md` declares.
+"""Write the flow fetch's plan: which names on which sessions, as `research/flow-signal-plan.md` declares.
 
 **Sessions.** A backtest window, thinned on a fixed rule: every 5th session counted from the design
 window's first. The holdout carries that count on (item 32), so its grid is the same rule and the

@@ -2,8 +2,8 @@ import type { StudiesBoard, StudyResult, StudyRow } from "@console/shared";
 import { useBridged } from "../../lib/bridged";
 
 /**
- * The studies board as a lookup, for the Backtest tabs that point at a study (2026-10-29,
- * docs/studies-board-plan.md phase 4): the queue names a row's study and its verdict, the runs list
+ * The studies board as a lookup, for the Backtest tabs that point at a study:
+ * the queue names a row's study and its verdict, the runs list
  * names the study a run belongs to. One fetch, shared through the query cache with the studies tab.
  */
 

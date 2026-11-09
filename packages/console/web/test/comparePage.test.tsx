@@ -56,7 +56,7 @@ function armOrder(html: string, module: string): string[] {
 
 /**
  * One arm's cells by column id, the arm opened so its expanded line is in the markup: since
- * 2026-10-30 most statistics sit there, not in the row (docs/console-review-plan.md batch 3).
+ * 2026-10-30 most statistics sit there, not in the row.
  */
 function cells(module: string, arm: string): Record<string, string> {
   const s = section(render(`/compare?arm=${module}/${arm}`), module);

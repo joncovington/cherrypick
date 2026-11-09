@@ -1,4 +1,4 @@
-"""Item 69, item 57's unhedged arm in paper (docs/edge-hypotheses-plan.md): does paper track the replay?
+"""Item 69, item 57's unhedged arm in paper (research/edge-hypotheses-plan.md): does paper track the replay?
 
     python scripts/weeklyput_item69.py track [--ledger PATH] [--out FILE]   # paper against item 57's replay
 

@@ -1,4 +1,4 @@
-"""Item 20, the Convex Stack (docs/edge-hypotheses-plan.md): one with-trend out-of-the-money SPX fly
+"""Item 20, the Convex Stack (research/edge-hypotheses-plan.md): one with-trend out-of-the-money SPX fly
 bought on Mondays and Thursdays at about 5 DTE, scored on three exit arms.
 
     python packages/backtest/scripts/convex_stack_item20.py [--start 2022-05-16] [--end 2024-12-31]

@@ -1,4 +1,4 @@
-"""Item 31, the earnings module's paper rule (docs/edge-hypotheses-plan.md): the event list, the
+"""Item 31, the earnings module's paper rule (research/edge-hypotheses-plan.md): the event list, the
 coverage pilot, the end-of-day request files, the study, and the replay check on paper entries.
 
     python packages/backtest/scripts/earnings_item31.py plan [--host H] [--port P] [--out FILE]

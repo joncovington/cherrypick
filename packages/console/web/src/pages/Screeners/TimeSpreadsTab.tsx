@@ -21,7 +21,7 @@ import { PanelChoice, ScreenerCard, ScreenerLayout, SessionSelect, useParamState
 import { Section } from "../../components/Section";
 
 /**
- * The time-spread scanner (docs/time-spread-scanner-plan.md): the day's calendars and diagonals on the
+ * The time-spread scanner: the day's calendars and diagonals on the
  * names whose front week is priced rich to the back month. Each card says whether the account's sizing
  * (the same day's manage evaluation) fits it, or which cap stops it. The filters live in the URL as the
  * other Screeners tabs' do. Every figure is the scan's or manage's; this formats and decides nothing,

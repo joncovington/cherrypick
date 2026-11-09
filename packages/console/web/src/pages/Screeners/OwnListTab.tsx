@@ -213,7 +213,7 @@ export function incomeListFrom(param: string | null, path: string): IncomeList {
 }
 
 /**
- * Both income lists on one tab (2026-10-30, docs/console-review-plan.md batch 3): the same component,
+ * Both income lists on one tab: the same component,
  * the same cards, one switch -- now two tabs in the card's head. The list rides `?list=`, and the two
  * old tabs' addresses still open their own list.
  */

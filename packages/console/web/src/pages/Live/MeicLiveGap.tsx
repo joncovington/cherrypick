@@ -6,7 +6,7 @@ import { fmtMoney } from "../../lib/format";
 import { BoxButton, BoxButtons } from "./portfolioBoxContext";
 
 /**
- * MEIC live against paper (docs/console-review-plan.md batch 5): each live condor beside its paper
+ * MEIC live against paper: each live condor beside its paper
  * twin (`live-shadow`, which trades what the `live` block trades), paired per session by the reader
  * (`readers/meicLiveGap.ts`). The gap is live's net less paper's, + in live's favour: the broker's
  * fills and fees against the paper model's. Sessions paper traded and live sat out are counted on

@@ -1,4 +1,4 @@
-"""Item 37 (docs/edge-hypotheses-plan.md): the curve module's own rule at real end-of-day quotes, the
+"""Item 37 (research/edge-hypotheses-plan.md): the curve module's own rule at real end-of-day quotes, the
 contango-gated VXX call credit spread, with its variants.
 
     python packages/backtest/scripts/curve_item37.py plan [--out FILE]      # the fetch-chain-paths request

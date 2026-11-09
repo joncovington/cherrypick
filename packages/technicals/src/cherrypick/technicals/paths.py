@@ -24,7 +24,7 @@ def eod_db() -> Path:
 
 
 def history_db() -> Path:
-    """The historical study's research store (docs/signal-log-plan.md, Phase 1): Dolt's whole daily
+    """The historical study's research store (research/signal-log-plan.md, Phase 1): Dolt's whole daily
     history in the same schema as `eod.db`, kept apart so the nightly store neither slows nor grows.
     Rebuildable from Dolt at any time."""
     return data_dir() / "history.db"

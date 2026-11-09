@@ -1,4 +1,4 @@
-"""Item 65, the intraday premium map (docs/edge-hypotheses-plan.md): at each time of day, the SPX
+"""Item 65, the intraday premium map (research/edge-hypotheses-plan.md): at each time of day, the SPX
 0DTE chain's implied probability that the index closes within +/- x% of its price at that time,
 against how often it did.
 

@@ -1,7 +1,7 @@
 """Record Yahoo's sector and industry for every earnings calendar name and every name in the vendor's
 sector map.
 
-**Why.** The earnings calendar (docs/history/earnings-screener-plan.md) took its sector only from the market
+**Why.** The earnings calendar (docs/history/earnings-screener-plan.md (tag archive/docs-2026-11)) took its sector only from the market
 report's map (`universe/sectors.json`), the vendor's own sectors read from its report editions. That
 covers about 500 names, so most of the calendar showed a dash. Yahoo's sector agreed with the
 vendor's on all 120 names sampled from that map (2026-10-17), once three of its labels are renamed

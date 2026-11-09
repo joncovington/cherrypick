@@ -1,4 +1,4 @@
-"""Item 27, getting the share ladder out of multi-year holds (docs/edge-hypotheses-plan.md): six
+"""Item 27, getting the share ladder out of multi-year holds (research/edge-hypotheses-plan.md): six
 changes to item 26's `once-3`, each paired against it on the same names.
 
     python scripts/share_ladder_item27.py study [--json PATH] [--names A,B]

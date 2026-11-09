@@ -5,7 +5,7 @@
         [--plan TRADES_JSON] [--chains-db PATH] [--history-db PATH] [--workers N] [--limit-names N]
         [--allow-holdout]
 
-The spec is docs/edge-hypotheses-plan.md, "### 17. Our own credit-spread list". This prices the
+The spec is research/edge-hypotheses-plan.md, "### 17. Our own credit-spread list". This prices the
 trades `packages/backtest/scripts/credit_spread_plan.py --item 17` decided (every signal trade of the eight
 setup-sides and its five matched baselines, exclusions applied there) on the end-of-day chains in the backtest
 store, and runs the declared pass test once. No AI, no network, no broker: a pure function of
@@ -869,7 +869,7 @@ def least_bad(tests: dict) -> dict | None:
 
 
 # ------------------------------------------------------------------------------------- item 18
-# docs/edge-hypotheses-plan.md, "### 18. Mean-reversion put spreads, tested once on the holdout":
+# research/edge-hypotheses-plan.md, "### 18. Mean-reversion put spreads, tested once on the holdout":
 # item 17's d20/em0.75 cell for reversion put spreads, declared fixed, liquid entries only, read once.
 ITEM18_START = "2025-07-01"
 ITEM18_END = "2026-10-12"

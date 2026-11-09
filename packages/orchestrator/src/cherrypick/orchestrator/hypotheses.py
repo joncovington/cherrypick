@@ -1,6 +1,6 @@
 """`cherrypick hypotheses` — the hypothesis register and its yearly re-test (B7, B14).
 
-`docs/hypotheses.json` holds one row per hypothesis: its four parts (what is measured, the expected
+`research/hypotheses.json` holds one row per hypothesis: its four parts (what is measured, the expected
 outcome as a number, the window and sample, the pass-or-fail rule), the mechanism, the rival
 explanations with the check that rules each out, its status and a pointer to the plan section.
 Never figures: licensed results stay under `~/.cherrypick`, so the register can live in the repo.
@@ -65,7 +65,7 @@ def notes_paths(result: Path) -> list[Path]:
 
 
 def register_path(root: Path | None = None) -> Path:
-    return (root or repo_root()) / "docs" / "hypotheses.json"
+    return (root or repo_root()) / "research" / "hypotheses.json"
 
 
 def load(path: Path | None = None) -> dict:
@@ -302,7 +302,7 @@ def board(
     version=lambda path: None,
     key=lambda path: path,
 ) -> dict:
-    """The studies board (docs/studies-board-plan.md): each register row joined with its result
+    """The studies board: each register row joined with its result
     files' verdicts and its research-queue rows. `read(path)` returns `(data, modified)` for a
     `{home}/...` or absolute path, `(None, None)` when the file is absent or unreadable.
     `notes(path)` returns the Markdown a study left beside that file (`results.json` ->

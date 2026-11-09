@@ -1,4 +1,4 @@
-"""Entry context for every trade row, derived on read (`docs/trading-book-review-plan.md` B4).
+"""Entry context for every trade row, derived on read (`docs/trading-book-review-plan.md (tag archive/docs-2026-11)` B4).
 
 For each closed trade (`core.ledgers` records): SPX against its 50- and 200-day averages, the name's
 ATR(14) as a percentage of price, its volume against its 20-day average, its sector, the entry time,

@@ -1,7 +1,7 @@
 # cherrypick-technicals
 
-The market report's end-of-day store and technical engines (see
-[`docs/market-report-plan.md`](../../docs/market-report-plan.md)).
+The market report's end-of-day store and technical engines (what it
+runs is in [`docs/reference.md`](docs/reference.md), "The market report: what runs").
 
 Every morning after the 05:30 ET Dolt pull, it lands raw daily bars, splits, dividends and
 implied-volatility history for the 35 rotation ETFs, the benchmarks, the stock universe's

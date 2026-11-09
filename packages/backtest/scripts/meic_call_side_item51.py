@@ -1,5 +1,5 @@
 """Item 51, dropping the condor's call side when the VIX curve is stressed
-(docs/edge-hypotheses-plan.md): the same entries with the call side never opened, on the sessions (part 1,
+(research/edge-hypotheses-plan.md): the same entries with the call side never opened, on the sessions (part 1,
 the curve at the open) or the entries (part 2, the curve at the entry's hour) a stressed curve flags.
 
     python packages/backtest/scripts/meic_call_side_item51.py fetch-yahoo

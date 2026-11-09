@@ -1,5 +1,5 @@
 /**
- * The skate screen (2026-10-19; docs/skate-plan.md step 3): short calls above a name's recent range
+ * The skate screen: short calls above a name's recent range
  * and short puts below it, quoted in regular hours by `fetch_screener_greeks.py skate` and scored by
  * `cherrypick.technicals.skate` (`score`, `best_expiries`) into
  * `market-report/screener-greeks/skate/<session>/<HHMM>.json`. The console reads that file and
@@ -141,7 +141,7 @@ export interface SkatePayload {
 }
 
 /**
- * The skate screen's forward record (docs/skate-plan.md step 4): `technicals.skate_record` keeps each
+ * The skate screen's forward record: `technicals.skate_record` keeps each
  * session's shown rows, settles them at expiry and writes its reading as
  * `data/technicals/skate/record.json`. The console passes that reading through and decides nothing:
  * the counts, rates, z scores, `decision_grade` and each band's `passes` are the file's.

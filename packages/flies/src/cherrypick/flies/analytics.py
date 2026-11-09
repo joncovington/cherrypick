@@ -3202,7 +3202,7 @@ def _pair_detail(lv: dict, pp: dict, gap: float) -> dict:
 
 
 # --------------------------------------------------------------------------- why the books differ
-# docs/strategy-analysis-plan.md Phase 2: every gap between live and paper gets a reason category, so
+# Every gap between live and paper gets a reason category, so
 # a month of them can be read as "mostly fills" or "mostly a gate the two disagree on" -- the vendor
 # found a $1,428 filter-precision mismatch only by building this by hand. Live's reasons are its
 # `fly_decisions` refusals; paper's are its `fly_entry_attempts` outcomes. A reason not named here

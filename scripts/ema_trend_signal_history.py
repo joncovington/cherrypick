@@ -2,7 +2,7 @@
 
     python scripts/ema_trend_signal_history.py [--symbols SPY,QQQ,GLD,IWM,SLV,SMH] [--start 2011-01-03]
 
-Hypothesis 5 in docs/edge-hypotheses-plan.md. Video 15's dynamic poor man's covered call picks the
+Hypothesis 5 in research/edge-hypotheses-plan.md. Video 15's dynamic poor man's covered call picks the
 weekly short call's delta from the daily 8 and 21 EMAs: out of the money in an uptrend, in the money
 in a downtrend. Selling in the money in a downtrend is mostly being less long when the trend turns, so
 the rule can only beat pmcc's fixed 0.70-delta short if the EMA state predicts the next week. This

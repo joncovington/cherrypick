@@ -1143,7 +1143,7 @@ def cmd_get_pnl_summary(args) -> dict:
 
 
 def cmd_get_excursions(args) -> dict:
-    """MAE/MFE per closed trade (docs/metrics-plan.md Phase 2), mirrored from columns this module
+    """MAE/MFE per closed trade (packages/core/docs/module-map.md), mirrored from columns this module
     already tracks live rather than derived from a raw mark path -- `max_unrealized_pnl`/
     `min_unrealized_pnl` are updated on every mark (see the UPDATE in `record_mark`), so the
     running best/worst are already computed by the time a trade closes. `core.metrics.excursions`

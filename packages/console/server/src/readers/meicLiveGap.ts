@@ -1,5 +1,5 @@
 /**
- * MEIC live against paper (docs/console-review-plan.md batch 5): each live condor beside the paper
+ * MEIC live against paper: each live condor beside the paper
  * arm that trades what live trades -- `live-shadow`, a `follows_live` arm merged onto the `live`
  * block, so it is live's twin by construction -- paired by session and, within a session, by entry
  * order. Paper is read from the first live session on.

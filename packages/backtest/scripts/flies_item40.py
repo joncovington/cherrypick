@@ -1,4 +1,4 @@
-"""Item 40, legged flies without the strand tail (docs/edge-hypotheses-plan.md): a fixed stop on an
+"""Item 40, legged flies without the strand tail (research/edge-hypotheses-plan.md): a fixed stop on an
 uncompleted vertical, and the whole fly bought at once, each against flies' `control`.
 
     python packages/backtest/scripts/flies_item40.py study --window design|holdout [--workers N] [--json PATH]

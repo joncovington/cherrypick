@@ -1,4 +1,4 @@
-"""Item 19, the Time Warp (docs/edge-hypotheses-plan.md): two out-of-the-money SPX flies bought at
+"""Item 19, the Time Warp (research/edge-hypotheses-plan.md): two out-of-the-money SPX flies bought at
 15:50 and sold the next session, scored on two exit arms.
 
     python packages/backtest/scripts/time_warp_item19.py [--start 2022-05-16] [--end 2024-12-31]

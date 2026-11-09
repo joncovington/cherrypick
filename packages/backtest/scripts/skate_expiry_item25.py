@@ -1,4 +1,4 @@
-"""Item 25, the skate put's expiry and management (docs/edge-hypotheses-plan.md): a cash-secured put at
+"""Item 25, the skate put's expiry and management (research/edge-hypotheses-plan.md): a cash-secured put at
 the fixed skate band on the 14-day weekly against the 45-60 day monthly, each held with the $0.03
 buy-back resting, closed at half credit, or rolled net-zero when tested.
 

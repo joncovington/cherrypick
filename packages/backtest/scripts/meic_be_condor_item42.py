@@ -1,5 +1,5 @@
-"""Item 42, the break-even condor at its own wing widths (docs/edge-hypotheses-plan.md): `be-hourly-1x`
-exactly as docs/breakeven-condor.md gives it, 25-40-point wings with credit equalized, with and
+"""Item 42, the break-even condor at its own wing widths (research/edge-hypotheses-plan.md): `be-hourly-1x`
+exactly as research/breakeven-condor.md gives it, 25-40-point wings with credit equalized, with and
 without the stabilization gate, over the wide SPX store (`SPX-60s-wide.db`, 40 strikes each side).
 
     python packages/backtest/scripts/meic_be_condor_item42.py --step coverage

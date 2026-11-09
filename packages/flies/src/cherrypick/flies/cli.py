@@ -236,7 +236,7 @@ def _open_ro(path: str):
 
 def cmd_replay(args) -> int:
     """Replay a recorded session through the paper loop's own tick into a fresh scratch ledger
-    (`flies.replay`; docs/quote-history-replay-plan.md Phase 1). Settles at `--settle-price`, or at
+    (`flies.replay`; docs/quote-history-replay-plan.md (tag archive/docs-2026-11) Phase 1). Settles at `--settle-price`, or at
     paper's own recorded settlement for the session when omitted. Writes only `--out`."""
     from cherrypick.flies import replay
 

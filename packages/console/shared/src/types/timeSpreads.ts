@@ -1,5 +1,5 @@
 /**
- * The time-spread scanner (docs/time-spread-scanner-plan.md): calendars and diagonals on names whose
+ * The time-spread scanner: calendars and diagonals on names whose
  * front week is priced rich to the back month. `scripts/fetch_time_spreads.py` writes one file a
  * session (`time-spreads/<session>.json`) with every name's term-structure row and the shortlist's
  * structures as manage builds them; manage sizes them to the account (`book.time_spreads`). Every

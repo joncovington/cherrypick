@@ -7,7 +7,7 @@ import type { ConsoleConfig } from "../src/config.js";
 import { readMeicLiveGap } from "../src/readers/meicLiveGap.js";
 
 /**
- * MEIC live against paper (docs/console-review-plan.md batch 5). The guards: a live condor pairs with
+ * MEIC live against paper. The guards: a live condor pairs with
  * the paper twin on the same strikes before entry order; paper sessions live sat out are counted on
  * their own line; an open condor has no net and no gap; the paired totals are the sums of their
  * rows; other paper arms and paper sessions before live began are not read; a missing ledger is

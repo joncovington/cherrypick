@@ -5,7 +5,7 @@ import { SecondaryCells, columnsFor, secondaryOf, type Column } from "../src/com
 import { earningsInLife } from "../src/pages/Live/ManagePage";
 
 /**
- * Batch 3 of docs/console-review-plan.md: a wide table keeps a short row in every view and moves the
+ * A wide table keeps a short row in every view and moves the
  * rest into the row's expanded line. A secondary column must be in exactly one of the two places.
  */
 

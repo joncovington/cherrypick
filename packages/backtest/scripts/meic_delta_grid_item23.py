@@ -1,4 +1,4 @@
-"""Item 23, the short delta of MEIC's live rule (docs/edge-hypotheses-plan.md): `pm-200` entering once
+"""Item 23, the short delta of MEIC's live rule (research/edge-hypotheses-plan.md): `pm-200` entering once
 a day, 14:00-14:30, at 12, 20, 25 and 30 delta, each paired with the same rule at its own 16.
 
     python packages/backtest/scripts/meic_delta_grid_item23.py --window design|holdout [--workers N] [--json

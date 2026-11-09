@@ -4,7 +4,7 @@
 
 *Drafted 2026-10-17. No module change is built from it; five of the eight tests have run (see
 Status). It follows a review of twenty public options-trading interviews
-(YouTube, 2024-09 to 2026-06; credited in [strategy-sources.md](strategy-sources.md)) and asks one question of each idea before anything else: **where does
+(YouTube, 2024-09 to 2026-06; credited in [strategy-sources.md](../docs/strategy-sources.md)) and asks one question of each idea before anything else: **where does
 the edge live?** Every item names its hypothesised edge, the claim that would falsify it, the data we
 already hold, the smallest test that answers it, and the result that would justify building
 anything.*
@@ -40,7 +40,7 @@ treated as variance and tail shaping unless a test shows otherwise.
 
 Every declaration from here on carries these lines, written before any look. Declarations already
 written are not re-judged. The arithmetic is `cherrypick.core.robustness`
-(`docs/trading-book-review-plan.md` B12, B13, B9).
+(`docs/trading-book-review-plan.md (tag archive/docs-2026-11)` B12, B13, B9).
 
 - **A register row** in [hypotheses.json](hypotheses.json) (B7), added with the declaration: the four
   parts, the mechanism, the rival explanations each with the check that rules it out, and a pointer
@@ -496,7 +496,7 @@ below. The test plan there supersedes this section.*
 ### 9. The 1:45 PM sandwich
 
 *Sources: the second source's "triple threat" bot, running live since 2026-04-01, and the video where it
-was chosen and set up (about 2026-03-31); both linked in [strategy-sources.md](strategy-sources.md).*
+was chosen and set up (about 2026-03-31); both linked in [strategy-sources.md](../docs/strategy-sources.md).*
 
 - **Rule as stated:** at 13:45 ET, a 0DTE SPX iron condor with its shorts at spot ±5 and 5-wide
   wings, 10 wide overall. Held to settlement, with no target and no stop. Two filters:
@@ -632,7 +632,7 @@ worth revisiting" on 2026-10-18.*
 
 ### 13. A screener for credit structures the model calls positive-expectancy
 
-*Source: the second source's set-up video (see [strategy-sources.md](strategy-sources.md)), two discretionary trades placed live after a
+*Source: the second source's set-up video (see [strategy-sources.md](../docs/strategy-sources.md)), two discretionary trades placed live after a
 sell-off.*
 
 - **Rule as stated:** in the vendor's trade-ideas screener, look for iron condors and credit spreads
@@ -828,7 +828,7 @@ reproduced (the best rule found picked 10-15% of its slots right).*
   - **D:** the call side lost in both halves; the put side priced too few trades to read.
   - A sensitivity added after the declared run (the short moved to the strike nearest 0.40 delta that
     does admit the credit) cannot pass by construction, and failed the bar anyway.
-  - Beside it, the income review's question (`docs/income-review-plan.md`, item 2): at 0.20, 0.25 and
+  - Beside it, the income review's question (manage's put-spread candidates, `packages/manage/README.md`): at 0.20, 0.25 and
     0.30 delta and the first out-of-the-money strike, unconditioned, **no short delta had edge after
     costs**, on either side, in either half. The credit-share constraint is what starved this test;
     item 15 drops it.
@@ -886,7 +886,7 @@ of the credit helps. Declared here before any of it is run.*
 
 - **Question:** does `mr-300m`, the one directional signal that passed its historical confirmation,
   make a put credit spread worth its risk after costs, and if so with which short strike and which
-  exit? The answer decides manage's put-spread candidates (`docs/income-review-plan.md`, item 2).
+  exit? The answer decides manage's put-spread candidates (`packages/manage/README.md`).
 - **Where the edge would live:** the **selection signal**. Item 14's delta comparison found no edge in
   the premium alone; a spread earns here only if the signal moves the odds of finishing above the
   short strike by more than the costs.
@@ -970,7 +970,7 @@ of the credit helps. Declared here before any of it is run.*
     the model's daily IV comes from the local Dolt volatility history, since `history.db`'s IV table
     is empty, which leaves 2016-19 and funds unmodelled.
   - **Decided:** manage's put spreads use the least-bad unconditioned cell, as declared
-    (`docs/income-review-plan.md`, item 2).
+    (`packages/manage/README.md`).
 
 ### 16. Put credit spreads on liquid metals and bitcoin funds
 
@@ -1817,8 +1817,8 @@ of it is run, and run after item 23's verdict.*
 
 *Source: the user, 2026-10-28: "for skate trades, would shorter dated CSP be better to use,
 assuming no earnings cross the expiry?", then "shorter dated, letting them run to expiry or
-assignment vs rolling?". The skate study (docs/skate-plan.md) measured how often a band strike
-skates, not what a breach costs; its "Not in this plan" left that to the licensed data. This is
+assignment vs rolling?". The skate study (packages/technicals/docs/reference.md) measured how often a band strike
+skates, not what a breach costs; the screen leaves that to the licensed data. This is
 that test. Declared here before any of it is fetched or run.*
 
 - **Question:** does a cash-secured put sold at the skate band earn more on a 14-day weekly than on
@@ -3695,7 +3695,7 @@ live-fill check; an unlisted arm (other deltas, other expiries) is outside the s
 *Source: the user, 2026-10-30. Their rule: no module is retired without a backtest of its own rule. They
 approved keeping curve's paper unchanged and declaring this test. **Look-alikes, said out loud.** The
 2026-10 history studies replayed curve on VXX's closes with a modelled mark path; the modelled `control`
-and `noflip` lost after costs and the modelled `hook` could only lose its costs (`docs/history-studies-2026-10-b.md`).
+and `noflip` lost after costs and the modelled `hook` could only lose its costs (`research/history-studies-2026-10-b.md`).
 A separate replay at recorded credits, held 20 sessions, put the $2 width slightly ahead. Both used
 modelled option prices; this is the first test on real end-of-day quotes. **Seen before declaring:** those
 aggregate verdicts and the module's own paper record (a handful of sessions, three arms). No real-quote
@@ -4259,7 +4259,7 @@ declaration.***
   crash, or the return it gives up exceeds 3 points a year. The 2026-10-05 notes are the prior: the gate
   bought drawdown, not return.
 - **Look-alikes:** curve (the same signal on VXX call spreads; costs take about half the credit);
-  the `/VXM` plan (`docs/vxm-plan.md`, CFE settlements, awaiting the user's decisions, not built);
+  the `/VXM` plan (`research/vxm-plan.md`, CFE settlements, awaiting the user's decisions, not built);
   item 26-27 (a leveraged-fund rule with a long-hold problem, the same family of funds).
 
 #### The arms (four judged, Holm across them)
@@ -4472,7 +4472,7 @@ VIX9D and SPX refresh done.
 | Idea | Why not | Evidence |
 |---|---|---|
 | Other ratio thresholds (0.90, 0.95, 1.05) | A search the sample cannot afford under a Holm of four | This item |
-| A `/VXM` arm | Another instrument; the plan awaits the user's decisions | `docs/vxm-plan.md` |
+| A `/VXM` arm | Another instrument; the plan awaits the user's decisions | `research/vxm-plan.md` |
 | Leveraged short-volatility funds | Hard to borrow, worse risk-adjusted | 2026-10-05 notes |
 - **Result (2026-10-31): fail, every arm; the holdout is not read.** Each gate holds SVXY for less of
   the time and cuts the maximum drawdown well below holding it, but gives up far more return than the
@@ -4604,7 +4604,7 @@ either rule below.*
 
 *Source: the user, 2026-10-31, after reviewing a contributor's gate (PRs #723, #728): "I would also
 like to create a backtest of this strategy/arm", then four variants and one control chosen from a
-list. The gate is `cherrypick.meic.stabilization_gate` (docs/breakeven-condor.md, gap 2).
+list. The gate is `cherrypick.meic.stabilization_gate` (research/breakeven-condor.md, gap 2).
 Declared here before any of it is run. Item 42 tests the strategy at its own wing widths, once the
 store holds them.*
 
@@ -4634,7 +4634,7 @@ store holds them.*
 - **The structure:** every arm is SPX, one condor per entry, 12 delta, per-side stop at 1.0× the
   whole credit, entries 09:45–15:30 at least 55 minutes apart, up to seven a session, 5% credit
   floor, the regime gates neutralised: the `be-hourly-1x` profile in
-  docs/breakeven-condor.md, except that both wings are **10 points wide** (`equalize_credit`
+  research/breakeven-condor.md, except that both wings are **10 points wide** (`equalize_credit`
   off). The store holds only about 100 points of strikes either side of spot, and a 12-delta short
   with a 25–40-point wing falls outside it on most mornings (item 42).
   - `be10` is that arm without the gate: the base for the first three judged arms.
@@ -4705,7 +4705,7 @@ store holds them.*
 strategy's 25–40-point wings need strikes the vendor store does not hold. Declared here before the
 store is fetched or any of it is run.*
 
-- **Question:** does the break-even condor as he describes it (docs/breakeven-condor.md, the
+- **Question:** does the break-even condor as he describes it (research/breakeven-condor.md, the
   `be-hourly-1x` arm) earn after costs, and does the stabilization gate improve it?
 - **Where the edge would live:** **premium**, for the condor: hourly 12-delta condors whose
   per-side stop at the whole credit turns one tested side into a near-flat trade, so the edge is
@@ -4770,7 +4770,7 @@ of it is run.*
   credit, and a stopped side loses more. Which wins is the question.
 - **Look-alikes:** `pm-200-1400-w5` (5 against 10, full vendor history, 10 ahead in nearly every
   quarter); item 23 (the delta of the same rule: no lever away from 16); the flies width question in
-  docs/quote-history-replay-plan.md, a different module.
+  docs/quote-history-replay-plan.md (tag archive/docs-2026-11), a different module.
 - **Rival explanations, each with its check:**
   - *Paying more by risking more:* a wider condor holds more buying power, so a larger net per
     session can be a larger bet. **Check:** the arm's net over buying power (summed net over the
@@ -5328,7 +5328,7 @@ loop. Declared here before any of it is run.*
 ### 49. The dip-sold put on TQQQ: a cash-secured 16-delta put sold by a resting order 20% over the ask
 
 *Source: a trader's written rules (a subscriber newsletter of 2026-07-07, not linked here; the public interview is credited in strategy-sources.md),
-moved to TQQQ in [`docs/history/ivan-plan.md`](history/ivan-plan.md) ("The TQQQ version"). The
+moved to TQQQ in [`docs/history/ivan-plan.md (tag archive/docs-2026-11)`](https://github.com/joncovington/cherrypick/blob/archive/docs-2026-11/docs/history/ivan-plan.md) ("The TQQQ version"). The
 user decided on 2026-11-02: the cushion is the ask × 1.20, every put is cash secured, and this
 backtest comes before any paper module. Declared here before any of it is run.*
 
@@ -5446,7 +5446,7 @@ backtest comes before any paper module. Declared here before any of it is run.*
   - The results are derived from licensed data, so they stay under
     `~/.cherrypick/data/backtest/results/research/item49/`; this plan records the verdict only.
 - **Decides:**
-  - **The resting-order claim passes:** the TQQQ paper module of `docs/history/ivan-plan.md` is built on
+  - **The resting-order claim passes:** the TQQQ paper module of `docs/history/ivan-plan.md (tag archive/docs-2026-11)` is built on
     the passing arm, paper only, with `noroll`'s defence if `noroll` did as well.
   - **Only `atclose` passes,** or no resting arm beats it: no module. Waiting for the fill adds
     nothing, and it is a plain cash-secured put, already measured.
@@ -5826,7 +5826,7 @@ run; the plan step has only counted the cells.*
 
 ### 54. Does the front/back IV ratio predict a time spread's profit?
 
-*Source: the user, 2026-11-06, with the time-spread scanner (docs/time-spread-scanner-plan.md). The
+*Source: the user, 2026-11-06, with the time-spread scanner (packages/manage/README.md). The
 scanner orders its calendars and diagonals by the front week's IV over the back month's and builds a
 "loses with the stock unchanged" verdict per structure; neither has been tested. Declared before any
 chain is fetched; the plan step only counts the requests.*

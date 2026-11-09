@@ -52,7 +52,7 @@ cherrypick/core/
   power/           is this machine on battery
   profiles/        named arm registry + merge engine + calibration comparison
   quotehistory/    the read side of gex's recorded chain quotes
-  rangefeatures/   the declared daily range-features study (docs/range-features.md)
+  rangefeatures/   the declared daily range-features study (research/range-features.md)
   regime/          joining a timestamp against the recorded market regime
   regimecuts/      the regime-cuts artifact contract
   risk/            account-level risk primitives (fail-closed deploy cap)

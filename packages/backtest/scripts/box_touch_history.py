@@ -4,7 +4,7 @@
     [--end D]
         [--allow-holdout] [--json FILE]
 
-Step 2 of hypothesis 8 in docs/edge-hypotheses-plan.md (docs/box-edge-0dte-routine.md), with the
+Step 2 of hypothesis 8 in research/edge-hypotheses-plan.md (research/box-edge-0dte-routine.md), with the
 direction tests of hypothesis 4 alongside, because they read the same sessions. Read-only.
 
 **Why this question.** The reconstructed box order is a condor order resting far above the

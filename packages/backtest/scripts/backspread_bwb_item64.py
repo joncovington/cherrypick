@@ -1,4 +1,4 @@
-"""Item 64, defined-risk bullish structures on slow-moving large caps (docs/edge-hypotheses-plan.md):
+"""Item 64, defined-risk bullish structures on slow-moving large caps (research/edge-hypotheses-plan.md):
 a call backspread, two front call credit spreads with a back-month long call, a 1-3-2 put broken-wing
 butterfly, and the 1-3-2 calendarized; each judged against holding the same delta in shares.
 

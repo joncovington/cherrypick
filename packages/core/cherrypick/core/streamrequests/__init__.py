@@ -478,7 +478,7 @@ def subscription_snapshot(seed_symbols=None) -> dict:
 # The suite discovered its own ceiling in production, at an open. On 2026-08-24 the producer held
 # ~12,000 subscriptions, tripped DXLink's subscription RATE limit on every reconnect, and spent a
 # morning delivering roughly five seconds of data per sixty-five second cycle while every trading
-# module starved (docs/streamer-subscription-budget.md). `cherrypick.core.streamer`'s pacing removes
+# module starved (packages/streamer/CLAUDE.md, "Subscription budget"). `cherrypick.core.streamer`'s pacing removes
 # that failure mode; this exists so the NEXT expensive declaration announces itself when it is
 # declared rather than when it bites.
 #

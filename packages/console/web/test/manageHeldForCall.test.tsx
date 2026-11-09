@@ -72,7 +72,7 @@ function hold(t: ManageTrade): string {
   return text(renderToString(<PositionCard t={t} onOpen={() => undefined} />));
 }
 
-// The exit levels left the holding row on 2026-10-30 (docs/console-review-plan.md batch 3): they are
+// The exit levels left the holding row on 2026-10-30: they are
 // the expanded line's "exit levels" card, so the held-for-call wording is read there.
 function expanded(t: ManageTrade): string {
   return text(renderToString(<TradeDetail t={t} />));

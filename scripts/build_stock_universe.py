@@ -1,8 +1,8 @@
 """Build the market report's stock universe: candidates from the vendor's editions and the tastylive
 follow feed, kept only when tastytrade's own quotes show them to be very liquid.
 
-**Why this exists.** `docs/market-report-plan.md` runs its breadth and stage engines over a stock
-universe, and the vendor's is neither the S&P 500 nor an option-volume screen (the plan's gap 3).
+**Why this exists.** The market report (`packages/technicals/docs/reference.md`) runs its breadth and stage engines over a stock
+universe, and the vendor's is neither the S&P 500 nor an option-volume screen (the report documents the difference).
 The two places names come from are the ones a person actually watches: every ticker the vendor's
 editions link, and every underlying the tastylive traders put on. A name earns its place only by
 trading tightly, measured, not by being mentioned.
@@ -11,7 +11,7 @@ A script rather than package code, for the same reason as the vendor collector: 
 network. It writes only its own folder, `~/.cherrypick/data/market-report/universe/`, and is
 read-only against the broker apart from the `watchlist` step: it asks for instruments, metrics,
 chains and quotes, and places nothing. It uses REST snapshots, never the streamer: several hundred
-names would blow the stream budget (the plan's "The streamer cannot carry a stock universe"), and
+names would blow the stream budget (a stock universe of hundreds of names cannot ride the stream), and
 the stream cache has one writer.
 
 Three steps, each its own subcommand and its own schedule:

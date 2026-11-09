@@ -4,7 +4,7 @@ The vendor's webinars (2024-12 onward) judge a business on four measures, each a
 industry: net margin (weighted most), estimated revenue growth, estimated EPS growth, and valuation
 (forward P/E in every example, price/sales when earnings are negative). Since 2026-10 the label is
 a continuous score whose clear tails are "Compelling" or "Weak"; the scale, weights and threshold
-are never stated. docs/signal-log-plan.md ("Round 5") declares ours:
+are never stated. research/signal-log-plan.md ("Round 5") declares ours:
 
 - **Measures, as of each weekly estimate snapshot** (Dolt `earnings`, Sundays, from 2017-10):
   - forward P/E: the raw close of the last session at or before the snapshot / the "Next Year"

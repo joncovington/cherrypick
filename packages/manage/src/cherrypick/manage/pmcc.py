@@ -1,5 +1,5 @@
-"""The PMCC view: a covered call written against a long call instead of shares (docs/skate-plan.md
-step 6), recognised, linked from the broker's trade history, and checked against today.
+"""The PMCC view: a covered call written against a long call instead of shares,
+recognised, linked from the broker's trade history, and checked against today.
 
 **Recognition.** A name is a PMCC candidate when its calls are exactly one long and one short of the
 same size, the short expiring first, at or above the long's strike (and no shares, which would make

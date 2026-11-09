@@ -5,7 +5,7 @@ import type { LiveTodayPayload, ManagePayload, ManageTrade } from "@console/shar
 import { WHAT_TO_DO_HELP, WhatToDoList, todoList } from "../src/pages/Live/WhatToDo";
 
 /**
- * What to do today (2026-10-30, docs/console-review-plan.md batch 5): one list from the live loops'
+ * What to do today: one list from the live loops'
  * attention items and the position evaluation. Every action and reason is manage's own; nothing is
  * re-judged, and the list never claims "nothing to do" for positions it has not read.
  */

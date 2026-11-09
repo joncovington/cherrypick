@@ -1,4 +1,4 @@
-"""Item 67, the earnings module's rule with paper's spread screen (docs/edge-hypotheses-plan.md).
+"""Item 67, the earnings module's rule with paper's spread screen (research/edge-hypotheses-plan.md).
 
     python packages/backtest/scripts/earnings_paper_screen_item67.py mde [--inputs-dir DIR] [--out-dir DIR]
     python packages/backtest/scripts/earnings_paper_screen_item67.py study [--host H] [--port P] [--inputs-dir

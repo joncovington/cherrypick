@@ -23,7 +23,7 @@ describe("an experiment switched off", () => {
 });
 
 /**
- * Batch 4 of docs/console-review-plan.md: the four paper-only experiments and the retired flies on
+ * The four paper-only experiments and the retired flies on
  * one page, a card each, every figure the module's own summary read.
  */
 

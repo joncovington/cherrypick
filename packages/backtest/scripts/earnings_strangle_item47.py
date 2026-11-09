@@ -1,5 +1,5 @@
 """Item 47, a short strangle across an earnings report picked by implied against past moves
-(docs/edge-hypotheses-plan.md): the request file and the study.
+(research/edge-hypotheses-plan.md): the request file and the study.
 
     python packages/backtest/scripts/earnings_strangle_item47.py requests [--out-dir DIR]
     python packages/backtest/scripts/earnings_strangle_item47.py study [--host H] [--port P] [--out-dir DIR]

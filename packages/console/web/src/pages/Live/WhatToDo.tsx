@@ -5,7 +5,7 @@ import { HelpSection, type CardHelpContent } from "../../components/CardHelp";
 import { ACTION_PRIORITY, earningsInLife } from "./ManagePage";
 
 /**
- * What to do today (2026-10-30, docs/console-review-plan.md batch 5): one list from reads Live
+ * What to do today: one list from reads Live
  * already makes, so the actions stop being spread over four pages. In order of how soon they bite:
  * a live loop that needs a person; a position the manage evaluation says to act on (its own action and
  * reason, in its own urgency order -- nothing is re-judged here); a held position whose short expires

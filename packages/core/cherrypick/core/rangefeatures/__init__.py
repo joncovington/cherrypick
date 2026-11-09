@@ -1,6 +1,6 @@
 """cherrypick.core.rangefeatures — the daily range-features study, exactly as declared.
 
-The contract is `docs/range-features.md`, declared 2026-10-03 before any feature here had been
+The contract is `research/range-features.md`, declared 2026-10-03 before any feature here had been
 computed against an outcome. This module implements that declaration and decides nothing it did
 not. A definition changed here is a new declaration, not a fix.
 
@@ -45,7 +45,7 @@ from cherrypick.core import marketregime as _mr
 from cherrypick.core import metrics as _metrics
 from cherrypick.core import stats as _stats
 
-DECLARATION = "docs/range-features.md"
+DECLARATION = "research/range-features.md"
 DECLARED = "2026-10-03"
 CALIBRATION_THROUGH = "2022-12-30"
 EVALUATION_FROM = "2023-01-03"

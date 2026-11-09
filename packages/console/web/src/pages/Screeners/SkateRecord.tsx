@@ -7,7 +7,7 @@ import { ScreenerCard } from "./ScreenerParts";
 import { Section } from "../../components/Section";
 
 /**
- * The skate screen's forward record on the Skate tab (docs/skate-plan.md step 4). `technicals.skate_record`
+ * The skate screen's forward record on the Skate tab. `technicals.skate_record`
  * keeps the rows the tab showed, settles them at expiry and writes its reading as `record.json`; this
  * shows that reading and decides nothing. Whether the record is decision-grade and whether a band
  * passes are the file's `decision_grade` and `passes`, never worked out here from the z scores, and

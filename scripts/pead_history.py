@@ -3,7 +3,7 @@
     python scripts/pead_history.py [--start 2020-01-01] [--end 2026-10-02] [--json FILE] [--limit N]
         [--symbols A,B]
 
-Step 1 of hypothesis 1 in docs/edge-hypotheses-plan.md. The trade under test (a ~20-delta put credit
+Step 1 of hypothesis 1 in research/edge-hypotheses-plan.md. The trade under test (a ~20-delta put credit
 spread sold under the pre-report price after a stock gaps up and holds) can only earn if stocks that
 gap up on earnings keep drifting the same way, beyond the market, for the weeks the spread is held.
 That is post-earnings announcement drift, one of the best-documented anomalies. This measures the
@@ -42,7 +42,7 @@ first), not over events.
 is built only if the `rule` group's mean 21-session abnormal return is positive with a week-clustered
 t of at least 2.0, positive in at least two-thirds of the calendar years holding 30 or more events,
 and positive in both halves (R before 2023, and from 2023). Otherwise the hypothesis stops here, and
-the result is recorded in docs/history-studies-2026-10-c.md either way.
+the result is recorded in research/history-studies-2026-10-c.md either way.
 
 Deterministic: the same clones and arguments give the same tables.
 """

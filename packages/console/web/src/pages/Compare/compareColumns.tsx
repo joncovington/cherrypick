@@ -22,8 +22,8 @@ export interface CompareColumn {
   /** Right-aligned figure. */
   num?: boolean;
   group?: "vs";
-  /** In the arm's expanded line, above its histogram, rather than the row (2026-10-30,
-   *  docs/console-review-plan.md batch 3). Gross, costs and net stay together in the row. */
+  /** In the arm's expanded line, above its histogram, rather than the row.
+   *  Gross, costs and net stay together in the row. */
   secondary?: boolean;
 }
 

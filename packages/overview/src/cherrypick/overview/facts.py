@@ -426,7 +426,7 @@ def _close_history(conn, symbols, session: str, days: int) -> dict[str, list[dic
 
 # --------------------------------------------------------------------------- the vol term structure
 # The curve, front to back. `dte` is nominal and is what the slope is quoted against; the symbol is
-# provenance. VIX6M/VIX1Y were admitted 2026-08-25 after an entitlement probe (docs/regime-recorder-plan.md).
+# provenance. VIX6M/VIX1Y were admitted 2026-08-25 after an entitlement probe (packages/gex/CLAUDE.md).
 _TERM_POINTS = (
     # VIX1D admitted 2026-09-02 at the advisor's request (flies band-containment, proposal #110):
     # the one-day implied range is the front-most point the curve can carry, and the recorder has

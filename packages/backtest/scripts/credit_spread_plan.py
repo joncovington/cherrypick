@@ -10,7 +10,7 @@ rather than $300M, no index reference, the declared leveraged, inverse and volat
 and its own seed. Everything below -- entry, expiry, exclusions, baselines -- is shared, as item 17
 declares. The structure (short, widths) is the study's, not the plan's: a trade's chain carries them all.
 
-Step 2 of hypothesis 14 in docs/edge-hypotheses-plan.md (selecting credit spreads). It decides, from
+Step 2 of hypothesis 14 in research/edge-hypotheses-plan.md (selecting credit spreads). It decides, from
 local data alone, every trade the declared test will price, and writes the end-of-day chain requests
 `python -m cherrypick.backtest fetch-chains` reads. Read-only throughout; no vendor data is read here.
 

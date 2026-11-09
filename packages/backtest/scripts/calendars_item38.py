@@ -1,4 +1,4 @@
-"""Item 38, the calendars module's own rule at real quotes (docs/edge-hypotheses-plan.md): does the
+"""Item 38, the calendars module's own rule at real quotes (research/edge-hypotheses-plan.md): does the
 weekly SPY double calendar earn after costs, entered Monday or the Friday before?
 
     python packages/backtest/scripts/calendars_item38.py exdates                 # SPY ex-dividend dates from

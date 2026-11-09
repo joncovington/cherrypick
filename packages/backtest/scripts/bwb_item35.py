@@ -1,4 +1,4 @@
-"""Item 35, the bwb module's whole rule at real quotes (docs/edge-hypotheses-plan.md, section 35): does the
+"""Item 35, the bwb module's whole rule at real quotes (research/edge-hypotheses-plan.md, section 35): does the
 SPX put broken-wing butterfly, alone or with an add-on put spread, earn after costs, and does it do so
 if entries are kept to days when VIX9D is below VIX?
 

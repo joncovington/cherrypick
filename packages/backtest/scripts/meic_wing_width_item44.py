@@ -1,5 +1,5 @@
 """Item 44, the stabilization gate across wing widths 10 to 40 on MEIC's live rule
-(docs/edge-hypotheses-plan.md): item 43's `w10` rule at widths 10-40, each with and without the gate,
+(research/edge-hypotheses-plan.md): item 43's `w10` rule at widths 10-40, each with and without the gate,
 over the wide SPX store (`SPX-60s-wide.db`, 40 strikes each side).
 
     python packages/backtest/scripts/meic_wing_width_item44.py --step coverage

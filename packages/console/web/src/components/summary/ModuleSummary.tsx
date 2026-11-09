@@ -372,7 +372,7 @@ export function ModuleSummary({
   module: string;
   mode: TradingMode;
   /** The module's own session cards (open now, today's entries and why), above the window's numbers.
-   *  Summary and session were two tabs until 2026-10-30 (docs/console-review-plan.md, batch 2). */
+   *  Summary and session were two tabs until 2026-10-30. */
   today?: ReactNode;
   /** The page header's arm/symbol/era, so the summary narrows the way the page beside it does. */
   scope?: SummaryScope;

@@ -286,7 +286,7 @@ The short rows, and both breakout rows after their Supertrend condition, were co
 
 ## Historical evidence (2026-10-04, analysis plan v2)
 
-The historical study (`study run`, plan in `docs/signal-log-plan.md`) scored every setup over
+The historical study (`study run`, plan in `research/signal-log-plan.md`) scored every setup over
 2011-01-03 to 2026-10-02. The universe was chosen as of each day: price ≥ $5 and 50-session median
 dollar volume ≥ $20M, which is 4,633 names over the period and 2,663 on the last day.
 
@@ -333,7 +333,7 @@ a family-wise 5%. The full results, with every sub-period and view, are in
 
 ## Round 2: one improvement confirmed (2026-10-04)
 
-Nine improvements were declared before they were run (`docs/signal-log-plan.md`, "Round 2"):
+Nine improvements were declared before they were run (`research/signal-log-plan.md`, "Round 2"):
 filters on the long mean reversion, market-regime filters on SPY's 200-session SMA, and two
 long-pullback exits.
 - They were tested on half the names (stage A).
@@ -380,7 +380,7 @@ study folder. The watchlist lists the rule's own trades under "Tested edge"
 ## Round 3: two infographic setups, neither worth trading (2026-10-04)
 
 The user brought two setups from Fingrad's indicator-pair infographics. They were declared before
-running (`docs/signal-log-plan.md`, "Round 3") and scored like round 1, on every name over
+running (`research/signal-log-plan.md`, "Round 3") and scored like round 1, on every name over
 2011-01-03 to 2026-10-02 (4,633 names).
 
 - **Supertrend + Vortex** (`st-vortex`) enters on the first close Supertrend(10, 3) and VI+(14) > VI-
@@ -459,7 +459,7 @@ they are not tests.
 The vendor's relative strength is price divided by the S&P 500, and its signal is that ratio at a
 new high with a price breakout. Fitted to their dated calls, the lookback is about 21 sessions.
 Round 4 asks whether the signal makes money, with and without the vendor's volume rule (at least
-1.5x the prior 30 sessions' average). It was declared before running (`docs/signal-log-plan.md`,
+1.5x the prior 30 sessions' average). It was declared before running (`research/signal-log-plan.md`,
 "Round 4"; `round4.py`, `study round4`).
 
 An exploratory look had already seen every entry on names trading at least $300M a day. So the
@@ -500,7 +500,7 @@ The vendor reads its 1-10 relative-strength score only where the fundamentals ar
 claim is that a low score with compelling fundamentals means the price has not caught up, while a
 10 is "late to the game". Round 5 asks whether a low score adds anything once compelling
 fundamentals and a bullish trigger agree, and the mirror for shorts. It was declared before running
-(`docs/signal-log-plan.md`, "Round 5"; `fundamentals.py`, `round5.py`, `study round5`).
+(`research/signal-log-plan.md`, "Round 5"; `fundamentals.py`, `round5.py`, `study round5`).
 
 **The setup:**
 - **Fundamentals:** our version of their four measures, each a percentile within the name's sector
@@ -551,7 +551,7 @@ when entries cluster (the Bearish-trend row).
 The vendor's board counts an analyst revision as one more agreeing tag once its direction read is
 set. Round 6 asks whether a revision that session improves a name already in a strong bearing,
 compared with the same bearing without one. It also asks whether a revision against the bearing is
-a warning. It was declared before running (`docs/signal-log-plan.md`, "Round 6"; `revisions.py`,
+a warning. It was declared before running (`research/signal-log-plan.md`, "Round 6"; `revisions.py`,
 `round6.py`, `study round6`).
 
 **The setup:**
@@ -603,7 +603,7 @@ Nothing passes. The full results are in `round6-20261016-053221.json` in the stu
 The vendor's stacked method rests on its direction read, our *bearing*. The earnings list trades
 only strong bull and strong bear names, and the board is read against it. Round 7 asks whether
 entering a bearing beats random entry at all. It was declared before running
-(`docs/signal-log-plan.md`, "Round 7"; `compass.py`, `bearing_table.py`, `round7.py`,
+(`research/signal-log-plan.md`, "Round 7"; `compass.py`, `bearing_table.py`, `round7.py`,
 `study round7`).
 
 **The setup:**

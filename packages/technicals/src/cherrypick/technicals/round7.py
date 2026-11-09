@@ -1,6 +1,6 @@
 """Round 7 of the historical study: does the bearing itself carry an edge?
 
-The declaration, its reasons and the decision rule are in docs/signal-log-plan.md ("Round 7"),
+The declaration, its reasons and the decision rule are in research/signal-log-plan.md ("Round 7"),
 committed before this module first ran with scoring on. In brief:
 
 - **The bearing** is `bearing_table.TABLE` (the lookup frozen from the 2026-10-07 security list) on

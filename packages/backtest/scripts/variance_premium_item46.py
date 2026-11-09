@@ -1,4 +1,4 @@
-"""Item 46, the variance premium by underlying, tenor and strike (docs/edge-hypotheses-plan.md): its inputs.
+"""Item 46, the variance premium by underlying, tenor and strike (research/edge-hypotheses-plan.md): its inputs.
 
     python packages/backtest/scripts/variance_premium_item46.py plan [--out FILE]       # chain-path requests
     python packages/backtest/scripts/variance_premium_item46.py coverage [--out FILE]   # what the store

@@ -30,8 +30,8 @@ import {
 } from "./manageParts";
 
 /**
- * Live → pmcc: each poor man's covered call packages/manage reads on the account (`pmcc.py`,
- * docs/skate-plan.md step 6), one card per name whose calls have a PMCC's shape, and the PMCC rules
+ * Live → pmcc: each poor man's covered call packages/manage reads on the account (`pmcc.py`),
+ * one card per name whose calls have a PMCC's shape, and the PMCC rules
  * that fired on the trades holding its legs. The columns are the wheel cards' wherever they mean the
  * same thing (today's check on a short, the skate yield, the rules and their rolls).
  *

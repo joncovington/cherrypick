@@ -226,8 +226,7 @@ about 45 days out; no exit for a trade opened inside it has been tested. Without
 
 ## The wheel view
 
-Each evaluation also follows every wheel on the account (`wheel.py`, [docs/skate-plan.md](../../docs/skate-plan.md)
-step 5): a cash-secured put, the shares it delivered, the calls written against them, until the shares
+Each evaluation also follows every wheel on the account (`wheel.py`): a cash-secured put, the shares it delivered, the calls written against them, until the shares
 are called away or sold. It is written into the evaluation as the account's `wheel`, one entry per
 cycle, and names the evaluated trades holding its legs. The `wheel.*` rules in the table above read it.
 
@@ -290,11 +289,11 @@ budget judged only on option-only trades.
 
 ## The PMCC view
 
-Each evaluation also reads every poor man's covered call on the account (`pmcc.py`,
-[docs/skate-plan.md](../../docs/skate-plan.md) step 6): a covered call written against a long call in
+Each evaluation also reads every poor man's covered call on the account (`pmcc.py`): a covered call written against a long call in
 place of the shares. It is written into the evaluation as the account's `pmcc`, one entry per name
 whose calls have a PMCC's shape, recognised or not, naming the trades holding its legs. The `pmcc.*`
-rules in the table above read it.
+rules in the table above read it. The view reads the real account, not the paper `pmcc` module (retired),
+and works the same whether or not that module runs.
 
 - **Shape.** One long call and one short call of the same size, the short expiring first at or above
   the long's strike, no shares. Neither leg's days left decides it (the standard definition, user
@@ -352,7 +351,7 @@ meant to protect against. A roll candidate costing a debit (allowed to $0.10) co
 ## The account as one book
 
 Beside the trades, each evaluation reads the whole account as one book (`portfolio.py`; the plan is in
-[docs/history/portfolio-guidance-plan.md](../../docs/history/portfolio-guidance-plan.md)). It records:
+[docs/history/portfolio-guidance-plan.md (tag archive/docs-2026-11)](https://github.com/joncovington/cherrypick/blob/archive/docs-2026-11/docs/history/portfolio-guidance-plan.md)). It records:
 
 - **beta-weighted delta (BWD)** in SPY shares, and what a 1% SPY move does to it. The beta is the
   broker's own, so the figure can be checked against the broker's screen;
@@ -519,6 +518,18 @@ widest long that keeps one unit under the per-trade cap (and over `spread_min_cr
 and for a spread strictly narrower than its own: one stopped by how full the book is gets no wider version.
 Priced at mid from a day-old reading: re-quote before sending.
 
+**The Screeners lists against the account.** The lists themselves are account-blind, so manage judges
+each list trade (`candidates.screen_fit`, written into the evaluation as `screen_fit`) and the console
+looks the row up. A short put's buying power is worked out at every strike within the lists' delta
+tolerance, cash-secured or Reg T, against the buying power available now; a covered call fits the
+shares the account holds and has not already written against. An unjudged row stays shown. The same
+reading marks a candidate `leveraged`, `inverse` or `volatility` when the name is on the declared fund
+list the skate screen leaves out (`technicals/leveraged_funds.json`): a badge, not an exclusion, since
+a daily-reset fund decays and gaps in ways its delta does not price. A candidate on a name that already
+has an option leg on the same expiry stands alone and carries `held_same_expiry`, with its sizing
+unchanged. Earnings inside a list trade are not judged here: the own-list tab hides them by default,
+and an unknown date stays shown, marked.
+
 **Waiting for room** (2026-10-20). A trade stopped only by how full the book already is -- buying
 power, the theta ceiling, or (from 2026-10-21) an expiry whose trades already hold more downside than
 `portfolio.expiry_concentration` allows (`ROOM_CAPS`), not a cap on the trade itself -- is also listed as
@@ -537,11 +548,24 @@ expiry for a diagonal). One earnings trade with no bounded loss refuses the whol
 freeing part of it. Only buying power is freed: their theta and delta still count. The console's
 income card switches between the two lists with a checkbox.
 
-### Time spreads (`book.time_spreads`, 2026-11-06)
+### Time spreads (`book.time_spreads`)
 
-The time-spread scanner's calendars and diagonals, sized to the account
-([docs/time-spread-scanner-plan.md](../../docs/time-spread-scanner-plan.md)). The snapshot carries the
-day's reading (`time_spreads`, snapshot v17: `scripts/fetch_time_spreads.py`, about 10:30 ET), and
+The time-spread scanner's calendars and diagonals, sized to the account; the page that shows them is in
+[the screeners guide](../../docs/guide/screeners.md). The idea is a term-structure premium: a front week
+priced well above the back month is a short leg that may be overpriced for what the stock then does.
+
+`scripts/fetch_time_spreads.py` (the `manage-time-spreads` job at about 10:30 ET on trading days, or
+`run.py time-spreads` on demand; read-only broker reads, so the streamer's budget is untouched) writes
+`time-spreads/<day>.json` in two steps. The term read takes the broker's market metrics for the
+liquidity verdict's tradable names: the front IV (the expiry 5 to 16 days out nearest the middle of that
+range), the back IV (a standard monthly 30 to 75 days out), IV rank and the next earnings date. The
+prefilter (`timespreads.RULE`) keeps a name with a front/back ratio of at least 1.15, an IV rank of at
+least 30%, a $20B market cap (a fund has none and is kept) and no earnings before the back expiry; a
+spread across a report is a different trade, screened by the earnings module. Every name's row is kept
+with the reason it failed. The chains step quotes both expiries' strikes near the spot for the 20 best
+ratios only. Manage stays credential-free and judges only what the snapshot carries.
+
+The snapshot carries the day's reading (`time_spreads`, snapshot v17), and
 `timespreads.py` builds from its quoted chains: same-strike calendars at the money and one strike either
 side, and put and call diagonals (long 0.55-0.75 delta, short 0.15-0.35 beyond it, the debit at most 75%
 of the gap), each gated as one order by the leg bars and a natural fill within 15% of the debit. Every
@@ -556,8 +580,10 @@ guard and refuse every calendar on a small account; the theta a row adds is show
 `delta_limit` (+100) beta-weighted delta, bullish structures are held back and counted. A name or a
 sector already held is flagged on the row. `show` (30) cuts the list that fits; the ones too big are
 all listed, each with the cap that stops it, so the screener tab can mark every scanned row. **No
-structure here has a tested edge**: rows are ordered by
-the front/back IV ratio, labelled an untested hypothesis, until item 54 decides it.
+structure here has a tested edge**: research item 54 (does the ratio, or the "loses on an unchanged
+stock" verdict, predict profit after costs) failed, so rows stay ordered by the front/back IV ratio,
+labelled an untested hypothesis, and the scanner is a convenience, never a source of trades. Above
+all it is advice: nothing here touches an order path.
 
 ## The opening half hour
 
@@ -675,6 +701,11 @@ are the comparison. A book that keeps far less than it collects is paying for it
   session's, and an option expiring today has no quote, so its leg is unpriced and a name's delta
   reads off the stale spot. The evaluation says so (`pre_open`: the New York time it was taken, and
   the trades with an unpriced leg expiring today); a run after 09:30 reprices.
+- **A snapshot older than the code leaves later views empty.** The wheel, PMCC and time-spread views
+  need fields only a newer snapshot carries. Manage snapshots every 30 minutes from 10:00 to 16:35 ET,
+  so only a merge after the day's last run leaves a stale one, and only until 10:00. The watchdog's
+  `manage.snapshot_version` WARNs while the newest snapshot is older than the installed
+  `SNAPSHOT_VERSION`, and the console's manage tabs show that finding as it states it.
 - **Fees are known only for a reconciled chain.** A trade priced from its open legs shows gross P&L only, and its basis misses any earlier roll.
 - **Ex-dividend dates are the last declared ones.** The rule fires once the next ex-date is announced.
 - **Earnings dates are the broker's expected dates**, which can move.

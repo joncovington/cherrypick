@@ -6,7 +6,7 @@ import { spawnModuleCli, spawnModuleCliAsync, type SpawnedJson } from "./moduleC
  *
  * `python -m cherrypick.core.analysis read` runs `core.ledgers`' reader for one schema and
  * `core.analysis.arm_reading` per arm: streaks, drawdown episodes, profit durability and the
- * reshuffle stress test (docs/strategy-analysis-plan.md). A derivation, so it is bridged, never
+ * reshuffle stress test (packages/core/docs/module-map.md). A derivation, so it is bridged, never
  * mirrored -- the same rule and pattern as `metricsBridge.ts`, whose grouping it shares, so the
  * performance and analysis slides always describe the same arms.
  *

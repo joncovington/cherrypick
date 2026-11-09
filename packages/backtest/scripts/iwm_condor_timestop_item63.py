@@ -1,4 +1,4 @@
-"""Item 63, a 7-day time stop on item 59's condor (docs/edge-hypotheses-plan.md): every cycle item 59
+"""Item 63, a 7-day time stop on item 59's condor (research/edge-hypotheses-plan.md): every cycle item 59
 enters, run twice on the same entry and the same daily marks, once under item 59's exit and once
 with a time stop that closes the condor 7 days after entry when the half-credit target has not come.
 

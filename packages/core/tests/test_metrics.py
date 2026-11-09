@@ -97,7 +97,7 @@ def test_sample_progress_tracks_the_next_unmet_target():
     assert metrics.sample_progress(150)["progress"] == 1.0
 
 
-# --- phase-1 expansion (docs/metrics-plan.md): edge, risk-adjusted, tail, duration ----
+# --- phase-1 expansion (packages/core/docs/module-map.md): edge, risk-adjusted, tail, duration ----
 
 
 def test_expectancy_is_mean_per_trade_and_refuses_empty():

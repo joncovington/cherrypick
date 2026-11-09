@@ -6,7 +6,7 @@ can see — so a change to it belongs on the record rather than in a config diff
 ## 2026-08-24: cut to 0.12 mid-session, restored to 0.20 after the close
 
 **What happened.** The suite's market-data producer spent the first half of the session
-crash-looping on DXLink's subscription rate limit (see `docs/streamer-subscription-budget.md`).
+crash-looping on DXLink's subscription rate limit (see `packages/streamer/CLAUDE.md`, "Subscription budget").
 While diagnosing it, this module's `deep_window_pct` was cut **0.20 → 0.12** as emergency load
 shedding: it drives the `window_hints` this module asks the producer for, and XSP's hint of 163
 strikes per side was the single largest window in the suite.

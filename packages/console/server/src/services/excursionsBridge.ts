@@ -9,11 +9,11 @@ import type {
 } from "@console/shared";
 
 /**
- * MAE/MFE (docs/metrics-plan.md Phase 2) per closed position, via each module's own `excursions`
+ * MAE/MFE (packages/core/docs/module-map.md) per closed position, via each module's own `excursions`
  * verb -- curve/calendars/pmcc (`<module>.cli --db PATH excursions`) and earnings (a different
  * shape: `earnings.db_paper get_excursions`, no `--db` flag at all, the same default-home
  * resolution `screenBridge.ts` already relies on for this module). meic/flies/bwb have no Python
- * excursions support: meic/flies were never wired (metrics-plan.md's own scope -- no general
+ * excursions support: meic/flies were never wired (the original scope -- no general
  * per-position mark path for either), and bwb was deliberately left out of the Phase 3a rollout
  * (its reversal add-on changes a position's leg set mid-life without updating `entry_credit`, so
  * a naive P&L reconstruction would misattribute the add-on's own credit as a mark move -- see

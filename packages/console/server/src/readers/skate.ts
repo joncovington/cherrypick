@@ -1,5 +1,5 @@
 /**
- * The skate screen for the Screeners page's Skate tab (2026-10-19; docs/skate-plan.md step 3).
+ * The skate screen for the Screeners page's Skate tab.
  *
  * `fetch_screener_greeks.py skate` quotes each name-side's range-band strikes in regular hours (12:00
  * and 15:05 ET) and scores them with `cherrypick.technicals.skate` (`score`, `best_expiries`), writing

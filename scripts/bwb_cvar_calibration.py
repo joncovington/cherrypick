@@ -5,7 +5,7 @@
 
 Read-only. Needs VIX9D.csv and SPX.csv (`bwb_history_backtest.py fetch DIR`).
 
-**The question** (docs/metrics-plan.md, open questions): `core.metrics.CVAR_MIN_SESSIONS = 20` was
+**The question** (issue #996): `core.metrics.CVAR_MIN_SESSIONS = 20` was
 proposed, not measured, and the plan said to revisit it once a module had ~20 sessions inside one
 era. Fifteen years of modelled bwb sessions answer the sampling half of that now: for a window of n
 sessions, how far is the CVaR it reads from the long-run tail?

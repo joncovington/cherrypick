@@ -167,7 +167,7 @@ affecting.
     reason. The VIX9D/VIX gate (`bwb regime-split`) is a hypothesis from a modelled two-year
     backtest that chose the best of six gates. It is measured on paper; live may gate on it
     (`live.vix9d_vix_max`, below). The modelled out-of-sample
-    test (2011-2024, `scripts/bwb_regime_gate_history.py`, root `docs/history-studies-2026-10.md`)
+    test (2011-2024, `scripts/bwb_regime_gate_history.py`, root `research/history-studies-2026-10.md`)
     found that skipped entries lose about twice as much per trade, and that kept entries still lose. A row with no reading,
     including every row before 2026-10-09, is `unmeasured` and is never assigned to a side.
 
@@ -194,7 +194,7 @@ Built to test whether the paper result survives a fill without disturbing the pa
   per-expiration worst-case margin caps from expiry payoffs, RESERVING an unfired position's future
   add-on whenever the arm can fire; the settled-net breaker; and the mark-drawdown breaker, which
   blocks the NEXT entry only, never an exit.
-- **Kill criteria** (`live.kill`, B1 of `docs/trading-book-review-plan.md`, 2026-10-24): the arm's
+- **Kill criteria** (`live.kill`, B1 of `docs/trading-book-review-plan.md (tag archive/docs-2026-11)`, 2026-10-24): the arm's
   frozen, dated condition for being wrong, read through `core.killcriteria.gate` after the breakers.
   Past the 95th-percentile drawdown or losing streak of its bootstrapped evidence an entry is halved
   (at least one); past the 99th it is refused (`kill_criteria`) and the block LATCHES

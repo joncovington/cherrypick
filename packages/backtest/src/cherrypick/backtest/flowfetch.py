@@ -1,5 +1,5 @@
 """The flow fetch: each name's day of option prints, grouped into orders (`flow.py`), the large ones
-kept with the open interest either side of them. `docs/flow-signal-plan.md`, build step 1.
+kept with the open interest either side of them. `research/flow-signal-plan.md`, build step 1.
 
 **What is kept,** per (name, session), in `flow.db` beside the other licensed stores:
 

@@ -222,7 +222,7 @@ question.
 
 ## c. CVaR minimum sessions
 
-`scripts/bwb_cvar_calibration.py`, for `docs/metrics-plan.md`'s open question.
+`scripts/bwb_cvar_calibration.py`, for the open question in issue #996.
 `core.metrics.CVAR_MIN_SESSIONS = 20` was proposed and never measured.
 
 The data is 823 modelled weekly bwb sessions (2011-2026, scaled). A bwb "session" is its settlement
@@ -253,6 +253,6 @@ and a max-loss week turns up in most windows of 14 or more.
   the tail 4-6% of the time. For bwb, 20 sessions are 20 weeks, about five months.
 - **This does not calibrate the daily modules.** meic and flies have path-dependent tails: stops,
   stranded verticals, gap-throughs. A capped weekly structure is the easy case. Their calibration
-  belongs to the quote-history replay (`docs/quote-history-replay-plan.md`).
+  belongs to the quote-history replay (`docs/quote-history-replay-plan.md (tag archive/docs-2026-11)`).
 - **Regime shift is the bigger risk.** Even at n = 20, the following year's tail is more than 50%
   worse 10-14% of the time. Sampling error stops mattering past ~26 sessions.

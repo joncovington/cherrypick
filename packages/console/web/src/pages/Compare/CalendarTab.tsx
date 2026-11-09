@@ -17,7 +17,7 @@ import { isModuleVisible } from "../../lib/visibility";
 
 /**
  * Compare's calendar tab: every arm's settled net per session, as a month grid with a weekly total
- * (docs/strategy-analysis-plan.md Phase 4). The nets are core.metrics' own per-session series, the
+ * (packages/core/docs/module-map.md). The nets are core.metrics' own per-session series, the
  * one each performance tab reads, over the suite window; this file only adds them up for display.
  *
  * A day drills to the arms that traded it, and an arm to its trades (`core.metrics trades`, the same

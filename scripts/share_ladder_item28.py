@@ -1,4 +1,4 @@
-"""Item 28, the share ladder before 2011 and on single stocks (docs/edge-hypotheses-plan.md): item 26's
+"""Item 28, the share ladder before 2011 and on single stocks (research/edge-hypotheses-plan.md): item 26's
 arms on daily-reset funds rebuilt from their 1x history back to 1999, and on single-stock 2x funds
 rebuilt from their stocks.
 

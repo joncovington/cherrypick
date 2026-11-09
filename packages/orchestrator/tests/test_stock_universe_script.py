@@ -5,8 +5,8 @@ and the only thing that makes a name belong is a measured tight market. So the v
 failing: each test breaks one part of that (a wide option, a stale quote, too few sessions, a low
 rating) and asserts the name does not get in for exactly that reason.
 
-It lives here beside the vendor collector's tests because the orchestrator schedules it; both move
-to the market-report package once that exists (docs/market-report-plan.md, "Where the code goes").
+It lives here beside the vendor collector's tests because the orchestrator schedules it; both could move
+to the technicals package, which already holds the market report's engines.
 """
 
 from __future__ import annotations

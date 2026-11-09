@@ -1,9 +1,10 @@
 """Collect the vendor's daily pre-open report as a scored fixture for the market-report build.
 
-**Why this exists.** `docs/market-report-plan.md` rebuilds a commercial pre-open report from our own
-data, and every engine it plans is scored against the vendor's published editions. Five were saved
+**Why this exists.** The market report (`packages/technicals/docs/reference.md`) rebuilds a commercial
+pre-open report from our own
+data, and every engine is scored against the vendor's published editions. Five were saved
 by hand; each one settled something the others could not. The fixture only grows if collecting it
-does not depend on someone remembering to save a page, so this does it every morning (Phase 0b).
+does not depend on someone remembering to save a page, so this does it every morning.
 
 A script rather than package code, for the same reason as the narratives and the Dolt refresh: it
 reaches the network, and nothing on a decision path may. It writes only its own store,

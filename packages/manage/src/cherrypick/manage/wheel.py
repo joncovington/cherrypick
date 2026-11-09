@@ -1,5 +1,5 @@
 """The wheel view: each name's cycle of cash-secured put, assignment, covered calls and call-away,
-linked from the broker's trade history and accounted for across every roll (docs/skate-plan.md step 5).
+linked from the broker's trade history and accounted for across every roll.
 
 **Linking.** Orders are linked into chains the way `chains.py` links them, through the contracts they
 open and close; a chain is a WHEEL chain when every option leg in it is one right sold to open or

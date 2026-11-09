@@ -1,4 +1,4 @@
-"""Phase 5 of docs/strategy-analysis-plan.md: how a set of arms behaves held together.
+"""How a set of arms behaves held together.
 
 One arm per strategy -- the arms within a module are alternatives, not holdings -- each read as its
 settled net per session (`core.metrics.session_nets_dated`, the series the P&L calendar draws).

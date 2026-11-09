@@ -99,7 +99,7 @@ const STUDIES = {
       title: "The short delta",
       status: "failed",
       legacy: false,
-      pointer: "docs/edge-hypotheses-plan.md#23-the-short-delta",
+      pointer: "research/edge-hypotheses-plan.md#23-the-short-delta",
       outcome: "live stays at 16 delta",
       rule: "t > 2",
       rivals: [{ explanation: "a calm span", check: "both halves" }, { explanation: "no check" }],

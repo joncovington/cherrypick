@@ -1,4 +1,4 @@
-"""Item 21, legged flies with a resting entry limit (docs/edge-hypotheses-plan.md): control's legged SPX
+"""Item 21, legged flies with a resting entry limit (research/edge-hypotheses-plan.md): control's legged SPX
 0DTE flies, with the entry resting above mid and filled only by the market reaching it.
 
     python packages/backtest/scripts/flies_entry_limit_item21.py --window design|holdout [--workers N] [--json

@@ -3,7 +3,7 @@
     python scripts/gex_levels_history.py [--history-db PATH] [--start D --end D] [--allow-holdout]
         [--json FILE]
 
-Item 12 in docs/edge-hypotheses-plan.md, its pass tests declared 2026-10-18 before any look. The
+Item 12 in research/edge-hypotheses-plan.md, its pass tests declared 2026-10-18 before any look. The
 provisional look (2026-10-19) ran without a committed script; this is that test written down so it
 can be re-run unchanged (B14). Read-only. Signal only: no option is priced here.
 

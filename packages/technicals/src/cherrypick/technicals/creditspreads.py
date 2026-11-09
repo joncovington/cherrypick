@@ -1,7 +1,7 @@
 """Our own credit-spread list: the chart setups' fresh entries as spreads, priced on the afternoon chain.
 
 The vendor's credit-spread tab froze with its subscription (2026-10-23 lists). This is its replacement,
-built to the user's stated trade (2026-10-24) and judged by item 17 of `docs/edge-hypotheses-plan.md`
+built to the user's stated trade (2026-10-24) and judged by item 17 of `research/edge-hypotheses-plan.md`
 (run 2026-10-25): nothing passed, and the file says so (`TESTED`). Each row carries every `SELECTIONS`
 pick, the rules the tab offers (the 30-40% credit rule and the two least-bad mean-reversion put cells).
 

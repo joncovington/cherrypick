@@ -5,7 +5,7 @@ Subcommands (all read-only over the module's own ledger):
     headline   per-arm, per-symbol results through the analytics layer
     worksheet  the live per-position worksheet (the user's spreadsheet, from the ledger)
     exposure   the early-assignment-exposure telemetry
-    excursions per-closed-position MAE/MFE (docs/metrics-plan.md Phase 2) plus distributions
+    excursions per-closed-position MAE/MFE (packages/core/docs/module-map.md) plus distributions
     equity     each arm's daily marked equity (every position at each session's close) and its tear sheet
     ladder     the ITM call ladder as a selector would see it (the calibration read)
     tracker    one position week by week: header, the long, every short, the weekly roll-up

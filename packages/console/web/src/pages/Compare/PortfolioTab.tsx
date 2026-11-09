@@ -14,7 +14,7 @@ import { useFeatures } from "../../lib/useFeatures";
 import { isModuleVisible } from "../../lib/visibility";
 
 /**
- * Compare's portfolio tab (docs/strategy-analysis-plan.md Phase 5): one chosen arm per module held
+ * Compare's portfolio tab (packages/core/docs/module-map.md): one chosen arm per module held
  * together, read by core.portfolio. The arms within a module are alternatives, not holdings, so the
  * picker takes one each. Its default -- `control`, else the module's first arm that is not an
  * advised experiment -- is a starting point, not a judgement of which arm is the strategy.

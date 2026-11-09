@@ -11,7 +11,7 @@ serves nothing itself (its old dashboard, WebSocket push and section card are re
 `pre-console-only` tag), places no orders, and never touches live trading.
 
 The recorder also carries the **suite-level market-regime series** (`src/cherrypick/gex/regime.py`;
-design record [`docs/regime-recorder-plan.md`](../../docs/regime-recorder-plan.md)): one row per
+the readings and rules are below): one row per
 reading per ~minute during RTH (the vol complex, breadth and cross-asset quotes, GLD/USO as labelled
 commodity proxies, the eleven SPDR sectors) into `market_regime_history`, plus a permanent
 `daily_closes` table harvested from `stream_summary`. Rules:
@@ -31,6 +31,45 @@ commodity proxies, the eleven SPDR sectors) into `market_regime_history`, plus a
   `range-high` arm, trend tag and band placement read, and the spot trail misses a touch between
   samples. Sessions before today only (today's range still moves), append-only, and a row with a
   missing high or low is left for a later run, never filled in.
+- **What is sampled** (`regime.READINGS`, one `market_regime_history` row per reading per minute):
+  the vol complex (VIX, VIX3M, VIX1D, VIX9D, VIX6M, VIX1Y, VVIX, SKEW), breadth and cross-asset
+  quotes (SPY, RSP, HYG, LQD, TLT, GLD, USO) and the eleven sector ETFs. The nine-day-to-one-year
+  VIX curve lets its slope be read at the front (event pricing) and the back (the carry a
+  short-premium book is paid for). GLD and USO are labelled price proxies, ETFs rather than
+  futures because the sampler is RTH-only and they track at beta near 1. `spy_volume` is SPY's
+  session-cumulative volume from the same trade row (the minute's volume and the VWAP are read-side
+  differences); SPX has no volume.
+- **Futures** (`vx1`, `vx2`, `zn1`) are ordinary readings whose symbol comes from
+  `state/futures_contracts.json`, written by `scripts/refresh_futures_contracts.py` at 08:45 ET from
+  the broker's instruments endpoint. Never assemble a futures symbol here: the exchange code is
+  only known to the endpoint, and a guessed one reads as "not entitled". The reading name is stable
+  across a roll and the row's `symbol` records the contract, so no row is a blended constant-maturity
+  value. VX takes consecutive expirations (the roll yield is a relationship between adjacent
+  contracts); ZN takes the active month, because a Treasury future's liquidity leaves ahead of first
+  notice. A map older than five days drops the futures readings, leaving a legible gap instead of a
+  quietly wrong series. The recorder stays credential-free and network-free; the script is the fence.
+- **Chain readings** per offered symbol (`regime.CHAIN_READINGS`: ATM IV, expected move, 25-delta
+  risk reversal, put/call open-interest ratio, gamma concentration) are raw measures computed from
+  the cached chain. IV rank is not stored: it is a read-side percentile of the ATM IV series.
+  Concentration is measured over the top strikes near spot, because a whole-chain share is
+  degenerate. The 25-delta risk reversal reads the nearest expiration, which for SPX is often 0DTE
+  with no 25-delta strike, so the reading is often absent; it is not Cboe's SKEW and is never shown
+  as that.
+- **Not reachable on the feed, so not recorded:** market internals ($TICK, $TRIN and the like; seven
+  symbol variants printed nothing as TimeAndSale), MOVE (an institutional feed), and OVX, GVZ and
+  RVX (no prints). TLT and HYG/LQD stand in for rates and credit. Indices publish Trade events, not
+  Quote, so cash legs are read from `stream_trades`; do not "fix" that to `stream_quotes`.
+- **Guards, each shown to fail:** a frozen quote lands unusable with its reason; every reading's
+  symbol appears in the recorder's own stream-request file; `dropped_readings` flags a reading that
+  disappeared; `regime_at` refuses beyond its staleness bound instead of returning the nearest row.
+- **Calendar context** (days to expiry, FOMC proximity) is not recorded: a pure function of the date
+  is re-derivable, so it belongs on the read side. The tables are permanent; the monthly log archive
+  zips only dated reports and rotated logs, never this database.
+- **Calendar context and derived measures** (realised volatility, trend-from-open, distance from
+  moving averages over `daily_closes`) are not built yet; see issue #999.
+- **Not measurement-affecting.** The series is telemetry and nothing gates on it. A module that wants
+  a regime-conditioned gate reads its own snapshot on its own decision path and stamps its own row,
+  as MEIC and bwb do, never a minutes-old sample from another process's database.
 
 **Coverage: did a session's recordings land?** (2026-10-14, `coverage.py`, `run.py coverage
 --session D`, JSON.) The heartbeat proves the recorder is alive, not that each series is on disk,

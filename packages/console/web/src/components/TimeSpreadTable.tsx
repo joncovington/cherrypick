@@ -3,7 +3,7 @@ import type { TimeSpreadStructure } from "@console/shared";
 import { fmtCash } from "../lib/format";
 
 /**
- * The time-spread scanner's structures (docs/time-spread-scanner-plan.md), for the Screeners tab and
+ * The time-spread scanner's structures, for the Screeners tab and
  * the Live portfolio card. Every figure is the producers' and MODELLED at each leg's own IV; the debit
  * is per share (`db`), the profit columns whole-position dollars for one unit. Rows come in the
  * producers' order: by the front/back IV ratio, an untested hypothesis. The second line holds the

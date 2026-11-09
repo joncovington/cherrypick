@@ -1012,7 +1012,7 @@ def _manage_attention(cfg, settings: dict, written: str | None, session: str | N
 
 
 def _run_time_spreads(cfg, force: bool = False) -> None:
-    """The time-spread scanner (docs/time-spread-scanner-plan.md): the `manage-time-spreads` job at
+    """The time-spread scanner: the `manage-time-spreads` job at
     about 10:30 ET on trading days, or by hand (`--force` scans outside regular hours). Runs the
     read-only scan script, then, when manage is on and the scan wrote the day's file, one full manage
     snapshot so Live, portfolio sizes the new rows now rather than at the next full run. Advice only:
@@ -2126,13 +2126,13 @@ def _git_show(rel: str) -> str:
 
 def _register_on_main() -> dict:
     try:
-        return json.loads(_git_show("docs/hypotheses.json") or "{}")
+        return json.loads(_git_show("research/hypotheses.json") or "{}")
     except ValueError:
         return {}
 
 
 def _plan_on_main() -> str:
-    return _git_show("docs/edge-hypotheses-plan.md")
+    return _git_show("research/edge-hypotheses-plan.md")
 
 
 def cmd_hypotheses(cfg, args) -> None:
@@ -2144,7 +2144,7 @@ def cmd_hypotheses(cfg, args) -> None:
         f"study {s} (queue or result folder): no register row" for s in hypotheses.unregistered(reg, studies)
     ]
     main_reg = _register_on_main()
-    plan = _plan_on_main() + "\n" + _read_text(hypotheses.repo_root() / "docs" / "edge-hypotheses-plan.md")
+    plan = _plan_on_main() + "\n" + _read_text(hypotheses.repo_root() / "research" / "edge-hypotheses-plan.md")
     out = {
         "ok": not problems,
         "problems": problems,

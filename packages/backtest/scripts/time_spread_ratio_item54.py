@@ -1,11 +1,11 @@
-"""Item 54, does the front/back IV ratio predict a time spread's profit? (docs/edge-hypotheses-plan.md)
+"""Item 54, does the front/back IV ratio predict a time spread's profit? (research/edge-hypotheses-plan.md)
 
     python packages/backtest/scripts/time_spread_ratio_item54.py plan [--out-dir DIR]      # universe,
     entries, requests python packages/backtest/scripts/time_spread_ratio_item54.py design [--out-dir DIR]    #
     2016-2020 python packages/backtest/scripts/time_spread_ratio_item54.py holdout [--out-dir DIR]   #
     2021-2026, read whatever
 
-The time-spread scanner (docs/time-spread-scanner-plan.md) orders its calendars and diagonals by the
+The time-spread scanner orders its calendars and diagonals by the
 front week's IV over the back month's, on the hypothesis that a rich front week is a premium the stock
 does not then earn. It also builds a "loses with the stock unchanged" verdict per structure. Neither has
 been tested. This study builds the scanner's own structures, with its own builder

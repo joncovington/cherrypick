@@ -6,7 +6,7 @@ import type { ConsoleConfig } from "../src/config.js";
 import { readManageBandsHistory } from "../src/readers/manage.js";
 
 /**
- * The bands over time (docs/console-review-plan.md batch 5): every stored evaluation's bands, each
+ * The bands over time: every stored evaluation's bands, each
  * session's own bounds as that day's evaluation stated them. The guards: oldest first, sessions
  * without bands left out, an unreadable file skipped, the theta figure the band judged (without the
  * front legs) preferred, and a missing band null rather than zero.

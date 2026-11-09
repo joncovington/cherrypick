@@ -78,7 +78,7 @@ what it may write. The package's own CLAUDE.md holds the detail.
   blocks GREEN**. Credential-free, network-free, read-only. The narrative is written outside the
   package by `scripts/morning_narrative.py`.
 - **packages/technicals** — the market report's end-of-day store and technical engines
-  (`docs/market-report-plan.md`), from the LOCAL Dolt clones (pulled by `scripts/refresh_dolt_data.py`).
+  (`packages/technicals/docs/reference.md`), from the LOCAL Dolt clones (pulled by `scripts/refresh_dolt_data.py`).
   Credential-free and network-free; adjusted bars are computed on read and match the vendor's to the
   cent; engines are fitted against the vendor and scored out of sample. Level SELECTION is not yet
   reproduced, and the docs say so.

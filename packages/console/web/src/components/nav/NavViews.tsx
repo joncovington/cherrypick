@@ -13,7 +13,7 @@ import {
 
 /**
  * The daily-series surfaces shared by the contango pages and the curve redesign
- * (docs/metrics-plan.md, "Daily-series readings"). Each renders what `core.metrics.nav` computed or
+ * (packages/core/docs/module-map.md, `metrics.nav`). Each renders what `core.metrics.nav` computed or
  * a display transform of the series it was computed over -- nothing here invents a metric.
  *
  * A reading's null is a refusal (too few days), shown as "—" with the reason on hover, never 0.

@@ -1,4 +1,4 @@
-"""Item 22, the overnight condor (docs/edge-hypotheses-plan.md): a 1DTE SPX iron condor sold at 15:50
+"""Item 22, the overnight condor (research/edge-hypotheses-plan.md): a 1DTE SPX iron condor sold at 15:50
 and bought back the next morning, scored on two exit arms.
 
     python packages/backtest/scripts/overnight_condor_item22.py [--start 2022-05-16] [--end 2024-12-31]

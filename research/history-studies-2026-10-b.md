@@ -174,7 +174,7 @@ holds, so root `CLAUDE.md` is unchanged.
 ## 7. Hourly SPX bars: skipped
 
 Neither test is cheap on hourly bars. The bars are not stored anywhere locally; the broker serves
-them from 2025-12-22 (`docs/range-features.md`), so getting them means a live DXLink session, which a
+them from 2025-12-22 (`research/range-features.md`), so getting them means a live DXLink session, which a
 read-only history study should not open. And the resolution does not fit either question:
 close-or-hold scaling is built on 5-minute realised vol (an hour gives at most six returns a
 session), and the range-high cut is an intraday position-in-range at the entry instant, which hourly

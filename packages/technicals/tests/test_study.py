@@ -1,4 +1,4 @@
-"""The historical study's guards (docs/signal-log-plan.md, Phase 1), each shown to fail when broken."""
+"""The historical study's guards (research/signal-log-plan.md, Phase 1), each shown to fail when broken."""
 
 from __future__ import annotations
 

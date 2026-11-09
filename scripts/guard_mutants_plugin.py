@@ -350,7 +350,7 @@ MUTANTS: tuple[Mutant, ...] = (
     ),
     Mutant(
         id="rangefeatures-lookahead",
-        breaks="a range feature reads the session after its own (docs/range-features.md)",
+        breaks="a range feature reads the session after its own (research/range-features.md)",
         package="core",
         tests=("tests/test_rangefeatures.py::test_features_are_truncation_invariant",),
         module="cherrypick.core.rangefeatures",

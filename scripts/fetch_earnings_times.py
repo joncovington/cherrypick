@@ -1,7 +1,7 @@
 """Record the time of day (before the open / after the close) of every announcement in the next month,
 from Nasdaq's public earnings calendar -- the earnings calendar's third timing source.
 
-**Why.** The earnings calendar (docs/history/earnings-screener-plan.md) takes its time of day from the broker
+**Why.** The earnings calendar (docs/history/earnings-screener-plan.md (tag archive/docs-2026-11)) takes its time of day from the broker
 (market-metrics `time-of-day`) and the local Dolt calendar. Between them about a third of the very-
 and somewhat-liquid names reporting in the next 30 days were untimed on 2026-10-16. Nasdaq's
 calendar agreed with both on all 378 names they timed, and timed 64 of the 206 they did not.

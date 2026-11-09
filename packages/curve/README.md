@@ -1,6 +1,6 @@
 # cherrypick-curve
 
-**Retired 2026-11-01; off by default.** Research item 37 (docs/edge-hypotheses-plan.md) tested the module's
+**Retired 2026-11-01; off by default.** Research item 37 (research/edge-hypotheses-plan.md) tested the module's
 own rule at real quotes, and every arm failed after costs. To reinstate: set `modules.curve.enabled` to true
 in the suite config (the **Modules & symbols** section of the console's Config page, or
 `~/.cherrypick/config.json`) and `enabled` to true on the arm or arms you want (`control`, `noflip`, `near`)

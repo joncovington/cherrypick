@@ -13,7 +13,7 @@ import { SkateRecordSection } from "./SkateRecord";
 import { beatsMonthly, otherBand, skateCounts, skateViews, type SkateView } from "./skateRows";
 
 /**
- * The Skate tab (2026-10-19; docs/skate-plan.md step 3): covered calls above a name's recent range
+ * The Skate tab: covered calls above a name's recent range
  * and cash-secured puts below it, where the seller does not want assignment. Read-only, and it
  * decides nothing: `fetch_screener_greeks.py skate` quotes the band strikes in regular hours and
  * `technicals.skate` scores them -- the history and implied rates, the gap between them, the yields,

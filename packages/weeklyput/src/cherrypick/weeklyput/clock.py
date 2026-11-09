@@ -1,6 +1,6 @@
 """The module's calendar: which expiries it sells into, the entry session, and the decision window.
 
-The calendar is item 57's (docs/edge-hypotheses-plan.md), the sample the unhedged arm passed on:
+The calendar is item 57's (research/edge-hypotheses-plan.md), the sample the unhedged arm passed on:
 
 - a week's expiry is its Friday, or the session before it when the Friday is a holiday;
 - a **standard monthly** is the third Friday, or the session before it when that is a holiday,

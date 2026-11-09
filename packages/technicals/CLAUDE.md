@@ -1,13 +1,14 @@
 # cherrypick-technicals — Operational Instructions
 
-> Operating contract for the market report's **end-of-day store and technical engines**. The plan
-> is [`docs/market-report-plan.md`](../../docs/market-report-plan.md); the dated fitting record is
+> Operating contract for the market report's **end-of-day store and technical engines**. What
+> the report runs (pack readings, universe, sectors, scripts) is in
+> [docs/reference.md](docs/reference.md), "The market report: what runs"; the dated fitting record is
 > [docs/fitting-record.md](docs/fitting-record.md); suite-wide context is the root
 > [documentation index](../../docs/README.md).
 
 One question: **what did every name in the universe do, session by session, on prices adjusted the
-way the vendor adjusts them.** The store (Phase 2) and the stage, rotation and chart engines
-(Phases 3-4) are pure functions over it.
+way the vendor adjusts them.** The store and the stage, rotation and chart engines are pure
+functions over it.
 
 **Credential-free and network-free.** Reads the LOCAL `dolt sql-server` (the `stocks` and `options`
 clones, pulled at 05:30 by `scripts/refresh_dolt_data.py`, outside every package) and, read-only,
@@ -171,7 +172,7 @@ switch.
 `screeners_at`) scores every saved screener session with its broker chain, after the previous
 evening's late greeks run; a scored session is skipped. It runs only while `market_report.collector`
 is on (off since the subscription ended). `technicals-skate` (06:45 ET, `skate_at`)
-writes the skate screen's bands from `history.db` (docs/skate-plan.md), then the forward record
+writes the skate screen's bands from `history.db`, then the forward record
 (`skate_record.py`: what the tab showed, what happened at expiry, the declared test; a failure there
 is reported and never fails the bands).
 

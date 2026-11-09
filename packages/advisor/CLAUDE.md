@@ -40,8 +40,7 @@ The advisor reads live facts (context a competent observer would want) but canno
 ## Experiments
 
 **Paused (2026-10-25).** `advisor.paused` admits new experiments `queued` and activates nothing new,
-while active ones run to their end. It stays on until the redesign in
-[docs/advisor-redesign-plan.md](../../docs/advisor-redesign-plan.md) lands: qualification on net, not
+while active ones run to their end. It stays on until the redesign (issue #995) lands: qualification on net, not
 win rate; an MDE at admission; the hypothesis register in the prompt; and multiplicity. Any truthy
 value counts as paused, a malformed one included. While paused:
 

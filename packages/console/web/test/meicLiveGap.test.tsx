@@ -4,7 +4,7 @@ import type { MeicLiveGapPayload, MeicLiveGapSide } from "@console/shared";
 import { MeicLiveGapView, MeicLivePairs } from "../src/pages/Live/MeicLiveGap";
 
 /**
- * MEIC live against paper, the card (docs/console-review-plan.md batch 5): the reader's pairs and
+ * MEIC live against paper, the card: the reader's pairs and
  * totals shown as given, a session live sat out marked as such, and an empty or absent ledger said
  * in words rather than drawn as zeros.
  */

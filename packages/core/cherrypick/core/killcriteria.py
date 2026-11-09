@@ -1,6 +1,6 @@
 """cherrypick.core.killcriteria — a live arm's written, frozen condition for being wrong.
 
-`docs/trading-book-review-plan.md` B1. Every live loop states, dated and before it trades, the
+`docs/trading-book-review-plan.md (tag archive/docs-2026-11)` B1. Every live loop states, dated and before it trades, the
 drawdown and losing streak that declare its arm invalid. Crossing them never closes anything and
 never flips a gate: it reduces the arm's entry size, then blocks its entries, and a block latches
 until a person clears it. Paper is unchanged.

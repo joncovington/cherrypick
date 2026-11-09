@@ -2,7 +2,7 @@
 
 `core.metrics` answers "how did this arm do" (net, win rate, profit factor, Sharpe, max drawdown).
 This module answers the questions asked before trusting an arm with money
-(docs/strategy-analysis-plan.md, Phase 1):
+(packages/core/docs/module-map.md):
 
 - `streaks`            the longest winning and losing runs, and the run in progress
 - `drawdown_episodes`  every fall below a previous high: its peak, its low, when (or whether) a

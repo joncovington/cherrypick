@@ -1662,7 +1662,7 @@ def derive_jobs(
             lambda job_id=job_id, at_key=at_key: JobSpec(
                 id=job_id,
                 # A package command: every announcement in the next 30 days, joined from local data
-                # and the local Dolt (docs/history/earnings-screener-plan.md), for the console's earnings tab.
+                # and the local Dolt (docs/history/earnings-screener-plan.md (tag archive/docs-2026-11)), for the console's earnings tab.
                 # The late pass catches a security list saved after the first.
                 argv=(pythonw, "-m", "cherrypick.technicals", "earnings-calendar"),
                 kind=KIND_DAILY,
@@ -1807,7 +1807,7 @@ def derive_jobs(
                 enabled_reason="" if mg["enabled"] else "disabled in config (manage)",
             ),
         )
-    # --- manage-time-spreads: the time-spread scanner (docs/time-spread-scanner-plan.md). Read-only REST
+    # --- manage-time-spreads: the time-spread scanner. Read-only REST
     # (the script refuses outside regular hours), then one full manage snapshot so the portfolio page
     # sizes the rows. No tested edge: the rows say so.
     ts = mg["time_spreads"]
@@ -2156,7 +2156,7 @@ def derive_jobs(
         "report-income-chains",
         lambda: JobSpec(
             id="report-income-chains",
-            # Our own income candidates (docs/history/portfolio-guidance-plan.md, piece 4): every
+            # Our own income candidates (docs/history/portfolio-guidance-plan.md (tag archive/docs-2026-11), piece 4): every
             # tradable name's
             # cycle-monthly chain, out of the money both sides, quoted in regular hours for manage to
             # size against the account, and the Screeners page's own short-put and covered-call lists.
@@ -2178,7 +2178,7 @@ def derive_jobs(
             f"report-skate-quotes-{i}",
             lambda i=i, at=at: JobSpec(
                 id=f"report-skate-quotes-{i}",
-                # The skate screen's strikes (docs/skate-plan.md): the morning's bands snapped to listed
+                # The skate screen's strikes: the morning's bands snapped to listed
                 # strikes, quoted in regular hours and scored -- every name-side on its cycle monthly,
                 # every weekly for the widest history-minus-implied gaps. Read-only REST; the script
                 # refuses outside the measuring window.

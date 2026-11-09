@@ -1118,7 +1118,7 @@ def cmd_measure(args) -> int:
 
 
 # ------------------------------------------------------------------------------------------------
-# `income`: our own candidates, in regular hours (2026-10-18; docs/history/portfolio-guidance-plan.md, 4).
+# `income`: our own candidates, in regular hours (2026-10-18; docs/history/portfolio-guidance-plan.md (tag archive/docs-2026-11), 4).
 #
 # The vendor's lists stop with its subscription on 2026-10-24, and which names they carry was never
 # reproduced. So the candidates manage sizes for the account come from OUR universe instead: every
@@ -1144,7 +1144,7 @@ CC_STRIKES = 8
 CC_NEAR = 2
 INCOME_STRIKES = CAND_STRIKES
 INCOME_NEAR = CAND_NEAR
-# The credit-spread list's chain (2026-10-24; docs/edge-hypotheses-plan.md, item 17): the covered
+# The credit-spread list's chain (2026-10-24; research/edge-hypotheses-plan.md, item 17): the covered
 # call's 30-45 day monthly, both sides, every listed strike out of the money from the first out to
 # CS_REACH_SD standard deviations -- a 0.40-delta short plus the widest width the list prices (0.75 of
 # the move, or five strikes). Never thinned: a spread's legs are neighbouring strikes, and evenly
@@ -1644,7 +1644,7 @@ def cmd_income(args) -> int:
 
 
 # ------------------------------------------------------------------------------------------------
-# The skate screen's quotes (docs/skate-plan.md, steps 2-3). `technicals skate` writes each name's
+# The skate screen's quotes (packages/technicals/docs/reference.md). `technicals skate` writes each name's
 # bands at 06:45; here the strikes past them are listed, quoted in regular hours and scored by
 # technicals' own functions. Two stages keep the broker load near the other passes': every name-side
 # on its cycle monthly, then every weekly expiry for the name-sides whose history beats their implied

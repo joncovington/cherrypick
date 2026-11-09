@@ -3,7 +3,7 @@
 > **Status (2026-11-08): closed 2026-10-17: the box-edge reversion test ran on licensed history and failed (research item 8, `failed` in `hypotheses.json`); nothing was built.**
 
 *Drafted 2026-10-17 from a public daily live-stream series (credited in
-[strategy-sources.md](strategy-sources.md)) for Monday 2026-10-12 to Friday 2026-10-16, read in full and checked against screenshots of his broker's order panel and charts.
+[strategy-sources.md](../docs/strategy-sources.md)) for Monday 2026-10-12 to Friday 2026-10-16, read in full and checked against screenshots of his broker's order panel and charts.
 This is hypothesis 8 of [edge-hypotheses-plan.md](edge-hypotheses-plan.md). Nothing is built. Its
 box-edge test ran 2026-10-17 on licensed history
 ([history-studies-2026-10-c.md](history-studies-2026-10-c.md), section 2); the results are kept

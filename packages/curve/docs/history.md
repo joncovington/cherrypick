@@ -78,7 +78,7 @@ rows before 2026-10-30 are control's, and should be read that way.
 
 ## Retired (2026-11-01)
 
-Research item 37 (docs/edge-hypotheses-plan.md) tested the module's own rule at real quotes, and every
+Research item 37 (research/edge-hypotheses-plan.md) tested the module's own rule at real quotes, and every
 arm failed after costs, so the owner retired it on 2026-11-01. Every arm and `advice` were switched off;
 the open spreads were managed from the ledger to their 2026-11-20 expiry, and then `modules.curve.enabled`
 went off. The example config now ships all of that off (each arm with a `_retired` note). Reinstating it

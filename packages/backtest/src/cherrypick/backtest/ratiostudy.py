@@ -1,6 +1,6 @@
 """Item 34's declared test of the option-to-stock premium ratio: the rules, pure.
 
-`docs/edge-hypotheses-plan.md` item 34 declares the test. This module is the arithmetic only: plain
+`research/edge-hypotheses-plan.md` item 34 declares the test. This module is the arithmetic only: plain
 rows in, plain numbers out, so every rule can be shown firing and failing on invented data.
 `packages/backtest/scripts/option_stock_ratio_item34.py` reads the stores, builds a `Scan` and calls
 `evaluate`.

@@ -1,6 +1,6 @@
 """P&L broken down by something known when a trade was entered: one engine, one column set.
 
-docs/strategy-analysis-plan.md, Phase 3. Every table has the same columns -- trades, sessions, net,
+(packages/core/docs/module-map.md) Every table has the same columns -- trades, sessions, net,
 win rate, average net, best, worst -- so a reader learns one table, not one per dimension. Every
 row carries its sample, and a row with fewer than `MIN_SESSIONS` sessions is marked `thin`: trades
 entered on one session are not independent, so it is sessions, not trades, that say how much a row

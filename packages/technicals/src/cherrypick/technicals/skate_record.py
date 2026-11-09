@@ -1,4 +1,4 @@
-"""The skate screen's forward record (docs/skate-plan.md, step 4).
+"""The skate screen's forward record.
 
 The 2026-10-18 study could only estimate, from overlapping history, whether history-minus-implied picks
 strikes that skate more often than the market prices. This keeps what the screen actually showed and
@@ -13,7 +13,7 @@ reads what happened, so that question gets an answer that was declared before th
   closes (skate's own reading, `skate.price_bars`): `skated` (the close at expiry on the safe side of
   the strike, as the skate rate counts it), `tested` (skated, but the price reached the strike on
   some session between), or `through` (finished past the strike).
-- **Verdict.** The declared test (plan, step 4): rows with history minus implied above 5 points must
+- **Verdict.** The declared test: rows with history minus implied above 5 points must
   skate more often than their implied rate AND more often than rows below zero, each by more than the
   binomial noise at that count (one-sided z > 1.645), judged once 20 distinct expiries have settled.
   Until then the reading says it is not yet decision-grade, and the tab says the gap is a history
@@ -48,7 +48,7 @@ CREATE TABLE IF NOT EXISTS recorded (session TEXT PRIMARY KEY, run TEXT NOT NULL
 
 FILE_BAND = {"fixed": "fixed", "by_expiry": "by_expiry"}
 RUN = re.compile(r"^(\d{4})\.json$")
-# The declared test (docs/skate-plan.md, step 4).
+# The declared test.
 GAP_HIGH = 0.05
 GAP_LOW = 0.0
 MIN_EXPIRIES = 20

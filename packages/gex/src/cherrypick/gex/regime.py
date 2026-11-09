@@ -3,7 +3,7 @@
 The GEX half of the regime already has a joinable time series (``gex_regime_history``); this is the
 other half — the vol complex, breadth, and cross-asset quotes nothing in the suite recorded intraday
 (VIX existed per-tick only inside MEIC's own store, per-day in curve's, once pre-open in overview's).
-Design record: ``docs/regime-recorder-plan.md`` at the repo root.
+Readings and rules: ``packages/gex/CLAUDE.md``.
 
 Rules, each inherited from a lesson already paid for elsewhere:
 
@@ -49,7 +49,7 @@ from cherrypick.gex import provider as _provider
 # the module docstring for why derived values are excluded on purpose.
 READINGS: dict[str, str] = {
     # vol complex. SKEW and VIX9D admitted 2026-08-24 after the entitlement probe printed both
-    # through the ordinary legs path (143.9 and 14.53) — see docs/regime-recorder-plan.md. SKEW
+    # through the ordinary legs path (143.9 and 14.53) — see packages/gex/CLAUDE.md. SKEW
     # prices the tail independently of the ATM level; VIX9D/VIX reads event-week pricing
     # (FOMC/CPI) more sharply than VIX/VIX3M does.
     "vix": "VIX",
@@ -127,7 +127,7 @@ SAMPLE_INTERVAL_SECONDS = 60
 MAX_QUOTE_AGE_SECONDS = 120
 
 
-# Futures readings, resolved rather than assembled (docs/regime-recorder-plan.md).
+# Futures readings, resolved rather than assembled (packages/gex/CLAUDE.md).
 #
 # The reading NAME is stable across a roll and the row's `symbol` carries the contract that was
 # actually sampled — so a roll shows up as the symbol changing under `vx1`, and no row is ever a

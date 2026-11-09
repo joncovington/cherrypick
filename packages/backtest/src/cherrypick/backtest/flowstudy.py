@@ -1,6 +1,6 @@
 """Item 32's declared test of large options orders as a signal: the rules, pure.
 
-`docs/flow-signal-plan.md` declares the method and `docs/edge-hypotheses-plan.md` item 32 records
+`research/flow-signal-plan.md` declares the method and `research/edge-hypotheses-plan.md` item 32 records
 what was settled before the first read. This module is the arithmetic only: plain rows in, plain
 numbers out, no store and no network, so every rule can be shown firing and failing on invented
 data. `packages/backtest/scripts/flow_signal_item32.py` reads the stores, builds a `Scan` and calls

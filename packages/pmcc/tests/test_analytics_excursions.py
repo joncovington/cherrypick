@@ -1,4 +1,4 @@
-"""`analytics.excursions` — MAE/MFE per closed position (docs/metrics-plan.md Phase 2).
+"""`analytics.excursions` — MAE/MFE per closed position (packages/core/docs/module-map.md).
 
 core.metrics.excursions owns the pure MAE/MFE math (tested there); this covers the module-specific
 half -- pairing pmcc_marks' per-tick long_call/short_call leg mids (by marked_at, one shared

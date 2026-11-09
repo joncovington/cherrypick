@@ -1,5 +1,5 @@
 """Item 66, item 47's mirror: a long straddle across an earnings report when its implied move is
-below its past moves (docs/edge-hypotheses-plan.md).
+below its past moves (research/edge-hypotheses-plan.md).
 
     python packages/backtest/scripts/earnings_straddle_item66.py [--host H] [--port P] [--out-dir DIR]
 

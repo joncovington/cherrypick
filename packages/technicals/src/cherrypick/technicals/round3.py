@@ -1,6 +1,6 @@
 """Round 3 of the historical study: two setups from published infographics, declared before they were run.
 
-The declaration, its reasons and the decision rule are in docs/signal-log-plan.md ("Round 3"),
+The declaration, its reasons and the decision rule are in research/signal-log-plan.md ("Round 3"),
 written before this module first ran. In brief:
 
 - Two setups, each long and short (`setups.STUDIED`): Supertrend(10, 3) with the Vortex

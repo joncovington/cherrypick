@@ -5,7 +5,7 @@ monthly, sell the put nearest 10 delta on SPX (SPXW), SPY, QQQ and IWM seven cal
 the expiry, and hold it to the expiry's posted close. No hedge, no stop, no exit. **Paper-only,
 credential-free, no live path** (posture: root file). Ledger:
 `~/.cherrypick/data/weeklyput/paper_trades.db`. Declared for paper as item 69
-(`docs/edge-hypotheses-plan.md`).
+(`research/edge-hypotheses-plan.md`).
 
 ## Why it exists
 

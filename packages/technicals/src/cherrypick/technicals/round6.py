@@ -1,6 +1,6 @@
 """Round 6 of the historical study: does an analyst revision add weight to the direction?
 
-The declaration, its reasons and the decision rule are in docs/signal-log-plan.md ("Round 6"),
+The declaration, its reasons and the decision rule are in research/signal-log-plan.md ("Round 6"),
 committed before this module first ran with scoring on. In brief:
 
 - **The direction** is the strong core of our *bearing* (`bearing`; declared as "trend+RS agree"):

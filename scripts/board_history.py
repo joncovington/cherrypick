@@ -7,7 +7,7 @@ The live board (`cherrypick.technicals.board`) counts, for one session, how many
 agree on a name's side: the relative-strength stage, its sector fund's rotation, fundamentals
 against industry peers, fundamentals against price, the trend-following scan and an analyst
 revision. This replays that count on every session from the first estimate snapshot (2017-10-26),
-for edge-hypotheses item 14's selector B (docs/edge-hypotheses-plan.md). It lives in `scripts/`
+for edge-hypotheses item 14's selector B (research/edge-hypotheses-plan.md). It lives in `scripts/`
 because it reads `history.db`, which `packages/backtest` may not import.
 
 **The same rules, read as of each session.** Every method is the live module's own function:

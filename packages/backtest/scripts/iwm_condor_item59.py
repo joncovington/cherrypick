@@ -1,4 +1,4 @@
-"""Item 59, the 45-day IWM condor (docs/edge-hypotheses-plan.md): an IWM iron condor sold on the
+"""Item 59, the 45-day IWM condor (research/edge-hypotheses-plan.md): an IWM iron condor sold on the
 monthly cycle at about 45 days, shorts at 16 delta and longs at 5, closed at half its credit or at
 21 days.
 

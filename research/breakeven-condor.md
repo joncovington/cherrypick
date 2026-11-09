@@ -3,7 +3,7 @@
 > **Status (2026-11-08): partial: the proposed arm was installed in paper on 2026-10-20 in the machine-local MEIC registry (not shipped in this repo); no result is recorded here.**
 
 *Drafted 2026-10-20 from the YouTube video "After 9,000 Trades, This Is Still My Most Profitable
-0DTE Strategy" (a self-interview, ~40 min, credited in [strategy-sources.md](strategy-sources.md);
+0DTE Strategy" (a self-interview, ~40 min, credited in [strategy-sources.md](../docs/strategy-sources.md);
 <https://www.youtube.com/watch?v=Fj41ojAdwJ8>). Quotes below are short excerpts for the points being
 made; the video is the source. The arm at the bottom is a **proposed** registry arm; it was
 installed into the machine-local registry (~/.cherrypick/config/meic.risk.json — not this repo) on
@@ -22,7 +22,7 @@ stops cost.
 
 He explicitly frames this as **the same trade as MEIC** — "essentially the same trade… MEIC is
 maybe a more known name" — the multiple-entry iron condor lineage our own module is named after
-(see [strategy-sources.md](strategy-sources.md), MEIC section). What he adds on top of the
+(see [strategy-sources.md](../docs/strategy-sources.md), MEIC section). What he adds on top of the
 mechanical version is (a) the break-even stop arithmetic, (b) an entry-stabilization read, and
 (c) a hard day-risk discipline.
 
@@ -132,7 +132,7 @@ change the trade's shape, only its measurement fidelity.
 ```json
 "be-hourly-1x": {
   "enabled": true,
-  "_note": "The 0DTE break-even condor (docs/breakeven-condor.md): ~1 IC/hour, 10-15 delta, 25-40-wide with per-side widths equalized to balance the premiums, per-side stop = total credit (the 'break-even' identity), neutralized gates like bt-1400-2x. Paper only.",
+  "_note": "The 0DTE break-even condor (research/breakeven-condor.md): ~1 IC/hour, 10-15 delta, 25-40-wide with per-side widths equalized to balance the premiums, per-side stop = total credit (the 'break-even' identity), neutralized gates like bt-1400-2x. Paper only.",
   "symbols": ["SPX"],
   "min_iv_rank": 0.0,
   "min_credit_pct_of_width": 0.05,

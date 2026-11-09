@@ -1,4 +1,4 @@
-"""Item 57, item 46's lone pass out of sample (docs/edge-hypotheses-plan.md): the equity-index 10-delta
+"""Item 57, item 46's lone pass out of sample (research/edge-hypotheses-plan.md): the equity-index 10-delta
 put at 7 days on the weekly expiries item 46 never read, hedged and unhedged.
 
     python packages/backtest/scripts/index_put_weekly_item57.py plan [--out FILE] [--through DATE]  #

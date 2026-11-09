@@ -9,7 +9,7 @@ import { CardHelpButton, HelpSection, type CardHelpContent } from "../../compone
 import { Section } from "../../components/Section";
 
 /**
- * The Experiments page (2026-10-30, docs/console-review-plan.md batch 4): the four paper-only
+ * The Experiments page: the four paper-only
  * experiments as one page, a card each, and the retired flies module's record. Each card reads the
  * module's own summary (`/api/summary/:module`) twice -- all time, and its latest traded day -- and
  * says what history found; the module's own pages hold everything else and the card links to them.

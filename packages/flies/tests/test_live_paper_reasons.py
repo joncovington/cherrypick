@@ -1,4 +1,4 @@
-"""Why live and paper differ, per entry (docs/strategy-analysis-plan.md Phase 2): each entry one book
+"""Why live and paper differ, per entry (packages/core/docs/module-map.md): each entry one book
 took and the other did not carries the other side's reason and a category, and each matched pair the
 category of its largest gap.
 

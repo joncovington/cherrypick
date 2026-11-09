@@ -1,5 +1,5 @@
 """Dolt's revenue consensus for the current and the next fiscal year, landed for the fair-value build
-(docs/history/fair-value-model-plan.md).
+(docs/history/fair-value-model-plan.md (tag archive/docs-2026-11)).
 
 The fundamentals landing keeps only the "Next Year" estimates (its score reads one year ahead). The
 fair-value forecast needs both years it can see: **year one is the current fiscal year** and year two

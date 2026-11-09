@@ -90,13 +90,13 @@ def excursions(marks: Sequence[float | None], basis: float = 0.0) -> dict:
     deviation seen (<=0, 0.0 if the position was never underwater), `mfe` the best POSITIVE
     deviation (>=0, 0.0 if it was never ahead); `n` is how many marks were usable.
 
-    `None` entries are skipped, never treated as zero -- the metrics-plan's own rule for this data
+    `None` entries are skipped, never treated as zero -- the rule for this data
     ("refusal-aware... usable=0 rows are excluded from excursions, never read as zero"): a module's
     analytics layer is expected to have already dropped its own usable=0 refusal rows before
     calling this, but a caller that instead passes them through as None is still handled honestly
     rather than having a stalled-feed tick misread as "the position was exactly at its basis."
 
-    This is the ONE generic function core.metrics owns for this (metrics-plan.md Phase 2); pairing
+    This is the ONE generic function core.metrics owns for this (packages/core/docs/module-map.md); pairing
     a module's own multi-leg marks to one position and producing the ordered P&L series is that
     module's own analytics layer's job, not this one's -- same split as `session_nets` (pure
     aggregation) versus each reader's own SQL (module-specific pairing)."""
@@ -414,7 +414,7 @@ def calibration_reading(records: Sequence[Mapping]) -> dict:
         "sharpe": sharpe(nets),
         "max_drawdown": max_drawdown(nets),
         "sample_progress": sample_progress(n),
-        # 2026-08-23 expansion (docs/metrics-plan.md phase 1): edge and risk-adjusted per-trade,
+        # Expansion: edge and risk-adjusted per-trade,
         # tail and duration per-session. Report-only — no qualification rule reads these yet; the
         # promotion-gate question is deliberately deferred (see the plan's open questions).
         "expectancy": expectancy(nets),
@@ -433,7 +433,7 @@ def calibration_reading(records: Sequence[Mapping]) -> dict:
         # readings and the arm-identity check compare on it). Report-only, like the block above.
         "session_sharpe": session_sharpe(session_nets(ordered)),
         "psr": probabilistic_sharpe(session_nets(ordered)),
-        # 2026-09 expansion (docs/metrics-plan.md's own capture-rate idea, console Phase 3a):
+        # Capture rate:
         # capture_rate needs FULL max_profit coverage across the sample before reporting a value,
         # same discipline as return_on_capital above -- a partial-coverage ratio would silently
         # compare a smaller, unstated sub-sample against the group's headline `n`. max_profit_pct/

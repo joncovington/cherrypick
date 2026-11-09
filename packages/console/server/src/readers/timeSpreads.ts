@@ -1,6 +1,6 @@
 /**
  * The time-spread scanner's file for the Screeners page's time-spreads tab, and the account's rows for
- * Live, portfolio (docs/time-spread-scanner-plan.md). `scripts/fetch_time_spreads.py` writes one file a
+ * Live, portfolio. `scripts/fetch_time_spreads.py` writes one file a
  * session (`time-spreads/<session>.json`): every name's term-structure row and the shortlist's
  * structures as manage builds them; manage sizes them (`book.time_spreads`). This renames and decides
  * nothing. NO TESTED EDGE: rows come in the producers' order, by the untested front/back ratio.

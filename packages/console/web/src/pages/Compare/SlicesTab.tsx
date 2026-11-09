@@ -4,7 +4,7 @@ import { Card } from "../../components/DataTable";
 import { useBridged } from "../../lib/bridged";
 
 /**
- * The Compare page's slices tab (B5, docs/trading-book-review-plan.md): an arm's in-sample slice
+ * The Compare page's slices tab (B5, docs/trading-book-review-plan.md (tag archive/docs-2026-11)): an arm's in-sample slice
  * report from `python -m cherrypick.technicals slices`. Each cell shows n, its mean and a 95%
  * interval; a cell under 30 trades (or a weekday or event-day cell under 10 days) is greyed and never
  * ranked. Whole-day cells also show their days and the share of random day sets that did as well
@@ -139,7 +139,7 @@ export function PlainEnglish({ r }: { r: SliceReport }) {
       </p>
       <p className="muted">
         <strong>How to use it.</strong> This only describes trades that already happened, and the more groups you look at the
-        more likely one looks good by luck. A difference here gets written down as a hypothesis (docs/hypotheses.json) and
+        more likely one looks good by luck. A difference here gets written down as a hypothesis (research/hypotheses.json) and
         tested on data this report never saw before anything changes. The ranges are also a little narrower than they should
         be, because trades on the same day move together.
         {a.greyedCells > 0
@@ -221,7 +221,7 @@ export function SlicesTab() {
   return (
     <>
       <p className="muted">
-        A description of the trades given, never a gate: a cell that looks good is declared in docs/hypotheses.json and tested
+        A description of the trades given, never a gate: a cell that looks good is declared in research/hypotheses.json and tested
         on held-out data, corrected for the cells looked at.
       </p>
       <label>

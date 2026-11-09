@@ -1,6 +1,6 @@
 """The fair-value file: one DCF estimate a name a session, for the income lists and the Screeners tab.
 
-`cherrypick.core.valuation` holds the arithmetic (version 2, docs/history/fair-value-model-plan.md);
+`cherrypick.core.valuation` holds the arithmetic (version 2, docs/history/fair-value-model-plan.md (tag archive/docs-2026-11));
 this module
 reads its inputs, every one with its source, and writes `valuation/<session>.json`. For every liquid
 optionable name on the security list that the liquidity verdict calls options-tradable (`build`):

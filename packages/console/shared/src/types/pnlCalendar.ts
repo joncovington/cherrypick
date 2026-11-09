@@ -1,7 +1,7 @@
 // ------------------------------------------------------------------- the P&L calendar (shared)
 // Compare's calendar tab (`GET /api/calendar`): every arm's net per session, from the per-session
 // nets `core.metrics` already computes for each module's performance tab (`session_nets_dated`),
-// over the suite window. docs/strategy-analysis-plan.md Phase 4.
+// over the suite window. packages/core/docs/module-map.md.
 
 import type { PerformanceModuleId } from "./performance.js";
 import type { TradingMode } from "./status.js";

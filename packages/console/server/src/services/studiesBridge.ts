@@ -16,7 +16,7 @@ import { spawnModuleCliAsync, type SpawnedJson } from "./moduleCli.js";
 
 /**
  * The Backtest page's studies board (`python -m cherrypick.cli hypotheses-board`; the orchestrator's
- * `hypotheses.board`, docs/studies-board-plan.md): each register row with its result files' verdicts
+ * `hypotheses.board`): each register row with its result files' verdicts
  * and its queue rows. Every rule is the orchestrator's: the group, the summary word, which status
  * wins. This renames the reply, drops a result file's full path for its name, and decides nothing.
  *

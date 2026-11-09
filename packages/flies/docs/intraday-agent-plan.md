@@ -281,7 +281,7 @@ before any live session is spent on it.
   **From 2026-10-13 that changes for sessions recorded from then on:** the gex recorder keeps the
   chain's quotes every ~15 s (`core.quotehistory`), so a close can be priced at natural at the
   tag and at any later time. Using it waits for the replay to validate
-  ([quote-history-replay-plan.md](../../../docs/quote-history-replay-plan.md)); nothing before
+  ([quote-history-replay-plan.md](https://github.com/joncovington/cherrypick/blob/archive/docs-2026-11/docs/quote-history-replay-plan.md)); nothing before
   10-13 can be recovered.
 - The packs show `control`'s positions, the arm being scored. The agent arm's own book did not exist.
 - Replayed sessions count toward the gate criteria in the qualification, marked `replay`, and never

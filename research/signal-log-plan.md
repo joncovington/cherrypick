@@ -108,7 +108,7 @@ overwrites `charts/<SYMBOL>.json` and `charts/setups-index.json`. Nothing is kep
   - Fills are at the next open.
   - A rule tuned on part of the history is judged only on the rest.
 - **Record the measure, not a verdict** (as the regime recorder does,
-  `docs/regime-recorder-plan.md`).
+  `packages/gex/CLAUDE.md`).
 - **Append-only, enforced.** The live log's tables refuse `UPDATE` and `DELETE` through SQLite
   triggers, the first store in the suite to enforce this. Each guard is shown to fail by trying.
 - **Rule versions are declared, and changing one is a boundary.** A rule change is

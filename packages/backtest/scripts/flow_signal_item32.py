@@ -1,4 +1,4 @@
-"""Item 32, large options orders as a signal (docs/flow-signal-plan.md, docs/edge-hypotheses-plan.md):
+"""Item 32, large options orders as a signal (research/flow-signal-plan.md, research/edge-hypotheses-plan.md):
 does a large, opened order (a call bought, a put sold, a put bought) predict the stock's next five
 sessions against same-stage stocks without one?
 
