@@ -1,6 +1,7 @@
 import { useWsState } from "../../lib/useQuote";
 import { useMorningReport, useOverview, useStatus } from "../../lib/api";
 import { LivenessChips } from "./LivenessChips";
+import { VersionChip } from "./VersionChip";
 import { useFeaturesFailure } from "../../lib/useFeatures";
 
 const DXLINK_LABEL: Record<string, string> = {
@@ -96,6 +97,7 @@ export function StatusBar() {
           </span>
         )}
         <MorningChip />
+        <VersionChip />
       </div>
     </div>
   );
