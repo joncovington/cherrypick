@@ -205,6 +205,10 @@ On purpose. The suite shows the account masked, with only the last four digits.
 Check whether the computer slept. A sleeping laptop misses its jobs. *Always-on machine* covers how
 to stop that.
 
+The morning and evening data runs (`morning-data`, `evening-data`) go in order. If one step fails, the
+System page and the warning name that step, and the steps that read its output do not run on stale
+files; the run is retried from the failed step.
+
 ### I changed a setting and nothing happened.
 
 Some jobs read their settings only when they start. Restart that job, or the suite, after editing.

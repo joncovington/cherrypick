@@ -42,8 +42,8 @@ stdlib + local files only — no broker, network or AI — and every registratio
 (schtasks fallback) until the transition window closes.
 
 **A daily job that runs several times is one job with `JobSpec.times_et`** (`manage-eval`,
-`market-files`, `report-screener-measure`, `report-skate-quotes`, `universe-measure`,
-`technicals-earnings-calendar`); `at_et` is the first time, so a reader of `at_et` still sees the day's
+`report-screener-measure`, `report-skate-quotes`, `universe-measure`, and `market-files` and
+`technicals-earnings-calendar` before the pipelines take one of their times); `at_et` is the first time, so a reader of `at_et` still sees the day's
 first run. The slot that matters at `now` is the latest time already passed, and `last_fire_day` holds
 `YYYY-MM-DD@HH:MM` for it. A slot's catch-up (`slot_catchup_minutes`, one per time, else
 `catchup_minutes`) ends at the earlier of its own limit and the next slot, so a missed slot is stamped
@@ -51,6 +51,26 @@ missed but never run late once a later slot has begun. A failed run's retries ar
 Jobs that differ in argv, gate or trigger stay separate jobs. A bare-date stamp from before a job had
 several times covers the slots that had begun when it last started, so the first pass after a restart
 does not run the day again.
+
+**The morning and evening data runs are two pipelines** (`morning-data`, `evening-data`;
+`jobspec.PIPELINES`, `orchestrator/pipeline.py`, `run.py pipeline <name>`), each ONE supervisor job
+whose steps run in order, every step its own subprocess with the argv, gate and switch of the job it
+replaced (`JobSpec.steps`, built by `fold_pipelines` from the ordinary job specs, so a step that is off
+in config stays listed off and is skipped; `derive_jobs(pipelines=False)` returns the plain jobs, which
+`bootstrap` runs once). A step never starts before the one ahead of it has ended or before its own `*_at`
+time. A failed step stops the run (the rest recorded `not_run`) unless its `independent` flag is set:
+nothing later reads what it writes, or it is a fetch that keeps its last good file on failure and the
+next step reads that, as before. A step off in config or gated out by `trading_days_only` is `skipped`,
+not failed. The pipeline starts at its first enabled step's time, catches up for its longest step's
+catch-up, and is retried from the failed step (`RETRY_ON_FAILURE`; a same-day run after a failure
+resumes, `--fresh` does not). Results: `state/pipeline.<name>.json` (status, exit code, seconds, stderr
+tail), the compact form in the registry row's `steps` (`supervisor._record_exit`), a `last_error` whose
+last line is `pipeline <name>: step <id> failed (exit N)`, and the `jobs.failed` finding, which names
+the step (`watchdog._failed_pipeline_step`). `market-files` and `technicals-earnings-calendar` run twice
+a day: their evening and first-pass times join the pipeline, the morning retry and the late pass stay
+jobs of their own. Which member is independent is a judgement made in `PIPELINES`; changing it, or a
+member's place, changes what a failure leaves unrun. The pipeline waits in its own process for a later
+step's time, so it is a long-lived child (the evening one ends after the 20:15 revisions fetch).
 
 **A job fed only by the vendor follows `market_report.collector`** (`cherrypick.core.vendor`, the
 switch every vendor reader shares): the collector itself, the two greeks runs over the vendor's list

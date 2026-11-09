@@ -87,20 +87,15 @@ removed in v0.12.0; your own scheduled reports are the `external-<id>` jobs belo
 | `review-provisional` | daily **16:30**, trading days | `run.py review --provisional` | on | see below |
 | `review-final` | daily **10:15**, trading days | `run.py review --final` | on | finalises the prior session and re-runs reconciliation |
 | `review-narrative` | daily **10:45**, trading days | `scripts/eod_narrative.py` | off, needs `claude` | the agent-written note, beside the facts, never inside them |
-| `market-files` | daily at **18:45** and again at **07:45** (the retry before the pack), trading days | `scripts/fetch_market_files.py fetch` | on | the files the morning pack reads, OCC's option volume included |
+| `market-files` | daily **07:45**, trading days (the retry before the pack; the evening fetch is a step of `evening-data`) | `scripts/fetch_market_files.py fetch` | on | the files the morning pack reads, OCC's option volume included |
+| `morning-data` | daily at its first step (**05:30**), every day; each step keeps its own trading-day gate; catches up for its longest step (720 min); retried from the failed step, twice | `run.py pipeline morning-data` | on with `dolt` (a step that is off is skipped) | the morning's fetches and landings in order: the Dolt pull, index bars, the SEC and Damodaran fetches, then `technicals-land`, `-history`, `-fundamentals`, `fundamentals-land` (a failure of these stops the run), then the readers of the store: `technicals-report`, `-stage-lists`, `fundamentals-valuation`, `technicals-screeners`, `-board`, `-skate`, `-earnings-record`, `-adjust-check`. See [Pipelines](#pipelines) |
+| `evening-data` | daily at its first step (**18:35**); steps on trading days; catches up for its longest step (600 min); retried from the failed step, twice | `run.py pipeline evening-data` | on | the security list's inputs (`technicals-dollar-volume`, `-sectors`, `-earnings-times`, the evening `market-files` fetch), then `technicals-securities`, `-iv-rank` (a failure of these, or of the calendar, stops the run), `-liquidity`, the `technicals-earnings-calendar` first pass, `report-earnings-strikes`, and the fetches the next morning reads: `technicals-dividends`, `-yahoo-adjusted`, `-revisions`. See [Pipelines](#pipelines) |
 | `earnings-moves` | daily **18:40**, trading days | `scripts/fetch_earnings_moves.py` | on | |
 | `fetch-headlines` | daily **08:45**, trading days | `scripts/fetch_headlines.py` | on | |
 | `futures-contracts` | daily **08:45**, trading days | `scripts/refresh_futures_contracts.py` | on | |
 | `morning-factpack` | daily **08:30**, trading days | `run.py morning` | on | the overview's fact pack and GREEN/YELLOW/RED phase |
 | `morning-narrative` | daily **09:00**, trading days | `scripts/morning_narrative.py` | off, needs `claude` | |
-| `technicals-index-bars` | daily **06:00** | `scripts/fetch_index_bars.py` | on with `dolt` | |
 | `vol-curve-bars` | daily **16:30**, trading days | `scripts/fetch_vol_curve_bars.py` | on | 5m and 1h bars of the VIX term structure and SPX, kept in `~/.cherrypick/data/market-files/vol_curve_bars.db`; the feed itself keeps only months |
-| `technicals-land` | daily **06:15** | `-m cherrypick.technicals land` | on with `dolt` | lands the end-of-day store from the Dolt clones |
-| `technicals-report` | daily **06:30** | `-m cherrypick.technicals report` | on with `dolt` | disabled with `technicals-land` |
-| `technicals-dollar-volume` | daily **18:35**, trading days | `scripts/fetch_dollar_volume.py` | on (no `dolt` needed) | each name's 50-session dollar volume from the broker's candles; the security list and the liquidity verdict read it |
-| `technicals-iv-rank` | daily **18:50**, trading days | `scripts/fetch_iv_rank.py` | on (no `dolt` needed) | |
-| `technicals-securities` / `technicals-liquidity` | daily **18:48** / **18:57**, trading days | `-m cherrypick.technicals securities` / `liquidity` | on (no `dolt` needed) | the security list and the liquidity verdict, the income lists' universe |
-| `technicals-dividends` | daily **19:30** | `scripts/fetch_dividends.py` | on with `dolt` | |
 | `report-edition` / `-retry`, `report-charts` | daily 07:00 / 08:15, 17:15, trading days | `scripts/fetch_vendor_edition.py` | off | `market_report.collector`; needs both vendor keys set |
 | `external-<id>` (one per `external_reports` entry) | daily at the entry's `at_et` (default trading days only), 240 min catch-up | `run.py external-run <id>`, which runs the entry's own script under `~/.cherrypick` | none until listed | `external_reports` in config.json ([guide](guide/external-reports.md)); a refused entry (script outside the home, bad id or time) is listed off with the reason; the report lands in `data/external/<id>.json` |
 | `universe-measure` (at 11:00 and 14:00), `universe-daily`, `universe-watchlist` | daily 18:00, 18:30, trading days | `scripts/build_stock_universe.py` | off | `market_report.universe` / `universe_watchlist` |
@@ -131,8 +126,8 @@ are off with `market_report.collector`, as the collector is (the subscription en
 `report-screener-measure` stays on for the earnings calendar's spreads and quote the
 vendor's list rows only while the collector is on.
 
-A job that runs several times a day is one row: `manage-eval`, `market-files`, `report-screener-measure`,
-`report-skate-quotes`, `universe-measure` and `technicals-earnings-calendar` list every time in their
+A job that runs several times a day is one row: `manage-eval`, `report-screener-measure`,
+`report-skate-quotes` and `universe-measure` list every time in their
 schedule (System page and `run.py status`). Each time catches up on its own, and only until the next
 time: a run missed while the machine slept is not made up once the next one has begun, and the
 newer run is the one that fires. The page shows the last run as `fired MM-DD@HH:MM`.
@@ -217,6 +212,34 @@ Two servers, one read and one write. Until 2026-08-12 there were seven: a suite 
 per-module dashboards on 5050/5051, 5052 and 5055 (+5056), scout on 5057, and three iframe embed
 ports at 8801–8803. All deleted — the console covers them, and anything still wanted from them is in
 the `pre-console-only` tag.
+
+## Pipelines
+
+The morning and evening data runs are two jobs, `morning-data` and `evening-data`, each running its
+steps one after another as their own subprocesses, with the commands the steps have always had
+(`run.py pipeline <name>`). A step starts only after the one before it has ended, and never before its
+own configured time (`technicals.land_at` and the other `*_at` keys still say when), so an early step
+that runs long delays the later ones instead of leaving them to read yesterday's file.
+
+- **A failed step stops the run**, the steps after it recorded as not run, unless it is *independent*:
+  then the failure is recorded and the run carries on. A step is independent when nothing later reads
+  what it writes, or when it is a fetch that keeps the file it already had on failure and the step after
+  it reads that file, as it did when the two were separate jobs (the Dolt pull, the broker, Yahoo, SEC
+  and Damodaran fetches). The landings and the evening's security list, IV ranks and earnings
+  calendar are not independent. Which is which is `jobspec.PIPELINES`.
+- **A step that is off in config, or whose trading-day gate fails today, is skipped, not failed.**
+  A pipeline with every step off is listed off.
+- **Each pipeline starts at its first step's time and catches up for its longest step.** A failed run
+  is retried twice inside that window, from the step that failed: steps that were `ok` that day are
+  not run again. `run.py pipeline <name> --fresh` runs everything again.
+- **The results**: `run.py status` shows each pipeline's per-step status, exit code and seconds in its
+  row; `~/.cherrypick/state/pipeline.<name>.json` also keeps the stderr tail of a failed step. The job's
+  `last_error` (shown on the System page) names the pipeline and the step, and so does the
+  `jobs.failed` warning: `morning-data step technicals-land (exit 2: ...)`.
+- **Left as jobs of their own** because nothing in the chain reads them or they read nothing from it:
+  `earnings-moves`, `universe-daily` and `-watchlist`, `backtest-fetch`, the vendor collector's jobs,
+  `technicals-income-lists`, `report-income-chains`, `vol-curve-bars`, `pmcc-earnings-refresh`, the
+  morning `market-files` retry and the late `technicals-earnings-calendar` pass.
 
 ## Dependency order and the clock
 
