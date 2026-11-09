@@ -337,7 +337,7 @@ def cmd_propose(args) -> dict:
         fingerprint=record["fingerprint"],
         **described,
     )
-    # B6 (docs/trading-book-review-plan.md (tag archive/docs-2026-11)): the person's interpretation, kept apart from the facts.
+    # B6 (trading-book-review-plan (archived)): the person's interpretation, kept apart from the facts.
     # Its own journal line, outside the sealed order, so it can never change the fingerprint, a gate
     # or a cap; nothing that computes reads it (tests/test_thesis.py pins that). A thesis that recurs
     # is a candidate row for research/hypotheses.json, never a rule.

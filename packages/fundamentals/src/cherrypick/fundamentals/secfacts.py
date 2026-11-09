@@ -1,5 +1,5 @@
 """SEC filings' XBRL facts, landed beside the bars for the fair-value build
-(docs/history/fair-value-model-plan.md (tag archive/docs-2026-11)).
+(fair-value-model-plan (archived)).
 
 `scripts/fetch_sec_facts.py` keeps each company's filing index and its `companyfacts` file under
 `paths.sec_dir()`. This module lands them into two tables of the package's store (`fundamentals.db`)

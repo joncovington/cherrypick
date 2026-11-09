@@ -1,8 +1,9 @@
 """Build the market report's stock universe: candidates from the vendor's editions and the tastylive
 follow feed, kept only when tastytrade's own quotes show them to be very liquid.
 
-**Why this exists.** The market report (`packages/technicals/docs/reference.md`) runs its breadth and stage engines over a stock
-universe, and the vendor's is neither the S&P 500 nor an option-volume screen (the report documents the difference).
+**Why this exists.** The market report (`packages/technicals/docs/reference.md`) runs its breadth and stage
+engines over a stock universe, and the vendor's is neither the S&P 500 nor an option-volume screen (the
+report documents the difference).
 The two places names come from are the ones a person actually watches: every ticker the vendor's
 editions link, and every underlying the tastylive traders put on. A name earns its place only by
 trading tightly, measured, not by being mentioned.

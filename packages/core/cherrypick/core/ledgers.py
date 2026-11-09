@@ -1087,7 +1087,7 @@ ERA_SCHEMAS = frozenset({"pmcc"})
 
 
 # --------------------------------------------------------------------------- results in R (B3)
-# `docs/trading-book-review-plan.md (tag archive/docs-2026-11)` B3: every closed record carries `r_multiple`, net over the
+# trading-book-review-plan (archived)` B3: every closed record carries `r_multiple`, net over the
 # trade's defined max loss at entry (`capital`), so modules compare on one scale. Derived here, on
 # read, from what every ledger already records -- so every row already written has it too, with no
 # backfill. A schema whose `capital` is not a defined max loss has no R: contango holds a fund (its

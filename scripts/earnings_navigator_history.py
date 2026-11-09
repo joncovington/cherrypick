@@ -4,7 +4,7 @@
         [--cache FILE] [--cutoffs FILE] [--json FILE] [--limit N] [--symbols A,B]
     python scripts/earnings_navigator_history.py --from-json FILE
 
-Step 1 of docs/history/earnings-screener-plan.md (tag archive/docs-2026-11): does the rule make money after costs, and which of its
+Step 1 of earnings-screener-plan (archived): does the rule make money after costs, and which of its
 unsettled details matter? Read-only throughout; nothing is written except the optional cache and
 JSON files.
 

@@ -17,7 +17,7 @@ file as it was for those symbols.
 
 **The implied vol of every listed expiration** in the next ten weeks arrives in the same response and
 is kept too, one small file a session (`iv/expiry-iv/<day>.json`), for the earnings calendar's
-expected move (docs/history/earnings-screener-plan.md (tag archive/docs-2026-11)). The calendar's names -- optionable stocks the
+expected move (earnings-screener-plan (archived)). The calendar's names -- optionable stocks the
 security list rates very or somewhat liquid -- are fetched alongside the store's, even where our own
 verdict holds them illiquid.
 
@@ -130,7 +130,7 @@ EXPIRY_IV_DAYS = 70  # far enough for the first expiry after any report in the c
 def expiry_ivs(raw: dict, on) -> dict[str, float]:
     """{expiration: implied vol} from one RAW market-metrics item, for the expirations after `on` and
     within EXPIRY_IV_DAYS. The earnings calendar's expected move is price x the event expiry's IV x
-    the root of its calendar time (docs/history/earnings-screener-plan.md (tag archive/docs-2026-11)). An expiration on the session
+    the root of its calendar time (earnings-screener-plan (archived)). An expiration on the session
     date itself is dropped: the broker still lists it after the close, with a meaningless IV (CB's
     read 3,745% on 2026-10-16)."""
     out = {}

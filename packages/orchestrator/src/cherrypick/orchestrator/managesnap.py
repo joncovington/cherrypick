@@ -18,7 +18,7 @@ Metrics and history come from the first enabled module whose broker tool answers
 failure to get either is recorded in the snapshot, never fatal: the evaluation still runs every rule
 that needs only prices, and says what was unavailable.
 
-Version 3 (2026-10-18) adds what a portfolio reading needs (docs/history/portfolio-guidance-plan.md (tag archive/docs-2026-11)): each
+Version 3 (2026-10-18) adds what a portfolio reading needs (portfolio-guidance-plan (archived)): each
 underlying's beta and three-month correlation to SPY as the broker states them -- the beta the broker's
 own beta-weighted delta uses, so the two can agree -- and the benchmark's metrics whether or not it is
 held, since a beta-weighted delta is priced in its units. The account's kind (margin or cash, IRA or

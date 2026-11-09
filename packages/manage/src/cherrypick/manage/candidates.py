@@ -1,4 +1,4 @@
-"""Income trades from our own universe, sized to the account (docs/history/portfolio-guidance-plan.md (tag archive/docs-2026-11), 4).
+"""Income trades from our own universe, sized to the account (portfolio-guidance-plan (archived), 4).
 
 A pure function of the evening `income` reading the snapshot carries (`fetch_screener_greeks.py
 income`: every tradable name's cycle-monthly chain, quoted in regular hours, with its earnings dates,

@@ -1,6 +1,6 @@
 """cherrypick.core.environment — the suite's one market-environment label (B8).
 
-`docs/trading-book-review-plan.md (tag archive/docs-2026-11)` B8. Every study and report says "uptrend", "sideways" or
+trading-book-review-plan (archived)` B8. Every study and report says "uptrend", "sideways" or
 "downtrend" by this function, so "it fails in downtrends" means the same thing everywhere. Before it,
 each study defined its own regime (SPY against its 200-day in one, VIX/VIX3M in curve and contango).
 

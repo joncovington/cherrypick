@@ -2144,7 +2144,8 @@ def cmd_hypotheses(cfg, args) -> None:
         f"study {s} (queue or result folder): no register row" for s in hypotheses.unregistered(reg, studies)
     ]
     main_reg = _register_on_main()
-    plan = _plan_on_main() + "\n" + _read_text(hypotheses.repo_root() / "research" / "edge-hypotheses-plan.md")
+    local_plan = hypotheses.repo_root() / "research" / "edge-hypotheses-plan.md"
+    plan = _plan_on_main() + "\n" + _read_text(local_plan)
     out = {
         "ok": not problems,
         "problems": problems,

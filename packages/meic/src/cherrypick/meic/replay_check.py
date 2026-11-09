@@ -1,4 +1,4 @@
-"""The MEIC replay's validation against MEIC paper (docs/quote-history-replay-plan.md (tag archive/docs-2026-11), Phase 2).
+"""The MEIC replay's validation against MEIC paper (quote-history-replay-plan (archived), Phase 2).
 
 A path replay drifts from paper the moment one decision differs, and for an arm with caps or spacing
 (`bp-*`) every later decision differs with it. That says little about whether the replay reproduces
@@ -41,7 +41,7 @@ from cherrypick.meic import paths as _paths
 
 WINDOW_SECONDS = 30.0
 TICK_SECONDS = replay.DEFAULT_TICK_SECONDS
-#: Declared 2026-10-18 in docs/quote-history-replay-plan.md (tag archive/docs-2026-11), before any MEIC replay number was read.
+#: Declared 2026-10-18 in quote-history-replay-plan (archived), before any MEIC replay number was read.
 THRESHOLDS = {
     "entries_matched_min": 0.90,
     "extra_entry_episodes_max": 0.10,

@@ -345,7 +345,7 @@ DEFAULT_RULES: dict[str, Any] = {
         "near_share": 0.8,
     },
     "pricing": {"rate": 0.04, "grid_low": 0.01, "grid_high": 3.0, "grid_steps": 600},
-    # The account as one book (portfolio.py, docs/history/portfolio-guidance-plan.md (tag archive/docs-2026-11)). Every band is a retail
+    # The account as one book (portfolio.py, portfolio-guidance-plan (archived)). Every band is a retail
     # heuristic with no published out-of-sample evidence, hence the low confidences.
     "portfolio": {
         "enabled": True,

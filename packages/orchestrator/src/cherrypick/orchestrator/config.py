@@ -677,7 +677,8 @@ VENDOR_COLLECTOR_KEYS = _vendor.VENDOR_COLLECTOR_KEYS
 
 def market_report_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     """Resolved scheduling for the vendor-edition collector (scripts/fetch_vendor_edition.py), the
-    fixture feed for the market report (packages/technicals/docs/reference.md). OFF by default: it needs a subscription login
+    fixture feed for the market report (packages/technicals/docs/reference.md). OFF by default: it needs
+    a subscription login
     stored first (`credentials` / `login`), and a job that fails every morning for want of one is
     noise.
 

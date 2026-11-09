@@ -42,7 +42,8 @@ def test_a_new_row_must_state_its_parts_and_rivals():
 
 
 def test_bad_status_pointer_and_duplicates_are_caught():
-    rows = [copy.deepcopy(NEW), {**NEW, "status": "maybe", "pointer": "research/edge-hypotheses-plan.md#nope"}]
+    bad = {**NEW, "status": "maybe", "pointer": "research/edge-hypotheses-plan.md#nope"}
+    rows = [copy.deepcopy(NEW), bad]
     problems = hy.check({"hypotheses": rows})
     assert any("unique integer" in p for p in problems)
     assert any("not one of" in p for p in problems)

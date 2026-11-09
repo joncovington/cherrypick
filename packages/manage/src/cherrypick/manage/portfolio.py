@@ -2,7 +2,7 @@
 
 A pure function of the trades the evaluation already built (each leg with its own solved IV) and the
 snapshot's market metrics, so a past session re-evaluates to the same reading. The plan behind it is
-docs/history/portfolio-guidance-plan.md (tag archive/docs-2026-11).
+portfolio-guidance-plan (archived).
 
 Every figure is MODELLED -- Black-Scholes at each leg's own IV, dividends ignored -- and the broker's
 display will differ a little (it models American exercise and dividends). What it is for:

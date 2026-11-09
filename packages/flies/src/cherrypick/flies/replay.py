@@ -1,6 +1,6 @@
 """The quote-history replay: a recorded session run through the paper loop's own tick.
 
-docs/quote-history-replay-plan.md (tag archive/docs-2026-11), Phase 1. The gex recorder keeps SPX's 0DTE chain every ~15 s from
+quote-history-replay-plan (archived), Phase 1. The gex recorder keeps SPX's 0DTE chain every ~15 s from
 2026-10-13 (`core.quotehistory`); this rebuilds each recorded sample as the snapshot
 `provider.build_snapshot` would have built at that instant and hands it to `paper_loop.run_once`
 (`snapshot_fn=`, `replay=True`), so the rules that run are the paper loop's, with no second copy, and

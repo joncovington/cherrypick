@@ -1,6 +1,7 @@
 """The morning's headlines, for the narrative only: title, link, source and time, nothing else.
 
-Part of the market report (packages/technicals/docs/reference.md). The report's prior-session movers and week-ahead sections are
+Part of the market report (packages/technicals/docs/reference.md). The report's prior-session movers and
+week-ahead sections are
 prose over headlines; the movers and the calendar are data the suite already computes, and this
 supplies the headlines. It fetches the RSS feeds verified (Fed press releases, CNBC, the
 MarketWatch and WSJ markets feeds -- Reuters' is dead) once each, keeps what was published in the

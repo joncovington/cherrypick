@@ -1662,7 +1662,7 @@ def derive_jobs(
             lambda job_id=job_id, at_key=at_key: JobSpec(
                 id=job_id,
                 # A package command: every announcement in the next 30 days, joined from local data
-                # and the local Dolt (docs/history/earnings-screener-plan.md (tag archive/docs-2026-11)), for the console's earnings tab.
+                # and the local Dolt (earnings-screener-plan (archived)), for the console's earnings tab.
                 # The late pass catches a security list saved after the first.
                 argv=(pythonw, "-m", "cherrypick.technicals", "earnings-calendar"),
                 kind=KIND_DAILY,
@@ -2156,7 +2156,7 @@ def derive_jobs(
         "report-income-chains",
         lambda: JobSpec(
             id="report-income-chains",
-            # Our own income candidates (docs/history/portfolio-guidance-plan.md (tag archive/docs-2026-11), piece 4): every
+            # Our own income candidates (portfolio-guidance-plan (archived), piece 4): every
             # tradable name's
             # cycle-monthly chain, out of the money both sides, quoted in regular hours for manage to
             # size against the account, and the Screeners page's own short-put and covered-call lists.
