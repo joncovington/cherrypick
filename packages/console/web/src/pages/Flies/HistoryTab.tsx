@@ -1,12 +1,19 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { TradingMode } from "@console/shared";
 import { useFliesTradeLog, fliesQuery, type FliesFilter, type FliesTradeLogRow } from "../../lib/api";
 import { useColumnLayout, type ColumnDef } from "../../components/table/columns";
 import { ColumnsMenu } from "../../components/table/ColumnsMenu";
 import { DateRangeBar, useUrlDateRange } from "../../components/table/DateRange";
-import { DataCard, PnlCell, SkeletonRows, fmtMoney, fmtNum, sortRows, useSort, type SortHeader } from "../../components/DataTable";
+import { Card, DataCard, PnlCell, SkeletonRows, SortTh, fmtMoney, fmtNum, sortRows, useSort, type SortHeader } from "../../components/DataTable";
 import { Pager, usePage } from "../../components/ScopeBar";
+import { HelpSection, HelpWarn, type CardHelpContent } from "../../components/CardHelp";
+import { ListViewContext, ViewSwitch, useViewChoice, type ListView } from "../../components/ViewSwitch";
+import { FilterGroup, FilterSortButton, FilterSortPanel, FilterSummary, SortSection, type SortChoice, type SortOption } from "../../components/FilterSort";
+import { CardLightbox, LightboxFrame, useOpenParam } from "../Backtest/CardLightbox";
+import { TradeCard, TradeCards, type TradeCardModel } from "../Live/TradeCard";
+import { ChoiceGroup, FliesLayout } from "./FliesFilter";
+import { Section } from "../../components/Section";
 import { clockTime, structureLabel, wingWidth } from "./structure";
 import { fmtCash, fmtPrice } from "../../lib/format";
 
@@ -310,6 +317,289 @@ const TRADE_LOG_SORTS: readonly string[] = [
   "entry", "exit", "gross", "fees", "settle", "slip", "net",
 ];
 
+/* ---------------------------------------------------------------- help */
+
+export const CALENDAR_HELP: CardHelpContent = {
+  title: "Calendar",
+  body: (
+    <HelpSection title="Settled days">
+      <p>One square a settled day, in a column a week, Monday at the top; its depth is the day's net against the largest in view. Open a day to replay it on the session tab.</p>
+    </HelpSection>
+  ),
+};
+
+export const BY_ARM_HELP: CardHelpContent = {
+  title: "By arm",
+  body: (
+    <>
+      <HelpWarn title="Thin rows">
+        <p>
+          A row with fewer sessions than the regime-cuts writer's floor is dimmed and tagged thin: same-day trades share a regime, so it is
+          a handful of independent observations however many trades it holds. The floor is the one core.regimecuts declares, read from its
+          artifact. A dimmed row is still the honest record of what happened.
+        </p>
+      </HelpWarn>
+      <HelpSection title="What is counted">
+        <p>Legged entries only, over settled days. Sessions sit beside trades everywhere, because the session is the unit of independence.</p>
+      </HelpSection>
+    </>
+  ),
+};
+
+export const TRADE_LOG_HELP: CardHelpContent = {
+  title: "The trade log",
+  body: (
+    <>
+      <HelpSection title="Totals">
+        <p>
+          The line under the head sums every row matching these filters, not just this page: gross less fees and settlement is net. Slippage
+          is what the modelled fills conceded against mid: already inside gross, never subtracted again, and recorded on the trades it says.
+          Sessions ride beside the net because same-day trades share a regime.
+        </p>
+      </HelpSection>
+      <HelpSection title="A trade">
+        <p>
+          One entry, closed or settled: entry and exit cash signed (received +, paid -), adding to gross; fees, settlement and slippage each
+          in their own column. n/r means the figure was not recorded. Rows read as a table or as cards; a row opens its card in place.
+        </p>
+      </HelpSection>
+    </>
+  ),
+};
+
+/* ---------------------------------------------------------------- the trade log */
+
+export function logModel(r: FliesTradeLogRow): TradeCardModel {
+  const wing = wingWidth(r.wingWidth, r.farWidth);
+  const slip = r.slippage === null ? "n/r" : fmtMoney(r.slippage);
+  return {
+    key: `${r.tradeDate}-${r.entryTime ?? ""}-${r.arm ?? ""}-${r.kind ?? ""}-${r.center ?? ""}-${r.side ?? ""}-${r.price ?? ""}`,
+    symbol: r.symbol,
+    symbolHref: `/charts/technicals?symbol=${encodeURIComponent(r.symbol)}`,
+    spot: null,
+    shape: `${structureLabel(r.kind, r.side)} · ${fmtNum(r.center, 0)}${wing === "—" ? "" : ` · ${wing} wide`}`,
+    chips: (
+      <>
+        {r.arm ? <span className="chip">{r.arm}</span> : null}
+        {r.exitKind ? <span className="chip">{r.exitKind}</span> : null}
+        {r.pinned ? <span className="chip chip-warn">pinned</span> : null}
+      </>
+    ),
+    cash: r.pnl,
+    side: [`net · ${fmtPrice(r.price)}`, r.quantity === null ? "qty —" : `qty ${r.quantity}`],
+    bar: null,
+    barTitle: "",
+    label: `entry ${fmtCash(r.entryCash)} · exit ${fmtCash(r.exitCash)} · gross ${fmtMoney(r.gross)}`,
+    open: { date: `${r.tradeDate.slice(5)} ${clockTime(r.entryTime)}`, price: fmtPrice(r.price) },
+    legs: [],
+    after: [
+      `fees ${fmtMoney(r.fees)}`,
+      `settlement ${r.settlementFees === null ? "n/r" : fmtMoney(r.settlementFees)}`,
+      `slippage ${slip}`,
+    ],
+    foot: [`entry mode: ${r.entryMode ?? "—"}`, r.latencyMin !== null ? `completed in ${r.latencyMin.toFixed(0)}m` : (r.window ?? "—")],
+  };
+}
+
+/** The log's panel sorts. The server orders the whole result; a column header sorts by any other. */
+export const LOG_SORTS: SortOption<FliesTradeLogRow>[] = [
+  { id: "date", label: "date", hint: "newest first", key: () => null },
+  { id: "net", label: "net", hint: "worst first", key: () => null },
+];
+const LOG_DIR: Record<string, "asc" | "desc"> = { date: "desc", net: "asc" };
+
+export function logChoice(sort: string | undefined, dir: "asc" | "desc" | undefined): SortChoice {
+  if (sort === undefined) return { id: "date", reversed: false };
+  const base = LOG_DIR[sort];
+  return base === undefined ? { id: sort, reversed: false } : { id: sort, reversed: (dir ?? "desc") !== base };
+}
+
+function TradeLogCard({
+  view,
+  setView,
+  cols,
+  log,
+  logQuery,
+  logTotal,
+  totals,
+  outcome,
+  setOutcome,
+  search,
+  setSearch,
+  page,
+  setOffset,
+  setLimit,
+  toggleSort,
+  setSort,
+}: {
+  view: ListView;
+  setView: (v: ListView) => void;
+  cols: ReturnType<typeof useColumnLayout<FliesTradeLogRow>>;
+  log: FliesTradeLogRow[];
+  logQuery: ReturnType<typeof useFliesTradeLog>;
+  logTotal: number;
+  totals: ReturnType<typeof useFliesTradeLog>["data"] extends infer D ? (D extends { totals: infer T } ? T : never) | undefined : never;
+  outcome: (typeof OUTCOMES)[number];
+  setOutcome: (o: (typeof OUTCOMES)[number]) => void;
+  search: string;
+  setSearch: (v: string) => void;
+  page: { offset: number; limit: number; sort?: string; dir?: "asc" | "desc" };
+  setOffset: (v: number) => void;
+  setLimit: (v: number) => void;
+  toggleSort: (k: string) => void;
+  setSort: (k?: string, d?: "asc" | "desc") => void;
+}) {
+  const [panel, setPanel] = useState(false);
+  const [open, setOpen] = useState<Set<string>>(new Set());
+  const anchor = useRef<HTMLButtonElement>(null);
+  const choice = logChoice(page.sort, page.dir);
+  const onLogSort = LOG_SORTS.find((o) => o.id === choice.id);
+  const changed = (outcome !== "all" ? 1 : 0) + (search !== "" ? 1 : 0) + (page.sort !== undefined ? 1 : 0) + (cols.isDefault ? 0 : 1);
+  const reset = () => {
+    setOutcome("all");
+    setSearch("");
+    setSort();
+    cols.reset();
+  };
+  const sortWords = onLogSort ? `by ${onLogSort.label}${choice.reversed ? ", reversed" : `, ${onLogSort.hint}`}` : `by ${choice.id}`;
+  // The totals line is the card's own state line, over every matching row: what it leaves out stays on it.
+  const totalsNote =
+    totals !== undefined && totals.trades > 0
+      ? `net ${fmtMoney(totals.netPnl)} · ${totals.trades.toLocaleString()} trades · ${totals.sessions.toLocaleString()} session${totals.sessions === 1 ? "" : "s"} · gross ${fmtMoney(totals.grossPnl)} · fees ${fmtMoney(totals.fees)} · settlement ${fmtMoney(totals.settlementFees)} · slippage ${fmtMoney(totals.slippage)}${totals.slippageTrades === totals.trades ? "" : ` (recorded on ${totals.slippageTrades.toLocaleString()} of ${totals.trades.toLocaleString()})`}`
+      : null;
+  const toggle = (k: string) => {
+    const next = new Set(open);
+    if (next.has(k)) next.delete(k);
+    else next.add(k);
+    setOpen(next);
+  };
+  const models = log.map(logModel);
+  return (
+    <>
+      <Card
+        title={`trade log — ${logTotal.toLocaleString()} matching`}
+        help={TRADE_LOG_HELP}
+        controls={
+          <>
+            <ViewSwitch view={view} onChange={setView} />
+            <FilterSortButton changed={changed} open={panel} onOpen={() => setPanel(!panel)} anchor={anchor} />
+          </>
+        }
+      >
+        <FilterSummary
+          parts={[sortWords, ...(outcome === "all" ? [] : [outcome]), ...(search === "" ? [] : [`“${search}”`])]}
+          note={totalsNote}
+          changed={changed}
+          onOpen={() => setPanel(true)}
+          onReset={reset}
+        />
+        {view === "cards" ? (
+          <div className={logQuery.isPlaceholderData ? "table-busy" : undefined}>
+            <ListViewContext.Provider value="cards">
+              <TradeCards models={models} empty="no trades match these filters" />
+            </ListViewContext.Provider>
+          </div>
+        ) : (
+          <div className={`table-scroll ${logQuery.isPlaceholderData ? "table-busy" : ""}`}>
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th aria-label="open" />
+                  {cols.columns.map((c) => {
+                    if (!TRADE_LOG_SORTS.includes(c.id)) {
+                      return (
+                        <th key={c.id} title={c.title}>
+                          {c.header}
+                        </th>
+                      );
+                    }
+                    // Sorted on the server, over every matching row; a click goes back to page one.
+                    const on = page.sort === c.id;
+                    return (
+                      <th key={c.id} title={c.title} aria-sort={on ? (page.dir === "asc" ? "ascending" : "descending") : undefined}>
+                        <button type="button" className="th-sort" onClick={() => toggleSort(c.id)}>
+                          {c.header}
+                          {on ? (page.dir === "asc" ? " ▴" : " ▾") : ""}
+                        </button>
+                      </th>
+                    );
+                  })}
+                </tr>
+              </thead>
+              <tbody>
+                {log.map((r, i) => {
+                  const m = models[i]!;
+                  const isOpen = open.has(m.key);
+                  return (
+                    <Fragment key={`${m.key}-${i}`}>
+                      <tr>
+                        <td>
+                          <button
+                            type="button"
+                            className={`btn btn-quiet collapse-toggle ${isOpen ? "collapse-toggle-open" : ""}`}
+                            aria-expanded={isOpen}
+                            aria-label={`${isOpen ? "Close" : "Open"} ${m.shape}`}
+                            onClick={() => toggle(m.key)}
+                          >
+                            ▸
+                          </button>
+                        </td>
+                        {cols.columns.map((c) => (
+                          <td key={c.id} className={c.className}>
+                            {c.render(r)}
+                          </td>
+                        ))}
+                      </tr>
+                      {isOpen && (
+                        <tr className="fl-open">
+                          <td colSpan={cols.columns.length + 1}>
+                            <TradeCard m={m} />
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {logTotal > 0 && (
+          <div className="card-footer">
+            <Pager offset={logQuery.data?.offset ?? page.offset} limit={logQuery.data?.limit ?? page.limit} total={logTotal} onOffset={setOffset} onLimit={setLimit} />
+          </div>
+        )}
+      </Card>
+      <FilterSortPanel open={panel} onClose={() => setPanel(false)} onReset={reset} anchor={anchor}>
+        <SortSection
+          sorts={LOG_SORTS}
+          choice={choice}
+          fallback="date"
+          onChange={(c) => setSort(c.id === "date" && !c.reversed ? undefined : c.id, (LOG_DIR[c.id] === "desc") !== c.reversed ? "desc" : "asc")}
+        />
+        <FilterGroup title="outcome">
+          <ChoiceGroup label="outcome filter" value={outcome} options={OUTCOMES.map((o) => ({ id: o, label: o }))} onChange={setOutcome} />
+        </FilterGroup>
+        <FilterGroup title="columns" note="the table's; cards ignore them">
+          <ColumnsMenu defs={TRADE_LOG_COLUMNS} layout={cols.layout} onChange={cols.setLayout} onReset={cols.reset} isDefault={cols.isDefault} />
+        </FilterGroup>
+        <FilterGroup title="search" note="symbol, arm, mode">
+          <input className="text-input" placeholder="search…" aria-label="search the trade log" value={search} onChange={(e) => setSearch(e.target.value)} style={{ textTransform: "none" }} />
+        </FilterGroup>
+      </FilterSortPanel>
+    </>
+  );
+}
+
+/* ---------------------------------------------------------------- across sessions */
+
+const ACROSS = [
+  { id: "mode", label: "entry mode" },
+  { id: "hour", label: "entry hour" },
+  { id: "fee", label: "fee drag" },
+  { id: "completion", label: "completion by hour" },
+] as const;
+
 export function HistoryTab({
   mode,
   filter,
@@ -328,6 +618,9 @@ export function HistoryTab({
   const { data, isLoading } = useHistory(mode, filter, from, to);
   const [outcome, setOutcome] = useState<(typeof OUTCOMES)[number]>("all");
   const [search, setSearch] = useState("");
+  const [view, setView] = useViewChoice("flies-tradelog", "rows");
+  const box = useOpenParam("fl");
+  const [acrossTab, setAcrossTab] = useState<(typeof ACROSS)[number]["id"]>("mode");
 
   // Search reaches the DB now, so let typing settle first.
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -336,33 +629,25 @@ export function HistoryTab({
     return () => clearTimeout(t);
   }, [search]);
 
-  // Explicit date bounds, either side independently empty. The search box could already match a
-  // date as text, which answers "2026-08" but not "the week either side of the cadence change" —
-  // and every measurement break in this module is a date, so a log filterable only by prefix cannot
-  // be pointed at one side of a break.
-  // In the page address since 2026-09-25, so a filtered log survives a reload and can be shared.
+  // Explicit date bounds, either side independently empty. In the page address since 2026-09-25, so
+  // a filtered log survives a reload and can be shared.
   const range = { from, to };
   const cols = useColumnLayout("flies-history", TRADE_LOG_COLUMNS);
 
-  const { page, setOffset, setLimit, toggleSort } = usePage([
-    mode, outcome, debouncedSearch, from, to, filter.arm, filter.era,
-  ]);
+  const { page, setOffset, setLimit, toggleSort, setSort } = usePage([mode, outcome, debouncedSearch, from, to, filter.arm, filter.era]);
   const armSort = useSort();
   const modeSort = useSort();
   const feeSort = useSort();
   // `filter.arm` and `filter.era` are the PAGE-level scope, the same one every other card on this
   // tab already honours. The log took era and ignored arm, so narrowing to one arm left it
   // answering for all of them beside tables that did not.
-  const logQuery = useFliesTradeLog(
-    mode, outcome, debouncedSearch, page, filter.era, range, filter.arm,
-  );
+  const logQuery = useFliesTradeLog(mode, outcome, debouncedSearch, page, filter.era, range, filter.arm);
   const log = logQuery.data?.rows ?? [];
   const logTotal = logQuery.data?.total ?? 0;
   const totals = logQuery.data?.totals;
 
   // Sessions beside trades, everywhere. Same-day trades share a regime and are not independent
-  // observations — this module's own experiment docs put the effective N at the day count, so a
-  // per-arm net over 40 trades from 3 sessions is a 3-sample reading wearing a 40-sample coat.
+  // observations: this module's own experiment docs put the effective N at the day count.
   const headers = ["", "trades", "sessions", "net", "win %", "avg", "PF"];
 
   // Arm x hour completion matrix: rows by arm, columns by the hours that actually appear, sorted
@@ -383,33 +668,26 @@ export function HistoryTab({
     for (const [arm, hourMap] of byArmMap) armRows.push([arm, hourMap]);
   }
 
-  return (
-    <div className="cards cards-wide">
-      <div className="history-controls" style={{ margin: 0 }}>
-        <DateRangeBar basis="trade date" allTitle="every session in the era picked in the header" />
-      </div>
-      <section className="card">
-        <h2>Daily P&L calendar (settled days — click a day to replay it)</h2>
-        {isLoading ? <span className="skeleton skeleton-text" style={{ width: "40%" }} /> : <FliesCalendar days={data?.dailyPnl ?? []} onPick={onReplayDay} />}
-      </section>
-
-      <div className="cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(34rem, 100%), 1fr))" }}>
-        <DataCard title="By arm (legged only, settled)" headers={SUMMARY_HEADERS} sort={armSort} loading={isLoading} rowCount={data?.byArm.length ?? 0}>
-          <SummaryRows rows={sortRows(data?.byArm ?? [], armSort, SUMMARY_SORTS)} label="arm" thinBelow={data?.thinBelowSessions ?? null} />
-        </DataCard>
+  const thin = data?.thinBelowSessions ?? null;
+  const acrossBody = (tab: (typeof ACROSS)[number]["id"]) => {
+    if (tab === "mode")
+      return (
         <DataCard title="By entry mode" headers={SUMMARY_HEADERS} sort={modeSort} loading={isLoading} rowCount={data?.byEntryMode.length ?? 0}>
-          <SummaryRows rows={sortRows(data?.byEntryMode ?? [], modeSort, SUMMARY_SORTS)} label="entryMode" thinBelow={data?.thinBelowSessions ?? null} />
+          <SummaryRows rows={sortRows(data?.byEntryMode ?? [], modeSort, SUMMARY_SORTS)} label="entryMode" thinBelow={thin} />
         </DataCard>
-        <DataCard title="By entry hour (deliberately unranked)" headers={headers} loading={isLoading} rowCount={data?.byEntryHour.length ?? 0}>
-          <SummaryRows rows={data?.byEntryHour} label="hour" thinBelow={data?.thinBelowSessions ?? null} />
-        </DataCard>
-        <DataCard
-          title="Fee drag by arm"
-          headers={FEE_DRAG_HEADERS}
-          sort={feeSort}
-          loading={isLoading}
-          rowCount={data?.feeDrag.length ?? 0}
-        >
+      );
+    if (tab === "hour")
+      return (
+        <>
+          <p className="muted" style={{ margin: "0 0 0.5rem" }}>Deliberately unranked: the order is the clock.</p>
+          <DataCard title="By entry hour" headers={headers} loading={isLoading} rowCount={data?.byEntryHour.length ?? 0}>
+            <SummaryRows rows={data?.byEntryHour} label="hour" thinBelow={thin} />
+          </DataCard>
+        </>
+      );
+    if (tab === "fee")
+      return (
+        <DataCard title="Fee drag by arm" headers={FEE_DRAG_HEADERS} sort={feeSort} loading={isLoading} rowCount={data?.feeDrag.length ?? 0}>
           {sortRows(data?.feeDrag ?? [], feeSort, FEE_DRAG_SORTS).map((r) => (
             <tr key={r.arm}>
               <td>{r.arm}</td>
@@ -420,16 +698,13 @@ export function HistoryTab({
               </td>
               <td className="muted">{r.settlementFees === null ? "n/r" : fmtMoney(r.settlementFees)}</td>
               <td><PnlCell v={r.netPnl} /></td>
-              <td className="muted">
-                {r.feeDragPct !== null ? `${r.feeDragPct.toFixed(1)}%` : "—"}
-              </td>
+              <td className="muted">{r.feeDragPct !== null ? `${r.feeDragPct.toFixed(1)}%` : "—"}</td>
             </tr>
           ))}
         </DataCard>
-      </div>
-
-      <section className="card">
-        <h2>Completion &amp; pin rate — by arm &times; entry hour</h2>
+      );
+    return (
+      <>
         <div className="table-scroll">
           <table className="data-table">
             <thead>
@@ -472,114 +747,89 @@ export function HistoryTab({
           </table>
         </div>
         <p className="muted" style={{ fontSize: 11, marginTop: "0.5rem", marginBottom: 0 }}>
-          Each cell reads completion % · median minutes to complete · pinned %. Completion is whether
-          the second leg ever filled; pinned is a settlement inside the short strike's band. A dash
-          means no trades entered that arm in that hour.
+          Each cell reads completion % · median minutes to complete · pinned %. Completion is whether the second leg ever filled; pinned is
+          a settlement inside the short strike's band. A dash means no trades entered that arm in that hour.
         </p>
-      </section>
+      </>
+    );
+  };
 
-      <section className="card">
-        <div className="panel-head-row">
-          <h2>Trade log — {logTotal.toLocaleString()} matching</h2>
-          {totals !== undefined && totals.trades > 0 && (
-            // Over every matching row, not the page. Sessions ride beside the net because same-day
-            // trades share a regime and are not independent observations — this module's own
-            // experiment docs put the effective N at the session count, so a net over 40 trades
-            // from 3 sessions is a 3-sample reading wearing a 40-sample coat.
-            <span
-              className="chip"
-              title={
-                "Over every row matching these filters — not just this page. Gross − fees − settlement = net. " +
-                "Slippage is what the modelled fills conceded against mid: already inside gross, never subtracted again" +
-                (totals.slippageTrades < totals.trades
-                  ? ` — recorded on ${totals.slippageTrades.toLocaleString()} of these ${totals.trades.toLocaleString()} trades.`
-                  : ".")
-              }
-            >
-              net <PnlCell v={totals.netPnl} /> · {totals.trades.toLocaleString()} trades ·{" "}
-              {totals.sessions.toLocaleString()} session{totals.sessions === 1 ? "" : "s"} · gross{" "}
-              {fmtMoney(totals.grossPnl)} · fees {fmtMoney(totals.fees)} · settlement {fmtMoney(totals.settlementFees)}
-              {" "}
-              · slippage{" "}
-              {totals.slippageTrades === totals.trades
-                ? fmtMoney(totals.slippage)
-                : `${fmtMoney(totals.slippage)} (recorded on ${totals.slippageTrades.toLocaleString()} of ${totals.trades.toLocaleString()})`}
-            </span>
-          )}
-        </div>
-        <div className="history-controls">
-          <ColumnsMenu
-            defs={TRADE_LOG_COLUMNS}
-            layout={cols.layout}
-            onChange={cols.setLayout}
-            onReset={cols.reset}
-            isDefault={cols.isDefault}
-          />
-          {/* A filter, not a tab strip: role=group rather than tablist, which would promise
-              tab semantics for something that narrows one table. */}
-          <div className="mode-toggle" role="group" aria-label="outcome filter">
-            {OUTCOMES.map((o) => (
-              <button key={o} type="button" className={outcome === o ? "mode-btn active" : "mode-btn"} onClick={() => setOutcome(o)}>
-                {o}
-              </button>
-            ))}
-          </div>
-          <input className="text-input" placeholder="search…" value={search} onChange={(e) => setSearch(e.target.value)} style={{ textTransform: "none" }} />
-        </div>
-        <div className={`table-scroll ${logQuery.isPlaceholderData ? "table-busy" : ""}`}>
-          <table className="data-table">
-            <thead>
-              <tr>
-                {cols.columns.map((c) => {
-                  if (!TRADE_LOG_SORTS.includes(c.id)) {
-                    return (
-                      <th key={c.id} title={c.title}>
-                        {c.header}
-                      </th>
-                    );
-                  }
-                  // Sorted on the server, over every matching row; a click goes back to page one.
-                  const on = page.sort === c.id;
-                  return (
-                    <th
-                      key={c.id}
-                      title={c.title}
-                      aria-sort={on ? (page.dir === "asc" ? "ascending" : "descending") : undefined}
-                    >
-                      <button type="button" className="th-sort" onClick={() => toggleSort(c.id)}>
-                        {c.header}
-                        {on ? (page.dir === "asc" ? " ▴" : " ▾") : ""}
-                      </button>
-                    </th>
-                  );
-                })}
-              </tr>
-            </thead>
-            <tbody>
-              {log.map((r, i) => (
-                <tr key={i}>
-                  {cols.columns.map((c) => (
-                    <td key={c.id} className={c.className}>
-                      {c.render(r)}
-                    </td>
-                  ))}
+  return (
+    <FliesLayout>
+      <div className="history-controls" style={{ margin: 0 }}>
+        <DateRangeBar basis="trade date" allTitle="every session in the era picked in the header" />
+      </div>
+      <Section concept="hist" tag="calendar" question="How did each day go?">
+        <Card title="daily P&L calendar" className="fl-w6" help={CALENDAR_HELP}>
+          {isLoading ? <span className="skeleton skeleton-text" style={{ width: "40%" }} /> : <FliesCalendar days={data?.dailyPnl ?? []} onPick={onReplayDay} />}
+        </Card>
+        <Card title="by arm" className="fl-w6" help={BY_ARM_HELP} flag={thin !== null ? "thin rows dimmed" : undefined}>
+          <div className="table-scroll">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  {SUMMARY_HEADERS.map((h, i) =>
+                    typeof h === "string" ? (
+                      <th key={i}>{h}</th>
+                    ) : (
+                      <SortTh key={h.k} label={h.label} k={h.k} sort={armSort} title={h.title} />
+                    ),
+                  )}
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        {logTotal > 0 && (
-          <div className="card-footer">
-            <Pager
-              offset={logQuery.data?.offset ?? page.offset}
-              limit={logQuery.data?.limit ?? page.limit}
-              total={logTotal}
-              onOffset={setOffset}
-              onLimit={setLimit}
-            />
+              </thead>
+              <tbody>
+                {isLoading ? <SkeletonRows n={4} cols={7} /> : <SummaryRows rows={sortRows(data?.byArm ?? [], armSort, SUMMARY_SORTS)} label="arm" thinBelow={thin} />}
+              </tbody>
+            </table>
           </div>
-        )}
-      </section>
-    </div>
+          <div className="pf-mores pf-push">
+            <button type="button" className="pf-more" onClick={() => box.show("across")}>
+              by entry mode, hour, fee drag <span aria-hidden="true">›</span>
+            </button>
+          </div>
+        </Card>
+      </Section>
+
+      <Section concept="hist" tag="trade log" question="Every trade">
+        <TradeLogCard
+          view={view}
+          setView={setView}
+          cols={cols}
+          log={log}
+          logQuery={logQuery}
+          logTotal={logTotal}
+          totals={totals}
+          outcome={outcome}
+          setOutcome={setOutcome}
+          search={search}
+          setSearch={setSearch}
+          page={page}
+          setOffset={setOffset}
+          setLimit={setLimit}
+          toggleSort={toggleSort}
+          setSort={setSort}
+        />
+      </Section>
+
+      {box.open === "across" ? (
+        <CardLightbox count={1} index={0} onStep={() => undefined} onClose={box.close} wide>
+          {(nav) => (
+            <LightboxFrame
+              kicker="history ›"
+              title="Across sessions"
+              tabs={ACROSS.map((a) => ({ id: a.id, label: a.label }))}
+              tab={acrossTab}
+              onTab={setAcrossTab}
+              position={nav.position}
+              onPrev={nav.prev}
+              onNext={nav.next}
+              onClose={box.close}
+            >
+              <div className="pf-box-body">{acrossBody(acrossTab)}</div>
+            </LightboxFrame>
+          )}
+        </CardLightbox>
+      ) : null}
+    </FliesLayout>
   );
 }

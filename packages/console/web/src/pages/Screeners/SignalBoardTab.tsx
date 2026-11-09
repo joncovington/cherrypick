@@ -5,7 +5,8 @@ import { useSignalBoard } from "../../lib/api";
 import { Card } from "../../components/DataTable";
 import { HelpSection, HelpWarn, type CardHelpContent } from "../../components/CardHelp";
 import { FilterGroup, FilterSortButton, FilterSortPanel, FilterSummary, FilterSwitch } from "../../components/FilterSort";
-import { QuestionSection, ScreenerLayout } from "./QuestionSection";
+import { ScreenerLayout } from "./ScreenerParts";
+import { Section } from "../../components/Section";
 
 /**
  * The signal board (2026-10-17): each listed stock's count of methods agreeing on one side, from our
@@ -170,14 +171,14 @@ export function SignalBoardTab() {
       {data && data.day === null && <p className="muted">No board written yet: the board job runs at 06:45 ET.</p>}
 
       {data && data.day !== null && (
-        <QuestionSection concept="dir" name="agreement" question="Where do our methods agree?">
+        <Section concept="dir" tag="agreement" question="Where do our methods agree?">
           <Card title="bullish" help={help} flag="not a tested signal" controls={<span className="chip">{bull.length}</span>}>
             <BoardList rows={bull} data={data} side="bullish" min={min} />
           </Card>
           <Card title="bearish" help={help} flag="not a tested signal" controls={<span className="chip">{bear.length}</span>}>
             <BoardList rows={bear} data={data} side="bearish" min={min} />
           </Card>
-        </QuestionSection>
+        </Section>
       )}
 
       <FilterSortPanel open={panel} onClose={() => setPanel(false)} onReset={reset} anchor={anchor}>

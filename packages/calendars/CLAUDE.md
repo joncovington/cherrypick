@@ -1,7 +1,6 @@
 # cherrypick-calendars
 
-> **Vocabulary.** This module's **book** is the suite's **arm** (root `CLAUDE.md`). The column
-> (`dc_positions.book`) moves with the rest of the schema; prose and the console already say `arm`.
+This module's old word `book` is the root's `arm`; the column is still `dc_positions.book`.
 
 Weekly SPY double calendars, a paper-only forward exit-parameter experiment (posture: root file).
 Every Monday (Tuesday after a Monday holiday) at 10:00 ET: a put calendar at the expected-move-down
@@ -163,18 +162,7 @@ surfaces show "paper only" (`readModuleGate`/`liveops._live_enabled`), nothing c
 
 ## Commands
 
-```bash
-python -m cherrypick.calendars.paper_loop --once        # one gated tick (what the supervisor spawns off-session)
-python -m cherrypick.calendars.paper_loop --interval 30 # the in-session resident loop
-python -m cherrypick.calendars.paper_loop --status      # one JSON health object (watchdog contract)
-python -m cherrypick.calendars.paper_loop --settle --date 2026-08-21 --price 6543.21  # official print
-python run.py status                                    # open positions + the current week plan
-python run.py policies                                  # the derived exit-policy table + its validation
-python run.py validate                                  # the validation alone
-python run.py record-break --key K --date D [--old X] [--new Y] [--note N]  # journal a break
-python -m pytest                                        # temp CHERRYPICK_HOME; no broker, no streamer needed
-ruff check . && ruff format .                           # line-length 110
-```
+Commands to run the package, its tests and its lint are in [README.md](README.md#commands).
 
 Config: `config.example.json` → `config.json` (git-ignored) or `~/.cherrypick/config/calendars.json`;
 the example is the design document — read its `_note` keys first.

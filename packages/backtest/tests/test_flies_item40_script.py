@@ -1,5 +1,5 @@
-"""Hypothesis 40's study (scripts/flies_item40.py): the arms it declares, its pass rule and its rivals.
-Invented sessions only, no store.
+"""Hypothesis 40's study (packages/backtest/scripts/flies_item40.py): the arms it declares, its pass rule and
+its rivals. Invented sessions only, no store.
 
 Each bar is shown firing and failing, because a check that cannot fire reads as coverage it is not.
 """
@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-SCRIPTS = Path(__file__).resolve().parents[3] / "scripts"
+SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 _spec = importlib.util.spec_from_file_location("flies_item40", SCRIPTS / "flies_item40.py")
 st = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(st)

@@ -2,7 +2,6 @@ import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { Shell } from "./components/shell/Shell";
 import { ModuleRoute } from "./pages/ModuleRoute";
 import { NotFoundPage } from "./pages/NotFoundPage";
-import { FlowPostPage } from "./pages/Flow/FlowPostPage";
 
 /** A moved page whose links carry a query (`/reports/chart?symbol=MSFT`): the query goes with it. */
 function MovedTo({ to }: { to: string }) {
@@ -13,8 +12,6 @@ function MovedTo({ to }: { to: string }) {
 export default function App() {
   return (
     <Routes>
-      {/* The Discord series' capture page: outside the shell (no header, no rail) and in no nav. */}
-      <Route path="post/flow" element={<FlowPostPage />} />
       <Route element={<Shell />}>
         {/* Home is the Live page (2026-10-16): the Overview page was removed, and `/` goes where
             the real account's day is read. `replace`, so Back does not bounce off `/`. */}
@@ -38,6 +35,8 @@ export default function App() {
         {/* Every trading module AND the suite-level surfaces (GEX, Live, Reports, Advisor,
             Config) live under these two routes, each a rail and a content pane inside the shell
             (`ModuleRoute`, `registry.ts`). An unknown name 404s. */}
+        {/* One report of External reports (data-driven tab, `ExternalReportsPage`): the frame is Reports / external. */}
+        <Route path="reports/external/:reportId" element={<ModuleRoute forced={{ module: "reports", slide: "external" }} />} />
         <Route path=":module" element={<ModuleRoute />} />
         <Route path=":module/:slide" element={<ModuleRoute />} />
         {/* Catch-all. Without it an unmatched path renders NOTHING — a blank screen that reads as

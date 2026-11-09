@@ -21,7 +21,7 @@ def test_an_undeclared_arm_other_than_control_does_not_enter(config):
 
 
 def test_a_held_long_arm_keeps_its_rules_with_a_bare_config_block(config):
-    """`{"enabled": true}` and nothing else still yields Tom King's rules, over `defaults`' 0.85-0.90
+    """`{"enabled": true}` and nothing else still yields the source design's rules, over `defaults`' 0.85-0.90
     band that control trades; `shield` alone rolls early."""
     cfg = copy.deepcopy(config)
     cfg["arms"]["shield"] = {"enabled": True}
@@ -128,3 +128,10 @@ def test_a_machine_running_control_alone_journals_no_boundary(config):
     conn = db.connect(":memory:")
     paper_loop._note_shield_boundary(conn, config)
     assert _breaks(conn) == {}
+
+
+def test_wind_down_opens_nothing_whatever_the_arms_say(config):
+    cfg = copy.deepcopy(config)
+    cfg["arms"]["shield"] = {"enabled": True}
+    cfg["defaults"] = {**(cfg.get("defaults") or {}), "wind_down": True}
+    assert paper_loop.session_books(cfg, "2026-10-05") == ([], {})

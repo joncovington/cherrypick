@@ -5,7 +5,7 @@ dealer gamma-exposure positioning (where market makers are likely to buy or sell
 price moves), option-implied-volatility skew, and traded volume, all by strike, updating live.
 Think of it as your own self-hosted version of what gexbot.com, SpotGamma, or MenthorQ sell,
 built on the suite's shared market-data feed. It never places an order — the other modules
-(MEIC, flies, bwb) use the same underlying gamma-exposure math to help decide when
+(MEIC and others) use the same underlying gamma-exposure math to help decide when
 *they* should trade, and this is simply that same view surfaced for you to watch directly, on the
 console's GEX page.
 
@@ -50,11 +50,13 @@ console shows the last cached snapshot rather than live data.
 ## Setup
 
 The suite's installer at the repo root (`install.cmd` on Windows, `install.sh` on macOS/Linux) installs
-this package and registers the recorder with the supervisor. To work on it by hand:
+this package and registers the recorder with the supervisor. To work on it by hand, check out the
+latest release tag (not `main`, which is often ahead of it):
 
 ```bash
 git clone https://github.com/joncovington/cherrypick.git
 cd cherrypick
+git checkout "$(git describe --tags --abbrev=0 origin/main)"   # the latest release tag
 pip install -e packages/core                    # shared cherrypick.core library, install first
 cd packages/gex
 pip install -e ".[dev]"
@@ -95,3 +97,13 @@ honoured until migrated, and with neither the module reads `config.example.json`
   existing `config.json`. The console polls its own GEX page at the same cache cadence.
 - `history_db` — this module's own SQLite for the recorded spot trail and regime rows (default
   `~/.cherrypick/data/gex/gex_history.db`).
+
+### More commands
+
+```bash
+python run.py gex --symbol SPX --json # one-shot payload to the terminal
+python run.py pin-study [--json]      # which recorded level the close settled nearest, over stored history
+python run.py repair-history [--json] # report off-hours gex_regime_history rows (--apply removes; DB copied first)
+python run.py coverage [--session D]  # did the recorder keep a whole session of every series (JSON, read-only)
+ruff check . ; ruff format .          # line-length 110
+```

@@ -1,11 +1,55 @@
 # Pages
 
-Moved from the console CLAUDE.md. Read the section for a page before changing it.
+## Page index
 
+A user-facing list of every page the rail can open. The source of truth is
+`web/src/components/shell/navLinks.ts` (the rail) and `web/src/lightbox/navGroups.ts` (each page's
+tabs); this index is checked against them by hand, so change the two files and this table together.
+A page the suite has switched off is not shown (see *What is off is not shown* below).
+
+**Suite pages** (the rail's top and bottom sections)
+
+| Page | Route | Tabs | What it is |
+|---|---|---|---|
+| Live | `/live` | today, positions, portfolio, wheel, pmcc, flies, meic | Real money first: what is open at the broker, the book as a whole, the wheel, and one tab per live loop (flies and meic only while their live switch is on or the loop still holds something). `/` redirects here. |
+| Reports | `/reports` | morning, eod, external | The morning pack, the end-of-day review, and **External reports**: the tabs people add with a script of their own (`/reports/external/<id>`). |
+| Charts | `/charts` | intraday, technicals, setups | Intraday charts, the technicals cards, and the setups the technicals package finds. |
+| GEX | `/gex` | gex, iv skew | Dealer gamma by strike for the recorded day, and the IV skew. Reads the market; trades nothing. |
+| GEX panel | `/gexpanel` | panel | Experimental, SPX only: a walls panel on the recorded data. |
+| Screeners | `/screeners` | two groups, eight tabs. Screens: earnings, earnings record, signal board, skate. Income lists: puts & calls, credit spreads, time spreads, fair value | The suite's own screens and income lists. The Dolt-backed tabs show a set-up card, not a blank, without Dolt. |
+| Compare | `/compare` | arms, risk, calendar, portfolio, slices | Every arm side by side. Left off the rail in the simple view. |
+| Backtest | `/backtest` | studies, queue, runs, data | Research studies and the queue. Fails closed: hidden unless the suite says the backtest feature is on (licensed data). Left off the rail in the simple view. |
+| Advisor | `/advisor` | advisor | The advisor's experiments roll-up. Paused since 2026-10-25 pending the redesign. Left off the rail in the simple view. |
+| System | `/system` | health, supervisor, data, environment, logs | The suite's own health, read-only. Left off the rail in the simple view. |
+| Config | `/config` | arms, modules & symbols, timing & cadence, alerts, position rules, then prefs | The one place configuration is edited, through the orchestrator's config editor. Always lists every toggle. |
+
+**Module pages** (the rail's Modules section, then the Experiments page)
+
+| Module | Route | Tabs | Status |
+|---|---|---|---|
+| MEIC | `/meic` | today, arms, forest, attempts, positions, history, sessions, exits, regime cuts, performance, analysis, costs, advisor, help | Active; live behind its own gate. |
+| BWB | `/bwb` | today, positions, history, decisions, arms, entry vol, live vs paper, performance, analysis, advisor, help | Retired 2026-11-08; ships off. |
+| Earnings | `/earnings` | today, positions, history, decisions, screening, strategies, advisor | Active; paper only. |
+| Experiments | `/experiments` | experiments | The comparison page for the paper-only experiments and the retired modules below. |
+| PMCC | `/pmcc` | today, by arm, positions, tracker, history, decisions, arms, performance, analysis, costs, advisor, help | Retired 2026-11-08; ships off. |
+| Calendars | `/calendars` | today, plan, positions, history, decisions, arms, policies, performance, analysis, advisor, help | Experimental; paper only. |
+| Curve | `/curve` | today, regime, positions, history, decisions, arms, performance, analysis, costs, advisor, help | Retired 2026-11-01; ships off. |
+| Contango | `/contango` | today, regime, positions, history, decisions, arms, performance, analysis, costs, help | Experimental; paper only. |
+| Weekly put | `/weeklyput` | today, cycles, positions, history, decisions, performance, costs, help (8 tabs) | Experimental; paper only. |
+| Flies | `/flies` | session, summary, forest, timeline, positions, history, books, opening range, attempts, decisions, gates vs control, live vs paper, selector, regime cuts, intraday agent, completion, performance, analysis, costs, advisor, help | Retired 2026-10-19; ships off. |
+
+The simple view shows a shorter tab list per page (`ModuleNavDecl.simple`); the detail view shows all.
+Keyboard: `g` plus the page's key for suite pages, a bare digit for the four modules on the rail,
+`j`/`k` for tabs.
+
+The sections below are the working notes for each page. Read the section for a page before changing it.
 
 **Shell.** A grid, not a stack (2026-10-12): the brand head and the top bar are row 1's two
 halves (ticker, session chip, the simple/detail view switch, clock), the rail and the content pane are row
-2's, the status bar (health chips, watchdog/session/morning phase, logs) is row 3. The brand
+2's, the status bar (health chips, watchdog/session/morning phase, logs, and the suite version
+last) is row 3. The version chip (`shell/VersionChip.tsx`, `/api/version`) is plain while this
+checkout is at or past GitHub's latest release, and an amber link to the release notes, "vX · vY
+available", once a newer one is out — the one place a release is announced. The brand
 head's underline is the same grid track as the top bar's — one rule across the window in both
 rail widths — and the rail's vertical is the brand head's right border continued by the nav's,
 unbroken from the top of the window to the status bar. **The rail is the one nav** (mounted in
@@ -38,8 +82,8 @@ coverage (`python -m cherrypick.core.quotehistory coverage`, which reads only th
 `core.impliedvar check` for VIX9D and VIX, whose refusal (`not_bracketed`) is a reading, not a
 failure (`spawnModuleCli`'s `okStatuses`).
 
-**What is off is not shown.** Whether a module, GEX (the `gex-recorder` service), Options flow
-(`options_flow`, i.e. `quikoptions.enabled`), the advisor, the technicals cards or a narrative is on comes **only** from the orchestrator's `configcli` op
+**What is off is not shown.** Whether a module, GEX (the `gex-recorder` service),
+the advisor, the technicals cards or a narrative is on comes **only** from the orchestrator's `configcli` op
 `features` (`services/featuresBridge.ts`, memoised 15 s and dropped on every config save or halt
 toggle; `GET /api/features`), never from reading the config here — `enabled` already folds in
 capabilities like Dolt and Claude Code. Every web rule is in `lib/visibility.ts`; the desk
@@ -52,7 +96,7 @@ working or held order, orphan, overdue settlement or attention item; `liveLoopsI
 turned off mid-session must not strand the one page showing what is still open, which Live Today
 links to (#422). An unread Live Today keeps it shown, and the account-wide tabs never leave. A direct URL to an off page renders `ModuleOffCard` (why, and a link to Config), never a 404
 and never the module. Config always lists every toggle. Calendars, pmcc, curve and contango carry
-an `experimental` chip, listed once in `moduleOrder.ts`'s `EXPERIMENTAL_MODULES`.
+an `experimental` chip, listed once in `moduleOrder.ts`'s `EXPERIMENTAL_MODULES`. Flies, bwb, pmcc and curve are retired (2026-10-19, 2026-11-08, 2026-11-08, 2026-11-01) and ship off, so a fresh install shows each as off until it is reinstated; Live → pmcc is the real account's view and stays.
 
 - **The Dolt-backed Screeners tabs are shown off, not hidden** (2026-10-19, the user's choice):
   earnings, earnings record, signal board and skate (`SCREENERS_NEED_DOLT`). With `features.technicals`
@@ -82,7 +126,7 @@ four tabs, because its write actions are wired through page-spanning state (`nav
 - **A renamed tab keeps its old id as an alias**, resolved before the first-tab fallback
   (`/flies/exits` → `divergence`); a fall-through looks like a working link showing the wrong page.
 - **The rail's order is a decision, pinned by `navLinks.test.ts`** (2026-10-18): Live first, the
-  market reads (Reports, Charts, Options flow, GEX, Screeners) above the modules, the modules
+  market reads (Reports, Charts, GEX, Screeners) above the modules, the modules
   live-capable first (`TRADING_MODULE_ORDER`), then Research and the suite's own pages, Config last.
   Inside every module the tables group (positions, history) follows the today group.
 - **A tab change is a handoff, not a remount.** The frame body stays mounted, the slide subtree is
@@ -108,7 +152,7 @@ four tabs, because its write actions are wired through page-spanning state (`nav
   `.card-subhead`, not in a short card beside it.
 
 **Reports** (`/reports`) holds the morning pack (`packages/overview`) and the EOD review
-(`packages/review`) as tabs; each tab renders its own page component unchanged, so neither report gains
+(`packages/review`) as tabs, and the reports a person's own scripts write (the External reports tab, below); each of the first two renders its own page component unchanged, so neither report gains
 a second place its shape is decided. The tab is in the URL (`/reports/eod`) because reports get sent, and
 `/morning` and `/review` redirect rather than 404.
 
@@ -118,6 +162,55 @@ a second place its shape is decided. The tab is in the URL (`/reports/eod`) beca
   close and would show the morning what it could not have known. A test pins the `<` and was shown to
   fail at `<=`.
 - Its leaders and scan matches link to the technicals chart, which is on the Charts page.
+
+**External reports** (`/reports/external`, the third Reports tab; `pages/External/ExternalReportsPage.tsx`,
+reader `readers/externalReports.ts`, route `GET /api/external-reports`, types `shared/types/externalReports.ts`)
+draws whatever a person's own scripts wrote to `data/external/<id>.json` (`docs/guide/external-reports.md`),
+with no source named in the code: the file says its own title and source.
+
+- **The tabs follow the files.** An *overview* tab lists every report (title, source label, `as_of`, a
+  fresh or stale badge, and each invalid file with its reason), each row linking to that report's own
+  tab at `/reports/external/<id>`. A new file adds a tab and a removed one takes it away; there is no
+  config. The strip is the page's own, not the rail's: the rail is static data (`navGroups.ts`) that
+  `ModuleFrame` checks against each manifest's slide list, and a tab list that depends on the server's
+  files cannot live there without breaking that check. The rail has the one `external` entry; the
+  report tabs route through the same frame (`App.tsx`, `ModuleRoute`'s `forced` module and slide).
+- **A report's tab** shows the title, a stale badge when `as_of` is older than `stale_after_hours`, the
+  source and age, the one-line summary, and each section as its own grid card titled by its heading: a
+  table section as a table (null cells are a dash, never 0), a text section as plain text. Every card
+  carries a small glyph so `ui-check --card "<heading>"` can capture it.
+- **Bars.** A table may carry `bars: [column index, ...]` (schema 1, optional): those numeric columns get
+  an inline bar beside the number, scaled by the column's largest magnitude (`barScales` / `barPercent` in
+  the page). A column with any negative value gets a zero line in the middle, negatives drawn to its left
+  in `--neg` and positives in `--pos` (both defined in each theme); a null cell has no bar and a column of
+  nothing to scale has none. The bar is `aria-hidden`: the number stays in the cell as text. Both
+  validators refuse a bar on a column holding text or past the last column (shared cases). The Discord
+  text card ignores the hint. A list of positions, not a per-column object, because tables are positional.
+  A column object may instead carry `bar: {scale: [min, max], track, own_column}`: a fixed scale (a value is
+  drawn against its own side's end, the zero line off the middle when the scale is lopsided), a grey track
+  (`--track`) and a bar column of its own after the number. `show_source_foot: false` drops the card foot
+  (a hidden svg then stays as the capture mark); the overview still shows source and `as_of`.
+- **Presentation hints** (schema 1, all optional, `lib/externalFormat.ts` and the `Section` component).
+  A column is a string or `{label, align, format, tone, width, stack}`; a cell a scalar or
+  `{value, text, tone, suffix, marker}`; a row an array or `{cells, emphasis}`; a section may add
+  `numbered`, `key` and `footnote`. Formats (`money`, `compact`, `int`, `percent`, `signed`, `decimal`)
+  are pure functions checked against the `formats` table in `external_report_cases.json`, which the
+  Python module (what the Discord card prints) is checked against too. `percent` takes the percent number
+  itself (56 is 56%). Tones are theme tokens (`external-tone-*`: `--pos`, `--neg`, `--warn`,
+  `--text-muted`, `--text`), so they read in light and dark. A stacked column draws one bar per row from
+  an array of numbers, its segment labels as a legend in the header; segment colours are `--stack-1..6`,
+  defined on `.external-card` from existing tokens (the console has no separate categorical palette). A
+  segment that has any value is kept at least 3 px wide (`stackWidths`). Every figure stays in its cell
+  as text and the bars are `aria-hidden` or carry the shares as a title. Rows are a step tighter than a
+  full-page table, as the old flow tables were. Invalid hints make the file invalid with the place named.
+- **An invalid file** gets a tab listing every reason and none of its content; a deep link to an id with
+  no file reads "No such report" with a link back, not an error.
+- **Validation** is the reader's: each file is judged against `packages/core/cherrypick/core/schemas/
+  external_report.schema.json`, the same file `cherrypick.core.external_report` reads, by a small
+  interpreter of the subset that file uses (`readers/externalReports.ts`). `external_report_cases.json`
+  (in core's test fixtures) is run by both languages' tests so the two validators cannot drift. Files
+  over 512 KiB are refused unparsed. The folder is `data/external/` (`config.paths.externalDir`).
+  Read-only; the console never runs a script.
 
 **Charts** (`/charts`, `lightbox/manifests/ChartsLightbox.tsx`) — three tabs: two charts and
 the setups watchlist:
@@ -167,8 +260,8 @@ the setups watchlist:
   (`names=all` is the way out). With no label it cuts nothing, because an unknown flag would empty
   it.
 
-**Screeners** (`/screeners`, 2026-10-16; `lightbox/manifests/ScreenersLightbox.tsx`) — two groups
-(2026-10-18 order). Our own screens first: the earnings calendar, its forward record and the signal
+**Screeners** (`/screeners`, 2026-10-16; `lightbox/manifests/ScreenersLightbox.tsx`) — eight tabs in two
+groups, `screens` and `income lists` (2026-10-18 order). Our own screens first: the earnings calendar, its forward record and the signal
 board. Then the income lists: short puts, covered calls and credit spreads, one tab each. The fidelity
 tab was retired on 2026-10-19; its final rates are in `packages/technicals/docs/reference.md`.
 
@@ -193,9 +286,9 @@ tab was retired on 2026-10-19; its final rates are in `packages/technicals/docs/
 - **Credit spreads** (2026-10-24; `CreditSpreadTab.tsx`, `readCreditSpreadList`): the chart setups'
   fresh entries as spreads, built by `technicals creditspreads.py`. A long setup is a put spread, its
   mirror a call spread, on the 30-45 day monthly. The short is nearest 0.40 delta and the pick is the
-  widest long giving 35-40% of the width. **"Not yet tested"** heads the table for as long as the
-  builder's rule says so (item 17). A row with no 35-40% width stays, marked, and is hidden only by
-  the "With a 35-40% width" filter, never by "Liquid trade". Each row opens its width table (1/2/3/5
+  widest long giving 30-40% of the width (35-40% until 2026-11-07). **"Not yet tested"** heads the table for as long as the
+  builder's rule says so (item 17). A row with no width in the band stays, marked, and is hidden only by
+  the "With a 30-40% width" filter, never by "Liquid trade". Each row opens its width table (1/2/3/5
   strikes, 0.25/0.5/0.75 of the move). Credits are per share (`cr`) and max loss is per contract. Rows
   are by symbol. A session built before the list, or without the history store, says so (`built`
   false) rather than showing an empty table. Behind `NeedsDolt` (`SCREENERS_NEED_DOLT`): the setups
@@ -379,8 +472,19 @@ from one `GET /api/backtest/summaries?ids=` read for the board (`read summaries`
 running net as a thin line, the arm with the highest mean drawn over the rest, and that arm's
 "$xx.xx / session" with "best of N" (control left out of both while it trades on another scale,
 and never the arm named while another arm has a mean). The board's words never wait on it. Group
-chips filter (`?group=`). A tile opens a lightbox (`?study=`, so back closes it; Esc,
-← → and a swipe step through the tiles in layout order) with four tabs: overview (the decision, a
+chips filter (`?group=`); **This week** (`?group=week`, 2026-11-07, `pages/Backtest/StudyWeek.tsx`,
+`GET /api/backtest/studies/digest?since=` → `services/studyReportBridge.ts` → `cherrypick.cli
+study-report --since`) shows the studies with a result or a finished step since Monday, newest
+first, under their verdict counts and the ones that gave no reading; the counts are the
+orchestrator's. A tile opens a lightbox (`?study=`, so back closes it; Esc,
+← → and a swipe step through the tiles in layout order) with five tabs. **report** (2026-11-07,
+`pages/Backtest/StudyReport.tsx`, `GET /api/backtest/studies/:study/report` → `study-report
+--study`, fetched on open): what the figures say, what to do next (each suggestion with the figure
+that prompted it), the gates the study uses in plain words, every arm charted by window on the
+measure picked (gain over baseline first, then gain where both entered, net per session, net per
+trade, return on buying power, entries a session) with its t-statistic, and the arm table. Every
+sentence and suggestion is the orchestrator's (`studyreport.py`, fixed rules, never a model); the
+tab draws and prints. The slug and date are checked before anything spawns. The others: overview (the decision, a
 stale note, and the run's figures, fetched on open from the newest result file that names a run:
 each arm's net a session, sessions, trades a session and verdict, and each arm's running net, legend
 entries hiding a line so one wide arm cannot flatten the rest; control starts hidden, with a note, when
@@ -520,7 +624,7 @@ default SPX era already pins one symbol. bwb's rows carry no symbol, so it is ne
 `/api/advisor/module/:module`: active experiments with progress against length and stall budget, the
 session strip from the advisor's `enactment` table (read, never re-derived), the paired comparison as
 of the last evening pass, tomorrow's artifact, the queue and the last concluded.
-`components/advisor/AdvisorSlide.tsx` renders it in all seven module manifests; the Advisor page's
+`components/advisor/AdvisorSlide.tsx` renders it in all seven module manifests that carry one (flies, meic, bwb, earnings, curve, pmcc, calendars); the Advisor page's
 experiments tab opens with the cross-module roll-up. Module slides are read-only; kill/dismiss stay on
 the Advisor page only.
 
@@ -528,7 +632,7 @@ the Advisor page only.
 `/live` lands), the account-wide `positions`, `portfolio`, `wheel` and `pmcc`, and one per live loop with a page of its
 own (`flies`, `meic`; each hidden when that module's live switch is off and the loop is idle, see *What is off*). The
 account-wide set is `LIVE_ACCOUNT_WIDE` in `lib/visibility.ts`, the one copy: those tabs are always shown and wear the
-suite badge. The simple view lists `today`, the four account views and `meic` (flies is retired). The execution record
+suite badge. The simple view lists `today`, the four account views and `meic` (flies is retired and off by default). The execution record
 (B10, below) was an account-wide `execution` tab until 2026-11-06; it is now a card on its arm's own tab (MEIC's, the
 only live ledger it reads), and `/live/execution` lands on `meic`. `test/manifestSlides.test.ts` holds every manifest's tabs equal to its `navGroups.ts` declaration. The
 `flies` tab is the pilot's day over `GET /api/live/flies` (`routes/live.ts` → `readers/fliesLive.ts`), composing existing readers

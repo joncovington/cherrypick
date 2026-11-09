@@ -1,5 +1,5 @@
-"""Item 31's event list and coverage pilot (scripts/earnings_item31.py): the entry session of each
-timing, the seeded outcome-blind draw, the requests built from an event, the declared basis rule and
+"""Item 31's event list and coverage pilot (packages/backtest/scripts/earnings_item31.py): the entry session
+of each timing, the seeded outcome-blind draw, the requests built from an event, the declared basis rule and
 the coverage report, which carries counts and never a price. Invented events and quotes only, no
 Dolt, no store of real data.
 
@@ -15,7 +15,7 @@ from pathlib import Path
 
 from cherrypick.backtest import intradayfetch as ix
 
-SCRIPT = Path(__file__).resolve().parents[3] / "scripts" / "earnings_item31.py"
+SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "earnings_item31.py"
 
 
 def _module():

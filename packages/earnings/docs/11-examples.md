@@ -70,14 +70,13 @@ NVEX iron_condor: sell 11/16 call spread + 5/0 put spread,
   entry credit $0.80/spread, quantity 12, capital_at_risk $3,840
 ```
 
-Paper mode: both recorded via `db_paper.py save_trade`, nothing submitted to the broker. Live
-mode would submit both via `tt.py execute_trade --live`.
+Both recorded via `db_paper.py save_trade`, nothing submitted to the broker.
 
 ### Overnight and Next-Morning Outcome
 
 ```
 NVEX announces after close, gaps +10%.
-Next morning 09:15 ET (Step 3c): iron_condor's exit_debit computed from live quotes —
+Next morning 09:15 ET (early exit): iron_condor's exit_debit computed from live quotes —
   profit came in under the 50% target, exit_debit stayed under the 1.5x stop → hold.
 09:41 ET (management): at a loss → the PEAD gate closes it (`pead_loser`).
   Realized: -$310 net (defined risk — the wings capped it well short of the raw
@@ -85,7 +84,7 @@ Next morning 09:15 ET (Step 3c): iron_condor's exit_debit computed from live quo
 
 BNKX announces before tomorrow's open, moves +1.2%, mild and well within the straddle's
   expected move.
-09:15 ET (Step 3c): exit_debit computed at $1.53/spread.
+09:15 ET (early exit): exit_debit computed at $1.53/spread.
   profit = $3.18 - $1.53 = $1.65, which is ≥ $3.18 * 0.25 ($0.80) → close_all, profit_target
   (acted on from 09:40 in the paper loop).
   Realized: +$1,320 across 8 spreads (net of costs via costs.py, slightly lower than gross).

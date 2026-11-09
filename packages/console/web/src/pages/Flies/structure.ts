@@ -62,3 +62,79 @@ export function structureLabel(kind: string | null, side: string | null): string
       return kind ?? "—";
   }
 }
+
+
+/** One leg of a structure: bought or sold, how many per unit, the strike and the right. */
+export interface StructureLeg {
+  buy: boolean;
+  n: number;
+  strike: number;
+  right: "P" | "C";
+}
+
+/**
+ * The legs a flies position holds, from the geometry the module itself uses (`book.entry_leg_strikes`,
+ * `fly.bwb_strikes`, the completion rules), so the card's order chain names the contracts the ledger
+ * row describes:
+ * - fly: the wings at centre ± wing bought once, the body sold twice;
+ * - short_vertical (a legged entry): the centre sold, the protected wing bought (put below, call above);
+ * - long_vertical (debit-first): the wing bought (call below, put above), the centre sold;
+ * - bwb: the near wing at `wing` on the protected side, the body twice, the far wing at `far` on the
+ *   risk side (put: near above, far below; call mirrored);
+ * - iron_fly: both bodies sold at the centre, a put wing below and a call wing above.
+ *
+ * Anything else, or a fly whose far wing differs from its near one (a rolled bwb, whose legs the row
+ * does not spell out), has no legs: an empty chain rather than one that names the wrong contracts.
+ */
+export function structureLegs(
+  kind: string | null,
+  side: string | null,
+  center: number | null,
+  wing: number | null,
+  far: number | null = null,
+): StructureLeg[] {
+  if (center === null || wing === null) return [];
+  const K = center;
+  const w = wing;
+  if (kind === "iron_fly") {
+    return [
+      { buy: true, n: 1, strike: K - w, right: "P" },
+      { buy: false, n: 1, strike: K, right: "P" },
+      { buy: false, n: 1, strike: K, right: "C" },
+      { buy: true, n: 1, strike: K + w, right: "C" },
+    ];
+  }
+  if (side !== "put" && side !== "call") return [];
+  const r = side === "put" ? "P" : "C";
+  const put = side === "put";
+  switch (kind) {
+    case "fly":
+      if (far !== null && far !== w) return [];
+      return [
+        { buy: true, n: 1, strike: K - w, right: r },
+        { buy: false, n: 2, strike: K, right: r },
+        { buy: true, n: 1, strike: K + w, right: r },
+      ];
+    case "short_vertical":
+      return [
+        { buy: false, n: 1, strike: K, right: r },
+        { buy: true, n: 1, strike: put ? K - w : K + w, right: r },
+      ];
+    case "long_vertical":
+      return [
+        { buy: true, n: 1, strike: put ? K + w : K - w, right: r },
+        { buy: false, n: 1, strike: K, right: r },
+      ];
+    case "bwb": {
+      if (far === null) return [];
+      const [low, high] = put ? [K - far, K + w] : [K - w, K + far];
+      return [
+        { buy: true, n: 1, strike: low, right: r },
+        { buy: false, n: 2, strike: K, right: r },
+        { buy: true, n: 1, strike: high, right: r },
+      ];
+    }
+    default:
+      return [];
+  }
+}

@@ -7,10 +7,11 @@ the technicals store) and every JSON/CSV/Markdown artifact beside them.
 
 **What is not, and why.** The Dolt stores (`.dolt/` under `data/earnings`, ~14 GB) are copies of
 public DoltHub databases and are re-pulled by `refresh_dolt_data.py`; the stream caches are rebuilt by
-the streamer on its next session; the vendor collector's browser profile holds a login and is a
-secret, not data; `logs/` has its own monthly archive; backups, archives and retired folders are
-already copies; and a vendor's licensed data (a directory carrying `LICENSED_MARKER`) must be
-purgeable within the licence window, which a copy here would defeat. `data/earnings` is BOTH a Dolt
+the streamer on its next session; a browser profile (`_is_browser_profile`, whatever its directory
+is called) holds a login and is a secret, not data, and an open browser locks it;
+`logs/` has its own monthly archive; backups, archives and retired folders are already copies; and
+a vendor's licensed data (a directory carrying `LICENSED_MARKER`) must be purgeable within the
+licence window, which a copy here would defeat. `data/earnings` is BOTH a Dolt
 server root and the earnings module's home, so only the `.dolt/`/`.doltcfg/` directories themselves
 are skipped -- skipping a directory that merely contains
 one dropped the earnings trade ledgers from the first draft of this.
@@ -85,6 +86,15 @@ _REGENERABLE_RE = re.compile(r"^stream_cache.*\.db$", re.I)
 LICENSED_MARKER = ".licensed-vendor-data"
 
 
+def _is_browser_profile(d: Path) -> bool:
+    """A Chromium user-data dir. It holds a login, a secret rather than data, and an open browser
+    locks its cache files: the screener-review profiles, under a folder no name rule caught, failed
+    the 2026-11-07 night that way. Found by what Chromium writes, not by the folder's name: `Local
+    State` at the top, written on a clean exit, or `Default/Local Storage`, there from first launch
+    (a profile whose browser was never closed cleanly has only the second)."""
+    return (d / "Local State").is_file() or (d / "Default" / "Local Storage").is_dir()
+
+
 def settings(cfg: dict[str, Any]) -> dict[str, Any]:
     """The resolved `backup` block (`config.backup_settings`, where the job reads it too)."""
     return cfgmod.backup_settings(cfg)
@@ -102,6 +112,7 @@ def collect(root: Path) -> tuple[list[Path], dict[str, int]]:
         "copy_or_scratch": 0,
         "regenerable": 0,
         "licensed_vendor": 0,
+        "browser_profile": 0,
     }
     out: list[Path] = []
     for dirpath, dirnames, filenames in os.walk(root):
@@ -115,6 +126,8 @@ def collect(root: Path) -> tuple[list[Path], dict[str, int]]:
                 skipped["dolt_store"] += 1
             elif (d / name / LICENSED_MARKER).exists():
                 skipped["licensed_vendor"] += 1
+            elif _is_browser_profile(d / name):
+                skipped["browser_profile"] += 1
             else:
                 keep.append(name)
         dirnames[:] = keep

@@ -1,5 +1,5 @@
-"""Hypothesis 43's study (scripts/meic_wing_width_item43.py): the arms it declares and its verdict.
-Invented sessions only, no store.
+"""Hypothesis 43's study (packages/backtest/scripts/meic_wing_width_item43.py): the arms it declares and its
+verdict. Invented sessions only, no store.
 
 Each bar is shown firing and failing, because a check that cannot fire reads as coverage it is not.
 """
@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-SCRIPTS = Path(__file__).resolve().parents[3] / "scripts"
+SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 _spec = importlib.util.spec_from_file_location(
     "meic_wing_width_item43", SCRIPTS / "meic_wing_width_item43.py"
 )

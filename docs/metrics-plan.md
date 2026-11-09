@@ -1,5 +1,7 @@
 # Trading-metrics expansion — a proposal
 
+> **Status (2026-11-08): mostly done. The metrics bundle is in `core.metrics`; still open is a trials-aware correction (the full Deflated Sharpe Ratio). Its examples name the retired modules flies, bwb, pmcc and curve.**
+
 *Drafted 2026-08-23, from a survey of standard algorithm-evaluation metrics mapped against what the
 suite already computes. The companion to
 [regime-recorder-plan.md](regime-recorder-plan.md), and its read-side complement: that plan records
@@ -86,6 +88,12 @@ Six additions, each with the shown-to-fail test the house rule requires:
 
 All six fold into `calibration_reading` with coverage counts, so `calibrate` and the advisor's
 promotion evidence pick them up through the one existing seam.
+
+Added 2026-11-07, report-only like the six: **`payoff`** — the average winning and losing trade, and
+the win rate they need to break even (`breakeven_win_rate`, on the same every-trade base as
+`win_rate`, scratches kept in the base). `None` unless the book has both a win and a loss. The
+performance tiles show it under the win rate: a 77% win rate whose losses average ten times its
+wins needs about 91%, and the win rate alone hides that.
 
 ## Phase 2 — MAE/MFE, read-side, over marks already recorded
 

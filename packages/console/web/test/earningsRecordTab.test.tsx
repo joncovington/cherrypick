@@ -104,6 +104,8 @@ describe("the earnings record tab", () => {
     expect(html).toContain('aria-expanded="false"');
     // Closed: the money columns are not drawn until a row opens.
     expect(html).not.toContain(">slippage<");
+    // The net's hover adds up in signed cash flow: costs negative, never "− fees +$4.50".
+    expect(html).toContain('title="gross +$140.00 · fees −$4.50 · slippage −$5.20 = net +$130.30"');
   });
 
   it("states a spread's money in the suite's layout when a row opens", () => {

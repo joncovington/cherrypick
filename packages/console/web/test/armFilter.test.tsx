@@ -3,7 +3,7 @@ import { renderToString } from "react-dom/server";
 import type { ArmAnalysis, RegimeArm, RegimeCuts } from "@console/shared";
 import { armOfTag, matchesArm } from "../src/lib/armTag";
 import { cutsForArm } from "../src/components/RegimeCutsTab";
-import { ArmIndex } from "../src/components/analysis/AnalysisSlide";
+import { ArmPicker, pickedArm } from "../src/components/analysis/AnalysisSlide";
 
 const text = (node: React.ReactElement) => renderToString(node).replace(/<!--\s*-->/g, "");
 
@@ -41,16 +41,31 @@ describe("cutsForArm", () => {
   });
 });
 
-describe("ArmIndex", () => {
+describe("ArmPicker", () => {
   const g = (tag: string, net: number) => ({
     tag,
-    analysis: { reading: { net_pnl: net }, stress: { sessions: 12 } } as unknown as ArmAnalysis,
+    analysis: {
+      reading: { net_pnl: net },
+      stress: { sessions: 12 },
+      coverage: { trades: 30 },
+      drawdowns: { deepest: [{ depth: -400 }] },
+      worst_trade: { net: -120 },
+    } as unknown as ArmAnalysis,
   });
 
-  it("lists every arm with its net, toned by sign", () => {
-    const html = text(<ArmIndex module="flies" groups={[g("control", 1545.88), g("range-high", -2795.66)]} />);
-    expect(html).toContain("control");
-    expect(html).toMatch(/class="pnl-pos">\$1545\.88/);
-    expect(html).toMatch(/class="pnl-neg">-\$2795\.66/);
+  it("lists every arm with its net toned by sign, its deepest fall as a loss, and marks the picked one", () => {
+    const html = text(<ArmPicker groups={[g("control", 1545.88), g("range-high", -2795.66)]} picked="range-high" onPick={() => {}} />);
+    expect(html).toMatch(/class="num pnl-pos">\$1545\.88/);
+    expect(html).toMatch(/class="num pnl-neg">-\$2795\.66/);
+    expect(html).toContain('aria-pressed="true" title="Show range-high');
+    expect(html).toContain('aria-pressed="false" title="Show control');
+    expect(html).toContain(">30<");
+  });
+
+  it("shows the address's arm when it was read, else the first", () => {
+    expect(pickedArm(["control", "range-high"], "range-high")).toBe("range-high");
+    expect(pickedArm(["control", "range-high"], "gone")).toBe("control");
+    expect(pickedArm(["control"], null)).toBe("control");
+    expect(pickedArm([], "control")).toBeNull();
   });
 });

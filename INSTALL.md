@@ -21,12 +21,15 @@ the suite does once it is running, see the [README](README.md) and the [User Gui
 | **Node.js 22+** | **Yes** | For the console, the suite's web UI. Windows: `winget install -e --id OpenJS.NodeJS.LTS`. macOS: `brew install node`. |
 | **pnpm 11** | Installed for you | The installer runs `npm install -g pnpm@11` if pnpm is missing. |
 | git | Optional | Downloading the ZIP from GitHub works just as well. |
-| [Dolt](https://github.com/dolthub/dolt) | Expected (the installer sets it up; `-SkipDolt` to skip) | Needed by the **earnings** module, the **technicals** report and four **Screeners** tabs (earnings, earnings record, signal board, skate). It serves three public DoltHub datasets, about 12 GB in all (`options` the largest), kept current by a 05:30 pull. A shallow clone would be a third of that, but Dolt 2.4 cannot pull into one, so the clones are full. Without it those features are off, and the Screeners tabs say so. The short-put and covered-call lists do not need it. |
-| [Claude Code](https://docs.claude.com/en/docs/claude-code) | Optional | Needed only by the AI advisor and the end-of-day and morning narratives, and for the repo's slash commands. Without it, those features are switched off and hidden. |
+| [Dolt](https://github.com/dolthub/dolt) | Offered, yes by default (the installer sets it up; `-SkipDolt` skips the offer) | Needed by the **earnings** module, the **technicals** report and four **Screeners** tabs (earnings, earnings record, signal board, skate). It serves three public DoltHub datasets, about 12 GB in all (`options` the largest), kept current by a 05:30 pull. A shallow clone would be a third of that, but Dolt 2.4 cannot pull into one, so the clones are full. Without it those features are off, and the Screeners tabs say so. The short-put and covered-call lists do not need it. |
+| [Claude Code](https://docs.claude.com/en/docs/claude-code) | Optional | Needed only by the AI advisor and the end-of-day and morning narratives, and for the repo's slash commands and skills (the `external-report` skill writes a [report of your own](docs/guide/external-reports.md) with you). Without it, those features are switched off and hidden; external reports themselves work without it. |
 | A machine that stays awake in market hours | **Yes** | It runs on your computer, not a cloud service. Windows is the most proven platform (see [below](#macos-and-linux)); on Windows, see [Leaving a Windows PC unattended](#leaving-a-windows-pc-unattended). |
 
 The installers check Python and Node before doing anything else, and print the command to install
 whichever is missing.
+
+Plan on about 2 GB of disk and half an hour without the Dolt data; about 14 GB and an hour or more with
+it, almost all of it the Dolt download.
 
 ## Windows
 
@@ -94,16 +97,17 @@ The `desktop` notification channel uses the notification centre on macOS and `no
 and only reaches you while you are logged in. For an alert that always arrives, set up a Discord or
 Slack webhook (`run.py connect`, or `run.py secrets-set --channel discord`).
 
-The optional browser collectors use Playwright, which no installer adds. Install it into `.venv`
+Optional reports of your own (a script you write, shown in the console and posted to Discord) need no
+extra install: see [docs/guide/external-reports.md](docs/guide/external-reports.md).
+
+The optional browser collector uses Playwright, which no installer adds. Install it into `.venv`
 yourself (`.venv/bin/pip install playwright`), then add the browsers:
-- **QuikOptions** needs Google Chrome itself: install it the usual way on macOS, or run
-  `.venv/bin/playwright install chrome` on x86-64 Linux. There is no Chrome for Linux on ARM.
 - **The vendor collector** (optional and off by default: it reads a paid subscription's lists, and
   nothing in the suite needs it) uses Playwright's own Chromium:
   `.venv/bin/playwright install --with-deps chromium`. On Linux this installs system libraries and
   needs sudo.
 
-Both run headless on schedule. Signing in the first time opens a visible browser, so a headless
+It runs headless on schedule. Signing in the first time opens a visible browser, so a headless
 server needs a display for that one step (a desktop session, VNC or `xvfb-run`).
 
 Install from a release, not from `main`: `main` is where development happens and is often ahead of
@@ -206,7 +210,7 @@ python packages/orchestrator/run.py report        # paper P&L once data has accu
 ```
 
 Modules are switched on and off on the console's **Config** page, or under `modules.<name>.enabled`
-in `~/.cherrypick/config.json`. Calendars, PMCC, curve and contango are EXPERIMENTAL and ship switched off.
+in `~/.cherrypick/config.json`. Calendars and contango are EXPERIMENTAL, and flies, bwb, PMCC and curve are retired; all ship switched off.
 Push notifications are off by default too: alerts go only to the suite's log until you add
 `desktop`, `discord`, `slack` or `telegram` to the `notify` channel lists (the console's own on-screen
 toasts need no setting).
@@ -365,6 +369,11 @@ running the installer again picks up where you left off. To remove everything, d
 your keyring.
 
 ## Updating to a new release
+
+The console tells you when one is out: the version chip at the right end of its status bar, on every
+page, turns amber and reads "v0.11.2 · v0.12.0 available", linking to the new release's notes. It
+asks GitHub at most every six hours; to turn that off, set `"update_check": false` in
+`~/.cherrypick/config/console.json`.
 
 Stop the suite (`uninstall.cmd` / `./uninstall.sh`; history and settings are kept), get the new
 release, and run the installer again. With the ZIP, unzip the new release over the old folder. With

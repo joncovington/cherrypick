@@ -19,6 +19,7 @@ wholesale with **`$CHERRYPICK_HOME`**. Nothing runtime lands in a source checkou
   config/pmcc.json                # PMCC engine config (experimental)
   config/curve.json               # Curve engine config (experimental)
   config/contango.json            # Contango engine config (experimental)
+  config/weeklyput.json           # Weeklyput engine config (experimental)
   config/manage.json              # manage's ruleset and portfolio bands
   config/backtest.json            # backtest store and runs (the vendor key lives in the keyring)
   config/gex.json                 # GEX engine config
@@ -30,7 +31,7 @@ wholesale with **`$CHERRYPICK_HOME`**. Nothing runtime lands in a source checkou
   data/meic/paper_trades.db       # MEIC paper ledger (ic_trades)   ← orchestrator reads this
   data/meic/meic_trades.db        # MEIC live ledger (read only by `report --live`)
   data/earnings/paper_trades.db   # Earnings paper ledger (trades)  ← orchestrator reads this
-  data/earnings/earnings_trades.db# Earnings live ledger
+  data/earnings/earnings_trades.db# Earnings historic live ledger (orders before v0.12.0)
   data/earnings/{earnings,options,stocks}/  # the optional Dolt clones (the `dolt` capability)
   data/flies/paper_trades.db      # Flies paper ledger (fly_positions / fly_books)
   data/flies/live_trades.db       # Flies live ledger (the live pilot writes here; armed per day)
@@ -40,6 +41,7 @@ wholesale with **`$CHERRYPICK_HOME`**. Nothing runtime lands in a source checkou
   data/pmcc/paper_trades.db       # PMCC paper ledger (pmcc_positions / pmcc_legs / pmcc_marks)
   data/curve/paper_trades.db      # Curve paper ledger (curve_positions)
   data/contango/paper_trades.db   # Contango paper ledger (contango_positions / contango_sessions)
+  data/weeklyput/paper_trades.db  # Weeklyput paper ledger (weeklyput_positions / weeklyput_entries)
   data/manage/                    # eval-<day>.json evaluations of the real account
   data/backtest/                  # the licensed vendor store and its results (purgeable; the backup skips it)
   data/console/                   # the console's own store
@@ -47,8 +49,17 @@ wholesale with **`$CHERRYPICK_HOME`**. Nothing runtime lands in a source checkou
                                   #   series (market_regime_history / daily_closes; read via
                                   #   cherrypick.core.regime — see docs/regime-recorder-plan.md)
   data/technicals/eod.db          # technicals' end-of-day store (bars, splits, dividends, IV)
-  data/technicals/valuation/      # <session>.json, one DCF fair-value estimate a liquid optionable name
+  data/fundamentals/              # packages/fundamentals' store; valuation/<session>.json is the fair-value file the Screeners tab reads
+  data/market-files/              # fetched public files: the event calendar, Treasury CSVs, OCC volume, VIX-curve bars
+  data/market-report/             # the market report's universe, liquidity verdicts, dollar volume and screener inputs
+  data/marketregime/              # the market-regime classification, one record a session
+  data/time-spreads/              # <day>.json, the time-spread scanner's daily reading (manage reads it)
+  data/research/                  # scratch stores the research-queue studies build (item<N>/ folders; purgeable)
+  data/live/                      # the live-account alerts' order-event inbox (account-alerts, live-fill-alerts)
+  data/outbound/                  # a record of every message posted to a push channel, kept as long as a post can be questioned
   data/overview/                  # morning-<day>.json fact packs + renders + notes
+  data/external/                  # <id>.json reports your own scripts write (docs/guide/external-reports.md); the console reads them
+  state/external_posts.json       # the last as_of each external report posted to Discord, so one is posted once
   data/advisor/                   # advisor.db, fact packs, checkpoints
   logs/                           # suite logs
   data/review/                    # eod-<day>.json fact sets + renders + notes
@@ -77,12 +88,13 @@ configure their own engine and nothing else:
 | `~/.cherrypick/config/pmcc.json` | PMCC | Symbols, the long/short delta and DTE windows, the declared ex-dividend spans, books, `advice` bounds. EXPERIMENTAL; off by default. |
 | `~/.cherrypick/config/curve.json` | Curve | The VXX spread construction, the VIX/VIX3M regime thresholds, books, `advice` bounds. EXPERIMENTAL; off by default. |
 | `~/.cherrypick/config/contango.json` | Contango | The arms and their two thresholds, the decision time. EXPERIMENTAL; off by default. |
+| `~/.cherrypick/config/weeklyput.json` | Weeklyput | The names, the entry window, the put band, the marking cadence. EXPERIMENTAL; off by default. |
 | `~/.cherrypick/config/manage.json` | Manage | The ruleset each trade is judged by and the portfolio bands; read by `run.py manage`. Keep only what you change. |
 | `~/.cherrypick/config/backtest.json` | Backtest | The vendor store and the runs; the vendor key lives in the keyring (`python -m cherrypick.backtest key set`), never here. |
 | `~/.cherrypick/config/gex.json` | GEX | `symbols`, the shared stream-cache source path, serve host/port, history DB path. |
 | *(orchestrator `morning`, `technicals` blocks)* | Overview, Technicals | Neither has a config file of its own: the orchestrator's `morning` block schedules the overview's fact pack (and its optional narrative), and `technicals` schedules the end-of-day landing and report. Technicals reads the Dolt clones the earnings module's `paper.dolt_service` serves. |
 | `~/.cherrypick/config/streamer.json` | Streamer | Broker session settings and the stream-cache path it writes; the symbol set is not configured here — it is the union of every module's `state/stream_requests/` file. |
-| `~/.cherrypick/config/console.json` | Console | Serve host/port (`127.0.0.1:5070`) and which modules' read models to surface. No credential of its own — it reads the shared suite entry and never writes one. |
+| `~/.cherrypick/config/console.json` | Console | Serve host/port (`127.0.0.1:5070`), which modules' read models to surface, and `update_check` (default on; `false` stops the six-hourly request to GitHub for the latest release that the status bar's version chip shows). No credential of its own — it reads the shared suite entry and never writes one. |
 | `~/.cherrypick/config/desk.json` | Desk | Its own authorization for discretionary live orders — which module's keyring service to borrow a session from (`broker_keyring_service`), the allowed accounts, and the policy gates (defined-risk requirement, per-order cap). It stores no broker secrets; the PIN is kept only as a salted verifier. Deliberately independent of every module's `enable_live_trading`. |
 
 **Resolution rules:**
@@ -149,7 +161,7 @@ effect on the next pass, with no `install` step and no scheduled task to registe
 | `review` | **on** | `review-provisional` 16:30 ET, `review-final` 10:15 next morning, trading days only; `review-narrative` **off** (needs `claude`) |
 | `morning` | **on** | `morning-factpack` 08:30 ET, the market files (`market-files`, `market-files-retry`, `earnings-moves`, `fetch-headlines`); `morning-narrative` **off** (needs `claude`) |
 | `technicals` | on in config; the jobs reading the Dolt clones need `dolt` (not the earnings module, from 2026-10-19), and `technicals-dollar-volume`, `-securities`, `-liquidity` and `-iv-rank` need only the block's switch | `technicals-land`, `technicals-report`, `technicals-dividends`, `technicals-index-bars`, `technicals-iv-rank`, `technicals-dollar-volume` |
-| `quikoptions` | **off** (`enabled`; `post` off even then) | `quikoptions-capture` 16:30 ET, `quikoptions-score` 16:50, `quikoptions-confirm` 08:30 next morning; with `post`: `quikoptions-post` 17:00, `quikoptions-morning` 08:45, `quikoptions-weekly` 17:15 (the week's last trading day). `enabled` also shows the console's Options flow page |
+| `external_reports` | **empty** (a list of entries: `id`, `script`, `at_et`, `trading_days_only`, `post`, `enabled`, and for a script that does its own work `args`, `timeout_minutes`, `writes_report`, `retries`, `retry_delay_minutes`) | one `external-<id>` job per entry, at its `at_et`; a script outside the suite home is refused (the job is listed off, with the reason). See [the guide](guide/external-reports.md). A `quikoptions` block left in config.json is ignored (removed in v0.12.0; `doctor` warns) |
 | `market_report` | **off** (`collector`, `universe`) | `report-edition`, `report-edition-retry`, `report-charts`, `universe-*` |
 | `advisor` | **off twice** (suite + per-module `advice` bounds), and needs `claude` | `advisor-deep` (17:00 ET) |
 | `status_digest` | **off** | `status-digest` (hourly), `status-digest-close` 16:35 ET |
@@ -191,8 +203,8 @@ quantity, capital_at_risk (defined max loss), entry_cost/exit_cost, entry_contex
 `daily_summary`, `market_context`.
 
 > **Two couplings the orchestrator depends on — don't change silently:** each module's **paper DB path**
-> + **schema** (read through the `meic_ic` / `earnings` adapter), and its **keyring service** + live
-> account designation (used by `connect`/`account`/`reconcile`). Renaming a DB or altering a schema
+> + **schema** (read through the `meic_ic` / `earnings` adapter), and its **keyring service** + account
+> designation (used by `connect`/`account`/`reconcile`; earnings has no live account to designate). Renaming a DB or altering a schema
 > breaks cross-module `report`/`calibrate`.
 
 ## The settings surface
@@ -211,7 +223,7 @@ are conservative by design:
 - **Every write is backed up first.** A timestamped copy of the previous file goes to
   `state/config-backups/<target>.<timestamp>.json` before the new version replaces it (atomic
   tmp-then-`os.replace`).
-- **Guarded fields are read-only, in both directions.** `enable_live_trading` (meic/earnings),
+- **Guarded fields are read-only, in both directions.** `enable_live_trading` (meic),
   flies' and bwb's `live.enabled` and `live.gate0_confirmed` (a human attestation string), bwb's
   `live.arm`, floor, caps and breakers, MEIC's `live.symbol`, `live.gate0_confirmed`, `live.arm`, caps
   and breakers, and every live loss/deploy-limit field cannot be changed from this surface — arming or

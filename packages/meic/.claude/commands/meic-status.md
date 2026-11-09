@@ -7,16 +7,9 @@ python -m cherrypick.meic.db get_today_count
 python -m cherrypick.meic.db get_today_pnl
 ```
 
-Also query the last 5 loop log entries:
+Then read today's loop log from the end-of-day summary command, which returns the day's `loop_log` rows newest first (use the first five):
 ```bash
-python -c "
-import sqlite3, json, os
-conn = sqlite3.connect(os.path.expanduser('~/.cherrypick/data/meic/meic_trades.db'))  # or \$MEIC_DATA_DIR
-conn.row_factory = sqlite3.Row
-rows = conn.execute('SELECT loop_time, symbol, action, reasoning, iv_rank, underlying_price, session_quality FROM loop_log ORDER BY loop_time DESC LIMIT 5').fetchall()
-print(json.dumps([dict(r) for r in rows], default=str))
-conn.close()
-"
+python -m cherrypick.meic.db get_eod_summary
 ```
 
 Present the results as a concise status report:

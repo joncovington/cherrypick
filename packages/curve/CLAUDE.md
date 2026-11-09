@@ -1,13 +1,15 @@
 # cherrypick-curve
 
-**Retired on 2026-11-01.** Research item 37 (docs/edge-hypotheses-plan.md) tested this module's own
-rule at real quotes, and every arm failed after costs. Every arm and `advice` are off in
-`curve.json`, so nothing new opens; the open spreads are managed from the ledger to their 2026-11-20
-expiry, and then `modules.curve.enabled` goes off. The code, ledgers and docs remain, and backtest
-research still reads them. Reinstating it means turning those keys back on.
+**Retired 2026-11-01; off by default.** Research item 37 (docs/edge-hypotheses-plan.md) tested the module's
+own rule at real quotes, and every arm failed after costs. To reinstate: set `modules.curve.enabled` to true
+in the suite config and `enabled` to true on the arm or arms you want (`control`, `noflip`, `near`) in
+`curve.json`; `advice.enabled` is separate and stays off.
 
-> **Vocabulary.** This module's **book** is the suite's **arm** (root `CLAUDE.md`). The column
-> (`curve_positions.book`) moves with the rest of the schema; prose and the console already say `arm`.
+Every arm and `advice` are off in the example config, so nothing opens. The open spreads were managed from
+the ledger to their 2026-11-20 expiry, and then the module went off. The code, ledgers and docs remain, and
+backtest research still reads them.
+
+This module's old word `book` is the root's `arm`; the column is still `curve_positions.book`.
 
 VXX call credit spreads harvesting the VIX term-structure roll yield, gated by a daily VIX/VIX3M
 regime read (posture: root file). Every arm trades the same shape — a short call (~30-delta; 0.40 in
@@ -125,13 +127,13 @@ quote-only `legs`, **never `symbols`** (which would make the producer maintain c
 the overview 2026-08-17 incident). No `window_hints` needed. The provider refuses rather than guesses,
 including on an unmeasured regime.
 
-**The signal backtests; the trade does not.** `regime-history` replays the classification over
-stored `stream_summary` closes with no look-ahead (a session's regime from the PRIOR session's
-closes), benchmarked against VXX's next-session move — a **separation benchmark, never suite P&L**;
-it schedules and decides nothing. The spread P&L cannot be backtested (no historical VXX chains, and
-the advisor contract rules out a replay engine); instead every position's per-tick mark path is
-recorded so a read-side exit-policy replay is possible later — forward-recorded, never
-vendor-imagined.
+**The signal backtests inside this package; the trade was tested outside it.** `regime-history` replays the
+classification over stored `stream_summary` closes with no look-ahead (a session's regime from the PRIOR
+session's closes), benchmarked against VXX's next-session move — a **separation benchmark, never suite
+P&L**; it schedules and decides nothing. The module itself holds no historical VXX chains and the advisor
+contract rules out a replay engine here, but research item 37 priced the spreads at real quotes (see the
+status line above): every arm failed after costs. Every position's per-tick mark path is still recorded,
+forward-recorded and never vendor-imagined.
 
 ## Live-trading prerequisites (none built)
 
@@ -159,21 +161,7 @@ it and it is `configedit.GUARDED`.
 
 ## Commands
 
-```bash
-python -m cherrypick.curve.paper_loop --once        # one gated tick (what the supervisor spawns off-session)
-python -m cherrypick.curve.paper_loop --interval 60 # the in-session resident loop
-python -m cherrypick.curve.paper_loop --status      # one JSON health object (watchdog contract)
-python -m cherrypick.curve.paper_loop --settle --date 2026-09-18 --price 42.10  # official print
-python run.py status                                # open positions + target expiration + today's regime
-python run.py regime                                # the stored daily regime series
-python run.py worksheet                             # the live per-position worksheet
-python run.py exposure                              # the early-assignment-exposure telemetry
-python run.py headline                              # closed results per arm
-python run.py equity                                # each arm's daily marked equity and tear sheet
-python run.py regime-history                        # the VIX/VIX3M signal replay over stored history
-python -m pytest                                    # temp CHERRYPICK_HOME; no broker, no streamer needed
-ruff check . && ruff format .                       # line-length 110
-```
+Commands to run the package, its tests and its lint are in [README.md](README.md#commands).
 
 Config: `config.example.json` -> `config.json` (git-ignored) or `~/.cherrypick/config/curve.json`;
 the example is the design document — read its `_note` keys first.

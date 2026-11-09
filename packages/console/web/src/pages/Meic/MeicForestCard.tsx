@@ -1,9 +1,13 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { TradingMode } from "@console/shared";
-import { fmtMoney } from "../../components/DataTable";
+import { Card, fmtMoney } from "../../components/DataTable";
+import { FilterGroup, FilterSortButton, FilterSortPanel, FilterSummary, FilterSwitch } from "../../components/FilterSort";
+import { ChoiceGroup } from "../Flies/FliesFilter";
+import { useMeasure } from "../../lib/useMeasure";
+import { HelpSection, HelpWarn, type CardHelpContent } from "../../components/CardHelp";
 import { AXIS_MUTED } from "../../components/Charts";
-import { ARM_COLORS, SPOT_COLOR } from "../../components/chart/tokens";
+import { ARM_COLORS } from "../../components/chart/tokens";
 import { niceTicks } from "../../components/chart/scales";
 import { SpotMarker, HoverReadout } from "../../components/chart/Tooltip";
 import { useHoverX } from "../../components/chart/useHoverX";
@@ -114,6 +118,8 @@ export function MeicForestCard({ mode, scope }: { mode: TradingMode; scope: Meic
   const [perCondor, setPerCondor] = useState(false);
   const [xwidth, setXwidth] = useState<(typeof X_WIDTHS)[number]>("auto");
   const [ywidth, setYwidth] = useState<(typeof Y_WIDTHS)[number]>("auto");
+  const [panel, setPanel] = useState(false);
+  const anchor = useRef<HTMLButtonElement>(null);
   // XSP is a tenth of SPX, so a fixed width and the buffer floor scale with it.
   const symbolScale = data?.symbol === "XSP" ? 0.1 : 1;
   // A MEIC book resolves ENTIRELY at settlement — every trade ends stopped or expired — so after
@@ -127,7 +133,9 @@ export function MeicForestCard({ mode, scope }: { mode: TradingMode; scope: Meic
   const drawn = arms.filter((a) => a.positions.length > 0 && a.prices.length > 0);
   const shown = perCondor ? drawn.map((a) => ({ ...a, pnl: a.pnl.map((v) => v / a.positions.length) })) : drawn;
 
-  const width = 1150;
+  // Drawn to the width it has, as the flies forest is: a fixed 1150 scaled down to a phone left a
+  // chart some 80px tall with 3px labels.
+  const [hostRef, width] = useMeasure<HTMLDivElement>(1150);
   const height = 320;
   const pad = { l: 66, r: 12, t: 20, b: 26 };
   const { fx: hoverX, onMouseMove: onHoverMove, onMouseLeave: onHoverLeave } = useHoverX(width, pad.l, pad.r);
@@ -343,63 +351,73 @@ export function MeicForestCard({ mode, scope }: { mode: TradingMode; scope: Meic
     );
   }
 
-  return (
-    <section className="card">
-      <div className="panel-head-row">
-        <h2>
-          Payoff at expiry — the profit forest{data?.tradeDate != null ? ` (${data.tradeDate})` : ""}
-          {!live && shown.length > 0 && (
-            <span className="chain-badge chain-badge-short" style={{ marginLeft: "0.5rem" }} title="No position is open: this book resolved at settlement. Shown as ENTERED — the structure the session accumulated, not what any trade realized. A stopped side came off before expiry and its P&L is not this curve.">
-              as entered
-            </span>
-          )}
-        </h2>
-        <label className="muted lbl" title={`a minimum window in ${data?.symbol === "XSP" ? "XSP" : "SPX"} points; auto fits the condors drawn and spot`}>
-          x width{" "}
-          <select className="text-input" value={xwidth} onChange={(e) => setXwidth(e.target.value as (typeof X_WIDTHS)[number])}>
-            {X_WIDTHS.map((w) => (
-              <option key={w} value={w}>
-                {w === "auto" ? "auto" : String(Number(w) * symbolScale)}
-              </option>
-            ))}
-          </select>
-        </label>
-        {(data?.symbols?.length ?? 0) > 1 && scope.symbol === null && (
-          <div className="mode-toggle" role="group" aria-label="forest symbol" title="one symbol per forest: an expiry payoff is drawn on that symbol's own price axis">
-            {(data?.symbols ?? []).map((sym) => (
-              <button
-                key={sym}
-                type="button"
-                className={`mode-btn ${data?.symbol === sym ? "active" : ""}`}
-                onClick={() => setForestSymbol(sym)}
-              >
-                {sym}
-              </button>
-            ))}
-          </div>
+  const asEntered = !live && shown.length > 0;
+  const help: CardHelpContent = {
+    title: "The profit forest",
+    body: (
+      <>
+        {asEntered && (
+          <HelpWarn title="As entered, not as realised">
+            <p>
+              No position is open: a MEIC book resolves entirely at settlement, so this is the day's {data?.tradesToday} trades drawn as
+              entered, every one priced as if it had been held to expiry.{" "}
+              {stopped > 0 && <>{stopped} were stopped and never reached it, </>}
+              {expired} expired. A stopped side came off before expiry and its P&amp;L is not this curve. For an arm that stops, the wings
+              below are the loss its stops existed to prevent rather than one it ran; for an arm that holds to expiry they are real. Each
+              arm's realised figure sits beside it in the legend, and the dashed line is the total
+              {realisedNet !== null && <> at {fmtMoney(realisedNet)}</>}.
+            </p>
+          </HelpWarn>
         )}
-        <label className="muted lbl" title="book: each arm's whole book; per condor: each arm's curve divided by its condor count, so arms of very different sizes read on one axis">
-          y scale{" "}
-          <select className="text-input" value={perCondor ? "condor" : "book"} onChange={(e) => setPerCondor(e.target.value === "condor")}>
-            <option value="book">book total</option>
-            <option value="condor">per condor</option>
-          </select>
-        </label>
-        <label className="muted lbl" title="a minimum y range per side; auto fits the visible curves">
-          y range{" "}
-          <select className="text-input" value={ywidth} onChange={(e) => setYwidth(e.target.value as (typeof Y_WIDTHS)[number])}>
-            {Y_WIDTHS.map((w) => (
-              <option key={w} value={w}>
-                {w === "auto" ? "auto" : `$${Number(w) >= 1000 ? `${Number(w) / 1000}k` : w}`}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="muted lbl">
-          <input type="checkbox" checked={showNested} onChange={(e) => setShowNested(e.target.checked)} /> show each
-          condor
-        </label>
-      </div>
+        <HelpSection title="What is drawn">
+          <p>
+            Expiry payoff, not an intraday mark: nothing here is quoted live. Faint lines are the individual condors behind each arm's
+            aggregate; dashed ticks on the axis are strikes a stop has released back for re-entry.
+            {halfOpen > 0 && (
+              <>
+                {" "}
+                {halfOpen === 1 ? "One condor has" : `${halfOpen} condors have`} had one side stopped: each is drawn as its held side to
+                expiry plus what the stop already booked.
+              </>
+            )}
+          </p>
+        </HelpSection>
+      </>
+    ),
+  };
+  const symbols = (data?.symbols?.length ?? 0) > 1 && scope.symbol === null ? (data?.symbols ?? []) : [];
+  const changed =
+    (xwidth !== "auto" ? 1 : 0) + (perCondor ? 1 : 0) + (ywidth !== "auto" ? 1 : 0) + (showNested ? 0 : 1) + (forestSymbol !== null ? 1 : 0);
+  const reset = () => {
+    setXwidth("auto");
+    setPerCondor(false);
+    setYwidth("auto");
+    setShowNested(true);
+    setForestSymbol(null);
+  };
+  const xLabel = (w: (typeof X_WIDTHS)[number]) => (w === "auto" ? "auto" : String(Number(w) * symbolScale));
+  const yLabel = (w: (typeof Y_WIDTHS)[number]) => (w === "auto" ? "auto" : `$${Number(w) >= 1000 ? `${Number(w) / 1000}k` : w}`);
+  const summary = [
+    ...(symbols.length > 0 && data?.symbol ? [data.symbol] : []),
+    `x width ${xLabel(xwidth)}`,
+    perCondor ? "per condor" : "book total",
+    `y range ${yLabel(ywidth)}`,
+    showNested ? "each condor shown" : "each condor hidden",
+  ];
+  return (
+    <>
+    <Card
+      title={`Payoff at expiry — the profit forest${data?.tradeDate != null ? ` (${data.tradeDate})` : ""}`}
+      className="lv-12"
+      collapseKey="meic-forest"
+      help={help}
+      flag={asEntered ? "as entered" : undefined}
+      controls={<FilterSortButton changed={changed} open={panel} onOpen={() => setPanel(!panel)} anchor={anchor} />}
+    >
+      <FilterSummary parts={summary} changed={changed} onOpen={() => setPanel(true)} onReset={reset} />
+      {/* Measured from the first render: the hook observes on mount, so the chart's own wrapper,
+          which only appears once data arrives, would never be seen. */}
+      <div ref={hostRef}>
       {isLoading ? (
         <span className="skeleton skeleton-text" style={{ width: "50%" }} />
       ) : shown.length === 0 ? (
@@ -442,36 +460,37 @@ export function MeicForestCard({ mode, scope }: { mode: TradingMode; scope: Meic
               </span>
             ))}
           </div>
-          <p className="muted" style={{ fontSize: 12, margin: "0.4rem 0 0" }}>
-            Expiry payoff, not an intraday mark — nothing here is quoted live. Faint lines are the individual condors
-            behind each arm's aggregate; dashed ticks on the axis are strikes a stop has released back for re-entry.
-            {halfOpen > 0 && (
-              <>
-                {" "}
-                {halfOpen === 1 ? "One condor has" : `${halfOpen} condors have`} had one side stopped: each is drawn as
-                its held side to expiry plus what the stop already booked.
-              </>
-            )}
-            {!live && (
-              <>
-                {" "}
-                <strong>No position is open</strong> — a MEIC book resolves entirely at settlement, so this is the
-                day's {data?.tradesToday} trades drawn <strong>as entered</strong>: every one priced as if it had been
-                held to expiry.{" "}
-                {stopped > 0 && (
-                  <>
-                    {stopped} were <strong>stopped</strong> and never reached it,{" "}
-                  </>
-                )}
-                {expired} expired. For an arm that stops, the wings below are the loss its stops existed to prevent
-                rather than one it ran; for an arm that holds to expiry they are real. Which is which is in the
-                legend — each arm's realised figure sits beside it, and the dashed line is the total
-                {realisedNet !== null && <> at {fmtMoney(realisedNet)}</>}.
-              </>
-            )}
-          </p>
         </>
       )}
-    </section>
+      </div>
+    </Card>
+    <FilterSortPanel open={panel} onClose={() => setPanel(false)} onReset={reset} anchor={anchor}>
+      {symbols.length > 0 && (
+        <FilterGroup title="symbol" note="one symbol per forest: an expiry payoff is drawn on that symbol's own price axis">
+          <ChoiceGroup label="symbol" value={data?.symbol ?? symbols[0]!} options={symbols.map((sym) => ({ id: sym, label: sym }))} onChange={setForestSymbol} />
+        </FilterGroup>
+      )}
+      <FilterGroup title="x width" note={`a minimum window in ${data?.symbol === "XSP" ? "XSP" : "SPX"} points; auto fits the condors drawn and spot`}>
+        <ChoiceGroup label="x width" value={xwidth} options={X_WIDTHS.map((w) => ({ id: w, label: xLabel(w) }))} onChange={setXwidth} />
+      </FilterGroup>
+      <FilterGroup title="y scale" note="per condor divides each arm's curve by its condor count, so arms of very different sizes read on one axis">
+        <ChoiceGroup
+          label="y scale"
+          value={perCondor ? "condor" : "book"}
+          options={[
+            { id: "book", label: "book total" },
+            { id: "condor", label: "per condor" },
+          ]}
+          onChange={(v) => setPerCondor(v === "condor")}
+        />
+      </FilterGroup>
+      <FilterGroup title="y range" note="a minimum per side; auto fits the visible curves">
+        <ChoiceGroup label="y range" value={ywidth} options={Y_WIDTHS.map((w) => ({ id: w, label: yLabel(w) }))} onChange={setYwidth} />
+      </FilterGroup>
+      <FilterGroup title="condors">
+        <FilterSwitch label="Show each condor" description="Each condor's own curve under its arm's book" on={showNested} onChange={setShowNested} />
+      </FilterGroup>
+    </FilterSortPanel>
+    </>
   );
 }

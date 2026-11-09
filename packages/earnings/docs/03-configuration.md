@@ -28,9 +28,8 @@ it's what the code actually reads.
 
 | Key | Meaning |
 |---|---|
-| `enable_live_trading` | `false` = paper mode (default), `true` = live mode. See `CLAUDE.md`'s Loop Step 0 for the full paper/live split. Flip this only after you trust what paper mode has been finding. |
-| `available_capital_paper_mode` | Simulated NLV paper mode uses for `max_risk_per_trade_pct` sizing checks. Paper mode never looks at your real tastytrade balance — size this to whatever capital you'd actually intend to trade live, or every order will get sized off a number that has nothing to do with your real account. |
-| `available_capital_live_mode_source` | Always `"tastytrade"` — documents that live mode sources NLV/buying power from `tt.py get_account_info`, not this file. |
+| `enable_live_trading` | Removed in v0.12.0 and ignored if present: earnings is paper-only. `run.py doctor` warns while the key (or a `live` block) is still in your file; delete it. |
+| `available_capital_paper_mode` | Simulated NLV used for `max_risk_per_trade_pct` sizing checks. It never looks at your real tastytrade balance — size it to the capital you want the paper book to model. |
 | `max_contracts_per_leg` | Hard ceiling on contracts per leg, enforced in `cherrypick/earnings/sizing.py` regardless of what the risk budget would otherwise allow. A backstop against a sizing bug rather than a knob you'll usually touch. |
 | `max_concurrent_earnings_positions` | Account-wide cap on simultaneous overnight positions across every strategy. |
 | `earnings_calendar_source` | Currently only `"dolthub"` is implemented. |
@@ -42,10 +41,9 @@ it's what the code actually reads.
 | `entry_scan_budget_seconds` / `entry_scan_workers` | Bounds on the entry scan (example: 1500 s, 4 workers). The morning snapshot orders the universe so a budget that binds still finishes the liquid names first, and from 2026-11-06 names the liquidity verdict refuses are screened after every tradable one, only with the budget left. |
 | `symbol_watch` | The pre-market forward scan the loop runs itself (`enabled`, `at` `06:30`, `days` 10 trading days, `liquid_only`, `tier_thresholds` in the example). It pre-filters the entry scan on stable criteria only and never decides an entry. |
 | `dolt_calendar_timeout_seconds` / `dolt_symbol_timeout_seconds` | Per-query bounds on the Dolt calendar and per-symbol reads (example: 30 / 90), so a hung query cannot hold the loop's lock. |
-| `close_window_start` | Next-morning time where Step 3's unconditional close-window backstop kicks in, e.g. `09:45` ET — chosen to be after the open's initial volatility has settled a bit. |
-| `exit_after_announcement_minutes` | The agent loop's same-session backstop (example: `240`). The managed paper loop overrides it — see `management` below. |
+| `close_window_start` | Next-morning time where the unconditional close-window backstop kicks in, e.g. `09:45` ET — chosen to be after the open's initial volatility has settled a bit. |
+| `exit_after_announcement_minutes` | The same-session backstop (example: `240`). The managed paper loop overrides it — see `management` below. |
 | `correlation_block_list` | Sector/date groupings you don't want opened simultaneously (e.g. two banks reporting the same night). Empty by default — see the note in `CLAUDE.md`: correlation risk isn't fully guarded today, so treat this as a partial mitigation, not a complete one. |
-| `reprice_interval_s` / `reprice_step` | Live-mode only: how often (seconds) and by how much an unfilled limit order reprices toward the market while working an entry. |
 | `tastytrade_costs` | Fee model for paper-mode cost-adjusted P&L — see below. |
 | `symbol_screen` | Per-criterion strictness for the five soft screening criteria, plus the `move_tail` veto switch — see below. |
 | `move_tail_multiple` | How many multiples of a name's own mean historical earnings move counts as a "blowout" quarter for `scanner.compute_historical_move_stats()`'s `move_tail_veto` flag. Only rejects when `symbol_screen.move_tail` is `"veto"` (default `"off"`, record-only). `2.0` default. |
@@ -79,7 +77,9 @@ fill price by a fraction of its bid-ask width conceded from mid, rather than ass
 mid-price fill (0.125 = a quarter of the way from mid to the far touch; this was 0.25 before a
 2026 revision toward a more realistic worked-combo-limit assumption). `slippage_cap_frac_of_mid`
 caps a single leg's slippage at that fraction of its own mid price, so a deep-OTM, wide-spread
-wing leg can't dominate the modelled cost. These rates come from tastytrade's published pricing
+wing leg can't dominate the modelled cost. An optional `slippage_frac_of_spread_by_symbol` map
+(e.g. `{"AAPL": 0.10}`) overrides the flat fraction per underlying; core's `fees.slippage_frac`
+gives the full lookup order. These rates come from tastytrade's published pricing
 page and are checked periodically — re-verify against the current schedule if it's been a
 while, since exchange/regulatory pass-through fees do change.
 
@@ -180,8 +180,8 @@ config block):
 | `max_front_expiration_days` | Ceiling on how far out the front/only expiration can be from earnings. |
 | `min_expected_move_pct` / `min_expected_move_dollars` | Floor on the options-implied expected move, in percent or dollar terms depending on the strategy. |
 | `max_risk_per_trade_pct` | Fraction of NLV this strategy's max loss is allowed to consume — feeds `sizing.compute_position_size`. |
-| `profit_target_pct` | Step 3c early-exit profit target, as a fraction of max profit (credit strategies) or max profit potential (debit strategies). |
-| `stop_loss_credit_multiple` (credit strategies) / `stop_loss_pct_of_debit` (debit strategies) | Step 3c early-exit stop-loss threshold. |
+| `profit_target_pct` | early-exit profit target, as a fraction of max profit (credit strategies) or max profit potential (debit strategies). |
+| `stop_loss_credit_multiple` (credit strategies) / `stop_loss_pct_of_debit` (debit strategies) | early-exit stop-loss threshold. |
 
 Everything below that isn't in the shared table above is genuinely strategy-specific.
 
@@ -507,7 +507,7 @@ across two expirations, and a tail-risk surprise hurts a debit trade worse than 
 width-defined max loss. `max_realized_move_dispersion_pct` gates on how *predictable* the
 underlying's historical earnings moves have been — high dispersion means the expected-move
 assumption this structure leans on is less trustworthy. `leg_stop_delta_abs` is checked
-per-side during Step 3b's intraday management (`evaluate_position()`); a side crossing this
+per-side during the intraday management (`evaluate_position()`); a side crossing this
 delta threshold gets closed independently of the other side, which is what `trade_legs` exists
 to support.
 

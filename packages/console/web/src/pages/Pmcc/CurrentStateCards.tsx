@@ -6,6 +6,33 @@ import { SignedBar } from "../../components/Charts";
 import { dteOf, fmtStrike } from "../../lib/optionFormat";
 import { fmtCash, fmtPrice } from "../../lib/format";
 import { EntrySpreadCell } from "./EntrySpread";
+import { HelpSection, HelpWarn, type CardHelpContent } from "../../components/CardHelp";
+
+const ARMS_HELP: CardHelpContent = {
+  title: "Reading the arm comparison",
+  body: (
+    <>
+      <HelpWarn title="An upper bound">
+        <p>
+          Every figure here is net of the modeled fee and slippage stack — and is still an upper bound while early assignment sits
+          unmodelled.
+        </p>
+      </HelpWarn>
+      <HelpSection title="Open, marked to market">
+        <p>
+          A held-long arm has no closed result until its long is sold, ~10 months after entry; until then this is its only number. A cell
+          with an unpriceable position shows a dash rather than a partial sum.
+        </p>
+      </HelpSection>
+      <HelpSection title="Advised arms">
+        <p>
+          One synthetic arm per advisor experiment (advised:&lt;experiment name&gt;), each running its own admitted params beside the
+          base arm it shadowed. History only: pmcc&apos;s advice was switched off on 2026-10-06 with control.
+        </p>
+      </HelpSection>
+    </>
+  ),
+};
 
 /**
  * The arms the page knows by name, in the order it lists them: the held-long pair (the base trade
@@ -209,7 +236,8 @@ function OpenTable({
   heldLong: boolean;
 }) {
   // Each lifecycle's table sorts on its own. The legs sort by strike; the assignment cell mixes a
-  // share with a settlement-style exemption, so it stays a fixed header.
+  // share with a settlement-style exemption, so it stays a fixed header; weekly yield is shown but
+  // never sorted on (the suite's rule: size, timing and fit only).
   const sort = useSort();
   const shown = sortRows(rows, sort, {
     symbol: (p) => p.symbol,
@@ -223,7 +251,6 @@ function OpenTable({
     short: (p) => p.shortStrike,
     tv: (p) => p.currentShortTv,
     spot: (p) => p.currentSpot ?? p.entrySpot,
-    yield: (p) => p.entryWeeklyYieldPct,
     spread: (p) => p.entryMaxSpreadPct,
     protection: (p) => p.downsideProtectionPct,
   });
@@ -245,7 +272,8 @@ function OpenTable({
               <SortTh label="short" k="short" sort={sort} title="sorts by strike" />
               <SortTh label="time value" k="tv" sort={sort} />
               <SortTh label="spot" k="spot" sort={sort} />
-              {!heldLong && <SortTh label="weekly yield" k="yield" sort={sort} />}
+              {/* A column, never a sort: the suite sorts on size, timing and fit, and yield has no tested edge. */}
+              {!heldLong && <th title="not sortable: yield is not a tested edge">weekly yield</th>}
               <SortTh label="entry spread" k="spread" sort={sort} />
               {!heldLong && <SortTh label="protection" k="protection" sort={sort} />}
               <th>assignment</th>
@@ -331,7 +359,7 @@ export function BookComparison({
   const hasClosed = arms.length > 0;
 
   return (
-    <Card title="arm comparison" collapseKey="pmcc-arms" updatedAt={updatedAt}>
+    <Card title="arm comparison" collapseKey="pmcc-arms" updatedAt={updatedAt} help={ARMS_HELP} flag="upper bound">
       {open.length > 0 && (
         <section className="pmcc-compare">
           <h3>open, marked to market</h3>
@@ -361,10 +389,6 @@ export function BookComparison({
             </tbody>
           </table>
           </div>
-          <p className="integrity-note">
-            A held-long arm has no closed result until its long is sold, ~10 months after entry; until then this is its
-            only number. A cell with an unpriceable position shows a dash rather than a partial sum.
-          </p>
         </section>
       )}
       {!hasClosed ? (
@@ -379,11 +403,6 @@ export function BookComparison({
           {others.length > 0 && (
             <section className="pmcc-compare">
               <h3>advised arms</h3>
-              <p className="integrity-note">
-                One synthetic arm per advisor experiment (advised:&lt;experiment name&gt;), each running its own
-                admitted params beside the base arm it shadowed. History only: pmcc&apos;s advice was switched off
-                on 2026-10-06 with control.
-              </p>
               <ul className="integrity-plain-list">
                 {others.map((t) => (
                   <li key={t.arm}>
@@ -414,10 +433,6 @@ export function BookComparison({
               </tbody>
             </table>
             </div>
-            <p className="integrity-note">
-              Every figure here is net of the modeled fee and slippage stack — and is still an upper bound while
-              early assignment sits unmodelled.
-            </p>
           </section>
         </>
       )}

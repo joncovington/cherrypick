@@ -9,6 +9,25 @@ import { useUrlDateRange } from "../../components/table/DateRange";
 import type { ColumnDef } from "../../components/table/columns";
 import { fmtStrike } from "../../lib/optionFormat";
 import { fmtCash, fmtPrice } from "../../lib/format";
+import { Section } from "../../components/Section";
+import { HelpSection, type CardHelpContent } from "../../components/CardHelp";
+
+const HISTORY_HELP: CardHelpContent = {
+  title: "Completed positions",
+  body: (
+    <>
+      <HelpSection title="The money">
+        <p>
+          Entry and exit are signed whole-position cash, then how the position ended, gross, every cost, and net: gross − fees −
+          settlement − slippage = net. bwb prices fills at mid and charges slippage as a cost, so it is subtracted.
+        </p>
+      </HelpSection>
+      <HelpSection title="The add-on">
+        <p>The add-on columns are blank when its trigger never fired. The add-on&apos;s credit and strikes are shown apart from the fly&apos;s.</p>
+      </HelpSection>
+    </>
+  ),
+};
 
 /**
  * Completed positions in the suite's standard trade layout (docs/conventions/money-layout.md): entry and exit as
@@ -151,11 +170,12 @@ export function HistoryTab({ mode = "paper" }: { mode?: TradingMode }) {
   const t = data?.totals ?? null;
 
   return (
-    <div className="cards cards-wide">
+    <div className="pf-layout">
+      <Section concept="hist" question="How has each arm done?">
       <HistoryTable
         table="bwb-history"
         title="completed positions"
-        className="view-fade"
+        help={HISTORY_HELP}
         defs={COLUMNS}
         sort={page}
         onSort={toggleSort}
@@ -203,6 +223,7 @@ export function HistoryTab({ mode = "paper" }: { mode?: TradingMode }) {
           )
         }
       />
+      </Section>
     </div>
   );
 }

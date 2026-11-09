@@ -1,7 +1,7 @@
 # The control book: making entry screening measurable
 
 **Status:** phases 0, 0b and 1 landed 2026-08-25; phase 3 (the entry replay) landed 2026-08-26.
-Phases 2 and 4 are planned, and nothing for them is built.
+Phases 2 and 4 are planned, and nothing for them is built (checked 2026-11-08; the advisor, phase 4's subject, is paused). Earnings has been paper-only since v0.12.0, so a "live path" below is a path that no longer exists.
 
 ## Decisions taken 2026-08-25
 

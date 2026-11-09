@@ -34,7 +34,7 @@ the vendor's levels.
   (−4.99%) $94.10 (−16.13%) … Resistance $113.60 (1.25%) $129.38 (15.31%)", listing the levels it
   draws.
   - The tie between that summary and the drawn lines was checked on one chart, CSCO: the four lines
-    in the user's own screenshot are exactly the four summary levels.
+    in the reference screenshot are exactly the four summary levels.
   - A headless page does not draw the lines, so the summary is what was collected.
 - **The panel.** 18 names were captured with the collector's own browser profile and sign-in, paced
   30–60 s apart (`probes/levels-20261003-210017/`: page text, screenshot and the data behind it).

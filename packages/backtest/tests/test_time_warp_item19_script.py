@@ -1,5 +1,5 @@
-"""Hypothesis 19's study (scripts/time_warp_item19.py): the Time Warp's pricing, body choice, exits
-and verdict. Invented quotes only, no store.
+"""Hypothesis 19's study (packages/backtest/scripts/time_warp_item19.py): the Time Warp's pricing, body
+choice, exits and verdict. Invented quotes only, no store.
 
 Each bar is shown firing and failing, because a check that cannot fire reads as coverage it is not.
 """
@@ -9,7 +9,7 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 
-SCRIPT = Path(__file__).resolve().parents[3] / "scripts" / "time_warp_item19.py"
+SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "time_warp_item19.py"
 
 
 def _module():

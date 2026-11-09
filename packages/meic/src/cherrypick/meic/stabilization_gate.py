@@ -2,7 +2,7 @@
 
 `stabilization_entry` profiles need a verdict AT ENTRY TIME. This module computes it — the
 completed-bar form of the Thinkorswim "Universal Adaptive Market Stabilization Indicator"
-(docs/theta-profits-be-condor.md, gap 2: the strategy's "wait until I see two or three five-minute
+(docs/breakeven-condor.md, gap 2: the strategy's "wait until I see two or three five-minute
 candles on more or less the same level", made deterministic):
 
   - 5-min bars from the recorded spot trail (`gex_spot_history` in the GEX history store),

@@ -130,13 +130,27 @@ def test_a_session_fetch_writes_only_a_declared_store_variant_and_is_bounded():
         ({**args, "from": "2026-11-01"}, "after"),
         ({**args, "workers": 5}, "workers"),  # past Standard's four concurrent requests
         ({**args, "cadence": "60"}, "cadence"),
+        ({**args, "dataset": "TSLA"}, "dataset"),  # only a declared 0DTE dataset
+        ({**args, "dataset": "qqq"}, "dataset"),
     ]:
         with pytest.raises(rq.Refused, match=why):
             rq.build_argv("fetch-sessions", bad, PY)
     row = {"kind": "fetch-sessions", "args": json.dumps(args)}
     out = rq.result_of(row, {"fetched": 3, "skipped": 1, "stopped": True}, Path("q.log"))
-    assert out["input"] == "2022-05-16..2026-10-30" and out["store"] == "backtest wide 0DTE store"
+    assert out["input"] == "2022-05-16..2026-10-30" and out["store"] == "backtest SPX wide 0DTE store"
     assert out["report"] == {"fetched": 3, "skipped": 1, "stopped": True}
+
+
+def test_a_session_fetch_of_another_dataset_names_it_and_spx_keeps_its_argv():
+    args = {"store_tag": "wide", "from": "2022-05-16", "to": "2026-10-30"}
+    assert "--dataset" not in rq.build_argv("fetch-sessions", {**args, "dataset": "SPX"}, PY)
+    assert rq.build_argv("fetch-sessions", args, PY) == rq.build_argv(
+        "fetch-sessions", {**args, "dataset": "SPX"}, PY
+    )
+    argv = rq.build_argv("fetch-sessions", {**args, "dataset": "NDX"}, PY)
+    assert argv[argv.index("--dataset") + 1] == "NDX"
+    row = {"kind": "fetch-sessions", "args": json.dumps({**args, "dataset": "QQQ"})}
+    assert rq.result_of(row, {}, Path("q.log"))["store"] == "backtest QQQ wide 0DTE store"
 
 
 def test_anything_off_the_allow_list_is_refused(files):
@@ -158,6 +172,18 @@ def test_a_script_must_be_committed_under_scripts_and_take_only_string_arguments
         rq.build_argv("script", {"path": "scripts/draft.py"}, PY, root=root, tracked=_tracked)
     with pytest.raises(rq.Refused, match="under scripts/"):
         rq.build_argv("script", {"path": "../loose.py"}, PY, root=root, tracked=lambda r, p: True)
+    # The backtest engine's studies sit in packages/backtest/scripts/; the rest of a package does not.
+    bt = root / "packages" / "backtest"
+    (bt / "scripts").mkdir(parents=True)
+    (bt / "src").mkdir()
+    (bt / "scripts" / "study.py").write_text("print('{}')\n", encoding="utf-8")
+    (bt / "src" / "study.py").write_text("print(1)\n", encoding="utf-8")
+    moved = rq.build_argv(
+        "script", {"path": "packages/backtest/scripts/study.py"}, PY, root=root, tracked=_tracked
+    )
+    assert moved == [PY, str((bt / "scripts" / "study.py").resolve())]
+    with pytest.raises(rq.Refused, match="packages/backtest/scripts/"):
+        rq.build_argv("script", {"path": "packages/backtest/src/study.py"}, PY, root=root, tracked=_tracked)
     with pytest.raises(rq.Refused, match="list of strings"):
         rq.build_argv(
             "script", {"path": "scripts/study.py", "args": "--x; rm"}, PY, root=root, tracked=_tracked

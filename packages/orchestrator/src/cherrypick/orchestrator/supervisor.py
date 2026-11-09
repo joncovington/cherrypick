@@ -611,17 +611,30 @@ class Supervisor:
             code = _EXIT_TOO_SOON
 
         if code == 0:
+            # The attempt that worked, counting the failures before it (status shows it).
+            st["attempt"] = int(st.get("consecutive_failures") or 0) + 1
             st["consecutive_failures"] = 0
             st["backoff_until"] = None
             st.pop("last_error", None)
         else:
+            if jobspec.is_fixed_time(spec):
+                # A fixed-time job's attempts are counted per day: yesterday's exhausted retries
+                # must not leave today's first failure looking like the limit has been passed.
+                today = timeutil.now_et().strftime("%Y-%m-%d")
+                if st.get("failure_day") != today:
+                    st["failure_day"] = today
+                    st["consecutive_failures"] = 0
             n = int(st.get("consecutive_failures") or 0) + 1
             st["consecutive_failures"] = n
+            st["attempt"] = n
             cap = spec.backoff_cap_seconds or _BACKOFF_CAP_SECONDS
             delay = min(cap, _BACKOFF_BASE_SECONDS * (2 ** (n - 1)))
+            # An entry that names its own delay (external reports: `retry_delay_minutes`) waits exactly that.
+            if spec.retry_delay_seconds:
+                delay = spec.retry_delay_seconds
             st["backoff_until"] = time.time() + delay
-            _log(f"{spec.id}: exit {code} (failure #{n}), backoff {delay}s")
-            retries = jobspec.RETRY_ON_FAILURE.get(spec.id, 0)
+            _log(f"{spec.id}: exit {code} (attempt {n}), backoff {delay}s")
+            retries = spec.retries or jobspec.RETRY_ON_FAILURE.get(spec.id, 0)
             if jobspec.is_fixed_time(spec) and n <= retries:
                 # Un-stamp the occurrence so it fires again once the backoff lapses -- still only
                 # inside its catch-up window, which should_start keeps enforcing.

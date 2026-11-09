@@ -3,9 +3,10 @@ import { renderToString } from "react-dom/server";
 import type { ReactElement } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { BridgedResult, FliesGateSessions, FliesLiveGap, FliesSelectorSessions } from "@console/shared";
+import { MemoryRouter } from "react-router-dom";
 import { LiveGapSlide } from "../src/pages/Flies/LiveGapSlide";
-import { GatesSlide } from "../src/pages/Flies/GatesSlide";
-import { SelectorSlide } from "../src/pages/Flies/SelectorSlide";
+import { ArmSessions, GatesSlide } from "../src/pages/Flies/GatesSlide";
+import { ModelBody, SelectorSlide, SessionsTable } from "../src/pages/Flies/SelectorSlide";
 
 /**
  * The three flies evidence slides render the module's numbers as given (bridged, never derived),
@@ -16,7 +17,11 @@ import { SelectorSlide } from "../src/pages/Flies/SelectorSlide";
 function render(key: string, value: BridgedResult<unknown>, el: ReactElement): string {
   const client = new QueryClient();
   client.setQueryData(["bridged", key], value);
-  return renderToString(<QueryClientProvider client={client}>{el}</QueryClientProvider>);
+  return renderToString(
+    <QueryClientProvider client={client}>
+      <MemoryRouter>{el}</MemoryRouter>
+    </QueryClientProvider>,
+  ).replace(/<!-- -->/g, "");
 }
 
 const side = (entries: number, completed: number, net: number | null) => ({
@@ -67,6 +72,16 @@ describe("the live vs paper slide", () => {
     expect(html).toContain("2026-10-05");
   });
 
+  it("opens a session's detail as a lightbox from its row, and keeps the break as an amber flag", () => {
+    const html = render("flies-live-gap", { ok: true, data: gap, error: null }, <LiveGapSlide />);
+    expect(html).toContain('aria-label="Open 2026-10-02: what differed"');
+    expect(html).not.toContain("▾");
+    expect(html).not.toContain("▸ 2026");
+    expect(html).toContain("not poolable across the break");
+    // The method sits behind the ?, not in the card body.
+    expect(html).not.toContain("within 30 minutes");
+  });
+
   it("shows a failed read as the failure", () => {
     const html = render("flies-live-gap", { ok: false, data: null, error: "flies evidence unavailable — exit 1" }, <LiveGapSlide />);
     expect(html).toContain("flies evidence unavailable");
@@ -111,9 +126,18 @@ const gates: FliesGateSessions = {
 };
 
 describe("the gates slide", () => {
-  it("renders each arm's own window, what acted and the module's diff", () => {
+  it("renders the module's diff in the summary and leaves each arm's sessions to its lightbox", () => {
     const html = render("flies-gates", { ok: true, data: gates, error: null }, <GatesSlide />);
-    expect(html).toContain("vol-floor vs control");
+    expect(html).toContain("-$30.00");
+    expect(html).toContain("quiet sessions counted apart");
+    expect(html).toContain('aria-label="Open vol-floor&#x27;s sessions"');
+    expect(html).not.toContain("straddle_below_floor");
+    expect(html).not.toContain("partial");
+  });
+
+  it("an arm's lightbox body holds its own window, what acted and the partial-session mark", () => {
+    const html = render("x", { ok: true, data: null, error: null }, <ArmSessions a={gates.arms[0]!} />);
+    expect(html).toContain("window from <strong>2026-10-05</strong>");
     expect(html).toContain("straddle_below_floor ×737");
     expect(html).toContain("-$30.00");
     expect(html).toContain("partial");
@@ -150,6 +174,42 @@ describe("the selector slide", () => {
     const html = render("flies-selector", { ok: true, data: selector, error: null }, <SelectorSlide />);
     expect(html).toContain("has not traded yet");
     expect(html).toContain("model_wrong_procedure");
-    expect(html).toContain("procedure v<!-- -->1");
+    expect(html).toContain("sign test: not due (0 of 10)");
+    // The procedure caveat is behind the ?, the refusal's detail inside the model's lightbox.
+    expect(html).not.toContain("Procedure v2");
+    expect(html).not.toContain("would refuse it");
+  });
+
+  it("the refused model's lightbox body says which procedure the file is and why it is refused", () => {
+    const html = render("x", { ok: true, data: null, error: null }, <ModelBody latest={selector.latest_model!} />);
+    expect(html).toContain("procedure v1");
+    expect(html).toContain("would refuse it");
+  });
+
+  it("the sessions lightbox lists a session's departure, entries and diff", () => {
+    const withSession: FliesSelectorSessions = {
+      ...selector,
+      sessions: [
+        {
+          session: "2026-10-12",
+          departed: true,
+          ticks: 40,
+          departing_ticks: 12,
+          reasons: { model_preferred: 12 },
+          selected_from: { "cell-a": 1 },
+          selector_entries: 3,
+          control_entries: 4,
+          selector_net: 30,
+          control_net: 10,
+          diff: 20,
+          model: { ok: true, reason: null },
+          model_ids: ["m1"],
+        },
+      ],
+    } as unknown as FliesSelectorSessions;
+    const html = render("x", { ok: true, data: null, error: null }, <SessionsTable d={withSession} />);
+    expect(html).toContain("departed");
+    expect(html).toContain("model_preferred ×12");
+    expect(html).toContain("$20.00");
   });
 });

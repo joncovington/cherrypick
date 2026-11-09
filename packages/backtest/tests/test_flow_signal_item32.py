@@ -1,5 +1,5 @@
-"""Item 32's rules (cherrypick.backtest.flowstudy) and its script (scripts/flow_signal_item32.py), on
-invented data only: no store, no vendor figure.
+"""Item 32's rules (cherrypick.backtest.flowstudy) and its script
+(packages/backtest/scripts/flow_signal_item32.py), on invented data only: no store, no vendor figure.
 
 Each rule is shown firing and failing, because a check that cannot fire reads as coverage it is not.
 """
@@ -16,7 +16,7 @@ import pytest
 from cherrypick.backtest import flow, flowstudy
 from cherrypick.backtest.flowstudy import Scan
 
-SCRIPTS = Path(__file__).resolve().parents[3] / "scripts"
+SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 _spec = importlib.util.spec_from_file_location("flow_signal_item32", SCRIPTS / "flow_signal_item32.py")
 s32 = importlib.util.module_from_spec(_spec)
 sys.modules["flow_signal_item32"] = s32
@@ -353,7 +353,8 @@ def test_the_placebo_of_a_real_effect_is_not_the_effect():
     cell = res["first"]["call_buy/50000"]
     assert cell["verdict"] == "pass"
     assert abs(cell["readings"]["placebo"]["mean"]) < cell["mean"] / 2
-    # and with the tag on every session, last session's tag is as good as this one's: the placebo is the effect  # noqa: E501
+    # and with the tag on every session, last session's tag is as good as this one's: the placebo is the
+    # effect  # noqa: E501
     full = flowstudy.evaluate(invented())["first"]["call_buy/50000"]
     assert full["readings"]["placebo"]["mean"] > full["mean"] / 2
 

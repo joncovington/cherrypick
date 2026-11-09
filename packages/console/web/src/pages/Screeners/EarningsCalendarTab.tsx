@@ -19,10 +19,11 @@ import {
 import { ListViewContext, ViewSwitch, useViewChoice } from "../../components/ViewSwitch";
 import { writePref } from "../../lib/prefs";
 import { TradeCards, dayMonth, type TradeCardLeg, type TradeCardModel } from "../Live/TradeCard";
-import { QuestionSection, ScreenerLayout } from "./QuestionSection";
+import { ScreenerLayout } from "./ScreenerParts";
+import { Section } from "../../components/Section";
 
 /**
- * The earnings calendar (2026-10-17; docs/earnings-screener-plan.md): every announcement in the
+ * The earnings calendar (2026-10-17; docs/history/earnings-screener-plan.md): every announcement in the
  * next 30 days, grouped by day. Read-only, and it decides nothing: `python -m cherrypick.technicals
  * earnings-calendar` joins every figure each evening.
  *
@@ -252,7 +253,7 @@ export const calendarHelp = (ivRankCut: number): CardHelpContent => ({
         <p>
           The suggested spread has no edge in history. Replayed over 2020-26 (3,587 priced announcements), it lost 4.3% on risk on the
           defaults and in every variant tried, and the direction read called the reaction 48-49% of the time: a coin. It is shown
-          because the screen shows it, not as advice (docs/earnings-screener-plan.md).
+          because the screen shows it, not as advice (docs/history/earnings-screener-plan.md).
         </p>
       </HelpWarn>
       <HelpSection title="Direction and strength">
@@ -389,7 +390,7 @@ export function EarningsCalendarTab() {
 
   return (
     <ScreenerLayout>
-      <QuestionSection concept="stand" name="the calendar" question="What reports soon?">
+      <Section concept="stand" tag="the calendar" question="What reports soon?">
         <Card
           title="earnings calendar"
           help={calendarHelp(data?.ivRankCut ?? 50)}
@@ -548,7 +549,7 @@ export function EarningsCalendarTab() {
             />
           </FilterGroup>
         </FilterSortPanel>
-      </QuestionSection>
+      </Section>
     </ScreenerLayout>
   );
 }

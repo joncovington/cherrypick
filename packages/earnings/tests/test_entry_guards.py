@@ -208,7 +208,7 @@ def _closed_twice(mod, tmp_path, monkeypatch, name):
     return first, second, row
 
 
-@pytest.mark.parametrize("mod, name", [(db_paper, "paper.db"), (db, "live.db")], ids=["paper", "live"])
+@pytest.mark.parametrize("mod, name", [(db_paper, "paper.db"), (db, "ledger.db")], ids=["paper", "ledger"])
 def test_a_second_close_is_refused_and_overwrites_nothing(mod, name, tmp_path, monkeypatch):
     first, second, row = _closed_twice(mod, tmp_path, monkeypatch, name)
     assert first["ok"] is True
@@ -223,7 +223,7 @@ _ORDER = {"strategy": "atm_calendar", "debit": 3.12}
 _STRAT = {"max_risk_per_trade_pct": 0.05}
 
 
-def test_paper_sizing_uses_paper_capital_when_the_live_flag_is_on():
+def test_paper_sizing_uses_paper_capital_and_ignores_a_leftover_live_flag():
     config = {
         "enable_live_trading": True,
         "available_capital_paper_mode": 100000,
@@ -233,17 +233,6 @@ def test_paper_sizing_uses_paper_capital_when_the_live_flag_is_on():
     result = sizing.compute_position_size(_ORDER, _STRAT, config)
     assert result["ok"] is True
     assert result["risk_budget"] == pytest.approx(100000 * 0.05)
-
-
-def test_live_sizing_is_still_available_to_a_caller_that_asks_for_it():
-    config = {
-        "enable_live_trading": True,
-        "_live_nlv": 50000,
-        "available_capital_paper_mode": 999999,
-        "max_contracts_per_leg": 20,
-    }
-    result = sizing.compute_position_size(_ORDER, _STRAT, config, live=True)
-    assert result["risk_budget"] == pytest.approx(50000 * 0.05)
 
 
 # --------------------------------------------------------------------------- 5. ET session dates

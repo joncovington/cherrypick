@@ -7,7 +7,7 @@ All commands are **read-only or paper-only** except the narrow onboarding pair (
 `settings`, which write *configuration* (never an order). See
 [guardrails-and-modes.md](guardrails-and-modes.md).
 (The modules' own live-trading loops are separate programs, armed per day with `/live-meic-start`,
-`/live-flies-start` and `/live-bwb-start` rather than any command on this page — see
+`/live-flies-start` and `/live-bwb-start`, or from a terminal with `python -m cherrypick.<module>.live_loop --arm --confirm YES`, rather than any command on this page — see
 [strategy-engines.md](strategy-engines.md).)
 
 ## Onboarding & setup
@@ -58,7 +58,7 @@ All commands are **read-only or paper-only** except the narrow onboarding pair (
 | `service` | **Optional, Windows only, off by default:** run the supervisor as a Windows service (WinSW v2) so the suite runs with nobody logged on. `service prepare` writes the service definition (`~/.cherrypick/service/`, from config `service.*`; the user's PATH carried, no password in the file) and prints the elevated commands a person runs: WinSW `install /p` (asks for the account password) and `start`, plus re-registering the anchor to run while logged off. `service status` reads `sc query`; `service uninstall` prints the undo. In service mode the anchor starts the service (`sc start`), never a rival supervisor; `install` keeps the anchor as configured; desktop toasts report `skipped` (session 0 has no desktop); `doctor` shows the service. Collector sign-ins still need a person at the machine. | `prepare` \| `status` \| `uninstall` |
 | `power-watch` | Notify **every** channel while this machine runs on battery (Windows `GetSystemPowerStatus`, Linux `/sys/class/power_supply`, macOS `pmset -g batt`; `cherrypick.core.power`; a Linux machine with no battery entry is not a laptop and never alerts): at once when it switches, then every `power_watch.repeat_minutes` (15), WARNING turning CRITICAL at `critical_percent` (20) or `critical_minutes` (30) of time left, naming an armed live session; one message when AC returns. A reading it cannot take is never read as plugged in or unplugged. Offline and local; runs as the `power-watch` supervisor job every 60 s, every day (`power_watch.enabled`, on by default). Added after the 2026-10-08 power outage. | — |
 | `notify-send` | Post a hand-written message — a correction, a note — to a webhook through the same send and outbound record as every scheduled post. The text is read from a file, so nothing a shell would expand (the `$1` in `$17.55M`) can be lost on the way. `--refers-to` ties it to the message it corrects, which `sent` then shows on both. | `--channel`, `--file`, `--kind correction\|note`, `--refers-to <message id>`, `--image` (repeatable), `--date <session>`, `--dry-run` |
-| `sent` | What the suite sent to webhooks, from the outbound record (`data/outbound/YYYY-MM.jsonl`): every QuikOptions post, flies payoff chart, status digest, notification and hand-sent message, with its text, images, message id and session. `--stale` names each post's input files that changed after it went out; `--verify` asks Discord whether each message still exists. Read-only. | `--date <session>`, `--days N` (default 7), `--kind`, `--stale`, `--verify`, `--json` |
+| `sent` | What the suite sent to webhooks, from the outbound record (`data/outbound/YYYY-MM.jsonl`): every external-report post, flies payoff chart, status digest, notification and hand-sent message, with its text, images, message id and session. `--stale` names each post's input files that changed after it went out; `--verify` asks Discord whether each message still exists. Read-only. | `--date <session>`, `--days N` (default 7), `--kind`, `--stale`, `--verify`, `--json` |
 | `ps` | Every supervisor job and managed daemon (streamer, services) by name: running PID, whether it is held, its last exit and whether that exit was asked for. Read-only. | — |
 | `restart NAME` | Restart a job or daemon by name, never by PID. For a job the command writes a request with its own id and the **supervisor** carries it out: stop the process tree, confirm the PID is gone (by PID *and* creation time, so a reused PID is never mistaken for it), and only then start one. A child that will not die is left running and reported, never doubled. The command waits for the supervisor's answer to *its* request and refuses outright if the supervisor is down. A daemon is held for the duration, stopped and started again. A **daily or monthly job** that is not running is **run once now** (`queued to run now`): an extra run, so its scheduled run still comes, under the usual holds (network, one browser job at a time, start spacing). Neither raises an alert or counts as a failure. | — |
 | `stop NAME` / `stop --all` | Hold a job or daemon (`state/holds.json`) and stop it: a held name is never started by the supervisor or restarted by the watchdog, and alerts about it go quiet. A hold older than 12 hours is a watchdog WARN, so a forgotten one is noticed. With the supervisor down, a job's recorded PID is killed only if its creation time still matches. `--all` is the full stop that follows `uninstall`, refused while the supervisor or its anchor task could start things again. `install` clears every hold. | `--all` |
@@ -74,6 +74,7 @@ All commands are **read-only or paper-only** except the narrow onboarding pair (
 | `execution` | Each live arm's execution record by week (B10): fills against the mid at submit, fill rate, time to fill, human overrides (a cleared kill block, an in-session config commit, a manual close), closed trades with no recorded net counted apart (`unpriced`), and the gap to its paper mirror split into missed / fill / costs / other. Read-only. | `--json` |
 | `hypotheses` | Check `docs/hypotheses.json` (B7): every row well formed, every pointer a real heading, a row from item 18 with a verdict names its `{home}/` result files; on this machine, an `itemN` study in the research queue or a result folder with no row; list logged rule changes due a re-read after 100 trades; `--similar` lists rejected look-alikes of a proposal. Exits 1 on a problem. | `--similar <json>` |
 | `hypotheses-board` | The studies board (`docs/studies-board-plan.md`): each register row with its result files' verdicts (read as written, never worked out from figures), its run id and its research-queue rows, grouped in progress / declared / finished / observation. Reads licensed result files; the console shows it only behind the backtest gate. | — |
+| `study-report` | One study's result files read as a report (`--study itemN`, `orchestrator/studyreport.py`): every arm's own figures by window, its paired difference against its baseline (and over sessions where both entered), entries a session, net per trade, net over buying power, the gates it uses in plain words, a reading worked out from those figures, and advice on what to do next (re-run, fix data, a new study, a ruleset change to weigh, a re-read later, a register row to record), each with the figure that prompted it, by fixed rules and never a model. The register's outcome leads and decides where a script's per-arm word differs. `--since YYYY-MM-DD` lists every study with a result or a finished step since then, with its verdict counts (the Studies tab's This week). Reads licensed result files: console only, behind the backtest gate. | — |
 | `retests` | B14: the year's re-test rows, every declared/passed/failed hypothesis with a recipe re-run unchanged as `<study>/retest-<year>`; rows without a recipe are listed. A dry run unless `--apply`, which queues them. | `--year`, `--apply` |
 | `review` | Suite end-of-day review (`packages/review`): build one session's cross-module fact set and render it. `--final` marks the session final and re-runs reconciliation; without it the pass is provisional. Read-only over every module's ledger. What the two daily supervisor jobs run. | `--final` |
 | `morning` | Build the pre-open morning fact pack (`packages/overview`): index/vol/sector readings from the stream cache, gamma flip and walls from the suite's own GEX history, and the mechanical GREEN/YELLOW/RED phase. What the daily morning-factpack job runs; a pure stream-cache + GEX consumer writing only into its own home, so a bad pass costs a report, never a trade. The session it describes is overview's own contract (today's ET trading day, resolved internally). | — |
@@ -105,7 +106,7 @@ The module paper loops are supervisor jobs too: MEIC as a 60 s `--once` spawn
 (`modules.meic.paper.tick_interval_seconds`), flies as the one **resident** child (its own
 `--interval 15` mode in-session, supervised for death and silence) plus a 60 s off-session `--once`
 job that owns settlement. The paper modules' own scheduled-task helpers were removed on
-2026-10-08; flies', bwb's and MEIC's live `--install-task` only writes the day's arm record, and refuses
+2026-10-08; flies', bwb's and MEIC's live `--install-task` (the slash commands' prompt-free path; `--arm --confirm YES` is the human one) only writes the day's arm record, and refuses
 without a running supervisor.
 
 ## The research queue (`orchestrator/researchqueue.py`, 2026-10-24)
@@ -157,6 +158,18 @@ unknown, never met). `--checks` takes the same kinds and is only reported in the
 | `remind-cancel` | Drop a live reminder. | `--reminder-id` |
 | `remind-run` | The `reminders` job: push the due rows, close the met ones. | — |
 
+## External reports (`orchestrator/external_reports.py`, 2026-11-08)
+
+A person's own script writes a small JSON report to `data/external/<id>.json`; the console's Reports >
+external page draws it. The suite ships no report and runs none until `config.json` lists one under
+`external_reports` ([the guide](guide/external-reports.md) has the entry fields). Each entry becomes a
+supervisor job named `external-<id>`, which runs `external-run <id>`.
+
+| Command | What it does | Flags |
+|---|---|---|
+| `external-check` | Judge one report file against the contract (`cherrypick.core`'s `external_report.schema.json`) and print what the console card will draw: title, source, `as_of`, stale or fresh, and each section's heading and row count, then one `hints:` line naming the presentation hints in use (for example `3 columns formatted, key of 3, footnote`). An invalid file prints every reason instead. Exit 0 valid, 1 invalid. Read-only. | the file, after the verb |
+| `external-run` | The `external-<id>` job: run the entry's script with the suite's Python (its `args`, under its `timeout_minutes`), then judge `data/external/<id>.json` (unless the entry says `writes_report: false`) and, when the entry's `post` is `reporting` or `notify`, post a text card to that Discord webhook once per new `as_of`. Exit 1 when the script fails or the report is invalid, which is what the entry's `retries` (0 to 3, each after `retry_delay_minutes`, inside the catch-up window) act on; `status` shows the job's `attempt`. | the entry's id, after the verb |
+
 ## Global flags
 
 `--date YYYY-MM-DD` (report) · `--eod` (report — scope to one
@@ -171,6 +184,6 @@ verdict) · `--month` / `--dry-run` (archive) · `--dry-run` / `--list` / `--ver
 ## Slash-command equivalents (Claude Code)
 
 Some workflows are also exposed as checked-in slash commands for interactive sessions:
-`/install`, `/uninstall`, `/console`, `/desktop`, `/meic-start`, `/earnings-start`. These are dev
+`/install`, `/uninstall`, `/console`, `/desktop`, `/meic-start`. These are dev
 conveniences, never a runtime dependency. The per-day live arms `/live-meic-start`,
-`/live-flies-start` and `/live-bwb-start` are not conveniences: they are the deliberate arming path.
+`/live-flies-start` and `/live-bwb-start`, and the loops' `--arm --confirm YES`, are not conveniences: they are the deliberate arming path.

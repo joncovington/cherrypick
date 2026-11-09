@@ -1,5 +1,5 @@
-"""Hypothesis 20's study (scripts/convex_stack_item20.py) and fetch plan: the Convex Stack's width,
-direction, body choice, exits and verdict. Invented quotes only, no store.
+"""Hypothesis 20's study (packages/backtest/scripts/convex_stack_item20.py) and fetch plan: the Convex Stack's
+width, direction, body choice, exits and verdict. Invented quotes only, no store.
 
 Each bar is shown firing and failing, because a check that cannot fire reads as coverage it is not.
 """
@@ -10,7 +10,7 @@ import importlib.util
 from datetime import date, timedelta
 from pathlib import Path
 
-SCRIPTS = Path(__file__).resolve().parents[3] / "scripts"
+SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 
 
 def _module(name):

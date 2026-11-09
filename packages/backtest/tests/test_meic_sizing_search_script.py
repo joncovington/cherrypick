@@ -1,5 +1,5 @@
-"""The MEIC sizing search (scripts/meic_sizing_search.py): what may be picked, and that the pick is the
-best CAGR per unit of drawdown among them. Invented sessions only, no store.
+"""The MEIC sizing search (packages/backtest/scripts/meic_sizing_search.py): what may be picked, and that the
+pick is the best CAGR per unit of drawdown among them. Invented sessions only, no store.
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ import pytest
 
 from cherrypick.backtest import paths
 
-SCRIPTS = Path(__file__).resolve().parents[3] / "scripts"
+SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 _spec = importlib.util.spec_from_file_location("meic_sizing_search", SCRIPTS / "meic_sizing_search.py")
 st = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(st)

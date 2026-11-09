@@ -405,7 +405,7 @@ def is_monthly(d: date) -> bool:
 
 
 def cycle_expiry(expiries: list[str], today: date) -> str | None:
-    """The monthly the user trades: inside 45-60 days, else inside 30-60, the latest there."""
+    """The cycle monthly: inside 45-60 days, else inside 30-60, the latest there."""
     months = [e for e in expiries if is_monthly(date.fromisoformat(e))]
     for lo, hi in ((45, 60), (30, 60)):
         inside = [e for e in months if lo <= (date.fromisoformat(e) - today).days <= hi]

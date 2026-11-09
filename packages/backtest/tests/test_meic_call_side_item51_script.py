@@ -1,6 +1,6 @@
-"""Hypothesis 51's study (scripts/meic_call_side_item51.py): the flags, the call side's net, the pairing,
-the verdict's checks and floors, the hourly reading rule and the validation. Invented numbers only, no
-run, no store.
+"""Hypothesis 51's study (packages/backtest/scripts/meic_call_side_item51.py): the flags, the call side's net,
+the pairing, the verdict's checks and floors, the hourly reading rule and the validation. Invented numbers
+only, no run, no store.
 
 Each bar is shown firing and failing, because a check that cannot fire reads as coverage it is not.
 """
@@ -16,7 +16,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-SCRIPTS = Path(__file__).resolve().parents[3] / "scripts"
+SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 _spec = importlib.util.spec_from_file_location("meic_call_side_item51", SCRIPTS / "meic_call_side_item51.py")
 st = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(st)

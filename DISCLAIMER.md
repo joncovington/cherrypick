@@ -6,7 +6,7 @@
 
 cherrypick is an **experimental prototype**, written to learn about and research options strategies.
 It is not a finished product, a trading service, or a recommendation of any strategy. Parts of it are
-marked **EXPERIMENTAL** (calendars, PMCC, curve, contango and the manual desk) and are less tested still.
+marked **EXPERIMENTAL** (calendars, contango, weeklyput and the manual desk) and are less tested still. Flies, bwb, PMCC and curve are retired and off by default.
 
 It is provided **"as is", without warranty of any kind**, under the MIT License ([LICENSE](LICENSE)).
 The authors are not liable for any loss or damage arising from its use.
@@ -28,7 +28,7 @@ which your broker is required to give you.
 
 ## Live trading places real, irreversible orders
 
-The live paths — MEIC, flies, BWB and earnings each have a live loop, and the manual desk places
+The live paths — MEIC, flies and BWB (the last two retired and off by default) each have a live loop, and the manual desk places
 orders by hand — send **real orders to a real brokerage account with real money**. They are **off by
 default** and each needs its own deliberate switch. If you turn one on:
 

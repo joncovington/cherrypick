@@ -25,7 +25,7 @@ off switch; all of them stay on in every arm.
 
 It is a read, never a verdict: no pass test, no trial (the script runs it provisionally over the
 design window and refuses the holdout), and nothing in it changes a live gate. Everything here is
-pure; `scripts/meic_gate_oracle.py` runs the replay and reads the ledgers.
+pure; `packages/backtest/scripts/meic_gate_oracle.py` runs the replay and reads the ledgers.
 """
 
 from __future__ import annotations

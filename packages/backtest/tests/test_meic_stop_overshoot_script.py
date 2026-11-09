@@ -1,5 +1,5 @@
-"""The MEIC stop-overshoot comparison (scripts/meic_stop_overshoot.py): a stopped side's cost to close
-over its trigger, read from a ledger, and its distribution. Invented ledgers only."""
+"""The MEIC stop-overshoot comparison (packages/backtest/scripts/meic_stop_overshoot.py): a stopped side's
+cost to close over its trigger, read from a ledger, and its distribution. Invented ledgers only."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import importlib.util
 import sqlite3
 from pathlib import Path
 
-SCRIPTS = Path(__file__).resolve().parents[3] / "scripts"
+SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 _spec = importlib.util.spec_from_file_location("meic_stop_overshoot", SCRIPTS / "meic_stop_overshoot.py")
 st = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(st)

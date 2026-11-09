@@ -15,6 +15,7 @@ export function Tile({
   afterFees,
   underpowered,
   title,
+  note,
 }: {
   label: string;
   value: string;
@@ -29,7 +30,12 @@ export function Tile({
   afterFees?: boolean;
   underpowered?: boolean;
   title?: string;
+  /** A second figure that reads against the value, on its own line under it: the win rate the
+   *  payoff needs under the win rate. Kept in the tile rather than a tile of its own, so a figure
+   *  never sits apart from the one it qualifies. Several lines are passed as an array. */
+  note?: string | readonly string[];
 }) {
+  const notes = note === undefined ? [] : typeof note === "string" ? [note] : note;
   const cls = tone === "pos" ? "pnl-pos" : tone === "neg" ? "pnl-neg" : tone === "dim" ? "muted" : "";
   const count = n === undefined || n === null ? null : nUnit === undefined ? `n=${n}` : `${n} ${nUnit}`;
   const footer = [count, afterFees ? "after fees" : null].filter((s): s is string => s !== null);
@@ -48,6 +54,11 @@ export function Tile({
         )}
       </span>
       <span className={`stat-value ${cls}`}>{value}</span>
+      {notes.map((line) => (
+        <span key={line} className="stat-note" style={{ fontSize: 11, display: "block" }}>
+          {line}
+        </span>
+      ))}
       {footer.length > 0 && (
         <span className="muted" style={{ fontSize: 10, display: "block" }}>
           {footer.join(" · ")}

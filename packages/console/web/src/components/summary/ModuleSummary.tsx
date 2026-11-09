@@ -1,17 +1,37 @@
-import type { ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
 import type { ModuleSummarySlice, SummaryBreakdown, SummaryTile, SummaryUnit, TradingMode } from "@console/shared";
 import { TESTED_STATUS } from "../../lib/testedStatus";
-import { SortTh, sortRows, useSort } from "../DataTable";
+import { useOpenParam } from "../../pages/Backtest/CardLightbox";
+import { BoxOpen, FliesBoxHost } from "../../pages/Flies/FliesBoxes";
+import { ChoiceGroup } from "../../pages/Flies/FliesFilter";
+import { HelpSection, type CardHelpContent } from "../CardHelp";
+import { Card } from "../DataTable";
+import {
+  FilterGroup,
+  FilterSortButton,
+  FilterSortPanel,
+  FilterSummary,
+  FilterSwitch,
+  SortSection,
+  sortRows,
+  useSortChoice,
+  type SortOption,
+} from "../FilterSort";
+import { Section } from "../Section";
 import { etToday } from "../table/DateRange";
-import { FaceSwitch, Gauge, NetHero, RangeToolbar, TsCard, TsEmpty, WinRateArcs, fmtUsd, fmtUsdPlain, sessionLabel, useFace, useSummaryRange } from "./kit";
+import { Gauge, NetHero, RangeToolbar, TsCard, TsEmpty, WinRateArcs, fmtUsd, fmtUsdPlain, sessionLabel, useFace, useSummaryRange } from "./kit";
 
 /**
  * A module's simplified-view summary: the MEIC summary's pattern over `/api/summary/:module`.
  * The component is shared; WHAT it shows is the module reader's choice (readers/summary/), in the
  * module's own vocabulary. It derives nothing but presentation. Loading, error and empty are
  * three different statements, never a wall of zeros.
+ *
+ * Laid out in the suite's sections (2026-11-07): the window's numbers, then where they came from
+ * (the breakdowns and the arms, each with its ordering behind filter & sort and its long tables in a
+ * lightbox), then the notes. What explains a card sits behind its ?.
  */
 
 /** The page header's scope, as the manifest holds it: the arm / symbol / era dropdowns. */
@@ -57,10 +77,39 @@ export function fmtValue(value: number | null, unit: SummaryUnit): string {
   }
 }
 
-function NetCard({ s, label }: { s: ModuleSummarySlice; label: string }) {
+/** The width a row of `n` cards gives each (fl-w3 four to a row, fl-w4 three, fl-w6 two). */
+export function widthOf(n: number): string {
+  return n >= 4 ? "fl-w3" : n === 3 ? "fl-w4" : "fl-w6";
+}
+
+function netHelp(unit: string | null): CardHelpContent {
+  return {
+    title: "Net P&L",
+    body: (
+      <>
+        <HelpSection title="What is counted">
+          <p>
+            Gross is the trades&apos; result before costs; each cost sits on its own line beneath it, and net is what is left. A cost the module
+            did not record reads n/r, never zero.
+          </p>
+        </HelpSection>
+        {unit && (
+          <HelpSection title="What one trade is here">
+            <p>One trade here is {unit}.</p>
+          </HelpSection>
+        )}
+        <HelpSection title="The figure">
+          <p>Click the big figure to swap the window&apos;s total for net per trade, with its median, average win and loss, worst trade and interval.</p>
+        </HelpSection>
+      </>
+    ),
+  };
+}
+
+function NetCard({ s, label, className }: { s: ModuleSummarySlice; label: string; className: string }) {
   const { hero } = s;
   return (
-    <TsCard title="net p&l" aside={<span className="ts-muted">{label}</span>}>
+    <TsCard title="net p&l" aside={<span className="ts-muted">{label}</span>} help={netHelp(s.unit ?? null)} className={className}>
       <NetHero net={hero.net} trades={hero.trades} shape={hero.shape} />
       <dl className="ts-kv">
         <div>
@@ -97,7 +146,7 @@ function NetCard({ s, label }: { s: ModuleSummarySlice; label: string }) {
 function Tiles({ tiles }: { tiles: SummaryTile[] }) {
   if (tiles.length === 0) return null;
   return (
-    <section className="ts-card">
+    <Card title="the window in figures" collapseKey="ts-tiles" className="lv-12">
       <div className="ts-tiles">
         {tiles.map((t) => {
           const tone = t.signed === false || t.value === null ? "" : t.value >= 0 ? "ts-pos" : "ts-neg";
@@ -110,7 +159,7 @@ function Tiles({ tiles }: { tiles: SummaryTile[] }) {
           );
         })}
       </div>
-    </section>
+    </Card>
   );
 }
 
@@ -119,18 +168,41 @@ function Tiles({ tiles }: { tiles: SummaryTile[] }) {
  *  emphasis follow the face. */
 const BREAKDOWN_FACES = ["per trade", "total"] as const;
 
-function Breakdown({ b }: { b: SummaryBreakdown }) {
-  const [face, , setFace] = useFace(`breakdown:${b.title}`, BREAKDOWN_FACES);
-  if (b.rows.length === 0) return <TsEmpty what={b.title} />;
-  const barOf = (r: SummaryBreakdown["rows"][number]) => (face === "total" ? r.net : (r.avgNet ?? 0));
-  const max = Math.max(...b.rows.map((r) => Math.abs(barOf(r))), 1);
+/** One row of a breakdown, an arm's row too: the arm table is a breakdown whose bucket is the arm. */
+interface BucketRow {
+  name: string;
+  trades: number;
+  winPct: number | null;
+  avgNet: number | null;
+  net: number;
+  retired?: boolean;
+}
+
+/** How many rows a card shows before the rest wait in its lightbox. */
+export const PREVIEW_ROWS = 6;
+
+/** The orderings: the module's own order, then size and name, then net (the old column sort). The
+ *  net key follows the face, as the emphasis does. Nothing here ranks on credit or yield. */
+export function bucketSorts(face: (typeof BREAKDOWN_FACES)[number]): SortOption<BucketRow>[] {
+  return [
+    { id: "read", label: "as the module orders them", hint: "module order", key: () => 0 },
+    { id: "size", label: "trades", hint: "most trades first", key: (r) => -r.trades },
+    { id: "name", label: "name", hint: "A to Z", key: (r) => r.name },
+    { id: "net", label: face === "total" ? "net" : "net per trade", hint: "best first", key: (r) => (face === "total" ? -r.net : r.avgNet === null ? null : -r.avgNet) },
+  ];
+}
+
+const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+
+function BucketTable({ rows, column, face }: { rows: BucketRow[]; column: string; face: (typeof BREAKDOWN_FACES)[number] }) {
+  const barOf = (r: BucketRow) => (face === "total" ? r.net : (r.avgNet ?? 0));
+  const max = Math.max(...rows.map((r) => Math.abs(barOf(r))), 1);
   return (
-    <TsCard title={b.title} aside={<FaceSwitch faces={BREAKDOWN_FACES} face={face} onFace={setFace} />}>
-      <div className="table-scroll">
+    <div className="table-scroll">
       <table className="ts-table">
         <thead>
           <tr>
-            <th>{b.column}</th>
+            <th>{column}</th>
             <th className="num">n</th>
             <th className="num">win</th>
             <th className="num">avg</th>
@@ -139,9 +211,12 @@ function Breakdown({ b }: { b: SummaryBreakdown }) {
           </tr>
         </thead>
         <tbody>
-          {b.rows.map((r) => (
-            <tr key={r.bucket}>
-              <td>{r.bucket}</td>
+          {rows.map((r) => (
+            <tr key={r.name} className={r.retired ? "ts-muted" : undefined}>
+              <td>
+                {r.name}
+                {r.retired ? " (retired)" : ""}
+              </td>
               <td className="num">{r.trades}</td>
               <td className="num">{r.winPct === null ? "n/r" : `${r.winPct.toFixed(0)}%`}</td>
               <td className={`num ${r.avgNet === null ? "" : r.avgNet >= 0 ? "ts-pos" : "ts-neg"}${face === "per trade" ? " ts-strong" : ""}`}>{r.avgNet === null ? "n/r" : fmtUsd(r.avgNet)}</td>
@@ -155,59 +230,103 @@ function Breakdown({ b }: { b: SummaryBreakdown }) {
           ))}
         </tbody>
       </table>
-      </div>
-    </TsCard>
+    </div>
   );
 }
 
-function ByArm({ s, arm }: { s: ModuleSummarySlice; arm?: string | null }) {
-  const sort = useSort();
-  const [face, , setFace] = useFace("breakdown:by arm", BREAKDOWN_FACES);
-  if (s.arms.length === 0) return <TsEmpty what="by arm" />;
-  const shown = (a: ModuleSummarySlice["arms"][number]) => (face === "per trade" ? (a.trades > 0 ? a.net / a.trades : null) : a.net);
-  const arms = sortRows(s.arms, sort, {
-    arm: (a) => a.arm,
-    n: (a) => a.trades,
-    win: (a) => a.winPct,
-    net: (a) => shown(a),
-  });
+/**
+ * One breakdown, or the arms: a short table with the bar per trade or total, its face and its order
+ * behind filter & sort, and the rest of a long table in a lightbox (`?sum-<title>=all`). Retired
+ * arms can be hidden; the summary line says what is on.
+ */
+export function BreakdownCard({ title, column, rows, note, className }: { title: string; column: string; rows: BucketRow[]; note?: string | null; className: string }) {
+  const [face, , setFace] = useFace(`breakdown:${title}`, BREAKDOWN_FACES);
+  const [sort, setSort] = useSortChoice(`ms-${slug(title)}`, "read");
+  const [hideRetired, setHideRetired] = useState(false);
+  const [panel, setPanel] = useState(false);
+  const anchor = useRef<HTMLButtonElement>(null);
+  const lb = useOpenParam(`sum-${slug(title)}`);
+  if (rows.length === 0) return <TsEmpty what={title} className={className} />;
+
+  const sorts = bucketSorts(face);
+  const option = sorts.find((x) => x.id === sort.id) ?? sorts[0];
+  const hasRetired = rows.some((r) => r.retired);
+  const kept = hideRetired ? rows.filter((r) => !r.retired) : rows;
+  const ordered = sortRows(kept, option, sort.reversed);
+  const shown = ordered.slice(0, PREVIEW_ROWS);
+  const changed = (face !== "per trade" ? 1 : 0) + (sort.id !== "read" || sort.reversed ? 1 : 0) + (hideRetired ? 1 : 0);
+  const reset = () => {
+    setFace("per trade");
+    setSort({ id: "read", reversed: false });
+    setHideRetired(false);
+  };
+  const box = {
+    id: "all",
+    kicker: `${title} ›`,
+    title: `${title}: every ${column}`,
+    tabs: [{ id: "all", label: `${ordered.length} ${column === "arm" ? "arms" : "rows"}` }],
+    body: () => <BucketTable rows={ordered} column={column} face={face} />,
+  };
   return (
-    <TsCard
-      title="by arm"
-      aside={
-        <span className="ts-muted">
-          {arm != null && arm !== "" ? `the ${arm} arm` : "every arm in the window"} <FaceSwitch faces={BREAKDOWN_FACES} face={face} onFace={setFace} />
-        </span>
-      }
+    <Card
+      title={title}
+      collapseKey={`ts-${title}`}
+      className={className}
+      help={{
+        title,
+        body: (
+          <>
+            <HelpSection title="What a row is">
+              <p>
+                Each {column} with its settled trades (n), the share that won, the average per trade and the net. The bar follows the figure you
+                choose under filter &amp; sort: per trade by default, since totals favour whichever {column} traded most.
+              </p>
+            </HelpSection>
+            {note && (
+              <HelpSection title="Scope">
+                <p>{note}</p>
+              </HelpSection>
+            )}
+          </>
+        ),
+      }}
+      controls={<FilterSortButton changed={changed} open={panel} onOpen={() => setPanel(!panel)} anchor={anchor} />}
     >
-      <div className="table-scroll">
-      <table className="ts-table">
-        <thead>
-          <tr>
-            <SortTh label="arm" k="arm" sort={sort} />
-            <SortTh label="n" k="n" sort={sort} className="num" />
-            <SortTh label="win" k="win" sort={sort} className="num" />
-            <SortTh label={face === "per trade" ? "net / trade" : "net"} k="net" sort={sort} className="num" />
-          </tr>
-        </thead>
-        <tbody>
-          {arms.map((a) => (
-            <tr key={a.arm} className={a.retired ? "ts-muted" : undefined}>
-              <td>
-                {a.arm}
-                {a.retired ? " (retired)" : ""}
-              </td>
-              <td className="num">{a.trades}</td>
-              <td className="num">{a.winPct === null ? "n/r" : `${a.winPct.toFixed(0)}%`}</td>
-              <td className={`num ${a.net >= 0 ? "ts-pos" : "ts-neg"}`}>{shown(a) === null ? "n/r" : fmtUsd(shown(a)!)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      </div>
-    </TsCard>
+      <FilterSummary
+        parts={[face, `by ${option?.label ?? sort.id}${sort.reversed ? ", reversed" : ""}`, ...(hideRetired ? ["retired hidden"] : [])]}
+        note={`${String(shown.length)} of ${String(ordered.length)} shown`}
+        changed={changed}
+        onOpen={() => setPanel(true)}
+        onReset={reset}
+      />
+      <BucketTable rows={shown} column={column} face={face} />
+      {ordered.length > shown.length && (
+        <div className="pf-mores pf-push">
+          <BoxOpen lb={lb} id="all" hot>
+            all {ordered.length} {column === "arm" ? "arms" : "rows"}
+          </BoxOpen>
+        </div>
+      )}
+      <FilterSortPanel open={panel} onClose={() => setPanel(false)} onReset={reset} anchor={anchor}>
+        <FilterGroup title="figure">
+          <ChoiceGroup label="Figure" value={face} options={BREAKDOWN_FACES.map((f) => ({ id: f, label: f }))} onChange={setFace} />
+        </FilterGroup>
+        {hasRetired && (
+          <FilterGroup title="show">
+            <FilterSwitch label="hide retired arms" description="leave out arms that no longer run" on={hideRetired} onChange={setHideRetired} />
+          </FilterGroup>
+        )}
+        <SortSection sorts={sorts} choice={sort} fallback="read" onChange={setSort} />
+      </FilterSortPanel>
+      <FliesBoxHost lb={lb} boxes={[box]} />
+    </Card>
   );
 }
+
+const asRows = (b: SummaryBreakdown): BucketRow[] => b.rows.map((r) => ({ name: r.bucket, trades: r.trades, winPct: r.winPct, avgNet: r.avgNet, net: r.net }));
+
+const armRows = (s: ModuleSummarySlice): BucketRow[] =>
+  s.arms.map((a) => ({ name: a.arm, trades: a.trades, winPct: a.winPct, avgNet: a.trades > 0 ? a.net / a.trades : null, net: a.net, retired: a.retired }));
 
 /**
  * The line above the numbers: which ledger this is, whether live has traded at all, and what history
@@ -298,6 +417,8 @@ export function ModuleSummary({
       : s.window.label === "day" && s.window.from !== null
         ? `${stale ? "last traded " : ""}${sessionLabel(s.window.from)}`
         : s.window.label;
+  const arm = scope?.arm;
+  const armNote = arm != null && arm !== "" ? `The ${arm} arm only.` : "Every arm in the window.";
   return (
     <div className="ts-root">
       {/* The session first, on its own read, so it never waits on the window's numbers below. */}
@@ -320,42 +441,70 @@ export function ModuleSummary({
             neverLive={s.mode === "live" && s.window.from === null && s.hero.trades === 0 && s.hero.open === 0}
             lastTraded={stale ? s.window.from : null}
           />
-          {s.unit && <p className="ts-muted ts-unit">one trade here is {s.unit}</p>}
           {s.hero.trades === 0 && s.hero.open === 0 ? (
             <p className="ts-empty">no settled trades in this window</p>
           ) : (
-            <>
-              <div className={`ts-row ${s.gauges.length >= 2 ? "ts-row-4" : s.gauges.length === 1 ? "ts-row-3" : "ts-row-2"}`}>
-                <NetCard s={s} label={label} />
-                {s.gauges.map((g) => (
-                  <Gauge key={g.title} title={g.title} rawPct={g.rawPct} min={g.min} max={g.max} caption={g.caption} dollars={g.dollars} />
-                ))}
-                <WinRateArcs daysWon={s.hero.daysWon} days={s.hero.daysWon + s.hero.daysLost} wins={s.hero.wins} trades={s.hero.trades} avgWin={s.hero.shape?.avgWin ?? null} avgLoss={s.hero.shape?.avgLoss ?? null} shape={s.hero.shape ?? null} />
-              </div>
-              <div className="ts-row">
+            <div className="pf-layout">
+              <Section concept="stand" tag="the window" question="How did this window go?">
+                {(() => {
+                  const w = widthOf(s.gauges.length + 2);
+                  return (
+                    <>
+                      <NetCard s={s} label={label} className={w} />
+                      {s.gauges.map((g) => (
+                        <Gauge key={g.title} title={g.title} rawPct={g.rawPct} min={g.min} max={g.max} caption={g.caption} dollars={g.dollars} className={w} />
+                      ))}
+                      <WinRateArcs
+                        daysWon={s.hero.daysWon}
+                        days={s.hero.daysWon + s.hero.daysLost}
+                        wins={s.hero.wins}
+                        trades={s.hero.trades}
+                        avgWin={s.hero.shape?.avgWin ?? null}
+                        avgLoss={s.hero.shape?.avgLoss ?? null}
+                        shape={s.hero.shape ?? null}
+                        className={w}
+                      />
+                    </>
+                  );
+                })()}
                 <Tiles tiles={s.tiles} />
-              </div>
+              </Section>
               {s.breakdowns.length > 0 && (
-                <div className={`ts-row ${s.breakdowns.length >= 3 ? "ts-row-3" : "ts-row-2"}`}>
+                <Section concept="edge" tag="breakdowns" question="Where did the result come from?">
                   {s.breakdowns.map((b) => (
-                    <Breakdown key={b.title} b={b} />
+                    <BreakdownCard key={b.title} title={b.title} column={b.column} rows={asRows(b)} className={s.breakdowns.length >= 3 ? "fl-w4" : "fl-w6"} />
                   ))}
-                </div>
+                </Section>
               )}
-              <div className="ts-row">
-                <ByArm s={s} arm={scope?.arm ?? null} />
-              </div>
-            </>
+              <Section concept="dir" tag="by arm" question="Which arm made it?">
+                <BreakdownCard title="by arm" column="arm" rows={armRows(s)} note={armNote} className="lv-12" />
+              </Section>
+            </div>
           )}
           {s.notes.length > 0 && (
-            <ul className="ts-notes ts-muted">
-              {s.notes.map((n) => (
-                <li key={n}>{n}</li>
-              ))}
-            </ul>
+            <div className="pf-layout">
+              <Section concept="risk" tag="caveats" question="What should I keep in mind about these numbers?">
+                <Card title="notes on this window" collapseKey="ts-notes" flag={`${String(s.notes.length)} note${s.notes.length === 1 ? "" : "s"}`} help={NOTES_HELP}>
+                  <ul className="ts-notes ts-muted">
+                    {s.notes.map((n) => (
+                      <li key={n}>{n}</li>
+                    ))}
+                  </ul>
+                </Card>
+              </Section>
+            </div>
           )}
         </>
       )}
     </div>
   );
 }
+
+const NOTES_HELP: CardHelpContent = {
+  title: "Notes on this window",
+  body: (
+    <HelpSection title="Where they come from">
+      <p>The module&apos;s own statements about how this window was measured: what is missing, what changed part-way, what a figure leaves out.</p>
+    </HelpSection>
+  ),
+};

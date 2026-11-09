@@ -37,7 +37,7 @@ in a window is no verdict.
 
 `intraday` replays `once` at cap 3 for SOXL, TECL and TQQQ on hourly bars cut to 8:00-20:00 ET
 (the broker's, Yahoo's before them with outside-hours highs and lows clipped to 3% beyond the
-bar's open and close) beside the daily replay over the same span, and checks the user's own fills
+bar's open and close) beside the daily replay over the same span, and checks a handful of hand-placed fills
 (a local file, never in the repo) against the broker's 5-minute bars. Reported, never judged.
 """
 

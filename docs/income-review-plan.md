@@ -1,8 +1,10 @@
 # Live and Screener income review — plan
 
+> **Status (2026-11-08): mostly built (agreed 2026-10-20). Decision 6, our own credit-spread list, landed 2026-10-24 (`technicals/creditspreads.py`, CHANGELOG); the individual decisions were not all re-checked on this date, so treat the plan's own "not built" notes as dated.**
+
 Agreed 2026-10-20, from a review of every Live and Screeners tab against one session's evaluation
 of the real account. It records fourteen decisions and the order they land in. It builds on
-[portfolio-guidance-plan.md](portfolio-guidance-plan.md), whose step 4 (screener candidates sized to
+[portfolio-guidance-plan.md](history/portfolio-guidance-plan.md), whose step 4 (screener candidates sized to
 the account) is what most of this revisits.
 
 Everything here stays advice: manage places no order, and the screeners are lists. Only #2 and #3
@@ -81,7 +83,7 @@ do not depend on the study.
 - **Item 15**, `mr-300m` -- the one directional signal that passed its historical confirmation --
   on bullish put spreads on single names, shorts at 0.20, 0.30 and 0.40 delta, held or closed at
   half the credit: **no cell passes.** It did not beat its random-date baselines.
-- **Item 16**, put spreads with no signal on the funds the user trades (GLD, SLV, GDX, GDXJ, SIL,
+- **Item 16**, put spreads with no signal on a liquid metals-fund set (GLD, SLV, GDX, GDXJ, SIL,
   SILJ; BITO for bitcoin, IBIT reported): **no cell passes on any fund.** Closing at half the credit
   did worse than holding on every fund. SILJ's entry quotes almost never clear the leg bars, and SIL
   never makes the tradable universe.

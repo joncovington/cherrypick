@@ -1,8 +1,12 @@
 import { Link } from "react-router-dom";
-import type { ModuleSummarySlice, TradingMode } from "@console/shared";
+import type { ModuleSummarySlice, SuiteFeatures, TradingMode } from "@console/shared";
+import { isModuleVisible } from "../../lib/visibility";
+import { useFeatures } from "../../lib/useFeatures";
 import { StatusLine, useModuleSummary } from "../../components/summary/ModuleSummary";
 import { fmtUsd } from "../../components/summary/kit";
 import { etToday } from "../../components/table/DateRange";
+import { CardHelpButton, HelpSection, type CardHelpContent } from "../../components/CardHelp";
+import { Section } from "../../components/Section";
 
 /**
  * The Experiments page (2026-10-30, docs/console-review-plan.md batch 4): the four paper-only
@@ -25,6 +29,26 @@ const PAGES = [
   ["history", "closed"],
   ["performance", "performance"],
 ] as const;
+
+/** What an experiment is, and what its card holds: the page's own explanation, behind the card's ?. */
+function experimentHelp(what: string): CardHelpContent {
+  return {
+    title: "About this experiment",
+    body: (
+      <>
+        <HelpSection title="What it is">
+          <p>{what}.</p>
+        </HelpSection>
+        <HelpSection title="What the card holds">
+          <p>
+            The paper-only experiments are a card each: the money so far and links into the module's own pages, where what history found
+            is written.
+          </p>
+        </HelpSection>
+      </>
+    ),
+  };
+}
 
 function Figure({ label, value, tone, foot }: { label: string; value: string; tone?: "pos" | "neg"; foot?: string }) {
   return (
@@ -58,8 +82,8 @@ export function ExperimentCard({ id, label, what }: { id: string; label: string;
     <section className="card" data-experiment={id}>
       <div className="card-head">
         <h2>{label}</h2>
+        <CardHelpButton cardTitle={label} help={experimentHelp(what)} />
         <span className="chip">paper</span>
-        <span className="card-asof">{what}</span>
       </div>
       <StatusLine module={id} mode="paper" lastTraded={lastTraded} />
       {all.isError ? (
@@ -92,8 +116,8 @@ function FliesRecord() {
     <section className="card" data-experiment="flies">
       <div className="card-head">
         <h2>Flies</h2>
+        <CardHelpButton cardTitle="Flies" help={experimentHelp("0DTE SPX net-credit butterflies")} />
         <span className="chip">retired</span>
-        <span className="card-asof">0DTE SPX net-credit butterflies</span>
       </div>
       <p className="muted">
         <strong>Retired by the developer in the live config on 2026-10-19; may be reinstated at a later date</strong>{" "}
@@ -108,17 +132,24 @@ function FliesRecord() {
   );
 }
 
+/** The experiments whose module is on: one switched off loses its card with its pages (the rail's rule). */
+export function shownExperiments(f: SuiteFeatures | undefined) {
+  return EXPERIMENTS.filter((e) => isModuleVisible(e.id, f));
+}
+
 export function ExperimentsPage() {
+  const shown = shownExperiments(useFeatures());
   return (
-    <div className="cards cards-wide">
-      <p className="muted" style={{ margin: 0 }}>
-        Paper-only experiments, a card each: what history found and where it is written, the money so far, and links into
-        the module's own pages.
-      </p>
-      {EXPERIMENTS.map((e) => (
-        <ExperimentCard key={e.id} id={e.id} label={e.label} what={e.what} />
-      ))}
-      <FliesRecord />
+    <div className="pf-layout">
+      <Section concept="edge" tag="paper experiments" question="What have the experiments earned?">
+        {shown.length === 0 ? <p className="muted">Every paper experiment is switched off.</p> : null}
+        {shown.map((e) => (
+          <ExperimentCard key={e.id} id={e.id} label={e.label} what={e.what} />
+        ))}
+      </Section>
+      <Section concept="hist" tag="retired" question="What did the retired module leave?">
+        <FliesRecord />
+      </Section>
     </div>
   );
 }

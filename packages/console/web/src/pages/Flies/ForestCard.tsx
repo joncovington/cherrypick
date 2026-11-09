@@ -1,4 +1,4 @@
-import { useId, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { TradingMode } from "@console/shared";
 import { useQuote } from "../../lib/useQuote";
@@ -10,7 +10,11 @@ import { niceTicks } from "../../components/chart/scales";
 import { SpotMarker, HoverReadout } from "../../components/chart/Tooltip";
 import { useHoverX } from "../../components/chart/useHoverX";
 import { useMeasure } from "../../lib/useMeasure";
-import { GridCard, type CardHeight, type CardSpan } from "../../components/grid/GridCard";
+import { Card } from "../../components/DataTable";
+import { HelpSection, type CardHelpContent } from "../../components/CardHelp";
+import { FilterGroup, FilterSortButton, FilterSortPanel, FilterSummary, FilterSwitch } from "../../components/FilterSort";
+import { ChoiceGroup, FliesLayout, TabLink } from "./FliesFilter";
+import { Section } from "../../components/Section";
 import { CHART_GRID, CHART_GRID_STRONG } from "../../components/Charts";
 import { extendFlat, visibleYRange } from "../../components/chart/payoffWindow";
 
@@ -137,6 +141,32 @@ export function floorSentence(c: PayoffCurve): string {
   return `${worst}, ${where}, and ${outside}.`;
 }
 
+const money0 = (w: string) => (Number(w) >= 1000 ? `$${Number(w) / 1000}k` : `$${w}`);
+
+export const FOREST_HELP: CardHelpContent = {
+  title: "Reading the forest",
+  body: (
+    <>
+      <HelpSection title="The curves">
+        <p>
+          One curve per arm: what its book pays at expiry across the price. The dashed lines mark the centres, and the amber line is spot
+          now or, once the day has settled, the settlement print that decided every payoff. A single arm is filled green above zero and red
+          below it. An arm drawn dashed is identical to an earlier one, point for point.
+        </p>
+      </HelpSection>
+      <HelpSection title="The window">
+        <p>
+          The price window is centred on the books' own centres, padded by at least the widest wing, with spot always kept inside; the x
+          width is a minimum. The y range is fitted to what is visible, and the range you pick is a per-side minimum.
+        </p>
+      </HelpSection>
+      <HelpSection title="Structures">
+        <p>On a single arm, each completed fly and each stranded vertical can be drawn on its own, under the book's sum.</p>
+      </HelpSection>
+    </>
+  ),
+};
+
 const X_WIDTHS = ["auto", "50", "100", "500", "1000"] as const;
 const Y_WIDTHS = ["auto", "250", "500", "1000", "5000"] as const;
 
@@ -167,8 +197,6 @@ export function ForestCard({
   variant = "full",
   height = 320,
   to,
-  span = 8,
-  h = 304,
 }: {
   mode: TradingMode;
   filter: FliesFilter;
@@ -177,14 +205,13 @@ export function ForestCard({
   height?: number;
   /** The page that holds this payoff's detail (the hero links to the books). */
   to?: string;
-  /** The hero's cell: the session tab's 8×304 unless a page places it elsewhere. */
-  span?: CardSpan;
-  h?: CardHeight;
 }) {
   const { data, isLoading } = useForest(mode, filter);
   const [xwidth, setXwidth] = useState<(typeof X_WIDTHS)[number]>("auto");
   const [ywidth, setYwidth] = useState<(typeof Y_WIDTHS)[number]>("auto");
   const [showParts, setShowParts] = useState(true);
+  const [panel, setPanel] = useState(false);
+  const anchor = useRef<HTMLButtonElement>(null);
   // The chart is drawn at its container's width rather than at a fixed 1150 that scales: at a
   // third of the page the 9px axis labels would render at 3px, and `niceTicks` would be spacing
   // ticks for a width this chart does not have. 1150 remains the fallback, which is what a server
@@ -508,19 +535,11 @@ export function ForestCard({
     const only = shown.length === 1 ? shown[0] : undefined;
     const holds = shown.filter((a) => a.curve.floor.floorHolds).length;
     return (
-      <GridCard
-        label={`payoff at expiry${data?.tradeDate != null ? ` — ${data.tradeDate}` : ""}`}
-        span={span}
-        h={h}
-        to={to}
-        toLabel="the books behind this payoff"
-        foot={
-          only !== undefined
-            ? `${only.arm} — ${floorSentence(only.curve)}`
-            : shown.length === 0
-              ? "nothing open on this session"
-              : `${String(shown.length)} arms · ${String(holds)} whose floor holds everywhere`
-        }
+      <Card
+        title="payoff at expiry"
+        className="fl-w8"
+        help={FOREST_HELP}
+        controls={data?.tradeDate != null ? <span className="card-asof">{data.tradeDate}</span> : null}
       >
         {isLoading ? (
           <span className="skeleton skeleton-text" style={{ width: "50%" }} />
@@ -530,47 +549,73 @@ export function ForestCard({
           <>
             {chart}
             {legendRow}
+            <p className="muted fl-state">
+              {only !== undefined
+                ? `${only.arm} — ${floorSentence(only.curve)}`
+                : `${String(shown.length)} arms · ${String(holds)} whose floor holds everywhere`}
+            </p>
           </>
         )}
-      </GridCard>
+        {to !== undefined ? (
+          <div className="pf-mores pf-push">
+            <TabLink to={to}>the forest</TabLink>
+          </div>
+        ) : null}
+      </Card>
     );
   }
 
+  const changed = (xwidth !== "auto" ? 1 : 0) + (ywidth !== "auto" ? 1 : 0) + (showParts ? 0 : 1);
+  const reset = () => {
+    setXwidth("auto");
+    setYwidth("auto");
+    setShowParts(true);
+  };
   return (
-    <section className="card">
-      <div className="panel-head-row">
-        <h2>Payoff at expiry — the profit forest{data?.tradeDate !== null && data !== undefined ? ` (${data.tradeDate})` : ""}</h2>
-        <label className="muted lbl">
-          x width{" "}
-          <select className="text-input" value={xwidth} onChange={(e) => setXwidth(e.target.value as (typeof X_WIDTHS)[number])}>
-            {X_WIDTHS.map((w) => (
-              <option key={w} value={w}>{w}</option>
-            ))}
-          </select>
-        </label>
-        <label className="muted lbl">
-          y range{" "}
-          <select className="text-input" value={ywidth} onChange={(e) => setYwidth(e.target.value as (typeof Y_WIDTHS)[number])}>
-            {Y_WIDTHS.map((w) => (
-              <option key={w} value={w}>{w === "auto" ? "auto" : `$${Number(w) >= 1000 ? `${Number(w) / 1000}k` : w}`}</option>
-            ))}
-          </select>
-        </label>
-        <label className="muted lbl" title="each fly and each stranded vertical on its own, under the book sum (single arm only)">
-          <input type="checkbox" checked={showParts} onChange={(e) => setShowParts(e.target.checked)} /> structures
-        </label>
-      </div>
-      {isLoading ? (
-        <span className="skeleton skeleton-text" style={{ width: "50%" }} />
-      ) : shown.length === 0 ? (
-        <p className="muted">no positions on this day</p>
-      ) : (
-        <>
-          {chart}
-          {legendRow}
-          {sentences}
-        </>
-      )}
-    </section>
+    <FliesLayout>
+      <Section concept="dir" tag="payoff" question="What does each arm pay at expiry?">
+        <Card
+          title={`the profit forest${data?.tradeDate !== null && data !== undefined ? ` — ${data.tradeDate}` : ""}`}
+          help={FOREST_HELP}
+          controls={<FilterSortButton changed={changed} open={panel} onOpen={() => setPanel(!panel)} anchor={anchor} />}
+        >
+          <FilterSummary
+            parts={[`x width ${xwidth}`, `y range ${ywidth === "auto" ? "auto" : money0(ywidth)}`, shown.length === 1 ? (showParts ? "structures shown" : "structures hidden") : "structures: single arm only"]}
+            changed={changed}
+            onOpen={() => setPanel(true)}
+            onReset={reset}
+          />
+          {isLoading ? (
+            <span className="skeleton skeleton-text" style={{ width: "50%" }} />
+          ) : shown.length === 0 ? (
+            <p className="muted">no positions on this day</p>
+          ) : (
+            <>
+              {chart}
+              {legendRow}
+              {sentences}
+            </>
+          )}
+        </Card>
+        <FilterSortPanel open={panel} onClose={() => setPanel(false)} onReset={reset} anchor={anchor}>
+          <FilterGroup title="x width" note="the price window; spot always stays inside">
+            <ChoiceGroup label="x width" value={xwidth} options={X_WIDTHS.map((w) => ({ id: w, label: w }))} onChange={setXwidth} />
+          </FilterGroup>
+          <FilterGroup title="y range" note="a per-side minimum, in dollars">
+            <ChoiceGroup label="y range" value={ywidth} options={Y_WIDTHS.map((w) => ({ id: w, label: w === "auto" ? "auto" : money0(w) }))} onChange={setYwidth} />
+          </FilterGroup>
+          <FilterGroup title="structures">
+            <FilterSwitch
+              label="Show tents and stranded verticals"
+              description="Each fly and each stranded vertical on its own, under the book sum"
+              on={showParts}
+              disabled={shown.length !== 1}
+              title={shown.length === 1 ? undefined : "Single arm only: several arms' parts on top of each other would say nothing"}
+              onChange={setShowParts}
+            />
+          </FilterGroup>
+        </FilterSortPanel>
+      </Section>
+    </FliesLayout>
   );
 }

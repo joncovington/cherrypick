@@ -1,5 +1,5 @@
-"""Item 48's arm registry (scripts/meic_stop_grid_item48.py): every arm is the live rule with its stop
-changed and nothing else. Invented registries only."""
+"""Item 48's arm registry (packages/backtest/scripts/meic_stop_grid_item48.py): every arm is the live rule
+with its stop changed and nothing else. Invented registries only."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-SCRIPTS = Path(__file__).resolve().parents[3] / "scripts"
+SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 _spec = importlib.util.spec_from_file_location("meic_stop_grid_item48", SCRIPTS / "meic_stop_grid_item48.py")
 st = importlib.util.module_from_spec(_spec)

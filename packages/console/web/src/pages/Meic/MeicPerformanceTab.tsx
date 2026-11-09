@@ -1,14 +1,18 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { TradingMode } from "@console/shared";
-import { Card, DataCard, PnlCell, SortTh, fmtMoney, fmtNum, fmtPct, sortRows, useSort } from "../../components/DataTable";
+import { Card, PnlCell, SortTh, fmtMoney, fmtNum, fmtPct, sortRows, useSort } from "../../components/DataTable";
+import { HelpSection, HelpWarn, type CardHelpContent } from "../../components/CardHelp";
 import { SeriesLegend, SERIES_COLORS } from "../../components/Charts";
 import { TimeLineChart } from "../../components/chart/TimeLineChart";
 import { TimeBarChart } from "../../components/chart/TimeBarChart";
 import { TabStrip } from "../../components/ScopeBar";
+import { Section } from "../../components/Section";
 import { powerNote, WithheldNote } from "../../lib/power";
-import { DailyRiskTiles } from "../../components/performance/DailyRiskTiles";
+import { DailyRiskTiles, dailyRiskFlag, dailyRiskNote } from "../../components/performance/DailyRiskTiles";
 import { tokenAlpha } from "../../components/chart/cssvars";
+import { useOpenParam } from "../Backtest/CardLightbox";
+import { BoxOpen, FliesBoxHost, type FliesBox } from "../Flies/FliesBoxes";
 
 interface BreakdownRow {
   bucket: string;
@@ -75,6 +79,137 @@ const ARM_SORTS = {
   dd: (p: ArmRow) => p.maxDrawdown,
 };
 
+const ARMS_HELP: CardHelpContent = {
+  title: "Arm comparison",
+  body: (
+    <HelpSection title="Every arm">
+      <p>
+        Every arm, ranked by net: the variance test&apos;s payoff. A header click re-ranks, and a third click returns to the server&apos;s order. Max
+        DD sorts by the drawdown&apos;s size, deepest first.
+      </p>
+    </HelpSection>
+  ),
+};
+
+/* Cumulative NET, not "equity on a $100k base": the base is a display constant, not a bankroll these
+   arms trade (an arm can take hundreds of one-lot entries in a session, a sampling stream rather than
+   a book). The drawdown is real and stays. */
+const CUMULATIVE_HELP: CardHelpContent = {
+  title: "Cumulative net and drawdown",
+  body: (
+    <HelpWarn title="1-lot samples, not a sized book">
+      <p>
+        The base under the curve is a drawing constant. These arms take one-lot entries and do not compound, so the line is cumulative net, not
+        equity. The drawdown below it is real.
+      </p>
+    </HelpWarn>
+  ),
+};
+
+const PERIOD_HELP: CardHelpContent = {
+  title: "Per period",
+  body: (
+    <HelpSection title="Bars and line">
+      <p>Each period&apos;s net as a bar, the cumulative as the line. The trends open the same periods&apos; win rate, expectancy, average win and loss, and trade count.</p>
+    </HelpSection>
+  ),
+};
+
+const STUDY_HELP: CardHelpContent = {
+  title: "Study arms",
+  body: (
+    <HelpWarn title="Wider than the page's scope">
+      <p>Cumulative net per arm over every arm-tagged trade. It ignores the symbol and arm picked in the header, but not the era.</p>
+    </HelpWarn>
+  ),
+};
+
+const BUCKET_HELP: CardHelpContent = {
+  title: "Breakdowns",
+  body: (
+    <>
+      <HelpSection title="What was known at entry">
+        <p>Win rate and average net by the session&apos;s quality and by the IV-rank band at entry. A breakdown too thin to read is withheld and says why.</p>
+      </HelpSection>
+      <HelpSection title="Regime coverage">
+        <p>How many trades carry each regime tag. Under half is shown in red; a degenerate dimension has one value for nearly every trade, so it cannot split them.</p>
+      </HelpSection>
+    </>
+  ),
+};
+
+function BucketTable({ rows, head }: { rows: BreakdownRow[]; head: string }) {
+  const note = powerNote(rows);
+  if (note !== null) return <WithheldNote note={note} />;
+  return (
+    <div className="table-scroll">
+      <table className="data-table data-table-labelled num-from-1">
+        <thead>
+          <tr>
+            <th>{head}</th>
+            <th>trades</th>
+            <th>sessions</th>
+            <th>win %</th>
+            <th>avg net</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.bucket}>
+              <td>{r.bucket}</td>
+              <td>{r.trades}</td>
+              <td className="muted">{r.sessions}</td>
+              <td>{fmtPct(r.winPct)}</td>
+              <td>{r.avgNet !== null ? <PnlCell v={r.avgNet} /> : "—"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function Trends({ periods }: { periods: Performance["periods"] }) {
+  return (
+    <div className="pf-row">
+      <div className="card">
+        <h3 className="card-subhead">win rate</h3>
+        <TimeLineChart
+          height={150}
+          yFormat={(v) => `${v.toFixed(0)}%`}
+          series={[{ label: "win %", color: "var(--pos)", points: periods.filter((p) => p.winRatePct !== null).map((p) => ({ x: p.period, y: p.winRatePct! })) }]}
+        />
+      </div>
+      <div className="card">
+        <h3 className="card-subhead">expectancy per trade</h3>
+        <TimeLineChart
+          height={150}
+          series={[{ label: "expectancy", color: "var(--amber-line)", points: periods.filter((p) => p.expectancy !== null).map((p) => ({ x: p.period, y: p.expectancy! })) }]}
+        />
+      </div>
+      <div className="card">
+        <h3 className="card-subhead">average win and loss</h3>
+        <TimeLineChart
+          height={150}
+          series={[
+            { label: "avg win", color: "var(--pos)", points: periods.filter((p) => p.avgWin !== null).map((p) => ({ x: p.period, y: p.avgWin! })) },
+            { label: "avg loss", color: "var(--neg)", points: periods.filter((p) => p.avgLoss !== null).map((p) => ({ x: p.period, y: p.avgLoss! })) },
+          ]}
+        />
+        <SeriesLegend items={[{ label: "avg win", color: "var(--pos)" }, { label: "avg loss", color: "var(--neg)" }]} />
+      </div>
+      <div className="card">
+        <h3 className="card-subhead">trades</h3>
+        <TimeBarChart height={150} yFormat={(v) => v.toFixed(0)} bars={periods.map((p) => ({ x: p.period, y: p.trades }))} />
+      </div>
+    </div>
+  );
+}
+
+function skeleton() {
+  return <span className="skeleton skeleton-text" style={{ width: "40%" }} />;
+}
+
 export function MeicPerformanceTab({
   mode,
   symbol,
@@ -100,235 +235,189 @@ export function MeicPerformanceTab({
     },
     refetchInterval: 60_000,
   });
+  const lb = useOpenParam("mperf");
 
   // The server ranks the arms by net; a header click re-ranks, and a third click returns to that.
   const armSort = useSort();
   const risk = data?.risk;
   const equity = data?.equity ?? [];
+  const periods = data?.periods ?? [];
+
+  const boxes: FliesBox[] = [
+    {
+      id: "trends",
+      kicker: `performance › ${granularity}`,
+      title: "Trends by period",
+      tabs: [{ id: "all", label: "trends" }],
+      body: () => <Trends periods={periods} />,
+    },
+  ];
 
   return (
-    <div className="cards cards-wide">
-      <Card title="Risk-adjusted metrics ($100k bankroll, 252-day annualization)" updatedAt={dataUpdatedAt}>
-        <DailyRiskTiles risk={risk} maxDrawdown={equity.length > 0 ? Math.max(...equity.map((e) => e.drawdown), 0) : null} />
-      </Card>
+    <div className="pf-layout">
+      <Section concept="hist" tag="side by side" question="How do the arms compare, risk-adjusted?">
+        <Card
+          title="risk-adjusted ratios"
+          className="lv-12"
+          collapseKey="meic-perf-risk"
+          updatedAt={dataUpdatedAt}
+          help={{ title: "Risk-adjusted ratios", body: dailyRiskNote(risk) }}
+          flag={dailyRiskFlag(risk)}
+        >
+          <DailyRiskTiles risk={risk} maxDrawdown={equity.length > 0 ? Math.max(...equity.map((e) => e.drawdown), 0) : null} />
+        </Card>
 
-      <Card title="Arm comparison (every arm, ranked by net — the variance-test payoff)" updatedAt={dataUpdatedAt}>
-        <div className="table-scroll">
-          <table className="data-table num-from-1">
-            <thead>
-              <tr>
-                <SortTh label="arm" k="arm" sort={armSort} />
-                <SortTh label="trades" k="trades" sort={armSort} />
-                <SortTh label="sessions" k="sessions" sort={armSort} />
-                <SortTh label="gross" k="gross" sort={armSort} />
-                <SortTh label="fees" k="fees" sort={armSort} />
-                <SortTh label="net" k="net" sort={armSort} />
-                <SortTh label="win %" k="win" sort={armSort} />
-                <SortTh label="expectancy" k="expectancy" sort={armSort} />
-                <SortTh label="PF" k="pf" sort={armSort} />
-                <SortTh label="max DD" k="dd" sort={armSort} title="sorts by the drawdown's size: deepest first" />
-              </tr>
-            </thead>
-            <tbody>
-              {isLoading ? (
-                <tr><td colSpan={10}><span className="skeleton skeleton-text" style={{ width: "60%" }} /></td></tr>
-              ) : data?.arms.length === 0 ? (
-                <tr><td colSpan={10} className="muted">no arm-tagged trades (this ledger has no arm column)</td></tr>
-              ) : (
-                sortRows(data?.arms ?? [], armSort, ARM_SORTS).map((p) => (
-                  <tr key={p.arm}>
-                    <td>{p.arm}</td>
-                    <td>{p.trades}</td>
-                    <td className="muted">{p.sessions}</td>
-                    <td>{fmtMoney(p.grossPnl)}</td>
-                    <td className="pnl-neg">{fmtMoney(p.fees)}</td>
-                    <td><PnlCell v={p.netPnl} /></td>
-                    <td>{fmtPct(p.winRatePct)}</td>
-                    <td>{p.expectancy !== null ? fmtMoney(p.expectancy) : "—"}</td>
-                    <td>{p.profitFactor !== null ? p.profitFactor.toFixed(2) : "—"}</td>
-                    <td className="pnl-neg">{fmtMoney(-p.maxDrawdown)}</td>
+        <Card title="arm comparison" className="lv-12" collapseKey="meic-perf-arms" updatedAt={dataUpdatedAt} help={ARMS_HELP}>
+          <div className="table-scroll">
+            <table className="data-table num-from-1">
+              <thead>
+                <tr>
+                  <SortTh label="arm" k="arm" sort={armSort} />
+                  <SortTh label="trades" k="trades" sort={armSort} />
+                  <SortTh label="sessions" k="sessions" sort={armSort} />
+                  <SortTh label="gross" k="gross" sort={armSort} />
+                  <SortTh label="fees" k="fees" sort={armSort} />
+                  <SortTh label="net" k="net" sort={armSort} />
+                  <SortTh label="win %" k="win" sort={armSort} />
+                  <SortTh label="expectancy" k="expectancy" sort={armSort} />
+                  <SortTh label="PF" k="pf" sort={armSort} />
+                  <SortTh label="max DD" k="dd" sort={armSort} title="sorts by the drawdown's size: deepest first" />
+                </tr>
+              </thead>
+              <tbody>
+                {isLoading ? (
+                  <tr>
+                    <td colSpan={10}>{skeleton()}</td>
                   </tr>
-                ))
+                ) : data?.arms.length === 0 ? (
+                  <tr>
+                    <td colSpan={10} className="muted">
+                      no arm-tagged trades (this ledger has no arm column)
+                    </td>
+                  </tr>
+                ) : (
+                  sortRows(data?.arms ?? [], armSort, ARM_SORTS).map((p) => (
+                    <tr key={p.arm}>
+                      <td>{p.arm}</td>
+                      <td>{p.trades}</td>
+                      <td className="muted">{p.sessions}</td>
+                      <td>{fmtMoney(p.grossPnl)}</td>
+                      <td className="pnl-neg">{fmtMoney(-p.fees)}</td>
+                      <td>
+                        <PnlCell v={p.netPnl} />
+                      </td>
+                      <td>{fmtPct(p.winRatePct)}</td>
+                      <td>{p.expectancy !== null ? fmtMoney(p.expectancy) : "—"}</td>
+                      <td>{p.profitFactor !== null ? p.profitFactor.toFixed(2) : "—"}</td>
+                      <td className="pnl-neg">{fmtMoney(-p.maxDrawdown)}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      </Section>
+
+      <Section concept="hist" tag="by period" question="How did it build up, period by period?">
+        <Card title="cumulative net and drawdown" collapseKey="meic-perf-cumulative" updatedAt={dataUpdatedAt} help={CUMULATIVE_HELP} flag="1-lot samples">
+          {isLoading ? (
+            skeleton()
+          ) : (
+            <>
+              <TimeLineChart series={[{ label: "cumulative", color: "var(--pos)", points: equity.map((e) => ({ x: e.date, y: e.equity })) }]} />
+              <TimeLineChart
+                height={120}
+                series={[{ label: "drawdown", color: "var(--neg)", fill: tokenAlpha("--neg", 0.2), points: equity.map((e) => ({ x: e.date, y: -e.drawdown })) }]}
+              />
+              <SeriesLegend items={[{ label: "cumulative", color: "var(--pos)" }, { label: "underwater", color: "var(--neg)" }]} />
+            </>
+          )}
+        </Card>
+
+        <Card
+          title="per period"
+          collapseKey="meic-perf-periods"
+          updatedAt={dataUpdatedAt}
+          help={PERIOD_HELP}
+          controls={<TabStrip tabs={GRANULARITIES} value={granularity} onChange={setGranularity} />}
+        >
+          {isLoading ? (
+            skeleton()
+          ) : (
+            <>
+              <TimeBarChart bars={periods.map((p) => ({ x: p.period, y: p.netPnl }))} overlay={periods.map((p) => ({ x: p.period, y: p.cumulative }))} />
+              <SeriesLegend items={[{ label: "period net", color: "var(--pos)" }, { label: "cumulative", color: "var(--accent)" }]} />
+              {periods.length > 0 && (
+                <div className="pf-mores pf-push">
+                  <BoxOpen lb={lb} id="trends">
+                    win rate, expectancy, wins and losses, trades
+                  </BoxOpen>
+                </div>
               )}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+            </>
+          )}
+        </Card>
 
-      {/* Labelled as cumulative NET, not "equity on a $100k base". The base is a display constant,
-          not a bankroll these arms trade: `open` and `width-5` each took 265 one-lot entries in a
-          single session, which is a sampling stream rather than a book. Calling the line equity
-          implies position sizing and compounding this experiment deliberately does not do, and it
-          is the most authoritative-looking chart on the page. The drawdown is real and stays. */}
-      <Card title="Cumulative net P&L and drawdown (1-lot samples, not a sized book)" updatedAt={dataUpdatedAt}>
-        {isLoading ? (
-          <span className="skeleton skeleton-text" style={{ width: "40%" }} />
-        ) : (
-          <>
-            <TimeLineChart
-              series={[{ label: "equity", color: "var(--pos)", points: equity.map((e) => ({ x: e.date, y: e.equity })) }]}
-            />
-            <TimeLineChart
-              height={120}
-              series={[
-                {
-                  label: "drawdown",
-                  color: "var(--neg)",
-                  fill: tokenAlpha("--neg", 0.2),
-                  points: equity.map((e) => ({ x: e.date, y: -e.drawdown })),
-                },
-              ]}
-            />
-            <SeriesLegend items={[{ label: "equity", color: "var(--pos)" }, { label: "underwater", color: "var(--neg)" }]} />
-          </>
-        )}
-      </Card>
+        <Card title="study arms" className="lv-12" collapseKey="meic-perf-study" updatedAt={dataUpdatedAt} help={STUDY_HELP} flag="ignores the header's scope">
+          {isLoading ? (
+            skeleton()
+          ) : (data?.studyArms.length ?? 0) === 0 ? (
+            <p className="muted">no arm-tagged history</p>
+          ) : (
+            <>
+              <TimeLineChart
+                series={(data?.studyArms ?? []).map((a, i) => ({
+                  label: a.arm,
+                  color: SERIES_COLORS[i % SERIES_COLORS.length],
+                  points: a.points.map((p) => ({ x: p.date, y: p.cumulative })),
+                }))}
+              />
+              <SeriesLegend items={(data?.studyArms ?? []).map((a, i) => ({ label: a.arm, color: SERIES_COLORS[i % SERIES_COLORS.length]! }))} />
+            </>
+          )}
+        </Card>
+      </Section>
 
-      <Card
-        title="Per-period performance"
-        updatedAt={dataUpdatedAt}
-        controls={<TabStrip tabs={GRANULARITIES} value={granularity} onChange={setGranularity} />}
-      >
-        {isLoading ? (
-          <span className="skeleton skeleton-text" style={{ width: "40%" }} />
-        ) : (
-          <>
-            <TimeBarChart
-              bars={(data?.periods ?? []).map((p) => ({ x: p.period, y: p.netPnl }))}
-              overlay={(data?.periods ?? []).map((p) => ({ x: p.period, y: p.cumulative }))}
-            />
-            <SeriesLegend items={[{ label: "period net", color: "var(--pos)" }, { label: "cumulative", color: "var(--accent)" }]} />
-            <div className="cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(23rem, 100%), 1fr))", marginTop: "0.8rem" }}>
-              <div>
-                <h2>win rate trend</h2>
-                <TimeLineChart
-                  height={130}
-                  yFormat={(v) => `${v.toFixed(0)}%`}
-                  series={[{ label: "win %", color: "var(--pos)", points: (data?.periods ?? []).filter((p) => p.winRatePct !== null).map((p) => ({ x: p.period, y: p.winRatePct! })) }]}
-                />
-              </div>
-              <div>
-                <h2>expectancy per trade</h2>
-                <TimeLineChart
-                  height={130}
-                  series={[{ label: "expectancy", color: "var(--amber-line)", points: (data?.periods ?? []).filter((p) => p.expectancy !== null).map((p) => ({ x: p.period, y: p.expectancy! })) }]}
-                />
-              </div>
-              <div>
-                <h2>avg win vs avg loss</h2>
-                <TimeLineChart
-                  height={130}
-                  series={[
-                    { label: "avg win", color: "var(--pos)", points: (data?.periods ?? []).filter((p) => p.avgWin !== null).map((p) => ({ x: p.period, y: p.avgWin! })) },
-                    { label: "avg loss", color: "var(--neg)", points: (data?.periods ?? []).filter((p) => p.avgLoss !== null).map((p) => ({ x: p.period, y: p.avgLoss! })) },
-                  ]}
-                />
-              </div>
-              <div>
-                <h2>trade count</h2>
-                <TimeBarChart height={130} yFormat={(v) => v.toFixed(0)} bars={(data?.periods ?? []).map((p) => ({ x: p.period, y: p.trades }))} />
-              </div>
+      <Section concept="dir" tag="what shaped it" question="When does it do better?">
+        <Card title="by session quality" className="lv-4" collapseKey="meic-perf-session" updatedAt={dataUpdatedAt} help={BUCKET_HELP}>
+          {isLoading ? skeleton() : <BucketTable rows={data?.bySession ?? []} head="session" />}
+        </Card>
+        <Card title="by IV-rank band" className="lv-4" collapseKey="meic-perf-ivr" updatedAt={dataUpdatedAt} help={BUCKET_HELP}>
+          {isLoading ? skeleton() : <BucketTable rows={data?.byIvRank ?? []} head="IV rank" />}
+        </Card>
+        <Card title="regime coverage" className="lv-4" collapseKey="meic-perf-coverage" updatedAt={dataUpdatedAt} help={BUCKET_HELP}>
+          {isLoading ? (
+            skeleton()
+          ) : (
+            <div className="table-scroll">
+              <table className="data-table data-table-labelled num-from-1">
+                <thead>
+                  <tr>
+                    <th>dimension</th>
+                    <th>tagged</th>
+                    <th>untagged</th>
+                    <th>coverage</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(data?.regimeCoverage ?? []).map((r) => (
+                    <tr key={r.dimension}>
+                      <td>
+                        {r.dimension} {r.degenerate && <span className="chain-badge chain-badge-short">degenerate</span>}
+                      </td>
+                      <td>{r.tagged}</td>
+                      <td className="muted">{r.untagged}</td>
+                      <td className={r.coveragePct < 50 ? "pnl-neg" : ""}>{fmtNum(r.coveragePct, 0)}%</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-          </>
-        )}
-      </Card>
-
-      <Card title="Study arms — cumulative net per arm (ignores the symbol and arm scope, not the era)" updatedAt={dataUpdatedAt}>
-        {isLoading ? (
-          <span className="skeleton skeleton-text" style={{ width: "40%" }} />
-        ) : (data?.studyArms.length ?? 0) === 0 ? (
-          <p className="muted">no arm-tagged history</p>
-        ) : (
-          <>
-            <TimeLineChart
-              series={(data?.studyArms ?? []).map((a, i) => ({
-                label: a.arm,
-                color: SERIES_COLORS[i % SERIES_COLORS.length],
-                points: a.points.map((p) => ({ x: p.date, y: p.cumulative })),
-              }))}
-            />
-            <SeriesLegend
-              items={(data?.studyArms ?? []).map((a, i) => ({ label: a.arm, color: SERIES_COLORS[i % SERIES_COLORS.length]! }))}
-            />
-          </>
-        )}
-      </Card>
-
-      <div className="cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(23rem, 100%), 1fr))" }}>
-        {powerNote(data?.bySession ?? []) !== null ? (
-          <section className="card">
-            <h2>Win rate by session quality</h2>
-            <WithheldNote note={powerNote(data?.bySession ?? [])!} />
-          </section>
-        ) : (
-        <DataCard
-          title="Win rate by session quality"
-          headers={["session", "trades", "sessions", "win %", "avg net"]}
-          numFrom={1}
-          tableClass="data-table-labelled"
-          loading={isLoading}
-          rowCount={data?.bySession.length ?? 0}
-          updatedAt={dataUpdatedAt}
-        >
-          {data?.bySession.map((r) => (
-            <tr key={r.bucket}>
-              <td>{r.bucket}</td>
-              <td>{r.trades}</td>
-              <td className="muted">{r.sessions}</td>
-              <td>{fmtPct(r.winPct)}</td>
-              <td>{r.avgNet !== null ? <PnlCell v={r.avgNet} /> : "—"}</td>
-            </tr>
-          ))}
-        </DataCard>
-        )}
-
-        {powerNote(data?.byIvRank ?? []) !== null ? (
-          <section className="card">
-            <h2>Avg P&L by IV-rank band</h2>
-            <WithheldNote note={powerNote(data?.byIvRank ?? [])!} />
-          </section>
-        ) : (
-        <DataCard
-          title="Avg P&L by IV-rank band"
-          headers={["IV rank", "trades", "sessions", "win %", "avg net"]}
-          numFrom={1}
-          tableClass="data-table-labelled"
-          loading={isLoading}
-          rowCount={data?.byIvRank.length ?? 0}
-          updatedAt={dataUpdatedAt}
-        >
-          {data?.byIvRank.map((r) => (
-            <tr key={r.bucket}>
-              <td>{r.bucket}</td>
-              <td>{r.trades}</td>
-              <td className="muted">{r.sessions}</td>
-              <td>{fmtPct(r.winPct)}</td>
-              <td>{r.avgNet !== null ? <PnlCell v={r.avgNet} /> : "—"}</td>
-            </tr>
-          ))}
-        </DataCard>
-        )}
-
-        <DataCard
-          title="Regime coverage"
-          headers={["dimension", "tagged", "untagged", "coverage", ""]}
-          numFrom={1}
-          tableClass="data-table-labelled"
-          loading={isLoading}
-          rowCount={data?.regimeCoverage.length ?? 0}
-          updatedAt={dataUpdatedAt}
-        >
-          {data?.regimeCoverage.map((r) => (
-            <tr key={r.dimension}>
-              <td>{r.dimension}</td>
-              <td>{r.tagged}</td>
-              <td className="muted">{r.untagged}</td>
-              <td className={r.coveragePct < 50 ? "pnl-neg" : ""}>{fmtNum(r.coveragePct, 0)}%</td>
-              <td>{r.degenerate && <span className="chain-badge chain-badge-short">degenerate</span>}</td>
-            </tr>
-          ))}
-        </DataCard>
-      </div>
+          )}
+        </Card>
+      </Section>
+      <FliesBoxHost lb={lb} boxes={boxes} />
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { Fragment, useState } from "react";
+import { Fragment, useRef, useState, type ReactNode } from "react";
 import type {
   RegimeArm,
   RegimeCell,
@@ -11,6 +11,11 @@ import type {
 } from "@console/shared";
 import { useRegimeCuts } from "../lib/api";
 import { Card, PnlCell, SkeletonRows, SortTh, fmtMoney, sortRows, useSort } from "./DataTable";
+import { HelpSection, HelpWarn, type CardHelpContent } from "./CardHelp";
+import { FilterGroup, FilterSortButton, FilterSortPanel, FilterSummary } from "./FilterSort";
+import { Section } from "./Section";
+import { useOpenParam } from "../pages/Backtest/CardLightbox";
+import { BoxOpen, FliesBoxHost, type FliesBox, type OpenParam } from "../pages/Flies/FliesBoxes";
 
 /**
  * The regime-cuts slide (2026-09-19): the module's own nightly artifact, one table per regime
@@ -131,10 +136,9 @@ function crossAxis(tab: RegimeCrossTab, i: number): string[] {
 
 const cellRate = (c: RegimeCrossCell): number | null => c.completionRate ?? c.winRate;
 
-export function CrossTabGrid({ tab, thinBelowSessions }: { tab: RegimeCrossTab; thinBelowSessions: number | null }) {
+export function CrossTabGrid({ tab }: { tab: RegimeCrossTab }) {
   const rows = crossAxis(tab, 0);
   const cols = crossAxis(tab, 1);
-  const rateLabel = tab.arms.some((b) => b.cells.some((c) => c.completionRate !== null)) ? "completion" : "win";
   return (
     <>
       <div className="regime-grid-arms">
@@ -191,14 +195,34 @@ export function CrossTabGrid({ tab, thinBelowSessions }: { tab: RegimeCrossTab; 
           );
         })}
       </div>
-      <p className="muted" style={{ fontSize: 11, marginTop: "0.5rem", marginBottom: 0 }}>
-        Colour is {rateLabel} rate (darker = higher); the cell prints sessions and {rateLabel} %. Rows are{" "}
-        {tab.dims[0]}, columns {tab.dims[1]}. A grey cell is one the writer flagged thin (fewer than{" "}
-        {thinBelowSessions ?? "the writer's floor of"} sessions); <em>fragile</em> and <em>±n</em> (sign changes over
-        prior snapshots) are the writer's stamps. Hover for trades, completed, win and avg.
-      </p>
     </>
   );
+}
+
+/** The cross-tab card's ?: how to read the grid, with the read-sessions-first warning leading. */
+export function crossTabHelp(tab: RegimeCrossTab, thinBelowSessions: number | null): CardHelpContent {
+  const rateLabel = tab.arms.some((b) => b.cells.some((c) => c.completionRate !== null)) ? "completion" : "win";
+  return {
+    title: `By ${tab.dims.join(" × ")}`,
+    body: (
+      <>
+        <HelpWarn title="Read sessions first">
+          <p>
+            A declared cross-tab. The first exists because a single-dimension cut once made net-GEX sign look predictive until the trend
+            bucket showed the whole effect sat in one seven-session cell.
+          </p>
+        </HelpWarn>
+        <HelpSection title="The grid">
+          <p>
+            Colour is {rateLabel} rate (darker = higher); the cell prints sessions and {rateLabel} %. Rows are {tab.dims[0]}, columns{" "}
+            {tab.dims[1]}. A grey cell is one the writer flagged thin (fewer than {thinBelowSessions ?? "the writer's floor of"} sessions);{" "}
+            <em>fragile</em> and <em>±n</em> (sign changes over prior snapshots) are the writer&apos;s stamps. Hover for trades, completed,
+            win and avg.
+          </p>
+        </HelpSection>
+      </>
+    ),
+  };
 }
 
 /**
@@ -206,9 +230,14 @@ export function CrossTabGrid({ tab, thinBelowSessions }: { tab: RegimeCrossTab; 
  * sessions both traded, per trade. A row at or above the writer's alpha is dimmed, never hidden;
  * with no alpha on the artifact nothing is dimmed, rather than using a console copy of the bar.
  */
-function PairedTable({ cuts, dim }: { cuts: RegimeCuts; dim: string }) {
+function pairedRows(cuts: RegimeCuts, dim: string): Array<{ arm: string; p: RegimePair }> {
   const rows: Array<{ arm: string; p: RegimePair }> = [];
   for (const b of cuts.arms) for (const p of b.dimensions[dim]?.paired ?? []) rows.push({ arm: b.arm, p });
+  return rows;
+}
+
+function PairedTable({ cuts, dim }: { cuts: RegimeCuts; dim: string }) {
+  const rows = pairedRows(cuts, dim);
   const sort = useSort();
   if (rows.length === 0) return null;
   const alpha = cuts.multiplicity?.pairedAlpha ?? null;
@@ -221,7 +250,11 @@ function PairedTable({ cuts, dim }: { cuts: RegimeCuts; dim: string }) {
   });
   return (
     <>
-      <h3 style={{ fontSize: 12, margin: "0.9rem 0 0.3rem" }}>same-day comparisons</h3>
+      <p className="muted pf-caption" style={{ marginTop: 0 }}>
+        Two buckets on the same days, per trade: a bucket that wins the by-regime table but not here is a kind of day,
+        not a kind of entry. Tied days are left out of W–L, and pairs sharing too few sessions are omitted by the
+        writer.{alpha !== null && ` Rows at p ≥ ${alpha} are dimmed.`}
+      </p>
       <div className="table-scroll">
         <table className="data-table">
           <thead>
@@ -265,20 +298,50 @@ function PairedTable({ cuts, dim }: { cuts: RegimeCuts; dim: string }) {
           </tbody>
         </table>
       </div>
-      <p className="muted" style={{ fontSize: 11, marginTop: "0.5rem", marginBottom: 0 }}>
-        Two buckets on the same days, per trade: a bucket that wins the table above but not here is a kind of day,
-        not a kind of entry. Tied days are left out of W–L, and pairs sharing too few sessions are omitted by the
-        writer.{alpha !== null && ` Rows at p ≥ ${alpha} are dimmed.`}
-      </p>
     </>
   );
 }
 
-function DimensionCard({ cuts, dim }: { cuts: RegimeCuts; dim: string }) {
-  const columns = bucketColumns(cuts.arms, dim);
+/** A dimension card's ?: how to read a cell and the writer's stamps, with undersampling leading as a warning. */
+function dimensionHelp(cuts: RegimeCuts, dim: string): CardHelpContent {
   const rateLabel = cuts.arms.some((b) => b.completionRate !== null) ? "completion" : "win";
+  const under = cuts.arms.filter((b) => b.dimensions[dim]?.underpowered === true).map((b) => b.arm);
+  return {
+    title: `By ${dim}`,
+    body: (
+      <>
+        {under.length > 0 && (
+          <HelpWarn title="Underpowered">
+            <p>
+              {under.join(", ")} {under.length === 1 ? "has" : "have"} too few sessions in this dimension to read; the suffix beside the arm
+              says how many.
+            </p>
+          </HelpWarn>
+        )}
+        <HelpSection title="Reading a cell">
+          <p>
+            Each cell reads {rateLabel} % · net · sessions. A dash means no rows in that bucket for that arm. A dimmed cell is one the writer
+            flagged thin (fewer than {cuts.thinBelowSessions ?? "the writer's floor of"} sessions); an arm&apos;s suffix is the writer&apos;s
+            coverage and power reading for this dimension. <em>fragile</em> marks a cell one session dominates or whose sign one session
+            decides; <em>±n</em> one whose net changed sign over the prior snapshots.
+          </p>
+        </HelpSection>
+      </>
+    ),
+  };
+}
+
+function DimensionCard({ cuts, dim, lb }: { cuts: RegimeCuts; dim: string; lb: OpenParam }) {
+  const columns = bucketColumns(cuts.arms, dim);
+  const under = cuts.arms.some((b) => b.dimensions[dim]?.underpowered === true);
   return (
-    <Card title={`by ${dim}`} collapseKey={`regime-${cuts.module}-${dim}`}>
+    <Card
+      title={`by ${dim}`}
+      className="lv-12"
+      collapseKey={`regime-${cuts.module}-${dim}`}
+      help={dimensionHelp(cuts, dim)}
+      flag={under ? "underpowered" : undefined}
+    >
       <div className="table-scroll">
         <table className="data-table">
           <thead>
@@ -327,25 +390,43 @@ function DimensionCard({ cuts, dim }: { cuts: RegimeCuts; dim: string }) {
           </tbody>
         </table>
       </div>
-      <p className="muted" style={{ fontSize: 11, marginTop: "0.5rem", marginBottom: 0 }}>
-        Each cell reads {rateLabel} % · net · sessions. A dash means no rows in that bucket for that arm. A dimmed
-        cell is one the writer flagged thin (fewer than {cuts.thinBelowSessions ?? "the writer's floor of"} sessions); an arm's suffix is the
-        writer's coverage and power reading for this dimension. <em>fragile</em> marks a cell one session dominates or
-        whose sign one session decides; <em>±n</em> one whose net changed sign over the prior snapshots.
-      </p>
-      <PairedTable cuts={cuts} dim={dim} />
+      {pairedRows(cuts, dim).length > 0 && (
+        <div className="pf-mores">
+          <BoxOpen lb={lb} id={pairedBoxId(dim)}>
+            same-day comparisons
+          </BoxOpen>
+        </div>
+      )}
     </Card>
   );
 }
 
+const pairedBoxId = (dim: string): string => `paired-${dim}`;
+
+/** The lightbox over a dimension's same-day comparisons, one per dimension that has any. */
+export function pairedBoxes(cuts: RegimeCuts): FliesBox[] {
+  return cuts.dimensions
+    .filter((dim) => pairedRows(cuts, dim).length > 0)
+    .map((dim) => ({
+      id: pairedBoxId(dim),
+      kicker: `by ${dim} ›`,
+      title: "Same-day comparisons",
+      tabs: [{ id: "paired", label: "same-day comparisons" }],
+      body: () => <PairedTable cuts={cuts} dim={dim} />,
+    }));
+}
+
 function CrossTabCard({ cuts, tab }: { cuts: RegimeCuts; tab: RegimeCrossTab }) {
+  const thin = tab.arms.some((b) => b.cells.some((c) => c.thin));
   return (
-    <Card title={`by ${tab.dims.join(" × ")}`} collapseKey={`regime-${cuts.module}-cross-${tab.dims.join("-")}`}>
-      <CrossTabGrid tab={tab} thinBelowSessions={cuts.thinBelowSessions} />
-      <p className="muted" style={{ fontSize: 11, marginTop: "0.5rem", marginBottom: 0 }}>
-        A declared cross-tab. The first exists because a single-dimension cut once made net-GEX sign look predictive
-        until the trend bucket showed the whole effect sat in one seven-session cell. Read sessions first.
-      </p>
+    <Card
+      title={`by ${tab.dims.join(" × ")}`}
+      className="lv-12"
+      collapseKey={`regime-${cuts.module}-cross-${tab.dims.join("-")}`}
+      help={crossTabHelp(tab, cuts.thinBelowSessions)}
+      flag={thin ? "thin cells" : undefined}
+    >
+      <CrossTabGrid tab={tab} />
     </Card>
   );
 }
@@ -375,7 +456,7 @@ export function EraCard({ cuts, stale }: { cuts: RegimeCuts; stale: { artifactSe
     net: (b) => b.netPnl,
   });
   return (
-    <Card title="era" collapseKey={`regime-${cuts.module}-era`}>
+    <Card title="era" collapseKey={`regime-${cuts.module}-era`} help={ERA_HELP}>
       <p style={{ marginTop: 0 }}>
         era since <strong>{cuts.era.start ?? "the first row"}</strong>
         {cuts.era.boundingBreak && <span className="muted"> · {cuts.era.boundingBreak.kind}</span>}
@@ -452,95 +533,173 @@ export function cutsForArm(cuts: RegimeCuts, arm: string | null): RegimeCuts {
   };
 }
 
+const REGIME_HELP: CardHelpContent = {
+  title: "Regime cuts",
+  body: (
+    <>
+      <HelpSection title="What this is">
+        <p>
+          The module&apos;s own nightly artifact, cut by the regime each entry was tagged with, rendered as written. The console computes
+          nothing from it: thin cells, coverage, era and every number are the writer&apos;s.
+        </p>
+      </HelpSection>
+      <HelpSection title="Read sessions first">
+        <p>Sessions are the unit of independence; read them before the net. Same-day entries share a regime.</p>
+      </HelpSection>
+    </>
+  ),
+};
+
+const ERA_HELP: CardHelpContent = {
+  title: "Era",
+  body: (
+    <HelpSection title="The window">
+      <p>
+        Every cut below is over the era the writer stamped: since its start, by the era column where there is one. An arm with its own start
+        is listed; breaks declared but not yet binding, and caveats inside the era, are the writer&apos;s notes.
+      </p>
+    </HelpSection>
+  ),
+};
+
+/**
+ * The session the cut is read for, behind filter & sort: one choice, the nightly artifact of that day
+ * (the latest by default). Returns the button for the card head and the summary and panel for its body.
+ */
+function useSessionFilter(sessions: string[], session: string | null, setSession: (s: string | null) => void) {
+  const [panel, setPanel] = useState(false);
+  const anchor = useRef<HTMLButtonElement>(null);
+  const changed = session !== null ? 1 : 0;
+  if (sessions.length <= 1) return { button: null, body: null };
+  const reset = () => setSession(null);
+  return {
+    button: <FilterSortButton changed={changed} open={panel} onOpen={() => setPanel(!panel)} anchor={anchor} />,
+    body: (
+      <>
+        <FilterSummary parts={[session === null ? "latest session" : `session ${session}`]} changed={changed} onOpen={() => setPanel(true)} onReset={reset} />
+        <FilterSortPanel open={panel} onClose={() => setPanel(false)} onReset={reset} anchor={anchor}>
+          <FilterGroup title="session" note="the artifact the module wrote that night">
+            <select
+              className="chip review-session-select"
+              value={session ?? ""}
+              onChange={(e) => setSession(e.target.value === "" ? null : e.target.value)}
+              aria-label="session"
+            >
+              <option value="">latest</option>
+              {[...sessions].reverse().map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+          </FilterGroup>
+        </FilterSortPanel>
+      </>
+    ),
+  };
+}
+
 export function RegimeCutsTab({ module, arm = null }: { module: RegimeCutsModule; arm?: string | null }) {
   const [session, setSession] = useState<string | null>(null);
   const { data, isLoading, isError, dataUpdatedAt } = useRegimeCuts(module, session);
+  const lb = useOpenParam("reg");
+  const filter = useSessionFilter(data?.sessions ?? [], session, setSession);
+  const frame = (card: ReactNode) => (
+    <div className="pf-layout">
+      <Section concept="stand" tag="the cut" question="What does this cut cover?">
+        {card}
+      </Section>
+    </div>
+  );
   if (isLoading || data === undefined) {
-    return (
+    return frame(
       <Card title="regime cuts" updatedAt={dataUpdatedAt} isError={isError}>
         <div className="table-scroll">
-        <table className="data-table">
-          <tbody>
-            <SkeletonRows n={4} cols={5} />
-          </tbody>
-        </table>
+          <table className="data-table">
+            <tbody>
+              <SkeletonRows n={4} cols={5} />
+            </tbody>
+          </table>
         </div>
-      </Card>
+      </Card>,
     );
   }
-  const picker =
-    data.sessions.length > 1 ? (
-      <select
-        className="chip review-session-select"
-        value={session ?? ""}
-        onChange={(e) => setSession(e.target.value === "" ? null : e.target.value)}
-        aria-label="session"
-      >
-        <option value="">latest</option>
-        {[...data.sessions].reverse().map((s) => (
-          <option key={s} value={s}>
-            {s}
-          </option>
-        ))}
-      </select>
-    ) : null;
   if (data.status === "absent") {
-    return (
-      <Card title="regime cuts" updatedAt={dataUpdatedAt} controls={picker}>
+    return frame(
+      <Card title="regime cuts" updatedAt={dataUpdatedAt} controls={filter.button}>
+        {filter.body}
         <p style={{ marginTop: 0 }}>No regime-cuts artifact yet.</p>
         <p className="muted" style={{ marginBottom: 0 }}>
           The module writes it nightly at 16:40 ET (<code>{WRITE_COMMAND[module]}</code>, which also accepts{" "}
           <code>--session YYYY-MM-DD</code> for a past day). Looked for <code>{data.path}</code>.
         </p>
-      </Card>
+      </Card>,
     );
   }
   if (data.status === "failed") {
-    return (
-      <Card title="regime cuts" updatedAt={dataUpdatedAt} isError controls={picker}>
+    return frame(
+      <Card title="regime cuts" updatedAt={dataUpdatedAt} isError controls={filter.button}>
+        {filter.body}
         <p className="pnl-neg" style={{ marginTop: 0 }}>
           The artifact could not be read: {data.error}
         </p>
         <p className="muted" style={{ marginBottom: 0 }}>
           This is a failure, not an empty day. Re-run <code>{WRITE_COMMAND[module]}</code> and check the file.
         </p>
-      </Card>
+      </Card>,
     );
   }
   const { stale } = data;
   const cuts = cutsForArm(data.cuts, arm);
+  const boxes = pairedBoxes(cuts);
   return (
-    <div className="cards cards-wide view-fade">
-      <Card title="regime cuts" updatedAt={dataUpdatedAt} controls={picker} collapseKey={`regime-${module}-head`}>
-        <p className="muted" style={{ margin: 0 }}>
-          {arm === null ? "Every arm" : <strong>{arm}</strong>}, cut by the regime each entry was tagged with, as the
-          module wrote it (generated {cuts.generatedAt ?? "?"}). The console renders this artifact and computes nothing
-          from it: thin cells, coverage, era and every number are the writer's. Sessions are the unit of independence;
-          read them before the net.
-        </p>
-        {arm !== null && cuts.arms.length === 0 && (
-          <p className="muted" style={{ marginBottom: 0 }}>
-            {arm} is not in this cut. Pick another arm, or all arms, in the header.
+    <div className="pf-layout view-fade">
+      <Section concept="stand" tag="the cut" question="What does this cut cover?">
+        <Card
+          title="regime cuts"
+          updatedAt={dataUpdatedAt}
+          controls={filter.button}
+          collapseKey={`regime-${module}-head`}
+          help={REGIME_HELP}
+          flag={stale !== null ? "stale" : undefined}
+        >
+          {filter.body}
+          <p className="muted" style={{ margin: 0 }}>
+            {arm === null ? "Every arm" : <strong>{arm}</strong>}, generated {cuts.generatedAt ?? "?"}.
           </p>
-        )}
-        {cuts.multiplicity !== null && (
-          <>
-            {arm !== null && (
-              <p className="muted" style={{ fontSize: 11, marginBottom: 0 }}>
-                the chance baseline below counts the whole cut, every arm, not only {arm}
-              </p>
-            )}
-            <MultiplicityLine m={cuts.multiplicity} />
-          </>
-        )}
-      </Card>
-      <EraCard cuts={cuts} stale={stale} />
-      {cuts.dimensions.map((dim) => (
-        <DimensionCard key={dim} cuts={cuts} dim={dim} />
-      ))}
-      {cuts.crossTabs.map((tab) => (
-        <CrossTabCard key={tab.dims.join("-")} cuts={cuts} tab={tab} />
-      ))}
+          {arm !== null && cuts.arms.length === 0 && (
+            <p className="muted" style={{ marginBottom: 0 }}>
+              {arm} is not in this cut. Pick another arm, or all arms, in the header.
+            </p>
+          )}
+          {cuts.multiplicity !== null && (
+            <>
+              {arm !== null && (
+                <p className="muted" style={{ fontSize: 11, marginBottom: 0 }}>
+                  the chance baseline below counts the whole cut, every arm, not only {arm}
+                </p>
+              )}
+              <MultiplicityLine m={cuts.multiplicity} />
+            </>
+          )}
+        </Card>
+        <EraCard cuts={cuts} stale={stale} />
+      </Section>
+      {cuts.dimensions.length > 0 && (
+        <Section concept="edge" tag="by regime" question="Does the edge depend on the regime?">
+          {cuts.dimensions.map((dim) => (
+            <DimensionCard key={dim} cuts={cuts} dim={dim} lb={lb} />
+          ))}
+        </Section>
+      )}
+      {cuts.crossTabs.length > 0 && (
+        <Section concept="risk" tag="cross-tabs" question="Does one regime hide the effect of another?">
+          {cuts.crossTabs.map((tab) => (
+            <CrossTabCard key={tab.dims.join("-")} cuts={cuts} tab={tab} />
+          ))}
+        </Section>
+      )}
+      <FliesBoxHost lb={lb} boxes={boxes} />
     </div>
   );
 }

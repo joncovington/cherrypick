@@ -1,8 +1,10 @@
 # Edge hypotheses: what the 2026-10 video review left worth testing
 
+> **Status (2026-11-08): ongoing. This is the register of research items, 69 so far (`hypotheses.json` holds each one's status); every item has a declared test and a recorded verdict or is still queued. Many items concern the retired modules flies, bwb, pmcc and curve.**
+
 *Drafted 2026-10-17. No module change is built from it; five of the eight tests have run (see
-Status). It follows a review of twenty Theta Profits interviews
-(YouTube, 2024-09 to 2026-06) and asks one question of each idea before anything else: **where does
+Status). It follows a review of twenty public options-trading interviews
+(YouTube, 2024-09 to 2026-06; credited in [strategy-sources.md](strategy-sources.md)) and asks one question of each idea before anything else: **where does
 the edge live?** Every item names its hypothesised edge, the claim that would falsify it, the data we
 already hold, the smallest test that answers it, and the result that would justify building
 anything.*
@@ -44,7 +46,11 @@ written are not re-judged. The arithmetic is `cherrypick.core.robustness`
   parts, the mechanism, the rival explanations each with the check that rules it out, and a pointer
   here. Run `cherrypick hypotheses --similar '{"setup": ..., "structure": ...}'` first; a rejected
   look-alike is named in the declaration, so a retest is said out loud. `cherrypick hypotheses`
-  fails on a malformed row. A `retest` recipe (the research queue's kind and args) lets B14 re-run it.
+  fails on a malformed row. Take the item number from its `next_id` (this checkout's register,
+  `origin/main`'s as last fetched, and this plan's headings), after a `git fetch`, and put `id` and
+  `study` in the `--similar` proposal: it fails when either is taken. The row names its `scripts` and
+  `tests` (repo paths that exist), which with the pointer, the queue rows keyed by `study` and
+  `results` make the study chain the console shows step by step (2026-11-07). A `retest` recipe (the research queue's kind and args) lets B14 re-run it.
   When the result lands, the row's status changes, `results` names the files as `{home}/...` paths
   and `outcome` says the decision in words (2026-10-29, for the Backtest page's studies board).
 - **A result file the board can read:** a top-level `verdict` (one word, or one per arm, or per arm
@@ -69,6 +75,34 @@ written are not re-judged. The arithmetic is `cherrypick.core.robustness`
     thresholds if it goes live;
   - the largest size whose 99th-percentile drawdown stays inside a declared share of the account
     (`max_size`).
+- **The verdict fill for SPX and XSP studies** (from 2026-11-07, for declarations written after it).
+  - The verdict fill is the suite's slippage model: `fees.slippage_dollars`, an eighth of each leg's
+    bid-ask from mid, capped at its share of the mid.
+  - Halfway from mid to the natural fill (the "working" price items 22 and 58-61 used) is reported
+    beside it as the stress, and mid as context.
+  - Why: MEIC's live fills land closer to mid than either. As of 2026-11-07, 9 priced live entries
+    filled about 0.3% of the wing width from the mid credit at submit (`python -m cherrypick.cli
+    execution`), about $2 to $3 a condor. An eighth of each leg's spread is several times that on SPX
+    at midday.
+  - Declarations already written keep their declared fill; re-scoring them at another fill would be
+    choosing a fill after seeing results.
+  - The modules' own default (`DEFAULT_COSTS["slippage_frac_of_spread"]`) is not changed here. That is
+    measurement-affecting for every paper module, so it is proposed at a declared boundary once MEIC
+    live has 30 priced fills, with the per-structure fill measured from those fills.
+  - The boundary sets one symbol, not the suite: core looks a fraction up per symbol
+    (`fees.slippage_frac`), most specific first. The order is the caller's per-symbol entry, the
+    caller's flat fraction, then the suite's per-symbol entry
+    (`DEFAULT_COSTS["slippage_frac_of_spread_by_symbol"]`, empty today), then the suite's flat 0.125.
+    A caller's flat fraction outranks the suite's per-symbol entry, so a study's stress keeps its
+    value. It also means a module config that pins the flat 0.125 (MEIC's and earnings' examples do)
+    has to drop that pin at the same boundary, or it will never see the SPX entry.
+- **Every arm writes a scorecard** (from 2026-11-07). Each arm's block in the result file carries
+  `scorecard`: `cherrypick.backtest.scorecard.scorecard(series, trades)` over the arm's own sessions
+  (`[{session, net, trades}]`, a session with no entry at zero) and, where the script keeps them, its
+  trades. That is the stats table (total P/L, max drawdown, return on drawdown, high and low P/L,
+  profit factor, Sharpe and Sortino) and the insights (costs, wide spreads, drawdown lengths). Run
+  cards build the same block, and the study's Report tab prints it. It is for reading: the declared
+  test still decides the verdict.
 
 ## Data we already hold
 
@@ -88,7 +122,7 @@ Five of the eight have been tested against their declared pass tests
 - 1, post-earnings drift: closed;
 - 4 and 8, the box edge and the intraday direction reads: not being built (they ran on licensed
   data, so the results are kept locally under `~/.cherrypick`, per the licence). Their yearly
-  re-test (B14) runs `scripts/box_touch_history.py` on one calendar year, and on one year the box
+  re-test (B14) runs `packages/backtest/scripts/box_touch_history.py` on one calendar year, and on one year the box
   test's "positive in two-thirds of the years holding 20 or more touches" reduces to that single
   year, so the re-test is not identical to the original test;
 - 5, the EMA signal: closed;
@@ -99,10 +133,10 @@ and 7 depend on an intraday fill model that is no longer being built for that ro
 has to justify that build on its own.
 
 **Added 2026-10-18:**
-- 9–11, Option Alpha's three automated bots (a separate source from the Theta Profits series).
+- 9–11, three automated bots from a second public source (separate from the interview series).
 - 12, GEX levels. They were in "not worth revisiting" until the backtest store made years of rebuilt
   dealer profiles available.
-- 13, Option Alpha's credit-structure screener.
+- 13, the second source's credit-structure screener.
 
 **Added 2026-10-19:**
 - 14, selecting credit spreads for the income lists (which names, which side), declared before
@@ -381,7 +415,7 @@ move).*
 
 ### 5. The dynamic PMCC short delta
 
-*Source: video 15, Tom King, the author of the Income Shield pmcc's `shield` arms already run.*
+*Source: video 15, the author of the held-long design behind pmcc's `shield` arms already run.*
 
 - **Rule as stated:** the weekly short's delta follows the daily 8/21 EMA. 20–30 delta in an
   uptrend, at the money when flat, 60–70 delta in the money in a downtrend.
@@ -439,7 +473,7 @@ all-time highs).*
 ### 8. A trader's daily SPX 0DTE routine
 
 *Source: video 14. Reconstructed from five daily sessions (10-12 to 10-16) in
-[daily-0dte-routine.md](daily-0dte-routine.md). The finding is that the condor is a
+[box-edge-0dte-routine.md](box-edge-0dte-routine.md). The finding is that the condor is a
 resting order far above the market, which fills only when price runs toward a box edge. So the edge
 claim is reversion at the expected-move box edge, not the open-to-close variance premium assumed
 below. The test plan there supersedes this section.*
@@ -461,9 +495,8 @@ below. The test plan there supersedes this section.*
 
 ### 9. The 1:45 PM sandwich
 
-*Sources: Option Alpha, "triple threat" (https://youtu.be/1BOZ0M3fSCs), a bot running live since
-2026-04-01; and the video where it was chosen and set up (https://youtu.be/4ngxNC6AWQI, about
-2026-03-31).*
+*Sources: the second source's "triple threat" bot, running live since 2026-04-01, and the video where it
+was chosen and set up (about 2026-03-31); both linked in [strategy-sources.md](strategy-sources.md).*
 
 - **Rule as stated:** at 13:45 ET, a 0DTE SPX iron condor with its shorts at spot ±5 and 5-wide
   wings, 10 wide overall. Held to settlement, with no target and no stop. Two filters:
@@ -557,7 +590,7 @@ below. The test plan there supersedes this section.*
 
 ### 12. GEX levels, revisited with history
 
-*Sources: Theta Profits videos 5, 7 and 14; Option Alpha's gamma scalper (11). Moved out of "not
+*Sources: videos 5, 7 and 14 of the review; the second source's gamma scalper (11). Moved out of "not
 worth revisiting" on 2026-10-18.*
 
 - **Why reopen it:** the evidence that closed it was short. It came from the 10-15 sign-gate replay
@@ -599,7 +632,7 @@ worth revisiting" on 2026-10-18.*
 
 ### 13. A screener for credit structures the model calls positive-expectancy
 
-*Source: Option Alpha (https://youtu.be/4ngxNC6AWQI), two discretionary trades placed live after a
+*Source: the second source's set-up video (see [strategy-sources.md](strategy-sources.md)), two discretionary trades placed live after a
 sell-off.*
 
 - **Rule as stated:** in the vendor's trade-ideas screener, look for iron condors and credit spreads
@@ -650,7 +683,7 @@ sell-off.*
 
 ### 14. Selecting credit spreads: which names, which side
 
-*Source: the user's own trade (2026-10-19). Credit spreads on the monthly 30-45 days out, sold for
+*Source: a hand-placed credit-spread habit (2026-10-19). Credit spreads on the monthly 30-45 days out, sold for
 premium, at a credit of 35-40% of the width, on both sides. The Screeners page's credit-spread tab
 still shows the vendor's lists, which stop on 2026-10-24, because which names make them was never
 reproduced (the best rule found picked 10-15% of its slots right).*
@@ -754,7 +787,7 @@ reproduced (the best rule found picked 10-15% of its slots right).*
   - **Fetch size:** with five matched baselines a trade, about 60,000 one-session chain requests,
     about 46,000 of them in the deciding window. That is before the earnings exclusion, and
     overnight work for a few workers at about a second a request.
-- **The plan itself** (2026-10-20, local data only): `scripts/credit_spread_plan.py`.
+- **The plan itself** (2026-10-20, local data only): `packages/backtest/scripts/credit_spread_plan.py`.
   - **What it does:** applies every exclusion above and draws the five baselines per trade with a fixed
     seed. It writes `trades.json` and the fetch's `requests.json` under
     `~/.cherrypick/data/backtest/results/research/item14/`.
@@ -868,8 +901,8 @@ of the credit helps. Declared here before any of it is run.*
   - **Universe (amended 2026-10-21, before any of it was run):** **single-name stocks only** -- every
     signal on a name `history.db` does not list as a fund (`listings.is_etf`). That is 285 names and
     736 signal trades in the deciding window before the structure's own drops, against 1,101 with the
-    funds. Funds are left out because the user trades credit spreads on single names and on a few
-    funds of their own (item 16), and because a mean-reversion long on an inverse fund is a short.
+    funds. Funds are left out because single names and a few chosen funds are asked about separately
+    (item 16), and because a mean-reversion long on an inverse fund is a short.
     GLD, SLV, GDX and GDXJ, which do clear the signal's liquidity rule, are reported as one row of
     their own (12 signals in the window: never a verdict).
 - **Structure (one rule for every cell):**
@@ -929,7 +962,7 @@ of the credit helps. Declared here before any of it is run.*
     a few points more than allowed at 0.20 and 0.30, while getting the net close. So **0.40 fails**
     on the model, and **0.20 and 0.30 are not decidable from it**, as declared. The 200 trades priced
     on real marks lose at all three deltas, so a full real-mark fetch is not worth running for them.
-  - The metals row and the user's own traded names (a row added after declaration, reported only)
+  - The metals row and a row of further funds (added after declaration, reported only)
     show nothing that changes this.
   - **Departures from the text, written down before any option data was fetched:** the entries are
     item 14's planner re-run with the 45-60-day window and its first two seeded baselines (read
@@ -939,17 +972,17 @@ of the credit helps. Declared here before any of it is run.*
   - **Decided:** manage's put spreads use the least-bad unconditioned cell, as declared
     (`docs/income-review-plan.md`, item 2).
 
-### 16. Put credit spreads on the funds the user trades: precious metals and bitcoin
+### 16. Put credit spreads on liquid metals and bitcoin funds
 
-*Source: the income review (2026-10-21). The user's own credit spreads are, beyond single names,
-GLD, GDX, SLV, GDXJ, SIL and SILJ, and IBIT now and then. `mr-300m` fires on them 12 times in five
+*Source: the income review (2026-10-21). Beyond single names, a liquid metals-fund set
+(GLD, GDX, SLV, GDXJ, SIL and SILJ) and a bitcoin fund are the natural credit-spread candidates. `mr-300m` fires on them 12 times in five
 years and never on SIL or SILJ (about $15M a day, against its $300M rule), and precious metals trend
 rather than revert. So this asks the premium question directly, with no signal. Declared before any
 of it is run.*
 
 - **Question:** on each of these funds, is a put credit spread worth its risk after costs, and with
   which short strike and which exit? The expectation, from the short-put delta studies, is "least bad,
-  not edge"; this measures it on the funds actually traded.
+  not edge"; this measures it on these funds.
 - **Funds and what decides each:**
   - **Precious metals:** GLD, SLV, GDX, GDXJ, SIL, SILJ, each decided on its own.
   - **Bitcoin:** **BITO** (options from 2021-10) decides; its futures-roll drag makes it a
@@ -1074,7 +1107,7 @@ does. Declared here before any of it is run.*
   $100M universe takes in thinner chains than item 14's, which the leg-bar share reports;
   breakouts are rare, so their setup-sides may end as no verdict.
 - **The plan** (2026-10-24, local data only, before any option data was read):
-  `scripts/credit_spread_plan.py --item 17`, item 14's planner with item 17's spec. Its exclusions,
+  `packages/backtest/scripts/credit_spread_plan.py --item 17`, item 14's planner with item 17's spec. Its exclusions,
   baselines and request file are item 14's; re-run for item 14, it reproduces item 14's plan byte for
   byte. Seed 20261024. The universe is every name that ever traded $100M a day, less the declared
   leveraged, inverse and volatility funds.
@@ -1171,7 +1204,7 @@ look has touched. The user approved the test on 2026-10-25. Declared here before
   sit well above the effect item 17 measured. So this test passes only an edge much stronger than
   item 17's. A fail rules out an edge that large, and says nothing about one of item 17's size. The
   low power is the accepted price of testing the trade as it would be placed.
-- **Account for B13's size line:** the live account's net liquidation value, chosen by the user
+- **Account for B13's size line:** an account net liquidation value, chosen
   before the run and passed at run time (`--account`, in the local queue row), so the account's
   size stays out of this repo.
 - **Structure, unchanged from item 17:**
@@ -1297,7 +1330,7 @@ two-session fetch smoke test read row counts only.*
   - costs at 1.5× and 2×;
   - the bootstrapped drawdown and losing streak;
   - the largest size inside a declared 10% of the account, with the account passed at run time.
-- **Data:** `scripts/fetch_spx_time_warp.py` writes `SPX-time-warp.db`, declared in
+- **Data:** `packages/backtest/scripts/fetch_spx_time_warp.py` writes `SPX-time-warp.db`, declared in
   `stores.STORES`. It holds each session's 15:45-15:55 chain for the next expiry at one minute,
   and that expiry's next session at five minutes. The study script reads only it and `SPX-60s.db`. Results go under the
   backtest data directory only. Its figures stay there; this plan records the verdict.
@@ -1411,7 +1444,7 @@ run.*
     and wider; arm B at 2× and 4×;
   - costs at 1.5× and 2×; the bootstrapped drawdown and losing streak; the largest size inside a
     declared 10% of the account, passed at run time.
-- **Data:** `scripts/fetch_spx_convex_stack.py` writes `SPX-convex-stack.db`, declared in
+- **Data:** `packages/backtest/scripts/fetch_spx_convex_stack.py` writes `SPX-convex-stack.db`, declared in
   `stores.STORES`: each entry's 15:40-15:50 chain at one minute, and that expiry on every session to
   expiry at five minutes. The study reads only it, `SPX-60s.db`'s spot history and daily closes, and
   Cboe's VIX history. Results go under the backtest data directory only; this plan records the
@@ -1498,7 +1531,7 @@ it is run.*
   measured in `validate`, not here); a fill is judged on mid, never on a print; a resting order
   left at the session's end opens nothing.
 - **Name split (B9):** does not apply; one symbol.
-- **Data:** no new store. `scripts/flies_entry_limit_item21.py` builds a scratch flies config from the
+- **Data:** no new store. `packages/backtest/scripts/flies_entry_limit_item21.py` builds a scratch flies config from the
   machine's (the six arms added) and runs `cherrypick.backtest.runner` over each window. Results go
   under the backtest data directory only; this plan records the verdict.
 - **Decides:**
@@ -1594,13 +1627,14 @@ whatever the design shows, on 2026-10-27. Declared here before any of it is run.
     buy-back at 09:45 and 10:30;
   - costs at 1.5× and 2×; the bootstrapped drawdown and losing streak; the largest size inside a
     declared 10% of the account, passed at run time.
-- **Data:** no new store. `scripts/overnight_condor_item22.py` reads `SPX-time-warp.db` (item 19's
+- **Data:** no new store. `packages/backtest/scripts/overnight_condor_item22.py` reads `SPX-time-warp.db` (item 19's
   store, which holds every session's 15:45-15:55 next-expiry chain and that expiry's next session at
   five minutes), `SPX-60s.db`'s daily closes and Cboe's VIX history. Results go under the backtest
   data directory only; this plan records the verdict.
 - **Decides:**
-  - **A pass:** a proposal for a paper arm beside the suite's loops, with the robustness report. The
-    account is an IRA, so the defined-risk condor is the only version worth proposing.
+  - **A pass:** a proposal for a paper arm beside the suite's loops, with the robustness report. On
+    an IRA or cash account only defined risk is allowed, so the defined-risk condor is the only
+    version worth proposing.
   - **A fail or no verdict:** closes the overnight 1DTE short as specified; with item 19 that closes
     both sides of the 1DTE overnight premium.
 - **Result (2026-10-27): fail, both arms; the structure is closed.** In the design window neither
@@ -1677,7 +1711,7 @@ here before any of it is run.*
 - **Declared limits (B11):** 60 s ticks; strikes by the replay's delta source; a stop fills under
   the fill model, not a recorded fill. VIX bands do not move the delta: every arm sets its own.
 - **Name split (B9):** does not apply; one symbol.
-- **Data:** no new store. `scripts/meic_delta_grid_item23.py` builds a scratch MEIC arm registry from
+- **Data:** no new store. `packages/backtest/scripts/meic_delta_grid_item23.py` builds a scratch MEIC arm registry from
   the machine's (the six arms added) and runs `cherrypick.backtest.runner` over each window. Results
   go under the backtest data directory only; this plan records the verdict.
 - **Decides:**
@@ -1752,7 +1786,7 @@ of it is run, and run after item 23's verdict.*
 - **Declared limits (B11):** 60 s ticks; one entry per slot, at the first tick that clears; strikes
   by the replay's delta source; stops under the fill model.
 - **Name split (B9):** does not apply; one symbol.
-- **Data:** no new store. `scripts/meic_entry_slot_item24.py --delta D` builds a scratch MEIC arm
+- **Data:** no new store. `packages/backtest/scripts/meic_entry_slot_item24.py --delta D` builds a scratch MEIC arm
   registry from the machine's (seven arms added) and runs `cherrypick.backtest.runner` over each
   window. Results go under the backtest data directory only; this plan records the verdict.
 - **Decides:**
@@ -1887,7 +1921,7 @@ that test. Declared here before any of it is fetched or run.*
   payoff shaping that did not pay. Every figure is in the local result
   (`~/.cherrypick/data/backtest/results/research/item25/results.json`).
 - **Clarified 2026-10-28, while building the replay, before any fetch or run**
-  (`scripts/skate_expiry_item25.py`). Where the declaration was silent:
+  (`packages/backtest/scripts/skate_expiry_item25.py`). Where the declaration was silent:
   - **The roll arm keeps the $0.03 buy-back.** The educator places it at the fill and rolls only
     when tested, so `roll` is `hold` plus the roll. A roll's new leg must pass the same spread bar.
   - **Unknown report dates.** A stock is clear only when no report falls in the span and Dolt shows
@@ -1915,7 +1949,7 @@ that test. Declared here before any of it is fetched or run.*
 ### 26. A dip-buying share ladder on leveraged funds: buy 7% under the previous close, sell each lot 4% up
 
 *Source: the user, 2026-10-29: members of a trading group buy SOXL shares after a 7% drop and sell
-after a 4% gain, sometimes holding several tranches; the user trades it by hand. Then: "I think it
+after a 4% gain, sometimes holding several tranches, by hand. Then: "I think it
 is from the previous day's close. I think they hold until the 4%", "let's not limit this to just
 one symbol", "could probably add TECL". **The user builds the module whatever this shows**
 (2026-10-29); the verdict sets how it is sized and armed, not whether it exists. Declared here
@@ -1945,9 +1979,9 @@ before any of it is fetched or run.*
   - *Searching a grid:* **Check:** Holm across the ten judged arms; the grid is fixed here.
 - **The structure:** one budget per name, `cap × tranche`; whole shares; no stop, no time limit.
   - **Entry trigger:** a price at or under 93% of the latest 4:00 pm close: the previous session's
-    before 4:00 pm, the same session's after it (the user's 10/29 buy at 16:06 was 12% under that
-    day's own close). The second-tranche rule is not settled (the user's 10/22 buys were 11%
-    apart), so it is an arm:
+    before 4:00 pm, the same session's after it (a 16:06 buy 12% under that
+    day's own close is possible). The second-tranche rule is not settled (buys 11%
+    apart occur), so it is an arm:
     - `once`: at most one new lot a session;
     - `chain`: a further lot at each 7% under the last lot bought, in the same session or later;
     - `steps`: lots at 7%, 14%, 21% … under the reference close, one per step reached.
@@ -1973,10 +2007,10 @@ before any of it is fetched or run.*
   `leveraged_funds.json` with daily bars from 2011-01-03 and a median daily dollar volume of $20M or
   more in the broker-sourced dollar-volume file of 2026-10-29 (`scripts/fetch_dollar_volume.py`,
   the 50-session median the liquidity verdict reads). **Judged:** all of them. SOXL, TECL and TQQQ, the
-  names the user trades or asked for, are reported first. Single-stock funds start after 2022, so
+  names the request named, are reported first. Single-stock funds start after 2022, so
   they fall out by rule. A fund closed before 2026 is not in the list, so the sample is survivors
   only, an upper bound.
-- **Window and sample:** daily bars, the broker's first (the user's rule), Yahoo's where the broker
+- **Window and sample:** daily bars, the broker's first (a standing rule), Yahoo's where the broker
   has none.
   - **Which bar a session takes:** the broker's regular-hours daily candle, unless it is missing or
     its close is more than 1% from Yahoo's, then Yahoo's. Both are split-adjusted, but the broker's
@@ -2002,8 +2036,8 @@ before any of it is fetched or run.*
   `overnight-trading-permitted` false on 2026-10-29), replayed with the same rules against the
   daily replay over the same span. Yahoo's extended-hours bars carry bad prints (SOXL's 10-29 16:00
   bar: a high of 123 and a low of 68.5 inside a 102-to-89 move), so outside 9:30-16:00 a Yahoo
-  bar's high and low are clipped to 3% beyond its open and close. Also: the user's five SOXL fills
-  of 10/22-10/29 must come out of a replay on the broker's 5-minute bars as trades, at or inside
+  bar's high and low are clipped to 3% beyond its open and close. Also: a handful of hand-placed fills
+  on a leveraged fund must come out of a replay on the broker's 5-minute bars as trades, at or inside
   each bar's range. Survivors only, as above.
 - **Name split (B9):** design and holdout cover the same names.
 - **Data:** fetched by a committed script (`scripts/fetch_ladder_bars.py`) into
@@ -2059,7 +2093,7 @@ before any of it is fetched or run.*
   - **The holdout, reported:** the mean edge stays small and positive on about three names in five.
   - **Intraday, reported:** on hourly bars the `once-3` replay makes a few points a year less than
     the daily replay over the same span on SOXL, TECL and TQQQ, so the daily fills read somewhat
-    high. The user's own six SOXL fills each sit inside the broker's 5-minute bar, every buy under
+    high. A handful of hand-placed fills each sit inside the broker's 5-minute bar, every buy under
     the trigger, every sell matching a lot at its target.
   - Every figure is in the local results (`~/.cherrypick/data/research/item26/results.json`,
     `intraday.json`).
@@ -2085,7 +2119,7 @@ cells motivated `confirm`; they are in-sample and one name.*
   less of a rebound to exit.
 - **Look-alikes:** the 10-20 strangle management test (stops failed both halves); the pmcc roll
   policy (lost to holding); the 10-19 covered-call study.
-- **Base, fixed now:** item 26's `once-3`, the arm nearest the user's own trading. It is the base
+- **Base, fixed now:** item 26's `once-3`, the arm nearest hand-placed practice. It is the base
   whatever item 26 finds, so its verdict cannot steer the comparison.
 - **The arms**, each `once-3` with one change, unless stated:
   - `avg-5`: averaging down. The first lot as `once`; while a position is open, a further lot at
@@ -2141,7 +2175,7 @@ cells motivated `confirm`; they are in-sample and one name.*
     planned correlated-group cap already covers part of it. Best tested as a portfolio item once
     the module's caps are set.
   - *Selling calls against stuck lots* to lower their break-even. Not yet: a contract needs 100
-    shares, beyond the user's lot size (about $1,000, 2026-10-29), and the 10-19 covered-call study
+    shares, beyond a small lot size (about $1,000), and the 10-19 covered-call study
     found the overlay lost against holding on most names.
 - **Decides:**
   - **A pass:** the passing arm with the shortest longest hold becomes the `ladder` module's
@@ -2352,7 +2386,7 @@ trip at the natural cost a sixth to a half of a spread's best case.*
   - The stress takes the options' fees and fills only. The share lot keeps its 0.05% a side.
 - **Data:** ThetaData Options Standard end-of-day chains for SOXL and TQQQ, fetched by a research-queue
   `fetch-chains` row into the backtest store, beside item 26's `bars.db` and item 28's Treasury files.
-  The replay is `scripts/share_ladder_item29.py`, run as `item29/plan`, `item29/fetch-chains` and
+  The replay is `packages/backtest/scripts/share_ladder_item29.py`, run as `item29/plan`, `item29/fetch-chains` and
   `item29/study`. The results are derived from licensed data, so they stay under
   `~/.cherrypick/data/backtest/results/research/item29/`, and this plan records the verdict without
   figures.
@@ -2462,7 +2496,7 @@ horizon: walls from the monthly a 20-60 day trade sells, read over 5 to 20 sessi
     result).
 - **Data:** the stored ThetaData end-of-day chains for the monthly expiries, with the 2023-25 monthlies
   fetched by a `fetch-chain-paths` row; open interest by the new `fetch-oi` (`oifetch.py`, its own
-  store `open_interest.db`). The study is `scripts/gex_walls_item30.py`, run as `item30/fetch-chain-paths`,
+  store `open_interest.db`). The study is `packages/backtest/scripts/gex_walls_item30.py`, run as `item30/fetch-chain-paths`,
   `item30/fetch-oi` and `item30/study`. The results are derived from licensed data, so they stay under
   `~/.cherrypick/data/backtest/results/research/item30/`, and this plan records the verdict without
   figures.
@@ -2742,7 +2776,7 @@ paper ledger has been running since 2026-07-15, and it is the thing asked about.
     for costs. The suite's liquidity verdict file for the pool.
   - *Licence.* Everything fetched and everything derived from it stays under
     `~/.cherrypick/data/backtest/results/research/item31/`, and this plan records the verdict without
-    figures. The replay is `scripts/earnings_item31.py`, run as `item31/plan`, `item31/pilot`,
+    figures. The replay is `packages/backtest/scripts/earnings_item31.py`, run as `item31/plan`, `item31/pilot`,
     `item31/fetch-chains` and `item31/study`.
 - **Decides** (the user is not going live; paper continues whatever this shows):
   - **An arm passes:** it is marked *eligible to be considered for live later*: that is all. The paper
@@ -2759,7 +2793,7 @@ paper ledger has been running since 2026-07-15, and it is the thing asked about.
     answer.
   - **"Pays, not for the report"** is reported as it is, not as a pass, and the premium is then looked for
     in the overnight alone (item 22's condor and item 19's flies are the nearest done).
-- **Settled with the build, before the first read (2026-10-30, `scripts/earnings_item31.py`).** The pilot
+- **Settled with the build, before the first read (2026-10-30, `packages/backtest/scripts/earnings_item31.py`).** The pilot
   chose the end-of-day basis, so the study is "The end-of-day fallback" for the whole window. Nothing
   below has read an outcome.
   - **The module's own code runs**: `fetch_price_and_term_structure`, `apply_tiering`, the three order
@@ -2829,6 +2863,15 @@ paper ledger has been running since 2026-07-15, and it is the thing asked about.
     - **The exact agreement is reported beside it** (`exact`: the same strikes, the credit within a
       tick), with the close's build, not gated.
 
+- **Result (2026-11-07): fail, no arm passes; the holdout is reported only.**
+  No arm passes the design window: the iron fly, the iron condor and their gated forms lose on their own net, and
+  the directional credit spread beats the no-report control but does not clear its own net bar. Three arms have too
+  few paired trades for a verdict. The holdout ran after the design, as declared, and is reported only. The
+  directional spread is the one the report is worth something to, and costs eat it.
+  Every figure is in the local result (`~/.cherrypick/data/backtest/results/research/item31/`).
+- **What this decides:** the fail branch. The earnings module's paper rule is unchanged; any retirement stays the user's decision,
+  and the paper entries from 2026-10-28 remain the untouched later check.
+
 ### 32. Large options orders as a signal: the flow plan's declared test, registered
 
 *Source: [flow-signal-plan.md](flow-signal-plan.md), declared 2026-10-24 with its fetch, and never run.
@@ -2858,7 +2901,7 @@ records only what had to be settled before the first read, and nothing here has 
     dropped; and the reading with the five most frequent names removed.
   - **The holdout fetch:** the grid rule carried on over 2025-07-01 to 2026-10-12 (every fifth session,
     counted on from the design grid), with the sessions before each report for the earnings test, by
-    `scripts/flow_fetch_plan.py` extended to the holdout. Fetching reads no outcome; the holdout is
+    `packages/backtest/scripts/flow_fetch_plan.py` extended to the holdout. Fetching reads no outcome; the holdout is
     still read once, after the design results.
 - **A gate, added 2026-10-30 before anything was read:** the second family gains **F7, no report
   ahead**: a tag is not counted when the name's next report has its reaction day inside the outcome
@@ -2866,7 +2909,7 @@ records only what had to be settled before the first read, and nothing here has 
   plan's earnings test asks apart; without them the tag asks about information outside reports.
   F7 on three tags at three cuts adds nine trials, so the second family is 49, deflated together.
   It replaces the reported reading with report windows dropped, which is now judged.
-- **Settled with the build, before the first read (2026-10-30, `scripts/flow_signal_item32.py`,
+- **Settled with the build, before the first read (2026-10-30, `packages/backtest/scripts/flow_signal_item32.py`,
   `cherrypick.backtest.flowstudy`):**
   - **The thin 2025 sessions were a calendar change, not missing data.** 2025-01-09 (a national day of
     mourning) became a closed day in the suite's calendar on 2026-10-25, after the grid was fetched,
@@ -2965,8 +3008,8 @@ Its sessions have never been split by Fed day.*
   days in all, so the holdout alone cannot confirm a small effect.
 - **Data:** the 60-second store, MEIC's replay, the Fed's calendar (public). Results stay under
   `~/.cherrypick/data/backtest/results/research/item33/`; this plan records the verdict without
-  figures. The study is `scripts/meic_fomc_item33.py`, run as `item33/study`.
-- **Settled with the build, before the first read (2026-10-30, `scripts/meic_fomc_item33.py`):**
+  figures. The study is `packages/backtest/scripts/meic_fomc_item33.py`, run as `item33/study`.
+- **Settled with the build, before the first read (2026-10-30, `packages/backtest/scripts/meic_fomc_item33.py`):**
   - **The arm is the live rule's single 14:00 entry,** item 23's `live-1400`, read from its stored
     design and holdout runs; the registry's `pm-200` enters every 30 minutes from 12:00 and is not
     the live rule. No replay is run and no holdout is spent by this item.
@@ -3025,7 +3068,7 @@ flow store's outcomes has been read.*
     reported; no borrow cost is charged, a declared limit.
 - **Declared limits (B11):** premium, not contracts; single-leg orders only; the histogram's buckets
   are coarse; grid sessions only; no borrow cost on the short leg.
-- **Settled with the build, before the first read (2026-10-30, `scripts/option_stock_ratio_item34.py`,
+- **Settled with the build, before the first read (2026-10-30, `packages/backtest/scripts/option_stock_ratio_item34.py`,
   `cherrypick.backtest.ratiostudy`):**
   - **The premium** counts each histogram bucket at its geometric midpoint; the underflow bucket
     (under $100) at $50 and the overflow bucket (over $10M) at its floor. The histogram holds every
@@ -3044,7 +3087,7 @@ flow store's outcomes has been read.*
     no holdout floor; item 32's is used), and is refused without a design pass or once spent.
 - **Data:** the flow store (design fetched; holdout by item 32's row) and the local bars. Results stay
   under `~/.cherrypick/data/backtest/results/research/item34/`, verdict here without figures. The
-  study is `scripts/option_stock_ratio_item34.py`, run as `item34/study`.
+  study is `packages/backtest/scripts/option_stock_ratio_item34.py`, run as `item34/study`.
 - **Decides:** **a pass** makes the ratio a candidate board method beside item 32's tags (read from
   the broker's nightly data, as item 32's would be); **a fail** closes it for this store and grid.
 - **Result (2026-10-31): fail; the holdout is not read.** The spread between the lowest and highest
@@ -3231,7 +3274,7 @@ computed.*
   - The 7 holiday-Thursday expiries (2023-04-06, 2024-03-28, 2025-04-17, 2025-07-03, 2026-04-02, 2026-06-18,
     2026-07-02) and the Thursday before each holiday (8-day entries for the next expiry) are
     not in the store (it was fetched for Friday expiries only); they need a fetch by the same
-    committed code (`scripts/fetch_addon_weeklies.py`, registered in `stores.STORES`, extended to take
+    committed code (`packages/backtest/scripts/fetch_addon_weeklies.py`, registered in `stores.STORES`, extended to take
     those dates). Until fetched, those entries drop and are counted. Two Fridays (2024-06-21, 2024-06-28)
     were refused by the vendor and cannot be fetched; their entries (about ten) drop.
   - Minute quotes, not the module's cache ticks; the vendor's delta feed lags the cache's.
@@ -3247,14 +3290,14 @@ computed.*
   - One lot of a $5/$10 structure at index levels from about 3,700 to 7,000; the wings are fixed in
     points, so the same rule is a different trade in 2022 and 2026. Reported by year, not scaled.
 - **Data:** the minute store `addon_weeklies.db` (registered in `stores.STORES`, built by
-  `scripts/fetch_addon_weeklies.py`; 222 Friday expiries with 5 entries each, minute stamps from 09:30
+  `packages/backtest/scripts/fetch_addon_weeklies.py`; 222 Friday expiries with 5 entries each, minute stamps from 09:30
   to 16:15, puts at all strikes in a band around spot), the 60-second store for the paper-validation
   gamma series, the exchange's public daily volatility and index files under `~/.cherrypick`, the
   paper ledger (validation only), `cherrypick.core.fees`. Everything fetched and derived stays under
   `~/.cherrypick/data/backtest/results/research/item35/`; this plan records the verdict without figures.
-  The study is a new script (`scripts/bwb_item35.py`), run as `item35/plan`, `item35/fetch`,
+  The study is a new script (`packages/backtest/scripts/bwb_item35.py`), run as `item35/plan`, `item35/fetch`,
   `item35/validate` and `item35/study`, queued as research-queue rows.
-- **Settled with the build, before the first read (2026-10-31, `scripts/bwb_item35.py`):**
+- **Settled with the build, before the first read (2026-10-31, `packages/backtest/scripts/bwb_item35.py`):**
   - The replay uses bwb's own entry planner, add-on planner, trigger management, execution gate and
     costs; only the chain reader is replaced. **The module's execution gate is applied** (a fire is
     held while any fly leg is missing or wider than 25% of its mid), as paper applies it.
@@ -3296,6 +3339,14 @@ computed.*
     detectable effect), and the retirement decision stays the user's. Paper keeps running meanwhile.
   - **A variant passes where `delta` fails:** recorded as the variant only, a new arm at a declared
     boundary, never `delta` itself brought back.
+
+- **Result (2026-11-07): fail, all twelve tests; the holdout is reported only.**
+  None of the twelve tests passes the design window, gated on VIX9D below VIX or not. The `flip` arms have no
+  verdict on their inputs (the replayed flip does not match paper's ticks) and `delta-dte3` has too few fires.
+  The holdout is reported only.
+  Every figure is in the local result (`~/.cherrypick/data/backtest/results/research/item35/`).
+- **What this decides:** the fail branch. bwb stays in paper and the retirement decision stays the user's; this is the
+  real-quote record of the whole rule, arm by arm.
 
 ### 36. pmcc's own rule on real quotes: the shield, three variants and two baselines
 
@@ -3518,7 +3569,7 @@ All options history is the licensed store's end-of-day chains (`eod_chain_quotes
 `stores.STORES`. Nothing licensed enters the repo, a PR or an issue. Underlying closes and rates come
 from the local bar store and the T-bill series on disk. Results stay under
 `~/.cherrypick/data/backtest/results/research/item36/`; this plan records the verdict without figures. The
-study is `scripts/pmcc_item36.py`, run as `item36/plan` (writes the request files and counts),
+study is `packages/backtest/scripts/pmcc_item36.py`, run as `item36/plan` (writes the request files and counts),
 `item36/pilot` (SPY first: the fetch, the guards, no arm read), and `item36/study`.
 
 **What a full test needs, per symbol** (about 564 Fridays, 2016-01 to 2026-10):
@@ -3555,7 +3606,7 @@ an expiry not listed is a week without a short; `XSP(SPY)` is a stand-in; stocks
 and reports; the three variants and `shield_guard` have no paper twin before a boundary and so no
 live-fill check; an unlisted arm (other deltas, other expiries) is outside the sample by design.
 
-- **Settled with the build, before the first read (2026-10-31, `scripts/pmcc_item36.py`):**
+- **Settled with the build, before the first read (2026-10-31, `packages/backtest/scripts/pmcc_item36.py`):**
   - The replay imports pmcc's own long and short selection, entry planning, management (stop, rolls,
     assignment roll, decay and breach rolls in pmcc's order), expirations and costs; it reimplements
     none of them. Delta is computed from each chain's mids with the T-bill rate and trailing dividend
@@ -3629,6 +3680,15 @@ live-fill check; an unlisted arm (other deltas, other expiries) is outside the s
 - **A fail or no verdict:** the evidence the retirement rule needs, with the minimum-detectable-effect
   note beside it. Any retirement of the module or removal of a symbol stays the user's decision; paper
   keeps running unchanged until then.
+
+#### Result
+
+- **Result (2026-11-07): no verdict, every arm; the holdout is not read.**
+  No arm is judged. Too few of the six funds have enough priced weeks in the design window, so every arm falls under
+  the declared four judged funds. The holdout is not read.
+  Every figure is in the local result (`~/.cherrypick/data/backtest/results/research/item36/`).
+- **What this decides:** no verdict. pmcc paper runs unchanged. A verdict needs fuller chain coverage of the funds that fell
+  short and would be a retest, declared as such.
 
 ### 37. A real-quote test of curve's own rule: the contango-gated VXX call spread, with two variants
 
@@ -3796,10 +3856,10 @@ outcome of any arm has been read. `hook` is retired (it never fired) and is not 
   from 2019-06-21 to 2026-12-18, each from the first session it can be the target to its expiry (or the
   last stored session). Fetched by research-queue `fetch-chain-paths` rows, not by hand. The sample check
   uses `fetch-intraday-chains`. Spot from the technicals bars, ratio from the public index files. The
-  replay is `scripts/curve_item37.py`, run as `item37/plan`, `item37/fetch-chain-paths`,
+  replay is `packages/backtest/scripts/curve_item37.py`, run as `item37/plan`, `item37/fetch-chain-paths`,
   `item37/fetch-intraday` and `item37/study`. Results are derived from licensed data and stay under
   `~/.cherrypick/data/backtest/results/research/item37/`; this plan records the verdict without figures.
-- **Settled with the build, before the first read (2026-10-30, `scripts/curve_item37.py`):**
+- **Settled with the build, before the first read (2026-10-30, `packages/backtest/scripts/curve_item37.py`):**
   - The replay calls the module's own entry planner, management, exit-spread gate, costs, assignment
     and expiry code; it reimplements none of them. Each arm is the module's defaults with its one
     change; `hold-expiry` keeps the flip.
@@ -3990,7 +4050,7 @@ has been computed.*
       20 requests.
   - Everything fetched and derived stays under `~/.cherrypick/data/backtest/results/research/item38/`;
     this plan records the verdict without figures. The study is a new script
-    (`scripts/calendars_item38.py`), run as `item38/plan`, `item38/pilot`, `item38/fetch`,
+    (`packages/backtest/scripts/calendars_item38.py`), run as `item38/plan`, `item38/pilot`, `item38/fetch`,
     `item38/validate` and `item38/study`, queued as research-queue rows.
 - **Fills and costs: the paper ledger's basis,** so the replay and the paper check read the same fills.
   Each opening and closing leg at mid plus slippage of 12.5% of its quoted spread, capped at 15% of
@@ -4142,7 +4202,7 @@ has been computed.*
   - Weekly sampling stands in for 252 daily readings in the IV rank.
   - The historical ex-dividend dates are declared from the issuer's schedule and are only as good as
     that declaration.
-- **Settled with the build, before the first read (2026-10-31, `scripts/calendars_item38.py`):**
+- **Settled with the build, before the first read (2026-10-31, `packages/backtest/scripts/calendars_item38.py`):**
   - **The trim check is judged both ways.** Removing the five worst weeks can only raise a mean, so on
     its own it can never fail; the check that shows a mean living in a few big weeks is the five best
     removed. Both are judged; the best-removed one is the one that bites.
@@ -4486,7 +4546,7 @@ either rule below.*
   `~/.cherrypick/data/backtest/results/research/item40/`; this plan records the verdict without figures.
 - **Decides:** a pass is evidence for reinstating flies with that arm, paper first, the user's decision;
   a fail closes these two levers, and with the 10-17 sweep leaves no tested way round the strand.
-- **Settled with the build, before the first read (2026-10-31, `scripts/flies_item40.py`, flies
+- **Settled with the build, before the first read (2026-10-31, `packages/backtest/scripts/flies_item40.py`, flies
   `engine.strand_stop_*` and `evaluate_whole_fly`).** Nothing below has read an outcome.
   - **The stop's rule was corrected on 2026-10-31, before any read.** The declaration first said three
     times the credit received. That is a buy-back cost above the 5-point width for any credit over a
@@ -4544,7 +4604,7 @@ either rule below.*
 
 *Source: the user, 2026-10-31, after reviewing a contributor's gate (PRs #723, #728): "I would also
 like to create a backtest of this strategy/arm", then four variants and one control chosen from a
-list. The gate is `cherrypick.meic.stabilization_gate` (docs/theta-profits-be-condor.md, gap 2).
+list. The gate is `cherrypick.meic.stabilization_gate` (docs/breakeven-condor.md, gap 2).
 Declared here before any of it is run. Item 42 tests the strategy at its own wing widths, once the
 store holds them.*
 
@@ -4574,7 +4634,7 @@ store holds them.*
 - **The structure:** every arm is SPX, one condor per entry, 12 delta, per-side stop at 1.0× the
   whole credit, entries 09:45–15:30 at least 55 minutes apart, up to seven a session, 5% credit
   floor, the regime gates neutralised: the `be-hourly-1x` profile in
-  docs/theta-profits-be-condor.md, except that both wings are **10 points wide** (`equalize_credit`
+  docs/breakeven-condor.md, except that both wings are **10 points wide** (`equalize_credit`
   off). The store holds only about 100 points of strikes either side of spot, and a 12-delta short
   with a 25–40-point wing falls outside it on most mornings (item 42).
   - `be10` is that arm without the gate: the base for the first three judged arms.
@@ -4618,7 +4678,7 @@ store holds them.*
 - **Name split (B9):** does not apply; one symbol.
 - **Data:** no new store. Needs PR #728 merged (the replay computes the verdicts, and the
   `stabilization_bars` and placebo keys exist); the script refuses to run without them.
-  `scripts/meic_stabilization_item41.py --step plan|study --window design|holdout` builds a scratch
+  `packages/backtest/scripts/meic_stabilization_item41.py --step plan|study --window design|holdout` builds a scratch
   MEIC arm registry from the machine's (the arms above added) and runs `cherrypick.backtest.runner`.
   Results go under the backtest data directory only; this plan records the verdict.
 - **Decides:**
@@ -4645,8 +4705,8 @@ store holds them.*
 strategy's 25–40-point wings need strikes the vendor store does not hold. Declared here before the
 store is fetched or any of it is run.*
 
-- **Question:** does the break-even condor as he describes it (docs/theta-profits-be-condor.md, the
-  `be-hourly-1x` profile) earn after costs, and does the stabilization gate improve it?
+- **Question:** does the break-even condor as he describes it (docs/breakeven-condor.md, the
+  `be-hourly-1x` arm) earn after costs, and does the stabilization gate improve it?
 - **Where the edge would live:** **premium**, for the condor: hourly 12-delta condors whose
   per-side stop at the whole credit turns one tested side into a near-flat trade, so the edge is
   surviving trades outweighing double stops (his ~8%). **Timing**, for the gate, as item 41.
@@ -4673,7 +4733,7 @@ store is fetched or any of it is run.*
   and the share of 12-delta shorts whose 40-point wing is inside it).
 - **Settled with the build, before any read (2026-10-31):** the store is built (#744, #745) and
   fetched as research-queue row `item42/fetch-wide-store` over 2022-05-16..2026-10-30.
-  `scripts/meic_be_condor_item42.py --step coverage` reports that reach for the wide store and the
+  `packages/backtest/scripts/meic_be_condor_item42.py --step coverage` reports that reach for the wide store and the
   plain one side by side, so what the wider fetch adds is on record; `--step study --window
   design|holdout` refuses until coverage has run and the wide store holds the window's sessions.
   `be-skip` uses item 41's measured refusal rate (the spot is the same in both stores), seed 42.
@@ -4685,6 +4745,13 @@ store is fetched or any of it is run.*
     with the gate if a gated arm also passes.
   - **`be` fails:** the strategy as described does not earn after costs here, whatever the gate
     does. That is the evidence for closing it as a MEIC arm; closing it stays the user's decision.
+
+- **Result (2026-11-07, provisional): `be` passes the design window and fails the holdout; both gated arms fail.**
+  `be` passes the design window. Its holdout mean is positive but misses the t bar, so `be` fails there.
+  Both gated arms fail against `be` in the design window.
+  Every figure is in the local result (`~/.cherrypick/data/backtest/results/research/item42/`).
+- **What this decides:** the fail branch for the gate, and `be` is not confirmed. Nothing changes. `be` is the zero-day rule
+  most worth a reread once more sessions are stored.
 
 ### 43. The wing width of MEIC's live rule: 15, 20, 25 and 30 against 10
 
@@ -4752,7 +4819,7 @@ of it is run.*
 - **Declared limits (B11):** 60 s ticks; strikes beyond the stored ~100 points do not exist here; a
   stop fills under the fill model, not a recorded fill; one width per arm, never a per-side pair.
 - **Name split (B9):** does not apply; one symbol.
-- **Data:** no new store. `scripts/meic_wing_width_item43.py --window design|holdout` builds a scratch
+- **Data:** no new store. `packages/backtest/scripts/meic_wing_width_item43.py --window design|holdout` builds a scratch
   MEIC arm registry from the machine's (the arms above added) and runs `cherrypick.backtest.runner`.
   Results go under the backtest data directory only; this plan records the verdict.
 - **Decides:**
@@ -4842,7 +4909,7 @@ it is run.*
 - **Declared limits (B11):** item 43's, with ~200 points of strikes in place of ~100; item 41's for
   the gate (one spot print a minute, ATR threshold only, no IV mode).
 - **Name split (B9):** does not apply; one symbol.
-- **Data:** the script (`scripts/meic_wing_width_item44.py --step plan|study --window design|holdout`)
+- **Data:** the script (`packages/backtest/scripts/meic_wing_width_item44.py --step plan|study --window design|holdout`)
   is written after the store lands, in its own PR, and implements exactly the arms above. Results go
   under the backtest data directory only; this plan records the verdict.
 - **Settled with the build, before any read (2026-11-01):**
@@ -4870,6 +4937,14 @@ it is run.*
   - **A (b) pass:** joins item 43's pass branch; the width proposal names the widest passing arm
     only if it also beats item 43's best on net over buying power.
   - **Fails:** the gate stays off the live rule at every width, and 35–40 wings are closed for it.
+
+- **Result (2026-11-07, provisional): fail, both parts.**
+  (a) Every gated arm fails against its own width in the design window and against the placebo, and the
+  holdout agrees. (b) `w35` and `w40` beat `w10` per session in the design window but fail on net over buying power,
+  and miss the t bar in the holdout.
+  Every figure is in the local result (`~/.cherrypick/data/backtest/results/research/item44/`).
+- **What this decides:** the fail branch. The gate stays off the live rule at every width, and wings of 35 to 40 are closed for
+  it.
 
 ### 45. A published GEX share strategy, out of sample: buy the calm after an implied-vol spike
 
@@ -4978,7 +5053,7 @@ inputs are fetched.*
   vendor reports them, so a position spanning a split is adjusted by its ratio (NEE, 2020-10-27,
   4:1). Dividends are ignored, as the source does. The tradable label is hindsight.
 - **Name split (B9):** applies in cell N (ten names); not in cell P, whose names are the author's.
-- **Data:** `scripts/gex_strategy_item45.py plan|requests|bars|pilot|study --cell pilot|P|N`.
+- **Data:** `packages/backtest/scripts/gex_strategy_item45.py plan|requests|bars|pilot|study --cell pilot|P|N`.
   `plan` writes the open-interest plan, `requests` the chain requests (wide, the minute samples and
   the probe), `bars` the broker's 15-minute candles for the pilot (read-only, the shared credential),
   `pilot` the basis decision, `study` the arms. Inputs are fetched as research-queue rows; results
@@ -5074,7 +5149,7 @@ Declared before any of its inputs are fetched.*
   peso explanation cannot be ruled out from history. The names are today's choice.
 - **Name split (B9):** does not apply: four index names that are one market, and three funds. The
   per-name breadth rule above stands in for it.
-- **Data:** `scripts/variance_premium_item46.py plan|coverage|study`. `plan` writes the chain-path
+- **Data:** `packages/backtest/scripts/variance_premium_item46.py plan|coverage|study`. `plan` writes the chain-path
   requests (each name's monthly cycles; paths the store already holds are skipped by the fetch).
   `coverage` and `study` land in their own changes, before any P&L is read. Inputs are fetched as a
   research-queue row; results stay under the backtest data directory.
@@ -5086,9 +5161,16 @@ Declared before any of its inputs are fetched.*
     survive costs. The question is closed for the suite, and the income lists keep their
     near-zero note.
 
+- **Result (2026-11-07): pass, one cell.**
+  One of the forty cells passes every check: the equity-index 10-delta put at 7 days. Every index cell at 30 to 60
+  days fails, and no non-equity cell passes.
+  Every figure is in the local result (`~/.cherrypick/data/backtest/results/research/item46/`).
+- **What this decides:** the pass branch, narrowly. The passing cell becomes a proposal for a paper arm, declared as its own
+  item, with sessions after 2026-10-30 read first. Nothing changes until then.
+
 ### 47. Selling a report when its implied move is above its past moves: a monthly strangle closed the next day
 
-*Source: the user, 2026-11-01, after reviewing a Theta Live video. A trader sells a short strangle
+*Source: the user, 2026-11-01, after reviewing a public trading-channel video. A trader sells a short strangle
 across an earnings report on names whose implied move is above both their long-run and recent average
 moves, on the monthly expiry, with strikes outside the worst move the name has made on a report, and
 buys it back the session after. Declared before any of its inputs are fetched.*
@@ -5152,7 +5234,7 @@ buys it back the session after. Declared before any of its inputs are fetched.*
   inside the session, no holding a pinned position longer, no rolls, no share hedge (his defences are
   not modelled; a next-day close takes the loss); the margin of a naked strangle is not charged; the
   tradable label is hindsight; the long average spans the calendar's years, not ten.
-- **Data:** `scripts/earnings_strangle_item47.py requests|study`. `requests` writes the end-of-day
+- **Data:** `packages/backtest/scripts/earnings_strangle_item47.py requests|study`. `requests` writes the end-of-day
   singles not already stored (the monthly on the entry and reaction sessions, for the events and the
   controls; about 9,200 on 2026-11-01). They are fetched as a research-queue row, and the study runs
   after them. Results stay under the backtest data directory.
@@ -5162,6 +5244,16 @@ buys it back the session after. Declared before any of its inputs are fetched.*
   - **Fail:** selling single-name report premium through a strangle is closed with the fly and navigator
     results, and implied-against-past moves as a selector is closed for the module's G1 too, if item 31
     finds the same.
+
+- **Result (2026-11-07): fail.** The first run read no trades: the chain reader keyed the store's
+  rights by the stored word and found no straddle (corrected the same day, before any trade was read;
+  the script's `REPLAY_CORRECTIONS`). On the corrected run, `rich` fails the design window on its own
+  net, its paired difference over the control, both time-halves, both name-halves and the cost stress,
+  though it beats the unselected reports. No arm is above zero in the holdout.
+  Every figure is in the local result (`~/.cherrypick/data/backtest/results/research/item47/`).
+- **What this decides:** the fail branch. Selling single-name report premium through a strangle is
+  closed with the fly and navigator results, and implied-against-past moves as a selector is closed
+  for the module's G1 too: item 31 found the same.
 
 ### 48. The stop of MEIC's live rule: 1.8, 1.9, 2.0 and 2.2 times the credit, filled by the loop or resting at the broker
 
@@ -5181,7 +5273,7 @@ loop. Declared here before any of it is run.*
 - **Look-alikes:** the 2026-10-18/19 `pm-hold` / `pm-095` / `pm-200` runs (0.95x lost to 2.0x in all
   three spans, and hold beat 2.0x in two calm spans); the 2026-10-18 condor study (whole-credit 2.0x
   the only stop rule positive in both halves); item 7 (stop mechanics, never run); the live stop
-  overshoot read (`scripts/meic_stop_overshoot.py`).
+  overshoot read (`packages/backtest/scripts/meic_stop_overshoot.py`).
 - **Rival explanations, each with its check:**
   - *A fill model, not a stop:* a minute's quotes cannot say where the ask crossed. **Check:** the
     resting stop runs at both bounds, `rest-*` (filled at the tick's ask) and `restbest-*` (filled at
@@ -5216,7 +5308,7 @@ loop. Declared here before any of it is run.*
 - **Declared limits (B11):** 60 s ticks; no outage is modelled, so the resting stop's main purpose,
   protection when the loop cannot run, is not measured here; the store keeps about 100 points either
   side of spot.
-- **Data:** no new store. `scripts/meic_stop_grid_item48.py --window design` builds a scratch MEIC
+- **Data:** no new store. `packages/backtest/scripts/meic_stop_grid_item48.py --window design` builds a scratch MEIC
   arm registry from the machine's and runs `cherrypick.backtest.runner`. Results go under the backtest
   data directory only; this plan records the verdict.
 - **Decides:**
@@ -5226,9 +5318,16 @@ loop. Declared here before any of it is run.*
   - **A fail:** live keeps 2.0x. The resting stop can still be switched on as outage protection,
     argued as insurance, not as edge, with this run's `rest-200` against `live-1400` as its cost.
 
-### 49. The "Crazy Ivan" on TQQQ: a cash-secured 16-delta put sold by a resting order 20% over the ask
+- **Result (2026-11-07, provisional): fail, every arm.**
+  Every arm fails the design window against `live-1400`: the loop ratios, the resting stops and the stop
+  off. No holdout is read.
+  Every figure is in the local result (`~/.cherrypick/data/backtest/results/research/item48/`).
+- **What this decides:** the fail branch. Live keeps its 2.0x stop. The resting stop can still be switched on as outage
+  protection, argued as insurance and not as edge.
 
-*Source: Maria Helmick's written rules (the Math Makes Money newsletter, Issue 32, 2026-07-07),
+### 49. The dip-sold put on TQQQ: a cash-secured 16-delta put sold by a resting order 20% over the ask
+
+*Source: a trader's written rules (a subscriber newsletter of 2026-07-07, not linked here; the public interview is credited in strategy-sources.md),
 moved to TQQQ in [`docs/history/ivan-plan.md`](history/ivan-plan.md) ("The TQQQ version"). The
 user decided on 2026-11-02: the cushion is the ask × 1.20, every put is cash secured, and this
 backtest comes before any paper module. Declared here before any of it is run.*
@@ -5244,16 +5343,16 @@ backtest comes before any paper module. Declared here before any of it is run.*
 - **This matches a "not worth revisiting" row, said out loud.** "Roll-for-a-credit, never close"
   (below) is answered. Every chain is scored from first sale to final close, so a roll can never
   turn a loss into a win, and `noroll` is a judged arm. The expectation is that `noroll` matches or
-  beats `maria`.
+  beats `rest20`.
 - **Look-alikes:** item 6 (a down-day entry filter for the put BWB, failed); item 21 (a resting entry
   limit on legged flies, failed); item 25 (the skate's cash-secured put, no verdict); item 46 (the
   variance premium on the equity index's 30–60-day puts, declared); the 2026-10-12 SPY 40-delta
   cash-secured put, which tracked Cboe's PUT index; the short-put delta and income-screen tests (edge
   about zero after costs at every delta); the pmcc roll policy (lost on 5 of 6 symbols).
 - **Rival explanations, each with its check:**
-  - *The plain short-put premium, not the fill:* **check:** `maria` must beat `atclose` (the same
+  - *The plain short-put premium, not the fill:* **check:** `rest20` must beat `atclose` (the same
     put, sold at the close on any session with room), paired by month.
-  - *The roll hides the loss:* **check:** chains are scored whole, and `maria` must beat `noroll`,
+  - *The roll hides the loss:* **check:** chains are scored whole, and `rest20` must beat `noroll`,
     paired by month.
   - *A Nasdaq bull market:* **check:** both time-halves must agree (2018's fourth quarter, 2020 and
     2022 are inside), `trend` shows how much rests on up-markets, and the holdout holds 2025's spring
@@ -5279,19 +5378,19 @@ backtest comes before any paper module. Declared here before any of it is run.*
   - **At expiry:** a put in the money is assigned 100 shares at the strike, sold at the next session's
     open.
 - **Judged arms (seven):**
-  - `maria`: as above.
+  - `rest20`: as above (results stored before 2026-11 name it `maria`; the script resolves the old name).
   - `deep`: the cushion at 1.40.
   - `atclose`: no resting order; sell at the close's mid on any session with room.
   - `overnight`: only a fill at the open counts. The order is gone by 09:45.
   - `noroll`: at the defence line, buy back at the close and end the chain.
   - `trend`: rest the order only while TQQQ's close is above its 200-session average.
-  - `qqq`: `maria` on QQQ, defence at 1.7% (unscaled).
+  - `qqq`: `rest20` on QQQ, defence at 1.7% (unscaled).
 - **Reported, never judged:**
   - `cushion10` (1.10);
   - `tp21` (half the credit or 21 DTE, whichever is first);
   - `tp75` (75%);
   - `hold` (no take profit);
-  - `spread` (`maria` with a long put 10% of spot below the short);
+  - `spread` (`rest20` with a long put 10% of spot below the short);
   - `dist15` (the strike nearest 15% below spot instead of 16 delta);
   - `single` (one open chain at a time).
 - **The fill, from end-of-day data.** Daily chains can't see an intraday bid, so the next session's
@@ -5322,7 +5421,7 @@ backtest comes before any paper module. Declared here before any of it is run.*
   - positive in each time-half;
   - still positive at 1.5x fees and the natural + $0.02 a leg, and with fills at the limit only;
   - then the holdout's mean above zero.
-  - **The Crazy Ivan claim** needs more: a passing `maria`, `deep`, `overnight` or `trend` must also
+  - **The resting-order claim** needs more: a passing `rest20`, `deep`, `overnight` or `trend` must also
     beat `atclose` and `noroll`, by a paired monthly difference with a one-sided t above 2.
 - **Minimum detectable effect (B12):** from the design window's own spread of chain nets, recorded
   in the local result before the holdout is read.
@@ -5335,7 +5434,7 @@ backtest comes before any paper module. Declared here before any of it is run.*
   - the five-chain cap stands in for a fixed account.
 - **Data:** ThetaData Options Standard end-of-day chains for TQQQ, in the backtest store from item 29.
   QQQ's come the same way. Bars come from the technicals history.
-  - The replay is `scripts/ivan_tqqq_item49.py`.
+  - The replay is `packages/backtest/scripts/ivan_tqqq_item49.py`.
   - Its `expirations` lists both names' expiries once, by hand: it needs the vendor session, which a
     queued script may not hold.
   - Its `plan` writes every expiry path an arm could read that the store's records of finished work
@@ -5347,13 +5446,18 @@ backtest comes before any paper module. Declared here before any of it is run.*
   - The results are derived from licensed data, so they stay under
     `~/.cherrypick/data/backtest/results/research/item49/`; this plan records the verdict only.
 - **Decides:**
-  - **The Crazy Ivan claim passes:** the TQQQ paper module of `docs/history/ivan-plan.md` is built on
+  - **The resting-order claim passes:** the TQQQ paper module of `docs/history/ivan-plan.md` is built on
     the passing arm, paper only, with `noroll`'s defence if `noroll` did as well.
   - **Only `atclose` passes,** or no resting arm beats it: no module. Waiting for the fill adds
     nothing, and it is a plain cash-secured put, already measured.
-  - **`noroll` beats `maria`:** the roll is dropped from every version of the plan.
+  - **`noroll` beats `rest20`:** the roll is dropped from every version of the plan.
   - **Only `qqq` passes:** the QQQ version is proposed instead.
   - **Every arm fails:** the question is closed and the plan stays shelved.
+
+- **Result (2026-11-07): fail, all seven arms; the holdout reads none.**
+  All seven arms fail the design window, so the holdout reads none. The resting-order claim holds for no arm.
+  Every figure is in the local result (`~/.cherrypick/data/backtest/results/research/item49/`).
+- **What this decides:** the fail branch. The question is closed and the plan stays shelved.
 
 ### 50. Item 43's wider wings with live's gates on: 15 and 20 against the live rule
 
@@ -5417,7 +5521,7 @@ is run.*
 - **Declared limits (B11):** item 43's: 60 s ticks; strikes beyond the stored ~100 points do not
   exist here; a stop fills under the fill model; one width per arm.
 - **Name split (B9):** does not apply; one symbol.
-- **Data:** no new store. `scripts/meic_wing_width_gated_item50.py --window design|holdout` builds a
+- **Data:** no new store. `packages/backtest/scripts/meic_wing_width_gated_item50.py --window design|holdout` builds a
   scratch MEIC arm registry from the machine's and runs `cherrypick.backtest.runner`. Its arithmetic
   is item 43's, loaded from that script. Results go under the backtest data directory only; this
   plan records the verdict.
@@ -5429,6 +5533,13 @@ is run.*
     No live change; whether a width-aware floor is worth declaring is read from the reported pairs.
   - **A fail or no verdict otherwise:** live stays at 10 wide with its gates, and item 43's pass is
     read as a result about the ungated rule only.
+
+- **Result (2026-11-07, provisional): fail, both arms.**
+  `g15` and `g20` both miss the paired t bar in the design window, so the holdout does not count. It is reported:
+  neither arm is confirmed there.
+  Every figure is in the local result (`~/.cherrypick/data/backtest/results/research/item50/`).
+- **What this decides:** the fail branch. Live stays at 10 wide with its gates, and item 43's pass is read as a result about the
+  ungated rule only.
 
 ### 51. Dropping the call side when the VIX curve is stressed
 
@@ -5524,6 +5635,12 @@ hourly break-even condor's entries made while inverted lost, nearly all of it on
   - **A fail or no verdict:** the call side stays, and the curve stays a reported column on the
     trades, re-read when part 2 has its sessions.
 
+- **Result (2026-11-07, provisional): fail, every cell in both parts.**
+  Every cell fails in both parts, for `be`, `live-1400` and `w15` on inverted and hump days alike, and the holdouts
+  agree. Part 2's hourly bars passed their validation against the broker's recorded bars.
+  Every figure is in the local result (`~/.cherrypick/data/backtest/results/research/item51/`).
+- **What this decides:** the fail branch. The call side stays, and the curve stays a reported column on the trades.
+
 ### 52. Diagonals across an earnings report: the short weekly takes the crush, the monthly long keeps its value
 
 *Source: the user, 2026-11-06, after the earnings review. A 40-delta long in the next monthly and a
@@ -5602,7 +5719,7 @@ a cheap back month. Declared before any of its inputs are fetched.*
 - **Data:** the licensed end-of-day chains, fetched as research-queue rows after item 31's study: the
   report weekly and the next monthly on the entry and reaction sessions (and the next session, for the
   day-2 variant), for each event and its control; Dolt for the back-month history and the skew cuts.
-  A script `scripts/earnings_diagonal_item52.py requests|study` writes the requests and runs the study;
+  A script `packages/backtest/scripts/earnings_diagonal_item52.py requests|study` writes the requests and runs the study;
   it is written and reviewed before anything is fetched. Results stay under the backtest data
   directory; the register records verdicts only.
 - **Decides:**
@@ -5612,7 +5729,7 @@ a cheap back month. Declared before any of its inputs are fetched.*
   - **A fail:** diagonals across a report are closed with the calendars. If B2 fails with the `cheap`
     cut too, the back-month wing does not rescue a short report strangle, and item 47's verdict is read
     beside it.
-- **Clarified 2026-11-06, before any fetch** (what the script `scripts/earnings_diagonal_item52.py`
+- **Clarified 2026-11-06, before any fetch** (what the script `packages/backtest/scripts/earnings_diagonal_item52.py`
   does where the stores or the text left a choice):
   - The licensed end-of-day chains carry no greeks, so every delta is solved from the mid with
     `core.american` at zero rate and the name's trailing-year dividend yield (broker dividend history
@@ -5635,6 +5752,15 @@ a cheap back month. Declared before any of its inputs are fetched.*
     stricter reading (Holm on both) is reported beside the verdict, not judged.
   - The control gets the leg checks (two-sided, spread at most 15% of mid) and not the event-level
     filters (close, expected move, open interest).
+
+- **Result (2026-11-07): fail.** Two earlier runs refused for missing inputs (vendor refusals, then
+  permanent 'no data' open-interest days; `REPLAY_CORRECTIONS`, before any read). On the run that
+  went through, every arm judged fails the design window, and the `cheap` cuts of B1, B2 and C are no
+  verdict on too few design trades. B2's `cheap` cut is reported above zero in the holdout; with no
+  design verdict it decides nothing.
+  Every figure is in the local result (`~/.cherrypick/data/backtest/results/research/item52/`).
+- **What this decides:** the fail branch. Diagonals across a report are closed with the calendars,
+  and the back-month wing does not rescue a short report strangle: item 47 failed too.
 
 ### 53. The time exit for short premium opened inside 30 DTE
 
@@ -5682,8 +5808,8 @@ run; the plan step has only counted the cells.*
   one (every arm reads the same marks, so the paired difference shares the bias); monthly expiries only,
   so one entry a month per entry DTE, not weekly, since the store holds no SPY weeklies; early assignment
   and ex-dividend exercise not modelled; deltas are the store's.
-- **Data:** the licensed `SPY-monthly-1545.db` (`scripts/fetch_spy_monthly_1545.py`), already stored; no
-  fetch. `scripts/time_exit_entry_dte_item53.py plan|design|holdout` writes under
+- **Data:** the licensed `SPY-monthly-1545.db` (`packages/backtest/scripts/fetch_spy_monthly_1545.py`), already stored; no
+  fetch. `packages/backtest/scripts/time_exit_entry_dte_item53.py plan|design|holdout` writes under
   `results/research/item53/`; the register records verdicts only.
 - **Decides:**
   - **B confirmed for an entry DTE:** a proposal to give manage a scaled time exit for trades opened at
@@ -5692,6 +5818,11 @@ run; the plan step has only counted the cells.*
   - **D confirmed:** a proposal to drop the 50% take profit for them.
   - **Nothing confirmed:** manage's default stands (`skip_if_entered_inside` on, arm A) and the question
     is closed. Whether short-dated premium earns at all is reported, not decided here.
+
+- **Result (2026-11-07): fail, no challenger confirmed.**
+  No challenger beats A under Holm in the design window, at any entry DTE, so the holdout confirms none.
+  Every figure is in the local result (`~/.cherrypick/data/backtest/results/research/item53/`).
+- **What this decides:** nothing confirmed. Manage's default A stands and the question is closed.
 
 ### 54. Does the front/back IV ratio predict a time spread's profit?
 
@@ -5740,7 +5871,7 @@ chain is fetched; the plan step only counts the requests.*
 - **Data:** end-of-day chains from the licensed `eod_chains.db`, fetched by the plan's request file
   (three chains a trade: front and back at entry, the back at the front's expiry) through the research
   queue's `fetch-chains`; closes and splits from the technicals history store.
-  `scripts/time_spread_ratio_item54.py plan|design|holdout` writes under `results/research/item54/`; the
+  `packages/backtest/scripts/time_spread_ratio_item54.py plan|design|holdout` writes under `results/research/item54/`; the
   register records verdicts only.
 - **Decides:**
   - **A ratio test confirmed for a structure:** the scanner may rank that structure by the ratio, and
@@ -5748,6 +5879,14 @@ chain is fetched; the plan step only counts the requests.*
   - **The verdict test confirmed:** the scanner drops "loses unchanged" rows of that structure.
   - **Nothing confirmed:** the ratio stays an untested ordering, labelled so, and the scanner stays a
     convenience, never presented as a source of trades.
+
+- **Result (2026-11-07): fail, nothing confirmed.** The first run read no trades: the store's CALL and
+  PUT never reached the builder (corrected before any trade was read; `REPLAY_CORRECTIONS`). On the
+  corrected run, one of the twelve tests passes the design window, the call calendar's ratio rank, and
+  the holdout does not confirm it.
+  Every figure is in the local result (`~/.cherrypick/data/backtest/results/research/item54/`).
+- **What this decides:** nothing confirmed. The ratio stays an untested ordering, labelled so, and
+  the scanner stays a convenience, never presented as a source of trades.
 
 ### 55. Does a defined-risk index collar improve a long-delta book after costs?
 
@@ -5804,12 +5943,12 @@ has only counted the cycles.*
   tail no worse. Each arm's own numbers are reported, not judged.
 - **Declared limits (B11):** a 45-day cycle a month, so about 60 cycles a window and the tests are
   coarse; once-a-session marks and no managing before the close; early assignment and dividends on SPY
-  are not modelled (the real hedge is cash-settled and European); the book is shares, not the user's
+  are not modelled (the real hedge is cash-settled and European); the book is shares, not an
   options book, so how a hedge interacts with theta and gamma already held is not tested; the call
   spread's strike is chosen at the entry mid, so the realised net is zero only before costs; fractional
   units for equal delta, where a real 1-lot hedge is lumpier.
-- **Data:** the licensed `SPY-monthly-1545.db` (`scripts/fetch_spy_monthly_1545.py`), already stored; no
-  fetch. `scripts/index_collar_item55.py plan|design|holdout` writes under
+- **Data:** the licensed `SPY-monthly-1545.db` (`packages/backtest/scripts/fetch_spy_monthly_1545.py`), already stored; no
+  fetch. `packages/backtest/scripts/index_collar_item55.py plan|design|holdout` writes under
   `results/research/item55/`; the register records verdicts only.
 - **Decides:**
   - **K confirmed against N, C and D:** the "no tested edge" label comes off the collar, with the
@@ -5819,6 +5958,1012 @@ has only counted the cycles.*
     for it is revisited at a declared boundary.
   - **Nothing confirmed:** the collar stays offered, labelled untested, and a book that needs a hedge
     is no better off for it than the single verticals show.
+
+- **Result (2026-11-07): fail, no test confirmed.**
+  None of the five tests is confirmed in the design window, so the holdout is reported only.
+  Every figure is in the local result (`~/.cherrypick/data/backtest/results/research/item55/`).
+- **What this decides:** nothing confirmed. The collar stays offered, labelled untested.
+
+### 56. The wide wing when its floor allows, else live's 10: item 50's arms composed tick by tick
+
+*Source: the user, 2026-11-07, after item 50's report: "I'd like the solution to this as well". Item 50
+failed both gated wide arms against `live-1400`, but on the sessions where both entered, each wide arm
+did better than live's 10: the trade it takes is better, and the credit floor, a share of the width,
+lets it enter too rarely to win over every session. This rule keeps the better trade where the floor
+allows it and the 10 where it does not. The idea came from item 50's figures in both windows, so it
+is declared here knowing neither window is clean; the clean check is named below.*
+
+- **Question:** does live's rule, entering at the first tick either width's gates pass and taking
+  the 15- (or 20-) point wing whenever that width qualifies at or before the 10, earn more per session
+  than live's 10 alone?
+- **Where the edge would live:** **premium**, with width as payoff shaping, as items 43 and 50. The
+  floor decides each session which width can be sold.
+- **Look-alikes:** item 43 (the widths ungated, passed against an ungated 10); item 50 (the widths
+  gated, failed against `live-1400`); item 44 (the stabilization gate across widths).
+- **Rival explanations, each with its check:**
+  - *Hindsight in the choice:* a fallback chosen per session by which width did better would win by
+    construction. **Check:** the width is chosen from the two entry times alone, the first passing
+    tick, the wide one on a tie; the outcome never enters the choice, and a test flips every outcome
+    and shows the choice does not move.
+  - *The windows were already read:* item 50's design and holdout prompted this. **Check:** the
+    verdict is judged as declared and reported as provisional and seen; a proposal waits for the
+    sessions after 2026-10-12, read once 100 are stored.
+  - *Paying more by risking more:* **Check:** the arm's net over buying power must be at least
+    `live-1400`'s over the same sessions.
+  - *A calm span:* **Check:** the paired difference must be positive in both time-halves.
+  - *Fees:* **Check:** the arm's own net is still positive at 1.5× fees.
+  - *Two runs mixed in the holdout:* item 23 spent `live-1400`'s holdout, so the holdout composes
+    item 50's wide run with item 23's recorded `live-1400` run, as item 50 judged them. **Check:**
+    each run's id is written beside the verdict.
+- **The structure:**
+  - `live-1400` is item 50's base: the registry's `pm-200` with entries 14:00–14:30, gates and all.
+  - `f15` and `f20`: in each session, the 15- (or 20-) point entry if item 50's `g15` (`g20`) entered
+    at or before `live-1400`, else `live-1400`'s entry, else no entry (at zero). Both arms enter at
+    most once a session at the first tick their gates pass, over the same ticks, with nothing but the
+    width different, so the composition is the rule replayed tick by tick. A session with two entries
+    in either arm stops the study.
+  - **Reported, never judged:** how often each width was taken, the sessions taken at 10 though the
+    wide width entered later in the window, and the fallback against item 50's gated wide arm alone.
+- **Costs:** MEIC paper's own model, as item 50.
+- **Measured:** each session's net in dollars at one condor, the taken entry's; each session's buying
+  power, the taken entry's.
+- **Window and sample:** item 50's runs over the 60 s vendor store.
+  - **Design:** 2022-05-16 to 2025-06-30. **Holdout:** 2025-07-01 to 2026-10-12, counting only
+    after a design pass.
+  - **Neither window is clean.** Both are judged as declared; the result is read as provisional and
+    seen. **The clean check:** the sessions after 2026-10-12, composed the same way once item 50's
+    arms are replayed over them, read once 100 are stored.
+  - **Provisional:** MEIC validation has not unlocked. Fewer than 100 sessions is no verdict.
+- **Pass-or-fail rule**, item 50's, per arm, all must hold:
+  - the paired difference against `live-1400` (one session one observation) has a mean above zero
+    and a one-sided t above 2;
+  - Holm across the two arms;
+  - the paired difference positive in each time-half of the window;
+  - the arm's own mean net above zero, and still positive at **1.5× fees**;
+  - its net over buying power at least `live-1400`'s over the same sessions;
+  - then the holdout: the paired difference with a mean above zero and a one-sided t above 2.
+- **Declared limits (B11):** item 43's and item 50's: 60 s ticks; strikes beyond the stored ~100
+  points do not exist here; a stop fills under the fill model. The composition assumes one entry a
+  session in each arm and refuses otherwise.
+- **Name split (B9):** does not apply; one symbol.
+- **Data:** no new store and no new replay. `packages/backtest/scripts/meic_wing_fallback_item56.py --window
+  design|holdout` reads item 50's results and both runs' ledgers (entry times, buying power) and
+  writes under the backtest data directory only; this plan records the verdict.
+- **Decides:**
+  - **A pass:** nothing changes live yet. The fresh sessions are read when 100 are stored; if they
+    agree and MEIC validation has unlocked, a proposal at a declared boundary teaches the live rule
+    to fall back from the wide wing to 10 at the tick, with the kill criteria and buying-power cap
+    re-derived from the composed sessions.
+  - **A fail or no verdict:** live stays at 10 wide with its gates, and item 50's better wide trades
+    are read as too rare to use.
+
+- **Result (2026-11-07, provisional and seen): fail, both arms.**
+  `f15` and `f20` both pass the design window: the paired difference against `live-1400` clears its
+  t bar under Holm in both halves, each stays positive at 1.5x fees, and each earns at least
+  `live-1400`'s net over buying power. In the holdout both stay ahead of `live-1400` on average but
+  neither clears the t bar, so both fail as declared.
+  Every figure is in the local result (`~/.cherrypick/data/backtest/results/research/item56/`).
+- **What this decides:** the fail branch for now. Live stays at 10 wide with its gates. Of the 0DTE
+  width rules this is the one most worth the clean check: the sessions after 2026-10-12, read once
+  MEIC validation unlocks and 100 are stored.
+
+### 57. Item 46's lone pass out of sample: the index 10-delta put at 7 days on the weekly expiries item 46 never read, hedged and unhedged
+
+*Source: the user, 2026-11-07 ("go ahead"), after item 46's result. Item 46 passed exactly one of its
+forty cells, the equity-index 10-delta put at 7 days on the standard monthly expiries, and its own
+robustness read called it a lone peak among its tenor neighbours. Its pass branch makes that cell a
+proposal for a paper arm, declared as its own item, with the sessions after 2026-10-30 read first. One
+7-day trade a month cannot reach item 46's bar of 80 cycles in any useful time, so waiting for new
+monthly cycles answers nothing. Item 46 never read the weekly expiries, and a 7-day trade into a
+non-monthly expiry occupies a different week from every monthly 7-day trade, so those weeks are an
+untouched sample of the same trade. Declared before any weekly path is fetched.*
+
+- **Question:** does the cell that passed item 46, the equity-index 10-delta put sold 7 days before
+  expiry and held to it, also earn money after costs on the weekly expiries item 46 never read, with
+  the daily forward hedge and without it?
+- **Where the edge would live:** a **risk premium**, item 46's: buyers pay above expected variance
+  for protection against the index falling. The unhedged arm adds a second reading: whether the premium
+  survives with the forward's drift left in, which is what a paper arm without a hedge would face.
+- **Look-alikes:** item 46 (the same cell, on the monthly expiries; this is its out-of-sample read, said
+  out loud); item 16 (put credit spreads on metals funds, failed) and item 14 (credit-spread selection,
+  failed), both defined-risk spreads rather than a naked hedged put; item 22 (an overnight SPX condor,
+  premium about fair at mid). `cherrypick hypotheses --similar` on this item's tags names no rejected
+  row; the register's nearest row is item 46's, passed.
+- **Names:** the equity-index group only: SPX (the SPXW weekly expiry, PM-settled, cash), SPY, QQQ and
+  IWM, item 46's. The names are today's choice (hindsight, B11).
+- **Cycles:** every weekly expiry from 2016-03 through 2026-10-16: the Friday, or the Thursday when
+  the Friday is a holiday, that is **not** a standard monthly (item 46's third Friday, or the session
+  before it). The unit is the cycle. A holiday Friday moves its expiry, and so its 7-day entry, to the
+  Thursday, which in a handful of weeks shares a session with a monthly's trade; those weeks are left
+  out, listed in the result file, and the calendar check that no remaining trade overlaps a monthly
+  7-day trade is part of the study. About 420 cycles are planned.
+- **Entry:** the first session on or after expiry minus 7 calendar days, at its end-of-day quotes, as
+  item 46.
+- **Leg:** `put10` exactly as item 46 picks it: the put whose Black delta, on the parity forward at
+  zero rate, is nearest 0.10. The strikes at 8 and 12 delta are **reported, never judged**.
+- **Two judged arms**, one trade each, sold at entry and held to expiry:
+  - `hedged`: item 46's trade, the position hedged to zero delta at every session's close in that
+    expiry's forward, with item 46's 0.5 bp of hedge notional at each rebalance.
+  - `unhedged`: the same entry and the same option costs and settlement fees, with no hedge and no
+    hedge cost. The two arms differ by the hedge alone.
+- **Exit and costs:** item 46's: settled at intrinsic against the expiry session's forward; an
+  in-the-money SPX leg pays `core.fees`' cash settlement charge, an in-the-money ETF put its share-side
+  delivery costs; slippage at 0.125 of the quoted spread on entry. Early assignment of the ETF puts is
+  not modelled, so the ETF names are an upper bound.
+- **Measured:** net P&L per trade in basis points of the forward notional at entry (100 x F a
+  contract). Per cycle, the equal-weight mean over the names present, so SPX and SPY count once between
+  them, as in item 46.
+- **Pass-or-fail rule, per arm, all must hold:**
+  - the mean net per cycle is above zero, with the one-sided p of item 46's Newey-West t (lag
+    `ceil(7 / 30)` = 1) passing Holm at 0.025 **across the two arms**;
+  - above zero in both time-halves (cycles expiring before 2021-06-01, and from it);
+  - still above zero at 1.5x costs;
+  - above zero on at least 3 of the 4 names, each on its own cycles;
+  - fewer than 80 cycles is no verdict for the arm.
+  - The study **passes** if either arm passes, **fails** if every arm with a verdict fails, and with no
+    verdict on either it is no verdict.
+- **Reported beside, never judged:**
+  - the worst cycle, `drawdown_range` on the per-cycle nets, and `max_size` at 10% of the account, per
+    arm;
+  - the strike neighbours at 8 and 12 delta, read as a plateau or a lone peak;
+  - **the forward read:** the monthly and the weekly cycles expiring after 2026-10-30, as they become
+    available, per arm and per kind. The forward cycles are not in the judged sample.
+- **Rival explanations, each with its check:**
+  - *A lone corner of a 40-cell grid:* item 46's pass may be the one cell a forty-way search was
+    bound to throw up. **Check:** this is a fresh sample, weekly expiries never read, judged on its own
+    two-arm Holm; the cell was chosen before any weekly path was fetched.
+  - *The same weeks as the monthly read:* a repeat of the same weeks would pass or fail for the same
+    reasons. **Check:** only non-monthly weeks, with every week whose trade shares a session with a
+    monthly's left out, and the disjointness checked on the calendar.
+  - *The hedge doing the work:* a hedged result that vanishes without the hedge is the hedge's
+    premium, not the put's. **Check:** the unhedged arm is judged beside it by the same rule.
+  - *A crash the sample lacks:* a premium that pays until the index falls. **Check:** the worst cycle
+    and `drawdown_range` are shown; 2018, 2020 and 2022 fall inside the time-halves; the peso
+    explanation cannot be ruled out from history and is said as a limit.
+  - *Costs:* **Check:** net of `core.fees` and, for the hedged arm, the hedge cost; still above zero at
+    1.5x costs.
+  - *One name carries it:* **Check:** above zero on at least 3 of the 4 names on their own cycles.
+  - *Early assignment on the ETF puts:* **Check:** not modelled, so the ETF names are an upper bound,
+    as item 46 said; the breadth rule includes SPX, which settles in cash.
+- **Minimum detectable effect (B12):** computed in the coverage step, before any P&L is read, as item
+  46 does: the per-cycle spread of the realised-variance term (half the entry dollar gamma times the
+  squared daily forward moves to expiry) of this leg, `planned_mde` at the pass bar, both ends of the
+  two-arm Holm ladder. It reads only the underlying's path and the entry quotes. The unhedged arm's
+  own spread is wider by the forward's drift, so its MDE is larger than the one recorded.
+- **Declared limits (B11):** only finished cycles count, so no position is open at the window's end.
+  A trade whose entry or expiry session is missing from the path is dropped and counted. A crash the
+  sample does not hold is not priced. The names are today's choice. The 7-day entry is a calendar rule
+  fixed by item 46's pass, not tuned here.
+- **Name split (B9):** does not apply: four index names that are one market. The 3-of-4 breadth rule
+  stands in for it, as in item 46.
+- **Data:** `packages/backtest/scripts/index_put_weekly_item57.py plan|coverage|study`, which loads item 46's script for
+  every piece of arithmetic (forward, leg pick, hedge, trade, fees, Newey-West, cell statistics, judge,
+  store access) and adds only the weekly calendar, a 10-day path request, the unhedged trade and the
+  two-arm judge. `plan` writes the chain-path requests for the weekly expiries and `--through` extends
+  them for the forward read; the fetch is a research-queue row; results stay under the backtest data
+  directory (`results/research/item57/`).
+- **Decides:**
+  - **A pass:** a proposal for a paper arm, declared as its own item at a boundary. It first needs a
+    home, a module that sells it, chosen by the user. Nothing changes until then.
+  - **A fail:** item 46's pass is read as a lone corner, and the variance-premium question closes for
+    these tenors.
+
+- **Result (2026-11-07): pass, the unhedged arm; the hedged arm fails.**
+  The unhedged arm clears every check: its mean is above zero with the Newey-West p passing Holm
+  at 0.025, above zero in both time-halves and at 1.5x costs, and on at least three of the four
+  names, as the rule needs. The hedged arm is below zero before the cost stress. No cycle expires
+  after 2026-10-30 yet, so the forward read is still empty. The declared limits stand: early
+  assignment on the ETF puts is not modelled, a crash the sample lacks is not priced, and the names
+  are today's choice. Every figure is in the local result
+  (`~/.cherrypick/data/backtest/results/research/item57/`).
+- **What this decides:** the pass branch. A paper arm needs a home, a module that sells it, and
+  that is the user's choice; nothing changes until then. The forward cycles are read as they finish.
+
+### 58. The closing fly: a 0DTE SPX iron fly sold at 15:55 and held to the settlement
+
+*Source: a review of third-party community backtests on 2026-11-07 (kept local, per the source's
+terms; none of its figures enter this repo). One family of tests recurred across symbols, wing
+widths, authors and years once its pricing artifacts were removed: a short at-the-money 0DTE fly or
+narrow condor entered in the last five minutes and held to the close. Nothing in this plan enters
+later than 15:50. The user approved the test on 2026-11-07. Declared here before any of it is run.
+No new fetch.*
+
+- **Question:** does selling a 0DTE SPX iron fly (or a condor one strike wide) from the 15:55 quote,
+  held to that day's settlement, earn after costs?
+- **Where the edge would live:** the **premium**, in one place: the last five minutes of the
+  session, including the closing auction. The hypothesis is that the 15:55 at-the-money price carries
+  more variance than the five minutes deliver. Not a signal.
+- **Look-alikes:** `cherrypick hypotheses --similar` on setup `entry-time`, neutral, `iron-condor`,
+  0DTE names item 24 (MEIC's entry slot, 12:00 to 13:30 against 14:00, failed). That item, item 9
+  (a 13:45 fly held to settlement, failed) and item 10 (a prior-close pin fly, failed) all read the
+  same day's premium hours earlier. Items 19 and 22 entered at 15:50 but held across the night. None
+  sold the last five minutes alone, so this is not a retest of a rejected row.
+- **Rival explanations, each with its check:**
+  - *Fills:* at-the-money 0DTE quotes at 15:55 were several dollars wide in 2022 and are a few
+    ticks wide now. **Check:** the verdict is at the working price (halfway from mid to natural);
+    mid, mid − $0.05 and natural are reported beside it.
+  - *Fees:* four legs and up to two $5 settlement events against a five-minute premium. **Check:**
+    still positive at 1.5× costs.
+  - *The settlement print:* before 2024-05-13 the store's SPX close is the vendor's last underlying
+    print, not the official close. A five-minute trade can be decided by that gap. **Check:** the
+    mean on the sessions settled at the official close (`thetadata:index_eod`) must be positive; it
+    is a pass check, not a description.
+  - *Drift:* **Check:** nets split by the close's direction from the entry spot.
+  - *A calm span:* **Check:** both time-halves positive; results by VIX band (the prior session's
+    close) and by year.
+  - *The tail:* **Check:** the five worst sessions reported with the verdict; the bootstrapped
+    drawdown beside a pass.
+- **The structure (declared by us, nothing tuned):**
+  - SPXW expiring the same day, priced from the **15:55 ET** one-minute quote, spot from the same
+    minute's trail.
+  - **Arm `fly`:** short the call and the put at the listed strike nearest spot; long the call 10
+    points above and the put 10 points below.
+  - **Arm `condor`:** short the highest put at or below spot − 1 and the lowest call at or above
+    spot + 1; each long 10 points further out.
+  - One contract a structure. All four legs must be quoted two-sided; a session missing a leg, the
+    entry minute (early closes) or a short strike is skipped and counted, by reason.
+  - No stop, no adjustment, nothing closed: the structure settles at that day's SPX close.
+  - The two arms are Holm-adjusted together.
+- **Costs:** the suite's tastytrade schedule (`cherrypick.core.fees`), as items 19 and 22: the
+  four-leg open fee and $5 per in-the-money settlement symbol.
+- **Measured:** each arm's net per session in dollars at one contract.
+- **Window and sample:**
+  - **Design:** 2022-05-16 to 2024-12-31, about 650 sessions. Read for the verdict.
+  - **Holdout:** 2025-01-01 to 2026-11-06, about 460 sessions, the same rules unchanged. It is read
+    **only after a design pass**.
+  - Fewer than 100 entered sessions, or fewer than 50 settled at the official close, is no verdict.
+- **Pass-or-fail rule**, per arm, all must hold:
+  - mean net per session above zero, with a one-sided t above 2 (one session is one observation);
+  - Holm across the two arms;
+  - each time-half of the design window positive;
+  - still positive at **1.5× costs**;
+  - positive on the sessions settled at the official close;
+  - then the holdout, with the same checks.
+- **Minimum detectable effect (B12):** from the design window's own spread of session nets, recorded
+  in the local result before the holdout is read. No comparable past result prices a five-minute
+  hold, so none is used to plan this one.
+- **Declared limits (B11):**
+  - settlement uses `SPX-60s.db`'s `daily_closes`: the official close from 2024-05-13 and the
+    vendor's last underlying print before; the two are reported apart and the official set is a
+    check;
+  - the monthly-expiry label is the calendar's third Friday, so an expiry moved to Thursday by a
+    holiday is labelled a plain day;
+  - the VIX band uses the prior session's close, known at entry; nothing reflects only today's state.
+- **Declared descriptions, never filters:** net by weekday, Friday against the rest, the
+  monthly-expiry Friday, the month's last session, VIX band, settlement source, the close's
+  direction, year, and how many legs finish in the money. They are hypotheses for a later item,
+  not reasons to re-choose this one.
+- **Name split (B9):** does not apply; one symbol.
+- **Robustness report beside a pass (B13), never used to re-choose:**
+  - neighbours: entry at 15:50, 15:53 and 15:57; wings 5, 15 and 20;
+  - costs at 1.5× and 2×; the bootstrapped drawdown and losing streak; the largest size inside a
+    declared 10% of the account, passed at run time.
+- **Data:** no new store. `packages/backtest/scripts/close_fly_item58.py` reads `SPX-60s.db` (the 0DTE chain at one
+  minute, its spot trail and the daily closes) and Cboe's VIX history. Results go under the backtest
+  data directory only; this plan records the verdict.
+- **Decides:**
+  - **A pass:** a proposal for a paper arm, with the robustness report and a fill study on the live
+    quote recorder before any size. The structure is cash-settled and defined-risk.
+  - **A fail or no verdict:** closes the closing fly as specified. The same structure on QQQ or SPY
+    is not pursued: those settle in shares, and the overnight assignment the backtests left out is
+    a risk this item cannot price.
+- **Result (2026-11-07): design pass, holdout fail, both arms; the closing fly is closed as
+  specified.**
+  - **Design window:** both arms pass every check, the condor by a wide margin. A leak check run
+    before the holdout found the 15:55 spot and quotes synchronous (put-call parity at the centre
+    strike matches that minute's spot, not a later one). The store records no quote age, so staleness
+    can't be checked directly. The condor's design result still holds at the full natural fill.
+  - **Holdout, read as declared after the design pass:** the fly's mean is negative. The condor's mean
+    stays positive in both halves and at 1.5× costs, but its t is far below the bar, and at the
+    natural fill it is about zero. The edge the design measured is much smaller in 2025-26.
+  - **Descriptions, never filters,** and the same sign in both windows: Fridays beat the other days,
+    the monthly-expiry Friday most, and the month's last session is weakest. In the holdout the condor
+    paid only with the prior VIX at 20 or above. The holdout is spent, so any of these needs a new
+    declaration with a forward read, not a re-cut of this history.
+  - Every figure is in the local result:
+    `~/.cherrypick/data/backtest/results/research/item58/study-2022-05-16-2024-12-31.json` and
+    `.../item58/study-2025-01-01-2026-11-06.json`.
+
+### 59. The 45-day IWM condor: 16-delta shorts, 5-delta wings, closed at half its credit or at 21 days
+
+*Source: the same 2026-11-07 review of third-party community backtests as item 58 (kept local; none
+of its figures enter this repo). Among tests held 30 to 45 days, a neutral IWM condor recurred with
+these strikes and this management. Its versions used five entry filters chosen on the same data,
+up to ten overlapping entries, and exits filled at mid. The user approved the test on 2026-11-07.
+Declared here before any of the fetched paths are read. The fetch is item 59's
+`fetch-chain-paths` row: each IWM standard monthly expiry's daily path from 60 days out.*
+
+- **Question:** does a neutral IWM iron condor sold once a monthly cycle at about 45 days, managed by
+  the common half-credit-or-21-days rule, earn after costs, unfiltered?
+- **Where the edge would live:** the **premium**: index-ETF implied vol above what the next three to
+  four weeks deliver. Not a signal. The source's filters are not used; they were chosen on its data.
+- **Look-alikes:** items 14 to 16 and the short-put delta study sold credit spreads on single names
+  and funds, one side at a time, and found no strike with an edge after costs. Item 16 also found
+  closing at half the credit, else at 21 days, worse than holding on every fund. No row sold a
+  two-sided condor on a broad index ETF at this tenor, so this is not a retest of a rejected row. The
+  2026-10-20 strangle management test chose this exit among others for 45-day strangles; it compared
+  exits on the same trades and did not ask whether the premium earns. Item 53 asks the same of trades
+  opened inside 30 days.
+  Those results are the prior: the declaration expects a fail and says so.
+- **Rival explanations, each with its check:**
+  - *Drift:* one side carries it. **Check:** the put and call verticals' gross reported apart.
+  - *A calm span:* **Check:** both time-halves positive; results by VIX band (the prior close) and by
+    year. The design window holds 2018's February and 2020's March.
+  - *The tail:* **Check:** the five worst trades reported with the verdict; the bootstrapped drawdown
+    beside a pass.
+  - *Fills:* **Check:** the verdict at the working price on both the sale and the buy-back; mid and
+    natural reported beside it.
+  - *Fees:* **Check:** still positive at 1.5× costs.
+  - *End-of-day marks:* the half-credit exit is seen only at a close, never intraday. **Check:** a
+    declared limit; it can only delay a target, never invent one.
+- **The structure (declared by us, nothing tuned):**
+  - Each IWM standard monthly expiry E: the third Friday, or the Thursday before it when that Friday
+    is a holiday.
+  - Entry at the close of the session nearest **45 calendar days** before E, 42 to 48 days out;
+    none, and the cycle is skipped and counted.
+  - Forward: put-call parity at r = 0, the median of K + C − P over the three strikes nearest the
+    strike where the call's and put's mids are closest. Delta: Black-76 at r = 0 from each strike's
+    own mid, as items 14 to 17.
+  - Short the out-of-the-money put and call whose |delta| is nearest **0.16**; long the put and call
+    further out whose |delta| is nearest **0.05**. One contract. One condor per cycle, so trades do
+    not overlap.
+  - Sold at the working price (halfway from mid to natural); a non-positive credit is no trade.
+- **Exit:** each later session's close marks the buy-back at the same fill. Close on the first
+  session whose buy-back costs **half the credit or less**, else on the first session **21 days or
+  fewer** from E. A session whose legs do not all price is passed over. A condor that reaches E
+  without a priced exit is skipped and counted.
+- **Costs:** the suite's tastytrade schedule (`cherrypick.core.fees`), the four-leg open fee and the
+  four-leg close fee. The condor is never held to expiry, so there is no settlement or assignment.
+- **Measured:** net per trade in dollars at one contract.
+- **Window and sample:**
+  - **Design:** cycles whose planned entry falls 2016-01-01 to 2021-12-31, about 70 trades. Read for
+    the verdict.
+  - **Holdout:** 2022-01-01 to 2026-11-06, about 57 trades, the same rules unchanged. Read **only
+    after a design pass**.
+  - Fewer than 50 trades in a window, or more than 5% of its entries without an exit mark, is no
+    verdict.
+- **Pass-or-fail rule**, all must hold:
+  - mean net per trade above zero, with a one-sided t above 2 (one trade is one observation);
+  - each time-half of the design window positive;
+  - still positive at **1.5× costs**;
+  - then the holdout, with the same checks.
+- **Minimum detectable effect (B12):** about 70 trades is a small sample. The planned MDE is computed
+  from the design window's own spread and recorded in the local result before the holdout is read. A
+  no-verdict or a fail reads as "no edge larger than" that figure.
+- **Declared limits (B11):**
+  - end-of-day marks only;
+  - deltas are modelled from mids, not the vendor's;
+  - cycles skipped for a missing entry chain, a missing strike or no exit mark are counted, by
+    reason;
+  - the VIX band uses the prior session's close; nothing reflects only today's state.
+- **Name split (B9):** does not apply; one symbol.
+- **Robustness report beside a pass (B13), never used to re-choose:**
+  - neighbours: shorts at 0.12 and 0.20 delta; entry at 40 and 50 days; the target at 40% and 60%;
+  - costs at 1.5× and 2×; the bootstrapped drawdown and losing streak; the largest size inside a
+    declared 10% of the account, passed at run time.
+- **Data:** `packages/backtest/scripts/iwm_condor_item59.py` reads `eod_chains.db` (IWM's chains and the fetched daily
+  paths) and Cboe's VIX history. Results go under the backtest data directory only; this plan records
+  the verdict.
+- **Decides:**
+  - **A pass:** a proposal for manage's income list, a neutral index condor beside the put spreads,
+    with the robustness report.
+  - **A fail or no verdict:** closes the 45-day index condor as specified, beside items 14 to 16.
+
+- **Result (2026-11-07, provisional): fail.**
+  Strictly no verdict: more than 5% of the design entries have no exit mark (no session before
+  expiry with all four legs quoted). The fail holds however those trades ended: even with each one
+  kept whole at the sample's average credit, the one-sided t misses 2, and on the trades read it
+  misses by far more. The holdout was not read. Every figure is in the local result
+  (`~/.cherrypick/data/backtest/results/research/item59/`).
+- **What this decides:** the fail branch: the 45-day index condor is closed as specified, beside
+  items 14 to 16. Re-fetching the cycles without an exit mark could make the verdict clean; it
+  would not make it a pass.
+
+### 60. FOMC expected-move flies: two short iron flies at the expected move, sold before the 14:00 statement
+
+*Source: the 2026-11-07 review of a third-party community board of live-traded bot rules (kept local;
+none of its figures enter this repo). The user approved the test on 2026-11-07. Declared here before
+any of it is run. No new fetch; the decision days are item 33's cached copy of the Fed's calendar.*
+
+- **Question:** on scheduled FOMC decision days, do two short iron flies placed at spot ± the expected
+  move just before the statement earn after costs?
+- **Where the edge would live:** the **event premium**: implied vol bid into the 14:00 release and
+  falling after it. The flies sit where the market prices the move to land. Not a signal.
+- **Look-alikes:** item 33 (MEIC entering at the statement; it asked about a cost, not a premium),
+  the 10-27 review's idea A (a post-release condor, never fetched), item 9 and item 58 (other
+  afternoon 0DTE premium). None sold the release itself.
+- **The structure (declared by us):**
+  - from the **13:50** quote of the same-day SPXW chain; the expected move is the at-the-money
+    straddle's mid;
+  - two iron flies, centred on the listed strike nearest spot + move and nearest spot − move, each
+    with **20-point** wings, one contract each, sold at the working price;
+  - each fly is bought back on the first later minute whose working buy-back is **90% of its credit
+    or less** (10% decayed); otherwise it settles at the close;
+  - costs: the suite's tastytrade schedule, an open fee per fly, a close fee when bought back, $5 per
+    in-the-money symbol at settlement.
+- **Rivals, each with its check:**
+  - *Any afternoon fly earns this:* the same rule on every non-FOMC session is reported as a
+    **placebo**, with FOMC's excess over it.
+  - *Fills:* the verdict at the working price; mid and natural reported.
+  - *One meeting decides it:* the five worst sessions and results by year are reported.
+- **Sample:** every decision day from 2022-05-16 to 2026-11-06, about 36. That is too few to split
+  into design and holdout, so this is **one whole-sample read**, declared as such. A pass would need a
+  forward read on the next meetings before any arm. Fewer than 25 entered sessions is no verdict.
+- **Pass-or-fail:** mean net per session above zero with a one-sided t above 2, both time-halves
+  positive, positive at 1.5× costs. **Minimum detectable effect:** from the sample's own spread,
+  recorded in the result; with about 36 sessions only a large effect can pass.
+- **Declared limits:** settlement at `daily_closes` (the official close from 2024-05-13, the vendor's
+  last print before); one-minute marks only; nothing reflects today's state.
+- **Robustness beside a pass:** wings 10 and 30.
+- **Data:** `packages/backtest/scripts/afternoon_0dte_items60_62.py fomc`, `SPX-60s.db`. Results stay local.
+- **Decides:** a pass leads to a forward paper read on the next meetings; a fail or no verdict closes
+  the FOMC expected-move fly as specified.
+- **Result (2026-11-07): fail; the FOMC expected-move fly is closed.**
+  - At the working price the mean net per decision day is negative, with a t below −2. Both halves
+    are negative, and it loses more at 1.5× costs.
+  - At mid it is positive but under the bar. At natural it is worse still.
+  - The placebo, the same rule on every other session, loses about as much, so decision days carry no
+    premium of their own here. A 10% decay target bought back on eight legs gives the spread most of
+    the credit.
+  - Local result: `~/.cherrypick/data/backtest/results/research/item60/study-2022-05-16-2026-11-06.json`.
+
+### 61. The 13:45 sandwich read on 2025-26 (exploratory, item 9's rule)
+
+*Source: the same 2026-11-07 review. Its live board showed item 9's rule earning over the last twelve
+months, against item 9's fail on 2022-24 history. Item 58 showed a late-day 0DTE edge changing between
+windows, the other way. The user approved the read on 2026-11-07. Declared here before it is run.*
+
+- **What it is:** item 9's rule, unchanged, read on the window item 9 never scored, **2025-01-01 to
+  2026-11-06**. Item 9 failed its design, so this read is **exploratory**: it cannot overturn item 9,
+  and it can only motivate a new declared item with a forward read.
+- **The rule (item 9's):** from the **13:45** quote, a condor with its shorts at the listed strikes
+  nearest spot − 5 and spot + 5 and **5-point** wings, one contract, held to the close. Two arms,
+  reported apart: unfiltered, and item 9's filters (prior VIX close below 24, credit at least half
+  the width).
+- **Reported:** net per session at the working, quarter-of-the-way and mid fills, by year, for both
+  arms. The same script's read of 2022-05-16 to 2024-12-31 is reported beside it, so the two windows
+  are priced the same way.
+- **No verdict is recorded.** The register row stays an observation.
+- **Read (2026-11-07), exploratory:** 2025-26 looks like 2022-24.
+  - Unfiltered, the rule is about zero at the working price in both windows.
+  - With item 9's filters it is positive at the quarter-of-the-way and mid fills in both windows, but
+    below the t bar, and 2023 lost.
+  - The fills real traders get on SPX condors sit between those two prices, so the filtered rule's
+    edge after costs is small and unproven: the same picture item 9 drew. Nothing changed between the
+    windows.
+  - Local results: `~/.cherrypick/data/backtest/results/research/item61/`.
+
+### 62. Fade to the day's midpoint at 13:45: does SPX close toward it?
+
+*Source: the same 2026-11-07 review. A community rule picks the side of an afternoon broken-wing fly
+by whether price at 13:45 is below or above the day's midpoint, betting on reversion. The user
+approved the test on 2026-11-07. Declared here before any of it is run.*
+
+- **Question:** at 13:45, does SPX close on the far side of its 13:45 price from the day's
+  midpoint, that is, toward the midpoint?
+- **Where the edge would live:** a **timing signal**. Only if the signal exists does any structure
+  built on it matter, so the signal is tested alone, in index points, with no structure and no costs.
+- **Look-alikes:** item 8 (box-edge fades) found intraday continuation, not reversion, on ThetaData
+  1-minute SPX. This is a different reference level and a fixed time. Item 8's result is the prior,
+  and the declaration expects a fail.
+- **The rule:** the midpoint is the mean of the spot trail's high and low from 09:30 to 13:45. The
+  signal is +1 when the 13:45 spot is below it and −1 above; on it, no observation. The outcome is
+  the signal times (the close − the 13:45 spot), in index points.
+- **Windows:** design 2022-05-16 to 2024-12-31 (about 650 sessions); holdout 2025-01-01 to 2026-11-06,
+  read only after a design pass. Fewer than 100 observations is no verdict.
+- **Pass-or-fail:** mean points above zero with a one-sided t above 2 and both design time-halves
+  positive; then the holdout with the same checks.
+- **Reported, never filters:** by side of the midpoint, by distance from it (0-5, 5-15, 15+ points),
+  by year, by settlement source.
+- **Data:** `packages/backtest/scripts/afternoon_0dte_items60_62.py fade`, `SPX-60s.db`. Results stay local.
+- **Decides:** a pass leads to a declared structure test (the one-sided fly) and a forward read; a
+  fail closes the midpoint fade at 13:45.
+- **Result (2026-11-07): fail; the midpoint fade is closed.**
+  - In the design window the signal's mean is about zero in points, with a t near zero and a hit rate
+    below half.
+  - Neither side of the midpoint, no distance band and no year separates.
+  - The holdout is not read. The one-sided fly built on this signal is not tested.
+  - Local result: `~/.cherrypick/data/backtest/results/research/item62/study-2022-05-16-2024-12-31.json`.
+
+### 63. A 7-day time stop on item 59's condor, paired against its own exit
+
+*Source: a 2026-11-07 review of a public scoreboard of traders' posted options trades (kept local;
+none of its figures enter this repo). Across its closed trades, those held under a week made money
+and those held longer lost it, and the losers had mostly been left to expiry. Most of that is how
+exits sort trades: winners are taken early and losers stay open, so a short hold is partly an
+outcome, not a cause. This asks whether closing early, decided in advance, would have helped. The
+user approved the test on 2026-11-07. Declared before item 59's fetched paths are read; it reads
+item 59's fetch and runs through item 59's script.*
+
+- **Question:** on the same entries, does item 59's condor earn more per trade when a condor that has
+  not reached half its credit is closed at 7 days, rather than held to 21 days?
+- **Where the edge would live:** in **management**, not in a signal. Closing at 7 days gives up most
+  of the theta a 45-day condor collects in its third to sixth week, and cuts how long it is exposed
+  to a large move. Which effect is larger is the question.
+- **Look-alikes:** item 16 found closing at half the credit or at 21 days worse than holding to
+  expiry on every fund. The 2026-10-20 strangle management test compared exits on 45-day SPY
+  strangles (50% or 21 days stayed the base; stops at 1× and 2× the credit failed across the two
+  halves) and had no time stop. No row has tested an early fixed exit on a two-sided index condor.
+  The prior is a fail: the scoreboard's pattern is mostly selection, and the strangle test's stops
+  failed the same two-halves check this uses.
+- **Rival explanations, each with its check:**
+  - *Selection, not timing:* the scoreboard's short holds were chosen after the fact. **Check:** the
+    stop is fixed in advance and applied to every trade, paired against item 59 on the same entry.
+  - *A calm span:* **Check:** the paired difference must be positive in both time-halves; each arm's
+    exits by kind and its days held are reported.
+  - *A better loser:* the stop could beat item 59 while both lose. **Check:** the stop arm's own mean
+    must be positive at 1.5× costs.
+  - *The tail:* **Check:** each arm's worst trade reported beside the verdict.
+  - *Fills:* **Check:** the verdict at the working price; mid and natural reported beside it.
+- **The structure:** item 59's, unchanged: the same cycles, entry session, strikes, working-price
+  fill and fees, computed by item 59's script, so the two cannot drift apart.
+- **The two arms:**
+  - `base`: item 59's exit. The first close at half the credit or less, else the first session 21
+    days or fewer from the expiry.
+  - `stop7`: the same half-credit target, else the first priced session **7 or more calendar days**
+    after entry. With entry 42 to 48 days out, item 59's 21-day exit cannot come first.
+- **Costs:** the suite's tastytrade schedule, one four-leg open and one four-leg close in both arms,
+  so the comparison carries no difference in fees.
+- **Measured:** per cycle, the stop arm's net less the base arm's net, in dollars at one contract,
+  over the cycles both arms closed.
+- **Window and sample:** item 59's. **Design** 2016-01-01 to 2021-12-31, about 70 pairs; **holdout**
+  2022-01-01 to 2026-11-06, read only after a design pass. Fewer than 50 pairs, or more than 5% of
+  entries without an exit mark in either arm, is no verdict.
+- **Pass-or-fail rule**, all must hold:
+  - the paired difference has a mean above zero with a one-sided t above 2 (one cycle is one
+    observation);
+  - its mean is above zero in each time-half of the design window;
+  - the stop arm's own mean net is still positive at **1.5× costs**;
+  - then the holdout, with the same checks.
+- **Minimum detectable effect (B12):** computed from the design window's paired differences and
+  recorded in the local result before the holdout is read.
+- **Declared limits (B11):** end-of-day marks only, so the stop and the target are seen only at a
+  close; the stop day counts calendar days from the entry session; item 59's limits apply.
+- **Name split (B9):** does not apply; one symbol.
+- **Robustness report beside a pass (B13), never used to re-choose:** the stop at 5, 10 and 14 days.
+- **Data:** `packages/backtest/scripts/iwm_condor_timestop_item63.py`, which loads `packages/backtest/scripts/iwm_condor_item59.py` for
+  everything but the exit. Results go under the backtest data directory only.
+- **Decides:**
+  - **A pass:** a proposal to manage's credit rules for a time stop on index condors, with the
+    robustness report, for the user to review. manage gives advice only; nothing is placed.
+  - **A fail or no verdict:** records that an early fixed exit does not improve the 45-day index
+    condor. manage's 50%-or-21-days rule stands.
+
+- **Result (2026-11-07, provisional): fail.**
+  Strictly no verdict, through item 59's missing exit marks in the base arm. The stop arm's own
+  mean net is below zero at 1.5x costs on the cycles read, and the missing cycles could not lift it
+  above zero: each would have to keep about its whole credit within seven days. The paired
+  difference also runs against the stop, in both time-halves. The holdout was not read. Every
+  figure is in the local result (`~/.cherrypick/data/backtest/results/research/item63/`).
+- **What this decides:** the fail branch: an early fixed exit does not improve the 45-day index
+  condor, and manage's 50%-or-21-days rule stands.
+
+### 64. Defined-risk bullish structures on slow large caps, against holding the same delta in shares
+
+*Source: the same 2026-11-07 scoreboard review as item 63 (kept local; none of its figures enter this
+repo). One trader's closed call backspreads (long two near-the-money calls, short one a strike up,
+60 to 150 days out, held days to weeks) on staples and other slow large caps mostly made money. The
+user asked for structures that are defined risk, so they can be held in an IRA, and named two
+calendarized versions of a broken-wing butterfly. Broker dry runs on 2026-11-07 (WMT and KMB,
+nothing submitted) accepted all four and showed what each holds: the debit for the backspread and for
+the spreads with a back-month long, the expiry's maximum loss for the 1-3-2, and for the calendarized
+1-3-2 both front credit spreads at full width, about twice the 1-3-2's. Declared before any of the
+fetched paths are read.*
+
+- **Question:** do these four structures earn on slow large caps after costs, beyond what the same
+  delta in shares would have made over the same days? And does calendarizing the 1-3-2 pay for the
+  capital it ties up?
+- **Where the edge would live:** the backspread and the spreads-plus-long are bets on direction with
+  a cheapened long call; the 1-3-2 sells put premium below the market. The trader's winners came in a
+  month the names rallied, so **drift** is the first explanation and the test is built around it.
+- **Look-alikes:** items 14 to 16 sold single-name and fund credit spreads one side at a time and found
+  no strike with an edge after costs. The bwb module's two-year backtest of its SPX 1-3-2 lost on every
+  arm; that was 7-day index flies, not 45-day single names. No row has tested a backspread or a
+  calendarized butterfly. The prior is a fail beyond drift.
+- **Rival explanations, each with its check:**
+  - *Drift:* **Check:** the verdict is on the excess over the structure's entry delta held in shares
+    from entry to exit; the raw return and the shares' part are reported beside it.
+  - *One name or one year:* **Check:** equal weight across names in each cycle; results by name and
+    by year; both time-halves positive.
+  - *Five structures, one lucky:* **Check:** Holm at 5% across the five tests.
+  - *Fees on many legs:* **Check:** the raw return on capital positive at 1.5× costs.
+  - *Fills:* the working price on every leg, open and close.
+- **The names (declared, chosen with hindsight):** WMT, KMB, PG, KO, PEP, JNJ, MCD, COST, TJX, CL.
+  Each has weekly options and large daily volume today, so each passes the options-tradable label;
+  the label is today's, which B11 declares.
+- **The cycle:** for each name and each standard monthly expiry F, with B the next monthly, enter on
+  the session nearest 45 days before F (42 to 48). K1 is the listed strike nearest F's parity forward.
+  Calls step up and puts step down by at least 3% of the forward: K2 and K3 above, P2 and P3 below
+  (P1 = K1).
+- **The four structures** (+ bought, − sold):
+  - **A backspread:** B +2 K1 call, −1 K2 call.
+  - **B spreads plus a back-month long:** B +1 K1 call; F −2 K2 call, +2 K3 call.
+  - **C 1-3-2:** F +1 P1, −3 P2, +2 P3 puts.
+  - **D 1-3-2 calendarized:** B +1 P1, −1 P2 puts (the debit spread); F −2 P2, +2 P3 puts (the two
+    credit spreads).
+  Every short is covered by a long of the same type expiring no earlier, so each is defined risk.
+- **Capital:** what the broker held in the dry runs: the debit for A and B; C's maximum loss at
+  expiry; D's two lower widths less the net credit. A structure with no positive capital is no trade.
+- **Exit:** the whole structure on the first close whose gross gain reaches **25% of its capital**,
+  else on the first session **21 days or fewer before F**. Every leg at the working price. A session
+  where a leg does not price is passed over; no priced exit is skipped and counted.
+- **Costs:** the suite's tastytrade schedule on every contract, open and close
+  (`cherrypick.core.fees`). Nothing is held to expiry.
+- **Measured:** per trade, net and excess (net less the shares' part) as a share of capital. One
+  observation is one cycle month: the equal-weight mean over the names that entered.
+- **The fifth test:** per cycle, D's return on capital less C's, over the names that entered both.
+- **Window and sample:** **design** cycles whose planned entry falls 2016-01-01 to 2021-12-31, about
+  70 cycles of up to ten names; **holdout** 2022-01-01 to 2026-11-06, read only after a design pass.
+  Fewer than 50 cycles, or more than 5% of a structure's entries without an exit mark, is no verdict.
+- **Pass-or-fail rule**, per test, all must hold:
+  - the mean excess return on capital above zero, one-sided t above 2, and Holm at 5% across the
+    five tests;
+  - positive in each time-half of the design window;
+  - for A to D, the raw return on capital still positive at **1.5× costs**;
+  - then the holdout, with the same checks.
+- **Minimum detectable effect (B12):** computed per structure from the design window and recorded in
+  the local result before the holdout is read.
+- **Declared limits (B11):**
+  - end-of-day marks only;
+  - the shares' part uses F's parity forward as the stock price, so dividends inside the hold are not
+    in it;
+  - early assignment is not modelled: an in-the-money short call can be assigned before an
+    ex-dividend date, which in an IRA is closed for you;
+  - the names are today's.
+- **Robustness report beside a pass (B13), never used to re-choose:** the step at 2% and 5%; the target
+  at 15% and 40%; costs at 2×; by name.
+- **Data:** `packages/backtest/scripts/backspread_bwb_item64.py requests` writes the path fetch (ten names, each monthly
+  from 2016, from 85 days out); `study` reads `eod_chains.db` and loads item 59's script for the
+  chain, forward and delta. Results go under the backtest data directory only.
+- **Decides:**
+  - **A pass:** that structure, with its robustness report, as a candidate for manage's IRA ideas,
+    for the user to review. Advice only.
+  - **D beats C:** calendarizing pays for its capital; otherwise the same-month 1-3-2 is the IRA form.
+  - **A fail or no verdict:** records that these structures add nothing beyond holding the shares on
+    slow large caps.
+
+### 65. The intraday premium map: implied against realised odds of SPX closing near its price, by time of day
+
+*Source: the 2026-11-07 review of third-party research (kept local). It publishes how often SPX
+closes within ±0.1-0.5% of its price at each half hour, realised only. The user approved this test
+on 2026-11-07. Declared here before any of it is run. No new fetch.*
+
+- **Question:** at each time of day, does the 0DTE chain price the move to the close at the rate it
+  happens? Where is the gap largest?
+- **What it is:** a **measurement**, not a strategy, so there is no pass test. It maps where any
+  intraday premium sits, so that a later declared structure test can be aimed at a time and width
+  chosen from it. Items 9, 24, 58, 60 and 61 each tested one afternoon structure; this measures the
+  premium under all of them at once.
+- **The reading:**
+  - Times 10:00 to 15:30 on the half hour, and 15:55. Bands ±0.1%, ±0.2%, ±0.3% and ±0.5% of the
+    spot at that minute.
+  - The chain's probability of closing above each listed strike comes from out-of-the-money mids
+    (the call or put spread over neighbouring strikes, divided by their gap). It is interpolated to
+    the band's edges, and the implied probability of closing inside is the difference.
+  - Realised is 1 when the close lands inside.
+  - The gap is realised minus implied, in percentage points, with its t (one session, one
+    observation).
+- **Reported:** the full table for 2022-05-16 to 2024-12-31, for 2025-01-01 to 2026-11-06, for the
+  whole span, and by year. A gap that keeps its sign in both windows and in most years is the only
+  kind a later item may build on.
+- **Declared limits:**
+  - mids, not fills: a gap is the most a structure could harvest before costs;
+  - settlement at `daily_closes` (the official close from 2024-05-13, the vendor's last print before);
+  - strike steps of five points make the narrowest band coarse at high index levels; the
+    interpolation is linear.
+- **Data:** `packages/backtest/scripts/intraday_premium_map_item65.py`, `SPX-60s.db`. Results stay local.
+- **Decides:** nothing by itself. A consistent positive gap at one time and width is the input to a
+  declared structure test (a fly or condor at that time, at working fills, with a holdout). No
+  consistent gap closes the "time of day" lever for 0DTE premium.
+- **Read (2026-11-07):**
+  - **Everywhere:** the gap is positive at nearly every time and band. The chain overprices the move
+    to the close.
+  - **13:30 to 14:00:** the only region with one sign in both windows and in every year, 2022 to 2026
+    (2023 weakest). That is MEIC's live entry window.
+  - **14:30 to 15:30:** strong in 2022-24, mostly faded in 2025-26.
+  - **15:55:** the largest gap in both windows, the move item 58 sold; it did not survive real fills.
+  - **What it means:** the gaps are at mids. Items 9, 24, 58 and 61 priced structures in these windows
+    at working fills and found the premium consumed by costs. So the map adds no new structure test.
+    It confirms MEIC's entry time and points at fill quality, not timing, as the lever.
+  - The full table (by window and year) is in the local result:
+    `~/.cherrypick/data/backtest/results/research/item65/map-2022-05-16-2026-11-06.json`.
+
+### 66. Item 47's mirror: a long straddle across an earnings report when its implied move is below past moves
+
+*Source: the same 2026-11-07 review. A third-party earnings tool ranks long options highest where a
+stock's implied move sits below its average past move. Item 47 tested the other side (selling when
+implied is above past moves) and failed. The user approved the test on 2026-11-07. Declared here
+before any of it is run. No new fetch: item 47's stored chains price it.*
+
+- **Question:** when the front weekly's expected move is below both the mean of the last eight
+  reports' moves and the mean of every earlier report's, does buying an at-the-money straddle across
+  the report earn after costs?
+- **Where the edge would live:** a **selection signal**, the market under-pricing a report's move
+  relative to the stock's own history. The rival is that the history is stale: the market knows
+  something about this report that past moves do not.
+- **Look-alikes:** item 47 (its mirror, failed today); item 31 (the module's paper rule); the
+  EM-fly and navigator studies (long flies and spreads around reports, both lost). None bought
+  volatility on a cheap-to-history selector.
+- **The structure, item 47's in every part but the side:**
+  - item 31's events, windows, time-halves, name-halves and paired control sessions; item 47's
+    past-move table and expected move (0.85 × the front weekly's at-the-money straddle mid over the
+    close);
+  - **cheap**: with at least four earlier reports, the expected move below both past means;
+  - **the straddle:** the first standard monthly at least 14 days out, the strike nearest the entry
+    close with both sides two-sided. It is **bought** at the entry session's close at mid plus the
+    suite's slippage and **sold** at the reaction session's close at mid less it. Fees are a two-leg
+    open and a two-leg close.
+  - **This is a monthly straddle**, not the front weekly. Only the monthly's exit chains are stored
+    (item 47's fetch), and a monthly carries more time value through the report than a weekly. That
+    is declared as a departure from the source, which used several expiries.
+  - A leg without a two-sided exit quote is sold at intrinsic less its entry spread, and counted.
+- **Measured:** net in basis points of the stock's notional (100 × the entry close); the control is
+  the same straddle on the control session.
+- **Pass-or-fail rule:** item 47's rule for its selected arm, applied to `cheap`:
+  - at least 150 design trades;
+  - net t above 2 and paired-difference t above 2 (clustered by entry session);
+  - net positive in each time-half and each name-half;
+  - positive at the stress (1.5× fees, a quarter of the spread);
+  - positive without the best five;
+  - above the other events' mean;
+  - then the holdout's net and pair both positive (at least 100 trades).
+- **Declared limits:** item 47's, plus the monthly expiry above.
+- **Data:** `packages/backtest/scripts/earnings_straddle_item66.py` (imports item 47's script), `eod_chains.db`, Dolt
+  bars. Results stay local.
+- **Decides:** a pass leads to a proposal for the earnings module (a long-vol arm, paper first); a
+  fail closes implied-against-past moves as a selector in both directions.
+- **Result (2026-11-07): fail; implied-against-past moves is closed as a selector both ways.**
+  - In the design window the cheap arm's mean net is negative, its t and its paired t are under the
+    bar, its second time-half and one name-half are negative, and it is negative at the stress and
+    without the best five.
+  - It does beat the other events in both windows. The selector orders reports the right way: long
+    straddles lose much less where implied sits below history. But no arm earns after costs.
+  - With item 47 (selling where implied sits above history, failed), the earnings premium around a
+    report is about fair to history after costs on both sides.
+  - The first run crashed at scoring on a field name. The fix is in the script, and it now saves the
+    trades before scoring. Nothing was read before the full run.
+  - Local result: `~/.cherrypick/data/backtest/results/research/item66/results.json`.
+
+### 67. The earnings module's rule with paper's spread screen: does what paper actually trades earn after costs?
+
+*Source: the user, 2026-11-07 ("yes"), after a local look at the paper ledger against item 31's
+screen. Item 31 replayed the earnings module's paper rule on end-of-day chains and failed every arm.
+Its screen, though, would not have admitted most of what paper trades, almost all for spreads: the
+study's own point-in-time cap on the at-the-money spread, and the module's own ceiling on it, applied
+to end-of-day quotes that run wider than the intraday quotes paper's live screen reads. So item 31's
+verdict covers the tight-spread subset, and the wider-spread trades paper actually takes were never
+judged historically. Declared here before the study is run; no chain is fetched for it.*
+
+- **Question:** does the earnings module's rule, with paper's spread screen in place of item 31's, earn
+  more than zero after the suite's costs, and more than the same structure on an ordinary session, on
+  the trades paper actually takes?
+- **Where the edge would live:** the same **risk premium** as item 31, the options' implied move into
+  a report exceeding the move that follows. The added claim is that it is there on the wider-spread
+  names too. What would falsify it: the mean net on capital at risk is zero or negative after costs, or
+  the control earns as much.
+- **Look-alikes, said out loud:** item 31 above all (the same replay, the same events, the same
+  control, the same rule; `cherrypick hypotheses --similar` on setup `earnings-premium` and structure
+  `iron-fly` names it, failed, and no row for `iron-condor`); item 47 (a monthly strangle across a
+  report, failed) and item 52 (diagonals across a report, failed) are other structures on the same
+  events. This item changes one thing about item 31, the screen, so it is a retest of item 31's rule on
+  the events item 31 did not admit, and the admitted half is expected to reproduce item 31.
+- **The replay is item 31's `Study`, unchanged except two spread checks:**
+  - `pit_spread`, the study's cap on the at-the-money spread, is dropped;
+  - the module's `bid_ask_spread_too_wide` criterion is not applied (each strategy's
+    `max_bid_ask_spread_pct` is set to infinity in a copy of item 31's config, the key being read in one
+    place, the module's liquidity gate; a name with no measurable spread at all stays out);
+  - every other criterion is item 31's: the point-in-time dollar-volume check, the price, term
+    structure, expected move, delta, expiry and volume criteria, the sizing and the management.
+- **Costs are item 31's:** 12.5% of the end-of-day spread from mid on each side, with fees on both.
+  That if anything overcharges the wider names, since closing spreads are wider than the intraday ones
+  paper pays.
+- **Arms:** the same three strategies, `iron_fly`, `iron_condor` and `directional_credit_spread`,
+  **ungated only**: G1 and G2 are item 31's, and they failed. Holm across three arms. The paired
+  control is item 31's exactly (the same structure on the same name, four weeks away, no report).
+- **Pass-or-fail rule, item 31's per arm, all must hold:**
+  - at least 150 paired design trades;
+  - the mean net share of capital at risk above zero with a one-sided date-clustered t above 2, under
+    Holm;
+  - the mean paired difference above zero with t above 2, under Holm;
+  - positive in each time-half and each name-half;
+  - positive at item 31's stress (1.5x fees, 25% of the spread) and with the best five trades removed;
+  - then the holdout's mean net and paired difference both above zero, with at least 100 trades.
+- **Reported, never judged:** each arm split by item 31's admission, the events item 31 admitted (the
+  half that reproduces item 31) against the events only this screen admits; and by terciles of the
+  at-the-money spread. Item 31's reported readings ride beside, as it reports them.
+- **Rival explanations, each with its check:**
+  - *Ordinary overnight theta:* the paired control; net positive with the pair not positive is "pays,
+    not for the report", not a pass.
+  - *Hindsight:* item 31 read the windows' admitted subset and a local diagnostic read the paper
+    period; the newly admitted wider-spread events were never read. **Check:** said as a limit. The
+    clean check is reports after 2026-11-06, read once 100 trades per arm are stored, and a proposal
+    waits for it.
+  - *Costs on the wide names:* the end-of-day spread haircut overstates the intraday spread. **Check:**
+    positive at item 31's stress; the tercile split shows whether the widest third carries or sinks an
+    arm.
+  - *The screen difference is a data artefact:* end-of-day quotes run wider than intraday ones, so the
+    newly admitted events may not be the events paper takes. **Check:** the reported admission split;
+    the admitted half must reproduce item 31.
+  - *A few names:* **Check:** both name-halves; no name over item 31's share cap; the top five names
+    removed and reported.
+  - *One era:* **Check:** both time-halves, then the holdout.
+- **Minimum detectable effect (B12):** computed before any of this study's P&L, by the script's `mde`
+  step, from item 31's per-trade spread of the same arm (read only) at the declared minimum of 150
+  design trades; the larger real sample makes it an upper bound. A no-verdict result then reads "no
+  edge larger than X". Unpaired, as item 31's.
+- **Declared limits (B11):** item 31's, all of them: the end-of-day basis, today's liquid list
+  (hindsight, reported apart), the open interest and option volume floors not reproduced, the weekly
+  Friday front expiry, no early assignment, a position open at a name's last bar settled at the last
+  close, stale marks counted. The number of trades empty chains removed is counted in the result file.
+  The newly admitted events were never read before this run.
+- **Name split (B9):** applies, as item 31's.
+- **Data:** `packages/backtest/scripts/earnings_paper_screen_item67.py mde|study|report`, which loads item 31's script for
+  every piece of arithmetic and adds only the two removed checks, the admission split, the three-arm
+  Holm and the report. It reads item 31's event list, calendar and trades from
+  `results/research/item31/` (read only). **No chain fetch is needed:** item 31's request plan covered
+  every event whether or not it was admitted. Results stay under the backtest data directory
+  (`results/research/item67/`).
+- **Decides:**
+  - **A pass:** the module's live spread screen stands as it is, the passing strategy's paper arm is
+    read on the next season, and a proposal follows at a declared boundary.
+  - **A fail:** the module's paper arm for that strategy is the same losing rule item 31 found, now with
+    the trades paper takes, and the redesign or retirement question returns to the user.
+
+- **Result (2026-11-07): fail, all three arms.**
+  In the design window each arm beats its own control on the paired difference, so the report
+  carries information, but no arm's own net clears its bar: the iron fly and the iron condor are
+  below zero, and the directional credit spread is above zero without reaching a t of 2. Every
+  figure, the holdout and the admission split included, is in the local result
+  (`~/.cherrypick/data/backtest/results/research/item67/`).
+- **What this decides:** the fail branch: the module's paper arms are the same losing rule item 31
+  found, now with the trades paper takes, and the redesign or retirement question returns to the
+  user.
+
+### 68. MEIC's live rule on QQQ and NDX: a second symbol for the live loop
+
+*Source: the user, 2026-11-07, planning a live MEIC loop that trades more than one symbol: "lets
+backtest qqq and ndx", choosing each symbol's SPX-equivalent wing and the width its config gives it
+today, in the queue's normal order. MEIC paper ran QQQ and NDX for a few July 2026 sessions under other
+arms and retired them without a reading; no backtest has run either. Declared here before any of it is
+run.*
+
+- **Question:** does the rule live trades on SPX, `pm-200` entering once a day 14:00–14:30, earn after
+  costs on QQQ or NDX, so that a second symbol would add to the live loop rather than dilute it?
+- **Where the edge would live:** **premium**, the same claim as SPX's: a 16-delta 0DTE condor is paid
+  more than the moves that reach its shorts. The question is whether the payment survives a different
+  chain's spreads, strike spacing and, for QQQ, physical settlement.
+- **Look-alikes:** item 23 (the same rule on SPX, whose `live-1400` runs are this item's SPX reference);
+  items 43 and 50 (width on SPX); item 59 (an IWM condor at 45 days, a different rule).
+- **Rival explanations, each with its check:**
+  - *The width, not the symbol:* a 10-point NDX wing is a far narrower structure, relative to price,
+    than SPX's 10. **Check:** each symbol runs at its SPX-equivalent width (10 points scaled by price:
+    QQQ 1, NDX 40) and at today's config width (QQQ 5, NDX 10); each is judged on its own.
+  - *Costs on a wider market:* NDX's 0DTE spreads are wider than SPX's in points and as a share of
+    credit. **Check:** the verdict fill is the module's own (an eighth of each leg's spread from mid);
+    the convention's stress, halfway from mid to the natural fill, is reported beside it in the design
+    window; the arm's net must stay positive at 1.5× fees.
+  - *Physical settlement:* QQQ is American-style and physically settled, so a side held into the close
+    risks assignment. **Check:** the replay runs paper's own rule (QQQ force-closed from 15:30 with its
+    modelled exit friction and pin penalty); entries still open at the session's end are counted and
+    reported per arm, and any such entry is a fault, not a settlement.
+  - *Paying more by risking more:* **Check:** net over buying power reported beside SPX `live-1400`'s
+    over the same sessions.
+  - *The store's strike window:* **Check:** a coverage step first reports each symbol's sessions, its
+    strike spacing near spot and the share of hourly 16-delta shorts whose wing is quoted.
+  - *A calm span:* **Check:** positive in both time-halves.
+  - *Searching a grid:* **Check:** Holm across the four arms; the arms are fixed here.
+- **The structure:**
+  - Each arm is item 23's `live-1400`: the registry's `pm-200` (16 delta, per-side stop at 2× the whole
+    credit, 30-minute spacing, its credit floor and call-delta ceilings) with entries 14:00–14:30, so one
+    condor a session. `symbols` is set to the one symbol and `wing_width_points` to the arm's width.
+  - **Judged:** `q1` and `q5` on QQQ, `n40` and `n10` on NDX.
+  - **Reported, never judged:** each arm's stress-fill twin (design window only); `control`, which the
+    runner requires, pointed at the symbol; SPX `live-1400` from item 23's recorded runs.
+  - The VIX inputs stay VIX's: the delta band and the IV-rank proxy read the market's volatility, not
+    VXN or the ETF's own. A declared limit, not a tuning.
+- **Costs:** MEIC paper's own model: fees from `core.fees` per symbol, the module's slippage share,
+  stops filled under the replay's fill model; NDX cash-settled at the store's close; QQQ closed before
+  the bell as paper closes it.
+- **Measured:** each session's summed net per arm, in dollars at one condor; each session's buying power
+  per arm from the run's ledgers; the correlation of each arm's session nets with SPX `live-1400`'s.
+- **Window and sample:** the backtest's own windows over each symbol's wide 60 s vendor store
+  (`QQQ-60s-wide.db`, `NDX-60s-wide.db`, 40 strikes each side).
+  - **Design:** 2022-05-16 to 2025-06-30. **Holdout:** 2025-07-01 to 2026-10-12, run straight after the
+    design whatever it shows. It counts toward a pass only after a design pass.
+  - Only sessions with a same-day expiry exist for a symbol, so the early part of each window holds
+    fewer sessions than SPX's.
+  - Neither symbol has run on either window under this rule, so both are out of sample.
+  - **Both runs are provisional, and stay so:** MEIC validation has not unlocked, and these symbols
+    cannot unlock at all, since there is no paper record of them to validate against. The holdout
+    spends once per arm through `unvalidated_holdout`.
+  - Fewer than 100 sessions in a window is no verdict.
+- **Pass-or-fail rule**, per arm, all must hold:
+  - the arm's own mean session net above zero with a one-sided t above 2 (a session with no entry counts
+    at zero);
+  - Holm across the four arms;
+  - positive in each time-half of the window;
+  - still positive at **1.5× fees**;
+  - then the holdout: mean above zero with a one-sided t above 2.
+- **Declared limits (B11):** 60 s ticks; VIX stands in for each symbol's own volatility; strikes beyond
+  the stored 40 do not exist here; a stop fills under the fill model, not a recorded fill; QQQ's
+  exit friction is paper's model, never a measured assignment; the settlement print for NDX is the
+  store's close.
+- **Name split (B9):** does not apply; each symbol is judged on its own.
+- **Data:** two new stores, declared in `stores.STORES` and fetched by the research queue's
+  `fetch-sessions` with `dataset` QQQ and NDX (`store_tag` wide). `packages/backtest/scripts/meic_symbols_item68.py --step
+  coverage`, then `--step study --window design|holdout`, builds a scratch MEIC arm registry per symbol
+  from the machine's and runs `cherrypick.backtest.runner`. Results go under the backtest data directory
+  only; this plan records the verdict.
+- **Decides:**
+  - **A pass:** a proposal to add that symbol to a multi-symbol live loop at a declared boundary, once
+    the loop exists and MEIC validation has unlocked on SPX, with the symbol's own Gate 0 attestation
+    and kill criteria derived from its run. For QQQ, only after the physical-settlement work (escalated
+    closes before the bell, a held-into-expiry state, an assignment reconcile).
+  - **A fail:** the symbol is not added; MEIC live stays on SPX alone.
+  - Either way the correlation and the net over buying power beside SPX are read with the verdict:
+    they say whether a passing symbol adds to SPX or repeats it.
+- **Result:** not yet run.
+
+### 69. Item 57's unhedged arm in paper: does a close-of-session fill track the replay?
+
+*Source: the user, 2026-11-08 ("let's make an experimental paper module and console page for the
+unhedged arm"), after item 57's pass. Item 57's pass branch is a paper arm in a home the user
+chooses; the user chose a new module, `packages/weeklyput`, on all four names and the weekly
+expiries only, as judged. Declared here before the module's first entry.*
+
+- **Question:** does the paper arm, selling item 57's put in the last minutes of the entry session
+  off the stream cache, reproduce what item 57's replay books for the same trades from end-of-day
+  quotes, closely enough that the replay's verdict describes what the arm actually does?
+- **Where the edge would live:** item 57's, a **risk premium** (buyers pay above expected variance
+  for protection against the index falling). This item does not test it again. It tests
+  **execution**: the fill, the stream window, the settlement print.
+- **Look-alikes:** item 57 (the rule and its verdict, unchanged here); item 39 (contango's declared
+  test of a paper rule against its replay, the same shape).
+- **The arm:** `packages/weeklyput`, arm `unhedged`, item 57's rule exactly: the calendar, the
+  entry session, the leg, one contract a name, fills at mid with `core.fees`' slippage and fees,
+  held to expiry. Two things paper must add, each declared now: the entry window (15:45 to 15:55,
+  nothing after it) and the settlement print (the posted close in `stream_summary`, not the expiry
+  forward). A 10-delta put the quoted puts do not bracket is refused.
+- **Measured:** per paper trade, against item 57's `trade_pair` on the same name and expiry from the
+  chain-path store (`scripts/weeklyput_item69.py track`): whether both picked the same strike, the
+  credit gap in dollars and the net gap in bp of notional; per cycle, both equal-weight means. The
+  forward per-cycle net is reported beside.
+- **Sample:** every finished paper cycle from the module's first entry. Read at **40 finished
+  cycles** (about a year of non-monthly weeklies). Fewer than 30 replayed trades is no verdict.
+- **Pass-or-fail rule**, all must hold:
+  - the mean net gap (paper minus replay, bp) is no worse than minus the replay's own mean cost in
+    bp: paper does not lose a second set of costs to execution;
+  - paper and the replay pick the same strike on at least 80% of the replayed trades;
+  - names missed (the window closed unentered) are under 10% of the name-cycles.
+- **Reported beside, never judged:** the forward mean, worst cycle and drawdown range per cycle;
+  the share of ETF trades flagged assignment-exposed; refusals by reason; the forward read below
+  item 57's 80-cycle bar is not a verdict on the premium.
+- **Rival explanations, each with its check:**
+  - *A close-of-session quote is not an end-of-day quote:* the last fifteen minutes can move.
+    **Check:** the credit and net gaps per trade, and the same-strike share.
+  - *The stream window misses the 10-delta strike:* **Check:** `delta_not_bracketed` refusals and
+    missed names reported; the band is 1.5% to 12% under spot, which holds a 10-delta 7-day put up
+    to an implied vol of about 65% (March 2020 went past it, so such a week is refused, never
+    filled with the wrong strike).
+  - *The settlement print:* the posted close against the expiry forward. **Check:** the per-trade
+    net gap includes it; the cash name (SPX) is read beside the ETFs.
+  - *Early assignment:* **Check:** assignment-exposed flags counted; the ETF names stay an upper
+    bound, as item 57 said.
+  - *A calm forward year:* **Check:** this item judges tracking, not the mean; the forward mean is
+    reported only.
+- **Declared limits (B11):** one contract a name; no share carried past the expiry session (an
+  assigned ETF put is booked as sold at the same close, the study's convention); a real assignment
+  over a weekend is not in the number.
+- **Data:** the module's ledger, read-only; the chain-path store extended by
+  `packages/backtest/scripts/index_put_weekly_item57.py plan --through DATE` and a research-queue fetch; results under
+  the backtest data directory (`results/research/item69/`).
+- **Decides:**
+  - **A pass:** the replay describes the arm. Nothing goes live from this item: a live proposal
+    needs item 57's forward read past 80 cycles and the assignment work calendars' prerequisites
+    name (detecting and disposing of an early assignment, an ex-dividend decision).
+  - **A fail:** the fill or the print costs more than the replay assumed; item 57 is re-read at the
+    measured gap as a replay correction, and the module stays paper.
+- **Result:** not yet run.
 
 ## Not worth revisiting
 

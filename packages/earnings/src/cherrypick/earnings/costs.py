@@ -22,20 +22,30 @@ from cherrypick.core.fees import (
 __all__ = ["DEFAULT_COSTS", "apply_entry_costs", "apply_exit_costs", "exit_costs", "natural_exit_costs"]
 
 
-def natural_exit_costs(order: dict, leg_quotes: list[dict], quantity: int, config: dict) -> dict:
+def natural_exit_costs(
+    order: dict, leg_quotes: list[dict], quantity: int, config: dict, *, symbol: str | None = None
+) -> dict:
     """`apply_exit_costs` for a fill already priced at the natural side: fees only, slippage 0.
 
     The fill concedes the spread in gross, so the haircut is not a cost here; total_cost is
     the stack less its haircut, and the returned `slippage` is 0 rather than absent so the
     ledger records "none charged", not "not recorded"."""
-    out = apply_exit_costs(order, leg_quotes, quantity, config)
+    out = apply_exit_costs(order, leg_quotes, quantity, config, symbol=symbol)
     return {**out, "slippage": 0.0, "total_cost": round(out["total_cost"] - out["slippage"], 2)}
 
 
-def exit_costs(basis: str, order: dict, leg_quotes: list[dict], quantity: int, config: dict) -> dict:
+def exit_costs(
+    basis: str,
+    order: dict,
+    leg_quotes: list[dict],
+    quantity: int,
+    config: dict,
+    *,
+    symbol: str | None = None,
+) -> dict:
     """The exit's cost stack for its fill basis (`scanner.exit_basis`): a mid fill concedes nothing in
     its price, so it takes the haircut as a cost, the same as an entry; a natural-side fill already
-    conceded it, so it takes fees only."""
+    conceded it, so it takes fees only. `symbol` picks the slippage fraction (`fees.slippage_frac`)."""
     if basis == "mid":
-        return apply_exit_costs(order, leg_quotes, quantity, config)
-    return natural_exit_costs(order, leg_quotes, quantity, config)
+        return apply_exit_costs(order, leg_quotes, quantity, config, symbol=symbol)
+    return natural_exit_costs(order, leg_quotes, quantity, config, symbol=symbol)

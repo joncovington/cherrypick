@@ -38,7 +38,11 @@ own store file. The vendor does not serve sub-minute history before 2026, so his
 the same session, and the retry is logged.
 
 **Run one client at a time.** The account has one session; a second login with the same key (a
-probe, the Theta Terminal) ends the fetch's, and the fetch stops rather than recording refusals.
+probe, the Theta Terminal) ends the fetch's, and the fetch stops rather than recording refusals. To
+check something by hand while a fetch runs, use the vendor's staging environment:
+`client_for(settings, env="STAGE")` in Python, or a second Theta Terminal with `mdds_type = "STAGE"`
+on port 25504. A staging login leaves the fetch's session alone. Its quotes match production, but
+its greeks differ slightly, so it is never used to build a store.
 
 ## Validating and running
 

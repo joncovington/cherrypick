@@ -29,13 +29,14 @@ in parallel and compare which entry rules actually add edge — see
 | Module | What it trades | Out of the box |
 |---|---|---|
 | **MEIC** | 0DTE **multiple-entry iron condors** on index products (SPX in the shipped example). Strike selection scaled to volatility, credit floors and OTM buffers, regime gates (VIX, VIX1D, ATR, dealer gamma / GEX), per-side stops. | On |
-| **Earnings** | **Defined-risk earnings plays** (iron fly, double calendar, iron condor, ATM calendar, directional credit spread, broken-wing butterfly), held overnight around a company's report. Needs [Dolt](#optional-extras). | On if Dolt is set up |
-| **Flies** | 0DTE **net-credit butterflies** on SPX/XSP: whether the manufactured credit survives real costs, arm by arm. Built so a negative answer is a usable result. | On |
-| **BWB** | A daily-laddered SPX **put broken-wing butterfly**, ~7 DTE, held to expiry; its arms differ only in whether and when a reversal-triggered add-on fires. | On |
+| **Earnings** | **Defined-risk earnings plays** (iron fly, double calendar, iron condor, ATM calendar, directional credit spread, broken-wing butterfly), held overnight around a company's report. Paper-only. Needs [Dolt](#optional-extras). | On if Dolt is set up |
+| **Flies** | 0DTE **net-credit butterflies** on SPX/XSP: whether the manufactured credit survives real costs, arm by arm. Built so a negative answer is a usable result. | Off (retired 2026-10-19) |
+| **BWB** | A daily-laddered SPX **put broken-wing butterfly**, ~7 DTE, held to expiry; its arms differ only in whether and when a reversal-triggered add-on fires. | Off (retired 2026-11-08) |
 | **Calendars** | Weekly **SPY double calendars**, an exit-parameter experiment. **EXPERIMENTAL.** | Off |
-| **PMCC** | **Deep-ITM calls** held with a weekly short call against them, on index ETFs and a few stocks. **EXPERIMENTAL.** | Off |
-| **Curve** | **VXX call credit spreads** gated by a daily VIX/VIX3M regime read. **EXPERIMENTAL.** | Off |
+| **PMCC** | **Deep-ITM calls** held with a weekly short call against them, on index ETFs and a few stocks. **Retired 2026-11-08.** | Off |
+| **Curve** | **VXX call credit spreads** gated by a daily VIX/VIX3M regime read. **Retired 2026-11-01.** | Off |
 | **Contango** | The same VIX/VIX3M signal held in shares: SVXY in contango, T-bills (SHV) otherwise. **EXPERIMENTAL.** | Off |
+| **Weeklyput** | The index put nearest 10 delta (SPX, SPY, QQQ, IWM), sold a week before each non-monthly weekly expiry and held to its close, unhedged. **EXPERIMENTAL.** | Off |
 
 The experimental modules are newer and less tested; switch one on deliberately if you want it (the
 console's **Config** page, or `modules.<name>.enabled` in `~/.cherrypick/config.json`).
@@ -50,6 +51,8 @@ console's **Config** page, or `modules.<name>.enabled` in `~/.cherrypick/config.
 - **The advisor** — paper A/B experiments proposed by an AI model and judged against the same control.
   Needs Claude Code, and is off by default.
 - **The console** — the web page at <http://127.0.0.1:5070> where you look at all of it.
+- **The desk** — an EXPERIMENTAL manual trading desk, not installed by default and not a strategy. It is
+  the only discretionary path that can place a live order; read its README before going near it.
 
 By default everything runs in **paper mode**: simulated fills, none of your money. Live trading is off
 everywhere; see [Paper and live modes](#paper-and-live-modes).
@@ -171,8 +174,8 @@ working.)
 The value is in controlled comparison: clone the `control` arm, change **one** parameter, and you
 measure that idea's effect in isolation rather than confounding several changes at once.
 
-**A base install runs only `control` in MEIC, earnings, flies, bwb, calendars and curve**; PMCC's
-example runs its two shield arms and contango's its two arms. Any other arm is your machine's own
+**A base install runs only `control` in MEIC, earnings and calendars**; flies, bwb, curve and PMCC are retired and ship with every arm off, and
+contango's example runs its two arms. Any other arm is your machine's own
 configuration. BWB, calendars and curve build comparison books into the module (bwb's add-on triggers,
 calendars' `path`, curve's `noflip` and `near`) that run unless a config sets that book's `enabled` to
 `false`; their shipped examples do exactly that, so you switch one on in your own config. For MEIC,
@@ -257,16 +260,16 @@ python run.py notify-test                        # check that alerts actually re
 
 Paper and live books are kept strictly separate, and credentials stay in your OS keyring. The MEIC,
 flies and bwb live loops add an extra safeguard: each has to be armed with a fresh, explicit
-confirmation every trading day (`/live-meic-start`, `/live-flies-start`, `/live-bwb-start`), and the arm is valid for that day only, so one day's confirmation never carries into the
+confirmation every trading day (`/live-meic-start`, `/live-flies-start`, `/live-bwb-start`, or `--arm --confirm YES` on the loop from a terminal), and the arm is valid for that day only, so one day's confirmation never carries into the
 next.
 
 > ### ⚠️ If you are thinking about trading live
 >
-> **Know every way an order can be placed.** There are five: **MEIC**, **earnings**, **flies** and
-> **bwb** each have a live loop behind gates of their own, and the **desk** is the manual one. The
-> four loops trade on their own once started, without asking again: MEIC's, flies' and bwb's are
-> supervisor jobs that run for as long as that day's arm is valid, and earnings' runs in an agent
-> session you start (`/earnings-start`). The orchestrator never places an order
+> **Know every way an order can be placed.** There are four: **MEIC**, **flies** and
+> **bwb** (retired, off by default) each have a live loop behind gates of their own, and the **desk** is the manual one. The
+> three loops trade on their own once started, without asking again: they are
+> supervisor jobs that run for as long as that day's arm is valid. Earnings is paper-only since
+> v0.12.0. The orchestrator never places an order
 > itself, but "the automation won't trade for me" stops being true the moment one of those gates is
 > open.
 >

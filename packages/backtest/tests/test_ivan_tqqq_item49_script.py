@@ -1,6 +1,6 @@
-"""Hypothesis 49's study (scripts/ivan_tqqq_item49.py): the expiry, strike and tick rules, the resting
-order's fill, management (take profit, defence and roll, expiry, splits), the chain's money, the plan's
-missing spans and the verdict. Invented bars and Black-Scholes chains only, no store.
+"""Hypothesis 49's study (packages/backtest/scripts/ivan_tqqq_item49.py): the expiry, strike and tick rules,
+the resting order's fill, management (take profit, defence and roll, expiry, splits), the chain's money, the
+plan's missing spans and the verdict. Invented bars and Black-Scholes chains only, no store.
 
 Each rule is shown firing and failing, because a check that cannot fire reads as coverage it is not.
 """
@@ -17,7 +17,7 @@ import pytest
 from cherrypick.core import bs
 from cherrypick.core import fees as core_fees
 
-SCRIPTS = Path(__file__).resolve().parents[3] / "scripts"
+SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 _spec = importlib.util.spec_from_file_location("ivan_tqqq_item49", SCRIPTS / "ivan_tqqq_item49.py")
 s49 = importlib.util.module_from_spec(_spec)
 sys.modules["ivan_tqqq_item49"] = s49
@@ -92,10 +92,10 @@ def test_limit_rounds_up_to_the_tick():
 
 def test_short_is_the_put_nearest_16_delta_and_dist15_the_put_nearest_85_percent():
     chain = _chain(60.0, 31 / 365)
-    k = s49.choose_short(s49.MARIA, chain, 60.0, 31 / 365)
+    k = s49.choose_short(s49.REST20, chain, 60.0, 31 / 365)
     d = s49.put_delta(chain, k, 60.0, 31 / 365)[0]
     assert abs(d - 0.16) < 0.02 and k < 55
-    assert s49.choose_short(replace(s49.MARIA, strike="dist"), chain, 60.0, 31 / 365) == 51.0
+    assert s49.choose_short(replace(s49.REST20, strike="dist"), chain, 60.0, 31 / 365) == 51.0
 
 
 def test_spread_long_sits_about_10_percent_of_spot_under_the_short():
@@ -106,7 +106,7 @@ def test_spread_long_sits_about_10_percent_of_spot_under_the_short():
     assert s49.collateral((51.0, None)) == 5100.0
 
 
-def _order(spot=60.0, dte=31, vol=0.6, arm=s49.MARIA):
+def _order(spot=60.0, dte=31, vol=0.6, arm=s49.REST20):
     day = Day("2022-01-04", spot, spot, spot, spot)
     exp = (date(2022, 1, 4) + timedelta(days=dte)).isoformat()
     return s49.make_order("TQQQ", arm, 0, day, exp, _chain(spot, dte / 365, vol=vol))
@@ -163,7 +163,7 @@ def _run(arm, days, expiries, split_dates=(), vol=0.6):
 def test_no_order_rests_over_a_weekend_but_atclose_sells_on_a_friday():
     days = _days([60.0] * 7)  # Mon..Tue of the next week
     exps = _fridays(12)
-    _, counts = _run(s49.MARIA, days, exps)
+    _, counts = _run(s49.REST20, days, exps)
     assert counts.get("unfilled") == 5  # Mon-Thu and the next Mon: six sessions with room, no Friday
     sold, counts = _run(replace(s49.JUDGED["atclose"], cap=10), days, exps)
     assert counts["sold-close"] == 6  # every session but the last, Friday included
@@ -181,9 +181,9 @@ def test_take_profit_closes_once_the_ask_is_half_the_credit():
     closes = [60.0, 57.0, 66.0, 66.0, 66.0]
     opens = [60.0, 57.0, 66.0, 66.0, 66.0]
     days = _days(closes, opens)
-    done, _ = _run(replace(s49.MARIA, cap=1), days, _fridays(12))
+    done, _ = _run(replace(s49.REST20, cap=1), days, _fridays(12))
     assert done[0]["how"] == "tp" and done[0]["net"] > 0
-    held, _ = _run(replace(s49.MARIA, cap=1, tp=None), days, _fridays(12))
+    held, _ = _run(replace(s49.REST20, cap=1, tp=None), days, _fridays(12))
     assert held[0]["how"] == "end"
 
 
@@ -191,7 +191,7 @@ def test_defence_rolls_down_and_out_for_a_credit_and_noroll_ends_the_chain():
     closes = [60.0, 57.0, 52.0, 52.0, 52.0]
     days = _days(closes, list(closes))
     exps = sorted(set(_fridays(30)) | set(s49.monthlies(_fridays(30))))
-    rolled, _ = _run(replace(s49.MARIA, cap=1), days, exps)
+    rolled, _ = _run(replace(s49.REST20, cap=1), days, exps)
     c = rolled[0]
     assert c["rolls"] >= 1 and c["legs_n"] >= 2
     ended, _ = _run(replace(s49.JUDGED["noroll"], cap=1), days, exps)
@@ -201,11 +201,11 @@ def test_defence_rolls_down_and_out_for_a_credit_and_noroll_ends_the_chain():
 def test_roll_takes_the_lowest_strike_whose_mid_pays_the_buyback():
     chain = _chain(52.0, 60 / 365, vol=0.8)
     paid = chain[(51.0, "P")][1] * 0.6
-    legs, credit, m = s49.roll_legs(s49.MARIA, chain, 52.0, paid)
+    legs, credit, m = s49.roll_legs(s49.REST20, chain, 52.0, paid)
     k = legs[0]
     assert s49.mid(chain[(k, "P")]) >= paid > s49.mid(chain[(k - 1, "P")])
     assert credit == chain[(k, "P")][0]
-    assert s49.roll_legs(s49.MARIA, chain, 52.0, 1e6) is None
+    assert s49.roll_legs(s49.REST20, chain, 52.0, 1e6) is None
 
 
 def test_put_in_the_money_at_expiry_is_assigned_and_sold_at_the_next_open():
@@ -220,11 +220,11 @@ def test_put_in_the_money_at_expiry_is_assigned_and_sold_at_the_next_open():
     c.leg_cash = 100.0
     days = _days([60.0, 58.0, 56.0, 54.0, 53.0, 52.0], opens=[60.0, 58.0, 56.0, 54.0, 53.0, 51.0])
     t = [d.date for d in days].index(exp)
-    how = s49._expire(c, s49.MARIA, days, t)
+    how = s49._expire(c, s49.REST20, days, t)
     fee = core_fees.assignment_round_trip_fee(100, 55.0, 51.0, direction="long")
     assert how == "assigned" and c.cash["natural"] == pytest.approx(100 * (51.0 - 55.0) - fee)
     c2 = state(50.0)
-    assert s49._expire(c2, s49.MARIA, days, t) == "expired" and c2.cash["natural"] == 0.0
+    assert s49._expire(c2, s49.REST20, days, t) == "expired" and c2.cash["natural"] == 0.0
 
 
 def test_a_split_closes_the_chain_the_session_before_and_cancels_an_order():
@@ -310,28 +310,60 @@ def _rep(n, mean, t, p, halves=(0.01, 0.01), stress=0.01, limit=0.01):
 
 def test_design_pass_needs_every_check_and_the_holdout_reads_only_passes():
     reports = {a: _rep(50, -0.01, -1.0, 0.9) for a in s49.JUDGED}
-    reports["maria"] = _rep(50, 0.02, 3.5, 0.0005)
+    reports["rest20"] = _rep(50, 0.02, 3.5, 0.0005)
     reports["deep"] = _rep(50, 0.02, 3.5, 0.0005, limit=-0.01)  # fails at the limit
     chains = {a: [] for a in s49.ARMS}
     v = s49.judge_design(reports, chains)
-    assert v["arms"]["maria"]["verdict"] == "design pass"
+    assert v["arms"]["rest20"]["verdict"] == "design pass"
     assert v["arms"]["deep"]["verdict"] == "fail" and not v["arms"]["deep"]["checks"]["limit"]
-    h = s49.judge_holdout(v, {"maria": {"n": 40, "mean": 0.01}})
-    assert h["maria"]["verdict"] == "pass" and h["deep"]["verdict"] == "fail"
-    h = s49.judge_holdout(v, {"maria": {"n": 10, "mean": 0.01}})
-    assert h["maria"]["verdict"] == "no verdict"
+    h = s49.judge_holdout(v, {"rest20": {"n": 40, "mean": 0.01}})
+    assert h["rest20"]["verdict"] == "pass" and h["deep"]["verdict"] == "fail"
+    h = s49.judge_holdout(v, {"rest20": {"n": 10, "mean": 0.01}})
+    assert h["rest20"]["verdict"] == "no verdict"
 
 
-def test_crazy_ivan_claim_needs_both_rivals_beaten():
-    verdict = {"maria": {"verdict": "pass"}, "deep": {"verdict": "pass"}}
+def test_resting_claim_claim_needs_both_rivals_beaten():
+    verdict = {"rest20": {"verdict": "pass"}, "deep": {"verdict": "pass"}}
     good, bad = {"mean": 0.01, "t": 2.5}, {"mean": 0.01, "t": 1.0}
     claim = {
-        "maria": {"atclose": good, "noroll": good},
+        "rest20": {"atclose": good, "noroll": good},
         "deep": {"atclose": good, "noroll": bad},
         "overnight": {"atclose": good, "noroll": good},
         "trend": {"atclose": good, "noroll": good},
     }
-    assert s49.claim_holds(verdict, claim) == ["maria"]  # overnight and trend did not pass
+    assert s49.claim_holds(verdict, claim) == ["rest20"]  # overnight and trend did not pass
+
+
+def test_the_retired_arm_name_still_resolves_in_stored_results():
+    """Results stored before the rename spell the base arm `maria` and the claim `crazy_ivan`."""
+    assert s49.ARM_ALIASES["maria"] == "rest20" and "rest20" in s49.JUDGED and "maria" not in s49.ARMS
+    old = {
+        "reports": {"maria": {"n": 40}, "deep": {"n": 40}},
+        "verdict": {"arms": {"maria": {"verdict": "design pass"}}, "claim": {"maria": {}}},
+        "arms_read": ["maria"],
+        "crazy_ivan": ["maria"],
+    }
+    new = s49.canon(old)
+    assert set(new["reports"]) == {"rest20", "deep"} and set(new["verdict"]["arms"]) == {"rest20"}
+    assert new["arms_read"] == ["rest20"] and new["resting_claim"] == ["rest20"]
+    assert s49.canon(new) == new  # current names pass through untouched
+
+
+def test_the_holdout_reads_a_design_result_stored_under_the_old_name(tmp_path, monkeypatch):
+    monkeypatch.setattr(s49, "_out_dir", lambda: tmp_path)
+    arms = {a: {"verdict": "fail", "checks": {}} for a in s49.JUDGED if a != "rest20"}
+    arms["maria"] = {"verdict": "design pass", "checks": {}}
+    design = {"reports": {}, "verdict": {"arms": arms, "claim": {}}}
+    (tmp_path / "results-design.json").write_text(s49.json.dumps(design), encoding="utf-8")
+    asked = []
+
+    def fake_run_window(window, names):
+        asked.append(list(names))
+        return {}, {}, {}
+
+    monkeypatch.setattr(s49, "run_window", fake_run_window)
+    assert s49.main(["study", "--window", "holdout"]) == 0
+    assert asked == [["rest20"]]  # the old name was read as the current arm, not a KeyError
 
 
 def test_the_holdout_is_read_once(tmp_path, monkeypatch):
@@ -341,7 +373,7 @@ def test_the_holdout_is_read_once(tmp_path, monkeypatch):
     (tmp_path / "results-design.json").write_text(s49.json.dumps(design), encoding="utf-8")
     assert s49.main(["study", "--window", "holdout"]) == 0  # nothing passed: no arm is read
     got = s49.json.loads((tmp_path / "results-holdout.json").read_text(encoding="utf-8"))
-    assert got["arms_read"] == [] and got["crazy_ivan"] == []
+    assert got["arms_read"] == [] and got["resting_claim"] == []
     with pytest.raises(SystemExit, match="read once"):
         s49.main(["study", "--window", "holdout"])
     with pytest.raises(SystemExit, match="read once"):

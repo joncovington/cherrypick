@@ -8,14 +8,14 @@ changing a package you don't know. The text as it stood before the 2026-09-29 co
 
 Packages: `packages/orchestrator`, `packages/meic`, `packages/earnings`, `packages/gex`,
 `packages/streamer`, `packages/flies` (retired 2026-10-19), `packages/calendars`, `packages/pmcc`,
-`packages/curve` (retired 2026-11-01), `packages/contango`, `packages/bwb`, `packages/overview`, `packages/technicals`, `packages/fundamentals`,
+`packages/curve` (retired 2026-11-01), `packages/contango`, `packages/weeklyput`, `packages/bwb`, `packages/overview`, `packages/technicals`, `packages/fundamentals`,
 `packages/console`, `packages/review`, `packages/manage`, `packages/advisor`, `packages/backtest`,
 `packages/desk`. `cherrypick.core` is `packages/core`, an editable dependency of each. Users install with the root
 `install.*`; developers run `scripts/dev-install.ps1`/`.sh`.
 
 ## Limits most tasks run into
 
-- **Live orders** exist only in meic, earnings, flies and bwb, each behind its own gate and a per-day
+- **Live orders** exist only in meic, flies and bwb, each behind its own gate and a per-day
   arm, and in desk (experimental, foreground, started by a human; no automated package may import it).
   Every other package is paper-only or read-only.
 - **orchestrator** drives modules by subprocess, never by import. It places no order and never flips

@@ -82,6 +82,28 @@ def test_licensed_vendor_data_is_never_backed_up_but_results_beside_it_are(home)
     assert "data/backtest/vendor/thetadata/SPX-2026-10.db" in {f.relative_to(home).as_posix() for f in files}
 
 
+def test_a_browser_profile_is_never_backed_up_whatever_its_folder_is_called(home):
+    """A Chromium profile holds a login, and an open browser locks its cache files, which failed the
+    2026-11-07 night. It is found by the `Local State` file Chromium writes at the top of every
+    profile, not by its folder's name: `screener-review/profiles/<name>` slipped past the name. A
+    profile whose browser never closed cleanly has no `Local State`, only `Default/Local Storage`."""
+    profiles = home / "screener-review" / "profiles"
+    closed = profiles / "site-a"
+    (closed / "Default" / "Cache" / "Cache_Data").mkdir(parents=True)
+    (closed / "Local State").write_text("{}", encoding="utf-8")
+    (closed / "Default" / "Cookies").write_text("secret", encoding="utf-8")
+    (closed / "Default" / "Cache" / "Cache_Data" / "data_0").write_bytes(b"x")
+    crashed = profiles / "site-b"
+    (crashed / "Default" / "Local Storage").mkdir(parents=True)
+    (crashed / "Default" / "DIPS").write_bytes(b"x")
+    (home / "screener-review" / "accounts.md").write_text("notes", encoding="utf-8")
+    files, skipped = backup.collect(home)
+    rel = {f.relative_to(home).as_posix() for f in files}
+    assert not any(r.startswith("screener-review/profiles/") for r in rel)
+    assert "screener-review/accounts.md" in rel, "notes beside the profiles are ours and are kept"
+    assert skipped["browser_profile"] == 2
+
+
 def test_the_marker_is_the_one_packages_backtest_writes():
     """The two packages never import each other, so the marker's name is spelt in both. Each side
     carries this check, so a change to either one runs it in CI (only changed packages' jobs run)."""

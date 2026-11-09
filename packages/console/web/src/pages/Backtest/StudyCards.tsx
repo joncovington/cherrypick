@@ -12,6 +12,7 @@ import type {
   StudyRow,
   StudyRunFigures,
   StudyRunSummaries,
+  StudyTask,
   StudyVersion,
 } from "@console/shared";
 import { isBacktestRunId } from "@console/shared";
@@ -20,6 +21,10 @@ import { fmtCash, fmtCount } from "../../lib/format";
 import { useRun } from "./BacktestPage";
 import { CardLightbox, LightboxFrame, useOpenParam, type LightboxTab } from "./CardLightbox";
 import { GridBars } from "./GridBars";
+import { ReportTab } from "./StudyReport";
+import { WeekSummary, mondayOf, useStudyDigest } from "./StudyWeek";
+import { BtRows, type BtRow } from "./BtRows";
+import { useListView } from "../../components/ViewSwitch";
 import { TaskDetail, ago, etMs, etNowMs, queuePollMs, resultLine, stamp } from "./QueueTab";
 import { VERDICT_STATUSES, resultLabel, statusWord, studyHref, verdictChip } from "./studyIndex";
 
@@ -413,6 +418,44 @@ export function StudyTile({
   );
 }
 
+/** A study's tile on one line: its word, its title, the tile's small print and its age. */
+export function studyRow(row: StudyRow, nowMs: number, onOpen: () => void): BtRow {
+  const m = tileModel(row);
+  const when = ago(etMs(row.lastActivity), nowMs);
+  const lead =
+    m.kind === "verdict" ? (
+      <span className={`study-tile-word${m.tone ? ` tone-${m.tone}` : ""}`}>{m.word}</span>
+    ) : m.kind === "running" ? (
+      <span className="study-tile-status">
+        <span className={m.running ? "study-dot is-running" : "study-dot"} />
+        {m.running ? "Running" : "In progress"}
+      </span>
+    ) : (
+      <span className="study-tile-status muted">{m.kind === "declared" ? "Declared" : "Observation"}</span>
+    );
+  const meta = [
+    row.study,
+    m.kind === "verdict" ? m.arms : null,
+    m.kind === "running" ? `${m.step ?? "between steps"} · ${String(m.done)} of ${String(m.total)} steps done` : null,
+    m.meta,
+  ].filter((x): x is string => x !== null && x !== "");
+  return {
+    key: row.study,
+    label: `Open ${row.study}: ${row.title}`,
+    lead,
+    title: row.title,
+    meta: meta.join(" · "),
+    end: (
+      <>
+        {m.stale ? <StaleMark /> : null}
+        {when === "—" ? null : <span>{when}</span>}
+      </>
+    ),
+    data: { "data-study": row.study },
+    onOpen,
+  };
+}
+
 // --------------------------------------------------------------------------- the lightbox: run figures
 
 /** The run a study's figures come from: its newest result file that names one in the runner's shape.
@@ -631,12 +674,128 @@ function StudyQueue({ row, nowMs }: { row: StudyRow; nowMs: number }) {
   );
 }
 
+// --------------------------------------------------------------------------- the study chain
+
+export type ChainState = "done" | "running" | "queued" | "failed" | "missing" | "pending" | "none";
+
+export interface ChainStep {
+  key: string;
+  label: string;
+  detail: string;
+  state: ChainState;
+  links: { text: string; href: string }[];
+}
+
+const TASK_STATE: Record<string, ChainState> = { done: "done", running: "running", queued: "queued", failed: "failed", stopped: "failed" };
+const FINISHED_STATUSES = ["passed", "failed", "no_verdict", "retired", "observation"];
+
+function isFetch(t: StudyTask): boolean {
+  return (t.kind ?? "").startsWith("fetch") || /fetch/i.test(t.step);
+}
+
+function fileName(path: string): string {
+  return path.slice(path.lastIndexOf("/") + 1);
+}
+
+/** A study in order: its declaration, the data it fetched, its scripts and tests, each queue step it
+ *  ran, its result files and the register's verdict. Built from the board row alone. */
+export function studyChain(row: StudyRow): ChainStep[] {
+  const tasks = row.tasks.filter((t) => t.status !== "cancelled").sort((a, b) => a.id - b.id);
+  const fetches = tasks.filter(isFetch);
+  const runs = tasks.filter((t) => !isFetch(t));
+  const url = planUrl(row.pointer);
+  const files = [...row.scripts, ...row.tests];
+  const present = row.results.filter((r) => r.present);
+  const steps: ChainStep[] = [
+    {
+      key: "declaration",
+      label: "Declaration",
+      detail: row.legacy ? "before the register: in the plan section" : "the plan section, written before the run",
+      state: url ? "done" : "missing",
+      links: url ? [{ text: "plan", href: url }] : [],
+    },
+    {
+      key: "fetch",
+      label: "Data",
+      detail: fetches.length ? fetches.map((t) => `${t.step} ${t.status}`).join(" · ") : "no fetch step: reads data already held",
+      state: fetches.length === 0 ? "none" : worst(fetches.map((t) => TASK_STATE[t.status] ?? "pending")),
+      links: [],
+    },
+    {
+      key: "code",
+      label: "Script and tests",
+      detail: files.length ? files.map(fileName).join(" · ") : row.legacy ? "before the register: not recorded" : "not named in the register",
+      state: row.scripts.length ? "done" : row.legacy ? "none" : "missing",
+      links: files.map((p) => ({ text: fileName(p), href: `${REPO_BLOB}${p}` })),
+    },
+    ...runs.map((t) => ({
+      key: `step-${String(t.id)}`,
+      label: t.step,
+      detail: `queue row ${String(t.id)}, ${t.status}`,
+      state: TASK_STATE[t.status] ?? "pending",
+      links: [],
+    })),
+    {
+      key: "results",
+      label: "Results",
+      detail: present.length ? present.map((r) => `${resultLabel(r)}${r.verdicts?.length ? ` ${r.verdicts.map((v) => v.verdict).join("/")}` : ""}`).join(" · ") : "none yet",
+      state: present.length ? "done" : "pending",
+      links: [],
+    },
+    {
+      key: "verdict",
+      label: "Verdict",
+      detail: row.outcome ?? statusWord(row.status),
+      state: FINISHED_STATUSES.includes(row.status) ? "done" : "pending",
+      links: [],
+    },
+  ];
+  if (runs.length === 0) steps.splice(3, 0, { key: "runs", label: "Run", detail: "nothing queued yet", state: "pending", links: [] });
+  return steps;
+}
+
+function worst(states: ChainState[]): ChainState {
+  for (const s of ["failed", "running", "queued", "pending"] as ChainState[]) if (states.includes(s)) return s;
+  return "done";
+}
+
+const CHAIN_CHIP: Record<ChainState, string> = {
+  done: "chip chip-ok",
+  running: "chip chip-warn",
+  queued: "chip",
+  failed: "chip chip-warn",
+  missing: "chip chip-warn",
+  pending: "chip",
+  none: "chip",
+};
+
+export function StudyChain({ row }: { row: StudyRow }) {
+  return (
+    <ol className="study-list">
+      {studyChain(row).map((s) => (
+        <li key={s.key} className={s.state === "none" || s.state === "pending" ? "muted" : undefined}>
+          <span className={CHAIN_CHIP[s.state]} style={{ marginRight: 6 }}>
+            {s.state}
+          </span>
+          <strong>{s.label}</strong> <span className="muted">{s.detail}</span>
+          {s.links.map((l) => (
+            <a key={l.href} href={l.href} target="_blank" rel="noreferrer" style={{ marginLeft: 6 }}>
+              {l.text}
+            </a>
+          ))}
+        </li>
+      ))}
+    </ol>
+  );
+}
+
 // --------------------------------------------------------------------------- the lightbox
 
-export type DialogTab = "overview" | "declaration" | "grid" | "queue";
+export type DialogTab = "overview" | "report" | "declaration" | "grid" | "queue";
 
 export const DIALOG_TABS: LightboxTab<DialogTab>[] = [
   { id: "overview", label: "Overview" },
+  { id: "report", label: "Report" },
   { id: "declaration", label: "Declaration" },
   { id: "grid", label: "Grid" },
   { id: "queue", label: "Queue" },
@@ -668,6 +827,10 @@ function OverviewTab({ row }: { row: StudyRow }) {
         </section>
       ) : null}
       {row.outcome ? <p className="study-decision">{row.outcome}</p> : null}
+      <section>
+        <h3>The study, step by step</h3>
+        <StudyChain row={row} />
+      </section>
       <section>
         <h3>Figures</h3>
         <RunFigures row={row} />
@@ -765,7 +928,7 @@ function QueueTab({ row, nowMs }: { row: StudyRow; nowMs: number }) {
   );
 }
 
-/** One study in the lightbox: a header, four tabs, and the way to the next study. */
+/** One study in the lightbox: a header, five tabs, and the way to the next study. */
 export function StudyDialogBody({
   row,
   tab,
@@ -811,6 +974,7 @@ export function StudyDialogBody({
       onClose={onClose}
     >
       {tab === "overview" ? <OverviewTab row={row} /> : null}
+      {tab === "report" ? <ReportTab row={row} /> : null}
       {tab === "declaration" ? <DeclarationTab row={row} /> : null}
       {tab === "grid" ? <GridTab row={row} /> : null}
       {tab === "queue" ? <QueueTab row={row} nowMs={nowMs} /> : null}
@@ -837,12 +1001,29 @@ function isGroup(v: string | null): v is StudyGroup {
   return v !== null && (GROUP_ORDER as string[]).includes(v);
 }
 
-export function GroupChips({ board, group, onPick }: { board: StudiesBoard; group: StudyGroup | null; onPick: (g: StudyGroup | null) => void }) {
+/** `?group=week`: the studies active since Monday, beside the board's own groups. */
+export const WEEK = "week";
+export type BoardView = StudyGroup | typeof WEEK;
+
+export function GroupChips({
+  board,
+  group,
+  onPick,
+  week = false,
+}: {
+  board: StudiesBoard;
+  group: StudyGroup | null;
+  onPick: (g: BoardView | null) => void;
+  week?: boolean;
+}) {
   const count = (g: StudyGroup) => board.rows.filter((r) => r.group === g).length;
   return (
     <div className="history-controls study-chips" role="group" aria-label="Show studies">
-      <button type="button" className={group === null ? "chip chip-ok" : "chip"} aria-pressed={group === null} onClick={() => onPick(null)}>
+      <button type="button" className={group === null && !week ? "chip chip-ok" : "chip"} aria-pressed={group === null && !week} onClick={() => onPick(null)}>
         All {board.rows.length}
+      </button>
+      <button type="button" className={week ? "chip chip-ok" : "chip"} aria-pressed={week} onClick={() => onPick(WEEK)}>
+        This week
       </button>
       {GROUP_ORDER.filter((g) => count(g) > 0).map((g) => (
         <button key={g} type="button" className={group === g ? "chip chip-ok" : "chip"} aria-pressed={group === g} onClick={() => onPick(g)}>
@@ -863,6 +1044,13 @@ export function openIndex(board: StudiesBoard, group: StudyGroup | null, study: 
   return { rows, index: rows.findIndex((r) => r.study === study) };
 }
 
+/** This week's stepping order: the week's tiles as laid out, or every study when the open one is not among them. */
+export function weekIndex(rows: StudyRow[], board: StudiesBoard, study: string | null): { rows: StudyRow[]; index: number } {
+  const shown = laidOut(rows);
+  const all = shown.some((r) => r.study === study) ? shown : laidOut(orderedRows(board, null));
+  return { rows: all, index: all.findIndex((r) => r.study === study) };
+}
+
 /** The tiles in the order the mosaic lays them out: the large tile first, then the rest. */
 export function laidOut(rows: StudyRow[]): StudyRow[] {
   const hero = heroStudy(rows);
@@ -881,8 +1069,10 @@ export function StudyTiles({
   onOpen: (study: string) => void;
   summaries?: StudyRunSummaries | null;
 }) {
+  const view = useListView();
   if (rows.length === 0) return <p className="muted">No studies in this group.</p>;
   const hero = heroStudy(rows);
+  if (view === "rows") return <BtRows rows={laidOut(rows).map((r) => studyRow(r, nowMs, () => onOpen(r.study)))} />;
   const figuresOf = (r: StudyRow): TileFigures | null => {
     const id = figuresRun(r)?.runId;
     const run = id ? summaries?.runs[id] : undefined;
@@ -904,17 +1094,24 @@ export function StudyCards({ board }: { board: StudiesBoard }) {
   const [params, setParams] = useSearchParams();
   const lightbox = useOpenParam("study");
   const groupParam = params.get("group");
+  const week = groupParam === WEEK;
   const group = isGroup(groupParam) ? groupParam : null;
-  const rows = orderedRows(board, group);
+  const digest = useStudyDigest(week ? mondayOf(new Date(etNowMs())) : null);
+  const digestRows = digest.data?.ok ? digest.data.data : null;
+  // This week: the digest's studies, in its order (newest first); the board's groups otherwise.
+  const rows = week
+    ? (digestRows?.studies ?? []).map((d) => board.rows.find((r) => r.study === d.study)).filter((r): r is StudyRow => r !== undefined)
+    : orderedRows(board, group);
   // One read for the whole board, so picking a group never asks again.
   const summaries = useRunSummaries(figuresRunIds(board.rows));
   // The lightbox steps in the order the tiles are laid out: the large tile first.
-  const { rows: stepRows, index } = openIndex(board, group, lightbox.open);
+  const { rows: stepRows, index } = week ? weekIndex(rows, board, lightbox.open) : openIndex(board, group, lightbox.open);
   return (
     <>
       <GroupChips
         board={board}
         group={group}
+        week={week}
         onPick={(g) => {
           const next = new URLSearchParams(params);
           if (g === null) next.delete("group");
@@ -922,6 +1119,7 @@ export function StudyCards({ board }: { board: StudiesBoard }) {
           setParams(next, { replace: true });
         }}
       />
+      {week ? <WeekSummary digest={digest.data} loading={digest.isLoading} onOpen={lightbox.show} /> : null}
       <StudyTiles rows={rows} nowMs={etNowMs()} onOpen={lightbox.show} summaries={summaries.data?.ok ? summaries.data.data : null} />
       {index >= 0 ? (
         <StudyDialog rows={stepRows} index={index} onStep={(to) => lightbox.step(stepRows[to]?.study ?? "")} onClose={lightbox.close} />

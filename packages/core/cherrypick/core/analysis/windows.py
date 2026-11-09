@@ -13,7 +13,7 @@ Two `measurement_breaks` schemas exist, and only one can say which arm a break b
   book (`scope` empty or "*"). Each arm reads from its own latest break, else the latest book-wide
   one. Breaks dated after the latest session are declared but do not bind yet, and kinds that
   caveat rather than bound (`regimecuts.NON_BOUNDING_KINDS`: the 10-08 outage) never start an era.
-- **keyed** (bwb, curve, pmcc, calendars, earnings, contango: `break_date, key, old_value,
+- **keyed** (bwb, curve, pmcc, calendars, earnings, contango, weeklyput: `break_date, key, old_value,
   new_value, note`): module-wide config changes with no arm. Which key resets which arm is not
   something this module can know -- bwb's 10-15 `arms` entry retired two arms and changed nothing
   for control -- so these arms read the suite window, and their reading says why rather than

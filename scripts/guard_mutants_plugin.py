@@ -95,6 +95,17 @@ def _decide_after_window():
     return patched
 
 
+def _enter_after_window():
+    """weeklyput's `record_misses` replaced by an entry pass: a put sold after the entry window,
+    the late fill the after-window rule exists to forbid."""
+    loop = importlib.import_module("cherrypick.weeklyput.paper_loop")
+
+    def patched(config, conn, *, cycle, day, cache_path):
+        return loop.run_entries(config, conn, cycle=cycle, day=day, cache_path=cache_path, final=True)
+
+    return patched
+
+
 def _ignore_as_of(rows, _as_of):
     """flies' intraday pack reading every row regardless of its instant: the look-ahead the
     truncation test exists to catch."""
@@ -188,6 +199,7 @@ REPLACEMENTS = {
     "unguarded": lambda: _unguarded,
     "features_read_ahead": _features_read_ahead,
     "decide_after_window": _decide_after_window,
+    "enter_after_window": _enter_after_window,
     "ignore_as_of": lambda: _ignore_as_of,
     "uncapped": lambda: _uncapped,
     "agent_fails_open": lambda: _agent_fails_open,
@@ -355,6 +367,15 @@ MUTANTS: tuple[Mutant, ...] = (
         module="cherrypick.contango.paper_loop",
         attr="record_misses",
         replacement="decide_after_window",
+    ),
+    Mutant(
+        id="weeklyput-no-fill-after-window",
+        breaks="weeklyput sells a cycle's put after its entry window closed",
+        package="weeklyput",
+        tests=("tests/test_paper_loop.py::test_nothing_fills_after_the_window",),
+        module="cherrypick.weeklyput.paper_loop",
+        attr="record_misses",
+        replacement="enter_after_window",
     ),
     Mutant(
         id="flies-intraday-pack-lookahead",

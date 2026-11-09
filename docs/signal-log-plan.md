@@ -1,5 +1,7 @@
 # The chart setups' evidence: a historical study now, and a live signal log after it
 
+> **Status (2026-11-08): done 2026-10-04 for the historical study (no setup profitable after costs and better than random); the live signal log was dropped the same day, so it is abandoned.**
+
 ***Phase 1 built 2026-10-04** on branch `technicals-history-study`: `history.py` (the store),
 `universe.py`, `study.py` and `tuning_names.py`, with the `history land|check` and `study run`
 commands. Its six guards were each shown to fail.*

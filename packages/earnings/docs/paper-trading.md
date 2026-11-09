@@ -3,16 +3,14 @@
 > _Part of the **cherrypick-earnings** package — [suite](../../../README.md) · [package README](../README.md) · [docs index](./README.md)._
 
 Simulates every strategy's entries, exits, and P&L across a real earnings calendar without ever
-touching the live tastytrade account's orders, positions, or buying power. The agent-driven loop
-(`CLAUDE.md`'s Loop Steps) branches between paper and live at Step 0
-(`paper_mode = not config.get("enable_live_trading")`). Since `enable_live_trading` defaults to
-`false`, running that loop at all is paper mode by default; nothing changes about the scanner,
-ranking, or selection logic between modes, so paper results are a genuine test of the system's
-current calibration, not a separate toy implementation. Separately, the unattended paper loop
+touching the live tastytrade account's orders, positions, or buying power. Earnings is paper-only
+since v0.12.0, so this is the only mode. The scanner, ranking and selection logic are the
+production ones, so paper results are a genuine test of the system's current calibration, not a
+separate toy implementation. The unattended paper loop
 (`paper_loop.py`, ticked every 60 s by the supervisor) runs the forced-sampling harness into the
 `strat_test` books and manages its positions (see [Exit Strategy Guide](./10-exits.md)).
 
-Two distinct paper-testing *programs* build on this same paper/live split, and can run
+Two distinct paper-testing *programs* build on this same mechanism, and can run
 concurrently since they write to isolated books — see [Strategy Testing Plan](./strategy-testing-plan.md)
 for `/paper-start`'s forced-sampling program (`cherrypick/earnings/strat_test_harness.py`, per-strategy `strat_test` books)
 versus `/paper-trading-start`'s one-shot production-ranking analysis (`rank_strategies.py`; it
@@ -21,13 +19,12 @@ places nothing, but logs its evaluation to `scan_log` and `entry_reviews`). What
 ## Data separation (hard requirement)
 
 Paper trades are stored in `paper_trades.db`, a **separate SQLite file** from
-`earnings_trades.db` — both in the shared cherrypick data home (`~/.cherrypick/data/earnings` by
+`earnings_trades.db` (the history of the live orders placed before v0.12.0; nothing writes it now) — both in the shared cherrypick data home (`~/.cherrypick/data/earnings` by
 default, or `$EARNINGS_DATA_DIR`; resolved by `cherrypick/earnings/paths.py`) — written and read exclusively through `cherrypick/earnings/db_paper.py` — a separate
 CLI module from `cherrypick/earnings/db.py`, not a `--paper` flag on the same one. There is no code path, table,
 or flag that can query both databases through one connection. This was a deliberate design
 choice (a shared table with an `is_paper` column was considered and rejected) specifically so a
-future live-trading bug can never accidentally blend simulated and real P&L by a forgotten
-filter.
+bug can never blend simulated and real P&L by a forgotten filter.
 
 Both databases' `trades` table is strategy-agnostic — a `strategy` column identifies which of
 the seven opened it — so every strategy's paper results land in the same database,
@@ -38,7 +35,7 @@ combined, for the forced-sampling program — see [Strat-Test Portfolios](./stra
 
 ## What Gets Simulated, and How
 
-See `CLAUDE.md`'s Loop Steps for the authoritative, single copy of this logic — summarized here:
+The ranked path, summarized here (the supervisor's paper loop runs the forced-sampling harness instead):
 
 **Entry (during `entry_window_start`–`entry_window_end` ET, e.g. `15:30`–`15:55`):**
 1. `rank_strategies.py get_ranked_symbols` evaluates all seven strategies against the merged
@@ -52,11 +49,11 @@ See `CLAUDE.md`'s Loop Steps for the authoritative, single copy of this logic �
    `double_calendar` specifically, also pass `legs` from `label_order_legs()` so each side can
    close independently later.
 
-**No call to `tt.py execute_trade` at any point in paper mode** — a real order preflight checks
-the live account's actual buying power/margin, which would incorrectly couple a simulated fill
-to whatever happens to be sitting in the connected account.
+**No order is placed or previewed at any point** — a real order preflight would check the live
+account's actual buying power/margin, which would incorrectly couple a simulated fill to whatever
+happens to be sitting in the connected account.
 
-**Close (agent-driven loop, during and after `close_window_start`, e.g. `09:45` ET the next
+**Close (the original design, during and after `close_window_start`, e.g. `09:45` ET the next
 morning).** The paper loop instead holds on the entry session, then applies the managed rules in
 [Exit Strategy Guide](./10-exits.md).
 1. For positions closing as a single unit (`legs_json`): fetch live quotes for every leg's exact
@@ -73,9 +70,8 @@ morning).** The paper loop instead holds on the entry session, then applies the 
 Sized the same way a real order would be — via `cherrypick/earnings/sizing.py`'s `compute_position_size`,
 scaling contract quantity to keep max loss within `max_risk_per_trade_pct` of the paper-mode
 capital basis (`available_capital_paper_mode`), capped by `max_contracts_per_leg`. This is not a
-fixed 1-contract simulation; paper-mode sizing exercises the exact same risk-cap logic live
-trading would use, so a paper position's `capital_at_risk` field reflects what a real trade at
-that size would actually risk.
+fixed 1-contract simulation, so a paper position's `capital_at_risk` field reflects what a real
+trade at that size would actually risk.
 
 ## Cost-Adjusted P&L
 
@@ -91,10 +87,9 @@ matters.
 
 ## How Many Candidates Get Paper-Traded
 
-For the production paper/live loop: only each symbol's single best-ranked strategy, after
+For the ranked path: only each symbol's single best-ranked strategy, after
 `scanner.select_positions()`'s `max_concurrent_earnings_positions`/`correlation_block_list`
-filtering — the same portfolio-construction logic live trading would use, not a simplified
-single-trade-a-day version. The separate forced-sampling program
+filtering, not a simplified single-trade-a-day version. The separate forced-sampling program
 (`strat_test_harness.py`/`/paper-start`) intentionally trades *every* candidate that clears the
 screen under *every* qualifying strategy instead, specifically to avoid starving strategies that
 rarely win the single-best-per-symbol comparison — see
@@ -102,19 +97,13 @@ rarely win the single-best-per-symbol comparison — see
 
 ## Running It
 
-Confirm `enable_live_trading` is `false` (or absent) in `config/config.json` — this is the only
-switch between paper and live mode, and it defaults to paper. Then use whichever slash command
-matches what you're trying to do:
+The supervisor's `earnings-paper` job runs the paper book on its own. By hand, use whichever slash
+command matches what you're trying to do:
 
 ```
 /paper-start              # forced-sampling strategy test, one full day's open-to-close cycle
 /paper-trading-start      # one-shot production-ranking analysis, places nothing
-/earnings-start           # the actual continuous loop, following CLAUDE.md's Loop Steps
 ```
-
-**Switching to live trading later** requires no loop changes — set `enable_live_trading: true`
-in `config/config.json` and every subsequent iteration automatically persists via `db.py` and
-submits real orders via `tt.py execute_trade --live` instead.
 
 ## Reporting
 

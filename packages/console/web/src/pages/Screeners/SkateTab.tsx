@@ -7,7 +7,8 @@ import { useViewChoice } from "../../components/ViewSwitch";
 import { writePref } from "../../lib/prefs";
 import { useSkate } from "../../lib/api";
 import { TradeCards, type TradeCardModel } from "../Live/TradeCard";
-import { PanelChoice, ScreenerCard, ScreenerLayout, ScreenerSection, SessionSelect, SymbolSearch, Tabs, useParamState } from "./ScreenerParts";
+import { PanelChoice, ScreenerCard, ScreenerLayout, SessionSelect, SymbolSearch, Tabs, useParamState } from "./ScreenerParts";
+import { Section } from "../../components/Section";
 import { SkateRecordSection } from "./SkateRecord";
 import { beatsMonthly, otherBand, skateCounts, skateViews, type SkateView } from "./skateRows";
 
@@ -154,7 +155,7 @@ export function skateModel(v: SkateView, c: SkateConfig | null): TradeCardModel 
     symbol: v.row.symbol,
     symbolHref: `/charts/technicals?symbol=${encodeURIComponent(v.row.symbol)}`,
     spot: v.row.spot === null ? null : v.row.spot.toFixed(2),
-    shape: `${word} · ${shortDate(v.best.expiry)} · ${p.days} d`,
+    shape: `${word} ${p.strike}${right} · ${shortDate(v.best.expiry)} · ${p.days} d`,
     chips: (
       <>
         {p.soft.all ? (
@@ -341,7 +342,7 @@ export function SkateTab() {
 
   return (
     <ScreenerLayout>
-      <ScreenerSection concept="income" tag="candidates" question="Which strikes pay most to sit through?">
+      <Section concept="income" tag="candidates" question="Which strikes pay most to sit through?">
         <ScreenerCard
           title="skate"
           help={skateHelp(data?.config ?? null)}
@@ -426,7 +427,7 @@ export function SkateTab() {
             <Pager offset={page.offset} limit={page.limit} total={views.length} pageSizes={PAGE_SIZES} onOffset={setOffset} onLimit={setLimit} />
           )}
         </ScreenerCard>
-      </ScreenerSection>
+      </Section>
       <SkateRecordSection />
     </ScreenerLayout>
   );

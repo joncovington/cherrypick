@@ -1,5 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
+import { Card } from "../DataTable";
+import { HelpSection, type CardHelpContent } from "../CardHelp";
 
 /**
  * The summary slides' shared visual kit, lifted from MEIC's summary (the pattern every module's
@@ -28,27 +30,39 @@ export function sessionLabel(iso: string): string {
   return d.toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric", timeZone: "UTC" });
 }
 
-export function TsCard({ title, aside, children }: { title: string; aside?: ReactNode; children: ReactNode }) {
+/**
+ * A summary card (2026-11-07): the suite's one `Card`, so its ? help and amber flag work as they do
+ * everywhere else. `aside` rides in the head beside them; `className` names the width a row gives it
+ * (fl-w3 and the like).
+ */
+export function TsCard({
+  title,
+  aside,
+  help,
+  flag,
+  className,
+  children,
+}: {
+  title: string;
+  aside?: ReactNode;
+  help?: CardHelpContent;
+  flag?: string;
+  className?: string;
+  children: ReactNode;
+}) {
   return (
-    <section className="ts-card">
-      <header className="ts-card-head">
-        <h3>{title}</h3>
-        {aside}
-      </header>
+    <Card title={title} collapseKey={`ts-${title}`} controls={aside} help={help} flag={flag} className={className}>
       {children}
-    </section>
+    </Card>
   );
 }
 
 /** A card whose payload has nothing for it. A zero would read as "traded and broke even". */
-export function TsEmpty({ what, why = "no rows in this window" }: { what: string; why?: string }) {
+export function TsEmpty({ what, why = "no rows in this window", className }: { what: string; why?: string; className?: string }) {
   return (
-    <section className="ts-card">
-      <header className="ts-card-head">
-        <h3>{what}</h3>
-      </header>
+    <Card title={what} collapseKey={`ts-${what}`} className={className}>
       <p className="ts-empty">{why}</p>
-    </section>
+    </Card>
   );
 }
 
@@ -124,9 +138,25 @@ export interface GaugeDollars {
  * the dollars behind it ("$91.7k of $95.5k premium sold"); the needle stays, so the card keeps its
  * shape. The percentage is the default face.
  */
-export function Gauge({ title, rawPct, min, max, caption, dollars }: { title: string; rawPct: number | null; min: number; max: number; caption: ReactNode; dollars?: GaugeDollars | null }) {
+export function Gauge({
+  title,
+  rawPct,
+  min,
+  max,
+  caption,
+  dollars,
+  className,
+}: {
+  title: string;
+  rawPct: number | null;
+  min: number;
+  max: number;
+  caption: ReactNode;
+  dollars?: GaugeDollars | null;
+  className?: string;
+}) {
   const [face, next] = useFace(`gauge:${title}`, ["pct", "usd"] as const);
-  if (rawPct === null) return <TsEmpty what={title} />;
+  if (rawPct === null) return <TsEmpty what={title} className={className} />;
   const theta = (v: number) => ((Math.min(Math.max(v, min), max) - min) / (max - min)) * 180;
   const zero = theta(Math.min(Math.max(0, min), max));
   const at = theta(rawPct);
@@ -142,7 +172,7 @@ export function Gauge({ title, rawPct, min, max, caption, dollars }: { title: st
         <line x1={G.cx} y1={G.cy} x2={nx} y2={ny} className="ts-needle" strokeWidth={2} />
         <circle cx={G.cx} cy={G.cy} r={3.5} className="ts-needle" />
         <text x={8} y={100} className="ts-tick">{tick(min)}</text>
-        <text x={max >= 100 ? 160 : 168} y={100} className="ts-tick">{tick(max)}</text>
+        <text x={172} y={100} textAnchor="end" className="ts-tick">{tick(max)}</text>
       </svg>
       {showUsd ? (
         <div className={`ts-gauge-value ${dollars.amount >= 0 ? "ts-pos" : "ts-neg"}`}>{fmtUsd(dollars.amount)}</div>
@@ -151,8 +181,20 @@ export function Gauge({ title, rawPct, min, max, caption, dollars }: { title: st
       )}
     </>
   );
+  const help: CardHelpContent = {
+    title,
+    body: (
+      <HelpSection title="Reading the gauge">
+        <p>
+          The arc runs from zero to the figure and the needle sits at it. A figure beyond the scale pins the needle to the end, but the number
+          shown is never clamped.
+        </p>
+        {dollars != null && <p>Click the figure to swap the percentage for the dollars behind it. The needle stays where it is.</p>}
+      </HelpSection>
+    ),
+  };
   return (
-    <TsCard title={title}>
+    <TsCard title={title} help={help} className={className}>
       {dollars == null ? (
         body
       ) : (
@@ -170,6 +212,7 @@ export function Gauge({ title, rawPct, min, max, caption, dollars }: { title: st
           )}
         </p>
       ) : (
+        // The caption carries the figure's denominator, so it stays on the card.
         <p className="ts-muted">{caption}</p>
       )}
     </TsCard>
@@ -272,6 +315,26 @@ export function NetHero({ net, trades, shape }: { net: number; trades: number; s
   );
 }
 
+const WIN_RATE_HELP: CardHelpContent = {
+  title: "Reading the win rate",
+  body: (
+    <>
+      <HelpSection title="The rings">
+        <p>The outer ring is the sessions with a positive net; the inner ring is the settled trades that won.</p>
+      </HelpSection>
+      <HelpSection title="The centre">
+        <p>
+          Click it to step between trades, sessions and the payoff ratio (average win over average loss, offered once the window has both a
+          win and a loss). It is coloured by net per trade, never by the rate passing 50%.
+        </p>
+      </HelpSection>
+      <HelpSection title="Why net per trade sits beside it">
+        <p>A win rate says nothing without what each trade nets: 80% wins at a payoff of 1 to 6 loses money, so the two are always shown together.</p>
+      </HelpSection>
+    </>
+  ),
+};
+
 function Ring({ r, fraction, className }: { r: number; fraction: number; className: string }) {
   const c = 2 * Math.PI * r;
   return (
@@ -314,6 +377,7 @@ export function WinRateArcs({
   avgWin = null,
   avgLoss = null,
   shape = null,
+  className,
 }: {
   daysWon: number;
   days: number;
@@ -323,11 +387,12 @@ export function WinRateArcs({
   avgWin?: number | null;
   avgLoss?: number | null;
   shape?: TradeShape | null;
+  className?: string;
 }) {
   const payoff = avgWin !== null && avgLoss !== null && avgLoss < 0 ? avgWin / Math.abs(avgLoss) : null;
   const faces = payoff === null ? (["trades", "sessions"] as const) : (["trades", "sessions", "payoff"] as const);
   const [face, next] = useFace<"trades" | "sessions" | "payoff">("win-rate", faces);
-  if (trades === 0 && days === 0) return <TsEmpty what="win rate" />;
+  if (trades === 0 && days === 0) return <TsEmpty what="win rate" className={className} />;
   const dayPct = days > 0 ? (daysWon / days) * 100 : 0;
   const tradePct = trades > 0 ? (wins / trades) * 100 : 0;
   const nextFace = faces[(faces.indexOf(face as never) + 1) % faces.length]!;
@@ -337,7 +402,7 @@ export function WinRateArcs({
   const interval = intervalLine(shape);
   const rateCi = shape?.winRateCi95 ?? null;
   return (
-    <TsCard title="win rate">
+    <TsCard title="win rate" help={WIN_RATE_HELP} className={className}>
       <button type="button" className="ts-rings" onClick={next} title={`showing ${name(face)} — click for ${name(nextFace)}`}>
         <svg viewBox="0 0 140 140" role="img" aria-label={`sessions ${dayPct.toFixed(1)}%, ${tradeNoun} ${tradePct.toFixed(1)}%`}>
           <Ring r={54} fraction={dayPct / 100} className="ts-ring-days" />

@@ -1,35 +1,36 @@
 # cherrypick-earnings — Operational Instructions
 
-> **Vocabulary.** This module's **profile** is the suite's **arm** (root `CLAUDE.md`); `strategy`
-> is the STRUCTURE type and is NOT renamed. The column is `arm` on every table that carries it (it was
-> `profile` until 2026-09-24); `_conn()` refuses a ledger that still says `profile` rather than adding
-> `arm` beside it (`scripts/arm_column_migrate.py --only profile` renames one). Save specs send `arm`;
-> a caller still sending `profile` is read, never dropped.
+This module's old word `profile` is the root's `arm` (`--profile` selects an arm); `strategy` is the
+STRUCTURE type and is not renamed. The column is `arm` on every table that carries it, and `_conn()`
+refuses a ledger that still says `profile` (`scripts/arm_column_migrate.py --only profile` renames one).
 
 > Operating contract for the cherrypick **Earnings** engine. Human guides: [`docs/`](docs/README.md);
 > incident history: [docs/operating-history.md](docs/operating-history.md); suite-wide context: the
 > root [documentation index](../../docs/README.md).
 
-You are the cherrypick **Earnings** agent, an autonomous options agent for earnings plays. Seven
-strategies, **all defined-risk**: `iron_fly`, `double_calendar`, `iron_condor`, `atm_calendar`,
+The cherrypick **Earnings** module runs options structures around earnings reports. **It is
+paper-only since v0.12.0**: it places no live order and has no live gate, arm or kill criteria, and a
+leftover `enable_live_trading` or `live` block in its config is ignored (`run.py doctor` says it can
+go). Seven strategies, **all defined-risk**: `iron_fly`, `double_calendar`, `iron_condor`, `atm_calendar`,
 `directional_credit_spread`, `broken_wing_butterfly`, `expected_move_butterfly`
-(`docs/05-strategies.md`). `expected_move_butterfly` is **paper only**: it opens in `strat_test`
-from 2026-10-14 (`STRAT_TEST_STARTS`), and is never ranked as a symbol's best, so never propose it
-live. `atm_calendar` and
-`double_calendar` stay registered but open nothing in `strat_test` from 2026-10-15 (and run no screen from 2026-11-06), and
-`broken_wing_butterfly` from 2026-10-26 (`strat_test_harness.STRAT_TEST_RETIRED`, dated retirements;
-docs/operating-history.md). **Exits price at mid for positions entered from 2026-10-26**, natural
-side before (`scanner.exit_basis`; slippage is a cost on a mid fill only, `costs.exit_costs`) —
-never pool across that break. **From 2026-10-28 every entry path admits only names the suite's
-liquidity verdict calls `tradable`** (declared 2026-10-27; docs/operating-history.md): a refused
-name is a recorded `not_tradable` drop, an unknown one is refused, and a missing or stale verdict
-refuses everything loudly, never silently. Never pool across that break either. **From 2026-10-30**
-a failed entry scan is retried inside the window, entries open as the scan goes, and a close the
-spread gate has held 30 minutes in a session is taken anyway (docs/operating-history.md); never pool
-across that one. **From 2026-11-06** the PEAD gate fires at the first executable check of the first
-morning, the scan screens tradable names first, the expected move is the report's own move, a short
-at assignment risk closes, and the expiry close is at 15:20 (docs/operating-history.md, the
-2026-11-06 boundary); never pool across it. Undefined-risk/naked
+(`docs/05-strategies.md`, the one strategy table). `expected_move_butterfly` is **paper only** and is
+never ranked as a symbol's best. `atm_calendar`, `double_calendar` and `broken_wing_butterfly` stay
+registered but open nothing in `strat_test` (`strat_test_harness.STRAT_TEST_RETIRED`, dated
+retirements). **Exits price at mid** (natural side before the 2026-10-26 boundary:
+`scanner.exit_basis`; slippage is a cost on a mid fill only, `costs.exit_costs`). **Every entry path
+admits only names the suite's liquidity verdict calls `tradable`**: a refused name is a recorded
+`not_tradable` drop, an unknown one is refused, and a missing or stale verdict refuses everything
+loudly, never silently. A failed entry scan is retried inside the window, entries open as the scan
+goes, and a close the spread gate has held 30 minutes in a session is taken anyway. The PEAD gate
+fires at the first executable check of the first morning, the scan screens tradable names first,
+the expected move is the report's own move, a short at assignment risk closes, and the expiry close
+is at 15:20.
+
+**Several of those rules began on a date, and the rows either side are not comparable. Never pool
+across a boundary; the list, with each date, is [Declared boundaries](docs/operating-history.md#declared-boundaries).**
+Strategy table: [docs/05-strategies.md](docs/05-strategies.md); this file does not repeat it.
+
+Undefined-risk/naked
 strategies were deliberately removed — a naked short on a single-name gap can blow out arbitrarily
 overnight. New strategies go under `src/cherrypick/earnings/strategies/` without touching the engine.
 
@@ -51,7 +52,7 @@ to late 2024. Small/mid-caps with only monthlies may legitimately fail the front
   window, mark/decide/act 09:40–15:40, the forced-sampling entry scan once at 15:35
   (`entry_scan_at`), EOD 16:00–16:30, nothing off-session. These are a normal 16:00 close; on a
   13:00 early-close day every exit clock is the same offset from that day's close and **no entry
-  scan runs** (`session_clock.py`, from 2026-11-05; docs/operating-history.md). It opens the strat_test books (every
+  scan runs** (`session_clock.py`; docs/operating-history.md). It opens the strat_test books (every
   strategy clearing the screen on every viable name; per-strategy by default via
   `strat_test_portfolio`), always paper-only into `paper_trades.db`. No per-iteration agent.
 - **Two trails, different questions.** `state/earnings_entry.last.json` / `earnings_exit.last.json` are LATESTs — "is it alive" only.
@@ -59,19 +60,17 @@ to late 2024. Small/mid-caps with only monthlies may legitimately fail the front
   phase (`append_run_log`) with the full per-symbol result. **Every phase must log, the forward scan
   included** — its `symbols` count is what separates "found nothing" from "screened, none cleared".
   Best-effort: a session that cannot write its log still trades.
-- **Positions are MANAGED, not force-closed next morning** (2026-08-12, a journaled break — never
-  pool across it). A winner short of target is carried up to three *trading* sessions; a loser
-  closes on the first morning (post-earnings drift continues). **Nothing but the expiry close and
-  the pin guard acts on the entry session** (`sessions_held == 0`): the report has not happened, and
-  a fresh mark is just the spread (docs/operating-history.md). **From 2026-11-06 the expiry close is
-  at 15:20 (40 minutes before the close, was 15:30) and a short at assignment risk (a call under a coming dividend, or 3%+ in the money with no time value)
-  closes as `assignment_risk`** (docs/10-exits.md); never pool across that either. Quotes come from the stream cache
-  first, the broker only for unsubscribed legs and to confirm a close.
-- **Expired positions are SETTLED, not traded out** (2026-08-31, its own break). An expired leg is
-  refused as a mark (`provider`) and resolved at intrinsic against the expiration day's close from
-  local `stocks.ohlcv` (`settlement.py`), **ahead of every gate** — settlement is bookkeeping, not an
-  order. Otherwise a zero-bid expired contract loops on `spread_too_wide` forever. Details:
-  `docs/10-exits.md`.
+- **Positions are MANAGED, not force-closed next morning** (a journaled break, see the boundaries).
+  A winner short of target is carried up to three *trading* sessions; a loser closes on the first
+  morning (post-earnings drift continues). **Nothing but the expiry close and the pin guard acts on
+  the entry session** (`sessions_held == 0`): the report has not happened, and a fresh mark is just
+  the spread. The expiry close is at 15:20, and a short at assignment risk (a call under a coming
+  dividend, or 3%+ in the money with no time value) closes as `assignment_risk` (docs/10-exits.md).
+  Quotes come from the stream cache first, the broker only for unsubscribed legs and to confirm a close.
+- **Expired positions are SETTLED, not traded out.** An expired leg is refused as a mark (`provider`)
+  and resolved at intrinsic against the expiration day's close from local `stocks.ohlcv`
+  (`settlement.py`), **ahead of every gate** -- settlement is bookkeeping, not an order. Otherwise a
+  zero-bid expired contract loops on `spread_too_wide` forever. Details: `docs/10-exits.md`.
 - **Screening is split across the day.** `forward_scan` (~06:30) computes the slow half (calendar and
   Dolt metrics, next 10 trading days), **bounded per symbol and per pass** (`bounded.py`, as the entry
   scan) and naming what it skipped — it holds the single-writer lock, so a hung query would block the
@@ -80,10 +79,10 @@ to late 2024. Small/mid-caps with only monthlies may legitimately fail the front
   morning reading ever decides an entry**. It also ORDERS the entry universe but never bounds it
   (`symbol_watch.covered_symbols` → `assume_amc_for`): Dolt's `when` is ~47% NULL, so a blank report
   time on the scan date is read as after-the-close and flagged `timing_assumed`; the set only decides
-  which rows finish FIRST if `entry_scan_budget_seconds` binds. It must never gate admission (that
-  gate caused a five-session outage; break `entry_calendar_admissibility_gate_removed`). Why AMC,
+  which rows finish FIRST if `entry_scan_budget_seconds` binds. It must never gate admission (a past
+  gate caused a five-session outage; docs/operating-history.md). Why AMC,
   never BMO: `docs/screening-criteria.md` Layer 0.
-- **The entry scan runs tradable names first (from 2026-11-06).** `run_entries` splits the calendar
+- **The entry scan runs tradable names first.** `run_entries` splits the calendar
   with `universe.refusal` before screening: names the liquidity verdict calls tradable go first, in
   the calendar's own order, then refused names, which are screened only with the budget left and
   then recorded as before (screen rows, then the `not_tradable` execution drop; never opened). A
@@ -93,9 +92,10 @@ to late 2024. Small/mid-caps with only monthlies may legitimately fail the front
 - **This module drives that scan itself.** The orchestrator's `symbol-watch` job, a second run of
   the same scan, was removed 2026-11-02; don't bring one back. `symbol_watch.py refresh`,
   `run_entries` and `run_closes` survive as manual/backfill verbs.
-- **Agent-driven loop (live or paper).** The **Loop Steps** below are executed by you, the agent,
-  for live trading and manual sessions — `rank_strategies.py` picks each symbol's single best
-  strategy. cherrypick never runs this path and never places live trades.
+- **No agent session.** There is no per-iteration agent and no `/earnings-start`; the supervisor's
+  `earnings-paper` job above is the whole loop. `rank_strategies.py` (best strategy per symbol, run
+  by hand through `/paper-trading-start`) is a standalone analysis tool that records to the paper
+  ledger and places nothing.
 
 ## The advised twin (paper only, off by default)
 
@@ -130,8 +130,8 @@ follows `stamp_for`; since 09-17 the tag names the experiment and the stamp is c
   this package — do not reintroduce one**; if the import fails, `pip install -e packages/core` (or
   `scripts/dev-install.*`). Add a symbol's fee by extending `cherrypick.core.fees`, never hardcode.
 - **Runtime data lives in the cherrypick data home, resolved only by `cherrypick/earnings/paths.py`**
-  — never rebuild a `data/…` path relative to the package. Ledgers `earnings_trades.db` (live) and
-  `paper_trades.db` (paper) under `~/.cherrypick/data/earnings` or `$EARNINGS_DATA_DIR` (tests);
+  — never rebuild a `data/…` path relative to the package. Ledgers `paper_trades.db` (paper) and the
+  historic `earnings_trades.db` (live orders placed before v0.12.0; nothing writes it now) under `~/.cherrypick/data/earnings` or `$EARNINGS_DATA_DIR` (tests);
   `db.py`, `db_paper.py`, `strategy_metrics.py` derive from it. `symbol_watch.json` (plain JSON) via
   `paths.data_path`; the console resolves the same path independently and must never import this
   package. Logs: `paths.logs_dir()` (`~/.cherrypick/logs/earnings`, `$EARNINGS_LOGS_DIR`, or
@@ -141,21 +141,13 @@ follows `stamp_for`; since 09-17 the tag names the experiment and the stamp is c
   `packages/review` builds them.
 - **The orchestrator boundary is strict.** It drives this module by subprocess for unattended
   **paper** collection and reads the paper ledger for cross-module reporting. It **never edits this
-  module's code or config, never places, cancels, adjusts or closes an order, and never flips live
-  trading**. Its one live-config action is onboarding (`cherrypick connect`/`account`), delegating to
-  this module's credential tool and writing the selected `ACCOUNT_NUMBER` into keyring service
-  `earningsagent` — configuration only.
+  module's code or config and never places, cancels, adjusts or closes an order**. Its one config
+  action is onboarding (`cherrypick connect`), delegating to this module's credential tool for
+  keyring service `earningsagent` — configuration only. The broker session is read-only: quotes and
+  chains, no orders.
 - **Two couplings — don't change silently:** (1) the paper DB path (the orchestrator's `paper_db`
   points at it) and its `trades` schema, read through the `"earnings"` adapter by `report`/`calibrate`;
-  (2) the `earningsagent` keyring service and live account designation (`connect`/`account`/`reconcile`).
-
----
-CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
----
-
-> ⚠️ Suite-wide guardrails apply — see root CLAUDE.md. (Build commands, tech-stack reference and
-> guidelines only — no scratchpad, changelogs or trackers; a fenced block of build/run commands is
-> fine, one holding program logic is not.)
+  (2) the `earningsagent` keyring service (`connect`).
 
 ## Commands and config
 
@@ -210,79 +202,3 @@ access through `db.py` / `db_paper.py`, which apply idempotent `ALTER TABLE ADD 
   `arm` stamped since 2026-09-01, earlier NULL, never backfilled); `loop_iterations` (one per tick,
   so quiet and dead differ); `open_leg_symbols` (the flat set the streamer subscribes via
   `leg_sources`); `measurement_breaks`.
-
-## Loop Steps
-
-0. **Determine mode**: `paper_mode = not config.get("enable_live_trading", False)`. **The config key
-   is the only arming surface** (the `ENABLE_LIVE_TRADING` environment fallback was removed
-   2026-09-17 as an unguarded, unattested path). Both ledgers' open legs are declared from the paper
-   loop's one request file: the live ledger's `open_leg_symbols` is filled by `db.save_trade` (OCC via
-   core's pinned converter) and cleared by `save_close`, and `leg_sources` carries both ledgers plus
-   the live underlyings — so a position opened with `execute_trade --live` is subscribed on the next
-   poll with no registration step.
-   - **Paper** (default): `db_paper.py`; stop at `get_order` — **never call `tt.py execute_trade`**
-     (dry-run still performs a real margin check). Entry `credit` is the simulated fill.
-   - **Live**: `db.py`; Step 4b calls `execute_trade --live`, which waits up to `--wait` s (default
-     30) and reports `fill: {state, price, polls}`. **Record the `price` it gives, never the limit
-     asked for.** `working` = still resting: record pending, ask again with `order_status`; a terminal
-     state (`cancelled`/`rejected`/`expired`) means nothing was established.
-1. **Load state** — open positions, tonight's entry count, NLV; skip entries at
-   `max_concurrent_earnings_positions`. **Paper NLV is `available_capital_paper_mode`**, never the
-   real balance.
-2. **Time gate** — work only in the entry window (before close) and close window (next morning).
-   Otherwise: multi-day strategies (`double_calendar`, `atm_calendar`) with positions open in session
-   → Step 3b/3d; overnight-hold positions between the open and `close_window_start` → Step 3c.
-   Outside all: Step 5.
-3. **Close window** — the unconditional backstop: whatever is open closes regardless of P&L.
-   `legs_json` positions (iron_fly, iron_condor, directional_credit_spread, broken_wing_butterfly,
-   atm_calendar): live quotes, generic exit debit, `save_close`. `trade_legs` positions
-   (`double_calendar`): `get_open_legs`, conservative pricing, `save_leg_close` each, then
-   `save_close`. Paper simulates from live quotes; live submits a real closing order.
-   - **3b. Double-calendar**: `get_open_legs`, live greeks, `double_calendar.py evaluate_position()`
-     with `is_first_check_of_day`. `hold` / `close_side` (that side's 2 legs, `save_leg_close`) /
-     `close_all` (`save_close`). Log via `scan_log`.
-   - **3c. Early exits** (credit strategies' profit target/stop, first chance after the gap): live
-     quotes, `evaluate_position()`; `hold` or `close_all` via `legs_json`. Log via `scan_log`.
-   - **3d. ATM calendar**: as 3b without partial-side close; `hold` or `close_all`. Log.
-4. **Entry window**:
-   - **4a. Account gate**: `get_connection_status` (required in paper too — quotes come from the real
-     session). NLV: `get_account_info` in live, `available_capital_paper_mode` in paper. Re-check the cap.
-   - **4b. Ranked list**: `rank_strategies get_ranked_symbols --date <today>` (union of windows,
-     merged today-AMC/tomorrow-BMO calendar, best per symbol, cap/correlation). Per selected symbol:
-     skip if opened today; `reverify_symbol()` fresh — not `ok` → reject and log; reject if max loss
-     exceeds `max_risk_per_trade_pct` of NLV; reject on a shared `correlation_block_list` grouping;
-     then `get_order()` (`ok: false` → log, move on), passing `label_order_legs()` for
-     `double_calendar`. Paper: `db_paper.py save_trade`, stop. Live: `execute_trade --live`, reprice
-     toward zero credit on a timer, `db.py save_trade`. **Log every candidate evaluated**, not just
-     entries — it distinguishes a quiet night from broken re-verification.
-5. **Record and notify** — one-line status; schedule the next wakeup:
-   - No open positions, outside all windows, next window >90 min away: **end loop**.
-   - 30 min before the entry window: **300s**. Inside it with capacity: **60s**; cap reached: **end /
-     wake at close window start**.
-   - Overnight with overnight-eligible positions, market closed: **wake at next open**.
-   - Inside the close window with ≥1 position: **60s**; none: **end loop**.
-   - `double_calendar`/`atm_calendar` open in session: **300–600s** (3b/3d); market closed: **wake at
-     next open**.
-   - Overnight-hold positions between the open and `close_window_start`: **60–120s** (3c).
-
-**The suite halt on live orders (2026-10-27).** `tt.py execute_trade --live` refuses an order with an
-opening leg while the suite halt flag is present; a closing order is never held back.
-
-**The per-day arm on live orders (2026-11-06).** `tt.py execute_trade --live` also refuses an order
-with an opening leg unless today's arm record (`state/earnings-live-arm.json`, `core.live`) is
-present and before 17:00 ET. Only `python -m cherrypick.earnings.live_arm arm --confirm YES` writes
-it, and only with `enable_live_trading` on; `disarm` deletes it; `status` says why not. There is no
-earnings live loop, so the orchestrator derives no job from the record. A closing order is never held
-back. Arm on the session you trade; yesterday's record refuses.
-
-**Kill criteria on live orders (B1, 2026-10-25).** `tt.py execute_trade --live` checks `live.kill`
-(`tt.kill_refusal`, `core.killcriteria`) before any order with an opening leg; a closing order is never
-held back. Every doubt refuses: missing criteria; a live ledger that is unreadable or **missing**
-(never read as an empty book; `db.py init_db` starts the empty one a first live trade needs); and a
-closed live trade since the criteria's `written` date with **no net** — `save_close` takes `pnl`
-and leaves `exit_cost` to the caller, and the verdict skips a row with no net, so an unrecorded loss
-would pass the drawdown check. Record `entry_cost` (`save_trade`) and `exit_cost` (`save_close`) on
-every live trade; the refusal names the order ids and does not latch. A block latches
-(`state/kill/earnings.json`, a watchdog CRITICAL) until a person clears it. Under a hand-written
-`hand_limit_dollars`, or a REDUCED verdict (which halves an entry, and `tt.py` cannot see the full
-size), an order carries one contract a leg. Guarded from the settings surface.

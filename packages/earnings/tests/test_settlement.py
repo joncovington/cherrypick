@@ -351,7 +351,7 @@ def test_a_calendars_live_back_month_still_pays_the_closing_stack(monkeypatch):
     }
     seen, saved = {}, {}
 
-    def exit_costs(order, quotes, quantity, config):
+    def exit_costs(order, quotes, quantity, config, **_):
         seen["legs"] = [one["symbol"] for one in order["order"]["legs"]]
         return {"total_cost": 1.0, "slippage": 0.2}
 

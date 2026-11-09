@@ -5,6 +5,7 @@ import { Card, PnlCell, fmtNum } from "../../components/DataTable";
 import { HelpSection, HelpWarn, type CardHelpContent } from "../../components/CardHelp";
 import { type Column } from "../../components/columns";
 import { fmtMoney } from "../../lib/format";
+import { etClock } from "../../lib/etTime";
 import { useLiveToday } from "../../lib/useLiveToday";
 import { Tile } from "../Flies/PerformanceTab";
 import { CardLightbox, LightboxFrame, useOpenParam, type LightboxTab } from "../Backtest/CardLightbox";
@@ -13,7 +14,7 @@ import { tone } from "./manageParts";
 import { WhatToDoList, todoList } from "./WhatToDo";
 import { HandCard, handHasTrades } from "./HandToday";
 import { LoopOrders } from "./LiveTodayOrders";
-import { Section } from "./PortfolioLayout";
+import { Section } from "../../components/Section";
 import { Meter, StateLine } from "./liveParts";
 
 /**
@@ -27,8 +28,9 @@ import { Meter, StateLine } from "./liveParts";
  * card's ?. There is no button here that touches an order.
  *
  * Money follows the one layout: "net" is net, costs sit in their own columns, settlement never
- * recorded apart reads n/r. The suite total sums only today's realised net, which every loop states
- * the same way; the worst case and the mark are each loop's own measure and are never added up.
+ * recorded apart reads n/r. The suite totals today's realised net and, beside it, what the loops hold
+ * at mark: every loop states both net of fees. The worst case stays each loop's own measure and is
+ * never added up.
  */
 export { useLiveToday };
 
@@ -79,6 +81,41 @@ export function handNote(d: LiveTodayPayload): string {
   if (h === undefined || h.status !== "ok" || h.orders.length === 0) return "No 0DTE trade by hand today.";
   const net = h.net === null ? "n/r" : `${fmtMoney(h.net)}${h.openLegs.length > 0 ? " at mark" : ""}`;
   return `By hand: ${net}, not in the loops' total.`;
+}
+
+/** One loop's open book at its own mark, or the hand trades' net with their held legs at mark. */
+export interface OpenAtMark {
+  key: string;
+  label: string;
+  value: number | null;
+  title: string;
+}
+
+/**
+ * What is open now, at each loop's own mark (2026-11-07): a loop holding something, or with a mark,
+ * is listed with its figure and the mark's basis; the hand trades are listed while a leg is held.
+ * These are the parts of the suite's unrealised total (`suite.unrealised`, every loop net of fees to
+ * date); the hand trades are listed beside it, never in it. Empty when nothing is open anywhere.
+ */
+export function openAtMark(d: LiveTodayPayload): OpenAtMark[] {
+  const out: OpenAtMark[] = d.loops
+    .filter((l) => !l.retired && l.ledger === "ok" && (l.open > 0 || (l.mark?.value ?? null) !== null))
+    .map((l) => ({
+      key: l.loop,
+      label: l.loop,
+      value: l.mark?.value ?? null,
+      title: `${l.loop}: ${l.open} open · ${l.mark?.basis ?? "no mark"}${l.mark?.at ? ` · as of ${etClock(l.mark.at, "?")} ET` : ""}`,
+    }));
+  const h = d.hand;
+  if (h !== undefined && h.status === "ok" && h.openLegs.length > 0) {
+    out.push({
+      key: "hand",
+      label: "by hand",
+      value: h.net,
+      title: `by hand: the day's net with ${h.openLegs.length} held leg${h.openLegs.length === 1 ? "" : "s"} at mark (realised and open together); never in the loops' total`,
+    });
+  }
+  return out;
 }
 
 /** True when any loop has a working order: the simple view then shows the `working` column too. */
@@ -314,10 +351,18 @@ const NET_HELP: CardHelpContent = {
     <>
       <HelpWarn title="Realised, not marked">
         <p>
-          Gross less fees less settlement, over the positions resolved today, at the broker&apos;s fills. Worst case and mark are each
-          loop&apos;s own measure (hover for which) and are not added across loops. A trade by hand is stated beside the total and never in it.
+          Gross less fees less settlement, over the positions resolved today, at the broker&apos;s fills. The worst case is each loop&apos;s
+          own measure (hover for which) and is not added across loops. A trade by hand is stated beside the total and never in it.
         </p>
       </HelpWarn>
+      <HelpSection title="Open at mark">
+        <p>
+          What the loops still hold, at mark, net of fees to date: flies at the loop&apos;s own mid mark, bwb at its usable mark, MEIC at
+          the stream cache&apos;s mid. The first figure totals the loops; each loop&apos;s part follows. A loop holding something it cannot
+          mark (or whose fees are unrecorded) reads n/r, and so does the total, rather than a part that reads as the whole. By hand is the
+          day&apos;s net with its held legs at mark, beside the total and never in it.
+        </p>
+      </HelpSection>
       <HelpSection title="Armed and halt">
         <p>A loop is armed when its arm record is dated today and the disarm time has not passed. The halt flag is suite-wide and blocks new entries on every loop; clearing it arms nothing.</p>
       </HelpSection>
@@ -330,7 +375,10 @@ const LOOP_HELP: CardHelpContent = {
   body: (
     <>
       <HelpSection title="Worst case and mark">
-        <p>Each loop&apos;s own measure, said in the figure&apos;s hover: the worst case at expiry for flies, the stop distance for MEIC, the box for bwb. They are never added across loops.</p>
+        <p>
+          The worst case is each loop&apos;s own measure, said in its hover: at expiry for flies, the stop distance for MEIC, the box for bwb.
+          It is never added across loops. The mark is unrealised net of fees to date on every loop, and the top card totals it.
+        </p>
       </HelpSection>
       <HelpSection title="Loss breaker">
         <p>The day&apos;s loss against the loop&apos;s own limit. A tripped breaker stops new entries. No limit configured reads as &quot;no limit&quot;, never as clear. MEIC&apos;s figure is gross, and says so.</p>
@@ -400,6 +448,37 @@ function LoopParentCard({ l, showWorking, onOpen }: { l: LiveTodayLoop; showWork
   );
 }
 
+/** Why the unrealised total reads as it does, for its hover. */
+export function unrealisedTitle(u: LiveTodayPayload["suite"]["unrealised"]): string {
+  if (u.value === null) return `Not totalled: ${u.unmarked.map((m) => `${m.loop} — ${m.reason}`).join("; ")}`;
+  if (u.summed.length === 0) return "Nothing is open in any loop.";
+  return `Unrealised net of fees to date over ${u.summed.join(", ")}, at each loop's mark${u.at ? ` (oldest ${etClock(u.at, "?")} ET)` : ""}. The hand trades are not in it.`;
+}
+
+/** The open-at-mark line under the realised net: the loops' unrealised total, then each loop's part
+ *  in its own tone with its basis on hover, then the hand trades beside it. */
+function OpenLine({ items, total }: { items: OpenAtMark[]; total: LiveTodayPayload["suite"]["unrealised"] }) {
+  return (
+    <p className="lt-open" aria-label="open at mark">
+      <span className="lt-open-lab">open at mark</span>
+      {items.length === 0 ? (
+        <span className="muted">nothing open</span>
+      ) : (
+        <>
+          <span className="lt-open-total" title={unrealisedTitle(total)}>
+            <span className={total.value === null ? "muted" : tone(total.value)}>{total.value === null ? "n/r" : fmtMoney(total.value)}</span>
+          </span>
+          {items.map((i) => (
+            <span key={i.key} className="lt-open-item" title={i.title}>
+              {i.label} <span className={i.value === null ? "muted" : tone(i.value)}>{i.value === null ? "n/r" : fmtMoney(i.value)}</span>
+            </span>
+          ))}
+        </>
+      )}
+    </p>
+  );
+}
+
 export function LiveTodayView({ data: d, manage }: { data: LiveTodayPayload; manage?: ManagePayload }) {
   const s = d.suite;
   const lightbox = useOpenParam("loop");
@@ -440,6 +519,7 @@ export function LiveTodayView({ data: d, manage }: { data: LiveTodayPayload; man
               · {s.trades === null ? "n/r" : String(s.trades)} resolved
             </span>
           </div>
+          <OpenLine items={openAtMark(d)} total={s.unrealised} />
           <span className="lt-hero-chips">
             <span className={`chip ${s.armed.length > 0 ? "chip-ok" : ""}`} title="A loop is armed when its arm record is dated today and the disarm time has not passed.">
               armed · {d.session}: {s.armed.length === 0 ? `none of ${s.loops}` : `${s.armed.length} of ${s.loops} · ${s.armed.join(", ")}`}

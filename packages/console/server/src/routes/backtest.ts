@@ -7,6 +7,8 @@ import {
   isBacktestRiskUnit,
   isBacktestRunId,
   isBacktestSession,
+  isIsoDate,
+  isStudySlug,
   STUDY_SUMMARY_RUNS,
   type BacktestOverview,
   type BacktestRunReport,
@@ -15,8 +17,11 @@ import {
   type BridgedResult,
   type ResearchQueue,
   type StudiesBoard,
+  type StudyDigest,
+  type StudyReport,
   type StudyRunSummaries,
 } from "@console/shared";
+import { readStudyDigest, readStudyReport } from "../services/studyReportBridge.js";
 import { backtestOn, getFeatures } from "../services/featuresBridge.js";
 import { readBacktestOverview, readBacktestPath, readBacktestRun, readBacktestTrades, readRunSummaries } from "../services/backtestBridge.js";
 import { readResearchQueue } from "../services/researchQueueBridge.js";
@@ -27,8 +32,9 @@ import { readQueueLog } from "../readers/logs.js";
 
 /**
  * `GET /api/backtest/overview`, `GET /api/backtest/runs/:id`, `GET /api/backtest/runs/:id/trades`,
- * `GET /api/backtest/runs/:id/path`, `GET /api/backtest/summaries`, `GET /api/backtest/queue` and
- * `GET /api/backtest/studies` — the Backtest page.
+ * `GET /api/backtest/runs/:id/path`, `GET /api/backtest/summaries`, `GET /api/backtest/queue`,
+ * `GET /api/backtest/studies`, `GET /api/backtest/studies/digest` and
+ * `GET /api/backtest/studies/:study/report` — the Backtest page.
  *
  * **Each route refuses on its own, fail closed.** Unless the orchestrator's features answer was read
  * and says `backtest: true` (`featuresBridge.backtestOn`), the answer is the same 404 an unknown API
@@ -141,6 +147,29 @@ export function registerBacktestRoutes(app: FastifyInstance, config?: ConsoleCon
     if (!backtestOn(await getFeatures())) return refuse(reply);
     return readStudies();
   });
+
+  // The studies active since a date, with their verdict counts (orchestrator `study-report --since`):
+  // the studies tab's This week. Behind the same gate; the date is checked before anything spawns.
+  app.get<{ Querystring: { since?: string } }>(
+    "/api/backtest/studies/digest",
+    async (req, reply): Promise<BridgedResult<StudyDigest> | FastifyReply> => {
+      if (!backtestOn(await getFeatures())) return refuse(reply);
+      const since = req.query.since ?? "";
+      if (!isIsoDate(since)) return reply.code(400).send({ error: "since must be a date, YYYY-MM-DD" });
+      return readStudyDigest(since);
+    },
+  );
+
+  // One study read as a report (orchestrator `study-report --study`): its arms, measures, gates,
+  // reading and advice. Behind the same gate; the slug is checked before anything spawns.
+  app.get<{ Params: { study: string } }>(
+    "/api/backtest/studies/:study/report",
+    async (req, reply): Promise<BridgedResult<StudyReport> | FastifyReply> => {
+      if (!backtestOn(await getFeatures())) return refuse(reply);
+      if (!isStudySlug(req.params.study)) return reply.code(400).send({ error: "not a study name" });
+      return readStudyReport(req.params.study);
+    },
+  );
 
   // One task's log tail, for its expanded row. The id is a positive integer and the path is built
   // from it alone, so nothing outside `logs/research-queue/` can be named.

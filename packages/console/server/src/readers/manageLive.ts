@@ -77,13 +77,13 @@ export function occToStreamer(occ: string): string {
   return out;
 }
 
-interface Fresh {
+export interface Fresh {
   mids: Map<string, number>;
   greeks: Map<string, { delta: number | null; theta: number | null }>;
   oldest: number | null;
 }
 
-function readFresh(config: ConsoleConfig, symbols: string[], now: number, maxAgeS: number): Fresh {
+export function readFresh(config: ConsoleConfig, symbols: string[], now: number, maxAgeS: number): Fresh {
   const out: Fresh = { mids: new Map(), greeks: new Map(), oldest: null };
   const p = config.paths.streamCacheDb;
   if (symbols.length === 0 || !fs.existsSync(p)) return out;

@@ -936,15 +936,15 @@ def test_two_browser_jobs_never_run_at_once(spawned, fixed_jobs):
     fixed_jobs.extend(
         [
             _daily("report-charts", "fetch_vendor_edition.py"),
-            _daily("quikoptions-capture", "fetch_quikoptions.py"),
+            _daily("report-edition", "fetch_vendor_edition.py"),
         ]
     )
     sup = supervisor.Supervisor(base_cfg())
     assert sup.pass_once(now=EVENING)["started"] == ["report-charts"]
-    assert sup._state["quikoptions-capture"]["waiting"] == "browser"
+    assert sup._state["report-edition"]["waiting"] == "browser"
     assert sup.pass_once(now=EVENING)["started"] == []  # the vendor browser is still up
     next(p for p in spawned if "fetch_vendor_edition.py" in p.argv[-1]).exit(0)
-    assert sup.pass_once(now=EVENING)["started"] == ["quikoptions-capture"]
+    assert sup.pass_once(now=EVENING)["started"] == ["report-edition"]
 
 
 def test_a_repeatable_fetch_retries_after_a_failure_and_others_do_not(spawned, fixed_jobs):
@@ -961,6 +961,94 @@ def test_a_repeatable_fetch_retries_after_a_failure_and_others_do_not(spawned, f
     res = sup.pass_once(now=EVENING)
     assert "market-files" in res["started"]  # retried inside its window
     assert "report-charts" not in res["started"]  # the vendor collector's cooldown decides, not us
+
+
+def _with_retries(retries, delay=600, catchup=300):
+    spec = _daily("external-x", "x.py", at="17:15", catchup=catchup)
+    return jobspec.JobSpec(
+        id=spec.id, argv=spec.argv, kind=spec.kind, at_et=spec.at_et, catchup_minutes=catchup,
+        retries=retries, retry_delay_seconds=delay,
+    )  # fmt: skip
+
+
+def _fail_and_let_the_delay_lapse(sup, spawned, now):
+    spawned[-1].exit(1)
+    sup.pass_once(now=now)  # records the failure
+    sup._state["external-x"]["backoff_until"] = time.time() - 1
+
+
+LATE_AFTERNOON = datetime(2026, 8, 10, 17, 20, tzinfo=ET)
+
+
+def test_an_entrys_own_retries_run_again_after_its_delay_and_stop_at_the_limit(spawned, fixed_jobs):
+    fixed_jobs.append(_with_retries(2))
+    sup = supervisor.Supervisor(base_cfg())
+    assert sup.pass_once(now=LATE_AFTERNOON)["started"] == ["external-x"]
+    spawned[-1].exit(1)
+    sup.pass_once(now=LATE_AFTERNOON)
+    # Inside the delay nothing starts; the attempt count is in the registry for status.
+    assert sup._state["external-x"]["attempt"] == 1
+    assert sup.pass_once(now=LATE_AFTERNOON)["started"] == []
+    for expected_attempt in (2, 3):
+        sup._state["external-x"]["backoff_until"] = time.time() - 1
+        assert sup.pass_once(now=LATE_AFTERNOON)["started"] == ["external-x"]  # a retry
+        spawned[-1].exit(1)
+        sup.pass_once(now=LATE_AFTERNOON)
+        assert sup._state["external-x"]["attempt"] == expected_attempt
+    sup._state["external-x"]["backoff_until"] = time.time() - 1
+    assert sup.pass_once(now=LATE_AFTERNOON)["started"] == []  # 1 run + 2 retries, then no more
+
+
+def test_the_delay_is_the_entrys_own_not_the_crash_ladders(spawned, fixed_jobs):
+    fixed_jobs.append(_with_retries(1, delay=600))
+    sup = supervisor.Supervisor(base_cfg())
+    sup.pass_once(now=LATE_AFTERNOON)
+    spawned[-1].exit(1)
+    sup.pass_once(now=LATE_AFTERNOON)
+    wait = float(sup._state["external-x"]["backoff_until"]) - time.time()
+    assert 590 < wait <= 600  # the ladder's first step would be 30 s
+
+
+def test_a_retry_never_runs_past_the_catch_up_window(spawned, fixed_jobs):
+    fixed_jobs.append(_with_retries(3, catchup=60))  # 17:15 to 18:15
+    sup = supervisor.Supervisor(base_cfg())
+    assert sup.pass_once(now=LATE_AFTERNOON)["started"] == ["external-x"]
+    _fail_and_let_the_delay_lapse(sup, spawned, LATE_AFTERNOON)
+    assert sup.pass_once(now=EVENING)["started"] == []  # 19:08 is past the window
+
+
+def test_success_on_the_second_attempt_is_recorded_once_and_does_not_run_again(spawned, fixed_jobs):
+    fixed_jobs.append(_with_retries(2))
+    sup = supervisor.Supervisor(base_cfg())
+    sup.pass_once(now=LATE_AFTERNOON)
+    _fail_and_let_the_delay_lapse(sup, spawned, LATE_AFTERNOON)
+    assert sup.pass_once(now=LATE_AFTERNOON)["started"] == ["external-x"]
+    spawned[-1].exit(0)
+    sup.pass_once(now=LATE_AFTERNOON)
+    st = sup._state["external-x"]
+    assert st["attempt"] == 2 and st["consecutive_failures"] == 0
+    st["backoff_until"] = None
+    assert sup.pass_once(now=LATE_AFTERNOON)["started"] == []  # done for the day
+    assert len(spawned) == 2
+
+
+def test_a_job_with_no_retries_does_not_run_again(spawned, fixed_jobs):
+    fixed_jobs.append(_with_retries(0))
+    sup = supervisor.Supervisor(base_cfg())
+    sup.pass_once(now=LATE_AFTERNOON)
+    _fail_and_let_the_delay_lapse(sup, spawned, LATE_AFTERNOON)
+    assert sup.pass_once(now=LATE_AFTERNOON)["started"] == []
+
+
+def test_yesterdays_exhausted_retries_do_not_cost_today_its_own(spawned, fixed_jobs):
+    fixed_jobs.append(_with_retries(1))
+    sup = supervisor.Supervisor(base_cfg())
+    sup.pass_once(now=LATE_AFTERNOON)
+    st = sup._state["external-x"]
+    st["consecutive_failures"], st["failure_day"] = 5, "2000-01-01"  # a long-ago bad run
+    _fail_and_let_the_delay_lapse(sup, spawned, LATE_AFTERNOON)
+    assert st["attempt"] == 1
+    assert sup.pass_once(now=LATE_AFTERNOON)["started"] == ["external-x"]
 
 
 def test_the_network_warning_is_sent_once_after_fifteen_minutes(spawned, fixed_jobs, monkeypatch):
@@ -981,7 +1069,7 @@ def test_the_rules_read_the_job_table():
     """Which jobs the holds apply to, from what each job runs -- not a hand-kept list."""
     assert jobspec.needs_network(_daily("x", "fetch_iv_rank.py"))
     assert not jobspec.needs_network(_daily("technicals-land"))
-    assert jobspec.uses_browser(_daily("x", "fetch_quikoptions.py"))
+    assert jobspec.uses_browser(_daily("x", "fetch_vendor_edition.py"))
     assert not jobspec.uses_browser(_daily("x", "fetch_market_files.py"))
     tagged = jobspec.JobSpec(
         id="reconcile",

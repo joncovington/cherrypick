@@ -23,6 +23,29 @@ import {
   stamp,
 } from "../src/pages/Backtest/QueueTab";
 import { indexStudies, splitTitle, type StudyIndex } from "../src/pages/Backtest/studyIndex";
+import { ListViewContext } from "../src/components/ViewSwitch";
+
+describe("the research queue tab: rows", () => {
+  it("lists up next and the failures as rows, in the same order, with the running task still large", () => {
+    const tasks = [
+      task({ id: 6, step: "running", status: "running", startedAt: "2026-10-27T11:00:00", waits: null }),
+      task({ id: 3, step: "ready-early", waits: "ready" }),
+      task({ id: 2, step: "early-wait" }),
+      task({ id: 4, step: "study-failed", status: "failed", finishedAt: "2026-10-27T09:00:00", waits: null, exitCode: 1 }),
+    ];
+    const out = wrap(
+      <ListViewContext.Provider value="rows">
+        <QueueCards q={queue(tasks)} nowMs={NOW} />
+      </ListViewContext.Provider>,
+    );
+    expect(out).toContain('class="study-tile study-hero q-hero" data-task="6"');
+    expect(out.match(/class="bt-row"/g)?.length).toBe(3);
+    expect(out).not.toContain('class="study-tile" data-task');
+    expect(out.indexOf("ready-early")).toBeLessThan(out.indexOf("early-wait"));
+    expect(out).toContain('class="tr-item bt-item is-attn"');
+    expect(out).toContain("ready: starts next");
+  });
+});
 
 /**
  * The Backtest page's queue tab (as cards 2026-11-03): the running task large, then up next in the

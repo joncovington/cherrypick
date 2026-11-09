@@ -1,0 +1,39 @@
+{
+  "_header": "===== cherrypick-weeklyput -- item 57's unhedged arm in paper (EXPERIMENTAL, paper-only) =====",
+  "_what_this_is": "On each weekly expiry that is not a standard monthly (and whose 7-day trade shares no session with a monthly's), sell the put nearest 10 delta on each name in the last minutes of the session seven calendar days before the expiry, and hold it to the expiry's posted close. No hedge, no stop. The rule is item 57's (docs/edge-hypotheses-plan.md), declared for paper as item 69. Copy to ~/.cherrypick/config/weeklyput.json (or a git-ignored config.json here).",
+  "_source_note": "stream_cache_db overrides the shared stream cache path; null means the suite default.",
+  "source": {
+    "stream_cache_db": null
+  },
+  "defaults_header": "===== the fill, the window, the marks =====",
+  "_window_note": "The entry window opens decision_minutes_before_close before the regular close (15:45, or 12:45 on an early close) and stays open decision_window_minutes. A name not entered by its end is recorded missed for that cycle; nothing fills after the window. The study entered at the entry session's end-of-day quotes.",
+  "_fill_note": "One contract per name, sold at mid. Slippage is core.fees' fraction of the quoted spread, a separate cost column; trading fees are core.fees for one sold leg. Settlement is intrinsic at the expiry's posted close (stream_summary), with the cash-settlement charge on an in-the-money SPX put and, on an ETF put, the assignment and the delivered shares sold at the same close.",
+  "_band_note": "put_band: the listed puts between 1.5% and 12% below spot are subscribed on the entry session only, so the 10-delta put can be found without widening any symbol's stream window. A 10-delta put the quoted puts do not bracket is refused (delta_not_bracketed) and retried on the next tick.",
+  "_mark_note": "Open puts are marked every mark_interval_minutes in session and on every entry-window tick. An in-the-money ETF put whose time value falls under assignment_extrinsic is flagged assignment-exposed: early assignment is measured, never modelled.",
+  "defaults": {
+    "quantity": 1,
+    "decision_minutes_before_close": 15,
+    "decision_window_minutes": 10,
+    "max_quote_age_seconds": 120,
+    "put_band": [0.015, 0.12],
+    "mark_interval_minutes": 30,
+    "assignment_extrinsic": 0.05,
+    "settle_alert_sessions": 2
+  },
+  "names_header": "===== the names: item 57's equity-index group =====",
+  "_names_note": "root is the OCC root a chain must carry (SPXW keeps the AM-settled SPX monthly out); fee_symbol picks the exchange fee schedule; settlement is cash (European, intrinsic at the print) or physical (American delivery). A name declared as neither is refused at entry.",
+  "names": {
+    "SPX": {"root": "SPXW", "fee_symbol": "SPX", "settlement": "cash"},
+    "SPY": {"root": "SPY", "fee_symbol": "SPY", "settlement": "physical"},
+    "QQQ": {"root": "QQQ", "fee_symbol": "QQQ", "settlement": "physical"},
+    "IWM": {"root": "IWM", "fee_symbol": "IWM", "settlement": "physical"}
+  },
+  "arms_header": "===== the arms =====",
+  "_arms_note": "unhedged: item 57's passing arm, as judged. The hedged arm failed item 57 and is not declared.",
+  "arms": {
+    "unhedged": {
+      "_summary": "The 10-delta put, 7 days out, on each non-monthly weekly expiry, held to expiry with no hedge.",
+      "enabled": true
+    }
+  }
+}

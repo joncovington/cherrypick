@@ -17,15 +17,15 @@ alone, and nothing tracked the gate after that.
 - **Reopens when** the live pilot has 15 sessions under the cap-only rule (the plan's Step 1 bar), and
   the replay shows the gate paying. Then it lands at a declared live boundary, never mid-clock.
 - **Measured 2026-10-03** (live control, 09-25..10-02, 6 sessions, 37 entries; experiment-log): not
-  paying. Every threshold from 15 to 90 minutes nets below no gate (−$368 → −$570 to −$979), and
+  paying. Every threshold from 15 to 90 minutes nets below no gate (live dollars recorded locally), and
   paper on the same dates agrees. Entries made while a spread that went on to strand was still open
   completed 91% (20 of 22) and made +$1,127. Re-run at 15 sessions (about 10-15).
 - **2026-10-12:** taken out of the advisor's bounds at the 10-15 boundary (experiment log). The live
   re-run at 15 sessions is still the reopen condition for live; the advisor no longer proposes it.
 - **Re-run 2026-10-15** (live control, 09-25..10-15, 15 sessions, 88 entries; experiment-log): not
-  met. 15 and 30 minutes net +$224 / +$251 over no gate, but only by cutting the worst day (about
-  +$510); losing days rise from 7 to 9–10, the median day falls from +$26 to about −$215, and 45
-  minutes and up lose more than no gate. Re-run at 30 sessions.
+  met. 15 and 30 minutes net a little over no gate, but only by cutting the worst day; losing days
+  rise, the median day falls sharply, and 45 minutes and up lose more than no gate (live dollars
+  recorded locally). Re-run at 30 sessions.
 
 ## Variants of the delta-placed debit-first pair, by config only
 

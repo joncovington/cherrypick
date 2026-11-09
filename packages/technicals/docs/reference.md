@@ -148,12 +148,12 @@ what is unsolved, and scheduling.
   2026-10-24): the four chart setups' open positions entered on one of the last 5 closes, walked over
   the history store as item 17's study walks them, a long setup a put spread and its mirror a call
   spread, on the income chains' `cs` block (the 30-45 day monthly, both sides, unthinned). The short
-  is nearest 0.40 delta within 0.05; the pick is the user's rule, the widest long giving 35-40% of the
+  is nearest 0.40 delta within 0.05; the pick is the user's rule, the widest long giving 30-40% of the
   width at the working price, null when none does (often). Every row carries the width table item 17
   will score (1/2/3/5 strikes, 0.25/0.5/0.75 of the move). **Untested**: the rule says so until item 17
   runs. No history store, no list (never an empty one).
 - **The fair-value file** moved to `packages/fundamentals` on 2026-10-29 (its `CLAUDE.md` and
-  `docs/fair-value-model-plan.md`). The income lists read its file by path
+  `docs/history/fair-value-model-plan.md`). The income lists read its file by path
   (`paths.fair_value_dir()`), never by import: fundamentals reads this package for prices.
 - **The security list** (`securities.py`, `securities`, 2026-10-17): every listed symbol's type
   (Nasdaq Trader's directory), options (any OCC volume in 20 sessions) and a liquidity rank that is
@@ -179,7 +179,7 @@ what is unsolved, and scheduling.
   the vendor's filed under it and the one before, to learn which close its evening lists describe.
   Mirrored to tastytrade by hand (`scripts/sync_stage_watchlists.py --apply`), never on a schedule.
 - **The earnings calendar** (`earnings_calendar.py`, `earnings-calendar`, 2026-10-17;
-  docs/earnings-screener-plan.md): every announcement in the next 30 days, joined from local data
+  docs/history/earnings-screener-plan.md): every announcement in the next 30 days, joined from local data
   and the local Dolt.
   - **Date and time:** a confirmed broker date wins, then Dolt's, then a broker estimate. The time of
     day comes from the broker (with its own date), then Nasdaq's public calendar

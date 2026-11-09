@@ -24,9 +24,12 @@ unreviewed code run by it. A kind builds its own argv from the row's arguments:
   `fetch-flow` / `fetch-oi`: the backtest package's resumable ThetaData fetches, given a request or
   plan file. Each is bounded by `--stop-by`, and a fetch that stops is queued again to resume.
   `fetch-sessions` is the 0DTE store's own `fetch` over a date span, into a declared store variant
-  (`store_tag`, e.g. items 42 and 44's wide store); the nightly job stays the plain store's writer.
-- `script`: a Python file checked into the repo's `scripts/` (git must know it), with string
-  arguments, no shell. It may not need the ThetaData session: it cannot be stopped mid-run.
+  (`store_tag`, e.g. items 42 and 44's wide store), of SPX or another declared `dataset` (QQQ, NDX
+  for item 68); the nightly job stays the plain SPX store's writer.
+- `script`: a Python file checked into one of `SCRIPT_DIRS` (git must know it), with string
+  arguments, no shell. Studies on the backtest engine live in `packages/backtest/scripts/`
+  (2026-11-08), everything else in `scripts/`. It may not need the ThetaData session: it cannot be stopped
+  mid-run.
 
 **When a task may start** (`ready`):
 - one task at a time; a `running` row whose process is gone (a reboot, a killed supervisor) is put
@@ -121,6 +124,11 @@ CREATE TABLE IF NOT EXISTS tasks (
 # Kinds: the allow-list.
 
 
+#: Where a `script` row's file may sit, repo-relative. The study chain (`hypotheses.CHAIN_PATHS`)
+#: reads the same list.
+SCRIPT_DIRS = ("scripts/", "packages/backtest/scripts/")
+
+
 class Refused(ValueError):
     """A row the allow-list will not run, with why."""
 
@@ -153,11 +161,10 @@ def _workers(args: dict, default: int, most: int = 4) -> str:
 def _tracked_script(args: dict, root: Path, tracked: Callable[[Path, Path], bool]) -> list[str]:
     rel = args.get("path")
     if not isinstance(rel, str) or not rel.endswith(".py"):
-        raise Refused("a script needs 'path', a .py file under scripts/")
+        raise Refused(f"a script needs 'path', a .py file under {' or '.join(SCRIPT_DIRS)}")
     p = (root / rel).resolve()
-    scripts = (root / "scripts").resolve()
-    if scripts not in p.parents or not p.is_file():
-        raise Refused(f"{rel!r} is not a file under scripts/")
+    if not any((root / d).resolve() in p.parents for d in SCRIPT_DIRS) or not p.is_file():
+        raise Refused(f"{rel!r} is not a file under {' or '.join(SCRIPT_DIRS)}")
     if not tracked(root, p):
         raise Refused(f"{rel!r} is not checked into the repo: commit it first")
     extra = args.get("args", [])
@@ -250,6 +257,10 @@ VALIDATE_MODULES = ("flies", "meic")
 #: nightly `backtest-fetch` is its writer.
 STORE_TAGS = ("wide",)
 
+#: The 0DTE datasets `fetch-sessions` may name (backtest `settings.DEFAULTS["datasets"]`); absent, SPX,
+#: the fetch verb's own default. Spelt here, as `STORE_TAGS` is, so a typo never queues.
+DATASETS = ("SPX", "QQQ", "NDX")
+
 
 def _day_arg(args: dict, key: str) -> str:
     v = args.get(key)
@@ -270,9 +281,14 @@ def _sessions_argv(args: dict, python: str) -> list[str]:
     lo, hi = _day_arg(args, "from"), _day_arg(args, "to")
     if lo > hi:
         raise Refused("fetch-sessions' 'from' is after its 'to'")
+    dataset = args.get("dataset", "SPX")
+    if dataset not in DATASETS:
+        raise Refused(f"fetch-sessions' 'dataset' is one of {', '.join(DATASETS)}")
     # One request in flight a session against Standard's four concurrent (backtest fetch.fetch).
-    return [python, "-m", "cherrypick.backtest", "fetch", "--store-tag", tag, "--cadence", str(cadence),
+    argv = [python, "-m", "cherrypick.backtest", "fetch", "--store-tag", tag, "--cadence", str(cadence),
             "--from", lo, "--to", hi, "--workers", _workers(args, 1, most=4)]  # fmt: skip
+    # SPX is the verb's default: its rows keep the argv they always had.
+    return argv if dataset == "SPX" else [*argv, "--dataset", dataset]
 
 
 def build_argv(
@@ -664,7 +680,7 @@ def result_of(row: dict, report: dict, log: Path) -> dict:
         out["report"] = counts
     if row["kind"] == "fetch-sessions":
         out["input"] = f"{args.get('from')}..{args.get('to')}"
-        out["store"] = f"backtest {args.get('store_tag')} 0DTE store"
+        out["store"] = f"backtest {args.get('dataset', 'SPX')} {args.get('store_tag')} 0DTE store"
     elif row["kind"] in FETCH_STORES:
         out["input"] = args.get("requests") or args.get("plan")
         out["store"] = "backtest " + FETCH_STORES[row["kind"]]

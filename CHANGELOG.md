@@ -233,9 +233,9 @@ beyond the latest release.
   net-zero roll, else the nearest quoting anything beyond the strike. Every candidate still goes
   through `check-roll`, and a snapshot without the field is read as before: re-evaluated on this
   branch and on main, every stored snapshot (10-13 to 10-20, seven sessions, 110 trades) gives a
-  byte-identical evaluation. On 10-20 the account holds 16 names and none of them a covered call,
+  byte-identical evaluation. On the latest stored day no name carries a covered call,
   PMCC-shaped short or bare short put, so the step makes no broker read; the most any stored day
-  would have cost is six (SOFI's short put on 10-13 and 10-14: a listing and five expiries).
+  would have cost is six (one short put on two days: a listing and five expiries).
 - **Fixed: a covered short call more than 60 days out was still judged as a naked call.** The PMCC
   link's join reaches 60 days, so a longer-dated short sold in its own order stayed a trade of its own
   beside a lone long call. Now, when a name's groups hold exactly one long call alone and one short
@@ -255,7 +255,7 @@ beyond the latest release.
   order, the expired shorts' premiums included. Only a group holding the long or the short alone moves;
   a short more than 60 days out, an unreconciled link, or a group with other legs keeps the chains'
   grouping, and a join that fails leaves them as they were. On every stored snapshot (10-13 to 10-20)
-  no trade's grouping or recommendation changes: the account holds no such split.
+  no trade's grouping or recommendation changes: no stored day holds such a split.
 - **Added: the console's PMCC tab.** Live → pmcc sits beside the wheel tab and reads the same
   evaluation: one card per name whose calls have a PMCC's shape, with the long (delta at entry, or
   "unknown" and why; today's delta, extrinsic share, days left, whether to roll it), the width check
@@ -661,7 +661,7 @@ against the session as it actually traded.
 - **Modules.**
   - **flies:** the intraday agent (shadow on live, acting on paper; #77–#93) and the `range-high`
     arm (#152).
-  - **pmcc:** the Income Shield as its base trade, extended to single stocks and SMH with an
+  - **pmcc:** a published held-long design as its base trade, extended to single stocks and SMH with an
     earnings refusal (#39, #52, #55).
   - **curve:** the 10-06 boundary, $2 wide with a net credit floor (#64).
   - **earnings:** the expected-move butterfly, on paper (#244).

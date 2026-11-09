@@ -36,6 +36,22 @@ STORES: list[dict[str, str]] = [
         "used_by": "items 42 and 44, wide-wing MEIC condors (docs/edge-hypotheses-plan.md)",
     },
     {
+        "file": "QQQ-60s-wide.db",
+        "holds": "QQQ intraday: 0DTE quote samples, spot, GEX profiles, closes, 40 strikes each side, "
+        "at 60 s",
+        "built_by": "python -m cherrypick.backtest fetch --cadence 60 --store-tag wide --dataset QQQ "
+        "(research queue)",
+        "used_by": "item 68, MEIC's live rule on QQQ (packages/backtest/scripts/meic_symbols_item68.py)",
+    },
+    {
+        "file": "NDX-60s-wide.db",
+        "holds": "NDX intraday (NDXP 0DTE): quote samples, spot, GEX profiles, closes, 40 strikes each side, "
+        "at 60 s",
+        "built_by": "python -m cherrypick.backtest fetch --cadence 60 --store-tag wide --dataset NDX "
+        "(research queue)",
+        "used_by": "item 68, MEIC's live rule on NDX (packages/backtest/scripts/meic_symbols_item68.py)",
+    },
+    {
         "file": "SPX-15s.db",
         "holds": "SPX intraday at 15 s, a short span: the cadence comparison beside the 60 s store",
         "built_by": "python -m cherrypick.backtest fetch --cadence 15",
@@ -53,9 +69,9 @@ STORES: list[dict[str, str]] = [
         "holds": "single-name option chains at intraday bars (quote, delta, implied vol, underlying)",
         "built_by": "python -m cherrypick.backtest fetch-intraday-chains --requests FILE",
         "used_by": (
-            "item 31, the earnings module's paper rule (scripts/earnings_item31.py); "
-            "item 37 morning sample (scripts/curve_item37.py); "
-            "item 38, the calendars module's rule (scripts/calendars_item38.py)"
+            "item 31, the earnings module's paper rule (packages/backtest/scripts/earnings_item31.py); "
+            "item 37 morning sample (packages/backtest/scripts/curve_item37.py); "
+            "item 38, the calendars module's rule (packages/backtest/scripts/calendars_item38.py)"
         ),
     },
     {
@@ -68,33 +84,34 @@ STORES: list[dict[str, str]] = [
         "file": "open_interest.db",
         "holds": "open interest per contract per name and session, expiries within 100 days",
         "built_by": "python -m cherrypick.backtest fetch-oi --plan FILE",
-        "used_by": "item 30, monthly-expiry GEX walls (scripts/gex_walls_item30.py)",
+        "used_by": "item 30, monthly-expiry GEX walls (packages/backtest/scripts/gex_walls_item30.py)",
     },
     {
         "file": "addon_weeklies.db",
         "holds": "SPXW weekly put minute greeks over each bwb life, and 10:00 ATM calls",
         "built_by": "python -m cherrypick.backtest fetch-addon-weeklies --requests FILE "
-        "(scripts/fetch_addon_weeklies.py requests)",
+        "(packages/backtest/scripts/fetch_addon_weeklies.py requests)",
         "used_by": "the bwb add-on standalone study (2026-10-23); item 35, the bwb module's whole rule "
-        "(scripts/bwb_item35.py)",
+        "(packages/backtest/scripts/bwb_item35.py)",
     },
     {
         "file": "SPY-monthly-1545.db",
         "holds": "SPY standard-monthly chains at 15:45 ET, each trading day 2017 on",
-        "built_by": "scripts/fetch_spy_monthly_1545.py",
+        "built_by": "packages/backtest/scripts/fetch_spy_monthly_1545.py",
         "used_by": "the strangle-management test (2026-10-20); items 53 and 55 "
-        "(scripts/time_exit_entry_dte_item53.py, scripts/index_collar_item55.py)",
+        "(packages/backtest/scripts/time_exit_entry_dte_item53.py,"
+        " packages/backtest/scripts/index_collar_item55.py)",
     },
     {
         "file": "SPX-time-warp.db",
         "holds": "SPXW next-expiry chains 15:45-15:55 ET, and that expiry's next session at 5 min",
-        "built_by": "scripts/fetch_spx_time_warp.py",
+        "built_by": "packages/backtest/scripts/fetch_spx_time_warp.py",
         "used_by": "item 19, the Time Warp test (docs/edge-hypotheses-plan.md)",
     },
     {
         "file": "SPX-convex-stack.db",
         "holds": "SPXW ~5-DTE chains 15:40-15:50 ET Mon/Thu, then that expiry to expiry at 5 min",
-        "built_by": "scripts/fetch_spx_convex_stack.py",
+        "built_by": "packages/backtest/scripts/fetch_spx_convex_stack.py",
         "used_by": "item 20, the Convex Stack test (docs/edge-hypotheses-plan.md)",
     },
 ]
@@ -102,10 +119,16 @@ STORES: list[dict[str, str]] = [
 DATE_COLUMNS = ("trade_date", "session", "day", "date", "expiration")
 
 
+#: Where a builder script may sit, repo-relative: this package's own `scripts/` (where its studies and
+#: store fetchers live, 2026-11-08) or the repo root's. The research queue's `SCRIPT_DIRS` lists the
+#: same two (the packages do not import each other).
+SCRIPT_DIRS = ("scripts/", "packages/backtest/scripts/")
+
+
 def script_of(entry: dict[str, str]) -> str | None:
     """The committed script an entry is built by, or None when it is a package verb."""
     first = entry["built_by"].split()[0]
-    return first if first.startswith("scripts/") and first.endswith(".py") else None
+    return first if first.startswith(SCRIPT_DIRS) and first.endswith(".py") else None
 
 
 def _shape(path: Path) -> dict[str, Any]:

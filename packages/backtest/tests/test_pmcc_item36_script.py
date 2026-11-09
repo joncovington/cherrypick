@@ -1,5 +1,5 @@
-"""Hypothesis 36's study (scripts/pmcc_item36.py): pmcc's own rule at real quotes, replayed here on
-invented Black-Scholes chains only, no store. Every rule, arm and baseline is shown to fire, and each
+"""Hypothesis 36's study (packages/backtest/scripts/pmcc_item36.py): pmcc's own rule at real quotes, replayed
+here on invented Black-Scholes chains only, no store. Every rule, arm and baseline is shown to fire, and each
 guard is shown to fail by breaking its invariant.
 """
 
@@ -21,7 +21,7 @@ pytest.importorskip("numpy")
 
 from cherrypick.core import bs  # noqa: E402
 
-SCRIPTS = Path(__file__).resolve().parents[3] / "scripts"
+SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 _spec = importlib.util.spec_from_file_location("pmcc_item36", SCRIPTS / "pmcc_item36.py")
 s36 = importlib.util.module_from_spec(_spec)
 sys.modules["pmcc_item36"] = s36

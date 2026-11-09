@@ -2255,14 +2255,19 @@ def test_every_configured_arm_is_a_registered_one():
 
 
 def test_the_shipped_example_configures_only_control_and_only_registered_arms():
-    """A base install runs one arm. Every arm the example names must be one the engine registers,
-    or `enabled_arms` (registry ∩ config) would silently drop it."""
+    """The example names one arm and it ships OFF: flies is retired (2026-10-19), so a base install runs
+    nothing, and the arm carries its `_retired` note. Every arm the example names must be one the
+    engine registers, or `enabled_arms` (registry ∩ config) would silently drop it once reinstated."""
     from cherrypick.flies import cli
 
     example = _example_config()
     configured = {k for k in example["arms"] if not k.startswith("_")}
     assert configured == {"control"}
     assert configured <= set(engine.ARMS)
+    assert example["arms"]["control"]["enabled"] is False
+    assert example["arms"]["control"]["_retired"] == "2026-10-19"
+    assert cli.enabled_arms(example) == []
+    example["arms"]["control"]["enabled"] = True
     assert cli.enabled_arms(example) == ["control"]
 
 

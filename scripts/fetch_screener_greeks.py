@@ -476,7 +476,7 @@ leg_passes = legbars.leg_passes
 
 
 def cycle_expiry(expirations: list[dict], is_monthly) -> dict | None:
-    """The standard monthly the user trades: inside 45-60 days if one is listed, else inside 30-60
+    """The standard cycle monthly: inside 45-60 days if one is listed, else inside 30-60
     (the latest there, nearest the preferred range). None when neither range holds a monthly --
     monthlies are 28 or 35 days apart, so after a 35-day gap 30-60 can be empty."""
     monthly = [e for e in expirations if is_monthly(e["expiration"])]
@@ -1118,7 +1118,7 @@ def cmd_measure(args) -> int:
 
 
 # ------------------------------------------------------------------------------------------------
-# `income`: our own candidates, in regular hours (2026-10-18; docs/portfolio-guidance-plan.md, 4).
+# `income`: our own candidates, in regular hours (2026-10-18; docs/history/portfolio-guidance-plan.md, 4).
 #
 # The vendor's lists stop with its subscription on 2026-10-24, and which names they carry was never
 # reproduced. So the candidates manage sizes for the account come from OUR universe instead: every

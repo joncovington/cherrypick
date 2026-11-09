@@ -1,9 +1,10 @@
 # Operations — startup, supervision, and the daily checklist
 
 How the suite runs day to day: what is installed, what starts when, what "healthy" looks like at
-09:00 ET, and which warnings are noise. Everything here was verified against the running suite on
-2026-07-29 (the fork cutover); each table cites its source so it can be re-verified rather than
-trusted.
+09:00 ET, and which warnings are noise. Each table cites its source so it can be re-verified rather
+than trusted; `tools/check_docs.py` checks the job and port tables against the code. The record of the
+2026-07-29 cutover, the old rollback note and the gaps that have since been fixed are in
+[history/operations-2026-07-29-cutover.md](history/operations-2026-07-29-cutover.md).
 
 ## The model, in one paragraph
 
@@ -56,23 +57,29 @@ shows and which is healthy. "Default" means what `config.example.json` ships.
 |---|---|---|---|---|
 | `meic-paper` | every **60 s** | `-m cherrypick.meic.paper_loop --once` | on | cadence is `modules.meic.paper.tick_interval_seconds` |
 | `meic-regime-cuts` | daily **16:40**, trading days | `-m cherrypick.meic.regime_cuts --write` | on | the nightly regime-cuts artifact the console and the advisor read |
-| `flies-paper` | **resident** `--interval 15`, 09:30–16:00, trading days | `-m cherrypick.flies.paper_loop --interval 15` | on | supervised for death and for 120 s of log silence. 15 s ticks are a journaled measurement break (completion rates are not comparable across 2026-08-09) |
-| `flies-paper-offsession` | every 60 s **outside** 09:30–16:00 | `…flies.paper_loop --once` | on | keeps 16:20 settlement, retry-until-settled and the hourly idle heartbeat |
-| `flies-regime-cuts` | daily **16:40**, trading days | `-m cherrypick.flies.cli regime-cuts --write` | on | as MEIC's |
-| `flies-fee-reconcile` | daily **09:15**, trading days | `-m cherrypick.flies.fee_reconcile --symbol SPX` | on | reconciles recorded fees against the schedule |
-| `flies-live` | every 60 s — **enabled only while the arm record is valid for today** | `-m cherrypick.flies.live_loop --once --live` | off (unarmed) | armed by `/live-flies-start` writing `state/flies-live-arm.json` (fresh YES each day); self-disarms by deleting the record at `live.disarm_time` (17:00 ET) or on a stale date; the watchdog backstops with the halt flag if the record survives |
-| `bwb-paper` | every **60 s** | `-m cherrypick.bwb.paper_loop --once` | on | the daily ladder: one entry a session, every open position marked each tick |
-| `bwb-fee-reconcile` | daily **09:20**, trading days | `-m cherrypick.bwb.fee_reconcile --symbol SPX` | on | as flies' |
-| `bwb-live` | every 60 s — **enabled only while the arm record is valid for today** | `-m cherrypick.bwb.live_loop --once --live` | off (unarmed) | armed by `/live-bwb-start` writing `state/bwb-live-arm.json`; the same self-disarm and watchdog backstop as flies, through `cherrypick.core.live`. Each tick confirms fills, walks resting orders, settles on an official print when due, and makes one entry attempt in the window |
+| `flies-paper` | **resident** `--interval 15`, 09:30–16:00, trading days | `-m cherrypick.flies.paper_loop --interval 15` | off (retired 2026-10-19; derived only while `modules.flies.enabled`) | supervised for death and for 120 s of log silence. 15 s ticks are a journaled measurement break (completion rates are not comparable across 2026-08-09) |
+| `flies-paper-offsession` | every 60 s **outside** 09:30–16:00 | `…flies.paper_loop --once` | off (retired 2026-10-19; derived only while `modules.flies.enabled`) | keeps 16:20 settlement, retry-until-settled and the hourly idle heartbeat |
+| `flies-regime-cuts` | daily **16:40**, trading days | `-m cherrypick.flies.cli regime-cuts --write` | off (retired 2026-10-19; derived only while `modules.flies.enabled`) | as MEIC's |
+| `flies-fee-reconcile` | daily **09:15**, trading days | `-m cherrypick.flies.fee_reconcile --symbol SPX` | off (retired 2026-10-19; derived only while `modules.flies.enabled`) | reconciles recorded fees against the schedule |
+| `flies-live` | every 60 s — **enabled only while the arm record is valid for today** | `-m cherrypick.flies.live_loop --once --live` | off (retired; derived only while `modules.flies.enabled`, and enabled only when armed) | armed by `/live-flies-start` (or the loop's `--arm --confirm YES`) writing `state/flies-live-arm.json` (fresh YES each day); self-disarms by deleting the record at `live.disarm_time` (17:00 ET) or on a stale date; the watchdog backstops with the halt flag if the record survives |
+| `bwb-paper` | every **60 s** | `-m cherrypick.bwb.paper_loop --once` | off (retired 2026-11-08; derived only while `modules.bwb.enabled`) | the daily ladder: one entry a session, every open position marked each tick |
+| `bwb-fee-reconcile` | daily **09:20**, trading days | `-m cherrypick.bwb.fee_reconcile --symbol SPX` | off (retired 2026-11-08; derived only while `modules.bwb.enabled`) | as flies' |
+| `bwb-live` | every 60 s — **enabled only while the arm record is valid for today** | `-m cherrypick.bwb.live_loop --once --live` | off (retired; derived only while `modules.bwb.enabled`, and enabled only when armed) | armed by `/live-bwb-start` (or the loop's `--arm --confirm YES`) writing `state/bwb-live-arm.json`; the same self-disarm and watchdog backstop as flies, through `cherrypick.core.live`. Each tick confirms fills, walks resting orders, settles on an official print when due, and makes one entry attempt in the window |
 | `earnings-paper` | every **60 s** | `-m cherrypick.earnings.paper_loop once` | on with `dolt` | the managed loop since 2026-08-12: the phase comes from the clock (forward scan ~06:30, marking from the open, management in the execution window, the forced-sampling entry scan from 15:35, the EOD write) |
 | `earnings-dolt` | every **5 min** | `run.py ensure-dolt` | on with `dolt` | keep-alive: starts `dolt sql-server` only when 3306 is down and `dolt-server` is not held |
 | `earnings-dolt-pull` | daily **05:30** | `scripts/refresh_dolt_data.py` | on with `dolt` | pulls the `earnings`/`options`/`stocks` clones up to date |
 | `calendars-paper` | **resident** `--interval 30`, 09:30–16:00, trading days | `-m cherrypick.calendars.paper_loop --interval 30` | **off** (experimental) | weekly SPY double calendars: entry self-gates to the entry day (Monday, or Tuesday after a Monday holiday) and every open leg is marked each tick — the exit study's substrate, so a cadence change is a journaled measurement break |
 | `calendars-paper-offsession` | every 60 s **outside** 09:30–16:00 | `…calendars.paper_loop --once` | **off** (experimental) | owns the 16:20 settlement of expiring legs: cash for SPX-style underlyings, **physical** for SPY (an ITM short delivers shares, held to the next session's disposal), retry-until-settled off a staleness-gated spot read |
-| `pmcc-paper` | every **60 s** | `-m cherrypick.pmcc.paper_loop --once` | **off** (experimental) | enters whenever the (symbol, book) slot is free, marks every open leg (the assignment-exposure telemetry reads that path), holds to the short's expiry, and settles expiring legs (an ITM short delivers shares covered the next session) |
-| `curve-paper` | every **60 s** | `-m cherrypick.curve.paper_loop --once` | **off** (experimental) | VXX call credit spreads; records the daily VIX/VIX3M regime classification every session, traded or not |
+| `pmcc-paper` | every **60 s** | `-m cherrypick.pmcc.paper_loop --once` | **off** (retired 2026-11-08) | enters whenever the (symbol, book) slot is free, marks every open leg (the assignment-exposure telemetry reads that path), holds to the short's expiry, and settles expiring legs (an ITM short delivers shares covered the next session) |
+| `curve-paper` | every **60 s** | `-m cherrypick.curve.paper_loop --once` | **off** (retired 2026-11-01) | VXX call credit spreads; records the daily VIX/VIX3M regime classification every session, traded or not |
 | `contango-paper` | every **60 s** | `-m cherrypick.contango.paper_loop --once` | **off** (experimental) | the SVXY/SHV switch: one decision per arm ten minutes before the close |
-| `meic-live` | every 60 s — **armed: all day; unarmed: trading days 09:30 to the disarm cutoff, to manage what the book holds** | `-m cherrypick.meic.live_loop --once --live` | manage-only (unarmed) | armed by `/live-meic-start` writing `state/meic-live-arm.json`; the arm gates new ICs only. Unarmed, a tick with a flat book ends without a broker call, and one holding an IC confirms fills, stops and settles it. The same self-disarm at `live.disarm_time` (17:00 ET) and watchdog backstop as flies, through `cherrypick.core.live` |
+| `weeklyput-paper` | every **60 s** | `-m cherrypick.weeklyput.paper_loop --once` | **off** (experimental) | item 57's unhedged index put: sells the 10-delta put in the last quarter hour seven days before each non-monthly weekly expiry; settles it at the expiry's posted close, often the next morning |
+| `meic-live` | every 60 s — **armed: all day; unarmed: trading days 09:30 to the disarm cutoff, to manage what the book holds** | `-m cherrypick.meic.live_loop --once --live` | manage-only (unarmed) | armed by `/live-meic-start` (or the loop's `--arm --confirm YES`) writing `state/meic-live-arm.json`; the arm gates new ICs only. Unarmed, a tick with a flat book ends without a broker call, and one holding an IC confirms fills, stops and settles it. The same self-disarm at `live.disarm_time` (17:00 ET) and watchdog backstop as flies, through `cherrypick.core.live` |
+
+The flies, bwb, pmcc and curve jobs above are derived only while that module is switched back on
+(`modules.<name>.enabled`); with the module off they do not appear in `status` at all, and a retired
+live module refuses to arm. Earnings has no live job: it is paper-only. The QuikOptions jobs were
+removed in v0.12.0; your own scheduled reports are the `external-<id>` jobs below.
 
 **Reports, data and the AI**
 
@@ -96,6 +103,7 @@ shows and which is healthy. "Default" means what `config.example.json` ships.
 | `technicals-securities` / `technicals-liquidity` | daily **18:48** / **18:57**, trading days | `-m cherrypick.technicals securities` / `liquidity` | on (no `dolt` needed) | the security list and the liquidity verdict, the income lists' universe |
 | `technicals-dividends` | daily **19:30** | `scripts/fetch_dividends.py` | on with `dolt` | |
 | `report-edition` / `-retry`, `report-charts` | daily 07:00 / 08:15, 17:15, trading days | `scripts/fetch_vendor_edition.py` | off | `market_report.collector`; needs both vendor keys set |
+| `external-<id>` (one per `external_reports` entry) | daily at the entry's `at_et` (default trading days only), 240 min catch-up | `run.py external-run <id>`, which runs the entry's own script under `~/.cherrypick` | none until listed | `external_reports` in config.json ([guide](guide/external-reports.md)); a refused entry (script outside the home, bad id or time) is listed off with the reason; the report lands in `data/external/<id>.json` |
 | `universe-measure-1` / `-2`, `universe-daily`, `universe-watchlist` | daily 11:00 / 14:00, 18:00, 18:30, trading days | `scripts/build_stock_universe.py` | off | `market_report.universe` / `universe_watchlist` |
 | `advisor-deep` | daily **17:00**, trading days | `scripts/advisor_checkpoint.py --slot deep` | off, needs `claude` | the post-close run, after `review-provisional`, on the strong model. It also ISSUES the next session's advice, even when the AI call failed. Catchup 300 min |
 | `advisor-<slot>` | as configured — **none by default** | `scripts/advisor_checkpoint.py --slot <s>` | off | optional light intraday checkpoints, declared in `advisor.checkpoints` |
@@ -147,11 +155,6 @@ experiment. That step runs **unconditionally**, after a timeout, a parse failure
 CRITICAL, and name the manual re-run command. Nothing here can reach a live account. The console's
 Advisor page is the read surface. Since 2026-09-15 a model `kill` verdict is actioned on admission
 (`advisor.kill_on_verdict`); the console button is for stopping one the model has not.
-
-**Rollback** (documented for one transition window): `git tag pre-supervisor` marks the last
-schtasks-driven commit. To roll back: `run.py uninstall` (new code), check out the tag, `run.py
-install` (old code re-registers every per-job task; the module `--install-task` helpers exist
-there, though they were removed from current code on 2026-10-08). The old and new mechanisms never coexist — each `install` deletes the other's registrations.
 
 ## Inventory — daemons (not tasks)
 
@@ -239,7 +242,7 @@ Time constants, each with its source:
 
 ## The 09:00 ET checklist
 
-Five commands; what "good" looks like is quoted from real runs (2026-07-29).
+Five commands; what "good" looks like is quoted from real runs.
 
 1. **`python run.py doctor`** (from `packages/orchestrator`) — expect `Result: ALL GREEN`. Read the
    `clock/tz` line (`trading_day=True` on a session day) and `onboarding` (each module's credential
@@ -253,8 +256,7 @@ Five commands; what "good" looks like is quoted from real runs (2026-07-29).
    down — `run.py ensure-supervisor` starts it (the anchor task does the same within 2 min).
 3. **`python packages/streamer/run.py --status`** — require **both** `"running": true **and** a small
    `oldest_event_age_s`** during market hours. Liveness alone is insufficient — the whole lesson of
-   the 2026-07-01 34-hour stall is a socket that is connected and silent. Caveat observed at cutover:
-   right after a restart the status row can still show the *previous* run's `connected_since` /
+   the 2026-07-01 34-hour stall is a socket that is connected and silent. Caveat: right after a restart the status row can still show the *previous* run's `connected_since` /
    `last_event_at` until the new connection populates, so read it a minute after any restart.
 4. **Dolt** (only with the `dolt` capability): reachable on 3306 *and serving* `earnings`, `options`,
    `stocks` — `doctor` checks the databases, not just the port (a server rooted at the wrong data dir
@@ -329,47 +331,3 @@ Each open gap below is tracked as an issue — the entry here is the operator-fa
   longer invisible: `python -m cherrypick.meic.gate_health` reports which gates are armed, which have
   stood down and why, and how many sessions ATR is still missing. Read-only and file-only.
   **Remaining:** it is a command, not a console page, so it still has to be asked.
-- ~~**Thin pre-open margin.**~~ **Fixed 2026-08-06** ([#64](https://github.com/joncovington/cherrypick/issues/64)),
-  **superseded 2026-08-09**: the dedicated `cherrypick-preopen` task (streamer liveness every 2 min,
-  09:00–09:35) became the supervisor's `streamer-health` job — same check (`_check_streamer_health`
-  reused, never copied; no heartbeat write; stops at the door on a non-trading day), every 60 s
-  across the whole 09:00–16:00 session. The original reasoning survives intact: the full watchdog
-  tick still never speeds up to protect the streamer — the check just has its own cadence now that
-  per-job cadences are free.
-- ~~**`doctor` coverage holes.**~~ **Mostly fixed 2026-08-06** ([#65](https://github.com/joncovington/cherrypick/issues/65)).
-  `doctor` now checks every orchestrator-owned task — `trade-notify`, `log-archive`, `reconcile`
-  and `preopen` — resolving each name through the same settings helper `install` uses,
-  so a config-driven rename can't desync the check. Opted-out-and-absent reports as healthy; enabled-
-  but-missing, and disabled-but-still-registered, both warn. **Still open:** nothing cross-checks that
-  `stream_requests/*.json` cover the symbols the modules actually trade — that half is better done
-  alongside [#62](https://github.com/joncovington/cherrypick/issues/62), which introduces the notion of
-  a request the producer has not served.
-- ~~**`holidays_loaded=0`.**~~ **Fixed 2026-08-05.** `timeutil.load_holidays` was scanning MEIC's
-  config for `nyse_holidays_<year>` keys that had been retired when the calendar moved into
-  `cherrypick.core` — so the scan matched nothing and every caller, the watchdog included, ran with an
-  empty set and treated market holidays as ordinary sessions. It now reads
-  `cherrypick.core.calendar.nyse_holidays` (this year and next; `doctor` shows 20 rather than 0), and
-  degrades to weekday-only gating if that lookup ever fails.
-
-## The 2026-07-29 cutover (record)
-
-The previous production checkout was retired and this fork became the live instance — the shadow-mode
-plan (task prefixes, port offsets, side-by-side A/B) was superseded by direct inheritance of
-`~/.cherrypick` with `CHERRYPICK_HOME` unset. What the cutover did, for the record:
-
-- `install` run from the fork checkout — same task names, commands re-baked at fork paths.
-- Home configs updated to the fork's shape; stale pre-monorepo `repo` keys removed so a path miss can
-  never clone retired code; **`data_epoch.date = 2026-07-29`** set (calibrate uses only post-epoch
-  sessions; production's last partial session was 07-28); the hardened promotion checks
-  (`min_return_on_capital: 0.02`, `require_slippage_survival: true`) enabled in MEIC's
-  `calibration.rule` — pending since phase 2.
-- `state/stream_requests/meic.json` corrected (it was hand-written at the 2026-07-21 streamer cutover:
-  seven retired symbols, leg query against the live ledger) and the MEIC writer added so it can never
-  go stale again; streamer restarted once so the XSP/QQQ underlying set bound.
-- Two live defects caught in verification: a gex-recorder surviving from the retired checkout
-  ("already running" at install — stop it so the relaunch runs current code), and the streamer's
-  credential chain missing the shared `cherrypick-broker` fallback after the keyring migration
-  (fixed; regression-tested).
-- The paper `drawdown` alert remains **deliberately disabled** in the home config (paper drawdown
-  noise is unwanted; live drawdown is the live module's concern) — note a forced-sampling study arm's
-  volume would trip any floors sized for ladder volume anyway.

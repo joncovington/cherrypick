@@ -1,5 +1,7 @@
 # Large options orders as a signal-board method — plan
 
+> **Status (2026-11-08): done, closed 2026-10-17. The ThetaData flow fetch is built in `packages/backtest` and the declared test ran and failed (research item 32, `failed` in `hypotheses.json`); no signal was built.**
+
 *Drafted 2026-10-17. A build plan and a declared test. Step 1, the ThetaData flow fetch
 (`backtest fetch-flow`, `flow.py`, `flowfetch.py`), was built the same evening; the declared test and
 the broker's nightly feed are not yet run or built. 2026-10-24: the fetched sessions declared,
@@ -41,7 +43,7 @@ included. But its history reaches back about one week only. So:
 
 Rejected, and why:
 
-- **QuikOptions flow** (`scripts/quikoptions_flow.py`) lists the day's top trades only, and its names
+- **A top-trades flow list** (the earlier hand-run scorer, removed from the suite in v0.12.0) listed the day's top trades only, and its names
   rarely coincide with the vendor's flow tags. It stays what it is: a daily read with its own test.
 - **Cboe Open-Close and Nasdaq Trade Outline** state origin (customer, firm, market maker) and
   opening or closing outright, which no inference here can. They cover their own exchanges only and
@@ -77,7 +79,7 @@ broker's prints have no gap: a cancel there names the print it replaces.
 
 **Its side** comes from where it filled against the quote standing then: edge = (price − mid) / half
 the spread. At or past +0.5 it is **bought**; at or past −0.5 **sold**; between, **unread** and
-never tagged. That is the QuikOptions scorer's `READ_EDGE`, kept so the two reads agree on what
+never tagged. That is the earlier scorer's edge rule, kept so the two reads agree on what
 "bought" means.
 
 **Its size** is premium (contracts × 100 × price) and, beside it, delta dollars (contracts × 100 ×
@@ -171,7 +173,7 @@ chosen before any outcome was read:
 - **plus the 10 sessions before each report's reaction day**, for the earnings test below, on the
   sessions the name passes the universe bar (7,377 reports; 153,577 name-days in all).
 
-`scripts/flow_fetch_plan.py` writes that list from the local stores; `backtest fetch-flow --plan`
+`packages/backtest/scripts/flow_fetch_plan.py` writes that list from the local stores; `backtest fetch-flow --plan`
 reads it, several requests at a time on the one session, and `--stop-by` keeps it clear of the
 nightly fetch's login. The tag test above reads the grid sessions only; with a 5-session outcome
 they do not overlap.

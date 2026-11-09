@@ -1,6 +1,6 @@
-"""Hypothesis 52's study (scripts/earnings_diagonal_item52.py): the structure, the requests, the delta
-strikes, the fills and costs, the control pairing, Holm, the verdict floors, arm C's side, the cheap cut
-and the refusal. Invented chains, bars and stores only: no vendor data, no real figure.
+"""Hypothesis 52's study (packages/backtest/scripts/earnings_diagonal_item52.py): the structure, the requests,
+the delta strikes, the fills and costs, the control pairing, Holm, the verdict floors, arm C's side, the cheap
+cut and the refusal. Invented chains, bars and stores only: no vendor data, no real figure.
 
 Each rule is shown firing and failing, because a check that cannot fire reads as coverage it is not.
 """
@@ -20,7 +20,7 @@ from cherrypick.core import calendar as cal
 
 from cherrypick.backtest import chainfetch
 
-SCRIPTS = Path(__file__).resolve().parents[3] / "scripts"
+SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 _spec = importlib.util.spec_from_file_location(
     "earnings_diagonal_item52", SCRIPTS / "earnings_diagonal_item52.py"
 )
@@ -436,12 +436,12 @@ def build_world(tmp_path=None):
     status = s52._status(conn)
     oi = sqlite3.connect(":memory:")
     oi.executescript(
-        "CREATE TABLE oi_days (symbol TEXT, session TEXT, status TEXT);"
+        "CREATE TABLE oi_days (symbol TEXT, session TEXT, status TEXT, reason TEXT);"
         "CREATE TABLE oi_contracts (symbol TEXT, session TEXT, expiration TEXT, right TEXT, strike REAL, "
         "open_interest INTEGER);"
     )
     for n in names:
-        oi.execute("INSERT INTO oi_days VALUES (?, '2021-10-27', 'complete')", (n,))
+        oi.execute("INSERT INTO oi_days VALUES (?, '2021-10-27', 'complete', NULL)", (n,))
         for exp in ("2021-10-29", "2021-11-19"):
             oi.execute(
                 "INSERT INTO oi_contracts VALUES (?, '2021-10-27', ?, 'C', 100.0, ?)",
@@ -550,7 +550,7 @@ def test_study_still_refuses_for_open_interest_alone(monkeypatch, capsys):
     for key in planned["chains"]:
         chainfetch.write_chain(conn, key, [{"strike": 100.0, "right": "C", "bid": 1.0, "ask": 1.1}])
     oi = sqlite3.connect(":memory:")
-    oi.executescript("CREATE TABLE oi_days (symbol TEXT, session TEXT, status TEXT);")
+    oi.executescript("CREATE TABLE oi_days (symbol TEXT, session TEXT, status TEXT, reason TEXT);")
     _patch_inputs(monkeypatch, conn, oi)
     args = type("A", (), {"host": "x", "port": 1, "out_dir": None})()
     assert s52.cmd_study(args) == 1
@@ -592,3 +592,33 @@ def test_the_calendar_used_here_is_not_the_host_date():
     src = (SCRIPTS / "earnings_diagonal_item52.py").read_text(encoding="utf-8")
     assert "date.today" not in src and "datetime.now" not in src
     assert cal.is_trading_day(date(2026, 10, 28))
+
+
+def test_an_open_interest_day_the_vendor_has_no_data_for_counts_as_answered():
+    conn = sqlite3.connect(":memory:")
+    conn.execute("CREATE TABLE oi_days (symbol TEXT, session TEXT, status TEXT, reason TEXT)")
+    conn.executemany(
+        "INSERT INTO oi_days VALUES (?, ?, ?, ?)",
+        [
+            ("AAA", "2024-01-10", "complete", None),
+            ("BBB", "2024-01-10", "empty", None),
+            ("CCC", "2024-01-10", "refused", "no_data: No data found for: open interest"),
+            ("DDD", "2024-01-10", "refused", "vendor_error: StatusCode.INTERNAL"),
+        ],
+    )
+    done = s52._oi_done(conn)
+    assert done == {("AAA", "2024-01-10"), ("BBB", "2024-01-10"), ("CCC", "2024-01-10")}
+    # A server error is not an answer: the study still waits for that day.
+    planned = {"chains": [], "oi": {"2024-01-10": ["AAA", "CCC", "DDD"]}}
+    assert s52.missing(planned, {}, done) == {"chains": [], "oi": {"2024-01-10": ["DDD"]}}
+
+
+def test_the_result_file_carries_each_arms_word_for_the_board():
+    arms = {
+        "A-call": {"verdict": "fail", "net": {}},
+        "B2|cheap": {"verdict": "no verdict", "why": "few trades"},
+    }
+    assert s52.verdict_words(arms) == {
+        "A-call": {"verdict": "fail"},
+        "B2|cheap": {"verdict": "no verdict", "why": "few trades"},
+    }

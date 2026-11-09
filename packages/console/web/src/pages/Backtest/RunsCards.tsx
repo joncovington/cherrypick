@@ -3,6 +3,8 @@ import { Link, useSearchParams } from "react-router-dom";
 import type { BacktestOverview, BacktestRunListing, BacktestRunReport, StudyResult, StudyRow } from "@console/shared";
 import { HelpSection } from "../../components/CardHelp";
 import { Card } from "../../components/DataTable";
+import { ListViewContext, ViewSwitch, useListView, useViewChoice } from "../../components/ViewSwitch";
+import { BtRows, type BtRow } from "./BtRows";
 import { fmtCash, fmtCount } from "../../lib/format";
 import { ArmsTable, LicenceFlag, PairingTable, ProvisionalChip, RefusedSessions, RunCardsSection, RunPlainEnglish, WithOverview, etStamp, measure, span, trialsLine, useRun, useRunChoices } from "./BacktestPage";
 import { CardLightbox, LightboxFrame, useOpenParam, type LightboxTab } from "./CardLightbox";
@@ -84,6 +86,30 @@ export function RunTile({ r, hit, hero, nowMs, onOpen }: { r: BacktestRunListing
       </span>
     </button>
   );
+}
+
+/** A run's tile on one line: module and window, the study's title, its verdict and span, its size and age. */
+export function runRow(r: BacktestRunListing, hit: StudyHit | undefined, nowMs: number, onOpen: () => void): BtRow {
+  const arms = r.arms.filter((a) => a !== "control");
+  return {
+    key: r.run_id,
+    label: `Open run ${r.run_id}`,
+    lead: (
+      <>
+        <span className="chip muted">{r.module}</span>
+        <span className="chip">{r.window}</span>
+      </>
+    ),
+    title: hit ? splitTitle(hit.row.title)[0] : r.run_id,
+    meta: (
+      <>
+        {r.provisional === true ? <span className="chip chip-warn">provisional</span> : null} {hit ? <span className={verdictChip(hit.result.summary)}>{hit.result.summary ?? "no verdict word"}</span> : "no study"} {span(r.span)}
+      </>
+    ),
+    end: `${fmtCount(r.sessions)} sessions · ${String(arms.length)} arm${arms.length === 1 ? "" : "s"} · ${runAge(r.created_at, nowMs)}`,
+    data: { "data-run": r.run_id },
+    onOpen,
+  };
 }
 
 // ------------------------------------------------------------------ the lightbox
@@ -357,6 +383,7 @@ function RunDialog({ runs, index, studies, onStep, onClose }: { runs: BacktestRu
 /** The mosaic: module chips, then one tile per run, newest first and large. */
 export function RunsMosaic({ d, studies, nowMs = etNowMs() }: { d: BacktestOverview; studies: StudyIndex; nowMs?: number }) {
   const [params, setParams] = useSearchParams();
+  const view = useListView();
   const lightbox = useOpenParam("run");
   const modules = runModules(d.runs);
   const raw = params.get("module");
@@ -384,11 +411,15 @@ export function RunsMosaic({ d, studies, nowMs = etNowMs() }: { d: BacktestOverv
           </button>
         ))}
       </div>
-      <div className="study-tiles">
-        {runs.map((r, i) => (
-          <RunTile key={r.run_id} r={r} hit={studies.byRun.get(r.run_id)} hero={i === 0} nowMs={nowMs} onOpen={() => lightbox.show(r.run_id)} />
-        ))}
-      </div>
+      {view === "rows" ? (
+        <BtRows rows={runs.map((r) => runRow(r, studies.byRun.get(r.run_id), nowMs, () => lightbox.show(r.run_id)))} />
+      ) : (
+        <div className="study-tiles">
+          {runs.map((r, i) => (
+            <RunTile key={r.run_id} r={r} hit={studies.byRun.get(r.run_id)} hero={i === 0} nowMs={nowMs} onOpen={() => lightbox.show(r.run_id)} />
+          ))}
+        </div>
+      )}
       {index >= 0 ? <RunDialog runs={stepRuns} index={index} studies={studies} onStep={(to) => lightbox.step(stepRuns[to]?.run_id ?? "")} onClose={lightbox.close} /> : null}
     </>
   );
@@ -397,6 +428,7 @@ export function RunsMosaic({ d, studies, nowMs = etNowMs() }: { d: BacktestOverv
 export function BacktestRunsTab() {
   const studies = useStudies();
   const index = indexStudies(studies.data?.ok ? studies.data.data : null);
+  const [view, setView] = useViewChoice("backtest-runs");
   return (
     <WithOverview>
       {(d, updatedAt) => (
@@ -405,6 +437,7 @@ export function BacktestRunsTab() {
             title="Runs"
             collapseKey="backtest-runs"
             updatedAt={updatedAt}
+            controls={d.runs.length > 0 ? <ViewSwitch view={view} onChange={setView} /> : undefined}
             help={{
               title: "Reading the runs",
               body: (
@@ -415,6 +448,7 @@ export function BacktestRunsTab() {
                       control, its running net, health, months and settings, and then the full report as more tabs: every arm, the pairing
                       with control, the run cards (account, sizing, compounded lens, drawdowns, trades) and the refused sessions.
                     </p>
+                    <p>The switch in the card head lists the runs as rows, one line a run; a row opens the same run.</p>
                   </HelpSection>
                 </>
               ),
@@ -423,7 +457,9 @@ export function BacktestRunsTab() {
             <p className="state-line state-warn bt-trials" style={{ fontSize: 12, margin: "0 0 4px" }}>
               {trialsLine(d)}
             </p>
-            <RunsMosaic d={d} studies={index} />
+            <ListViewContext.Provider value={view}>
+              <RunsMosaic d={d} studies={index} />
+            </ListViewContext.Provider>
           </Card>
         </div>
       )}

@@ -49,6 +49,24 @@ describe("MetricTiles", () => {
     expect(html).toContain("n=1");
   });
 
+  it("puts the break-even win rate under the win rate, and the average win and loss under profit factor", () => {
+    const reading = { ...READING, win_rate: 0.77, avg_win: 141, avg_loss: -1421, breakeven_win_rate: 0.9097 };
+    const html = text(<MetricTiles reading={reading} />);
+    expect(html).toContain("77.0%");
+    expect(html).toContain("break-even 91.0%"); // a fraction, scaled like win_rate
+    expect(html).toContain("avg win $141.00");
+    expect(html).toContain("avg loss -$1421.00");
+  });
+
+  it("draws no break-even line when the reading has none, rather than a 0%", () => {
+    // One-sided books (core.metrics.payoff) and readings from before the payoff carry no rate.
+    const before = text(<MetricTiles reading={READING} />);
+    expect(before).not.toContain("stat-note"); // no payoff keys at all: no second line anywhere
+    const oneSided = text(<MetricTiles reading={{ ...READING, avg_win: 20, avg_loss: null, breakeven_win_rate: null }} />);
+    expect(oneSided).not.toMatch(/stat-note[^>]*>break-even/);
+    expect(oneSided).toContain("avg loss —");
+  });
+
   it("renders a dozen tiles, so the 2/3/4/6-column grid never ends on a ragged row", () => {
     const html = text(<MetricTiles reading={READING} />);
     expect(html.match(/class="stat-tile"/g)?.length).toBe(12);

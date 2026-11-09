@@ -9,6 +9,7 @@ Read-only: it never installs, restarts, or trades.
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
 import subprocess
 import sys
@@ -423,6 +424,59 @@ def module_streamer_checks(name: str, mcfg: dict[str, Any]) -> list[Check]:
     ]
 
 
+def earnings_live_leftover_check(config_path: Path | None) -> Check | None:
+    """A WARN for an earnings config that still carries the live keys. Pure but for the one read.
+
+    Earnings live trading was removed in v0.12.0: the module is paper-only and ignores
+    `enable_live_trading` and the `live` block wherever they appear. They do nothing, so they
+    mislead, and the warning says they can go. Silent when the file is absent or unreadable, or
+    carries neither key (a value of false counts as carrying it)."""
+    if config_path is None:
+        return None
+    try:
+        doc = json.loads(Path(config_path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(doc, dict):
+        return None
+    found = [k for k in ("enable_live_trading", "live") if k in doc]
+    if not found:
+        return None
+    return Check(
+        "earnings.live_config",
+        WARN,
+        f"earnings live trading was removed in v0.12.0; the {' and '.join(f'`{k}`' for k in found)} "
+        "key in your earnings config does nothing and can be deleted",
+    )
+
+
+def removed_config_checks(cfg: dict[str, Any]) -> list[Check]:
+    """One WARN for a config.json that still carries the `quikoptions` block. That integration was
+    removed in v0.12.0 and the block is ignored; external reports (docs/guide/external-reports.md)
+    replace it. Silent when the block is absent."""
+    if "quikoptions" not in cfg:
+        return []
+    return [
+        Check(
+            "config.quikoptions",
+            WARN,
+            "the `quikoptions` block in config.json was removed in v0.12.0 and is ignored; "
+            "external reports replace it (docs/guide/external-reports.md), and the block can be deleted",
+        )
+    ]
+
+
+def external_report_checks(cfg: dict[str, Any]) -> list[Check]:
+    """One WARN per `external_reports` entry that cannot become a job, with the reason."""
+    from . import external_reports as extrep
+
+    return [
+        Check(f"external.{e['id'] or 'entry'}", WARN, f"external report not scheduled: {e['problem']}")
+        for e in extrep.entries(cfg)
+        if e["problem"]
+    ]
+
+
 def run(cfg: dict[str, Any] | None = None, fast: bool = False) -> list[Check]:
     """Run the readiness checks. `fast=True` skips the broker/keyring check — the only one that makes
     an authenticated broker round-trip (a 35s-timeout subprocess) — so it's safe to poll on a short
@@ -440,6 +494,8 @@ def run(cfg: dict[str, Any] | None = None, fast: bool = False) -> list[Check]:
     # home on Windows, so the raw value carries the username onto the dashboard's System card — the
     # one surface in the suite that renders doctor's details verbatim to a browser.
     checks.append(Check("python", OK, f"{sys.version.split()[0]} @ {cfgmod.portable_path(sys.executable)}"))
+    checks.extend(removed_config_checks(cfg))
+    checks.extend(external_report_checks(cfg))
 
     from . import winservice
 
@@ -581,6 +637,10 @@ def run(cfg: dict[str, Any] | None = None, fast: bool = False) -> list[Check]:
         else:
             config_check = Check(f"{name}.config", WARN, "module config not found (home, in-repo or example)")
         checks.append(config_check)
+        if name == "earnings":
+            leftover = earnings_live_leftover_check(mc)
+            if leftover:
+                checks.append(leftover)
 
         paper = mcfg.get("paper", {})
         # paper DB dir writable (resolved the same way every read surface resolves it, so this checks

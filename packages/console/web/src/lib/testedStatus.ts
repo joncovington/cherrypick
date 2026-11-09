@@ -38,6 +38,11 @@ export const TESTED_STATUS: Readonly<Record<string, TestedStatus>> = {
     words: "The VXX spread's edge is real in replay, but costs take about half of each credit and the market is about ten contracts deep.",
     source: "packages/contango/CLAUDE.md",
   },
+  weeklyput: {
+    words:
+      "The unhedged arm passed item 57's checks in replay; the hedged arm failed. Paper reads it forward, and under 80 cycles that is a forward read, not a verdict.",
+    source: "packages/weeklyput/CLAUDE.md",
+  },
   contango: {
     words: "In replay (2018–26) the gate buys drawdown, not return: holding SVXY outright earned more.",
     source: "packages/contango/CLAUDE.md",

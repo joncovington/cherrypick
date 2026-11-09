@@ -91,15 +91,18 @@ describe("PMCC open trades", () => {
     expect(weekly).toContain("→ $0.05");
   });
 
-  it("makes every rankable column a sort button, and leaves the assignment cell fixed", () => {
+  it("makes every rankable column a sort button, and leaves the assignment cell and weekly yield fixed", () => {
     const sortButtons = (html: string) => [...html.matchAll(/<button type="button" class="th-sort">([^<]*)/g)].map((m) => m[1]);
     expect(sortButtons(text(<OpenTradesCard data={payload([position({})])} />))).toEqual([
       "symbol", "arm", "opened", "qty", "price", "entry", "mark (net of costs to date)", "long", "short", "time value", "spot", "entry spread",
     ]);
-    // Control's two columns sort where they are drawn.
-    const weekly = sortButtons(text(<OpenTradesCard data={payload([control])} />));
-    expect(weekly).toContain("weekly yield");
+    // Control's protection sorts where it is drawn; its weekly yield is shown but never a sort (no
+    // tested edge in yield, 2026-11-07).
+    const html = text(<OpenTradesCard data={payload([control])} />);
+    const weekly = sortButtons(html);
     expect(weekly).toContain("protection");
+    expect(weekly).not.toContain("weekly yield");
+    expect(html).toContain("weekly yield");
     expect(weekly).not.toContain("assignment");
   });
 });

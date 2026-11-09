@@ -225,6 +225,26 @@ export const CONTANGO_SLIDES = [
 export type ContangoSlideId = (typeof CONTANGO_SLIDES)[number]["id"];
 
 /**
+ * weeklyput's tabs (2026-11-08): item 57's unhedged weekly index put, paper. `summary` (today) is the
+ * entry session and each name's row for the cycle; `cycles` is the judged unit (one expiry, the
+ * equal-weight mean of its names in bp) and `performance` the forward read of those cycles; `costs`
+ * keeps fees, settlement and slippage apart. Open and settled puts are separate tables. No advisor,
+ * regime or analysis tab: the module declares no advice bounds and keeps no daily series.
+ */
+export const WEEKLYPUT_SLIDES = [
+  { id: "summary", label: "today" },
+  { id: "cycles", label: "cycles" },
+  { id: "positions", label: "positions" },
+  { id: "history", label: "history" },
+  { id: "decisions", label: "decisions" },
+  { id: "performance", label: "performance" },
+  { id: "costs", label: "costs" },
+  { id: "guide", label: "help" },
+] as const satisfies readonly NavSlide[];
+
+export type WeeklyputSlideId = (typeof WEEKLYPUT_SLIDES)[number]["id"];
+
+/**
  * PMCC's tabs, on the frame since 2026-09-25. `now` → `session`; its cards became pages:
  * `decisions` (the arm rail, the attempt timeline, today's attempts and management verdicts, the
  * decision log), `arms` (the arm comparison) and `positions`. `history` is the completed cycles in
@@ -313,9 +333,12 @@ export const LIVE_SLIDES = [
   { id: "meic", label: "meic" },
 ] as const satisfies readonly NavSlide[];
 
+// `external` (2026-11-08): the reports a person's own scripts write to data/external
+// (docs/guide/external-reports.md), drawn source-neutrally.
 export const REPORTS_SLIDES = [
   { id: "morning", label: "morning" },
   { id: "eod", label: "eod" },
+  { id: "external", label: "external" },
 ] as const satisfies readonly NavSlide[];
 
 /**
@@ -359,20 +382,6 @@ export const SCREENERS_SLIDES = [
   { id: "time-spreads", label: "time spreads" },
   { id: "valuation", label: "fair value" },
 ] as const satisfies readonly NavSlide[];
-
-/**
- * Options flow (2026-10-03): QuikOptions' Hot Options Report, one capture a session
- * (`docs/quikoptions-plan.md`). `today` is the page at a glance and links into the site's four
- * tables, each in full. They were four tabs until 2026-10-30 (docs/console-review-plan.md, batch 2)
- * and are one `tables` tab now, the table chosen in the page; the old ids land on their own table.
- */
-export const FLOW_SLIDES = [
-  { id: "today", label: "today" },
-  { id: "derived", label: "derived flow" },
-  { id: "tables", label: "tables" },
-] as const satisfies readonly NavSlide[];
-
-export type FlowSlideId = (typeof FLOW_SLIDES)[number]["id"];
 
 export const ADVISOR_SLIDES = [{ id: "advisor", label: "advisor" }] as const satisfies readonly NavSlide[];
 
@@ -509,6 +518,18 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
     ],
     legacy: { session: "summary" },
   },
+  weeklyput: {
+    slides: WEEKLYPUT_SLIDES,
+    simple: ["summary", "cycles", "performance", "positions", "guide"],
+    groups: [
+      { label: "today", ids: ["summary"] },
+      { label: "tables", ids: ["cycles", "positions", "history"] },
+      { label: "evidence", ids: ["decisions"] },
+      { label: "study", ids: ["performance", "costs"] },
+      { label: "help", ids: ["guide"] },
+    ],
+    legacy: { session: "summary" },
+  },
   calendars: {
     slides: CALENDARS_SLIDES,
     simple: ["summary", "plan", "performance", "positions", "guide"],
@@ -535,11 +556,6 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
   },
   gex: { slides: GEX_SLIDES, legacy: { volume: "skew", history: "gex" } },
   gexpanel: { slides: GEX_PANEL_SLIDES },
-  flow: {
-    slides: FLOW_SLIDES,
-    simple: ["today"],
-    legacy: { birdseye: "tables", trades: "tables", spreads: "tables", voloi: "tables" },
-  },
   // Simple leaves out flies (2026-10-21): the module is retired, and its live tab is its history.
   live: { slides: LIVE_SLIDES, simple: ["today", "positions", "portfolio", "wheel", "pmcc", "meic"], legacy: { manage: "positions", execution: "meic" } },
   charts: { slides: CHARTS_SLIDES },

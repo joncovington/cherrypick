@@ -848,3 +848,11 @@ the payoff grid, a property of the structure that is settled before the session 
 the agreement is mechanical. The clean result is the rule-vs-rule comparison, not the rate. All four
 residual disagreements are books that touched an edge and settled back inside, and are labelled as
 such.
+
+## Retired (2026-10-19)
+
+The owner retired the module on 2026-10-19 and it may be reinstated. `modules.flies.enabled` went off, so
+no paper or live session runs and the supervisor derives none of the flies jobs. The ledgers, code and
+docs are kept and backtest research still reads them. The example config now ships the module and its
+`control` arm off (with a `_retired` note); `/live-flies-start` and the loop's `--arm` refuse while the
+module is off.

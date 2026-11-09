@@ -415,6 +415,30 @@ and a book-level floor carries the price band over which it holds.
 
 ---
 
+## Credits for the rest of the repo
+
+This is the one place the repo credits the public sources behind its non-MEIC ideas. Every other
+document, comment, config note and screen refers to them descriptively ("a published held-long
+design", "a bot platform's backtest") and points here. Each entry says what we took from the
+source and what **we** measured. None of it is a judgement of the people: a rule that fails here
+failed our replay after costs, on our data, and nothing more.
+
+| Source | Link | What we took | What we measured |
+|---|---|---|---|
+| **Theta Profits** (YouTube interview channel), the "Income Shield" video with its host, Tom King | [P43DluId17o](https://www.youtube.com/watch?v=P43DluId17o) | The held-long PMCC: a ~1-year call near 0.90 delta, a ~0.70-delta weekly call sold against it | Our replay against the suite's older PMCC arm, then paper arms since 2026-10-06: [`packages/pmcc/docs/shield-study.md`](../packages/pmcc/docs/shield-study.md). The held long does most of the work; the short's edge rests on the IV assumption |
+| **Theta Profits**, the 0DTE break-even iron condor interview | [Fj41ojAdwJ8](https://www.youtube.com/watch?v=Fj41ojAdwJ8) | An hourly 0DTE condor whose per-side stop equals the whole credit | The rules as stated and the proposed MEIC arm: [`breakeven-condor.md`](breakeven-condor.md); items 41 and 42 of [`edge-hypotheses-plan.md`](edge-hypotheses-plan.md) test it after costs |
+| **Theta Profits**, the twenty-interview review (2024-09 to 2026-06) | [thetaprofits.com](https://www.thetaprofits.com/) | A list of ideas, each stated as the edge it would need | [`edge-hypotheses-plan.md`](edge-hypotheses-plan.md), every item with its declared test and result |
+| The skate objective, from two public videos: "Stop Picking Wheel Strategy Strikes by Delta" (Theta Profits) and "Ep73 - My Exact Process for Trading Covered Calls" (Market Taker Mentoring) | [pd6KYv5O0b4](https://www.youtube.com/watch?v=pd6KYv5O0b4), [_7sX9naKTaE](https://www.youtube.com/watch?v=_7sX9naKTaE) | Short strikes sold outside the stock's recent range, and the covered-call process around them | [`skate-plan.md`](skate-plan.md); the 2026-10-18 study found the range band matches delta on average and does not beat it |
+| **Rob and Maria Helmick** ("Math Makes Money"), shown on Theta Profits' *My Trade* segment (2026-09-14) | the segment is on the Theta Profits channel | A dip-sold put entered by a resting limit order priced above the ask, taken profit at about half the credit, defended by rolling | Shelved /NQ plan: [`history/ivan-plan.md`](history/ivan-plan.md). Item 49 replays the rule as written on TQQQ, with its variants: all seven judged arms fail the design window after costs |
+| **Option Alpha** (bot platform), the "triple threat" bot and its set-up video; stop-level backtests | [1BOZ0M3fSCs](https://youtu.be/1BOZ0M3fSCs), [4ngxNC6AWQI](https://youtu.be/4ngxNC6AWQI) | A 13:45 0DTE condor; a screen for credit structures; a gamma-scalping bot; the finding that no stop beats every stop level on SPY 0DTE | Items 9 to 13 of [`edge-hypotheses-plan.md`](edge-hypotheses-plan.md) test the rules as stated; MEIC's `stop-none` arm carries the stop literature ([`packages/meic/docs/paper-experiments.md`](../packages/meic/docs/paper-experiments.md)) |
+| **Option Omega** (backtesting platform), its public material only | see the lineage section above | A short-call volatility backtest | The MEIC module's own record; the short-call idea sits in a plan-only branch |
+| **Tammy Chambless, Dale Perryman and Mark Anderson** (the 0DTE condor presenters) | see the lineage section above | The MEIC convention: a per-side stop keyed to the whole condor's credit | MEIC's paper arms and the backtest in [`packages/meic/docs/strategy.md`](../packages/meic/docs/strategy.md) |
+| **A daily 0DTE live-stream series** (YouTube) | the series' channel; five sessions read, 2026-10-12 to 2026-10-16 | A resting condor order that fills only when price runs to the edge of the expected-move box | [`box-edge-0dte-routine.md`](box-edge-0dte-routine.md); the box-edge reversion test on licensed history is in [`history-studies-2026-10-c.md`](history-studies-2026-10-c.md), its figures kept locally |
+| **TheOptionPremium** and **coveredcallcalculator.net** (PMCC guides) | [theoptionpremium.com](https://www.theoptionpremium.com/p/pmcc-management-rules-rolling-short-calls-dividend-risk), [coveredcallcalculator.net](https://coveredcallcalculator.net/guides-hub/poor-mans-covered-call-guide.html) | Roll the long at 90 to 120 days left or near 0.70 delta; a dividend check on the short | `manage`'s `pmcc.roll_long` and `pmcc.assignment` rules, flagged "no tested edge" in [`packages/manage/README.md`](../packages/manage/README.md) |
+| **trading_skills, `ib-pmcc-advisor`** (open source) | [github.com/staskh/trading_skills](https://github.com/staskh/trading_skills) | The PMCC P&L-if-assigned figure and short roll candidates | `manage`'s `pmcc.width` rule, same README |
+
+---
+
 ## The pattern elsewhere in the suite
 
 Modules that came from a published source name it; the suite's own contributions are then measured
@@ -444,8 +468,9 @@ four modules is the suite's own measurement.
   shield study's Tom King video and the shelved ivan plan's "Math Makes Money" — neither touches
   these two modules. bwb and earnings name no video either; bwb's lineage is a genre, not a video.
 - No reference to the Option Omega MEIC course, to Tammy Chambless's channel, or to Theta Profits
-  exists in the repo; the "Chambless" name is carried bare, as if the reader already knew it. This
-  document exists to fix that.
+  existed in the repo on 2026-10-12; the "Chambless" name was carried bare, as if the reader already
+  knew it. This document exists to fix that, and since 2026-11 it is the only place the sources are
+  named.
 - Flies' origin is claimed from artefacts (the transcribed order chains), not from literature — the
   one academic citation it carries (du Toit & Peskir) governs the completion gate's timing, not the
   structure itself.

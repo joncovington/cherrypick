@@ -8,13 +8,13 @@
 
 This gets cherrypick running on your computer in **paper mode**: it watches the real market and
 records the trades its strategies *would* make, without sending any orders. It takes about 30
-minutes, most of it waiting for downloads. You do not need to know how to program.
+minutes without the optional Dolt data and an hour or more with it, most of it waiting for downloads. You do not need to know how to program.
 
 ## What you need
 
 - A computer running **Windows 10 or 11**, or a **Mac**. (Linux works too; see [INSTALL.md](INSTALL.md).)
 - A **tastytrade** brokerage account. cherrypick uses it only to read market prices.
-- About 2 GB of free disk space (several GB more if you add the optional earnings data in step 4).
+- About 2 GB of free disk space, plus about 12 GB more if you accept the optional Dolt data that step 4 offers.
 
 ## 1. Install two free tools: Python and Node.js
 
@@ -113,7 +113,7 @@ The installer asks you a few things along the way:
 | It asks | What to do |
 |---|---|
 | Type YES to accept the disclaimer | Read [DISCLAIMER.md](DISCLAIMER.md), then type `YES`. |
-| Set up Dolt now? | **Optional.** Dolt downloads free market history that two extra features use: the **earnings** strategy and the **technicals** report. It is several GB and can take an hour. Answer **n** to skip it; those two features are then switched off and hidden, and you can add them later by running the installer again. |
+| Set up Dolt now? | **Offered, and yes is the default.** Dolt downloads free market history that two extra features use: the **earnings** strategy and the **technicals** report. It is about 12 GB and can take an hour or more. Answer **n** to skip it; those two features are then switched off and hidden, and you can add them later by running the installer again. |
 | Connect now? | Answer **y**. At `client_secret`, paste the **Client Secret** from step 3; at `refresh_token`, paste the **Refresh Token**. Nothing is shown as you paste; that is normal. Press Enter after each. |
 | Keep a history of your settings? | **Optional.** Answer **y** to have cherrypick keep a git history of your settings (never your trading data or passwords), so a change can be undone. It then asks for a private repository to copy it to: press Enter to keep it on your computer only. You can switch this on or off later on the console's **Config** page. Needs git installed. |
 
@@ -152,6 +152,8 @@ What you will see:
 
 Right after installing, before the first trading session, the pages are mostly empty: that is
 expected.
+
+**Optional: your own reports.** If you write small scripts of your own, the console can show what they produce (and post it to Discord): see [docs/guide/external-reports.md](docs/guide/external-reports.md). Nothing is set up until you add one.
 
 **Optional: the console in its own window.** If you would rather have cherrypick as a desktop app
 than a browser tab, double-click **`console-desktop.cmd`** in the installation folder (Windows), or

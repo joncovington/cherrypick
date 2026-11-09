@@ -20,3 +20,16 @@ python -m pytest
 
 Config: the machine's copy is `~/.cherrypick/config/contango.json`. Without it, the module runs
 off `config.example.json`, whose `_note` keys document every setting.
+
+## Commands
+
+```bash
+python -m cherrypick.contango.paper_loop --once        # one gated tick
+python -m cherrypick.contango.paper_loop --interval 60 # the in-session resident loop
+python -m cherrypick.contango.paper_loop --status      # one JSON health object (watchdog contract)
+python run.py status | nav [--arm A] [--limit N] | stints [--arm A] | metrics
+python ../../scripts/contango_replay.py [--start 2018-03-01] [--cost-bps 2]
+python ../../scripts/contango_replay.py --validate [--ledger PATH]   # the replay against the ledger, read-only
+python ../../scripts/contango_item39.py refresh | plan | study   # item 39, the declared test of this rule
+python -m pytest
+```

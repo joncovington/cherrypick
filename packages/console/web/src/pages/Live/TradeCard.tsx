@@ -30,6 +30,8 @@ export interface TradeCardModel {
   chips: ReactNode;
   /** Whole-position cash, signed: a credit is +, a debit −. */
   cash: number | null;
+  /** The figure is a reference, not the trade's (a screener row with no pick): drawn muted. */
+  cashMuted?: boolean;
   side: string[];
   /** 0-100; the bar's share of the cap it is measured against. */
   bar: number | null;
@@ -67,7 +69,7 @@ export function TradeCard({ m }: { m: TradeCardModel }) {
         <span className="pos-card-chips">{m.chips}</span>
       </span>
       <span className="pos-card-figs">
-        <span className={`pos-card-pnl ${tone(m.cash)}`}>{fmtCash(m.cash)}</span>
+        <span className={`pos-card-pnl ${m.cashMuted ? "muted" : tone(m.cash)}`}>{fmtCash(m.cash)}</span>
         <span className="pos-card-side">
           {m.side.map((s, i) => (
             <span key={i}>
@@ -163,9 +165,11 @@ function TradeRows({ models }: { models: TradeCardModel[] }) {
               {m.spot ? <span className="tr-spot">{m.spot}</span> : null}
             </span>
             <span className="tr-shape">
-              {m.shape} · {m.open.date}
+              {m.shape}
+              {/* Every proposal says "proposed": on a row it is noise, so only another date is shown. */}
+              {m.open.date === "proposed" ? null : ` · ${m.open.date}`}
             </span>
-            <span className={`tr-cash ${tone(m.cash)}`}>{fmtCash(m.cash)}</span>
+            <span className={`tr-cash ${m.cashMuted ? "muted" : tone(m.cash)}`}>{fmtCash(m.cash)}</span>
             <span className="tr-cap" title={m.barTitle}>
               {m.hideBar ? null : (
                 <span className="pos-bar">

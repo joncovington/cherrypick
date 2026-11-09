@@ -25,6 +25,13 @@
  * `--card <text>` crops `--shot` to the first grid card whose title contains the text (case-folded)
  * and that has drawn a chart; no such card is a missing expectation, never a whole-page fallback.
  *
+ * `--fixture <scenario.json>` draws the page in a state the live data has not got (2026-11-07): the
+ * file's `api` object maps an API path (`/api/live/meic`, or a path with its query) to the JSON the
+ * page is answered with, so an open condor with its mark or a halted loop can be looked at on a
+ * quiet day. Every other GET goes to the console as usual; every request that is not a GET or HEAD
+ * is refused, so a fixture run can never write a preference, a config or anything else. The
+ * scenarios live in `tools/states/` and `tools/state-preview.mjs` shoots them all.
+ *
  * Exit codes: 0 pass (or skipped), 1 an --expect or --card was missing, 2 the console was unreachable.
  * A skip (no browser, no puppeteer) also exits 0 and writes no file, so a caller that needs the shot
  * must check the file exists.
@@ -80,6 +87,36 @@ function findBrowser() {
   return null;
 }
 
+/**
+ * Answer the scenario's API paths from its file and refuse every write. A key with a `?` matches the
+ * path and query exactly; a bare path matches that path with any query. The refusal is the point: a
+ * page drawn from made-up data must not be able to save anything back.
+ */
+async function answerFrom(page, file) {
+  const scenario = JSON.parse(fs.readFileSync(file, "utf-8"));
+  const api = scenario.api ?? {};
+  const refused = [];
+  await page.setRequestInterception(true);
+  page.on("request", (req) => {
+    const method = req.method();
+    if (method !== "GET" && method !== "HEAD") {
+      refused.push(`${method} ${req.url()}`);
+      void req.abort("blockedbyclient");
+      return;
+    }
+    const u = new URL(req.url());
+    const hit = api[`${u.pathname}${u.search}`] ?? api[u.pathname];
+    if (hit === undefined) {
+      void req.continue();
+      return;
+    }
+    void req.respond({ status: 200, contentType: "application/json", body: JSON.stringify(hit) });
+  });
+  process.on("exit", () => {
+    if (refused.length > 0) console.log(`ui-check: refused ${refused.length} write(s) under the fixture: ${refused.slice(0, 3).join(", ")}`);
+  });
+}
+
 function parseArgs(argv) {
   const out = { route: "/", clicks: [], expects: [], waits: [], viewport: "1500x1000", timeout: 20000 };
   for (let i = 0; i < argv.length; i++) {
@@ -94,6 +131,7 @@ function parseArgs(argv) {
     else if (a === "--full") out.full = true;
     else if (a === "--links") out.links = true;
     else if (a === "--card") out.card = next();
+    else if (a === "--fixture") out.fixture = next();
     else if (a === "--scale") out.scale = Number(next());
     else if (a === "--viewport") out.viewport = next();
     else if (a === "--timeout") out.timeout = Number(next());
@@ -241,6 +279,7 @@ async function main() {
       if (r.status() >= 400) failedRequests.push(`${r.url()} — HTTP ${r.status()}`);
     });
 
+    if (args.fixture !== undefined) await answerFrom(page, args.fixture);
     await page.goto(url, { waitUntil: "networkidle2", timeout: args.timeout });
     for (const text of args.clicks) await clickByText(page, text);
     for (const sel of args.waits) await page.waitForSelector(sel, { timeout: args.timeout });

@@ -102,6 +102,12 @@ Subcommands:
   remind-done          Close a reminder by hand (--reminder-id, --note).
   remind-cancel        Drop a reminder (--reminder-id).
   remind-run           Push the due reminders, close the met ones (the supervisor's reminders job).
+  external-check       Judge one external report file (the path after the verb) against the
+                       contract: print what the console card will draw, or every reason it is
+                       invalid. Exit 0 valid, 1 invalid. docs/guide/external-reports.md.
+  external-run         Run one `external_reports` entry (its id after the verb): the person's
+                       script, then the check, then the Discord post when the entry asks for one.
+                       The supervisor's `external-<id>` job.
 """
 
 from __future__ import annotations
@@ -110,6 +116,7 @@ import argparse
 import getpass
 import json
 import os
+import re
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -1652,6 +1659,9 @@ def cmd_account(cfg, args) -> None:
         _emit(accounts.clear_account(cfg, module))
         return
     if args.set:
+        if module in cfgmod.PAPER_ONLY_MODULES:
+            _emit(accounts.set_account(cfg, module, args.set))  # the refusal; nothing is written
+            sys.exit(1)
         # Setting the destination for LIVE orders — confirm unless --yes.
         if not args.yes:
             print(
@@ -1881,6 +1891,29 @@ def cmd_remind_run(cfg) -> None:
     _emit(reminders.run(cfg))
 
 
+def cmd_external_check(path: str | None) -> None:
+    """What the console card will draw for one report file, or every reason it is invalid."""
+    from cherrypick.core import external_report
+
+    if not path:
+        print("external-check needs the report file: run.py external-check <file>")
+        sys.exit(2)
+    result = external_report.check_file(path)
+    for line in external_report.describe(result):
+        print(line)
+    sys.exit(0 if result.valid else 1)
+
+
+def cmd_external_run(cfg, report_id: str | None) -> None:
+    """The supervisor's `external-<id>` job: the script, the check, the post. Exit 1 when it fails."""
+    from cherrypick.orchestrator import external_reports
+
+    out = external_reports.run(cfg, report_id)
+    _emit(out)
+    if not out.get("ok"):
+        sys.exit(1)
+
+
 def cmd_power_watch(cfg) -> None:
     """Notify every channel while this machine is on battery (orchestrator/powerwatch.py)."""
     from cherrypick.orchestrator import powerwatch
@@ -2067,6 +2100,41 @@ def _study_folders() -> set[str]:
     return out
 
 
+def _read_text(path) -> str:
+    try:
+        return Path(path).read_text(encoding="utf-8")
+    except OSError:
+        return ""
+
+
+def _git_show(rel: str) -> str:
+    """`origin/main:<rel>` as last fetched, or "" (no remote ref, no git)."""
+    try:
+        res = subprocess.run(
+            ["git", "show", f"origin/main:{rel}"],
+            cwd=hypotheses.repo_root(),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=20,
+            creationflags=CREATE_NO_WINDOW,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return res.stdout if res.returncode == 0 else ""
+
+
+def _register_on_main() -> dict:
+    try:
+        return json.loads(_git_show("docs/hypotheses.json") or "{}")
+    except ValueError:
+        return {}
+
+
+def _plan_on_main() -> str:
+    return _git_show("docs/edge-hypotheses-plan.md")
+
+
 def cmd_hypotheses(cfg, args) -> None:
     """B7: check the register, list rule changes due a re-read, and (--similar) rejected look-alikes."""
     reg = hypotheses.load()
@@ -2075,13 +2143,27 @@ def cmd_hypotheses(cfg, args) -> None:
     problems += [
         f"study {s} (queue or result folder): no register row" for s in hypotheses.unregistered(reg, studies)
     ]
-    out = {"ok": not problems, "problems": problems, "rereads": hypotheses.rereads(reg, _trades_since(cfg))}
+    main_reg = _register_on_main()
+    plan = _plan_on_main() + "\n" + _read_text(hypotheses.repo_root() / "docs" / "edge-hypotheses-plan.md")
+    out = {
+        "ok": not problems,
+        "problems": problems,
+        "rereads": hypotheses.rereads(reg, _trades_since(cfg)),
+        # The next free item number here and on origin/main as last fetched: fetch before declaring.
+        "next_id": hypotheses.next_id(reg, main_reg, plan_md=plan),
+    }
     if args.similar:
+        proposal = json.loads(args.similar)
         out["similar_rejected"] = [
             {k: r.get(k) for k in ("id", "study", "title", "pointer")}
-            for r in hypotheses.similar(reg, json.loads(args.similar))
+            for r in hypotheses.similar(reg, proposal)
         ]
+        out["taken"] = hypotheses.taken(proposal, reg, main_reg)
+        if out["taken"]:
+            out["ok"] = False
     _emit(out)
+    if out.get("taken"):
+        sys.exit(1)
     if problems:
         sys.exit(1)
 
@@ -2090,6 +2172,53 @@ def cmd_hypotheses_board() -> None:
     """The studies board: each register row with its result files' verdicts and its queue rows.
     Reads result files under the home, licensed ones included, so the console shows it only behind
     the backtest gate."""
+    out, _read = _board()
+    _emit({"ok": True, **out})
+
+
+def cmd_study_report(args) -> None:
+    """One study's result files read as a report (`--study itemN`), or every study active since a
+    date with its verdict counts (`--since YYYY-MM-DD`). Licensed figures: the console shows it only
+    behind the backtest gate, as it does the board."""
+    from cherrypick.core import home as core_home
+
+    from cherrypick.orchestrator import studyreport
+
+    if bool(args.study) == bool(args.since):
+        _emit({"ok": False, "error": "study-report needs exactly one of --study or --since"})
+        sys.exit(2)
+    board, read = _board()
+    if args.since:
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", args.since):
+            _emit({"ok": False, "error": "--since is a date, YYYY-MM-DD"})
+            sys.exit(2)
+        _emit({"ok": True, **studyreport.digest(board["rows"], args.since)})
+        return
+    row = next((r for r in board["rows"] if r["study"] == args.study), None)
+    if row is None:
+        _emit({"ok": False, "error": f"no register row for study {args.study}"})
+        sys.exit(1)
+    files, seen = [], set()
+    for res in row["results"]:
+        data, _ = read(res["path"])
+        if data is not None and res["name"] not in seen:
+            seen.add(res["name"])
+            files.append({"name": res["name"], "data": data})
+    # A study's design file is often unlisted while its holdout is: read the folder's too.
+    folder = core_home.home() / "data" / "backtest" / "results" / "research" / args.study
+    if folder.is_dir():
+        for p in sorted(folder.glob("*.json")):
+            if p.name in seen or not studyreport.is_window_file(p.name):
+                continue
+            data, _ = read(str(p))
+            if data is not None:
+                seen.add(p.name)
+                files.append({"name": p.name, "data": data})
+    _emit({"ok": True, "study": args.study, **studyreport.report(row, files)})
+
+
+def _board():
+    """The studies board and the reader it used (`read(path) -> (data, modified)`)."""
     from datetime import datetime
 
     from cherrypick.core import home as core_home
@@ -2110,11 +2239,12 @@ def cmd_hypotheses_board() -> None:
 
     def notes(path: str):
         # The study's own Markdown beside its result file, capped: it rides in every board read.
-        p = Path(path.replace("{home}", home.as_posix())).expanduser().with_suffix(".md")
-        try:
-            return p.read_text(encoding="utf-8")[:65536]
-        except OSError:
-            return None
+        for p in hypotheses.notes_paths(Path(path.replace("{home}", home.as_posix())).expanduser()):
+            try:
+                return p.read_text(encoding="utf-8")[:65536]
+            except OSError:
+                continue
+        return None
 
     from cherrypick.orchestrator import studyversion
 
@@ -2146,7 +2276,7 @@ def cmd_hypotheses_board() -> None:
     reg = hypotheses.load()
     out = hypotheses.board(reg, queue, read, notes, version, _key)
     out["unregistered"] = hypotheses.unregistered(reg, set(out["unregistered"]) | _study_folders())
-    _emit({"ok": True, **out})
+    return out, read
 
 
 def cmd_retests(args) -> None:
@@ -2393,6 +2523,7 @@ def build_parser() -> argparse.ArgumentParser:
             "execution",
             "hypotheses",
             "hypotheses-board",
+            "study-report",
             "retests",
             "run-earnings-entry",
             "run-earnings-exit",
@@ -2436,13 +2567,15 @@ def build_parser() -> argparse.ArgumentParser:
             "remind-done",
             "remind-cancel",
             "remind-run",
+            "external-check",
+            "external-run",
         ],
     )
     parser.add_argument(
         "--channel",
         choices=list(notify_secrets.PUSH_CHANNELS + notify_secrets.DEDICATED),
         help="Secrets-set/secrets-delete: a push channel, or a dedicated one "
-        "(discord_reporting: the reporting channel the QuikOptions series posts to, never suite alerts)",
+        "(discord_reporting: the reporting channel external reports post to, never suite alerts)",
     )
     parser.add_argument(
         "--url",
@@ -2651,7 +2784,8 @@ def build_parser() -> argparse.ArgumentParser:
         nargs="?",
         default=None,
         help="For restart/stop/start: a supervisor job (console, flies-paper, ...), `streamer`, or a "
-        "service id -- `ps` lists them. For service: prepare | status | uninstall",
+        "service id -- `ps` lists them. For service: prepare | status | uninstall. For external-check: "
+        "the report file. For external-run: the entry's id",
     )
     parser.add_argument(
         "--query",
@@ -2712,6 +2846,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--task-id", type=int, default=None, help="For queue-cancel / queue-priority: the row"
+    )
+    parser.add_argument(
+        "--since",
+        default=None,
+        help="For study-report: every study with a result or a finished step since this date (YYYY-MM-DD)",
     )
     parser.add_argument(
         "--priority",
@@ -2809,6 +2948,7 @@ def main() -> None:
         "execution": lambda: cmd_execution(cfg, args),
         "hypotheses": lambda: cmd_hypotheses(cfg, args),
         "hypotheses-board": cmd_hypotheses_board,
+        "study-report": lambda: cmd_study_report(args),
         "retests": lambda: cmd_retests(args),
         "notify-trades": lambda: cmd_notify_trades(cfg, dry_run=args.dry_run),
         "notify-desk": lambda: cmd_notify_desk(cfg),
@@ -2852,6 +2992,8 @@ def main() -> None:
         "remind-done": lambda: cmd_remind_close(args, done=True),
         "remind-cancel": lambda: cmd_remind_close(args, done=False),
         "remind-run": lambda: cmd_remind_run(cfg),
+        "external-check": lambda: cmd_external_check(args.name),
+        "external-run": lambda: cmd_external_run(cfg, args.name),
     }
     dispatch[args.command]()
 

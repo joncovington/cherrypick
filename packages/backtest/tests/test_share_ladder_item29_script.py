@@ -1,5 +1,5 @@
-"""Hypothesis 29's study (scripts/share_ladder_item29.py): the trigger on split-adjusted bars, the
-expiry rules, each trade's schedule, the legs, fills and fees, the paired measure and the verdict.
+"""Hypothesis 29's study (packages/backtest/scripts/share_ladder_item29.py): the trigger on split-adjusted
+bars, the expiry rules, each trade's schedule, the legs, fills and fees, the paired measure and the verdict.
 Invented bars and Black-Scholes chains only, no store.
 
 Each rule is shown firing and failing, because a check that cannot fire reads as coverage it is not.
@@ -17,7 +17,7 @@ import pytest
 from cherrypick.core import bs
 from cherrypick.core import fees as core_fees
 
-SCRIPTS = Path(__file__).resolve().parents[3] / "scripts"
+SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 _spec = importlib.util.spec_from_file_location("share_ladder_item29", SCRIPTS / "share_ladder_item29.py")
 s29 = importlib.util.module_from_spec(_spec)
 sys.modules["share_ladder_item29"] = s29

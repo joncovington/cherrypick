@@ -290,10 +290,9 @@ and three books flip `floor_holds` from held to broken — 2026-07-30 `time_wind
 −$18.33), 2026-07-31 `gex` XSP (+$22.32 to −$12.68), 2026-08-04 `control` SPX (+$113.15 to
 −$126.85). The large moves are real: a many-position book's worst price leaves dozens of strikes in
 the money at $5 each, where the old rule charged only the handful its actual settlement did.
-**Live:** 9 books; 7 `worst` values move (−$29.98 to +$5.03), none flips. Six live rows had been
-stored before broker fee reconciliation rewrote their positions' fees, so their recompute absorbs
-that too. 2026-09-23's stored book `pnl` ($201.04) is stale against its own reconciled positions
-($199.04) and was left as recorded.
+**Live:** 9 books; 7 `worst` values move, none flips. Six live rows had been stored before broker
+fee reconciliation rewrote their positions' fees, so their recompute absorbs that too. One stored
+book `pnl` is stale against its own reconciled positions and was left as recorded (live figures recorded locally).
 
 Consequences for reads of the band classifier (`python run.py bands`) and any `floor_holds` rate:
 re-run them; figures taken before today rest on the old floors. Backups sit beside each ledger as
@@ -301,8 +300,8 @@ re-run them; figures taken before today rest on the old floors. Backups sit besi
 
 ## 2026-09-28 — the stranded edge spreads: five rules replayed, none adopted (a negative result)
 
-Asked after live control's 09-28 book (+$166.11 at 7683.69): five flies and one 7670/7675 call
-spread sold at 10:49 near the session low, which never completed and settled −$253.44 as SPX rallied
+Asked after live control's 09-28 book (live result recorded locally): five flies and one call
+spread sold at 10:49 near the session low, which never completed and settled at a loss as SPX rallied
 back into the forest. The question was whether a rule could stop an uncompleted spread at the edge
 of the forest ending as a full loss. Nothing was changed. The replay is
 `scripts/flies_stranded_replay.py` (read-only; `--arm`, `--all`, `--ledger live`), so every figure
@@ -312,7 +311,7 @@ below can be re-run on later sessions rather than re-derived.
 fully through the long wing (avg −$284), 5 partially, **none** out of the money. That is structural —
 a spread whose short strike ends out of the money had its completion on the way there — so the
 stranded branch is close to a binary −$285 against +$88 per completed fly: break-even completion
-74.8% against 77.7% observed. Live since 09-17 is the same shape: 5 of 5 full.
+74.8% against 77.7% observed. Live since 09-17 is the same shape (counts recorded locally).
 
 **What was replayed, all on 5-wide control unless named:**
 
@@ -437,17 +436,15 @@ break. Build the replay after a few sessions; read it before touching the floor.
 
 ## 2026-10-02 — live completions fill where paper's model says no; fill realism recorded from today
 
-Of the 48 live completions 2026-07-30..10-02, **43 filled below the best modelled completing debit
-the live loop saw while the spread was open**, by a median 0.14 points (about $14 a position, range
-0.025 worse to 0.49 better). Paper's gate (`debit < credit − fee_buffer`, on mid plus 0.125 of each
+Of the live completions 2026-07-30..10-02, **most filled below the best modelled completing debit
+the live loop saw while the spread was open** (the figures are recorded locally). Paper's gate (`debit < credit − fee_buffer`, on mid plus 0.125 of each
 leg's spread) would have refused those completions on the same quotes. Two readings, not yet
 separable: the live loop samples once a minute and the resting limit catches dips between samples,
 or the modelled haircut overcharges a resting order. Either way it questions the live-trading
 plan's assumption that paper's completion rate is a ceiling on live's.
 
-At the moment the loop noticed each fill, spot sat a median 6.2 points past the centre in the
-completing direction (−0.3 to 13.1; about 1.2 wing widths at 5-wide SPX), and median latency was
-22.7 minutes.
+At the moment the loop noticed each fill, spot sat well past the centre in the
+completing direction and the median latency was tens of minutes (live figures recorded locally).
 
 From today the live ledger records every order and what it saw while it worked, and each paper
 legged entry carries a live-like completion shadow ([fill-model.md](fill-model.md)). The ledger's
@@ -459,22 +456,20 @@ declared boundary.
 **The backfill, same day** (`fill_facts backfill --write`; broker fill times from the transactions,
 spot from the gex trail; 2026-08-01..10-02, SPX and XSP):
 
-| | Orders | Filled | Spot past centre at fill (p25 / p50 / p75) | Past the completing long strike (p50) | Better than limit |
-|---|---|---|---|---|---|
-| Entries | 66 | 55 (11 cancelled) | −2.3 / −1.6 / −0.8 pts | — | none above 0.10 |
-| Completions | 55 | 42 (13 cut off at 15:30) | 3.6 / 5.1 / 6.0 pts (0.71 / 1.03 / 1.20 widths) | +0.14 pts | none above 0.05 |
+(The live order and fill table is recorded locally: entries fill on submission, and completions fill when spot
+reaches the completing long strike, with nothing better than the limit worth the name.)
 
-- **Completions fill when spot reaches the completing long strike.** The median sits 0.14 points
-  past it (0.21 of the entry's straddle past the centre). Measured at the moment the loop
-  noticed instead, the same fills read 6.2–6.4 points: notice lag, not market.
-- **There is no price improvement to speak of.** Every fill was within 0.05 of its limit, so the
+- **Completions fill when spot reaches the completing long strike.** The median sits just
+  past it. Measured at the moment the loop noticed instead, the same fills read much further out:
+  notice lag, not market.
+- **There is no price improvement to speak of.** Every fill was at about its limit, so the
   ledger's limit-as-price was a fair record. The gap to paper is when the market reaches a limit,
   not what it fills at.
-- **Entries fill on submission**, at the price asked; the 11 that did not were cancelled and
+- **Entries fill on submission**, at the price asked; the few that did not were cancelled and
   re-priced by the loop.
 - **A spot-distance rule** ("fill at the first time spot is X widths past the centre", over each
-  order's trail path) agrees with live on 84% of the 55 completion orders at 0.25–0.75 widths, and
-  fires a median 2.5–6.5 minutes early. At 1.0 width it agrees on only 65%: 18 fills arrived before
+  order's trail path) agrees with live on most completion orders at 0.25–0.75 widths, and
+  fires early. At 1.0 width it agrees far less often: many fills arrived before
   spot got there, because the limit depends on the credit as well as on spot. Spot alone is a
   coarse rule. The price rules need quoted paths, which start today.
 
@@ -483,28 +478,22 @@ spot from the gex trail; 2026-08-01..10-02, SPX and XSP):
 Read-only over the backfilled live ledger (SPX, 2026-08-03..10-02) and paper on the same days, in
 the arm live traded each day.
 
-| | Live | Paper (same days, same arm) |
-|---|---|---|
-| Completion rate | 76% (42 of 55) | 79% (81 of 103) |
-| Completion rate, 19 matched entries (same side and centre, within 10 min) | 89% | 84% |
-| Spot past the centre at completion (median) | 5.1 pts (1.03 widths) | 7.1 pts |
-| Credit minus completion price, per share (median) | 0.25, every time | 0.29 |
-| Minutes to complete (median) | 19 | 31 |
+Paper, same days and arm: completion rate 79% (81 of 103), spot past the centre at completion 7.1 pts,
+credit minus completion price 0.29 per share, 31 minutes to complete. The live column is recorded locally:
+live's completion rate was level with paper's, and it completed sooner and nearer the centre.
 
-- **The live limit is credit − 0.25 on every order**, set by the `min_floor_dollars` bound, and the
-  broker fills at exactly it: no improvement above 0.05, median 0.
-- **Paper completes later, further out, and about $4 a completion better than live ever got.** Its
+- **The live limit is credit − 0.25 on every order**, set by the `min_floor_dollars` bound, and the broker fills at about it, with no improvement worth the name.
+- **Paper completes later, further out, and at a better price than live ever got.** Its
   trigger waits until mid plus the haircut is under the limit, and by its tick the market has usually
   run past. On the 16 matched pairs where both completed, paper needed about 2.7 points more spot
   travel. The rates are level, so paper is neither a ceiling nor a floor on completion: it is late
   and generous.
-- **Spot distance is not the mechanism.** 18 of 42 fills came before spot reached the completing long
-  strike: decay and volatility bring the debit down too. When spot did reach it, the order filled 24
-  times out of 25, a median 68 seconds later. The exception is 2026-09-30, the 7715 put: 1.49 widths
-  at 10:54 and no fill.
-- **The misses are the P&L.** 42 completions made +$3,350 and 13 misses lost −$3,442, about $265
-  each. In 8 of the misses spot never got 0.65 widths past the centre, and in 3 it went straight the
-  wrong way.
+- **Spot distance is not the mechanism.** Many live fills came before spot reached the completing long
+  strike: decay and volatility bring the debit down too. When spot did reach it, the order almost
+  always filled within about a minute (one exception, recorded locally).
+- **The misses are the P&L.** the completions made money and the misses lost about as much
+  (dollars recorded locally). In most misses spot never got far past the centre, and in a few it went
+  straight the wrong way.
 - **Entries fill on submission at the limit**, conceding 0.05 to the fresh mid. Paper charges about
   0.04 there: close enough to leave alone.
 
@@ -598,7 +587,7 @@ about $3.20 a spread.
 ## 2026-10-02 — release days: no gate, no morning restriction; every entry now tagged with its day's releases
 
 The question was whether scheduled releases (PCE, JOLTS, CPI and the rest) should gate entries. It
-was asked after the 10-02 jobs report, when paper `control` completed 6 of 10 and live 2 of 5. Read
+was asked after the 10-02 jobs report, when paper `control` completed 6 of 10 (live result recorded locally). Read
 over paper `control` (345 settled 5-wide SPX spreads, 43 sessions, 08-03..10-02). The release dates
 come from BEA's file, FRED's history and the curated FOMC list.
 
@@ -654,7 +643,7 @@ The likely mechanism is that a release delivers realised movement the straddle d
   completed 76%. The arm stays as declared, with one variable. Its results are re-cut by
   `event_bucket` at its 14-session read, which tests "low vol and no release" without a second arm.
 - **NFP is the one release with a consistent negative:** 3 sessions, 61%, −$41.7 a spread, every
-  day losing. Live's one NFP day completed 40%. Retail sales is negative on 2 sessions (69%, −$39.4).
+  day losing. Live's one NFP day is recorded locally. Retail sales is negative on 2 sessions (69%, −$39.4).
   Every other release is positive on 1–3 sessions each: JOLTS 94%, ISM Manufacturing 88%, PCE and
   GDP 100%.
 - **Timing around a release is not the problem.** Entries within 15 minutes of a 10:00 release
@@ -680,24 +669,18 @@ The backlog's first step for turning the gate on live. `run.py --db <live ledger
 --start 2026-09-25`, live `control`, SPX, 09-25..10-02: 6 sessions, 37 settled entries. Nothing was
 changed.
 
-| Rule | Kept | Net | Losing days | Worst day | Paper `control`, same dates |
-|---|---|---|---|---|---|
-| no gate (deployed) | 37 | −$368.06 | 3 / 6 | −$784.10 | +$1,296.79 (54 entries) |
-| 15 min | 22 | −$604.17 | 5 / 6 | −$267.82 | +$1,138.34 |
-| 30 min | 25 | −$569.81 | 5 / 6 | −$265.33 | +$859.85 |
-| 45 min | 23 | −$907.11 | 5 / 6 | −$265.33 | +$1,274.40 |
-| 60 min | 26 | −$763.32 | 4 / 6 | −$545.66 | +$853.10 |
-| 90 min | 28 | −$978.64 | 4 / 6 | −$784.10 | +$686.25 |
+(The per-rule table is recorded locally. At every setting live was no better than the deployed no-gate rule,
+while paper `control` on the same dates was positive throughout.)
 
 - **Entries made after a stranded first leg are where live made its money.** 22 of the 37 were
-  entered while a spread that went on to strand was still open. They completed 91% (20 of 22) and
-  made +$1,127. The 10 entered with nothing open completed 70% (−$711). The 5 entered with only
-  later-completing spreads open completed 40% (−$784). Paper on the same dates is less extreme (16 such
+  entered while a spread that went on to strand was still open. They completed most of the time and
+  made money. Those entered with nothing open, or with only later-completing spreads open, completed
+  less often and lost (dollars recorded locally). Paper on the same dates is less extreme (16 such
   entries, 75%, +$287), but it has the same sign.
 - **The pattern the gate is built for happened once.** On 10-02, two spreads entered while a miss was
-  open (11:02, 11:25) also missed. Gating at 15–45 minutes cuts that day from −$784 to −$265, but
-  gives back more on 09-28, 09-29 and 10-01. Those days' biggest completions came after a stranding
-  (+$385, +$424, +$371).
+  open (11:02, 11:25) also missed. Gating at 15–45 minutes cuts that day's loss sharply, but
+  gives back more on 09-28, 09-29 and 10-01, whose biggest completions came after a stranding
+  (dollars recorded locally).
 - **Caveats.** Six sessions. Dropping an entry frees room under the $1,000 margin cap that the replay
   cannot spend, so a gated live loop would have entered trades the replay never sees. The 09-29 break
   (live start 10:30 → 10:15) falls inside the window.
@@ -882,8 +865,7 @@ credit − 0.25: fees of $3.44 to enter and $3.44 to complete, the $15 worst-cas
 still rounds to 0.25.
 
 **More room barely helps:** room −0.05 gives 65%, today 78%, +0.05 78%, +0.10 79%. Misses are spot
-running through the short strike, not near-misses. Live entries already fill immediately (61
-fills, median 0 minutes, max 1.8). Completions take a median of 22 minutes (quartiles 8 / 69), set
+running through the short strike, not near-misses. Live entries already fill immediately. Completions take a long wait (live figures recorded locally), set
 by when the market reaches a limit that already rests all session. Pricing is not the lever for
 completion rate or fill speed. Which entries are taken is the lever, and `vol-floor` (10-05) and
 `selector` (10-19) are the experiments testing that.
@@ -995,7 +977,7 @@ Asked whether the credit a completed fly locks in could pay for a higher complet
 was changed. The replay is `scripts/flies_completion_replay.py` (`flies.completion_escalation`), and
 it is meant to be re-run as quoted sessions accumulate.
 
-**The premise is smaller than it looks.** Every live fly since 09-18 locked in exactly $25. After
+**The premise is smaller than it looks.** Every completed live fly since 09-18 locked in the same small credit by construction. After
 fees and the worst-case settlement reserve, though, its floor is $3.11, so a day of completed flies
 banks about $12. A raise is a per-position decision, from the position's own credit, fees and
 reserve. Completed flies cannot fund it.
@@ -1012,13 +994,14 @@ side, and are never applied at placement except as the reference row. Each trigg
 
 **First run: 10-05 and 10-06, 12 positions, 4 strands.**
 - **Every +0.25 cell loses money and rescues nothing.** The near misses needed more than 0.25.
-- **The best +0.50 cell (`away 1.0w`) reads +$221, but it is not a result:**
-  - one real rescue: 10-05 7745, from −$253 to −$47;
-  - one lucky pin: 10-06 7820, a strand that had already settled out of the money for +$242,
-    completed into a fly that pinned for +$356;
-  - $100 overpaid on two flies that would have filled anyway.
+- **The best +0.50 cell (`away 1.0w`) reads positive, but it is not a result:**
+  - one real rescue;
+  - one lucky pin: a strand that had already settled out of the money for a profit completed into a
+    fly that pinned for a larger one;
+  - a little overpaid on two flies that would have filled anyway.
+  (Per-position dollars recorded locally.)
 - **Each fly filled at +0.50 has a floor of −$47**, against +$3 at today's limit.
-- **2 of the 4 live strands expired out of the money as profits.** The 09-28 paper study saw none.
+- **Half of the live strands expired out of the money as profits.** The 09-28 paper study saw none.
 
 **The entries a rescue frees.** Live sizes by the $1,000 margin cap, and every refusal is logged in
 `fly_decisions`. Re-totalled under each policy, the rescues let in at most one scorable entry: 10-05
@@ -1042,7 +1025,7 @@ gex spot trail at the entry instant: (spot - low) / (high - low), the range so f
 - **The losers are a new high of a quiet session:** position >= 0.9 with a range under 30 points,
   47 entries completing 70% for -$2,548 over 26 sessions; -$1,437 without the worst two. Ahead in
   both halves (+$1,578 / +$970). The cut-off holds from 20 to 40 points.
-- **Live control pointed the same way:** 8 such entries, -$498. Too few to count.
+- **Live control pointed the same way:** 8 such entries, a loss (recorded locally). Too few to count.
 - **Against it:** the cut was found by searching about 25 variants on the same rows, and it hurt
   more sessions than it helped (16 to 10). The gain comes from avoiding a handful of bad mornings.
 
@@ -1062,17 +1045,14 @@ The question was whether to go back to one open spread at a time on live. Read w
 live `control` 09-25..10-09 (11 sessions, 64 entries) and paper `control` 08-21..10-09 (33 sessions).
 At $1,000 the replay admits all 64 live entries, which is the check on the model.
 
-| Live, cap | Entries | Net | Worst day | Max drawdown |
-|---|---|---|---|---|
-| $500 (= one incomplete) | 25 | −$1,897 | −$286 | −$1,897 |
-| $750 | 51 | −$905 | −$496 | −$1,213 |
-| **$1,000** (deployed) | 64 | −$666 | −$779 | −$1,391 |
+(The live cap table is recorded locally: the lower the cap, the fewer the entries and the worse the net, though the
+worst day shrinks.)
 
 - **A $500 cap and the one-incomplete rule are the same rule on live.** One open 5-wide vertical
   commits ~$255–300, so two never fit.
-- **The entries the rule blocks are the good ones.** 39 blocked, 33 completed, +$1,231. Under the rule,
-  a stranded first spread holds the slot all day (09-29, 09-30 and 10-09 each became one ~−$275 trade).
-- **It does cap the bad day** (10-02 and 10-07 from about −$770 to −$230), but costs more on the rest:
+- **The entries the rule blocks are the good ones.** 39 blocked, 33 completed, a net gain (recorded locally). Under the rule,
+  a stranded first spread holds the slot all day (09-29, 09-30 and 10-09 each became one losing trade).
+- **It does cap the bad day** (10-02 and 10-07 are capped sharply), but costs more on the rest:
   worse on 8 of 11 days.
 - **More buying power stops paying at about $1,000.** Paper control: $1,000 +$4,771, $1,250 +$4,659,
   $1,500 +$3,655, uncapped +$4,342, while the worst day grows to −$1,388 at $1,500. Net per entry falls
@@ -1171,7 +1151,7 @@ cells will be clear.
 ## 2026-10-12 — the live start replay's admission model rebuilt; the 10:15 case re-read, nothing changed
 
 The ten-session check declared on 09-28. `scripts/flies_live_start_replay.py --validate` showed live
-admitting 59 structures from 09-29 against the replay's 41, and netting −$195.91 against +$74.16.
+admitting 59 structures from 09-29 against the replay's 41, and netting a loss against the replay's small gain (dollars recorded locally).
 
 **Why it drifted.** The replay took paper control's settled rows and dropped the ones the start or the
 cap refused. 36 of live's 59 entries were structures (centre and side) that no paper arm held that day,
@@ -1194,7 +1174,7 @@ Most of what it admits paper never held, so it prices from two models:
 - Every session's mean is within ±2 of live, and the total within 10%. That is the declared tolerance.
 - At ±1, 09-29 and 10-02 fall outside. On both, the day forks at the first tick's side choice and at
   one completion time.
-- The money is not reproduced: live −$222, replay −$320, with the four phases running −$1,596 to +$600.
+- The money is not reproduced: live and replay differ, and the four phases run widely (dollars recorded locally).
 - 09-25 is not comparable, because the one-incomplete rule still ran that session. On 09-28, at
   10:30, the replay admits 8.5 to live's 6: live's unfilled and re-placed entries and its fresh-quote
   skips are not modelled.
@@ -1228,8 +1208,7 @@ The question was whether the live entry gives away more than it needs to. Every 
 the fresh credit floored to the tick: mid less `slippage_frac` (0.125) of the two legs' spreads,
 about mid − 0.05 on 5-wide SPX (`fly.vertical_credit`, `live_orders.entry_fresh_reprice`). The
 ledger review of 10-12 found every live entry of the control era filling at once (median latency
-0 s, 69 entries) and 16 of them with price improvement; across the whole live ledger, 93 entries
-filled and 21 filled better than their limit. An order that always fills at once is priced past
+0 s), many with price improvement (counts recorded locally). An order that always fills at once is priced past
 where it needs to be, but only the market can say by how much.
 
 **Built: `live.entry_pricing`** (`live_orders.entry_pricing_mode`, `live_loop._manage_pending_entry`).
@@ -1359,13 +1338,13 @@ after the close the way `replay_gates.py` works, which can express neither: drop
 the rule would have refused and sum the rest. That is an upper bound in the gate's favour, because a
 slot freed by a refusal is never refilled, and a refusal could have moved later strikes. Rows: legged
 `control`, settled SPX, from 2026-08-21 and including 10-14: paper 268 entries over 36 sessions
-(+$3,268), live 95 over 19 (+$382). Range position as in the 2026-10-09 entry: the gex spot trail at
+(+$3,268), live 95 over 19 (live result recorded locally). Range position as in the 2026-10-09 entry: the gex spot trail at
 the entry instant, no look-ahead.
 
 **Range position alone is the wrong variable.** Paper put spreads entered at the session low made
 +$3,596 (43 entries, 91% completed), and those on a day already 20 points down made +$2,154 (23, 96%).
 That is today's trade, and it has been control's best cell. Where position mattered was the side: at
-either edge, call spreads lost in both ledgers (paper −$1,644 over 80 entries, live −$627 over 23)
+either edge, call spreads lost in both ledgers (paper −$1,644 over 80 entries, live also a loss over 23)
 while put spreads made money. That table was read on the morning of 10-14 over about 20 cells, so
 candidate B below is in-sample.
 
@@ -1377,19 +1356,19 @@ is still uncompleted and spot sits X wing widths past its short strike, against 
 - **Paper loses at every X:** −$2,035 (X ≤ 2), −$2,055, −$1,156, −$842; sessions helped to hurt 7/25,
   6/22, 5/20, 1/16. Most refused entries would have completed (74 of 93 at X ≤ 2). The first half of the
   era (08-21..09-17) carries the loss, and the second half is small and positive except at 4.5.
-- **Live is mixed and small:** −$156, +$128, −$152, −$156. The one positive setting (2.5) hurt 8 of 11
-  sessions it changed and turns negative without the two best and worst sessions (−$173).
-- It pays on a day like 10-14 (paper +$478, live +$275 at X ≤ 2) and costs on the rest.
+- **Live is mixed and small** (dollars recorded locally). The one positive setting (2.5) hurt 8 of 11
+  sessions it changed and turns negative without the two best and worst sessions.
+- It pays on a day like 10-14 (paper +$478, live also positive at X ≤ 2) and costs on the rest.
 
 **B. Edge-side gate:** at position ≤ 0.1 or ≥ 0.9 of the range so far, refuse call spreads (which
 complete on a fall); sell put spreads only.
 - **Paper +$1,472**, 85 refused (58 had completed), sessions 16 helped and 19 hurt, +$544 without the
-  best and worst two, halves −$798 / +$2,271. **Live +$184**, 26 refused, 7 helped and 7 hurt, +$8
-  without the best and worst two, halves −$572 / +$756.
+  best and worst two, halves −$798 / +$2,271. **Live** small and positive, 26 refused, 7 helped and 7 hurt, and about nothing
+  without the best and worst two (dollars recorded locally).
 - **Most of it is `range-high`'s.** That arm's rule would refuse 39 of these paper entries; 23 are also
-  B refusals, and they carry $1,196 of B's $1,472. B on its own adds about +$277 in paper and −$91 in
+  B refusals, and they carry $1,196 of B's $1,472. B on its own adds about +$277 in paper and a small loss in
   live.
-- **It loses on the day that prompted it:** 10-14 −$172 paper, −$443 live, because the call spreads
+- **It loses on the day that prompted it:** 10-14 −$172 paper, a larger loss live, because the call spreads
   were the ones that completed.
 
 **Searched:** A at six settings (four distinct), B as one rule, both ledgers, plus the morning's ~20-cell
@@ -1404,20 +1383,15 @@ measured for those days.
 ## 2026-10-14 — the completion-limit replay re-run on 13 strands; still no raise
 
 `scripts/flies_completion_replay.py` (the 2026-10-07 entry) over 10-05..10-14: 43 live positions,
-13 strands it can replay, baseline +$257.58. The live ledger holds 16 strands since 10-02, but the
+13 strands it can replay (baseline dollars recorded locally). The live ledger holds 16 strands since 10-02, but the
 three from 10-02..10-04 carry no order-path quotes, and `--since 2026-10-02` replays the same 13.
 
-| Rule | vs baseline | rescued | overpaid | sessions helped / hurt | without its best session |
-|---|---|---|---|---|---|
-| +0.50 once spot is 1.0w away | +$191 | 5 | 16 ($800) | 4 / 4 | −$27 |
-| +0.25 flat | +$169 | 4 | 30 ($750) | 3 / 5 | −$224 |
-| +0.50 flat | +$165 | 8 | 30 ($1,500) | 4 / 4 | −$73 |
-| +0.25 once 1.0w away | +$118 | 2 | 16 ($400) | 1 / 6 | −$275 |
-| +0.50 once 0.5w away | +$67 | 6 | 23 ($1,150) | 4 / 4 | −$151 |
-| every time-triggered ladder | −$5 to −$180 | 0–1 | | | |
+(The rule-by-rule table is recorded locally. The best cells were a few thousand dollars at most in the raise
+size, rescued a handful of strands, overpaid many completions, and every time-triggered ladder was
+roughly flat to negative.)
 
 - **Every positive cell is one session.** Without its best session each goes negative, and in four of
-  the five that session is 10-14 (+$393 or +$218). 10-12 and 10-13 are negative in every cell.
+  the five that session is 10-14. 10-12 and 10-13 are negative in every cell.
 - **The mechanism:** a raise rescues a strand on a one-way day and overpays every completion that
   would have filled at the live limit, every other day.
 - The margin a rescue frees would have let in 5 to 8 more entries, paper-scored at −$272 to +$257.
@@ -1426,9 +1400,9 @@ three from 10-02..10-04 carry no order-path quotes, and `--since 2026-10-02` rep
 **No change.** Re-run at about 20 replayable strands. Any raise it supports is measurement-affecting.
 
 **Correction to the entry above.** Its first paragraph was read before settlement and counted
-cancelled orders as entries. Live settled seven entries on 10-14. Two put spreads stranded (−$562).
-The 13:30 put spread completed, and so did the four call spreads, one pinning for +$407. Live control
-netted −$82.33, paper control −$604.52. The intraday agent's shadow gate would have refused only the
+cancelled orders as entries. Live settled seven entries on 10-14. Two put spreads stranded.
+The 13:30 put spread completed, and so did the four call spreads, one pinning. Live control
+netted a small loss (recorded locally), paper control −$604.52. The intraday agent's shadow gate would have refused only the
 13:30 entry, a winner. The replays in that entry used settled rows and are unaffected.
 
 ## 2026-10-14 — live entry fills: 86%, adversely selected; the entry shadow starts recording
@@ -1437,8 +1411,8 @@ The question was how to carry live's entry fill rate into paper. Read from `fly_
 entry orders recorded at placement, 10-05..10-14; the 72 earlier rows are backfills with no mid) and
 the gex spot trail.
 
-- **43 of 50 filled** at the plan's credit floored to the tick (mid − 0.05), most within 0–4 s, 9
-  better than the limit. 6 of the 7 misses were re-placed on the next tick and usually filled a minute
+- **Most filled** at the plan's credit floored to the tick (mid − 0.05), most within seconds, some
+  better than the limit (counts recorded locally). Most misses were re-placed on the next tick and usually filled a minute
   later at a new centre or side; 1 was lost.
 - **The misses are adversely selected.** Spot moved toward the completing side in 6 of 7 (+0.76
   points at 20 s, +1.00 at 60 s), against about half the fills (−0.07 / −0.02). Live misses the
@@ -1484,8 +1458,8 @@ live ledgers, run as one-off scripts outside the repo; the modelled ones say so.
   against holding. Most spreads that complete are down first.
 - **Time stops** (close if not completed in T minutes) looked like +$1,600 to +$5,000 on the model.
   Checked against the live loop's recorded mids (`fly_live_marks`), the model is optimistic exactly
-  where the stop acts (−$52 mean error at 90–180 minutes), and on 95 live positions every T from 60
-  to 240 minutes lost to holding (−$118 to −$1,059). Not proposed.
+  where the stop acts (error figures recorded locally), and on 95 live positions every T from 60
+  to 240 minutes lost to holding. Not proposed.
 - The hedge overlay (an opposite-side long at entry) is still negative: +$803 unhedged, −$4,813
   hedged.
 
@@ -1567,23 +1541,16 @@ The re-run the 10-03 entry asked for, at the backlog's 15 sessions under the cap
 command, `run.py --db <live ledger> replay-gates --start 2026-09-25`: live `control`, SPX,
 09-25..10-15, 15 sessions, 88 settled entries. Nothing was changed.
 
-| Rule | Kept | Net | Losing days | Worst day | Median day | Paper `control`, same dates |
-|---|---|---|---|---|---|---|
-| no gate (deployed) | 88 | −$523.38 | 7 / 15 | −$779.08 | +$26.24 | −$758.88 (117 entries) |
-| 15 min | 47 | −$299.57 | 9 / 15 | −$267.82 | −$219.70 | +$218.67 |
-| 30 min | 50 | −$272.75 | 10 / 15 | −$265.32 | −$214.11 | +$470.79 |
-| 45 min | 53 | −$853.52 | 10 / 15 | −$525.64 | −$204.08 | −$207.20 |
-| 60 min | 60 | −$933.80 | 9 / 15 | −$540.64 | −$204.08 | −$839.50 |
-| 90 min | 67 | −$1,347.59 | 9 / 15 | −$779.08 | −$204.08 | −$1,777.98 |
+(The per-rule table is recorded locally: live's kept entries, net, losing days, worst day and median day beside
+paper `control` on the same dates.)
 
-- **The 15- and 30-minute gains are a cut tail.** Cutting the worst day alone is worth about +$510,
-  more than either gate's whole gain (+$224, +$251). Every other measure gets worse: losing days go
-  from 7 to 9–10 and the median day from +$26 to about −$215.
+- **The 15- and 30-minute gains are a cut tail.** Cutting the worst day alone is worth
+  more than either gate's whole gain. Every other measure gets worse: more losing days and a worse
+  median day.
 - **Not monotone.** 15 and 30 minutes help; 45 and above lose more than no gate. A real effect of
   the wait would move steadily with it.
 - **It flips with the window.** The first six sessions (the 10-03 run) were negative at every
-  setting. The nine since 10-05 carry the whole gain: live no gate −$160.34, 15 min +$304.59,
-  30 min +$297.05.
+  setting. The nine since 10-05 carry the whole gain: live dollars recorded locally.
 - **Paper agrees in sign at 15 and 30 minutes** (+$978 and +$1,230 against its own no gate), with the
   same shape: one bad day cut, more losing days, and worse from 45 minutes up.
 - **The advised experiments.** `advised:miss-stop-90` finished 0 of 13 sessions ahead of `control`
@@ -1627,8 +1594,7 @@ live's 10:15 start. Nothing before 10:00 can be replayed, because paper records 
   With twelve more sessions it is +$509.
 - **The model's day-level money is loose.** `--validate` at 10:15 over live's 12 sessions since
   09-29 passes on counts (80.5 structures against 76), but it reproduces only 31 of live's 76
-  structures. Individual days miss by hundreds of dollars; 10-09 was +$307 on live and −$339 in the
-  replay.
+  structures. Individual days miss by hundreds of dollars; 10-09's live result is recorded locally.
 
 Live stays at 10:15.
 

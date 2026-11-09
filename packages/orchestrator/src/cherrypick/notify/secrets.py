@@ -29,8 +29,8 @@ SUPPORTED = ("slack", "discord")
 PUSH_CHANNELS = SUPPORTED + ("telegram",)
 # Webhooks one job posts to and nothing else: never a push channel, so none can be listed in
 # `notify.channels` (the notifier skips an unknown name; `doctor` warns), and no suite alert can
-# land in them. `discord_reporting` is the reporting channel the QuikOptions series posts to
-# (docs/quikoptions-plan.md).
+# land in them. `discord_reporting` is the reporting channel external reports post to
+# (docs/guide/external-reports.md).
 DEDICATED = ("discord_reporting",)
 WEBHOOKS = SUPPORTED + DEDICATED
 

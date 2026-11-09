@@ -232,11 +232,11 @@ describe("the suite surfaces are on the frame", () => {
   const cases: Array<[string, string]> = [
     ["/gex/skew", "GEX / iv skew"],
     ["/gex", "GEX / gex"],
-    ["/flow", "Options flow / today"],
-    ["/flow/tables", "Options flow / tables"],
     ["/live", "Live / today"],
     ["/live/flies", "Live / flies"],
     ["/reports/eod", "Reports / eod"],
+    ["/reports/external", "Reports / external"],
+    ["/reports/external/demo", "Reports / external"], // a report's own tab: data-driven, inside the same frame
     ["/reports", "Reports / morning"],
     ["/compare", "Compare / arms"],
     ["/compare/arms?scope=all", "Compare / arms"],
@@ -260,8 +260,6 @@ describe("the suite surfaces are on the frame", () => {
   // Folded 2026-10-30 (docs/console-review-plan.md, batch 2): each old address lands on the tab
   // that holds it now, never on the page's first tab by accident.
   const folded: Array<[string, string]> = [
-    ["/flow/spreads", "Options flow / tables"],
-    ["/flow/voloi", "Options flow / tables"],
     ["/gex/volume", "GEX / iv skew"],
     ["/gex/history", "GEX / gex"],
     ["/system/modules", "System / health"],
@@ -368,16 +366,6 @@ describe("a page the suite has turned off", () => {
     expect(text(renderWith("/meic", base))).not.toContain("Calendars");
     expect(text(renderWith("/meic", base))).toContain("Experiments");
     expect(text(renderWith("/calendars", base))).toMatch(/Experiments[\s\S]*Calendars\s*experimental/);
-  });
-
-  it("Options flow is a turned-off card while the capture is off, and leaves the rail", () => {
-    const off = { ...base, features: { ...base.features, options_flow: false } };
-    expect(text(renderWith("/flow", off))).toContain("Options flow is turned off");
-    expect(text(renderWith("/flow", off))).toContain("quikoptions.enabled");
-    expect(renderWith("/flies/session", off)).not.toContain('href="/flow"');
-    const on = { ...base, features: { ...base.features, options_flow: true } };
-    expect(text(renderWith("/flow", on))).toContain("Options flow / today");
-    expect(renderWith("/flies/session", on)).toContain('href="/flow"');
   });
 
   it("a switched-off live loop's tab stays reachable while it still holds something (#422)", () => {

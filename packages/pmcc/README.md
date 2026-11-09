@@ -1,15 +1,17 @@
 # cherrypick-pmcc
 
-> **EXPERIMENTAL, and off by default.** This module ships `enabled: false` in the orchestrator's
-> `config.example.json`, so a fresh install does not run it. To turn it on, use the **Modules &
-> symbols** section of the console's Config page, or set `modules.pmcc.enabled` to `true` in
-> `~/.cherrypick/config.json`. It is paper-only either way.
+**Retired 2026-11-08; off by default.** The owner switched its entries off (`defaults.wind_down`, #974, stops
+entries and closes what is open; the module goes off once flat). The code, ledgers and docs are kept. To
+reinstate: set `modules.pmcc.enabled` to true in the suite config (the **Modules & symbols** section of the
+console's Config page, or `~/.cherrypick/config.json`), `enabled` to true on the `shield`, `shield_hold` and
+`shield_guard` arms in `pmcc.json`, and `defaults.wind_down` to false or remove it. It is paper-only either
+way.
 
 PMCC: a paper-only module that holds a deep-ITM call and sells a shorter call against it, on XSP,
 QQQ, GLD, IWM, SLV and SMH and the stocks AMZN, TSLA, AMD, NVDA and PLTR. Since 2026-10-06 the
 trade is two arms, each its own portfolio:
 
-- **`shield`** and **`shield_hold`** follow Tom King's "Income Shield": hold a ~1-year call near
+- **`shield`** and **`shield_hold`** follow a published held-long design ([credited](../../docs/strategy-sources.md)): hold a ~1-year call near
   0.90 delta (the broker's, 0.88-0.92) and sell a 0.70-delta weekly call against it, rolled every
   week until the long reaches 45 DTE. `shield` also rolls early once the short has decayed or been
   breached; `shield_hold` holds each short to Friday. `shield_guard` (from 2026-10-26) holds like
@@ -17,7 +19,7 @@ trade is two arms, each its own portfolio:
   real short risks early assignment.
 - A short spanning an ex-dividend date or, on a stock, an earnings announcement is refused.
 
-A config must declare the shield arms to run them; the shipped example does. `control` (a ~21-DTE
+A config must declare the shield arms to run them; the shipped example does, with each switched off. `control` (a ~21-DTE
 long re-bought each cycle) was retired on 2026-10-06 and its advisor twins with it; pmcc's advice is
 off.
 
@@ -38,3 +40,24 @@ python -m pytest
 Config: the machine's copy is `~/.cherrypick/config/pmcc.json`; a git-ignored in-repo `config.json`
 is still read, and with neither the module runs off `config.example.json`. The example's `_note`
 keys are the design document, and it ships the full roster.
+
+## Commands
+
+```bash
+python -m cherrypick.pmcc.paper_loop --once        # one gated tick (what the supervisor spawns off-session)
+python -m cherrypick.pmcc.paper_loop --interval 60 # the in-session resident loop
+python -m cherrypick.pmcc.paper_loop --status      # one JSON health object (watchdog contract)
+python -m cherrypick.pmcc.paper_loop --settle --date 2026-10-09 --price 71.23 [--symbol SLV]  # official print
+python run.py status                               # open positions + the expiration plan
+python run.py headline [--era ALL]                 # closed results per arm and symbol
+python run.py tracker-index                        # every position the tracker can show
+python run.py tracker --position SLV:shield:2026-10-05   # one position, week by week
+python run.py weekly [--era ALL]                   # the arms' weekly A/B
+python run.py equity [--era ALL]                   # each arm's daily marked equity and tear sheet
+python run.py exposure                             # the early-assignment-exposure telemetry
+python ../../scripts/pmcc_leap_probe.py            # what each symbol lists ~1 year out (network, read-only)
+python ../../scripts/pmcc_shield_replay.py         # the 2011- replay behind the shield arms, put benchmark included
+python ../../scripts/pmcc_shield_replay.py --skew-check   # the model against the sampled skew
+python -m pytest                                   # temp CHERRYPICK_HOME; no broker, no streamer needed
+ruff check . && ruff format .                      # line-length 110
+```

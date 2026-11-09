@@ -1,5 +1,6 @@
 import type { CurveArmCell, CurveFlipDivergence, CurveOpenPosition, CurvePayload, CurveRegimeRow } from "@console/shared";
 import { Card, DataCard, PnlCell, fmtMoney, fmtNum, fmtPct } from "../../components/DataTable";
+import { HelpSection, HelpWarn, type CardHelpContent } from "../../components/CardHelp";
 import { UnrealisedPnlCell } from "../../components/UnrealisedPnlCell";
 import { SignedBar } from "../../components/Charts";
 import { RegimeRatioChart } from "../../components/nav/NavViews";
@@ -175,10 +176,20 @@ export function RegimeCard({
     ...(params?.hookThreshold != null ? [{ label: `hook (${String(params.hookThreshold)})`, value: params.hookThreshold }] : []),
   ];
   return (
-    <Card title="VIX/VIX3M regime, recorded every session" collapseKey="curve-regime" updatedAt={updatedAt} className="view-fade">
-      <p className="integrity-note">
-        Written every session, traded or not -- the series' value is its continuity, never only what fed a trade.
-      </p>
+    <Card
+      title="VIX/VIX3M regime, recorded every session"
+      collapseKey="curve-regime"
+      updatedAt={updatedAt}
+      className="view-fade"
+      help={{
+        title: "The regime series",
+        body: (
+          <HelpSection title="Recorded every session">
+            <p>Written every session, traded or not -- the series' value is its continuity, never only what fed a trade.</p>
+          </HelpSection>
+        ),
+      }}
+    >
       {today === undefined ? (
         <p className="muted">no regime row for the current session yet</p>
       ) : !today.usable ? (
@@ -235,6 +246,30 @@ export function RegimeCard({
     </Card>
   );
 }
+
+const ARMS_HELP: CardHelpContent = {
+  title: "Reading the arm comparison",
+  body: (
+    <>
+      <HelpWarn title="An upper bound">
+        <p>Every figure is still an upper bound while early assignment sits unmodelled.</p>
+      </HelpWarn>
+      <HelpSection title="Where the money went">
+        <p>
+          Each row adds up: gross - fees - settle - slip = net. Fills are modelled at mid, so slippage is a charged cost here, not a
+          concession inside gross.
+        </p>
+      </HelpSection>
+      <HelpSection title="near, hook and advised arms">
+        <p>
+          Their own entries, not paired with control. near sells a 0.40-delta short (from 2026-10-06) on its own plan. hook enters only on
+          the two-day-confirmed deep-backwardation spike, so idleness is its honest state. An advised:&lt;experiment&gt; arm runs its
+          admitted params beside the base it shadows. Compare them by net per cycle, never by summed net.
+        </p>
+      </HelpSection>
+    </>
+  ),
+};
 
 /** The suite's arm-qualification floor (`core.profiles.QUALIFICATION_RULE.min_sample`): below it a
  *  figure is shown, but flagged as too few cycles to judge an arm on. */
@@ -308,7 +343,7 @@ export function ArmComparison({
   const flipExits = flipDivergence?.controlFlipExits ?? 0;
 
   return (
-    <Card title="arm comparison" collapseKey="curve-arms" updatedAt={updatedAt}>
+    <Card title="arm comparison" collapseKey="curve-arms" updatedAt={updatedAt} help={ARMS_HELP} flag="upper bound">
       {arms.length === 0 ? (
         <p className="muted">
           no completed cycles yet -- per-arm results fill in as positions close
@@ -342,11 +377,6 @@ export function ArmComparison({
                 </tbody>
               </table>
             </div>
-            <p className="integrity-note">
-              Each row adds up: gross - fees - settle - slip = net. Fills are modelled at mid, so slippage is a
-              charged cost here, not a concession inside gross. Every figure is still an upper bound while early
-              assignment sits unmodelled.
-            </p>
           </section>
 
           <section className="pmcc-compare">
@@ -359,16 +389,6 @@ export function ArmComparison({
             <p className="integrity-note">
               Both arms enter from the same plan on the same tick, so until a flip fires they are byte-identical
               and every shared cycle counts twice. Only the diverged positions say anything about the flip rule.
-            </p>
-          </section>
-
-          <section className="pmcc-compare">
-            <h3>near, hook and advised arms -- their own entries, not paired with control</h3>
-            <p className="integrity-note">
-              near sells a 0.40-delta short (from 2026-10-06) on its own plan. hook enters only on the
-              two-day-confirmed deep-backwardation spike, so idleness is its honest state. An
-              advised:&lt;experiment&gt; arm runs its admitted params beside the base it shadows. Compare them by
-              net per cycle, never by summed net.
             </p>
           </section>
 

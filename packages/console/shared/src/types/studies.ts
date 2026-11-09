@@ -1,3 +1,4 @@
+import type { BacktestScorecard } from "./backtest.js";
 /**
  * The studies board (`run.py hypotheses-board`; packages/orchestrator `hypotheses.board`, 2026-10-29,
  * docs/studies-board-plan.md): each row of the hypothesis register joined with its result files'
@@ -92,6 +93,8 @@ export interface StudyVersion {
 
 export interface StudyTask {
   id: number;
+  /** The queue row's kind: `script`, `fetch-chain-paths`, ...; null from an older orchestrator. */
+  kind: string | null;
   step: string;
   status: string;
   createdAt: string | null;
@@ -123,6 +126,9 @@ export interface StudyRow {
   rule: string | null;
   mechanism: string | null;
   rivals: StudyRival[];
+  /** The study chain (2026-11-07): repo paths of its scripts and tests; empty on a legacy row. */
+  scripts: string[];
+  tests: string[];
   group: StudyGroup;
   results: StudyResult[];
   queueActive: boolean;
@@ -163,3 +169,132 @@ export interface StudyRunSummaries {
 
 /** Run ids one summaries read answers for (the package's `SUMMARY_RUNS`). */
 export const STUDY_SUMMARY_RUNS = 80;
+
+// --------------------------------------------------------------------------- study reports
+
+/**
+ * One study read as a report (orchestrator `study-report --study`, `orchestrator/studyreport.py`).
+ * Every figure, sentence and piece of advice is the orchestrator's: the console draws and prints
+ * them and works nothing out.
+ */
+export interface StudyStat {
+  mean: number;
+  t: number | null;
+  n: number | null;
+  p: number | null;
+}
+
+export interface StudyReportArm {
+  arm: string;
+  group: string;
+  window: string;
+  file: string;
+  mean: number;
+  t: number | null;
+  /** Trades (or, where a study counts no trades, its observations). */
+  n: number | null;
+  p: number | null;
+  verdict: string | null;
+  sessions: number | null;
+  entryRate: number | null;
+  netPerTrade: number | null;
+  /** True when net per trade was worked out from net per session and the entry count. */
+  netPerTradeDerived: boolean;
+  /** Net over buying power, a fraction; the baseline's beside it. */
+  perRisk: number | null;
+  perRiskBase: number | null;
+  paired: StudyStat | null;
+  pairedVs: string | null;
+  pairedBoth: StudyStat | null;
+  /** The arm's stats table and insights, when its script wrote a `scorecard` block (2026-11-07). */
+  scorecard: BacktestScorecard | null;
+}
+
+export type StudyMeasureKey = "paired" | "paired_both" | "mean" | "net_per_trade" | "per_risk" | "entry_rate";
+
+export interface StudyMeasure {
+  key: StudyMeasureKey;
+  label: string;
+  note: string;
+  /** Which measure's t-statistic goes with it, or null. */
+  t: StudyMeasureKey | null;
+}
+
+export interface StudyParagraph {
+  kind: string;
+  /** Plain words with `**bold**` names. */
+  text: string;
+}
+
+export type StudyAdviceKind = "rerun" | "data" | "new_study" | "ruleset" | "reread" | "register";
+
+export interface StudyAdvice {
+  kind: StudyAdviceKind;
+  text: string;
+  /** The figure or fact that prompted it. */
+  why: string;
+}
+
+export interface StudyGate {
+  key: string;
+  name: string;
+  text: string;
+}
+
+export interface StudyReportVerdict {
+  arm: string | null;
+  verdict: string;
+  why: string | null;
+  file: string;
+}
+
+export interface StudyReport {
+  study: string;
+  provisional: boolean;
+  windows: string[];
+  arms: StudyReportArm[];
+  comparisons: StudyReportArm[];
+  verdicts: StudyReportVerdict[];
+  measures: StudyMeasure[];
+  gates: StudyGate[];
+  reading: StudyParagraph[];
+  advice: StudyAdvice[];
+  failedSteps: string[];
+}
+
+export interface StudyTally {
+  pass: number;
+  fail: number;
+  noVerdict: number;
+}
+
+/** One study active since the digest's date (`study-report --since`). */
+export interface StudyDigestRow {
+  id: number;
+  study: string;
+  title: string;
+  status: string;
+  outcome: string | null;
+  finished: string;
+  tally: StudyTally;
+  provisional: boolean;
+  failedSteps: string[];
+}
+
+export interface StudyDigest {
+  since: string;
+  studies: StudyDigestRow[];
+  totals: StudyTally;
+  /** Study ids that gave no reading: no verdict word in any file. */
+  noReading: number[];
+}
+
+/** A study slug as the register spells it (`hypotheses.SLUG`). */
+export function isStudySlug(v: string): boolean {
+  return /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(v) && v.length <= 64;
+}
+
+/** A calendar date, YYYY-MM-DD. */
+export function isIsoDate(v: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(Date.parse(`${v}T00:00:00Z`));
+}

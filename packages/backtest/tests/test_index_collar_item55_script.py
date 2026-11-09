@@ -1,5 +1,6 @@
-"""Hypothesis 55's study (scripts/index_collar_item55.py): the entry session, the three hedges and the
-collar's strike, the sizing, the fills and the declared decision rules. Invented chains only, no store.
+"""Hypothesis 55's study (packages/backtest/scripts/index_collar_item55.py): the entry session, the three
+hedges and the collar's strike, the sizing, the fills and the declared decision rules. Invented chains only,
+no store.
 
 Each rule is shown firing and failing, because a check that cannot fire reads as coverage it is not.
 """
@@ -14,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-SCRIPTS = Path(__file__).resolve().parents[3] / "scripts"
+SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 _spec = importlib.util.spec_from_file_location("index_collar_item55", SCRIPTS / "index_collar_item55.py")
 s55 = importlib.util.module_from_spec(_spec)
 sys.modules["index_collar_item55"] = s55
@@ -286,3 +287,11 @@ def test_a_cycle_is_dropped_with_the_reason():
     no_exit_spot = _sessions(100.0, 90.0)
     no_exit_spot[date(2027, 3, 17)] = (None, chain_at(90.0))
     assert s55.simulate(no_exit_spot, expiry)[1] == "no_exit_spot"
+
+
+def test_a_study_that_judged_nothing_is_no_verdict_not_failed():
+    nothing = {"a": {"decision": "no verdict"}, "b": {"decision": "no verdict"}}
+    assert s55.overall_verdict(nothing, []) == "no verdict"
+    judged = {"a": {"decision": "no verdict"}, "b": {"decision": "fail"}}
+    assert s55.overall_verdict(judged, []) == "failed"
+    assert s55.overall_verdict(judged, ["b"]) == "passed"

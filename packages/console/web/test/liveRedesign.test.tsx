@@ -7,7 +7,7 @@ import { ListViewContext, useViewChoice } from "../src/components/ViewSwitch";
 import { writePref } from "../src/lib/prefs";
 import { LivePage, positionModel } from "../src/pages/Live/LivePage";
 import { PositionsPage, notEvaluatedWords, rulesetBox } from "../src/pages/Live/ManagePage";
-import { MeicLivePage, icLineFor, openModel, stopWords } from "../src/pages/Live/MeicLivePage";
+import { MeicLivePage, icLineFor, keptShare, openModel, stopWords } from "../src/pages/Live/MeicLivePage";
 import { MeicReadinessCard } from "../src/pages/Live/MeicReadinessCard";
 import { handModel } from "../src/pages/Live/HandToday";
 import { breakerShare } from "../src/pages/Live/LiveTodayPage";
@@ -43,6 +43,7 @@ const openRow = (over: Partial<LiveMeicOpenRow> = {}): LiveMeicOpenRow => ({
   callClosing: false,
   fillConfirmedAt: "2026-11-06T12:30:20",
   overdue: false,
+  mark: null,
   ...over,
 });
 
@@ -128,9 +129,33 @@ describe("Live → meic", () => {
     expect(stopWords("LIVE-XYZ-1 XYZ 100p/120c 10w, credit 1.8")).toBeNull();
   });
 
-  it("has no bar for the credit kept: the live read carries no mark, and none is made up", () => {
+  it("has no bar for the credit kept without a mark, and none is made up", () => {
     expect(openModel(openRow()).hideBar).toBe(true);
     expect(renderToString(<TradeCard m={openModel(openRow())} />)).not.toContain("pos-bar");
+  });
+
+  it("draws the credit kept against the entry credit from the mark, and prints each leg at its mid", () => {
+    const mark = { at: "2026-11-06T17:45:00.000Z", mids: { shortPut: 0.5, longPut: 0.1, shortCall: 0.35, longCall: 0.05 }, closeCost: 0.7, exitCash: -70 };
+    const r = openRow({ mark });
+    // entry +$180, close at the mark −$70: $110 kept, 61% of the credit.
+    expect(keptShare(r)).toEqual({ dollars: 110, share: (110 / 180) * 100 });
+    const m = openModel(r);
+    expect(m.hideBar).toBe(false);
+    expect(m.label).toBe("61% of the credit kept · close 0.70");
+    expect(m.legs.map((l) => l.text)).toEqual(["1 100P @ 0.50", "1 90P @ 0.10", "1 120C @ 0.35", "1 130C @ 0.05"]);
+    expect(text(renderToString(<TradeCard m={m} />))).toContain("pos-bar");
+    // A mark past the credit keeps nothing: the bar is empty, never negative.
+    expect(keptShare(openRow({ mark: { ...mark, closeCost: 2.4, exitCash: -240 } }))).toEqual({ dollars: -60, share: 0 });
+  });
+
+  it("puts the history's net rule behind its ?, and its totals in chips that wrap inside the card", () => {
+    const totals = { trades: 3, sessions: 2, gross: 300, fees: 12, settlementFees: 1.5, settlementRecorded: 1.5, settlementTrades: 3, net: 286.5, feesTrades: 3, feesRecorded: 12, netRecorded: 286.5 };
+    const html = renderIn(<MeicLivePage />, [[["live-meic"], meicPayload({ totals })], [["live-meic-gap"], gapPayload]]);
+    expect(html).toContain('aria-label="About History — 0 resolved live"');
+    expect(html).not.toContain("Gross less fees less settlement");
+    const foot = html.slice(html.indexOf('class="lv-totals"'));
+    expect(foot.indexOf('class="lv-totals"')).toBe(0);
+    for (const part of [">3 trades · 2 sessions<", ">gross $300.00<", ">settlement $1.50<"]) expect(foot).toContain(part);
   });
 
   it("flags live vs paper as paired, and opens execution from it as a lightbox, not a table on the page", () => {

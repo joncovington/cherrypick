@@ -1,13 +1,8 @@
 import type {
   BacktestArmReport,
-  BacktestGapStats,
-  BacktestInventory,
   BacktestInventoryStore,
   BacktestOverview,
   BacktestRunReport,
-  BacktestStore,
-  BacktestSideReading,
-  BacktestValidation,
   BridgedResult,
   StudyResult,
   StudyRow,

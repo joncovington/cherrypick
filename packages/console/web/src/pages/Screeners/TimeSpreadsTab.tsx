@@ -17,7 +17,8 @@ import {
   type TimeSpreadView,
 } from "../../lib/timeSpreadView";
 import { TradeCards, timeSpreadModel, type TradeCardModel } from "../Live/TradeCard";
-import { PanelChoice, ScreenerCard, ScreenerLayout, ScreenerSection, SessionSelect, useParamState } from "./ScreenerParts";
+import { PanelChoice, ScreenerCard, ScreenerLayout, SessionSelect, useParamState } from "./ScreenerParts";
+import { Section } from "../../components/Section";
 
 /**
  * The time-spread scanner (docs/time-spread-scanner-plan.md): the day's calendars and diagonals on the
@@ -212,7 +213,7 @@ export function TimeSpreadsTab() {
 
   return (
     <ScreenerLayout>
-      <ScreenerSection concept="add" tag="structures" question="Which calendars and diagonals fit?">
+      <Section concept="add" tag="structures" question="Which calendars and diagonals fit?">
         <ScreenerCard
           title="time spreads"
           help={help}
@@ -334,7 +335,7 @@ export function TimeSpreadsTab() {
             <TradeCards models={shown.map(model)} />
           )}
         </ScreenerCard>
-      </ScreenerSection>
+      </Section>
     </ScreenerLayout>
   );
 }

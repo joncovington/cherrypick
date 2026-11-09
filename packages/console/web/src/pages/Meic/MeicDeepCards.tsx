@@ -1,7 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
 import type { TradingMode } from "@console/shared";
 import { powerNote } from "../../lib/power";
-import { DataCard, PnlCell } from "../../components/DataTable";
+import { Card, DataCard, PnlCell } from "../../components/DataTable";
+import { HelpSection, type CardHelpContent } from "../../components/CardHelp";
+import { Section } from "../../components/Section";
 import { CalendarHeatmap } from "../../components/CalendarHeatmap";
 
 interface BreakdownRow {
@@ -61,24 +63,23 @@ function NlvChart({ points }: { points: Array<{ date: string; nlv: number }> }) 
   );
 }
 
-function BreakdownCard({ title, rows, loading }: { title: string; rows: BreakdownRow[] | undefined; loading: boolean }) {
+function BreakdownCard({ title, rows, loading, className }: { title: string; rows: BreakdownRow[] | undefined; loading: boolean; className?: string }) {
   const note = rows !== undefined && !loading ? powerNote(rows) : null;
   if (note !== null) {
     return (
-      <section className="card">
-        <h2>{title}</h2>
+      <Card title={title} className={className}>
         <p className="muted" style={{ fontSize: 12 }}>
           {note}
         </p>
-      </section>
+      </Card>
     );
   }
   return (
     <DataCard
       title={title}
+      className={className}
       headers={["bucket", "trades", "sessions", "win %", "avg net"]}
       numFrom={1}
-      tableClass="data-table-labelled"
       loading={loading}
       rowCount={rows?.length ?? 0}
     >
@@ -107,6 +108,18 @@ function BreakdownCard({ title, rows, loading }: { title: string; rows: Breakdow
   );
 }
 
+const NLV_HELP: CardHelpContent = {
+  title: "Account value (NLV)",
+  body: (
+    <HelpSection title="Why it is unscoped">
+      <p>
+        closing_nlv is a broker balance for the whole account, and the daily summary carries no arm column to group it by, so the page's
+        symbol, arm and era filters do not narrow this line. It is written only by the end-of-day report, so paper mode has none.
+      </p>
+    </HelpSection>
+  ),
+};
+
 export function MeicDeepCards({
   mode,
   symbol = null,
@@ -121,44 +134,36 @@ export function MeicDeepCards({
   const { data, isLoading } = useDeep(mode, symbol, profile, era);
   return (
     <>
-      <section className="card">
-        <h2>Daily net P&L (after fees) — calendar</h2>
-        {isLoading ? (
-          <span className="skeleton skeleton-text" style={{ width: "40%" }} />
-        ) : (
-          <CalendarHeatmap days={(data?.calendar ?? []).map((d) => ({ date: d.date, net: d.net, count: d.trades }))} />
-        )}
-      </section>
+      <Section concept="hist" tag="calendar" question="Which days made money?">
+        <Card title="Daily net P&L (after fees) — calendar" className="lv-12">
+          {isLoading ? (
+            <span className="skeleton skeleton-text" style={{ width: "40%" }} />
+          ) : (
+            <CalendarHeatmap days={(data?.calendar ?? []).map((d) => ({ date: d.date, net: d.net, count: d.trades }))} />
+          )}
+        </Card>
+      </Section>
 
       {/* Paper mode has no NLV and cannot have one: `closing_nlv` is written only by
           `db.cmd_save_daily_summary`, reachable solely from the agent-driven /eod-report, and it is
-          a BROKER fact rather than something derivable from ic_trades — the session roll-up
+          a BROKER fact rather than something derivable from ic_trades -- the session roll-up
           deliberately does not invent it. Rendering an empty chart in paper was reporting an
           absence as a flat line. */}
       {mode === "live" && (
-        <section className="card">
-          <h2>
-            Account value (NLV) over time{" "}
-            {/* Every other card here answers for the symbol/profile/era the page is scoped to; this
-                one cannot. `closing_nlv` is a broker balance for the whole account, and
-                `daily_summary` carries no profile column to group it by, so narrowing the scope
-                leaves this line unchanged. Say so on the card rather than letting it read as a
-                filtered result. */}
-            <span className="chip chip-warn" title="closing_nlv is a whole-account broker balance; the page's symbol, profile and era filters do not narrow it">
-              account-level · unscoped
-            </span>
-          </h2>
-          {isLoading ? <span className="skeleton skeleton-text" style={{ width: "40%" }} /> : <NlvChart points={data?.nlv ?? []} />}
-        </section>
+        <Section concept="stand" tag="account" question="What is the account worth?">
+          <Card title="Account value (NLV) over time" className="lv-12" help={NLV_HELP} flag="account-level · unscoped">
+            {isLoading ? <span className="skeleton skeleton-text" style={{ width: "40%" }} /> : <NlvChart points={data?.nlv ?? []} />}
+          </Card>
+        </Section>
       )}
 
-      <div className="cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(25rem, 100%), 1fr))" }}>
-        <BreakdownCard title="By short-call delta" rows={data?.byDelta} loading={isLoading} />
-        <BreakdownCard title="By wing width" rows={data?.byWing} loading={isLoading} />
-        <BreakdownCard title="By symbol" rows={data?.bySymbol} loading={isLoading} />
-        <BreakdownCard title="By weekday" rows={data?.byWeekday} loading={isLoading} />
-        <BreakdownCard title="By entry hour (ET) — * is off-session" rows={data?.byHour} loading={isLoading} />
-      </div>
+      <Section concept="edge" tag="breakdowns" question="Where does the net come from?">
+        <BreakdownCard title="By short-call delta" rows={data?.byDelta} loading={isLoading} className="lv-4" />
+        <BreakdownCard title="By wing width" rows={data?.byWing} loading={isLoading} className="lv-4" />
+        <BreakdownCard title="By symbol" rows={data?.bySymbol} loading={isLoading} className="lv-4" />
+        <BreakdownCard title="By weekday" rows={data?.byWeekday} loading={isLoading} className="lv-4" />
+        <BreakdownCard title="By entry hour (ET) — * is off-session" rows={data?.byHour} loading={isLoading} className="lv-8" />
+      </Section>
     </>
   );
 }

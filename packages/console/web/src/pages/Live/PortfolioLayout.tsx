@@ -1,8 +1,8 @@
-import type { ReactNode } from "react";
 import type { ManageAccount } from "@console/shared";
 import { AddingTradesCard } from "./IncomeCard";
 import { ContributionCard, DirectionCard, GuidanceCard, IncomeParentCard, RoomCard, StressCard } from "./PortfolioCards";
 import { LadderCard, RiskMatrixCard } from "./ScenarioCards";
+import { Section } from "../../components/Section";
 
 /**
  * The portfolio tab's layout (2026-11-06, docs: the "portfolio tab layouts" review): the cards grouped
@@ -11,32 +11,6 @@ import { LadderCard, RiskMatrixCard } from "./ScenarioCards";
  * and fold to two a row, then one, as the page narrows (container queries on `.pf-layout`). What
  * explains or audits a card opens from it as a lightbox (PortfolioBox.tsx) instead of taking a row.
  */
-
-export type Concept = "stand" | "income" | "dir" | "risk" | "room" | "add" | "live" | "hist";
-
-const NAME: Record<Concept, string> = {
-  stand: "where the book stands",
-  income: "income",
-  dir: "direction",
-  risk: "movement risk",
-  room: "room to act",
-  add: "adding trades",
-  live: "live",
-  hist: "record",
-};
-
-/** `tag` names the section in the colour of `concept`, where another tab's own words fit better. */
-export function Section({ concept, question, tag, children }: { concept: Concept; question: string; tag?: string; children: ReactNode }) {
-  return (
-    <section className={`pf-sec pf-c-${concept}`} aria-label={tag ?? NAME[concept]}>
-      <div className="pf-sec-head">
-        <span className="pf-tag">{tag ?? NAME[concept]}</span>
-        <h3>{question}</h3>
-      </div>
-      <div className="pf-row">{children}</div>
-    </section>
-  );
-}
 
 export function PortfolioLayout({ a }: { a: ManageAccount }) {
   const p = a.portfolio;

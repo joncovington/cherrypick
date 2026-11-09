@@ -12,8 +12,8 @@ nothing measured the difference.
 
 ## What prompted it
 
-Over 2026-07-30..10-02, **43 of 48 live completions filled below the best modelled debit the live
-loop ever saw** while the spread was open, by a median 0.14 points (about $14 a position). Paper's
+Over 2026-07-30..10-02, **most live completions filled below the best modelled debit the live
+loop ever saw** while the spread was open (figures recorded locally). Paper's
 gate would have refused those completions on the same quotes.
 
 The live loop samples once a minute, so part of that gap may be dips it never saw. Even so, it
@@ -115,9 +115,9 @@ via `analytics.fill_realism` and `analytics.shadow_completion`.
 
 ## What comes next, and what would change paper
 
-0. **Price: done, from 2026-10-05.** Live filled at its limit 42 times out of 42, so the price was
+0. **Price: done, from 2026-10-05.** Live filled at its limit every time, so the price was
    never in doubt. Every paper legged completion now pays the live limit (`engine.pays_limit`)
-   instead of its modelled debit, on the unchanged trigger: about $4 less a completion, and a
+   instead of its modelled debit, on the unchanged trigger: a lower price for each completion, and a
    book-wide `completion_rule` break. What follows is the trigger, a separate and later break.
 1. **Collect.** Let live orders accumulate quoted paths. A price rule needs a few dozen completion
    orders with quotes, filled and unfilled, before its grid value means anything.
@@ -127,9 +127,9 @@ via `analytics.fill_realism` and `analytics.shadow_completion`.
      on a fast one. Read it across `time_bucket` and `vol_bucket` before preferring it.
    - The backfill (2026-10-02; broker fill times, spot from the trail; 42 filled and 13 cut-off
      completion orders, 2026-08-01..10-02) is in the experiment log. In short: completions filled
-     with spot a median 1.03 widths past the centre, at the completing long strike; no fill was
-     better than its limit by more than 0.05; and a distance rule at 0.25–0.75 widths agreed with
-     live on 84% of orders, firing a median 2.5–6.5 minutes before the real fill.
+     with spot about a width past the centre, at the completing long strike; no fill was
+     better than its limit to speak of; and a distance rule at 0.25–0.75 widths agreed with
+     live on most orders, firing minutes before the real fill.
 3. **Shadow first.** Read the shadow at the fitted value against paper's own rule, and against live
    on the days both traded.
 4. **Switch at a declared boundary.** Replacing paper's completion rule changes what control's

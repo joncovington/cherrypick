@@ -22,10 +22,11 @@
  *
  * The suite line totals each loop's realised net for today. All three state it the same way --
  * resolved positions at the broker's fills, less trading fees and settlement, slippage never
- * charged again -- so those sum. The worst case and the mark are each loop's own measure (a fly's
- * floor after fees, a BWB's entry max loss; a fly's mid mark, a BWB's unrealised net), so they are
- * shown per loop and never totalled. A loop whose ledger read failed makes the total n/r: a total
- * missing one loop reads as the whole suite's.
+ * charged again -- so those sum. Since 2026-11-07 the marks sum too (`suite.unrealised`): each
+ * loop's is unrealised net of fees to date (a fly's `mark_pnl`, a BWB's unrealised net, MEIC's
+ * condors at mid less their fees). The worst case stays each loop's own measure and is never
+ * totalled. A loop whose ledger read failed makes either total n/r: a total missing one loop reads
+ * as the whole suite's.
  *
  * The hand row (2026-11-03, `liveHand.ts`) is today's 0DTE trades placed by hand, read from
  * packages/manage's evaluation. It sits beside the loops, not among them, and its net is never in
@@ -40,6 +41,7 @@ import type {
   LiveAttentionItem,
   LiveLoopId,
   LiveMeicBrokerHealth,
+  LiveMeicOpenRow,
   LiveTodayArm,
   LiveTodayLoop,
   LiveTodayMoney,
@@ -339,7 +341,7 @@ function readMeicToday(config: ConsoleConfig, now: Date): LoopRead {
     entriesToday:
       p.open.filter((r) => r.tradeDate === session && !r.working).length + todays.length,
     today,
-    mark: { value: null, at: null, basis: "MEIC's live loop writes no marks" },
+    mark: meicOpenMark(p.open),
     breaker: breakerOf(
       limit,
       limit ? meicBreakerFigure(dbPath, session) : null,
@@ -474,6 +476,39 @@ function attentionFor(l: LiveTodayLoop): LiveAttentionItem[] {
   return out;
 }
 
+/**
+ * What the loops hold, at mark, net of fees to date: each loop's `mark` summed. A loop holding nothing
+ * adds nothing, whatever its last mark said; one holding something it cannot mark, or whose ledger
+ * could not be read, makes the total n/r and is named. An absent ledger holds nothing here.
+ */
+export function unrealisedOf(loops: LiveTodayLoop[]): LiveTodaySuite["unrealised"] {
+  const summed: LiveLoopId[] = [];
+  const unmarked: LiveTodaySuite["unrealised"]["unmarked"] = [];
+  let total = 0;
+  const ats: string[] = [];
+  for (const l of loops) {
+    if (l.ledger === "failed") {
+      unmarked.push({ loop: l.loop, reason: "the live ledger could not be read" });
+      continue;
+    }
+    if (l.ledger !== "ok" || l.open === 0) continue;
+    const v = l.mark?.value ?? null;
+    if (v === null) {
+      unmarked.push({ loop: l.loop, reason: `${l.open} open, not all marked` });
+      continue;
+    }
+    summed.push(l.loop);
+    total += v;
+    if (l.mark?.at) ats.push(l.mark.at);
+  }
+  return {
+    value: unmarked.length > 0 ? null : round2(total),
+    at: ats.length === 0 ? null : ats.sort()[0]!,
+    summed,
+    unmarked,
+  };
+}
+
 export function suiteOf(loops: LiveTodayLoop[]): LiveTodaySuite {
   const excluded: LiveTodaySuite["excluded"] = [];
   const summed: LiveLoopId[] = [];
@@ -488,7 +523,7 @@ export function suiteOf(loops: LiveTodayLoop[]): LiveTodaySuite {
   const armed = loops.filter((l) => l.arm.armed && !l.arm.pastDisarm).map((l) => l.loop);
   // A loop unread makes the total n/r; so does nothing read at all -- no ledger anywhere is not a flat day.
   if (failed || summed.length === 0)
-    return { loops: loops.length, armed, net: null, gross: null, fees: null, settlementFees: null, trades: null, summed: [], excluded, feesUnrecorded: [] };
+    return { loops: loops.length, armed, net: null, gross: null, fees: null, settlementFees: null, trades: null, summed: [], excluded, feesUnrecorded: [], unrealised: unrealisedOf(loops) };
   const read = loops.filter((l) => summed.includes(l.loop));
   const money = read.map((l) => l.today!);
   const sum = (f: (m: LiveTodayMoney) => number) => round2(money.reduce((s, m) => s + f(m), 0));
@@ -507,6 +542,7 @@ export function suiteOf(loops: LiveTodayLoop[]): LiveTodaySuite {
     summed,
     excluded,
     feesUnrecorded,
+    unrealised: unrealisedOf(loops),
   };
 }
 
@@ -525,6 +561,30 @@ export function isRetired(l: Omit<LiveTodayLoop, "retired">): boolean {
   );
 }
 
+
+
+export const MEIC_MARK_BASIS =
+  "unrealised net if bought back now at the stream cache's mid: each held condor's entry credit less its cost to close and its fees to date; " +
+  "n/r when any held condor is unmarked (a side already closed, or a leg without a fresh two-sided quote) or has no fees recorded";
+
+/**
+ * MEIC's loop mark (2026-11-07): the open condors' stream-cache marks (`meicLive.markOpen`), summed as
+ * whole-position cash, entry credit plus the close at the mark, less each condor's fees to date (so it
+ * reads as flies' and bwb's marks do, and the suite can total them). Nothing held is no mark; one held
+ * condor without a mark makes the sum n/r rather than a part-sum that reads as the whole book. Entries
+ * still working hold nothing and are left out. `at` is the oldest quote behind the sum.
+ */
+export function meicOpenMark(open: LiveMeicOpenRow[]): LiveTodayLoop["mark"] {
+  const held = open.filter((r) => !r.working);
+  if (held.length === 0) return { value: null, at: null, basis: MEIC_MARK_BASIS };
+  const marked = held.flatMap((r) =>
+    r.mark !== null && r.entryCash !== null && r.feesToDate !== null ? [{ cash: r.entryCash + r.mark.exitCash - r.feesToDate, at: r.mark.at }] : [],
+  );
+  if (marked.length < held.length) return { value: null, at: null, basis: MEIC_MARK_BASIS };
+  const value = Math.round(marked.reduce((t, m) => t + m.cash, 0) * 100) / 100;
+  const at = marked.map((m) => m.at).sort()[0] ?? null;
+  return { value, at, basis: MEIC_MARK_BASIS };
+}
 export function readLiveToday(config: ConsoleConfig, now: Date = new Date()): LiveTodayPayload {
   const { session, minute } = etParts(now);
   const enabled = new Map(moduleIds(config).map((m) => [m.id, m.enabled]));

@@ -144,10 +144,6 @@ def test_gated_features_is_the_one_view_the_console_reads():
     assert view["features"]["advisor"] is False
     assert view["features"]["advisor_paused"] is False
     assert view["features"]["technicals"] is True
-    assert view["features"]["options_flow"] is False  # off until a person signs in and switches it on
-    cfg = _cfg(dolt=True)
-    cfg["quikoptions"] = {"enabled": True}
-    assert caps.gated_features(cfg)["features"]["options_flow"] is True
 
 
 def test_gated_features_reports_the_advisor_pause_as_the_advisor_reads_it():
@@ -164,14 +160,17 @@ def test_gated_features_names_each_readable_live_switch(monkeypatch, tmp_path):
     home = tmp_path / "home"
     (home / "config").mkdir(parents=True)
     (home / "config" / "meic.json").write_text(json.dumps({"enable_live_trading": False}), encoding="utf-8")
-    (home / "config" / "earnings.json").write_text(json.dumps({"live": {"enabled": True}}), encoding="utf-8")
+    (home / "config" / "earnings.json").write_text(
+        json.dumps({"enable_live_trading": True}), encoding="utf-8"
+    )
     monkeypatch.setenv("CHERRYPICK_HOME", str(home))
     cfg = _cfg()
     for m in cfg["modules"].values():
         m["path"] = str(tmp_path / "no-checkout")  # no in-repo fallback config either
     live = caps.gated_features(cfg)["live"]
     assert live["meic"] is False
-    assert live["earnings"] is True
+    # Earnings is paper-only since v0.12.0: a leftover switch in its file is ignored.
+    assert live["earnings"] is False
     # No readable config: left out (the console shows the tab), never reported as off.
     assert "pmcc" not in live
 

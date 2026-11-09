@@ -63,8 +63,8 @@ A measurement only; nothing in the loop reads it. `run.py backfill-peak-risk [--
 settled before it existed (dry run by default) and checks the replay against the live loop's own
 `fly_live_marks.open_margin` at the same tick. The two differ for two known reasons, both named in its
 output: an entry still at its limit when the broker filled it better, and an entry order working at
-that tick that never filled. Any other gap is listed as unexplained. On 2026-10-16 the live ledger
-read 14 of 21 sessions matched to the cent and 7 explained, none unexplained.
+that tick that never filled. Any other gap is listed as unexplained. On 2026-10-16 every session of the live ledger
+was matched or explained, none unexplained.
 
 **Five measurements this strategy needs and generic P&L reporting cannot give:**
 
@@ -91,7 +91,7 @@ read 14 of 21 sessions matched to the cent and 7 explained, none unexplained.
 
 **Fill realism, tag-don't-gate** (2026-10-02, [docs/fill-model.md](fill-model.md)). Paper
 completes on the first tick its modelled debit clears the gate and pays that debit; live rests a
-limit at `max_safe_completion_debit` and pays the limit. 43 of the first 48 live completions filled
+limit at `max_safe_completion_debit` and pays the limit. most of the first live completions filled
 below the best modelled debit the live loop ever saw, so the gap between the two is measured, not
 assumed:
 - **Live** records every order (`fly_live_orders`, filled or not) and what it saw while it worked
@@ -116,13 +116,13 @@ assumed:
 - **From 2026-10-05 every paper legged completion PAYS THE LIVE LIMIT** (`engine.pays_limit`,
   `completion_price` / `completion_price_from`). The trigger is unchanged: the modelled debit at
   or under the limit. The price is `engine.completion_limit`, the one formula live's resting order
-  is priced from; live filled at it 42 times out of 42. The plan's `market_debit` keeps the
+  is priced from; live filled at it every time. The plan's `market_debit` keeps the
   modelled market price, and the best-debit counterfactuals record that, never the price paid. A
   book-wide `completion_rule` break (`paper_loop._note_completion_rule`): **never pool completion
   P&L across 2026-10-05.** The trigger's timing is the next step, fitted from quoted live paths
   against the shadow, as a second break.
-- **The entry shadow (2026-10-14, step 1f′).** Live entry orders fill 86% (43 of 50), and the misses
-  are not random: spot was moving toward completion in 6 of 7, so live misses the entries that were
+- **The entry shadow (2026-10-14, step 1f′).** Live entry orders mostly fill, and the misses
+  are not random: spot was usually moving toward completion, so live misses the entries that were
   going its way. Each paper legged entry stamps the limit live would ask (`shadow_entry_limit`) and
   its first 60 s (`shadow_entry_path`: spot's move toward completion, the entry spread's gaps).
   `run.py fill-model`'s `entry` block fits a miss rule on live's orders off the gex spot trail,

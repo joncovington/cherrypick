@@ -2,14 +2,12 @@
 
 > Operating contract for the cherrypick **MEIC** engine. Human guides: [`docs/`](docs/README.md); the
 > entry-gate catalogue: [`GATES.md`](GATES.md); suite context: the root
-> [documentation index](../../docs/README.md). Dated history behind the rules here:
-> [docs/history.md](docs/history.md).
+> [documentation index](../../docs/README.md). Dated history behind the rules here, and the
+> list of declared boundaries (never pool across one): [docs/history.md](docs/history.md#declared-boundaries).
 
-> **Vocabulary.** What this module historically called a **risk profile** is the suite's **arm**. The
-> column is `arm` (`ic_trades.arm`, `entry_attempts.arm`; `risk_profile` until 2026-09-24), and
-> `db.init_db` refuses a ledger that still says `risk_profile` rather than adding `arm` beside it
-> (`scripts/arm_column_migrate.py --only risk_profile` renames one). The *config preset* registry in
-> the arm registry under `profiles` keeps that word.
+This module's old word `risk profile` is the root's `arm`; the column is `arm`, and `db.init_db` refuses a
+ledger that still says `risk_profile` (`scripts/arm_column_migrate.py --only risk_profile` renames one).
+The arm registry keeps the key `profiles`.
 
 You are an autonomous quantitative options trading agent. Your objective is to maximise risk-adjusted
 returns while strictly protecting capital, running a Multiple Entry Iron Condor (MEIC) strategy on 0DTE
@@ -100,14 +98,6 @@ decisions per symbol, one shared account-wide risk budget.
   retired with the suite dashboard on 2026-08-12; the console reads both ledgers directly, so there is
   no second payload to keep in step. Shared read-side queries live in `cherrypick.meic.analytics`.
 
----
-CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
----
-
-> ⚠️ Suite-wide guardrails apply — see root CLAUDE.md. This file is for build commands, tech-stack
-> reference and guidelines only — no scratchpad, changelogs or task trackers. A fenced block of
-> build/run commands is fine; one holding program logic is not.
-
 ## Tastytrade auth and tool reference
 
 - **OAuth2** via the official [`tastytrade`](https://github.com/tastyware/tastytrade) SDK (session tokens
@@ -118,21 +108,23 @@ CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
 - **`enable_live_trading: true` in `config.json` is the master switch.** There is no environment
   fallback: an env var is outside the orchestrator's guarded config table and carries no attestation.
 - **The live loop is armed one day at a time (2026-10-14, the flies/bwb posture).** `/live-meic-start`
-  writes the arm record (`--install-task`, `cherrypick.core.live`), and each `--live` tick deletes
+  writes the arm record (`--install-task`, the agent path that prompts for nothing because the
+  slash command already asked; a person arms with `--arm --confirm YES`, which prints `DISCLAIMER.md`
+  and refuses on any other word; `--disarm` is the old `--uninstall-task`; all in
+  `cherrypick.core.live`), and each `--live` tick deletes
   it once stale or past `live.disarm_time`, before any broker read. **The arm gates new ICs only
   (2026-11-02).** Unarmed, a tick whose book holds nothing today ends there without a broker call;
   one that holds an IC or a pending entry runs management only (fill confirmation, resting stops,
   stops, force-close, settlement), with entries blocked as `not_armed`. The supervisor therefore
   runs `meic-live` every trading day from the open to the disarm cutoff, armed or not. Unarmed
   with a live gate unmet (the master switch off), the tick touches nothing and says `unmanaged`;
-  the watchdog's `live_unmanaged` is the CRITICAL. Before this, disarming left an open IC
-  unmanaged until the next day's catch-up settle. `--status` is the arming
+  the watchdog's `live_unmanaged` is the CRITICAL. `--status` is the arming
   command's and the watchdog's read (no broker). Its `arm_ready` (`arm_verdict`, 2026-11-02) is the
   one answer to "may live arm": `blockers` are the arming command's stop-here states (an unmet
   gate, orphans, a held submission, an overdue session, an unreadable ledger, no supervisor, kill
   criteria blocked, read with `killcriteria.peek` so a readout never latches) and `warnings` what
-  a YES may pass (the halt flag, a tripped or unset breaker, positions held). `--install-task`
-  refuses while a blocker stands. `live.max_structures_per_day` (default 1) caps new
+  a YES may pass (the halt flag, a tripped or unset breaker, positions held). `--install-task` and
+  `--arm` refuse while a blocker stands. `live.max_structures_per_day` (default 1) caps new
   ICs a session (`null` lifts the count cap, so buying power alone sizes); a one-tick lock keeps a
   slow tick from overlapping the next. `live.daily_loss_halt_dollars` and the halt flag block NEW ICs
   only: fills are still confirmed and open ICs still stopped and force-closed. The breaker sums
@@ -158,8 +150,7 @@ CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
   order in doubt (a pending entry or close, a resting stop last seen working): the tick's own
   `_poll_resting_stops` and `_confirm_fills`, through `_SettleBroker`, which reads statuses and
   refuses to place, replace or cancel. A fill is booked at the broker's legs and a dead order
-  cleared; anything unresolved, or no broker to ask, leaves the session open (`left`). Before, a
-  close that filled unseen was read as cancelled and its side settled at expiry.
+  cleared; anything unresolved, or no broker to ask, leaves the session open (`left`).
 - **The orphan sweep is suite-wide.** flies, bwb and MEIC trade SPX in one account, so each loop
   publishes its ledger's order ids (`core.execution.publish_known_orders`) and counts the others' as
   known; an order none of them records blocks new entries, and a sweep that cannot look does too.
@@ -203,9 +194,7 @@ CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
   (`manage_only (...)`) and fill confirmation, stops and force-close run as usual. A held leg neither
   source prices fails the tick (exit 1, `held legs unpriced`) and is never priced off an older quote.
   Every failed tick writes its reason to `meic_live.log` and stderr (`_fail`), and a placed entry
-  whose row will not save raises the suite halt flag. The incident: DXLink refused connections for an
-  hour, every tick exited at `no snapshot`, and a put side was stopped 79 minutes late at $7.15
-  against a $3.60 trigger.
+  whose row will not save raises the suite halt flag.
 - **What the loop tells a person (2026-11-02).** `--status` names each of today's held ICs in words
   (`open_ics`, `describe_ic`: id, strikes, sides still held, credit, stop), and the watchdog's live
   findings quote them. Every `CRITICAL` line a tick logs (and `_quiet`'s, and an unpriced-legs exit)
@@ -299,8 +288,7 @@ side, own status/exit/P&L), `daily_summary` (key `summary_date`), `loop_log` (ap
   `core.settlement.OFFICIAL_SOURCES` (a past day by date, today's via `tt.py get_official_close`),
   clock pinned to the settlement instant, no entries evaluated, then the daily_summary roll-up.
   No official print, a physically settled symbol, an event force-close day, or a session already
-  partly settled at another print: left open and logged, never a guess (2026-10-13: an outage across
-  the close left 656 positions open).
+  partly settled at another print: left open and logged, never a guess.
 - **`analytics.settlement_audit` (`run.py settlement-audit`) is re-runnable** and reproduces each
   resolved fill from the written convention with its own `_side_settle_value`, **deliberately
   duplicated, not imported** — an audit that imports what it audits only confirms the function equals

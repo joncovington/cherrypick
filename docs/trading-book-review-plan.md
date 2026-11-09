@@ -1,5 +1,7 @@
 # A trading book, reviewed: what it asks of the suite
 
+> **Status (2026-11-08): done. Actions B1-B14 are each built or audited (see the table); later changes to a measurement land at a declared boundary. Names the retired modules flies, bwb, pmcc and curve.**
+
 *Started 2026-10-24, all fifteen chapters and the conclusion reviewed the same day. A chapter-by-chapter review of a book on scientific method in trading, read against how this suite already tests and runs strategies. No module change is
 built from this file directly: each action item below becomes its own PR, and any that changes what
 a module measures lands at a declared boundary. The closing review at the end gives a suggested build order.*

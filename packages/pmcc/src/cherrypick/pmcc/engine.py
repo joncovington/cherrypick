@@ -29,8 +29,8 @@ ARMS = ("control", "shield", "shield_hold", "shield_guard")
 # plausible. Open positions are managed through the same merge (`management.effective_params`), so
 # an arm dropped from the config still manages what it holds by its own rules. The values are the
 # shield study's (docs/shield-study.md): a year-long long chosen by delta alone (no extrinsic
-# fallback) in 0.88-0.92, nearest 0.90 -- Tom King's own "90ish" (0.90-0.95, nearest 0.925, until the
-# 2026-10-06 boundary) -- a 0.70-delta weekly short, his 30% stop; `shield` alone rolls early (at 85%
+# fallback) in 0.88-0.92, nearest 0.90 -- the source design's own "90ish" (0.90-0.95, nearest 0.925, until the
+# 2026-10-06 boundary) -- a 0.70-delta weekly short, its 30% stop; `shield` alone rolls early (at 85%
 # of the short's extrinsic decayed, or on a breach). The delta is the broker's, as the live loop will
 # see it: on American-style ETFs its deep-call delta runs below parity, so 0.90 sits ~36-41% ITM.
 _HELD_LONG_RULES = {
@@ -328,7 +328,7 @@ def select_short_by_delta(
     floor_strike: float | None = None,
 ) -> dict:
     """The held-long arm's weekly short: the call whose delta is nearest `short_delta_target`
-    (default 0.70, Tom King's "about 70 delta") inside `[short_delta_min, short_delta_max]`
+    (default 0.70, the source design's "about 70 delta") inside `[short_delta_min, short_delta_max]`
     (0.65-0.78), strictly above `floor_strike` (the long's strike -- a short below its own cover is
     a different, uncovered position). A tie takes the higher strike: nearer the money, more
     extrinsic for the same delta reading.
@@ -708,7 +708,10 @@ def leg_costs(
     )
     slips = allocate(
         ticket["slippage"],
-        [_fees.slippage_dollars([{"bid": leg["bid"], "ask": leg["ask"]}], quantity, config) for leg in legs],
+        [
+            _fees.slippage_dollars([{"bid": leg["bid"], "ask": leg["ask"]}], quantity, config, symbol=symbol)
+            for leg in legs
+        ],
     )
     return [{"fee": f, "slippage": s} for f, s in zip(fees, slips, strict=True)]
 

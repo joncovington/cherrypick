@@ -132,7 +132,7 @@ const STUDIES = {
             version: 1,
             current: 2,
             commit: "abc1234",
-            script: "scripts/meic_delta_grid_item23.py",
+            script: "packages/backtest/scripts/meic_delta_grid_item23.py",
             stale: true,
             since: [{ on: "2026-11-01", what: "a fix", before_read: true }, { what: "no date" }],
           },

@@ -6,6 +6,41 @@ import { TradeTotalsChip, tradeMoneyColumns } from "../../components/TradeMoney"
 import { HistoryTable } from "../../components/table/HistoryTable";
 import { useUrlDateRange } from "../../components/table/DateRange";
 import type { ColumnDef } from "../../components/table/columns";
+import { HelpSection, type CardHelpContent } from "../../components/CardHelp";
+import { Section } from "../../components/Section";
+
+const WEEKS_HELP: CardHelpContent = {
+  title: "Weeks",
+  body: (
+    <>
+      <HelpSection title="A week">
+        <p>
+          One arm&rsquo;s week. The week&rsquo;s legs are one click down, for every arm, because the arms are only interesting against each
+          other: they share the entry.
+        </p>
+      </HelpSection>
+      <HelpSection title="Open weeks">
+        <p>
+          <strong>closed</strong> rides beside <strong>positions</strong> because a week does not finish while its delivered shares are
+          outstanding. An unfinished week gets a badge, not a number.
+        </p>
+      </HelpSection>
+    </>
+  ),
+};
+
+const EM_HELP: CardHelpContent = {
+  title: "Expected move vs realised",
+  body: (
+    <HelpSection title="The premise, measured">
+      <p>
+        The expected move taken at entry against the move actually realised to the Friday expiration. Floats, not verdicts: a calendar
+        wants the underlying to sit near its strike, so a ratio under 1 is the structure&rsquo;s friend and this table is the record of how
+        often that happened, not an opinion about whether it will.
+      </p>
+    </HelpSection>
+  ),
+};
 
 /**
  * Every week on file, per arm, with the week's legs one click down.
@@ -139,11 +174,13 @@ export function WeeksTab({ data }: { data: CalendarsPayload | undefined }) {
   const keyOf = (r: CalendarsWeekRow) => `${r.weekOf}-${r.arm}`;
 
   return (
-    <div className="cards cards-wide">
+    <div className="pf-layout">
+      <Section concept="hist" tag="weeks" question="How did each week go?">
       <HistoryTable
         table="calendars-weeks"
         title="weeks"
-        className="view-fade"
+        help={WEEKS_HELP}
+        className="view-fade lv-12"
         defs={COLUMNS}
         clientSort
         rows={weeks?.rows ?? []}
@@ -168,9 +205,13 @@ export function WeeksTab({ data }: { data: CalendarsPayload | undefined }) {
         expanded={(r) => (open === keyOf(r) ? <WeekDetail week={r.weekOf} /> : null)}
         detailClassName="cal-detail-row"
       />
+      </Section>
 
+      <Section concept="edge" tag="the premise" question="Did the market stay inside the expected move?">
       <DataCard
         title="expected move vs realized"
+        help={EM_HELP}
+        className="lv-12"
         sort={emSort}
         headers={[
           { label: "week", k: "week" },
@@ -183,14 +224,6 @@ export function WeeksTab({ data }: { data: CalendarsPayload | undefined }) {
         rowCount={em.length}
         numFrom={2}
         empty="no week has settled yet"
-        footer={
-          <p className="integrity-note">
-            The strategy&rsquo;s premise, measured: the expected move taken at entry against the move actually
-            realized to the Friday expiration. Floats, not verdicts — a calendar wants the underlying to sit
-            near its strike, so a ratio under 1 is the structure&rsquo;s friend and this table is the record of
-            how often that happened, not an opinion about whether it will.
-          </p>
-        }
       >
         {em.map((r) => (
           <tr key={r.weekOf}>
@@ -204,6 +237,7 @@ export function WeeksTab({ data }: { data: CalendarsPayload | undefined }) {
           </tr>
         ))}
       </DataCard>
+      </Section>
     </div>
   );
 }

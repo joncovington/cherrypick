@@ -1,5 +1,5 @@
-"""Hypothesis 46's inputs (scripts/variance_premium_item46.py): the names, the cycles and the path requests.
-Invented store keys only, no store.
+"""Hypothesis 46's inputs (packages/backtest/scripts/variance_premium_item46.py): the names, the cycles and
+the path requests. Invented store keys only, no store.
 
 Each rule is shown firing and failing, because a check that cannot fire reads as coverage it is not.
 """
@@ -11,7 +11,7 @@ import sys
 from datetime import date
 from pathlib import Path
 
-SCRIPTS = Path(__file__).resolve().parents[3] / "scripts"
+SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 _spec = importlib.util.spec_from_file_location(
     "variance_premium_item46", SCRIPTS / "variance_premium_item46.py"
 )

@@ -134,6 +134,7 @@ export function readExitReasons(
     const reasonRows = db
       .prepare<string[], Record<string, unknown>>(
         `SELECT ${tagColumn} AS tag, exit_reason AS reason, COUNT(*) AS n,
+                SUM(CASE WHEN (${spec.netExpr}) > 0 THEN 1 ELSE 0 END) AS wins,
                 SUM(${spec.netExpr}) AS net, AVG(${spec.netExpr}) AS avg_net
            FROM ${spec.positionsTable}
           WHERE ${spec.closedWhere} AND exit_reason IS NOT NULL${eraWhere("")}
@@ -145,6 +146,7 @@ export function readExitReasons(
       tag: str(r["tag"]) ?? "",
       reason: str(r["reason"]) ?? "",
       n: numLoose(r["n"]) ?? 0,
+      wins: numLoose(r["wins"]) ?? 0,
       net: numLoose(r["net"]),
       avgNet: numLoose(r["avg_net"]),
     }));

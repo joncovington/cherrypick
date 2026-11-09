@@ -4,6 +4,28 @@ Incident narratives moved out of `packages/earnings/CLAUDE.md`, which keeps the 
 Exit rules and the settlement backfill are in [10-exits.md](10-exits.md); screening rules in
 [screening-criteria.md](screening-criteria.md).
 
+## Declared boundaries
+
+One line per boundary, so the dates stay findable. Rows either side of a boundary were produced under
+different rules: **never pool across one**. The section named is where the reasoning and numbers are.
+
+| Date | What began | Where |
+|---|---|---|
+| 2026-08-12 | Positions managed (carried up to three trading sessions), not force-closed next morning; lifecycle tables | below, and [10-exits.md](10-exits.md) |
+| 2026-08-31 | Expired positions settled at intrinsic against the expiration close, ahead of every gate | [10-exits.md](10-exits.md) |
+| 2026-09-01 | `management_events.arm` stamped (earlier rows NULL, never backfilled) | schema notes in `CLAUDE.md` |
+| 2026-09-02 | Entry-calendar admissibility gate removed | The entry-calendar admissibility gate |
+| 2026-09-24 | `profile` column renamed `arm` | `scripts/arm_column_migrate.py` |
+| 2026-10-14 | `expected_move_butterfly` opens in `strat_test` (declared 2026-10-13) | The `expected_move_butterfly` section |
+| 2026-10-15 | `atm_calendar` and `double_calendar` open nothing in `strat_test` (declared 2026-10-12) | The two calendars retired |
+| 2026-10-26 | Exits price at mid; `broken_wing_butterfly` retired from `strat_test` (declared 2026-10-23) | The 2026-10-26 boundary |
+| 2026-10-28 | Entry admits only names the liquidity verdict calls `tradable` (declared 2026-10-27) | The 2026-10-28 boundary |
+| 2026-10-30 | Failed entry scan retried in the window; held spread-gate close taken after 30 minutes (declared 2026-10-29) | The 2026-10-30 boundary |
+| 2026-11-02 | `symbol-watch` job removed; the module drives the scan itself | `CLAUDE.md`, How this runs now |
+| 2026-11-05 | Early-close days; leg quotes and term-structure inputs recorded (NULL before, never backfilled) | Early-close days; Leg quotes |
+| 2026-11-06 | PEAD gate at first executable check, tradable-first scan, report's own expected move, `assignment_risk` close, expiry close at 15:20 (declared 2026-11-05) | The 2026-11-06 boundary |
+| v0.12.0 | Earnings is paper-only: no live order, gate, arm or kill criteria | `CLAUDE.md` |
+
 ## The forward scan logged nothing (to 2026-08-25)
 
 When entry and exit moved into the managed loop at the 2026-08-12 cutover, nothing took over the

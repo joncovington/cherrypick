@@ -1,7 +1,10 @@
+import type { ReactNode } from "react";
 import type { TechnicalsMover, TechnicalsReport, TechnicalsStageMember } from "@console/shared";
 import { Link } from "react-router-dom";
 import { BarChart, SignedBar } from "../../components/Charts";
-import { SortTh, sortRows, useSort } from "../../components/DataTable";
+import { Card, SortTh, sortRows, useSort } from "../../components/DataTable";
+import { HelpSection } from "../../components/CardHelp";
+import { Section } from "../../components/Section";
 
 /**
  * The technicals report on the Morning tab: breadth, stages by sector, rotation, the relative-
@@ -46,25 +49,51 @@ function pct(v: number | null, digits = 1): string {
   return v === null ? "—" : `${v > 0 ? "+" : ""}${v.toFixed(digits)}%`;
 }
 
-function Head({ title, t, children }: { title: string; t: TechnicalsReport; children?: React.ReactNode }) {
+/** One technicals card: record-only is its amber flag, the close it reads its date chip, and what explains it sits behind the ?. */
+function TCard({ title, t, extra, help, children }: { title: string; t: TechnicalsReport; extra?: ReactNode; help?: ReactNode; children: ReactNode }) {
   return (
-    <div className="card-head">
-      <h2>{title}</h2>
-      <span className="chip">record-only</span>
+    <Card
+      title={title}
+      flag="record-only"
+      help={{
+        title,
+        body: (
+          <>
+            {help}
+            <HelpSection title="Record-only">
+              <p>Nothing here gates, sizes or suggests an order. It is the technicals package's own answer for the close of {t.session}.</p>
+            </HelpSection>
+          </>
+        ),
+      }}
+      controls={
+        <>
+          {extra}
+          <span className="card-asof">close of {t.session}</span>
+        </>
+      }
+    >
       {children}
-      <span className="card-asof">close of {t.session}</span>
-    </div>
+    </Card>
   );
 }
+
+const help = (title: string, text: ReactNode) => (
+  <HelpSection title={title}>
+    <p>{text}</p>
+  </HelpSection>
+);
 
 function BreadthCard({ t }: { t: TechnicalsReport }) {
   const last = t.breadth[t.breadth.length - 1];
   const bars = t.breadth.filter((b) => b.net !== null).map((b) => ({ x: b.session, y: b.net as number }));
   return (
-    <section className="card">
-      <Head title="Breadth" t={t}>
-        {t.universe !== null && <span className="card-asof">{t.universe} stocks staged</span>}
-      </Head>
+    <TCard
+      title="Breadth"
+      t={t}
+      extra={t.universe !== null ? <span className="card-asof">{t.universe} stocks staged</span> : null}
+      help={help("Net leaders", `Net leaders over the last ${String(t.breadth.length)} sessions: stocks staged as leaders against the S&P 500 minus those staged as laggards. A stock in neither is not counted.`)}
+    >
       {last === undefined ? (
         <p className="muted">No breadth history in this report.</p>
       ) : (
@@ -93,21 +122,16 @@ function BreadthCard({ t }: { t: TechnicalsReport }) {
             </div>
           </div>
           <BarChart bars={bars} height={140} yFormat={(v) => `${v > 0 ? "+" : ""}${v.toFixed(0)}`} />
-          <p className="muted">
-            Net leaders over the last {t.breadth.length} sessions: stocks staged as leaders against the S&amp;P 500
-            minus those staged as laggards. A stock in neither is not counted.
-          </p>
         </>
       )}
-    </section>
+    </TCard>
   );
 }
 
 function StagesCard({ t }: { t: TechnicalsReport }) {
   const maxAbs = Math.max(1, ...t.stages.map((s) => Math.abs(s.net ?? 0)));
   return (
-    <section className="card">
-      <Head title="Stages by sector" t={t} />
+    <TCard title="Stages by sector" t={t}>
       {t.stages.length === 0 ? (
         <p className="muted">No stages in this report.</p>
       ) : (
@@ -138,17 +162,22 @@ function StagesCard({ t }: { t: TechnicalsReport }) {
         </table>
         </div>
       )}
-    </section>
+    </TCard>
   );
 }
 
 function RotationCard({ t }: { t: TechnicalsReport }) {
   const none = t.rotation["none"] ?? [];
   return (
-    <section className="card">
-      <Head title="Rotation" t={t}>
-        {t.rules["rotation"] !== undefined && <span className="card-asof">rule {t.rules["rotation"]}</span>}
-      </Head>
+    <TCard
+      title="Rotation"
+      t={t}
+      extra={t.rules["rotation"] !== undefined ? <span className="card-asof">rule {t.rules["rotation"]}</span> : null}
+      help={help(
+        "How it is read",
+        `Sector and industry funds against SPY, asset-class funds against AOR; fast and slow relative-strength windows.${none.length > 0 ? ` Not yet classified (a window short, or inside the margin): ${none.join(", ")}.` : ""}`,
+      )}
+    >
       <div className="stats-grid">
         {ROTATION_ORDER.map((state) => {
           const funds = t.rotation[state] ?? [];
@@ -162,12 +191,7 @@ function RotationCard({ t }: { t: TechnicalsReport }) {
           );
         })}
       </div>
-      <p className="muted">
-        Sector and industry funds against SPY, asset-class funds against AOR; fast and slow relative-strength
-        windows.
-        {none.length > 0 && ` Not yet classified (a window short, or inside the margin): ${none.join(", ")}.`}
-      </p>
-    </section>
+    </TCard>
   );
 }
 
@@ -181,8 +205,7 @@ function LeadersCard({ t }: { t: TechnicalsReport }) {
     stage: (l) => l.stage,
   });
   return (
-    <section className="card">
-      <Head title="Relative-strength leaders" t={t} />
+    <TCard title="Relative-strength leaders" t={t} help={help("Ranking", "Ranked by 125-session return; rank is that return's decile across the universe (10 = top).")}>
       {t.leaders.length === 0 ? (
         <p className="muted">No leaders in this report.</p>
       ) : (
@@ -219,8 +242,7 @@ function LeadersCard({ t }: { t: TechnicalsReport }) {
         </table>
         </div>
       )}
-      <p className="muted">Ranked by 125-session return; rank is that return's decile across the universe (10 = top).</p>
-    </section>
+    </TCard>
   );
 }
 
@@ -250,8 +272,7 @@ function MoversCard({ t }: { t: TechnicalsReport }) {
   const { gainers, losers } = t.movers;
   if (gainers.length + losers.length === 0) return null; // a version-1 report carries none
   return (
-    <section className="card">
-      <Head title="Session movers" t={t} />
+    <TCard title="Session movers" t={t} help={help("What this is", "The largest one-session moves in the universe. Why they moved is the narrative's to say.")}>
       <div className="table-scroll">
       <table className="data-table">
         <thead>
@@ -269,16 +290,14 @@ function MoversCard({ t }: { t: TechnicalsReport }) {
         </tbody>
       </table>
       </div>
-      <p className="muted">The largest one-session moves in the universe. Why they moved is the narrative's to say.</p>
-    </section>
+    </TCard>
   );
 }
 
 function SignalsCard({ t }: { t: TechnicalsReport }) {
   const rules = Object.entries(t.signals);
   return (
-    <section className="card">
-      <Head title="Scan signals" t={t} />
+    <TCard title="Scan signals" t={t} help={help("What a match is", "A match is a pattern on the chart, not a trade idea.")}>
       {rules.length === 0 ? (
         <p className="muted">No scan rules in this report.</p>
       ) : (
@@ -305,8 +324,7 @@ function SignalsCard({ t }: { t: TechnicalsReport }) {
         </table>
         </div>
       )}
-      <p className="muted">A match is a pattern on the chart, not a trade idea.</p>
-    </section>
+    </TCard>
   );
 }
 
@@ -316,15 +334,13 @@ export function TechnicalsCards({ t }: { t: TechnicalsReport | null | undefined 
     return <p className="muted">No technicals report before this session.</p>;
   }
   return (
-    <>
+    <Section concept="dir" tag="technicals" question="What do the charts say?">
       <MoversCard t={t} />
       <BreadthCard t={t} />
       <StagesCard t={t} />
-      <div className="cards cards-wide">
-        <RotationCard t={t} />
-        <LeadersCard t={t} />
-      </div>
+      <RotationCard t={t} />
+      <LeadersCard t={t} />
       <SignalsCard t={t} />
-    </>
+    </Section>
   );
 }

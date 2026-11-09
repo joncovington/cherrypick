@@ -706,7 +706,8 @@ def main(argv: list[str] | None = None) -> int:
     ff.add_argument("--from", dest="start")
     ff.add_argument("--to", dest="end")
     ff.add_argument(
-        "--plan", help="a plan file, {sessions: {session: [symbols]}} (scripts/flow_fetch_plan.py)"
+        "--plan",
+        help="a plan file, {sessions: {session: [symbols]}} (packages/backtest/scripts/flow_fetch_plan.py)",
     )
     ff.add_argument("--workers", type=int, default=1, help="concurrent requests on the one session")
     ff.add_argument("--stop-by", help="ET wall clock, YYYY-MM-DDTHH:MM: start no request after it")

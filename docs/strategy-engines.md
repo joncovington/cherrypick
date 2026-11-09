@@ -2,25 +2,26 @@
 
 **What this covers:** a suite-level overview of what each trading strategy actually does, so you
 can decide which one(s) fit your goals before diving into an individual module's own docs. The suite
-ships eight strategy modules — MEIC, Earnings, Flies and BWB, which are on in a fresh install
-(Earnings only where Dolt is set up), and Calendars, PMCC, Curve and Contango, which are
-**EXPERIMENTAL and off by default** — plus the GEX engine the console renders. MEIC, Earnings and Flies get a full
-section below; the others a short one. Each module's own docs (linked) are the source of truth for its
+ships these strategy modules: MEIC, and Earnings (paper-only), which are on in a fresh install
+(Earnings only where Dolt is set up); Calendars, Contango and Weeklyput, which are
+**EXPERIMENTAL and off by default**; and Flies, BWB, PMCC and Curve, which are **retired and off by default** (kept so each can be reinstated) — plus the GEX engine the console renders. MEIC, Earnings and Flies get a full
+section below; the others a short one. (The experimental manual desk, `packages/desk`, is not a strategy
+engine and has no section here; see its README.) Each module's own docs (linked) are the source of truth for its
 internals.
 
 | Module | Structure | Default | Live path |
 |---|---|---|---|
 | MEIC | 0DTE iron condors, multiple entries | on | per-day armed loop (`/live-meic-start`, the `meic-live` job) behind `enable_live_trading`; also an agent session |
-| Earnings | defined-risk earnings plays, held overnight | on with the `dolt` capability | `enable_live_trading` |
-| Flies | 0DTE net-credit butterflies | on | per-day armed pilot |
-| BWB | ~7 DTE SPX put broken-wing butterflies, laddered daily | on | per-day armed pilot |
+| Earnings | defined-risk earnings plays, held overnight | on with the `dolt` capability | none: paper-only since v0.12.0 |
+| Flies | 0DTE net-credit butterflies | **off** (retired 2026-10-19) | per-day armed pilot (refuses while the module is off) |
+| BWB | ~7 DTE SPX put broken-wing butterflies, laddered daily | **off** (retired 2026-11-08) | per-day armed pilot (refuses while the module is off) |
 | Calendars | weekly SPY double calendars | **off** (experimental) | none |
-| PMCC | deep-ITM calls with a weekly short call (the shield arms) | **off** (experimental) | none |
-| Curve | VXX call credit spreads, regime-gated | **off** (experimental) | none |
+| PMCC | deep-ITM calls with a weekly short call (the shield arms) | **off** (retired 2026-11-08) | none |
+| Curve | VXX call credit spreads, regime-gated | **off** (retired 2026-11-01) | none |
 | Contango | SVXY/SHV switch on VIX/VIX3M | **off** (experimental) | none |
+| Weeklyput | index 10-delta put, 7 days, weekly expiries | **off** (experimental) | none |
 
-Every shipped example config runs `control` alone except PMCC's (`shield` and `shield_hold`; `control`
-off) and contango's (`control` and `flipexit`). Any other arm named below is added in a machine's own
+Every shipped example config runs `control` alone except contango's (`control` and `flipexit`), weeklyput's (`unhedged`) and the four retired modules', which ship with every arm off (PMCC's examples name `shield`, `shield_hold` and `shield_guard`; its `control` is retired too). Any other arm named below is added in a machine's own
 config. BWB, calendars and curve build their comparison books into the module and run them unless the
 config sets that book's `enabled` to `false`, as their examples do.
 
@@ -87,7 +88,7 @@ hidden.
 [`earnings/docs/strategy-testing-plan.md`](../packages/earnings/docs/strategy-testing-plan.md),
 [`earnings/CLAUDE.md`](../packages/earnings/CLAUDE.md).
 
-## Flies — 0DTE net-credit butterflies
+## Flies — 0DTE net-credit butterflies (retired 2026-10-19, off by default)
 
 **What it trades.** A long butterfly spread pays out somewhere between $0 and its maximum width
 at expiration and can never go negative — so a butterfly held for a **net credit** guarantees a
@@ -107,19 +108,19 @@ turns into a full butterfly — is the single number the whole exercise turns on
 **How it runs.** Paper trading (simulated) by default: a resident loop in session (`flies-paper`,
 15-second ticks) plus an off-session job that owns settlement. A small, explicitly-armed live pilot is
 also supported: one arm, one symbol, a worst-case buying-power cap, armed fresh every trading day by
-`/live-flies-start` and valid for that day only; while armed, the supervisor runs it as the
+`/live-flies-start` (or `live_loop --arm --confirm YES` from a terminal) and valid for that day only; while armed, the supervisor runs it as the
 `flies-live` job.
 
 → Depth: [`flies/README.md`](../packages/flies/README.md),
 [`flies/docs/live-trading-plan.md`](../packages/flies/docs/live-trading-plan.md).
 
-## BWB — daily-laddered put broken-wing butterflies
+## BWB — daily-laddered put broken-wing butterflies (retired 2026-11-08, off by default)
 
 One net-credit SPX put broken-wing butterfly a session at the expected move, ~7 DTE, held to expiry, so
 several ride at once. Its books trade the identical base structure and differ only in whether and when
 a reversal-triggered put credit spread add-on fires (never / delta touch / confirmed bounce / gamma-flip
 reclaim). SPX cash-settles, so there is no assignment machinery. Paper by default (`bwb-paper`); since
-2026-09-18 a narrow live path in the flies posture — one arm, armed per day by `/live-bwb-start`, a
+2026-09-18 a narrow live path in the flies posture — one arm, armed per day by `/live-bwb-start` (or `live_loop --arm --confirm YES`), a
 worst-case margin cap, a cost-derived credit floor, no closing orders.
 
 → Depth: [`bwb/README.md`](../packages/bwb/README.md), [`bwb/CLAUDE.md`](../packages/bwb/CLAUDE.md).
@@ -135,7 +136,7 @@ physical settlement are modelled; ex-dividend weeks are skipped. Paper-only and 
 → Depth: [`calendars/README.md`](../packages/calendars/README.md),
 [`calendars/CLAUDE.md`](../packages/calendars/CLAUDE.md).
 
-## PMCC — deep-ITM calls with a short call against them (EXPERIMENTAL, off by default)
+## PMCC — deep-ITM calls with a short call against them (retired 2026-11-08, off by default)
 
 On XSP, QQQ, GLD, IWM, SLV, SMH and five single stocks (AMZN, TSLA, AMD, NVDA, PLTR): the
 `shield` and `shield_hold` arms hold a ~1-year 0.88–0.92-delta call and sell a weekly 0.70-delta call against it, rolled each week until the long
@@ -146,7 +147,7 @@ upper bound. Paper-only and credential-free.
 
 → Depth: [`pmcc/README.md`](../packages/pmcc/README.md), [`pmcc/CLAUDE.md`](../packages/pmcc/CLAUDE.md).
 
-## Curve — VXX call credit spreads (EXPERIMENTAL, off by default)
+## Curve — VXX call credit spreads (retired 2026-11-01, off by default)
 
 Harvests the VIX term-structure roll yield with VXX call credit spreads, gated by a daily VIX/VIX3M
 regime read. Its books (`control`, `noflip`, the 0.40-delta `near`, and `hook`, retired from 2026-10-15) differ
@@ -165,6 +166,17 @@ thresholds. It exists because curve's option costs take about half of each credi
 measures whether that trade holds after real switching costs. Paper-only and credential-free.
 
 → Depth: [`contango/README.md`](../packages/contango/README.md), [`contango/CLAUDE.md`](../packages/contango/CLAUDE.md).
+
+## Weeklyput — item 57's put, in paper (EXPERIMENTAL, off by default)
+
+Sells the put nearest 10 delta on SPX, SPY, QQQ and IWM, seven calendar days before each weekly
+expiry that is not a standard monthly, in the last minutes of the session, and holds it to the
+expiry's posted close: no hedge, no stop. It is the one arm that [research item](glossary.md) 57 passed, on weekly
+expiries item 46 never read. One arm, `unhedged`; item 69 reads paper against item 57's replay of
+the same trades, so the paper run measures execution, not the premium again. Early assignment of
+the ETF puts is measured, never modelled. Paper-only and credential-free.
+
+→ Depth: [`weeklyput/README.md`](../packages/weeklyput/README.md), [`weeklyput/CLAUDE.md`](../packages/weeklyput/CLAUDE.md).
 
 ## Variance testing with arms (the distinguishing capability)
 

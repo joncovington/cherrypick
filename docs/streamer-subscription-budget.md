@@ -1,5 +1,7 @@
 # The producer's subscription burst — incident record and the fix
 
+> **Status (2026-11-08): incident record, 2026-08-24; four of the five fixes are built and the heartbeat gap is open, as marked in the text.**
+
 *Written 2026-08-24, during and immediately after the incident; the fix section re-checked against
 the code and rewritten 2026-08-26. The mitigation described under "What was done during the session"
 is live. **Four of the five fixes are built and one item — the heartbeat gap — is still open**; each

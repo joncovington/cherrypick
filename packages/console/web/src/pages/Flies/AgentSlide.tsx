@@ -1,4 +1,4 @@
-import { Fragment, useState } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type {
   AgentArmDay,
@@ -9,7 +9,23 @@ import type {
   FliesAgentPayload,
   TradingMode,
 } from "@console/shared";
-import { Card, DataCard, PnlCell } from "../../components/DataTable";
+import { Card, PnlCell } from "../../components/DataTable";
+import { HelpSection, HelpWarn, type CardHelpContent } from "../../components/CardHelp";
+import {
+  FilterGroup,
+  FilterSortButton,
+  FilterSortPanel,
+  FilterSummary,
+  FilterSwitch,
+  SortSection,
+  sortRows,
+  useSortChoice,
+  type SortOption,
+} from "../../components/FilterSort";
+import { useOpenParam } from "../Backtest/CardLightbox";
+import { FliesLayout } from "./FliesFilter";
+import { Section } from "../../components/Section";
+import { BoxOpen, FliesBoxHost, type FliesBox } from "./FliesBoxes";
 import { TileGrid } from "../../components/performance/TileGrid";
 import { ARM_COLORS, AXIS_FONT_FAMILY, AXIS_MUTED_HEX, SPOT_COLOR } from "../../components/chart/tokens";
 import { CHART_GRID } from "../../components/Charts";
@@ -17,6 +33,7 @@ import { niceTicks } from "../../components/chart/scales";
 import { hhmm, minuteOf } from "../../components/chart/time";
 import { fmtCash, fmtPct, fmtPrice } from "../../lib/format";
 import { Tile } from "./PerformanceTab";
+import { Tile as CountTile } from "../../components/performance/Tile";
 import { useTimeline } from "./TimelineCard";
 
 /**
@@ -212,27 +229,6 @@ function PassCell({ pass }: { pass: boolean | null }) {
   return <span className={pass ? "pnl-pos" : "pnl-neg"}>{pass ? "pass" : "not yet"}</span>;
 }
 
-function PackRow({ session, check, cols }: { session: string; check: AgentCheck; cols: number }) {
-  const pack = useQuery<FliesAgentPack>({
-    queryKey: ["flies-agent-pack", session, check.index],
-    queryFn: async () => {
-      const res = await fetch(`/api/flies/agent/pack?session=${session}&index=${String(check.index)}`);
-      if (!res.ok) throw new Error(`pack: HTTP ${res.status}`);
-      return (await res.json()) as FliesAgentPack;
-    },
-    staleTime: Infinity,
-  });
-  return (
-    <tr>
-      <td colSpan={cols}>
-        <pre className="spec-block" style={{ maxHeight: 360, overflow: "auto" }}>
-          {pack.data !== undefined ? JSON.stringify(pack.data.pack, null, 2) : pack.isError ? "pack not readable" : "reading…"}
-        </pre>
-      </td>
-    </tr>
-  );
-}
-
 function closeRow(c: AgentTaggedClose) {
   return (
     <tr key={`${c.arm}:${c.positionId}`}>
@@ -255,33 +251,285 @@ function closeRow(c: AgentTaggedClose) {
 }
 
 // --------------------------------------------------------------------------- the slide
+/** A table inside the agent's record lightbox: its caption stays inside, under the rows. */
+function RecordTable({
+  headers,
+  numFrom,
+  empty,
+  caption,
+  rowCount,
+  children,
+}: {
+  headers: string[];
+  numFrom?: number;
+  empty: string;
+  caption?: string;
+  rowCount: number;
+  children: ReactNode;
+}) {
+  return (
+    <>
+      {rowCount === 0 ? (
+        <p className="muted">{empty}</p>
+      ) : (
+        <div className="table-scroll">
+          <table className={`data-table${numFrom !== undefined ? ` num-from-${String(numFrom)}` : ""}`}>
+            <thead>
+              <tr>{headers.map((h, i) => <th key={`${h}-${String(i)}`}>{h}</th>)}</tr>
+            </thead>
+            <tbody>{children}</tbody>
+          </table>
+        </div>
+      )}
+      {caption ? <p className="muted pf-caption">{caption}</p> : null}
+    </>
+  );
+}
+
+function PackBody({ session, check }: { session: string; check: AgentCheck }) {
+  const pack = useQuery<FliesAgentPack>({
+    queryKey: ["flies-agent-pack", session, check.index],
+    queryFn: async () => {
+      const res = await fetch(`/api/flies/agent/pack?session=${session}&index=${String(check.index)}`);
+      if (!res.ok) throw new Error(`pack: HTTP ${res.status}`);
+      return (await res.json()) as FliesAgentPack;
+    },
+    staleTime: Infinity,
+  });
+  return (
+    <pre className="spec-block" style={{ maxHeight: "none", overflow: "auto" }}>
+      {pack.data !== undefined ? JSON.stringify(pack.data.pack, null, 2) : pack.isError ? "pack not readable" : "reading…"}
+    </pre>
+  );
+}
+
+/** The decisions' sorts: timing, cost (size) and the model's confidence. */
+export const CHECK_SORTS: SortOption<AgentCheck>[] = [
+  { id: "time", label: "time", hint: "earliest first", key: (c) => c.at },
+  { id: "cost", label: "cost", hint: "dearest first", key: (c) => (c.costUsd === null ? null : -c.costUsd) },
+  { id: "confidence", label: "confidence", hint: "most sure first", key: (c) => (c.confidence === null ? null : -c.confidence) },
+];
+
+/** The agent card's ?: what the agent does and what its spend and skipped checks are. */
+export const AGENT_HELP: CardHelpContent = {
+  title: "The agent",
+  body: (
+    <>
+      <HelpSection title="Paper arm">
+        <p>It reads and follows the paper arm only. With no fresh decision for the session the arm runs trend-rule&apos;s gate exactly.</p>
+      </HelpSection>
+      <HelpSection title="Spend">
+        <p>Every model call is costed. A call is made only near the trend band or with a vertical open; skipped checks are recorded too.</p>
+      </HelpSection>
+      <HelpSection title="The chart">
+        <p>
+          ■ a model call (amber gate on, blue gate off, grey not admissible) · ✕ an entry the gate refused · ○ ◆ the agent arm&apos;s
+          entries and completions · △ a close tagged · dashed: the open and the trend band the gate uses.
+        </p>
+      </HelpSection>
+    </>
+  ),
+};
+
+export const CHECKS_HELP: CardHelpContent = {
+  title: "Decisions",
+  body: (
+    <>
+      <HelpSection title="A row">
+        <p>One check: the model, its cost, the gate it chose, the closes it named, its confidence and its reason.</p>
+      </HelpSection>
+      <HelpSection title="The pack">
+        <p>
+          Every check is recorded with its pack, called or not: the material a deterministic rule is later fitted from. The pack is what the
+          model saw; open a row to read it.
+        </p>
+      </HelpSection>
+    </>
+  ),
+};
+
+export const RULE_HELP: CardHelpContent = {
+  title: "Tagged closes",
+  body: (
+    <>
+      <HelpWarn title="Recorded, never executed">
+        <p>The vertical settled as usual; the close is what the agent would have done. Net if closed is a valuation, never a fill.</p>
+      </HelpWarn>
+      <HelpSection title="Agent − rule">
+        <p>The sum of the module&apos;s per-session figures: the agent arm&apos;s settled net less trend-rule&apos;s, over the sessions both have.</p>
+      </HelpSection>
+    </>
+  ),
+};
+
+export type RecordTab = "arms" | "offer" | "shadow" | "closes" | "spend";
+
+/** One tab of the agent's record lightbox; each table keeps its caption inside. */
+export function RecordBody({ data, tab }: { data: FliesAgentPayload; tab: RecordTab }) {
+  const q = data.qualification;
+  const sessionCloses = q?.taggedCloses ?? [];
+  const perSession = [...(q?.perSession ?? [])].reverse();
+  const spend = [...(q?.spend ?? [])].reverse();
+  switch (tab) {
+    case "offer":
+      return (
+        <RecordTable
+          headers={["unlocks", "criterion", "value", "needs", ""]}
+          rowCount={q?.criteria.length ?? 0}
+          empty={data.qualificationStatus === "failed" ? "the qualification file could not be read" : "not evaluated yet"}
+          caption={
+            q === null
+              ? undefined
+              : `Paired over ${String(q.gates.n)} sessions: mean ${fmtCash(q.gates.mean)}, one-sided 95% bound ${fmtCash(q.gates.lower95)}` +
+                `${q.gates.sessionsNeeded !== null ? `, about ${String(q.gates.sessionsNeeded)} sessions to detect ${fmtCash(q.gates.targetEdge)} at this spread` : ""}` +
+                ` · evaluated ${q.generatedAt ?? "—"} by intraday_eval; "not scored" never unlocks.`
+          }
+        >
+          {(q?.criteria ?? []).map((c) => (
+            <tr key={c.id}>
+              <td>{c.mode === "gates" ? "gates" : "gates + closures"}</td>
+              <td>{c.label}</td>
+              <td>{criterionValue(c)}</td>
+              <td>{criterionThreshold(c)}</td>
+              <td><PassCell pass={c.pass} /></td>
+            </tr>
+          ))}
+        </RecordTable>
+      );
+    case "shadow":
+      return (
+        <RecordTable
+          headers={["session", "entries", "gate would refuse", "live effect", "paper effect", "counted", "agree"]}
+          numFrom={1}
+          rowCount={q?.shadow.sessions.length ?? 0}
+          empty="no live session run with the agent in shadow yet"
+          caption={
+            q === null
+              ? undefined
+              : `Live effect: what refusing the entries the agent's gate would have refused was worth (minus their settled net). Paper effect: agent arm less control, same session. ` +
+                `${String(q.shadow.agree)} of ${String(q.shadow.counted)} counted sessions agree in sign` +
+                ` · shadow closes tagged at live natural: ${String(q.shadow.closes.tagged)}, saved ${fmtCash(q.shadow.closes.saved)}` +
+                (q.liveClosesBuilt === false ? " · live closing orders are not built, so closures are never offered" : "")
+          }
+        >
+          {[...(q?.shadow.sessions ?? [])].reverse().map((r) => (
+            <tr key={r.session}>
+              <td>{r.session}</td>
+              <td>{r.entries}</td>
+              <td>{r.wouldRefuse}</td>
+              <td><PnlCell v={r.liveEffect} /></td>
+              <td><PnlCell v={r.paperEffect} /></td>
+              <td>{r.counted ? "yes" : <span className="muted">no effect</span>}</td>
+              <td>{r.agree === null ? <span className="muted">—</span> : r.agree ? "yes" : "no"}</td>
+            </tr>
+          ))}
+        </RecordTable>
+      );
+    case "closes":
+      return (
+        <RecordTable
+          headers={["session", "arm", "by", "tagged", "vertical", "spot", "entry", "close (natural)", "close (mid)", "fees", "settled net", "net if closed", "at 2x", "saved"]}
+          numFrom={5}
+          rowCount={sessionCloses.length + data.openTags.length}
+          empty="no close tagged yet"
+          caption="Recorded, never executed: the vertical settled as usual. Net if closed = (entry credit − natural debit) × 100 × qty − the round trip's modelled fees; at 2x adds one more spread (natural − mid). Open rows have no net until they settle."
+        >
+          {data.openTags.map((t) => (
+            <tr key={`open:${t.arm}:${t.positionId}`}>
+              <td>{data.session}</td>
+              <td>{t.arm}</td>
+              <td>{t.source ?? "—"}</td>
+              <td>{clock(t.taggedAt)}</td>
+              <td>{structure(t.side, t.center, t.wingWidth)}</td>
+              <td>{t.spot !== null ? t.spot.toFixed(2) : "—"}</td>
+              <td>{fmtPrice(t.credit)}</td>
+              <td>{fmtPrice(t.natural !== null ? -t.natural : null)}</td>
+              <td>{fmtPrice(t.mid !== null ? -t.mid : null)}</td>
+              <td className="muted" colSpan={5}>open: values when it settles</td>
+            </tr>
+          ))}
+          {[...sessionCloses].reverse().map(closeRow)}
+        </RecordTable>
+      );
+    case "spend":
+      return (
+        <RecordTable headers={["session", "target", "checks", "calls", "admissible", "cost", "by model"]} numFrom={2} rowCount={spend.length} empty="no spend recorded yet">
+          {spend.map((s) => (
+            <tr key={`${s.session}:${s.target}`}>
+              <td>{s.session}</td>
+              <td>{s.target}</td>
+              <td>{s.checks}</td>
+              <td>{s.calls}</td>
+              <td>{s.ok}</td>
+              <td>{usd(s.costUsd)}</td>
+              <td>{Object.entries(s.byModel).map(([m, v]) => `${m} ${String(v.calls)} · ${usd(v.costUsd)}`).join("; ") || "—"}</td>
+            </tr>
+          ))}
+        </RecordTable>
+      );
+    default:
+      return (
+        <RecordTable
+          headers={["session", "source", "decided", "control", "trend-rule", "agent", "agent − rule", "rule strands", "agent strands", "agent if closed (2x)"]}
+          numFrom={3}
+          rowCount={perSession.length}
+          empty={data.qualificationStatus === "absent" ? "not evaluated yet: `run.py agent-eval --write`, or the next settlement" : "no settled session for the rule or agent arm yet"}
+          caption="Settled net, after fees. Strands are uncompleted verticals over entries. The last column values the agent arm's tagged closes at natural plus one more spread's worth. Replay rows are control's recorded entries less those each gate refuses; past sessions kept no quotes, so they value no close."
+        >
+          {perSession.map((r) => (
+            <tr key={r.session}>
+              <td>{r.session}</td>
+              <td>{r.source === "replay" ? <span className="muted" title="historical replay: the gate only, no closes valued">replay</span> : "forward"}</td>
+              <td>{r.decided ? "yes" : <span className="muted">no</span>}</td>
+              <td><ArmNet day={r.control} /></td>
+              <td><ArmNet day={r.rule} /></td>
+              <td><ArmNet day={r.agent} /></td>
+              <td><PnlCell v={r.agentLessRule} /></td>
+              <td>{strands(r.rule)}</td>
+              <td>{strands(r.agent)}</td>
+              <td>{r.agent !== null ? <PnlCell v={r.agent.netCloses2x} /> : <span className="muted">—</span>}</td>
+            </tr>
+          ))}
+        </RecordTable>
+      );
+  }
+}
+
 export function AgentSlide({ mode, date }: { mode: TradingMode; date: string | null }) {
   const { data, isLoading, isError, dataUpdatedAt } = useAgent(date);
   const [showSkips, setShowSkips] = useState(false);
-  const [open, setOpen] = useState<number | null>(null);
+  const [sort, setSort] = useSortChoice("fl-agent-checks", "time");
+  const [panel, setPanel] = useState(false);
+  const anchor = useRef<HTMLButtonElement>(null);
+  const packs = useOpenParam("pack");
+  const record = useOpenParam("rec");
 
   // Paper-only until the live shadow is scored (step 4): refuse a live read rather than show the
   // paper arm under a live badge.
   if (mode === "live") {
     return (
-      <div className="cards cards-wide">
-        <section className="card">
-          <p className="muted">
-            This tab reads the paper arm and the module's qualification file, so it has no live view. The live shadow (chosen
-            per day at /live-flies-start) is scored there and shown under &quot;live shadow&quot; in the Paper view.
-          </p>
-        </section>
-      </div>
+      <FliesLayout>
+        <Section concept="stand" tag="the agent" question="What is the agent doing?">
+          <Card title="intraday agent">
+            <p className="muted">
+              This tab reads the paper arm and the module&apos;s qualification file, so it has no live view. The live shadow (chosen
+              per day at /live-flies-start) is scored there and shown under &quot;live shadow&quot; in the Paper view.
+            </p>
+          </Card>
+        </Section>
+      </FliesLayout>
     );
   }
 
   if (data === undefined) {
     return (
-      <div className="cards cards-wide">
-        <section className="card">
-          <p className="muted">{isLoading ? "reading…" : isError ? "the agent payload could not be read" : "—"}</p>
-        </section>
-      </div>
+      <FliesLayout>
+        <Section concept="stand" tag="the agent" question="What is the agent doing?">
+          <Card title="intraday agent">
+            <p className="muted">{isLoading ? "reading…" : isError ? "the agent payload could not be read" : "—"}</p>
+          </Card>
+        </Section>
+      </FliesLayout>
     );
   }
 
@@ -291,229 +539,172 @@ export function AgentSlide({ mode, date }: { mode: TradingMode; date: string | n
   const paperChecks = data.checks.filter((c) => c.target === "paper");
   const calls = paperChecks.filter((c) => c.called);
   const decisionValue = d?.fresh === true ? `gate ${d.trendGate ?? "?"}` : "rule";
-  const rows = showSkips ? paperChecks : calls;
+  const option = CHECK_SORTS.find((s) => s.id === sort.id) ?? CHECK_SORTS[0];
+  const rows = sortRows(showSkips ? paperChecks : calls, option, sort.reversed);
   const sessionCloses = q?.taggedCloses ?? [];
-  const perSession = [...(q?.perSession ?? [])].reverse();
   const spend = [...(q?.spend ?? [])].reverse();
   const decided = q?.sessions.decided ?? null;
   const minSessions = q?.criteria.find((c) => c.id === "decision_sessions")?.threshold ?? null;
+  const gaps = (q?.perSession ?? []).map((r) => r.agentLessRule).filter((v): v is number => v !== null);
+  const gapSum = gaps.length > 0 ? gaps.reduce((a, b) => a + b, 0) : null;
+  const changed = (showSkips ? 1 : 0) + (sort.id !== "time" || sort.reversed ? 1 : 0);
+  const reset = () => {
+    setShowSkips(false);
+    setSort({ id: "time", reversed: false });
+  };
+
+  const session = data.session;
+  const packBoxes: FliesBox[] =
+    session === null
+      ? []
+      : rows
+          .filter((c) => c.called)
+          .map((c) => ({
+            id: String(c.index),
+            kicker: "decisions ›",
+            title: `Pack · ${clock(c.at)}`,
+            chips: c.reason !== null ? <span className="chip">{c.reason}</span> : undefined,
+            tabs: [{ id: "pack", label: "what the model saw" }],
+            body: () => <PackBody session={session} check={c} />,
+          }));
+
+  const recordBox: FliesBox = {
+    id: "record",
+    kicker: "against the rule ›",
+    title: "The agent's record",
+    tabs: [
+      { id: "arms", label: "arms by session" },
+      { id: "offer", label: "live may offer" },
+      { id: "shadow", label: "live shadow" },
+      { id: "closes", label: "tagged closes" },
+      { id: "spend", label: "spend" },
+    ] satisfies Array<{ id: RecordTab; label: string }>,
+    body: (tab) => <RecordBody data={data} tab={tab as RecordTab} />,
+  };
 
   return (
-    <div className="cards cards-wide">
-      <section className="card">
-        <TileGrid count={6}>
-          <Tile
-            label="following now"
-            value={decisionValue}
-            tone={d?.fresh === true ? undefined : "dim"}
-            title={
-              d === null
-                ? "no decision file yet: the arm runs the fixed rule"
-                : d.fresh
-                  ? `${d.model ?? "?"} at ${clock(d.at)}, expires ${clock(d.expiresAt)}${d.reason !== null ? ` — ${d.reason}` : ""}`
-                  : "no fresh decision for this session: the arm runs trend-rule's gate exactly"
-            }
+    <FliesLayout>
+      <Section concept="stand" tag="the agent" question="What is the agent doing?">
+        <Card title="intraday agent" collapseKey="flies-agent" updatedAt={dataUpdatedAt} help={AGENT_HELP} className="fl-wide">
+          <TileGrid count={6}>
+            <Tile
+              label="following now"
+              value={decisionValue}
+              tone={d?.fresh === true ? undefined : "dim"}
+              title={
+                d === null
+                  ? "no decision file yet: the arm runs the fixed rule"
+                  : d.fresh
+                    ? `${d.model ?? "?"} at ${clock(d.at)}, expires ${clock(d.expiresAt)}${d.reason !== null ? ` — ${d.reason}` : ""}`
+                    : "no fresh decision for this session: the arm runs trend-rule's gate exactly"
+              }
+            />
+            <Tile label="last decision" value={d !== null && d.session === data.session ? `${clock(d.at)} · ${ageLabel(d.ageSeconds)}` : "—"} />
+            <Tile
+              label="calls this session"
+              value={`${String(calls.length)}${cfg?.maxCallsPerSession != null ? ` / ${String(cfg.maxCallsPerSession)}` : ""}`}
+              title={`${String(paperChecks.length)} checks; a call is made only near the trend band or with a vertical open`}
+            />
+            <Tile label="spend this session" value={usd(data.sessionSpend.calls > 0 ? data.sessionSpend.costUsd : null)} tone="dim" />
+            <Tile
+              label="sessions decided"
+              value={decided === null ? "—" : `${String(decided)}${minSessions !== null ? ` / ${String(minSessions)}` : ""}`}
+              title="sessions with an admissible paper decision, against the gates criterion"
+            />
+            <Tile
+              label="live may offer"
+              value={q !== null ? q.offeredModes.join(" · ") : "—"}
+              title={`capped by live_mode_max (${q?.liveModeMax ?? cfg?.liveModeMax ?? "?"}) and by the criteria in the record`}
+            />
+          </TileGrid>
+          {cfg !== null && !cfg.enabled && <p className="muted">The agent is off in flies.json (intraday_agent.enabled); the arm runs the fixed rule.</p>}
+          <div className="fl-chart">
+            <div className="card-subhead">{`the session${data.session !== null ? ` · ${data.session}` : ""}`}</div>
+            {data.session !== null ? (
+              <DecisionChart data={data} />
+            ) : (
+              <p className="muted">No agent session recorded yet: the job&apos;s first check runs at 09:30 on a session day.</p>
+            )}
+          </div>
+        </Card>
+      </Section>
+
+      <Section concept="hist" tag="record" question="What has it decided?">
+        <Card
+          title="decisions"
+          collapseKey="flies-agent-decisions"
+          className="fl-8"
+          help={CHECKS_HELP}
+          controls={<FilterSortButton changed={changed} open={panel} onOpen={() => setPanel(!panel)} anchor={anchor} />}
+        >
+          <FilterSummary
+            parts={[showSkips ? "every check" : "model calls only", `by ${option?.label ?? sort.id}${sort.reversed ? ", reversed" : ""}`]}
+            note={`${String(rows.length)} of ${String(paperChecks.length)} checks`}
+            changed={changed}
+            onOpen={() => setPanel(true)}
+            onReset={reset}
           />
-          <Tile label="last decision" value={d !== null && d.session === data.session ? `${clock(d.at)} · ${ageLabel(d.ageSeconds)}` : "—"} />
-          <Tile
-            label="calls this session"
-            value={`${String(calls.length)}${cfg?.maxCallsPerSession != null ? ` / ${String(cfg.maxCallsPerSession)}` : ""}`}
-            title={`${String(paperChecks.length)} checks; a call is made only near the trend band or with a vertical open`}
-          />
-          <Tile label="spend this session" value={usd(data.sessionSpend.calls > 0 ? data.sessionSpend.costUsd : null)} tone="dim" />
-          <Tile
-            label="sessions decided"
-            value={decided === null ? "—" : `${String(decided)}${minSessions !== null ? ` / ${String(minSessions)}` : ""}`}
-            title="sessions with an admissible paper decision, against the gates criterion"
-          />
-          <Tile
-            label="live may offer"
-            value={q !== null ? q.offeredModes.join(" · ") : "—"}
-            title={`capped by live_mode_max (${q?.liveModeMax ?? cfg?.liveModeMax ?? "?"}) and by the criteria below`}
-          />
-        </TileGrid>
-        {cfg !== null && !cfg.enabled && <p className="muted">The agent is off in flies.json (intraday_agent.enabled); the arm runs the fixed rule.</p>}
-      </section>
+          {rows.length === 0 ? (
+            <p className="muted">{paperChecks.length === 0 ? "no checks recorded for this session" : "no model calls this session"}</p>
+          ) : (
+            <div className="table-scroll">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    {["time", "check", "model", "cost", "secs", "gate", "closes", "conf.", "reason", ""].map((h, i) => (
+                      <th key={`${h}-${String(i)}`}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((c) => (
+                    <tr key={c.index}>
+                      <td>{clock(c.at)}</td>
+                      <td>{c.called ? (c.trigger ?? "called") : <span className="muted">{c.skipped ?? "skipped"}</span>}</td>
+                      <td>{c.model ?? "—"}</td>
+                      <td>{usd(c.costUsd)}</td>
+                      <td>{c.seconds !== null ? c.seconds.toFixed(0) : "—"}</td>
+                      <td>{c.called ? (c.ok === true ? (c.trendGate ?? "—") : <span className="pnl-neg" title={c.error ?? ""}>not admissible</span>) : "—"}</td>
+                      <td>
+                        {c.closeLabels.join(", ") || "—"}
+                        {c.droppedCloses.length > 0 && <span className="muted" title="past the wing: dropped by the validator"> (dropped {c.droppedCloses.join(", ")})</span>}
+                      </td>
+                      <td>{c.confidence !== null ? c.confidence.toFixed(2) : "—"}</td>
+                      <td>{c.reason ?? (c.error !== null ? <span className="muted">{c.error}</span> : "—")}</td>
+                      <td>
+                        {c.called && session !== null && (
+                          <button type="button" className="pf-more" onClick={() => packs.show(String(c.index))} aria-label={`Open the pack for ${clock(c.at)}`}>
+                            pack <span aria-hidden="true">›</span>
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <FilterSortPanel open={panel} onClose={() => setPanel(false)} onReset={reset} anchor={anchor}>
+            <FilterGroup title="show">
+              <FilterSwitch label="skipped checks" description="every check is recorded, called or not" on={showSkips} onChange={setShowSkips} />
+            </FilterGroup>
+            <SortSection sorts={CHECK_SORTS} choice={sort} fallback="time" onChange={setSort} />
+          </FilterSortPanel>
+        </Card>
 
-      <Card title={`the session${data.session !== null ? ` · ${data.session}` : ""}`} updatedAt={dataUpdatedAt}>
-        {data.session !== null ? (
-          <DecisionChart data={data} />
-        ) : (
-          <p className="muted">No agent session recorded yet: the job's first check runs at 09:30 on a session day.</p>
-        )}
-        <p className="muted">
-          ■ a model call (amber gate on, blue gate off, grey not admissible) · ✕ an entry the gate refused · ○ ◆ the agent arm's
-          entries and completions · △ a close tagged · dashed: the open and ±{q?.trendBandPoints ?? "?"} points, the gate's band
-          {data.dayOpen === null ? " (drawn once a call has seen the open)" : ""}
-        </p>
-      </Card>
-
-      <DataCard
-        title="decisions"
-        headers={["time", "check", "model", "cost", "secs", "gate", "closes", "conf.", "reason", ""]}
-        loading={false}
-        rowCount={rows.length}
-        empty={paperChecks.length === 0 ? "no checks recorded for this session" : "no model calls this session"}
-        controls={
-          <label className="muted">
-            <input type="checkbox" checked={showSkips} onChange={(e) => setShowSkips(e.target.checked)} /> show skipped checks
-          </label>
-        }
-        footer="Every check is recorded with its pack, called or not: the material a deterministic rule is later fitted from. The pack is what the model saw."
-      >
-        {rows.map((c) => (
-          <Fragment key={c.index}>
-            <tr>
-              <td>{clock(c.at)}</td>
-              <td>{c.called ? (c.trigger ?? "called") : <span className="muted">{c.skipped ?? "skipped"}</span>}</td>
-              <td>{c.model ?? "—"}</td>
-              <td>{usd(c.costUsd)}</td>
-              <td>{c.seconds !== null ? c.seconds.toFixed(0) : "—"}</td>
-              <td>{c.called ? (c.ok === true ? (c.trendGate ?? "—") : <span className="pnl-neg" title={c.error ?? ""}>not admissible</span>) : "—"}</td>
-              <td>
-                {c.closeLabels.join(", ") || "—"}
-                {c.droppedCloses.length > 0 && <span className="muted" title="past the wing: dropped by the validator"> (dropped {c.droppedCloses.join(", ")})</span>}
-              </td>
-              <td>{c.confidence !== null ? c.confidence.toFixed(2) : "—"}</td>
-              <td>{c.reason ?? (c.error !== null ? <span className="muted">{c.error}</span> : "—")}</td>
-              <td>
-                {c.called && data.session !== null && (
-                  <button type="button" className="link-button" onClick={() => setOpen(open === c.index ? null : c.index)}>
-                    {open === c.index ? "hide pack" : "pack"}
-                  </button>
-                )}
-              </td>
-            </tr>
-            {open === c.index && data.session !== null && <PackRow session={data.session} check={c} cols={10} />}
-          </Fragment>
-        ))}
-      </DataCard>
-
-      <DataCard
-        title="arms by session"
-        headers={["session", "source", "decided", "control", "trend-rule", "agent", "agent − rule", "rule strands", "agent strands", "agent if closed (2x)"]}
-        loading={false}
-        rowCount={perSession.length}
-        empty={data.qualificationStatus === "absent" ? "not evaluated yet: `run.py agent-eval --write`, or the next settlement" : "no settled session for the rule or agent arm yet"}
-        numFrom={3}
-        footer="Settled net, after fees. Strands are uncompleted verticals over entries. The last column values the agent arm's tagged closes at natural plus one more spread's worth. Replay rows are control's recorded entries less those each gate refuses; past sessions kept no quotes, so they value no close."
-      >
-        {perSession.map((r) => (
-          <tr key={r.session}>
-            <td>{r.session}</td>
-            <td>{r.source === "replay" ? <span className="muted" title="historical replay: the gate only, no closes valued">replay</span> : "forward"}</td>
-            <td>{r.decided ? "yes" : <span className="muted">no</span>}</td>
-            <td><ArmNet day={r.control} /></td>
-            <td><ArmNet day={r.rule} /></td>
-            <td><ArmNet day={r.agent} /></td>
-            <td><PnlCell v={r.agentLessRule} /></td>
-            <td>{strands(r.rule)}</td>
-            <td>{strands(r.agent)}</td>
-            <td>{r.agent !== null ? <PnlCell v={r.agent.netCloses2x} /> : <span className="muted">—</span>}</td>
-          </tr>
-        ))}
-      </DataCard>
-
-      <DataCard
-        title="what live may offer"
-        headers={["unlocks", "criterion", "value", "needs", ""]}
-        loading={false}
-        rowCount={q?.criteria.length ?? 0}
-        empty={data.qualificationStatus === "failed" ? "the qualification file could not be read" : "not evaluated yet"}
-        footer={
-          q === null
-            ? undefined
-            : `Paired over ${String(q.gates.n)} sessions: mean ${fmtCash(q.gates.mean)}, one-sided 95% bound ${fmtCash(q.gates.lower95)}` +
-              `${q.gates.sessionsNeeded !== null ? `, about ${String(q.gates.sessionsNeeded)} sessions to detect ${fmtCash(q.gates.targetEdge)} at this spread` : ""}` +
-              ` · evaluated ${q.generatedAt ?? "—"} by intraday_eval; "not scored" never unlocks.`
-        }
-      >
-        {(q?.criteria ?? []).map((c) => (
-          <tr key={c.id}>
-            <td>{c.mode === "gates" ? "gates" : "gates + closures"}</td>
-            <td>{c.label}</td>
-            <td>{criterionValue(c)}</td>
-            <td>{criterionThreshold(c)}</td>
-            <td><PassCell pass={c.pass} /></td>
-          </tr>
-        ))}
-      </DataCard>
-
-      <DataCard
-        title="live shadow"
-        headers={["session", "entries", "gate would refuse", "live effect", "paper effect", "counted", "agree"]}
-        loading={false}
-        rowCount={q?.shadow.sessions.length ?? 0}
-        empty="no live session run with the agent in shadow yet"
-        numFrom={1}
-        footer={
-          q === null
-            ? undefined
-            : `Live effect: what refusing the entries the agent's gate would have refused was worth (minus their settled net). Paper effect: agent arm less control, same session. ` +
-              `${String(q.shadow.agree)} of ${String(q.shadow.counted)} counted sessions agree in sign` +
-              ` · shadow closes tagged at live natural: ${String(q.shadow.closes.tagged)}, saved ${fmtCash(q.shadow.closes.saved)}` +
-              (q.liveClosesBuilt === false ? " · live closing orders are not built, so closures are never offered" : "")
-        }
-      >
-        {[...(q?.shadow.sessions ?? [])].reverse().map((r) => (
-          <tr key={r.session}>
-            <td>{r.session}</td>
-            <td>{r.entries}</td>
-            <td>{r.wouldRefuse}</td>
-            <td><PnlCell v={r.liveEffect} /></td>
-            <td><PnlCell v={r.paperEffect} /></td>
-            <td>{r.counted ? "yes" : <span className="muted">no effect</span>}</td>
-            <td>{r.agree === null ? <span className="muted">—</span> : r.agree ? "yes" : "no"}</td>
-          </tr>
-        ))}
-      </DataCard>
-
-      <DataCard
-        title="tagged closes"
-        headers={["session", "arm", "by", "tagged", "vertical", "spot", "entry", "close (natural)", "close (mid)", "fees", "settled net", "net if closed", "at 2x", "saved"]}
-        loading={false}
-        rowCount={sessionCloses.length + data.openTags.length}
-        empty="no close tagged yet"
-        numFrom={5}
-        footer="Recorded, never executed: the vertical settled as usual. Net if closed = (entry credit − natural debit) × 100 × qty − the round trip's modelled fees; at 2x adds one more spread (natural − mid). Open rows have no net until they settle."
-      >
-        {data.openTags.map((t) => (
-          <tr key={`open:${t.arm}:${t.positionId}`}>
-            <td>{data.session}</td>
-            <td>{t.arm}</td>
-            <td>{t.source ?? "—"}</td>
-            <td>{clock(t.taggedAt)}</td>
-            <td>{structure(t.side, t.center, t.wingWidth)}</td>
-            <td>{t.spot !== null ? t.spot.toFixed(2) : "—"}</td>
-            <td>{fmtPrice(t.credit)}</td>
-            <td>{fmtPrice(t.natural !== null ? -t.natural : null)}</td>
-            <td>{fmtPrice(t.mid !== null ? -t.mid : null)}</td>
-            <td className="muted" colSpan={5}>open: values when it settles</td>
-          </tr>
-        ))}
-        {[...sessionCloses].reverse().map(closeRow)}
-      </DataCard>
-
-      <DataCard
-        title="spend"
-        headers={["session", "target", "checks", "calls", "admissible", "cost", "by model"]}
-        loading={false}
-        rowCount={spend.length}
-        empty="no spend recorded yet"
-        numFrom={2}
-      >
-        {spend.map((s) => (
-          <tr key={`${s.session}:${s.target}`}>
-            <td>{s.session}</td>
-            <td>{s.target}</td>
-            <td>{s.checks}</td>
-            <td>{s.calls}</td>
-            <td>{s.ok}</td>
-            <td>{usd(s.costUsd)}</td>
-            <td>{Object.entries(s.byModel).map(([m, v]) => `${m} ${String(v.calls)} · ${usd(v.costUsd)}`).join("; ") || "—"}</td>
-          </tr>
-        ))}
-      </DataCard>
-    </div>
+        <Card title="against the rule" collapseKey="flies-agent-rule" className="fl-4" help={RULE_HELP} flag="recorded, never executed">
+          <TileGrid count={3}>
+            <CountTile label="agent − rule" value={fmtCash(gapSum)} tone={gapSum === null ? "dim" : gapSum >= 0 ? "pos" : "neg"} n={gaps.length} nUnit="sessions" afterFees />
+            <Tile label="tagged closes" value={String(sessionCloses.length + data.openTags.length)} />
+            <Tile label="spend, all sessions" value={usd(spend.length > 0 ? spend.reduce((a, s) => a + (s.costUsd ?? 0), 0) : null)} tone="dim" />
+          </TileGrid>
+          <div className="pf-mores pf-push">
+            <BoxOpen lb={record} id="record" hot>the agent&apos;s record</BoxOpen>
+          </div>
+        </Card>
+      </Section>
+      <FliesBoxHost lb={packs} boxes={packBoxes} />
+      <FliesBoxHost lb={record} boxes={[recordBox]} />
+    </FliesLayout>
   );
 }

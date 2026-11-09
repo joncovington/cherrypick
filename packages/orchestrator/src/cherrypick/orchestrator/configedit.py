@@ -47,10 +47,6 @@ GUARDED: dict[str, dict[str, str]] = {
         "/live/daily_loss_halt_dollars": "live loss halt — hand-edit deliberately, not from this surface",
         "/live/kill": "the frozen kill criteria (B1) — derived, dated and written by hand, never here",
     },
-    "earnings": {
-        "/enable_live_trading": "hand-edit after the live-trading plan's gates; never from this surface",
-        "/live/kill": "the frozen kill criteria (B1) — derived, dated and written by hand, never here",
-    },
     # flies carried only the switch, the attestation and the two loss caps until 2026-09-23, while
     # bwb — whose live block is the same shape — guarded its arm selector, its margin cap and its
     # credit floor too. That asymmetry was backwards: the "cannot arm the loop but can widen it once
@@ -114,6 +110,7 @@ _MODULE_TARGETS: tuple[str, ...] = (
     "meic",
     "pmcc",
     "streamer",
+    "weeklyput",
 )
 
 # Each target's config.example.json, relative to the orchestrator checkout (cfgmod.ROOT). Used by
@@ -132,6 +129,7 @@ _EXAMPLE_REL: dict[str, str] = {
     "meic-risk": "../meic/config.risk.example.json",
     "pmcc": "../pmcc/config.example.json",
     "streamer": "../streamer/config.example.json",
+    "weeklyput": "../weeklyput/config.example.json",
 }
 
 

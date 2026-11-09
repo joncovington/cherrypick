@@ -122,16 +122,7 @@ Suite context: the root [documentation index](../../docs/README.md), especially
 
 ## Commands
 
-```bash
-python run.py stream --symbol SPX     # standalone streamer -> source.stream_cache_db (repoint it first)
-python run.py record                  # always-on spot-trail + regime recorder (--once / --interval / --status)
-python run.py gex --symbol SPX --json # one-shot payload to the terminal
-python run.py pin-study [--json]      # which recorded level the close settled nearest, over stored history
-python run.py repair-history [--json] # report off-hours gex_regime_history rows (--apply removes; DB copied first)
-python run.py coverage [--session D]  # did the recorder keep a whole session of every series (JSON, read-only)
-python -m pytest                      # tests seed a temp cache; no streamer required
-ruff check . ; ruff format .          # line-length 110
-```
+Commands to run the package, its tests and its lint are in [README.md](README.md#commands).
 
 Config: copy `config.example.json` → `config.json` (git-ignored); paths resolve relative to the config
 file's directory.

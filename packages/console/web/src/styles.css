@@ -3570,8 +3570,7 @@ select.text-input {
    (`.table-scroll`, around every table), card headers wrap, and the chrome gives way first. */
 .status-header,
 .mf-sub,
-.card,
-.ts-card {
+.card {
   min-width: 0;
 }
 .table-scroll {
@@ -3985,85 +3984,6 @@ select.text-input {
   margin: 0 0 0.5rem;
 }
 
-/* ---- Options flow (2026-10-03) ----
-   QuikOptions' Hot Options Report. The cards hold tables of up to ten rows inside the fixed card
-   heights, so the rows are a step tighter than a full-page data table and start at the top of the
-   card body rather than its centre. */
-.gcard .flow-table {
-  font-size: 12px;
-}
-.gcard .flow-table th,
-.gcard .flow-table td {
-  padding-top: 2px;
-  padding-bottom: 2px;
-}
-.gcard-body:has(> .flow-table) {
-  justify-content: flex-start;
-  overflow: hidden;
-}
-.flow-bar {
-  display: block;
-}
-.flow-table tr.flow-linked td {
-  background: rgba(166, 173, 184, 0.06);
-}
-/* The Morning report's OCC card marks a name the Options flow capture also holds. */
-.flow-mark {
-  margin-left: 0.4em;
-  font-size: 10px;
-  padding: 0 0.35em;
-}
-
-/* The post page (`/post/flow`): the Discord series' captures. A fixed width a phone reads once
-   Discord scales the image, and cards as tall as their rows rather than the grid's fixed steps. */
-.post-page {
-  width: 1280px;
-  padding: 12px;
-  background: var(--canvas);
-}
-.gcard.post-card {
-  height: auto;
-}
-/* Derived flow and Top spreads take the page's full width (2026-10-03: widened so a row's flags fit
-   on one line); the narrower tables keep 1,000 px so their pictures do not stretch. */
-.gcard.post-card.post-card-narrow {
-  max-width: 1000px;
-}
-.band-key {
-  margin-left: 0.6em;
-  text-transform: none;
-}
-.band-key > span {
-  margin-right: 0.7em;
-  white-space: nowrap;
-}
-/* The flags' key under a derived-flow table: one flag a line, the flag set like the table's own. */
-.flag-key {
-  margin: 0.6rem 0 0;
-  font-size: 11px;
-  color: var(--text-muted);
-}
-.flag-key > div {
-  display: flex;
-  gap: 0.6em;
-  line-height: 1.5;
-}
-.flag-key dt {
-  min-width: 16em;
-  font-family: var(--num-face);
-  color: var(--text);
-}
-.flag-key dd {
-  margin: 0;
-}
-/* Flags as abbreviations in a narrow column, keyed under the table (`FLAG_ABBR`, `FlagKey`). */
-.flag-abbr {
-  color: var(--warn);
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: 0 0.6em;
-}
-
 /* ---------------------------------------------------------------------------
  * The MEIC summary slide — the surface that seeded the adopted theme (2026-10,
  * docs/history.md, 2026-10-15): rounded cards, blue selection, mint/salmon sign tones. Its
@@ -4139,29 +4059,6 @@ select.text-input {
   .ts-row-4 {
     grid-template-columns: repeat(2, 1fr);
   }
-}
-
-.ts-card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  padding: 14px 16px;
-  min-width: 0; /* lets the grid cell, not the content, set the width (charts measure it) */
-}
-.ts-card-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 8px;
-}
-.ts-card-head h3 {
-  margin: 0;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-muted);
 }
 
 .ts-pos {
@@ -4793,7 +4690,8 @@ select.text-input {
 .ts-legend {
   margin: 0;
   display: flex;
-  gap: 16px;
+  flex-wrap: wrap;
+  gap: 4px 16px;
   justify-content: center;
   font-size: 12px;
   color: var(--text-muted);
@@ -5767,6 +5665,69 @@ select.text-input {
   padding: 14px 16px;
   border: 1px solid var(--warn);
   border-radius: 12px;
+}
+
+/* The This week summary sits above the tiles, not inside a study, so it is not a warning. */
+.study-week {
+  border-color: var(--border);
+  margin-bottom: 12px;
+}
+
+/* A study's Report tab (StudyReport.tsx). */
+.study-report section {
+  margin-bottom: 18px;
+}
+.study-report h4 {
+  margin: 0 0 6px;
+}
+.study-reading {
+  margin: 0 0 6px;
+}
+.study-reading-decision {
+  font-size: 1.05em;
+}
+.study-advice {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.study-advice li {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.study-report-note {
+  font-size: 0.85em;
+}
+.study-gates {
+  margin: 0;
+  display: grid;
+  gap: 8px;
+}
+.study-gates dt {
+  font-weight: 600;
+}
+.study-gates dd {
+  margin: 2px 0 0;
+}
+.study-report-legend {
+  font-size: 0.85em;
+  display: flex;
+  gap: 12px;
+  margin: 4px 0;
+}
+.study-report-legend i {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  vertical-align: -1px;
+}
+.study-report-table {
+  overflow-x: auto;
 }
 
 .study-decision {
@@ -7697,64 +7658,6 @@ select.text-input {
   font-size: 12.5px;
 }
 
-.ldg-cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 10px;
-}
-
-.ldg-card {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 14px 16px;
-  text-align: left;
-  font: inherit;
-  color: var(--text);
-  background: var(--surface-sunken);
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  cursor: pointer;
-  min-width: 0;
-}
-
-.ldg-card:hover {
-  border-color: var(--chart-grid-strong);
-}
-
-.ldg-card:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-.ldg-card.is-neg {
-  border-color: color-mix(in srgb, var(--neg) 45%, var(--border));
-}
-
-.ldg-card-top {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 8px;
-}
-
-.ldg-card-name {
-  font-family: var(--num-face);
-  font-size: 17px;
-  font-weight: 600;
-}
-
-.ldg-card-net {
-  font-family: var(--num-face);
-  font-size: 15px;
-}
-
-.ldg-card-parts,
-.ldg-card-sub {
-  font-size: 12px;
-  color: var(--text-dim);
-}
-
 .ldg-actions {
   display: flex;
   justify-content: flex-end;
@@ -9293,6 +9196,104 @@ button.chip[aria-pressed][data-hue="special"],
     padding-left: 12px;
   }
 }
+/* The backtest tabs' rows (2026-11-07): a tile on one line; a row opens the tile's lightbox. */
+.bt-rows {
+  margin-top: 12px;
+}
+.bt-row {
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(110px, 0.8fr) minmax(0, 2.2fr) minmax(0, 1.6fr) minmax(0, 1.3fr) 12px;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 12px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.bt-row:hover {
+  background: var(--surface-hover);
+}
+.bt-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.bt-item.is-attn {
+  box-shadow: inset 3px 0 0 var(--warn);
+}
+.bt-row-lead {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  flex-wrap: wrap;
+  min-width: 0;
+  font-weight: 600;
+}
+.bt-row-title {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.bt-row-meta,
+.bt-row-end {
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: 11.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.bt-row-end {
+  text-align: right;
+}
+.bt-row-open {
+  color: var(--text-muted);
+}
+/* A verdict word keeps its tile's tone, at the row's size. */
+.bt-row .study-tile-word,
+.mf-layout[data-module="backtest"] .bt-row .study-tile-word {
+  font-size: 12.5px;
+}
+.bt-row .study-tile-status {
+  font-size: 12px;
+}
+.bt-row .q-pos {
+  font-size: 13px;
+  min-width: 1.4em;
+}
+@container trlist (max-width: 640px) {
+  .bt-row {
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas:
+      "l e"
+      "t t"
+      "m m";
+    row-gap: 3px;
+  }
+  .bt-row-lead {
+    grid-area: l;
+    flex-wrap: nowrap;
+  }
+  .bt-row-end {
+    grid-area: e;
+  }
+  .bt-row-title {
+    grid-area: t;
+    white-space: normal;
+  }
+  .bt-row-meta {
+    grid-area: m;
+    white-space: normal;
+  }
+  .bt-row-open {
+    display: none;
+  }
+}
 /* A trade card's leg: its quote and delta right-aligned and muted, so the legs read in the order chain's columns. */
 .tc-leg-quote {
   margin-left: auto;
@@ -9726,4 +9727,424 @@ button.chip[aria-pressed][data-hue="special"],
 }
 .vr-card .pos-card-foot > span:first-child {
   white-space: normal;
+}
+
+/* redesign: flies-a */
+/* Flies session, forest, timeline, positions, books, history and opening range, laid out in the portfolio
+   tab's sections (pf-layout / pf-sec / pf-row). A flies card names its width: w3 four to a row, w4 and
+   w8 a third and two thirds, w6 halves; each folds by the width the page really has. */
+.pf-c-edge { --pf-c: var(--warn); }
+
+.pf-row > .card.fl-w3 { grid-column: span 3; }
+.pf-row > .card.fl-w4 { grid-column: span 4; }
+.pf-row > .card.fl-w6 { grid-column: span 6; }
+.pf-row > .card.fl-w8 { grid-column: span 8; }
+@container pf (max-width: 1100px) {
+  .pf-row > .card.fl-w3 { grid-column: span 6; }
+  .pf-row > .card.fl-w4,
+  .pf-row > .card.fl-w8 { grid-column: 1 / -1; }
+}
+@container pf (max-width: 760px) {
+  .pf-row > .card.fl-w6 { grid-column: 1 / -1; }
+}
+@container pf (max-width: 520px) {
+  .pf-row > .card.fl-w3 { grid-column: 1 / -1; }
+}
+
+/* A tile of the day: its figure, one state line, the link to its tab on the floor. */
+.fl-hero {
+  font-family: var(--num-face);
+  font-size: 22px;
+  font-weight: 700;
+  margin: 0.25rem 0 0.4rem;
+  overflow-wrap: anywhere;
+}
+.fl-state {
+  margin: 0.5rem 0 0;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.fl-tile .stat-bullet,
+.fl-tile .bullet {
+  margin-top: 0.25rem;
+}
+
+/* The scope filter's panel: one field a group. */
+.fl-field {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.fl-choice {
+  flex-wrap: wrap;
+  height: auto;
+}
+
+/* A trade log row opened in place: its card, full width under the row. */
+.fl-open > td {
+  background: var(--surface-sunken);
+  padding: 10px 12px;
+}
+.fl-open .pos-card {
+  max-width: 460px;
+}
+
+/* redesign: flies-b */
+.pf-row > .card.fl-wide {
+  grid-column: 1 / -1;
+}
+.pf-row > .card.fl-8 {
+  grid-column: span 8;
+}
+.pf-row > .card.fl-4 {
+  grid-column: span 4;
+}
+@container pf (max-width: 900px) {
+  .pf-row > .card.fl-8,
+  .pf-row > .card.fl-4 {
+    grid-column: 1 / -1;
+  }
+}
+.fl-chart {
+  margin-top: 0.75rem;
+}
+.fl-gloss {
+  margin: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+.fl-gloss dt {
+  margin: 0;
+}
+.fl-gloss dd {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+.fl-layout td .pf-more {
+  white-space: nowrap;
+}
+
+/* redesign: gaps (one Section suite-wide; MEIC history totals that wrap) */
+.lv-totals {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+/* redesign: shared-b (analysis: one block per arm, its name and window above its sections) */
+.an-arm {
+  display: grid;
+  gap: 1.1rem;
+  min-width: 0;
+}
+.an-arm-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.2rem 0.8rem;
+  padding: 0.2rem 0.15rem 0;
+  border-top: 1px solid var(--border-strong);
+}
+.an-arm-name {
+  margin: 0;
+  font-size: 1.05rem;
+}
+.an-arm-head p {
+  margin: 0;
+}
+.an-layout {
+  gap: 1.6rem;
+}
+
+/* redesign: today-open (Live > today: what is open at each loop's mark, under the realised net) */
+.lt-open {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 14px;
+  margin: 0.2rem 0 0.6rem;
+  font-size: 13px;
+}
+.lt-open-lab {
+  color: var(--text-muted);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.lt-open-item {
+  font-family: var(--num-face);
+}
+.lt-open-total {
+  font-family: var(--num-face);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+/* help-tables (2026-11-07): a table inside a card's ? scrolls in its own box instead of widening the
+   help body's grid column, which clipped every paragraph beside it; help tables sit a size smaller. */
+.help-body {
+  grid-template-columns: minmax(0, 1fr);
+}
+.help-body .data-table {
+  font-size: 12px;
+}
+.help-body .data-table th,
+.help-body .data-table td {
+  padding: 4px 6px;
+  white-space: normal;
+}
+
+/* ---- External reports (2026-11-08): a table card is as tall as its rows, whatever the grid step. ---- */
+.gcard.external-card {
+  height: auto;
+}
+.gcard.external-card .gcard-body {
+  justify-content: flex-start;
+}
+.external-glyph {
+  vertical-align: -1px;
+  opacity: 0.6;
+}
+.external-text {
+  white-space: pre-wrap;
+  margin: 0;
+}
+.external-invalid {
+  margin: 0.4rem 0;
+}
+.external-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1rem;
+  margin: 0 0 1rem;
+  border-bottom: 1px solid var(--border, rgba(128, 128, 128, 0.3));
+}
+.external-tab {
+  padding: 0.3rem 0;
+  color: var(--text-muted);
+  text-decoration: none;
+}
+.external-tab[aria-current="page"] {
+  color: var(--text);
+  border-bottom: 2px solid var(--accent, currentColor);
+}
+.external-tab-bad {
+  color: var(--warn);
+}
+.external-bar {
+  display: inline-flex;
+  width: 84px;
+  height: 8px;
+  margin-left: 0.8em;
+  vertical-align: middle;
+}
+.external-bar-half {
+  flex: 1;
+  display: flex;
+  height: 100%;
+}
+.external-bar-signed .external-bar-left {
+  justify-content: flex-end;
+  border-right: 1px solid var(--text-muted);
+}
+.external-bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: 1px;
+}
+.external-bar-pos {
+  background: var(--pos);
+}
+.external-bar-neg {
+  background: var(--neg);
+}
+
+/* ---- External reports: presentation hints (2026-11-08) ----
+   A table's own look, set by the report: formats, tones, a stacked bar with its legend, a key under
+   the table and a footnote at the card's foot. Every colour is an existing theme token, so each works
+   in light and dark. Rows are a step tighter than a full-page table, as the Options flow tables were. */
+.gcard.external-card {
+  --stack-1: var(--text-dim);
+  --stack-2: color-mix(in srgb, var(--neg) 50%, transparent);
+  --stack-3: var(--accent);
+  --stack-4: var(--warn);
+  --stack-5: var(--chart-special);
+  --stack-6: var(--chart-orange);
+}
+.external-table {
+  font-size: 13px;
+}
+.external-table th,
+.external-table td {
+  padding-top: 3px;
+  padding-bottom: 3px;
+}
+.external-table th.external-right,
+.external-table td.external-right {
+  text-align: right;
+}
+.external-table th.external-narrow {
+  width: 1%;
+}
+.external-table th.external-wide {
+  width: 45%;
+}
+.external-index {
+  color: var(--text-muted);
+}
+.external-table tr.external-row-strong td {
+  color: var(--text);
+  font-weight: 600;
+}
+.external-table tr.external-row-dim td {
+  color: var(--text-muted);
+}
+/* After the row rules, at the same weight, so a cell's own tone beats its row's. */
+.external-table tr td.external-tone-pos,
+.external-key-tag.external-tone-pos {
+  color: var(--pos);
+}
+.external-table tr td.external-tone-neg,
+.external-key-tag.external-tone-neg {
+  color: var(--neg);
+}
+.external-table tr td.external-tone-warn,
+.external-key-tag.external-tone-warn {
+  color: var(--warn);
+}
+.external-table tr td.external-tone-muted,
+.external-key-tag.external-tone-muted {
+  color: var(--text-muted);
+}
+.external-table tr td.external-tone-strong,
+.external-key-tag.external-tone-strong {
+  color: var(--text);
+  font-weight: 600;
+}
+.external-suffix {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+.external-suffix.external-tone-pos {
+  color: var(--pos);
+}
+.external-suffix.external-tone-neg {
+  color: var(--neg);
+}
+.external-suffix.external-tone-warn {
+  color: var(--warn);
+}
+.external-marker {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: 0.5em;
+  background: var(--text-muted);
+  vertical-align: baseline;
+}
+.external-marker-dot {
+  border-radius: 50%;
+}
+.external-marker.external-tone-pos {
+  background: var(--pos);
+}
+.external-marker.external-tone-neg {
+  background: var(--neg);
+}
+.external-marker.external-tone-warn {
+  background: var(--warn);
+}
+.external-marker.external-tone-strong {
+  background: var(--text);
+}
+.external-stack {
+  display: inline-flex;
+  height: 10px;
+  vertical-align: middle;
+}
+.external-stack-seg {
+  display: block;
+  height: 100%;
+}
+.external-stack-1 {
+  background: var(--stack-1);
+}
+.external-stack-2 {
+  background: var(--stack-2);
+}
+.external-stack-3 {
+  background: var(--stack-3);
+}
+.external-stack-4 {
+  background: var(--stack-4);
+}
+.external-stack-5 {
+  background: var(--stack-5);
+}
+.external-stack-6 {
+  background: var(--stack-6);
+}
+.external-legend {
+  margin-left: 0.8em;
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+}
+.external-legend > span {
+  margin-right: 0.7em;
+  white-space: nowrap;
+}
+.external-swatch {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+}
+/* The key under a table: a tag in its tone, an optional label, and the text that explains it. */
+.external-key {
+  margin: 0.6rem 0 0;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.external-key > div {
+  display: flex;
+  gap: 0.6em;
+  line-height: 1.5;
+}
+.external-key dt {
+  min-width: 16em;
+  font-family: var(--num-face);
+  color: var(--text);
+}
+.external-key dd {
+  margin: 0;
+}
+.external-key-tag {
+  margin-right: 0.2em;
+}
+.external-footnote {
+  margin: 0.6rem 0 0;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.external-suffix.external-tone-strong {
+  color: var(--text);
+}
+
+/* A bar with its own column after the number, and a grey track under any bar. */
+.external-bar-track {
+  background: var(--track);
+}
+.external-table th.external-barcol,
+.external-table td.external-barcol {
+  width: 1%;
+  padding-left: 0;
+}
+.external-barcol .external-bar {
+  margin-left: 0;
 }

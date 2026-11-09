@@ -22,6 +22,8 @@ NEW = {
     "mechanism": "fear premium after a down day",
     "rivals": [{"explanation": "market drift", "check": "same entries on up days"}],
     "pointer": "docs/edge-hypotheses-plan.md#the-rule-this-plan-follows",
+    "scripts": ["packages/backtest/scripts/credit_spread_item17.py"],
+    "tests": ["packages/backtest/tests/test_credit_spread_item18_script.py"],
 }
 
 
@@ -53,9 +55,20 @@ def test_a_verdict_names_its_results_under_the_home():
     # Broken on purpose: a verdict with no result, and a result outside the home.
     assert any("names its result files" in p for p in hy.check({"hypotheses": [{**done, "results": None}]}))
     assert any("{home}/" in p for p in hy.check({"hypotheses": [{**done, "results": ["docs/x.json"]}]}))
+    # A result's notes are not a result: listed, the board read results.md as a missing result.
+    notes = [*done["results"], "{home}/data/backtest/results/research/item18/study.md"]
+    assert any("is not a .json file" in p for p in hy.check({"hypotheses": [{**done, "results": notes}]}))
     # A declared row has no result yet, and a legacy verdict may have none.
     assert hy.check({"hypotheses": [NEW]}) == []
     assert hy.check({"hypotheses": [{**NEW, "legacy": True, "status": "failed", "rule": None}]}) == []
+
+
+def test_notes_are_found_beside_a_result_or_shared_by_its_windows(tmp_path):
+    assert hy.notes_paths(tmp_path / "results.json") == [tmp_path / "results.md"]
+    # A per-window file falls back to the study's one results.md (item 49's layout).
+    window = hy.notes_paths(tmp_path / "results-design.json")
+    assert window == [tmp_path / "results-design.md", tmp_path / "results.md"]
+    assert hy.notes_paths(tmp_path / "trades.json") == [tmp_path / "trades.md"]
 
 
 def test_every_queue_item_study_has_a_row():
@@ -136,6 +149,12 @@ def test_board_joins_results_and_queue_and_groups_rows():
     stale = {"version": 1, "current": 2, "stale": True}
     out = hy.board({"hypotheses": [done]}, [], lambda p: files.get(p, (None, None)), version=lambda p: stale)
     assert [x["version"] for x in out["rows"][0]["results"]] == [stale, None]
+    # A trade file (a JSON list) among the results is present, with no window, run id or verdict.
+    trades = {**done, "results": ["{home}/r/trades.json"]}
+    out = hy.board({"hypotheses": [trades]}, [], lambda p: ([{"pnl": 1.0}], "2026-11-07T17:00:00"))
+    listed = out["rows"][0]["results"][0]
+    assert listed["present"] is True and listed["verdicts"] is None and listed["window"] is None
+    assert listed["run_id"] is None and listed["summary"] is None
     # A retired row closed without a run: finished, no results, never re-tested.
     retired = {**NEW, "id": 11, "study": "item11", "status": "retired", "legacy": True}
     out = hy.board({"hypotheses": [retired]}, [], lambda p: (None, None))

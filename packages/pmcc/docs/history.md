@@ -2,6 +2,53 @@
 
 Moved out of `packages/pmcc/CLAUDE.md`, which keeps the rule each episode produced.
 
+## Declared boundaries
+
+Moved verbatim from `CLAUDE.md`, where only the reading rules stay. **Never pool across these.**
+
+- **2026-08-23 redesign**: from 3 symbols/3 books (TNA/TQQQ/UPRO; `control`/`keltner`/`roll`) to one
+  `control` arm with a delta-band long, nearest-spot short and hold-to-expiry exit. Pre-redesign rows
+  are history, not comparable measurement.
+- **2026-08-23 XSP added** to `control` (additive). **Always read `pmcc` grouped by `symbol`, never
+  pooled**: each symbol is its own population.
+- **2026-08-28 entry spread gate**: `max_leg_spread_pct` is enforced at entry as well as at exit.
+- **2026-10-05 shield boundary** (`paper_loop.SHIELD_FROM`). All of these land together, and the loop
+  journals four `measurement_breaks` rows (`era`, `arms`, `symbols`, `pacing`), read from the config
+  as it stands:
+  - the held-long arms join control;
+  - the symbols become XSP/QQQ/GLD/IWM/SLV (TQQQ takes no new entries and runs off);
+  - `max_positions` goes from 3 to 6;
+  - held-long first entries are paced (`entry_symbols_per_session`);
+  - the era becomes `shield`.
+
+  XSP control's rules are unchanged across it, but its roster and cap are not, so it is read per era.
+  If the deploy slips past the date, move `SHIELD_FROM` with it.
+- **2026-10-06 control retired, advice off.** `books.control.enabled: false`, pmcc `advice.enabled:
+  false` and the advisor's `modules.pmcc` off; experiment `exp-2026-10-01-pmcc-1` killed. Journaled as
+  `measurement_breaks` `arms` and `advice` rows dated 2026-10-06, by hand: `_note_shield_boundary` only
+  writes its own date. No new era: shield's rules and roster are untouched, and the two arms never
+  shared a position. Control and its advised twins ran off under their own rules (shorts 10-09 and
+  10-16); every one of their positions, and every TQQQ position, was closed by 2026-10-18.
+- **2026-10-12 to 10-19, six symbols added**, one a market day (`symbol_from`): SMH, AMZN, TSLA, AMD,
+  NVDA, PLTR — the first single stocks, physical settlement, with the earnings refusal (below, under "What can refuse").
+  Additive: each symbol is its own population, and no existing symbol's rules change. Journaled as
+  `symbols` (with `max_positions` raised for the larger roster) and `earnings` rows. A held-long
+  stock long sits deep (broker 0.90 is ~45–55% in the money on these IVs), and AMZN lists strikes
+  only down to about 48% below spot, which is where its long lands.
+- **2026-10-26 `shield_guard` joins** (`from` on its config block, `engine.arm_on`), journaled as an
+  `arms` row by `_note_arm_starts` on the first tick of the day. `shield_hold` plus `assignment_roll`:
+  the 2026-10-19 review found the hold arm's shorts deep in the money with almost no extrinsic
+  (SLV 1,071 exposed ticks, QQQ 675), the region where a live IRA short is assigned. It enters fresh,
+  two symbols a session, so its longs are not the pair's; compare weekly marked change per symbol.
+  Additive: no running arm's rules change.
+- **2026-10-06 long delta 0.88–0.92** (was 0.90–0.95, nearest 0.925): the source design's ~90-delta long,
+  journaled as `long_delta`. Measured by the BROKER's delta, which the live loop will select by: on
+  American-style ETFs its deep-call delta runs below parity, so 0.90 sits ~36–41% in the money (parity
+  ~0.94–0.97); on XSP the two agree (~24%). The XSP pair entered 2026-10-05 at ~0.925 stays as entered.
+
+- **2026-11-08 entries switched off** (`defaults.wind_down`, #974): the module is retired; see
+  "Entries switched off" below.
+
 ## The 2026-08-23 redesign (measurement break)
 
 The original design traded TNA/TQQQ/UPRO in `control`/`keltner`/`roll` books, with a ~99-delta long
@@ -47,7 +94,7 @@ long legs included, and one at 0.293 — so the gate refuses the anomaly rather 
 
 ## The shield boundary (2026-10-05, measurement break)
 
-On 2026-10-04 Tom King's "Income Shield" (a ~1-year deep-ITM call held, a ~70-delta weekly call
+On 2026-10-04 a published held-long design (a ~1-year deep-ITM call held, a ~70-delta weekly call
 rolled against it) was compared with control. The replay (`scripts/pmcc_shield_replay.py`,
 docs/shield-study.md) found:
 - holding the long beat re-buying it on all five candidate symbols over 2011–2026, though in only 11
@@ -113,7 +160,7 @@ Built beside it:
 - the console splits open trades by lifecycle, shows every expiry with its year, and files arms as
   advised by their prefix. Shield had been listed among the advised arms.
 
-The same boundary moved the held-long long to Tom King's own ~90 delta: 0.88–0.92 nearest 0.90, from
+The same boundary moved the held-long long to the design's own ~90 delta: 0.88–0.92 nearest 0.90, from
 0.90–0.95 nearest 0.925, journaled as `long_delta`. It is the broker's delta, the one the live loop
 will select by. Measured that evening, the broker's deep-call delta on the American-style ETFs ran
 well below parity, and the old 0.925 sat 44–49% in the money (QQQ's at the 385 strike, below the
@@ -146,6 +193,15 @@ the one credible ETF the candidate screen found. Built for them:
 - **A daily calendar refresh** from the local Dolt clone, since nothing on a loop path may read it.
 - **`symbol_from`, starting one symbol a market day after the ETF rollout:** six at once would have
   added about 6,000 subscriptions to a ~10,000 load against a 12,000 budget.
+
+## Entries switched off (2026-11-08)
+
+The owner switched the module's entries off on 2026-11-08, with `defaults.wind_down` (#974): no arm
+enters and every open position closes at the next tick its execution gate allows, recorded with the
+reason `wind_down`. No arm was edited, so the rows to that day are one population. The module is
+switched off once flat, ships off in the example config (`modules.pmcc.enabled` and the `shield`,
+`shield_hold` and `shield_guard` arms `enabled` false, each with a `_retired` note), and may be
+reinstated by turning those on and `defaults.wind_down` off.
 
 ## Milestones
 

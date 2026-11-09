@@ -9,7 +9,8 @@ import { useViewChoice } from "../../components/ViewSwitch";
 import { useIncomeList } from "../../lib/api";
 import { writePref } from "../../lib/prefs";
 import { TradeCards, dayMonth, type TradeCardModel } from "../Live/TradeCard";
-import { ScreenerCard, ScreenerLayout, ScreenerSection, SessionSelect, SymbolSearch, Tabs, useParamState } from "./ScreenerParts";
+import { ScreenerCard, ScreenerLayout, SessionSelect, SymbolSearch, Tabs, useParamState } from "./ScreenerParts";
+import { Section } from "../../components/Section";
 
 /**
  * Our own short-put and covered-call lists (2026-10-19): one row a name from the suite's universe,
@@ -120,7 +121,7 @@ export function incomeModel(r: IncomeListRow, calls: boolean, farthest: number):
     key: r.symbol,
     symbol: r.symbol,
     spot: money(r.spot),
-    shape: `${calls ? "covered call" : "short put"} · ${r.dte} d${fund ? ` · ${r.type === "Exchange Traded Fund" ? "fund" : r.type}` : ""}`,
+    shape: `${calls ? "covered call" : "short put"} ${r.strike}${right} · Δ ${Math.abs(r.delta).toFixed(2)} · ${r.dte} d · ${dayMonth(r.expiry)}${fund ? ` · ${r.type === "Exchange Traded Fund" ? "fund" : r.type === "Depository Receipt" ? "ADR" : r.type}` : ""}`,
     chips: (
       <>
         {r.fit === true ? <span className="chip chip-ok">fits</span> : null}
@@ -148,7 +149,7 @@ export function incomeModel(r: IncomeListRow, calls: boolean, farthest: number):
       </>
     ),
     cash: r.premium,
-    side: [`${price} at the working price`, `${r.dte} d · ${dayMonth(r.expiry)}`],
+    side: [`${price} at the working price`],
     bar: farthest > 0 ? (dist / farthest) * 100 : null,
     barTitle: "how far the strike sits from the share price, against the farthest on this list",
     label: `distance ${signedPct(r.distanceFraction)} to the strike`,
@@ -315,7 +316,7 @@ export function OwnListTab({ list, tabs }: { list: IncomeList; tabs?: ReactNode 
 
   return (
     <ScreenerLayout>
-      <ScreenerSection concept="income" tag="candidates" question={`Which ${calls ? "covered calls" : "short puts"} fit?`}>
+      <Section concept="income" tag="candidates" question={`Which ${calls ? "covered calls" : "short puts"} fit?`}>
         <ScreenerCard
           title={TITLE[list].toLowerCase()}
           help={incomeHelp(list, calls, dropped)}
@@ -425,7 +426,7 @@ export function OwnListTab({ list, tabs }: { list: IncomeList; tabs?: ReactNode 
             <p className="muted">Nothing matches these filters.</p>
           )}
         </ScreenerCard>
-      </ScreenerSection>
+      </Section>
     </ScreenerLayout>
   );
 }

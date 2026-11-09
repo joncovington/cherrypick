@@ -165,7 +165,7 @@ def test_before_the_boundary_a_thin_name_still_reaches_its_order(monkeypatch):
     assert reached == [1] and result["universe"]["gated"] is False
 
 
-# --------------------------------------------------------------------------- the ranked (live) path
+# --------------------------------------------------------------------------- the ranked path
 def _ranked(monkeypatch, today, verdict):
     cal = [
         {"symbol": "AAA", "date": "2026-10-29", "timing": "After market close"},
@@ -190,7 +190,7 @@ def _ranked(monkeypatch, today, verdict):
     monkeypatch.setattr(scanner, "et_today", lambda: today)
     monkeypatch.setattr(rank_strategies, "_ensure_dolt_running", lambda: True)
     monkeypatch.setattr(rank_strategies, "_verify_tastytrade_connection", lambda: True)
-    monkeypatch.setattr(scanner, "_load_config", lambda *a, **k: {"enable_live_trading": False})
+    monkeypatch.setattr(scanner, "_load_config", lambda *a, **k: {})
     monkeypatch.setattr(scanner, "fetch_entry_window_calendar", lambda config, **k: list(cal))
     monkeypatch.setattr(rank_strategies.symbol_watch, "covered_symbols", lambda *a, **k: set())
     monkeypatch.setattr(rank_strategies, "_evaluate_and_rank_symbol", evaluate)

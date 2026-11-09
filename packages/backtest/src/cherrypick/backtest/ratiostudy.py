@@ -2,7 +2,8 @@
 
 `docs/edge-hypotheses-plan.md` item 34 declares the test. This module is the arithmetic only: plain
 rows in, plain numbers out, so every rule can be shown firing and failing on invented data.
-`scripts/option_stock_ratio_item34.py` reads the stores, builds a `Scan` and calls `evaluate`.
+`packages/backtest/scripts/option_stock_ratio_item34.py` reads the stores, builds a `Scan` and calls
+`evaluate`.
 
 **The signal** of a name on a grid session is the premium of the day's single-leg option orders over
 the stock's dollar volume (raw close times volume). The premium is read from the store's premium

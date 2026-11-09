@@ -116,12 +116,13 @@ export function logSources(config: ConsoleConfig): Array<{ id: string; path: str
     ["pmcc", "pmcc/pmcc_paper.log"],
     ["curve", "curve/curve_paper.log"],
     ["contango", "contango/contango_paper.log"],
+    ["weeklyput", "weeklyput/weeklyput_paper.log"],
     ["bwb", "bwb/bwb_paper.log"],
   ].map(([id, rel]) => ({ id: id!, path: path.join(root, rel!) }));
 }
 
 /** The Overview's merged view: watchdog, notify and the trading modules' own loops. */
-const DEFAULT_SOURCES = new Set(["watchdog", "notify", "meic", "flies", "earnings", "calendars", "pmcc", "curve", "contango", "bwb"]);
+const DEFAULT_SOURCES = new Set(["watchdog", "notify", "meic", "flies", "earnings", "calendars", "pmcc", "curve", "contango", "weeklyput", "bwb"]);
 
 /**
  * The merged default view leaves out a module the suite has turned off (`features`, decided in

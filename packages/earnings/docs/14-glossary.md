@@ -117,15 +117,15 @@ Net premium received (credit strategies) or paid (debit strategies, e.g. the cal
 `CLAUDE.md`'s Database section.
 
 **Profit Target** (`profit_target_pct`)
-Step 3c early-exit target, checked the first morning after entry — a fraction of max profit for
+early-exit target, checked the first morning after entry — a fraction of max profit for
 credit strategies, or of max profit potential for debit strategies.
 
 **Stop Loss** (`stop_loss_credit_multiple` for credit strategies, `stop_loss_pct_of_debit` for
 debit strategies)
-Step 3c early-exit stop threshold, checked alongside the profit target.
+early-exit stop threshold, checked alongside the profit target.
 
 **Close-Window Backstop**
-The unconditional exit (Step 3 in `CLAUDE.md`'s Loop Steps) that closes whatever's still open
+The unconditional exit that closes whatever's still open
 once `close_window_start` arrives, regardless of P&L. Agent-driven loop only; the paper loop
 manages positions instead. There's no same-day, hours-after-the-
 announcement backstop in this system — every strategy is either a single overnight hold or a
@@ -150,7 +150,7 @@ trading sessions (`hold_winners_max_days`). See [Exit Strategy Guide](./10-exits
 
 **`leg_stop_delta_abs`**
 Per-leg delta stop. On `double_calendar` it applies per side (0.45) and closes only that side, during
-Step 3b. On `broken_wing_butterfly` it applies to the short body (0.60) and closes the position.
+the intraday check. On `broken_wing_butterfly` it applies to the short body (0.60) and closes the position.
 
 **Defined Risk / Undefined Risk**
 Defined-risk: maximum loss is known at entry (every strategy in this system). Undefined risk:
@@ -209,7 +209,7 @@ A few worth calling out by name since they show up throughout the other docs:
 - **`max_risk_per_trade_pct`** — per-strategy fraction of NLV a single trade's max loss may
   consume.
 - **`profit_target_pct`** / **`stop_loss_credit_multiple`** / **`stop_loss_pct_of_debit`** —
-  Step 3c early-exit thresholds, per strategy.
+  early-exit thresholds, per strategy.
 - **`min_iv_rv_ratio`** / **`min_term_structure`** / **`min_winrate`** — the shared core
   quality gates every strategy applies with its own threshold.
 - **`max_bid_ask_spread_pct`** / **`min_market_cap`** / **`min_combined_open_interest`** /
@@ -235,9 +235,6 @@ symbol's best.
 
 **`python -m cherrypick.earnings.strategies.<name> get_order --symbol X --earnings_date DATE --earnings_timing "..."`**
 Build a concrete tradeable order from live chain data.
-
-**`python -m cherrypick.earnings.tt execute_trade --order '<JSON>' [--live]`**
-Dry-run validate (no `--live`, still performs a real margin check) or submit a live order.
 
 **`python -m cherrypick.earnings.strategy_report`**
 Per-strategy expectancy/win-rate/IV-crush text report. The charts are on the console's Earnings page

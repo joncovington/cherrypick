@@ -1162,7 +1162,9 @@ def run_once(
             if live:
                 symbols = [leg["symbol"] for leg in spec["legs"]]
                 fresh = broker.fresh_quotes(symbols)
-                new_price, info = live_orders.entry_fresh_reprice(spec, fresh, params.get("slippage_frac"))
+                new_price, info = live_orders.entry_fresh_reprice(
+                    spec, fresh, fly.slippage_frac(params, snapshot.get("symbol"))
+                )
                 tolerance = live_cfg.get("fresh_quote_tolerance_dollars", 0.05)
                 if new_price is None:
                     summary["skips"].append(
@@ -2275,6 +2277,7 @@ def run_status(config: dict, conn) -> dict:
         "date": today,
         "in_session": _pl.in_session(provider.minute_of_day(when)),
         "armed_for": arm_stamp_date(),
+        "module_enabled": _live.suite_module_enabled("flies"),
         "arm": arm,
         "symbol": live_cfg.get("symbol"),
         "open_positions": len(open_rows),
@@ -2365,6 +2368,11 @@ def main() -> int:
     ap.add_argument("--watch-fills", action="store_true", help="burst fill-watcher (spawned by ticks)")
     ap.add_argument("--status", action="store_true", help="one JSON health object, files/DB only")
     ap.add_argument(
+        "--readiness",
+        action="store_true",
+        help="the unmet account gates as JSON (exit 1 if any); the check before arming",
+    )
+    ap.add_argument(
         "--expected-legs",
         action="store_true",
         help="the filled open legs the ledger holds (JSON; files/DB only)",
@@ -2383,9 +2391,19 @@ def main() -> int:
         "official-print confirm targets YESTERDAY's book",
     )
     ap.add_argument(
-        "--install-task", action="store_true", help="arm the live loop for TODAY (supervisor job)"
+        "--arm",
+        action="store_true",
+        help="arm the live loop for TODAY, by hand: prints DISCLAIMER.md and needs --confirm YES",
     )
-    ap.add_argument("--uninstall-task", action="store_true", help="disarm the live loop")
+    ap.add_argument("--confirm", help="with --arm: the word YES, exactly")
+    ap.add_argument(
+        "--install-task",
+        action="store_true",
+        help="arm for TODAY, the agent path (/live-flies-start calls it after its own YES)",
+    )
+    ap.add_argument(
+        "--disarm", "--uninstall-task", dest="disarm", action="store_true", help="disarm the live loop"
+    )
     ap.add_argument(
         "--agent-mode",
         choices=intraday_advice.LIVE_MODES,
@@ -2396,10 +2414,18 @@ def main() -> int:
     ap.add_argument("--stream-cache")
     args = ap.parse_args()
 
-    if args.install_task:
-        print(json.dumps(install_task(load_config(args.config)), indent=2))
-        return 0
-    if args.uninstall_task:
+    if args.arm or args.install_task:
+        arm_config = load_config(args.config)
+        armed = _live.arm_from_cli(
+            "flies",
+            lambda: install_task(arm_config),
+            confirm=args.confirm,
+            prompted=args.arm,
+            require_enabled=True,
+        )
+        print(json.dumps(armed, indent=2))
+        return 0 if armed.get("ok") else 1
+    if args.disarm:
         print(json.dumps(uninstall_task(), indent=2))
         return 0
 
@@ -2408,6 +2434,12 @@ def main() -> int:
         out = set_agent_mode(config, args.agent_mode)
         print(json.dumps(out, indent=2))
         return 0 if out.get("ok") else 1
+    if args.readiness:
+        from cherrypick.flies import credentials as creds
+
+        unmet = readiness(config, designated=creds.designated_account())
+        print(json.dumps({"ok": not unmet, "unmet_gates": unmet}, indent=2))
+        return 1 if unmet else 0
     cache_path = args.stream_cache or _pl.stream_cache_path(config)
     db_path = args.db or dbmod.live_db_path()
     conn = dbmod.connect(db_path)

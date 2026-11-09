@@ -1,5 +1,7 @@
 # Skate screener, wheel and PMCC views — plan
 
+> **Status (2026-11-08): mostly built (2026-10-18 on): the range bands, the score, the Skate tab, the forward record, and the wheel and PMCC views in `manage`. The PMCC parts now serve a retired module (pmcc, retired 2026-11-08, off by default).**
+
 Status: plan, 2026-10-18; steps 1–2 and the score are built (table below). The study it rests on was run by hand on 2026-10-18
 (results below); the scripts were scratch files and are not in the repo. The three open questions
 were decided by the user on 2026-10-18 (see "Decisions").
@@ -15,9 +17,8 @@ were decided by the user on 2026-10-18 (see "Decisions").
 
 A screen for short options sold where the seller does not want assignment: covered calls above
 the stock's recent range and cash-secured puts below it, on our own options-tradable names. The
-method is an options educator's "skate" objective ([Stop Picking Wheel Strategy Strikes by
-Delta](https://www.youtube.com/watch?v=pd6KYv5O0b4), Theta Profits; [the educator's covered-call
-process](https://www.youtube.com/watch?v=_7sX9naKTaE)). It is a read surface, a new
+method is an options educator's "skate" objective (two public videos, linked in
+[strategy-sources.md](strategy-sources.md)). It is a read surface, a new
 tab on the console's Screeners page. It places no order and opens no paper position.
 
 Once one of its trades is open in the real account, the wheel view follows it: the put, any
@@ -109,9 +110,9 @@ assignment or times the LEAPS roll, which steps 5 and 6 do.
 | Dual yield on a covered call: premium only, and if called | [PremiumGuard](https://premiumguardhq.com/blog/covered-call-tracking-spreadsheet) | steps 3, 5 |
 | Calls still sellable = shares − short calls − working sell orders | [AllYouNeedIsWheel](https://github.com/WahBun/AllYouNeedIsWheel) | step 5; built in `manage.candidates` 2026-10-19 (filled short calls, then working sell-to-open calls) |
 | A roll may not pay for itself by taking more risk: a rolled put's strike is capped at old strike + original premium − buyback cost | [thetagang](https://github.com/brndnmtthws/thetagang) | step 5, as a `check-roll` test |
-| PMCC P&L if assigned = (short strike − long strike − long's net cost + premiums) × 100, shown in dollars beside the width check | [trading_skills `ib-pmcc-advisor`](https://github.com/staskh/trading_skills) | step 6 |
-| PMCC short roll candidates: delta ≤ 0.40, net debit no worse than $0.10, next five expiries, never past the long's expiry; assignment chance N(d2) | trading_skills | step 6 |
-| LEAPS extrinsic as a share of its price; roll the long at 90–120 days left or below ~0.70 delta | [coveredcallcalculator.net](https://coveredcallcalculator.net/guides-hub/poor-mans-covered-call-guide.html), [TheOptionPremium](https://www.theoptionpremium.com/p/pmcc-management-rules-rolling-short-calls-dividend-risk) | step 6 floors |
+| PMCC P&L if assigned = (short strike − long strike − long's net cost + premiums) × 100, shown in dollars beside the width check | an open-source PMCC advisor ([strategy-sources.md](strategy-sources.md)) | step 6 |
+| PMCC short roll candidates: delta ≤ 0.40, net debit no worse than $0.10, next five expiries, never past the long's expiry; assignment chance N(d2) | the same advisor | step 6 |
+| LEAPS extrinsic as a share of its price; roll the long at 90–120 days left or below ~0.70 delta | two published PMCC guides ([strategy-sources.md](strategy-sources.md)) | step 6 floors |
 
 Not taken: win rate by delta bracket and A–F trade grades (they need many closed trades and grade
 nothing the forward record doesn't), projected annual income from a weekly average (the
@@ -293,7 +294,7 @@ For each underlying that holds a short put, shares, or a covered call:
 - **Console**: a wheel tab beside Live → positions (built 2026-10-20: `pages/Live/WheelCards.tsx`,
   one card per cycle, read through `readers/manage.ts`).
 
-The real account is an IRA, so only cash-secured puts and covered calls arise; margin accounts are
+On an IRA or cash account only cash-secured puts and covered calls arise; margin accounts are
 supported by `manage` and need nothing extra here.
 
 ### 6. The PMCC view (packages/manage)

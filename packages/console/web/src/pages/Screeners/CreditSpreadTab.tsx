@@ -7,18 +7,19 @@ import { useViewChoice } from "../../components/ViewSwitch";
 import { useCreditSpreadList } from "../../lib/api";
 import { TradeCards, dayMonth, type TradeCardModel } from "../Live/TradeCard";
 import { FAIR_TITLE, earningsText, fairText } from "./OwnListTab";
-import { BoxOpenButton, PanelChoice, ScreenerCard, ScreenerLayout, ScreenerSection, SessionSelect, SymbolSearch, useParamState, useScreenerBoxes, type ScreenerBox } from "./ScreenerParts";
+import { BoxOpenButton, PanelChoice, ScreenerCard, ScreenerLayout, SessionSelect, SymbolSearch, useParamState, useScreenerBoxes, type ScreenerBox } from "./ScreenerParts";
+import { Section } from "../../components/Section";
 
 /**
  * Our own credit-spread list (2026-10-24): the chart setups' fresh entries as spreads on the 30-45 day
  * monthly, from `packages/technicals` `income-lists` (version 2, `creditspreads.py`). A long setup is a
  * put spread, its short mirror a call spread; the short nearest 0.40 delta, the pick the widest long
- * giving 35-40% of the width at the working price. Every figure is the builder's; this formats and
+ * giving the credit share of the width (30-40% since 2026-11-07) at the working price. Every figure is the builder's; this formats and
  * filters, and ranks nothing -- rows are by symbol.
  *
  * NO TESTED EDGE: item 17 of docs/edge-hypotheses-plan.md (run 2026-10-25) found no setup, side, short
  * or width that passed after costs. The tab reads the rows by a SELECTION (the user's choice the same
- * day): the 35-40% credit rule (every row, the default) or one of the study's least-bad mean-reversion
+ * day): the credit-share rule (every row, the default) or one of the study's least-bad mean-reversion
  * put cells (0.20 or 0.40 delta, 5 strikes), which keep only their rows and show their own short and
  * spread (`rowsFor`).
  *
@@ -136,7 +137,7 @@ export function WidthsBody({ r }: { r: CreditSpreadRow }) {
         <tbody>
           {r.widths.map((w) => {
             const p = w.price;
-            const label = w.unit === "strikes" ? `${w.size} strike${w.size === 1 ? "" : "s"}` : `${w.size} × move`;
+            const label = widthLabel(w);
             const picked = p !== null && r.pick !== null && p.long === r.pick.long;
             return (
               <tr key={`${w.unit}-${w.size}`}>
@@ -145,7 +146,7 @@ export function WidthsBody({ r }: { r: CreditSpreadRow }) {
                   {picked ? (
                     <>
                       {" "}
-                      <span className="chip" title="The same long as the 35-40% pick">
+                      <span className="chip" title="The same long as the credit-rule pick">
                         pick
                       </span>
                     </>
@@ -231,14 +232,44 @@ export function rowsFor(rows: CreditSpreadRow[], selection: string): CreditSprea
 
 export const boxId = (r: CreditSpreadRow) => `${r.symbol}-${r.spread}`;
 
+/** A width's name as the width table prints it: "2 strikes", "0.5 × move". */
+function widthLabel(w: { unit: "strikes" | "move"; size: number }): string {
+  return w.unit === "strikes" ? `${w.size} strike${w.size === 1 ? "" : "s"}` : `${w.size} × move`;
+}
+
+/**
+ * For a row with no width in the credit band: the priced width whose credit share comes closest to
+ * the band (the narrower on a tie), so the card can show the spread it would have been. Shown as
+ * short of the rule, never as a pick; null when no width is priced.
+ */
+export function nearestWidth(r: CreditSpreadRow, share: [number, number]): { label: string; price: CreditSpreadPrice } | null {
+  let best: { label: string; price: CreditSpreadPrice; miss: number } | null = null;
+  for (const w of r.widths) {
+    const p = w.price;
+    if (p === null || p.creditWidth === null) continue;
+    const miss = p.creditWidth < share[0] ? share[0] - p.creditWidth : p.creditWidth > share[1] ? p.creditWidth - share[1] : 0;
+    if (best === null || miss < best.miss || (miss === best.miss && p.width < best.price.width)) best = { label: widthLabel(w), price: p, miss };
+  }
+  return best === null ? null : { label: best.label, price: best.price };
+}
+
 /**
  * One setup as a trade card: the chosen width's credit as the headline, the max loss as the bar
  * (against the largest on the list: no per-trade cap comes with the list), the order that would open
  * it, the setup and the earnings in the foot. `open` is the card's button for the lightbox.
  */
-export function creditModel(r: CreditSpreadRow, shareLabel: string, largest: number, open: ((id: string) => void) | null): TradeCardModel {
+export function creditModel(
+  r: CreditSpreadRow,
+  share: [number, number],
+  largest: number,
+  open: ((id: string) => void) | null,
+): TradeCardModel {
+  const shareLabel = `${Math.round(share[0] * 100)}–${Math.round(share[1] * 100)}%`;
   const right = r.spread === "put" ? "P" : "C";
   const p = r.pick;
+  // No width in the band: show the nearest one's spread, marked short of the rule, with no headline.
+  const near = p === null ? nearestWidth(r, share) : null;
+  const long = p?.long ?? near?.price.long ?? null;
   const mid = r.short.bid !== null && r.short.ask !== null ? ` @ ${((r.short.bid + r.short.ask) / 2).toFixed(2)}` : "";
   const ex = exDividendText(r);
   return {
@@ -246,7 +277,10 @@ export function creditModel(r: CreditSpreadRow, shareLabel: string, largest: num
     symbol: r.symbol,
     symbolHref: `/charts/technicals?symbol=${encodeURIComponent(r.symbol)}`,
     spot: money(r.spot),
-    shape: `${r.spread === "put" ? "bull put" : "bear call"} · ${r.dte} d · ${dayMonth(r.expiry)}`,
+    shape: `${r.spread === "put" ? "bull put" : "bear call"} ${r.short.strike}${long === null ? "" : `/${long}`}${right} · ${r.dte} d · ${dayMonth(r.expiry)}${
+      // A name signalling both sides says so here, not as a chip: two chips stacked made the row two lines.
+      r.conflict ? " · both sides" : ""
+    }`,
     chips: (
       <>
         {p === null ? (
@@ -262,11 +296,6 @@ export function creditModel(r: CreditSpreadRow, shareLabel: string, largest: num
             45-60
           </span>
         ) : null}
-        {r.conflict ? (
-          <span className="chip chip-warn" title="The name signals both sides at once: a put spread and a call spread">
-            both sides
-          </span>
-        ) : null}
         {r.leveraged ? (
           <span className="chip" title="A daily-reset fund: it decays and gaps in ways its delta does not price">
             {r.leveraged}
@@ -274,11 +303,23 @@ export function creditModel(r: CreditSpreadRow, shareLabel: string, largest: num
         ) : null}
       </>
     ),
-    cash: p === null ? null : p.credit * 100,
-    side: p === null ? ["no pick", `${r.dte} d`] : [credit(p.credit), `Cr/ML ${p.creditMaxLoss === null ? "—" : p.creditMaxLoss.toFixed(2)}`],
+    // An unpicked row's figure is the nearest width's, drawn muted: short of the rule, never a pick.
+    cash: p !== null ? p.credit * 100 : near !== null ? near.price.credit * 100 : null,
+    cashMuted: p === null,
+    side:
+      p !== null
+        ? [credit(p.credit), `Cr/ML ${p.creditMaxLoss === null ? "—" : p.creditMaxLoss.toFixed(2)}`]
+        : near !== null
+          ? [`nearest width, not a pick`, `max loss ${contract(near.price.maxLoss)}`]
+          : ["no pick", `${r.dte} d`],
     bar: p === null || largest <= 0 ? null : (p.maxLoss * 100 * 100) / largest,
     barTitle: "the max loss, against the largest on this list: the list carries no per-trade cap",
-    label: p === null ? "no width to size" : `max loss ${contract(p.maxLoss)}${p.creditWidth === null ? "" : ` · credit ${pct(p.creditWidth, 0)} of the width`}`,
+    label:
+      p === null
+        ? near === null
+          ? "no width to size"
+          : `nearest ${near.label} · credit ${pct(near.price.creditWidth, 0)} of the width`
+        : `max loss ${contract(p.maxLoss)}${p.creditWidth === null ? "" : ` · credit ${pct(p.creditWidth, 0)} of the width`}`,
     open: { date: "proposed", price: p === null ? "—" : credit(p.credit) },
     legs: [
       {
@@ -286,7 +327,11 @@ export function creditModel(r: CreditSpreadRow, shareLabel: string, largest: num
         text: `1 ${r.expiry} ${r.short.strike}${right}${mid}`,
         quote: `${r.short.bid === null ? "—" : r.short.bid.toFixed(2)} / ${r.short.ask === null ? "—" : r.short.ask.toFixed(2)} · Δ ${Math.abs(r.short.delta).toFixed(2)}`,
       },
-      ...(p === null ? [] : [{ buy: true, text: `1 ${r.expiry} ${p.long}${right}`, quote: `Δ ${Math.abs(p.longDelta).toFixed(2)}` }]),
+      ...(p !== null
+        ? [{ buy: true, text: `1 ${r.expiry} ${p.long}${right}`, quote: `Δ ${Math.abs(p.longDelta).toFixed(2)}` }]
+        : near !== null
+          ? [{ buy: true, text: `1 ${r.expiry} ${near.price.long}${right}`, quote: `Δ ${Math.abs(near.price.longDelta).toFixed(2)} · nearest width, short of the ${shareLabel} rule` }]
+          : []),
     ],
     after: [`setup: ${setupsText(r)}`],
     foot: [`${earningsText(r)}${ex === null ? "" : ` · ex-div ${ex}`}`, fairText(r.fair)],
@@ -302,7 +347,7 @@ export function creditHelp(tested: string | null, selection: { label: string; ru
         <HelpWarn title="No tested edge">
           <p>
             Item 17 of the edge-hypotheses plan tested every setup, side, short and width on 2020-2025 and none passed after costs
-            {tested ? ` (${tested})` : ""}. The selections are rules to read the cards by, not recommendations: the 35-40% credit rule you
+            {tested ? ` (${tested})` : ""}. The selections are rules to read the cards by, not recommendations: the {shareLabel} credit rule you
             trade, and the two mean-reversion put cells the study found least bad.
             {selection && selection.label ? ` Showing: ${selection.rule}.` : ""}
           </p>
@@ -353,7 +398,7 @@ export function CreditSpreadTab() {
   const rows = sorted.slice(page.offset, page.offset + page.limit);
   const latest = data?.days[0] ?? null;
   const dropped = Object.entries(data?.dropped ?? {});
-  const share = data?.rule.creditShare ?? [0.35, 0.4];
+  const share = data?.rule.creditShare ?? [0.3, 0.4];
   const shareLabel = `${Math.round(share[0] * 100)}–${Math.round(share[1] * 100)}%`;
   const unpickedAll = all.filter((r) => r.pick === null).length;
   const largest = Math.max(0, ...shown.map((r) => (r.pick === null ? 0 : r.pick.maxLoss * 100)));
@@ -389,7 +434,7 @@ export function CreditSpreadTab() {
 
   return (
     <ScreenerLayout>
-      <ScreenerSection concept="dir" tag="setups" question="Which setups make a spread worth sizing?">
+      <Section concept="dir" tag="setups" question="Which setups make a spread worth sizing?">
         <ScreenerCard
           title="credit spreads"
           help={creditHelp(data?.rule.tested ?? null, current, shareLabel, dropped, data?.rule.recentSessions ?? 5, unpickedAll, all.length)}
@@ -477,14 +522,14 @@ export function CreditSpreadTab() {
               store the setups are read from.
             </p>
           )}
-          <TradeCards models={rows.map((r) => creditModel(r, shareLabel, largest, box.open))} />
+          <TradeCards models={rows.map((r) => creditModel(r, share, largest, box.open))} />
           {shown.length > PAGE_SIZES[0] && (
             <Pager offset={page.offset} limit={page.limit} total={shown.length} pageSizes={PAGE_SIZES} onOffset={setOffset} onLimit={setLimit} />
           )}
           {data && data.built && all.length > 0 && shown.length === 0 && <p className="muted">Nothing matches these filters.</p>}
           {data && data.built && all.length === 0 && <p className="muted">No setup entered on a recent close for any name this session.</p>}
         </ScreenerCard>
-      </ScreenerSection>
+      </Section>
       {box.node}
     </ScreenerLayout>
   );

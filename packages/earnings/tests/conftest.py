@@ -105,25 +105,3 @@ def _isolated_home(tmp_path_factory, monkeypatch):
     ):
         monkeypatch.delenv(leaked, raising=False)
     return home
-
-
-@pytest.fixture(autouse=True)
-def _a_designated_account(monkeypatch):
-    """`tt execute_trade` refuses without a designated account (2026-10-12), and the real lookup reads
-    the machine's keyring. Pinned to a fake here so no test reads a keyring; the refusal's own tests
-    pin it to None."""
-    from cherrypick.earnings import tt
-
-    monkeypatch.setattr(tt, "_designated_account", lambda: "TEST0001")
-
-
-@pytest.fixture(autouse=True)
-def _armed_today(request, monkeypatch):
-    """The per-day arm on opening live orders (2026-11-06) is its own gate, tested in
-    test_live_arm.py; every other test that sends a live order reaches past it, as past the
-    designated account above."""
-    if request.module.__name__.endswith("test_live_arm"):
-        return
-    from cherrypick.earnings import tt
-
-    monkeypatch.setattr(tt, "live_arm_refusal", lambda: None)

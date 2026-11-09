@@ -1,5 +1,7 @@
 # Our own daily market report — research and plan
 
+> **Status (2026-11-08): partial. Phase 1 and the technicals store landed in 2026-09; the vendor-fed parts went off when the subscription ended on 2026-10-24 (see [operations.md](operations.md)). The later phases stay a plan.**
+
 *Drafted 2026-09-27. A research record and a build plan; Phase 1 and the technicals store landed the
 same week (see Plan). The subject is a
 third-party pre-open report (the 2026-09-25 edition of a commercial vendor's daily report), read
@@ -672,7 +674,7 @@ estimated) and ex-dividend date, which reach past the local Dolt calendar's ~5 w
 **The read-side view exists (2026-10-16): the console's Screeners page.** It was to wait for two
 weeks of lists and the name-selection rule; the user asked for it on 2026-10-16 with the row rules
 reproduced and selection still open, so it shows both layers and says which is which: the listed
-trade with our rule's strike beside it, and the user's trade (the listed option when liquid, else
+trade with our rule's strike beside it, and the practical trade (the listed option when liquid, else
 the cycle monthly, marked thin when that fails too), cut by default to tradable names with no
 earnings inside the cycle. Since 2026-10-16 the default also hides a name with no liquid trade
 (the listed option and the cycle monthly both thin), and earnings are judged against the trade's

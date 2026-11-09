@@ -1,5 +1,5 @@
-"""Hypothesis 47's study (scripts/earnings_strangle_item47.py): the expiry, the past moves, the selector,
-the strikes and the fills. Invented chains and bars only, no store.
+"""Hypothesis 47's study (packages/backtest/scripts/earnings_strangle_item47.py): the expiry, the past moves,
+the selector, the strikes and the fills. Invented chains and bars only, no store.
 
 Each rule is shown firing and failing, because a check that cannot fire reads as coverage it is not.
 """
@@ -7,11 +7,12 @@ Each rule is shown firing and failing, because a check that cannot fire reads as
 from __future__ import annotations
 
 import importlib.util
+import sqlite3
 import sys
 from datetime import date
 from pathlib import Path
 
-SCRIPTS = Path(__file__).resolve().parents[3] / "scripts"
+SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 _spec = importlib.util.spec_from_file_location(
     "earnings_strangle_item47", SCRIPTS / "earnings_strangle_item47.py"
 )
@@ -125,3 +126,29 @@ def test_the_verdict_follows_the_declaration():
     assert s47.verdict(good, _arm(200, -1.0, 0.0, 1.0, 0.0), 1.0)["verdict"] == "fail"
     assert s47.verdict(_arm(100, 5.0, 3.0, 4.0, 2.5), held, 1.0)["verdict"] == "no verdict"
     assert s47.verdict(good, _arm(50, 1.0, 0.0, 1.0, 0.0), 1.0)["verdict"] == "no verdict"
+
+
+def _store(rows):
+    """An in-memory end-of-day store holding the quotes the way the vendor store spells them."""
+    conn = sqlite3.connect(":memory:")
+    conn.execute(
+        "CREATE TABLE eod_chain_quotes (symbol TEXT, session TEXT, expiration TEXT, strike REAL, "
+        "right TEXT, bid REAL, ask REAL)"
+    )
+    conn.executemany("INSERT INTO eod_chain_quotes VALUES (?, ?, ?, ?, ?, ?, ?)", rows)
+    return conn
+
+
+def test_the_chain_reader_keys_the_stores_spelled_out_rights_by_their_first_letter():
+    conn = _store(
+        [
+            ("ZZZ", "2024-01-10", "2024-01-12", 100.0, "CALL", 2.0, 2.2),
+            ("ZZZ", "2024-01-10", "2024-01-12", 100.0, "PUT", 1.8, 2.0),
+            ("ZZZ", "2024-01-10", "2024-01-19", 100.0, "CALL", 4.0, 4.4),
+        ]
+    )
+    got = s47.chain(conn, "ZZZ", date(2024, 1, 10), date(2024, 1, 12))
+    assert got == {(100.0, "C"): (2.0, 2.2), (100.0, "P"): (1.8, 2.0)}
+    # and what it reads is what the expected move wants: 0.85 x (2.1 + 1.9) / 100
+    assert abs(s47.expected_move(got, 100.0) - 0.034) < 1e-9
+    assert s47.chain(conn, "ZZZ", date(2024, 1, 11), date(2024, 1, 12)) == {}

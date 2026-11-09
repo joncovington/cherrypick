@@ -195,3 +195,53 @@ def test_fast_mode_skips_broker_check(tmp_path, monkeypatch):
 
     monkeypatch.setattr(builtins, "__import__", fake_import)
     assert doctor._dolt_databases("127.0.0.1", 3306) is None
+
+
+# --- earnings live trading, removed in v0.12.0
+
+
+def _earnings_cfg(module):
+    return {
+        "timezone": "America/New_York",
+        "modules": {
+            "earnings": {"enabled": True, "path": str(module), "paper": {"paper_db": "data/paper.db"}}
+        },
+        "notify": {"channels": ["log"]},
+        "capabilities": {"dolt": True},
+    }
+
+
+def _run_with_earnings_config(tmp_path, monkeypatch, body):
+    module = tmp_path / "earnings"
+    module.mkdir(exist_ok=True)
+    conf = tmp_path / "earnings.json"
+    conf.unlink(missing_ok=True)
+    if body is not None:
+        conf.write_text(body, encoding="utf-8")
+    monkeypatch.setattr(
+        doctor._home, "config_path", lambda name: conf if name == "earnings" else tmp_path / "none"
+    )
+    return _check(doctor.run(_earnings_cfg(module), fast=True), "earnings.live_config")
+
+
+def test_a_leftover_enable_live_trading_key_warns_that_it_can_go(tmp_path, monkeypatch):
+    c = _run_with_earnings_config(tmp_path, monkeypatch, '{"enable_live_trading": true}')
+    assert c is not None and c.status == WARN
+    assert "removed in v0.12.0" in c.detail and "enable_live_trading" in c.detail and "deleted" in c.detail
+
+
+def test_a_leftover_live_block_warns_too(tmp_path, monkeypatch):
+    c = _run_with_earnings_config(tmp_path, monkeypatch, '{"live": {"kill": null}}')
+    assert c is not None and c.status == WARN and "`live`" in c.detail
+
+
+def test_an_earnings_config_without_the_live_keys_is_silent(tmp_path, monkeypatch):
+    assert _run_with_earnings_config(tmp_path, monkeypatch, '{"available_capital_paper_mode": 10000}') is None
+    assert _run_with_earnings_config(tmp_path, monkeypatch, None) is None
+
+
+def test_the_leftover_check_is_silent_for_a_file_it_cannot_read(tmp_path):
+    bad = tmp_path / "bad.json"
+    bad.write_text("{not json", encoding="utf-8")
+    assert doctor.earnings_live_leftover_check(bad) is None
+    assert doctor.earnings_live_leftover_check(None) is None

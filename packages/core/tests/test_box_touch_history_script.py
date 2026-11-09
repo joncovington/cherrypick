@@ -1,5 +1,5 @@
-"""The box-touch study (scripts/box_touch_history.py): boxes, touches, placebos, the fade and trend
-reads, the resampled rates and the declared pass test.
+"""The box-touch study (packages/backtest/scripts/box_touch_history.py): boxes, touches, placebos, the fade
+and trend reads, the resampled rates and the declared pass test.
 
 Synthetic paths and synthetic stores only. Each pass test is shown to FAIL on data built to fail it,
 because a check that cannot fire reads as coverage it is not.
@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-SCRIPT = Path(__file__).resolve().parents[3] / "scripts" / "box_touch_history.py"
+SCRIPT = Path(__file__).resolve().parents[3] / "packages" / "backtest" / "scripts" / "box_touch_history.py"
 
 
 def _module():

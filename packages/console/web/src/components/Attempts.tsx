@@ -1,6 +1,20 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { TradingMode } from "@console/shared";
+import { Card } from "./DataTable";
+import { HelpSection, HelpWarn, type CardHelpContent } from "./CardHelp";
+import {
+  FilterGroup,
+  FilterSortButton,
+  FilterSortPanel,
+  FilterSummary,
+  FilterSwitch,
+  SortSection,
+  sortRows,
+  useSortChoice,
+  type SortOption,
+} from "./FilterSort";
+import { ChoiceGroup } from "../pages/Flies/FliesFilter";
 
 /** Modules with a per-arm entry decision. calendars has none — its books share one entry plan. */
 import type { AttemptsModule } from "@console/shared";
@@ -172,6 +186,66 @@ function cadenceRemaining(rows: AttemptRow[], arm: string, now: number): number 
   return null;
 }
 
+/** The arm cards' orderings: the recorded order, then name, size (entries, opportunities) and timing. */
+export const ARM_SORTS: SortOption<ArmRailEntry>[] = [
+  { id: "read", label: "as recorded", hint: "the module's order", key: () => 0 },
+  { id: "name", label: "name", hint: "A to Z", key: (a) => a.arm },
+  { id: "entries", label: "entries", hint: "most first", key: (a) => -a.fills },
+  { id: "tries", label: "opportunities", hint: "most first", key: (a) => -a.attempts },
+  { id: "lastfill", label: "last fill", hint: "latest first", key: (a) => {
+    const at = parseSuiteTs(a.lastFillTs);
+    return at === null ? null : -at;
+  } },
+];
+
+/** The ? of the arm cards: what a card says, where "next entry in" comes from, and any measurement breaks. */
+function armRailHelp(module: AttemptsModule, mode: TradingMode, breaks: Array<{ arm: string; reason: string }>): CardHelpContent {
+  const subtitle =
+    mode === "paper"
+      ? module === "pmcc"
+        ? // pmcc's books isolate one variable each and it has no entry-cadence gate, so the
+          // meic/flies subtitle would describe pacing this module does not do.
+          "One arm per variable, paper only."
+        : "One portfolio each, with unbounded capital, paced by cadence."
+      : module === "flies"
+        ? "Live pilot: real capital, one arm, one position at a time."
+        : "Live: real capital, under the configured concurrency cap.";
+  return {
+    title: "Reading the arm cards",
+    body: (
+      <>
+        {breaks.length > 0 && (
+          <HelpWarn title="Measurement breaks">
+            {/* Stated where the numbers are read rather than left in a journal nobody opens. */}
+            {breaks.map((b, i) => (
+              <p key={i}>
+                <strong>{b.arm !== "*" ? `${b.arm}: ` : ""}</strong>
+                {b.reason}
+              </p>
+            ))}
+            <p>A day with a break does not pool with its neighbours.</p>
+          </HelpWarn>
+        )}
+        <HelpSection title="What the arms are">
+          <p>{subtitle}</p>
+        </HelpSection>
+        <HelpSection title="Next entry in">
+          <p>
+            Counted from the arm&apos;s latest cadence refusal, which recorded how long it still had to wait; it is not read from config. An arm
+            not held by cadence says what holds it, or that it is eligible.
+          </p>
+        </HelpSection>
+        <HelpSection title="Opportunities">
+          <p>
+            Entries are shown against every evaluation, with the rule that took the rest: that ratio is the experiment, since every arm sees the same
+            market with the same money. The bar splits the refusals by rule.
+          </p>
+        </HelpSection>
+      </>
+    ),
+  };
+}
+
 /**
  * One card per arm: how far through its cadence it is, what it has taken today,
  * and what is currently holding it back.
@@ -195,30 +269,29 @@ export function ArmRail({
   const arms = data?.arms ?? [];
   const now = useNow(arms.length > 0);
 
+  const [sort, setSort] = useSortChoice(`arm-rail-${module}`, "read");
+  const [quietOnly, setQuietOnly] = useState(false);
+  const [panel, setPanel] = useState(false);
+  const anchor = useRef<HTMLButtonElement>(null);
+  const option = ARM_SORTS.find((s) => s.id === sort.id) ?? ARM_SORTS[0];
+  const shown = sortRows(quietOnly ? arms.filter((a) => a.fills === 0) : arms, option, sort.reversed);
+  const changed = (quietOnly ? 1 : 0) + (sort.id !== "read" || sort.reversed ? 1 : 0);
+  const reset = () => {
+    setQuietOnly(false);
+    setSort({ id: "read", reversed: false });
+  };
+  const breaks = data?.breaks ?? [];
+
   return (
-    <section className="card">
-      <div className="panel-head-row">
-        <h2>Arms{data?.tradeDate != null ? ` (${data.tradeDate})` : ""}</h2>
-        <span className="muted lbl">
-          {mode === "paper"
-            ? module === "pmcc"
-              // pmcc's books isolate one variable each and it has no entry-cadence gate, so the
-              // meic/flies subtitle would describe pacing this module does not do.
-              ? "one arm per variable · paper only"
-              : "one portfolio each · unbounded capital · paced by cadence"
-            : module === "flies"
-              ? "live pilot — real capital, one arm, one position at a time"
-              : "live — real capital, under the configured concurrency cap"}
-        </span>
-      </div>
-      {/* Measurement breaks, stated where the numbers are read rather than left in a journal
-          nobody opens. A cadence change or an arm added mid-session makes this day non-poolable
-          with its neighbours, and a reader comparing arms has no other way to know. */}
-      {(data?.breaks ?? []).map((b, i) => (
-        <p key={i} className="stale-note" style={{ marginTop: i === 0 ? 0 : "0.3rem" }}>
-          <strong>measurement break{b.arm !== "*" ? ` (${b.arm})` : ""}:</strong> {b.reason}
-        </p>
-      ))}
+    <Card
+      title={`Arms${data?.tradeDate != null ? ` (${data.tradeDate})` : ""}`}
+      collapseKey={`arm-rail-${module}`}
+      help={armRailHelp(module, mode, breaks)}
+      // A cadence change or an arm added mid-session makes this day non-poolable with its
+      // neighbours, and a reader comparing arms has no other way to know: the flag says so on the card.
+      flag={breaks.length > 0 ? `measurement break${breaks.length === 1 ? "" : "s"}` : undefined}
+      controls={arms.length > 0 ? <FilterSortButton changed={changed} open={panel} onOpen={() => setPanel(!panel)} anchor={anchor} /> : null}
+    >
       {isLoading ? (
         <span className="skeleton skeleton-text" style={{ width: "60%" }} />
       ) : arms.length === 0 ? (
@@ -226,6 +299,20 @@ export function ArmRail({
           no entry attempts recorded for this day — the loop may not have reached its entry window yet
         </p>
       ) : (
+        <>
+        <FilterSummary
+          parts={[quietOnly ? "arms with no entry yet" : "every arm", `by ${option?.label ?? sort.id}${sort.reversed ? ", reversed" : ""}`]}
+          note={`${String(shown.length)} of ${String(arms.length)} arms`}
+          changed={changed}
+          onOpen={() => setPanel(true)}
+          onReset={reset}
+        />
+        <FilterSortPanel open={panel} onClose={() => setPanel(false)} onReset={reset} anchor={anchor}>
+          <FilterGroup title="show">
+            <FilterSwitch label="no entry yet" description="only arms that have not taken an entry this day" on={quietOnly} onChange={setQuietOnly} />
+          </FilterGroup>
+          <SortSection sorts={ARM_SORTS} choice={sort} fallback="read" onChange={setSort} />
+        </FilterSortPanel>
         <div
           style={{
             display: "grid",
@@ -233,7 +320,7 @@ export function ArmRail({
             gap: "0.6rem",
           }}
         >
-          {arms.map((a) => {
+          {shown.map((a) => {
             const remaining = cadenceRemaining(data?.timeline ?? [], a.arm, now);
             const lastFill = parseSuiteTs(a.lastFillTs);
             const refusals = Object.entries(a.refusals).sort((x, y) => y[1] - x[1]);
@@ -360,8 +447,9 @@ export function ArmRail({
             );
           })}
         </div>
+        </>
       )}
-    </section>
+    </Card>
   );
 }
 
@@ -379,6 +467,26 @@ const SESSION_END_MIN = 16 * 60;
  * the day's 34 fills outside the canvas and 11 more underneath the labels, which reads exactly like
  * an arm that barely traded.
  */
+
+const TIMELINE_HELP: CardHelpContent = {
+  title: "Reading the entry attempts",
+  body: (
+    <>
+      <HelpSection title="What a mark is">
+        <p>
+          Every evaluated opportunity, filled or refused, one lane per arm across the regular session in Eastern time. A wide mark is a fill, painted
+          over the refusals that follow it; a thin one is a refusal, coloured by the rule that stopped it.
+        </p>
+      </HelpSection>
+      <HelpSection title="Why it is drawn this way">
+        <p>
+          The axis is the whole session, so a lane that stops half way reads as an arm that stopped, not a chart that ran out. Hover a mark for the
+          reason, the blocking strike and any wait still to run.
+        </p>
+      </HelpSection>
+    </>
+  ),
+};
 
 /**
  * One lane per arm across the session, every evaluated entry marked by outcome.
@@ -405,8 +513,23 @@ export function AttemptTimeline({
 }) {
   const { data, isLoading } = useAttempts(module, mode, date, scope);
   const [hover, setHover] = useState<AttemptRow | null>(null);
-  const rows = data?.timeline ?? [];
-  const arms = (data?.arms ?? []).map((a) => a.arm);
+  const [sort, setSort] = useSortChoice(`attempt-lanes-${module}`, "read");
+  const [armOnly, setArmOnly] = useState<string | null>(null);
+  const [marks, setMarks] = useState<"all" | "fills">("all");
+  const [panel, setPanel] = useState(false);
+  const anchor = useRef<HTMLButtonElement>(null);
+  const allRows = data?.timeline ?? [];
+  const everyArm = data?.arms ?? [];
+  const option = ARM_SORTS.find((s) => s.id === sort.id) ?? ARM_SORTS[0];
+  const shownArms = sortRows(armOnly === null ? everyArm : everyArm.filter((a) => a.arm === armOnly), option, sort.reversed);
+  const arms = shownArms.map((a) => a.arm);
+  const rows = marks === "fills" ? allRows.filter((r) => r.outcome === "filled") : allRows;
+  const changed = (armOnly !== null ? 1 : 0) + (marks !== "all" ? 1 : 0) + (sort.id !== "read" || sort.reversed ? 1 : 0);
+  const reset = () => {
+    setArmOnly(null);
+    setMarks("all");
+    setSort({ id: "read", reversed: false });
+  };
 
   const width = 1150;
   const pad = { l: 92, r: 12, t: 18, b: 24 };
@@ -420,17 +543,51 @@ export function AttemptTimeline({
   for (let m = SESSION_START_MIN; m <= SESSION_END_MIN; m += 60) hourTicks.push(m);
 
   return (
-    <section className="card">
-      <div className="panel-head-row">
-        <h2>Entry attempts{data?.tradeDate != null ? ` (${data.tradeDate})` : ""}</h2>
-        <span className="muted lbl">every evaluated opportunity, filled or refused</span>
-      </div>
+    <Card
+      title={`Entry attempts${data?.tradeDate != null ? ` (${data.tradeDate})` : ""}`}
+      collapseKey={`attempt-timeline-${module}`}
+      help={TIMELINE_HELP}
+      controls={allRows.length > 0 ? <FilterSortButton changed={changed} open={panel} onOpen={() => setPanel(!panel)} anchor={anchor} /> : null}
+    >
       {isLoading ? (
         <span className="skeleton skeleton-text" style={{ width: "60%" }} />
-      ) : rows.length === 0 ? (
+      ) : allRows.length === 0 ? (
         <p className="muted">nothing recorded for this day</p>
       ) : (
         <>
+          <FilterSummary
+            parts={[armOnly ?? "every arm", marks === "fills" ? "fills only" : "every attempt", `by ${option?.label ?? sort.id}${sort.reversed ? ", reversed" : ""}`]}
+            note={`${String(rows.length)} of ${String(allRows.length)} marks`}
+            changed={changed}
+            onOpen={() => setPanel(true)}
+            onReset={reset}
+          />
+          <FilterSortPanel open={panel} onClose={() => setPanel(false)} onReset={reset} anchor={anchor}>
+            <FilterGroup title="arm">
+              <div className="ldg-windows" role="group" aria-label="Arm">
+                <button type="button" className={armOnly === null ? "ldg-win is-on" : "ldg-win"} aria-pressed={armOnly === null} onClick={() => setArmOnly(null)}>
+                  all
+                </button>
+                {everyArm.map((a) => (
+                  <button key={a.arm} type="button" className={armOnly === a.arm ? "ldg-win is-on" : "ldg-win"} aria-pressed={armOnly === a.arm} onClick={() => setArmOnly(a.arm)}>
+                    {a.arm}
+                  </button>
+                ))}
+              </div>
+            </FilterGroup>
+            <FilterGroup title="marks">
+              <ChoiceGroup
+                label="Marks"
+                value={marks}
+                options={[
+                  { id: "all", label: "every attempt" },
+                  { id: "fills", label: "fills only" },
+                ]}
+                onChange={setMarks}
+              />
+            </FilterGroup>
+            <SortSection sorts={ARM_SORTS} choice={sort} fallback="read" onChange={setSort} />
+          </FilterSortPanel>
           <svg
             viewBox={`0 0 ${width} ${height}`}
             role="img"
@@ -513,6 +670,6 @@ export function AttemptTimeline({
           </p>
         </>
       )}
-    </section>
+    </Card>
   );
 }

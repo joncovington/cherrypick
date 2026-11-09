@@ -4,34 +4,13 @@ Verify that the tastytrade option chain and delta-based strike selection are wor
 
 ## Step 1: Determine target expiration and symbol list
 
-```bash
-python -c "
-import datetime, pytz, json
-et = pytz.timezone('America/New_York')
-now = datetime.datetime.now(et)
-with open('config.json') as f:
-    cfg = json.load(f)
-year = str(now.year)
-holidays = set(cfg.get('nyse_holidays_' + year, []))
-def next_trading_day(d):
-    d += datetime.timedelta(days=1)
-    while d.weekday() >= 5 or str(d) in holidays:
-        d += datetime.timedelta(days=1)
-    return d
-today = now.date()
-today_is_trading = today.weekday() < 5 and str(today) not in holidays
-if today_is_trading and now.hour < 16:
-    target = today
-    reason = 'today (market open or pre-cutoff)'
-else:
-    target = next_trading_day(today)
-    reason = 'next trading day (market closed or after 16:00 ET)'
-dte = (target - today).days
-test_width = max(1, cfg['max_wing_width'] // 2)
-symbols = cfg.get('symbols') or ([cfg['symbol']] if cfg.get('symbol') else ['XSP'])
-print(json.dumps({'now_et': now.strftime('%H:%M %Z'), 'target_date': str(target), 'dte': dte, 'reason': reason, 'symbols': symbols, 'delta_target': cfg['delta_target'], 'test_wing_width': test_width}))
-"
-```
+Read MEIC's live config (`cherrypick.meic.paths.config_path()`, normally `~/.cherrypick/config/meic.json`) and work out:
+
+- **`symbols`**: the config's `symbols` list (fall back to the single `symbol` key, then to `XSP`).
+- **`target_date`**: today if today is a weekday that is not in the config's `nyse_holidays_<year>` list and it is before 16:00 ET; otherwise the next weekday that is not a listed holiday.
+- **`dte`**: calendar days from today to `target_date`.
+- **`test_wing_width`**: half of `max_wing_width`, at least 1.
+- **`delta_target`**: the config's `delta_target`.
 
 Record: `target_date`, `dte`, `symbols` (the full list to test), `delta_target`, `test_wing_width`, `reason`. Run Steps 2–4 once for each entry in `symbols`.
 

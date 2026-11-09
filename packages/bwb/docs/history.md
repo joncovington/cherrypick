@@ -3,6 +3,25 @@
 Moved out of `packages/bwb/CLAUDE.md`, which keeps the rule each incident produced. This file keeps
 the narrative behind them.
 
+## Declared boundaries
+
+Rows either side of these dates were produced under different rules. **Never pool across one.** The
+section named holds the numbers.
+
+| Date | What changed |
+|---|---|
+| 2026-08-24..27 | `trigger_ticks_unmeasured`: the trigger-tick substrate recorded nothing usable (every row `measured = 0`); must not pool with later rows |
+| 2026-08-31 | The `wall` book added, opt-in (retired 2026-10-15) |
+| 2026-09-17 | Advice tags settle: `advised:control` / `advised:delta` before it still resolve |
+| 2026-09-18 | Two recorded numbers corrected: rows before it carry an overstated `entry_max_loss` and a doubled body settlement fee (derivable, not rewritten); the narrow live path starts |
+| 2026-09-23 | Ledger column `book` becomes `arm` |
+| 2026-09-26 | Add-on bracket quotes recorded from here; anything priced off tick quotes starts 2026-09-28 |
+| 2026-10-08 | Power outage 10:35-16:00 ET: triggers not reconstructed; affected positions stamped `addon_missed` |
+| 2026-10-09 | Implied variance and the vol term structure recorded at entry (rows before carry none) |
+| 2026-10-15 | `delta` and `wall` arms retired (declared 2026-10-12); `scripts/boundary_2026_10_19.py` |
+| 2026-10-24 | Live kill criteria (`live.kill`) |
+| 2026-11-08 | Entries switched off; module retired |
+
 ## Lineage
 
 bwb absorbs and supersedes the "1-3-2 put condor" briefly floated as a fourth book for
@@ -86,6 +105,14 @@ derivable and neither is rewritten.
   metric also reads the `delta` book as the reference. It reaches its 15 sessions about 10-14 and
   concludes on its own; its verdict measures nothing, and a re-proposal needs a base that has a
   trigger.
+
+## Entries switched off (2026-11-08)
+
+The owner switched the module's entries off on 2026-11-08. Nothing about the measurement changed: no
+arm was edited, so the rows to that day are one population. The module is switched off once its ladder
+is flat, ships off in the example config (`modules.bwb.enabled` and every arm `enabled` false, each
+with a `_retired` note), and may be reinstated by turning those back on. `/live-bwb-start` and the
+loop's `--arm` refuse while the module is off.
 
 ## Milestones
 

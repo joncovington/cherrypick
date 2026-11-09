@@ -1,5 +1,7 @@
 # History studies, October 2026 (b)
 
+> **Status (2026-11-08): record, not a plan: results from history, 2026-10-12. Curve, pmcc and flies are retired and off by default; the studies of their hooks and rolls are closed.**
+
 Seven questions answered from history we already hold, rather than from months of paper. Each
 section gives the sample, the net, the drawdown and a verdict, and names the script that reproduces
 it. Every script reads the live stores read-only (`mode=ro` SQLite, the Cboe files the market-files

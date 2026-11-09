@@ -6,17 +6,22 @@ what it may write. The package's own CLAUDE.md holds the detail.
 - **packages/orchestrator** — watchdog, OS scheduler, notifications, and the read side (report /
   reconcile / calibrate / review). Drives modules **by subprocess**, never by import.
 - **packages/meic** — MEIC 0DTE multiple-entry iron-condor trading module. Paper by default; its live
-  loop is armed per day by `/live-meic-start` (the supervisor's `meic-live` job while that day's arm
+  loop is armed per day by `/live-meic-start` or, from a terminal, `live_loop --arm --confirm YES`
+  (the supervisor's `meic-live` job while that day's arm
   record is valid, self-disarming at 17:00) and sized from the config's `live` block, which may name
   one arm (`live.arm`).
-- **packages/earnings** — earnings-play trading module (defined-risk strategies).
+- **packages/earnings** — earnings-play trading module (defined-risk strategies). **Paper-only since
+  v0.12.0:** it places no order and has no live gate; the supervisor's `earnings-paper` job runs it
+  (no agent session). A leftover `enable_live_trading` or `live` key in its config is ignored and
+  `run.py doctor` flags it. `earnings_trades.db` is the history of the earlier live orders.
 - **packages/gex** — the live GEX engine and spot-trail recorder; it computes and records, the console
   renders.
 - **packages/streamer** — the **single** producer of the shared stream cache every module reads.
   Modules declare symbols via `state/stream_requests/`; nothing else may write that cache.
-- **packages/flies** — 0DTE net-credit butterflies. **Retired by the developer in the live config on
-  2026-10-19; may be reinstated at a later date** (`modules.flies.enabled`). Paper by default, with a
-  narrow, per-day-armed live pilot (one arm, one symbol, a worst-case buying-power cap). Floors are
+- **packages/flies** — 0DTE net-credit butterflies. **Retired 2026-10-19; off by default; may be
+  reinstated** (`modules.flies.enabled` and the `control` arm's `enabled`). Was paper by default, with a
+  narrow, per-day-armed live pilot (one arm, one symbol, a worst-case buying-power cap) whose arm
+  commands refuse while the module is off. Floors are
   measured after fees, and a book-level floor always carries the price band over which it holds.
 - **packages/calendars** — weekly SPY double calendars; **paper-only, credential-free**, a pure
   stream-cache consumer (chains via the streamer's `expirations` field). An exit-parameter experiment:
@@ -25,20 +30,23 @@ what it may write. The package's own CLAUDE.md holds the detail.
   are distinct structures, never pooled; both European cash and American physical settlement are
   modelled, and a symbol declared as neither is refused at entry; ex-dividend weeks are skipped. No
   live path.
-- **packages/pmcc** — PMCC deep-ITM calls with a short call against them, on XSP, QQQ, GLD, IWM, SLV,
+- **packages/pmcc** — **Retired 2026-11-08; off by default; may be reinstated** (the owner switched
+  entries off with `defaults.wind_down`, #974, which also closes what is open; the module goes off
+  once flat; reinstating means `modules.pmcc.enabled`, the shield arms' `enabled` and `wind_down`
+  false). PMCC deep-ITM calls with a short call against them, on XSP, QQQ, GLD, IWM, SLV,
   SMH and the stocks AMZN, TSLA, AMD, NVDA and PLTR (one a market day, 2026-10-12 to 10-19);
   **paper-only, credential-free**, the calendars posture (chains via `expirations`/`window_hints`,
   year-long dates from the streamer's listing). The base trade since 2026-10-06 is `shield`/
   `shield_hold` (a ~1-year long held while a weekly short rolls against it, closed-only readers seeing
   them late), with `shield_guard` from 2026-10-26 (rolls an assignment-exposed in-the-money short); `control` (a 21-DTE long re-bought each cycle) and its advised twins are retired and run
   off, and pmcc's advice is off. A short spanning an earnings announcement is refused, as one spanning
-  an ex-date is. SLV is the intended first live symbol. **Early assignment
+  an ex-date is. **Early assignment
   is measured, never modelled**: ex-dividend spans refused, near-zero-extrinsic marks flagged
   assignment-exposed, so the paper result is an explicit upper bound. No live path yet.
-- **packages/curve** — VXX call-credit spreads gated by a daily VIX/VIX3M regime read. **Retired on
-  2026-11-01** after research item 37 failed every arm after costs: every arm and `advice` are off in
-  `curve.json`, so nothing new opens; the open spreads run to their 2026-11-20 expiry, then
-  `modules.curve.enabled` goes off. Was **paper-only,
+- **packages/curve** — VXX call-credit spreads gated by a daily VIX/VIX3M regime read. **Retired
+  2026-11-01; off by default; may be reinstated** (`modules.curve.enabled` and the arms' `enabled`)
+  after research item 37 failed every arm after costs: every arm and `advice` ship off, nothing new
+  opens, and the open spreads ran to their 2026-11-20 expiry. Was **paper-only,
   credential-free**. Books `control`, `noflip` (byte-identical to control until a flip fires),
   `hook` (retired from 2026-10-15) and (from 2026-10-06) `near`, a 0.40-delta short, differ in entry gate, exit rule or short
   delta; $2-wide from 2026-10-06, its credit floor net of entry costs against max loss. The daily classification is recorded every session,
@@ -50,10 +58,19 @@ what it may write. The package's own CLAUDE.md holds the detail.
   `control` (out at 0.97) and `flipexit` (out at 1.0) differ only in thresholds. Nothing fills
   after the decision window. Validated against `scripts/contango_replay.py`, which runs the loop's
   own rule. Trade schema `contango_etf`; off by default in the example. No live path.
-- **packages/bwb** — daily-laddered SPX put broken-wing butterflies, ~7 DTE, held to expiry; paper by
+- **packages/weeklyput** — ⚠️ EXPERIMENTAL. Research item 57's passing arm in paper: the put
+  nearest 10 delta on SPX (SPXW), SPY, QQQ and IWM, sold in the last minutes of the session seven
+  days before each weekly expiry that is not a standard monthly, held to the expiry's posted close,
+  unhedged. **Paper-only, credential-free**, a stream-cache consumer; declared as item 69, which
+  reads paper against item 57's replay. Settles only on a posted close (`stream_summary`), never a
+  last trade. Early assignment of the ETF puts is measured, never modelled (an upper bound). Off by
+  default in the example. No live path.
+- **packages/bwb** — **Retired 2026-11-08; off by default; may be reinstated** (the owner switched
+  entries off; the module goes off once flat; reinstating means `modules.bwb.enabled` and the arms'
+  `enabled`). Daily-laddered SPX put broken-wing butterflies, ~7 DTE, held to expiry; was paper by
   default and credential-free. Four books differ only in whether/when a reversal-triggered put credit
   spread add-on fires; trigger latches persist on the position row. **A narrow live path exists** in
-  the flies posture: one arm, armed per day by `/live-bwb-start`, a worst-case margin cap, a
+  the flies posture: one arm, armed per day by `/live-bwb-start` or `live_loop --arm --confirm YES` (both refuse while the module is off), a worst-case margin cap, a
   cost-derived credit floor, and a mark-drawdown breaker that blocks entries only. Every fill is the
   broker's word; settlement lands on an official print or not at all. Paper books are untouched by it.
 - **packages/overview** — the pre-open market overview: one deterministic fact pack per session with a
@@ -102,9 +119,7 @@ what it may write. The package's own CLAUDE.md holds the detail.
   the key lives in the keyring only, and a run is a pure function of the local store. No AI, no broker.
 - **packages/desk** — ⚠️ **EXPERIMENTAL.** The suite's only *discretionary* live-order path (meic,
   flies and bwb each have a live loop behind their own gate: `enable_live_trading` for meic, flies'
-  and bwb's own `live` gates and per-day arm; earnings has no live loop, and its hand-placed
-  `tt.py execute_trade --live` orders sit behind `enable_live_trading` and, from 2026-11-06, a
-  per-day arm for any order that opens). A
+  and bwb's own `live` gates and per-day arm; earnings is paper-only since v0.12.0). A
   foreground, human-initiated CLI, authorized entirely on its own (own config, own PIN, per-order
   ticket, own policy gates). Stores no broker secrets — it borrows a module's keyring session, because
   borrowing credentials is not borrowing permissions. No loop, no schedule, no ledger, never scheduled,

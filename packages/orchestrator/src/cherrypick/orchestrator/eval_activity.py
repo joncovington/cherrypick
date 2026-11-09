@@ -438,7 +438,11 @@ _READERS = {
 # contango (2026-10-06) is calendars' case daily: one decision per arm inside an eight-minute window
 # before the close, so every tick outside it is idle by design. Its window misses are recorded on
 # its own rows (`contango_sessions.action = 'missed'`) and read by the review's health reader.
-NOT_APPLICABLE = frozenset({"earnings", "dc_week", "contango_etf"})
+# weeklyput (2026-11-08) ticks every minute but acts only on an entry session's last quarter hour
+# (once a week, per name) and when an expiry's close posts, so a per-session evaluation count would
+# read every other day as "not evaluating". A cycle it missed is a `weeklyput_entries` row with the
+# refusal, and the review's health reader counts due against entered.
+NOT_APPLICABLE = frozenset({"earnings", "dc_week", "contango_etf", "weeklyput_put"})
 
 
 def assess(

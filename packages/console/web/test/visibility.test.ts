@@ -120,11 +120,6 @@ describe("gex, the advisor and the reports", () => {
     expect(isSlideVisible("flies", "session", fliesOff)).toBe(true);
   });
 
-  it("Options flow follows the options_flow feature, and is shown while the reply does not name it", () => {
-    expect(isModuleVisible("flow", withOff({ features: { ...ALL_ON.features, options_flow: false } }))).toBe(false);
-    expect(isModuleVisible("flow", withOff({ features: { ...ALL_ON.features, options_flow: true } }))).toBe(true);
-    expect(isModuleVisible("flow", ALL_ON)).toBe(true);
-  });
 
   it("the technicals chart follows technicals; the narratives follow their own features", () => {
     const off = withOff({ features: { advisor: true, technicals: false, review_narrative: false, morning_narrative: true } });
@@ -151,7 +146,7 @@ describe("fail open", () => {
     expect(isFeatureOn("technicals", undefined)).toBe(true);
     expect(offReason("earnings", undefined)).toBeNull();
     expect(visibleNavLinks(undefined).modules).toHaveLength(4);
-    expect(visibleNavLinks(undefined).experiments).toHaveLength(5);
+    expect(visibleNavLinks(undefined).experiments).toHaveLength(6);
     expect(visibleNavLinks(undefined).suite.map((l) => l.to)).toContain("/gex");
   });
 
@@ -162,7 +157,7 @@ describe("fail open", () => {
     expect(isSlideVisible("charts", "technicals", failed)).toBe(true);
     expect(offReason("earnings", failed)).toBeNull();
     expect(visibleNavLinks(failed).modules).toHaveLength(4);
-    expect(visibleNavLinks(failed).experiments).toHaveLength(5);
+    expect(visibleNavLinks(failed).experiments).toHaveLength(6);
   });
 });
 
@@ -192,7 +187,7 @@ describe("the nav lists", () => {
       ["/earnings", "3"],
       ["/experiments", "4"],
     ]);
-    expect(experiments.map((l) => l.to)).toEqual(["/calendars", "/curve", "/contango", "/flies"]);
+    expect(experiments.map((l) => l.to)).toEqual(["/calendars", "/curve", "/contango", "/weeklyput", "/flies"]);
   });
 
   it("drop the advisor from the suite links when it is off", () => {
@@ -242,7 +237,7 @@ describe("backtest fails closed", () => {
 
   it("leaves every other page's fail-open rule alone", () => {
     for (const f of [undefined, failed]) {
-      for (const id of ["earnings", "gex", "advisor", "flow", "system"]) {
+      for (const id of ["earnings", "gex", "advisor", "system"]) {
         expect(isModuleVisible(id, f)).toBe(true);
         expect(isHiddenAsUnknown(id, f)).toBe(false);
       }

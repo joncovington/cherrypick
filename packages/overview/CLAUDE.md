@@ -157,12 +157,7 @@ by default) runs `python run.py morning` → `python -m cherrypick.overview buil
 trading-days-only with a deliberately tight 90-minute catch-up — a pack caught up at 11:00 describes
 a market that already opened.
 
----
-CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
----
-
-> ⚠️ Suite-wide guardrails apply — see root `CLAUDE.md`. The fact pack is deterministic; the
-> narrative is not, and is fenced accordingly (above).
+The fact pack is deterministic; the narrative is not, and is fenced accordingly (above).
 
 ## Tool Reference
 

@@ -1,5 +1,7 @@
 # History studies, October 2026
 
+> **Status (2026-11-08): record, not a plan: results from history, 2026-10. The bwb sections concern a retired module (bwb, retired 2026-11-08, off by default).**
+
 Four questions that the suite was waiting on live data to answer. Each one can be answered now from
 history already on disk. Each section names its script, what it read, and what it found, and ends
 with a verdict. These are research results. No module's behaviour changed because of them.

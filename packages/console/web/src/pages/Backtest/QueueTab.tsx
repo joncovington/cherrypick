@@ -4,11 +4,13 @@ import type { BridgedResult, ResearchProgress, ResearchQueue, ResearchTask } fro
 import { VERDICT_STATUSES, indexStudies, splitTitle, statusWord, studyHref, useStudies, verdictChip, type StudyIndex } from "./studyIndex";
 import { HelpSection } from "../../components/CardHelp";
 import { Card } from "../../components/DataTable";
+import { ListViewContext, ViewSwitch, useListView, useViewChoice } from "../../components/ViewSwitch";
 import { useBridged } from "../../lib/bridged";
+import { BtRows, type BtRow } from "./BtRows";
 import { CardLightbox, LightboxFrame, useOpenParam, type LightboxTab } from "./CardLightbox";
 
 /**
- * The Backtest page's queue tab (2026-10-24; laid out again 2026-10-27, docs/progress-queue-arms-plan.md
+ * The Backtest page's queue tab (2026-10-24; laid out again 2026-10-27, docs/history/progress-queue-arms-plan.md
  * phase 2; by study 2026-11-02): the research tasks the supervisor's `research-queue` job runs one at a
  * time, and the runs started by hand beside them, read through `/api/backtest/queue` (the
  * orchestrator's `queue-list`).
@@ -466,6 +468,50 @@ function TaskTile({ item, studies, nowMs, onOpen }: { item: Extract<QueueItem, {
   );
 }
 
+/** A queued, failed or stopped task's tile on one line: its place or age and state, its study, its step and wait. */
+export function taskRow(item: Extract<QueueItem, { kind: "task" }>, studies: StudyIndex | undefined, nowMs: number, onOpen: () => void): BtRow {
+  const t = item.t;
+  const chip = stateChip(t);
+  const attention = item.section === "attention";
+  const wait = waitText(t, item.pos);
+  const meta = [t.study, t.step, t.kind, t.needs.includes("thetadata") ? "ThetaData" : null, studies && !studies.byStudy.has(t.study) ? "not in the register" : null];
+  return {
+    key: item.key,
+    label: `Open ${t.name}`,
+    lead: (
+      <>
+        {item.pos !== undefined ? <span className={t.waits === "ready" ? "q-pos" : "q-pos is-waiting"}>{item.pos}</span> : null}
+        <span className={chip.cls}>{chip.word}</span>
+      </>
+    ),
+    title: studyTitle(t.study, studies),
+    meta: meta.filter((x): x is string => x !== null).join(" · "),
+    end: attention ? (
+      <span className={t.result?.outputExists === false ? "pnl-neg" : undefined}>{t.note ?? resultLine(t)}</span>
+    ) : (
+      (wait ?? (item.pos === undefined ? ago(endedMs(t), nowMs) : null))
+    ),
+    attention,
+    data: { "data-task": String(t.id) },
+    onOpen,
+  };
+}
+
+/** A run started by hand on one line: its state, its job, how far or how long ago. */
+export function handRow(item: Extract<QueueItem, { kind: "hand" }>, nowMs: number, live: boolean, onOpen: () => void): BtRow {
+  const p = item.p;
+  return {
+    key: item.key,
+    label: `Open ${p.job}`,
+    lead: <span className={PROGRESS_CHIP[p.state]}>{p.state}</span>,
+    title: <span className="q-mono">{p.job}</span>,
+    meta: "started by hand",
+    end: live ? progressLine(p) : ago(p.updatedAt === null ? null : p.updatedAt * 1000 - (Date.now() - nowMs), nowMs),
+    data: { "data-task": `hand:${p.file}` },
+    onOpen,
+  };
+}
+
 function CardSection({ title, note, children }: { title: string; note?: string; children: ReactNode }) {
   return (
     <section className="q-section">
@@ -662,9 +708,19 @@ function QueueDialog({ items, index, studies, onStep, onClose }: { items: QueueI
   );
 }
 
+function tasksOf(items: QueueItem[]): Array<Extract<QueueItem, { kind: "task" }>> {
+  return items.filter((i): i is Extract<QueueItem, { kind: "task" }> => i.kind === "task");
+}
+
+function handsOf(items: QueueItem[]): Array<Extract<QueueItem, { kind: "hand" }>> {
+  return items.filter((i): i is Extract<QueueItem, { kind: "hand" }> => i.kind === "hand");
+}
+
 /** The tab's cards: the running task large, then up next, the last week's failures, runs by hand. */
 export function QueueCards({ q, nowMs = etNowMs(), studies }: { q: ResearchQueue; nowMs?: number; studies?: StudyIndex }) {
   const lightbox = useOpenParam("task");
+  // Rows apply to the lists below the running task; the running tile and the hand runs beside it stay.
+  const rows = useListView() === "rows";
   if (q.tasks.length === 0 && q.byHand.length === 0) return <p className="muted">The queue is empty.</p>;
   const items = queueItems(q, nowMs);
   const index = items.findIndex((i) => i.key === lightbox.open);
@@ -693,17 +749,29 @@ export function QueueCards({ q, nowMs = etNowMs(), studies }: { q: ResearchQueue
       </div>
       {next.length > 0 ? (
         <CardSection title="Up next" note="in the order the runner takes them">
-          <div className="study-tiles q-tiles">{next.map((i) => (i.kind === "task" ? <TaskTile key={i.key} item={i} studies={studies} nowMs={nowMs} onOpen={open(i)} /> : null))}</div>
+          {rows ? (
+            <BtRows rows={tasksOf(next).map((i) => taskRow(i, studies, nowMs, open(i)))} />
+          ) : (
+            <div className="study-tiles q-tiles">{tasksOf(next).map((i) => <TaskTile key={i.key} item={i} studies={studies} nowMs={nowMs} onOpen={open(i)} />)}</div>
+          )}
         </CardSection>
       ) : null}
       {attention.length > 0 ? (
         <CardSection title="Failed or stopped" note={`last ${String(ATTENTION_DAYS)} days; each is also on its study's card`}>
-          <div className="study-tiles q-tiles">{attention.map((i) => (i.kind === "task" ? <TaskTile key={i.key} item={i} studies={studies} nowMs={nowMs} onOpen={open(i)} /> : null))}</div>
+          {rows ? (
+            <BtRows rows={tasksOf(attention).map((i) => taskRow(i, studies, nowMs, open(i)))} />
+          ) : (
+            <div className="study-tiles q-tiles">{tasksOf(attention).map((i) => <TaskTile key={i.key} item={i} studies={studies} nowMs={nowMs} onOpen={open(i)} />)}</div>
+          )}
         </CardSection>
       ) : null}
       {handRecent.length > 0 ? (
         <CardSection title="Started by hand" note={`last ${String(RECENT_DAYS)} days`}>
-          <div className="study-tiles q-tiles q-tiles-small">{handRecent.map((i) => (i.kind === "hand" ? <HandTile key={i.key} p={i.p} nowMs={nowMs} live={false} onOpen={open(i)} /> : null))}</div>
+          {rows ? (
+            <BtRows rows={handsOf(handRecent).map((i) => handRow(i, nowMs, false, open(i)))} />
+          ) : (
+            <div className="study-tiles q-tiles q-tiles-small">{handsOf(handRecent).map((i) => <HandTile key={i.key} p={i.p} nowMs={nowMs} live={false} onOpen={open(i)} />)}</div>
+          )}
         </CardSection>
       ) : null}
       {index >= 0 ? <QueueDialog items={items} index={index} studies={studies} onStep={(to) => lightbox.step(items[to]?.key ?? "")} onClose={lightbox.close} /> : null}
@@ -714,6 +782,7 @@ export function QueueCards({ q, nowMs = etNowMs(), studies }: { q: ResearchQueue
 export function BacktestQueueTab() {
   const { data, isLoading, isError, error, dataUpdatedAt } = useBridged<ResearchQueue>(["backtest", "queue"], "/api/backtest/queue", queuePollMs);
   const studies = useStudies();
+  const [view, setView] = useViewChoice("backtest-queue");
   // No index until the board has loaded: an empty one would call every study unregistered.
   const index = studies.data?.ok && studies.data.data ? indexStudies(studies.data.data) : undefined;
   let body: ReactNode;
@@ -743,6 +812,7 @@ export function BacktestQueueTab() {
       collapseKey="backtest-queue"
       updatedAt={dataUpdatedAt}
       isError={isError}
+      controls={<ViewSwitch view={view} onChange={setView} />}
       help={{
         title: "How the queue runs",
         body: (
@@ -773,11 +843,17 @@ export function BacktestQueueTab() {
                 here through its progress file.
               </p>
             </HelpSection>
+            <HelpSection title="Cards or rows">
+              <p>
+                The switch in the card head lists up next, the failures and the hand runs as rows, one line a task; a row opens the same
+                card. The running task stays large either way.
+              </p>
+            </HelpSection>
           </>
         ),
       }}
     >
-      {body}
+      <ListViewContext.Provider value={view}>{body}</ListViewContext.Provider>
     </Card>
   );
 }

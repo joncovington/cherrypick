@@ -37,8 +37,8 @@ or *book*; those spellings keep working.)
 
 Because each arm changes one lever against a shared control, you can measure the isolated effect of a
 single idea rather than confounding several at once. **A base install runs only the `control` arm in
-MEIC, earnings, flies, bwb, calendars and curve**; PMCC's example runs its two shield arms and
-contango's its two arms. Any further arms are your own machine's configuration under
+MEIC, earnings and calendars**; flies, bwb, curve and PMCC are retired and ship with every arm off (see their status lines),
+contango runs its two arms and weeklyput its one, `unhedged`. Any further arms are your own machine's configuration under
 `~/.cherrypick/config/` (MEIC's in `meic.risk.json`). BWB, calendars and curve also build comparison
 books into the module (bwb's add-on triggers, calendars' `path`, curve's `noflip` and `near`); their shipped examples switch
 each one off with `enabled: false`, and you switch one on in your own config. With Claude Code
@@ -97,7 +97,7 @@ suite once collected $4.00 of credit against $4.96 of fees.
 - **Earnings** — defined-risk earnings plays (iron flies, calendars, condors, broken-wing flies, and more),
   each sized to a fixed dollar risk, held overnight around a company's earnings report. Needs the
   optional Dolt data; without it the module is switched off and hidden.
-- **Flies** — 0DTE net-credit butterflies on SPX/XSP built from two credit spreads, measuring whether the
+- **Flies** — **Retired 2026-10-19, off by default.** 0DTE net-credit butterflies on SPX/XSP built from two credit spreads, measuring whether the
   manufactured credit survives real trading costs. See [packages/flies](packages/flies). It is built so a
   *negative* result is usable: floors are measured after fees, and a book-level floor always carries the
   price band over which it actually holds.
@@ -107,14 +107,14 @@ suite once collected $4.00 of credit against $4.96 of fees.
   mechanical control book, a permissive path book recording every tick, and a read-side replay that
   scores profit targets, stops and exit timings over the recorded path — validated against the real
   books to the cent. Paper-only and credential-free. See [packages/calendars](packages/calendars).
-- **PMCC** — ⚠️ **EXPERIMENTAL, off by default.** A deep-ITM call held with a shorter call sold
+- **PMCC** — **Retired 2026-11-08, off by default.** A deep-ITM call held with a shorter call sold
   against it, on XSP, QQQ, GLD, IWM, SLV, SMH and the stocks AMZN, TSLA, AMD, NVDA and PLTR.
   The `shield` and `shield_hold` arms hold a ~1-year 0.88–0.92-delta long and sell a
   weekly 0.70-delta call against it, rolled each week (`shield` also rolls early); the original
   21-DTE `control` is retired and off in the example. A short spanning an earnings or ex-dividend
   date is refused; early assignment is measured, never modelled, so paper results are an explicit
   upper bound. Paper-only and credential-free. See [packages/pmcc](packages/pmcc).
-- **Curve** — ⚠️ **EXPERIMENTAL, off by default.** VXX call credit spreads harvesting the VIX term-structure roll yield, gated by a daily
+- **Curve** — **Retired 2026-11-01, off by default.** VXX call credit spreads harvesting the VIX term-structure roll yield, gated by a daily
   VIX/VIX3M regime read. Its books (contango-gated `control`, `noflip` without the flip exit, the
   0.40-delta `near`, and `hook`, retired from 2026-10-15) trade the same structure and differ only
   in entry gate, exit rule or short delta; the daily regime
@@ -125,7 +125,12 @@ suite once collected $4.00 of credit against $4.96 of fees.
   differ only in where they get out (0.97 or 1.0). Replayed from 2018, the switch earns less than
   holding SVXY outright for about 20 points less drawdown, and the paper run measures whether that
   holds. Paper-only and credential-free. See [packages/contango](packages/contango).
-- **BWB** — a daily-laddered SPX put broken-wing butterfly entered at the expected move for a net
+- **Weeklyput** — ⚠️ **EXPERIMENTAL, off by default.** The one cell that [research item](docs/glossary.md) 57 passed: the
+  index put nearest 10 delta (SPX, SPY, QQQ, IWM), sold seven days before each weekly expiry that is
+  not a standard monthly and held to expiry, unhedged. The paper run measures whether a
+  close-of-session fill tracks the study's replay (item 69). Paper-only and credential-free. See
+  [packages/weeklyput](packages/weeklyput).
+- **BWB** — **Retired 2026-11-08, off by default.** A daily-laddered SPX put broken-wing butterfly entered at the expected move for a net
   credit, ~7 DTE, held to expiry. Four books trade the identical base structure and differ only in
   whether a reversal-triggered add-on fires (never / delta touch / confirmed bounce / gamma-flip
   reclaim), plus an opt-in call-side book at the GEX call wall. A narrow, per-day-armed live path
@@ -156,6 +161,10 @@ with an *experimental* chip.
   every other package's data, and kept running by the supervisor rather than started by hand. A module or
   feature that is switched off, or needs a capability this machine lacks, is hidden. It replaced the
   suite dashboard and every per-module dashboard on 2026-08-12.
+- **Your own reports (optional)** — write a small script that saves a JSON report under `~/.cherrypick`,
+  list it in `config.json`, and the console draws it under Reports > external (optionally posting a text
+  card to Discord). Nothing is shipped or run until you add one: see
+  [the guide](docs/guide/external-reports.md).
 - **The end-of-day review on disk** — one versioned, deterministic fact set per session covering every
   module (`packages/review`), with rendered reports built from it and (opt-in, needs Claude Code) an
   AI-written narrative over it. The fact set stays the source of record; it replaced the old per-module EOD reports on
@@ -174,10 +183,10 @@ Every surface binds to loopback only.
   read-only safety check that flags anything a paper-only suite shouldn't be holding). Turning live
   trading *on* is always a deliberate, manual, per-module act — the orchestrator will never do it for you
   and never places an order itself. But note what that means: **once a module's live gate is open, that
-  module's own loop can place orders without asking again.** MEIC, earnings, flies, and bwb each have a live
-  path, each behind its own gate (`enable_live_trading` for MEIC and earnings; flies and bwb have their
-  own `live` gates instead). MEIC, flies and bwb are the most tightly bounded of them — loops that must
-  be re-armed by hand every trading day (`/live-meic-start`, `/live-flies-start`, `/live-bwb-start`),
+  module's own loop can place orders without asking again.** MEIC, flies, and bwb each have a live
+  path, each behind its own gate (`enable_live_trading` for MEIC; flies and bwb have their
+  own `live` gates instead). They are loops that must
+  be re-armed by hand every trading day (`/live-meic-start`, `/live-flies-start`, `/live-bwb-start`, or `python -m cherrypick.<module>.live_loop --arm --confirm YES` from a terminal; flies and bwb are retired and refuse while switched off),
   one arm at a time, under a buying-power cap; while armed, the supervisor runs their live loop as a job
   ([the flies plan](packages/flies/docs/live-trading-plan.md)).
 - **The manual desk — ⚠️ EXPERIMENTAL.**
@@ -196,11 +205,11 @@ kept strictly separate.
 > been validated as profitable — the paper experiments exist precisely because the answer is not yet
 > known, and several of the suite's own recorded results are *negative*.
 >
-> **There are five ways real orders can be placed**, and it is worth knowing all of them before you open
-> any of them: **MEIC**, **earnings**, **flies**, and **bwb** each have a live path behind gates of their
-> own, and **desk** is the manual one. The first four are *loops* — once the gate is open, they act on
-> their own schedule without asking again (MEIC's, flies' and bwb's as supervisor jobs while that day's
-> arm is valid; earnings' in an agent session you start). The orchestrator itself
+> **There are four ways real orders can be placed**, and it is worth knowing all of them before you open
+> any of them: **MEIC**, **flies** and **bwb** (the last two retired and off by default) each have a live path behind gates of their
+> own, and **desk** is the manual one. The first three are *loops* — once the gate is open, they act on
+> their own schedule without asking again (as supervisor jobs while that day's
+> arm is valid). A person arms each loop for one day, with its slash command or with `--arm --confirm YES` on the module's live loop; flies and bwb refuse to arm while the module is off (both ship retired and off). Earnings is paper-only since v0.12.0. The orchestrator itself
 > never places an order, but "the automation won't trade for you" stops being true the moment you open
 > one of those gates.
 >
@@ -219,14 +228,14 @@ kept strictly separate.
 
 ## What's in the repo
 
-One workspace, twenty packages: the strategy engines above plus the pieces that feed, drive, and
+One workspace of packages: the strategy engines above plus the pieces that feed, drive, and
 read them.
 
 | Package | What it is |
 |---|---|
 | [packages/orchestrator](packages/orchestrator) | The supervisor, watchdog, notifications, and the read side (report / calibrate / EOD). Drives the engines by subprocess. |
 | [packages/core](packages/core) | The shared `cherrypick.core` library — calendar, fees, profiles, GEX math, broker, auth. Install it first. |
-| [packages/meic](packages/meic) · [packages/earnings](packages/earnings) · [packages/flies](packages/flies) · [packages/calendars](packages/calendars) · [packages/pmcc](packages/pmcc) · [packages/curve](packages/curve) · [packages/contango](packages/contango) · [packages/bwb](packages/bwb) | The eight strategy engines. Calendars, pmcc and curve are EXPERIMENTAL, paper-only and off by default, as is contango; bwb is paper by default with a narrow live path; earnings needs the optional Dolt data. |
+| [packages/meic](packages/meic) · [packages/earnings](packages/earnings) · [packages/flies](packages/flies) · [packages/calendars](packages/calendars) · [packages/pmcc](packages/pmcc) · [packages/curve](packages/curve) · [packages/contango](packages/contango) · [packages/weeklyput](packages/weeklyput) · [packages/bwb](packages/bwb) | The strategy engines. MEIC runs by default; earnings is paper-only and needs the optional Dolt data; calendars, contango and weeklyput are EXPERIMENTAL, paper-only and off by default; flies, bwb, pmcc and curve are retired and ship off (kept so each can be reinstated; flies and bwb keep their narrow live paths behind the same gates, and refuse to arm while off). |
 | [packages/streamer](packages/streamer) | The single market-data producer. Everything else reads the cache it writes; nothing else writes it. |
 | [packages/gex](packages/gex) | The GEX engine and spot-trail recorder; the console renders it. |
 | [packages/console](packages/console) | The unified web console (`127.0.0.1:5070`) — every module's read models plus research and screening, in one app. Read-only. |
@@ -248,7 +257,7 @@ read them.
 | **[Node.js](https://nodejs.org) 22+** | The console — the suite's one read surface — is a Node/TypeScript package. The installer adds **pnpm 11** for you. |
 | A computer that stays awake during market hours | cherrypick runs on your machine, so it has to be on to capture a session. **Windows is recommended** — the scheduler and self-healing are most proven there; the macOS/Linux crontab backend is newer and less proven. |
 | **[Dolt](https://github.com/dolthub/dolt)** *(optional)* | The **earnings** module and the **technicals** report read three public DoltHub datasets from a local `dolt sql-server` (`stocks` about 3 GB, `earnings` about 1.35 GB, `options` larger still). Without it, both are switched off and hidden. |
-| **[Claude Code](https://docs.claude.com/en/docs/claude-code)** *(optional)* | Anthropic's agentic CLI. The AI advisor, the agent-written end-of-day and morning narratives, and the repo's slash commands (`/meic-start`, `/earnings-start`, `/console`, …) need it. Without it, those features are switched off and hidden; the paper automation runs on its own. |
+| **[Claude Code](https://docs.claude.com/en/docs/claude-code)** *(optional)* | Anthropic's agentic CLI. The AI advisor, the agent-written end-of-day and morning narratives, and the repo's slash commands (`/meic-start`, `/console`, …) need it. Without it, those features are switched off and hidden; the paper automation runs on its own. |
 
 Whether this machine has the two optional pieces is recorded as **capabilities** in
 `~/.cherrypick/config.json` (`capabilities: {claude, dolt}`, absent means no). The installer detects
@@ -412,7 +421,7 @@ ones. Paper and live ledgers are separate files, never queryable through one con
 - **Paper by default.** Every engine ships with live trading off, and the orchestrator that schedules
   them never places, cancels, or closes an order itself. Opening a module's live gate is on you — and
   once open, that module's loop trades within its own limits without asking again.
-- **Experimental modules are off.** Calendars, PMCC, curve and contango ship switched off, and the desk is not
+- **Experimental and retired modules are off.** Calendars, contango and weeklyput (experimental) and flies, bwb, PMCC and curve (retired) ship switched off, and the desk is not
   installed at all unless you ask for it.
 - **Your data stays yours.** Trades and credentials live on your machine (credentials in your operating
   system's secure keyring — never in a plain file).

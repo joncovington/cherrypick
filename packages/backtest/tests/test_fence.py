@@ -6,6 +6,9 @@
 2. **The keyring is touched from one file only**, `credential.py`, so the key's value has exactly
    one way out (to the vendor client), and no other module can print, log or store it.
 3. **No AI, no broker.** This package measures; it never asks a model and never reaches an account.
+4. **Every store comes from the vendor's production environment.** Its STAGE environment computes
+   greeks slightly differently, so it is for checks run by hand only: nothing in the package or its
+   scripts asks for it, by name or through the library's `mdds_type`.
 """
 
 from __future__ import annotations
@@ -54,6 +57,7 @@ STRATEGY = {
     "cherrypick.pmcc",
     "cherrypick.curve",
     "cherrypick.contango",
+    "cherrypick.weeklyput",
     "cherrypick.gex",
     "cherrypick.advisor",
     "cherrypick.desk",
@@ -111,6 +115,65 @@ def test_the_strategy_fence_fires_on_a_planted_import(tmp_path):
     assert _offenders(STRATEGY, None, tmp_path) == [
         "runner.py: cherrypick.meic",
         "runner.py: cherrypick.flies.replay",
+    ]
+
+
+SCRIPTS = PACKAGE_ROOT / "scripts"
+#: The two files that name the environments and pass one through to the library.
+STAGE_FILES = {"vendor/__init__.py", "vendor/thetadata.py"}
+#: The suite's own ways to build a client; `env=` elsewhere (a subprocess's) is not the vendor's.
+CLIENT_CALLS = {"client_for", "ThetaDataClient"}
+
+
+def _called(node: ast.Call) -> str | None:
+    f = node.func
+    return f.id if isinstance(f, ast.Name) else f.attr if isinstance(f, ast.Attribute) else None
+
+
+def _stage_asks(root: Path, allowed: set[str]) -> list[str]:
+    """Every place under `root` that could pick the vendor's environment: ``env=`` on a client the
+    suite builds, ``mdds_type=`` on any call (the library's own), or the literal "STAGE"."""
+    found = []
+    for py in sorted(root.rglob("*.py")):
+        rel = py.relative_to(root).as_posix()
+        if rel in allowed:
+            continue
+        for node in ast.walk(ast.parse(py.read_text(encoding="utf-8"), filename=str(py))):
+            if isinstance(node, ast.Call):
+                for k in node.keywords:
+                    if k.arg == "mdds_type" or (k.arg == "env" and _called(node) in CLIENT_CALLS):
+                        found.append(f"{rel}: {k.arg}=")
+            elif (
+                isinstance(node, ast.Constant)
+                and isinstance(node.value, str)
+                and node.value.upper() == "STAGE"
+            ):
+                found.append(f"{rel}: 'STAGE'")
+    return sorted(found)
+
+
+def test_nothing_in_the_package_or_its_scripts_asks_for_stage():
+    offenders = _stage_asks(SRC, STAGE_FILES) + _stage_asks(SCRIPTS, set())
+    assert not offenders, f"STAGE is for checks by hand; a store comes from PROD: {offenders}"
+
+
+def test_the_stage_fence_fires_on_a_planted_ask(tmp_path):
+    """A guard has to be shown to fail: each way of asking is reported outside the vendor files, a
+    subprocess's `env=` is not, and the same words inside the vendor files stay quiet."""
+    (tmp_path / "vendor").mkdir()
+    (tmp_path / "fetch_x.py").write_text(
+        "client = vendor.client_for(s, env=e)\n"
+        "c = ThetaClient(api_key=k, mdds_type=m)\n"
+        "os.environ['THETADATA_MDDS_TYPE'] = 'stage'\n"
+        "subprocess.run(cmd, env=environ)\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "vendor" / "thetadata.py").write_text("ENVS = ('PROD', 'STAGE')\n", encoding="utf-8")
+    (tmp_path / "vendor" / "__init__.py").write_text("c = ThetaDataClient(s, env=env)\n", encoding="utf-8")
+    assert _stage_asks(tmp_path, STAGE_FILES) == [
+        "fetch_x.py: 'STAGE'",
+        "fetch_x.py: env=",
+        "fetch_x.py: mdds_type=",
     ]
 
 

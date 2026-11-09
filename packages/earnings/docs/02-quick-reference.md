@@ -39,8 +39,9 @@ python -m cherrypick.earnings.rank_strategies get_ranked_symbols --date MM/DD/YY
 ```
 
 Evaluates every enabled strategy against every candidate on the merged today-AMC/tomorrow-BMO
-calendar and picks each symbol's single best-ranked strategy. This is what the live/paper loop
-(`/earnings-start`) actually calls at entry time — see `CLAUDE.md`'s Loop Step 4b.
+calendar and picks each symbol's single best-ranked strategy. It is a standalone analysis
+tool (`/paper-trading-start`); the supervisor's paper loop opens its books through the
+forced-sampling harness instead.
 
 ### Building a concrete order
 
@@ -75,22 +76,22 @@ Every candidate has to clear the shared liquidity/quality gates in
 
 ## Exit Mechanics (In Order)
 
-In the agent-driven loop (`/earnings-start`):
+The original same-session exit rules, kept here for the thresholds they set:
 
-1. **Early exit check (Step 3c/3b/3d)** — the first morning after entry, between market open and
+1. **Early exit check** — the first morning after entry, between market open and
    `close_window_start` (default `09:45` ET): profit-target and stop checks per strategy run against
    live quotes (`strategies.<name>`: iron_fly 25% / 1.5×, iron_condor 50% / 1.5×,
    directional_credit_spread 50% / 2.0×, broken_wing_butterfly 25% / 2.0×, calendars 15% / 50% of
    debit — see [Exit Strategy Guide](./10-exits.md)).
-2. **Unconditional close-window backstop (Step 3)** — whatever is still open when the close
+2. **Unconditional close-window backstop** — whatever is still open when the close
    window arrives gets closed regardless of P&L. IV crush already happened overnight; there's no
    more edge from holding, so this is a hard stop, not a target.
 
 There is no same-day "4-hour backstop" — every strategy here holds overnight by design (that's
 the whole edge: capturing the IV crush that happens around the report, not during the
-afternoon before it). See `CLAUDE.md`'s Loop Steps for the full mechanics.
+afternoon before it).
 
-The unattended paper loop manages positions instead: it holds them on the entry session, then
+The unattended paper loop is what runs today, and it manages positions differently: it holds them on the entry session, then
 applies the PEAD gate, a three-session cap and the 15:20 expiry close — see
 [Exit Strategy Guide](./10-exits.md).
 
@@ -99,8 +100,8 @@ applies the PEAD gate, a three-session cap and the 15:20 expiry close — see
 ## Position Sizing
 
 Sizing is code-enforced in `cherrypick/earnings/sizing.py`, not a spreadsheet calc — `compute_position_size`
-scales quantity to keep max loss within `max_risk_per_trade_pct` of NLV (real account balance in
-live mode, `available_capital_paper_mode` in paper mode), capped by `max_contracts_per_leg`
+scales quantity to keep max loss within `max_risk_per_trade_pct` of NLV (the simulated
+`available_capital_paper_mode`), capped by `max_contracts_per_leg`
 regardless of the risk budget. To see what it would do for a real candidate, just read the
 `quantity` and `capital_at_risk` fields in `get_order`'s output — there's no separate sizing
 command to run by hand.
@@ -163,19 +164,8 @@ See [Configuration Guide](./03-configuration.md) for every parameter and what it
 
 ## Strategy Comparison
 
-All seven strategies are defined-risk — max loss is known at entry for every one of them.
-
-| Strategy | Structure | Entry | Hold |
-|---|---|---|---|
-| `iron_fly` | Short ATM straddle + long OTM wings | Credit | Overnight |
-| `iron_condor` | Short OTM put spread + short OTM call spread | Credit | Overnight |
-| `directional_credit_spread` | Short OTM put or call spread (side by skew) | Credit | Overnight |
-| `broken_wing_butterfly` | Skip-strike butterfly, wings sized to skew | Credit | Overnight |
-| `atm_calendar` | Short front-month + long back-month, one side | Debit | Multi-day |
-| `double_calendar` | ATM calendar on both call and put side | Debit | Multi-day |
-| `expected_move_butterfly` | 1-2-1 fly, body at spot ± EM, side by rr25 skew (paper only) | Debit | To the 15:20 expiry close or take-profit |
-
-The two calendars open nothing in the forced-sampling books from 2026-10-15.
+All seven strategies are defined-risk: max loss is known at entry for every one of them. Structure,
+entry and hold for each are in the one strategy table, [Strategy Guide](./05-strategies.md).
 
 ---
 
@@ -195,11 +185,6 @@ quiet, illiquid, or low-IV/RV night produces a lot of legitimate rejections. See
 Re-run `python -m cherrypick.earnings.rank_strategies get_ranked_symbols --date MM/DD/YYYY` and check the
 per-strategy scores in the output — the ranking is logged to `scan_log` (`strategy = "_ranked"`)
 so you can also query the database directly for the full evaluation trail.
-
-### "Order rejected" / margin errors in dry-run
-`python -m cherrypick.earnings.tt execute_trade --order '<JSON>'` without `--live` still performs a real margin
-check against your account — read the response body for the specific rejection reason before
-assuming it's a code bug.
 
 ### "Connection failed"
 ```bash

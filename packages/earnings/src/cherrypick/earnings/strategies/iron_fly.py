@@ -215,7 +215,7 @@ def fetch_iron_fly_order(symbol: str, earnings_date: date, earnings_timing: str,
     alone). `full_config` is the whole project config (not just this
     strategy's sub-config) since fetching IV/RV ratio needs the top-level
     DoltHub connection settings. Returns
-    {"ok": True, "order": {...tt.py execute_trade-shaped spec...},
+    {"ok": True, "order": {...broker order spec...},
     "expiration": ..., "short_strike": ..., "wing_width": ..., "credit": ...}
     or {"ok": False, "error": ...}.
 
@@ -343,7 +343,7 @@ def fetch_iron_fly_order(symbol: str, earnings_date: date, earnings_timing: str,
 
 def evaluate_position(position: dict, quotes: dict, config: dict, *, now=None) -> dict:
     """Decide whether to close an open iron fly position early (CLAUDE.md
-    Step 3c, the narrow market-open-to-close-window slot) ahead of Step 3's
+    the early-exit check, the narrow market-open-to-close-window slot) ahead of the
     unconditional close-window sweep, which remains the final backstop
     regardless of what this returns. Pure calculation, no I/O -- caller
     fetches `quotes` via `scanner.fetch_quotes_by_symbol` for this

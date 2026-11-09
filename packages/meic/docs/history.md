@@ -4,6 +4,42 @@ Dated narrative behind the rules in [`../CLAUDE.md`](../CLAUDE.md). The rules li
 keeps how each was found, with the numbers. For the experiment designs themselves see
 [paper-experiments.md](paper-experiments.md).
 
+## Declared boundaries
+
+Dates from which MEIC's rows were produced under a different rule. **Never pool across one**; the
+console and `analytics` read the current era by default (`CURRENT_ERA`), and a boundary that changes a
+measurement is journaled as a break on the arms it touches.
+
+| Date | What changed |
+|---|---|
+| 2026-08-12 | Suite dashboard and this module's dashboard retired; the console reads both ledgers |
+| 2026-08-21 | Advisor-era cutover: `control` redefined as the permissive sampling substrate; sign, control-drift, width-5, width-10 retired |
+| 2026-09-24 | Ledger column `risk_profile` renamed `arm` |
+| 2026-09-28 | `live-shadow` and `bp-5k` / `bp-10k` / `bp-25k` added (arm_added break 2026-09-29) |
+| 2026-10-08 | The module's own scheduled-task launcher removed; the supervisor fires `meic-paper` |
+| 2026-10-14 | The `live` block: live-only sizing leaves the top level |
+| 2026-10-15 | Live settles on the official print only; `live-minus-*` and `live-plus-otmfloor` arms (declared 2026-10-12) |
+| 2026-10-16 | `live-minus-otmfloor` retired; live's OTM floors back to control's |
+| 2026-10-18 | `pm-200` becomes the arm `live.arm` names; the in-module rollback streamer removed |
+| 2026-10-19 | Remaining `live-minus-*` arms retired; `scripts/boundary_2026_10_19.py` |
+| 2026-10-24 | Live kill criteria (`live.kill`) |
+| 2026-10-25 | A closed live IC with no net refuses new ICs |
+| 2026-10-27 | A manual (agent-path) opening order obeys the loop's entry rules |
+| 2026-11-02 | Arm gates new ICs only (management runs unarmed); settlement asks the broker first; entries written ahead of their order; manage-only snapshot; `MAX_LIVE_QUANTITY` of one; `live.resting_stop` available, off by default (switching it on is a boundary against `live-shadow`) |
+
+## Moved from CLAUDE.md
+
+- **2026-10-13** - an outage across the close left 656 paper positions open. The cause of the rule that
+  a past session is settled only at the official print, by `paper_loop.settle_overdue`, and otherwise
+  left open and logged.
+- **2026-11-02, the DXLink hour** - DXLink refused connections for an hour, every live tick exited at
+  `no snapshot`, and a put side was stopped 79 minutes late at $7.15 against a $3.60 trigger. The reason
+  a failed entry snapshot never skips management (`_manage_snapshot`).
+- **Before 2026-11-02, disarming** left an open IC unmanaged until the next day's catch-up settle. Now the
+  arm gates new ICs only and `meic-live` runs every trading day.
+- **Before 2026-11-02, settling** a session with an order in doubt: a close that filled unseen was read
+  as cancelled and its side settled at expiry. Now settlement asks the broker first.
+
 ## Operations
 
 - **2026-06-30** — XSP: $4.00 gross credit, $4.96 fees, net −$0.97. The reason for the fee-adjusted
@@ -153,17 +189,12 @@ gross by hand came out $55k off before it was noticed — hence the net-of-fees 
   found holding beats every stop at every cap, and forward it won 26% of entries over 9 sessions. It
   is concluded with a verdict by `advisor kill` on the weekend of 10-17 (the boundary script), not
   left to run its 20.
-- **2026-10-12 — three live-ledger rows corrected** (`scripts/meic_live_ledger_correct.py`, dry run
-  by default; a recording correction). The agent-era loop stored the entry's limit as `net_credit`.
-  id 7 (06-30): filled at 0.43, not 0.32, so the stop at 0.39 was the +$4.00 gross the row already
-  says (net −$0.96, which matches the account's move that day). id 6 (06-29): filled at 0.38, exit
-  0.40, so pnl −$2.00 gross and fees $4.96 (net −$6.96, again matching the account) where both were
-  NULL. id 1 (06-25) is a paper trade (`PAPER-` id, live trading off that day) that every reader
-  counts as live, with a net figure in the gross column; the script exports and removes it on
-  request. Broker transactions for orders 479518187/479536927 and 479793516/479805454 would make
-  id 6's fee split exact. Separately, `live_loop.py` updates only `net_credit` on a fill, while stop
-  and expiry P&L read the per-side `put_credit`/`call_credit` modelled at quote time, so live P&L
-  leaves out any fill improvement. No live row exists since 06-30; fix before MEIC goes live.
+- **2026-10-12 — a June live-ledger correction** (a recording correction, made once by a script
+  that is no longer kept in the repo). The agent-era loop had stored the entry's limit as
+  `net_credit` rather than the fill. Separately, `live_loop.py` updates only `net_credit` on a fill,
+  while stop and expiry P&L read the per-side `put_credit`/`call_credit` modelled at quote time, so
+  live P&L leaves out any fill improvement. The note written then, that no live row existed since
+  06-30 and that this needed fixing before MEIC went live, is resolved: MEIC has been live since.
 - **2026-10-14/15 — live gets its own block, a per-day arm and XSP.** A live-only $500 cap could not
   be set without capping `control` (live traded the top level every paper arm inherits), so the
   `live` block gained flies' seam (#269): `live.arm`, live-only sizing that only narrows, and

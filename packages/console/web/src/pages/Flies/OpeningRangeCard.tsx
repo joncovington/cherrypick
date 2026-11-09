@@ -1,5 +1,8 @@
 import { useOpeningRange } from "../../lib/api";
 import { Card, SkeletonRows } from "../../components/DataTable";
+import { HelpSection, type CardHelpContent } from "../../components/CardHelp";
+import { FliesLayout } from "./FliesFilter";
+import { Section } from "../../components/Section";
 import { Spark } from "../../components/chart/Spark";
 import { hhmm } from "../../components/chart/time";
 
@@ -30,12 +33,47 @@ function Stat({ label, value, hint }: { label: string; value: string; hint?: str
   );
 }
 
+export const OPENING_RANGE_HELP: CardHelpContent = {
+  title: "Opening range",
+  body: (
+    <>
+      <HelpSection title="Raw observations only">
+        <p>
+          No ATR, no regime, no judgement: the half hour before either entry window opens, as it was. Those definitions live once, in
+          <code> cherrypick.core.openingrange</code>, and the study they feed is declared in <code>flies/docs/openingrange.md</code>. This
+          gates nothing.
+        </p>
+      </HelpSection>
+      <HelpSection title="The sparkline">
+        <p>
+          Scaled to the session's own high and low, not the closes' extent, so a six-tick drift inside a wide range looks flat rather than
+          like a rally.
+        </p>
+      </HelpSection>
+      <HelpSection title="An incomplete window">
+        <p>A range over four of six buckets is not a range, so an incomplete window says so and shows none.</p>
+      </HelpSection>
+    </>
+  ),
+};
+
+function Wrapped({ children }: { children: React.ReactNode }) {
+  return (
+    <FliesLayout>
+      <Section concept="hist" tag="09:30–10:00" question="What did the opening half hour do?">
+        {children}
+      </Section>
+    </FliesLayout>
+  );
+}
+
 export function OpeningRangeCard({ filter }: { filter: { date: string | null } }) {
   const { data, isLoading, isError, dataUpdatedAt } = useOpeningRange(filter.date);
 
   if (isLoading || data === undefined) {
     return (
-      <Card title="opening range" updatedAt={dataUpdatedAt} isError={isError}>
+      <Wrapped>
+      <Card title="opening range" help={OPENING_RANGE_HELP} updatedAt={dataUpdatedAt} isError={isError}>
         <div className="table-scroll">
         <table className="data-table">
           <tbody>
@@ -44,6 +82,7 @@ export function OpeningRangeCard({ filter }: { filter: { date: string | null } }
         </table>
         </div>
       </Card>
+      </Wrapped>
     );
   }
 
@@ -52,7 +91,8 @@ export function OpeningRangeCard({ filter }: { filter: { date: string | null } }
   const rising = closes.length > 0 && closes[closes.length - 1]! >= closes[0]!;
 
   return (
-    <Card title="opening range" updatedAt={dataUpdatedAt} collapseKey="flies-opening-range">
+    <Wrapped>
+    <Card title="opening range" help={OPENING_RANGE_HELP} updatedAt={dataUpdatedAt} collapseKey="flies-opening-range">
       <p className="muted" style={{ marginTop: 0 }}>
         09:30–10:00 ET on {data.session ?? "—"} · {data.symbol} · the half-hour before either entry
         window opens.
@@ -90,11 +130,7 @@ export function OpeningRangeCard({ filter }: { filter: { date: string | null } }
           )}
         </>
       )}
-      <p className="muted" style={{ fontSize: 11, marginTop: "0.6rem", marginBottom: 0 }}>
-        Raw observations only — no ATR, no regime, no judgement. Those definitions live in
-        <code> cherrypick.core.openingrange</code>, and the study they feed is declared in
-        <code> flies/docs/openingrange.md</code>. This gates nothing.
-      </p>
     </Card>
+    </Wrapped>
   );
 }

@@ -1,5 +1,7 @@
 # History studies, 2026-10 (c): the first edge-hypotheses tests
 
+> **Status (2026-11-08): record, not a plan: results from history, 2026-10-17. The bwb and pmcc studies concern retired modules (both off by default).**
+
 *Run 2026-10-17. These are the first four tests from [edge-hypotheses-plan.md](edge-hypotheses-plan.md).
 Each pass test was declared in its script's docstring before the first full run. All four scripts are
 read-only.*
@@ -63,10 +65,10 @@ years is positive, and the drift is not positive in both halves.
 - Daily bars only. Entry at the reaction close misses the video's possibly earlier entry.
 - The history screen needs four earlier positive reactions, so `rule` is thin before 2022.
 
-## 2. The expected-move box edge, and two direction reads (`scripts/box_touch_history.py`)
+## 2. The expected-move box edge, and two direction reads (`packages/backtest/scripts/box_touch_history.py`)
 
-**The question.** The reconstructed Daily Profit Play
-([daily-0dte-routine.md](daily-0dte-routine.md)) earns only if SPX closes back inside the
+**The question.** The reconstructed box order
+([box-edge-0dte-routine.md](box-edge-0dte-routine.md)) earns only if SPX closes back inside the
 gap-adjusted expected-move box after touching its edge more often than chance. The same sessions also
 answer hypothesis 4:
 - *the fade:* does price move back after touching the expected move early in the day?

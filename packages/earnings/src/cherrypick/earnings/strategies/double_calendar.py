@@ -408,7 +408,7 @@ def evaluate_position(
     `expiration` (the front-month expiration, stored at entry).
 
     `is_first_check_of_day` should be True when this is the loop's first
-    Step 3b tick since the prior session close (the "wake at next market
+    intraday tick since the prior session close (the "wake at next market
     open" case in CLAUDE.md's wakeup table, not a mid-session poll). It does
     NOT change any threshold or action -- an earnings reaction gap happens
     overnight, so no polling frequency could have caught it sooner regardless

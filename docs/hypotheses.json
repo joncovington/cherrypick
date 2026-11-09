@@ -1,5 +1,5 @@
 {
-  "_note": "B7 of docs/trading-book-review-plan.md: one row per hypothesis. Statuses and pointers only, never licensed figures (results stay under ~/.cherrypick). Legacy rows (items 1-17) predate the register: their four parts, mechanism and rivals live in the plan section they point to. From item 18 every field is required. `results` names each result file as a `{home}/...` path (the file stays on this machine); a row from item 18 with a verdict must name one. `outcome` is the decision in words, never a figure. Checked by `cherrypick hypotheses check`.",
+  "_note": "B7 of docs/trading-book-review-plan.md: one row per hypothesis. Statuses and pointers only, never licensed figures (results stay under ~/.cherrypick). Legacy rows (items 1-17) predate the register: their four parts, mechanism and rivals live in the plan section they point to. From item 18 every field is required. `results` names each result file as a `{home}/...` path to its .json (the file stays on this machine; its .md notes beside it are found on their own and never listed); a row from item 18 with a verdict must name one. `outcome` is the decision in words, never a figure. From item 18 a row also names its `scripts` (under scripts/) and `tests` (under packages/*/tests/): with the pointer, the research-queue rows keyed by `study` and the results, the whole study chain. Checked by `cherrypick hypotheses check`.",
   "hypotheses": [
     {
       "id": 1,
@@ -99,7 +99,7 @@
       "retest": {
         "kind": "script",
         "args": {
-          "path": "scripts/box_touch_history.py",
+          "path": "packages/backtest/scripts/box_touch_history.py",
           "args": [
             "--start",
             "{start}",
@@ -211,7 +211,7 @@
       "retest": {
         "kind": "script",
         "args": {
-          "path": "scripts/box_touch_history.py",
+          "path": "packages/backtest/scripts/box_touch_history.py",
           "args": [
             "--start",
             "{start}",
@@ -400,7 +400,7 @@
     {
       "id": 16,
       "study": "item16",
-      "title": "Put credit spreads on the funds the user trades: precious metals and bitcoin",
+      "title": "Put credit spreads on liquid metals and bitcoin funds",
       "status": "failed",
       "legacy": true,
       "setup": "premium-only",
@@ -413,7 +413,7 @@
       "rule": null,
       "mechanism": null,
       "rivals": [],
-      "pointer": "docs/edge-hypotheses-plan.md#16-put-credit-spreads-on-the-funds-the-user-trades-precious-metals-and-bitcoin",
+      "pointer": "docs/edge-hypotheses-plan.md#16-put-credit-spreads-on-liquid-metals-and-bitcoin-funds",
       "results": null,
       "retest": null,
       "retests": []
@@ -435,6 +435,12 @@
       "mechanism": null,
       "rivals": [],
       "pointer": "docs/edge-hypotheses-plan.md#17-our-own-credit-spread-list-setup-side-and-width-per-symbol",
+      "scripts": [
+        "packages/backtest/scripts/credit_spread_item17.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_credit_spread_item17_script.py"
+      ],
       "results": [
         "{home}/data/backtest/results/research/item17/study.json"
       ],
@@ -475,6 +481,12 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#18-mean-reversion-put-spreads-tested-once-on-the-holdout",
+      "scripts": [
+        "packages/backtest/scripts/credit_spread_item17.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_credit_spread_item18_script.py"
+      ],
       "results": [
         "{home}/data/backtest/results/research/item18/study.json"
       ],
@@ -516,6 +528,12 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#19-the-time-warp-two-out-of-the-money-spx-flies-bought-at-the-close-sold-the-next-morning",
+      "scripts": [
+        "packages/backtest/scripts/time_warp_item19.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_time_warp_item19_script.py"
+      ],
       "results": [
         "{home}/data/backtest/results/research/item19/study-2022-05-16-2024-12-31.json",
         "{home}/data/backtest/results/research/item19/study-2025-01-01-2026-10-23.json"
@@ -562,6 +580,12 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#20-the-convex-stack-one-with-trend-spx-fly-bought-twice-a-week-at-about-5-dte",
+      "scripts": [
+        "packages/backtest/scripts/convex_stack_item20.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_convex_stack_item20_script.py"
+      ],
       "results": [
         "{home}/data/backtest/results/research/item20/study-2022-05-16-2024-12-31.json",
         "{home}/data/backtest/results/research/item20/study-2025-01-01-2026-10-23.json"
@@ -608,6 +632,12 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#21-legged-spx-flies-with-a-resting-entry-limit-with-and-without-the-range-high-refusal",
+      "scripts": [
+        "packages/backtest/scripts/flies_entry_limit_item21.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_flies_entry_limit_item21_script.py"
+      ],
       "results": [
         "{home}/data/backtest/results/research/item21/study-design-2022-05-16-2025-06-30.json",
         "{home}/data/backtest/results/research/item21/study-holdout-2025-07-01-2026-10-12.json"
@@ -658,6 +688,12 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#22-the-overnight-condor-a-1dte-spx-iron-condor-sold-at-the-close-bought-back-the-next-morning",
+      "scripts": [
+        "packages/backtest/scripts/overnight_condor_item22.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_overnight_condor_item22_script.py"
+      ],
       "results": [
         "{home}/data/backtest/results/research/item22/study-2022-05-16-2024-12-31.json",
         "{home}/data/backtest/results/research/item22/study-2025-01-01-2026-10-23.json"
@@ -700,6 +736,12 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#23-the-short-delta-of-meics-live-rule-12-20-25-and-30-against-16",
+      "scripts": [
+        "packages/backtest/scripts/meic_delta_grid_item23.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_meic_delta_grid_item23_script.py"
+      ],
       "results": [
         "{home}/data/backtest/results/research/item23/study-design-2022-05-16-2025-06-30.json",
         "{home}/data/backtest/results/research/item23/study-holdout-2025-07-01-2026-10-12.json"
@@ -742,6 +784,12 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#24-the-entry-slot-of-meics-live-rule-1200-to-1330-against-1400",
+      "scripts": [
+        "packages/backtest/scripts/meic_entry_slot_item24.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_meic_entry_slot_item24_script.py"
+      ],
       "results": [
         "{home}/data/backtest/results/research/item24/study-design-2022-05-16-2025-06-30-d16.json",
         "{home}/data/backtest/results/research/item24/study-holdout-2025-07-01-2026-10-12-d16.json"
@@ -788,6 +836,12 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#25-the-skate-puts-expiry-and-management-14-days-against-the-monthly-held-halved-or-rolled",
+      "scripts": [
+        "packages/backtest/scripts/skate_expiry_item25.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_skate_expiry_item25_script.py"
+      ],
       "results": [
         "{home}/data/backtest/results/research/item25/results.json"
       ],
@@ -837,6 +891,12 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#26-a-dip-buying-share-ladder-on-leveraged-funds-buy-7-under-the-previous-close-sell-each-lot-4-up",
+      "scripts": [
+        "scripts/share_ladder_item26.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_share_ladder_item26_script.py"
+      ],
       "results": [
         "{home}/data/research/item26/results.json",
         "{home}/data/research/item26/intraday.json"
@@ -883,6 +943,12 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#27-getting-the-share-ladder-out-of-multi-year-holds-averaging-down-a-decaying-target-a-time-stop-a-trend-check-a-confirmation",
+      "scripts": [
+        "scripts/share_ladder_item27.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_share_ladder_item27_script.py"
+      ],
       "results": [
         "{home}/data/research/item27/results.json"
       ],
@@ -920,6 +986,12 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#28-the-share-ladder-before-2011-and-on-single-stocks-daily-reset-funds-rebuilt-from-their-1x-history",
+      "scripts": [
+        "scripts/share_ladder_item28.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_share_ladder_item28_script.py"
+      ],
       "results": [
         "{home}/data/research/item28/results.json"
       ],
@@ -965,6 +1037,12 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#29-the-share-ladder-in-options-a-call-debit-spread-a-put-credit-spread-or-a-zebra-in-place-of-the-share-lot",
+      "scripts": [
+        "packages/backtest/scripts/share_ladder_item29.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_share_ladder_item29_script.py"
+      ],
       "results": [
         "{home}/data/backtest/results/research/item29/results.json"
       ],
@@ -1006,6 +1084,12 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#30-gex-walls-on-the-monthly-expiry-does-price-stop-short-of-them-over-the-next-two-weeks",
+      "scripts": [
+        "packages/backtest/scripts/gex_walls_item30.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_gex_walls_item30_script.py"
+      ],
       "results": [
         "{home}/data/backtest/results/research/item30/results.json"
       ],
@@ -1017,7 +1101,7 @@
       "id": 31,
       "study": "item31",
       "title": "The earnings module's paper rule: does any strategy it opens earn after costs?",
-      "status": "declared",
+      "status": "failed",
       "legacy": false,
       "setup": "earnings-premium",
       "side": "neutral",
@@ -1059,11 +1143,19 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#31-the-earnings-modules-paper-rule-does-any-strategy-it-opens-earn-after-costs",
+      "scripts": [
+        "packages/backtest/scripts/earnings_item31.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_earnings_item31_script.py",
+        "packages/backtest/tests/test_earnings_item31_study_script.py"
+      ],
       "results": [
         "{home}/data/backtest/results/research/item31/results.json"
       ],
       "retest": null,
-      "retests": []
+      "retests": [],
+      "outcome": "no arm passes the design window, and three arms have too few paired trades for a verdict; the directional credit spread's gain over the no-report control holds but its own net does not clear the bar, so costs eat what the report is worth; the holdout is reported only; the earnings paper rule is unchanged and retirement is the user's call"
     },
     {
       "id": 32,
@@ -1107,6 +1199,12 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#32-large-options-orders-as-a-signal-the-flow-plans-declared-test-registered",
+      "scripts": [
+        "packages/backtest/scripts/flow_signal_item32.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_flow_signal_item32.py"
+      ],
       "results": [
         "{home}/data/backtest/results/research/item32/results-design.json"
       ],
@@ -1144,6 +1242,12 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#33-meic-on-fed-decision-days-does-entering-at-the-1400-statement-cost-more-than-other-days",
+      "scripts": [
+        "packages/backtest/scripts/meic_fomc_item33.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_meic_fomc_item33_script.py"
+      ],
       "results": [
         "{home}/data/backtest/results/research/item33/results.json"
       ],
@@ -1184,6 +1288,12 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#34-the-option-to-stock-premium-ratio-does-heavy-option-trading-foretell-weaker-returns",
+      "scripts": [
+        "packages/backtest/scripts/option_stock_ratio_item34.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_option_stock_ratio_item34.py"
+      ],
       "results": [
         "{home}/data/backtest/results/research/item34/results-design.json"
       ],
@@ -1195,7 +1305,7 @@
       "id": 35,
       "study": "item35",
       "title": "The bwb module's whole rule at real quotes: does the put broken-wing butterfly or any add-on arm earn after costs?",
-      "status": "declared",
+      "status": "failed",
       "legacy": false,
       "setup": "bwb-whole-rule",
       "side": "neutral",
@@ -1237,17 +1347,24 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#35-the-bwb-modules-whole-rule-at-real-quotes-does-the-put-broken-wing-butterfly-or-any-add-on-arm-earn-after-costs",
+      "scripts": [
+        "packages/backtest/scripts/bwb_item35.py"
+      ],
+      "tests": [
+        "packages/bwb/tests/test_item35_script.py"
+      ],
       "results": [
         "{home}/data/backtest/results/research/item35/results.json"
       ],
       "retest": null,
-      "retests": []
+      "retests": [],
+      "outcome": "none of the twelve tests passes the design window, gated or ungated, and the flip and delta-dte3 arms have no verdict on their inputs; the holdout is reported only; bwb stays in paper, retirement the user's call"
     },
     {
       "id": 36,
       "study": "item36",
       "title": "pmcc's own rule on real quotes: the shield, three variants and two baselines",
-      "status": "declared",
+      "status": "no_verdict",
       "legacy": false,
       "setup": "pmcc-own-rule",
       "side": "bullish",
@@ -1281,11 +1398,18 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#36-pmccs-own-rule-on-real-quotes-the-shield-three-variants-and-two-baselines",
+      "scripts": [
+        "packages/backtest/scripts/pmcc_item36.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_pmcc_item36_script.py"
+      ],
       "results": [
         "{home}/data/backtest/results/research/item36/results.json"
       ],
       "retest": null,
-      "retests": []
+      "retests": [],
+      "outcome": "every arm falls short of the declared four judged funds in the design window, because too few funds have enough priced weeks, so nothing is judged and the holdout is not read; pmcc paper runs unchanged, and a fuller read needs better chain coverage of the funds and would be a retest"
     },
     {
       "id": 37,
@@ -1325,6 +1449,12 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#37-a-real-quote-test-of-curves-own-rule-the-contango-gated-vxx-call-spread-with-two-variants",
+      "scripts": [
+        "packages/backtest/scripts/curve_item37.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_curve_item37_script.py"
+      ],
       "results": [
         "{home}/data/backtest/results/research/item37/results.json"
       ],
@@ -1382,6 +1512,12 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#38-the-calendars-modules-own-rule-at-real-quotes-does-the-weekly-spy-double-calendar-earn-after-costs-entered-monday-or-the-friday-before",
+      "scripts": [
+        "packages/backtest/scripts/calendars_item38.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_calendars_item38_script.py"
+      ],
       "results": [
         "{home}/data/backtest/results/research/item38/results.json"
       ],
@@ -1427,6 +1563,12 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#39-the-contango-modules-own-rule-on-real-daily-prices-the-switch-a-9-day-exit-and-a-realised-volatility-gate",
+      "scripts": [
+        "scripts/contango_item39.py"
+      ],
+      "tests": [
+        "packages/contango/tests/test_item39_script.py"
+      ],
       "results": [
         "{home}/data/research/item39/results.json"
       ],
@@ -1468,6 +1610,13 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#40-legged-flies-without-the-strand-tail-a-fixed-stop-on-an-uncompleted-vertical-and-the-whole-fly-bought-at-once",
+      "scripts": [
+        "packages/backtest/scripts/flies_item40.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_flies_item40_script.py",
+        "packages/flies/tests/test_item40_arms.py"
+      ],
       "results": [
         "{home}/data/backtest/results/research/item40/results.json"
       ],
@@ -1513,6 +1662,12 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#41-the-stabilization-entry-gate-at-real-quotes-does-waiting-for-flat-five-minute-bars-improve-the-break-even-condor-or-the-1400-rule",
+      "scripts": [
+        "packages/backtest/scripts/meic_stabilization_item41.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_meic_stabilization_item41_script.py"
+      ],
       "results": [
         "{home}/data/backtest/results/research/item41/study-design-2022-05-16-2025-06-30.json",
         "{home}/data/backtest/results/research/item41/study-holdout-2025-07-01-2026-10-12.json"
@@ -1525,7 +1680,7 @@
       "id": 42,
       "study": "item42",
       "title": "The break-even condor at its own wing widths, with and without the stabilization gate",
-      "status": "declared",
+      "status": "failed",
       "legacy": false,
       "setup": "break-even-condor",
       "side": "neutral",
@@ -1555,6 +1710,12 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#42-the-break-even-condor-at-its-own-wing-widths-with-and-without-the-stabilization-gate",
+      "scripts": [
+        "packages/backtest/scripts/meic_be_condor_item42.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_meic_be_condor_item42_script.py"
+      ],
       "results": [
         "{home}/data/backtest/results/research/item42/study-design-2022-05-16-2025-06-30.json",
         "{home}/data/backtest/results/research/item42/study-holdout-2025-07-01-2026-10-12.json"
@@ -1605,6 +1766,12 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#43-the-wing-width-of-meics-live-rule-15-20-25-and-30-against-10",
+      "scripts": [
+        "packages/backtest/scripts/meic_wing_width_item43.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_meic_wing_width_item43_script.py"
+      ],
       "results": [
         "{home}/data/backtest/results/research/item43/study-design-2022-05-16-2025-06-30.json",
         "{home}/data/backtest/results/research/item43/study-holdout-2025-07-01-2026-10-12.json"
@@ -1617,7 +1784,7 @@
       "id": 44,
       "study": "item44",
       "title": "The stabilization gate across wing widths 10 to 40 on MEIC's live rule",
-      "status": "declared",
+      "status": "failed",
       "legacy": false,
       "setup": "entry-filter",
       "side": "neutral",
@@ -1655,9 +1822,19 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#44-the-stabilization-gate-across-wing-widths-10-to-40-on-meics-live-rule",
-      "results": [],
+      "scripts": [
+        "packages/backtest/scripts/meic_wing_width_item44.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_meic_wing_width_item44_script.py"
+      ],
+      "results": [
+        "{home}/data/backtest/results/research/item44/study-design-2022-05-16-2025-06-30.json",
+        "{home}/data/backtest/results/research/item44/study-holdout-2025-07-01-2026-10-12.json"
+      ],
       "retest": null,
-      "retests": []
+      "retests": [],
+      "outcome": "provisional: the gate fails at every width in the design window, beating neither its own width ungated nor the placebo, and w35 and w40 beat w10 on dollars but fail on net over buying power; the holdout agrees; the gate stays off live's rule at every width and wings of 35 to 40 are closed for it"
     },
     {
       "id": 45,
@@ -1701,6 +1878,12 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#45-a-published-gex-share-strategy-out-of-sample-buy-the-calm-after-an-implied-vol-spike",
+      "scripts": [
+        "packages/backtest/scripts/gex_strategy_item45.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_gex_strategy_item45_script.py"
+      ],
       "results": null,
       "retest": null,
       "retests": []
@@ -1709,7 +1892,7 @@
       "id": 46,
       "study": "item46",
       "title": "Where implied runs above realised: the variance premium by underlying, tenor and strike",
-      "status": "declared",
+      "status": "passed",
       "legacy": false,
       "setup": "variance-premium",
       "side": "neutral",
@@ -1747,15 +1930,24 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#46-where-implied-runs-above-realised-the-variance-premium-by-underlying-tenor-and-strike",
-      "results": null,
+      "scripts": [
+        "packages/backtest/scripts/variance_premium_item46.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_variance_premium_item46_script.py"
+      ],
+      "results": [
+        "{home}/data/backtest/results/research/item46/results.json"
+      ],
       "retest": null,
-      "retests": []
+      "retests": [],
+      "outcome": "one of the forty cells passes, the equity-index 10-delta put at 7 days; every index cell at 30 to 60 days fails, and no non-equity cell passes; the passing cell becomes a proposal for a paper arm, declared as its own item, with sessions after 2026-10-30 read first"
     },
     {
       "id": 47,
       "study": "item47",
       "title": "Selling a report when its implied move is above its past moves: a monthly strangle closed the next day",
-      "status": "declared",
+      "status": "failed",
       "legacy": false,
       "setup": "earnings-premium",
       "side": "neutral",
@@ -1793,15 +1985,24 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#47-selling-a-report-when-its-implied-move-is-above-its-past-moves-a-monthly-strangle-closed-the-next-day",
-      "results": null,
+      "scripts": [
+        "packages/backtest/scripts/earnings_strangle_item47.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_earnings_strangle_item47_script.py"
+      ],
+      "results": [
+        "{home}/data/backtest/results/research/item47/results.json"
+      ],
       "retest": null,
-      "retests": []
+      "retests": [],
+      "outcome": "the rich arm fails the design window on its own net, its paired difference, both halves and the cost stress, though it does beat the unselected reports; the holdout agrees; selling single-name report premium through a strangle is closed with the fly and navigator results, and implied-against-past moves as a selector is closed for the module's G1 too, item 31 having found the same"
     },
     {
       "id": 48,
       "study": "item48",
       "title": "The stop of MEIC's live rule: 1.8, 1.9, 2.0 and 2.2 times the credit, filled by the loop or resting at the broker",
-      "status": "declared",
+      "status": "failed",
       "legacy": false,
       "setup": "stop-mechanics",
       "side": "neutral",
@@ -1831,15 +2032,24 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#48-the-stop-of-meics-live-rule-18-19-20-and-22-times-the-credit-filled-by-the-loop-or-resting-at-the-broker",
-      "results": null,
+      "scripts": [
+        "packages/backtest/scripts/meic_stop_grid_item48.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_meic_stop_grid_item48_script.py"
+      ],
+      "results": [
+        "{home}/data/backtest/results/research/item48/study-design-2022-05-16-2025-06-30.json"
+      ],
       "retest": null,
-      "retests": []
+      "retests": [],
+      "outcome": "provisional: every arm fails the design window against live-1400, the loop ratios, the resting stops and the stop off alike, so live keeps its 2.0x stop; the resting stop can still be switched on as outage insurance, argued as insurance and not as edge"
     },
     {
       "id": 49,
       "study": "item49",
-      "title": "The \"Crazy Ivan\" on TQQQ: a cash-secured 16-delta put sold by a resting order 20% over the ask",
-      "status": "declared",
+      "title": "The dip-sold put on TQQQ: a cash-secured 16-delta put sold by a resting order 20% over the ask",
+      "status": "failed",
       "legacy": false,
       "setup": "down-day",
       "side": "bullish",
@@ -1848,16 +2058,16 @@
       "measure": "per chain, the net from first sale to final close (legs, core.fees, slippage, assignment) as a share of the first leg's collateral (strike x 100); a one-lot TQQQ put nearest 16 delta, 24-44 DTE nearest 31, sold by a sell limit at the close ask x 1.20 filled next session (modelled at the open or the low from the prior close's IV), half-credit take profit, rolled down and out for a credit when the close is within 5% of the strike (at most 3 rolls, 180 DTE); per month, the summed net over collateral for paired comparisons",
       "expected": "a positive mean chain net after costs for the resting-order arms, above the same put sold at the close (atclose) and above buying back at the defence line (noroll)",
       "sample": "TQQQ (and QQQ for the qqq arm) ThetaData end-of-day chains with technicals bars; design 2016-05-02..2024-12-31 (halves split 2020-09-01), holdout 2025-01-02..2026-10-28 read once per surviving arm; at most five open chains per arm; < 30 closed chains an arm in a window = no verdict",
-      "rule": "per judged arm (maria, deep, atclose, overnight, noroll, trend, qqq): design mean chain net > 0 with one-sided t > 2 clustered by entry month, Holm across 7; positive in each half; positive at 1.5x fees, natural + $0.02 a leg and fills at the limit only; then holdout mean > 0. The Crazy Ivan claim also needs a passing resting arm to beat atclose and noroll by a paired monthly difference with one-sided t > 2",
+      "rule": "per judged arm (rest20, deep, atclose, overnight, noroll, trend, qqq): design mean chain net > 0 with one-sided t > 2 clustered by entry month, Holm across 7; positive in each half; positive at 1.5x fees, natural + $0.02 a leg and fills at the limit only; then holdout mean > 0. The resting-order claim also needs a passing resting arm to beat atclose and noroll by a paired monthly difference with one-sided t > 2",
       "mechanism": "after a fast fall, index put buyers pay above the variance that follows, most at the opening gap; an order that fills only then sells into that premium. The roll is payoff shaping, tested only against its rival",
       "rivals": [
         {
           "explanation": "the plain short-put premium, not the fill",
-          "check": "maria must beat atclose, paired by month"
+          "check": "rest20 must beat atclose, paired by month"
         },
         {
           "explanation": "the roll hides the loss (matches the not-worth-revisiting roll-for-a-credit row)",
-          "check": "chains scored whole; maria must beat noroll, paired by month"
+          "check": "chains scored whole; rest20 must beat noroll, paired by month"
         },
         {
           "explanation": "a Nasdaq bull market",
@@ -1880,16 +2090,26 @@
           "check": "Holm across the seven judged arms, fixed before any look"
         }
       ],
-      "pointer": "docs/edge-hypotheses-plan.md#49-the-crazy-ivan-on-tqqq-a-cash-secured-16-delta-put-sold-by-a-resting-order-20-over-the-ask",
-      "results": null,
+      "pointer": "docs/edge-hypotheses-plan.md#49-the-dip-sold-put-on-tqqq-a-cash-secured-16-delta-put-sold-by-a-resting-order-20-over-the-ask",
+      "scripts": [
+        "packages/backtest/scripts/ivan_tqqq_item49.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_ivan_tqqq_item49_script.py"
+      ],
+      "results": [
+        "{home}/data/backtest/results/research/item49/results-design.json",
+        "{home}/data/backtest/results/research/item49/results-holdout.json"
+      ],
       "retest": null,
-      "retests": []
+      "retests": [],
+      "outcome": "all seven arms fail the design window, so the holdout reads none and the resting-order claim holds for no arm; the question is closed and the TQQQ plan stays shelved"
     },
     {
       "id": 50,
       "study": "item50",
       "title": "Item 43's wider wings with live's gates on: 15 and 20 against the live rule",
-      "status": "declared",
+      "status": "failed",
       "legacy": false,
       "setup": "wing-width",
       "side": "neutral",
@@ -1927,15 +2147,25 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#50-item-43s-wider-wings-with-lives-gates-on-15-and-20-against-the-live-rule",
-      "results": [],
+      "scripts": [
+        "packages/backtest/scripts/meic_wing_width_gated_item50.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_meic_wing_width_gated_item50_script.py"
+      ],
+      "results": [
+        "{home}/data/backtest/results/research/item50/study-design-2022-05-16-2025-06-30.json",
+        "{home}/data/backtest/results/research/item50/study-holdout-2025-07-01-2026-10-12.json"
+      ],
       "retest": null,
-      "retests": []
+      "retests": [],
+      "outcome": "provisional: g15 and g20 both miss the paired t bar in the design window, so the holdout does not count; live stays at 10 wide with its gates, and item 43's pass reads as a result about the ungated rule only"
     },
     {
       "id": 51,
       "study": "item51",
       "title": "Dropping the call side when the VIX curve is stressed",
-      "status": "declared",
+      "status": "failed",
       "legacy": false,
       "setup": "curve-gate",
       "side": "neutral",
@@ -1977,15 +2207,28 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#51-dropping-the-call-side-when-the-vix-curve-is-stressed",
-      "results": [],
+      "scripts": [
+        "packages/backtest/scripts/meic_call_side_item51.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_meic_call_side_item51_script.py"
+      ],
+      "results": [
+        "{home}/data/backtest/results/research/item51/study-part1-design-2022-05-16-2025-06-30.json",
+        "{home}/data/backtest/results/research/item51/study-part1-holdout-2025-07-01-2026-10-12.json",
+        "{home}/data/backtest/results/research/item51/study-part2-design-2024-01-19-2025-06-30.json",
+        "{home}/data/backtest/results/research/item51/study-part2-holdout-2025-07-01-2026-10-12.json",
+        "{home}/data/backtest/results/research/item51/validation.json"
+      ],
       "retest": null,
-      "retests": []
+      "retests": [],
+      "outcome": "provisional: every cell fails in both parts, be, live-1400 and w15 on inverted and hump days alike, and the holdouts agree; part 2's hourly bars passed their validation against the broker's; the call side stays and the curve stays a reported column on the trades"
     },
     {
       "id": 52,
       "study": "item52",
       "title": "Diagonals across an earnings report: the short weekly takes the crush, the monthly long keeps its value",
-      "status": "declared",
+      "status": "failed",
       "legacy": false,
       "setup": "earnings-premium",
       "side": "neutral",
@@ -2019,15 +2262,24 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#52-diagonals-across-an-earnings-report-the-short-weekly-takes-the-crush-the-monthly-long-keeps-its-value",
-      "results": null,
+      "scripts": [
+        "packages/backtest/scripts/earnings_diagonal_item52.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_earnings_diagonal_item52_script.py"
+      ],
+      "results": [
+        "{home}/data/backtest/results/research/item52/results.json"
+      ],
       "retest": null,
-      "retests": []
+      "retests": [],
+      "outcome": "every arm judged fails the design window (A-call, A-put, B1, B2, C and A's cheap cuts); the cheap cuts of B1, B2 and C are no verdict on too few design trades, so B2's cheap cut's holdout is reported only; diagonals across a report are closed with the calendars, and the back-month wing does not rescue a short report strangle, beside item 47's fail"
     },
     {
       "id": 53,
       "study": "item53",
       "title": "The time exit for short premium opened inside 30 DTE",
-      "status": "declared",
+      "status": "failed",
       "legacy": false,
       "setup": "short-dated-management",
       "side": "neutral",
@@ -2057,15 +2309,25 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#53-the-time-exit-for-short-premium-opened-inside-30-dte",
-      "results": null,
+      "scripts": [
+        "packages/backtest/scripts/time_exit_entry_dte_item53.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_time_exit_entry_dte_item53_script.py"
+      ],
+      "results": [
+        "{home}/data/backtest/results/research/item53/design.json",
+        "{home}/data/backtest/results/research/item53/holdout.json"
+      ],
       "retest": null,
-      "retests": []
+      "retests": [],
+      "outcome": "no challenger beats A in the design window under Holm, so the holdout confirms none; manage's default A stands and the question is closed"
     },
     {
       "id": 54,
       "study": "item54",
       "title": "Does the front/back IV ratio predict a time spread's profit?",
-      "status": "declared",
+      "status": "failed",
       "legacy": false,
       "setup": "term-structure",
       "side": "neutral",
@@ -2095,15 +2357,25 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#54-does-the-frontback-iv-ratio-predict-a-time-spreads-profit",
-      "results": null,
+      "scripts": [
+        "packages/backtest/scripts/time_spread_ratio_item54.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_time_spread_ratio_item54_script.py"
+      ],
+      "results": [
+        "{home}/data/backtest/results/research/item54/design.json",
+        "{home}/data/backtest/results/research/item54/holdout.json"
+      ],
       "retest": null,
-      "retests": []
+      "retests": [],
+      "outcome": "one of the twelve tests passes the design window, the call calendar's ratio rank, and the holdout does not confirm it; nothing is confirmed, so the ratio stays an untested ordering, labelled so, and the scanner stays a convenience, never presented as a source of trades"
     },
     {
       "id": 55,
       "study": "item55",
       "title": "Does a defined-risk index collar improve a long-delta book after costs?",
-      "status": "declared",
+      "status": "failed",
       "legacy": false,
       "setup": "portfolio-hedge",
       "side": "long",
@@ -2137,9 +2409,712 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#55-does-a-defined-risk-index-collar-improve-a-long-delta-book-after-costs",
-      "results": null,
+      "scripts": [
+        "packages/backtest/scripts/index_collar_item55.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_index_collar_item55_script.py"
+      ],
+      "results": [
+        "{home}/data/backtest/results/research/item55/design.json",
+        "{home}/data/backtest/results/research/item55/holdout.json"
+      ],
       "retest": null,
-      "retests": []
+      "retests": [],
+      "outcome": "none of the five tests is confirmed, so the collar keeps its \"no tested edge\" label and stays offered as an untested hedge"
+    },
+    {
+      "id": 56,
+      "study": "item56",
+      "title": "The wide wing when its floor allows, else live's 10: item 50's arms composed tick by tick",
+      "status": "failed",
+      "legacy": false,
+      "setup": "wing-width",
+      "side": "neutral",
+      "structure": "iron-condor",
+      "window": "0dte",
+      "measure": "summed net per session in $ at one condor, and buying power per session, per arm: live-1400 (pm-200 entering 14:00-14:30, floor and ceiling as live) and f15/f20, the same rule entering at the first tick either width's gates pass, at 15 (or 20) wide when that width qualifies at or before 10 does, else at 10; composed from item 50's recorded g15/g20 and live-1400 entries, no new replay",
+      "expected": "a positive paired difference per session against live-1400, at no worse net over buying power",
+      "sample": "design 2022-05-16..2025-06-30, holdout 2025-07-01..2026-10-12 (item 23's recorded live-1400 holdout, as item 50); both windows were read by item 50, whose sessions-both-entered figures prompted this, so neither is clean: the clean check is the sessions after 2026-10-12, read once 100 are stored; provisional, MEIC history being unvalidated; < 100 sessions = no verdict",
+      "rule": "item 50's, per arm: paired difference against live-1400 with mean > 0 and one-sided t > 2, Holm across the two arms, positive in both time-halves, own mean net > 0 and still positive at 1.5x fees, net over buying power >= live-1400's; then holdout mean > 0 with t > 2; a proposal needs the fresh sessions after 2026-10-12 to agree as well",
+      "mechanism": "item 50 found the gated wide condor beats live's 10 on the sessions both enter but enters too rarely to win overall; taking the wide one when its floor allows and the 10 otherwise keeps the better trade without giving up the sessions only the 10 can enter",
+      "rivals": [
+        {
+          "explanation": "hindsight in the choice",
+          "check": "a session's width is chosen from the two entry times alone, the first passing tick, the wide one on a tie; outcomes never enter the choice (tested)"
+        },
+        {
+          "explanation": "the windows were already read",
+          "check": "item 50 read both; the fresh sessions after 2026-10-12 are the clean check and a proposal waits for them"
+        },
+        {
+          "explanation": "paying more by risking more",
+          "check": "net over buying power at least live-1400's over the same sessions"
+        },
+        {
+          "explanation": "a calm span",
+          "check": "paired difference positive in both time-halves"
+        },
+        {
+          "explanation": "fees",
+          "check": "own net positive at 1.5x fees"
+        },
+        {
+          "explanation": "two runs mixed in the holdout",
+          "check": "the holdout composes item 50's wide run with item 23's live-1400 run, as item 50 judged them; each run's id is recorded beside the verdict"
+        }
+      ],
+      "pointer": "docs/edge-hypotheses-plan.md#56-the-wide-wing-when-its-floor-allows-else-lives-10-item-50s-arms-composed-tick-by-tick",
+      "scripts": [
+        "packages/backtest/scripts/meic_wing_fallback_item56.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_meic_wing_fallback_item56_script.py"
+      ],
+      "results": [
+        "{home}/data/backtest/results/research/item56/study-design-2022-05-16-2025-06-30.json",
+        "{home}/data/backtest/results/research/item56/study-holdout-2025-07-01-2026-10-12.json"
+      ],
+      "retest": null,
+      "retests": [],
+      "outcome": "provisional: f15 and f20 both pass the design window, beating live-1400 on the same sessions and per dollar of buying power, but neither clears the holdout's t bar though both stay ahead there, so both fail; nothing changes live, and the fallback is the 0DTE rule most worth a reread on the sessions after 2026-10-12 once MEIC validation unlocks"
+    },
+    {
+      "id": 57,
+      "study": "item57",
+      "title": "Item 46's lone pass out of sample: the index 10-delta put at 7 days on the weekly expiries item 46 never read, hedged and unhedged",
+      "status": "passed",
+      "legacy": false,
+      "setup": "variance-premium",
+      "side": "neutral",
+      "structure": "delta-hedged-short-option",
+      "window": "weekly",
+      "measure": "net P&L per trade in bp of the forward notional at entry, the equity-index 10-delta put (SPX, SPY, QQQ, IWM) sold 7 days before a weekly expiry and held to it, per cycle the equal-weight mean over the names present; two arms: hedged (item 46's daily forward hedge, 0.5 bp of hedge notional a rebalance) and unhedged (same entry, option costs and settlement, no hedge); core.fees option costs (0.125 of spread)",
+      "expected": "the hedged put positive after costs as it was on the monthly expiries; the unhedged arm shows whether the hedge does the work",
+      "sample": "every weekly Friday expiry (the Thursday when Friday is a holiday) 2016-03..2026-10-16 that is not a standard monthly and whose 7-day trade shares no session with a monthly's, from daily end-of-day chain paths; cycles are the unit; fewer than 80 cycles = no verdict; cycles expiring after 2026-10-30 are a forward read, reported and never judged",
+      "rule": "per arm: mean > 0 with the one-sided Newey-West p (lag 1) passing Holm at 0.025 across the two arms, > 0 in both time-halves (split 2021-06-01), > 0 at 1.5x costs, > 0 on 3 of 4 names; the study passes if either arm passes, fails if every arm with a verdict fails",
+      "mechanism": "option buyers pay above expected variance for protection against the index falling; item 46's one passing cell, read on the weekly expiries it never saw, is either the premium again or one corner of a forty-cell grid",
+      "rivals": [
+        {
+          "explanation": "a lone corner of a 40-cell grid",
+          "check": "a fresh sample of weekly expiries never read, judged on its own two-arm Holm, declared before any weekly path is fetched"
+        },
+        {
+          "explanation": "the same weeks as the monthly read",
+          "check": "non-monthly weeks only, any week whose trade shares a session with a monthly's left out, disjointness checked on the calendar"
+        },
+        {
+          "explanation": "the hedge does the work",
+          "check": "the unhedged arm is judged beside the hedged one by the same rule"
+        },
+        {
+          "explanation": "a crash the sample lacks",
+          "check": "worst cycle and drawdown range reported; 2018, 2020 and 2022 inside the halves; the peso case is said as a limit"
+        },
+        {
+          "explanation": "the premium is real but costs take it",
+          "check": "net of core.fees and the hedge cost; still above zero at 1.5x costs"
+        },
+        {
+          "explanation": "one name carries the group",
+          "check": "above zero on 3 of 4 names on their own cycles"
+        },
+        {
+          "explanation": "early assignment on the ETF puts",
+          "check": "not modelled, so the ETF names are an upper bound as in item 46; SPX settles in cash"
+        }
+      ],
+      "pointer": "docs/edge-hypotheses-plan.md#57-item-46s-lone-pass-out-of-sample-the-index-10-delta-put-at-7-days-on-the-weekly-expiries-item-46-never-read-hedged-and-unhedged",
+      "scripts": [
+        "packages/backtest/scripts/index_put_weekly_item57.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_index_put_weekly_item57_script.py"
+      ],
+      "results": [
+        "{home}/data/backtest/results/research/item57/results.json"
+      ],
+      "retest": null,
+      "retest_note": "No yearly re-test: the forward read of cycles after 2026-10-30 is this study's own re-test, reported beside the verdict.",
+      "retests": [],
+      "outcome": "the unhedged arm passes every check over the weekly expiries item 46 never read; the hedged arm fails before the cost stress; a paper arm needs a module to sell it, the user's choice, and the forward cycles are read as they finish"
+    },
+    {
+      "id": 58,
+      "study": "item58",
+      "title": "The closing fly: a 0DTE SPX iron fly sold at 15:55 and held to the settlement",
+      "status": "failed",
+      "legacy": false,
+      "setup": "entry-time",
+      "side": "neutral",
+      "structure": "iron-fly",
+      "window": "0dte",
+      "measure": "net per session in $ at one contract, for two arms: an iron fly at the strike nearest spot and a condor one strike wide, both 10-point wings, sold from the 15:55 quote and settled at the close",
+      "expected": "a positive mean net per session after the suite's tastytrade costs",
+      "sample": "design 2022-05-16..2024-12-31 (~650 sessions); holdout 2025-01-01..2026-11-06 read only after a design pass; < 100 entered sessions or < 50 official-close sessions = no verdict",
+      "rule": "per arm: one-sided t > 2 on session nets, Holm across the two arms, both design time-halves positive, positive at 1.5x costs, positive on the official-close sessions; then the holdout with the same checks",
+      "mechanism": "the 15:55 at-the-money 0DTE price carries more variance than the last five minutes and the closing auction deliver",
+      "rivals": [
+        {
+          "explanation": "optimistic fills in wide closing quotes",
+          "check": "verdict at the working price; mid, mid - $0.05 and natural reported"
+        },
+        {
+          "explanation": "fees and settlement events on a five-minute premium",
+          "check": "positive at 1.5x costs"
+        },
+        {
+          "explanation": "the store's close is the last print, not the official close, before 2024-05-13",
+          "check": "positive on the official-close sessions (a pass check)"
+        },
+        {
+          "explanation": "market drift",
+          "check": "nets by the close's direction from the entry spot"
+        },
+        {
+          "explanation": "a calm span",
+          "check": "both design time-halves must pass; results by VIX band and year"
+        },
+        {
+          "explanation": "a few sessions decide it",
+          "check": "five worst sessions reported; bootstrapped drawdown beside a pass"
+        }
+      ],
+      "pointer": "docs/edge-hypotheses-plan.md#58-the-closing-fly-a-0dte-spx-iron-fly-sold-at-1555-and-held-to-the-settlement",
+      "scripts": [
+        "packages/backtest/scripts/close_fly_item58.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_close_fly_item58_script.py"
+      ],
+      "results": [
+        "{home}/data/backtest/results/research/item58/study-2022-05-16-2024-12-31.json",
+        "{home}/data/backtest/results/research/item58/study-2025-01-01-2026-11-06.json"
+      ],
+      "retest": null,
+      "retests": [],
+      "outcome": "design pass, holdout fail on both arms; the closing fly is closed as specified"
+    },
+    {
+      "id": 59,
+      "study": "item59",
+      "title": "The 45-day IWM condor: 16-delta shorts, 5-delta wings, closed at half its credit or at 21 days",
+      "status": "failed",
+      "legacy": false,
+      "setup": "short-dated-management",
+      "side": "neutral",
+      "structure": "iron-condor",
+      "window": "monthly",
+      "measure": "net per trade in $ at one contract: an IWM condor sold at about 45 days on each monthly cycle, closed at half its credit or at 21 days",
+      "expected": "a positive mean net per trade after the suite's tastytrade costs",
+      "sample": "design: cycles entered 2016-01-01..2021-12-31 (~70 trades); holdout 2022-01-01..2026-11-06 (~57) read only after a design pass; < 50 trades or > 5% without an exit mark = no verdict",
+      "rule": "one-sided t > 2 on trade nets, both design time-halves positive, positive at 1.5x costs; then the holdout with the same checks",
+      "mechanism": "index-ETF implied vol at 45 days sits above what the next three to four weeks deliver; unfiltered, one condor a cycle",
+      "rivals": [
+        {
+          "explanation": "market drift",
+          "check": "put and call verticals' gross reported apart"
+        },
+        {
+          "explanation": "a calm span",
+          "check": "both design time-halves must pass; results by VIX band and year"
+        },
+        {
+          "explanation": "a few trades decide it",
+          "check": "five worst trades reported; bootstrapped drawdown beside a pass"
+        },
+        {
+          "explanation": "optimistic fills",
+          "check": "verdict at the working price both ways; mid and natural reported"
+        },
+        {
+          "explanation": "fees on two four-leg orders",
+          "check": "positive at 1.5x costs"
+        }
+      ],
+      "pointer": "docs/edge-hypotheses-plan.md#59-the-45-day-iwm-condor-16-delta-shorts-5-delta-wings-closed-at-half-its-credit-or-at-21-days",
+      "scripts": [
+        "packages/backtest/scripts/iwm_condor_item59.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_iwm_condor_item59_script.py"
+      ],
+      "results": [
+        "{home}/data/backtest/results/research/item59/study-2016-01-01-2021-12-31.json",
+        "{home}/data/backtest/results/research/item59/trades-2016-01-01-2021-12-31.json"
+      ],
+      "retest": null,
+      "retests": [],
+      "outcome": "provisional: strictly no verdict, more than 5% of design entries lacking an exit mark, but even the best case for those trades misses the t bar, so it fails; the 45-day index condor is closed as specified, beside items 14 to 16"
+    },
+    {
+      "id": 60,
+      "study": "item60",
+      "title": "FOMC expected-move flies: two short iron flies at the expected move, sold before the 14:00 statement",
+      "status": "failed",
+      "setup": "event-gate",
+      "side": "neutral",
+      "structure": "iron-fly",
+      "window": "0dte",
+      "measure": "net per FOMC decision day in $ (two flies, one contract each), against the same rule on other days",
+      "expected": "a positive mean net per decision day after the suite's tastytrade costs",
+      "sample": "every scheduled decision day 2022-05-16..2026-11-06 (~36), one whole-sample read, too few to split; < 25 = no verdict",
+      "rule": "one-sided t > 2, both time-halves positive, positive at 1.5x costs",
+      "mechanism": "implied vol bid into the 14:00 statement falls after it; the flies sit at the priced move",
+      "rivals": [
+        {
+          "explanation": "any afternoon fly earns this",
+          "check": "the same rule on non-FOMC days as a placebo; excess reported"
+        },
+        {
+          "explanation": "optimistic fills",
+          "check": "verdict at working; mid and natural reported"
+        },
+        {
+          "explanation": "one meeting decides it",
+          "check": "worst five sessions and by-year results reported"
+        }
+      ],
+      "pointer": "docs/edge-hypotheses-plan.md#60-fomc-expected-move-flies-two-short-iron-flies-at-the-expected-move-sold-before-the-1400-statement",
+      "scripts": [
+        "packages/backtest/scripts/afternoon_0dte_items60_62.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_afternoon_0dte_items60_62_script.py"
+      ],
+      "legacy": false,
+      "results": [
+        "{home}/data/backtest/results/research/item60/study-2022-05-16-2026-11-06.json"
+      ],
+      "retest": null,
+      "retests": [],
+      "outcome": "the FOMC expected-move fly is closed; negative at working, and the placebo days lose as much"
+    },
+    {
+      "id": 61,
+      "study": "item61",
+      "title": "The 13:45 sandwich read on 2025-26 (exploratory, item 9's rule)",
+      "status": "observation",
+      "setup": "afternoon-sandwich",
+      "side": "neutral",
+      "structure": "iron-condor",
+      "window": "0dte",
+      "measure": "net per session in $ at one contract, unfiltered and with item 9's filters, 2025-01-01..2026-11-06 beside 2022-05-16..2024-12-31",
+      "expected": "exploratory: no verdict; item 9's design fail stands",
+      "sample": "about 460 sessions 2025-26; the 2022-24 read reported beside it",
+      "rule": "none (exploratory read)",
+      "mechanism": "the 0DTE variance premium over the last two and a quarter hours, as item 9",
+      "rivals": [
+        {
+          "explanation": "fills",
+          "check": "working, quarter-of-the-way and mid fills reported"
+        },
+        {
+          "explanation": "a regime, not an edge",
+          "check": "by-year results in both windows"
+        }
+      ],
+      "pointer": "docs/edge-hypotheses-plan.md#61-the-1345-sandwich-read-on-2025-26-exploratory-item-9s-rule",
+      "scripts": [
+        "packages/backtest/scripts/afternoon_0dte_items60_62.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_afternoon_0dte_items60_62_script.py"
+      ],
+      "legacy": false,
+      "results": [
+        "{home}/data/backtest/results/research/item61/study-2025-01-01-2026-11-06.json",
+        "{home}/data/backtest/results/research/item61/study-2022-05-16-2024-12-31.json"
+      ],
+      "retest": null,
+      "retests": [],
+      "outcome": "2025-26 reads like 2022-24: unfiltered about zero, filtered small and below the t bar; item 9 stands"
+    },
+    {
+      "id": 62,
+      "study": "item62",
+      "title": "Fade to the day's midpoint at 13:45: does SPX close toward it?",
+      "status": "failed",
+      "setup": "mean-reversion",
+      "side": "directional",
+      "structure": "none",
+      "window": "0dte",
+      "measure": "signal x (close - 13:45 spot) in SPX points, signal +1 below the day's high-low midpoint, -1 above",
+      "expected": "a positive mean in points (the declaration expects a fail, after item 8)",
+      "sample": "design 2022-05-16..2024-12-31 (~650 sessions); holdout 2025-01-01..2026-11-06 after a design pass; < 100 = no verdict",
+      "rule": "one-sided t > 2 and both design time-halves positive; then the holdout with the same checks",
+      "mechanism": "afternoon reversion toward the day's midpoint",
+      "rivals": [
+        {
+          "explanation": "drift",
+          "check": "results by side of the midpoint"
+        },
+        {
+          "explanation": "a few large days",
+          "check": "results by distance from the midpoint and by year"
+        }
+      ],
+      "pointer": "docs/edge-hypotheses-plan.md#62-fade-to-the-days-midpoint-at-1345-does-spx-close-toward-it",
+      "scripts": [
+        "packages/backtest/scripts/afternoon_0dte_items60_62.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_afternoon_0dte_items60_62_script.py"
+      ],
+      "legacy": false,
+      "results": [
+        "{home}/data/backtest/results/research/item62/study-2022-05-16-2024-12-31.json"
+      ],
+      "retest": null,
+      "retests": [],
+      "outcome": "the midpoint fade at 13:45 is closed; no signal in the design window"
+    },
+    {
+      "id": 63,
+      "study": "item63",
+      "title": "A 7-day time stop on item 59's condor, paired against its own exit",
+      "status": "failed",
+      "legacy": false,
+      "setup": "short-dated-management",
+      "side": "neutral",
+      "structure": "iron-condor",
+      "window": "monthly",
+      "measure": "per cycle, the net of item 59's condor closed at half its credit or else at 7 days, less its net under item 59's own exit (half its credit or 21 days), on the same entry; $ at one contract",
+      "expected": "a positive paired difference, with the stop arm itself positive after costs; the declaration expects a fail",
+      "sample": "item 59's: design cycles entered 2016-01-01..2021-12-31 (~70 pairs); holdout 2022-01-01..2026-11-06 read only after a design pass; < 50 pairs or > 5% of entries without an exit mark in either arm = no verdict",
+      "rule": "paired difference: one-sided t > 2 and positive in both design time-halves; the stop arm's own mean positive at 1.5x costs; then the holdout with the same checks",
+      "mechanism": "an early fixed exit gives up the theta of weeks three to six and cuts the time exposed to a large move; which is larger decides it",
+      "rivals": [
+        {
+          "explanation": "selection, not timing",
+          "check": "the stop is fixed in advance and paired against item 59 on the same entry"
+        },
+        {
+          "explanation": "a calm span",
+          "check": "the paired difference positive in both design time-halves; exits by kind and days held reported"
+        },
+        {
+          "explanation": "a better loser",
+          "check": "the stop arm's own mean positive at 1.5x costs"
+        },
+        {
+          "explanation": "the tail",
+          "check": "each arm's worst trade reported"
+        },
+        {
+          "explanation": "optimistic fills",
+          "check": "verdict at the working price; mid and natural reported"
+        }
+      ],
+      "pointer": "docs/edge-hypotheses-plan.md#63-a-7-day-time-stop-on-item-59s-condor-paired-against-its-own-exit",
+      "scripts": [
+        "packages/backtest/scripts/iwm_condor_timestop_item63.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_iwm_condor_timestop_item63_script.py"
+      ],
+      "results": [
+        "{home}/data/backtest/results/research/item63/study-2016-01-01-2021-12-31.json",
+        "{home}/data/backtest/results/research/item63/pairs-2016-01-01-2021-12-31.json"
+      ],
+      "retest": null,
+      "retests": [],
+      "outcome": "provisional: strictly no verdict through item 59's missing exit marks, but the stop arm loses at 1.5x costs whatever those cycles did, and the paired difference runs against it in both halves; manage's 50%-or-21-days rule stands"
+    },
+    {
+      "id": 64,
+      "study": "item64",
+      "title": "Defined-risk bullish structures on slow large caps, against holding the same delta in shares",
+      "status": "declared",
+      "legacy": false,
+      "setup": "structure-choice",
+      "side": "bullish",
+      "structure": "ratio-and-broken-wing",
+      "window": "monthly",
+      "measure": "per trade, net and excess (net less the entry delta held in shares from entry to exit) as a share of capital held, for four structures on ten slow large caps: a call backspread, two front call credit spreads with a back-month long call, a 1-3-2 put BWB, and the 1-3-2 calendarized; one observation is one cycle month, equal weight across names",
+      "expected": "a positive excess after costs for at least one structure, and the calendarized 1-3-2 ahead of the same-month one on return on capital; the declaration expects a fail beyond drift",
+      "sample": "design cycles entered 2016-01-01..2021-12-31 (~70 cycles of up to ten names); holdout 2022-01-01..2026-11-06 read only after a design pass; < 50 cycles or > 5% of a structure's entries without an exit mark = no verdict",
+      "rule": "per test (four structures and D less C): mean excess return on capital > 0, one-sided t > 2, Holm at 5% across the five; both design time-halves positive; for A to D the raw return on capital positive at 1.5x costs; then the holdout with the same checks",
+      "mechanism": "the backspread and the spreads-plus-long are long-delta bets with a cheapened call; the 1-3-2 sells put premium below the market; calendarizing changes the capital held and the exposure to the term structure",
+      "rivals": [
+        {
+          "explanation": "market drift",
+          "check": "the verdict is on the excess over the entry delta held in shares"
+        },
+        {
+          "explanation": "one name or one year",
+          "check": "equal weight across names per cycle; by name and by year; both halves"
+        },
+        {
+          "explanation": "one lucky structure of five",
+          "check": "Holm at 5% across the five tests"
+        },
+        {
+          "explanation": "fees on many legs",
+          "check": "raw return on capital positive at 1.5x costs"
+        },
+        {
+          "explanation": "optimistic fills",
+          "check": "the working price on every leg, open and close"
+        }
+      ],
+      "pointer": "docs/edge-hypotheses-plan.md#64-defined-risk-bullish-structures-on-slow-large-caps-against-holding-the-same-delta-in-shares",
+      "scripts": [
+        "packages/backtest/scripts/backspread_bwb_item64.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_backspread_bwb_item64_script.py"
+      ],
+      "results": [],
+      "retest": null,
+      "retests": [],
+      "outcome": null
+    },
+    {
+      "id": 65,
+      "study": "item65",
+      "title": "The intraday premium map: implied against realised odds of SPX closing near its price, by time of day",
+      "status": "observation",
+      "setup": "entry-time",
+      "side": "neutral",
+      "structure": "none",
+      "window": "0dte",
+      "measure": "realised minus implied probability (points) that SPX closes within +/-0.1-0.5% of its price at each time of day",
+      "expected": "a measurement: no pass test; a consistent gap aims a later structure test",
+      "sample": "every session 2022-05-16..2026-11-06, reported by window and year",
+      "rule": "none (measurement); only a gap with one sign in both windows and most years may be built on",
+      "mechanism": "the 0DTE chain may price the move to the close above or below what happens, by time of day",
+      "rivals": [
+        {
+          "explanation": "a calm span",
+          "check": "both windows and every year reported"
+        },
+        {
+          "explanation": "strike granularity",
+          "check": "four band widths reported; linear interpolation declared"
+        }
+      ],
+      "pointer": "docs/edge-hypotheses-plan.md#65-the-intraday-premium-map-implied-against-realised-odds-of-spx-closing-near-its-price-by-time-of-day",
+      "scripts": [
+        "packages/backtest/scripts/intraday_premium_map_item65.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_items65_66_scripts.py"
+      ],
+      "legacy": false,
+      "results": [
+        "{home}/data/backtest/results/research/item65/map-2022-05-16-2026-11-06.json"
+      ],
+      "retest": null,
+      "retests": [],
+      "outcome": "the chain overprices the move to the close; 13:30-14:00 is the one window with one sign in every year (MEIC's entry); costs, not timing, are the lever"
+    },
+    {
+      "id": 66,
+      "study": "item66",
+      "title": "Item 47's mirror: a long straddle across an earnings report when its implied move is below past moves",
+      "status": "failed",
+      "setup": "earnings-premium",
+      "side": "long",
+      "structure": "options",
+      "window": "earnings",
+      "measure": "net in bp of notional of a long at-the-money monthly straddle bought at the entry close and sold at the reaction close, on reports whose expected move is below both past-move means, paired against the control session",
+      "expected": "a positive net and paired difference after costs",
+      "sample": "item 31's events: design >= 150 trades, holdout >= 100",
+      "rule": "item 47's rule for its selected arm, applied to the cheap arm",
+      "mechanism": "the market under-prices a report's move relative to the stock's own history",
+      "rivals": [
+        {
+          "explanation": "history is stale; the market knows better",
+          "check": "paired against the control session and above the other events"
+        },
+        {
+          "explanation": "a few huge moves",
+          "check": "net without the best five"
+        },
+        {
+          "explanation": "costs",
+          "check": "positive at the stress"
+        }
+      ],
+      "pointer": "docs/edge-hypotheses-plan.md#66-item-47s-mirror-a-long-straddle-across-an-earnings-report-when-its-implied-move-is-below-past-moves",
+      "scripts": [
+        "packages/backtest/scripts/earnings_straddle_item66.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_items65_66_scripts.py"
+      ],
+      "legacy": false,
+      "results": [
+        "{home}/data/backtest/results/research/item66/results.json"
+      ],
+      "retest": null,
+      "retests": [],
+      "outcome": "implied-against-past moves is closed as a selector both ways; cheap reports lose less but no arm earns after costs"
+    },
+    {
+      "id": 67,
+      "study": "item67",
+      "title": "The earnings module's rule with paper's spread screen: does what paper actually trades earn after costs?",
+      "status": "failed",
+      "legacy": false,
+      "setup": "earnings-premium",
+      "side": "neutral",
+      "structure": "iron-fly",
+      "window": "earnings",
+      "measure": "per trade, net dollars for the whole position and net as a share of capital at risk, for the iron fly, iron condor and directional credit spread, replayed exactly as item 31 replays them (the module's own builders, sizing and management, the 12.5% of the end-of-day spread from mid on each side, fees on both) on every event item 31 admitted and every event that passes all of its criteria except two spread checks: the study's point-in-time cap on the at-the-money spread and the module's own ceiling on it; paired with item 31's no-report control (same structure, same name, four weeks away)",
+      "expected": "a positive mean net share of capital at risk after costs, and a positive paired difference over the no-report control, on the events paper's spread screen admits",
+      "sample": "item 31's events and windows (names the liquidity verdict calls tradable on 2026-10-30, hindsight; Dolt stated-timing reports), design 2020-01-22..2023-12-31, holdout 2024-01-02..2026-07-14 run after the design whatever it shows; < 150 paired trades in an arm in the design window or < 100 in the holdout = no verdict; reports after 2026-11-06 are the untouched forward check",
+      "rule": "item 31's per arm, ungated only, Holm across three arms: mean net share of capital at risk > 0 with a one-sided date-clustered t > 2; mean paired difference > 0 on the same test; positive in each time-half and each name-half; positive at 1.5x fees and 25%-of-spread slippage and with the best 5 trades removed; then holdout mean net > 0 and paired difference > 0. Reported, never judged: each arm split by item 31's admission and by the at-the-money spread's terciles",
+      "mechanism": "item 31's: implied volatility into a report overstates the move that follows, so the seller of the event is paid for carrying it. The added claim is that the premium is also there on the wider-spread names paper's intraday screen admits and item 31's end-of-day screen turned away",
+      "rivals": [
+        {
+          "explanation": "ordinary overnight theta, not the report",
+          "check": "item 31's paired control: same structure, same name, four weeks away with no report; net positive with the pair not positive is 'pays, not for the report', not a pass"
+        },
+        {
+          "explanation": "hindsight: item 31 read the windows' admitted subset and a local diagnostic read the paper period, but the newly admitted wider-spread events were never read",
+          "check": "said as a limit; the clean check is reports after 2026-11-06, read once 100 trades per arm are stored, and a proposal waits for it"
+        },
+        {
+          "explanation": "costs on the wide names: the end-of-day spread haircut overstates the intraday spread paper pays",
+          "check": "positive at item 31's stress (1.5x fees, 25% of the spread); the by-tercile split shows whether the widest third carries or sinks the arm"
+        },
+        {
+          "explanation": "the screen difference is a data artefact: end-of-day quotes run wider than intraday ones, so the newly admitted events are not the events paper takes",
+          "check": "the reported admission split; the admitted half must reproduce item 31, and the wider-spread half is read apart from it"
+        },
+        {
+          "explanation": "a few names carry it",
+          "check": "both name-halves; no name above item 31's share cap; the top five names removed and reported"
+        },
+        {
+          "explanation": "one era",
+          "check": "both time-halves, then the holdout; 2020-02..06 removed and reported"
+        }
+      ],
+      "pointer": "docs/edge-hypotheses-plan.md#67-the-earnings-modules-rule-with-papers-spread-screen-does-what-paper-actually-trades-earn-after-costs",
+      "scripts": [
+        "packages/backtest/scripts/earnings_paper_screen_item67.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_earnings_paper_screen_item67_script.py"
+      ],
+      "results": [
+        "{home}/data/backtest/results/research/item67/results.json"
+      ],
+      "retest": null,
+      "retests": [],
+      "outcome": "every arm beats its control on the paired difference but none earns after costs in the design window: the fly and condor lose, the credit spread misses the t bar; the module's paper arms repeat item 31's losing rule, and redesign or retirement returns to the user"
+    },
+    {
+      "id": 68,
+      "study": "item68",
+      "title": "MEIC's live rule on QQQ and NDX: a second symbol for the live loop",
+      "status": "declared",
+      "legacy": false,
+      "setup": "symbol-choice",
+      "side": "neutral",
+      "structure": "iron-condor",
+      "window": "0dte",
+      "measure": "summed net per session in $ at one condor, and buying power per session, per arm: pm-200 entering 14:00-14:30 with all its gates on QQQ at 1 and 5 wide (q1, q5) and on NDX at 40 and 10 wide (n40, n10); SPX live-1400 from item 23's runs as the reference",
+      "expected": "a positive mean session net after costs on at least one arm, in both windows",
+      "sample": "design 2022-05-16..2025-06-30, holdout 2025-07-01..2026-10-12 run straight after, counting only after a design pass; each symbol's wide 60 s vendor store (40 strikes each side); sessions with a same-day expiry only; both provisional for good, MEIC history being unvalidated and these symbols having no paper record to validate against; < 100 sessions = no verdict",
+      "rule": "per arm: own mean session net > 0 with one-sided t > 2, Holm across the four arms, positive in both time-halves, still positive at 1.5x fees; then holdout mean > 0 with t > 2. Reported, never judged: net over buying power and session-net correlation beside SPX live-1400, the two together, the halfway-to-natural fill stress (design), entries left open at the session's end",
+      "mechanism": "SPX's premium claim on another 0DTE chain: a 16-delta condor is paid more than the moves that reach its shorts, if that survives the chain's spreads, strike spacing and, for QQQ, physical settlement",
+      "rivals": [
+        {
+          "explanation": "the width, not the symbol",
+          "check": "each symbol at its SPX-equivalent width (QQQ 1, NDX 40) and at today's config width (QQQ 5, NDX 10), each judged on its own"
+        },
+        {
+          "explanation": "costs on a wider market",
+          "check": "the module's own fill as the verdict, halfway-to-natural reported beside it, positive at 1.5x fees"
+        },
+        {
+          "explanation": "physical settlement (QQQ)",
+          "check": "paper's own 15:30 force-close, exit friction and pin penalty; entries left open at the session's end counted and reported as faults"
+        },
+        {
+          "explanation": "paying more by risking more",
+          "check": "net over buying power reported beside SPX live-1400's over the same sessions"
+        },
+        {
+          "explanation": "the store's strike window",
+          "check": "a coverage step first: sessions, strike spacing and the share of 16-delta shorts whose wing is quoted, per symbol and window"
+        },
+        {
+          "explanation": "a calm span",
+          "check": "positive in both time-halves"
+        },
+        {
+          "explanation": "searching a grid",
+          "check": "Holm across the four arms; arms fixed before any look"
+        }
+      ],
+      "pointer": "docs/edge-hypotheses-plan.md#68-meics-live-rule-on-qqq-and-ndx-a-second-symbol-for-the-live-loop",
+      "scripts": [
+        "packages/backtest/scripts/meic_symbols_item68.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_meic_symbols_item68_script.py"
+      ],
+      "results": [],
+      "retest": null,
+      "retests": [],
+      "outcome": null
+    },
+    {
+      "id": 69,
+      "study": "item69",
+      "title": "Item 57's unhedged arm in paper: does a close-of-session fill track the replay?",
+      "status": "declared",
+      "legacy": false,
+      "setup": "variance-premium",
+      "side": "bullish",
+      "structure": "short-put",
+      "window": "weekly",
+      "measure": "per paper trade of packages/weeklyput (arm unhedged), against item 57's trade_pair on the same name and expiry from the chain-path store: same strike or not, the credit gap in $ and the net gap in bp of the entry forward notional; per cycle, both equal-weight means; the forward per-cycle net reported beside",
+      "expected": "paper tracks the replay within the replay's own costs; item 57's verdict describes what the arm does",
+      "sample": "every finished paper cycle from the module's first entry, read at 40 finished cycles (about a year of non-monthly weeklies); fewer than 30 replayed trades = no verdict",
+      "rule": "mean net gap (paper minus replay, bp) no worse than minus the replay's mean cost in bp; the same strike on at least 80% of replayed trades; missed names under 10% of name-cycles",
+      "mechanism": "execution, not the premium: a close-of-session fill off the stream cache, the stream window's reach and the posted-close settlement against item 57's end-of-day quotes and expiry forward",
+      "rivals": [
+        {
+          "explanation": "a close-of-session quote is not an end-of-day quote",
+          "check": "credit and net gaps per trade; the same-strike share"
+        },
+        {
+          "explanation": "the stream window misses the 10-delta strike",
+          "check": "delta_not_bracketed refusals and missed names reported; the band holds a 10-delta 7-day put up to about 65% implied vol"
+        },
+        {
+          "explanation": "the settlement print differs from the expiry forward",
+          "check": "the per-trade net gap includes it; SPX (cash) read beside the ETFs"
+        },
+        {
+          "explanation": "early assignment on the ETF puts",
+          "check": "assignment-exposed flags counted; the ETF names stay an upper bound"
+        },
+        {
+          "explanation": "a calm forward year",
+          "check": "this item judges tracking, not the mean; the forward mean is reported only"
+        }
+      ],
+      "pointer": "docs/edge-hypotheses-plan.md#69-item-57s-unhedged-arm-in-paper-does-a-close-of-session-fill-track-the-replay",
+      "scripts": [
+        "scripts/weeklyput_item69.py"
+      ],
+      "tests": [
+        "packages/weeklyput/tests/test_item69_script.py"
+      ],
+      "results": [
+        "{home}/data/backtest/results/research/item69/tracking.json"
+      ],
+      "retest": null,
+      "retest_note": "No yearly re-test: the item reads the module's own forward ledger as it grows.",
+      "retests": [],
+      "outcome": null
     }
   ],
   "rule_changes": []

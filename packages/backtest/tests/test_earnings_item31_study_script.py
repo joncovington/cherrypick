@@ -1,5 +1,5 @@
-"""Item 31's study (scripts/earnings_item31.py): the end-of-day request files, the control pairing, the
-replay of the module's own structures and management over invented chains, the fills and their
+"""Item 31's study (packages/backtest/scripts/earnings_item31.py): the end-of-day request files, the control
+pairing, the replay of the module's own structures and management over invented chains, the fills and their
 stresses, the nine arms, Holm, the pass rule, results.json as the board reads it, and the replay check
 on paper entries. Invented events, chains and bars only: no Dolt, no store of real data.
 
@@ -21,7 +21,7 @@ from cherrypick.core import bs, robustness
 
 from cherrypick.backtest import chainfetch
 
-SCRIPT = Path(__file__).resolve().parents[3] / "scripts" / "earnings_item31.py"
+SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "earnings_item31.py"
 
 
 def _module():

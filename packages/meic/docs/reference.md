@@ -86,7 +86,7 @@ off the shipped `config.example.json`, so a new bound is covered the moment it i
 
 **Live presets (not shipped).** `/set-risk-profile <name>` applies a named preset from the machine's own
 arm registry (`paths.risk_profiles_path`) to `~/.cherrypick/config/meic.json`, live on the next
-iteration; it refuses while only the shipped control-only example exists. The four-tier ladder below no
+iteration; it refuses while only the shipped control-only example exists. The four-tier ladder below is an **example ladder, not shipped**: it no
 longer ships with the package; it exists only in a registry a machine has built, as **live-only**
 presets, all `enabled: false` for paper:
 
@@ -223,7 +223,7 @@ preserve: [docs/risk-profiles.md](risk-profiles.md#design-rationale).
 | `stop_type` | `spread` | Software stop only (tastytrade auto-cancels exchange multi-leg stops) |
 | `stop_trigger_ratio` | `0.95` | Per-side stop fires when that side's cost reaches this fraction of `net_credit` |
 | `stop_limit_ratio` | `1.02` | Cushion on the marketable closing debit, `(short_ask − long_bid) × ratio`, so the Day limit stays marketable if the quote ticks against you |
-| `per_side_stop_management` | `true` | Independent call/put stops. The trigger basis is always the whole IC's `net_credit` (the Chambless convention, `docs/strategy.md`) — fixed in code. **`per_side_stop_trigger` does not exist and was never read — do not reintroduce it**; the per-side-own-credit question is the derived `stop-2.0-side` policy ([docs/paper-experiments.md](paper-experiments.md)) |
+| `per_side_stop_management` | `true` | Independent call/put stops. The trigger basis is always the whole IC's `net_credit` (the published MEIC convention, `docs/strategy.md`) — fixed in code. **`per_side_stop_trigger` does not exist and was never read — do not reintroduce it**; the per-side-own-credit question is the derived `stop-2.0-side` policy ([docs/paper-experiments.md](paper-experiments.md)) |
 | `max_stop_adjustments_per_ic` | `3` | Max stop tightenings per IC |
 | `cash_settled_symbols` | `[SPX, XSP, NDX, RUT]` | Decides the **end-of-day path**: listed symbols are **left to expire** and cash-settled at `expiration_settlement_time` (OTM short keeps full credit; ITM settles at intrinsic capped at width); unlisted (QQQ/IWM/equities) are **force-closed** by `physical_settlement_force_close_time`. Also drives the missed-force-close escalation (Step 2) and paper's assignment/pin friction. Per-side stops and event force-closes apply to every symbol. Never list physically settled ETFs |
 | `expiration_settlement_time` | `16:00` | Cash settlement time (ET). Paper settles at the close; live settles only on the official print (`core.settlement.official_index_close`), leaving the IC open until one is posted, and a missed session is settled by `live_loop --settle-overdue` (the hourly `settle-overdue-live` job) |
@@ -269,4 +269,5 @@ preserve: [docs/risk-profiles.md](risk-profiles.md#design-rationale).
 | `late_entry_bias_iv_rank_max` | `0.45` | Bias applies at IV rank ≤ this |
 | `late_entry_bias_start_time` | `12:00` | No IC entries before this when the bias applies |
 | `slippage_frac_of_spread` | `0.125` | Paper fills are priced at mid less this fraction of the leg spreads, on entry and every priced exit (a live row's entry slippage is measured instead; see above) |
+| `slippage_frac_of_spread_by_symbol` | unset | Per-symbol fractions, e.g. `{"NDX": 0.08}`; outranks the flat key for that symbol. Unset, a symbol takes the flat key; without that, core's per-symbol entry, then core's 0.125 (`fees.slippage_frac`) |
 | `live` | see the example | Live-only: the pinned `symbol`, the `gate0_confirmed` attestation, `arm`, the narrowing overrides, `max_structures_per_day`, `daily_loss_halt_dollars`, `disarm_time`, `use_order_alert_daemon` — see the live block above |

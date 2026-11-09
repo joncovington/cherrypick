@@ -84,4 +84,4 @@ button (`.th-sort`). **Where the rows live decides how** (2026-10-16):
 
 Leave the order alone where it is the meaning: time series and journals, pivots and heatmaps,
 key/value lists, fixed category orders, legs of one position, grouped rows, a `#` that is the row's
-position, top-N previews of a server ranking (Flow's today cards), and capture layouts.
+position, top-N previews of a server ranking (the morning hot-options card), and capture layouts.

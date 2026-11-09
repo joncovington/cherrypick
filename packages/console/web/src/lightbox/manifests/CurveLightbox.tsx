@@ -11,6 +11,7 @@ import { HelpTab } from "../../pages/Curve/HelpTab";
 import { CurvePerformance } from "../../pages/Curve/CurvePerformance";
 import { CurveCosts } from "../../pages/Curve/CurveCosts";
 import { AdvisorSlide } from "../../components/advisor/AdvisorSlide";
+import { Section } from "../../components/Section";
 import { ModuleFrame } from "../ModuleFrame";
 import { CURVE_SLIDES, type CurveSlideId } from "../navGroups";
 import type { SlideDef } from "../types";
@@ -35,13 +36,15 @@ export function CurveLightbox({ slide }: { slide: string }) {
       id: "regime",
       label: CURVE_LABEL.regime,
       render: () => (
-        <div className="cards cards-wide">
-          <RegimeCard
-            series={data?.regimeSeries ?? []}
-            today={todayRegime}
-            params={data?.params}
-            updatedAt={dataUpdatedAt}
-          />
+        <div className="pf-layout">
+          <Section concept="dir" tag="the regime" question="What does the VIX/VIX3M read say, and how has it moved?">
+            <RegimeCard
+              series={data?.regimeSeries ?? []}
+              today={todayRegime}
+              params={data?.params}
+              updatedAt={dataUpdatedAt}
+            />
+          </Section>
         </div>
       ),
     },
@@ -49,8 +52,10 @@ export function CurveLightbox({ slide }: { slide: string }) {
       id: "decisions",
       label: CURVE_LABEL.decisions,
       render: () => (
-        <div className="cards cards-wide">
-          <DecisionsCard module="curve" />
+        <div className="pf-layout">
+          <Section concept="add" tag="entries" question="Which entries were taken today, and which were refused?">
+            <DecisionsCard module="curve" />
+          </Section>
         </div>
       ),
     },
@@ -59,8 +64,10 @@ export function CurveLightbox({ slide }: { slide: string }) {
       label: CURVE_LABEL.arms,
       render: () => (
         <>
-          <div className="cards cards-wide">
-            <ArmComparison data={data} flipDivergence={data?.flipDivergence} updatedAt={dataUpdatedAt} />
+          <div className="pf-layout">
+            <Section concept="hist" tag="the arms" question="How do the arms compare, after every cost?">
+              <ArmComparison data={data} flipDivergence={data?.flipDivergence} updatedAt={dataUpdatedAt} />
+            </Section>
           </div>
           <BookArmGuide module="curve" />
         </>
@@ -74,8 +81,10 @@ export function CurveLightbox({ slide }: { slide: string }) {
       id: "positions",
       label: CURVE_LABEL.positions,
       render: () => (
-        <div className="cards cards-wide">
-          <OpenTradesCard data={isLoading ? undefined : data} updatedAt={dataUpdatedAt} />
+        <div className="pf-layout">
+          <Section concept="stand" tag="the book" question="What is open now, and how is it marked?">
+            <OpenTradesCard data={isLoading ? undefined : data} updatedAt={dataUpdatedAt} />
+          </Section>
         </div>
       ),
     },

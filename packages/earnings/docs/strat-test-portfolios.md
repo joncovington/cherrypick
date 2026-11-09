@@ -100,5 +100,4 @@ head-to-head report script; the per-strategy books plus the shared `strategy_met
 computations *are* the comparison.
 
 Once a strategy has a decision-grade sample (see `docs/strategy-testing-plan.md`'s sample
-targets), decide **enable live / keep paper / retire** on it, then copy that strategy's validated
-parameter block into the live config root and flip `enable_live_trading` only after review.
+targets), decide **keep / retire** on it.

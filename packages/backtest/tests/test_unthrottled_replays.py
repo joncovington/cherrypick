@@ -9,9 +9,11 @@ import re
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from cherrypick.backtest import runner
 
-SCRIPTS = Path(__file__).resolve().parents[3] / "scripts"
+SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 
 
 def test_each_replay_is_started_unthrottled(monkeypatch, tmp_path):
@@ -31,6 +33,16 @@ def test_each_replay_is_started_unthrottled(monkeypatch, tmp_path):
     }
     assert runner._replay("2024-01-02", tmp_path / "o.db", ["a"], tmp_path / "h.db", 1.0, cfg) == {"ok": True}
     assert [c[2] for c in calls] == ["cherrypick.meic.replay", "cherrypick.flies.cli"]
+    # SPX's command line is the one it always was; another symbol is named (item 68)
+    assert "--symbol" not in calls[0]
+    runner._meic_replay("2024-01-02", tmp_path / "o.db", ["a"], tmp_path / "h.db", 1.0, cfg, symbol="NDX")
+    assert calls[-1][-2:] == ["--symbol", "NDX"]
+
+
+def test_only_a_replay_that_takes_a_symbol_runs_one_other_than_spx(tmp_path):
+    with pytest.raises(runner.RunRefused, match="SPX's only"):
+        runner.run({}, ["a"], "design", module="flies", symbol="QQQ")
+    assert runner.MODULES["meic"].per_symbol and not runner.MODULES["flies"].per_symbol
 
 
 def test_the_runner_sizes_its_pool_from_the_machine():

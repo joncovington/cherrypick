@@ -29,6 +29,20 @@ CONTRACT_MULTIPLIER = 100
 # the same key.
 DEFAULT_SLIPPAGE_FRAC = _fees.DEFAULT_COSTS["slippage_frac_of_spread"]
 
+
+def slippage_frac(params: dict, symbol: str | None) -> float:
+    """The fill fraction for `symbol` under flies' own keys, through core's lookup
+    (`fees.slippage_frac`): `slippage_frac_by_symbol[symbol]`, then the flat `slippage_frac`, then
+    the suite's per-symbol entry, then the suite's flat fraction."""
+    return _fees.slippage_frac(
+        symbol,
+        {
+            _fees.BY_SYMBOL_KEY: params.get("slippage_frac_by_symbol"),
+            "slippage_frac_of_spread": params.get("slippage_frac"),
+        },
+    )
+
+
 PUT, CALL = "put", "call"
 
 CANCELLED = "cancelled"

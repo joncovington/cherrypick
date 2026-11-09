@@ -8,14 +8,16 @@ import { useMode } from "../../lib/useMode";
 import { ModeToggle } from "../../components/ModeToggle";
 import { PaperLiveBadge } from "../../components/shell/PaperLiveBadge";
 import { Card, DataCard, PnlCell, fmtMoney, fmtNum, fmtPct, sortRows, useSort } from "../../components/DataTable";
+import { Section } from "../../components/Section";
+import { Tile } from "../../components/performance/Tile";
+import { TileGrid, tileCount } from "../../components/performance/TileGrid";
 import { ScopeSelect, EraSelect, LoopPill } from "../../components/ScopeBar";
 import { ArmSelect } from "../../components/ArmSelect";
 import { ModuleIntegrityStrip } from "../../components/ModuleIntegrityStrip";
 import { MeicDeepCards } from "../../pages/Meic/MeicDeepCards";
 import { MeicDivergenceCard } from "../../pages/Meic/MeicDivergenceCard";
 import { ExperimentGuideView } from "../../components/ExperimentGuide";
-import { ArmRail, AttemptTimeline } from "../../components/Attempts";
-import { OccupancyMap } from "../../components/OccupancyMap";
+import { AttemptsTab } from "../../components/AttemptsTab";
 import { MeicForestCard } from "../../pages/Meic/MeicForestCard";
 import { MeicArmCards } from "../../pages/Meic/MeicArmCards";
 import { MeicPerformanceTab } from "../../pages/Meic/MeicPerformanceTab";
@@ -191,7 +193,17 @@ export function MeicLightbox({ slide }: { slide: string }) {
       ),
     },
     { id: "arms", label: MEIC_LABEL.arms, render: () => <MeicArmCards mode={mode} scope={scopeArgs} attemptsScope={attemptsScope} /> },
-    { id: "forest", label: MEIC_LABEL.forest, render: () => <MeicForestCard mode={mode} scope={scopeArgs} /> },
+    {
+      id: "forest",
+      label: MEIC_LABEL.forest,
+      render: () => (
+        <div className="pf-layout">
+          <Section concept="dir" tag="forest" question="What does each arm's book pay at expiry?">
+            <MeicForestCard mode={mode} scope={scopeArgs} />
+          </Section>
+        </div>
+      ),
+    },
     {
       // Attempts and occupancy merged (2026-09): both are bounded snapshots regardless of session
       // activity -- AttemptTimeline's SVG height depends only on arm count, and OccupancyMap shows
@@ -199,63 +211,58 @@ export function MeicLightbox({ slide }: { slide: string }) {
       id: "attempts",
       label: MEIC_LABEL.attempts,
       render: () => (
-        <div className="cards cards-wide">
-          <ArmRail module="meic" mode={mode} date={day} scope={attemptsScope} />
-          <AttemptTimeline module="meic" mode={mode} date={day} scope={attemptsScope} />
-          <OccupancyMap module="meic" mode={mode} date={day} scope={attemptsScope} />
-        </div>
+        <AttemptsTab module="meic" mode={mode} date={day} scope={attemptsScope} />
       ),
     },
     {
       id: "exits",
       label: MEIC_LABEL.exits,
       render: () => (
-        <div className="cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(18rem, 100%), 1fr))" }}>
-          <DataCard
-            title="Exit reasons"
-            headers={["reason", "count", "%"]}
-            numFrom={1}
-            tableClass="data-table-labelled"
-            loading={analytics.isLoading}
-            rowCount={a?.exitReasons.length ?? 0}
-            updatedAt={analytics.dataUpdatedAt}
-          >
-            {a?.exitReasons.map((r) => (
-              <tr key={r.reason}>
-                <td>{r.reason}</td>
-                <td>{r.count}</td>
-                <td className="muted">{totalExits > 0 ? `${((r.count / totalExits) * 100).toFixed(1)}%` : "—"}</td>
-              </tr>
-            ))}
-          </DataCard>
-          <MeicDivergenceCard mode={mode} date={null} era={resolvedEra} />
-          <Card title="Fee drag (this era)" updatedAt={analytics.dataUpdatedAt}>
-            <div className="stats-grid">
-              <div className="stat-tile">
-                <span className="stat-label">premium collected</span>
-                <span className="stat-value">{a !== undefined ? fmtMoney(a.feeDrag.credit) : "—"}</span>
-              </div>
-              <div className="stat-tile" title="commissions and exchange fees; settlement is its own figure and outside fee drag">
-                <span className="stat-label">trading fees</span>
-                <span className="stat-value pnl-neg">{a !== undefined ? fmtMoney(a.feeDrag.fees) : "—"}</span>
-              </div>
-              <div
-                className="stat-tile"
-                title={
-                  a?.feeDrag.settlementFees === null
-                    ? "not recorded on every trade in this era; the unrecorded trades' settlement is inside trading fees"
-                    : "exercise / assignment fees at settlement"
-                }
-              >
-                <span className="stat-label">settlement</span>
-                <span className="stat-value">{a === undefined ? "—" : a.feeDrag.settlementFees === null ? "n/r" : fmtMoney(a.feeDrag.settlementFees)}</span>
-              </div>
-              <div className="stat-tile" title="trading fees ÷ premium collected, settled trades">
-                <span className="stat-label">fee drag</span>
-                <span className="stat-value">{fmtPct(a?.feeDrag.dragPct ?? null, 1)}</span>
-              </div>
-            </div>
-          </Card>
+        <div className="pf-layout">
+          <Section concept="hist" tag="exits" question="How do positions end, and what do fees take?">
+            <DataCard
+              title="Exit reasons"
+              className="lv-4"
+              headers={["reason", "count", "%"]}
+              numFrom={1}
+              tableClass="data-table-labelled"
+              loading={analytics.isLoading}
+              rowCount={a?.exitReasons.length ?? 0}
+              updatedAt={analytics.dataUpdatedAt}
+            >
+              {a?.exitReasons.map((r) => (
+                <tr key={r.reason}>
+                  <td>{r.reason}</td>
+                  <td>{r.count}</td>
+                  <td className="muted">{totalExits > 0 ? `${((r.count / totalExits) * 100).toFixed(1)}%` : "—"}</td>
+                </tr>
+              ))}
+            </DataCard>
+            <Card title="Fee drag (this era)" className="lv-8" updatedAt={analytics.dataUpdatedAt}>
+              <TileGrid count={4}>
+                <Tile label="premium collected" value={a !== undefined ? fmtMoney(a.feeDrag.credit) : "—"} />
+                <Tile
+                  label="trading fees"
+                  value={a !== undefined ? fmtMoney(a.feeDrag.fees) : "—"}
+                  tone="neg"
+                  title="commissions and exchange fees; settlement is its own figure and outside fee drag"
+                />
+                <Tile
+                  label="settlement"
+                  value={a === undefined ? "—" : a.feeDrag.settlementFees === null ? "n/r" : fmtMoney(a.feeDrag.settlementFees)}
+                  title={
+                    a?.feeDrag.settlementFees === null
+                      ? "not recorded on every trade in this era; the unrecorded trades' settlement is inside trading fees"
+                      : "exercise / assignment fees at settlement"
+                  }
+                />
+                <Tile label="fee drag" value={fmtPct(a?.feeDrag.dragPct ?? null, 1)} title="trading fees ÷ premium collected, settled trades" />
+              </TileGrid>
+            </Card>
+          </Section>
+          <Section concept="add" tag="arms" question="Do the arms reach different entry decisions?">
+            <MeicDivergenceCard mode={mode} date={null} era={resolvedEra} className="lv-12" />
+          </Section>
         </div>
       ),
     },
@@ -285,24 +292,28 @@ export function MeicLightbox({ slide }: { slide: string }) {
       id: "sessions",
       label: MEIC_LABEL.sessions,
       render: () => (
-        <div className="cards cards-wide">
-          <Card title="Calendar periods (net of fees)" updatedAt={analytics.dataUpdatedAt}>
-            <div className="stats-grid">
-              {(a?.periods ?? []).map((p) => (
-                <div key={p.label} className="stat-tile">
-                  <span className="stat-label">{p.label}</span>
-                  <span className={`stat-value ${p.net >= 0 ? "pnl-pos" : "pnl-neg"}`}>{fmtMoney(p.net)}</span>
-                  <span className="muted" style={{ fontSize: 11 }}>
-                    {p.trades} trades · {p.wins}W/{p.losses}L
-                    {p.wins + p.losses > 0 ? ` · ${((p.wins / (p.wins + p.losses)) * 100).toFixed(0)}%` : ""}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </Card>
+        <div className="pf-layout">
+          <Section concept="hist" tag="periods" question="How did each calendar period go?">
+            <Card title="Calendar periods (net of fees)" className="lv-12" updatedAt={analytics.dataUpdatedAt}>
+              <TileGrid count={tileCount((a?.periods ?? []).length)}>
+                {(a?.periods ?? []).map((p) => (
+                  <Tile
+                    key={p.label}
+                    label={p.label}
+                    value={fmtMoney(p.net)}
+                    tone={p.net >= 0 ? "pos" : "neg"}
+                    n={p.trades}
+                    nUnit={`trades · ${p.wins}W/${p.losses}L${p.wins + p.losses > 0 ? ` · ${((p.wins / (p.wins + p.losses)) * 100).toFixed(0)}%` : ""}`}
+                  />
+                ))}
+              </TileGrid>
+            </Card>
+          </Section>
           <MeicDeepCards mode={mode} symbol={symbol} profile={profile} era={resolvedEra} />
+          <Section concept="hist" tag="sessions" question="How did each recent session end?">
           <DataCard
             title="Daily summaries (the newest 20)"
+            className="lv-12"
             headers={[
               { label: "date", k: "date" },
               { label: "sym", k: "sym" },
@@ -331,6 +342,7 @@ export function MeicLightbox({ slide }: { slide: string }) {
               </tr>
             ))}
           </DataCard>
+          </Section>
         </div>
       ),
     },

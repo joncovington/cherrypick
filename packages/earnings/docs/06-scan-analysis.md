@@ -28,7 +28,7 @@ best:
 python -m cherrypick.earnings.rank_strategies get_ranked_symbols --date MM/DD/YYYY
 ```
 
-This second command is what the live/paper loop calls at entry time (`CLAUDE.md`'s Step 4b) —
+This second command is the ranking `/paper-trading-start` runs —
 run it yourself before the market close to see exactly what the loop is about to do.
 
 ---

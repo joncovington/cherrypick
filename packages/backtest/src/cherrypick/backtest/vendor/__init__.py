@@ -46,11 +46,15 @@ class VendorRefusal(Exception):
         self.detail = detail
 
 
-def client_for(settings: dict):
-    """The configured vendor's client. Imported lazily, so nothing but a fetch loads the library."""
+def client_for(settings: dict, *, env: str = "PROD"):
+    """The configured vendor's client. Imported lazily, so nothing but a fetch loads the library.
+
+    ``env="STAGE"`` is for checks run by hand only: a second login that leaves the fetch's session
+    alive (see `vendor/thetadata.py`). Nothing in the package or its scripts may ask for it
+    (tests/test_fence.py), so every store is built from the production environment."""
     name = settings["vendor"]["name"]
     if name == "thetadata":
         from .thetadata import ThetaDataClient
 
-        return ThetaDataClient(settings)
+        return ThetaDataClient(settings, env=env)
     raise VendorRefusal("unknown_vendor", name)

@@ -1,6 +1,8 @@
 import type { TradingMode } from "@console/shared";
 import type { FliesFilter } from "../../lib/api";
-import { GridCard, type CardHeight, type CardSpan } from "../../components/grid/GridCard";
+import { Card } from "../../components/DataTable";
+import { HelpSection, type CardHelpContent } from "../../components/CardHelp";
+import { TabLink } from "./FliesFilter";
 import { ARM_COLORS, SPOT_COLOR } from "../../components/chart/tokens";
 import { niceTicks } from "../../components/chart/scales";
 import { minuteOf, hhmm } from "../../components/chart/time";
@@ -15,21 +17,28 @@ import { useTimeline } from "./TimelineCard";
  * (wanted centres, leg-in bars, the replayed book, named gaps) stays on the tab it links to; a gap in
  * the record still breaks the line here rather than being drawn as a calm stretch.
  */
+export const SPOT_PATH_HELP: CardHelpContent = {
+  title: "Spot path",
+  body: (
+    <HelpSection title="Markers">
+      <p>
+        The session's spot, with a ○ where an arm sold a credit spread and a ◆ where it completed into a fly, each in its arm's colour. A
+        gap in the record breaks the line rather than being drawn as a calm stretch. The full timeline is on the timeline tab.
+      </p>
+    </HelpSection>
+  ),
+};
+
 export function SpotPathCard({
   mode,
   filter,
   arm,
-  span = 8,
-  h = 304,
   chartHeight = 236,
   to = "/flies/timeline",
 }: {
   mode: TradingMode;
   filter: FliesFilter;
   arm: string | null;
-  /** The cell: the session tab's 8×304 unless a page places it elsewhere. */
-  span?: CardSpan;
-  h?: CardHeight;
   /** The drawing's height in viewBox units at its fixed 760 width; a shorter cell wants less. */
   chartHeight?: number;
   to?: string;
@@ -114,19 +123,18 @@ export function SpotPathCard({
   const entries = events.filter((e) => e.kind === "entry").length;
   const completions = events.filter((e) => e.kind === "completion").length;
   return (
-    <GridCard
-      label="spot path"
-      span={span}
-      h={h}
-      to={to}
-      toLabel="the full session timeline"
-      foot={
-        data === undefined
-          ? isLoading ? "reading…" : "—"
-          : `${data.date ?? "no session"} · ○ ${String(entries)} entries · ◆ ${String(completions)} completions${arm !== null ? ` · ${arm}` : ""}`
-      }
-    >
+    <Card title="spot path" className="fl-w6" help={SPOT_PATH_HELP}>
       {body ?? <p className="muted">{isLoading ? "reading…" : "no spot recorded for this session"}</p>}
-    </GridCard>
+      <p className="muted fl-state">
+        {data === undefined
+          ? isLoading
+            ? "reading…"
+            : "—"
+          : `${data.date ?? "no session"} · ○ ${String(entries)} entries · ◆ ${String(completions)} completions${arm !== null ? ` · ${arm}` : ""}`}
+      </p>
+      <div className="pf-mores pf-push">
+        <TabLink to={to}>the timeline</TabLink>
+      </div>
+    </Card>
   );
 }

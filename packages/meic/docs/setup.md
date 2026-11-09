@@ -20,12 +20,15 @@ There is no separate MCP server to install — `cherrypick/meic/tt.py` talks to 
 
 ### 1. Clone the suite and enter this package
 
-`cherrypick-meic` is the MEIC module of the [cherrypick](../../../README.md) monorepo. Clone the
-suite, then work from `packages/meic`:
+`cherrypick-meic` is the MEIC module of the [cherrypick](../../../README.md) monorepo. The root
+installer ([INSTALL.md](../../../INSTALL.md)) is the normal way in. By hand, clone the suite, check out the
+latest release tag (not `main`, which is often ahead of it), then work from `packages/meic`:
 
 ```bash
 git clone https://github.com/joncovington/cherrypick.git
-cd cherrypick/packages/meic
+cd cherrypick
+git checkout "$(git describe --tags --abbrev=0 origin/main)"   # the latest release tag
+cd packages/meic
 ```
 
 ### 2. Install Python dependencies
@@ -138,7 +141,8 @@ By default this is `false`, so `execute_trade`/`adjust_order` calls without `--l
 
 That key is the master switch. The deterministic live loop also needs `live.symbol`, a non-empty
 `live.gate0_confirmed` attestation and a designated account, and trades only on a day armed with
-`/live-meic-start`. Size live in the `live` block (`live.arm`, `max_open_bp_dollars`,
+`/live-meic-start` (or, without Claude Code, `python -m cherrypick.meic.live_loop --arm --confirm YES`, which
+prints `DISCLAIMER.md` and arms nothing on any other word). Size live in the `live` block (`live.arm`, `max_open_bp_dollars`,
 `wing_widths_by_symbol`, the entry window), never at the top level, which every paper arm inherits;
 `python -m cherrypick.meic.live_migrate` moves misplaced keys (dry run by default).
 

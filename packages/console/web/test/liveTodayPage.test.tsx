@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { renderToString } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
 import type { LiveMeicPayload, LiveTodayHand, LiveTodayLoop, LiveTodayPayload } from "@console/shared";
-import { LiveTodayView, LoopDetail, suiteBadgeText } from "../src/pages/Live/LiveTodayPage";
+import { LiveTodayView, LoopDetail, openAtMark, suiteBadgeText, unrealisedTitle } from "../src/pages/Live/LiveTodayPage";
 import { DayChains, bwbChains, meicChains } from "../src/pages/Live/LiveTodayOrders";
 import { expiredWords, handModel } from "../src/pages/Live/HandToday";
 import { inView } from "./viewTables";
@@ -48,7 +48,7 @@ function payload(over: Partial<LiveTodayPayload> = {}): LiveTodayPayload {
     halted: false,
     loops: [loop("flies"), loop("meic"), loop("bwb")],
     attention: [],
-    suite: { loops: 3, armed: [], net: 0, gross: 0, fees: 0, settlementFees: 0, trades: 0, summed: ["flies", "meic", "bwb"], excluded: [], feesUnrecorded: [] },
+    suite: { loops: 3, armed: [], net: 0, gross: 0, fees: 0, settlementFees: 0, trades: 0, summed: ["flies", "meic", "bwb"], excluded: [], feesUnrecorded: [], unrealised: { value: 0, at: null, summed: [], unmarked: [] } },
     hand: hand({ status: "none", reason: "no position evaluation today yet (newest 2026-10-14)" }),
     ...over,
   };
@@ -254,7 +254,7 @@ describe("the loop order chains", () => {
   const meicOpen = {
     id: 7, tradeDate: "2026-10-15", entryTime: "2026-10-15T10:05:00", symbol: "SPX", arm: "live", status: "open", working: false,
     putStrike: 5800, callStrike: 5900, wingWidth: 25, quantity: 1, netCredit: 2.6, entryCash: 260,
-    putHeld: false, callHeld: true, putClosing: false, callClosing: false, fillConfirmedAt: null, overdue: false,
+    putHeld: false, callHeld: true, putClosing: false, callClosing: false, fillConfirmedAt: null, overdue: false, mark: null,
   };
   const meicDone = {
     mode: "live" as const, id: 6, tradeDate: "2026-10-15", entryTime: "2026-10-15T09:45:00", symbol: "SPX", putStrike: 5795, callStrike: 5905,
@@ -363,5 +363,39 @@ describe("the hand row", () => {
     expect(html).toContain("no position evaluation today yet (newest 2026-10-14)");
     expect(html).toContain("No 0DTE trade by hand today.");
     expect(html).not.toContain("tc-card");
+  });
+
+  it("leads the open line with the loops' unrealised total, then each loop's part; the hand trades beside it, never in it", () => {
+    const d = payload({
+      loops: [
+        loop("flies", { open: 1, mark: { value: -20, at: "2030-01-02T17:44:30.000Z", basis: "mid mark, net of fees" } }),
+        loop("meic", { open: 2, mark: { value: 50, at: "2030-01-02T17:44:10.000Z", basis: "net of fees to date" } }),
+        loop("bwb", { open: 0, mark: null }),
+      ],
+      hand: hand(HAND_IC),
+    });
+    d.suite.unrealised = { value: 30, at: "2030-01-02T17:44:10.000Z", summed: ["flies", "meic"], unmarked: [] };
+    const items = openAtMark(d);
+    expect(items.map((i) => [i.label, i.value])).toEqual([["flies", -20], ["meic", 50], ["by hand", 168]]);
+    const html = render(d).replace(/<!-- -->/g, "");
+    expect(html).toMatch(/aria-label="open at mark"><span class="lt-open-lab">open at mark<\/span><span class="lt-open-total"[^>]*><span class="pnl-pos">\$30\.00/);
+    expect(html).toMatch(/meic <span class="pnl-pos">\$50\.00/);
+    // the hand trades' 168 is beside the total, never in it, and the realised total is untouched
+    expect(html).not.toContain("$198.00");
+    expect(html).toMatch(/net today · all loops[\s\S]*?class="pf-hero pnl-pos"[^>]*>\$0\.00</);
+    expect(unrealisedTitle(d.suite.unrealised)).toContain("over flies, meic");
+  });
+
+  it("reads the total n/r and names the loop that could not be marked", () => {
+    const d = payload({ loops: [loop("bwb", { open: 1, mark: { value: null, at: null, basis: "n/r when any is unmarked" } })] });
+    d.suite.unrealised = { value: null, at: null, summed: [], unmarked: [{ loop: "bwb", reason: "1 open, not all marked" }] };
+    const html = render(d).replace(/<!-- -->/g, "");
+    expect(html).toMatch(/class="lt-open-total" title="Not totalled: bwb — 1 open, not all marked"><span class="muted">n\/r/);
+  });
+
+  it("says nothing is open when no loop holds anything and no hand leg is held", () => {
+    const d = payload({ loops: [loop("flies", { open: 0, mark: null }), loop("meic", { open: 0, mark: { value: null, at: null, basis: "x" } })] });
+    expect(openAtMark(d)).toEqual([]);
+    expect(render(d)).toContain(">nothing open<");
   });
 });
