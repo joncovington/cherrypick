@@ -99,13 +99,10 @@ vocabulary (`ROLL_FOR_CREDIT`, `CLOSE`, `TAKE_PROFIT`, `ROLL_OR_CLOSE`, `CLOSE_L
 shows it firing and not firing, the regenerated example, and a README row with its source and the
 outside evidence. Its confidence is a statement about evidence — say where it came from.
 
----
-CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
----
+Package guardrails, on top of the root's:
 
-> Suite-wide guardrails apply — see root CLAUDE.md.
-> - **Advice only.** No order path, no credentials, no network; the orchestrator owns the broker read.
-> - **Deterministic.** A pure function of snapshot + rules; no AI anywhere in the verdict.
+- **Advice only.** No order path, no credentials, no network; the orchestrator owns the broker read.
+- **Deterministic.** A pure function of snapshot + rules; no AI anywhere in the verdict.
 
 ## Tool Reference
 

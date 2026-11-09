@@ -40,3 +40,24 @@ python -m pytest
 Config: the machine's copy is `~/.cherrypick/config/pmcc.json`; a git-ignored in-repo `config.json`
 is still read, and with neither the module runs off `config.example.json`. The example's `_note`
 keys are the design document, and it ships the full roster.
+
+## Commands
+
+```bash
+python -m cherrypick.pmcc.paper_loop --once        # one gated tick (what the supervisor spawns off-session)
+python -m cherrypick.pmcc.paper_loop --interval 60 # the in-session resident loop
+python -m cherrypick.pmcc.paper_loop --status      # one JSON health object (watchdog contract)
+python -m cherrypick.pmcc.paper_loop --settle --date 2026-10-09 --price 71.23 [--symbol SLV]  # official print
+python run.py status                               # open positions + the expiration plan
+python run.py headline [--era ALL]                 # closed results per arm and symbol
+python run.py tracker-index                        # every position the tracker can show
+python run.py tracker --position SLV:shield:2026-10-05   # one position, week by week
+python run.py weekly [--era ALL]                   # the arms' weekly A/B
+python run.py equity [--era ALL]                   # each arm's daily marked equity and tear sheet
+python run.py exposure                             # the early-assignment-exposure telemetry
+python ../../scripts/pmcc_leap_probe.py            # what each symbol lists ~1 year out (network, read-only)
+python ../../scripts/pmcc_shield_replay.py         # the 2011- replay behind the shield arms, put benchmark included
+python ../../scripts/pmcc_shield_replay.py --skew-check   # the model against the sampled skew
+python -m pytest                                   # temp CHERRYPICK_HOME; no broker, no streamer needed
+ruff check . && ruff format .                      # line-length 110
+```

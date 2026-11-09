@@ -177,3 +177,24 @@ ruff check .
 
 See `CLAUDE.md` for the architecture and the invariants, including the isolation test that checks
 no other package imports or launches this one.
+
+## Commands
+
+```bash
+# Fresh clone: install packages/core first (see the root CLAUDE.md).
+pip install -e packages/desk
+
+cherrypick-desk status                      # gates, config errors, PIN/lockout, halt flag, today's tallies
+cherrypick-desk pin-set                     # interactive only; needs the current PIN once one is set
+cherrypick-desk pin-clear                   # interactive only; needs the current PIN
+cherrypick-desk analyze --order '<json>'    # OFFLINE structure + worst case. No broker, no state
+cherrypick-desk propose --order '<json>'    # gates + broker preflight -> ticket + confirmation code
+cherrypick-desk confirm --ticket <id> --code <code>   # PIN prompt, re-check everything, submit
+cherrypick-desk orders                      # working orders -- read-only, no PIN, still gated
+cherrypick-desk cancel --order-id <id>      # PIN prompt, pull a resting order
+cherrypick-desk purge                       # drop expired pending and claimed tickets
+
+# Tests (pytest; markers: unit [default lane], live)
+python -m pytest                            # default: -m 'not live' -q
+ruff check .
+```

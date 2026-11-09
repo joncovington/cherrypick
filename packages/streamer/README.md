@@ -56,8 +56,11 @@ Config: `~/.cherrypick/config/streamer.json`, or copy `config.example.json` → 
 package. Credentials live in the OS keyring only, and the daemon needs just the two bearer secrets — it
 never makes an account-scoped call. It reads them from the `meicagent` service first, then the
 pre-rename `tastytrade-mcp`, then the suite's shared broker login, `cherrypick-broker` (where the
-installer's broker login stores them), so a machine onboarded once needs no re-entry. `--secrets-set`
-writes under `meicagent`.
+installer's broker login stores them), so a machine onboarded once needs no re-entry. **On a normal
+install, connect the broker once with `python run.py connect` from `packages/orchestrator` (or
+`cherrypick connect`)**: it stores the one shared `cherrypick-broker` login every package reads, and the
+streamer needs nothing more. `--secrets-set` is for a streamer-only box and still writes the legacy
+`meicagent` service, which the read order above finds.
 
 The package declares `tastytrade` as a dependency of its own: the daemon opens its broker session and
 DXLink stream through `cherrypick.core`, which imports `tastytrade` lazily and so does not declare it.
@@ -98,3 +101,17 @@ never a faster full watchdog tick.
 Development guidance and the full invariant list: [CLAUDE.md](CLAUDE.md). Why the streamer was split
 out of MEIC: [docs/history/streamer-package-plan.md](../../docs/history/streamer-package-plan.md). The
 incidents behind the rules: [docs/history.md](docs/history.md).
+
+## Commands
+
+```bash
+python run.py               # run the daemon in the foreground (Ctrl-C / SIGTERM to stop)
+python run.py --status      # print one JSON health object (running, pid, oldest_event_age_s, ...) and exit
+python run.py --stop        # SIGTERM a running daemon
+python run.py --symbol SPX --symbol XSP   # override the configured symbols for this run
+python run.py --secrets-set    # store the shared tastytrade OAuth bearer secrets (hidden input) in the keyring
+python run.py --secrets-status # print which shared OAuth secrets are present (JSON)
+python run.py --prune       # report dead chain rows in the cache; add --apply to delete them
+python -m pytest            # lifecycle tests; no broker/streamer required (temp $CHERRYPICK_HOME)
+ruff check . && ruff format .             # line-length 110
+```

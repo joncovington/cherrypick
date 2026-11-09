@@ -86,7 +86,7 @@ off the shipped `config.example.json`, so a new bound is covered the moment it i
 
 **Live presets (not shipped).** `/set-risk-profile <name>` applies a named preset from the machine's own
 arm registry (`paths.risk_profiles_path`) to `~/.cherrypick/config/meic.json`, live on the next
-iteration; it refuses while only the shipped control-only example exists. The four-tier ladder below no
+iteration; it refuses while only the shipped control-only example exists. The four-tier ladder below is an **example ladder, not shipped**: it no
 longer ships with the package; it exists only in a registry a machine has built, as **live-only**
 presets, all `enabled: false` for paper:
 

@@ -1,10 +1,8 @@
 # cherrypick-earnings — Operational Instructions
 
-> **Vocabulary.** This module's **profile** is the suite's **arm** (root `CLAUDE.md`); `strategy`
-> is the STRUCTURE type and is NOT renamed. The column is `arm` on every table that carries it (it was
-> `profile` until 2026-09-24); `_conn()` refuses a ledger that still says `profile` rather than adding
-> `arm` beside it (`scripts/arm_column_migrate.py --only profile` renames one). Save specs send `arm`;
-> a caller still sending `profile` is read, never dropped.
+This module's old word `profile` is the root's `arm` (`--profile` selects an arm); `strategy` is the
+STRUCTURE type and is not renamed. The column is `arm` on every table that carries it, and `_conn()`
+refuses a ledger that still says `profile` (`scripts/arm_column_migrate.py --only profile` renames one).
 
 > Operating contract for the cherrypick **Earnings** engine. Human guides: [`docs/`](docs/README.md);
 > incident history: [docs/operating-history.md](docs/operating-history.md); suite-wide context: the
@@ -15,22 +13,24 @@ paper-only since v0.12.0**: it places no live order and has no live gate, arm or
 leftover `enable_live_trading` or `live` block in its config is ignored (`run.py doctor` says it can
 go). Seven strategies, **all defined-risk**: `iron_fly`, `double_calendar`, `iron_condor`, `atm_calendar`,
 `directional_credit_spread`, `broken_wing_butterfly`, `expected_move_butterfly`
-(`docs/05-strategies.md`). `expected_move_butterfly` is **paper only**: it opens in `strat_test`
-from 2026-10-14 (`STRAT_TEST_STARTS`), and is never ranked as a symbol's best. `atm_calendar` and
-`double_calendar` stay registered but open nothing in `strat_test` from 2026-10-15 (and run no screen from 2026-11-06), and
-`broken_wing_butterfly` from 2026-10-26 (`strat_test_harness.STRAT_TEST_RETIRED`, dated retirements;
-docs/operating-history.md). **Exits price at mid for positions entered from 2026-10-26**, natural
-side before (`scanner.exit_basis`; slippage is a cost on a mid fill only, `costs.exit_costs`) —
-never pool across that break. **From 2026-10-28 every entry path admits only names the suite's
-liquidity verdict calls `tradable`** (declared 2026-10-27; docs/operating-history.md): a refused
-name is a recorded `not_tradable` drop, an unknown one is refused, and a missing or stale verdict
-refuses everything loudly, never silently. Never pool across that break either. **From 2026-10-30**
-a failed entry scan is retried inside the window, entries open as the scan goes, and a close the
-spread gate has held 30 minutes in a session is taken anyway (docs/operating-history.md); never pool
-across that one. **From 2026-11-06** the PEAD gate fires at the first executable check of the first
-morning, the scan screens tradable names first, the expected move is the report's own move, a short
-at assignment risk closes, and the expiry close is at 15:20 (docs/operating-history.md, the
-2026-11-06 boundary); never pool across it. Undefined-risk/naked
+(`docs/05-strategies.md`, the one strategy table). `expected_move_butterfly` is **paper only** and is
+never ranked as a symbol's best. `atm_calendar`, `double_calendar` and `broken_wing_butterfly` stay
+registered but open nothing in `strat_test` (`strat_test_harness.STRAT_TEST_RETIRED`, dated
+retirements). **Exits price at mid** (natural side before the 2026-10-26 boundary:
+`scanner.exit_basis`; slippage is a cost on a mid fill only, `costs.exit_costs`). **Every entry path
+admits only names the suite's liquidity verdict calls `tradable`**: a refused name is a recorded
+`not_tradable` drop, an unknown one is refused, and a missing or stale verdict refuses everything
+loudly, never silently. A failed entry scan is retried inside the window, entries open as the scan
+goes, and a close the spread gate has held 30 minutes in a session is taken anyway. The PEAD gate
+fires at the first executable check of the first morning, the scan screens tradable names first,
+the expected move is the report's own move, a short at assignment risk closes, and the expiry close
+is at 15:20.
+
+**Several of those rules began on a date, and the rows either side are not comparable. Never pool
+across a boundary; the list, with each date, is [Declared boundaries](docs/operating-history.md#declared-boundaries).**
+Strategy table: [docs/05-strategies.md](docs/05-strategies.md); this file does not repeat it.
+
+Undefined-risk/naked
 strategies were deliberately removed — a naked short on a single-name gap can blow out arbitrarily
 overnight. New strategies go under `src/cherrypick/earnings/strategies/` without touching the engine.
 
@@ -52,7 +52,7 @@ to late 2024. Small/mid-caps with only monthlies may legitimately fail the front
   window, mark/decide/act 09:40–15:40, the forced-sampling entry scan once at 15:35
   (`entry_scan_at`), EOD 16:00–16:30, nothing off-session. These are a normal 16:00 close; on a
   13:00 early-close day every exit clock is the same offset from that day's close and **no entry
-  scan runs** (`session_clock.py`, from 2026-11-05; docs/operating-history.md). It opens the strat_test books (every
+  scan runs** (`session_clock.py`; docs/operating-history.md). It opens the strat_test books (every
   strategy clearing the screen on every viable name; per-strategy by default via
   `strat_test_portfolio`), always paper-only into `paper_trades.db`. No per-iteration agent.
 - **Two trails, different questions.** `state/earnings_entry.last.json` / `earnings_exit.last.json` are LATESTs — "is it alive" only.
@@ -60,19 +60,17 @@ to late 2024. Small/mid-caps with only monthlies may legitimately fail the front
   phase (`append_run_log`) with the full per-symbol result. **Every phase must log, the forward scan
   included** — its `symbols` count is what separates "found nothing" from "screened, none cleared".
   Best-effort: a session that cannot write its log still trades.
-- **Positions are MANAGED, not force-closed next morning** (2026-08-12, a journaled break — never
-  pool across it). A winner short of target is carried up to three *trading* sessions; a loser
-  closes on the first morning (post-earnings drift continues). **Nothing but the expiry close and
-  the pin guard acts on the entry session** (`sessions_held == 0`): the report has not happened, and
-  a fresh mark is just the spread (docs/operating-history.md). **From 2026-11-06 the expiry close is
-  at 15:20 (40 minutes before the close, was 15:30) and a short at assignment risk (a call under a coming dividend, or 3%+ in the money with no time value)
-  closes as `assignment_risk`** (docs/10-exits.md); never pool across that either. Quotes come from the stream cache
-  first, the broker only for unsubscribed legs and to confirm a close.
-- **Expired positions are SETTLED, not traded out** (2026-08-31, its own break). An expired leg is
-  refused as a mark (`provider`) and resolved at intrinsic against the expiration day's close from
-  local `stocks.ohlcv` (`settlement.py`), **ahead of every gate** — settlement is bookkeeping, not an
-  order. Otherwise a zero-bid expired contract loops on `spread_too_wide` forever. Details:
-  `docs/10-exits.md`.
+- **Positions are MANAGED, not force-closed next morning** (a journaled break, see the boundaries).
+  A winner short of target is carried up to three *trading* sessions; a loser closes on the first
+  morning (post-earnings drift continues). **Nothing but the expiry close and the pin guard acts on
+  the entry session** (`sessions_held == 0`): the report has not happened, and a fresh mark is just
+  the spread. The expiry close is at 15:20, and a short at assignment risk (a call under a coming
+  dividend, or 3%+ in the money with no time value) closes as `assignment_risk` (docs/10-exits.md).
+  Quotes come from the stream cache first, the broker only for unsubscribed legs and to confirm a close.
+- **Expired positions are SETTLED, not traded out.** An expired leg is refused as a mark (`provider`)
+  and resolved at intrinsic against the expiration day's close from local `stocks.ohlcv`
+  (`settlement.py`), **ahead of every gate** -- settlement is bookkeeping, not an order. Otherwise a
+  zero-bid expired contract loops on `spread_too_wide` forever. Details: `docs/10-exits.md`.
 - **Screening is split across the day.** `forward_scan` (~06:30) computes the slow half (calendar and
   Dolt metrics, next 10 trading days), **bounded per symbol and per pass** (`bounded.py`, as the entry
   scan) and naming what it skipped — it holds the single-writer lock, so a hung query would block the
@@ -81,10 +79,10 @@ to late 2024. Small/mid-caps with only monthlies may legitimately fail the front
   morning reading ever decides an entry**. It also ORDERS the entry universe but never bounds it
   (`symbol_watch.covered_symbols` → `assume_amc_for`): Dolt's `when` is ~47% NULL, so a blank report
   time on the scan date is read as after-the-close and flagged `timing_assumed`; the set only decides
-  which rows finish FIRST if `entry_scan_budget_seconds` binds. It must never gate admission (that
-  gate caused a five-session outage; break `entry_calendar_admissibility_gate_removed`). Why AMC,
+  which rows finish FIRST if `entry_scan_budget_seconds` binds. It must never gate admission (a past
+  gate caused a five-session outage; docs/operating-history.md). Why AMC,
   never BMO: `docs/screening-criteria.md` Layer 0.
-- **The entry scan runs tradable names first (from 2026-11-06).** `run_entries` splits the calendar
+- **The entry scan runs tradable names first.** `run_entries` splits the calendar
   with `universe.refusal` before screening: names the liquidity verdict calls tradable go first, in
   the calendar's own order, then refused names, which are screened only with the budget left and
   then recorded as before (screen rows, then the `not_tradable` execution drop; never opened). A
@@ -150,14 +148,6 @@ follows `stamp_for`; since 09-17 the tag names the experiment and the stamp is c
 - **Two couplings — don't change silently:** (1) the paper DB path (the orchestrator's `paper_db`
   points at it) and its `trades` schema, read through the `"earnings"` adapter by `report`/`calibrate`;
   (2) the `earningsagent` keyring service (`connect`).
-
----
-CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
----
-
-> ⚠️ Suite-wide guardrails apply — see root CLAUDE.md. (Build commands, tech-stack reference and
-> guidelines only — no scratchpad, changelogs or trackers; a fenced block of build/run commands is
-> fine, one holding program logic is not.)
 
 ## Commands and config
 

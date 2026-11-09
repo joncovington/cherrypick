@@ -15,16 +15,10 @@ parameterized, never reached back into; a new core module imports only `cherrypi
 standard library. This keeps `git subtree split --prefix=packages/core` a byte-identical reproduction
 of the standalone repo — the escape hatch if core ever has to be split out again.
 
-**Do not use that split as the check — it segfaults on this machine** (exit 139 under Git Bash, git
-2.44.0.windows.1, at commits predating any change), so a failure there says nothing about yours. Check
-the invariant directly:
-
-```bash
-test -f packages/core/cherrypick/__init__.py && echo VIOLATION || echo "PEP 420 intact"
-grep -rn "^\s*\(from\|import\) cherrypick\.\(meic\|flies\|bwb\|calendars\|pmcc\|curve\|contango\|gex\|earnings\|orchestrator\|streamer\|console\|review\|advisor\|desk\|overview\|technicals\|manage\|backtest\)\b"   packages/core/cherrypick/ --include=*.py    # must print nothing
-```
-
-If the split must ever run for real, run it where `git subtree` works.
+`tests/test_core_imports_no_consumer.py` checks the invariant directly. It derives the consumers from
+the `packages/*/src/cherrypick/*` directories, so a new package is covered the day it lands, and fails
+on any import of one from core. It also fails if `cherrypick/__init__.py` appears (the PEP 420 rule
+below). If the subtree split must ever run for real, run it where `git subtree` works.
 
 ## Layout stays flat, not src-layout
 
@@ -76,11 +70,7 @@ A module's own experiment names, `advice.bounds` and book naming live in that mo
 
 ## Commands
 
-```bash
-pip install -e ".[dev]"
-ruff check .
-pytest
-```
+Install, lint and test commands are in [README.md](README.md#develop).
 
 ## Guardrails
 

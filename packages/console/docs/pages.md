@@ -1,7 +1,48 @@
 # Pages
 
-Moved from the console CLAUDE.md. Read the section for a page before changing it.
+## Page index
 
+A user-facing list of every page the rail can open. The source of truth is
+`web/src/components/shell/navLinks.ts` (the rail) and `web/src/lightbox/navGroups.ts` (each page's
+tabs); this index is checked against them by hand, so change the two files and this table together.
+A page the suite has switched off is not shown (see *What is off is not shown* below).
+
+**Suite pages** (the rail's top and bottom sections)
+
+| Page | Route | Tabs | What it is |
+|---|---|---|---|
+| Live | `/live` | today, positions, portfolio, wheel, pmcc, flies, meic | Real money first: what is open at the broker, the book as a whole, the wheel, and one tab per live loop (flies and meic only while their live switch is on or the loop still holds something). `/` redirects here. |
+| Reports | `/reports` | morning, eod, external | The morning pack, the end-of-day review, and **External reports**: the tabs people add with a script of their own (`/reports/external/<id>`). |
+| Charts | `/charts` | intraday, technicals, setups | Intraday charts, the technicals cards, and the setups the technicals package finds. |
+| GEX | `/gex` | gex, iv skew | Dealer gamma by strike for the recorded day, and the IV skew. Reads the market; trades nothing. |
+| GEX panel | `/gexpanel` | panel | Experimental, SPX only: a walls panel on the recorded data. |
+| Screeners | `/screeners` | two groups, eight tabs. Screens: earnings, earnings record, signal board, skate. Income lists: puts & calls, credit spreads, time spreads, fair value | The suite's own screens and income lists. The Dolt-backed tabs show a set-up card, not a blank, without Dolt. |
+| Compare | `/compare` | arms, risk, calendar, portfolio, slices | Every arm side by side. Left off the rail in the simple view. |
+| Backtest | `/backtest` | studies, queue, runs, data | Research studies and the queue. Fails closed: hidden unless the suite says the backtest feature is on (licensed data). Left off the rail in the simple view. |
+| Advisor | `/advisor` | advisor | The advisor's experiments roll-up. Paused since 2026-10-25 pending the redesign. Left off the rail in the simple view. |
+| System | `/system` | health, supervisor, data, environment, logs | The suite's own health, read-only. Left off the rail in the simple view. |
+| Config | `/config` | arms, modules & symbols, timing & cadence, alerts, position rules, then prefs | The one place configuration is edited, through the orchestrator's config editor. Always lists every toggle. |
+
+**Module pages** (the rail's Modules section, then the Experiments page)
+
+| Module | Route | Tabs | Status |
+|---|---|---|---|
+| MEIC | `/meic` | today, arms, forest, attempts, positions, history, sessions, exits, regime cuts, performance, analysis, costs, advisor, help | Active; live behind its own gate. |
+| BWB | `/bwb` | today, positions, history, decisions, arms, entry vol, live vs paper, performance, analysis, advisor, help | Retired 2026-11-08; ships off. |
+| Earnings | `/earnings` | today, positions, history, decisions, screening, strategies, advisor | Active; paper only. |
+| Experiments | `/experiments` | experiments | The comparison page for the paper-only experiments and the retired modules below. |
+| PMCC | `/pmcc` | today, by arm, positions, tracker, history, decisions, arms, performance, analysis, costs, advisor, help | Retired 2026-11-08; ships off. |
+| Calendars | `/calendars` | today, plan, positions, history, decisions, arms, policies, performance, analysis, advisor, help | Experimental; paper only. |
+| Curve | `/curve` | today, regime, positions, history, decisions, arms, performance, analysis, costs, advisor, help | Retired 2026-11-01; ships off. |
+| Contango | `/contango` | today, regime, positions, history, decisions, arms, performance, analysis, costs, help | Experimental; paper only. |
+| Weekly put | `/weeklyput` | today, cycles, positions, history, decisions, performance, costs, help (8 tabs) | Experimental; paper only. |
+| Flies | `/flies` | session, summary, forest, timeline, positions, history, books, opening range, attempts, decisions, gates vs control, live vs paper, selector, regime cuts, intraday agent, completion, performance, analysis, costs, advisor, help | Retired 2026-10-19; ships off. |
+
+The simple view shows a shorter tab list per page (`ModuleNavDecl.simple`); the detail view shows all.
+Keyboard: `g` plus the page's key for suite pages, a bare digit for the four modules on the rail,
+`j`/`k` for tabs.
+
+The sections below are the working notes for each page. Read the section for a page before changing it.
 
 **Shell.** A grid, not a stack (2026-10-12): the brand head and the top bar are row 1's two
 halves (ticker, session chip, the simple/detail view switch, clock), the rail and the content pane are row
@@ -216,8 +257,8 @@ the setups watchlist:
   (`names=all` is the way out). With no label it cuts nothing, because an unknown flag would empty
   it.
 
-**Screeners** (`/screeners`, 2026-10-16; `lightbox/manifests/ScreenersLightbox.tsx`) — two groups
-(2026-10-18 order). Our own screens first: the earnings calendar, its forward record and the signal
+**Screeners** (`/screeners`, 2026-10-16; `lightbox/manifests/ScreenersLightbox.tsx`) — eight tabs in two
+groups, `screens` and `income lists` (2026-10-18 order). Our own screens first: the earnings calendar, its forward record and the signal
 board. Then the income lists: short puts, covered calls and credit spreads, one tab each. The fidelity
 tab was retired on 2026-10-19; its final rates are in `packages/technicals/docs/reference.md`.
 
@@ -580,7 +621,7 @@ default SPX era already pins one symbol. bwb's rows carry no symbol, so it is ne
 `/api/advisor/module/:module`: active experiments with progress against length and stall budget, the
 session strip from the advisor's `enactment` table (read, never re-derived), the paired comparison as
 of the last evening pass, tomorrow's artifact, the queue and the last concluded.
-`components/advisor/AdvisorSlide.tsx` renders it in all seven module manifests; the Advisor page's
+`components/advisor/AdvisorSlide.tsx` renders it in all seven module manifests that carry one (flies, meic, bwb, earnings, curve, pmcc, calendars); the Advisor page's
 experiments tab opens with the cross-module roll-up. Module slides are read-only; kill/dismiss stay on
 the Advisor page only.
 

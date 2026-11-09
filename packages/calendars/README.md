@@ -53,3 +53,18 @@ The suite runs it unattended: the orchestrator's supervisor drives
 once-a-minute off-session tick (see `modules.calendars` in the orchestrator's
 `config.example.json`). Operating contract and design rationale: [CLAUDE.md](CLAUDE.md); every
 config key is documented inline in [config.example.json](config.example.json).
+
+## Commands
+
+```bash
+python -m cherrypick.calendars.paper_loop --once        # one gated tick (what the supervisor spawns off-session)
+python -m cherrypick.calendars.paper_loop --interval 30 # the in-session resident loop
+python -m cherrypick.calendars.paper_loop --status      # one JSON health object (watchdog contract)
+python -m cherrypick.calendars.paper_loop --settle --date 2026-08-21 --price 6543.21  # official print
+python run.py status                                    # open positions + the current week plan
+python run.py policies                                  # the derived exit-policy table + its validation
+python run.py validate                                  # the validation alone
+python run.py record-break --key K --date D [--old X] [--new Y] [--note N]  # journal a break
+python -m pytest                                        # temp CHERRYPICK_HOME; no broker, no streamer needed
+ruff check . && ruff format .                           # line-length 110
+```

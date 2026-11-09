@@ -1,7 +1,7 @@
 # console (unified web UI)
 
-The suite's only read surface: one app over every module's read models — the Live page, the eight
-trading modules (MEIC, earnings, calendars, contango, and the retired flies, bwb, PMCC and curve, which ship off by default), GEX,
+The suite's only read surface: one app over every module's read models — the Live page, the nine
+trading modules (MEIC, earnings, calendars, contango, weeklyput, and the retired flies, bwb, PMCC and curve, which ship off by default), GEX,
 Charts, Screeners, Compare, Backtest and System — plus the advisor and the reports. Every module
 remains a producer this package reads; it touches none of their code. The dashboards it replaced
 survive only at the `pre-console-only` tag, and the scout research surfaces are retired too, so **no
@@ -40,17 +40,7 @@ Unlike the rest of the suite this package is **Node + TypeScript**:
 
 The one package with a Node toolchain — `pip`/`pytest`/`ruff` do not apply. From this directory:
 
-```bash
-pnpm install
-pnpm build                        # build shared + server + the SPA + the desktop main process
-pnpm dev:server                   # backend on :5070 with reload
-pnpm dev:web                      # Vite on :5173, proxying /api and /ws to :5070
-pnpm test                         # vitest
-pnpm typecheck                    # tsc --noEmit across all three workspaces
-python run.py dashboard --serve   # what the supervisor's `console` job invokes
-pnpm --filter @console/desktop start   # the desktop window
-pnpm ui-check --route /flies/performance --expect "drawdown"   # drive the REAL browser
-```
+Commands to run the package, its tests and its lint are in [README.md](README.md#commands).
 
 **Confirming a change reached the page** (a front-end change is confirmed in a browser, not by tests
 alone):
@@ -207,6 +197,6 @@ alone):
 
 ## Package guardrails
 
-Suite guardrails apply (root CLAUDE.md). Package-specific: **loopback-only serving**; the console
+Package-specific: **loopback-only serving**; the console
 **computes no verdicts** — it renders what the modules decided, and where it mirrors a module's queries
 it says so and is checked against them.

@@ -9,8 +9,7 @@ Every arm and `advice` are off in the example config, so nothing opens. The open
 the ledger to their 2026-11-20 expiry, and then the module went off. The code, ledgers and docs remain, and
 backtest research still reads them.
 
-> **Vocabulary.** This module's **book** is the suite's **arm** (root `CLAUDE.md`). The column
-> (`curve_positions.book`) moves with the rest of the schema; prose and the console already say `arm`.
+This module's old word `book` is the root's `arm`; the column is still `curve_positions.book`.
 
 VXX call credit spreads harvesting the VIX term-structure roll yield, gated by a daily VIX/VIX3M
 regime read (posture: root file). Every arm trades the same shape — a short call (~30-delta; 0.40 in
@@ -162,21 +161,7 @@ it and it is `configedit.GUARDED`.
 
 ## Commands
 
-```bash
-python -m cherrypick.curve.paper_loop --once        # one gated tick (what the supervisor spawns off-session)
-python -m cherrypick.curve.paper_loop --interval 60 # the in-session resident loop
-python -m cherrypick.curve.paper_loop --status      # one JSON health object (watchdog contract)
-python -m cherrypick.curve.paper_loop --settle --date 2026-09-18 --price 42.10  # official print
-python run.py status                                # open positions + target expiration + today's regime
-python run.py regime                                # the stored daily regime series
-python run.py worksheet                             # the live per-position worksheet
-python run.py exposure                              # the early-assignment-exposure telemetry
-python run.py headline                              # closed results per arm
-python run.py equity                                # each arm's daily marked equity and tear sheet
-python run.py regime-history                        # the VIX/VIX3M signal replay over stored history
-python -m pytest                                    # temp CHERRYPICK_HOME; no broker, no streamer needed
-ruff check . && ruff format .                       # line-length 110
-```
+Commands to run the package, its tests and its lint are in [README.md](README.md#commands).
 
 Config: `config.example.json` -> `config.json` (git-ignored) or `~/.cherrypick/config/curve.json`;
 the example is the design document — read its `_note` keys first.

@@ -14,7 +14,7 @@ Flies' losses are almost entirely stranded verticals, not costs (analysis of 202
 | SPX, current era | Completed | Stranded verticals | Net per position |
 |---|---|---|---|
 | Paper `control` | 182, +$15,886 | 45, −$11,431 | +$19.63 |
-| Live `control` | 52, +$3,704 | 16, −$3,753 | about −$0.71 |
+| Live `control` | recorded locally | recorded locally | recorded locally |
 
 **How a strand happens:**
 - A completion order rests at the entry.
@@ -249,7 +249,7 @@ than in sequence:
 Each rung is a declared boundary with a `measurement_breaks` row.
 
 The fill-realism work (`docs/fill-model.md`) already narrows the gap. Since 2026-10-05, paper
-completions pay the live limit. And 43 of the first 48 live completions filled better than paper's
+completions pay the live limit. And most of the first live completions filled better than paper's
 modelled debit. Neither changes the plan. Both are why the comparison is paired rather than absolute.
 
 ## Answering in weeks: the historical replay
@@ -321,9 +321,7 @@ API-equivalent):**
 same gate scored on the live loop's own fills over its 14 live sessions. These are printed only,
 never qualified.
 
-| Live sessions | as traded | `trend-rule` | Opus | Sonnet |
-|---|---|---|---|---|
-| all 14 | −$241 | −$156 | +$70 | +$188 |
+On all 14 sessions every gate variant (`trend-rule`, Opus, Sonnet) scored better than as traded (dollars recorded locally).
 
 The models differed on 2 sessions (09-24, 09-30), where Sonnet switched the gate off. Three sessions
 separate the agent from the rule, which is too few to call an edge.
@@ -367,7 +365,7 @@ event-driven cadence is about **$25-80 a month**, and the replay about **$100**)
 - The replay over 30 sessions is about 900 calls, about **$60 once**.
 - These are API-equivalent costs. On a subscription they draw on usage limits instead.
 
-For scale: live strands about 8 verticals a month at about $250 each.
+For scale: live strands several verticals a month, each near full width.
 
 **As configured from 2026-10-06 (Opus, about $0.17 a call, a 4-minute gap, cap 100):** the
 estimates above assumed calls only near the trend band. The open-vertical trigger fires whenever a

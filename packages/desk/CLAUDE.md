@@ -35,24 +35,7 @@ broker-touching command. There is no fallback to `config.example.json`.
 
 ## Commands
 
-```bash
-# Fresh clone: install packages/core first (see the root CLAUDE.md).
-pip install -e packages/desk
-
-cherrypick-desk status                      # gates, config errors, PIN/lockout, halt flag, today's tallies
-cherrypick-desk pin-set                     # interactive only; needs the current PIN once one is set
-cherrypick-desk pin-clear                   # interactive only; needs the current PIN
-cherrypick-desk analyze --order '<json>'    # OFFLINE structure + worst case. No broker, no state
-cherrypick-desk propose --order '<json>'    # gates + broker preflight -> ticket + confirmation code
-cherrypick-desk confirm --ticket <id> --code <code>   # PIN prompt, re-check everything, submit
-cherrypick-desk orders                      # working orders -- read-only, no PIN, still gated
-cherrypick-desk cancel --order-id <id>      # PIN prompt, pull a resting order
-cherrypick-desk purge                       # drop expired pending and claimed tickets
-
-# Tests (pytest; markers: unit [default lane], live)
-python -m pytest                            # default: -m 'not live' -q
-ruff check .
-```
+Commands to run the package, its tests and its lint are in [README.md](README.md#commands).
 
 `tests/conftest.py` points `CHERRYPICK_HOME` at a temp dir and replaces the keyring, the broker
 session and the terminal for every test. Keep it that way: no test may reach the real keyring or a

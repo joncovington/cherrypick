@@ -98,14 +98,11 @@ Every reviewed schema has its own independent query, bwb, curve, contango and we
 still trading is left out and named in `skipped`, because the status digest refreshes today's
 provisional set through the day; every closed session is checked.
 
----
-CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
----
+Package guardrail, on top of the root's:
 
-> Suite-wide guardrails apply — see root CLAUDE.md.
-> - **The fact set is deterministic; the narrative is not, and is fenced accordingly.** Every figure is
->   computed from closed rows; the narrative is generated outside this package by a scheduled agent
->   reading the fact set, so a failed narrative can never damage a report.
+- **The fact set is deterministic; the narrative is not, and is fenced accordingly.** Every figure is
+  computed from closed rows; the narrative is generated outside this package by a scheduled agent
+  reading the fact set, so a failed narrative can never damage a report.
 
 ## Tool Reference
 

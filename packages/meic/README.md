@@ -47,12 +47,15 @@ Shared logic (market calendar, fee schedule) comes from the **`cherrypick.core`*
 - **macOS** — open **Terminal** (Applications → Utilities), or install Git via `xcode-select --install`.
 - **Linux** — open your terminal; install Git with your package manager (e.g. `sudo apt install git`).
 
-Then download the suite and move into this package's folder:
+Then download the suite and move into this package's folder. The root installer ([INSTALL.md](../../INSTALL.md)) is the normal way in. By hand, install from a
+release, not from `main` (which is often ahead of the latest release):
 
 ```bash
 # 1. Clone the cherrypick monorepo
 git clone https://github.com/joncovington/cherrypick.git
-cd cherrypick/packages/meic
+cd cherrypick
+git checkout "$(git describe --tags --abbrev=0 origin/main)"   # the latest release tag
+cd packages/meic
 ```
 
 Every command below is run from inside `packages/meic`. On macOS/Linux, if `python`/`pip` aren't found, use `python3`/`pip3` instead.
@@ -170,7 +173,7 @@ the trade:
 
 ## Risk Profiles
 
-> ⚠️ **This four-tier ladder is history, and no longer ships.** It was disabled for paper on
+> ⚠️ **The four-tier table below is an example ladder, not shipped.** It is history, and no longer ships. It was disabled for paper on
 > 2026-08-07, and since 2026-10-01 the package carries only `config.risk.example.json`, an arm
 > registry holding `control` alone. Every other arm, the ladder tiers included, is a machine's own
 > configuration in `~/.cherrypick/config/meic.risk.json` (or the file `$MEIC_RISK_CONFIG` names);
