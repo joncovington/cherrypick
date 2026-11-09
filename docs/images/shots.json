@@ -1,0 +1,126 @@
+{
+  "_note": "Every image in docs/images. `shots` are console screenshots: scripts/reshoot.py takes each again from a demo home built with `demo` (route and optional card, as ui-check takes them), and CI warns when a PR changes one of its `sources` without the image. `manual` images are not console screenshots and are taken by hand. tools/check_guide.py (rule 9) keeps this list and the folder in step.",
+  "demo": { "seed": 7, "days": 30 },
+  "shots": [
+    {
+      "file": "live-today.png",
+      "route": "live/today",
+      "card": null,
+      "viewport": "1500x1000",
+      "sources": [
+        "packages/console/web/src/pages/Live/LiveTodayPage.tsx",
+        "packages/console/web/src/lightbox/manifests/LiveLightbox.tsx",
+        "packages/console/web/src/components/shell/ModuleNav.tsx",
+        "packages/console/web/src/components/shell/StatusHeader.tsx",
+        "packages/console/web/src/components/shell/StatusBar.tsx"
+      ]
+    },
+    {
+      "file": "live-positions.png",
+      "route": "live/positions",
+      "card": null,
+      "viewport": "1500x1000",
+      "sources": ["packages/console/web/src/pages/Live/ManagePage.tsx", "packages/console/web/src/pages/Live/PositionCards.tsx"]
+    },
+    {
+      "file": "live-portfolio.png",
+      "route": "live/portfolio",
+      "card": null,
+      "viewport": "1500x1000",
+      "sources": [
+        "packages/console/web/src/pages/Live/PortfolioCards.tsx",
+        "packages/console/web/src/pages/Live/PortfolioLayout.tsx",
+        "packages/console/web/src/pages/Live/ManagePage.tsx"
+      ]
+    },
+    {
+      "file": "live-wheel.png",
+      "route": "live/wheel",
+      "card": null,
+      "viewport": "1500x1500",
+      "sources": ["packages/console/web/src/pages/Live/WheelCards.tsx", "packages/console/web/src/pages/Live/ManagePage.tsx"]
+    },
+    {
+      "file": "reports-morning.png",
+      "route": "reports/morning",
+      "card": null,
+      "viewport": "1500x1000",
+      "sources": ["packages/console/web/src/pages/Morning/MorningPage.tsx", "packages/console/web/src/lightbox/manifests/ReportsLightbox.tsx"]
+    },
+    {
+      "file": "reports-eod.png",
+      "route": "reports/eod",
+      "card": null,
+      "viewport": "1500x1000",
+      "sources": ["packages/console/web/src/pages/Review/ReviewPage.tsx", "packages/console/web/src/lightbox/manifests/ReportsLightbox.tsx"]
+    },
+    {
+      "file": "screeners-skate.png",
+      "route": "screeners/skate",
+      "card": null,
+      "viewport": "1500x1000",
+      "sources": [
+        "packages/console/web/src/pages/Screeners/SkateTab.tsx",
+        "packages/console/web/src/pages/Screeners/ScreenerParts.tsx",
+        "packages/console/web/src/lightbox/manifests/ScreenersLightbox.tsx"
+      ]
+    },
+    {
+      "file": "screeners-income.png",
+      "route": "screeners/income",
+      "card": null,
+      "viewport": "1500x1000",
+      "sources": [
+        "packages/console/web/src/pages/Screeners/OwnListTab.tsx",
+        "packages/console/web/src/pages/Screeners/ScreenerParts.tsx",
+        "packages/console/web/src/lightbox/manifests/ScreenersLightbox.tsx"
+      ]
+    },
+    {
+      "file": "meic-summary.png",
+      "route": "meic/summary",
+      "card": null,
+      "viewport": "1500x1000",
+      "sources": [
+        "packages/console/web/src/pages/Meic/SummarySlide.tsx",
+        "packages/console/web/src/lightbox/manifests/MeicLightbox.tsx",
+        "packages/console/web/src/components/summary/ModuleSummary.tsx"
+      ]
+    },
+    {
+      "file": "meic-attempts.png",
+      "route": "meic/attempts",
+      "card": null,
+      "viewport": "1500x1000",
+      "sources": [
+        "packages/console/web/src/components/AttemptsTab.tsx",
+        "packages/console/web/src/components/Attempts.tsx",
+        "packages/console/web/src/lightbox/manifests/MeicLightbox.tsx"
+      ]
+    },
+    {
+      "file": "contango-regime.png",
+      "route": "contango/regime",
+      "card": null,
+      "viewport": "1500x1000",
+      "sources": ["packages/console/web/src/pages/Contango/ContangoPages.tsx", "packages/console/web/src/lightbox/manifests/ContangoLightbox.tsx"]
+    },
+    {
+      "file": "compare-arms.png",
+      "route": "compare/arms",
+      "card": null,
+      "viewport": "1500x1000",
+      "sources": ["packages/console/web/src/pages/Compare/ComparePage.tsx", "packages/console/web/src/pages/Compare/compareColumns.tsx"]
+    },
+    {
+      "file": "system-health.png",
+      "route": "system/health",
+      "card": null,
+      "viewport": "1500x1000",
+      "sources": ["packages/console/web/src/pages/System/SystemTabs.tsx", "packages/console/web/src/lightbox/manifests/SystemLightbox.tsx"]
+    }
+  ],
+  "manual": [
+    { "file": "terminal-venv-doctor.png", "note": "QUICKSTART: a terminal activating the venv and running doctor; taken by hand." }
+  ]
+}

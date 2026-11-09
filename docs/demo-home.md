@@ -54,6 +54,15 @@ started and nothing else.
 
 ## Shoot it
 
+The guide's own screenshots are listed in `docs/images/shots.json` (route, card, viewport and the
+console files that draw each), and `python scripts/reshoot.py` takes them all again: it builds a home,
+serves it through this launcher's guards, shoots, compresses each to a palette PNG under 150 KB, and
+lists which changed. `--use-running --home <dir>` shoots a demo console you already started. A pull
+request that changes one of a shot's files without the image gets a CI warning
+(`tools/check_screenshots_fresh.py`); label it `screenshots-ok` once you have looked.
+
+For a one-off shot:
+
 `ui-check` reads the port from the home, so give it the same `CHERRYPICK_HOME`:
 
 ```
