@@ -7,4 +7,4 @@ Screeners page's fair-value tab and the technicals income lists read it.
 
 The value is a model estimate, never a price, and was tested 2018-26 with no edge as a way to pick
 names. See [CLAUDE.md](CLAUDE.md) for the package's rules and
-[docs/fair-value-model-plan.md](../../docs/history/fair-value-model-plan.md) for the method.
+[docs/history/fair-value-model-plan.md](../../docs/history/fair-value-model-plan.md) for the method.

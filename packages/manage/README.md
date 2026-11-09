@@ -352,7 +352,7 @@ meant to protect against. A roll candidate costing a debit (allowed to $0.10) co
 ## The account as one book
 
 Beside the trades, each evaluation reads the whole account as one book (`portfolio.py`; the plan is in
-[docs/portfolio-guidance-plan.md](../../docs/history/portfolio-guidance-plan.md)). It records:
+[docs/history/portfolio-guidance-plan.md](../../docs/history/portfolio-guidance-plan.md)). It records:
 
 - **beta-weighted delta (BWD)** in SPY shares, and what a 1% SPY move does to it. The beta is the
   broker's own, so the figure can be checked against the broker's screen;
