@@ -333,20 +333,16 @@ def test_derive_full_suite_job_table():
         "settle-overdue-live",
         "live-fill-alerts",
         "report-session-alert",
-        "report-screener-measure-1",
-        "report-screener-measure-2",
+        "report-screener-measure",
         "report-screener-greeks",
         "report-screener-greeks-late",
         "report-earnings-strikes",
         "report-income-chains",
-        "report-skate-quotes-1",
-        "report-skate-quotes-2",
-        "universe-measure-1",
-        "universe-measure-2",
+        "report-skate-quotes",
+        "universe-measure",
         "universe-daily",
         "universe-watchlist",
         "market-files",
-        "market-files-retry",
         "backtest-fetch",
         "backtest-inventory",
         "research-queue",
@@ -365,7 +361,6 @@ def test_derive_full_suite_job_table():
         "technicals-securities",
         "technicals-income-lists",
         "technicals-earnings-calendar",
-        "technicals-earnings-calendar-late",
         "technicals-earnings-record",
         "technicals-screeners",
         "technicals-skate",
@@ -753,20 +748,146 @@ def test_the_time_spread_scan_follows_manage_and_has_its_own_switch():
     assert not alone.enabled and alone.at_et == "11:00"
 
 
-def test_manage_also_at_adds_one_job_per_further_time():
-    """Each further time is its own job running the same verb; one equal to `at` is not doubled."""
+def test_manage_also_at_adds_one_time_to_the_one_job():
+    """Each further time is a slot of `manage-eval`; one equal to `at` is not doubled, and no
+    `manage-eval-HHMM` job exists."""
     cfg = suite_cfg()
     cfg["manage"] = {"enabled": True, "also_at": ["16:35", "12:30", "10:00"]}
     jobs = {j.id: j for j in derive(cfg)[0] if j.id.startswith("manage-eval")}
-    assert sorted(jobs) == ["manage-eval", "manage-eval-1230", "manage-eval-1635"]
-    late = jobs["manage-eval-1635"]
-    assert late.at_et == "16:35" and late.trading_days_only and late.enabled
-    assert late.argv == jobs["manage-eval"].argv
-    assert late.catchup_minutes == 60
-    assert jobspec.notifies_own_failure("manage-eval-1635")
-    assert not jobspec.notifies_own_failure("managed-something")
+    assert sorted(jobs) == ["manage-eval"]
+    job = jobs["manage-eval"]
+    assert job.times_et == ("10:00", "12:30", "16:35") and job.at_et == "10:00"
+    assert job.trading_days_only and job.enabled and job.argv[-1] == "manage"
+    # The first run keeps the full-run catch-up, the further ones the refresh's.
+    assert job.slot_catchup_minutes == (300, 60, 60)
+    assert jobspec.notifies_own_failure("manage-eval")
+    assert not jobspec.notifies_own_failure("manage-eval-1230")
     cfg["manage"]["enabled"] = False
-    assert not {j.id: j for j in derive(cfg)[0]}["manage-eval-1230"].enabled
+    assert not {j.id: j for j in derive(cfg)[0]}["manage-eval"].enabled
+
+
+def test_a_merged_job_derives_once_with_its_times_and_the_old_ids_are_gone():
+    cfg = suite_cfg()
+    cfg["manage"] = {"enabled": True, "also_at": ["13:00"]}
+    cfg["market_report"] = {"universe": True, "screener_greeks": True}
+    by_id = {j.id: j for j in derive(cfg)[0]}
+    expected = {
+        "manage-eval": ("10:00", "13:00"),
+        "report-screener-measure": ("11:30", "14:30"),
+        "report-skate-quotes": ("12:00", "15:05"),
+        "universe-measure": ("11:00", "14:00"),
+        "market-files": ("07:45", "18:45"),
+        "technicals-earnings-calendar": ("19:10", "23:40"),
+    }
+    for job_id, times in expected.items():
+        assert by_id[job_id].times_et == times and by_id[job_id].at_et == times[0], job_id
+    old = (
+        "manage-eval-1300",
+        "report-screener-measure-1",
+        "report-screener-measure-2",
+        "report-skate-quotes-1",
+        "report-skate-quotes-2",
+        "universe-measure-1",
+        "universe-measure-2",
+        "market-files-retry",
+        "technicals-earnings-calendar-late",
+    )
+    assert not set(old) & set(by_id)
+    # Per-slot catch-up survives the merge: the evening fetch is long, the morning retry short.
+    assert by_id["market-files"].slot_catchup_minutes == (40, 600)
+    assert by_id["universe-measure"].slot_catchup_minutes == (90, 60)
+    assert by_id["technicals-earnings-calendar"].slot_catchup_minutes == (240, 120)
+
+
+def test_times_are_validated():
+    base = dict(id="j", argv=("py",), kind=jobspec.KIND_DAILY)
+    with pytest.raises(ValueError):
+        JobSpec(**base, times_et=("11:00", "10:00"))
+    with pytest.raises(ValueError):
+        JobSpec(**base, times_et=("10:00", "10:00"))
+    with pytest.raises(ValueError):
+        JobSpec(**base, at_et="09:00", times_et=("10:00", "11:00"))
+    with pytest.raises(ValueError):
+        JobSpec(**base, times_et=("10:00", "11:00"), slot_catchup_minutes=(5,))
+    with pytest.raises(ValueError):
+        JobSpec(id="j", argv=("py",), kind=jobspec.KIND_INTERVAL, interval_seconds=60, times_et=("10:00",))
+
+
+# --------------------------------------------------------------------------- a daily job at several times
+def slotted(**kw):
+    base = dict(
+        id="m",
+        argv=("py", "x"),
+        kind=jobspec.KIND_DAILY,
+        times_et=("10:00", "12:30", "16:35"),
+        slot_catchup_minutes=(300, 60, 60),
+        catchup_minutes=300,
+    )
+    base.update(kw)
+    return JobSpec(**base)
+
+
+def test_the_slot_that_matters_is_the_latest_time_already_passed():
+    spec = slotted()
+    assert spec.at_et == "10:00"
+    fire, reason, _ = jobspec.should_start(spec, {}, et(2026, 8, 10, 9, 59))
+    assert not fire and "before 10:00" in reason
+    fire, _, patch = jobspec.should_start(spec, {}, et(2026, 8, 10, 10, 0))
+    assert fire and patch["last_fire_day"] == "2026-08-10@10:00"
+    # The first slot stamped, nothing more until the next one.
+    state = dict(patch)
+    assert not jobspec.should_start(spec, state, et(2026, 8, 10, 12, 29))[0]
+    fire, _, patch = jobspec.should_start(spec, state, et(2026, 8, 10, 12, 30))
+    assert fire and patch["last_fire_day"] == "2026-08-10@12:30"
+    # And the next day starts over.
+    assert jobspec.should_start(spec, state, et(2026, 8, 11, 10, 0))[0]
+
+
+def test_each_slot_has_its_own_catch_up():
+    spec = slotted()
+    # 10:00 keeps 300 minutes -- but it ends at the next slot, 12:30, whichever is sooner.
+    assert jobspec.should_start(spec, {}, et(2026, 8, 10, 12, 29))[0]
+    # 12:30 + 60: still inside at 13:30, missed at 13:31.
+    state = {"last_fire_day": "2026-08-10@10:00"}
+    assert jobspec.should_start(spec, state, et(2026, 8, 10, 13, 30))[0]
+    fire, reason, _ = jobspec.should_start(spec, state, et(2026, 8, 10, 13, 31))
+    assert not fire and "missed (12:30 + 60m" in reason
+
+
+def test_a_slot_with_a_long_catch_up_still_ends_at_the_next_slot():
+    spec = slotted(times_et=("10:00", "10:30"), slot_catchup_minutes=(300, 60))
+    # 10:20 is inside 10:00's window, so the late run is the 10:00 one.
+    fire, _, patch = jobspec.should_start(spec, {}, et(2026, 8, 10, 10, 20))
+    assert fire and patch["last_fire_day"] == "2026-08-10@10:00"
+
+
+def test_a_newer_slot_overtakes_a_missed_one():
+    spec = slotted()
+    # The machine wakes at 12:45: 10:00 never ran and is not run late; 12:30 is the slot.
+    fire, _, patch = jobspec.should_start(spec, {}, et(2026, 8, 10, 12, 45))
+    assert fire and patch["last_fire_day"] == "2026-08-10@12:30" and patch["missed"] is None
+    # Past the 12:30 window (14:00) the slot is stamped missed, and 16:35 is still ahead.
+    now = et(2026, 8, 10, 14, 0)
+    fire, reason, patch = jobspec.should_start(spec, {}, now)
+    assert not fire and "missed" in reason
+    assert patch == {"last_fire_day": "2026-08-10@12:30", "missed": now.isoformat()}
+    assert not jobspec.should_start(spec, patch, et(2026, 8, 10, 15, 0))[0]  # stamped, not re-judged
+    fire, _, patch2 = jobspec.should_start(spec, patch, et(2026, 8, 10, 16, 35))
+    assert fire and patch2["missed"] is None
+
+
+def test_a_stamp_from_before_the_job_had_several_times_does_not_run_today_again():
+    spec = slotted()
+    started = et(2026, 8, 10, 10, 1).astimezone(ZoneInfo("UTC")).isoformat()
+    state = {"last_fire_day": "2026-08-10", "last_start": started}
+    assert not jobspec.should_start(spec, state, et(2026, 8, 10, 10, 40))[0]
+    assert jobspec.should_start(spec, state, et(2026, 8, 10, 12, 30))[0]  # the later slots still come
+    assert not jobspec.should_start(spec, {"last_fire_day": "2026-08-10"}, et(2026, 8, 10, 16, 40))[0]
+
+
+def test_describe_lists_every_time():
+    assert slotted().describe() == "daily 10:00, 12:30, 16:35 ET"
+    assert daily_spec().describe() == "daily 15:45 ET"
 
 
 def test_manage_marks_runs_each_minute_in_the_session_with_manage_and_can_be_turned_off_alone():
@@ -1256,11 +1377,11 @@ def test_screener_greeks_is_its_own_switch_and_runs_after_the_chart_capture():
     assert minutes(job.at_et) >= minutes(by_id["report-charts"].at_et) + 60
     # The spread readings: regular hours, inside the measuring window, never on top of the
     # universe builder's own readings.
-    for i in (1, 2):
-        m = by_id[f"report-screener-measure-{i}"]
-        assert m.enabled and m.trading_days_only and m.argv[-1] == "measure"
-        assert 10 * 60 <= minutes(m.at_et) <= 15 * 60 + 30
-        assert m.at_et not in {by_id["universe-measure-1"].at_et, by_id["universe-measure-2"].at_et}
+    m = by_id["report-screener-measure"]
+    assert m.enabled and m.trading_days_only and m.argv[-1] == "measure"
+    for at in m.times_et:
+        assert 10 * 60 <= minutes(at) <= 15 * 60 + 30
+        assert at not in by_id["universe-measure"].times_et
     # The late slot: after the evening one, with --final, and its catch-up ends before midnight ET,
     # when the script's 'today' would become tomorrow.
     late = by_id["report-screener-greeks-late"]
@@ -1279,7 +1400,7 @@ def test_screener_rows_runs_follow_the_collector():
     for job_id in ("report-screener-greeks", "report-screener-greeks-late"):
         assert not by_id[job_id].enabled
         assert "market_report.collector" in by_id[job_id].enabled_reason
-    for job_id in ("report-screener-measure-1", "report-earnings-strikes", "report-income-chains"):
+    for job_id in ("report-screener-measure", "report-earnings-strikes", "report-income-chains"):
         assert by_id[job_id].enabled
 
 
@@ -1308,7 +1429,7 @@ def test_scoring_the_vendor_screens_follows_the_collector():
 
 
 # --------------------------------------------------------------------------- stock universe (2026-09-27)
-UNIVERSE_JOBS = ("universe-measure-1", "universe-measure-2", "universe-daily")
+UNIVERSE_JOBS = ("universe-measure", "universe-daily")
 
 
 def test_universe_jobs_are_off_until_switched_on():
@@ -1334,11 +1455,11 @@ def test_universe_measurements_sit_inside_regular_hours_and_the_harvest_after_th
         return h * 60 + m
 
     assert all(by_id[j].enabled and by_id[j].trading_days_only for j in UNIVERSE_JOBS)
-    for job_id in ("universe-measure-1", "universe-measure-2"):
-        assert (
-            10 * 60 <= minutes(job_id) and minutes(job_id) + jobspec.CATCHUP_MINUTES[job_id] <= 15 * 60 + 30
-        )
-        assert by_id[job_id].argv[-1] == "measure"
+    measure = by_id["universe-measure"]
+    assert measure.argv[-1] == "measure" and len(measure.times_et) == 2
+    for at, catchup in zip(measure.times_et, measure.slot_catchup_minutes, strict=True):
+        h, m = (int(x) for x in at.split(":"))
+        assert 10 * 60 <= h * 60 + m and h * 60 + m + catchup <= 15 * 60 + 30
     assert minutes("universe-daily") > minutes("report-charts")
     assert by_id["universe-daily"].argv[-1] == "daily"
 
@@ -1376,11 +1497,13 @@ def test_market_files_are_fetched_after_treasury_posts_and_retried_before_the_pa
         h, m = (int(x) for x in at.split(":"))
         return h * 60 + m
 
-    evening, retry, pack = by_id["market-files"], by_id["market-files-retry"], by_id["morning-factpack"]
-    assert evening.enabled and retry.enabled, "credential-free: on with the pack"
-    assert minutes(evening.at_et) >= 18 * 60
-    assert minutes(retry.at_et) + retry.catchup_minutes <= minutes(pack.at_et)
-    assert evening.argv[-1] == "fetch" and evening.trading_days_only
+    files, pack = by_id["market-files"], by_id["morning-factpack"]
+    assert files.enabled, "credential-free: on with the pack"
+    retry_at, evening_at = files.times_et
+    retry_catchup, evening_catchup = files.slot_catchup_minutes
+    assert minutes(evening_at) >= 18 * 60 and evening_catchup == jobspec.CATCHUP_MINUTES["market-files"]
+    assert minutes(retry_at) + retry_catchup <= minutes(pack.at_et)
+    assert files.argv[-1] == "fetch" and files.trading_days_only
 
 
 def test_market_files_follow_the_morning_switch():

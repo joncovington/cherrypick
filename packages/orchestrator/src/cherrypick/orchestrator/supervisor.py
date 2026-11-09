@@ -619,8 +619,12 @@ class Supervisor:
         else:
             if jobspec.is_fixed_time(spec):
                 # A fixed-time job's attempts are counted per day: yesterday's exhausted retries
-                # must not leave today's first failure looking like the limit has been passed.
+                # must not leave today's first failure looking like the limit has been passed. A job
+                # that runs several times a day counts per run (its stamp names the slot), so a
+                # failed morning run does not use up the evening's retries.
                 today = timeutil.now_et().strftime("%Y-%m-%d")
+                if spec.times_et and st.get("last_fire_day"):
+                    today = str(st["last_fire_day"])
                 if st.get("failure_day") != today:
                     st["failure_day"] = today
                     st["consecutive_failures"] = 0

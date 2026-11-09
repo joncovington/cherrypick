@@ -1139,3 +1139,77 @@ def test_restart_of_a_daily_job_runs_it_once_now_without_stealing_its_scheduled_
     sup._last_fixed_spawn = 0.0  # the start-spacing guard counts real seconds; these passes are an hour apart
     sup.pass_once(now=MONDAY_NOON.replace(hour=6, minute=41))
     assert len(runs()) == 2  # the scheduled 06:40 run still came
+
+
+# --------------------------------------------------------------------------- a daily job at several times
+def _slotted(retries=0):
+    return jobspec.JobSpec(
+        id="slotted",
+        argv=("pythonw", "C:/repo/scripts/fetch_market_files.py", "fetch"),
+        kind=jobspec.KIND_DAILY,
+        times_et=("07:45", "18:45"),
+        slot_catchup_minutes=(40, 600),
+        catchup_minutes=40,
+        retries=retries,
+    )
+
+
+def _at(h, m):
+    return MONDAY_NOON.replace(hour=h, minute=m)
+
+
+def test_a_slotted_job_fires_once_per_slot_and_stamps_the_slot(spawned, fixed_jobs):
+    fixed_jobs.append(_slotted())
+    sup = supervisor.Supervisor(base_cfg())
+    assert sup.pass_once(now=_at(7, 45))["started"] == ["slotted"]
+    assert sup._state["slotted"]["last_fire_day"] == "2026-08-10@07:45"
+    spawned[-1].exit(0)
+    sup.pass_once(now=_at(7, 46))
+    assert sup.pass_once(now=_at(8, 0))["started"] == []
+    assert sup.pass_once(now=_at(18, 45))["started"] == ["slotted"]
+    assert sup._state["slotted"]["last_fire_day"] == "2026-08-10@18:45"
+    assert len(spawned) == 2
+
+
+def test_a_slotted_job_missed_slot_is_stamped_missed(spawned, fixed_jobs):
+    fixed_jobs.append(_slotted())
+    sup = supervisor.Supervisor(base_cfg())
+    assert sup.pass_once(now=_at(9, 0))["started"] == []  # 07:45 + 40m has passed
+    st = sup._state["slotted"]
+    assert st["last_fire_day"] == "2026-08-10@07:45" and st["missed"]
+    assert sup.pass_once(now=_at(18, 45))["started"] == ["slotted"]
+    assert sup._state["slotted"]["missed"] is None
+
+
+def test_a_retry_stays_inside_its_slot_and_each_slot_has_its_own_count(spawned, fixed_jobs):
+    fixed_jobs.append(_slotted(retries=1))
+    sup = supervisor.Supervisor(base_cfg())
+    sup.pass_once(now=_at(7, 45))
+    spawned[-1].exit(1)
+    sup.pass_once(now=_at(7, 46))  # the failure; the stamp is lifted for the retry
+    assert "last_fire_day" not in sup._state["slotted"]
+    sup._state["slotted"]["backoff_until"] = time.time() - 1
+    assert sup.pass_once(now=_at(7, 50))["started"] == ["slotted"]  # the retry, still slot 07:45
+    assert sup._state["slotted"]["last_fire_day"] == "2026-08-10@07:45"
+    spawned[-1].exit(1)
+    sup.pass_once(now=_at(7, 51))
+    sup._state["slotted"]["backoff_until"] = time.time() - 1
+    assert sup.pass_once(now=_at(7, 55))["started"] == []  # one retry, used
+    # The evening slot is a new run with a retry of its own.
+    assert sup.pass_once(now=_at(18, 45))["started"] == ["slotted"]
+    spawned[-1].exit(1)
+    sup.pass_once(now=_at(18, 46))
+    assert sup._state["slotted"]["attempt"] == 1
+    assert "last_fire_day" not in sup._state["slotted"]
+
+
+def test_run_now_of_a_slotted_job_is_an_extra_run_that_stamps_nothing(spawned, fixed_jobs):
+    fixed_jobs.append(_slotted())
+    sup = supervisor.Supervisor(base_cfg())
+    supervisor.request_restart("slotted", by="test", request_id="r1")
+    assert sup.pass_once(now=_at(5, 0))["started"] == ["slotted"]
+    assert "last_fire_day" not in sup._state["slotted"]
+    spawned[-1].exit(0)
+    sup.pass_once(now=_at(5, 1))
+    sup._last_fixed_spawn = 0.0
+    assert sup.pass_once(now=_at(7, 45))["started"] == ["slotted"]  # the scheduled slot still comes
