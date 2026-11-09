@@ -130,21 +130,27 @@ def test_the_ledgers_add_up(homes):
         assert fees > 0
 
 
-def test_generated_files_carry_no_username_or_real_repo_path(homes):
-    import getpass
-
+def test_generated_files_carry_no_home_folder_or_real_repo_path(homes):
     assert (homes[0] / ".demo-home").is_file()
     loaded = load_script("demo_home")
     assert loaded.leaks_in(homes[0]) == []
     cfg = (homes[0] / "config.json").read_text(encoding="utf-8")
     assert "/opt/cherrypick/packages/meic" in cfg
-    assert getpass.getuser().encode() not in b"".join(p.read_bytes() for p in homes[0].rglob("*.json"))
+    home = Path.home().as_posix().encode()
+    assert home not in b"".join(p.read_bytes() for p in homes[0].rglob("*.json"))
 
 
 def test_the_leak_check_fails_when_a_path_leaks(tmp_path):
     loaded = load_script("demo_home")
     (tmp_path / "x.json").write_text(f'{{"path": "{loaded.REPO.as_posix()}/packages"}}', encoding="utf-8")
     assert loaded.leaks_in(tmp_path) == ["x.json"]
+
+
+def test_the_leak_check_catches_the_home_folder_but_not_a_plain_word(tmp_path):
+    loaded = load_script("demo_home")
+    (tmp_path / "home.json").write_text(f'{{"log": "{Path.home().as_posix()}/x.log"}}', encoding="utf-8")
+    (tmp_path / "word.json").write_text('{"_comment": "the task runner reads this"}', encoding="utf-8")
+    assert loaded.leaks_in(tmp_path) == ["home.json"]
 
 
 # ---------------------------------------------------------------------------- the launcher's guards

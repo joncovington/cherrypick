@@ -2350,10 +2350,14 @@ def scrub(ctx: Ctx) -> None:
 
 
 def leaks_in(root: Path) -> list[str]:
-    """Files that carry this machine's checkout path or the OS username, as text or inside a database."""
-    import getpass
+    """Files that carry this machine's checkout path or home folder, as text or inside a database.
 
-    needles = {getpass.getuser(), str(REPO), REPO.as_posix(), json.dumps(str(REPO))[1:-1]}
+    The username leaks only as part of a path (`C:\\Users\\<name>`, `/home/<name>`), so the home
+    folder is what is matched, in every spelling a file could hold. Matching the bare name instead
+    flags ordinary words: on CI the user is `runner`, which config comments use as a word."""
+    needles: set[str] = set()
+    for p in (REPO, Path.home()):
+        needles |= {str(p), p.as_posix(), json.dumps(str(p))[1:-1]}
     needles = {n for n in needles if len(n) >= 3}
     found = []
     for path in sorted(p for p in root.rglob("*") if p.is_file()):
