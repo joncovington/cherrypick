@@ -7,7 +7,7 @@ All commands are **read-only or paper-only** except the narrow onboarding pair (
 `settings`, which write *configuration* (never an order). See
 [guardrails-and-modes.md](guardrails-and-modes.md).
 (The modules' own live-trading loops are separate programs, armed per day with `/live-meic-start`,
-`/live-flies-start` and `/live-bwb-start` rather than any command on this page — see
+`/live-flies-start` and `/live-bwb-start`, or from a terminal with `python -m cherrypick.<module>.live_loop --arm --confirm YES`, rather than any command on this page — see
 [strategy-engines.md](strategy-engines.md).)
 
 ## Onboarding & setup
@@ -106,7 +106,7 @@ The module paper loops are supervisor jobs too: MEIC as a 60 s `--once` spawn
 (`modules.meic.paper.tick_interval_seconds`), flies as the one **resident** child (its own
 `--interval 15` mode in-session, supervised for death and silence) plus a 60 s off-session `--once`
 job that owns settlement. The paper modules' own scheduled-task helpers were removed on
-2026-10-08; flies', bwb's and MEIC's live `--install-task` only writes the day's arm record, and refuses
+2026-10-08; flies', bwb's and MEIC's live `--install-task` (the slash commands' prompt-free path; `--arm --confirm YES` is the human one) only writes the day's arm record, and refuses
 without a running supervisor.
 
 ## The research queue (`orchestrator/researchqueue.py`, 2026-10-24)
@@ -174,4 +174,4 @@ verdict) · `--month` / `--dry-run` (archive) · `--dry-run` / `--list` / `--ver
 Some workflows are also exposed as checked-in slash commands for interactive sessions:
 `/install`, `/uninstall`, `/console`, `/desktop`, `/meic-start`. These are dev
 conveniences, never a runtime dependency. The per-day live arms `/live-meic-start`,
-`/live-flies-start` and `/live-bwb-start` are not conveniences: they are the deliberate arming path.
+`/live-flies-start` and `/live-bwb-start`, and the loops' `--arm --confirm YES`, are not conveniences: they are the deliberate arming path.

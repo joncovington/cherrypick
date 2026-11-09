@@ -138,7 +138,8 @@ By default this is `false`, so `execute_trade`/`adjust_order` calls without `--l
 
 That key is the master switch. The deterministic live loop also needs `live.symbol`, a non-empty
 `live.gate0_confirmed` attestation and a designated account, and trades only on a day armed with
-`/live-meic-start`. Size live in the `live` block (`live.arm`, `max_open_bp_dollars`,
+`/live-meic-start` (or, without Claude Code, `python -m cherrypick.meic.live_loop --arm --confirm YES`, which
+prints `DISCLAIMER.md` and arms nothing on any other word). Size live in the `live` block (`live.arm`, `max_open_bp_dollars`,
 `wing_widths_by_symbol`, the entry window), never at the top level, which every paper arm inherits;
 `python -m cherrypick.meic.live_migrate` moves misplaced keys (dry run by default).
 

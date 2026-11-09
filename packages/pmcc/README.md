@@ -1,9 +1,11 @@
 # cherrypick-pmcc
 
-> **EXPERIMENTAL, and off by default.** This module ships `enabled: false` in the orchestrator's
-> `config.example.json`, so a fresh install does not run it. To turn it on, use the **Modules &
-> symbols** section of the console's Config page, or set `modules.pmcc.enabled` to `true` in
-> `~/.cherrypick/config.json`. It is paper-only either way.
+**Retired 2026-11-08; off by default.** The owner switched its entries off (`defaults.wind_down`, #974, stops
+entries and closes what is open; the module goes off once flat). The code, ledgers and docs are kept. To
+reinstate: set `modules.pmcc.enabled` to true in the suite config (the **Modules & symbols** section of the
+console's Config page, or `~/.cherrypick/config.json`), `enabled` to true on the `shield`, `shield_hold` and
+`shield_guard` arms in `pmcc.json`, and `defaults.wind_down` to false or remove it. It is paper-only either
+way.
 
 PMCC: a paper-only module that holds a deep-ITM call and sells a shorter call against it, on XSP,
 QQQ, GLD, IWM, SLV and SMH and the stocks AMZN, TSLA, AMD, NVDA and PLTR. Since 2026-10-06 the
@@ -17,7 +19,7 @@ trade is two arms, each its own portfolio:
   real short risks early assignment.
 - A short spanning an ex-dividend date or, on a stock, an earnings announcement is refused.
 
-A config must declare the shield arms to run them; the shipped example does. `control` (a ~21-DTE
+A config must declare the shield arms to run them; the shipped example does, with each switched off. `control` (a ~21-DTE
 long re-bought each cycle) was retired on 2026-10-06 and its advisor twins with it; pmcc's advice is
 off.
 

@@ -107,7 +107,10 @@ holds is refused.
    - ```bash
      python -m cherrypick.meic.live_loop --install-task
      ```
-     This writes today's arm record (the supervisor enables `meic-live` within one pass) and fires
+     This is the agent path: it prompts for nothing, because the YES above is the confirmation.
+     (A person without Claude Code arms with `--arm --confirm YES`, which prints the disclaimer
+     itself; never pass that flag on a YES you did not get this run.)
+     It writes today's arm record (the supervisor enables `meic-live` within one pass) and fires
      the first tick immediately. A refusal (`ok: false`: a blocker named in `blockers`, such as
      no supervisor) is final: report it, do not work around it.
 
@@ -123,7 +126,7 @@ holds is refused.
    --live`), and how to stop early: `/live-meic-start --stop`, or create the halt flag
    (`~/.cherrypick/state/halt-live.flag`, which stops new entries within one tick while open ICs
    are still stopped, force-closed and settled), or `python -m cherrypick.meic.live_loop
-   --uninstall-task` directly.
+   --disarm` directly.
 
 ## Stop / disarm (`--stop`)
 
@@ -132,7 +135,7 @@ holds is refused.
 2. Confirm the disarm (a plain question is fine: disarming stops NEW ICs; it places no order, and
    the loop keeps managing what it holds).
 3. ```bash
-   python -m cherrypick.meic.live_loop --uninstall-task
+   python -m cherrypick.meic.live_loop --disarm
    ```
    This deletes the arm record. Within one pass the supervisor moves `meic-live` to its unarmed
    schedule: trading days from the open to the disarm cutoff, managing only.

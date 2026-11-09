@@ -5,7 +5,7 @@ dealer gamma-exposure positioning (where market makers are likely to buy or sell
 price moves), option-implied-volatility skew, and traded volume, all by strike, updating live.
 Think of it as your own self-hosted version of what gexbot.com, SpotGamma, or MenthorQ sell,
 built on the suite's shared market-data feed. It never places an order — the other modules
-(MEIC, flies, bwb) use the same underlying gamma-exposure math to help decide when
+(MEIC and others) use the same underlying gamma-exposure math to help decide when
 *they* should trade, and this is simply that same view surfaced for you to watch directly, on the
 console's GEX page.
 

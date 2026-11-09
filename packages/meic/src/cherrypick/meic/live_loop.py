@@ -2041,8 +2041,18 @@ def main(argv=None) -> int:
     ap.add_argument(
         "--status", action="store_true", help="armed state, gates, caps, orphans, holds (JSON; no broker)"
     )
-    ap.add_argument("--install-task", action="store_true", help="arm for TODAY (the /live-meic-start path)")
-    ap.add_argument("--uninstall-task", action="store_true", help="disarm now")
+    ap.add_argument(
+        "--arm",
+        action="store_true",
+        help="arm for TODAY, by hand: prints DISCLAIMER.md and needs --confirm YES",
+    )
+    ap.add_argument("--confirm", help="with --arm: the word YES, exactly")
+    ap.add_argument(
+        "--install-task",
+        action="store_true",
+        help="arm for TODAY, the agent path (/live-meic-start calls it after its own YES)",
+    )
+    ap.add_argument("--disarm", "--uninstall-task", dest="disarm", action="store_true", help="disarm now")
     ap.add_argument(
         "--settle-overdue",
         action="store_true",
@@ -2060,9 +2070,17 @@ def main(argv=None) -> int:
         print(json.dumps(payload, indent=2, default=str))
         return 0 if payload.get("ok", True) else 1
 
-    if args.install_task:
-        return out(install_task(cfg))
-    if args.uninstall_task:
+    if args.arm or args.install_task:
+        return out(
+            _live.arm_from_cli(
+                "meic",
+                lambda: install_task(cfg),
+                confirm=args.confirm,
+                prompted=args.arm,
+                require_enabled=False,
+            )
+        )
+    if args.disarm:
         return out(uninstall_task())
     if args.settle_overdue or args.settle:
         # Under the tick's own lock: a tick and a settlement writing the same rows is P&L corruption.
@@ -2105,7 +2123,7 @@ def main(argv=None) -> int:
         print(json.dumps(expected_legs(cfg, str(_paths.live_db_path())), default=str))
         return 0
     if not args.once:
-        ap.error("--once is required (or --status, --expected-legs, --install-task, --uninstall-task)")
+        ap.error("--once is required (or --status, --expected-legs, --arm, --disarm)")
     live = not args.dry_run
     not_armed = None
     if live:

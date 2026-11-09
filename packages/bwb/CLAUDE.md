@@ -1,5 +1,11 @@
 # cherrypick-bwb
 
+**Retired 2026-11-08; off by default.** The owner switched its entries off; the code, ledgers and docs are
+kept so it can be reinstated. To reinstate: set `modules.bwb.enabled` to true in the suite config and
+`enabled` to true on the `control` arm (and on `bounce` or `flip` if wanted) in `bwb.json`; the supervisor
+derives the bwb jobs from the module switch. Live trading stays behind its own gate and per-day arm
+(`/live-bwb-start` and `--arm` refuse while the module is off).
+
 > **Vocabulary.** This module's **book** (the config key `books`) is the suite's **arm** (root
 > `CLAUDE.md`). The ledger column has been `bwb_positions.arm` since 2026-09-23; prose and the
 > console say `arm`.
@@ -180,7 +186,7 @@ Built to test whether the paper result survives a fill without disturbing the pa
   surface. One list: `broker_cli.live_gates` is `live_loop.readiness` plus the arm record read as
   the dead-man's switch reads it (2026-10-12; a missing `live.arm` refuses in both). **The suite halt flag stops new risk only** (2026-10-08): the entry is refused
   (`halt_flag_present`) and an armed add-on deferred, while fills are confirmed, resting orders
-  managed and the ladder settled. Never run `--install-task` outside `/live-bwb-start`.
+  managed and the ladder settled. Never run `--install-task` outside `/live-bwb-start`; a person arms with `--arm --confirm YES`.
 - **The structure is the paper structure.** `engine.plan_entry` plans it; `live_orders.entry_spec`
   only collapses the body into one sell leg at double quantity with a limit (mid minus
   `entry_concession`, floored to the nickel). Live-only rules REFUSE, never reshape: the
@@ -274,8 +280,10 @@ python -m cherrypick.bwb.live_loop --settle --price 6400.10 --date 2026-09-18   
 python -m cherrypick.bwb.fee_reconcile            # settled live rows vs broker transactions
 ```
 
-`--once --live` is the real tick; `--install-task`/`--uninstall-task` are what `/live-bwb-start`
-calls. Config: `config.example.json` -> `config.json` (git-ignored) or `~/.cherrypick/config/bwb.json`;
+`--once --live` is the real tick. `--install-task` is the agent path `/live-bwb-start` calls after its own
+YES, and `--disarm` (alias `--uninstall-task`) disarms; a person arms with `--arm --confirm YES`, which
+prints `DISCLAIMER.md` first. All arm paths refuse while `modules.bwb.enabled` is false. `--readiness`
+lists the unmet account gates. Config: `config.example.json` -> `config.json` (git-ignored) or `~/.cherrypick/config/bwb.json`;
 the example is the design document — read its `_note` keys first.
 
 ## Data source and guardrails

@@ -18,6 +18,12 @@ confirmation, a current status readout, and a visible way to stop.
 
 ## Arm (default)
 
+0. **Is flies switched on?** Run the status readout (step 2) first and read `module_enabled`
+   (the suite's `modules.flies.enabled`). If it is false, stop here and say: "flies is retired and
+   switched off; reinstate it first (see packages/flies/README.md)". Arm nothing and ask nothing.
+   (`--install-task` repeats the check and refuses while the module is off, so this is the early
+   warning, not the only guard.)
+
 1. **Never reuse an old confirmation.** Ask fresh every time this command runs — a prior
    session's "YES" (in this conversation or any past one) covers nothing.
 
@@ -27,15 +33,10 @@ confirmation, a current status readout, and a visible way to stop.
    python -m cherrypick.flies.live_loop --status
    ```
    and present, in plain language:
-   - **Unmet readiness gates** — additionally run the readiness check:
+   - **Unmet readiness gates** — additionally run the readiness check, which prints
+     `unmet_gates` and exits non-zero if any gate is unmet:
      ```bash
-     python -c "
-   from cherrypick.flies.cli import load_config
-   from cherrypick.flies import live_loop, credentials as creds
-   cfg = load_config()
-   unmet = live_loop.readiness(cfg, designated=creds.designated_account())
-   print('unmet gates:', unmet or 'NONE -- readiness passes')
-   "
+     python -m cherrypick.flies.live_loop --readiness
      ```
      If any gate is unmet, **stop here** and report — there is nothing to arm if every tick
      would refuse. (The halt flag is not a readiness gate; it blocks new entries only.)
@@ -93,7 +94,11 @@ confirmation, a current status readout, and a visible way to stop.
    - ```bash
      python -m cherrypick.flies.live_loop --install-task
      ```
-     This writes today's arm record (the supervisor enables its `flies-live` job within one
+     This is the agent path: it prompts for nothing, because the YES above is the confirmation.
+     (A person without Claude Code arms with `--arm --confirm YES`, which prints the disclaimer
+     itself; never pass that flag on a YES you did not get this run.) Both refuse, writing
+     nothing, while `modules.flies.enabled` is false.
+     It writes today's arm record (the supervisor enables its `flies-live` job within one
      pass) and fires the first tick immediately. With no supervisor running it refuses
      (`ok: false`, "no supervisor running"): start it with `run.py ensure-supervisor`, then retry.
      With the alert daemon on, the record names it (`companions: ["flies-alert-daemon"]` in the
@@ -134,7 +139,7 @@ confirmation, a current status readout, and a visible way to stop.
    mode set to live (http://127.0.0.1:5070/flies), and how to stop early: `/live-flies-start --stop`,
    or create the halt flag (`~/.cherrypick/state/halt-live.flag` — stops new entries within one
    tick; open positions still follow their normal hold-to-settlement rules), or
-   `python -m cherrypick.flies.live_loop --uninstall-task` directly. Also mention settlement: from 16:20
+   `python -m cherrypick.flies.live_loop --disarm` directly. Also mention settlement: from 16:20
    each tick fetches the official print (tastytrade, else Yahoo/Barchart) and falls back to the
    last streamed trade, marked provisional, only when none answers; a session the machine missed is
    settled by the hourly `settle-overdue-live` job, and a by-hand confirm is
@@ -147,7 +152,7 @@ confirmation, a current status readout, and a visible way to stop.
 2. Confirm the disarm (a plain question is fine — disarming only stops NEW ticks; it places
    no order and touches no open position).
 3. ```bash
-   python -m cherrypick.flies.live_loop --uninstall-task
+   python -m cherrypick.flies.live_loop --disarm
    ```
    This deletes the arm record (the supervisor's `flies-live` job disables within one pass); a
    legacy task left on an old box is removed by `run.py install`.

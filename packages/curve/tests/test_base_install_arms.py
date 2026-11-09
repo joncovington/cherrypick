@@ -20,8 +20,18 @@ def _registry(config: dict) -> dict:
     return next(config[k] for k in ("arms", "books", "profiles") if k in config)
 
 
-def test_the_shipped_example_runs_only_control():
-    arms, advised = paper_loop.session_books(_example(), "2026-10-05")
+def test_the_shipped_example_runs_no_arm_because_the_module_is_retired():
+    """curve is retired (2026-11-01): every arm ships off, each with a `_retired` note."""
+    config = _example()
+    arms, advised = paper_loop.session_books(config, "2026-10-05")
+    assert arms == [] and advised == {}
+    assert _registry(config)["control"]["_retired"] == "2026-11-01"
+
+
+def test_reinstating_control_alone_runs_only_control():
+    config = _example()
+    _registry(config)["control"]["enabled"] = True
+    arms, advised = paper_loop.session_books(config, "2026-10-05")
     assert arms == ["control"] and advised == {}
 
 
@@ -34,7 +44,7 @@ def test_an_arm_the_config_predates_stays_off():
         registry[arm]["enabled"] = True
     del registry["near"]
     arms, _ = paper_loop.session_books(config, "2026-10-30")
-    assert arms == ["control", "noflip", "hook"]
+    assert arms == ["noflip", "hook"]  # control ships off (retired), so it is not among them
 
 
 def test_control_with_no_block_still_runs():

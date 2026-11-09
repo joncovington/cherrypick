@@ -37,9 +37,11 @@
   "books": {
     "control": {
       "_summary": "The ~7-DTE SPX put broken-wing butterfly alone, held to expiry with no add-on.",
-      "enabled": true
+      "_retired": "2026-11-08",
+      "_retired_note": "Retired 2026-11-08; may be reinstated. Open rows are managed until they close.",
+      "enabled": false
     },
-    "_base_install_note": "A base install runs only `control`. The engine's other built-in arms run unless a config switches them off, so the example lists each one with enabled:false. Turn one on (or define your own) in ~/.cherrypick/config/bwb.json.",
+    "_base_install_note": "The module is retired (2026-11-08), so a base install runs no arm at all; once reinstated it runs only `control`. The engine's other built-in arms run unless a config switches them off, so the example lists each one with enabled:false. Turn one on (or define your own) in ~/.cherrypick/config/bwb.json.",
     "delta": {
       "_summary": "Retired: added the put credit spread once the near wing reached 50 delta.",
       "_retired": "2026-10-15",
@@ -47,10 +49,14 @@
     },
     "bounce": {
       "_summary": "Adds the put credit spread once the near wing has reached 50 delta and pulled back to 45.",
+      "_retired": "2026-11-08",
+      "_retired_note": "Retired 2026-11-08; may be reinstated. Open rows are managed until they close.",
       "enabled": false
     },
     "flip": {
       "_summary": "Adds the put credit spread once spot has traded below the gamma flip and reclaimed it.",
+      "_retired": "2026-11-08",
+      "_retired_note": "Retired 2026-11-08; may be reinstated. Open rows are managed until they close.",
       "enabled": false
     }
   },

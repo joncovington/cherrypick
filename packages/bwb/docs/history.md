@@ -87,6 +87,14 @@ derivable and neither is rewritten.
   concludes on its own; its verdict measures nothing, and a re-proposal needs a base that has a
   trigger.
 
+## Entries switched off (2026-11-08)
+
+The owner switched the module's entries off on 2026-11-08. Nothing about the measurement changed: no
+arm was edited, so the rows to that day are one population. The module is switched off once its ladder
+is flat, ships off in the example config (`modules.bwb.enabled` and every arm `enabled` false, each
+with a `_retired` note), and may be reinstated by turning those back on. `/live-bwb-start` and the
+loop's `--arm` refuse while the module is off.
+
 ## Milestones
 
 Built 2026-08-23; paper since 2026-08-24. Runs as the supervisor's `bwb-paper` job on a 60s

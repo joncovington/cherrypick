@@ -1425,6 +1425,7 @@ def run_status(config: dict, conn, *, cache_path: str, broker=None) -> dict:
         "ok": True,
         "date": today,
         "armed_for": arm_stamp_date(),
+        "module_enabled": _live.suite_module_enabled("bwb"),
         "arm": _arm(config),
         "in_session": _pl.in_session(clock.minute_of_day(when)),
         "open_positions": len(open_now),
@@ -1462,6 +1463,11 @@ def main(argv=None) -> int:
     ap.add_argument("--live", action="store_true", help="place real orders (every gate must be met)")
     ap.add_argument("--status", action="store_true")
     ap.add_argument(
+        "--readiness",
+        action="store_true",
+        help="the unmet account gates as JSON (exit 1 if any); the check before arming",
+    )
+    ap.add_argument(
         "--expected-legs",
         action="store_true",
         help="the filled open legs the ledger holds (JSON; files/DB only)",
@@ -1475,8 +1481,18 @@ def main(argv=None) -> int:
     ap.add_argument("--price", type=float, help="the official settlement print, by hand")
     ap.add_argument("--date", help="YYYY-MM-DD")
     ap.add_argument("--force", action="store_true")
-    ap.add_argument("--install-task", action="store_true", help="arm for today (the arm command's path)")
-    ap.add_argument("--uninstall-task", action="store_true", help="disarm now")
+    ap.add_argument(
+        "--arm",
+        action="store_true",
+        help="arm for today, by hand: prints DISCLAIMER.md and needs --confirm YES",
+    )
+    ap.add_argument("--confirm", help="with --arm: the word YES, exactly")
+    ap.add_argument(
+        "--install-task",
+        action="store_true",
+        help="arm for today, the agent path (/live-bwb-start calls it after its own YES)",
+    )
+    ap.add_argument("--disarm", "--uninstall-task", dest="disarm", action="store_true", help="disarm now")
     args = ap.parse_args(argv)
 
     config = climod.load_config(args.config)
@@ -1489,10 +1505,19 @@ def main(argv=None) -> int:
         print(json.dumps(payload, indent=2, default=str))
         return 0 if payload.get("ok", True) else 1
 
-    if args.install_task:
-        return out(install_task())
-    if args.uninstall_task:
+    if args.arm or args.install_task:
+        return out(
+            _live.arm_from_cli(
+                "bwb", install_task, confirm=args.confirm, prompted=args.arm, require_enabled=True
+            )
+        )
+    if args.disarm:
         return out(uninstall_task())
+    if args.readiness:
+        from cherrypick.bwb import credentials
+
+        unmet = readiness(config, designated=credentials.designated_account())
+        return out({"ok": not unmet, "unmet_gates": unmet})
     if args.status:
         return out(run_status(config, conn, cache_path=cache_path))
     if args.expected_legs:
@@ -1551,7 +1576,7 @@ def main(argv=None) -> int:
             )
         finally:
             looplock.release(_once_lock_path())
-    ap.error("choose one of --once, --status, --settle, --install-task, --uninstall-task")
+    ap.error("choose one of --once, --status, --settle, --arm, --disarm")
     return 2
 
 

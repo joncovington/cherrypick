@@ -52,7 +52,7 @@ working or held order, orphan, overdue settlement or attention item; `liveLoopsI
 turned off mid-session must not strand the one page showing what is still open, which Live Today
 links to (#422). An unread Live Today keeps it shown, and the account-wide tabs never leave. A direct URL to an off page renders `ModuleOffCard` (why, and a link to Config), never a 404
 and never the module. Config always lists every toggle. Calendars, pmcc, curve and contango carry
-an `experimental` chip, listed once in `moduleOrder.ts`'s `EXPERIMENTAL_MODULES`.
+an `experimental` chip, listed once in `moduleOrder.ts`'s `EXPERIMENTAL_MODULES`. Flies, bwb, pmcc and curve are retired (2026-10-19, 2026-11-08, 2026-11-08, 2026-11-01) and ship off, so a fresh install shows each as off until it is reinstated; Live → pmcc is the real account's view and stays.
 
 - **The Dolt-backed Screeners tabs are shown off, not hidden** (2026-10-19, the user's choice):
   earnings, earnings record, signal board and skate (`SCREENERS_NEED_DOLT`). With `features.technicals`
@@ -539,7 +539,7 @@ the Advisor page only.
 `/live` lands), the account-wide `positions`, `portfolio`, `wheel` and `pmcc`, and one per live loop with a page of its
 own (`flies`, `meic`; each hidden when that module's live switch is off and the loop is idle, see *What is off*). The
 account-wide set is `LIVE_ACCOUNT_WIDE` in `lib/visibility.ts`, the one copy: those tabs are always shown and wear the
-suite badge. The simple view lists `today`, the four account views and `meic` (flies is retired). The execution record
+suite badge. The simple view lists `today`, the four account views and `meic` (flies is retired and off by default). The execution record
 (B10, below) was an account-wide `execution` tab until 2026-11-06; it is now a card on its arm's own tab (MEIC's, the
 only live ledger it reads), and `/live/execution` lands on `meic`. `test/manifestSlides.test.ts` holds every manifest's tabs equal to its `navGroups.ts` declaration. The
 `flies` tab is the pilot's day over `GET /api/live/flies` (`routes/live.ts` → `readers/fliesLive.ts`), composing existing readers
