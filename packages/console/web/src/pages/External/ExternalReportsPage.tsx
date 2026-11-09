@@ -1,6 +1,18 @@
+import { Fragment } from "react";
 import { Link, useParams } from "react-router-dom";
-import type { ExternalCell, ExternalReport, ExternalReportInvalid, ExternalSection } from "@console/shared";
+import type {
+  ExternalColumn,
+  ExternalColumnObject,
+  ExternalCell,
+  ExternalKeyEntry,
+  ExternalReport,
+  ExternalReportInvalid,
+  ExternalRow,
+  ExternalSection,
+  ExternalTone,
+} from "@console/shared";
 import { GridCard } from "../../components/grid/GridCard";
+import { cellParts, cellText, cellTone, columnSpec, rowCells, type ColumnSpec } from "../../lib/externalFormat";
 import { useExternalReports } from "../../lib/api";
 
 /**
@@ -18,14 +30,13 @@ import { useExternalReports } from "../../lib/api";
  * Every section is a card titled by its heading, so a script that posts a picture of its own report
  * can capture it by title (`tools/ui-check.mjs --route /reports/external/<id> --card "<heading>"`).
  * A file that fails the contract is a tab saying why and nothing of its content, never half drawn.
+ *
+ * A table may carry presentation hints (formats, tones, stacked bars, a key, a footnote); every one is
+ * optional and every figure stays in its cell as text, the picture beside it never replacing it. A
+ * tone is a theme token (`external-tone-*` in styles.css), so it reads in light and dark.
  */
 
 const BASE = "/reports/external";
-
-function cell(v: ExternalCell): string {
-  if (v === null) return "—";
-  return typeof v === "number" ? v.toLocaleString(undefined, { maximumFractionDigits: 6 }) : v;
-}
 
 /** A small table glyph: the card's mark, and what a capture waits for before it takes the card. */
 function Glyph() {
@@ -41,39 +52,119 @@ function Glyph() {
 export interface BarScale {
   max: number;
   signed: boolean;
+  /** A fixed scale's minimum (the report's `bar.scale`); absent when the column's own maximum rules. */
+  min?: number;
+  /** A grey track under the bar. */
+  track?: boolean;
+  /** The bar has its own column after the number. */
+  own?: boolean;
 }
+
+const valueAt = (row: ExternalRow, col: number): number | null => {
+  const v = cellParts(rowCells(row)[col] as ExternalCell).value;
+  return typeof v === "number" ? v : null;
+};
 
 /** The scale of each column the table marks with `bars`, within that column only. A null or text cell
  *  has no bar; a column with nothing to scale (all null, or all zero) gets none. */
-export function barScales(table: { rows: ExternalCell[][]; bars?: number[] | undefined }): Map<number, BarScale> {
+export function barScales(table: {
+  rows: ExternalRow[];
+  bars?: number[] | undefined;
+  columns?: ExternalColumn[] | undefined;
+}): Map<number, BarScale> {
   const out = new Map<number, BarScale>();
-  for (const col of table.bars ?? []) {
-    const values = table.rows.map((r) => r[col]).filter((v): v is number => typeof v === "number");
+  const wanted = new Map<number, NonNullable<ExternalColumnObject["bar"]>>();
+  for (const col of table.bars ?? []) wanted.set(col, {});
+  (table.columns ?? []).forEach((c, i) => {
+    if (typeof c !== "string" && c.bar !== undefined) wanted.set(i, c.bar);
+  });
+  for (const [col, cfg] of wanted) {
+    const extras = { ...(cfg.track === true ? { track: true } : {}), ...(cfg.own_column === true ? { own: true } : {}) };
+    if (cfg.scale !== undefined) {
+      const [min, max] = cfg.scale;
+      out.set(col, { max, min, signed: min < 0, ...extras });
+      continue;
+    }
+    const values = table.rows.map((r) => valueAt(r, col)).filter((v): v is number => v !== null);
     const max = Math.max(0, ...values.map((v) => Math.abs(v)));
-    if (max > 0) out.set(col, { max, signed: values.some((v) => v < 0) });
+    if (max > 0) out.set(col, { max, signed: values.some((v) => v < 0), ...extras });
   }
   return out;
 }
 
-/** Share of its half of the track a value fills, 0 to 100. */
+/** Share of its side of the track a value fills, 0 to 100: against the column's largest magnitude, or
+ *  against the fixed scale's own end on that side (`min` for a negative, `max` for a positive). */
 export function barPercent(value: number, scale: BarScale): number {
-  return Math.min(100, (Math.abs(value) / scale.max) * 100);
+  const end = scale.min !== undefined && value < 0 ? Math.abs(scale.min) : scale.max;
+  return end > 0 ? Math.min(100, (Math.abs(value) / end) * 100) : 0;
 }
 
 /** An inline bar beside the number, which stays in the cell as text: the bar is a picture of it. */
 function Bar({ value, scale }: { value: number; scale: BarScale }) {
   const pct = barPercent(value, scale);
   const negative = value < 0;
+  // A fixed scale that is not symmetric puts the zero line off the middle, in proportion.
+  const split = scale.min !== undefined && scale.signed ? -scale.min / (scale.max - scale.min) : 0.5;
+  const sized = (flex: number) => (split === 0.5 ? undefined : { flex });
   return (
-    <span className={`external-bar${scale.signed ? " external-bar-signed" : ""}`} aria-hidden="true">
+    <span
+      className={`external-bar${scale.signed ? " external-bar-signed" : ""}${scale.track === true ? " external-bar-track" : ""}`}
+      aria-hidden="true"
+    >
       {scale.signed && (
-        <span className="external-bar-half external-bar-left">
+        <span className="external-bar-half external-bar-left" style={sized(split)}>
           {negative && <span className="external-bar-fill external-bar-neg" style={{ width: `${String(pct)}%` }} />}
         </span>
       )}
-      <span className="external-bar-half external-bar-right">
+      <span className="external-bar-half external-bar-right" style={sized(1 - split)}>
         {!negative && <span className="external-bar-fill external-bar-pos" style={{ width: `${String(pct)}%` }} />}
       </span>
+    </span>
+  );
+}
+
+/** A segment narrower than this many pixels is widened to it, so a sliver that has trades in it is
+ *  still visible; the rest shrink to fit. */
+const MIN_SEGMENT = 3;
+const STACK_WIDTH = 160;
+
+/** Segment widths in pixels for `values` across `width`: in proportion, every non-zero one at least
+ *  `MIN_SEGMENT`, the roomy ones giving up the excess. Empty when there is nothing to draw. */
+export function stackWidths(values: (number | null)[], width: number = STACK_WIDTH): number[] {
+  const nums = values.map((v) => (v !== null && v > 0 ? v : 0));
+  const total = nums.reduce((a, v) => a + v, 0);
+  if (total <= 0) return [];
+  const floored = nums.map((v) => (v > 0 ? Math.max((v / total) * width, MIN_SEGMENT) : 0));
+  const excess = floored.reduce((a, w) => a + w, 0) - width;
+  const roomy = floored.reduce((a, w) => a + (w > MIN_SEGMENT ? w : 0), 0);
+  return floored.map((w) => (w > MIN_SEGMENT && roomy > 0 ? w - (excess * w) / roomy : w));
+}
+
+/** The legend of a stacked column, in the header: a swatch and a label per segment. */
+function StackLegend({ labels }: { labels: string[] }) {
+  return (
+    <span className="external-legend">
+      {labels.map((l, i) => (
+        <span key={i}>
+          <span className={`external-swatch external-stack-${String(i + 1)}`} aria-hidden="true" /> {l}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+/** One horizontal bar split in proportion. The figures stay as text, hidden visually but not from a
+ *  reader of the page, and as the tooltip. */
+function StackBar({ values, labels }: { values: (number | null)[]; labels: string[] }) {
+  const widths = stackWidths(values);
+  if (widths.length === 0) return <>{"—"}</>;
+  const total = values.reduce<number>((a, v) => a + (v !== null && v > 0 ? v : 0), 0);
+  const said = values.map((v, i) => `${labels[i] ?? ""} ${String(Math.round(((v ?? 0) / total) * 1000) / 10)}%`).join(" · ");
+  return (
+    <span className="external-stack" role="img" aria-label={said} title={said}>
+      {widths.map((w, i) =>
+        w > 0 ? <span key={i} className={`external-stack-seg external-stack-${String(i + 1)}`} style={{ width: `${String(w)}px` }} /> : null,
+      )}
     </span>
   );
 }
@@ -88,52 +179,135 @@ function Freshness({ report }: { report: ExternalReport }) {
   );
 }
 
-function Section({ report, section }: { report: ExternalReport; section: ExternalSection }) {
-  const foot = (
+const toneClass = (tone: ExternalTone | null): string => (tone === null ? "" : ` external-tone-${tone}`);
+
+function Cell({
+  col,
+  cell,
+  bar,
+}: {
+  col: ColumnSpec;
+  cell: ExternalCell;
+  bar: BarScale | undefined;
+}) {
+  if (col.stack !== null) {
+    return Array.isArray(cell) ? <StackBar values={cell} labels={col.stack} /> : <>{"—"}</>;
+  }
+  const parts = cellParts(cell);
+  const text = cellText(col, parts);
+  return (
     <>
-      <Glyph /> {report.source}, as of {report.asOf}
+      {parts.marker !== null && (
+        <span className={`external-marker external-marker-${parts.marker}${toneClass(parts.tone)}`} aria-hidden="true" />
+      )}
+      {text}
+      {parts.suffix !== null && (
+        <span className={`external-suffix${toneClass(parts.suffix.tone ?? "muted")}`}> {parts.suffix.text}</span>
+      )}
+      {bar !== undefined && typeof parts.value === "number" ? <Bar value={parts.value} scale={bar} /> : null}
     </>
   );
+}
+
+function Key({ entries }: { entries: ExternalKeyEntry[] }) {
+  return (
+    <dl className="external-key">
+      {entries.map((e, i) => (
+        <div key={i}>
+          <dt>
+            <span className={`external-key-tag${toneClass(e.tone ?? null)}`}>{e.tag}</span>
+            {e.label !== undefined ? ` ${e.label}` : ""}
+          </dt>
+          <dd>{e.text}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+function Section({ report, section }: { report: ExternalReport; section: ExternalSection }) {
+  // The card's mark, which a capture waits for, rides on the foot; with no foot a hidden one stays.
+  const foot =
+    report.showSourceFoot === false ? undefined : (
+      <>
+        <Glyph /> {report.source}, as of {report.asOf}
+      </>
+    );
+  const mark = foot === undefined ? <svg className="external-mark" width="0" height="0" aria-hidden="true" /> : null;
   if ("text" in section) {
     return (
       <GridCard label={section.heading} span={12} h={96} className="external-card" foot={foot}>
+        {mark}
         <p className="external-text">{section.text}</p>
       </GridCard>
     );
   }
-  const { columns, rows } = section.table;
+  const { rows } = section.table;
+  const cols = section.table.columns.map(columnSpec);
   const scales = barScales(section.table);
+  const numbered = section.numbered === true;
+  const headClass = (c: ColumnSpec) =>
+    `${c.align === "right" ? "external-right" : ""}${c.width !== null ? ` external-${c.width}` : ""}`.trim() || undefined;
   return (
     <GridCard label={section.heading} span={12} h={96} className="external-card" foot={foot}>
+      {mark}
       {rows.length === 0 ? (
         <p className="muted">No rows.</p>
       ) : (
         <div className="table-scroll">
-          <table className="data-table">
+          <table className="data-table external-table">
             <thead>
               <tr>
-                {columns.map((c, i) => (
-                  <th key={i}>{c}</th>
+                {numbered && <th className="external-right external-narrow">#</th>}
+                {cols.map((c, i) => (
+                  <Fragment key={i}>
+                    <th className={headClass(c)}>
+                      {c.label}
+                      {c.stack !== null && <StackLegend labels={c.stack} />}
+                    </th>
+                    {scales.get(i)?.own === true && <th className="external-barcol" />}
+                  </Fragment>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {rows.map((row, r) => (
-                <tr key={r}>
-                  {row.map((v, i) => (
-                    <td key={i} className={typeof v === "number" ? "num" : undefined}>
-                      {scales.has(i) && typeof v === "number" ? (
-                        <Bar value={v} scale={scales.get(i)!} />
-                      ) : null}
-                      {cell(v)}
-                    </td>
-                  ))}
-                </tr>
-              ))}
+              {rows.map((row, r) => {
+                const emphasis = Array.isArray(row) ? undefined : row.emphasis;
+                return (
+                  <tr key={r} className={emphasis === undefined ? undefined : `external-row-${emphasis}`}>
+                    {numbered && <td className="external-right external-index">{r + 1}</td>}
+                    {rowCells(row).map((v, i) => {
+                      const col = cols[i]!;
+                      const parts = Array.isArray(v) ? null : cellParts(v);
+                      const tone = parts === null ? null : cellTone(col, parts);
+                      // A plain number keeps the right edge it always had, whatever the column says.
+                      const right = col.align === "right" || (col.format === "text" && typeof parts?.value === "number");
+                      const classes = [right ? "external-right" : "", tone === null ? "" : `external-tone-${tone}`];
+                      const scale = scales.get(i);
+                      const own = scale?.own === true;
+                      const value = parts?.value;
+                      return (
+                        <Fragment key={i}>
+                          <td className={classes.filter((x) => x !== "").join(" ") || undefined}>
+                            <Cell col={col} cell={v} bar={own ? undefined : scale} />
+                          </td>
+                          {own && (
+                            <td className="external-barcol">
+                              {scale !== undefined && typeof value === "number" ? <Bar value={value} scale={scale} /> : null}
+                            </td>
+                          )}
+                        </Fragment>
+                      );
+                    })}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
       )}
+      {section.key !== undefined && section.key.length > 0 && <Key entries={section.key} />}
+      {section.footnote !== undefined && <p className="external-footnote">{section.footnote}</p>}
     </GridCard>
   );
 }

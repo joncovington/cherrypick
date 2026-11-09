@@ -3,8 +3,9 @@
  * (`docs/guide/external-reports.md`). Every file is judged against the contract in
  * `packages/core/cherrypick/core/schemas/external_report.schema.json` -- the same file
  * `cherrypick.core.external_report` reads -- by a small interpreter of the subset that file uses
- * (types, const, pattern, length and size bounds, required/additionalProperties, oneOf), plus the two
- * checks a schema cannot say: the id matches the file name, and every row is as wide as its columns.
+ * (types, const, enum, $ref, pattern, length and size bounds, required/additionalProperties, oneOf), plus
+ * the checks a schema cannot say (`externalHints.ts`): the id matches the file name, every row is as wide
+ * as its columns, and the presentation hints agree with the cells.
  *
  * A valid file comes back as a report; an invalid one comes back with every reason and nothing of its
  * content, so the page can never half-draw it. Read-only, no network, no module name anywhere.
@@ -13,6 +14,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { ExternalReport, ExternalReportInvalid, ExternalReportsPayload, ExternalSection } from "@console/shared";
 import { REPO_ROOT, type ConsoleConfig } from "../config.js";
+import { tableProblems } from "./externalHints.js";
 
 /** The whole file, in bytes: past this a runaway script is refused before it is parsed. */
 export const MAX_REPORT_BYTES = 512 * 1024;
@@ -56,9 +58,16 @@ function kind(v: unknown): string {
   return typeof v;
 }
 
-function check(value: unknown, schema: Json, at: string): string[] {
+function check(value: unknown, schemaIn: Json, at: string): string[] {
   const here = at === "" ? "report" : at;
+  let schema = schemaIn;
+  if (typeof schema["$ref"] === "string") {
+    schema = (loadSchema()["$defs"] as Record<string, Json>)[schema["$ref"].split("/").pop()!]!;
+  }
   if ("const" in schema && value !== schema["const"]) return [`${here}: must be ${JSON.stringify(schema["const"])}`];
+  if (Array.isArray(schema["enum"]) && !schema["enum"].includes(value)) {
+    return [`${here}: must be one of ${(schema["enum"] as string[]).join(", ")}`];
+  }
   if ("type" in schema) {
     const wanted = Array.isArray(schema["type"]) ? (schema["type"] as string[]) : [schema["type"] as string];
     if (!wanted.some((t) => TYPES[t]!(value))) return [`${here}: must be ${wanted.join(" or ")}, not ${kind(value)}`];
@@ -102,9 +111,17 @@ function check(value: unknown, schema: Json, at: string): string[] {
     }
   }
   if (Array.isArray(schema["oneOf"])) {
-    const tried = (schema["oneOf"] as Json[]).map((branch) => check(value, branch, at));
+    const branches = schema["oneOf"] as Json[];
+    const tried = branches.map((branch) => check(value, branch, at));
     if (tried.filter((t) => t.length === 0).length !== 1) {
-      const nearest = tried.reduce((a, b) => (b.length < a.length ? b : a));
+      // The branch the value came nearest to, among those whose type fits it (a cell that is an
+      // object is judged as an object, not as a string).
+      const fits = tried.filter((_, i) => {
+        const type = branches[i]!["type"];
+        return type === undefined || ([] as string[]).concat(type as string | string[]).some((t) => TYPES[t]!(value));
+      });
+      const pool = fits.length > 0 ? fits : tried;
+      const nearest = pool.reduce((a, b) => (b.length < a.length ? b : a));
       problems.push(...(nearest.length > 0 ? nearest : [`${here}: matches more than one shape`]));
     }
   }
@@ -120,19 +137,7 @@ export function validateReport(doc: unknown, expectedId?: string): string[] {
   }
   (doc["sections"] as ExternalSection[]).forEach((section, i) => {
     if (!("table" in section)) return;
-    const width = section.table.columns.length;
-    const bad = section.table.rows.findIndex((row) => row.length !== width);
-    if (bad >= 0) {
-      problems.push(`sections[${i}].table.rows[${bad}]: ${section.table.rows[bad]!.length} cells for ${width} columns`);
-      return;
-    }
-    for (const col of section.table.bars ?? []) {
-      const where = `sections[${i}].table.bars`;
-      if (col >= width) problems.push(`${where}: column ${col} does not exist (${width} columns)`);
-      else if (section.table.rows.some((row) => typeof row[col] === "string")) {
-        problems.push(`${where}: column ${col} ('${section.table.columns[col]}') is not numeric`);
-      }
-    }
+    problems.push(...tableProblems(`sections[${i}].table`, section.table));
   });
   return problems;
 }
@@ -170,6 +175,7 @@ export function readExternalReports(config: ConsoleConfig, nowMs: number = Date.
       asOf: reasons["as_of"] as string,
       staleAfterHours,
       summary: typeof reasons["summary"] === "string" ? reasons["summary"] : null,
+      showSourceFoot: reasons["show_source_foot"] !== false,
       sections: reasons["sections"] as ExternalSection[],
       ageHours,
       stale: ageHours !== null && ageHours > staleAfterHours,

@@ -61,6 +61,65 @@ A heading is 1 to 120 characters and is the title of the section's card. The who
 not be over 512 KiB; a bigger one is refused without being read, so a script that runs away cannot
 freeze the console. Unknown fields are not allowed.
 
+## Making it look right
+
+A plain table is enough, and a report without any of this stays valid. When you want a table to read
+like the console's own, add hints. Every one is optional, none changes the schema number (still `1`),
+and in each case the figure stays in the cell as text, so nothing is lost without the picture. The
+Discord text card ignores styling and prints each cell's text.
+
+**Format a column.** Give the column an object instead of a name. `format` is `text` (as written),
+`money` (`$24.04M`, `$511K`, `$30.8K`; the number is whole dollars), `compact` (`639.1K`), `int`
+(`5,179`), `percent` (`56%`; the number **is** the percent, so write `56`, not `0.56`, and anything
+past 1,000 is refused as a unit mistake), `signed` (`+76`, `−44`) or `decimal`. Numbers align right
+unless you say `"align": "left"`. `"tone": "sign"` colours a positive number green and a negative one
+red (it needs a numeric format). `"width": "narrow"` or `"wide"` asks for a thinner or wider column.
+
+```
+{"label": "Premium", "format": "money"}
+{"label": "Score", "format": "signed", "tone": "sign"}
+```
+
+**Style a cell.** A cell may be an object: `value` (formatted by its column), `text` (shown instead),
+`tone` (`pos`, `neg`, `warn`, `muted` or `strong`), `suffix` (a muted word after it) and `marker`
+(`square` or `dot`, drawn before it). A `null` is a dash.
+
+```
+{"text": "DVN 15 Jan 27 45C", "tone": "strong", "suffix": {"text": "outright"}}
+{"text": "", "marker": "square", "tone": "warn"}
+```
+
+**Stack a bar.** A column with `"stack": [{"label": "1 lot"}, {"label": "2-10"}]` (two to six
+segments) takes an array of numbers per cell, one for each segment, or `null`. It draws one bar split in
+proportion, with the labels as a legend in the header. A segment cannot be negative.
+
+```
+{"label": "Trade size", "stack": [{"label": "1 lot"}, {"label": "2-10"}, {"label": "11-99"}]}   ...   [350900, 232000, 51100]
+```
+
+**Shape a bar.** The `bars` list above is shorthand. To say more, put `"bar"` on a column object:
+`"bar": {"scale": [-100, 100], "track": true, "own_column": true}`. `scale` fixes the ends, so a bar
+means the same on every row and every day (negatives grow left of the zero line, positives right;
+without it the column's largest magnitude is the scale); `track` draws a grey track under it;
+`own_column` puts the bar in its own column after the number instead of beside it. A scale needs its
+minimum below its maximum, and a bar on a column holding text is refused.
+
+**Hide the source line.** Each card ends with "source, as of …". Set `"show_source_foot": false` at the
+top of the report to leave it off the cards; the overview tab still shows the source and `as_of`.
+
+**Emphasise a row.** A row may be `{"cells": [...], "emphasis": "strong"}` (or `"dim"`) instead of a
+plain list.
+
+**Number it, key it, footnote it.** On a table section, `"numbered": true` adds a `#` column;
+`"key": [{"tag": "V>OI", "tone": "warn", "label": "volume over OI", "text": "..."}]` draws a legend under
+the table, one line per entry; `"footnote": "..."` adds a muted line at the card's foot.
+
+A hint that disagrees with the cells (a stacked cell with the wrong number of segments, a sign tone on a
+text column) makes the whole file invalid, and `external-check` names the place. It also prints one
+`hints:` line saying which hints it found, for example `3 columns formatted, key of 3, footnote`.
+Lists and texts have caps (at most 6 segments, 12 key entries, a 300-character footnote), so a runaway
+script cannot freeze the console.
+
 ## Check a file
 
 ```
@@ -143,6 +202,20 @@ a fallback: if the one you chose is not stored, nothing is posted and the log sa
 posted **once per `as_of`**: running the job again, or restarting the machine, never repeats a post for
 the same `as_of`. An invalid report posts nothing and the job fails with the reason. Setting up the
 webhooks is in [Discord](discord.md).
+
+## Let Claude Code write it for you
+
+If you use [Claude Code](https://docs.claude.com/en/docs/claude-code) in this repository, describe the
+report you want ("a daily table of the VIX term structure from Cboe's public files, posted to my
+reporting channel") and it picks up the repository's `external-report` skill on its own. You don't
+need a command. The skill,
+[`.claude/skills/external-report/SKILL.md`](../../.claude/skills/external-report/SKILL.md), tells it
+to read this guide and the schema first, write the script under `~/.cherrypick` with a test of its
+shaping step, check the file with `external-check`, use the styling hints only where they carry
+meaning, follow the rules below, and tell you what it checked before saying it is done.
+
+It is optional. Everything on this page works by hand, and a report Claude Code writes is the same kind
+of file as one you write yourself.
 
 ## The rules
 

@@ -258,6 +258,27 @@ def test_the_discord_card_ignores_the_bars_hint():
     assert ext.card_payload(barred) == ext.card_payload(plain)
 
 
+def test_the_discord_card_prints_formatted_text_and_ignores_the_rest_of_the_styling():
+    doc = _doc()
+    doc["sections"][0]["table"] = {
+        "columns": [
+            "name",
+            {"label": "premium", "format": "money", "tone": "sign"},
+            {"label": "size", "stack": [{"label": "a"}, {"label": "b"}]},
+        ],
+        "rows": [
+            [{"value": "x", "tone": "strong", "suffix": {"text": "sweep"}}, 24040000, [3, 1]],
+            {"cells": [{"text": "y", "marker": "square"}, None, None], "emphasis": "dim"},
+        ],
+    }
+    doc["sections"][0].update(numbered=True, footnote="a note", key=[{"tag": "t", "text": "k"}])
+    description = ext.card_payload(doc)["embeds"][0]["description"]
+    assert "name | premium | size" in description
+    assert "x sweep | $24.04M | 3/1" in description
+    assert "y | — |" in description
+    assert "a note" not in description and "square" not in description
+
+
 def test_a_wide_cell_is_shortened():
     doc = _doc()
     doc["sections"][0]["table"]["rows"][0][0] = "x" * 150

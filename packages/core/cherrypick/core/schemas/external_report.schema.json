@@ -2,10 +2,86 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "external_report.schema.json",
   "title": "External report",
-  "description": "One report a person's own script writes to data/external/<id>.json for the console's External reports card. The single source of truth: cherrypick.core.external_report (Python) and the console server both read this file. Beyond the schema they check that id matches the filename and that every table row is as wide as its columns.",
+  "description": "One report a person's own script writes to data/external/<id>.json for the console's External reports card. The single source of truth: cherrypick.core.external_report (Python) and the console server both read this file. Beyond the schema they check that id matches the filename, that every table row is as wide as its columns, and that the presentation hints agree with the cells (a stacked column's cells have one number per segment, a bar column is numeric, a sign tone sits on a numeric format). Every presentation hint is optional: a file without them is a plain table.",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema", "id", "title", "source", "as_of", "stale_after_hours", "sections"],
+  "$defs": {
+    "tone": {
+      "description": "A cell's colour, by meaning: pos and neg are the console's positive and negative colours, warn its amber, muted the dimmed text colour, strong the full-strength text colour. Never an arbitrary colour, so every tone works in light and dark.",
+      "type": "string",
+      "enum": ["pos", "neg", "warn", "muted", "strong"]
+    },
+    "column": {
+      "description": "A column: a plain label, or an object that also says how its cells are formatted. align defaults to right for every format but text. format: text shows a cell as written; money $24.04M, $511K, $30.8K, $4.20 (a number is whole dollars); compact 639.1K; int 5,179; percent 56% (the number IS the percent: 56 means 56%, not 0.56); signed +76 or -44 (with a real minus sign); decimal a plain number to up to 6 places. tone sign colours a positive number with the positive colour and a negative one with the negative colour (it needs a numeric format). width narrow or wide asks for a thinner or fatter column. stack makes the column a stacked bar: its cells are arrays of one number per segment, drawn as one bar split in proportion, with the segment labels as a legend in the header.",
+      "oneOf": [
+        { "type": "string", "maxLength": 60 },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["label"],
+          "properties": {
+            "label": { "type": "string", "maxLength": 60 },
+            "align": { "type": "string", "enum": ["left", "right"] },
+            "format": { "type": "string", "enum": ["text", "money", "compact", "int", "percent", "signed", "decimal"] },
+            "tone": { "type": "string", "enum": ["none", "sign"] },
+            "width": { "type": "string", "enum": ["narrow", "wide"] },
+            "bar": {
+              "description": "Draw a bar for each number in this column. scale [min, max] fixes the scale (a value is drawn against it, negatives left of zero and positives right, so bars compare across rows and days); without it the column's largest magnitude is the scale. track draws a grey track under the bar. own_column puts the bar in its own column after the number rather than beside it. The section-level bars list is shorthand for {} on those columns.",
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "scale": { "type": "array", "minItems": 2, "maxItems": 2, "items": { "type": "number" } },
+                "track": { "type": "boolean" },
+                "own_column": { "type": "boolean" }
+              }
+            },
+            "stack": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 6,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["label"],
+                "properties": { "label": { "type": "string", "minLength": 1, "maxLength": 24 } }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "cell": {
+      "description": "A cell: a string, a number or null (a dash), or an object {value, text, tone, suffix, marker}. value is formatted by the column's format; text, when present, is shown instead (and is what the Discord card prints); suffix is a muted word after the cell, for example the kind of a contract; marker draws a small square or dot before the text. In a stacked column a cell is an array of numbers (or null) instead.",
+      "oneOf": [
+        { "type": ["string", "number", "null"], "maxLength": 200 },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "value": { "type": ["string", "number", "null"], "maxLength": 200 },
+            "text": { "type": "string", "maxLength": 200 },
+            "tone": { "$ref": "#/$defs/tone" },
+            "suffix": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["text"],
+              "properties": {
+                "text": { "type": "string", "maxLength": 60 },
+                "tone": { "$ref": "#/$defs/tone" }
+              }
+            },
+            "marker": { "type": "string", "enum": ["square", "dot"] }
+          }
+        },
+        {
+          "type": "array",
+          "maxItems": 6,
+          "items": { "type": ["number", "null"] }
+        }
+      ]
+    }
+  },
   "properties": {
     "schema": { "const": 1 },
     "id": { "type": "string", "pattern": "^[a-z0-9-]+$", "minLength": 1, "maxLength": 64 },
@@ -14,6 +90,7 @@
     "as_of": { "type": "string", "format": "date-time-offset" },
     "stale_after_hours": { "type": "number", "exclusiveMinimum": 0, "maximum": 8760 },
     "summary": { "type": "string", "maxLength": 200 },
+    "show_source_foot": { "type": "boolean", "description": "Draw the source and as_of line under every section card. Default true; the overview tab shows them either way." },
     "sections": {
       "type": "array",
       "minItems": 1,
@@ -26,6 +103,24 @@
             "required": ["heading", "table"],
             "properties": {
               "heading": { "type": "string", "minLength": 1, "maxLength": 120 },
+              "numbered": { "type": "boolean", "description": "Draw a leading # column counting the rows from 1." },
+              "key": {
+                "description": "The legend under the table: one line per entry, a tag (an abbreviation such as V>OI, in the tone), an optional label after it, and the text that explains it.",
+                "type": "array",
+                "maxItems": 12,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["tag", "text"],
+                  "properties": {
+                    "tag": { "type": "string", "minLength": 1, "maxLength": 16 },
+                    "tone": { "$ref": "#/$defs/tone" },
+                    "label": { "type": "string", "maxLength": 40 },
+                    "text": { "type": "string", "minLength": 1, "maxLength": 200 }
+                  }
+                }
+              },
+              "footnote": { "type": "string", "maxLength": 300, "description": "A muted line at the foot of the card." },
               "table": {
                 "type": "object",
                 "additionalProperties": false,
@@ -35,7 +130,7 @@
                     "type": "array",
                     "minItems": 1,
                     "maxItems": 12,
-                    "items": { "type": "string", "maxLength": 60 }
+                    "items": { "$ref": "#/$defs/column" }
                   },
                   "bars": {
                     "type": "array",
@@ -46,9 +141,27 @@
                     "type": "array",
                     "maxItems": 500,
                     "items": {
-                      "type": "array",
-                      "maxItems": 12,
-                      "items": { "type": ["string", "number", "null"], "maxLength": 200 }
+                      "description": "A row: an array of cells, or {cells, emphasis} where emphasis strong draws the whole row at full strength and dim mutes it.",
+                      "oneOf": [
+                        {
+                          "type": "array",
+                          "maxItems": 12,
+                          "items": { "$ref": "#/$defs/cell" }
+                        },
+                        {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": ["cells"],
+                          "properties": {
+                            "cells": {
+                              "type": "array",
+                              "maxItems": 12,
+                              "items": { "$ref": "#/$defs/cell" }
+                            },
+                            "emphasis": { "type": "string", "enum": ["strong", "dim"] }
+                          }
+                        }
+                      ]
                     }
                   }
                 }
