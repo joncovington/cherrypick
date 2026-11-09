@@ -447,6 +447,50 @@ def restore(cfg: dict[str, Any], to_dir: str) -> dict[str, Any]:
     return {"ok": True, "night": night, "restored_to": str(target), "files": count}
 
 
+def restore_over_home(zip_path: Path) -> dict[str, Any]:
+    """Put a backup's files back into the live home, over what is there. The one place a restore
+    touches the live tree, and only `run.py upgrade --rollback` calls it, with the suite stopped.
+
+    Every member is checked against the manifest's sha256 before anything is written, so a damaged
+    zip changes nothing. A SQLite file's `-wal`/`-shm`/`-journal` beside it are removed first: they
+    belong to the newer database being replaced, and left next to the restored one they would be
+    replayed into it. Files in the home that the backup does not hold are left alone."""
+    home = _home.home().resolve()
+    try:
+        zf = zipfile.ZipFile(zip_path)
+    except (OSError, zipfile.BadZipFile) as exc:
+        return {"ok": False, "error": f"cannot read {zip_path}: {exc}"}
+    with zf:
+        try:
+            manifest = json.loads(zf.read(MANIFEST))
+        except (KeyError, ValueError) as exc:
+            return {"ok": False, "error": f"{zip_path} has no readable {MANIFEST}: {exc}"}
+        entries = manifest.get("files", [])
+        for e in entries:
+            target = (home / e["path"]).resolve()
+            if not target.is_relative_to(home):
+                return {"ok": False, "error": f"{e['path']} points outside the home; nothing restored"}
+            if _sha256(zf.read(e["path"])) != e["sha256"]:
+                return {
+                    "ok": False,
+                    "error": f"{e['path']} does not match its manifest sha256; nothing restored",
+                }
+        for e in entries:
+            target = home / e["path"]
+            target.parent.mkdir(parents=True, exist_ok=True)
+            for sidecar in ("-wal", "-shm", "-journal"):
+                target.with_name(target.name + sidecar).unlink(missing_ok=True)
+            tmp = target.with_name(target.name + ".restoring")
+            tmp.write_bytes(zf.read(e["path"]))
+            os.replace(tmp, target)
+    return {
+        "ok": True,
+        "night": manifest.get("night"),
+        "files": len(entries),
+        "paths": [e["path"] for e in entries],
+    }
+
+
 def newest_age_hours(cfg: dict[str, Any], now: datetime | None = None) -> float | None:
     """Hours since the backup was written (by file time), or None when there is none."""
     path = latest_path(cfg)

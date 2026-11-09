@@ -1001,6 +1001,8 @@ def fill_earnings_times(metrics: dict[str, dict], times: dict[str, dict[str, str
 
 
 def build(cfg: dict[str, Any]) -> dict[str, Any]:
+    # When the reads began: a fill heard after this is not in the snapshot (`managerefresh.stored_snapshot`).
+    started_at = time.strftime("%Y-%m-%dT%H:%M:%S%z")
     positions = positions_mod.run(cfg)
     symbols = sorted(
         {
@@ -1040,6 +1042,7 @@ def build(cfg: dict[str, Any]) -> dict[str, Any]:
     return {
         "snapshot_version": SNAPSHOT_VERSION,
         "session": session,
+        "started_at": started_at,
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
         "benchmark": BENCHMARK,
         "positions": positions,

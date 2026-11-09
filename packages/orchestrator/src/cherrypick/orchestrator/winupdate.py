@@ -99,6 +99,7 @@ def job_times(jobs: dict[str, dict[str, Any]]) -> list[str]:
         m = re.match(pattern, str(st.get("schedule") or ""))
         if m:
             out.extend(m.group(1).split(", "))
+            out.extend(str(t) for t in st.get("step_times") or [])
     return out
 
 
@@ -109,7 +110,7 @@ def times_from_specs(specs) -> list[str]:
         t
         for s in specs
         if s.kind in ("daily", "monthly") and s.enabled and s.at_et and s.id not in RESTART_TOLERANT
-        for t in (s.times_et or (s.at_et,))
+        for t in (s.times_et or (s.at_et, *(st.at_et for st in s.steps if st.enabled)))
     ]
 
 

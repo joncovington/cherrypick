@@ -276,6 +276,9 @@ the optional Dolt download, asks for your tastytrade login, starts the suite, an
 <http://127.0.0.1:5070>. It is safe to run again, never overwrites your settings, and is how you add
 Dolt or Claude Code later. [QUICKSTART.md](QUICKSTART.md) is the same thing in plain language;
 [INSTALL.md](INSTALL.md) lists every step and option, and the developer path (`scripts/dev-install.*`).
+To move to a newer release later, run **`upgrade.cmd`** (Windows) or **`./upgrade.sh`**: it shows the
+release's notes, backs up, installs and checks, refuses while a live loop is armed or a live position is
+open, and `--rollback` undoes it ([the upgrading guide](docs/guide/upgrading.md)).
 
 Every command below is `python run.py <cmd>` from `packages/orchestrator`, using the installer's
 interpreter (`.venv\Scripts\python` on Windows, `.venv/bin/python` elsewhere) — the supervisor runs on

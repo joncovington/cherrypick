@@ -128,6 +128,13 @@ its rules suggest.
 Onto the Wheel page, in the same cycle as the put. You'll see the shares, what they really cost you
 after all the premium, and the covered call the rules suggest next.
 
+### I just traded. When does the positions page catch up?
+
+Within a minute or two of the last fill, during the session (09:36 to 16:10 ET). A trade that
+arrives as no order (an assignment, an exercise, a transfer) is found by a check of your held
+positions every five minutes. Discord hears about it only when the list of trades needing action
+changes. See [Live](live.md) for the settings.
+
 ### What's the difference between the two costs it shows for my shares?
 
 The tax basis is the price you got the shares at. The wheel basis is what they've really cost once
@@ -205,6 +212,10 @@ On purpose. The suite shows the account masked, with only the last four digits.
 Check whether the computer slept. A sleeping laptop misses its jobs. *Always-on machine* covers how
 to stop that.
 
+The morning and evening data runs (`morning-data`, `evening-data`) go in order. If one step fails, the
+System page and the warning name that step, and the steps that read its output do not run on stale
+files; the run is retried from the failed step.
+
 ### I changed a setting and nothing happened.
 
 Some jobs read their settings only when they start. Restart that job, or the suite, after editing.
@@ -216,7 +227,8 @@ with `python packages/orchestrator/run.py secrets-set --channel discord`.
 
 ### How do I upgrade?
 
-The console's status bar chip tells you when a new release is out. Stop the suite (`uninstall.cmd`
-or `./uninstall.sh`, which keeps your history and settings), get the new release, run the installer
-again, and read that release's notes on the Releases page first: they say what changed and anything
-you need to do.
+The console's status bar chip tells you when a new release is out. Run `upgrade.cmd` (or
+`./upgrade.sh`, or `/cherrypick-upgrade` in Claude Code) on a quiet evening after the close. It shows the
+new release's notes, backs up, installs, migrates, restarts and checks, and `--rollback` undoes it. It
+refuses while a live loop is armed or a live position is open. [Upgrading](upgrading.md) has the detail,
+including the one manual move from v0.11 to v0.12.

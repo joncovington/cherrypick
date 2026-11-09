@@ -297,7 +297,162 @@ RETRY_ON_FAILURE = {
     "futures-contracts": 2,
     "report-screener-greeks": 1,
     "backtest-fetch": 1,
+    # A pipeline retries from the step that failed (`pipeline.py`): the fetches it holds were retried
+    # twice each as jobs of their own.
+    "morning-data": 2,
+    "evening-data": 2,
 }
+
+
+# ------------------------------------------------------------------------------------- pipelines
+# The morning and evening data runs, each ONE supervisor job that runs its steps in order. Their
+# members were jobs of their own, chained only by start times someone guessed: when an early step ran
+# long or failed, a later one read the previous file and nothing said so. Membership and order are
+# here, because the job table is derived from config: a member that is off in config stays a step,
+# listed off with its reason, and is skipped; a member that cannot derive is missing from the run and
+# reported in `derive_jobs`' errors.
+#
+# Each member is (job id, independent, slot). `independent` is the one judgement: a failure of an
+# independent step is recorded and the run carries on, either because nothing later reads what it
+# writes, or because it is a fetch that keeps the file it already had on failure and the step after it
+# reads that file, as it did when the two were separate jobs. Every other failure stops the run, so a
+# step never reads what an earlier one failed to write. `slot` picks one time of a job that runs twice
+# a day: "last"/"first" is the time that joins the pipeline, the other stays a job of its own.
+MORNING_PIPELINE = "morning-data"
+EVENING_PIPELINE = "evening-data"
+PIPELINES: dict[str, tuple[tuple[str, bool, str | None], ...]] = {
+    MORNING_PIPELINE: (
+        # Fetches ahead of the landings. A failed fetch leaves the last good file, which the landing
+        # reads exactly as it did when it ran alone.
+        ("earnings-dolt-pull", True, None),
+        ("technicals-index-bars", True, None),
+        ("fundamentals-sec", True, None),
+        ("fundamentals-damodaran", True, None),
+        # The landings: the store, then what the board and the skate screen read from it.
+        ("technicals-land", False, None),
+        ("technicals-history", False, None),
+        ("technicals-fundamentals", False, None),
+        ("fundamentals-land", False, None),
+        # Readers of the store. None of their outputs is read by a later step.
+        ("technicals-report", True, None),
+        ("technicals-stage-lists", True, None),
+        ("fundamentals-valuation", True, None),
+        ("technicals-screeners", True, None),
+        ("technicals-board", True, None),
+        ("technicals-skate", True, None),
+        ("technicals-earnings-record", True, None),
+        ("technicals-adjust-check", True, None),
+    ),
+    EVENING_PIPELINE: (
+        # Inputs of the security list. Fetches keep the last good file on failure.
+        ("technicals-dollar-volume", True, None),
+        ("technicals-sectors", True, None),
+        ("technicals-earnings-times", True, None),
+        ("market-files", True, "last"),
+        # The security list, then the IV ranks and the liquidity verdict that read it, then the
+        # calendar that reads the ranks.
+        ("technicals-securities", False, None),
+        ("technicals-iv-rank", False, None),
+        ("technicals-liquidity", True, None),
+        ("technicals-earnings-calendar", False, "first"),
+        ("report-earnings-strikes", True, None),
+        # Fetches the next morning reads; nothing later in the evening does.
+        ("technicals-dividends", True, None),
+        ("technicals-yahoo-adjusted", True, None),
+        ("technicals-revisions", True, None),
+    ),
+}
+
+
+def pipeline_command(pythonw: str, launcher: str, name: str) -> tuple[str, ...]:
+    return (pythonw, launcher, "pipeline", name)
+
+
+def _split_slot(spec: JobSpec, which: str) -> tuple[JobSpec, JobSpec | None]:
+    """(the spec for the time that joins a pipeline, the job left with the other times or None)."""
+    times = spec.times_et or (spec.at_et or "",)
+    if len(times) == 1:
+        return spec, None
+    catchups = [slot_catchup(spec, i) for i in range(len(times))] if spec.times_et else [spec.catchup_minutes]
+    take = 0 if which == "first" else len(times) - 1
+    keep = [i for i in range(len(times)) if i != take]
+    step = replace(
+        spec, at_et=times[take], times_et=(), slot_catchup_minutes=(), catchup_minutes=catchups[take]
+    )
+    left_times = tuple(times[i] for i in keep)
+    left_cu = tuple(catchups[i] for i in keep)
+    left = replace(
+        spec,
+        at_et=left_times[0],
+        times_et=left_times if len(left_times) > 1 else (),
+        slot_catchup_minutes=left_cu if len(left_times) > 1 else (),
+        catchup_minutes=left_cu[0],
+    )
+    return step, left
+
+
+def fold_pipelines(jobs: list[JobSpec], pythonw: str, launcher: str) -> list[JobSpec]:
+    """`jobs` with each pipeline's members replaced by the pipeline job (at the place of its first
+    member). The old ids leave the table, so the supervisor prunes their registry rows."""
+    by_id = {j.id: j for j in jobs}
+    placed: dict[str, JobSpec | None] = {}  # member id -> what stays in the table in its place
+    pipes: dict[str, JobSpec] = {}
+    for name, members in PIPELINES.items():
+        steps: list[PipelineStep] = []
+        for job_id, independent, slot in members:
+            spec = by_id.get(job_id)
+            if spec is None or spec.kind != KIND_DAILY:
+                continue
+            left = None
+            if slot is not None:
+                spec, left = _split_slot(spec, slot)
+            placed[job_id] = left
+            steps.append(
+                PipelineStep(
+                    id=job_id,
+                    argv=spec.argv,
+                    at_et=str(spec.at_et),
+                    cwd=spec.cwd,
+                    catchup_minutes=spec.catchup_minutes,
+                    trading_days_only=spec.trading_days_only,
+                    independent=independent,
+                    enabled=spec.enabled,
+                    enabled_reason=spec.enabled_reason,
+                )
+            )
+        if not steps:
+            continue
+        live = [s for s in steps if s.enabled]
+        first = (live or steps)[0]
+        pipes[name] = JobSpec(
+            id=name,
+            argv=pipeline_command(pythonw, launcher, name),
+            kind=KIND_DAILY,
+            at_et=first.at_et,
+            # The longest of its steps': a pipeline caught up late runs every step that is still wanted.
+            catchup_minutes=max((s.catchup_minutes for s in (live or steps)), default=0),
+            trading_days_only=False,  # each step keeps its own gate
+            tags=("network",),
+            enabled=bool(live),
+            enabled_reason=""
+            if live
+            else "every step is off in config (" + ", ".join(s.id for s in steps) + ")",
+            steps=tuple(steps),
+        )
+    out: list[JobSpec] = []
+    emitted: set[str] = set()
+    owner = {m[0]: name for name, members in PIPELINES.items() for m in members if name in pipes}
+    for j in jobs:
+        if j.id in placed:
+            name = owner[j.id]
+            if name not in emitted:
+                emitted.add(name)
+                out.append(pipes[name])
+            if placed[j.id] is not None:
+                out.append(placed[j.id])
+            continue
+        out.append(j)
+    return out
 
 
 def is_fixed_time(spec: JobSpec) -> bool:
@@ -322,6 +477,25 @@ def needs_network(spec: JobSpec) -> bool:
 
 def uses_browser(spec: JobSpec) -> bool:
     return is_fixed_time(spec) and script_of(spec) in BROWSER_SCRIPTS
+
+
+@dataclass(frozen=True)
+class PipelineStep:
+    """One step of a pipeline (`JobSpec.steps`): a command run as its own subprocess, with the argv,
+    time and gate the job it replaced had. `at_et` is the earliest the step may start (the pipeline
+    waits for it, so a step keeps the spacing its configured time gave it), and a step also never
+    starts before the one ahead of it has ended. `independent` says a failure is recorded and the run
+    carries on; every other failure stops the pipeline there."""
+
+    id: str
+    argv: tuple[str, ...]
+    at_et: str
+    cwd: str | None = None
+    catchup_minutes: int = 0
+    trading_days_only: bool = False
+    independent: bool = False
+    enabled: bool = True
+    enabled_reason: str = ""
 
 
 @dataclass(frozen=True)
@@ -382,6 +556,9 @@ class JobSpec:
     # uses `catchup_minutes`. See `_slot_decision` for how the slot that matters is chosen.
     times_et: tuple[str, ...] = ()
     slot_catchup_minutes: tuple[int, ...] = ()
+    # A pipeline: a daily job whose argv is `run.py pipeline <id>` and whose steps run in this order,
+    # each as its own subprocess (`orchestrator/pipeline.py`). Empty for every other job.
+    steps: tuple[PipelineStep, ...] = ()
 
     def __post_init__(self) -> None:
         """Validate at construction so a malformed config block fails inside `derive_jobs`'s
@@ -404,6 +581,13 @@ class JobSpec:
                 raise ValueError(f"{self.id}: slot_catchup_minutes must give one value per time")
         elif self.slot_catchup_minutes:
             raise ValueError(f"{self.id}: slot_catchup_minutes needs times_et")
+        if self.steps:
+            if self.kind != KIND_DAILY or self.times_et:
+                raise ValueError(f"{self.id}: steps apply to a single-time daily job only")
+            if len({s.id for s in self.steps}) != len(self.steps):
+                raise ValueError(f"{self.id}: step ids must be distinct")
+            for s in self.steps:
+                _hhmm(str(s.at_et))
         if self.kind in (KIND_DAILY, KIND_MONTHLY):
             _hhmm(str(self.at_et or ""))
         if self.kind == KIND_MONTHLY and not 1 <= int(self.day_of_month) <= 28:
@@ -443,6 +627,8 @@ class JobSpec:
         if self.window_start and self.window_end:
             side = "outside" if self.window_invert else "within"
             base += f" {side} {self.window_start}-{self.window_end} ET"
+        if self.steps:
+            base += f", {len(self.steps)} steps in order"
         if self.trading_days_only:
             base += ", trading days"
         if self.quiet_interval_seconds:
@@ -874,6 +1060,7 @@ def derive_jobs(
     now: datetime,
     arm_records: dict[str, dict[str, Any]] | None = None,
     include_retired: bool = False,
+    pipelines: bool = True,
 ) -> tuple[list[JobSpec], dict[str, str]]:
     """Project config into the supervisor's job table. Returns (jobs, errors) where `errors` maps a
     job id to why its derivation failed (that job is omitted; everything else derives normally).
@@ -881,6 +1068,9 @@ def derive_jobs(
     Disabled-by-config jobs are INCLUDED with enabled=False + a reason, so status/doctor can keep
     the off-by-choice-is-healthy distinction the schtasks registry had. The exception is a retired
     feature's job while it is off (`RETIRED_WHEN_OFF`), left out unless `include_retired`.
+
+    The members of `PIPELINES` come out as the pipeline job that runs them in order; `pipelines=False`
+    returns them as the jobs they are on their own (`bootstrap` runs those once, by hand).
     """
     jobs: list[JobSpec] = []
     errors: dict[str, str] = {}
@@ -2500,6 +2690,8 @@ def derive_jobs(
     # supervisor drives rather than every switch ever thrown; the switch still brings them back.
     if not include_retired:
         jobs = [j for j in jobs if j.enabled or j.id not in RETIRED_WHEN_OFF]
+    if pipelines:
+        jobs = fold_pipelines(jobs, pythonw, launcher)
     return jobs, errors
 
 

@@ -153,6 +153,11 @@ before changing it, and change it only with a re-score.
   TradingView's "closed once entered" convention does not fit.
 
 ## Scheduling
+Every job named below except `technicals-income-lists` and the late `-earnings-calendar` pass runs as a
+step of the orchestrator's `morning-data` or `evening-data` pipeline (`orchestrator/jobspec.PIPELINES`):
+in order, each no earlier than its time here, a failed landing stopping the steps that read it. The times
+and the `*_at` keys are unchanged; they are the earliest a step may start. See
+`docs/operations.md#pipelines`.
 
 `technicals-land` (06:15 ET daily, after the 05:30 Dolt pull; config block `technicals`), enabled
 with Dolt set up. The sql-server it reads is kept by earnings' declared `dolt_service`, with or

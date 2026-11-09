@@ -625,6 +625,13 @@
       "start": "09:36",
       "end": "16:10"
     },
+    "_on_change_note": "Evaluate when the account changes, not only at the scheduled times (the `manage-marks` job takes the full snapshot, so it needs 'marks' on). A fill starts a run once no newer fill has arrived for 'settle_seconds' (a roll's legs or a burst of orders are one run). The broker's held positions are read every 'positions_check_seconds' (at least 60, read-only) and compared with the stored snapshot's, which catches an assignment, exercise or transfer that arrives as no order. No such run starts within 'min_gap_seconds' of the last snapshot. A run then posts only when the trades needing action differ from the last post's (the day's first run always posts), with 'notify_every_minutes' as the floor between posts, and the post says what started the run. 'enabled': false restores the 30-second fill wait and the timer-only post.",
+    "on_change": {
+      "enabled": true,
+      "settle_seconds": 60,
+      "min_gap_seconds": 120,
+      "positions_check_seconds": 300
+    },
     "_time_spreads_note": "The time-spread scanner: at 'at' ET on trading days the `manage-time-spreads` job runs `run.py time-spreads` -- a read-only scan of the tradable names' term structure and the shortlist's chains (scripts/fetch_time_spreads.py), then one full manage snapshot so Live, portfolio sizes the calendars and diagonals. No tested edge: the rows are ordered by the untested front/back IV ratio. On whenever manage is; 'enabled': false turns it off alone.",
     "time_spreads": {
       "enabled": true,

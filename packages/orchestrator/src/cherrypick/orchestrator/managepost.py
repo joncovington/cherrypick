@@ -31,6 +31,34 @@ def post_due(last: dict[str, Any] | None, now: datetime, session: str | None, ev
         return True
 
 
+def post_due_on_change(
+    last: dict[str, Any] | None, now: datetime, session: str | None, every: int, sig: list[str]
+) -> bool:
+    """Whether this run posts when posts follow the account, not a timer (`manage.on_change`): the
+    day's first run always, and after that only when the trades needing action (`signature`) differ from
+    the last post's. `every` stays a floor between posts, so a set that flaps cannot flood the channel; a
+    change held back by it posts on the first run past the floor, since it still differs then. A last
+    post with no signature (or an unreadable one) posts: a missed change costs more than one extra."""
+    if not last or last.get("session") != session or not isinstance(last.get("signature"), list):
+        return True
+    if last["signature"] == sig:
+        return False
+    return every <= 0 or post_due(last, now, session, every)
+
+
+def signature(doc: dict[str, Any]) -> list[str]:
+    """The trades needing action and what to do with each, as sorted strings: what a person reading the
+    post would act on. A price move that changes no action leaves it as it was."""
+    out = []
+    for account in doc.get("accounts") or []:
+        for t in acting(account):
+            what = t.get("trade_id") or t.get("underlying") or "?"
+            out.append(
+                f"{account.get('account') or ''}|{what}|{(t.get('recommendation') or {}).get('action')}"
+            )
+    return sorted(out)
+
+
 # Not acting: a held trade, and one the clock settles without a decision.
 QUIET = frozenset({"HOLD", "SETTLES"})
 
@@ -76,8 +104,9 @@ def acting(account: dict[str, Any]) -> list[dict[str, Any]]:
     return sorted(out, key=key)
 
 
-def build(doc: dict[str, Any], at_et: str) -> tuple[str, str, dict[str, Any]]:
-    """(title, message, embed) for one evaluation, run at `at_et` (HH:MM ET)."""
+def build(doc: dict[str, Any], at_et: str, reason: str | None = None) -> tuple[str, str, dict[str, Any]]:
+    """(title, message, embed) for one evaluation, run at `at_et` (HH:MM ET), because of `reason`
+    (what started the run: the scheduled time, a fill, a position change) when it is given."""
     accounts = doc.get("accounts") or []
     many = len(accounts) > 1
     lines: list[str] = []
@@ -98,7 +127,8 @@ def build(doc: dict[str, Any], at_et: str) -> tuple[str, str, dict[str, Any]]:
     if not n_act:
         lines.append(f"Nothing needs action: all {n_all} trades hold.")
     title = f"Positions to manage, {doc.get('session') or '?'} {at_et} ET: {n_act} of {n_all}"
-    message = "\n".join(lines) + "\nAdvice only; see the console's Live → positions."
+    why = f"\nRun because: {reason}." if reason else ""
+    message = "\n".join(lines) + why + "\nAdvice only; see the console's Live → positions."
     description = message if len(message) <= _DESCRIPTION_MAX else message[:_DESCRIPTION_MAX] + "\n…"
     color = _GREEN if worst is None else (_AMBER if _ORDER.get(worst, 1) >= 2 else _RED)
     embed = {"title": title, "description": description, "color": color}

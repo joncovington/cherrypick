@@ -584,6 +584,11 @@ class Supervisor:
         st.pop("pid_started_at", None)
         st["last_exit_code"] = code
         st["last_exit_at"] = _utc_iso()
+        if spec.steps:
+            # A pipeline's per-step results, where `status` and the console's System page read them.
+            from . import pipeline
+
+            st["steps"] = pipeline.summary(spec.id)
         st.pop("last_exit_requested", None)  # set again below only if this exit was asked for
         req = consume_restart_request(spec.id)
         if req is not None:
@@ -955,6 +960,7 @@ class Supervisor:
                     "kind": spec.kind,
                     "interval_seconds": spec.interval_seconds or None,
                     "schedule": spec.describe(),
+                    "step_times": [s.at_et for s in spec.steps if s.enabled] or None,
                 }
             )
             # Asked-for stops and restarts first, so nothing below can launch beside a child that
