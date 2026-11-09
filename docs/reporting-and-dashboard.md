@@ -142,14 +142,14 @@ net +$48 · day 7 trades net +$61`, with a matching Discord card. Arms are **cou
 ## What was sent: the outbound record
 
 Every webhook send in the suite goes through one function, `notify.notifier.send_webhook`: the
-QuikOptions series, the flies payoff charts, the status digest, trade and watchdog notifications,
+external-report posts, the flies payoff charts, the status digest, trade and watchdog notifications,
 and anything posted by hand with `run.py notify-send`. Each send, landed or not, appends a line to
 `~/.cherrypick/data/outbound/YYYY-MM.jsonl` (under `data/`, so the log archive never moves it):
 the text and card fields sent, a fingerprint of each image, the webhook's name (never its URL), the
 message id Discord returns, the session, and fingerprints of the files the message was built from.
 
 `run.py sent` reads it back. `--stale` names a post whose inputs changed after it went out — the
-question that took a rebuilt parser and a backup to answer for the 10-05 QuikOptions post.
+question that took a rebuilt parser and a backup to answer for a post on 10-05.
 `--verify` asks Discord whether each message is still there. A correction sent with
 `notify-send --refers-to <message id>` is shown against the post it corrects. Two senders record no
 inputs, by design: the flies payoff chart (its ledger is a live SQLite file that changes every tick)

@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import Any
 
 from . import config as cfgmod
+from . import external_reports as extrep
 from . import timeutil
 
 KIND_INTERVAL = "interval"
@@ -159,7 +160,6 @@ CATCHUP_MINUTES = {
     # capture keys its files by the session of the latest bar, so a late one still files right.
     # The browser checks (2026-10-09): only useful before the run they check, so a short window.
     "report-browser-check": 15,
-    "quikoptions-browser-check": 25,
     "report-edition": 180,
     "report-edition-retry": 180,
     "report-charts": 300,
@@ -196,15 +196,6 @@ CATCHUP_MINUTES = {
     # A close card caught up mid-evening still describes the settled day correctly; past that the
     # next morning's cards take over.
     "status-digest-close": 90,
-    # QuikOptions (docs/quikoptions-plan.md): the capture is the session's final page, worth taking
-    # all evening; scoring and the post follow it; the confirmation and its post only make sense
-    # the morning after, before the next session's capture replaces the question.
-    "quikoptions-capture": 300,
-    "quikoptions-score": 300,
-    "quikoptions-post": 240,
-    "quikoptions-confirm": 300,
-    "quikoptions-morning": 240,
-    "quikoptions-weekly": 300,
 }
 
 # Quiet-hours cadences (2026-10-12). The interval jobs below ran at their session cadence around the
@@ -263,7 +254,7 @@ RETIRED_WHEN_OFF = frozenset(
 )
 
 # The browser-driven collectors: one browser session on this machine at a time.
-BROWSER_SCRIPTS = frozenset({"fetch_vendor_edition.py", "fetch_quikoptions.py"})
+BROWSER_SCRIPTS = frozenset({"fetch_vendor_edition.py"})
 
 # Fixed-time jobs that send their OWN alert when they fail (2026-10-08). The watchdog's generic
 # failed-job check skips their failures so one fault is one message; a MISSED run is still reported
@@ -276,9 +267,7 @@ NOTIFIES_OWN_FAILURE = frozenset(
         "report-edition",  # the vendor collector's own warnings
         "report-edition-retry",
         "report-charts",
-        "quikoptions-capture",  # its own throttle / needs-a-person warnings
         "report-browser-check",  # `smoke` warns on its own: browser would not start / signed out
-        "quikoptions-browser-check",
         "review-provisional",  # "Suite review (...) failed"
         "review-final",
         "manage-eval",  # "Position evaluation failed"
@@ -308,10 +297,6 @@ RETRY_ON_FAILURE = {
     "futures-contracts": 2,
     "report-screener-greeks": 1,
     "backtest-fetch": 1,
-    # A page that timed out is not a refusal: a 403/429 starts the script's own 24-hour cooldown,
-    # and a run inside it exits 0 having requested nothing. On 2026-11-02 one ERR_TIMED_OUT at
-    # 16:45 ET cost the day's capture and post.
-    "quikoptions-capture": 2,
 }
 
 
@@ -648,15 +633,6 @@ def _minutes_before(hhmm: str, minutes: int) -> str:
 
 def _vendor_collector_script(launcher: str) -> str:
     return _suite_script(launcher, "fetch_vendor_edition.py")
-
-
-# How long a QuikOptions step waits for the one before it (`--wait`): past the capture's jitter and
-# its paced run, so a wake that fires the whole evening at once still runs it in order.
-QUIKOPTIONS_WAIT_MINUTES = 45
-
-
-def _quikoptions_script(launcher: str, name: str) -> str:
-    return _suite_script(launcher, "fetch_quikoptions.py" if name == "fetch" else f"quikoptions_{name}.py")
 
 
 def _universe_script(launcher: str) -> str:
@@ -2229,66 +2205,26 @@ def derive_jobs(
                 enabled_reason=uv_reason,
             ),
         )
-    qo = cfgmod.quikoptions_settings(cfg)
-    qo_off = "disabled in config (quikoptions.enabled)"
-    post_off = "disabled in config (quikoptions.post, which needs quikoptions.enabled)"
-    capture_argv = (
-        "hot-options",
-        "--jitter",
-        str(qo["jitter_minutes"]),
-        *(() if qo["headed"] else ("--headless",)),
-    )
-    wait = ("--wait", str(QUIKOPTIONS_WAIT_MINUTES))
-    for job_id, at, script, args, on, reason in (
-        # Scripts, not packages: the capture signs in to a third-party site (paced, one session, a
-        # 24-hour cooldown after a refusal), scoring and confirming read the broker (read-only market
-        # data), and the posts push a webhook. A day with no capture leaves the rest nothing to do.
-        # The same local check, half an hour before the capture (`smoke`, never a site visit).
-        (
-            "quikoptions-browser-check",
-            _minutes_before(qo["at"], 30),
-            "fetch",
-            ("smoke",),
-            qo["enabled"],
-            qo_off,
-        ),
-        ("quikoptions-capture", qo["at"], "fetch", capture_argv, qo["enabled"], qo_off),
-        (
-            "quikoptions-score",
-            qo["score_at"],
-            "flow",
-            ("score", "--require-today", *wait),
-            qo["enabled"],
-            qo_off,
-        ),
-        ("quikoptions-confirm", qo["confirm_at"], "flow", ("confirm",), qo["enabled"], qo_off),
-        ("quikoptions-post", qo["post_at"], "post", wait, qo["post"], post_off),
-        (
-            "quikoptions-morning",
-            qo["morning_at"],
-            "post",
-            ("--kind", "morning", *wait),
-            qo["post"] and qo["post_morning"],
-            post_off if not qo["post"] else "disabled in config (quikoptions.post_morning)",
-        ),
-        (
-            "quikoptions-weekly",
-            qo["weekly_at"],
-            "post",
-            ("--kind", "weekly"),
-            qo["post"] and qo["post_weekly"],
-            post_off if not qo["post"] else "disabled in config (quikoptions.post_weekly)",
-        ),
-    ):
+    # External reports (docs/guide/external-reports.md): one daily job per `external_reports` entry,
+    # `run.py external-run <id>`, which starts the person's own script (always under the suite home)
+    # and judges and posts what it wrote. A refused entry is listed off with its reason.
+    for position, entry in enumerate(extrep.entries(cfg), 1):
+        rid = entry["id"]
+        if not isinstance(rid, str) or not extrep.ID_PATTERN.match(rid):
+            errors[f"external-entry-{position}"] = f"external_reports entry {position}: {entry['problem']}"
+            continue
+        on = entry["enabled"] and entry["problem"] is None
+        reason = entry["problem"] or "disabled in config (external_reports entry enabled: false)"
         add(
-            job_id,
-            lambda job_id=job_id, at=at, script=script, args=args, on=on, reason=reason: JobSpec(
-                id=job_id,
-                argv=(pythonw, _quikoptions_script(launcher, script), *args),
+            f"{extrep.JOB_PREFIX}{rid}",
+            lambda rid=rid, entry=entry, on=on, reason=reason: JobSpec(
+                id=f"{extrep.JOB_PREFIX}{rid}",
+                argv=(pythonw, launcher, "external-run", rid),
+                tags=("network",),
                 kind=KIND_DAILY,
-                at_et=at,
-                catchup_minutes=CATCHUP_MINUTES[job_id],
-                trading_days_only=True,
+                at_et=entry["at_et"] or "00:00",
+                catchup_minutes=extrep.CATCHUP_MINUTES,
+                trading_days_only=entry["trading_days_only"],
                 enabled=on,
                 enabled_reason="" if on else reason,
             ),

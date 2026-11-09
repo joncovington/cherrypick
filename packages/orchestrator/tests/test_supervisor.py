@@ -936,15 +936,15 @@ def test_two_browser_jobs_never_run_at_once(spawned, fixed_jobs):
     fixed_jobs.extend(
         [
             _daily("report-charts", "fetch_vendor_edition.py"),
-            _daily("quikoptions-capture", "fetch_quikoptions.py"),
+            _daily("report-edition", "fetch_vendor_edition.py"),
         ]
     )
     sup = supervisor.Supervisor(base_cfg())
     assert sup.pass_once(now=EVENING)["started"] == ["report-charts"]
-    assert sup._state["quikoptions-capture"]["waiting"] == "browser"
+    assert sup._state["report-edition"]["waiting"] == "browser"
     assert sup.pass_once(now=EVENING)["started"] == []  # the vendor browser is still up
     next(p for p in spawned if "fetch_vendor_edition.py" in p.argv[-1]).exit(0)
-    assert sup.pass_once(now=EVENING)["started"] == ["quikoptions-capture"]
+    assert sup.pass_once(now=EVENING)["started"] == ["report-edition"]
 
 
 def test_a_repeatable_fetch_retries_after_a_failure_and_others_do_not(spawned, fixed_jobs):
@@ -981,7 +981,7 @@ def test_the_rules_read_the_job_table():
     """Which jobs the holds apply to, from what each job runs -- not a hand-kept list."""
     assert jobspec.needs_network(_daily("x", "fetch_iv_rank.py"))
     assert not jobspec.needs_network(_daily("technicals-land"))
-    assert jobspec.uses_browser(_daily("x", "fetch_quikoptions.py"))
+    assert jobspec.uses_browser(_daily("x", "fetch_vendor_edition.py"))
     assert not jobspec.uses_browser(_daily("x", "fetch_market_files.py"))
     tagged = jobspec.JobSpec(
         id="reconcile",

@@ -41,7 +41,7 @@ included. But its history reaches back about one week only. So:
 
 Rejected, and why:
 
-- **QuikOptions flow** (`scripts/quikoptions_flow.py`) lists the day's top trades only, and its names
+- **A top-trades flow list** (the earlier hand-run scorer, removed from the suite in v0.12.0) listed the day's top trades only, and its names
   rarely coincide with the vendor's flow tags. It stays what it is: a daily read with its own test.
 - **Cboe Open-Close and Nasdaq Trade Outline** state origin (customer, firm, market maker) and
   opening or closing outright, which no inference here can. They cover their own exchanges only and
@@ -77,7 +77,7 @@ broker's prints have no gap: a cancel there names the print it replaces.
 
 **Its side** comes from where it filled against the quote standing then: edge = (price − mid) / half
 the spread. At or past +0.5 it is **bought**; at or past −0.5 **sold**; between, **unread** and
-never tagged. That is the QuikOptions scorer's `READ_EDGE`, kept so the two reads agree on what
+never tagged. That is the earlier scorer's edge rule, kept so the two reads agree on what
 "bought" means.
 
 **Its size** is premium (contracts × 100 × price) and, beside it, delta dollars (contracts × 100 ×

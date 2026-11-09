@@ -102,6 +102,12 @@ Subcommands:
   remind-done          Close a reminder by hand (--reminder-id, --note).
   remind-cancel        Drop a reminder (--reminder-id).
   remind-run           Push the due reminders, close the met ones (the supervisor's reminders job).
+  external-check       Judge one external report file (the path after the verb) against the
+                       contract: print what the console card will draw, or every reason it is
+                       invalid. Exit 0 valid, 1 invalid. docs/guide/external-reports.md.
+  external-run         Run one `external_reports` entry (its id after the verb): the person's
+                       script, then the check, then the Discord post when the entry asks for one.
+                       The supervisor's `external-<id>` job.
 """
 
 from __future__ import annotations
@@ -1885,6 +1891,29 @@ def cmd_remind_run(cfg) -> None:
     _emit(reminders.run(cfg))
 
 
+def cmd_external_check(path: str | None) -> None:
+    """What the console card will draw for one report file, or every reason it is invalid."""
+    from cherrypick.core import external_report
+
+    if not path:
+        print("external-check needs the report file: run.py external-check <file>")
+        sys.exit(2)
+    result = external_report.check_file(path)
+    for line in external_report.describe(result):
+        print(line)
+    sys.exit(0 if result.valid else 1)
+
+
+def cmd_external_run(cfg, report_id: str | None) -> None:
+    """The supervisor's `external-<id>` job: the script, the check, the post. Exit 1 when it fails."""
+    from cherrypick.orchestrator import external_reports
+
+    out = external_reports.run(cfg, report_id)
+    _emit(out)
+    if not out.get("ok"):
+        sys.exit(1)
+
+
 def cmd_power_watch(cfg) -> None:
     """Notify every channel while this machine is on battery (orchestrator/powerwatch.py)."""
     from cherrypick.orchestrator import powerwatch
@@ -2538,13 +2567,15 @@ def build_parser() -> argparse.ArgumentParser:
             "remind-done",
             "remind-cancel",
             "remind-run",
+            "external-check",
+            "external-run",
         ],
     )
     parser.add_argument(
         "--channel",
         choices=list(notify_secrets.PUSH_CHANNELS + notify_secrets.DEDICATED),
         help="Secrets-set/secrets-delete: a push channel, or a dedicated one "
-        "(discord_reporting: the reporting channel the QuikOptions series posts to, never suite alerts)",
+        "(discord_reporting: the reporting channel external reports post to, never suite alerts)",
     )
     parser.add_argument(
         "--url",
@@ -2753,7 +2784,8 @@ def build_parser() -> argparse.ArgumentParser:
         nargs="?",
         default=None,
         help="For restart/stop/start: a supervisor job (console, flies-paper, ...), `streamer`, or a "
-        "service id -- `ps` lists them. For service: prepare | status | uninstall",
+        "service id -- `ps` lists them. For service: prepare | status | uninstall. For external-check: "
+        "the report file. For external-run: the entry's id",
     )
     parser.add_argument(
         "--query",
@@ -2960,6 +2992,8 @@ def main() -> None:
         "remind-done": lambda: cmd_remind_close(args, done=True),
         "remind-cancel": lambda: cmd_remind_close(args, done=False),
         "remind-run": lambda: cmd_remind_run(cfg),
+        "external-check": lambda: cmd_external_check(args.name),
+        "external-run": lambda: cmd_external_run(cfg, args.name),
     }
     dispatch[args.command]()
 

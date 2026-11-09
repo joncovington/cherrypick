@@ -249,7 +249,7 @@ def write_configs(ctx: Ctx) -> None:
     for name, mod in cfg["modules"].items():
         mod["enabled"] = name in shipped_on
     cfg["capabilities"] = {"claude": False, "dolt": True}
-    for key in ("quikoptions", "market_report", "advisor", "backtest", "config_backup"):
+    for key in ("market_report", "advisor", "backtest", "config_backup"):
         if key in cfg and isinstance(cfg[key], dict):
             cfg[key]["enabled"] = False
     cfg["manage"]["enabled"] = True

@@ -745,70 +745,6 @@ def market_report_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-# The Discord series' title: one line a person chose, so a rule the console's config editor and the
-# post script both apply. The session date is always appended after it.
-QUIKOPTIONS_TITLE_MAX = 80
-
-
-def quikoptions_title_problem(title: Any) -> str | None:
-    """Why `title` cannot head the Discord series, or None: non-empty after trimming, one line, at
-    most QUIKOPTIONS_TITLE_MAX characters."""
-    if not isinstance(title, str) or not title.strip():
-        return "the title is empty"
-    if "\n" in title or "\r" in title:
-        return "the title must be one line"
-    if len(title.strip()) > QUIKOPTIONS_TITLE_MAX:
-        return f"the title is longer than {QUIKOPTIONS_TITLE_MAX} characters"
-    return None
-
-
-# Which webhook the series posts to: the suite's own Discord notify webhook (`notify`, keyring
-# entry `discord`), or the reporting channel (`reporting`, `discord_reporting`). A choice, never a
-# fallback: with the chosen one not stored, nothing is posted.
-QUIKOPTIONS_WEBHOOKS = {"notify": "discord", "reporting": "discord_reporting"}
-# The choice's earlier spelling, which resolves for good (renamed 2026-10-03).
-QUIKOPTIONS_WEBHOOK_ALIASES = {"dedicated": "reporting"}
-
-# The Options flow `today` cards the series can post, by title, and the default: a short series.
-QUIKOPTIONS_CARDS = (
-    "Derived flow",
-    "Net by name",
-    "Trades",
-    "Names across tables",
-    "Largest by contracts",
-    "Top sweeps",
-    "Top spreads",
-    "Vol / OI",
-)
-# `Events` is a section with no card: the session's high-impact releases, from the calendar capture.
-QUIKOPTIONS_SECTIONS = (*QUIKOPTIONS_CARDS, "Events")
-QUIKOPTIONS_DEFAULT_CARDS = ("Derived flow", "Trades", "Top spreads", "Events")
-# Names a config may still carry from before a card was renamed: they resolve for good.
-QUIKOPTIONS_CARD_ALIASES = {"Birdseye": "Trades"}
-# How the series is sent: card images two to a message, one to a message, one embed of small
-# tables, or plain text (scripts/quikoptions_post.py).
-QUIKOPTIONS_STYLES = ("cards", "singles", "embed", "text")
-
-
-def quikoptions_post_problem(q: dict[str, Any]) -> str | None:
-    """Why the series' `post_webhook` or `post_cards` cannot be used, or None. Checked by the post
-    script before anything is sent: a wrong value refuses the run rather than quietly becoming
-    another one."""
-    hook = q.get("post_webhook", "reporting")
-    if QUIKOPTIONS_WEBHOOK_ALIASES.get(hook, hook) not in QUIKOPTIONS_WEBHOOKS:
-        return f"post_webhook must be one of {sorted(QUIKOPTIONS_WEBHOOKS)}, not {hook!r}"
-    style = q.get("post_style", "singles")
-    if style not in QUIKOPTIONS_STYLES:
-        return f"post_style must be one of {list(QUIKOPTIONS_STYLES)}, not {style!r}"
-    cards = q.get("post_cards", list(QUIKOPTIONS_DEFAULT_CARDS))
-    if not isinstance(cards, list) or not cards:
-        return "post_cards must be a non-empty list of card titles"
-    unknown = [c for c in cards if QUIKOPTIONS_CARD_ALIASES.get(c, c) not in QUIKOPTIONS_SECTIONS]
-    if unknown:
-        return f"post_cards names sections there are not: {unknown} (known: {list(QUIKOPTIONS_SECTIONS)})"
-    return None
-
-
 def fundamentals_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     """Resolved scheduling for packages/fundamentals (2026-10-29): the fair-value file and what feeds it.
     ON by default wherever technicals is on: it reads technicals' bars and the local Dolt clones.
@@ -879,51 +815,6 @@ def backtest_settings(cfg: dict[str, Any]) -> dict[str, Any]:
         "fetch_recent_sessions": int(b.get("fetch_recent_sessions", 5)),
         "inventory": bool(b.get("inventory", fetch)),
         "inventory_interval_minutes": int(b.get("inventory_interval_minutes", 10)),
-    }
-
-
-def quikoptions_settings(cfg: dict[str, Any]) -> dict[str, Any]:
-    """QuikOptions' Hot Options Report (scripts/fetch_quikoptions.py, docs/quikoptions-plan.md):
-    the capture, the console's Options flow page, and the daily Discord series.
-
-    OFF by default: the capture signs in to a third-party site with a browser profile a person
-    signed in to by hand (`python scripts/fetch_quikoptions.py login`), and a job that fails every
-    day for want of one is noise. `enabled` also shows the console's Options flow page. `post` is
-    the Discord series, its own switch and OFF even with `enabled` on, because it republishes the
-    site's figures; it needs `enabled`. `post_webhook` chooses the suite's Discord notify webhook
-    or the series' own; `post_cards` the cards it pictures. A title that breaks the rule falls
-    back to the default rather than heading the series badly; the post script refuses a bad title,
-    webhook or card list outright (`quikoptions_post_problem`).
-    """
-    q = cfg.get("quikoptions", {}) or {}
-    enabled = bool(q.get("enabled", False))
-    title = q.get("post_title", "Hot options")
-    # The day's timeline (ET), 30-60 minutes after the close: capture (with up to `jitter_minutes`
-    # of random delay), score once the broker's greeks can be read, post; the next trading morning,
-    # the open-interest confirmation and its post; on the week's last session, the scorecard.
-    return {
-        "enabled": enabled,
-        "at": q.get("at", "16:30"),
-        "jitter_minutes": int(q.get("jitter_minutes", 10)),
-        # Headless unless asked (decided 2026-10-08): a window opening on the desktop is disruptive,
-        # and the visible browser is for a session a person is watching for errors.
-        "headed": bool(q.get("headed", False)),
-        "score_at": q.get("score_at", "16:50"),
-        "confirm_at": q.get("confirm_at", "08:30"),
-        "post": enabled and bool(q.get("post", False)),
-        "post_at": q.get("post_at", "17:00"),
-        "morning_at": q.get("morning_at", "08:45"),
-        "weekly_at": q.get("weekly_at", "17:15"),
-        "post_title": title.strip() if quikoptions_title_problem(title) is None else "Hot options",
-        "post_webhook": QUIKOPTIONS_WEBHOOK_ALIASES.get(
-            q.get("post_webhook"), q.get("post_webhook", "reporting")
-        ),
-        "post_cards": [
-            QUIKOPTIONS_CARD_ALIASES.get(c, c) for c in (q.get("post_cards") or QUIKOPTIONS_DEFAULT_CARDS)
-        ],
-        "post_style": q.get("post_style", "singles"),
-        "post_morning": bool(q.get("post_morning", True)),
-        "post_weekly": bool(q.get("post_weekly", True)),
     }
 
 

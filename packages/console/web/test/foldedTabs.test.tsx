@@ -2,25 +2,15 @@ import { describe, it, expect } from "vitest";
 import { renderToString } from "react-dom/server";
 import type { GexPayload, GexRegimeRow } from "@console/shared";
 import { RecordedToday, fmtRecorded } from "../src/lightbox/manifests/GexLightbox";
-import { flowTableId } from "../src/pages/Flow/FlowPage";
 import { incomeListFrom } from "../src/pages/Screeners/OwnListTab";
 
 /**
- * Batch 2 of docs/console-review-plan.md: Flow's four site tables became one `tables` tab, and GEX's
+ * Batch 2 of docs/console-review-plan.md: GEX's
  * `history` became a line on `gex`. What each fold must keep: an old address opens its own table, and
  * a symbol the recorder stopped writing never reads as recorded today.
  */
 
 const text = (html: string) => html.replace(/<!-- -->/g, "");
-
-describe("Flow tables", () => {
-  it("opens the table an old tab's address names, and the first table otherwise", () => {
-    expect(flowTableId("spreads")).toBe("spreads");
-    expect(flowTableId("voloi")).toBe("voloi");
-    expect(flowTableId("tables")).toBe("birdseye");
-    expect(flowTableId(null)).toBe("birdseye");
-  });
-});
 
 describe("Screeners income lists", () => {
   it("opens the list `?list=` names, else the one an old tab's address names, else short puts", () => {

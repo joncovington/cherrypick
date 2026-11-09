@@ -166,16 +166,6 @@ function ScreenersIcon() {
   );
 }
 
-/* Flowing tape — the options-flow feed. */
-function FlowIcon() {
-  return (
-    <Svg>
-      <path d="M4 8c3 0 3 4 6 4s3-4 6-4 3 2 4 2" />
-      <path d="M4 15c3 0 3 3 6 3s3-3 6-3" opacity="0.55" />
-    </Svg>
-  );
-}
-
 /* A filed document — the session reports. */
 function ReportsIcon() {
   return (
@@ -269,7 +259,6 @@ const ICONS: Record<string, (p: NavIconProps) => ReactNode> = {
   "/charts": ChartsIcon,
   "/backtest": BacktestIcon,
   "/screeners": ScreenersIcon,
-  "/flow": FlowIcon,
   "/reports": ReportsIcon,
   "/compare": CompareIcon,
   "/experiments": ExperimentsIcon,

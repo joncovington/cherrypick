@@ -46,12 +46,12 @@ export interface ConsoleConfig {
         Screeners fair-value tab shows. Optional so a config built elsewhere (tests) need not name it;
         the reader falls back to the directory beside `technicalsDir`. */
     fundamentalsDir?: string;
-    /** `data/quikoptions/` — the Hot Options Report captures (`hot-options/<session>.json`) the
-        Options flow page shows. Optional so a config built elsewhere (tests) need not name it; the
-        reader falls back to `<cherrypick>/data/quikoptions`. */
-    quikoptionsDir?: string;
+    /** `data/external/` -- the reports a person's own scripts write (`<id>.json`, `docs/guide/external-reports.md`)
+        the External reports tab shows. Optional so a config built elsewhere (tests) need not name it; the
+        reader falls back to `<cherrypick>/data/external`. */
+    externalDir?: string;
     /** `data/market-report/` -- the screener lists, their broker readings, the liquidity verdicts
-        and the IV-rank file the Screeners page reads. Optional like `quikoptionsDir`; the reader
+        and the IV-rank file the Screeners page reads. Optional like `fundamentalsDir`; the reader
         falls back to the directory beside `technicalsDir`. */
     marketReportDir?: string;
     /** `state/advice/` — the artifacts the advisor issues and every module's loop reads. */
@@ -113,7 +113,7 @@ export function loadConfig(): ConsoleConfig {
       advisorDir: path.join(data, "advisor"),
       technicalsDir: path.join(data, "technicals"),
       fundamentalsDir: path.join(data, "fundamentals"),
-      quikoptionsDir: path.join(data, "quikoptions"),
+      externalDir: path.join(data, "external"),
       marketReportDir: path.join(data, "market-report"),
       adviceDir: path.join(CHERRYPICK, "state", "advice"),
       ...meicRiskPaths(),

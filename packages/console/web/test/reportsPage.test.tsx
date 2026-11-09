@@ -240,7 +240,7 @@ describe("the scorecard fronts the S&P, crude and gold as futures", () => {
   });
 });
 
-describe("the hot-options card marks the names the Options flow also holds", () => {
+describe("the hot-options card", () => {
   const row = (symbol: string) => ({
     symbol,
     rank: 1,
@@ -253,7 +253,7 @@ describe("the hot-options card marks the names the Options flow also holds", () 
     relativeVolume: null,
   });
 
-  function setHot(flow: unknown): string {
+  function setHot(): string {
     const hotOptions = {
       session: "2026-10-02",
       lagSessions: 0,
@@ -268,35 +268,13 @@ describe("the hot-options card marks the names the Options flow also holds", () 
       unclassified: [],
       classification: null,
       reason: null,
-      flow,
     };
     morning = { sessions: ["2026-10-03"], current: { ...PACK_BASE, hotOptions }, note: null } as unknown as MorningPayload;
     return renderMorning();
   }
 
-  it("links a marked name to that session's Options flow page, with its tables as the title", () => {
-    const html = setHot({ session: "2026-10-02", tables: { NVDA: ["birdseye", "spreads"] } });
-    expect(html).toContain('href="/flow?session=2026-10-02"');
-    expect(html).toContain("Hot Options Report for 2026-10-02: birdseye, spreads");
-    // The legend and NVDA; F is not in the flow, so it is not marked.
-    expect(html.match(/class="chip flow-mark"/g)?.length).toBe(2);
-  });
-
-  it("no capture for the session means no marks and no legend, never a claim of no flow", () => {
-    const html = setHot(null);
-    expect(html).toContain("Hot options");
-    expect(html).not.toContain("flow-mark");
-  });
-
-  it("a server older than this bundle omits the field: the card still renders, unmarked", () => {
-    const html = setHot(undefined);
-    expect(html).toContain("Hot options");
-    expect(html).toContain("NVDA");
-    expect(html).not.toContain("flow-mark");
-  });
-
   it("every column sorts, and the rows start in the pack's ranking with its stored rank as the #", () => {
-    const html = setHot(null).replace(/<!-- -->/g, "");
+    const html = setHot().replace(/<!-- -->/g, "");
     for (const label of ["#", "Underlying", "Contracts", "Calls", "Puts", "P/C", "vs avg", "Customer sides"]) {
       expect(html).toContain(`<button type="button" class="th-sort">${label}</button>`);
     }

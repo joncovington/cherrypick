@@ -1,7 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { renderToString } from "react-dom/server";
 import { StatusLine } from "../src/components/summary/ModuleSummary";
-import { RejectedNotice } from "../src/lightbox/manifests/FlowLightbox";
 import { TESTED_STATUS } from "../src/lib/testedStatus";
 
 const renderToText = (el: Parameters<typeof renderToString>[0]) => renderToString(el).replace(/<!-- -->/g, "");
@@ -37,16 +36,5 @@ describe("module status line", () => {
 
   it("covers every module that keeps a summary page", () => {
     for (const m of ["meic", "bwb", "earnings", "pmcc", "calendars", "curve", "contango"]) expect(TESTED_STATUS[m]).toBeDefined();
-  });
-});
-
-describe("refused flow capture", () => {
-  const rejected = { session: "2026-10-29", savedAt: null, problems: ["spreads GE: 4.34 x 10000 x 100 != premium 2,170,217"] };
-
-  it("names the refused day, the day shown and each failed check", () => {
-    const html = renderToText(<RejectedNotice rejected={rejected} shown="2026-10-28" />);
-    expect(html).toContain("The 2026-10-29 capture was refused");
-    expect(html).toContain("2026-10-28 is the latest capture that passed");
-    expect(html).toContain("spreads GE");
   });
 });

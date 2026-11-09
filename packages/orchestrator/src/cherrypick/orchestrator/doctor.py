@@ -450,6 +450,33 @@ def earnings_live_leftover_check(config_path: Path | None) -> Check | None:
     )
 
 
+def removed_config_checks(cfg: dict[str, Any]) -> list[Check]:
+    """One WARN for a config.json that still carries the `quikoptions` block. That integration was
+    removed in v0.12.0 and the block is ignored; external reports (docs/guide/external-reports.md)
+    replace it. Silent when the block is absent."""
+    if "quikoptions" not in cfg:
+        return []
+    return [
+        Check(
+            "config.quikoptions",
+            WARN,
+            "the `quikoptions` block in config.json was removed in v0.12.0 and is ignored; "
+            "external reports replace it (docs/guide/external-reports.md), and the block can be deleted",
+        )
+    ]
+
+
+def external_report_checks(cfg: dict[str, Any]) -> list[Check]:
+    """One WARN per `external_reports` entry that cannot become a job, with the reason."""
+    from . import external_reports as extrep
+
+    return [
+        Check(f"external.{e['id'] or 'entry'}", WARN, f"external report not scheduled: {e['problem']}")
+        for e in extrep.entries(cfg)
+        if e["problem"]
+    ]
+
+
 def run(cfg: dict[str, Any] | None = None, fast: bool = False) -> list[Check]:
     """Run the readiness checks. `fast=True` skips the broker/keyring check — the only one that makes
     an authenticated broker round-trip (a 35s-timeout subprocess) — so it's safe to poll on a short
@@ -467,6 +494,8 @@ def run(cfg: dict[str, Any] | None = None, fast: bool = False) -> list[Check]:
     # home on Windows, so the raw value carries the username onto the dashboard's System card — the
     # one surface in the suite that renders doctor's details verbatim to a browser.
     checks.append(Check("python", OK, f"{sys.version.split()[0]} @ {cfgmod.portable_path(sys.executable)}"))
+    checks.extend(removed_config_checks(cfg))
+    checks.extend(external_report_checks(cfg))
 
     from . import winservice
 

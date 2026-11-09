@@ -1,0 +1,133 @@
+{
+  "_comment": "Shared by the Python validator's tests (packages/core/tests/test_external_report.py) and the console reader's (packages/console/server/test/external-reports.test.ts): both must agree on which of these are valid. `stem` is the file name without .json.",
+  "cases": [
+    {
+      "name": "a table and a text section",
+      "stem": "demo",
+      "valid": true,
+      "doc": {
+        "schema": 1, "id": "demo", "title": "Demo", "source": "my script", "as_of": "2026-11-09T16:30:00-05:00",
+        "stale_after_hours": 24, "summary": "one line",
+        "sections": [
+          { "heading": "Table", "table": { "columns": ["a", "b"], "rows": [["x", 1], ["y", null], ["z", 2.5]] } },
+          { "heading": "Notes", "text": "plain words" }
+        ]
+      }
+    },
+    {
+      "name": "no summary, a UTC as_of and an empty table",
+      "stem": "bare",
+      "valid": true,
+      "doc": {
+        "schema": 1, "id": "bare", "title": "Bare", "source": "s", "as_of": "2026-11-09T21:30:00Z",
+        "stale_after_hours": 0.5, "sections": [ { "heading": "H", "table": { "columns": ["a"], "rows": [] } } ]
+      }
+    },
+    {
+      "name": "the id differs from the file name",
+      "stem": "demo",
+      "valid": false,
+      "doc": {
+        "schema": 1, "id": "other", "title": "T", "source": "s", "as_of": "2026-11-09T16:30:00-05:00",
+        "stale_after_hours": 24, "sections": [ { "heading": "H", "text": "t" } ]
+      }
+    },
+    {
+      "name": "as_of without an offset",
+      "stem": "demo",
+      "valid": false,
+      "doc": {
+        "schema": 1, "id": "demo", "title": "T", "source": "s", "as_of": "2026-11-09T16:30:00",
+        "stale_after_hours": 24, "sections": [ { "heading": "H", "text": "t" } ]
+      }
+    },
+    {
+      "name": "a zero stale window",
+      "stem": "demo",
+      "valid": false,
+      "doc": {
+        "schema": 1, "id": "demo", "title": "T", "source": "s", "as_of": "2026-11-09T16:30:00-05:00",
+        "stale_after_hours": 0, "sections": [ { "heading": "H", "text": "t" } ]
+      }
+    },
+    {
+      "name": "an empty title",
+      "stem": "demo",
+      "valid": false,
+      "doc": {
+        "schema": 1, "id": "demo", "title": "", "source": "s", "as_of": "2026-11-09T16:30:00-05:00",
+        "stale_after_hours": 24, "sections": [ { "heading": "H", "text": "t" } ]
+      }
+    },
+    {
+      "name": "an unknown field",
+      "stem": "demo",
+      "valid": false,
+      "doc": {
+        "schema": 1, "id": "demo", "title": "T", "source": "s", "as_of": "2026-11-09T16:30:00-05:00",
+        "stale_after_hours": 24, "extra": true, "sections": [ { "heading": "H", "text": "t" } ]
+      }
+    },
+    {
+      "name": "no sections",
+      "stem": "demo",
+      "valid": false,
+      "doc": {
+        "schema": 1, "id": "demo", "title": "T", "source": "s", "as_of": "2026-11-09T16:30:00-05:00",
+        "stale_after_hours": 24, "sections": []
+      }
+    },
+    {
+      "name": "a section with neither table nor text",
+      "stem": "demo",
+      "valid": false,
+      "doc": {
+        "schema": 1, "id": "demo", "title": "T", "source": "s", "as_of": "2026-11-09T16:30:00-05:00",
+        "stale_after_hours": 24, "sections": [ { "heading": "H" } ]
+      }
+    },
+    {
+      "name": "a row shorter than the columns",
+      "stem": "demo",
+      "valid": false,
+      "doc": {
+        "schema": 1, "id": "demo", "title": "T", "source": "s", "as_of": "2026-11-09T16:30:00-05:00",
+        "stale_after_hours": 24, "sections": [ { "heading": "H", "table": { "columns": ["a", "b"], "rows": [["only"]] } } ]
+      }
+    },
+    {
+      "name": "a boolean in a cell",
+      "stem": "demo",
+      "valid": false,
+      "doc": {
+        "schema": 1, "id": "demo", "title": "T", "source": "s", "as_of": "2026-11-09T16:30:00-05:00",
+        "stale_after_hours": 24, "sections": [ { "heading": "H", "table": { "columns": ["a"], "rows": [[true]] } } ]
+      }
+    },
+    {
+      "name": "a summary over 200 characters",
+      "stem": "demo",
+      "valid": false,
+      "doc": {
+        "schema": 1, "id": "demo", "title": "T", "source": "s", "as_of": "2026-11-09T16:30:00-05:00",
+        "stale_after_hours": 24, "summary": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "sections": [ { "heading": "H", "text": "t" } ]
+      }
+    },
+    {
+      "name": "the wrong schema number",
+      "stem": "demo",
+      "valid": false,
+      "doc": {
+        "schema": 2, "id": "demo", "title": "T", "source": "s", "as_of": "2026-11-09T16:30:00-05:00",
+        "stale_after_hours": 24, "sections": [ { "heading": "H", "text": "t" } ]
+      }
+    },
+    {
+      "name": "not an object",
+      "stem": "demo",
+      "valid": false,
+      "doc": [1, 2, 3]
+    }
+  ]
+}

@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "external_report.schema.json",
+  "title": "External report",
+  "description": "One report a person's own script writes to data/external/<id>.json for the console's External reports card. The single source of truth: cherrypick.core.external_report (Python) and the console server both read this file. Beyond the schema they check that id matches the filename and that every table row is as wide as its columns.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "id", "title", "source", "as_of", "stale_after_hours", "sections"],
+  "properties": {
+    "schema": { "const": 1 },
+    "id": { "type": "string", "pattern": "^[a-z0-9-]+$", "minLength": 1, "maxLength": 64 },
+    "title": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "source": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "as_of": { "type": "string", "format": "date-time-offset" },
+    "stale_after_hours": { "type": "number", "exclusiveMinimum": 0, "maximum": 8760 },
+    "summary": { "type": "string", "maxLength": 200 },
+    "sections": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 20,
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["heading", "table"],
+            "properties": {
+              "heading": { "type": "string", "minLength": 1, "maxLength": 120 },
+              "table": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["columns", "rows"],
+                "properties": {
+                  "columns": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 12,
+                    "items": { "type": "string", "maxLength": 60 }
+                  },
+                  "rows": {
+                    "type": "array",
+                    "maxItems": 500,
+                    "items": {
+                      "type": "array",
+                      "maxItems": 12,
+                      "items": { "type": ["string", "number", "null"], "maxLength": 200 }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["heading", "text"],
+            "properties": {
+              "heading": { "type": "string", "minLength": 1, "maxLength": 120 },
+              "text": { "type": "string", "maxLength": 5000 }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

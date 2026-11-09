@@ -16,7 +16,7 @@ uses only the stdlib + the OS shell — no MCP, no third-party client — so it 
 the watchdog (which must have no network/AI failure mode on its own reliability path).
 
 **Every webhook send in the suite goes through `send_webhook`** — this class's pushes, the
-QuikOptions series, the flies payoff chart, and anything a person or a session posts by hand
+external reports, the flies payoff chart, and anything a person or a session posts by hand
 (`run.py notify-send`). Each send, landed or not, appends one record to
 `data/outbound/YYYY-MM.jsonl`: what was sent (text, card fields, attachment fingerprints), where
 (the webhook's name, never its URL), the message id Discord returns, and fingerprints of the files

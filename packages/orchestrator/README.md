@@ -53,6 +53,12 @@ earnings and technicals, `claude` for the advisor and narratives), and `--detect
 Push notifications are **off by default**: every channel list in `config.example.json` is `["log"]`,
 so add `desktop`, `discord` or `slack` to turn one on (webhooks via `run.py secrets-set`).
 
+**External reports** let you add your own daily report without touching the suite: list a script under
+`~/.cherrypick` in `config.json`'s `external_reports`, and the supervisor runs it each day and the
+console draws the JSON it writes (optionally posting a text card to Discord). `python run.py
+external-check <file>` shows what a report file will look like, or why it will not. See the
+[guide](../../docs/guide/external-reports.md).
+
 Every other command — calibration, the end-of-day review, reconcile, archive, backup, secrets, onboarding
 — is in the [CLI reference](../../docs/orchestrator-cli.md), which documents all of them and is checked
 against the code so it cannot quietly fall behind.

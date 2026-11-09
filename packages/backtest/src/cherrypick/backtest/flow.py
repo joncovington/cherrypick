@@ -16,7 +16,7 @@ A **print** is a dict: ``expiration`` (ISO date), ``strike``, ``right`` ("CALL"/
   before: an intermarket sweep across exchanges at one instant, or an algorithm slicing a block.
 - **Its side** is read from where each print filled against the quote: edge = (price - mid) / half
   the spread; at or past +`READ_EDGE` bought, at or past -`READ_EDGE` sold, between unread. The
-  QuikOptions scorer's own edge, so the two agree on what "bought" means. Inferred, not known: the
+  earlier scorer's own edge, so the two agree on what "bought" means. Inferred, not known: the
   print says where it filled, not who started it.
 - **Its size** is premium: contracts x 100 x price.
 

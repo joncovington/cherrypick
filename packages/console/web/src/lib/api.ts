@@ -3,6 +3,7 @@ import { normalizeAdvisorPayload } from "./advisorShape";
 import type {
   ArmCostsPayload,
   EquityPayload,
+  ExternalReportsPayload,
   ContangoMetrics,
   ContangoHistory,
   ContangoPayload,
@@ -27,7 +28,6 @@ import type {
   ReviewPayload,
   AdvisorPayload,
   MorningPayload,
-  OptionsFlowPayload,
   TechnicalsChartPayload,
   TechnicalsWatchlist,
   EarningsCalendarPayload,
@@ -212,6 +212,15 @@ export function useLogs(source: string | null, limit: number) {
   });
 }
 
+export function useExternalReports() {
+  return useQuery<ExternalReportsPayload>({
+    queryKey: ["external-reports"],
+    queryFn: () => getJson<ExternalReportsPayload>("/api/external-reports"),
+    // Files a person's own script writes a few times a day at most.
+    refetchInterval: 60_000,
+  });
+}
+
 export function useMorningReport(session?: string) {
   return useQuery<MorningPayload>({
     queryKey: ["morning", session ?? "latest"],
@@ -222,16 +231,6 @@ export function useMorningReport(session?: string) {
   });
 }
 
-/** QuikOptions' Hot Options Report for a session (latest when none): one capture a day, after the
- *  close, so a few minutes is already far finer than the data. */
-export function useOptionsFlow(session?: string) {
-  return useQuery<OptionsFlowPayload>({
-    queryKey: ["options-flow", session ?? "latest"],
-    queryFn: () =>
-      getJson<OptionsFlowPayload>(`/api/options-flow${session ? `?session=${encodeURIComponent(session)}` : ""}`),
-    refetchInterval: 300_000,
-  });
-}
 
 export function useTechnicalsChart(symbol?: string) {
   return useQuery<TechnicalsChartPayload>({

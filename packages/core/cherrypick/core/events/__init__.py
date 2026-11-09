@@ -27,8 +27,8 @@ clean on FRED, and BLS refuses scripted access to its own schedule, so FRED stay
 
 **Why Michigan's own page (2026-10-02).** FRED's release 91 carries only the *final* consumer
 sentiment reading (7/31, 8/28, 9/25, 10/23); the preliminary, the one that moves the market, was
-never on this calendar, and 2026-10-09 read as a known day without it. QuikOptions' economic
-calendar showed the gap (docs/quikoptions-plan.md). The preliminary has no fixed rule (2026: the
+never on this calendar, and 2026-10-09 read as a known day without it. An independent economic
+calendar showed the gap. The preliminary has no fixed rule (2026: the
 third Friday in July, the second in August), so it is read, not computed.
 
 **Unknown is not quiet.** A day is `known` only when every source it cannot do without speaks for
