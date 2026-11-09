@@ -100,12 +100,22 @@ def entries(cfg: dict[str, Any]) -> list[dict[str, Any]]:
         args = item.get("args", [])
         timeout = item.get("timeout_minutes", SCRIPT_TIMEOUT_SECONDS // 60)
         writes = bool(item.get("writes_report", True))
+        retries = item.get("retries", 0)
+        delay = item.get("retry_delay_minutes", 10)
         if problem is None and not (isinstance(args, list) and all(isinstance(a, str) for a in args)):
             problem = "args must be a list of strings"
         elif problem is None and not (
             isinstance(timeout, (int, float)) and not isinstance(timeout, bool) and 1 <= timeout <= 180
         ):
             problem = f"timeout_minutes {timeout!r} must be between 1 and 180"
+        elif problem is None and not (
+            isinstance(retries, int) and not isinstance(retries, bool) and 0 <= retries <= 3
+        ):
+            problem = f"retries {retries!r} must be a whole number from 0 to 3"
+        elif problem is None and not (
+            isinstance(delay, (int, float)) and not isinstance(delay, bool) and 0.5 <= delay <= 120
+        ):
+            problem = f"retry_delay_minutes {delay!r} must be between 0.5 and 120"
         elif problem is None and post is not None and not writes:
             problem = "post needs a report: set writes_report true, or post null and let the script post"
         if isinstance(rid, str):
@@ -121,6 +131,8 @@ def entries(cfg: dict[str, Any]) -> list[dict[str, Any]]:
                 "args": list(args) if isinstance(args, list) else [],
                 "timeout_minutes": timeout if isinstance(timeout, (int, float)) else 15,
                 "writes_report": writes,
+                "retries": retries if isinstance(retries, int) and not isinstance(retries, bool) else 0,
+                "retry_delay_minutes": delay if isinstance(delay, (int, float)) else 10,
                 "problem": problem,
             }
         )
@@ -138,6 +150,8 @@ def _entry_stub(rid: Any, problem: str) -> dict[str, Any]:
         "args": [],
         "timeout_minutes": 15,
         "writes_report": True,
+        "retries": 0,
+        "retry_delay_minutes": 10,
         "problem": problem,
     }
 

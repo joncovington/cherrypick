@@ -251,6 +251,13 @@ def test_a_short_table_is_shown_whole_without_a_more_line():
     assert "more row" not in embed["description"] and "d1" in embed["description"]
 
 
+def test_the_discord_card_ignores_the_bars_hint():
+    plain = _doc()
+    barred = _doc()
+    barred["sections"][0]["table"]["bars"] = [1]
+    assert ext.card_payload(barred) == ext.card_payload(plain)
+
+
 def test_a_wide_cell_is_shortened():
     doc = _doc()
     doc["sections"][0]["table"]["rows"][0][0] = "x" * 150
@@ -296,6 +303,37 @@ def test_several_entries_may_run_one_script_at_different_times(home):
     jobs, errors = _derive({"external_reports": [one, two]})
     ids = {j.id: j.at_et for j in jobs if j.id.startswith("external-")}
     assert errors == {} and ids == {"external-qo-score": "16:50", "external-qo-post": "17:00"}
+
+
+def test_retries_and_their_delay_reach_the_job(home):
+    jobs, _ = _derive({"external_reports": [_entry(home, retries=2, retry_delay_minutes=1)]})
+    job = next(j for j in jobs if j.id == "external-vix-history")
+    assert (job.retries, job.retry_delay_seconds) == (2, 60)
+    plain, _ = _derive({"external_reports": [_entry(home)]})
+    job = next(j for j in plain if j.id == "external-vix-history")
+    assert (job.retries, job.retry_delay_seconds) == (0, 600)  # off by default; ten minutes when on
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [{"retries": 4}, {"retries": -1}, {"retries": 1.5}, {"retries": True}, {"retry_delay_minutes": 0},
+     {"retry_delay_minutes": 500}, {"retry_delay_minutes": "10"}],
+)  # fmt: skip
+def test_bad_retries_or_delay_is_refused_with_a_reason(home, bad):
+    problem = ext.entries(_cfg(home, **bad))[0]["problem"]
+    assert problem and ("retries" in problem or "retry_delay_minutes" in problem)
+
+
+def test_a_timeout_or_an_invalid_report_exits_non_zero_so_the_supervisor_retries(home):
+    import subprocess
+
+    def timed_out(argv, **kw):
+        raise subprocess.TimeoutExpired(argv, 1)
+
+    assert ext.run(_cfg(home, retries=1), "vix-history", runner=timed_out)["ok"] is False
+    _write(home, _doc(title=""))
+    fine = lambda argv, **kw: SimpleNamespace(returncode=0, stdout="", stderr="")  # noqa: E731
+    assert ext.run(_cfg(home, retries=1), "vix-history", runner=fine)["ok"] is False
 
 
 # ----------------------------------------------------------------------------- external-check

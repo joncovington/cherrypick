@@ -372,6 +372,10 @@ class JobSpec:
     quiet_interval_seconds: int | None = None
     active_start: str | None = None
     active_end: str | None = None
+    # A fixed-time job's own retries after a failed run (external reports: `retries`), each after
+    # `retry_delay_seconds`, and never past `catchup_minutes`. 0 falls back to `RETRY_ON_FAILURE`.
+    retries: int = 0
+    retry_delay_seconds: int | None = None
 
     def __post_init__(self) -> None:
         """Validate at construction so a malformed config block fails inside `derive_jobs`'s
@@ -389,6 +393,10 @@ class JobSpec:
         if self.window_start and self.window_end:
             if _hhmm(self.window_start) >= _hhmm(self.window_end):
                 raise ValueError(f"{self.id}: window end must follow its start")
+        if not 0 <= int(self.retries) <= 3:
+            raise ValueError(f"{self.id}: retries must be 0..3")
+        if self.retry_delay_seconds is not None and int(self.retry_delay_seconds) <= 0:
+            raise ValueError(f"{self.id}: retry_delay_seconds must be positive")
         if self.backoff_cap_seconds is not None and int(self.backoff_cap_seconds) <= 0:
             raise ValueError(f"{self.id}: backoff_cap_seconds must be positive")
         if self.quiet_interval_seconds is not None:
@@ -2224,6 +2232,8 @@ def derive_jobs(
                 kind=KIND_DAILY,
                 at_et=entry["at_et"] or "00:00",
                 catchup_minutes=extrep.CATCHUP_MINUTES,
+                retries=entry["retries"],
+                retry_delay_seconds=int(entry["retry_delay_minutes"] * 60),
                 trading_days_only=entry["trading_days_only"],
                 enabled=on,
                 enabled_reason="" if on else reason,

@@ -168,7 +168,7 @@ supervisor job named `external-<id>`, which runs `external-run <id>`.
 | Command | What it does | Flags |
 |---|---|---|
 | `external-check` | Judge one report file against the contract (`cherrypick.core`'s `external_report.schema.json`) and print what the console card will draw: title, source, `as_of`, stale or fresh, and each section's heading and row count. An invalid file prints every reason instead. Exit 0 valid, 1 invalid. Read-only. | the file, after the verb |
-| `external-run` | The `external-<id>` job: run the entry's script with the suite's Python (its `args`, under its `timeout_minutes`), then judge `data/external/<id>.json` (unless the entry says `writes_report: false`) and, when the entry's `post` is `reporting` or `notify`, post a text card to that Discord webhook once per new `as_of`. Exit 1 when the script fails or the report is invalid. | the entry's id, after the verb |
+| `external-run` | The `external-<id>` job: run the entry's script with the suite's Python (its `args`, under its `timeout_minutes`), then judge `data/external/<id>.json` (unless the entry says `writes_report: false`) and, when the entry's `post` is `reporting` or `notify`, post a text card to that Discord webhook once per new `as_of`. Exit 1 when the script fails or the report is invalid, which is what the entry's `retries` (0 to 3, each after `retry_delay_minutes`, inside the catch-up window) act on; `status` shows the job's `attempt`. | the entry's id, after the verb |
 
 ## Global flags
 
