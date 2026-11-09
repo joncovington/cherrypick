@@ -82,6 +82,11 @@ cached spot (dated if it is not from today), and, outside regular hours, a `last
 - A wall can show as two numbers, such as `7740 / 7600`. That is a near tie: a single number would hop
   between the two on noise, so you are shown both.
 - **Open interest** is positioning, counted once a day. **Volume** is the day's flow. They can disagree.
+- **Why the pages lead with volume.** tastytrade does not offer level 2 data, so open interest does not
+  stream: the figure the suite has is the broker's once-a-day count, as of the open, and it does not move
+  during the session. GEX by volume (gamma times the session's traded volume) is the reading that changes
+  intraday, so it is what the GEX pages show by default. Read the open-interest figures as where
+  positioning stood at the open. Both pages say this in a note above the readings.
 - Look at the time before the shape. A reading is a claim about now. A chip saying `last session` means the
   market is closed and you are looking at the previous session's chain. A dated `as of` means the spot is
   stale.
@@ -109,7 +114,7 @@ A card on the left and a chart on the right. The card shows SPX, its spot, the e
 `below flip` chip, and a `late session` chip in the last 30 minutes of the day. Below that, in order:
 
 - net GEX by open interest and by volume, gross GEX and the put/call ratios;
-- two buttons, `walls by OI` and `walls by volume`, then the call walls above spot (`CW1`, `CW2` ...) and the
+- two buttons, `walls by volume` (the default) and `walls by OI`, then the call walls above spot (`CW1`, `CW2` ...) and the
   put walls below it (`PW1` ...), each with its share, open interest and GEX;
 - zero gamma, the **magnet** (the strike with the most open interest inside the expected-move band, with the
   sign of its gamma), **max pain** (marked `(edge)` when it sits at the edge of the strikes covered, so do not

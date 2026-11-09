@@ -9,7 +9,7 @@ import { CardHelpButton, HelpSection, type CardHelpContent } from "../../compone
 import { Section } from "../../components/Section";
 
 /**
- * The Experiments page (2026-10-30, docs/console-review-plan.md batch 4): the four paper-only
+ * The Experiments page (2026-10-30, docs/console-review-plan.md batch 4): the five paper-only
  * experiments as one page, a card each, and the retired flies module's record. Each card reads the
  * module's own summary (`/api/summary/:module`) twice -- all time, and its latest traded day -- and
  * says what history found; the module's own pages hold everything else and the card links to them.
@@ -21,6 +21,7 @@ export const EXPERIMENTS = [
   { id: "calendars", label: "Calendars", what: "a weekly SPY double calendar" },
   { id: "curve", label: "Curve", what: "VXX call credit spreads on a contango day" },
   { id: "contango", label: "Contango", what: "SVXY or SHV, switched on the VIX/VIX3M ratio" },
+  { id: "weeklyput", label: "Weekly put", what: "an index put near 10 delta, sold before each weekly expiry and held to it" },
 ] as const;
 
 const PAGES = [

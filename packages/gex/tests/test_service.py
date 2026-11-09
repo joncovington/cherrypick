@@ -107,7 +107,7 @@ def test_provider_opens_read_only(tmp_path):
         conn.close()
 
 
-# The gexbot zero-gamma / net-wall / volume-total math moved to cherrypick.core.gex (shared with MEIC);
+# The zero-gamma / net-wall / volume-total math moved to cherrypick.core.gex (shared with MEIC);
 # these keep the gex package's golden values as a regression guard against the core it now imports.
 def test_nearest_zero_gamma_picks_crossing_closest_to_spot():
     # Series [-10, 5, -20, 20] sign-flips 3x (90.67, ~92.8, 100.5); returns the crossing nearest spot.

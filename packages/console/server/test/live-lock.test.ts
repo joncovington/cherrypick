@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { ConsoleConfig } from "../src/config.js";
-import { readLockStatus, readModuleGate, sessionDateEt } from "../src/services/liveLock.js";
+import { displayPath, readLockStatus, readModuleGate, sessionDateEt } from "../src/services/liveLock.js";
 
 /**
  * The lock hero reads three separate gates and must not blur them: the suite halt flag, each
@@ -91,6 +91,23 @@ describe("the halt flag", () => {
     expect(readLockStatus(config).halted).toBe(false);
     fs.writeFileSync(path.join(tmp, "state", "halt-live.flag"), "");
     expect(readLockStatus(config).halted).toBe(true);
+  });
+});
+
+describe("displayPath", () => {
+  const home = path.join(path.sep, "home", "someone");
+  it("shows a path under the home folder from ~, so no user name reaches the page", () => {
+    expect(displayPath(path.join(home, ".cherrypick", "state", "halt-live.flag"), home)).toBe("~/.cherrypick/state/halt-live.flag");
+  });
+  it("shows a path elsewhere whole, with forward slashes", () => {
+    const other = path.join(path.sep, "srv", "suite", "state", "halt-live.flag");
+    expect(displayPath(other, home)).toBe(other.split(path.sep).join("/"));
+    expect(displayPath(path.join(home, "..", "other", "x"), home)).not.toContain("~");
+  });
+  it("is what the lock status carries", () => {
+    const shown = readLockStatus(config).haltFlagPath;
+    expect(shown.endsWith("state/halt-live.flag")).toBe(true);
+    expect(shown).not.toContain(os.userInfo().username + path.sep);
   });
 });
 

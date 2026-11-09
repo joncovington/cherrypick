@@ -27,7 +27,7 @@ import { TradeCards, type TradeCardModel } from "./TradeCard";
 const ACTIVITY_PAGE_SIZES = [10, 25, 50, 100] as const;
 
 /**
- * The flies live pilot's day, read-only (2026-09-17). Two honesty rules the page states on its
+ * The flies live tab (flies is retired), read-only. Two honesty rules the page states on its
  * face: the period tiles are SETTLED net only (flies settles at expiry, so today reads zero until
  * the bell, and the intraday number beside it is the mark), and a mark is a MID, not a fill. There
  * is no button here that touches an order: the desk CLI is the suite's only discretionary path,

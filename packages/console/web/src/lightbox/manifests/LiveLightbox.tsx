@@ -10,9 +10,9 @@ import type { SlideDef } from "../types";
 import type { LiveFliesPayload } from "@console/shared";
 
 /**
- * The Live page (2026-09-17): the flies live pilot's day, on the module frame since 2026-09-25.
+ * The Live page: every live loop, one tab each, read-only (flies is retired and its tab shows its record).
  * One page, read-only, no order path. The header carries the arming strip -- armed for today or not, the
- * halt flag, the pilot's arm and symbol -- and the live loop's own pill, so the first glance says
+ * halt flag, the loop's arm and symbol -- and the live loop's own pill, so the first glance says
  * whether anything can trade before the tiles say what it did. On the `meic` tab (2026-10-15) the
  * strip is MEIC's own arm record instead: each live loop is armed separately, so one badge for both
  * would say the wrong thing about one of them.

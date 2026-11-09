@@ -109,6 +109,14 @@ morning.)
 Always the net result: after fees, settlement and slippage. Those three also get their own columns,
 so you can see where the money went.
 
+### Why does GEX lead with volume rather than open interest?
+
+tastytrade does not offer level 2 data, so open interest does not stream. The suite only has the
+broker's once-a-day count, as of the open, and it doesn't move during the session. GEX by volume (the
+session's traded volume) is the reading that changes intraday, so the GEX pages show it by default.
+The open-interest figures are still there, as positioning at the open. See
+[Charts and GEX](charts-and-gex.md).
+
 ## Income trades (skate, wheel, PMCC)
 
 ### Does the suite place my wheel or PMCC trades?

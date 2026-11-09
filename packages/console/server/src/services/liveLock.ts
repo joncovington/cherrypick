@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import type { ConsoleConfig } from "../config.js";
 import { readJson } from "../readers/db.js";
@@ -70,6 +71,16 @@ export function sessionDateEt(): string {
 // when MEIC's arm registry left the repo for `~/.cherrypick/config/meic.risk.json` (2026-10-01):
 // a file outside the checkout has no working tree to dirty.
 
+/**
+ * A path as the page shows it: under the home folder it starts `~/`, so the user name never appears
+ * on a page (or in a screenshot of it). Forward slashes on every OS. A path elsewhere is shown whole.
+ */
+export function displayPath(p: string, home = os.homedir()): string {
+  const rel = path.relative(home, p);
+  const inside = rel !== "" && !rel.startsWith("..") && !path.isAbsolute(rel);
+  return (inside ? `~/${rel}` : p).split(path.sep).join("/");
+}
+
 export function readLockStatus(config: ConsoleConfig): LockStatus {
   const haltFlagPath = path.join(config.paths.cherrypick, "state", "halt-live.flag");
   const orchestrator = readJson(config.paths.orchestratorConfig) ?? {};
@@ -85,7 +96,7 @@ export function readLockStatus(config: ConsoleConfig): LockStatus {
 
   return {
     halted: fs.existsSync(haltFlagPath),
-    haltFlagPath,
+    haltFlagPath: displayPath(haltFlagPath),
     modules: ids.map((id) => readModuleGate(config, id)),
     fliesArm: {
       // Armed means armed FOR TODAY. A record from a previous day is a record the live loop

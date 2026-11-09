@@ -72,7 +72,7 @@ export function interpolateZeroGamma(strikes: Array<{ strike: number }>, key: st
 
 /**
  * Interpolated strike where per-strike `key` changes sign, NEAREST to spot —
- * gexbot's zero-gamma definition: the local flip that governs price here.
+ * the local zero-gamma flip: the sign change that governs price here.
  * Deliberately distinct from interpolateZeroGamma (the cumulative whole-book
  * flip); the gex page's panels and overlays use this one.
  */

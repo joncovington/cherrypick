@@ -3,7 +3,7 @@
 **What this module does:** it computes and records a read-only market view, not a trading strategy — it shows you
 dealer gamma-exposure positioning (where market makers are likely to buy or sell to hedge as
 price moves), option-implied-volatility skew, and traded volume, all by strike, updating live.
-Think of it as your own self-hosted version of what gexbot.com, SpotGamma, or MenthorQ sell,
+Think of it as your own self-hosted version of what commercial GEX services sell,
 built on the suite's shared market-data feed. It never places an order — the other modules
 (MEIC and others) use the same underlying gamma-exposure math to help decide when
 *they* should trade, and this is simply that same view surfaced for you to watch directly, on the
@@ -15,6 +15,10 @@ Four tabs on the console at <http://127.0.0.1:5070/gex>, the first three off one
   by side**, the **gamma-flip / zero-gamma** level, the **call/put walls**, and a live spot marker with
   an intraday spot trail. The stats panel shows two blocks — **Open Interest (positioning)** and
   **Volume (flow)** — each with total call/put GEX, net GEX, zero gamma, and call/put walls.
+- **Why volume leads:** tastytrade does not offer level 2 data, so open interest does not stream. The
+  open interest the engine has is the broker's once-a-day count, as of the open, and it does not change
+  during the session; GEX by volume is the intraday read, and the console shows it by default (the GEX
+  panel's walls open on `walls by volume`). Both GEX pages carry a note saying so.
 - **IV Skew** — call vs put implied-volatility curve and open interest by strike.
 - **Volume** — call/put/total traded volume by strike.
 - **History** — the latest recorded GEX regime per symbol and today's regime snapshots.

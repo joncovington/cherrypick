@@ -18,6 +18,7 @@ import {
   type GexStrikeRow,
   type GexView,
 } from "../../pages/Gex/GexProfileChart";
+import { GEX_OI_NOTE, GexOiNote } from "../../components/GexOiNote";
 import { ModuleFrame } from "../ModuleFrame";
 import { GEX_SLIDES, type GexSlideId } from "../navGroups";
 import type { SlideDef } from "../types";
@@ -226,6 +227,7 @@ export function RecordedToday({ symbol, data }: { symbol: string; data: GexPaylo
 const GEX_HELP: CardHelpContent = {
   title: "GEX by strike",
   body: (
+    <>
     <HelpSection title="Reading the chart">
       <p>
         Net GEX by strike, with the spot, the zero-gamma flip and the call and put walls marked. OI vs volume sets positioning (open
@@ -233,6 +235,10 @@ const GEX_HELP: CardHelpContent = {
         the right come from the same chain, by open interest and by volume.
       </p>
     </HelpSection>
+    <HelpSection title="Why volume">
+      <p>{GEX_OI_NOTE}</p>
+    </HelpSection>
+    </>
   ),
 };
 
@@ -291,6 +297,7 @@ export function GexLightbox({ slide }: { slide: string }) {
       render: () => (
         <div className="pf-layout">
           <Section concept="risk" tag="gamma" question="Where does the dealer gamma sit?">
+          <GexOiNote />
           <Card
             title={`GEX by strike — ${view === "net" ? "net (green = call heavy, red = put heavy)" : view === "oivol" ? "net GEX, OI vs volume" : "absolute"}`}
             className="lv-12"

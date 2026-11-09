@@ -214,8 +214,8 @@ commissions and slippage?), and use `calibrate` to see when a profile has met a 
 
 ## GEX — the gamma-exposure engine
 
-A self-hosted **GEX (gamma-exposure)** engine — a lightweight take on what gexbot/SpotGamma/MenthorQ
-sell — built on the shared `cherrypick.core.gex` engine (the *same* math MEIC's GEX regime gate uses).
+A self-hosted **GEX (gamma-exposure)** engine — a lightweight take on what commercial GEX
+services sell — built on the shared `cherrypick.core.gex` engine (the *same* math MEIC's GEX regime gate uses).
 The package computes and records; the console's GEX page renders it, off one live option chain:
 
 net GEX by strike with open interest ("positioning") against traded volume ("flow"), the gamma-flip /

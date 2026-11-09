@@ -5,7 +5,7 @@ Guidance for Claude Code when working in the gex package.
 ## What this is
 
 cherrypick-gex is the **GEX (gamma-exposure) engine and market recorder** — the compute half of a
-self-hosted gexbot / SpotGamma / MenthorQ. It computes GEX through the shared `cherrypick.core.gex`
+self-hosted commercial GEX service. It computes GEX through the shared `cherrypick.core.gex`
 engine and records the spot trail; the **console** renders it at <http://127.0.0.1:5070/gex>. It
 serves nothing itself (its old dashboard, WebSocket push and section card are recoverable from the
 `pre-console-only` tag), places no orders, and never touches live trading.
