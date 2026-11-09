@@ -126,9 +126,7 @@ there, never overwrite your configuration, and are how you add Dolt or Claude Co
 2. **Prerequisites.** Python 3.11+ and Node 22+ are checked; pnpm 11 is installed if missing.
 3. **Python environment.** A virtual environment is created at `.venv` inside the checkout, and
    `packages/core` is installed first (every other package depends on it, and it is not on PyPI),
-   then every other package **except `packages/desk`**. The desk is an EXPERIMENTAL prototype for
-   educational purposes only, not installed or enabled by default — see
-   [packages/desk/README.md](packages/desk/README.md).
+   then every other package.
 4. **Console.** `pnpm install` and `pnpm build` in `packages/console`.
 5. **Configuration.** `run.py init` writes `~/.cherrypick/config.json` from the annotated template,
    and keeps it if it already exists.
@@ -164,7 +162,6 @@ there, never overwrite your configuration, and are how you add Dolt or Claude Co
 | `-Yes` / `--yes` | Accept every default without asking (Dolt: yes; connect: yes). The disclaimer still needs `-AcceptDisclaimer`. |
 | `-SkipDolt` / `--skip-dolt` | Do not offer the Dolt setup. Earnings, technicals and four Screeners tabs stay off; `doctor` warns. |
 | `-SkipBootstrap` / `--skip-bootstrap` | Do not build the income lists' universe at the end of the install (`run.py bootstrap`); it builds that evening instead. |
-| `-WithDesk` / `--with-desk` | Also install the EXPERIMENTAL manual desk. Installing it does not enable it. |
 | `-ConfigHistory` / `--config-history` | Keep a git history of your settings without being asked (add `-ConfigRemote <url>` / `--config-remote <url>` to push it to a private repository you own). |
 | `-NoStart` / `--no-start` | Install only. Start later with `.venv/bin/python packages/orchestrator/run.py install` (`.venv\Scripts\python` on Windows). |
 
@@ -392,7 +389,7 @@ first: they say what changed and anything you need to do.
 ## For developers
 
 `scripts/dev-install.ps1` and `scripts/dev-install.sh` are the developer path: editable installs
-**with the `[dev]` extras** (pytest, ruff) of every package including desk, into whichever Python
+**with the `[dev]` extras** (pytest, ruff) of every package, into whichever Python
 you pass, followed by a console build if pnpm is present. They do not create a venv, write config,
 detect capabilities or start anything.
 

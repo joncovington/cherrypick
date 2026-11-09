@@ -52,7 +52,7 @@ export function executionCaption(m: Pick<ExecutionModule, "mirror">): string {
   return (
     `fills against the mid at submit and every human override, beside each week's live net. The gap below is live less ` +
     `${m.mirror ?? "its paper mirror"} over every session live was working, so it also counts paper's entries live ` +
-    `missed; the live vs paper card pairs only the condors both sides took. Desk orders keep no ledger and are not read.`
+    `missed; the live vs paper card pairs only the condors both sides took.`
   );
 }
 

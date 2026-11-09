@@ -1,7 +1,7 @@
 """Every package that declares tastytrade caps its major version.
 
-A tastytrade major moves the API the live order path (core.broker, core.execution, bwb, flies, meic,
-desk) submits through: 13 rewrote order placement into per-type order classes and switched httpx for
+A tastytrade major moves the API the live order path (core.broker, core.execution, bwb, flies, meic)
+submits through: 13 rewrote order placement into per-type order classes and switched httpx for
 httpx2. An uncapped `>=12` let any fresh install pull a new major straight into that path. The
 suite moved to 13 on 2026-10-05, after checking that orders serialize and dry-run identically
 (core/tests/test_order_sdk.py); the cap now sits below 14, and moves only with the same check. The

@@ -62,8 +62,6 @@ def _seed_home(home: Path) -> Path:
     state = home / "state"
     state.mkdir(parents=True, exist_ok=True)
     (state / "console.heartbeat").write_text("", encoding="utf-8")
-    (state / "desk").mkdir(exist_ok=True)
-    (state / "desk" / "journal.jsonl").write_text('{"event": "refused"}\n', encoding="utf-8")
 
     raw = home / "reply.txt"
     raw.write_text("Here is what I see:\n" + json.dumps(ADMITTED_REPLY), encoding="utf-8")

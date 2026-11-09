@@ -9,7 +9,7 @@ ledgers already record -- files only, no broker, nothing written.
   A credit filled above the mid is positive (better than the model).
 - **Overrides,** flagged per week: a kill-criteria block cleared by hand (`state/kill/history.jsonl`),
   a module config committed during a session (the config-backup history, so at its cadence), and a
-  manual close. Desk orders keep no ledger, so they cannot be read here.
+  manual close.
 - **The paper-live gap:** live net against the paper arm that mirrors it (meic `live-shadow`, bwb its
   `live.arm`) since the first live order, split into missed entries, fill, costs and the rest, with
   the largest named.

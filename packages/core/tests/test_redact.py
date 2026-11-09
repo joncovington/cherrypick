@@ -42,6 +42,6 @@ def test_mask_account_strips_before_taking_the_last_four():
     assert mask_account("  23  ") == "****"
 
 
-# That the orchestrator and the desk mask with THIS rule is asserted in their own tests
-# (test_util.py, test_policy.py): core is import-self-contained, and its CI job installs core alone,
-# so a test here importing either package failed every run from 2026-09-30 to 2026-10-01.
+# That the orchestrator masks with THIS rule is asserted in its own tests (test_util.py): core is
+# import-self-contained, and its CI job installs core alone, so a test here importing the
+# orchestrator would fail.

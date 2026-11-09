@@ -450,20 +450,41 @@ def earnings_live_leftover_check(config_path: Path | None) -> Check | None:
     )
 
 
-def removed_config_checks(cfg: dict[str, Any]) -> list[Check]:
-    """One WARN for a config.json that still carries the `quikoptions` block. That integration was
-    removed in v0.12.0 and the block is ignored; external reports (docs/guide/external-reports.md)
-    replace it. Silent when the block is absent."""
-    if "quikoptions" not in cfg:
-        return []
-    return [
-        Check(
-            "config.quikoptions",
-            WARN,
-            "the `quikoptions` block in config.json was removed in v0.12.0 and is ignored; "
-            "external reports replace it (docs/guide/external-reports.md), and the block can be deleted",
+def removed_config_checks(cfg: dict[str, Any], desk_config: Path | None = None) -> list[Check]:
+    """A WARN for each piece of configuration whose feature was removed in v0.12.0, all of it ignored:
+    the `quikoptions` block (external reports, docs/guide/external-reports.md, replace it), and the
+    manual desk's `desk_notify` block and its own `~/.cherrypick/config/desk.json`. They do nothing,
+    so they mislead, and each warning says it can go. Silent when none is present."""
+    out: list[Check] = []
+    if "quikoptions" in cfg:
+        out.append(
+            Check(
+                "config.quikoptions",
+                WARN,
+                "the `quikoptions` block in config.json was removed in v0.12.0 and is ignored; "
+                "external reports replace it (docs/guide/external-reports.md), and the block can be deleted",
+            )
         )
-    ]
+    if "desk_notify" in cfg:
+        out.append(
+            Check(
+                "config.desk_notify",
+                WARN,
+                "the manual desk was removed in v0.12.0; the `desk_notify` block in config.json is "
+                "ignored and can be deleted",
+            )
+        )
+    desk_config = desk_config if desk_config is not None else _home.config_path("desk")
+    if desk_config.exists():
+        out.append(
+            Check(
+                "config.desk",
+                WARN,
+                f"the manual desk was removed in v0.12.0; {cfgmod.portable_path(desk_config)} is "
+                "ignored and can be deleted",
+            )
+        )
+    return out
 
 
 def external_report_checks(cfg: dict[str, Any]) -> list[Check]:

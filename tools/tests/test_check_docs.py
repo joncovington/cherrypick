@@ -352,7 +352,7 @@ def test_every_package_is_registered_in_every_index():
 
 
 def test_roster_rule_reports_a_package_missing_from_one_index(tmp_path, monkeypatch):
-    """Console, desk, and scout were absent from all four indexes at once -- each stopped at seven of
+    """Console and scout were absent from all four indexes at once -- each stopped at seven of
     ten packages independently, so no single file looked wrong."""
     monkeypatch.setattr(cd, "ROOT", tmp_path)
     for pkg in ("meic", "console"):

@@ -99,7 +99,7 @@ def test_quiet_must_not_be_faster_than_active():
 def test_the_notify_and_service_jobs_declare_a_quiet_cadence():
     jobs, errors = derive(suite_cfg())
     by_id = {j.id: j for j in jobs}
-    for job_id in ("trade-notify", "desk-notify", "power-watch", "earnings-dolt"):
+    for job_id in ("trade-notify", "power-watch", "earnings-dolt"):
         assert by_id[job_id].quiet_interval_seconds, job_id
     assert by_id["watchdog"].quiet_interval_seconds is None
 

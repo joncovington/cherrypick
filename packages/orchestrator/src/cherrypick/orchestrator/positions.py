@@ -153,8 +153,8 @@ _group_by_underlying = legmarks.group_by_underlying
 def run(cfg: dict[str, Any] | None = None, *, account: str | None = None) -> dict[str, Any]:
     """Price every position on the real login and group the result by underlying.
 
-    `account` filters to one account by its last 4 digits, matching how the desk's allowlist and every
-    masked report refer to accounts — a caller should never need the full number to ask for a report
+    `account` filters to one account by its last 4 digits, matching how every masked report refers to
+    accounts — a caller should never need the full number to ask for a report
     about it.
     """
     cfg = cfgmod.load_config() if cfg is None else cfg

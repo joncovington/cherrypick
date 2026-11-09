@@ -481,8 +481,7 @@ def _check_package_roster() -> list[str]:
 
     The bug: the suite grew from seven packages to ten, and four independent indexes each stopped at
     seven. `packages/console` -- 17,920 lines and the only non-Python package -- appeared in none of
-    them, and `packages/desk`, the one surface that places live orders, appeared in none either, so a
-    reader of the guardrails docs alone would conclude no sanctioned live-order path existed.
+    them, so a reader of the indexes alone would not know the console existed.
 
     Truth is the filesystem: a directory under `packages/` holding a `CLAUDE.md` is a package. The match
     is deliberately dumb -- the literal string `packages/<name>` anywhere in the file. It checks that a

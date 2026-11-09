@@ -2817,7 +2817,7 @@ def _delivery_findings(
     - every recorded push in the window failed (at least `_DELIVERY_MIN_FAILURES`): the webhook is
       revoked, the bot is dead, the service is down, or the network is.
 
-    `cfg_channels` is every channel ANY push route names (alerts, trade fills, digest, desk), and
+    `cfg_channels` is every channel ANY push route names (alerts, trade fills, digest), and
     `push_secret_state(ch)` answers `notify.secrets.state`: "set", "not set" or "keyring unavailable"."""
     from cherrypick.notify.secrets import PUSH_CHANNELS, SET, UNAVAILABLE
 
@@ -2977,13 +2977,12 @@ def _check_notify_delivery(cfg: dict[str, Any]) -> list[Finding]:
     except OSError:
         sent = []
     # Every route a push can take, not just the alert list: a channel named only in trade_channels
-    # (or the digest's, or the desk's) with no secret skips every fill push without a trace.
+    # (or the digest's) with no secret skips every fill push without a trace.
     notify_cfg = cfg.get("notify") or {}
     channels = {
         *(notify_cfg.get("channels") or []),
         *(notify_cfg.get("trade_channels") or []),
         *cfgmod.status_digest_settings(cfg)["channels"],
-        *cfgmod.desk_notify_settings(cfg)["channels"],
     }
     return _delivery_findings(sorted(channels), sent, _secrets.state)
 
