@@ -17,8 +17,8 @@ import { useSetupsWatchlist } from "../../lib/api";
  * Two lists share the page. The default is the setups' own rows; "Tested edge" swaps in the rows of
  * the historical study's confirmed rule (TESTED_RULE), which re-walks its setup with one change, so
  * the two overlap and are never shown together. Either is cut to options-tradable names by default
- * when the file carries the label (weekly options, and $100M a day in the stock: the user trades
- * options, so a liquid stock alone is not enough), with "All names" as the way out.
+ * when the file carries the label (weekly options, and $100M a day in the stock: this is an
+ * options tool, so a liquid stock alone is not enough), with "All names" as the way out.
  */
 
 type View = "signals" | "open";

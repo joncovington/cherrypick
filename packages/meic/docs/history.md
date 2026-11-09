@@ -153,17 +153,12 @@ gross by hand came out $55k off before it was noticed — hence the net-of-fees 
   found holding beats every stop at every cap, and forward it won 26% of entries over 9 sessions. It
   is concluded with a verdict by `advisor kill` on the weekend of 10-17 (the boundary script), not
   left to run its 20.
-- **2026-10-12 — three live-ledger rows corrected** (`scripts/meic_live_ledger_correct.py`, dry run
-  by default; a recording correction). The agent-era loop stored the entry's limit as `net_credit`.
-  id 7 (06-30): filled at 0.43, not 0.32, so the stop at 0.39 was the +$4.00 gross the row already
-  says (net −$0.96, which matches the account's move that day). id 6 (06-29): filled at 0.38, exit
-  0.40, so pnl −$2.00 gross and fees $4.96 (net −$6.96, again matching the account) where both were
-  NULL. id 1 (06-25) is a paper trade (`PAPER-` id, live trading off that day) that every reader
-  counts as live, with a net figure in the gross column; the script exports and removes it on
-  request. Broker transactions for orders 479518187/479536927 and 479793516/479805454 would make
-  id 6's fee split exact. Separately, `live_loop.py` updates only `net_credit` on a fill, while stop
-  and expiry P&L read the per-side `put_credit`/`call_credit` modelled at quote time, so live P&L
-  leaves out any fill improvement. No live row exists since 06-30; fix before MEIC goes live.
+- **2026-10-12 — a June live-ledger correction** (a recording correction, made once by a script
+  that is no longer kept in the repo). The agent-era loop had stored the entry's limit as
+  `net_credit` rather than the fill. Separately, `live_loop.py` updates only `net_credit` on a fill,
+  while stop and expiry P&L read the per-side `put_credit`/`call_credit` modelled at quote time, so
+  live P&L leaves out any fill improvement. The note written then, that no live row existed since
+  06-30 and that this needed fixing before MEIC went live, is resolved: MEIC has been live since.
 - **2026-10-14/15 — live gets its own block, a per-day arm and XSP.** A live-only $500 cap could not
   be set without capping `control` (live traded the top level every paper arm inherits), so the
   `live` block gained flies' seam (#269): `live.arm`, live-only sizing that only narrows, and

@@ -476,7 +476,7 @@ leg_passes = legbars.leg_passes
 
 
 def cycle_expiry(expirations: list[dict], is_monthly) -> dict | None:
-    """The standard monthly the user trades: inside 45-60 days if one is listed, else inside 30-60
+    """The standard cycle monthly: inside 45-60 days if one is listed, else inside 30-60
     (the latest there, nearest the preferred range). None when neither range holds a monthly --
     monthlies are 28 or 35 days apart, so after a 35-day gap 30-60 can be empty."""
     monthly = [e for e in expirations if is_monthly(e["expiration"])]

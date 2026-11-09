@@ -320,7 +320,7 @@ def test_broker_adapter_place_extracts_order_id_from_serialized_response(monkeyp
     class FakeSdkResponse:
         def model_dump(self, mode="json"):
             return {
-                "order": {"id": 489184188, "status": "Received"},
+                "order": {"id": 900000003, "status": "Received"},
                 "warnings": [],
                 "errors": [],
             }
@@ -349,7 +349,7 @@ def test_broker_adapter_place_extracts_order_id_from_serialized_response(monkeyp
 
     result = adapter.place({"legs": []}, live=True)
     assert result["ok"] is True
-    assert result["order_id"] == "489184188"  # core.execution.order_id_of reads it once, as text
+    assert result["order_id"] == "900000003"  # core.execution.order_id_of reads it once, as text
     assert isinstance(result["response"], dict)  # never the raw SDK object
 
 

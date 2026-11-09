@@ -400,7 +400,7 @@
     {
       "id": 16,
       "study": "item16",
-      "title": "Put credit spreads on the funds the user trades: precious metals and bitcoin",
+      "title": "Put credit spreads on liquid metals and bitcoin funds",
       "status": "failed",
       "legacy": true,
       "setup": "premium-only",
@@ -2048,7 +2048,7 @@
     {
       "id": 49,
       "study": "item49",
-      "title": "The \"Crazy Ivan\" on TQQQ: a cash-secured 16-delta put sold by a resting order 20% over the ask",
+      "title": "The dip-sold put on TQQQ: a cash-secured 16-delta put sold by a resting order 20% over the ask",
       "status": "failed",
       "legacy": false,
       "setup": "down-day",
@@ -2058,16 +2058,16 @@
       "measure": "per chain, the net from first sale to final close (legs, core.fees, slippage, assignment) as a share of the first leg's collateral (strike x 100); a one-lot TQQQ put nearest 16 delta, 24-44 DTE nearest 31, sold by a sell limit at the close ask x 1.20 filled next session (modelled at the open or the low from the prior close's IV), half-credit take profit, rolled down and out for a credit when the close is within 5% of the strike (at most 3 rolls, 180 DTE); per month, the summed net over collateral for paired comparisons",
       "expected": "a positive mean chain net after costs for the resting-order arms, above the same put sold at the close (atclose) and above buying back at the defence line (noroll)",
       "sample": "TQQQ (and QQQ for the qqq arm) ThetaData end-of-day chains with technicals bars; design 2016-05-02..2024-12-31 (halves split 2020-09-01), holdout 2025-01-02..2026-10-28 read once per surviving arm; at most five open chains per arm; < 30 closed chains an arm in a window = no verdict",
-      "rule": "per judged arm (maria, deep, atclose, overnight, noroll, trend, qqq): design mean chain net > 0 with one-sided t > 2 clustered by entry month, Holm across 7; positive in each half; positive at 1.5x fees, natural + $0.02 a leg and fills at the limit only; then holdout mean > 0. The Crazy Ivan claim also needs a passing resting arm to beat atclose and noroll by a paired monthly difference with one-sided t > 2",
+      "rule": "per judged arm (rest20, deep, atclose, overnight, noroll, trend, qqq): design mean chain net > 0 with one-sided t > 2 clustered by entry month, Holm across 7; positive in each half; positive at 1.5x fees, natural + $0.02 a leg and fills at the limit only; then holdout mean > 0. The resting-order claim also needs a passing resting arm to beat atclose and noroll by a paired monthly difference with one-sided t > 2",
       "mechanism": "after a fast fall, index put buyers pay above the variance that follows, most at the opening gap; an order that fills only then sells into that premium. The roll is payoff shaping, tested only against its rival",
       "rivals": [
         {
           "explanation": "the plain short-put premium, not the fill",
-          "check": "maria must beat atclose, paired by month"
+          "check": "rest20 must beat atclose, paired by month"
         },
         {
           "explanation": "the roll hides the loss (matches the not-worth-revisiting roll-for-a-credit row)",
-          "check": "chains scored whole; maria must beat noroll, paired by month"
+          "check": "chains scored whole; rest20 must beat noroll, paired by month"
         },
         {
           "explanation": "a Nasdaq bull market",
@@ -2090,7 +2090,7 @@
           "check": "Holm across the seven judged arms, fixed before any look"
         }
       ],
-      "pointer": "docs/edge-hypotheses-plan.md#49-the-crazy-ivan-on-tqqq-a-cash-secured-16-delta-put-sold-by-a-resting-order-20-over-the-ask",
+      "pointer": "docs/edge-hypotheses-plan.md#49-the-dip-sold-put-on-tqqq-a-cash-secured-16-delta-put-sold-by-a-resting-order-20-over-the-ask",
       "scripts": [
         "packages/backtest/scripts/ivan_tqqq_item49.py"
       ],
@@ -2103,7 +2103,7 @@
       ],
       "retest": null,
       "retests": [],
-      "outcome": "all seven arms fail the design window, so the holdout reads none and the Crazy Ivan claim holds for no arm; the question is closed and the TQQQ plan stays shelved"
+      "outcome": "all seven arms fail the design window, so the holdout reads none and the resting-order claim holds for no arm; the question is closed and the TQQQ plan stays shelved"
     },
     {
       "id": 50,

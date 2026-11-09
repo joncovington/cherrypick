@@ -14,7 +14,7 @@ on which the `multi` oracle (2 bars) does not read STABLE. The verdict changes o
 it is read once per five-minute interval, each interval standing for its five 60 s ticks. That share
 is `be10-skip`'s placebo rate; the study step refuses to run without it.
 
-**The arms, as declared.** `be10` is the `be-hourly-1x` profile (docs/theta-profits-be-condor.md) with
+**The arms, as declared.** `be10` is the `be-hourly-1x` profile (docs/breakeven-condor.md) with
 both wings 10 points and `equalize_credit` off. Judged: `be10-multi`, `be10-perday` and `be10-multi-3b`
 against `be10`; `live-1400-multi` (item 23's `live-1400` with the gate) against `live-1400`. Reported:
 `be10-skip`, `live-1400`, `control`.
@@ -56,7 +56,7 @@ PLACEBO_SEED = 41
 ET = ZoneInfo("America/New_York")
 WINDOW = ("09:45", "15:30")
 
-# docs/theta-profits-be-condor.md, "The proposed arm", with both wings 10 points: the store holds
+# docs/breakeven-condor.md, "The proposed arm", with both wings 10 points: the store holds
 # about 100 points of strikes either side of spot, too few for his 25-40 (item 42).
 BE10 = {
     "enabled": True,

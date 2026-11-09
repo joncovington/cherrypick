@@ -58,7 +58,7 @@ document's own manual finding exactly (`{'trades': 290, 'clean_pct': 10.0, 'doub
 and the console's performance tab carry the per-arm read now).
 
 **The stop is the canonical convention, not a bug.** Research confirms the per-side stop keyed to
-the *whole IC's* credit (not each side's own credit) is the published Chambless MEIC method,
+the *whole IC's* credit (not each side's own credit) is the published MEIC method (credited in docs/strategy-sources.md),
 designed so a single-side stop scratches the trade. `stop_trigger_ratio: 0.95` is the documented
 "MEIC+" variant (stop $0.10 below breakeven) that turns scratch days slightly positive. But the
 stop's cost is real and unpriced by the convention: of stopped sides with a recorded settlement
@@ -96,7 +96,7 @@ position cost** and with exact pairing (same entries, same strikes, same credit,
 
 | policy | rule | why it's interesting |
 |---|---|---|
-| `stop-none` | hold to settlement | flagship candidate — external literature (Option Alpha's SPY/0DTE backtests) predicts no-stop beats every stop level tested; the tail risk is real, so its scorecard carries a held-through-ITM count and worst-loss line, not just an average |
+| `stop-none` | hold to settlement | flagship candidate — external literature (a bot platform's published SPY/0DTE backtests, in docs/strategy-sources.md) predicts no-stop beats every stop level tested; the tail risk is real, so its scorecard carries a held-through-ITM count and worst-loss line, not just an average |
 | `stop-0.75-net` | cost ≥ 0.75 × net_credit | a clean tightening of `control`'s own basis, zero censoring |
 | `stop-2.0-side` | cost ≥ 2.0 × that side's own credit | the "gave back its own premium" rule people mean when they say that — 1.0× side credit does NOT mean that (see the corrections below); for a balanced split this is ≈ `control` already, so it's a re-basing test more than a tightening |
 | `strike-touch` | stop only on an actual spot breach of the short strike | strongest per-dollar support in the tracked sample — most stops fired on sides that were never breached |
@@ -120,7 +120,7 @@ wrong — recorded here so they aren't re-asserted:
 |---|---|
 | `gex_positive_at_entry` = 1 on all 290 book-era rows | 1 on 78 non-null rows; 212 NULL. The dominant defect was missing GEX instrumentation (73% untagged), not a gate that never fired |
 | `overlap_scope: "none"` was already a working config flip | only `"shorts"` had a branch; `"none"` fell through to the strictest path (`"all"`) — a silent throttle. Fixed by adding an explicit branch (`paper.py`) |
-| the per-side stop is "mis-based by construction" | it is the canonical Chambless MEIC convention (see above) — reframed as canonical-vs-variant, not a bug |
+| the per-side stop is "mis-based by construction" | it is the canonical published MEIC convention (see above) — reframed as canonical-vs-variant, not a bug |
 | `1.0× side credit` giveback means "gave back its own premium" | giveback of 1.0 means **cost = 2.0× side credit** — at 1.0× the side exits at its entry price having given back nothing. `stop-2.0-side` above is the rule people actually mean |
 | the retired `width-*` arms "never traded a row" | they filled on 2026-07-30/31; the rows were destroyed by a missing-columns incident during a later schema change — the same failure class `stale_writer_columns()` (`db.py`) now exists to catch |
 | `per_side_stop_trigger` would be "wired" this phase | superseded by the read-side derivation above: rather than adding a fifth live-configurable trigger-basis mode, the four bases are answered from `open`'s recorded paths via `stop_policies.py`. The config key was unread by any code path — decorative — and was removed from `config.json`/`config.example.json` 2026-08-07 rather than left as a misleading no-op |

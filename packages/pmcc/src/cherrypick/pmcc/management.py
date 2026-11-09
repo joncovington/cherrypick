@@ -63,14 +63,14 @@ PARAM_DEFAULTS = {
     # Minutes before the session's own close (`clock.session_close_min`, 13:00 on an early close).
     "roll_time_offset": 60,
     "roll_deadline_offset": 20,
-    # Fraction of the short's extrinsic at sale that has decayed when the early roll fires (Tom
-    # King's "80-90% decayed"); None never rolls early (`shield_hold`).
+    # Fraction of the short's extrinsic at sale that has decayed when the early roll fires (the
+    # source design's "80-90% decayed"); None never rolls early (`shield_hold`).
     "early_roll_decay": None,
     "breach_roll": False,
     # Roll an in-the-money short whose extrinsic is under `assignment_exposure_tv` (`shield_guard`):
     # the telemetry's own exposure region, so the rule and the measurement share one threshold.
     "assignment_roll": False,
-    # P&L to date at or below -this x the long's cost closes the position (Tom King's 30% stop).
+    # P&L to date at or below -this x the long's cost closes the position (the source design's 30% stop).
     "stop_loss_frac": None,
     "long_close_dte": 45,
     # How an expiring short is treated (Part 2's account policy, read by paper too so a paper arm

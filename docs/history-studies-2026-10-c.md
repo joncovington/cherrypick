@@ -65,8 +65,8 @@ years is positive, and the drift is not positive in both halves.
 
 ## 2. The expected-move box edge, and two direction reads (`packages/backtest/scripts/box_touch_history.py`)
 
-**The question.** The reconstructed Daily Profit Play
-([daily-0dte-routine.md](daily-0dte-routine.md)) earns only if SPX closes back inside the
+**The question.** The reconstructed box order
+([box-edge-0dte-routine.md](box-edge-0dte-routine.md)) earns only if SPX closes back inside the
 gap-adjusted expected-move box after touching its edge more often than chance. The same sessions also
 answer hypothesis 4:
 - *the fade:* does price move back after touching the expected move early in the day?

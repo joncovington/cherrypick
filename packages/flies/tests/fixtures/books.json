@@ -1,5 +1,5 @@
 {
-  "_comment": "Three real tastytrade order chains, transcribed from the operator's screenshots. These are the module's most valuable tests because they come from OUTSIDE our own assumptions: they check the accounting against something that actually happened, not against a model we also wrote. Sign convention: positive = credit received, negative = debit paid. `mark` is the position's value as a long at the moment of the screenshot; P/L = (net + mark) * 100 * quantity.",
+  "_comment": "Three SPX butterfly order chains in the broker's own shape, rolls and completions included. They check the accounting against chains as a broker records them, not against a model we also wrote. Sign convention: positive = credit received, negative = debit paid. `mark` is the position's value as a long at the moment the chain was read; P/L = (net + mark) * 100 * quantity.",
 
   "book_c": {
     "_comment": "Feb 4 — the decisive book. Two flies LEGGED IN for a net credit, running alongside one bought outright. Each legged fly's floor is its own credit, so each is individually risk-free, not merely the book. Note the direction inversion: the put fly completed as price ROSE away from the completing spread, the call fly as price FELL. Encode that backwards and the module never completes anything.",

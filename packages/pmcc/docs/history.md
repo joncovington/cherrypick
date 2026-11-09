@@ -47,7 +47,7 @@ long legs included, and one at 0.293 — so the gate refuses the anomaly rather 
 
 ## The shield boundary (2026-10-05, measurement break)
 
-On 2026-10-04 Tom King's "Income Shield" (a ~1-year deep-ITM call held, a ~70-delta weekly call
+On 2026-10-04 a published held-long design (a ~1-year deep-ITM call held, a ~70-delta weekly call
 rolled against it) was compared with control. The replay (`scripts/pmcc_shield_replay.py`,
 docs/shield-study.md) found:
 - holding the long beat re-buying it on all five candidate symbols over 2011–2026, though in only 11
@@ -113,7 +113,7 @@ Built beside it:
 - the console splits open trades by lifecycle, shows every expiry with its year, and files arms as
   advised by their prefix. Shield had been listed among the advised arms.
 
-The same boundary moved the held-long long to Tom King's own ~90 delta: 0.88–0.92 nearest 0.90, from
+The same boundary moved the held-long long to the design's own ~90 delta: 0.88–0.92 nearest 0.90, from
 0.90–0.95 nearest 0.925, journaled as `long_delta`. It is the broker's delta, the one the live loop
 will select by. Measured that evening, the broker's deep-call delta on the American-style ETFs ran
 well below parity, and the old 0.925 sat 44–49% in the money (QQQ's at the 385 strike, below the

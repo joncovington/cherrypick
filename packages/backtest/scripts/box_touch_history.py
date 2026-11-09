@@ -4,10 +4,10 @@
     [--end D]
         [--allow-holdout] [--json FILE]
 
-Step 2 of hypothesis 8 in docs/edge-hypotheses-plan.md (docs/daily-0dte-routine.md), with the
+Step 2 of hypothesis 8 in docs/edge-hypotheses-plan.md (docs/box-edge-0dte-routine.md), with the
 direction tests of hypothesis 4 alongside, because they read the same sessions. Read-only.
 
-**Why this question.** The reconstructed Daily Profit Play is a condor order resting far above the
+**Why this question.** The reconstructed box order is a condor order resting far above the
 market: it fills only when price runs toward the edge of a gap-adjusted expected-move box. Its edge,
 if any, is that price closes back inside after such a touch more often than chance. Under a
 martingale a price sitting at a level has about an even chance of closing on either side of it, so

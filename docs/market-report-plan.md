@@ -672,7 +672,7 @@ estimated) and ex-dividend date, which reach past the local Dolt calendar's ~5 w
 **The read-side view exists (2026-10-16): the console's Screeners page.** It was to wait for two
 weeks of lists and the name-selection rule; the user asked for it on 2026-10-16 with the row rules
 reproduced and selection still open, so it shows both layers and says which is which: the listed
-trade with our rule's strike beside it, and the user's trade (the listed option when liquid, else
+trade with our rule's strike beside it, and the practical trade (the listed option when liquid, else
 the cycle monthly, marked thin when that fails too), cut by default to tradable names with no
 earnings inside the cycle. Since 2026-10-16 the default also hides a name with no liquid trade
 (the listed option and the cycle monthly both thin), and earnings are judged against the trade's

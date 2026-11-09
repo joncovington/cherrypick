@@ -11,7 +11,8 @@ year-long expiry deep enough to trade.
 
 ## What was compared
 
-The design comes from Tom King's "Income Shield" (Theta Profits, video P43DluId17o): hold a ~1-year
+The design comes from a published held-long income design (credited in
+[strategy-sources.md](../../../docs/strategy-sources.md)): hold a ~1-year
 call at about 0.925 delta, and every week sell a ~0.70-delta call against it. By put-call parity, a
 deep long call plus a short ITM weekly call is a short ~30-delta weekly put plus a far-OTM long put.
 It earns the variance premium on the weekly, with a crash floor far below.
