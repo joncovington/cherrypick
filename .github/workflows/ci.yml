@@ -12,6 +12,9 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  UV_VERSION: "0.13.7"
+
 jobs:
   # Which jobs this change needs (scripts/ci_changed_packages.py has the rules and their reasons).
   # A pull request runs only the packages it touches, plus everything when core or a shared path
@@ -123,11 +126,20 @@ jobs:
           python-version: "3.13"
       # uv in place of pip: the install was 8-31s of every job, 16 jobs a run. Installed into the
       # setup-python interpreter (UV_SYSTEM_PYTHON), so ruff and pytest land on PATH as before.
-      - uses: astral-sh/setup-uv@v6
+      # uv comes from PyPI, pinned, rather than from astral-sh/setup-uv: that action downloads from
+      # GitHub releases (and looks up the latest version) on every job, and a 504 there failed whole
+      # runs. PyPI is a separate CDN; three tries cover a blip. Bump UV_VERSION by hand.
+      - name: Install uv
+        if: env.RUN == 'true'
+        run: |
+          for i in 1 2 3; do python -m pip install --disable-pip-version-check -q "uv==$UV_VERSION" && break; sleep $((i * 10)); done
+          uv --version
+      - uses: actions/cache@v4
         if: env.RUN == 'true'
         with:
-          enable-cache: true
-          cache-dependency-glob: "packages/*/pyproject.toml"
+          path: ~/.cache/uv
+          key: uv-${{ runner.os }}-${{ hashFiles('packages/*/pyproject.toml') }}
+          restore-keys: uv-${{ runner.os }}-
       - name: Install
         if: env.RUN == 'true'
         env:
@@ -180,11 +192,20 @@ jobs:
         if: env.RUN == 'true'
         with:
           python-version: "3.13"
-      - uses: astral-sh/setup-uv@v6
+      # uv comes from PyPI, pinned, rather than from astral-sh/setup-uv: that action downloads from
+      # GitHub releases (and looks up the latest version) on every job, and a 504 there failed whole
+      # runs. PyPI is a separate CDN; three tries cover a blip. Bump UV_VERSION by hand.
+      - name: Install uv
+        if: env.RUN == 'true'
+        run: |
+          for i in 1 2 3; do python -m pip install --disable-pip-version-check -q "uv==$UV_VERSION" && break; sleep $((i * 10)); done
+          uv --version
+      - uses: actions/cache@v4
         if: env.RUN == 'true'
         with:
-          enable-cache: true
-          cache-dependency-glob: "packages/*/pyproject.toml"
+          path: ~/.cache/uv
+          key: uv-${{ runner.os }}-${{ hashFiles('packages/*/pyproject.toml') }}
+          restore-keys: uv-${{ runner.os }}-
       - name: Install the packages the mutants test
         if: env.RUN == 'true'
         env:
