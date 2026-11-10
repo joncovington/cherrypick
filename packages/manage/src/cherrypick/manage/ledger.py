@@ -45,6 +45,11 @@ def _right(lot: dict[str, Any]) -> str:
     return "S"
 
 
+def _sym(value: Any) -> str:
+    """A contract symbol with its padding collapsed, as `wheel.py` writes it."""
+    return " ".join(str(value or "").split())
+
+
 def _source(right: str) -> str:
     return {"P": "puts", "C": "calls"}.get(right, "shares")
 
@@ -102,10 +107,15 @@ def reading(
     session: date,
     rules: dict[str, Any],
     scope: list[str] | None = None,
+    contracts: list[str] | None = None,
 ) -> dict[str, Any]:
     """The account's ledger: per name and window, by month, every closed span, and what is still held.
 
     With `scope` (the wheel's names), only those names count, in every total and month; `scope` says so.
+    With `contracts` too (every option contract the wheel's cycles traded), an option leg on a scoped
+    name counts only when it is one of them: another trade on the same name (a PMCC, a spread) is not
+    the wheel's, and its legs are stated apart under `excluded.outside_wheel`. Shares and dividends on
+    the name still count. `outside_wheel` counts the closed legs it set aside, as the ledger counts.
     """
     if rows is None or error:
         return {
@@ -117,10 +127,21 @@ def reading(
     zero_dte = {str(s).upper() for s in ((rules.get("exclude") or {}).get("zero_dte_underlyings") or [])}
     spans = _premium.closed_lots(rows, zero_dte, shares=True)
     divs = _dividends(rows)
+    outside: list[dict[str, Any]] = []
     if scope is not None:
         keep = set(scope)
         spans = {k: [s for s in v if s["underlying"] in keep] for k, v in spans.items()}
         divs = [d for d in divs if d["underlying"] in keep]
+    if contracts is not None:
+        wheel_legs = {_sym(c) for c in contracts}
+
+        def wheels(s: dict[str, Any]) -> bool:
+            return _right(s) == "S" or _sym(s["symbol"]) in wheel_legs
+
+        # Closed legs only, as everything the ledger counts: a still-held leg of another trade is just
+        # not listed under `open`.
+        outside = [s for s in spans["lots"] if not wheels(s)]
+        spans = {k: ([s for s in v if wheels(s)] if k in ("lots", "open") else v) for k, v in spans.items()}
     windows = [(name, _since(session, name, days)) for name, days in WINDOWS]
     months = _premium._months_back(session, MONTHS)
 
@@ -210,5 +231,9 @@ def reading(
         "excluded": {
             "zero_dte": {**summary(spans["zero_dte"]), "underlyings": sorted(zero_dte)},
             "unmatched": summary(spans["unmatched"]),
+            "outside_wheel": {
+                **summary(outside),
+                "underlyings": sorted({s["underlying"] for s in outside}),
+            },
         },
     }

@@ -298,6 +298,7 @@ export function LedgerDesk({ ledger }: { ledger: ManageLedger | null }) {
   const first = ledger.historyFrom?.slice(0, 7) ?? "";
   const months = ledger.months.filter((m) => m.month >= first);
   const z = ledger.excluded.zeroDte;
+  const ow = ledger.excluded.outsideWheel ?? null;
   const index = lightbox.open === null ? -1 : order.indexOf(lightbox.open);
   const changed = (win !== DEFAULT_WINDOW ? 1 : 0) + (sort.id !== "net" || sort.reversed ? 1 : 0);
   const reset = () => {
@@ -328,6 +329,12 @@ export function LedgerDesk({ ledger }: { ledger: ManageLedger | null }) {
         </div>
       ) : null}
       <MonthBars months={months} />
+      {ow && ow.legs > 0 ? (
+        <p className="muted ldg-note">
+          not the wheel's: {ow.legs} option leg{ow.legs === 1 ? "" : "s"} on {ow.underlyings.join(", ")} from other trades on the same
+          name (a PMCC, a spread), net {fmtCash(ow.net)}, left out
+        </p>
+      ) : null}
       {z.legs > 0 || ledger.excluded.unmatched.legs > 0 ? (
         <p className="muted ldg-note">
           {z.legs > 0

@@ -39,10 +39,24 @@ export function meterFill(distance: number | null, nearPct: number | null): numb
   return Math.max(0, Math.min(100, (1 - distance / nearPct) * 100));
 }
 
-/** Manage's list kept to `scope` (the wheel's names); null keeps all. */
-export function scoped(all: ManageAttention, scope: string[] | null): ManageAttention {
-  const keep = (x: { underlying: string }) => scope === null || scope.includes(x.underlying);
+/** A contract symbol with its padding collapsed ("XYZ   261218C00060000" -> "XYZ 261218C00060000"),
+ *  as manage's wheel writes it. */
+export function contractKey(symbol: string | null | undefined): string {
+  return (symbol ?? "").split(/\s+/).filter(Boolean).join(" ");
+}
+
+/** Manage's list kept to `scope` (names) and `held` (contract symbols, padding collapsed); null keeps
+ *  all. The wheel tab passes `held`: a leg on a wheel name that belongs to another trade (a PMCC's
+ *  short call) is not the wheel's. */
+export function scoped(all: ManageAttention, scope: string[] | null, held: ReadonlySet<string> | null = null): ManageAttention {
+  const keep = (x: { underlying: string; symbol?: string | null }) =>
+    (scope === null || scope.includes(x.underlying)) && (held === null || held.has(contractKey(x.symbol)));
   return { ...all, items: all.items.filter(keep), expiring: all.expiring.filter(keep) };
+}
+
+/** How the cards name what they cover: everything, a wheel name's, or what the wheel holds. */
+function coverage(scope: string[] | null, held: ReadonlySet<string> | null): string {
+  return held !== null ? " the wheel holds" : scope === null ? "" : " on a wheel name";
 }
 
 function Row({ i, nearPct }: { i: ManageAttentionItem; nearPct: number | null }) {
@@ -68,9 +82,17 @@ function Row({ i, nearPct }: { i: ManageAttentionItem; nearPct: number | null })
 }
 
 /** The shorts near their strike, in the money or at risk of early exercise. */
-export function NearStrikeCard({ a: all, scope = null }: { a: ManageAttention; scope?: string[] | null }) {
-  const a = scoped(all, scope);
-  const of = scope === null ? "" : " on a wheel name";
+export function NearStrikeCard({
+  a: all,
+  scope = null,
+  held = null,
+}: {
+  a: ManageAttention;
+  scope?: string[] | null;
+  held?: ReadonlySet<string> | null;
+}) {
+  const a = scoped(all, scope, held);
+  const of = coverage(scope, held);
   return (
     <Card
       title="shorts near their strike"
@@ -108,9 +130,17 @@ export function NearStrikeCard({ a: all, scope = null }: { a: ManageAttention; s
 }
 
 /** Legs expiring within the ruleset's days, with how far each is from its strike. */
-export function ExpiringCard({ a: all, scope = null }: { a: ManageAttention; scope?: string[] | null }) {
-  const a = scoped(all, scope);
-  const of = scope === null ? "" : " on a wheel name";
+export function ExpiringCard({
+  a: all,
+  scope = null,
+  held = null,
+}: {
+  a: ManageAttention;
+  scope?: string[] | null;
+  held?: ReadonlySet<string> | null;
+}) {
+  const a = scoped(all, scope, held);
+  const of = coverage(scope, held);
   return (
     <Card
       title={`expiring in ${a.expiringDays ?? "?"} days`}

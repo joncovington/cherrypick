@@ -709,6 +709,9 @@ def _accounting(cy: _Cycle, held_legs: dict[str, dict], session: date) -> dict[s
             for s, q in sorted(cy.positions.items())
             if abs(q) > EPS
         ],
+        # Every option contract the cycle traded, open or closed: what makes a leg a wheel leg. The
+        # ledger counts these and no other option on the name (a PMCC's calls stay out).
+        "contracts": sorted({r["symbol"] for r in cy.rows if r["kind"] == "option"}),
         "credits": credits,
         "debits": debits,
         "net_cash": net_cash,

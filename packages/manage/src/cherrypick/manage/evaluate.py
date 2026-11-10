@@ -2807,6 +2807,8 @@ def evaluate(
                 session,
                 rules,
                 scope=wheel_view["names"],
+                # Only the wheel's own contracts: another trade on a wheel name (a PMCC) is not the wheel's.
+                contracts=sorted({c for cy in wheel_view["cycles"] for c in cy.get("contracts") or []}),
             )
             if account.get("designated") or n_accounts == 1
             else None

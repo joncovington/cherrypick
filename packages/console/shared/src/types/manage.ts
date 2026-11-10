@@ -493,6 +493,9 @@ export interface ManageWheelCycle {
   basisKnown: boolean | null;
   lots: Array<{ date: string | null; shares: number | null; price: number | null; source: string | null }>;
   openOptions: Array<{ symbol: string; leg: string; quantity: number | null }>;
+  /** Every option contract the cycle traded, open or closed: what makes a leg a wheel leg. Empty from
+   *  an evaluation written before manage listed them. */
+  contracts: string[];
   credits: number | null;
   debits: number | null;
   netCash: number | null;
@@ -1052,7 +1055,13 @@ export interface ManageLedger {
   lots: ManageLedgerLot[];
   /** Legs and shares still held: the cash so far, never counted as kept. */
   open: Array<{ underlying: string; symbol: string; right: string; opened: string | null; quantity: number | null; net: number }>;
-  excluded: { zeroDte: { legs: number; net: number; underlyings: string[] }; unmatched: { legs: number; net: number } };
+  excluded: {
+    zeroDte: { legs: number; net: number; underlyings: string[] };
+    unmatched: { legs: number; net: number };
+    /** Closed option legs on a wheel name that no wheel cycle traded (a PMCC, a spread): not the
+     *  wheel's. Optional: a page built before its server restarts reads a payload without it. */
+    outsideWheel?: { legs: number; net: number; underlyings: string[] };
+  };
 }
 
 /** One calendar month of the premium pace (packages/manage `premium.py`). */
