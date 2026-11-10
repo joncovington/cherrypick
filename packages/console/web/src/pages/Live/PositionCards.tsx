@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { ViewSwitch, useViewChoice } from "../../components/ViewSwitch";
 import { FilterSortButton, FilterSortPanel, FilterSummary, SortSection, sortRows, type SortChoice, type SortOption } from "../../components/FilterSort";
 import { useSearchParams } from "react-router-dom";
@@ -10,6 +10,7 @@ import { ACTION_LABEL, ActionChip, Kv, Money, tone } from "./manageParts";
 import { useLiveMarks } from "./LiveMarks";
 import { useQuote } from "../../lib/useQuote";
 import { liveTrade } from "./liveLegs";
+import { useTickFlash } from "../../lib/useTickFlash";
 import type { QuoteState } from "../../lib/wsClient";
 import { chipState, formatChange, formatPct, formatPrice } from "../../components/shell/FuturesTicker";
 
@@ -293,16 +294,7 @@ function CardSpot({ t, inSession }: { t: ManageTrade; inSession: boolean }) {
   const bars = useCandles(inSession ? "" : t.underlying, "1d");
   const closed = inSession ? null : sessionClose(bars, new Date());
   const ref = useRef<HTMLSpanElement>(null);
-  const prevTs = useRef(0);
-  useEffect(() => {
-    if (q === undefined || q.ts === prevTs.current) return;
-    prevTs.current = q.ts;
-    const el = ref.current;
-    if (el === null || q.direction === null || q.source !== "dxlink" || !inSession) return;
-    el.classList.remove("flash-up", "flash-down");
-    void el.offsetWidth; // restart the animation
-    el.classList.add(q.direction === "up" ? "flash-up" : "flash-down");
-  }, [q, inSession]);
+  useTickFlash(ref, q, inSession);
   return (
     <span ref={ref} className="pos-card-spot-wrap">
       <SpotLine q={q} evaluated={t.spot} closed={closed} />
