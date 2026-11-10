@@ -16,8 +16,9 @@ no broker credentials and no network: the snapshot is taken by
 the orchestrator's `manage` verb (`orchestrator/managesnap.py`: positions and balances, market metrics, trade history
 per held name and for the whole account (`account_transactions`, v15, for the premium pace),
 the XSP hedge chain, the quoted chain of each expiry holding a short strangle, the next quoted
-expiries after each covered call, PMCC short and short put (`roll_out_chains`, v14, capped; `pmcc.py`
-and `wheel.py` price their rolls there first and fall back to the income reading), the broker's greeks
+expiries after each covered call, PMCC short, short put and put calendar's or diagonal's short
+(`roll_out_chains`, v14, capped; `pmcc.py`, `wheel.py` and `deltaideas.py` price their rolls there
+first, the first two falling back to the income reading), the broker's greeks
 for each option leg held and the day's orders, all read-only; and from local files the income reading
 and the held names' skate bands, copied as the band file states them, which `wheel.py` moves to
 today's price, and each long call's entry-day close with the name's dividends and splits from the

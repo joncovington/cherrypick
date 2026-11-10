@@ -72,6 +72,25 @@ way am I leaning (the direction dial and where the delta comes from), what happe
 stress table and graph), do I have room to act (buying power against a limit that rises with VIX), and
 what could I add. A card compares the suite's greeks with the broker's own.
 
+The direction card's **ideas** button answers "how do I move delta without closing anything?". It
+opens on two tabs, add delta and cut delta, with the one that moves you toward the middle of your band
+first. Each tab lists the trades that drive your delta, then the rolls that would move it, largest
+first, each drawn as the order you would enter:
+
+- a calendar's or diagonal's short that expires within a week, rolled to a different strike;
+- the untested side of a condor or strangle, moved toward the money in the same expiry;
+- a poor man's covered call's short, rolled under its own rules: the width check must still pass
+  and a small debit is allowed. Its driver row says it is a stock substitute, since its long delta is
+  the reason you hold it;
+- a new spread, last.
+
+Each card shows the delta it moves and where that leaves you, the credit at mid and at the natural
+price, theta and buying power. Amber chips flag what you would want to weigh: a rule in your ruleset
+that is off, a trade already over its size budget, a roll that inverts a spread (with the collateral
+it ties up), earnings before the new expiry. A line at the top adds every roll up. A roll the
+snapshot has no quotes for is named rather than left out. Prices come from the last snapshot, so
+re-check them before you trade; nothing here places an order.
+
 ### wheel
 
 ![Live wheel: the ledger and a card for each wheel cycle](../images/live-wheel.png)
