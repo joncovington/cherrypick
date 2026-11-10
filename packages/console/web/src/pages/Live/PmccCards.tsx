@@ -9,6 +9,8 @@ import { BandDial } from "./PortfolioCards";
 import { chainLegs } from "./PositionCards";
 import { Section } from "../../components/Section";
 import { BoxButton, BoxButtons, PortfolioBoxContext } from "./portfolioBoxContext";
+import { useLiveMarks } from "./LiveMarks";
+import { livePmccs } from "./liveLegs";
 import { Cells, HeadRow, useColumns, type Column } from "../../components/columns";
 import { fmtCash, fmtMoney, fmtPrice } from "../../lib/format";
 import {
@@ -842,7 +844,9 @@ export function longDeltaFloor(rules: Record<string, unknown> | null | undefined
 
 /** One account's PMCCs: the ones that need action first, then each PMCC as a parent card, or a plain
  *  statement of why there is none. */
-export function PmccCards({ a, rules = null }: { a: ManageAccount; rules?: Record<string, unknown> | null }) {
+export function PmccCards({ a: evaluated, rules = null }: { a: ManageAccount; rules?: Record<string, unknown> | null }) {
+  // The spot and both legs' mids on live quotes where they are fresh (liveLegs.ts); the evaluation's otherwise.
+  const a = livePmccs(evaluated, useLiveMarks()?.payload ?? null);
   const v = a.pmcc;
   if (v === null) {
     return (

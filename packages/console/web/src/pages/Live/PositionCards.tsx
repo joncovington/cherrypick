@@ -9,6 +9,7 @@ import { CardLightbox, LightboxFrame, useOpenParam, type LightboxTab } from "../
 import { ACTION_LABEL, ActionChip, Kv, Money, tone } from "./manageParts";
 import { useLiveMarks } from "./LiveMarks";
 import { useQuote } from "../../lib/useQuote";
+import { liveTrade } from "./liveLegs";
 import type { QuoteState } from "../../lib/wsClient";
 import { chipState, formatChange, formatPct, formatPrice } from "../../components/shell/FuturesTicker";
 
@@ -309,9 +310,10 @@ function CardSpot({ t, inSession }: { t: ManageTrade; inSession: boolean }) {
   );
 }
 
-export function PositionCard({ t, onOpen, inSession = true }: { t: ManageTrade; onOpen: () => void; inSession?: boolean }) {
-  const live = useLiveMarks()?.trades.get(t.tradeId);
-  const livePnl = live ? (live.pnlNet ?? live.pnlGross) : null;
+export function PositionCard({ t: evaluated, onOpen, inSession = true }: { t: ManageTrade; onOpen: () => void; inSession?: boolean }) {
+  // The headline, the capture bar and "close at mid" on the live marks when every leg has one; the
+  // evaluation's net stays in the small print. The verdict and its levels are the evaluation's.
+  const { t, live, evaluatedNet } = liveTrade(evaluated, useLiveMarks()?.trades.get(evaluated.tradeId));
   const losing = t.pnlNet !== null && t.pnlNet < 0;
   const bar = t.capture === null ? 0 : Math.min(100, Math.abs(t.capture) * 100);
   const n = rolls(t);
@@ -344,10 +346,10 @@ export function PositionCard({ t, onOpen, inSession = true }: { t: ManageTrade; 
       </span>
       <span className="pos-chain-label">
         order chain · {n === 0 ? "no rolls" : `${n} roll${n === 1 ? "" : "s"}`}
-        {livePnl !== null ? (
-          <span>
+        {live ? (
+          <span title="the P&L above is on the live marks; this is the evaluation's, at its snapshot">
             {" "}
-            · live <span className={tone(livePnl)}>{fmtMoney(livePnl)}</span>
+            · live · evaluated <span className={tone(evaluatedNet)}>{fmtMoney(evaluatedNet)}</span>
           </span>
         ) : null}
       </span>
@@ -360,21 +362,25 @@ export function PositionCard({ t, onOpen, inSession = true }: { t: ManageTrade; 
   );
 }
 
-function ChainTab({ t }: { t: ManageTrade }) {
+function ChainTab({ t: evaluated }: { t: ManageTrade }) {
+  // The same live marks as the card: the rows below still add up (close at mid less the cost is the
+  // gross, less the fees the net), all live or all the evaluation's.
+  const { t, live, evaluatedNet } = liveTrade(evaluated, useLiveMarks()?.trades.get(evaluated.tradeId));
   const fees = t.fees === null ? null : Math.abs(t.fees);
   return (
     <div className="pos-open">
       <Timeline t={t} full />
       <aside className="pos-open-side">
-        <div className="lbl">P&amp;L, whole chain</div>
+        <div className="lbl">P&amp;L, whole chain{live ? " · live" : ""}</div>
         <PnlFigure t={t} />
         <Kv
           rows={[
             [t.chain && t.chain.cash !== null && t.chain.cash < 0 ? "net paid in" : "net taken in", <Money key="c" v={t.chain?.cash ?? t.opening?.net ?? null} />],
-            ["close at mid", <Money key="m" v={t.value} />],
+            [live ? "close at mid, live" : "close at mid", <Money key="m" v={t.value} />],
             ["P&L gross", <Money key="g" v={t.pnlGross} />],
             ["fees paid", fmtMoney(fees)],
             ["P&L net of fees", <Money key="n" v={t.pnlNet} />],
+            ...(live ? [["P&L net, as evaluated", <Money key="e" v={evaluatedNet} />] as [string, ReactNode]] : []),
           ]}
         />
       </aside>

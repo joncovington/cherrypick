@@ -642,7 +642,7 @@ function EvaluationPage({ view }: { view: keyof typeof VIEW_TITLE }) {
   const newest = data?.session !== null && data?.session !== undefined && data.session === sessions[sessions.length - 1];
   const late = newest ? snapshotLate(snapMs, nowMs, tradingDay) : null;
   // Live marks only beside the newest evaluation, and only on the views that show marks or greeks.
-  const wantLive = newest && (view === "positions" || view === "portfolio");
+  const wantLive = newest && (view === "positions" || view === "portfolio" || view === "wheel" || view === "pmcc");
   const live = liveMarks(useManageLive(wantLive).data);
   const picker =
     sessions.length > 1 ? (
