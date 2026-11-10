@@ -25,8 +25,13 @@ export function StatusHeader() {
         {/* No pill until the watchdog has reported once: an absent state file reads as "not a
             trading day", which is what a fresh install showed on a weekday for its first minutes. */}
         {wd && wd.ts !== null && (
-          <span className={`chip ${wd.inSession ? "chip-ok" : ""}`}>
-            {wd.isTradingDay ? (wd.inSession ? "market open" : "trading day, closed") : "non-trading day"}
+          <span
+            className={`chip ${wd.inSession ? "chip-ok" : ""}`}
+            title={wd.isTradingDay ? (wd.inSession ? "market open" : "trading day, closed") : "non-trading day"}
+          >
+            {/* The short word is for a tablet, where the ticker needs the room (styles.css). */}
+            <span className="status-long">{wd.isTradingDay ? (wd.inSession ? "market open" : "trading day, closed") : "non-trading day"}</span>
+            <span className="status-short">{wd.isTradingDay ? (wd.inSession ? "open" : "closed") : "no session"}</span>
           </span>
         )}
         <div className="mode-toggle view-toggle" role="group" aria-label="view">
@@ -51,7 +56,11 @@ export function StatusHeader() {
         </div>
         <div className="status-clock">
           {data ? (
-            <span title="Eastern time">{data.nowEt} ET</span>
+            <span title={`${data.nowEt} Eastern time`}>
+              {/* "11/9/2026, 10:28:35 PM": a tablet shows the time alone (styles.css). */}
+              {data.nowEt.includes(", ") && <span className="status-long">{data.nowEt.slice(0, data.nowEt.indexOf(", ") + 2)}</span>}
+              {data.nowEt.includes(", ") ? data.nowEt.slice(data.nowEt.indexOf(", ") + 2) : data.nowEt} ET
+            </span>
           ) : (
             <span className="skeleton skeleton-text" style={{ width: "11rem" }} />
           )}

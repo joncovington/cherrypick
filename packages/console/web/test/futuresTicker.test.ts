@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { chipState, formatChange, formatPct, formatPrice } from "../src/components/shell/FuturesTicker";
+import { chipState, formatChange, formatPct, formatPrice, priceParts } from "../src/components/shell/FuturesTicker";
 import type { QuoteState } from "../src/lib/wsClient";
 
 /**
@@ -47,5 +47,13 @@ describe("futures chips", () => {
     expect(formatChange("ZB", -0.25)).toBe("−0'08");
     expect(formatChange("ES", 12.25)).toBe("+12.25");
     expect(formatPct(-0.0612)).toBe("−0.06%");
+  });
+  it("splits off the cents a phone drops, only from a price of 1,000 or more, never from bonds", () => {
+    const [whole, cents] = priceParts("NQ", 27953.5);
+    expect(cents).not.toBeNull();
+    expect(`${whole}${cents ?? ""}`).toBe(formatPrice("NQ", 27953.5));
+    expect(cents!.slice(1)).toBe("50");
+    expect(priceParts("CL", 85.9)).toEqual([formatPrice("CL", 85.9), null]);
+    expect(priceParts("ZB", 1115.5)).toEqual(["1115'16", null]);
   });
 });

@@ -8,7 +8,9 @@ import type { QuoteState } from "../../lib/wsClient";
  * The top bar's futures ticker: /ES /NQ /CL /GC /ZB as chips, each with its live price and its
  * change on the day in points and percent, green when up and red when down, flashing on every tick.
  * The chip stacks price over change: five chips with both on one line did not fit beside the clock
- * at 1500px.
+ * at 1500px. In a top bar under 860px (styles.css) the chip stacks symbol, price and percent in one column and
+ * drops the change in points; on a phone the ticker takes its own row and a price of 1,000 or more
+ * drops its cents (`priceParts`).
  *
  * The contract for each product comes from the server (`state/futures_contracts.json`, the broker's
  * own answer, never assembled here); the prices ride the ordinary quote socket, so a contract the
@@ -38,6 +40,17 @@ function thirtySeconds(v: number): string {
 export function formatPrice(product: string, v: number): string {
   if (product === "ZB") return thirtySeconds(v);
   return v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+/**
+ * A price split so a narrow screen can drop the cents of a large one: `[whole, cents]` for a price
+ * of 1,000 or more ("7,578" and ".50"), `[whole, null]` otherwise. Bonds keep their 32nds.
+ */
+export function priceParts(product: string, v: number): [string, string | null] {
+  const s = formatPrice(product, v);
+  const dot = s.lastIndexOf(".");
+  if (product === "ZB" || Math.abs(v) < 1000 || dot < 0) return [s, null];
+  return [s.slice(0, dot), s.slice(dot)];
 }
 
 export function formatPct(v: number): string {
@@ -96,6 +109,7 @@ function Tick({ entry }: { entry: FuturesTickerEntry }) {
 
   const { price, change, changePct, tone } = chipState(q);
   const live = q?.source === "dxlink";
+  const [whole, cents] = price !== undefined ? priceParts(entry.product, price) : ["—", null];
 
   const title =
     entry.reason !== null
@@ -112,11 +126,19 @@ function Tick({ entry }: { entry: FuturesTickerEntry }) {
   return (
     <span ref={chipRef} className={`chip futures-chip ${tone}`} title={title}>
       <span className="futures-chip-symbol">{entry.label}</span>
-      <span className="futures-chip-price">{price !== undefined ? formatPrice(entry.product, price) : "—"}</span>
+      <span className="futures-chip-price">
+        {whole}
+        {cents !== null && <span className="futures-chip-cents">{cents}</span>}
+      </span>
       <span className="futures-chip-change">
-        {change !== undefined && changePct !== undefined
-          ? `${formatChange(entry.product, change)} ${formatPct(changePct)}`
-          : " "}
+        {change !== undefined && changePct !== undefined ? (
+          <>
+            <span className="futures-chip-points">{formatChange(entry.product, change)} </span>
+            {formatPct(changePct)}
+          </>
+        ) : (
+          " "
+        )}
       </span>
     </span>
   );
