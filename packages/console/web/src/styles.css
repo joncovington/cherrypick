@@ -10439,7 +10439,41 @@ button.chip[aria-pressed][data-hue="special"],
 .faq-a {
   padding: 0 0.9rem 0.3rem 2.1rem;
 }
-@media (max-width: 1100px) {
+/* The index folds behind this toggle on a narrow screen; on a wide one it is hidden and the index
+   stays open beside the page. */
+.guide-toc-toggle {
+  display: none;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  padding: 0.6rem 0.8rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+.guide-toc-toggle-label {
+  color: var(--text-dim);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.guide-toc-toggle-current {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.guide-md code {
+  overflow-wrap: anywhere;
+}
+/* A tablet in landscape: the page needs the room "On this page" takes. */
+@media (max-width: 1300px) {
   .guide-layout {
     grid-template-columns: minmax(170px, 210px) minmax(0, 1fr);
   }
@@ -10447,13 +10481,59 @@ button.chip[aria-pressed][data-hue="special"],
     display: none;
   }
 }
-@media (max-width: 700px) {
+/* A tablet in portrait and a phone: one column, the index folded above the page. */
+@media (max-width: 900px) {
   .guide-layout {
     grid-template-columns: minmax(0, 1fr);
+    gap: 1rem;
   }
   .guide-toc {
     position: static;
     max-height: none;
+  }
+  .guide-toc-toggle {
+    display: flex;
+  }
+  .guide-toc:not(.open) .guide-toc-body {
+    display: none;
+  }
+  .guide-toc.open .guide-toc-body {
+    margin-top: 0.6rem;
+  }
+  .guide-toc-link {
+    padding: 0.4rem 0.5rem;
+  }
+  .guide-prevnext {
+    flex-wrap: wrap;
+  }
+}
+/* A phone: a larger type size, and the full-size screenshot wider than the screen, panned by touch. */
+@media (max-width: 600px) {
+  .guide-md {
+    font-size: 15px;
+  }
+  .guide-md h1 {
+    font-size: 1.4rem;
+  }
+  .guide-md ul,
+  .guide-md ol {
+    padding-left: 1.2rem;
+  }
+  .guide-img-dialog {
+    max-width: 100vw;
+    max-height: 100vh;
+    width: 100vw;
+    height: 100vh;
+    border: 0;
+    border-radius: 0;
+  }
+  .guide-img-dialog img {
+    max-width: none;
+    max-height: none;
+    width: 1100px;
+  }
+  .guide-img-close {
+    position: fixed;
   }
 }
 
