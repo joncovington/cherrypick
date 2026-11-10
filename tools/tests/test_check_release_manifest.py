@@ -53,6 +53,13 @@ def test_a_malformed_manifest_or_tag_is_refused():
     assert crm.problems([], "v0.13.0")
     assert crm.problems({"releases": []}, "v0.13.0")
     assert crm.problems(manifest(), "0.13.0")
+    assert crm.problems(manifest(), "v0.13.0-rc1")
+
+
+def test_a_beta_is_a_tag_with_its_own_entry():
+    beta = {"schema": 1, "releases": {"v0.13.0-beta": dict(GOOD, migrations=[])}}
+    assert crm.problems(beta, "v0.13.0-beta") == []
+    assert crm.problems(beta, "v0.13.0-beta.2") == ["no entry for v0.13.0-beta.2 in release/manifest.json"]
 
 
 def test_the_real_manifest_has_the_first_tooled_release():

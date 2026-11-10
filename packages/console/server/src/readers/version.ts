@@ -27,26 +27,34 @@ const INSTALLED_TTL_MS = 60_000;
 
 // --------------------------------------------------------------------------- pure helpers
 
-/** `v0.12.0` / `v0.12.0-14-gabc1234` / `v0.12.0-14-gabc1234-dirty` → tag and commits past it. */
+/** A release `v0.12.0` or a pre-release `v0.12.1-beta` / `v0.12.1-beta.2` (orchestrator `upgrade.py`). */
+const VERSION = String.raw`v\d+\.\d+\.\d+(?:-beta(?:\.\d+)?)?`;
+/** A release ranks above every beta of its own number. */
+const FINAL = 1_000_000;
+
+/** `v0.12.0` / `v0.12.1-beta` / either with `-14-gabc1234` and `-dirty` → tag and commits past it. */
 export function parseDescribe(describe: string): { tag: string | null; commitsPast: number | null } {
   const s = describe.trim().replace(/-dirty$/, "");
-  const past = /^(v\d+\.\d+\.\d+)-(\d+)-g[0-9a-f]+$/.exec(s);
+  const past = new RegExp(`^(${VERSION})-(\\d+)-g[0-9a-f]+$`).exec(s);
   if (past) return { tag: past[1]!, commitsPast: Number(past[2]) };
-  if (/^v\d+\.\d+\.\d+$/.test(s)) return { tag: s, commitsPast: 0 };
+  if (new RegExp(`^${VERSION}$`).test(s)) return { tag: s, commitsPast: 0 };
   return { tag: null, commitsPast: null };
 }
 
-function parts(tag: string): [number, number, number] | null {
-  const m = /^v?(\d+)\.(\d+)\.(\d+)$/.exec(tag.trim());
-  return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null;
+/** (major, minor, patch, stage): a beta's stage is its number (`-beta` is 0), a release's is FINAL. */
+function parts(tag: string): [number, number, number, number] | null {
+  const m = /^v?(\d+)\.(\d+)\.(\d+)(-beta(?:\.(\d+))?)?$/.exec(tag.trim());
+  if (!m) return null;
+  return [Number(m[1]), Number(m[2]), Number(m[3]), m[4] ? Number(m[5] ?? 0) : FINAL];
 }
 
-/** True when `latest` is a strictly newer vMAJOR.MINOR.PATCH than `installed`; false if either is unreadable. */
+/** True when `latest` is strictly newer than `installed` (a release is newer than its own betas);
+ *  false if either is unreadable. */
 export function isNewer(latest: string, installed: string): boolean {
   const a = parts(latest);
   const b = parts(installed);
   if (a === null || b === null) return false;
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < 4; i++) {
     if (a[i]! !== b[i]!) return a[i]! > b[i]!;
   }
   return false;

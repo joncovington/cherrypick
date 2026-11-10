@@ -45,7 +45,7 @@ guide's paths match:
 - Mac: `/Users/<you>/Documents/cherrypick`
 
 (If you use git, clone into the same place and check out the latest release:
-`git checkout "$(git describe --tags --abbrev=0 origin/main)"`. [INSTALL.md](INSTALL.md) has the
+`git checkout "$(git describe --tags --abbrev=0 --exclude "*-*" origin/main)"`. [INSTALL.md](INSTALL.md) has the
 exact lines.)
 
 [latest]: https://github.com/joncovington/cherrypick/releases/latest

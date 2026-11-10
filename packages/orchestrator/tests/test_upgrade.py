@@ -244,6 +244,27 @@ def test_a_development_checkout_past_its_tag_is_left_to_git(gitworld):
     assert "development checkout" in " ".join(refusal(gitworld))
 
 
+def test_a_beta_sorts_before_its_release_and_after_the_one_before():
+    order = ["v0.12.0", "v0.12.1-beta", "v0.12.1-beta.2", "v0.12.1", "v0.13.0-beta", "v0.13.0"]
+    assert sorted(reversed(order), key=upgrade.parse_tag) == order
+    assert upgrade.parse_describe("v0.12.1-beta") == ("v0.12.1-beta", 0)
+    assert upgrade.parse_describe("v0.12.1-beta.2-3-gabc1234-dirty") == ("v0.12.1-beta.2", 3)
+    assert upgrade.normalise_tag("0.12.1-beta") == "v0.12.1-beta"
+    assert upgrade.parse_tag("v0.12.1-rc1") is None
+    # Notes from a beta up to the release include the release, not the beta the person already has.
+    manifest = {"releases": {v: {} for v in order}}
+    assert [v for v, _ in upgrade.notes_between(manifest, "v0.12.1-beta", "v0.12.1")] == [
+        "v0.12.1-beta.2",
+        "v0.12.1",
+    ]
+
+
+def test_an_installed_beta_is_read_and_its_release_is_newer(world):
+    (world.root / ".git_archival.txt").write_text("describe: v0.12.1-beta\n", encoding="utf-8")
+    assert "older than" in " ".join(refusal(world, to="v0.12.0"))
+    assert "already at" in " ".join(refusal(world, to="v0.12.1-beta"))
+
+
 def test_same_version_and_older_version_are_refused(world):
     assert "already at" in " ".join(refusal(world, to="v0.12.0"))
     world.runner.describe = "v0.13.0"

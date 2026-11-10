@@ -27,7 +27,7 @@ latest release tag (not `main`, which is often ahead of it), then work from `pac
 ```bash
 git clone https://github.com/joncovington/cherrypick.git
 cd cherrypick
-git checkout "$(git describe --tags --abbrev=0 origin/main)"   # the latest release tag
+git checkout "$(git describe --tags --abbrev=0 --exclude "*-*" origin/main)"   # the latest release tag
 cd packages/meic
 ```
 

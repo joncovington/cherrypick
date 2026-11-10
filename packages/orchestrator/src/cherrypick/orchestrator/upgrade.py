@@ -83,8 +83,12 @@ JOB_ALLOWANCE_MINUTES = 15
 SESSION_END_FALLBACK = "17:30"
 MORNING_FALLBACK = "09:00"
 
-_DESCRIBE = re.compile(r"^(v\d+\.\d+\.\d+)(?:-(\d+)-g[0-9a-f]+)?$")
-_TAG = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)$")
+# A release is `v0.13.0`; a pre-release `v0.12.1-beta` or `v0.12.1-beta.2`, which GitHub never calls
+# the latest, so it is reached only by naming it (`--to`).
+_DESCRIBE = re.compile(r"^(v\d+\.\d+\.\d+(?:-beta(?:\.\d+)?)?)(?:-(\d+)-g[0-9a-f]+)?$")
+_TAG = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)(?:-beta(?:\.(\d+))?)?$")
+# Where a release sits against its own betas: after every one of them.
+_FINAL = 1_000_000
 
 
 class Refused(Exception):
@@ -146,20 +150,27 @@ class Ports:
 
 
 # --------------------------------------------------------------------------- versions
-def parse_tag(tag: str | None) -> tuple[int, int, int] | None:
+def parse_tag(tag: str | None) -> tuple[int, int, int, int] | None:
+    """A sortable key: (major, minor, patch, stage). A beta's stage is its number (`-beta` is 0), a
+    release's is above every beta, so `v0.12.1-beta` < `v0.12.1-beta.2` < `v0.12.1` < `v0.12.2`."""
     m = _TAG.match((tag or "").strip())
-    return (int(m[1]), int(m[2]), int(m[3])) if m else None
+    if not m:
+        return None
+    beta = (tag or "").strip().find("-beta") >= 0
+    stage = (int(m[4]) if m[4] else 0) if beta else _FINAL
+    return (int(m[1]), int(m[2]), int(m[3]), stage)
 
 
 def normalise_tag(tag: str) -> str:
     t = tag.strip()
     if parse_tag(t) is None:
-        raise Refused(f"{tag!r} is not a release version like v0.13.0")
+        raise Refused(f"{tag!r} is not a release version like v0.13.0 (or v0.13.0-beta)")
     return t if t.startswith("v") else f"v{t}"
 
 
 def parse_describe(describe: str | None) -> tuple[str | None, int | None]:
-    """`v0.12.0` or `v0.12.0-14-gabc1234` (a `-dirty` suffix is ignored) -> (tag, commits past it)."""
+    """`v0.12.0`, `v0.12.1-beta` or either with `-14-gabc1234` (a `-dirty` suffix is ignored) ->
+    (tag, commits past it)."""
     m = _DESCRIBE.match((describe or "").strip().removesuffix("-dirty"))
     return (m[1], int(m[2] or 0)) if m else (None, None)
 
@@ -233,13 +244,13 @@ def notes_between(
     manifest: dict[str, Any], current: str | None, target: str
 ) -> list[tuple[str, dict[str, Any]]]:
     """Each release after `current` up to and including `target`, oldest first, with its manifest entry."""
-    lo, hi = parse_tag(current) or (0, 0, 0), parse_tag(target)
+    lo, hi = parse_tag(current) or (0, 0, 0, 0), parse_tag(target)
     rows = [
         (v, e)
         for v, e in manifest["releases"].items()
         if (t := parse_tag(v)) is not None and hi is not None and lo < t <= hi
     ]
-    return sorted(rows, key=lambda r: parse_tag(r[0]) or (0, 0, 0))
+    return sorted(rows, key=lambda r: parse_tag(r[0]) or (0, 0, 0, 0))
 
 
 def format_notes(rows: list[tuple[str, dict[str, Any]]]) -> list[str]:

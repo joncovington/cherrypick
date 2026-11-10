@@ -266,7 +266,7 @@ check out the release, as below) and double-click **`install.cmd`**. On **macOS 
 ```bash
 git clone https://github.com/joncovington/cherrypick.git
 cd cherrypick
-git checkout "$(git describe --tags --abbrev=0 origin/main)"   # the latest release
+git checkout "$(git describe --tags --abbrev=0 --exclude "*-*" origin/main)"   # the latest release
 ./install.sh
 ```
 

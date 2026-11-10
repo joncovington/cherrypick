@@ -18,8 +18,10 @@ from pathlib import Path
 
 CHANGELOG = Path(__file__).resolve().parent.parent / "CHANGELOG.md"
 # A version heading: `## v0.10.0 — 2026-10-01 — the public release`. The date and the name are
-# separated by an em dash; the name is optional.
-_HEADING = re.compile(r"^## (v\d+\.\d+\.\d+)\b(?:\s+—\s+(\d{4}-\d{2}-\d{2}))?(?:\s+—\s+(.+))?\s*$")
+# separated by an em dash; the name is optional. A pre-release is `v0.12.1-beta` or `v0.12.1-beta.2`.
+_HEADING = re.compile(
+    r"^## (v\d+\.\d+\.\d+(?:-beta(?:\.\d+)?)?)(?=\s|$)(?:\s+—\s+(\d{4}-\d{2}-\d{2}))?(?:\s+—\s+(.+))?\s*$"
+)
 
 
 class NotesError(Exception):

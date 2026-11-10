@@ -60,7 +60,7 @@ latest release tag (not `main`, which is often ahead of it):
 ```bash
 git clone https://github.com/joncovington/cherrypick.git
 cd cherrypick
-git checkout "$(git describe --tags --abbrev=0 origin/main)"   # the latest release tag
+git checkout "$(git describe --tags --abbrev=0 --exclude "*-*" origin/main)"   # the latest release tag
 pip install -e packages/core                    # shared cherrypick.core library, install first
 cd packages/gex
 pip install -e ".[dev]"

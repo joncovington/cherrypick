@@ -11,6 +11,11 @@ beyond the latest release.
 
 ## [Unreleased]
 
+- **Beta releases.** A version can now be tried as a beta (`v0.12.1-beta`) before it is the release.
+  A beta is a GitHub pre-release: `upgrade` and the console's version chip never offer it, and the
+  install instructions skip it, so nobody lands on one by accident. To try one, run
+  `run.py upgrade --to <its tag>`.
+
 - **The PMCC tab shows PMCCs only.** A call calendar or diagonal whose long was not bought deep enough
   to be a PMCC is judged as a time spread, so it no longer gets a PMCC card. A line names it (now
   "calendar" or "diagonal" for what it is) and opens the positions tab's new **time spreads** filter,
