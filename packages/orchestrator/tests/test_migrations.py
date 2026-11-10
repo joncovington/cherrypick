@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from cherrypick.orchestrator import config as cfgmod
-from cherrypick.orchestrator import migrations
+from cherrypick.orchestrator import migrations, upgrade
 from cherrypick.orchestrator.migrations import Migration, MigrationError
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -159,10 +159,8 @@ def test_the_manifest_lists_exactly_the_registry_in_order():
     """Every release's migration ids, oldest release first, are the registry's ids: a migration added
     without telling the person upgrading (or listed but not shipped) fails here."""
     manifest = json.loads((ROOT / "release" / "manifest.json").read_text(encoding="utf-8"))
-
-    def key(tag: str) -> tuple[int, ...]:
-        return tuple(int(p) for p in tag.lstrip("v").split("."))
-
+    # The suite's one version order, betas included (a beta before its release).
+    key = upgrade.parse_tag
     listed = [
         m for tag in sorted(manifest["releases"], key=key) for m in manifest["releases"][tag]["migrations"]
     ]
