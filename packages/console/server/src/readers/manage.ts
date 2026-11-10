@@ -780,7 +780,14 @@ function deltaIdeas(v: unknown): ManageDeltaIdeas | null {
     inside: d["inside"] === true,
     drivers: arr(d["drivers"]).map((raw) => {
       const r = rec(raw);
-      return { tradeId: str(r["trade_id"]), underlying: str(r["underlying"]) ?? "?", shape: str(r["shape"]), bwd: num(r["bwd"]), reason: str(r["reason"]) ?? "" };
+      return {
+        tradeId: str(r["trade_id"]),
+        underlying: str(r["underlying"]) ?? "?",
+        shape: str(r["shape"]),
+        bwd: num(r["bwd"]),
+        pmcc: r["pmcc"] === true,
+        reason: str(r["reason"]) ?? "",
+      };
     }),
     add: arr(d["add"]).map(deltaIdea),
     cut: arr(d["cut"]).map(deltaIdea),

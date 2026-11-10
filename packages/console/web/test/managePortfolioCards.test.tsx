@@ -367,7 +367,7 @@ describe("the portfolio layout", () => {
       benchmark: "SPY",
       band: [-40, 60],
       inside: true,
-      drivers: [{ tradeId: "BBB-261106-1", underlying: "BBB", shape: "calendar", bwd: -6, reason: "the 40P short is 5.0% below spot (42.1)" }],
+      drivers: [{ tradeId: "BBB-261106-1", underlying: "BBB", shape: "calendar", bwd: -6, pmcc: false, reason: "the 40P short is 5.0% below spot (42.1)" }],
       add: [idea],
       cut: [],
       together: { add: { ideas: 1, bwdChange: 2.5, afterBwd: -7.5, cash: 40 }, cut: null },

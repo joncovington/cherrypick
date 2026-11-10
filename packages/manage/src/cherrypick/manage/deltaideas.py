@@ -6,7 +6,7 @@ Three parts:
 
 - **drivers**: the trades whose delta makes the book's, largest first, each with the reason in a line
   (a condor's short call nearer the money than its put; a calendar's strike below spot);
-- **ideas**, three kinds, each priced and ranked by the delta it adds in that direction:
+- **ideas**, four kinds, each priced and ranked by the delta it adds in that direction:
   - `front_roll`: a time spread's short within `front_days` of expiry is rolled anyway, so roll it to
     the strike that moves delta most, for a credit, with its short at most `roll_short_delta`. Priced
     on the snapshot's roll-out chains, the nearest quoted expiry first and never on or after the long.
@@ -15,11 +15,16 @@ Three parts:
     spread toward the money, keeping its width (so no buying power moves), its short nearest
     `untested_short_delta` and never past the other side's short. Priced on the snapshot's
     `roll_chains` for that expiry;
+  - `pmcc_roll`: a recognised, reconciled PMCC (pmcc.py) is a stock substitute, not a plain diagonal:
+    its driver row says so, and its short rolls by the PMCC's own rules (`pmcc.roll`: short at most
+    `max_delta`, at most `max_debit` a share as a debit, the width check still passing), on any quoted
+    call expiry before the long, not only in its front week;
   - `new_spread`: one unit of the hedge's own credit and debit spreads (`hedge.py`) on its chain.
 - **together**: every roll idea in one direction, one per trade, summed;
 - **unquoted**: a trade a roll applies to whose chain the snapshot does not quote, named with why.
 
-A roll that takes a credit at mid but pays at the natural price is not offered.
+A roll that takes a credit at mid but pays at the natural price is not offered (a PMCC's: one that
+pays more than its `max_debit` at the natural price).
 
 Each idea carries the flags a person would weigh: the ruleset has `roll.untested_side` off, the trade
 is already past the per-trade risk budget (`risk.oversize` fired), the roll inverts a time spread and
@@ -36,6 +41,7 @@ from datetime import date
 from typing import Any
 
 from cherrypick.manage import hedge as _hedge
+from cherrypick.manage import pmcc as _pmcc
 from cherrypick.manage import portfolio as _portfolio
 from cherrypick.manage import pricing
 
@@ -454,6 +460,144 @@ def _untested_side(
     }
 
 
+# --------------------------------------------------------------------------- PMCC
+
+
+def _pmcc_views(account_pmcc: dict[str, Any] | None) -> dict[str, dict[str, Any]]:
+    """The recognised, reconciled PMCCs (pmcc.py), by name."""
+    return {
+        str(v["underlying"]).upper(): v
+        for v in (account_pmcc or {}).get("positions") or []
+        if v.get("recognized") and v.get("reconciled")
+    }
+
+
+def _is_pmcc(t: dict[str, Any], views: dict[str, dict[str, Any]]) -> bool:
+    return bool((t.get("pmcc") or {}).get("recognized")) and t["underlying"].upper() in views
+
+
+def _pmcc_roll(
+    t: dict[str, Any],
+    direction: str,
+    scale: float,
+    view: dict[str, Any],
+    snapshot: dict[str, Any],
+    metrics: dict[str, Any],
+    session: date,
+    rules: dict[str, Any],
+) -> dict[str, Any] | None:
+    """A PMCC's short rolled by the PMCC's own roll rules (`pmcc.roll`): any quoted call expiry after the
+    short's and before the long's, the short at most `max_delta`, the roll costing at most `max_debit` a
+    share (at mid and at the natural price), and the width check still passing. Of those, the strike that
+    moves delta most in `direction`. Not tied to `front_days`: a PMCC's short is a monthly, rolled when
+    its own rules say."""
+    spread = _time_spread(t)
+    spot = _f(t.get("spot"))
+    if not spread or not spot or view.get("div_yield") is None:
+        return None
+    short, long_ = spread
+    if short["right"] != "C" or _f(short.get("mid")) is None or _f(short.get("delta")) is None:
+        return None
+    pcfg = rules["pmcc"]["roll"]
+    max_delta, max_debit = float(pcfg["max_delta"]), float(pcfg["max_debit"])
+    net_ps = (view.get("width") or {}).get("net_cost_per_share")
+    warn = float(rules["pmcc"]["width"]["warn_share"])
+    quotes = _pmcc._quoted_expiries(
+        t["underlying"].upper(),
+        snapshot.get("income"),
+        snapshot.get("roll_chains"),
+        snapshot.get("roll_out_chains"),
+    )
+    sexp, lexp = str(short["expiration"])[:10], str(long_["expiration"])[:10]
+    later = sorted(e for e in quotes if sexp < e < lexp)[: int(pcfg["expiries"])]
+    rate = float(rules["pricing"]["rate"])
+    qty = _f(short["quantity"])  # negative
+    old_mid, old_delta = _f(short["mid"]), _f(short["delta"])
+    long_k = float(long_["strike"])
+    sign = 1.0 if direction == "add" else -1.0
+    old_q = {
+        "strike": float(short["strike"]),
+        "right": "C",
+        "mid": old_mid,
+        "delta": old_delta,
+        "bid": None,
+        "ask": None,
+    }
+    # The held short's bid and ask, where any of the PMCC's quoted chains carries its own expiry.
+    if quotes.get(sexp):
+        old_q = _held_quote(short, [{**q, "right": "C"} for q in quotes[sexp]])
+    best = None
+    for exp in later:
+        years = (date.fromisoformat(exp) - session).days / 365.0
+        for q in quotes[exp]:
+            _, d = _pmcc._solve(spot, q["strike"], years, q["mid"], "C", rate, view["div_yield"])
+            if d is None or d > max_delta + 1e-9:
+                continue
+            net = q["mid"] - old_mid
+            if net < -max_debit - 1e-9:
+                continue
+            if net_ps is not None and not q["strike"] - long_k > net_ps - net + 1e-9:
+                continue
+            change = qty * MULTIPLIER * (d - old_delta) * scale
+            if change * sign <= 0:
+                continue
+            row = {**q, "right": "C", "delta": d}
+            natural = _natural([("BTC", old_q), ("STO", row)])
+            if natural is not None and natural < -max_debit - 1e-9:
+                continue
+            if best is None or change * sign > best[0] * sign:
+                best = (change, exp, row, net, natural, years)
+    if best is None:
+        return None
+    change, exp, row, net, natural, years = best
+    q_div = view["div_yield"]
+    iv = pricing.implied_vol(spot, row["strike"], years, row["mid"], "C", rate, q_div)
+    g = pricing.greeks(spot, row["strike"], years, iv, "C", rate, q_div) if iv else None
+    old_g = _leg_greeks(short, spot, rate)
+    theta_change = qty * MULTIPLIER * (g["theta"] - old_g["theta"]) if g and old_g else None
+    flags = _flags_for(t)
+    if net_ps is not None:
+        kept = (row["strike"] - long_k) - (net_ps - net)
+        share = (net_ps - net) / (row["strike"] - long_k)
+        flags.append(
+            {
+                "key": "thin" if share > warn else "width",
+                "text": f"width holds: assigned at {row['strike']:g} it keeps "
+                f"${kept * MULTIPLIER * abs(qty):,.0f}"
+                + (f", a thin {share:.0%} of the width used" if share > warn else ""),
+            }
+        )
+    earn = _earnings_flag(t["underlying"].upper(), metrics, session, exp)
+    if earn:
+        flags.append(earn)
+    word = "credit" if net >= 0 else "debit"
+    return {
+        "kind": "pmcc_roll",
+        "header": f"Roll the PMCC's {sexp[5:]} {float(short['strike']):g}C short "
+        f"to {exp[5:]} {row['strike']:g}C",
+        "explanation": (
+            "A PMCC stands in for the shares, so its long delta is the point: "
+            + (
+                "rolling the short up gives more of it back to the long. "
+                if direction == "add"
+                else "rolling the short down caps more of the move, by choice. "
+            )
+            + f"Its own roll rules apply: the short at most {max_delta:.2f} delta, at most "
+            f"{max_debit:.2f} a share as a debit, and the width check still passing. This roll is a {word}."
+        ),
+        "legs": [_leg_row("BTC", qty, sexp, old_q), _leg_row("STO", qty, exp, row)],
+        "price": _r(net),
+        "natural": _r(natural),
+        "cash": _r(net * MULTIPLIER * abs(qty)),
+        "bwd_change": _r(change),
+        "theta_change": _r(theta_change),
+        "buying_power_change": 0.0,
+        "plain_bwd_change": None,
+        "new_expiry": exp,
+        "flags": flags,
+    }
+
+
 # --------------------------------------------------------------------------- new spread
 
 
@@ -520,11 +664,23 @@ def _new_spreads(
 
 
 def _unquoted(
-    t: dict[str, Any], roll_out: dict[str, Any] | None, roll_chains: dict[str, Any], cfg: dict[str, Any]
+    t: dict[str, Any],
+    roll_out: dict[str, Any] | None,
+    roll_chains: dict[str, Any],
+    cfg: dict[str, Any],
+    snapshot: dict[str, Any],
+    views: dict[str, dict[str, Any]],
 ) -> str | None:
     """Why a trade one of the rolls applies to has no idea for want of quotes, or None."""
     name = t["underlying"].upper()
     spread = _time_spread(t)
+    if spread and _is_pmcc(t, views):
+        short, long_ = spread
+        sexp, lexp = str(short["expiration"])[:10], str(long_["expiration"])[:10]
+        quotes = _pmcc._quoted_expiries(name, snapshot.get("income"), roll_chains, roll_out)
+        if any(sexp < e < lexp for e in quotes):
+            return None
+        return "no quoted call expiry between the PMCC's short and its long"
     if spread:
         short, long_ = spread
         if short.get("dte") is None or int(short["dte"]) > int(cfg["front_days"]):
@@ -555,8 +711,10 @@ def suggest(
     metrics: dict[str, Any],
     session: date,
     rules: dict[str, Any],
+    pmcc: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
-    """The direction card's ideas, or None when the ruleset turns them off."""
+    """The direction card's ideas, or None when the ruleset turns them off. `pmcc` is the account's
+    PMCC view (pmcc.py): a recognised PMCC is rolled by its own rules, not as a plain time spread."""
     cfg = (rules.get("portfolio") or {}).get("delta_ideas") or {}
     if not cfg or cfg.get("enabled") is False:
         return None
@@ -577,17 +735,21 @@ def suggest(
         out["error"] = "no beta-weighted delta to move"
         return out
     scales = _scales(book, trades)
+    views = _pmcc_views(pmcc)
     drivers = []
     for t in trades:
         v = _trade_bwd(t, scales.get(t["underlying"]))
         if v is not None:
+            is_pmcc = _is_pmcc(t, views)
             drivers.append(
                 {
                     "trade_id": t.get("trade_id"),
                     "underlying": t["underlying"],
                     "shape": t.get("shape"),
                     "bwd": round(v, 2),
-                    "reason": _reason(t),
+                    # A PMCC's long delta is what it is held for, so it is named as such.
+                    "pmcc": is_pmcc,
+                    "reason": ("PMCC, a stock substitute: " if is_pmcc else "") + _reason(t),
                 }
             )
     drivers.sort(key=lambda d: -abs(d["bwd"]))
@@ -597,7 +759,7 @@ def suggest(
     out["unquoted"] = [
         {"trade_id": t.get("trade_id"), "underlying": t["underlying"], "why": why}
         for t in trades
-        if (why := _unquoted(t, roll_out, roll_chains, cfg))
+        if (why := _unquoted(t, roll_out, roll_chains, cfg, snapshot, views))
     ]
     for direction in DIRECTIONS:
         ideas = []
@@ -605,9 +767,14 @@ def suggest(
             scale = scales.get(t["underlying"])
             if scale is None:
                 continue
-            idea = _front_roll(t, direction, scale, roll_out, session, rules, cfg, metrics) or _untested_side(
-                t, direction, scale, roll_chains, rules, cfg
-            )
+            if _is_pmcc(t, views):
+                idea = _pmcc_roll(
+                    t, direction, scale, views[t["underlying"].upper()], snapshot, metrics, session, rules
+                )
+            else:
+                idea = _front_roll(
+                    t, direction, scale, roll_out, session, rules, cfg, metrics
+                ) or _untested_side(t, direction, scale, roll_chains, rules, cfg)
             if idea:
                 ideas.append(
                     {

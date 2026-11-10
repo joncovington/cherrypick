@@ -2755,7 +2755,9 @@ def evaluate(
         )
         book["hedges"] = _hedge.suggest(book, snapshot.get("hedge_chain"), metrics, session, rules)
         # The direction card's ideas: what drives delta and the rolls that move it (deltaideas.py).
-        book["delta_ideas"] = _deltaideas.suggest(book, trades, snapshot, metrics, session, rules)
+        book["delta_ideas"] = _deltaideas.suggest(
+            book, trades, snapshot, metrics, session, rules, pmcc=pmcc_view
+        )
         book["candidates"] = _candidates.suggest(
             snapshot.get("income"),
             book,

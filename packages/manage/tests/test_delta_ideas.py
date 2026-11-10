@@ -200,3 +200,88 @@ def test_turned_off_there_is_no_block():
     r = _rules_with()
     r["portfolio"]["delta_ideas"]["enabled"] = False
     assert deltaideas.suggest(_book(), [_condor()], {}, {}, SESSION, r) is None
+
+
+PMCC_SHORT, PMCC_NEXT, PMCC_LONG = "2026-12-18", "2027-01-15", "2027-06-17"
+
+
+def _pmcc_trade(spot=100.0):
+    # A deep long call and a monthly short 39 days out: well past `front_days`.
+    return {
+        "trade_id": "XYZ-261001-1",
+        "underlying": "XYZ",
+        "spot": spot,
+        "shape": "diagonal",
+        "legs": [_leg(spot, 80, PMCC_LONG, "C", 1), _leg(spot, 108, PMCC_SHORT, "C", -1)],
+        "pmcc": {"recognized": True},
+        "fired": [],
+    }
+
+
+def _pmcc_view(net_cost_per_share):
+    return {
+        "positions": [
+            {
+                "underlying": "XYZ",
+                "recognized": True,
+                "reconciled": True,
+                "div_yield": 0.0,
+                "width": {"net_cost_per_share": net_cost_per_share},
+            }
+        ]
+    }
+
+
+def _pmcc_snapshot(spot=100.0):
+    chains = {}
+    for e in (PMCC_SHORT, PMCC_NEXT):
+        chains[f"XYZ|C|{e}"] = {
+            "underlying": "XYZ",
+            "right": "C",
+            "expiration": e,
+            "options": _chain(spot, e, "C", range(95, 121)),
+        }
+    return {"roll_out_chains": {"chains": chains}}
+
+
+def test_a_pmcc_is_named_as_a_stock_substitute_and_rolled_by_its_own_rules():
+    rules = _rules_with()
+    out = deltaideas.suggest(
+        _book(), [_pmcc_trade()], _pmcc_snapshot(), {}, SESSION, rules, pmcc=_pmcc_view(19.0)
+    )
+    (driver,) = out["drivers"]
+    assert driver["pmcc"] is True and driver["reason"].startswith("PMCC, a stock substitute")
+    # Cutting delta rolls the short down and out, though it is 39 days from expiry (no front-week gate).
+    (idea,) = out["cut"]
+    assert idea["kind"] == "pmcc_roll" and idea["new_expiry"] == PMCC_NEXT
+    new = idea["legs"][1]
+    k = float(new["label"].split()[1][:-1])
+    assert new["delta"] <= rules["pmcc"]["roll"]["max_delta"]
+    assert idea["price"] >= -rules["pmcc"]["roll"]["max_debit"]
+    # The width check holds: the short less the long still beats what the PMCC has cost.
+    assert k - 80 > 19.0 - idea["price"]
+    assert any(f["key"] in ("width", "thin") for f in idea["flags"])
+
+
+def test_a_pmcc_roll_never_breaks_the_width_check():
+    rules = _rules_with()
+    loose = deltaideas.suggest(
+        _book(), [_pmcc_trade()], _pmcc_snapshot(), {}, SESSION, rules, pmcc=_pmcc_view(0.0)
+    )
+    tight = deltaideas.suggest(
+        _book(), [_pmcc_trade()], _pmcc_snapshot(), {}, SESSION, rules, pmcc=_pmcc_view(28.0)
+    )
+    strike = lambda out: float(out["cut"][0]["legs"][1]["label"].split()[1][:-1])  # noqa: E731
+    # With room to spare the short goes as low as its delta cap allows; a costlier PMCC stops it higher.
+    assert strike(tight) > strike(loose)
+    assert strike(tight) - 80 > 28.0 - tight["cut"][0]["price"]
+
+
+def test_an_unrecognised_diagonal_stays_on_the_time_spread_path():
+    trade = {**_pmcc_trade(), "pmcc": {"recognized": False}}
+    out = deltaideas.suggest(
+        _book(), [trade], _pmcc_snapshot(), {}, SESSION, _rules_with(), pmcc=_pmcc_view(19.0)
+    )
+    assert out["drivers"][0]["pmcc"] is False
+    # Its short is 39 days out, past `front_days`: no roll offered.
+    assert [i["kind"] for i in out["add"] + out["cut"]] == []

@@ -450,12 +450,19 @@ to **cut** it, without closing anything held. Each has:
     moves its untested side's spread toward the money in the same expiry, keeping its width (so no
     buying power moves), its short nearest `untested_short_delta` (0.30) and never past the other
     short;
+  - **roll a PMCC's short** (`pmcc_roll`): a recognised, reconciled PMCC is not treated as a plain
+    diagonal. Its long delta is what it is held for, so its driver row says so. Its short rolls by the
+    PMCC's own rules (`pmcc.roll`): any quoted call expiry before the long, the short at most
+    `max_delta`, at most `max_debit` a share as a debit (at mid and at the natural price), and the
+    width check still passing. It is not tied to `front_days`, and the idea states what an assignment
+    at the new strike would keep;
   - **open a new spread** (`new_spread`): one unit of the hedge's credit and debit spreads, ranked after
     the rolls.
 - **together**: every roll in that direction (one per trade) summed, and where it leaves delta;
 - **unquoted**: a trade a roll applies to whose chain the snapshot does not quote, named with the reason.
 
-Each roll takes at least `min_credit` (0.10 a share) at mid and is not a debit at the natural price.
+Every roll but a PMCC's takes at least `min_credit` (0.10 a share) at mid and is not a debit at the
+natural price.
 Flags name what a person would weigh: the ruleset has `roll.untested_side` off, the trade already fired
 `risk.oversize`, the spread inverts, earnings fall before the new expiry. Thresholds are ours, with no
 published evidence. Ideas carry no confidence because none is a rule; they size, place and close nothing.

@@ -610,7 +610,7 @@ export interface ManageHedgeSuggestion {
 
 /** One way to move delta without closing anything (packages/manage `deltaideas.py`). */
 export interface ManageDeltaIdea {
-  kind: "front_roll" | "untested_side" | "new_spread" | string;
+  kind: "front_roll" | "untested_side" | "pmcc_roll" | "new_spread" | string;
   /** Null for a new spread, which no held trade owns. */
   tradeId: string | null;
   underlying: string;
@@ -641,7 +641,8 @@ export interface ManageDeltaIdeas {
   benchmark: string | null;
   band: [number, number] | null;
   inside: boolean;
-  drivers: Array<{ tradeId: string | null; underlying: string; shape: string | null; bwd: number | null; reason: string }>;
+  /** `pmcc`: a recognised PMCC, whose long delta is what it is held for. */
+  drivers: Array<{ tradeId: string | null; underlying: string; shape: string | null; bwd: number | null; pmcc: boolean; reason: string }>;
   add: ManageDeltaIdea[];
   cut: ManageDeltaIdea[];
   /** Every roll in one direction summed; null when there is none. */

@@ -334,6 +334,7 @@ export function timeSpreadModel(s: TimeSpreadStructure, capDollars: number | nul
 const IDEA_KIND: Record<string, string> = {
   front_roll: "roll the front short",
   untested_side: "roll the untested side",
+  pmcc_roll: "PMCC roll",
   new_spread: "new spread",
 };
 
@@ -344,6 +345,8 @@ const IDEA_FLAG: Record<string, string> = {
   inverts: "inverts",
   earnings: "earnings",
   past_cap: "past the cap",
+  width: "width holds",
+  thin: "thin width",
 };
 
 /**
@@ -366,7 +369,7 @@ export function deltaIdeaModel(i: ManageDeltaIdea, benchmark: string | null): Tr
     chips: (
       <>
         {i.flags.map((f) => (
-          <span key={f.key} className="chip chip-warn" title={f.text}>
+          <span key={f.key} className={`chip ${f.key === "width" ? "chip-ok" : "chip-warn"}`} title={f.text}>
             {IDEA_FLAG[f.key] ?? f.key}
           </span>
         ))}
