@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useRef, type ReactNode } from "react";
 import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Link } from "react-router-dom";
@@ -26,6 +26,34 @@ export function guideLink(href: string, slugs: ReadonlySet<string>): GuideLink {
 export function guideImage(src: string): string {
   const m = /^(?:\.\.\/images\/|\.\.\/\.\.\/docs\/images\/)([A-Za-z0-9][A-Za-z0-9._-]*)$/.exec(src);
   return m ? `/api/help/images/${m[1]!}` : src;
+}
+
+/**
+ * A guide's screenshot, shown at the column's width and opened at full size on a click. The full-size
+ * view is a native modal dialog: Esc, a click anywhere on it, or its close button shuts it, and focus
+ * goes back to the image.
+ */
+export function GuideImage({ src, alt }: { src: string; alt: string }) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  return (
+    <>
+      <button
+        type="button"
+        className="guide-img-btn"
+        aria-label={alt ? `Expand image: ${alt}` : "Expand image"}
+        title="Click to expand"
+        onClick={() => dialog.current?.showModal()}
+      >
+        <img src={src} alt={alt} className="guide-img" loading="lazy" />
+      </button>
+      <dialog ref={dialog} className="guide-img-dialog" aria-label={alt || "Image"} onClick={() => dialog.current?.close()}>
+        <button type="button" className="guide-img-close" aria-label="Close">
+          ×
+        </button>
+        <img src={src} alt={alt} />
+      </dialog>
+    </>
+  );
 }
 
 function textOf(node: ReactNode): string {
@@ -71,7 +99,7 @@ export function GuideMarkdown({ markdown, slugs, headingOffset = 0 }: { markdown
         </a>
       );
     },
-    img: ({ src, alt }) => <img src={guideImage(typeof src === "string" ? src : "")} alt={alt ?? ""} className="guide-img" loading="lazy" />,
+    img: ({ src, alt }) => <GuideImage src={guideImage(typeof src === "string" ? src : "")} alt={alt ?? ""} />,
     table: ({ children }) => (
       <div className="guide-table-wrap">
         <table>{children}</table>

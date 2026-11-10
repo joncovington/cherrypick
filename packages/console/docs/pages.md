@@ -112,7 +112,10 @@ with its paper and live all-time nets; its tabs stay because it may be reinstate
 matches the code it describes. Two tabs. `guides` holds every page at `/help/<slug>` (its own route in
 `App.tsx`, since a slug is not a tab id): a table of contents grouped and ordered by
 `docs/guide/README.md`, with a search over titles and headings; the page; "On this page"; and the
-previous and next pages in index order. `faq` (`/help/faq`) shows `faq.md` as collapsible rows, with a
+previous and next pages in index order. Prose keeps an 88ch line while a screenshot takes the
+column's width, and a click opens the screenshot full size. "On this page" drops out below 1300px; below
+900px (a tablet in portrait, a phone) the page is one column with the table of contents folded behind
+a "Guides" toggle above it. `faq` (`/help/faq`) shows `faq.md` as collapsible rows, with a
 filter, expand-all and deep links (`/help/faq#<question>`) that open the row. The server
 (`readers/help.ts`) serves only slugs the index lists, and images from `docs/images/` by bare name
 (PNG, JPEG, WebP; never SVG). Markdown is `react-markdown` + `remark-gfm`, pinned, with no raw-HTML
