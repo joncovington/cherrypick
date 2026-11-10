@@ -793,7 +793,8 @@ holding are one card each), titled by manage's stable trade ID (`XYZ-260401-1`, 
 rolls; the dialog marks a provisional ID and any ID a join merged into it): the trade's action, its P&L net of fees, capture (manage's gross figure, the one take-profit judges, so labelled before fees) and short DTE,
 and its broker order chain down the card (open, rolls, then "now, close at mid" with what the chain
 took in), from manage's own `chain`. A trade with no reconciled chain shows its opening alone and
-says so. A losing trade is red, edge included. Chips filter (all, needs action, rolled) and sort by
+says so. A losing trade is red, edge included. Chips filter (all, needs action, rolled, and time
+spreads: every trade manage shapes `calendar` or `diagonal`, `TIME_SPREAD_SHAPES`) and sort by
 P&L net either way (`?show=`, `?pnl=asc`), a trade with no net last; a card opens the shared
 lightbox (`?trade=`) with the whole chain, every leg, each order's fees and the chain's running total
 (the sum of its own signed cash, nothing re-priced), and the evaluation's detail. The ruleset follows;
@@ -880,6 +881,16 @@ the card never re-sizes a row itself. It is absent where manage wrote no such li
 manage's reason where manage refused one. There is no earnings column: manage drops a trade with a
 report inside it, so a known date is always after expiry. An unknown one is an `earnings unknown`
 chip on the name.
+
+**Which cycles, and how.** Live -> wheel's cycles are picked by state (`CYCLE_STATES`, `?state=`):
+`active` by default (open, waiting and unreconciled: what is running), then open, waiting, complete and
+all, each with manage's count, and an amber unreconciled choice only while one exists. Live -> pmcc
+lists manage's PMCCs and its undecided candidates (`splitPmccs`: every position whose `recognition` is
+not `diagonal`); a decided non-PMCC is a time spread, judged by the time-spread rules, so it is one
+line (`TimeSpreadStrip`, named by manage's `structure`, calendar or diagonal) that opens the positions
+board's time spreads, and the lightbox steps through the listed PMCCs only. Both tabs carry the
+cards/rows switch (`view.wheel`, `view.pmcc`); a row (`CardRows`, in the trade rows' classes) opens its
+full card in place. A section's controls, rows and one-line notes span its whole grid row.
 
 **What the wheel holds only**. Live -> wheel shows the wheel and no other trade, even one on a wheel
 name (a PMCC). Needs a look and expiring keep to the contracts a running cycle holds

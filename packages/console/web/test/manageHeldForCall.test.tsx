@@ -243,4 +243,25 @@ describe("the positions cards", () => {
     const act = board("/live/positions?show=act");
     expect(act).not.toContain("$50.00");
   });
+
+  it("the board's time spreads are its calendars and diagonals, calls or puts", () => {
+    const trades = [
+      trade({ tradeId: "CAL", shape: "calendar", pnlNet: 11 }),
+      trade({ tradeId: "DIA", shape: "diagonal", pnlNet: 22 }),
+      trade({ tradeId: "IC", shape: "iron condor", pnlNet: 33 }),
+    ];
+    const board = (url: string) =>
+      text(
+        renderToString(
+          <MemoryRouter initialEntries={[url]}>
+            <PositionCards trades={trades} loading={false} detail={() => null} />
+          </MemoryRouter>,
+        ),
+      );
+    expect(board("/live/positions")).toContain("time spreads 2");
+    const spreads = board("/live/positions?show=spreads");
+    expect(spreads).toContain("$11.00");
+    expect(spreads).toContain("$22.00");
+    expect(spreads).not.toContain("$33.00");
+  });
 });

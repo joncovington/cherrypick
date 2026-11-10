@@ -11,6 +11,17 @@ beyond the latest release.
 
 ## [Unreleased]
 
+- **The PMCC tab shows PMCCs only.** A call calendar or diagonal whose long was not bought deep enough
+  to be a PMCC is judged as a time spread, so it no longer gets a PMCC card. A line names it (now
+  "calendar" or "diagonal" for what it is) and opens the positions tab's new **time spreads** filter,
+  which lists every calendar and diagonal, calls and puts. A candidate whose entry delta is not known
+  yet stays on the PMCC tab until it is decided.
+- **Wheel tab state choice.** The cycles open on **active** (open, waiting for a put, and any that
+  does not reconcile), with open, waiting, complete and all one click away, each counted. The choice
+  is in the page's address.
+- **Cards or rows on the wheel and PMCC tabs**, as on the positions board: one row per cycle or PMCC,
+  opening its card in place, remembered per tab.
+
 - **Delta ideas on the portfolio tab.** The direction card has an **ideas** button: what drives your
   delta, and the rolls that would move it either way without closing anything, each priced as the order
   you would enter, with flags for anything that goes against your ruleset or sizing. A poor man's

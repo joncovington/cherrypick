@@ -24,6 +24,9 @@ import { useLiveMarks } from "./LiveMarks";
 import { liveWheel } from "./liveLegs";
 import { Section } from "../../components/Section";
 import { BoxButton, BoxButtons, PortfolioBoxContext } from "./portfolioBoxContext";
+import { useSearchParams } from "react-router-dom";
+import { ViewSwitch, useViewChoice } from "../../components/ViewSwitch";
+import { CardRows, type CardRow } from "./CardRows";
 import {
   ActionChip,
   DetailCard,
@@ -708,6 +711,87 @@ export function WheelCards({ a: evaluated }: { a: ManageAccount }) {
   );
 }
 
+/**
+ * The cycle states a reader picks between (2026-11-10), in the URL as `?state=`. "active" is what is
+ * running now, and the default: open, waiting for a put, and unreconciled (a running cycle whose
+ * history does not replay). Unreconciled gets its own amber choice only while one exists.
+ */
+export const CYCLE_STATES: Array<{ id: string; label: string; states: string[] | null; warn?: boolean }> = [
+  { id: "active", label: "active", states: ["open", "waiting", "unreconciled"] },
+  { id: "open", label: "open", states: ["open"] },
+  { id: "waiting", label: "waiting", states: ["waiting"] },
+  { id: "complete", label: "complete", states: ["complete"] },
+  { id: "unreconciled", label: "unreconciled", states: ["unreconciled"], warn: true },
+  { id: "all", label: "all", states: null },
+];
+
+export function cyclesIn(cycles: ManageWheelCycle[], id: string): ManageWheelCycle[] {
+  const pick = CYCLE_STATES.find((s) => s.id === id) ?? CYCLE_STATES[0]!;
+  return pick.states === null ? cycles : cycles.filter((c) => pick.states!.includes(c.status));
+}
+
+/** One cycle as a row: the figures its card leads with, and the card itself when it opens. */
+function cycleRow(c: ManageWheelCycle, near: Map<string, number | null>): CardRow {
+  const be = c.breakeven && c.breakeven.price !== null ? `breakeven ${px(c.breakeven.price)}` : "breakeven —";
+  const short = c.today[0];
+  return {
+    key: cycleKey(c),
+    symbol: c.underlying,
+    shape: `wheel · since ${c.start ?? "?"}${c.end ? ` to ${c.end}` : ""}`,
+    cash: c.pnlNet,
+    label: `${be} · ${c.shares ?? 0} shares`,
+    after: short ? `short ${short.leg} · ${short.dte ?? "—"} dte` : c.status === "waiting" ? "holds nothing · waiting for a put" : `${daysText(c)} days`,
+    chips: <StatusChip status={c.status} />,
+    card: <CycleCard c={c} near={near} />,
+  };
+}
+
+/** The cycles in the chosen state, as cards or rows; the choice of state is in the URL, the view remembered. */
+function CycleList({ cycles, near }: { cycles: ManageWheelCycle[]; near: Map<string, number | null> }) {
+  const [params, setParams] = useSearchParams();
+  const [view, setView] = useViewChoice("wheel");
+  const raw = params.get("state");
+  const current = CYCLE_STATES.some((s) => s.id === raw) ? raw! : "active";
+  const shown = cyclesIn(cycles, current);
+  const pick = (id: string) => {
+    const next = new URLSearchParams(params);
+    if (id === "active") next.delete("state");
+    else next.set("state", id);
+    setParams(next, { replace: true });
+  };
+  const choices = CYCLE_STATES.filter((s) => !s.warn || cyclesIn(cycles, s.id).length > 0 || current === s.id);
+  return (
+    <>
+      <div className="pos-controls">
+        <div className="history-controls" role="group" aria-label="Cycle state">
+          {choices.map((s) => (
+            <button
+              key={s.id}
+              type="button"
+              className={current === s.id ? "chip chip-ok" : "chip"}
+              data-hue={s.warn ? "warn" : undefined}
+              aria-pressed={current === s.id}
+              onClick={() => pick(s.id)}
+            >
+              {s.label} {cyclesIn(cycles, s.id).length}
+            </button>
+          ))}
+        </div>
+        <span className="pos-tools">
+          <ViewSwitch view={view} onChange={setView} />
+        </span>
+      </div>
+      {shown.length === 0 ? (
+        <p className="muted">No {current === "all" ? "" : `${current} `}cycles.</p>
+      ) : view === "rows" ? (
+        <CardRows rows={shown.map((c) => cycleRow(c, near))} />
+      ) : (
+        shown.map((c) => <CycleCard key={cycleKey(c)} c={c} near={near} />)
+      )}
+    </>
+  );
+}
+
 /** The wheel's cycles, a card each, or a plain statement of why there is none. */
 function WheelCycles({ a }: { a: ManageAccount }) {
   const w = a.wheel;
@@ -738,9 +822,7 @@ function WheelCycles({ a }: { a: ManageAccount }) {
             {a.account ?? "?"} · {cycleCount(w.cycles)}
             {w.bandsMissing ? ` · skate bands: ${w.bandsMissing}` : w.bandsDay ? ` · skate bands from ${w.bandsDay}` : ""}
           </p>
-          {w.cycles.map((c) => (
-            <CycleCard key={cycleKey(c)} c={c} near={near} />
-          ))}
+          <CycleList cycles={w.cycles} near={near} />
         </>
       )}
       {leftOutText(w.leftOut) && <p className="muted">{leftOutText(w.leftOut)}</p>}

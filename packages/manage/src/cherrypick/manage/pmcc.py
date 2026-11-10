@@ -22,7 +22,9 @@ close for the day in the snapshot, a split since, a fill no volatility prices) i
 guessed, and an unknown delta does not recognise: the candidate is listed, says why, and stays under
 the diagonal rules it always had. `recognition` names which of the three a candidate is: `pmcc`,
 `diagonal` (decided: an intent or a delta under the floor) or `unknown` (not yet decided), so a
-reader never shows an undecided candidate as a diagonal.
+reader never shows an undecided candidate as a diagonal. `structure` names the spread whatever it is
+recognised as: `calendar` (the short at the long's strike) or `diagonal` (a higher short), so a
+decided non-PMCC is named for what it is.
 
 **Linking.** The long and its shorts are often not one order chain: a short sold after the last one
 expired opens a chain of its own. So the view links them as the wheel view does, through the contracts
@@ -774,6 +776,10 @@ def judge(
         "underlying": underlying,
         "recognized": recognized,
         "recognition": recognition,
+        # The call time spread's structure, whatever it is recognised as: a calendar sells the long's
+        # own strike, a diagonal a higher one. The PMCC tab lists PMCCs and undecided ones, and names
+        # the rest by this.
+        "structure": "calendar" if abs(sk - lk) < EPS else "diagonal",
         "recognized_by": by,
         "intent": intent,
         "intent_source": intent_source,

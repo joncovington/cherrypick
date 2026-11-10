@@ -9564,6 +9564,13 @@ button.chip[aria-pressed][data-hue="special"],
 .pf-row > .card.wh-wide {
   grid-column: 1 / -1;
 }
+/* A section's list controls, its rows and its one-line notes take the whole row, never one grid column. */
+.pf-row > .pos-controls,
+.pf-row > .tr-list,
+.pf-row > .muted,
+.pf-row > .pf-hint {
+  grid-column: 1 / -1;
+}
 /* The risk section gives each card a row (the portfolio's matrix is tall); the two lists here share one. */
 .pf-row > .card.wh-half {
   grid-column: span 6;

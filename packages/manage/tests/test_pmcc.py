@@ -97,6 +97,16 @@ def test_a_long_entered_deep_is_a_pmcc():
     assert v["long"]["entry_fills"][0]["close"] == 50.0 and v["long"]["entry_fills"][0]["div_yield"] == 0.0
 
 
+def test_a_long_at_the_short_s_strike_is_a_calendar():
+    same = occ(LONG_EXP, "C", 55)
+    price = fill(55, 0.30)
+    a = evaluate(
+        snapshot(history(long=same, long_price=price), legs(long=same, long_price=price, long_mid=6.0))
+    )
+    v = view_of(a)
+    assert v["recognition"] == "diagonal" and v["structure"] == "calendar"
+
+
 def test_a_long_entered_near_the_money_stays_a_diagonal():
     near = occ(LONG_EXP, "C", 50)
     price = fill(50, 0.30)
@@ -107,6 +117,7 @@ def test_a_long_entered_near_the_money_stays_a_diagonal():
     assert v["long"]["delta_at_entry"] < 0.70
     assert not v["recognized"] and "under 0.70): a diagonal" in v["recognized_by"]
     assert v["recognition"] == "diagonal"
+    assert v["structure"] == "diagonal"
     # The view lists it; no PMCC rule judges it, whatever its numbers.
     assert not any(r.startswith("pmcc") for r in fired(trade_of(a, SHORT)))
 

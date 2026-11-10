@@ -28,10 +28,13 @@ import { chipState, formatChange, formatPct, formatPrice } from "../../component
  */
 
 export type PnlOrder = "desc" | "asc";
-type Filter = "all" | "act" | "rolled";
+type Filter = "all" | "act" | "rolled" | "spreads";
 type Tab = "chain" | "evaluation";
 
 const PASSIVE = new Set(["HOLD", "SETTLES"]);
+
+/** A time spread, by manage's shape name: calls or puts, a calendar or a diagonal (PMCCs included). */
+export const TIME_SPREAD_SHAPES = new Set(["calendar", "diagonal"]);
 
 /** P&L net, high to low or low to high; a trade whose net is unknown goes last in both. */
 export function sortByPnl(trades: ManageTrade[], order: PnlOrder): ManageTrade[] {
@@ -531,7 +534,7 @@ export function PositionCards({
   const anchor = useRef<HTMLButtonElement>(null);
   const [view, setView] = useViewChoice("positions");
   const raw = params.get("show");
-  const filter: Filter = raw === "act" || raw === "rolled" ? raw : "all";
+  const filter: Filter = raw === "act" || raw === "rolled" || raw === "spreads" ? raw : "all";
   const setParam = (k: string, v: string | null) => {
     const next = new URLSearchParams(params);
     if (v === null) next.delete(k);
@@ -540,7 +543,9 @@ export function PositionCards({
   };
   const acting = trades.filter((t) => !PASSIVE.has(t.action));
   const rolled = trades.filter((t) => rolls(t) > 0);
-  const shown = sortRows(filter === "act" ? acting : filter === "rolled" ? rolled : trades, option, choice.reversed);
+  const spreads = trades.filter((t) => t.shape !== null && TIME_SPREAD_SHAPES.has(t.shape));
+  const picked = filter === "act" ? acting : filter === "rolled" ? rolled : filter === "spreads" ? spreads : trades;
+  const shown = sortRows(picked, option, choice.reversed);
   // A trade named in the URL but filtered out still opens, stepping through every trade.
   const stepTrades = shown.some((t) => t.tradeId === lightbox.open) ? shown : sortRows(trades, option, choice.reversed);
   const changed = choice.id !== "pnl" || choice.reversed ? 1 : 0;
@@ -571,6 +576,9 @@ export function PositionCards({
           <button type="button" className={chip(filter === "rolled")} data-hue="special" aria-pressed={filter === "rolled"} onClick={() => setParam("show", "rolled")}>
             rolled {rolled.length}
           </button>
+          <button type="button" className={chip(filter === "spreads")} aria-pressed={filter === "spreads"} onClick={() => setParam("show", "spreads")}>
+            time spreads {spreads.length}
+          </button>
         </div>
         <span className="pos-tools">
           <ViewSwitch view={view} onChange={setView} />
@@ -587,7 +595,7 @@ export function PositionCards({
         <SortSection sorts={POSITION_SORTS} choice={choice} fallback="pnl" onChange={setSort} />
       </FilterSortPanel>
       {shown.length === 0 ? (
-        <p className="muted">{filter === "act" ? "Nothing to do today." : "No rolled trades."}</p>
+        <p className="muted">{filter === "act" ? "Nothing to do today." : filter === "spreads" ? "No calendars or diagonals." : "No rolled trades."}</p>
       ) : view === "rows" ? (
         <PositionRows trades={shown} inSession={inSession} onOpen={(id) => lightbox.show(id)} />
       ) : (
