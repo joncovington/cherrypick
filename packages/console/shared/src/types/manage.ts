@@ -288,6 +288,9 @@ export interface ManagePmccPosition {
   /** Which of the three manage decided: a PMCC, a diagonal, or unknown (not yet decided: the delta at
    * entry could not be solved). Null on an evaluation written before the field. */
   recognition: "pmcc" | "diagonal" | "unknown" | null;
+  /** The call time spread's structure: a calendar sells the long's own strike, a diagonal a higher one.
+   *  Null on an evaluation written before the field. */
+  structure: "calendar" | "diagonal" | null;
   recognizedBy: string | null;
   intent: string | null;
   /** Where the intent came from: set on this long's contract (`trades`) or on the name (`positions`);

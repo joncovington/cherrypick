@@ -414,6 +414,7 @@ function pmccPosition(v: unknown): ManagePmccPosition {
     underlying: str(p["underlying"]) ?? "?",
     recognized: flag(p["recognized"]),
     recognition: recognitionOf(p["recognition"]),
+    structure: p["structure"] === "calendar" || p["structure"] === "diagonal" ? p["structure"] : null,
     recognizedBy: str(p["recognized_by"]),
     intent: str(p["intent"]),
     intentSource: p["intent_source"] === "contract" || p["intent_source"] === "symbol" ? p["intent_source"] : null,

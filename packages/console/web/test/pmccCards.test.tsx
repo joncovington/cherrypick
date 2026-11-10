@@ -15,9 +15,11 @@ import {
   proposedRoll,
   pmccTabs,
   rollWords,
+  splitPmccs,
   twoOrderRollWords,
 } from "../src/pages/Live/PmccCards";
 import { aligned, inView, tables } from "./viewTables";
+import { writePref } from "../src/lib/prefs";
 
 /**
  * Live → pmcc draws packages/manage's PMCC view and decides nothing. The guards: an account with no
@@ -44,6 +46,7 @@ function position(over: Partial<ManagePmccPosition> = {}): ManagePmccPosition {
     underlying: "XYZ",
     recognized: true,
     recognition: "pmcc",
+    structure: "diagonal",
     recognizedBy: "entered at 0.82 delta (at least 0.80)",
     intent: null,
     intentSource: null,
@@ -321,8 +324,10 @@ describe("the pmcc tab", () => {
     const diagonal = position({ recognized: false, recognition: "diagonal", recognizedBy: "entered at 0.40 delta (under 0.70): a diagonal" });
     const out = render(account(view({ positions: [position(), diagonal, unknown] })));
     expect(out).toContain("XYZ · PMCC");
-    expect(out).toContain("XYZ · diagonal");
     expect(out).toContain("XYZ · PMCC? not yet decided");
+    // A decided diagonal is a time spread: no card here, named in the line that opens the positions board.
+    expect(out).not.toContain("XYZ · diagonal");
+    expect(text(out)).toContain("1 call time spread is not a PMCC");
     // An undecided candidate is never called a diagonal, on the row or in the card.
     expect(kindOf(unknown)).toEqual({
       kind: "PMCC? not yet decided",
@@ -583,5 +588,54 @@ describe("the pmcc tab, what needs action", () => {
     expect(longDeltaFloor({ pmcc: { roll_long: { min_delta: 0.7 } } })).toBe(0.7);
     expect(longDeltaFloor({ pmcc: {} })).toBeNull();
     expect(longDeltaFloor(null)).toBeNull();
+  });
+});
+
+describe("the pmcc tab holds PMCCs; time spreads go to positions", () => {
+  const calendar = position({ underlying: "CAL", recognized: false, recognition: "diagonal", structure: "calendar", recognizedBy: "entered at 0.40 delta (under 0.70): a diagonal" });
+  const diagonal = position({ underlying: "DIA", recognized: false, recognition: "diagonal", structure: "diagonal", recognizedBy: "entered at 0.45 delta (under 0.70): a diagonal" });
+  const undecided = position({ underlying: "UND", recognized: false, recognition: "unknown", recognizedBy: "delta at entry unknown" });
+
+  it("keeps PMCCs and undecided ones, and names the rest by structure", () => {
+    const { pmccs, spreads } = splitPmccs([position(), calendar, diagonal, undecided]);
+    expect(pmccs.map((p) => p.underlying)).toEqual(["XYZ", "UND"]);
+    expect(spreads.map((p) => p.underlying)).toEqual(["CAL", "DIA"]);
+    const html = renderToString(
+      <MemoryRouter>
+        <PmccCards a={account(view({ positions: [position(), calendar, diagonal] }))} />
+      </MemoryRouter>,
+    );
+    const out = text(html);
+    expect(out).toContain("2 call time spreads are not PMCCs");
+    expect(out).toContain("CAL calendar, DIA diagonal");
+    expect(html).toContain('href="/live/positions?show=spreads"');
+    expect(out).not.toContain("CAL · ");
+  });
+
+  it("with only time spreads, says there is no PMCC and still names them", () => {
+    const out = text(
+      renderToString(
+        <MemoryRouter>
+          <PmccCards a={account(view({ positions: [calendar] }))} />
+        </MemoryRouter>,
+      ),
+    );
+    expect(out).toContain(NO_PMCC);
+    expect(out).toContain("1 call time spread is not a PMCC");
+  });
+
+  it("draws one line a PMCC in rows", () => {
+    void writePref("view.pmcc", "rows");
+    try {
+      const html = renderToString(
+        <MemoryRouter>
+          <PmccCards a={account(view({ positions: [position(), undecided] }), [])} />
+        </MemoryRouter>,
+      );
+      expect(html.match(/class="tr-row"/g)?.length).toBe(2);
+      expect(text(html)).toContain("PMCC? not yet decided");
+    } finally {
+      void writePref("view.pmcc", "cards");
+    }
   });
 });

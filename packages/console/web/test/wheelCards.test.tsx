@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { renderToString } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
 import type { ManageAccount, ManageAttention, ManagePayoff, ManageTrade, ManageWheel, ManageWheelCheck, ManageWheelCycle } from "@console/shared";
-import { CYCLE_TABS, CycleBody, cycleKey, NO_WHEEL, WheelCards, outsideLegs, wheelHolding } from "../src/pages/Live/WheelCards";
+import { CYCLE_TABS, CycleBody, cycleKey, cyclesIn, NO_WHEEL, WheelCards, outsideLegs, wheelHolding } from "../src/pages/Live/WheelCards";
+import { writePref } from "../src/lib/prefs";
 import { scoped } from "../src/pages/Live/AttentionCard";
 import { aligned, inView, tables } from "./viewTables";
 
@@ -457,5 +458,63 @@ describe("the wheel tab, laid out by question", () => {
   it("a cycle's lightbox has history, money and P&L, and rules", () => {
     expect(CYCLE_TABS.map((t) => t.label)).toEqual(["history", "money & P&L", "wheel rules"]);
     expect(cycleKey(cycle())).toBe("XYZ-2026-10-01");
+  });
+});
+
+describe("the wheel tab's state choice and rows", () => {
+  const cycles = [
+    cycle({ underlying: "AAA", status: "open", start: "2026-10-01" }),
+    cycle({ underlying: "BBB", status: "waiting", start: "2026-09-11" }),
+    cycle({ underlying: "CCC", status: "complete", start: "2026-06-03", end: "2026-08-21" }),
+  ];
+  function page(route: string, cs: ManageWheelCycle[] = cycles): string {
+    return text(
+      renderToString(
+        <MemoryRouter initialEntries={[route]}>
+          <WheelCards a={account(wheel({ cycles: cs }))} />
+        </MemoryRouter>,
+      ),
+    );
+  }
+
+  it("opens on what is running now, with every state counted", () => {
+    const out = page("/live/wheel");
+    expect(out).toContain("AAA · wheel");
+    expect(out).toContain("BBB · wheel");
+    expect(out).not.toContain("CCC · wheel");
+    for (const s of ["active 2", "open 1", "waiting 1", "complete 1", "all 3"]) expect(out).toContain(s);
+    // No unreconciled cycle, so no choice for one.
+    expect(out).not.toContain("unreconciled 0");
+  });
+
+  it("takes the state from the URL", () => {
+    const out = page("/live/wheel?state=complete");
+    expect(out).toContain("CCC · wheel");
+    expect(out).not.toContain("AAA · wheel");
+    expect(page("/live/wheel?state=all")).toContain("CCC · wheel");
+    expect(page("/live/wheel?state=waiting", [cycles[0]!])).toContain("No waiting cycles.");
+  });
+
+  it("counts an unreconciled cycle as active and gives it its own choice", () => {
+    const odd = cycle({ underlying: "DDD", status: "unreconciled", problems: ["history starts after the shares"] });
+    expect(cyclesIn([...cycles, odd], "active").map((c) => c.underlying)).toEqual(["AAA", "BBB", "DDD"]);
+    expect(page("/live/wheel", [...cycles, odd])).toContain("unreconciled 1");
+  });
+
+  it("draws one line a cycle in rows, the card opening from it", () => {
+    void writePref("view.wheel", "rows");
+    try {
+      const html = renderToString(
+        <MemoryRouter initialEntries={["/live/wheel"]}>
+          <WheelCards a={account(wheel({ cycles }))} />
+        </MemoryRouter>,
+      );
+      expect(html.match(/class="tr-row"/g)?.length).toBe(2);
+      expect(text(html)).toContain("wheel · since 2026-10-01");
+      // Closed rows hold no card.
+      expect(text(html)).not.toContain("AAA · wheel");
+    } finally {
+      void writePref("view.wheel", "cards");
+    }
   });
 });

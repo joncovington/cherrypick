@@ -59,8 +59,9 @@ Then a card per trade, such as `IWM-261019-1`: its action chip (`take profit`, `
 `hold`, `review`), its net P&L, how much of the credit is captured, days to the nearest short leg, and
 the order chain that built it, each order with its legs and signed cash. Open a card for the exit
 levels, the closing order a person would enter, the rules that fired and the legs. Filters are
-`all`, `needs action` and `rolled`; sorts include P&L, days to the nearest short and needs action
-first. A `ruleset` button opens the settings the evaluation used.
+`all`, `needs action`, `rolled` and `time spreads` (every calendar and diagonal, calls or puts); sorts
+include P&L, days to the nearest short and needs action first. A `ruleset` button opens the settings
+the evaluation used.
 
 ### portfolio
 
@@ -101,10 +102,21 @@ wheel has made (a ledger of puts, calls, shares and dividends), how each cycle s
 with its net, breakeven, days, shares and the short it holds now) and what a trade would do. In the
 demo the ledger reads `$0.00` because no cycle has closed; the three cards below show the open ones.
 
+The cycles open on `active`: what is running now (open, waiting for the next put, and any that does
+not reconcile). The other choices are `open`, `waiting`, `complete` and `all`, each with its count,
+plus an amber `unreconciled` while one exists. The two icons beside them switch between a card per
+cycle and one row per cycle; a row opens its card in place. The state is kept in the page's address,
+so a link opens on it, and the view is remembered.
+
 ### pmcc
 
 Each poor man's covered call on the account: which needs action, then a card per position with the
-long leg's state, a width check, the money and the rules that fired.
+long leg's state, a width check, the money and the rules that fired. A position counts once its long
+call was bought deep enough (the entry delta in your ruleset, 0.70 by default); one whose entry delta
+is not known yet is listed as `PMCC? not yet decided` until it is. A call calendar or diagonal that is
+not a PMCC is judged as a time spread, not by the PMCC rules, so it is not drawn here: a line names it
+and opens the positions tab's `time spreads` filter. The two icons switch the PMCCs between cards and
+rows.
 
 ### meic and flies
 

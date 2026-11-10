@@ -31,6 +31,9 @@ import {
   share,
 } from "./manageParts";
 import { GuideLink } from "../../components/GuideLink";
+import { Link } from "react-router-dom";
+import { ViewSwitch, useViewChoice } from "../../components/ViewSwitch";
+import { CardRows, type CardRow } from "./CardRows";
 
 /**
  * Live → pmcc: each poor man's covered call packages/manage reads on the account (`pmcc.py`),
@@ -822,7 +825,8 @@ function PmccDialog({ ps, trades, index, open, onStep, onClose }: { ps: ManagePm
  *  so the buttons are the same buttons). */
 function PmccBoxes({ a, children }: { a: ManageAccount; children: ReactNode }) {
   const lb = useOpenParam("pm");
-  const ps = a.pmcc?.positions ?? [];
+  // Only what the tab lists steps in the lightbox: the time spreads open on the positions board.
+  const ps = splitPmccs(a.pmcc?.positions ?? []).pmccs;
   const ids = new Set(ps.map(pmccKey));
   const base = (id: string) => id.replace(/:rolls$/, "");
   const index = lb.open === null ? -1 : ps.findIndex((p) => pmccKey(p) === base(lb.open!));
@@ -861,29 +865,98 @@ export function PmccCards({ a: evaluated, rules = null }: { a: ManageAccount; ru
     v.underlyingHistoryError ? `deltas at entry: ${v.underlyingHistoryError}` : null,
     v.bandsMissing ? `skate bands: ${v.bandsMissing}` : null,
   ].filter((x): x is string => x !== null);
-  if (v.positions.length === 0) {
+  const { pmccs, spreads } = splitPmccs(v.positions);
+  if (pmccs.length === 0) {
     return (
-      <Card title={`pmcc · ${a.account ?? "?"}`}>
-        <p className="muted" style={{ margin: 0 }}>
-          {noPmccText(v.recognize)}
-        </p>
-        {v.error && <p className="muted">no PMCC view for this account: {v.error}</p>}
-        {notes.map((n) => (
-          <p key={n} className="muted">
-            {n}
+      <>
+        <Card title={`pmcc · ${a.account ?? "?"}`}>
+          <p className="muted" style={{ margin: 0 }}>
+            {noPmccText(v.recognize)}
           </p>
-        ))}
-      </Card>
+          {v.error && <p className="muted">no PMCC view for this account: {v.error}</p>}
+          {notes.map((n) => (
+            <p key={n} className="muted">
+              {n}
+            </p>
+          ))}
+        </Card>
+        <TimeSpreadStrip spreads={spreads} />
+      </>
     );
   }
-  return <PmccLayout a={a} floor={longDeltaFloor(rules)} notes={notes} />;
+  return <PmccLayout a={a} pmccs={pmccs} spreads={spreads} floor={longDeltaFloor(rules)} notes={notes} />;
 }
 
-function PmccLayout({ a, floor, notes }: { a: ManageAccount; floor: number | null; notes: string[] }) {
+/**
+ * The tab holds PMCCs and the candidates manage has not decided yet (2026-11-10). A call time spread
+ * manage decided is not a PMCC (a calendar, or a diagonal whose long was bought too shallow) is judged
+ * by the time-spread rules, so it lives on the positions board; the tab names it in one line.
+ */
+export function splitPmccs(positions: ManagePmccPosition[]): { pmccs: ManagePmccPosition[]; spreads: ManagePmccPosition[] } {
+  return {
+    pmccs: positions.filter((p) => p.recognition !== "diagonal"),
+    spreads: positions.filter((p) => p.recognition === "diagonal"),
+  };
+}
+
+/** "calendar" or "diagonal" from manage; an evaluation written before the field says "diagonal". */
+export function structureOf(p: ManagePmccPosition): string {
+  return p.structure ?? "diagonal";
+}
+
+/** The call time spreads that are not PMCCs, in one line that opens them on the positions board. */
+export function TimeSpreadStrip({ spreads }: { spreads: ManagePmccPosition[] }) {
+  if (spreads.length === 0) return null;
+  const n = spreads.length;
+  return (
+    <p className="pf-hint">
+      <span className="chip muted">not PMCCs</span>
+      <span>
+        <strong>
+          {n} call time spread{n === 1 ? " is" : "s are"} not {n === 1 ? "a PMCC" : "PMCCs"}
+        </strong>{" "}
+        · {spreads.map((p) => `${p.underlying} ${structureOf(p)}`).join(", ")} · judged as time spreads, not by the PMCC rules ·{" "}
+        <Link to="/live/positions?show=spreads">open on positions ›</Link>
+      </span>
+    </p>
+  );
+}
+
+/** One PMCC as a row: the same figures its card leads with, and the card itself when it opens. */
+function pmccRow(p: ManagePmccPosition, trades: ManageTrade[], floor: number | null): CardRow {
+  const k = kindOf(p);
+  const mine = trades.filter((t) => p.tradeIds.includes(t.tradeId));
+  const pnl = mine.length && mine.every((t) => t.pnlNet !== null) ? mine.reduce((s, t) => s + (t.pnlNet ?? 0), 0) : null;
+  const w = p.width;
+  return {
+    key: pmccKey(p),
+    symbol: p.underlying,
+    shape: `${k.kind} · ${p.long.leg} / ${p.short.leg}`,
+    cash: pnl,
+    label: `width ${w.passes === null ? "—" : w.passes ? "holds" : "fails"}${w.costShare === null ? "" : ` · cost ${pct(w.costShare)} of it`}`,
+    after: `long ${p.long.delta === null ? "—" : delta(p.long.delta)} delta · short ${p.short.dte ?? "—"} dte`,
+    chips: <span className={k.chipClass}>{k.kind}</span>,
+    card: <PmccCard p={p} trades={trades} floor={floor} />,
+  };
+}
+
+function PmccLayout({
+  a,
+  pmccs,
+  spreads,
+  floor,
+  notes,
+}: {
+  a: ManageAccount;
+  pmccs: ManagePmccPosition[];
+  spreads: ManagePmccPosition[];
+  floor: number | null;
+  notes: string[];
+}) {
   const held = useContext(VerdictsHeld);
-  const positions = a.pmcc!.positions;
-  const needs = held === null ? positions.filter((p) => pmccActions(p, a.trades).length > 0) : [];
-  const rest = positions.filter((p) => !needs.includes(p));
+  const [view, setView] = useViewChoice("pmcc");
+  const needs = held === null ? pmccs.filter((p) => pmccActions(p, a.trades).length > 0) : [];
+  const rest = pmccs.filter((p) => !needs.includes(p));
   return (
     <PmccBoxes a={a}>
       <div className="pf-layout">
@@ -896,15 +969,23 @@ function PmccLayout({ a, floor, notes }: { a: ManageAccount; floor: number | nul
         ) : null}
         {rest.length > 0 ? (
           <Section concept="dir" tag="each pmcc" question="Is each PMCC healthy?">
-            <p className="muted">
-              {a.account ?? "?"} · {positions.length} {positions.length === 1 ? "name" : "names"} with a PMCC's shape
-              {notes.length ? ` · ${notes.join(" · ")}` : ""}
-            </p>
-            {rest.map((p) => (
-              <PmccCard key={pmccKey(p)} p={p} trades={a.trades} floor={floor} />
-            ))}
+            <div className="pos-controls">
+              <p className="muted" style={{ margin: 0 }}>
+                {a.account ?? "?"} · {pmccs.length} {pmccs.length === 1 ? "PMCC" : "PMCCs"}
+                {notes.length ? ` · ${notes.join(" · ")}` : ""}
+              </p>
+              <span className="pos-tools">
+                <ViewSwitch view={view} onChange={setView} />
+              </span>
+            </div>
+            {view === "rows" ? (
+              <CardRows rows={rest.map((p) => pmccRow(p, a.trades, floor))} />
+            ) : (
+              rest.map((p) => <PmccCard key={pmccKey(p)} p={p} trades={a.trades} floor={floor} />)
+            )}
           </Section>
         ) : null}
+        <TimeSpreadStrip spreads={spreads} />
       </div>
     </PmccBoxes>
   );
