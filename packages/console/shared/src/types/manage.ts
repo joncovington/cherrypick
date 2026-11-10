@@ -1184,6 +1184,9 @@ export interface ManageLivePayload {
   accounts: ManageLiveAccount[];
   /** Each held underlying's (and the benchmark's) streamed price. */
   spots: Record<string, number>;
+  /** Each held option leg's streamed mid, a share, keyed by its contract symbol with the padding
+   *  collapsed ("XYZ 261120P00050000"). Optional: a server older than the page sends none. */
+  marks?: Record<string, number>;
 }
 
 /**

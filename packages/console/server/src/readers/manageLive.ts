@@ -251,7 +251,7 @@ export function readManageLive(
   const sessions = listSessions(config);
   const session = sessions[sessions.length - 1] ?? null;
   const maxAge = closed ? CLOSED_MAX_AGE_S : MAX_AGE_S;
-  const empty: ManageLivePayload = { session, oldestQuoteAt: null, maxAgeSeconds: maxAge, closedMarks: closed, trades: [], accounts: [], spots: {} };
+  const empty: ManageLivePayload = { session, oldestQuoteAt: null, maxAgeSeconds: maxAge, closedMarks: closed, trades: [], accounts: [], spots: {}, marks: {} };
   if (session === null) return empty;
   let doc: Rec;
   try {
@@ -261,6 +261,8 @@ export function readManageLive(
   }
   const accounts = arr(doc["accounts"]).map(rec);
   const symbols = new Set<string>();
+  // Each option leg's contract symbol (padding collapsed) to its cache key, for `marks`.
+  const contracts = new Map<string, string>();
   for (const a of accounts) {
     const bench = rec(a["portfolio"])["benchmark"];
     if (typeof bench === "string") symbols.add(bench);
@@ -268,7 +270,9 @@ export function readManageLive(
       if (typeof t["underlying"] === "string") symbols.add(t["underlying"]);
       for (const l of arr(t["legs"])) {
         const leg = legOf(l);
-        if (leg) symbols.add(leg.key);
+        if (!leg) continue;
+        symbols.add(leg.key);
+        if (leg.option) contracts.set(contractKey(String(rec(l)["symbol"])), leg.key);
       }
     }
   }
@@ -278,6 +282,11 @@ export function readManageLive(
     const m = fresh.mids.get(s);
     if (!s.startsWith(".") && m !== undefined) spots[s] = m;
   }
+  const marks: Record<string, number> = {};
+  for (const [contract, key] of contracts) {
+    const m = fresh.mids.get(key);
+    if (m !== undefined) marks[contract] = m;
+  }
   return {
     session,
     oldestQuoteAt: fresh.oldest,
@@ -286,5 +295,11 @@ export function readManageLive(
     trades: accounts.flatMap((a) => arr(a["trades"]).map((t) => liveTrade(rec(t), fresh))),
     accounts: accounts.map((a) => liveAccount(a, fresh)),
     spots,
+    marks,
   };
+}
+
+/** A contract symbol with its padding collapsed, as manage's wheel and the page key it. */
+export function contractKey(symbol: string): string {
+  return symbol.split(/\s+/).filter(Boolean).join(" ");
 }

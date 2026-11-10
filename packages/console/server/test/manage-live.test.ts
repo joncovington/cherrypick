@@ -105,6 +105,9 @@ describe("readManageLive", () => {
     expect(glw.atTakeProfit).toBe(true);
     expect(glw.atStop).toBe(false);
     expect(live.spots).toEqual({ GLW: 130, SPY: 650 });
+    // Each option leg's live mid, keyed by its contract with the padding collapsed (the wheel and
+    // PMCC tabs look a leg up by it).
+    expect(live.marks).toEqual({ "GLW 261120C00155000": 0.6, "GLW 261120C00150000": 1, "GLW 261120P00112500": 1 });
   });
 
   it("leaves a trade with an unquoted leg null, never part-marked", () => {
@@ -115,6 +118,8 @@ describe("readManageLive", () => {
     expect(glw.pnlGross).toBeNull();
     expect(glw.legsQuoted).toBe(1);
     expect(glw.legsTotal).toBe(3);
+    // The one quoted leg still has its own mark; the others have none, never the evaluation's.
+    expect(live.marks).toEqual({ "GLW 261120C00155000": 0.6 });
   });
 
   it("does not use a quote older than the cutoff", () => {

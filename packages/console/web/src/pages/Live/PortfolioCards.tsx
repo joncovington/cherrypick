@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { ManageBand, ManageGuidance, ManageGuidanceFigure, ManageLimits, ManagePortfolio, ManagePremium } from "@console/shared";
+import type { ManageBand, ManageGuidance, ManageGuidanceFigure, ManageLimits, ManageLiveAccount, ManagePortfolio, ManagePremium } from "@console/shared";
 import { Card } from "../../components/DataTable";
 import { DivergingBars } from "../../components/grid/DivergingBars";
 import { useColumns } from "../../components/columns";
@@ -167,7 +167,18 @@ function DialBeside({ dial, children }: { dial: ReactNode; children: ReactNode }
  * Income: theta against its band, beside the premium pace (theta against its target). The months
  * collected and kept, and theta over time, open from it.
  */
-export function IncomeParentCard({ p, premium }: { p: ManagePortfolio; premium: ManagePremium | null }) {
+/** The live figure beside a dial: what the stream says now, with the band's verdict left the
+ *  evaluation's. Null when the payload has no whole figure (a leg without fresh greeks). */
+export function liveGreekLine(kind: "theta" | "bwd", live: ManageLiveAccount | null, benchmark: string | null): string | null {
+  if (live === null) return null;
+  const v = kind === "theta" ? live.theta : live.bwd;
+  if (v === null) return null;
+  const figure = kind === "theta" ? `${fmtMoney(v)} theta per day` : `${signed(v)} ${benchmark ?? "SPY"} sh beta-weighted delta`;
+  return `live: ${figure} (${live.legsWithGreeks} of ${live.legsTotal} legs streaming greeks; the band above is the evaluation's)`;
+}
+
+export function IncomeParentCard({ p, premium, live = null }: { p: ManagePortfolio; premium: ManagePremium | null; live?: ManageLiveAccount | null }) {
+  const liveLine = liveGreekLine("theta", live, p.benchmark);
   const band = p.bands?.theta ?? null;
   const short = (v: number) => (v === 0 ? "0" : v.toFixed(v < 1 ? 2 : 1).replace(/0+$/, "").replace(/\.$/, ""));
   const pctBand = band ? asPercent(band) : null;
@@ -206,6 +217,7 @@ export function IncomeParentCard({ p, premium }: { p: ManagePortfolio; premium: 
             : `${fmtMoney(p.theta)} per day`}{" "}
           · band {pctOf(band?.low ?? null, places)}–{pctOf(band?.high ?? null, places)}
         </p>
+        {liveLine ? <p className="muted pf-caption">{liveLine}</p> : null}
       </DialBeside>
       <BoxButtons>
         <BoxButton id="overTime">over time</BoxButton>
@@ -219,7 +231,8 @@ export function IncomeParentCard({ p, premium }: { p: ManagePortfolio; premium: 
  * Direction: beta-weighted delta against its band, what a 1% move is worth, and the sized hedge's
  * headline while delta is outside the band (manage sizes one only then).
  */
-export function DirectionCard({ p }: { p: ManagePortfolio }) {
+export function DirectionCard({ p, live = null }: { p: ManagePortfolio; live?: ManageLiveAccount | null }) {
+  const liveLine = liveGreekLine("bwd", live, p.benchmark);
   const band = p.bands?.delta ?? null;
   const places = band ? placesApart(band.value, [band.low, band.high], 1) : 1;
   const first = p.hedges?.suggestions.find((s) => !s.error) ?? null;
@@ -238,6 +251,7 @@ export function DirectionCard({ p }: { p: ManagePortfolio }) {
           <Tile label={`per 1% ${p.benchmark ?? "SPY"} move`} value={fmtCash(p.bwdDollarsPer1pct)} />
           <Tile label="band" value={band ? `${signed(band.low, places)} to ${signed(band.high, places)}` : "—"} />
         </div>
+        {liveLine ? <p className="muted pf-caption">{liveLine}</p> : null}
         {first && p.hedges ? (
           <p className="pf-hint">
             <span className="chip pf-out">hedge</span>

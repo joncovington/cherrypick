@@ -20,6 +20,8 @@ import { fmtCash, fmtMoney, fmtPrice } from "../../lib/format";
 import { ExpiringCard, NearStrikeCard, contractKey, distanceWords } from "./AttentionCard";
 import { PayoffStrip } from "./PayoffCard";
 import { LedgerDesk } from "./LedgerDesk";
+import { useLiveMarks } from "./LiveMarks";
+import { liveWheel } from "./liveLegs";
 import { Section } from "../../components/Section";
 import { BoxButton, BoxButtons, PortfolioBoxContext } from "./portfolioBoxContext";
 import {
@@ -665,7 +667,9 @@ export function outsideLegs(payoff: ManagePayoff, holding: WheelHolding): Array<
  * One account's wheel, laid out by question: what needs a look, how much it has made, how each cycle
  * stands, what a trade would do.
  */
-export function WheelCards({ a }: { a: ManageAccount }) {
+export function WheelCards({ a: evaluated }: { a: ManageAccount }) {
+  // Each short's check on live quotes where they are fresh (liveLegs.ts); the evaluation's otherwise.
+  const a = liveWheel(evaluated, useLiveMarks()?.payload ?? null);
   const holding = wheelHolding(a.wheel);
   // What needs a look and the payoff go by what the wheel holds today, not by every name it has ever
   // wheeled, so another trade on a wheel name (a PMCC) stays on its own tab.

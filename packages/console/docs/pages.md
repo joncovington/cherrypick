@@ -835,12 +835,19 @@ flag only; one point per session, its last run. Both tabs' header shows manage's
 expiring legs unpriced). The contribution cards sum the names past their five into one "others"
 row, so the rows add up to the book; the lightbox lists every name. **Live marks** (`readers/manageLive.ts`,
 `/api/manage/live`, `pages/Live/LiveMarks.tsx`) re-price the NEWEST evaluation's legs from the stream
-cache every five seconds: per-trade live P&L and capture on the evaluation's own basis, fees and
-capture denominator, and an "at TP" / "at stop" chip against the evaluation's own levels (the
-payload carries the book's streamed delta and theta). Display only: no verdict is
-re-judged and no in/out-of-band flag is drawn for a live figure (that stays the evaluation's). A trade
-or book figure with any quote over 120 s old reads a dash, never part-marked. A past session shows
-none. Under the status line each account's day P&L (each leg's mark less the broker's
+cache every five seconds, on the positions, portfolio, wheel and pmcc tabs: per-trade live P&L and
+capture on the evaluation's own basis, fees and capture denominator, an "at TP" / "at stop" chip
+against the evaluation's own levels, each underlying's spot, each option leg's mid (`marks`, keyed by
+the contract with its padding collapsed) and the book's streamed delta and theta. The tabs put them on
+the page through `pages/Live/liveLegs.ts`, pure overlays that swap a mid or a spot for its live quote
+and redo what manage derives from them by arithmetic its own way: a position card's headline P&L,
+capture bar and "close at mid" (and its chain tab's rows, which still add up), with the evaluation's
+net in the small print; the wheel's check on each short (spot, mid, extrinsic, mark at or under a
+resting buy-to-close); a PMCC's spot and both legs' mid, intrinsic and extrinsic; and a live delta and
+theta line under the portfolio's dials. Display only: no verdict is re-judged, `tested` and the levels
+stay manage's, and no in/out-of-band flag is drawn for a live figure (that stays the evaluation's). A
+trade or book figure with any quote over 120 s old reads the evaluation's, never part-marked. A past
+session shows none. Under the status line each account's day P&L (each leg's mark less the broker's
 previous close, which manage now carries per leg) and an estimated net liq (the evaluation's, moved
 by the evaluated legs' marks; cash and the left-out 0DTE legs are the snapshot's), with the legs the
 stream is not carrying named in red: either figure is a dash while one is. While manage's evaluation

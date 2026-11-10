@@ -3,6 +3,8 @@ import { AddingTradesCard } from "./IncomeCard";
 import { ContributionCard, DirectionCard, GuidanceCard, IncomeParentCard, RoomCard, StressCard } from "./PortfolioCards";
 import { LadderCard, RiskMatrixCard } from "./ScenarioCards";
 import { Section } from "../../components/Section";
+import { useLiveMarks } from "./LiveMarks";
+import { liveAccountOf } from "./liveLegs";
 
 /**
  * The portfolio tab's layout (2026-11-06, docs: the "portfolio tab layouts" review): the cards grouped
@@ -13,6 +15,7 @@ import { Section } from "../../components/Section";
  */
 
 export function PortfolioLayout({ a }: { a: ManageAccount }) {
+  const live = liveAccountOf(useLiveMarks()?.payload ?? null, a.account);
   const p = a.portfolio;
   if (!p) return null;
   return (
@@ -21,11 +24,11 @@ export function PortfolioLayout({ a }: { a: ManageAccount }) {
         <GuidanceCard p={p} />
       </Section>
       <Section concept="income" question="Am I being paid enough?">
-        <IncomeParentCard p={p} premium={a.premium} />
+        <IncomeParentCard p={p} premium={a.premium} live={live} />
         <ContributionCard p={p} figure="theta" />
       </Section>
       <Section concept="dir" question="Which way am I leaning?">
-        <DirectionCard p={p} />
+        <DirectionCard p={p} live={live} />
         <ContributionCard p={p} figure="bwd" />
       </Section>
       <Section concept="risk" question="What happens if it moves?">
