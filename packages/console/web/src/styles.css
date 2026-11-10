@@ -10225,9 +10225,16 @@ button.chip[aria-pressed][data-hue="special"],
   padding-left: 1.2rem;
   font-size: 12px;
 }
+/* The page fills its column. Prose keeps a readable line length; a screenshot or a table takes the
+   column's full width. */
 .guide-page {
   min-width: 0;
-  max-width: 76ch;
+}
+.guide-md > :is(h1, h2, h3, h4, p, ul, ol, blockquote, pre, hr) {
+  max-width: 88ch;
+}
+.guide-md > p:has(> .guide-img-btn) {
+  max-width: none;
 }
 .guide-md {
   font-size: 14px;
@@ -10315,6 +10322,55 @@ button.chip[aria-pressed][data-hue="special"],
   border: 1px solid var(--border);
   border-radius: 6px;
 }
+.guide-img-btn {
+  display: inline-block;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: zoom-in;
+}
+.guide-img-btn .guide-img {
+  display: block;
+}
+.guide-img-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+.guide-img-dialog {
+  max-width: 96vw;
+  max-height: 96vh;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  overflow: auto;
+  cursor: zoom-out;
+}
+.guide-img-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.75);
+}
+.guide-img-dialog img {
+  display: block;
+  max-width: 96vw;
+  max-height: 96vh;
+  object-fit: contain;
+}
+.guide-img-close {
+  position: absolute;
+  top: 0.4rem;
+  right: 0.4rem;
+  width: 2rem;
+  height: 2rem;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
+}
 .guide-anchor {
   margin-left: 0.4rem;
   color: var(--text-dim);
@@ -10383,7 +10439,41 @@ button.chip[aria-pressed][data-hue="special"],
 .faq-a {
   padding: 0 0.9rem 0.3rem 2.1rem;
 }
-@media (max-width: 1100px) {
+/* The index folds behind this toggle on a narrow screen; on a wide one it is hidden and the index
+   stays open beside the page. */
+.guide-toc-toggle {
+  display: none;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  padding: 0.6rem 0.8rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+.guide-toc-toggle-label {
+  color: var(--text-dim);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.guide-toc-toggle-current {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.guide-md code {
+  overflow-wrap: anywhere;
+}
+/* A tablet in landscape: the page needs the room "On this page" takes. */
+@media (max-width: 1300px) {
   .guide-layout {
     grid-template-columns: minmax(170px, 210px) minmax(0, 1fr);
   }
@@ -10391,13 +10481,59 @@ button.chip[aria-pressed][data-hue="special"],
     display: none;
   }
 }
-@media (max-width: 700px) {
+/* A tablet in portrait and a phone: one column, the index folded above the page. */
+@media (max-width: 900px) {
   .guide-layout {
     grid-template-columns: minmax(0, 1fr);
+    gap: 1rem;
   }
   .guide-toc {
     position: static;
     max-height: none;
+  }
+  .guide-toc-toggle {
+    display: flex;
+  }
+  .guide-toc:not(.open) .guide-toc-body {
+    display: none;
+  }
+  .guide-toc.open .guide-toc-body {
+    margin-top: 0.6rem;
+  }
+  .guide-toc-link {
+    padding: 0.4rem 0.5rem;
+  }
+  .guide-prevnext {
+    flex-wrap: wrap;
+  }
+}
+/* A phone: a larger type size, and the full-size screenshot wider than the screen, panned by touch. */
+@media (max-width: 600px) {
+  .guide-md {
+    font-size: 15px;
+  }
+  .guide-md h1 {
+    font-size: 1.4rem;
+  }
+  .guide-md ul,
+  .guide-md ol {
+    padding-left: 1.2rem;
+  }
+  .guide-img-dialog {
+    max-width: 100vw;
+    max-height: 100vh;
+    width: 100vw;
+    height: 100vh;
+    border: 0;
+    border-radius: 0;
+  }
+  .guide-img-dialog img {
+    max-width: none;
+    max-height: none;
+    width: 1100px;
+  }
+  .guide-img-close {
+    position: fixed;
   }
 }
 
