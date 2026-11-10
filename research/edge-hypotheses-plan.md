@@ -6965,6 +6965,94 @@ expiries only, as judged. Declared here before the module's first entry.*
     measured gap as a replay correction, and the module stays paper.
 - **Result:** not yet run.
 
+### 70. The dividend-yield put: a cash-secured put at the strike where a cheap payer's dividend yields its usual rate
+
+*Source: the user, 2026-11-10 ("add as a research item, then we'll decide if a trading module is
+worth the effort"), after a review of the options educator's free episode on dividend investing
+with options (https://youtu.be/RKjYmfrj95E). Declared before any option quote was read; the screen
+inputs (bars, dividends, statements) were read to place the target, as the target paragraph says.*
+
+- **Question:** on dividend payers screened the educator's way (high trailing yield, payout under
+  100%, positive earnings, a low P/E), does a cash-secured put sold at the strike where the forward
+  dividend would yield the name's usual rate earn more, after costs and net of the market exposure
+  it carries, than our short-put list's 16-delta put on the same names and months?
+- **Where the edge would live:** a **valuation anchor**: a payer's yield reverts toward its own
+  norm, so a stock bought at that yield is cheap, and the put's premium is paid on top. Against it,
+  dividends are already in the put's price (the forward is lower by them), and a yield well above
+  its norm is often the market expecting a cut.
+- **Look-alikes:** the 2026-10-19 short-put delta sweep (16-delta, 45-60 days, closed at half
+  credit, the best of the strike rules and near zero; this item's base); the income screen tests
+  (IV/RV and momentum select no edge); item 25 (the skate put's expiry; its replay machinery is
+  reused here); item 49 (a cash-secured put by a different entry rule, failed).
+  `cherrypick hypotheses` lists no rejected row with this setup.
+- **The screen**, on the first trading day of each month, over the liquidity verdict's tradable
+  names, each read as of that day: trailing dividend (ex-dates in the 365 days to it) above zero;
+  earnings per share from the latest annual statement whose period ended 90 or more days before,
+  above zero; payout (trailing dividend over earnings per share) under 100%; a P/E at or under the
+  median of the names passing so far; a split since that statement's period end makes the name
+  unknown. The 30 highest trailing yields make the month's list; a name may enter only in a month
+  it is listed.
+- **The target:** the forward dividend (the latest payment at the trailing year's count) over the
+  name's own usual yield, the median trailing yield on the first trading day of each of the 60
+  months before, months whose trailing year holds a split skipped, 36 or more needed. The
+  educator's own rule (a bill yield plus a premium for the stock's risk, his example 5% to 6.5%)
+  was read on the screen inputs first: at 2025-26's bill rates it put the median listed name's
+  target 57% under its close, where no put is bid, and at 2022's at or over the close on 80% of
+  listings, so it is not declared. The declared target sits at or over the close on 56% (design)
+  and 65% (holdout) of listings, where `y-strike` sells the put at the money: a high-yield screen
+  picks names above their usual yield.
+- **The arms**, one position a name at a time on the 45-60 day standard monthly, entered on a
+  listed day while flat:
+  - `y-strike`: the highest listed put at or under the lower of the target and the close, held to
+    expiry; no lower strike is tried when it fails the spread bar.
+  - `y-net`: the highest listed put at or under the close whose strike less its working credit is
+    at or under the target (the educator's "84 put at $1 gets me in at 83"), the first passing the
+    spread bar going down, held to expiry.
+  - `d16-tp50` (the base): the listed put nearest -0.16 delta, bought back at half the credit.
+  - `d16-hold` (reported, never judged): the same put held, to separate the strike from the exit.
+  No earnings refusal (the strategy holds through reports, and every arm crosses the same ones); a
+  span holding a split is refused; a leg must pass `core.legbars`' spread bar.
+- **Measured:** per name and arm, edge = net less the delta-equivalent stock position over each
+  trade, **its dividends with an ex-date in the trade included** (without them a put on a payer
+  looks better than it is by the dividend the stock drops by), as a percentage of the mean capital
+  (strike x 100) per year the name was listed. Fills at mid conceding a quarter of the bid-ask, real
+  fees, $5 settlement; 3/8 of the spread as the stress. An assigned put is booked at its intrinsic
+  value at the expiry close.
+- **Windows:** design, entries 2025-09-01 to 2026-08-31 (run end 2026-10-16); holdout, entries
+  2022 (run end 2023-02-17), a falling year, when a yield screen's names are tested.
+- **Pass-or-fail rule**, per judged arm (`y-strike`, `y-net`) against `d16-tp50`, all must hold:
+  - design: the per-name paired difference's mean above zero with a one-sided t above 2, Holm
+    across the two arms; positive on more than half the names; the arm's own median edge above
+    zero, and at the 3/8 stress;
+  - holdout: the paired mean and the arm's own median edge above zero.
+  - Under 20 traded names or 150 trades in an arm, or the base, in a window is no verdict.
+- **Reported beside, never judged:** `d16-hold`; each arm's refusals by reason; how far under the
+  close each strike sat; assignments; the listed names per month.
+- **Rival explanations, each with its check:**
+  - *The at-the-money put is just more market exposure:* **Check:** the edge takes off the
+    delta-equivalent stock, dividends included; raw net is not the measure.
+  - *The half-credit exit, not the strike, separates the arms:* **Check:** `d16-hold` beside.
+  - *Dividends are already priced:* **Check:** the measure's dividend term; the forward in each
+    slice carries the dividends due before expiry.
+  - *Survivorship:* the pool is today's tradable verdict, so names that cut and fell out are
+    missing, which flatters a yield screen. **Check:** stated as a limit; a pass is read as an upper
+    bound and the holdout's falling year is the stricter half.
+  - *A yield well above its norm prices a cut:* **Check:** assignments and the stock's move after
+    them are reported per name.
+- **Declared limits (B11):** one contract a name; annual statements only (no quarterly earnings);
+  a special dividend counts in the trailing and forward figures; early assignment not modelled; a
+  share held after assignment is not carried (the study's convention, as item 69's).
+- **Data:** the liquidity verdict, history.db (bars, splits, reconciled dividends), fundamentals.db
+  (`statements_annual`), and the chain-path store for the listed names' monthlies, fetched from
+  `packages/backtest/scripts/dividend_put_item70.py requests`' file; results under the backtest
+  data directory (`results/research/item70/`).
+- **Decides:**
+  - **A pass:** a proposal for a dividend-put screen on the Screeners page and, if the user wants
+    one, a paper arm; nothing goes live from this item.
+  - **A fail:** the yield anchor adds nothing over the 16-delta rule; the short-put list keeps its
+    rule and no dividend screen is built.
+- **Result:** not yet run.
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:
