@@ -11,6 +11,16 @@ beyond the latest release.
 
 ## [Unreleased]
 
+- **Delta ideas on the portfolio tab.** The direction card has an **ideas** button: what drives your
+  delta, and the rolls that would move it either way without closing anything, each priced as the order
+  you would enter, with flags for anything that goes against your ruleset or sizing. A poor man's
+  covered call is rolled under its own PMCC rules, with the width check kept. Worked out on every
+  manage run, inside the band as well as outside. The thresholds are in `portfolio.delta_ideas` in
+  `config/manage.json` (defaults in `packages/manage/config.example.json`); nothing to set to use it.
+- **Put calendars' rolls are now quoted.** The manage snapshot reads the next expiries after a put
+  calendar's or diagonal's short, as it already did for call ones, so those rolls are priced from
+  quotes. That adds a few broker reads to each manage run, inside the existing cap.
+
 ## v0.12.0 — 2026-11-09 — the guided release
 Three weeks and about 560 pull requests since v0.11.2. This is the release that is written to be
 upgraded to. Earnings and the manual desk stopped placing orders for good, so live orders now exist
