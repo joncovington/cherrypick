@@ -27,7 +27,9 @@ import sys
 from pathlib import Path
 
 MANIFEST = Path(__file__).resolve().parent.parent / "release" / "manifest.json"
-_TAG = re.compile(r"^v\d+\.\d+\.\d+$")
+# A release, or a pre-release (`v0.12.1-beta`, `v0.12.1-beta.2`), which publishes as a GitHub
+# pre-release and is never the latest.
+_TAG = re.compile(r"^v\d+\.\d+\.\d+(?:-beta(?:\.\d+)?)?$")
 _MIGRATION_ID = re.compile(r"^v\d+\.\d+\.\d+-\d{2}-[a-z0-9][a-z0-9-]*$")
 _STRING_LISTS = ("upgrading", "manual_steps", "measurement_boundaries")
 
@@ -35,7 +37,7 @@ _STRING_LISTS = ("upgrading", "manual_steps", "measurement_boundaries")
 def problems(manifest: object, version: str) -> list[str]:
     """Everything wrong with `version`'s entry in a parsed manifest (empty when it is fine)."""
     if not _TAG.match(version):
-        return [f"{version!r} is not a vMAJOR.MINOR.PATCH tag"]
+        return [f"{version!r} is not a vMAJOR.MINOR.PATCH tag (or one with -beta / -beta.N)"]
     if not isinstance(manifest, dict) or not isinstance(manifest.get("releases"), dict):
         return ["the manifest has no `releases` object"]
     releases = manifest["releases"]

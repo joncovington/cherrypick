@@ -48,7 +48,7 @@ it, almost all of it the Dolt download.
    ```powershell
    git clone https://github.com/joncovington/cherrypick.git
    cd cherrypick
-   git checkout (git describe --tags --abbrev=0 origin/main)   # the latest release
+   git checkout (git describe --tags --abbrev=0 --exclude "*-*" origin/main)   # the latest release
    .\install.cmd
    ```
 3. **Set the PC up to run unattended:** Windows Update's restart hours, sleep, power cuts, and how
@@ -64,7 +64,7 @@ it, almost all of it the Dolt download.
    ```bash
    git clone https://github.com/joncovington/cherrypick.git
    cd cherrypick
-   git checkout "$(git describe --tags --abbrev=0 origin/main)"   # the latest release
+   git checkout "$(git describe --tags --abbrev=0 --exclude "*-*" origin/main)"   # the latest release
    ```
 
 2. **Go to the folder, then run the installer** from inside it:
@@ -389,10 +389,10 @@ the old one). With git, from the checkout:
 
 ```bash
 git fetch --tags origin
-git checkout "$(git describe --tags --abbrev=0 origin/main)"
+git checkout "$(git describe --tags --abbrev=0 --exclude "*-*" origin/main)"
 ```
 
-In PowerShell the second line is `git checkout (git describe --tags --abbrev=0 origin/main)`.
+In PowerShell the second line is `git checkout (git describe --tags --abbrev=0 --exclude "*-*" origin/main)`.
 
 Read that release's notes on the [Releases page](https://github.com/joncovington/cherrypick/releases)
 first: they say what changed and anything you need to do.

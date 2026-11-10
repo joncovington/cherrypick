@@ -16,6 +16,13 @@ only when a batch of work is finished.
 - **Patch** (`v0.11.1`): fixes only, to the latest release.
 - **Major**: not used yet. `v1.0.0` would mean the suite's config and data layout are promised stable
   across upgrades.
+- **Beta** (`v0.12.1-beta`, then `v0.12.1-beta.2` if another is needed): a pre-release of the version
+  it names, for trying a batch before it is the release. It is cut exactly like a release (its own
+  dated changelog section and manifest entry), but the Release workflow publishes it as a GitHub
+  **pre-release**, so it is never "latest": `run.py upgrade` and the console's version chip read
+  `/releases/latest` and never offer it, and every install line skips it (`git describe --exclude
+  "*-*"`). Someone reaches it only by name, `run.py upgrade --to v0.12.1-beta`. A beta sorts after the
+  release before it and before its own release, so the release that follows is an upgrade from it.
 
 A patch release is cut from `main` like any other, so it carries everything merged since the last
 release. If that ever means shipping a fix together with an unfinished feature, the time has come for
@@ -106,10 +113,10 @@ patch version.
   ```bash
   git clone https://github.com/joncovington/cherrypick.git
   cd cherrypick
-  git checkout "$(git describe --tags --abbrev=0 origin/main)"
+  git checkout "$(git describe --tags --abbrev=0 --exclude "*-*" origin/main)"
   ```
 
-  In PowerShell the last line is `git checkout (git describe --tags --abbrev=0 origin/main)`. This
+  In PowerShell the last line is `git checkout (git describe --tags --abbrev=0 --exclude "*-*" origin/main)`. This
   leaves git in "detached HEAD" at the tag, which is expected. To upgrade later, run `upgrade.cmd` or
   `./upgrade.sh` (v0.12.0 and later; [the guide](guide/upgrading.md)), or by hand: stop the suite,
   `git fetch --tags origin`, the same `git checkout` line, then run the installer again.

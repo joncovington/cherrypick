@@ -61,8 +61,17 @@ describe("isNewer", () => {
     expect(isNewer("v0.11.1", "v0.11.2")).toBe(false);
     expect(isNewer("v1.0.0", "v0.99.99")).toBe(true);
   });
+  it("puts a release after its own betas, and a beta after the release before it", () => {
+    expect(parseDescribe("v0.12.1-beta")).toEqual({ tag: "v0.12.1-beta", commitsPast: 0 });
+    expect(parseDescribe("v0.12.1-beta.2-4-gabc1234")).toEqual({ tag: "v0.12.1-beta.2", commitsPast: 4 });
+    expect(isNewer("v0.12.1", "v0.12.1-beta")).toBe(true);
+    expect(isNewer("v0.12.1-beta.2", "v0.12.1-beta")).toBe(true);
+    expect(isNewer("v0.12.0", "v0.12.1-beta")).toBe(false);
+    expect(isNewer("v0.12.1-beta", "v0.12.0")).toBe(true);
+  });
   it("is false when either side is unreadable", () => {
     expect(isNewer("nightly", "v0.11.2")).toBe(false);
+    expect(isNewer("v0.12.1-rc1", "v0.11.2")).toBe(false);
     expect(isNewer("v0.12.0", "8d4f772dc")).toBe(false);
   });
 });

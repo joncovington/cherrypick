@@ -39,9 +39,13 @@ jobs:
       # release without a well-formed entry would upgrade people blind. Refused before publishing.
       - name: The manifest has an entry for this tag
         run: python tools/check_release_manifest.py "$GITHUB_REF_NAME"
+      # A `-beta` tag publishes as a GitHub pre-release: never "latest", so `run.py upgrade` (which
+      # reads /releases/latest) and a new install never pick it up unless asked for by name.
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           cp release/manifest.json release-manifest.json
-          gh release create "$GITHUB_REF_NAME" --verify-tag --title "$(cat title.txt)" --notes-file notes.md release-manifest.json
+          pre=""
+          case "$GITHUB_REF_NAME" in *-beta*) pre="--prerelease" ;; esac
+          gh release create "$GITHUB_REF_NAME" --verify-tag $pre --title "$(cat title.txt)" --notes-file notes.md release-manifest.json

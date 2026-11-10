@@ -23,6 +23,10 @@ Preface.
 
 - Hot options in the morning pack.
 
+## v0.11.1-beta — 2026-10-20 — a beta
+
+- Something to try.
+
 ## v0.11.0 — 2026-10-15 — hot options
 
 - The morning pack ranks OCC's volume.
@@ -45,6 +49,16 @@ def test_the_body_stops_at_the_next_heading():
     title, notes = release_notes.section(CHANGELOG, "v0.11.0")
     assert title == "v0.11.0 — hot options"
     assert notes == "- The morning pack ranks OCC's volume.\n- One OCC fetch.\n"
+
+
+def test_a_beta_has_its_own_section_and_never_stands_for_the_release():
+    assert release_notes.section(CHANGELOG, "v0.11.1-beta") == (
+        "v0.11.1-beta — a beta",
+        "- Something to try.\n",
+    )
+    # The plain version is not the beta's section.
+    with pytest.raises(release_notes.NotesError):
+        release_notes.section(CHANGELOG, "v0.11.1")
 
 
 def test_a_heading_without_a_name_is_titled_by_its_version():
