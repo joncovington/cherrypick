@@ -28,6 +28,7 @@ from cherrypick.core import calendar as _calendar
 from cherrypick.manage import attention as _attention
 from cherrypick.manage import candidates as _candidates
 from cherrypick.manage import chains as _chains
+from cherrypick.manage import deltaideas as _deltaideas
 from cherrypick.manage import explain as _explain
 from cherrypick.manage import hedge as _hedge
 from cherrypick.manage import ledger as _ledger
@@ -2753,6 +2754,8 @@ def evaluate(
             snapshot.get("spot_vol_history"),
         )
         book["hedges"] = _hedge.suggest(book, snapshot.get("hedge_chain"), metrics, session, rules)
+        # The direction card's ideas: what drives delta and the rolls that move it (deltaideas.py).
+        book["delta_ideas"] = _deltaideas.suggest(book, trades, snapshot, metrics, session, rules)
         book["candidates"] = _candidates.suggest(
             snapshot.get("income"),
             book,

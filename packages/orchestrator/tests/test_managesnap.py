@@ -932,6 +932,41 @@ def test_each_short_gets_the_next_listed_expiries_within_its_bound(monkeypatch):
     ]
 
 
+def test_a_put_time_spread_s_short_is_an_anchor_kept_before_its_long():
+    held = {
+        "accounts": [
+            {
+                "underlyings": [
+                    {
+                        "underlying": "AAA",
+                        "legs": [
+                            _leg("AAA   261211P00050000", "P", 1, "2026-12-11", 50.0),
+                            _leg("AAA   261120P00050000", "P", -1, "2026-11-20", 50.0),
+                        ],
+                    },
+                    {
+                        # A put spread in one expiry: its short is rolled with its wing, so no anchor.
+                        "underlying": "BBB",
+                        "legs": [
+                            _leg("BBB   261211P00040000", "P", -1, "2026-12-11", 40.0),
+                            _leg("BBB   261211P00035000", "P", 1, "2026-12-11", 35.0),
+                        ],
+                    },
+                ]
+            }
+        ]
+    }
+    assert managesnap.roll_out_anchors(held, date(2026, 11, 9), 60) == [
+        {
+            "underlying": "AAA",
+            "right": "P",
+            "expiration": "2026-11-20",
+            "strike": 50.0,
+            "before": "2026-12-11",
+        }
+    ]
+
+
 def test_a_pmcc_s_rolls_stop_before_its_long(monkeypatch):
     held = {
         "accounts": [

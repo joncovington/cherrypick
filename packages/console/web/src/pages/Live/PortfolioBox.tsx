@@ -4,7 +4,7 @@ import type { ManageAccount } from "@console/shared";
 import { CardLightbox, LightboxFrame, useOpenParam, type LightboxTab } from "../Backtest/CardLightbox";
 import { BandsOverTime } from "./BandsHistory";
 import { LimitsBody } from "./LimitsCard";
-import { BrokerCheckBody, ContributionBars, HedgeBody } from "./PortfolioCards";
+import { BrokerCheckBody, ContributionBars, DeltaIdeasBody, HedgeBody, deltaIdeasFirst } from "./PortfolioCards";
 import { PositionCard } from "./PositionCards";
 import { PremiumPaceBody } from "./PremiumPace";
 import { RiskGraphBody } from "./ScenarioCards";
@@ -50,6 +50,18 @@ function boxesFor(a: ManageAccount, rules: Record<string, unknown> | null | unde
   out.push({ id: "deltaAll", kicker: "where the delta comes from ›", title: "Every name's delta", tabs: one("all", "by size"), body: () => <ContributionBars p={p} figure="bwd" limit={null} /> });
   if (p.brokerCheck) {
     out.push({ id: "broker", kicker: "where the delta comes from ›", title: "Against the broker's model", tabs: one("check", "delta and theta"), body: () => <BrokerCheckBody p={p} /> });
+  }
+  if (p.deltaIdeas) {
+    const d = p.deltaIdeas;
+    const tab = (dir: "add" | "cut"): LightboxTab => ({ id: dir, label: `${dir === "add" ? "add" : "cut"} delta · ${d[dir].length}` });
+    const first = deltaIdeasFirst(d);
+    out.push({
+      id: "deltaIdeas",
+      kicker: "direction ›",
+      title: "Moving delta without closing",
+      tabs: first === "add" ? [tab("add"), tab("cut")] : [tab("cut"), tab("add")],
+      body: (t) => <DeltaIdeasBody d={d} direction={t === "cut" ? "cut" : "add"} />,
+    });
   }
   if (p.hedges) {
     out.push({ id: "hedge", kicker: "direction ›", title: "A hedge, sized", tabs: one("hedge", `${p.hedges.suggestions.length} structure${p.hedges.suggestions.length === 1 ? "" : "s"}`), body: () => <HedgeBody p={p} /> });

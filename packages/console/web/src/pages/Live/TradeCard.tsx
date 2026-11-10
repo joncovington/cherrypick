@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { useListView } from "../../components/ViewSwitch";
-import type { ManageCandidate, ManageHedgeSuggestion, ManageHedges, TimeSpreadStructure } from "@console/shared";
+import type { ManageCandidate, ManageDeltaIdea, ManageHedgeSuggestion, ManageHedges, TimeSpreadStructure } from "@console/shared";
 import { fmtCash, fmtMoney } from "../../lib/format";
 import { tone } from "./manageParts";
 
@@ -331,6 +331,68 @@ export function timeSpreadModel(s: TimeSpreadStructure, capDollars: number | nul
 }
 
 /** One sized hedge; the bar is the share of the needed delta it covers. */
+const IDEA_KIND: Record<string, string> = {
+  front_roll: "roll the front short",
+  untested_side: "roll the untested side",
+  new_spread: "new spread",
+};
+
+/** Each flag's chip word; its sentence is on the card's after line. */
+const IDEA_FLAG: Record<string, string> = {
+  rule_off: "rule off",
+  oversize: "oversize",
+  inverts: "inverts",
+  earnings: "earnings",
+  past_cap: "past the cap",
+};
+
+/**
+ * One delta idea (packages/manage `deltaideas.py`) as a trade card: the roll as one order, closing legs
+ * first, with the delta it moves and where that leaves the book. Every figure is manage's.
+ */
+export function deltaIdeaModel(i: ManageDeltaIdea, benchmark: string | null): TradeCardModel {
+  const price = i.price === null ? "—" : `${Math.abs(i.price).toFixed(2)} ${i.price >= 0 ? "cr" : "db"}`;
+  const bp =
+    i.buyingPowerChange === null
+      ? "buying power not modelled"
+      : i.buyingPowerChange === 0
+        ? "no buying power moves"
+        : `ties up ${fmtMoney(i.buyingPowerChange)}`;
+  return {
+    key: `${i.kind}-${i.tradeId ?? i.underlying}-${i.header}`,
+    symbol: i.underlying,
+    spot: null,
+    shape: `${i.shape ?? "not held"} · ${IDEA_KIND[i.kind] ?? i.kind}`,
+    chips: (
+      <>
+        {i.flags.map((f) => (
+          <span key={f.key} className="chip chip-warn" title={f.text}>
+            {IDEA_FLAG[f.key] ?? f.key}
+          </span>
+        ))}
+        {i.inBandAfter === false ? <span className="chip chip-warn">outside the band after</span> : null}
+      </>
+    ),
+    cash: i.cash,
+    side: [`${price} at mid`, `natural ${i.natural === null ? "—" : `${Math.abs(i.natural).toFixed(2)} ${i.natural >= 0 ? "cr" : "db"}`}`],
+    bar: null,
+    barTitle: "",
+    hideBar: true,
+    label: `moves delta ${signed(i.bwdChange)} to ${signed(i.afterBwd)} ${benchmark ?? "SPY"} sh${
+      i.plainBwdChange !== null ? ` · the same-strike roll moves ${signed(i.plainBwdChange)}` : ""
+    }`,
+    open: { date: "proposed", price, role: i.kind === "new_spread" ? "open" : "roll" },
+    legs: i.legs.map((l) => ({
+      buy: l.action.startsWith("B"),
+      tag: l.action,
+      text: `${l.quantity} ${l.label}${l.mid === null ? "" : ` @ ${l.mid.toFixed(2)}`}`,
+      quote: quote(l.bid, l.ask, l.delta),
+    })),
+    after: [i.explanation, ...i.flags.map((f) => f.text)],
+    foot: [`theta ${i.thetaChange === null ? "—" : `${i.thetaChange >= 0 ? "+" : "−"}${fmtMoney(Math.abs(i.thetaChange))}`} per day · ${bp}`, "nothing is placed"],
+  };
+}
+
 export function hedgeModel(s: ManageHedgeSuggestion, h: ManageHedges): TradeCardModel {
   const a = s.after;
   const covered = s.bwdChange !== null && h.need ? (s.bwdChange / h.need) * 100 : null;
