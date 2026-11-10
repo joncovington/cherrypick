@@ -37,9 +37,11 @@ for your install drops off the list.
 From left to right:
 
 - **The futures ticker**: ES, NQ, CL, GC and ZB, each with a price and its change. A dash means no
-  price has arrived yet.
+  price has arrived yet. On a tablet the change shows as a percentage only. On a phone the ticker
+  gets its own row, and prices of 1,000 or more are shown without cents.
 - **The session chip**: `market open`, `trading day, closed` or `non-trading day`, from the watchdog.
-  It does not appear until the watchdog has reported once.
+  It does not appear until the watchdog has reported once. On a narrower screen it shortens to `open`,
+  `closed` or `no session`, and the clock shows the time without the date.
 - **The simple and detail switch.** See below.
 - **The clock**, in Eastern time.
 

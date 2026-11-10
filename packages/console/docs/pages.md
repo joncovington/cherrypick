@@ -45,7 +45,10 @@ Keyboard: `g` plus the page's key for suite pages, a bare digit for the four mod
 The sections below are the working notes for each page. Read the section for a page before changing it.
 
 **Shell.** A grid, not a stack: the brand head and the top bar are row 1's two
-halves (ticker, session chip, the simple/detail view switch, clock), the rail and the content pane are row
+halves (ticker, session chip, the simple/detail view switch, clock; the top bar is a size container,
+so as it narrows the session chip shortens to one word and the clock drops the date (under 1010px), the
+chips stack symbol, price and percent (under 860px), and on a phone the ticker takes a row of its own
+with prices of 1,000 or more shown without cents), the rail and the content pane are row
 2's, the status bar (health chips, watchdog/session/morning phase, logs, and the suite version
 last) is row 3. The version chip (`shell/VersionChip.tsx`, `/api/version`) is plain while this
 checkout is at or past GitHub's latest release, and an amber link to the release notes, "vX · vY

@@ -399,6 +399,76 @@ a.chip:hover {
   border-style: dashed;
 }
 
+/* The top bar on a smaller screen. The short market word only shows below 1300px. */
+.status-short {
+  display: none;
+}
+/* The cut-offs below measure the top bar itself, not the window: the rail beside it is 64px or
+   222px depending on the window and the toggle, and the ticker only has what the bar has left.
+   A bar under 1010px (a tablet in landscape, a laptop with the rail open): the market chip says
+   one word and the clock drops the date, which leaves the whole ticker room beside them. */
+.status-header {
+  container: topbar / inline-size;
+}
+@container topbar (max-width: 1010px) {
+  .status-header .status-long {
+    display: none;
+  }
+  .status-header .status-short {
+    display: inline;
+  }
+}
+/* A bar under 860px (a tablet in portrait): the five chips stack symbol, price and percent in one
+   narrow column and drop the change in points. */
+@container topbar (max-width: 860px) {
+  .futures-ticker {
+    gap: 0.3rem;
+  }
+  .futures-chip {
+    grid-template-columns: auto;
+    grid-template-rows: none;
+    justify-items: center;
+    padding: 0.1rem 0.45rem;
+    border-radius: 10px;
+    line-height: 1.15;
+  }
+  .futures-chip-symbol {
+    grid-row: auto;
+    font-size: 10px;
+  }
+  .futures-chip-price {
+    font-size: 11.5px;
+  }
+  .futures-chip-change {
+    font-size: 10px;
+  }
+  .futures-chip-points {
+    display: none;
+  }
+}
+/* A phone: the ticker takes a row of its own below the view switch, five equal columns across the
+   width, so every contract shows without scrolling, and a price of 1,000 or more drops its cents. */
+@media (max-width: 760px) {
+  .futures-chip-cents {
+    display: none;
+  }
+  .status-header {
+    flex-wrap: wrap;
+    row-gap: 0.35rem;
+  }
+  .futures-ticker {
+    order: 2;
+    flex-basis: 100%;
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
+    overflow: visible;
+  }
+  .futures-chip {
+    padding: 0.1rem 0.15rem;
+  }
+}
+
 .chart-symbol-row {
   display: flex;
   align-items: center;
