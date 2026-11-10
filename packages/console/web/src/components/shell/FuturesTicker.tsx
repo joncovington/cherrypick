@@ -1,7 +1,8 @@
-import { useEffect, useRef } from "react";
+import { useRef } from "react";
 import type { FuturesTickerEntry } from "@console/shared";
 import { useFuturesTicker } from "../../lib/api";
 import { useQuote } from "../../lib/useQuote";
+import { useTickFlash } from "../../lib/useTickFlash";
 import type { QuoteState } from "../../lib/wsClient";
 
 /**
@@ -95,17 +96,7 @@ export function chipState(q: QuoteState | undefined): ChipState {
 function Tick({ entry }: { entry: FuturesTickerEntry }) {
   const q = useQuote(entry.streamerSymbol ?? "");
   const chipRef = useRef<HTMLSpanElement>(null);
-  const prevTs = useRef<number>(0);
-
-  useEffect(() => {
-    if (q === undefined || q.ts === prevTs.current) return;
-    prevTs.current = q.ts;
-    const el = chipRef.current;
-    if (el === null || q.direction === null || q.source !== "dxlink") return;
-    el.classList.remove("flash-up", "flash-down");
-    void el.offsetWidth; // restart the animation
-    el.classList.add(q.direction === "up" ? "flash-up" : "flash-down");
-  }, [q]);
+  useTickFlash(chipRef, q);
 
   const { price, change, changePct, tone } = chipState(q);
   const live = q?.source === "dxlink";
