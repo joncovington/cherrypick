@@ -134,6 +134,12 @@ describe("GuideMarkdown", () => {
     expect(html).toContain('id="the-file"');
     expect(html).toContain('href="/help/external-reports#posting-to-discord"');
   });
+  it("makes a screenshot a button that opens it full size in a dialog", () => {
+    const html = render("![Live today](../images/live-today.png)");
+    expect(html).toMatch(/<button[^>]*class="guide-img-btn"[^>]*aria-label="Expand image: Live today"/);
+    expect(html).toMatch(/<dialog[^>]*class="guide-img-dialog"/);
+    expect(html.match(/src="\/api\/help\/images\/live-today.png"/g)).toHaveLength(2);
+  });
   it("draws GitHub tables", () => {
     expect(render("| a | b |\n|---|---|\n| 1 | 2 |")).toContain("<table>");
   });
