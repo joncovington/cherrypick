@@ -22,6 +22,30 @@ const FEED_AGGREGATION_S = 1;
 type QuoteStreamer = ReturnType<typeof getClient>["quoteStreamer"];
 type FeedSetup = Parameters<NonNullable<QuoteStreamer["dxLinkFeed"]>["configure"]>[0];
 
+/** How recent a stream-cache quote must be to count as the tape moving right now. */
+const STREAMER_FRESH_S = 30;
+
+/**
+ * Whether a "connected" session that has been silent is in fact dead. A minute of silence is only
+ * evidence when something should have ticked:
+ * - in regular hours on a weekday, the SPX sentinel ticks continuously;
+ * - at any hour, a symbol a viewer holds here that the Python streamer, on its own session, quoted
+ *   in the last 30 s. That is the overnight case: futures trade nearly around the clock, SPX does
+ *   not, and a session that died after 16:00 used to stay dead until the next morning while the
+ *   futures chips sat on a cached price.
+ * The streamer check is a callback so it reads the cache only when the silence is already long.
+ */
+export function feedLooksDead(input: {
+  silenceMs: number;
+  etWeekday: string;
+  etMinutes: number;
+  streamerHasFreshViewedSymbol: () => boolean;
+}): boolean {
+  if (input.silenceMs < HEARTBEAT_SILENCE_MS) return false;
+  const rth = !["Sat", "Sun"].includes(input.etWeekday) && input.etMinutes >= 9 * 60 + 30 && input.etMinutes < 16 * 60;
+  return rth || input.streamerHasFreshViewedSymbol();
+}
+
 interface SymbolEntry {
   refs: number;
   lingerTimer: NodeJS.Timeout | null;
@@ -425,11 +449,20 @@ export class MarketDataService extends EventEmitter {
     }
   }
 
+  /** Whether the Python streamer's cache, on its own session, has a fresh quote for a symbol a
+   *  viewer holds here: proof the tape is moving, whatever the hour. */
+  private streamerHasFreshViewedSymbol(): boolean {
+    for (const [symbol, entry] of this.symbols) {
+      if (entry.refs > 0 && cachedQuote(this.config, symbol, STREAMER_FRESH_S) !== null) return true;
+    }
+    return false;
+  }
+
   /**
-   * Silent-death watchdog: during RTH the SPX sentinel guarantees a steady
-   * event flow, so a connected session with a minute of silence is dead —
-   * the SDK never flips its own state when the websocket drops. Rebuilds the
-   * session (fresh client) through the same path the bulk jobs use.
+   * Silent-death watchdog: the SDK never flips its own state when the websocket drops, so a
+   * connected session can go quiet and stay "connected". It is rebuilt (fresh client, the path the
+   * bulk jobs use) after a minute of silence when the tape is known to be moving — see
+   * `feedLooksDead`.
    */
   startHeartbeat(log: (msg: string) => void): NodeJS.Timeout {
     const timer = setInterval(() => {
@@ -442,9 +475,13 @@ export class MarketDataService extends EventEmitter {
         hour12: false,
       }).formatToParts(new Date());
       const get = (t: string): string => et.find((p) => p.type === t)?.value ?? "";
-      const minutes = (Number(get("hour")) % 24) * 60 + Number(get("minute"));
-      if (["Sat", "Sun"].includes(get("weekday")) || minutes < 9 * 60 + 30 || minutes >= 16 * 60) return;
-      if (Date.now() - this.lastFeedEventAt < HEARTBEAT_SILENCE_MS) return;
+      const dead = feedLooksDead({
+        silenceMs: Date.now() - this.lastFeedEventAt,
+        etWeekday: get("weekday"),
+        etMinutes: (Number(get("hour")) % 24) * 60 + Number(get("minute")),
+        streamerHasFreshViewedSymbol: () => this.streamerHasFreshViewedSymbol(),
+      });
+      if (!dead) return;
       log(`dxlink heartbeat: no events for ${Math.round((Date.now() - this.lastFeedEventAt) / 1000)}s — rebuilding session`);
       this.reconnecting = true;
       void this.reconnectFeed()
