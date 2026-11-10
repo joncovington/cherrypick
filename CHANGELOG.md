@@ -11,11 +11,25 @@ beyond the latest release.
 
 ## [Unreleased]
 
-- **Beta releases.** A version can now be tried as a beta (`v0.12.1-beta`) before it is the release.
-  A beta is a GitHub pre-release: `upgrade` and the console's version chip never offer it, and the
-  install instructions skip it, so nobody lands on one by accident. To try one, run
-  `run.py upgrade --to <its tag>`.
+## v0.12.1-beta — 2026-11-10 — moving delta
+The first beta: a pre-release to try before v0.12.1. `upgrade` and the version chip will not offer
+it, and a fresh install will not land on it; it is reached only by name. It adds a way to move the
+book's delta without closing anything, keeps the PMCC tab to PMCCs, and gives the wheel tab a choice
+of which cycles to show. No stored number changes, and there is no config to set.
 
+### Upgrading
+
+- **To try it:** `python packages/orchestrator/run.py upgrade --to v0.12.1-beta`. It refuses while a
+  live loop is armed or holds a position, as every upgrade does.
+- **Nothing to do by hand.** The manage snapshot now reads a few more broker chains (each put
+  calendar's next expiries), inside the existing `manage.roll_out` cap.
+- **From the beta to the release:** v0.12.1, when it is out, is an ordinary upgrade from here.
+
+### What's new
+
+- **Beta releases.** A version can now be tried as a beta before it is the release. A beta is a
+  GitHub pre-release: `upgrade` and the console's version chip never offer it, and the install
+  instructions skip it, so nobody lands on one by accident.
 - **The PMCC tab shows PMCCs only.** A call calendar or diagonal whose long was not bought deep enough
   to be a PMCC is judged as a time spread, so it no longer gets a PMCC card. A line names it (now
   "calendar" or "diagonal" for what it is) and opens the positions tab's new **time spreads** filter,

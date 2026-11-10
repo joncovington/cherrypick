@@ -1,6 +1,25 @@
 {
   "schema": 1,
   "releases": {
+    "v0.12.1-beta": {
+      "upgrading": [
+        "A beta: a pre-release to try before v0.12.1. `upgrade` and the console's version chip never offer it and a fresh install never lands on it; reach it with `run.py upgrade --to v0.12.1-beta`. v0.12.1 will be an ordinary upgrade from it.",
+        "The portfolio tab's direction card has an ideas button: what drives your delta and the rolls that would move it either way without closing anything. A poor man's covered call is rolled under its own PMCC rules.",
+        "The PMCC tab lists PMCCs and undecided candidates only. A call calendar or diagonal that is not a PMCC is named in one line that opens the positions tab's new time spreads filter.",
+        "The wheel tab opens on active cycles, with open, waiting, complete and all one click away. The wheel and PMCC tabs switch between cards and rows.",
+        "The manage snapshot reads a few more broker chains (each put calendar's next expiries), inside the existing manage.roll_out cap."
+      ],
+      "manual_steps": [],
+      "config_changes": [
+        {
+          "file": "manage.json",
+          "key": "portfolio.delta_ideas",
+          "note": "New and optional: the direction card's ideas (front_days, roll_short_delta, untested_short_delta, min_credit, new_spread). The defaults apply when it is absent."
+        }
+      ],
+      "measurement_boundaries": [],
+      "migrations": []
+    },
     "v0.12.0": {
       "first_with_upgrade_tooling": true,
       "upgrading": [
