@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { renderToString } from "react-dom/server";
 import type { ReactElement } from "react";
-import type { ManageAccount, ManageCandidate, ManageCandidateRoom, ManageCandidates, ManagePortfolio } from "@console/shared";
+import type { ManageAccount, ManageCandidate, ManageCandidateRoom, ManageCandidates, ManageDeltaIdea, ManageDeltaIdeas, ManagePortfolio } from "@console/shared";
 import { AddingTradesCard, IncomeCard, netPrice } from "../src/pages/Live/IncomeCard";
-import { BandDial, BrokerCheckBody, ContributionBars, HedgeBody, guidanceHelp, placesApart } from "../src/pages/Live/PortfolioCards";
+import { BandDial, BrokerCheckBody, ContributionBars, DeltaIdeasBody, HedgeBody, deltaIdeasFirst, guidanceHelp, placesApart } from "../src/pages/Live/PortfolioCards";
 import { incomeHelp } from "../src/pages/Live/IncomeCard";
 import { PortfolioLayout } from "../src/pages/Live/PortfolioLayout";
 import { BuyingPowerCard, LadderCard, RiskGraphCard, RiskMatrixCard, ScenarioCards, matrixHelp } from "../src/pages/Live/ScenarioCards";
@@ -86,6 +86,7 @@ function reading(over: Partial<ManagePortfolio> = {}): ManagePortfolio {
       realistic: null,
     },
     ideas: [],
+    deltaIdeas: null,
     ladder: {
       expiries: [
         { expiration: "2026-10-23", trades: ["RTX", "NFLX", "UAL", "CLF"], downside: -1064, downsideUnknown: 0, theta: 15.16 },
@@ -333,6 +334,61 @@ describe("the portfolio layout", () => {
     expect(html.match(/tc-card/g)?.length).toBe(1);
     // While delta is outside its band, the direction card carries the hedge's headline.
     expect(cards(hedged)).toContain("brings it to −0.6 sh");
+  });
+
+  it("draws each delta idea as a roll order with its flags, the drivers above, and an unquoted roll named", () => {
+    const idea: ManageDeltaIdea = {
+      kind: "untested_side",
+      tradeId: "AAA-261105-1",
+      underlying: "AAA",
+      shape: "iron condor",
+      header: "Roll the put side up to 62P",
+      explanation: "The puts are the untested side.",
+      legs: [
+        { action: "BTC", quantity: 1, label: "2026-12-11 55P", mid: 0.4, bid: 0.38, ask: 0.42, delta: -0.08 },
+        { action: "STC", quantity: 1, label: "2026-12-11 53P", mid: 0.25, bid: 0.23, ask: 0.27, delta: -0.05 },
+        { action: "STO", quantity: 1, label: "2026-12-11 62P", mid: 1.6, bid: 1.55, ask: 1.65, delta: -0.3 },
+        { action: "BTO", quantity: 1, label: "2026-12-11 60P", mid: 1.05, bid: 1.0, ask: 1.1, delta: -0.22 },
+      ],
+      price: 0.4,
+      natural: 0.25,
+      cash: 40,
+      bwdChange: 2.5,
+      afterBwd: -7.5,
+      inBandAfter: true,
+      thetaChange: 0.3,
+      buyingPowerChange: 0,
+      plainBwdChange: null,
+      newExpiry: "2026-12-11",
+      flags: [{ key: "rule_off", text: "your ruleset has roll.untested_side off" }],
+    };
+    const d: ManageDeltaIdeas = {
+      bwd: -10,
+      benchmark: "SPY",
+      band: [-40, 60],
+      inside: true,
+      drivers: [{ tradeId: "BBB-261106-1", underlying: "BBB", shape: "calendar", bwd: -6, pmcc: false, reason: "the 40P short is 5.0% below spot (42.1)" }],
+      add: [idea],
+      cut: [],
+      together: { add: { ideas: 1, bwdChange: 2.5, afterBwd: -7.5, cash: 40 }, cut: null },
+      unquoted: [{ tradeId: "BBB-261106-1", underlying: "BBB", why: "no quoted expiry to roll the 11-20 40P short to" }],
+      error: null,
+    };
+    const add = render(<DeltaIdeasBody d={d} direction="add" />);
+    expect(add).toContain("what drives it");
+    expect(add).toContain("the 40P short is 5.0% below spot");
+    // The roll is one order: the held legs closed first, in the order chain's tags.
+    expect(add.indexOf("BTC")).toBeLessThan(add.indexOf("STO"));
+    expect(add).toContain("STC");
+    expect(add).toContain("rule off");
+    expect(add).toContain("your ruleset has roll.untested_side off");
+    expect(add).toContain("moves delta +2.5 to −7.5 SPY sh");
+    expect(add).toContain("no buying power moves");
+    expect(add).toContain("no quoted expiry to roll the 11-20 40P short to");
+    expect(render(<DeltaIdeasBody d={d} direction="cut" />)).toContain("moves delta down for a credit");
+    // Short of the band's middle, the add tab opens first.
+    expect(deltaIdeasFirst(d)).toBe("add");
+    expect(deltaIdeasFirst({ ...d, bwd: 60 })).toBe("cut");
   });
 
   it("says when a debit hedge is offered past the cap", () => {

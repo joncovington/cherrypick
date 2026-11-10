@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { ManageBand, ManageGuidance, ManageGuidanceFigure, ManageLimits, ManageLiveAccount, ManagePortfolio, ManagePremium } from "@console/shared";
+import type { ManageBand, ManageDeltaIdeas, ManageGuidance, ManageGuidanceFigure, ManageLimits, ManageLiveAccount, ManagePortfolio, ManagePremium } from "@console/shared";
 import { Card } from "../../components/DataTable";
 import { DivergingBars } from "../../components/grid/DivergingBars";
 import { useColumns } from "../../components/columns";
@@ -8,7 +8,7 @@ import { fmtCash, fmtMoney } from "../../lib/format";
 import { Tile } from "../Flies/PerformanceTab";
 import { limitChip, limitText, limitValue } from "./LimitsCard";
 import { RiskGraph } from "./ScenarioCards";
-import { TradeCards, hedgeModel } from "./TradeCard";
+import { TradeCards, deltaIdeaModel, hedgeModel } from "./TradeCard";
 import { BoxButton, BoxButtons } from "./portfolioBoxContext";
 import { HelpSection, HelpWarn, type CardHelpContent } from "../../components/CardHelp";
 import { GuideLink } from "../../components/GuideLink";
@@ -266,6 +266,7 @@ export function DirectionCard({ p, live = null }: { p: ManagePortfolio; live?: M
       </DialBeside>
       <BoxButtons>
         <BoxButton id="overTime">over time</BoxButton>
+        <BoxButton id="deltaIdeas">ideas</BoxButton>
         <BoxButton id="hedge">a hedge, sized</BoxButton>
       </BoxButtons>
     </Card>
@@ -552,6 +553,66 @@ export function GuidanceCard({ p }: { p: ManagePortfolio }) {
   );
 }
 
+/** Which delta-ideas tab opens first: the direction that moves delta toward the band's middle. */
+export function deltaIdeasFirst(d: ManageDeltaIdeas): "add" | "cut" {
+  if (d.band === null || d.bwd === null) return "add";
+  return d.bwd < (d.band[0] + d.band[1]) / 2 ? "add" : "cut";
+}
+
+/**
+ * The direction card's ideas, one direction at a time: what drives delta, every roll that moves it that
+ * way without closing anything (and all of them together), then a new spread as the fallback. Every
+ * figure is manage's (`deltaideas.py`).
+ */
+export function DeltaIdeasBody({ d, direction }: { d: ManageDeltaIdeas; direction: "add" | "cut" }) {
+  const bench = d.benchmark ?? "SPY";
+  const ideas = d[direction];
+  const together = d.together[direction];
+  return (
+    <>
+      <p className="muted pf-caption" style={{ marginTop: 0 }}>
+        delta {signed(d.bwd)} {bench} sh
+        {d.band ? `, band ${signed(d.band[0])} to ${signed(d.band[1])} (${d.inside ? "inside" : "outside"})` : ""} · priced at mid, which is not a
+        fill · nothing is placed
+      </p>
+      {d.error ? <p className="muted">{d.error}</p> : null}
+      {d.drivers.length ? (
+        <>
+          <h3 className="pf-ideas-title">what drives it</h3>
+          <ul className="pf-targets">
+            {d.drivers.map((r) => (
+              <li key={r.tradeId ?? r.underlying}>
+                <span>
+                  <strong>{r.underlying}</strong> {r.shape ?? ""} · {r.reason}
+                </span>
+                <span className="num">{signed(r.bwd)} sh</span>
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : null}
+      <h3 className="pf-ideas-title" style={{ marginTop: "1rem" }}>{direction === "add" ? "to add delta" : "to cut delta"}</h3>
+      {together ? (
+        <p className="pf-hint">
+          <span className="chip">together</span>
+          <span>
+            every roll here moves delta {signed(together.bwdChange)} to <strong>{signed(together.afterBwd)} sh</strong> for {fmtCash(together.cash)}
+          </span>
+        </p>
+      ) : null}
+      <TradeCards
+        models={ideas.map((i) => deltaIdeaModel(i, d.benchmark))}
+        empty={`Nothing held, and no spread on the hedge chain, moves delta ${direction === "add" ? "up" : "down"} for a credit.`}
+      />
+      {d.unquoted.map((u) => (
+        <p key={u.tradeId ?? u.underlying} className="muted pf-caption">
+          <strong>{u.underlying}</strong> · {u.why}
+        </p>
+      ))}
+    </>
+  );
+}
+
 /** The sized hedges as trade cards, under the line saying what they are for. */
 export function HedgeBody({ p }: { p: ManagePortfolio }) {
   const h = p.hedges;
@@ -667,6 +728,13 @@ export function directionHelp(p: ManagePortfolio): CardHelpContent {
               ? "Scaled by theta, so a book paid more may lean further."
               : "Scaled by net liq: its floor, used when there is too little theta to scale by."}{" "}
             Amber comes only from manage's own in/out flag, never from where the needle sits.
+          </p>
+        </HelpSection>
+        <HelpSection title="Ideas">
+          <p>
+            What drives delta, and the rolls that move it either way without closing anything: a time spread's short about to expire rolled to
+            another strike, or a condor's untested side moved toward the money. Each is priced at mid with the delta it moves, its credit and buying
+            power, and flags where it goes against your ruleset or sizing. A new spread comes last. Worked out inside the band as well as outside.
           </p>
         </HelpSection>
         <HelpSection title="The hedge line">

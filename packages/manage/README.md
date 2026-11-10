@@ -433,6 +433,40 @@ power used past 50% of net liq, and one that cannot fit says so. A debit spread 
 worst case and it only lowers the book's, so it is offered past the cap and marked `past_cap`. The
 mid is not a fill. Nothing is placed.
 
+**Delta ideas** (`deltaideas.py`, `portfolio.delta_ideas`), behind the direction card's ideas button,
+are worked out on every evaluation, inside the band or out, for both directions: to **add** delta and
+to **cut** it, without closing anything held. Each has:
+
+- the **drivers**: the trades whose beta-weighted delta makes the book's, largest first, each with
+  its reason in a line (a condor's short call nearer the money than its put, a calendar's short below
+  spot);
+- the **ideas**, each priced at quoted mids with its delta at its own IV, ranked by the delta it moves:
+  - **roll a front short** (`front_roll`): a calendar's or diagonal's short within `front_days` (7)
+    of expiry is rolled anyway, so it is rolled to the strike that moves delta most, its delta at most
+    `roll_short_delta` (0.40), in the nearest quoted expiry before the long. The plain roll (same
+    strike) is stated beside it. A strike past the long inverts the spread, which then ties up its
+    width as collateral, and the idea says how much;
+  - **roll the untested side** (`untested_side`): a credit trade selling both sides in one expiry
+    moves its untested side's spread toward the money in the same expiry, keeping its width (so no
+    buying power moves), its short nearest `untested_short_delta` (0.30) and never past the other
+    short;
+  - **roll a PMCC's short** (`pmcc_roll`): a recognised, reconciled PMCC is not treated as a plain
+    diagonal. Its long delta is what it is held for, so its driver row says so. Its short rolls by the
+    PMCC's own rules (`pmcc.roll`): any quoted call expiry before the long, the short at most
+    `max_delta`, at most `max_debit` a share as a debit (at mid and at the natural price), and the
+    width check still passing. It is not tied to `front_days`, and the idea states what an assignment
+    at the new strike would keep;
+  - **open a new spread** (`new_spread`): one unit of the hedge's credit and debit spreads, ranked after
+    the rolls.
+- **together**: every roll in that direction (one per trade) summed, and where it leaves delta;
+- **unquoted**: a trade a roll applies to whose chain the snapshot does not quote, named with the reason.
+
+Every roll but a PMCC's takes at least `min_credit` (0.10 a share) at mid and is not a debit at the
+natural price.
+Flags name what a person would weigh: the ruleset has `roll.untested_side` off, the trade already fired
+`risk.oversize`, the spread inverts, earnings fall before the new expiry. Thresholds are ours, with no
+published evidence. Ideas carry no confidence because none is a rule; they size, place and close nothing.
+
 **Scenarios and the expiry ladder.** The reading also carries:
 
 - a **risk matrix**: the book's P&L across SPY moves (−10% to +10%) and IV shifts (−5, 0, +5 points),

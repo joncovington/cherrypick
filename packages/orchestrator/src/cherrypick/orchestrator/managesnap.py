@@ -98,7 +98,8 @@ roll candidates (manage's `pmcc.width` / `pmcc.assignment`) and the wheel's test
 (`wheel.tested`) were priced only from what the snapshot happened to quote, in practice the income
 reading's one cycle monthly and a strangle's own expiry; a roll to next week or the month after had
 no price. Now each short a roll out in time starts from (`roll_out_anchors`: a covered call, a PMCC's
-short, a short put on a name holding no long put, within `max_short_days` of expiry) gets the next
+short, a short put on a name holding no long put, a put calendar's or diagonal's short, within
+`max_short_days` of expiry) gets the next
 `expiries` listed expiries after it -- before the long's expiry for a PMCC, within `max_days` of the
 short's otherwise -- each read like `roll_chains` (`_chain_slice`: quotes and the broker's greeks,
 ROLL_STRIKES strikes a side) but centred on the short's strike, where a roll's strikes start, and kept
@@ -506,9 +507,11 @@ def roll_out_anchors(positions: dict[str, Any], session: date, max_short_days: i
     """The shorts a roll out in time starts from, nearest expiry first: each short call covered by
     shares (a covered call) or by the name's one long call expiring later (a PMCC's shape: one long
     and one short call of the same size, the short first), and each short put on a name holding no long
-    put (a short put; a put spread's short is rolled with its wing). Only shorts within
-    `max_short_days` of expiry: one further out is not rolled yet. A PMCC's anchor carries the long's
-    expiry, which its rolls must stay before."""
+    put (a short put; a put spread's short is rolled with its wing), and the short of a put time
+    spread (one long and one short put of the same size, the short first: a put calendar or
+    diagonal). Only shorts within `max_short_days` of expiry: one further out is not rolled yet. A
+    PMCC's anchor, and a put time spread's, carries the long's expiry, which its rolls must stay
+    before."""
     out: list[dict[str, Any]] = []
     seen: set[tuple[str, str, str, float]] = set()
     for account in positions.get("accounts") or []:
@@ -533,6 +536,11 @@ def roll_out_anchors(positions: dict[str, Any], session: date, max_short_days: i
                     picked.append((sh, lexp))
             if short_puts and not long_puts:
                 picked += [(leg, None) for leg in short_puts]
+            elif len(long_puts) == 1 and len(short_puts) == 1:
+                lo, sh = long_puts[0], short_puts[0]
+                lexp, sexp = str(lo["expiration"])[:10], str(sh["expiration"])[:10]
+                if abs(_qty(lo) + _qty(sh)) < 1e-9 and sexp < lexp:
+                    picked.append((sh, lexp))
             for leg, before in picked:
                 exp = str(leg["expiration"])[:10]
                 try:

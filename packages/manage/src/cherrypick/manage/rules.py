@@ -483,6 +483,22 @@ DEFAULT_RULES: dict[str, Any] = {
                 "min_short_delta": 0.05,
             },
         },
+        # The direction card's ideas (deltaideas.py): what drives the book's delta and the rolls that
+        # move it without closing anything, in both directions, on every evaluation. A time spread's
+        # short within `front_days` is rolled to the strike that moves delta most with its delta at most
+        # `roll_short_delta`; a two-sided credit trade's untested side is rolled toward
+        # `untested_short_delta`; each for at least `min_credit` a share. `new_spread` adds one unit of
+        # the hedge's own spreads. Thresholds are ours, with no published evidence; ideas inform and
+        # never size, place or close anything.
+        "delta_ideas": {
+            "enabled": True,
+            "drivers": 5,
+            "front_days": 7,
+            "roll_short_delta": 0.40,
+            "untested_short_delta": 0.30,
+            "min_credit": 0.10,
+            "new_spread": True,
+        },
         # Income trades from our own universe, sized to the account (candidates.py). The structures
         # are the screener rules on the cycle monthly; the caps scale with net liq. The short put and
         # covered call deltas are the Screeners lists' (`cherrypick.core.incomerules`, 16, 2026-10-19:

@@ -19,6 +19,8 @@ import type {
   ManageCandidate,
   ManageCandidateRoom,
   ManageCandidates,
+  ManageDeltaIdea,
+  ManageDeltaIdeas,
   ManageExEarnings,
   ManageChainOrder,
   ManageHedges,
@@ -725,6 +727,79 @@ function band(v: unknown): ManageBand {
   };
 }
 
+function deltaIdea(raw: unknown): ManageDeltaIdea {
+  const i = rec(raw);
+  return {
+    kind: str(i["kind"]) ?? "?",
+    tradeId: str(i["trade_id"]),
+    underlying: str(i["underlying"]) ?? "?",
+    shape: str(i["shape"]),
+    header: str(i["header"]) ?? "",
+    explanation: str(i["explanation"]) ?? "",
+    legs: arr(i["legs"]).map((l) => {
+      const leg = rec(l);
+      return {
+        action: str(leg["action"]) ?? "?",
+        quantity: num(leg["quantity"]) ?? 0,
+        label: str(leg["label"]) ?? "?",
+        mid: num(leg["mid"]),
+        bid: num(leg["bid"]),
+        ask: num(leg["ask"]),
+        delta: num(leg["delta"]),
+      };
+    }),
+    price: num(i["price"]),
+    natural: num(i["natural"]),
+    cash: num(i["cash"]),
+    bwdChange: num(i["bwd_change"]),
+    afterBwd: num(i["after_bwd"]),
+    inBandAfter: typeof i["in_band_after"] === "boolean" ? i["in_band_after"] : null,
+    thetaChange: num(i["theta_change"]),
+    buyingPowerChange: num(i["buying_power_change"]),
+    plainBwdChange: num(i["plain_bwd_change"]),
+    newExpiry: str(i["new_expiry"]),
+    flags: arr(i["flags"]).map((f) => ({ key: str(rec(f)["key"]) ?? "?", text: str(rec(f)["text"]) ?? "" })),
+  };
+}
+
+/** The direction card's ideas, passed through. Null when the evaluation carries none. */
+function deltaIdeas(v: unknown): ManageDeltaIdeas | null {
+  if (v === null || v === undefined) return null;
+  const d = rec(v);
+  const [low, high] = arr(d["band"]).map(num);
+  const together = rec(d["together"]);
+  const sum = (x: unknown) => {
+    if (x === null || x === undefined) return null;
+    const t = rec(x);
+    return { ideas: num(t["ideas"]) ?? 0, bwdChange: num(t["bwd_change"]), afterBwd: num(t["after_bwd"]), cash: num(t["cash"]) };
+  };
+  return {
+    bwd: num(d["bwd"]),
+    benchmark: str(d["benchmark"]),
+    band: typeof low === "number" && typeof high === "number" ? [low, high] : null,
+    inside: d["inside"] === true,
+    drivers: arr(d["drivers"]).map((raw) => {
+      const r = rec(raw);
+      return {
+        tradeId: str(r["trade_id"]),
+        underlying: str(r["underlying"]) ?? "?",
+        shape: str(r["shape"]),
+        bwd: num(r["bwd"]),
+        pmcc: r["pmcc"] === true,
+        reason: str(r["reason"]) ?? "",
+      };
+    }),
+    add: arr(d["add"]).map(deltaIdea),
+    cut: arr(d["cut"]).map(deltaIdea),
+    together: { add: sum(together["add"]), cut: sum(together["cut"]) },
+    unquoted: arr(d["unquoted"]).map((raw) => {
+      const r = rec(raw);
+      return { tradeId: str(r["trade_id"]), underlying: str(r["underlying"]) ?? "?", why: str(r["why"]) ?? "" };
+    }),
+    error: str(d["error"]),
+  };
+}
+
 function hedges(v: unknown): ManageHedges | null {
   if (v === null || v === undefined) return null;
   const h = rec(v);
@@ -888,6 +963,7 @@ function portfolio(v: unknown, rules: Record<string, unknown>, lev: Leveraged = 
       };
     }),
     hedges: hedges(p["hedges"]),
+    deltaIdeas: deltaIdeas(p["delta_ideas"]),
     vix: num(p["vix"]),
     scenarios: scenarios(p["scenarios"]),
     ideas: arr(p["ideas"]).map(idea),

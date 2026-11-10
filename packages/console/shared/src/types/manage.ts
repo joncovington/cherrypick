@@ -608,6 +608,49 @@ export interface ManageHedgeSuggestion {
   } | null;
 }
 
+/** One way to move delta without closing anything (packages/manage `deltaideas.py`). */
+export interface ManageDeltaIdea {
+  kind: "front_roll" | "untested_side" | "pmcc_roll" | "new_spread" | string;
+  /** Null for a new spread, which no held trade owns. */
+  tradeId: string | null;
+  underlying: string;
+  shape: string | null;
+  header: string;
+  explanation: string;
+  /** The order, in sequence: BTC / STC the held legs, then STO / BTO the new ones. */
+  legs: Array<{ action: string; quantity: number; label: string; mid: number | null; bid: number | null; ask: number | null; delta: number | null }>;
+  /** Per share, signed: + a credit received. */
+  price: number | null;
+  natural: number | null;
+  /** Whole-position cash, signed. */
+  cash: number | null;
+  bwdChange: number | null;
+  afterBwd: number | null;
+  inBandAfter: boolean | null;
+  thetaChange: number | null;
+  /** Buying power the change ties up (+) or frees (−); null where it is not modelled. */
+  buyingPowerChange: number | null;
+  /** A front roll's same-strike roll, for comparison: the delta it would move. */
+  plainBwdChange: number | null;
+  newExpiry: string | null;
+  flags: Array<{ key: string; text: string }>;
+}
+
+export interface ManageDeltaIdeas {
+  bwd: number | null;
+  benchmark: string | null;
+  band: [number, number] | null;
+  inside: boolean;
+  /** `pmcc`: a recognised PMCC, whose long delta is what it is held for. */
+  drivers: Array<{ tradeId: string | null; underlying: string; shape: string | null; bwd: number | null; pmcc: boolean; reason: string }>;
+  add: ManageDeltaIdea[];
+  cut: ManageDeltaIdea[];
+  /** Every roll in one direction summed; null when there is none. */
+  together: Record<"add" | "cut", { ideas: number; bwdChange: number | null; afterBwd: number | null; cash: number | null } | null>;
+  unquoted: Array<{ tradeId: string | null; underlying: string; why: string }>;
+  error: string | null;
+}
+
 export interface ManageHedges {
   target: number | null;
   need: number | null;
@@ -684,6 +727,8 @@ export interface ManagePortfolio {
   ruleConfidence: { low: number; high: number } | null;
   underlyings: ManagePortfolioUnderlying[];
   hedges: ManageHedges | null;
+  /** The direction card's ideas; null on an evaluation from before them or with them turned off. */
+  deltaIdeas: ManageDeltaIdeas | null;
   vix: number | null;
   scenarios: ManageScenarios | null;
   /** Ideas for reshaping the book (packages/manage `ideas.py`), shown under the risk matrix; empty on
