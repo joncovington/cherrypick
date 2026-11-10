@@ -231,6 +231,23 @@ def test_a_rolled_put_is_one_cycle_with_the_roll_counted():
     assert [e["what"] for e in c["events"]] == ["open", "roll", "option delivery"]
     assert c["net_cash"] == pytest.approx(100 - 200 + 230)
     assert c["assignments"] == 0
+    # Every contract it traded, closed ones too: what the ledger counts as the wheel's.
+    assert c["contracts"] == sorted({" ".join(PUT50.split()), " ".join(put48.split())})
+
+
+def test_a_pmcc_on_a_wheel_name_is_not_in_the_cycle_s_contracts():
+    long_call = occ("2027-01-15", "C", 40)
+    short_call = occ("2026-09-18", "C", 60)
+    history = [
+        tx(1, "2026-08-03T15:00:00Z", "Sell to Open", PUT50, 1, 1.00),
+        tx(2, "2026-08-18T15:00:00Z", "Buy to Close", PUT50, 1, 0.40),
+        # A PMCC on the same name: a long call and a short call against it, no shares.
+        tx(3, "2026-08-05T15:00:00Z", "Buy to Open", long_call, 1, 12.00),
+        tx(3, "2026-08-05T15:00:00Z", "Sell to Open", short_call, 1, 0.80),
+    ]
+    legs = [opt_leg(long_call, 1, 12.5, 12.0), opt_leg(short_call, -1, 0.5, 0.8)]
+    (c,) = build(history, legs, session=date(2026, 8, 20))["cycles"]
+    assert c["contracts"] == [" ".join(PUT50.split())]
 
 
 def test_a_net_debit_roll_raises_the_wheel_basis():

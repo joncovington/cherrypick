@@ -149,7 +149,7 @@ describe("readManage", () => {
     expect(l.names).toEqual([{ underlying: "AAA", windows: { ALL: b } }]);
     expect(l.lots[0]).toMatchObject({ right: "P", how: "assigned", net: 149, fees: -1 });
     expect(l.open[0]).toMatchObject({ underlying: "BBB", quantity: -1, net: 79 });
-    expect(l.excluded).toEqual({ zeroDte: { legs: 1, net: 299, underlyings: ["SPX"] }, unmatched: { legs: 0, net: 0 } });
+    expect(l.excluded).toEqual({ zeroDte: { legs: 1, net: 299, underlyings: ["SPX"] }, unmatched: { legs: 0, net: 0 }, outsideWheel: { legs: 0, net: 0, underlyings: [] } });
     fs.writeFileSync(path.join(tmp, "manage", "eval-2026-11-04.json"), JSON.stringify(evalDoc("2026-11-04")));
     expect(readManage(config).accounts[0]!.ledger).toBeNull();
   });

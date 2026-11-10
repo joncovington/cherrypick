@@ -866,11 +866,15 @@ manage's reason where manage refused one. There is no earnings column: manage dr
 report inside it, so a known date is always after expiry. An unknown one is an `earnings unknown`
 chip on the name.
 
-**The wheel's names only**. Live -> wheel shows the names the wheel follows and no other:
-needs a look, expiring, the payoff strip and the ledger. The names are manage's (`wheel.names`, the
-names with a cycle). The console keeps only those names' items from manage's account-wide `attention`
-and `payoff`, which the alert post still reads whole, and the ledger arrives already summed over them
-(`ledger.scope`, named in its header). An evaluation from before carries no names and shows the
+**What the wheel holds only**. Live -> wheel shows the wheel and no other trade, even one on a wheel
+name (a PMCC). Needs a look and expiring keep to the contracts a running cycle holds
+(`wheelHolding`: each open or unreconciled cycle's `openOptions`; a complete cycle, or one flat and
+waiting for a put, holds nothing), matched by contract symbol from manage's account-wide `attention`,
+which the alert post still reads whole. The payoff strip shows a name only while a running cycle holds
+something there; manage prices the whole name, so a payoff that also counts legs outside the wheel says
+which. The ledger arrives already kept to the wheel's own contracts (`ledger.scope`, named in its
+header), with another trade's closed legs stated apart (`excluded.outsideWheel`). A waiting cycle's
+card says when it went flat and that it holds nothing. An evaluation with no wheel view shows the
 whole account as it did.
 
 **Live -> wheel's payoff** (`pages/Live/PayoffCard.tsx`): a strip of held names, each

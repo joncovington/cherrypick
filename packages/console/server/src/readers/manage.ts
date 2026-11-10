@@ -671,6 +671,7 @@ function wheelCycle(v: unknown): ManageWheelCycle {
       const o = rec(raw);
       return { symbol: str(o["symbol"]) ?? "?", leg: str(o["leg"]) ?? str(o["symbol"]) ?? "?", quantity: num(o["quantity"]) };
     }),
+    contracts: strs(c["contracts"]),
     credits: num(c["credits"]),
     debits: num(c["debits"]),
     netCash: num(c["net_cash"]),
@@ -1317,6 +1318,7 @@ function ledger(v: unknown): ManageLedger | null {
   const ex = rec(l["excluded"]);
   const z = rec(ex["zero_dte"]);
   const u = rec(ex["unmatched"]);
+  const o = rec(ex["outside_wheel"]);
   return {
     error: str(l["error"]),
     scope: Array.isArray(l["scope"]) ? strs(l["scope"]) : null,
@@ -1359,6 +1361,7 @@ function ledger(v: unknown): ManageLedger | null {
     excluded: {
       zeroDte: { legs: num(z["legs"]) ?? 0, net: num(z["net"]) ?? 0, underlyings: strs(z["underlyings"]) },
       unmatched: { legs: num(u["legs"]) ?? 0, net: num(u["net"]) ?? 0 },
+      outsideWheel: { legs: num(o["legs"]) ?? 0, net: num(o["net"]) ?? 0, underlyings: strs(o["underlyings"]) },
     },
   };
 }

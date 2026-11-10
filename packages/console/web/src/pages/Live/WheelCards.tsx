@@ -2,7 +2,9 @@ import { useState, type ReactNode } from "react";
 import type {
   ManageAccount,
   ManageAttention,
+  ManagePayoff,
   ManageTrade,
+  ManageWheel,
   ManageWheelCheck,
   ManageWheelCycle,
   ManageWheelNote,
@@ -15,7 +17,7 @@ import { CardLightbox, LightboxFrame, useOpenParam, type LightboxTab } from "../
 import { Tile } from "../Flies/PerformanceTab";
 import { Cells, HeadRow, useColumns, type Column } from "../../components/columns";
 import { fmtCash, fmtMoney, fmtPrice } from "../../lib/format";
-import { ExpiringCard, NearStrikeCard, distanceWords } from "./AttentionCard";
+import { ExpiringCard, NearStrikeCard, contractKey, distanceWords } from "./AttentionCard";
 import { PayoffStrip } from "./PayoffCard";
 import { LedgerDesk } from "./LedgerDesk";
 import { Section } from "../../components/Section";
@@ -467,9 +469,10 @@ function daysText(c: ManageWheelCycle): string {
 /** The line under a cycle's figures: what it holds against today's strike, or why it holds nothing. */
 function CheckLines({ c, near }: { c: ManageWheelCycle; near: Map<string, number | null> }) {
   if (c.today.length === 0) {
+    const flatSince = c.events.length > 0 ? c.events[c.events.length - 1]!.date : null;
     const said =
       c.status === "waiting"
-        ? "flat · waiting for a put"
+        ? `flat${flatSince ? ` since ${flatSince}` : ""} · holds nothing · waiting for a put`
         : c.status === "complete"
           ? c.calledAway ? `called away ${c.end ?? "?"}` : `ended ${c.end ?? "?"}`
           : "no short option held";
@@ -604,6 +607,58 @@ function WheelBoxes({ a, children }: { a: ManageAccount; children: ReactNode }) 
   );
 }
 
+/* ------------------------------------------------------------------ what the wheel holds */
+
+export interface WheelHolding {
+  /** The names where a running cycle holds shares or an option. */
+  names: string[];
+  /** The option contracts those cycles hold, padding collapsed (`contractKey`). */
+  symbols: ReadonlySet<string>;
+  /** The same contracts as manage labels them ("2026-11-13 27C"), by name. */
+  labels: ReadonlyMap<string, ReadonlySet<string>>;
+}
+
+/**
+ * What the wheel holds today: each running cycle's open contracts and its names. A complete cycle, or
+ * one gone flat and waiting for a put, holds nothing. Null with no wheel view (an evaluation written
+ * before it), which keeps the tab's older by-name scope.
+ */
+export function wheelHolding(w: ManageWheel | null): WheelHolding | null {
+  if (w === null) return null;
+  const names = new Set<string>();
+  const symbols = new Set<string>();
+  const labels = new Map<string, Set<string>>();
+  for (const c of w.cycles) {
+    if (c.status === "complete" || c.status === "waiting") continue;
+    if (!(c.shares ?? 0) && c.openOptions.length === 0) continue;
+    names.add(c.underlying);
+    for (const o of c.openOptions) {
+      symbols.add(contractKey(o.symbol));
+      if (!labels.has(c.underlying)) labels.set(c.underlying, new Set());
+      labels.get(c.underlying)!.add(o.leg);
+    }
+  }
+  return { names: [...names].sort(), symbols, labels };
+}
+
+/** A payoff leg's label without its quantity: "-1 2026-11-13 27C" -> "2026-11-13 27C". */
+function payoffLegLabel(leg: string): string {
+  return leg.replace(/^[+-−]?\d+(\.\d+)?\s+/, "");
+}
+
+/** The wheel's payoff names that also count legs the wheel does not hold (a PMCC on the same name):
+ *  manage prices the whole name, so the page says what else is in it. */
+export function outsideLegs(payoff: ManagePayoff, holding: WheelHolding): Array<{ underlying: string; legs: string[] }> {
+  const out: Array<{ underlying: string; legs: string[] }> = [];
+  for (const n of payoff.names) {
+    if (!holding.names.includes(n.underlying)) continue;
+    const ours = holding.labels.get(n.underlying) ?? new Set<string>();
+    const legs = n.legs.filter((l) => !ours.has(payoffLegLabel(l.leg))).map((l) => l.leg);
+    if (legs.length > 0) out.push({ underlying: n.underlying, legs });
+  }
+  return out;
+}
+
 /* ------------------------------------------------------------------ the tab */
 
 /**
@@ -611,15 +666,19 @@ function WheelBoxes({ a, children }: { a: ManageAccount; children: ReactNode }) 
  * stands, what a trade would do.
  */
 export function WheelCards({ a }: { a: ManageAccount }) {
-  const scope = a.wheel?.names ?? null;
+  const holding = wheelHolding(a.wheel);
+  // What needs a look and the payoff go by what the wheel holds today, not by every name it has ever
+  // wheeled, so another trade on a wheel name (a PMCC) stays on its own tab.
+  const scope = holding?.names ?? null;
   const held = a.payoff ? (scope === null ? a.payoff.names : a.payoff.names.filter((n) => scope.includes(n.underlying))).length : 0;
+  const mixed = a.payoff && holding ? outsideLegs(a.payoff, holding) : [];
   return (
     <WheelBoxes a={a}>
       <div className="pf-layout">
         {a.attention ? (
           <Section concept="risk" tag="needs a look" question="What needs a look?">
-            <NearStrikeCard a={a.attention} scope={scope} />
-            <ExpiringCard a={a.attention} scope={scope} />
+            <NearStrikeCard a={a.attention} scope={scope} held={holding?.symbols ?? null} />
+            <ExpiringCard a={a.attention} scope={scope} held={holding?.symbols ?? null} />
           </Section>
         ) : null}
         {a.ledger ? (
@@ -633,6 +692,11 @@ export function WheelCards({ a }: { a: ManageAccount }) {
         {a.payoff && held > 0 ? (
           <Section concept="add" tag="what if" question="What would a trade do?">
             <PayoffStrip payoff={a.payoff} scope={scope} />
+            {mixed.map((m) => (
+              <p key={m.underlying} className="muted sm">
+                {m.underlying}'s payoff is the whole name's: it also counts {m.legs.join(", ")}, held outside the wheel
+              </p>
+            ))}
           </Section>
         ) : null}
       </div>

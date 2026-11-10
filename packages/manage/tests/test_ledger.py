@@ -115,6 +115,37 @@ def test_a_scope_counts_only_its_names_everywhere():
     assert empty["names"] == [] and empty["windows"]["ALL"]["net"] == 0.0
 
 
+def test_the_wheels_contracts_keep_another_trade_on_a_wheel_name_out():
+    # AAA is wheeled (the put) and also holds a PMCC (a long call and a short call against it). Scoped by
+    # name alone, the PMCC's calls were the wheel's; with the wheel's contracts they are stated apart.
+    long_call = "AAA   270319C00030000"
+    short_call = "AAA   261120C00050000"
+    rows = [
+        row(1, "2026-09-01T15:00:00Z", "Sell to Open", PUT, 1, 150.0),
+        row(2, "2026-09-20T15:00:00Z", "Buy to Close", PUT, 1, -50.0),
+        row(3, "2026-09-02T15:00:00Z", "Buy to Open", long_call, 1, -900.0),
+        row(4, "2026-09-02T15:00:00Z", "Sell to Open", short_call, 1, 40.0),
+        row(5, "2026-10-01T15:00:00Z", "Buy to Close", short_call, 1, -240.0),
+        dividend("2026-09-15T12:00:00Z", 5.0),
+    ]
+    by_name = ledger.reading(rows, None, SESSION, _rules.DEFAULT_RULES, scope=["AAA"])
+    # The wheel's contracts as wheel.py writes them: padding collapsed.
+    out = ledger.reading(
+        rows, None, SESSION, _rules.DEFAULT_RULES, scope=["AAA"], contracts=["AAA 261120P00045000"]
+    )
+    # Each row pays the fixture's $1 fee.
+    assert name(by_name, "AAA")["ALL"]["calls"] == -202.0
+    a = name(out, "AAA")["ALL"]
+    assert a["puts"] == 98.0 and a["calls"] == 0.0 and a["dividends"] == 5.0
+    assert {r["symbol"] for r in out["lots"] if r["right"] != "D"} == {PUT}
+    # The PMCC's long call is still held: not the wheel's either, and not listed as the wheel's open leg.
+    assert out["open"] == []
+    # Set aside: the closed short call, counted as the ledger counts (closed spans only).
+    assert out["excluded"]["outside_wheel"] == {"legs": 1, "net": -202.0, "underlyings": ["AAA"]}
+    # Without contracts nothing is set aside.
+    assert by_name["excluded"]["outside_wheel"] == {"legs": 0, "net": 0.0, "underlyings": []}
+
+
 def test_windows_count_back_from_the_session_by_the_closing_day():
     rows = [
         row(1, "2026-03-02T15:00:00Z", "Sell to Open", "AAA   260320P00045000", 1, 100.0),

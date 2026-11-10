@@ -49,7 +49,7 @@ function ledger(over: Partial<ManageLedger> = {}): ManageLedger {
       { underlying: "AAA", symbol: "AAA", right: "D", opened: null, closed: "2026-09-15", how: "dividend", net: 12, fees: 0 },
     ],
     open: [{ underlying: "AAA", symbol: "AAA   261218C00055000", right: "C", opened: "2026-10-22", quantity: -1, net: 79 }],
-    excluded: { zeroDte: { legs: 300, net: -2500, underlyings: ["SPX"] }, unmatched: { legs: 0, net: 0 } },
+    excluded: { zeroDte: { legs: 300, net: -2500, underlyings: ["SPX"] }, unmatched: { legs: 0, net: 0 }, outsideWheel: { legs: 0, net: 0, underlyings: [] } },
     ...over,
   };
 }
@@ -99,7 +99,20 @@ describe("the ledger", () => {
 
   it("says what it left out with its count and net", () => {
     expect(render(ledger())).toContain("left out: 300 0DTE legs on SPX, net -$2500.00");
-    expect(render(ledger({ excluded: { zeroDte: { legs: 0, net: 0, underlyings: ["SPX"] }, unmatched: { legs: 0, net: 0 } } }))).not.toContain("left out");
+    const none = { legs: 0, net: 0, underlyings: [] };
+    expect(render(ledger({ excluded: { zeroDte: { legs: 0, net: 0, underlyings: ["SPX"] }, unmatched: { legs: 0, net: 0 }, outsideWheel: none } }))).not.toContain("left out");
+  });
+
+  it("says which legs on a wheel name were another trade's, and nothing when none were", () => {
+    const pmcc = { legs: 2, net: -351, underlyings: ["XYZ"] };
+    const out = render(ledger({ excluded: { zeroDte: { legs: 0, net: 0, underlyings: [] }, unmatched: { legs: 0, net: 0 }, outsideWheel: pmcc } }));
+    expect(out).toContain("not the wheel's: 2 option legs on XYZ from other trades on the same name (a PMCC, a spread), net -$351.00, left out");
+    expect(render(ledger())).not.toContain("not the wheel's");
+  });
+
+  it("draws a payload from a server older than the page (no outsideWheel) without failing", () => {
+    const old = { zeroDte: { legs: 0, net: 0, underlyings: [] }, unmatched: { legs: 0, net: 0 } };
+    expect(render(ledger({ excluded: old }))).not.toContain("not the wheel's");
   });
 
   it("an evaluation without a ledger draws nothing, and one whose history failed says so", () => {

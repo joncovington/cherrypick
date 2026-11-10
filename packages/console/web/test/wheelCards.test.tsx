@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { renderToString } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
-import type { ManageAccount, ManageTrade, ManageWheel, ManageWheelCheck, ManageWheelCycle } from "@console/shared";
-import { CYCLE_TABS, CycleBody, cycleKey, NO_WHEEL, WheelCards } from "../src/pages/Live/WheelCards";
+import type { ManageAccount, ManageAttention, ManagePayoff, ManageTrade, ManageWheel, ManageWheelCheck, ManageWheelCycle } from "@console/shared";
+import { CYCLE_TABS, CycleBody, cycleKey, NO_WHEEL, WheelCards, outsideLegs, wheelHolding } from "../src/pages/Live/WheelCards";
+import { scoped } from "../src/pages/Live/AttentionCard";
 import { aligned, inView, tables } from "./viewTables";
 
 /**
@@ -67,6 +68,7 @@ function cycle(over: Partial<ManageWheelCycle> = {}): ManageWheelCycle {
     basisKnown: true,
     lots: [],
     openOptions: [{ symbol: "XYZ 261120P00050000", leg: "2026-11-20 50P", quantity: -1 }],
+    contracts: ["XYZ 261120P00050000"],
     credits: 100,
     debits: 0,
     netCash: 100,
@@ -339,13 +341,58 @@ describe("the wheel tab", () => {
     const waiting = cycle({ status: "waiting", flat: true, openOptions: [], today: [], shares: 0 });
     const out = render(account(wheel({ cycles: [cycle(), waiting] })));
     expect(out).toContain("1 open · 1 waiting for a put");
-    expect(out).toContain("flat · waiting for a put");
+    // When it went flat (its last event), and that it holds nothing: it is not a live position.
+    expect(out).toContain("flat since 2026-10-01 · holds nothing · waiting for a put");
   });
 
   it("says once which cash-settled index names were left out, and nothing when none were", () => {
     const out = render(account(wheel({ leftOut: ["SPX", "XSP"] })));
     expect(out).toContain("left out, cash-settled (no shares are ever delivered): SPX, XSP");
     expect(render(account(wheel()))).not.toContain("left out, cash-settled");
+  });
+});
+
+/**
+ * The tab keeps to what the wheel holds. A name wheeled once can carry another trade (a PMCC): its legs
+ * are not the wheel's, so what needs a look keeps to the cycles' own open contracts, and a payoff that
+ * prices the whole name says which legs in it are not the wheel's.
+ */
+describe("what the wheel holds", () => {
+  const pmccShort = { underlying: "XYZ", symbol: "XYZ   261218C00060000", leg: "2026-12-18 60C" };
+  const wheelPut = { underlying: "XYZ", symbol: "XYZ   261120P00050000", leg: "2026-11-20 50P" };
+
+  it("holds a running cycle's open contracts, and nothing for a complete or waiting one", () => {
+    const h = wheelHolding(
+      wheel({
+        cycles: [
+          cycle(),
+          cycle({ underlying: "AAA", status: "waiting", flat: true, openOptions: [], shares: 0 }),
+          cycle({ underlying: "BBB", status: "complete", openOptions: [], shares: 0 }),
+        ],
+      }),
+    )!;
+    expect(h.names).toEqual(["XYZ"]);
+    expect([...h.symbols]).toEqual(["XYZ 261120P00050000"]);
+    expect(wheelHolding(null)).toBeNull();
+  });
+
+  it("needs-a-look keeps the wheel's own put and leaves a PMCC's call on the same name out", () => {
+    const attention = { nearPct: 0.03, expiringDays: 7, items: [], expiring: [pmccShort, wheelPut] } as unknown as ManageAttention;
+    const h = wheelHolding(wheel())!;
+    const kept = scoped(attention, h.names, h.symbols);
+    expect(kept.expiring.map((e) => e.leg)).toEqual(["2026-11-20 50P"]);
+    // By name alone, the PMCC's call came along.
+    expect(scoped(attention, ["XYZ"]).expiring).toHaveLength(2);
+  });
+
+  it("says which legs in a wheel name's payoff are not the wheel's", () => {
+    const payoff = {
+      names: [
+        { underlying: "XYZ", legs: [{ leg: "-1 2026-11-20 50P" }, { leg: "+1 2027-03-19 40C" }, { leg: "-1 2026-12-18 60C" }] },
+        { underlying: "QQQ", legs: [{ leg: "-1 2026-12-18 500P" }] },
+      ],
+    } as unknown as ManagePayoff;
+    expect(outsideLegs(payoff, wheelHolding(wheel())!)).toEqual([{ underlying: "XYZ", legs: ["+1 2027-03-19 40C", "-1 2026-12-18 60C"] }]);
   });
 });
 

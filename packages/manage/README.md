@@ -656,10 +656,13 @@ with how it ended), and what is still held is `open`, its cash so far, never cou
 0DTE legs on `exclude.zero_dte_underlyings` and spans the history entered mid-position are counted aside with their legs
 and net, as the pace counts them. The console's Live -> wheel tab draws it above the cycles.
 
-The evaluation's `ledger` counts the wheel's names alone: the names with a cycle, which
-the wheel view states as `names`, are passed as `scope`, and every total, month, lot and open leg is
-over them alone; `scope` is in the reading. The scope is by name, so a name's other trades (a
-diagonal on a name the wheel also runs) are in it. With no cycle the ledger is empty, never the
+The evaluation's `ledger` counts the wheel alone. The names with a cycle, which the wheel view states
+as `names`, are passed as `scope`, and every total, month, lot and open leg is over them alone; `scope`
+is in the reading. Each cycle lists every option contract it traded (`contracts`), and the ledger
+counts an option leg on those names only when it is one of them: another trade on a wheel name (a PMCC,
+a diagonal, a spread) is not the wheel's. Its closed legs are stated apart under
+`excluded.outside_wheel` with their count and net, and a still-held one is not listed as the wheel's
+`open`. Shares and dividends on the name still count. With no cycle the ledger is empty, never the
 account's.
 
 ## The premium pace
