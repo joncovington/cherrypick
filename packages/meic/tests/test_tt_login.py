@@ -103,6 +103,28 @@ def test_a_bad_login_name_is_refused(monkeypatch, capsys, restore_tt):
     assert code == 1 and "not a login name" in out["error"]
 
 
+def test_an_account_suffix_picks_exactly_one_account(monkeypatch, restore_tt):
+    import asyncio
+    from types import SimpleNamespace
+
+    async def listed(session):
+        return [{"account_number": "9ZZ000001234"}, {"account_number": "9ZZ000005678"}]
+
+    async def got(number=None):
+        return f"account:{number}"
+
+    monkeypatch.setattr(tt._broker, "list_accounts", listed)
+    monkeypatch.setattr(tt, "_get_account", got)
+    monkeypatch.setattr(tt, "get_session", lambda: object())
+    assert asyncio.run(tt._read_account(SimpleNamespace(account_suffix="5678"))) == "account:9ZZ000005678"
+    assert (
+        asyncio.run(tt._read_account(SimpleNamespace(account_suffix=None, account_number=None)))
+        == "account:None"
+    )
+    with pytest.raises(RuntimeError, match="0 accounts match"):
+        asyncio.run(tt._read_account(SimpleNamespace(account_suffix="9999")))
+
+
 def test_the_read_verbs_are_exactly_the_account_reads():
     assert tt.LOGIN_READ_VERBS == {
         "get_connection_status",

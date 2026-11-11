@@ -66,7 +66,11 @@ def held_legs(positions: object) -> dict[tuple[str, str], float] | None:
                     qty = float(leg.get("quantity") or 0)
                 except (TypeError, ValueError):
                     continue
-                key = (str(account.get("account") or ""), symbol)
+                # The login joins the account on another login: two logins can share a last four,
+                # and a leg moving between them is a change in both. Main's key is as it always was.
+                login = account.get("login") or "main"
+                who = str(account.get("account") or "")
+                key = (who if login == "main" else f"{login} {who}", symbol)
                 out[key] = out.get(key, 0.0) + qty
     return out
 

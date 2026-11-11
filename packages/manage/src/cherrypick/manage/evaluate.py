@@ -2587,6 +2587,52 @@ def group_trades(
     return out
 
 
+NO_ACCOUNT_HISTORY = "the snapshot carries no trade history for this account"
+
+# The per-account fields a snapshot carries for an account other than the broker tool's default one
+# (`accounts_history[<account_key>]`, written by the orchestrator's managesnap). The default account's
+# stay at the top level, as every snapshot before named broker logins had them.
+_ACCOUNT_FIELDS = (
+    "transactions",
+    "transactions_error",
+    "account_transactions",
+    "account_transactions_error",
+    "working_orders",
+    "working_orders_error",
+)
+
+
+def _is_history_account(account: dict[str, Any], snapshot: dict[str, Any], n_accounts: int) -> bool:
+    """Is this the account the snapshot's top-level history belongs to? `history_account` names it
+    when the snapshot says (the account key); a snapshot that does not reads it the way every one
+    before named logins did: the designated account, or the only one."""
+    named = snapshot.get("history_account")
+    if "history_account" in snapshot:
+        return bool(named) and account.get("account_key") == named
+    return bool(account.get("designated") or n_accounts == 1)
+
+
+def _has_own_history(account: dict[str, Any], snapshot: dict[str, Any], n_accounts: int) -> bool:
+    key = account.get("account_key")
+    return _is_history_account(account, snapshot, n_accounts) or (
+        bool(key) and key in (snapshot.get("accounts_history") or {})
+    )
+
+
+def account_snapshot(snapshot: dict[str, Any], account: dict[str, Any], n_accounts: int) -> dict[str, Any]:
+    """The snapshot as one account's views read it: its own trade history, account-wide history and
+    day's orders in the top-level fields every reader already uses. The history account reads the
+    snapshot as it is; another account with its own entry in `accounts_history` reads that; any other
+    has none of the three, so nothing of one account's history is ever read for another."""
+    if _is_history_account(account, snapshot, n_accounts):
+        return snapshot
+    own = (snapshot.get("accounts_history") or {}).get(account.get("account_key") or "")
+    view = {k: v for k, v in snapshot.items() if k not in _ACCOUNT_FIELDS}
+    if isinstance(own, dict):
+        view.update({k: own[k] for k in _ACCOUNT_FIELDS if k in own})
+    return view
+
+
 def _wheel_view(
     account: dict[str, Any],
     n_accounts: int,
@@ -2600,12 +2646,12 @@ def _wheel_view(
 ) -> dict[str, Any]:
     """The account's wheel cycles (`wheel.py`), each naming the evaluated trades that hold its legs.
 
-    The trade history and the day's orders are the broker tool's designated account's, so only that
-    account (or the only one) gets a view; the others say why they have none. Cash-settled index names
+    The view reads this account's own trade history and day's orders (`account_snapshot`); an account
+    the snapshot carries none for gets no view and says why. Cash-settled index names
     (`expiry.cash_settled_roots`) are left out: no shares are ever delivered there.
     """
-    if not (account.get("designated") or n_accounts == 1):
-        return {"cycles": [], "error": "the trade history is the designated account's"}
+    if not _has_own_history(account, snapshot, n_accounts):
+        return {"cycles": [], "error": NO_ACCOUNT_HISTORY}
     if not history_ok:
         return {"cycles": [], "error": "no trade history in this snapshot"}
     # The view reads history rows this account has never produced (no assignment has been seen on it),
@@ -2899,11 +2945,12 @@ def _pmcc_view(
     snapshot: dict[str, Any],
     rules: dict[str, Any],
 ) -> dict[str, Any]:
-    """The account's PMCCs (`pmcc.py`), recognised or not. Like the wheel view, only the designated
-    account (or the only one) has the history to link them, and a failure costs the view: every trade
-    is still judged, by its diagonal rules alone."""
-    if not (account.get("designated") or n_accounts == 1):
-        return {"positions": [], "error": "the trade history is the designated account's"}
+    """The account's PMCCs (`pmcc.py`), recognised or not. Like the wheel view, it needs this account's
+    own history to link them, and a failure costs the view: every trade is still judged, by its
+    diagonal rules alone. Only this account's legs and history are read, so a long in one account and
+    a short in another are never one diagonal."""
+    if not _has_own_history(account, snapshot, n_accounts):
+        return {"positions": [], "error": NO_ACCOUNT_HISTORY}
     if not history_ok:
         return {"positions": [], "error": "no trade history in this snapshot"}
     try:
@@ -2951,14 +2998,20 @@ def evaluate(
         raise ValueError("snapshot has no session date")
     positions = snapshot.get("positions") or {}
     metrics = snapshot.get("metrics") or {}
-    # Trade history arrived with snapshot v2; without it (or when its fetch failed) every trade falls back
-    # to the open legs' prices, and says so.
-    history = snapshot.get("transactions") or {}
-    history_ok = "transactions" in snapshot and not snapshot.get("transactions_error")
+    whole = snapshot
+    n_accounts = len(positions.get("accounts") or [])
     # Stable trade IDs, against the store as this snapshot carried it (tradeids.py).
     ids = _tradeids.Assigner(snapshot.get("trade_ids"))
     accounts = []
     for account in positions.get("accounts") or []:
+        # Every view below reads this account's own history and orders, never another account's
+        # (`account_snapshot`); the shared readings -- metrics, chains, greeks -- are the same for all.
+        snapshot = account_snapshot(whole, account, n_accounts)
+        own_history = _has_own_history(account, snapshot, n_accounts)
+        # Trade history arrived with snapshot v2; without it (or when its fetch failed) every trade falls
+        # back to the open legs' prices, and says so.
+        history = snapshot.get("transactions") or {}
+        history_ok = "transactions" in snapshot and not snapshot.get("transactions_error")
         balances = account.get("balances") or {}
         net_liq = _f(balances.get("net_liquidating_value"))
         trades = []
@@ -2970,7 +3023,7 @@ def evaluate(
         # each trade holding a cycle's legs alongside every other rule.
         wheel_view = _wheel_view(
             account,
-            len(positions.get("accounts") or []),
+            n_accounts,
             history,
             history_ok,
             session,
@@ -2981,7 +3034,7 @@ def evaluate(
         )
         pmcc_view = _pmcc_view(
             account,
-            len(positions.get("accounts") or []),
+            n_accounts,
             history,
             history_ok,
             session,
@@ -3083,7 +3136,7 @@ def evaluate(
             rules,
             account.get("account_type"),
             book.get("benchmark_spot"),
-            # The broker tool's day list is for its designated account, the one manage evaluates.
+            # This account's own day list (`account_snapshot`).
             snapshot.get("working_orders"),
             # What the Screeners trades are judged to fit against (`candidates.screen_fit`).
             available_bp=_f(balances.get("derivative_buying_power")),
@@ -3098,9 +3151,8 @@ def evaluate(
             account.get("account_type"),
             book.get("benchmark_spot"),
         )
-        # The account-wide history is the broker tool's designated account's, so only that account
-        # (or the only one) gets a pace; another account's would be someone else's trades.
-        n_accounts = len(positions.get("accounts") or [])
+        # The pace reads this account's own account-wide history; an account the snapshot carries none
+        # for gets no pace -- another account's would be someone else's trades.
         premium = (
             _premium.reading(
                 snapshot.get("account_transactions") if "account_transactions" in snapshot else None,
@@ -3110,7 +3162,7 @@ def evaluate(
                 net_liq,
                 rules,
             )
-            if account.get("designated") or n_accounts == 1
+            if own_history
             else None
         )
         # Every short option held against its strike, and what expires soon (`attention.py`).
@@ -3132,7 +3184,7 @@ def evaluate(
                 # Only the wheel's own contracts: another trade on a wheel name (a PMCC) is not the wheel's.
                 contracts=sorted({c for cy in wheel_view["cycles"] for c in cy.get("contracts") or []}),
             )
-            if account.get("designated") or n_accounts == 1
+            if own_history
             else None
         )
         # The legs left out above, split into the loops' and the hand's (`zerodte.py`); the same
@@ -3152,7 +3204,7 @@ def evaluate(
                 known=snapshot.get("live_known_orders") if "live_known_orders" in snapshot else None,
                 known_error=snapshot.get("live_known_orders_error"),
             )
-            if zero_dte_names and (account.get("designated") or n_accounts == 1)
+            if zero_dte_names and own_history
             else None
         )
         _link_wheel(wheel_view, trades)
@@ -3161,6 +3213,13 @@ def evaluate(
         accounts.append(
             {
                 "account": account.get("account"),
+                # Which broker login it sits on and its key there (absent on a snapshot from before
+                # named logins: main, keyed by its masked number).
+                "login": account.get("login") or "main",
+                "login_label": account.get("login_label"),
+                "account_key": account.get("account_key")
+                or f"main-{str(account.get('account') or '****')[-4:]}",
+                "role": account.get("role"),
                 "wheel": wheel_view,
                 "pmcc": pmcc_view,
                 "grouping_errors": grouping_errors,

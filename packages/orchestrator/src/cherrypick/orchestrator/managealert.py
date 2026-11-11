@@ -21,9 +21,17 @@ from cherrypick.core.jsonio import write_json_atomic
 
 
 def _items(doc: dict[str, Any]) -> list[dict[str, Any]]:
+    """Every account's items, each with `_key`: the name on the main login (as the state file always
+    held it), `<login> ****1234|NAME` on another, so the same name in two accounts posts for each."""
+    from .managepost import account_ref
+
     out: list[dict[str, Any]] = []
     for account in doc.get("accounts") or []:
-        out += list(((account.get("attention") or {}).get("items")) or [])
+        main = (account.get("login") or "main") == "main"
+        ref = account_ref(account)
+        for i in ((account.get("attention") or {}).get("items")) or []:
+            key = str(i.get("underlying")) if main else f"{ref}|{i.get('underlying')}"
+            out.append({**i, "_key": key, "_account": None if main else ref})
     return out
 
 
@@ -33,16 +41,21 @@ def due(
     """(the items on names not yet posted this session, the state to record)."""
     already = set((sent or {}).get("names") or []) if (sent or {}).get("session") == session else set()
     items = _items(doc)
-    fresh = [i for i in items if i.get("underlying") not in already]
-    names = sorted(already | {str(i.get("underlying")) for i in fresh})
+    fresh = [i for i in items if i["_key"] not in already]
+    names = sorted(already | {i["_key"] for i in fresh})
     return fresh, {"session": session, "names": names}
 
 
+def _name(i: dict[str, Any]) -> str:
+    return f"{i.get('underlying')} ({i['_account']})" if i.get("_account") else str(i.get("underlying"))
+
+
 def message(items: list[dict[str, Any]]) -> tuple[str, str]:
-    """A title naming the names, and one line per leg: name, leg, level and why."""
-    names = sorted({str(i.get("underlying")) for i in items})
+    """A title naming the names, and one line per leg: name, leg, level and why. A name on another
+    login carries its account."""
+    names = sorted({_name(i) for i in items})
     title = f"Needs a look: {', '.join(names)}"
-    lines = [f"{i.get('underlying')} {i.get('leg')} -- {i.get('level')}: {i.get('why')}" for i in items]
+    lines = [f"{_name(i)} {i.get('leg')} -- {i.get('level')}: {i.get('why')}" for i in items]
     return title, "\n".join(lines) + "\nSee the console's Live → wheel."
 
 
@@ -71,14 +84,22 @@ def run(written: str | None, session: str | None, state_path: Path, notifier: An
 def day_loss_due(
     doc: dict[str, Any], sent: dict[str, Any] | None, session: str | None
 ) -> dict[str, Any] | None:
-    """The first account whose day's loss crossed its alert (manage's `limits.day_loss`), unless one
-    was already posted this session; None otherwise."""
+    """The first account whose day's loss crossed its alert (manage's `limits.day_loss`) and has not
+    been posted this session; None otherwise. Once a session PER ACCOUNT: `sent["accounts"]` lists the
+    ones posted. A state from before named logins (no list) means the main login's was."""
+    from .managepost import account_ref
+
+    posted: set[str] = set()
     if (sent or {}).get("session") == session:
-        return None
+        listed = (sent or {}).get("accounts")
+        if not isinstance(listed, list):
+            return None  # the old shape: one post a session, already made
+        posted = {str(a) for a in listed}
     for account in doc.get("accounts") or []:
         day = ((account.get("limits") or {}).get("day_loss")) or {}
-        if day.get("crossed") is True:
-            return {"account": account.get("account"), **day}
+        ref = account_ref(account)
+        if day.get("crossed") is True and ref not in posted:
+            return {"account": ref, "posted": sorted(posted | {ref}), **day}
     return None
 
 
@@ -99,7 +120,11 @@ def run_day_loss(written: str | None, session: str | None, state_path: Path, not
     hit = day_loss_due(doc, sent, session)
     if hit is None:
         return False
-    write_json_atomic(state_path, {"session": session, "pnl": hit.get("pnl")}, indent=None)
+    write_json_atomic(
+        state_path,
+        {"session": session, "pnl": hit.get("pnl"), "accounts": hit.get("posted") or []},
+        indent=None,
+    )
     notifier.notify(
         "WARNING",
         "manage.day_loss",

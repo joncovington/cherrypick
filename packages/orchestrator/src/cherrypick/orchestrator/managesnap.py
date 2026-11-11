@@ -125,6 +125,15 @@ session (`market-files/cboe`, scripts/fetch_market_files.py), the days both list
 matrix can move IV with the market as VIX has moved over windows like the one it models. A local file
 read; a missing or unreadable file is `spot_vol_history: null` with `spot_vol_history_error`, and the
 matrix then has no realistic row. A snapshot without the field is read exactly as before.
+
+Version 19 reads every broker login (`broker.logins`). The top-level `transactions`,
+`account_transactions` and `working_orders` stay the broker tool's default account's, which
+`history_account` names by its account key (`<login>-<last4>`; null when no evaluated account can
+be said to be it, as when nothing is designated and the main login holds several). Each `managed`
+account (on a login flagged `manage`) reads its own three from its own login by its last 4 into
+`accounts_history[<account_key>]`, so manage judges every account on its own history and never on
+another's. A snapshot without the two fields is read as before: the designated account, or the only
+one, owns the top-level history.
 """
 
 from __future__ import annotations
@@ -144,7 +153,7 @@ from . import doctor
 from . import positions as positions_mod
 from .util import first_json
 
-SNAPSHOT_VERSION = 18
+SNAPSHOT_VERSION = 19
 # Greeks move far more slowly than a bid; the cache's are used up to this old, the feed's otherwise.
 GREEKS_MAX_AGE_SECONDS = 900.0
 # Monday reads Friday's afternoon reading; anything older is a stale book of quotes.
@@ -207,9 +216,10 @@ def _metric(entry: dict[str, Any]) -> dict[str, Any]:
 
 
 def _first_answer(
-    cfg: dict[str, Any], prefer: str | None, argv: list[str], timeout: int = 35
+    cfg: dict[str, Any], prefer: str | None, argv: list[str], timeout: int = 35, login: str | None = None
 ) -> tuple[dict, str | None]:
-    """The first enabled module whose broker tool answers `argv` ok, or the last error."""
+    """The first enabled module whose broker tool answers `argv` ok, or the last error. `login` names
+    an extra broker login (`--login`); None or `main` leaves the argv as it always was."""
     modules = cfgmod.enabled_modules(cfg)
     order = [m for m in ([prefer] if prefer else []) + ["meic", *modules] if m in modules]
     last_error = "no enabled module with a broker tool"
@@ -217,7 +227,9 @@ def _first_answer(
         mcfg = modules[name]
         try:
             run = doctor._run(
-                cfgmod.module_root(mcfg, name), [*cfgmod.broker_tool(mcfg, name), *argv], timeout=timeout
+                cfgmod.module_root(mcfg, name),
+                [*cfgmod.broker_tool(mcfg, name), *cfgmod.login_argv(login), *argv],
+                timeout=timeout,
             )
         except subprocess.TimeoutExpired:
             # A slow broker read is a missing piece of the snapshot, never the end of it: until
@@ -245,21 +257,39 @@ def market_metrics(
     return out, error
 
 
+def _which(suffix: str | None) -> list[str]:
+    """The argv that picks one account by its last 4 (`--account_suffix`); nothing for the broker
+    tool's default account."""
+    return ["--account_suffix", str(suffix)[-4:]] if suffix else []
+
+
 def transactions(
-    cfg: dict[str, Any], symbols: list[str], prefer: str | None = None
+    cfg: dict[str, Any],
+    symbols: list[str],
+    prefer: str | None = None,
+    *,
+    login: str | None = None,
+    suffix: str | None = None,
 ) -> tuple[dict, str | None]:
     """{underlying: [trade history rows]} reaching back HISTORY_DAYS, so manage can rebuild each
-    position's order chain (its opening order and every roll); an error string when unavailable."""
+    position's order chain (its opening order and every roll); an error string when unavailable.
+    `login` and `suffix` read another account's (default: the broker tool's default account)."""
     if not symbols:
         return {}, None
     since = (date.today() - timedelta(days=HISTORY_DAYS)).isoformat()
     payload, error = _first_answer(
-        cfg, prefer, ["get_transactions", "--underlyings", *symbols, "--since", since], timeout=180
+        cfg,
+        prefer,
+        ["get_transactions", "--underlyings", *symbols, "--since", since, *_which(suffix)],
+        timeout=180,
+        login=login,
     )
     return payload.get("transactions") or {}, error
 
 
-def account_transactions(cfg: dict[str, Any], prefer: str | None = None) -> tuple[list, str | None]:
+def account_transactions(
+    cfg: dict[str, Any], prefer: str | None = None, *, login: str | None = None, suffix: str | None = None
+) -> tuple[list, str | None]:
     """The whole account's trade history since it opened (`ACCOUNT_HISTORY_FROM`), closed names
     included, for manage's premium pace (v15) and its ledger (each name's earnings over every window,
     ALL included): what was collected and kept on trades no longer held, which the per-underlying read
@@ -267,8 +297,9 @@ def account_transactions(cfg: dict[str, Any], prefer: str | None = None) -> tupl
     payload, error = _first_answer(
         cfg,
         prefer,
-        ["get_transactions", "--account_wide", "--since", ACCOUNT_HISTORY_FROM],
+        ["get_transactions", "--account_wide", "--since", ACCOUNT_HISTORY_FROM, *_which(suffix)],
         timeout=180,
+        login=login,
     )
     rows = payload.get("account")
     if error is None and not isinstance(rows, list):
@@ -339,10 +370,71 @@ def _slim_order(order: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
-def working_orders(cfg: dict[str, Any], prefer: str | None = None) -> tuple[list[dict], str | None]:
+def working_orders(
+    cfg: dict[str, Any], prefer: str | None = None, *, login: str | None = None, suffix: str | None = None
+) -> tuple[list[dict], str | None]:
     """The day's orders on the account, slimmed (`_slim_order`), and an error string when unavailable."""
-    payload, error = _first_answer(cfg, prefer, ["get_working_orders"])
+    payload, error = _first_answer(cfg, prefer, ["get_working_orders", *_which(suffix)], login=login)
     return [_slim_order(o) for o in payload.get("orders") or [] if isinstance(o, dict)], error
+
+
+def history_account_key(entries: list[dict[str, Any]]) -> str | None:
+    """The account the snapshot's top-level history belongs to: the broker tool's default, which is
+    the designated account, or the main login's only account. None when neither: the tool would read
+    the login's first account, which no evaluated account can be said to be -- so no account claims
+    that history, as before named logins (`designated or n_accounts == 1`)."""
+    main = [e for e in entries if (e.get("login") or "main") == "main"]
+    designated = [e for e in main if e.get("designated")]
+    if designated:
+        return designated[0].get("account_key")
+    return main[0].get("account_key") if len(main) == 1 else None
+
+
+def evaluated_elsewhere(entries: list[dict[str, Any]], history_key: str | None) -> list[dict[str, Any]]:
+    """The accounts manage evaluates beyond the history account: each `managed` one (on a login
+    flagged `manage`) that was read without error."""
+    return [
+        e
+        for e in entries
+        if e.get("role") == "managed" and e.get("account_key") != history_key and not e.get("error")
+    ]
+
+
+def account_histories(
+    cfg: dict[str, Any], entries: list[dict[str, Any]], prefer: str | None
+) -> dict[str, dict[str, Any]]:
+    """{account_key: its own trade history, account-wide history and day's orders} for each account in
+    `entries`, read from its own login by its last 4. One account's failed read is that account's
+    error, never another's. Read-only, like every call here."""
+    out: dict[str, dict[str, Any]] = {}
+    for e in entries:
+        login = e.get("login") or "main"
+        suffix = str(e.get("account") or "")[-4:]
+        symbols = sorted(
+            {str(u.get("underlying")).upper() for u in e.get("underlyings") or [] if u.get("underlying")}
+        )
+        tx, tx_error = transactions(cfg, symbols, prefer, login=login, suffix=suffix)
+        acct, acct_error = account_transactions(cfg, prefer, login=login, suffix=suffix)
+        orders, orders_error = working_orders(cfg, prefer, login=login, suffix=suffix)
+        out[e["account_key"]] = {
+            "transactions": tx,
+            "transactions_error": tx_error,
+            "account_transactions": acct,
+            "account_transactions_error": acct_error,
+            "working_orders": orders,
+            "working_orders_error": orders_error,
+        }
+    return out
+
+
+def _merged_history(history: dict[str, list], others: dict[str, dict[str, Any]]) -> dict[str, list]:
+    """Every account's per-underlying rows in one map, for the readings keyed by name alone (which
+    names hold a long call and when it was bought: `underlying_history`)."""
+    merged = {k: list(v) for k, v in history.items()}
+    for own in others.values():
+        for sym, rows in (own.get("transactions") or {}).items():
+            merged.setdefault(sym, []).extend(rows or [])
+    return merged
 
 
 def pick_hedge_expiry(listing: dict[str, list[dict]], session: date) -> str | None:
@@ -1027,6 +1119,12 @@ def build(cfg: dict[str, Any]) -> dict[str, Any]:
     metrics, error = market_metrics(cfg, quoted, prefer) if ok else ({}, None)
     history, history_error = transactions(cfg, symbols, prefer) if ok else ({}, None)
     account_history, account_history_error = account_transactions(cfg, prefer) if ok else ([], None)
+    # Each further account manage evaluates reads its own history and orders from its own login
+    # (`accounts_history`); the top-level fields stay the history account's, as every reader before
+    # named logins (and main's code on a rollback) reads them.
+    entries = positions.get("accounts") or []
+    history_key = history_account_key(entries)
+    others = account_histories(cfg, evaluated_elsewhere(entries, history_key), prefer) if ok else {}
     session = clock.today_iso()
     fill_earnings_times(metrics, earnings_times(date.fromisoformat(session)))
     hedge_spot = (metrics.get(HEDGE_ROOT) or {}).get("last")
@@ -1042,7 +1140,9 @@ def build(cfg: dict[str, Any]) -> dict[str, Any]:
         else None
     )
     bands, bands_error = skate_bands(date.fromisoformat(session), symbols)
-    underlying, underlying_error = underlying_history(date.fromisoformat(session), positions, history)
+    underlying, underlying_error = underlying_history(
+        date.fromisoformat(session), positions, _merged_history(history, others)
+    )
     # Read after the broker's history, so an order a loop placed before that read is already listed
     # (each loop publishes its ledger's ids every tick).
     known_orders, known_orders_error = _execution.read_known_orders()
@@ -1060,6 +1160,8 @@ def build(cfg: dict[str, Any]) -> dict[str, Any]:
         "transactions_error": history_error,
         "account_transactions": account_history,
         "account_transactions_error": account_history_error,
+        "history_account": history_key,
+        "accounts_history": others,
         "hedge_chain": hedge,
         "broker_greeks": greeks,
         "broker_greeks_error": greeks_error,

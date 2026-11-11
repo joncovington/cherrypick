@@ -362,6 +362,23 @@ async def _get_account(account_number: str | None = None):
     )
 
 
+async def _read_account(args):
+    """The account a READ verb acts on: `--account_suffix` (a last 4, matched against the login's own
+    account list, exactly one or an error) or `--account_number`, else `_get_account`'s fallback. The
+    suffix exists because the orchestrator's snapshot holds only masked numbers; it never reaches an
+    order verb, which resolves through `_trading_account` alone."""
+    suffix = getattr(args, "account_suffix", None)
+    if not suffix:
+        return await _get_account(getattr(args, "account_number", None))
+    listed = await _broker.list_accounts(get_session())
+    matches = [
+        a["account_number"] for a in listed if str(a.get("account_number") or "").endswith(str(suffix))
+    ]
+    if len(matches) != 1:
+        raise RuntimeError(f"--account_suffix {suffix}: {len(matches)} accounts match on this login")
+    return await _get_account(matches[0])
+
+
 def _designated_account() -> str | None:
     """This module's designated live account (`cherrypick account --module meic --set <last4>`), or
     None when it is unset or the keyring cannot be read. A seam, so tests never read a real keyring."""
@@ -529,7 +546,7 @@ async def cmd_get_transactions(args) -> dict:
     try:
         if not args.account_wide and not args.underlyings:
             return {"ok": False, "error": "get_transactions needs --underlyings or --account_wide"}
-        account = await _get_account(getattr(args, "account_number", None))
+        account = await _read_account(args)
         session = get_session()
         since = date.fromisoformat(args.since)
         if args.account_wide:
@@ -1035,7 +1052,7 @@ def _select_put_spread(puts, wing_width, short_delta, greeks):
 
 async def cmd_get_working_orders(args) -> dict:
     try:
-        account = await _get_account(getattr(args, "account_number", None))
+        account = await _read_account(args)
         session = get_session()
         orders = await account.get_live_orders(session)
         return {
@@ -1798,6 +1815,7 @@ def main():
     p_tx.add_argument("--account_wide", action="store_true")
     p_tx.add_argument("--since", required=True, help="YYYY-MM-DD")
     p_tx.add_argument("--account_number", default=None)
+    p_tx.add_argument("--account_suffix", default=None, help="the account by its last 4 (read-only)")
 
     p_mo = sub.add_parser("get_market_overview")
     p_mo.add_argument("--symbols", nargs="+", required=True)
@@ -1828,6 +1846,7 @@ def main():
 
     p_wo = sub.add_parser("get_working_orders")
     p_wo.add_argument("--account_number", default=None)
+    p_wo.add_argument("--account_suffix", default=None, help="the account by its last 4 (read-only)")
 
     p_et = sub.add_parser("execute_trade")
     p_et.add_argument("--order", required=True, help="JSON order spec")
