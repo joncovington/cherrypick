@@ -162,7 +162,10 @@ entries) live in the OS keyring, never in files, env vars, or logs.
 login lives once in the shared `cherrypick-broker` keyring service, which every module's store reads
 *through* as a fallback; a module's own service, when set, always wins — that's the override and
 per-module rotation layer, and it's what `connect --module` writes. The suite-wide account designation
-follows the same shape (shared default, per-module override). Secrets are still only ever typed into
+follows the same shape (shared default, per-module override). A further tastytrade login is a name in
+`broker.logins` with its tokens in its own `cherrypick-broker.<name>` service and no fallback either
+way; it is read (accounts, positions, history, order events) and never traded: nothing is designated
+on it, and a broker tool's order verbs refuse `--login`. Secrets are still only ever typed into
 module/core child processes with the tty inherited — the orchestrator process never sees a bearer
 secret; the status surfaces (doctor's onboarding line, the Live Ops card) show presence and *source*
 (own/shared/missing), never values.

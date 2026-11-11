@@ -173,6 +173,7 @@ effect on the next pass, with no `install` step and no scheduled task to registe
 | `backtest` | **off** (`fetch`), daily at `fetch_at` (18:45 ET); the store count follows `fetch` unless `inventory` is set | `backtest-fetch`, `backtest-inventory` |
 | `live_positions` | **on** | `live-positions` |
 | `account_alerts` | **on** whenever a module has a live loop and a keyring service; trading days 09:00–18:00, armed or not | `account-alerts` |
+| `broker.logins` | one entry per extra broker login; each with `alerts` (default on) gets its own order-event service | `account-alerts.<name>` |
 | `live_fill_alerts` | **on**, while `account_alerts` runs | `live-fill-alerts` |
 | `live_settle_overdue` | **on**, hourly | `settle-overdue-live` |
 | `power_watch` | **on** | `power-watch` |
@@ -264,7 +265,11 @@ monthly `archive` task zips finished-month reports + rotated logs into `logs/arc
 Every secret lives in the **OS keyring** (Windows Credential Manager/DPAPI, macOS Keychain, Linux Secret
 Service) — never in files, env vars, or logs. The broker OAuth tokens are one shared entry,
 `cherrypick-broker`, which the installer and `connect` write; a module's own `keyring_service` is an
-optional per-module override layered over it. Slack/Discord webhooks and Telegram's bot token and chat ID live under the orchestrator's
+optional per-module override layered over it. A second (or third) tastytrade login keeps its tokens
+under its own service, `cherrypick-broker.<name>`, with no fallback to the main login's; `connect
+--login <name>` writes it and adds `<name>` to `broker.logins` in `config.json`, which holds names
+only. Reconcile, positions, the manage snapshot and the order alerts read every listed login;
+designation and orders stay on the main login. Slack/Discord webhooks and Telegram's bot token and chat ID live under the orchestrator's
 `cherrypick-notify` service (`secrets-set`). See [guardrails-and-modes.md](guardrails-and-modes.md).
 
 > **Moved out (2026-08-21):** the tastylive Follow Feed and Lossdog VIP feed notifiers live in a

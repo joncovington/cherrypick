@@ -19,6 +19,8 @@ All commands are **read-only or paper-only** except the narrow onboarding pair (
 | `connect --module <m>` | The per-module **override** layer: runs that module's own hidden-input credential tool for the OAuth secrets (the orchestrator never sees `client_secret`/`refresh_token`) and selects that module's account. Only needed when one module must differ from the suite default. | `--module meic\|earnings` |
 | `account` | List, set, or clear the **suite-wide** designated live-trading account (masked) — the default every module inherits through the store fallback chain. Configuration only. | `--set <last4\|index>`, `--clear`, `--yes` |
 | `account --module <m>` | The same, for one module's own designation (its override). Configuration only. | `--module`, `--set <last4\|index>`, `--clear`, `--yes` |
+| `connect --login <name>` | Connect another tastytrade login: its OAuth secrets by hidden input into its own keyring service (`cherrypick-broker.<name>`), a read-only connection check, then a label and the manage choice, and `<name>` added to `broker.logins` (config backed up first). Designates nothing. Restart the supervisor afterwards. | `--login` |
+| `account --login <name>` | List that login's accounts (masked). Listing only: designation stays on the main login, so `--set`/`--clear` refuse. | `--login` |
 | `migrate-home` | Move in-repo config into `~/.cherrypick` and sweep leftovers. Dry-run by default. | `--apply` (perform the move) |
 | `secrets-set` | Store a Slack/Discord webhook URL in the OS keyring (prompted without echo if `--url` omitted); for `telegram`, `--url` is the bot token and `--chat-id` the chat ID, and whichever is omitted is prompted for without echo. | `--channel slack\|discord\|telegram`, `--url`, `--chat-id` (telegram) |
 | `secrets-status` | Show which push-channel secrets are configured (secret-free). | — |
@@ -177,10 +179,10 @@ supervisor job named `external-<id>`, which runs `external-run <id>`.
 `--date YYYY-MM-DD` (report) · `--eod` (report — scope to one
 settlement session) · `--live` (report — read the modules' separate live ledgers instead of paper; a
 deliberately separate path calibrate can never reach) · `--fast` (doctor) ·
-`--module` / `--set` / `--clear` / `--yes` (connect/account) ·
+`--module` / `--set` / `--clear` / `--yes` / `--login <name>` (connect/account) ·
 `--host` / `--port` / `--no-browser` (settings) · `--to` / `--rollback` / `--force-window` / `--yes` / `--dry-run` (upgrade) · `--dry-run` / `--apply` (migrations) · `--apply` (migrate-home,
 settings --organize) · `--organize [target]` (settings) · `--stop` (supervise — ask a running
-supervisor to exit) · `--detail` / `--account <last4>` / `--json` (positions) · `--scheduled` (reconcile — the daily job's mode; notifies on any non-FLAT
+supervisor to exit) · `--detail` / `--account <last4|login-last4>` / `--json` (positions) · `--scheduled` (reconcile — the daily job's mode; notifies on any non-FLAT
 verdict) · `--month` / `--dry-run` (archive) · `--dry-run` / `--list` / `--verify` / `--restore-to DIR` (backup) · `--channel` / `--url` (secrets) · `--detect` / `--write` / `--cap name=bool` (capabilities) · `--force` (init).
 
 ## Slash-command equivalents (Claude Code)

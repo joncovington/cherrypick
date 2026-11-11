@@ -68,10 +68,14 @@ def _live_enabled(root: Path, module: str | None = None) -> bool | None:
     return None
 
 
-def _broker_accounts(root: Path, tool: list[str] | None = None) -> tuple[list[dict], str | None]:
+def _broker_accounts(
+    root: Path, tool: list[str] | None = None, login: str | None = None
+) -> tuple[list[dict], str | None]:
     """The login's accounts via the module's read-only broker tool (`list_accounts`) —
-    (accounts, error). `tool` is the module's config-declared argv (cfgmod.broker_tool)."""
-    payload = _tt(root, "list_accounts", tool=tool)
+    (accounts, error). `tool` is the module's config-declared argv (cfgmod.broker_tool); `login` an
+    extra broker login (None = main, the argv unchanged)."""
+    kw = {} if login in (None, "", "main") else {"login": login}
+    payload = _tt(root, "list_accounts", tool=tool, **kw)
     if not payload.get("ok"):
         return [], (payload.get("error") or "list_accounts not ok")[:200]
     return payload.get("accounts") or [], None
@@ -201,6 +205,69 @@ def set_shared_account(cfg: dict[str, Any], selector: str) -> dict[str, Any]:
     return {"ok": True, "scope": "shared", "designated": mask_account(full)}
 
 
+def list_login(cfg: dict[str, Any], login: str) -> dict[str, Any]:
+    """An extra broker login's accounts, masked. Nothing is designated on it: designation stays on
+    the main login, so this is a listing only (`account --login NAME`)."""
+    from cherrypick.core.auth import logins as _logins
+
+    try:
+        login = _logins.check_login_name(login)
+    except _logins.LoginNameError as exc:
+        return {"ok": False, "error": str(exc)}
+    if _logins.is_default(login):
+        return list_shared(cfg)
+    if login not in cfgmod.broker_login_names(cfg):
+        return {
+            "ok": False,
+            "error": f"login {login!r} is not in broker.logins (run `connect --login {login}`)",
+        }
+    name, _mcfg, root, tool = _first_broker_module(cfg)
+    if root is None:
+        return {"ok": False, "error": _NO_BROKER_MODULE}
+    accounts_list, aerr = _broker_accounts(root, tool, login=login)
+    if aerr:
+        return {"ok": False, "login": login, "error": aerr}
+    return {
+        "ok": True,
+        "scope": "login",
+        "login": login,
+        "via_module": name,
+        "accounts": [
+            {
+                "account": mask_account(a.get("account_number")),
+                "nickname": a.get("nickname"),
+                "type": a.get("account_type"),
+                "designated": False,
+            }
+            for a in accounts_list
+        ],
+        "designated": None,
+    }
+
+
+def logins_status(cfg: dict[str, Any], store_factory=None) -> list[dict[str, Any]]:
+    """Each extra login's keyring state (presence only, never values, no broker): `[{login, label,
+    manage, credentials}]`, credentials `present` / `missing` / `error: ...`."""
+    from cherrypick.core.auth import REQUIRED_SECRETS
+    from cherrypick.core.auth import logins as _logins
+
+    out = []
+    for entry in cfgmod.broker_logins(cfg)[1:]:
+        try:
+            store = (
+                store_factory(_logins.login_service(entry["name"]))
+                if store_factory
+                else _logins.login_store(entry["name"])
+            )
+            state = "present" if all(store.get_secret(k) for k in REQUIRED_SECRETS) else "missing"
+        except CredentialError as exc:
+            state = f"error: {exc}"
+        out.append(
+            {"login": entry["name"], "label": entry["label"], "manage": entry["manage"], "credentials": state}
+        )
+    return out
+
+
 def clear_shared_account() -> dict[str, Any]:
     _shared_store().delete_secret(ACCOUNT_NUMBER)
     return {"ok": True, "scope": "shared", "designated": None}
@@ -250,6 +317,7 @@ def onboarding_status(cfg: dict[str, Any], store_factory=CredentialStore) -> dic
             "account": mask_account(shared_acct) if shared_acct else None,
         },
         "modules": modules,
+        "logins": logins_status(cfg, store_factory),
     }
 
 

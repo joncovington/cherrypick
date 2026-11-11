@@ -1151,7 +1151,9 @@ def _run_manage_marks(cfg) -> None:
     written: str | None = None
     # A trade since the stored snapshot, or no snapshot today yet: this minute takes a full one.
     snap_session, snap_at = managerefresh.stored_snapshot(cfgmod.state_file("manage.snapshot.json"))
-    fill_at = managerefresh.latest_fill(Path(account_alerts.data_dir()) / account_alerts.INBOX_FILENAME)
+    fill_at = managerefresh.latest_fill_any(
+        [Path(account_alerts.inbox_path(login)) for login in cfgmod.broker_login_names(cfg)]
+    )
     today = now.date().isoformat()
     oc = cfgmod.manage_settings(cfg)["on_change"]
     if oc["enabled"]:
@@ -1744,8 +1746,16 @@ def _account_table(listing: dict) -> None:
 def cmd_account(cfg, args) -> None:
     """List / set / clear a designated live-trading account (masked). With --module, the
     module's own designation (its override); WITHOUT --module, the SUITE-WIDE shared default
-    every module inherits through the store fallback chain."""
+    every module inherits through the store fallback chain. With --login NAME (an extra login),
+    a listing only: designation stays on the main login."""
     module = args.module
+    login = getattr(args, "login", None)
+    if login not in (None, "", "main"):
+        if args.set or args.clear or module:
+            _emit({"ok": False, "error": "designating an account on another login is not supported yet"})
+            sys.exit(1)
+        _emit(accounts.list_login(cfg, login))
+        return
     if not module:
         if args.clear:
             _emit(accounts.clear_shared_account())
@@ -1799,7 +1809,12 @@ def cmd_account(cfg, args) -> None:
 def cmd_connect(cfg, args) -> None:
     """With --module: the per-module onboarding (override layer). Without: the SUITE wizard —
     shared login once, optional migration of per-module copies, one suite-wide designation,
-    opt-in webhooks, status panel."""
+    opt-in webhooks, status panel. With --login NAME: connect an extra broker login (its own hidden
+    secret entry, then the name added to broker.logins)."""
+    login = getattr(args, "login", None)
+    if login not in (None, "", "main"):
+        _emit(connect.run_login(cfg, login))
+        return
     if not args.module:
         _emit(connect.run_suite(cfg))
         return
@@ -2777,6 +2792,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="For account: designate this account (a last-4 or 1-based index)",
     )
     parser.add_argument("--clear", action="store_true", help="For account: unset the designated account")
+    parser.add_argument(
+        "--login",
+        default=None,
+        help="For connect/account: an extra broker login by name (broker.logins); absent = the main login",
+    )
     parser.add_argument(
         "--detect", action="store_true", help="For capabilities: probe this machine for claude and dolt"
     )

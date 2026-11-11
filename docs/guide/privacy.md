@@ -109,6 +109,7 @@ There are three separate things to remove. Do them in this order.
 3. **Delete the keyring entries.** These are not in `~/.cherrypick`, so deleting the folder does not remove
    them. The suite uses these keyring service names:
    - `cherrypick-broker`: the shared broker login;
+   - `cherrypick-broker.<name>`: each further broker login you connected with `connect --login <name>`;
    - `cherrypick-notify`: Discord, Slack and Telegram webhooks;
    - `meicagent` and `earningsagent`: a module's own login, if you ever entered one for a module (also
      `fliesagent` and `bwbagent` for the retired modules);
@@ -121,6 +122,9 @@ There are three separate things to remove. Do them in this order.
    ```bash
    python -c "import keyring; [keyring.delete_password('cherrypick-broker', 'production:' + k) for k in ('client_secret', 'refresh_token', 'account_number')]"
    ```
+
+   A further login is removed with `python -m cherrypick.core.auth remove --login <name>`, also before
+   you delete the checkout.
 
    Webhooks are removed with `secrets-delete --channel discord` (and `slack`, `telegram`,
    `discord_reporting`), before you delete the checkout, because the command lives there.
