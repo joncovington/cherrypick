@@ -84,9 +84,22 @@ export interface Fresh {
   oldest: number | null;
 }
 
-export function readFresh(config: ConsoleConfig, symbols: string[], now: number, maxAgeS: number): Fresh {
+/** The cache a broker login's own producer writes (`streamer.instances`): `<marketdata>/<login>/
+ *  stream_cache.db`, beside the shared one. Main's is the shared cache itself. */
+export function instanceCachePath(config: ConsoleConfig, login: string | null): string {
+  if (!login || login === "main") return config.paths.streamCacheDb;
+  return path.join(path.dirname(config.paths.streamCacheDb), login, "stream_cache.db");
+}
+
+export function readFresh(
+  config: ConsoleConfig,
+  symbols: string[],
+  now: number,
+  maxAgeS: number,
+  cachePath: string = config.paths.streamCacheDb,
+): Fresh {
   const out: Fresh = { mids: new Map(), greeks: new Map(), oldest: null };
-  const p = config.paths.streamCacheDb;
+  const p = cachePath;
   if (symbols.length === 0 || !fs.existsSync(p)) return out;
   let db: Database.Database | null = null;
   try {
@@ -261,10 +274,21 @@ export function readManageLive(
     return empty;
   }
   const accounts = arr(doc["accounts"]).map(rec);
-  const symbols = new Set<string>();
+  // An account on a broker login with a producer of its own (`stream_instances`, written by the
+  // orchestrator's snapshot) is quoted from that producer's cache, as manage declared its legs there;
+  // every other account, and the benchmark, from the shared one. Never one login's quotes for
+  // another's legs: an account whose own producer is down shows unmarked.
+  const instances = new Set(arr(doc["stream_instances"]).filter((s): s is string => typeof s === "string"));
+  const sourceOf = (a: Rec): string => {
+    const login = typeof a["login"] === "string" ? a["login"] : "main";
+    return instances.has(login) ? login : "main";
+  };
+  const wanted = new Map<string, Set<string>>([["main", new Set()]]);
   // Each option leg's contract symbol (padding collapsed) to its cache key, for `marks`.
   const contracts = new Map<string, string>();
   for (const a of accounts) {
+    const symbols = wanted.get(sourceOf(a)) ?? new Set<string>();
+    wanted.set(sourceOf(a), symbols);
     const bench = rec(a["portfolio"])["benchmark"];
     if (typeof bench === "string") symbols.add(bench);
     for (const t of arr(a["trades"]).map(rec)) {
@@ -277,24 +301,34 @@ export function readManageLive(
       }
     }
   }
-  const fresh = readFresh(config, [...symbols], now, maxAge);
-  const spots: Record<string, number> = {};
-  for (const s of symbols) {
-    const m = fresh.mids.get(s);
-    if (!s.startsWith(".") && m !== undefined) spots[s] = m;
+  const freshBy = new Map<string, Fresh>();
+  for (const [source, symbols] of wanted) {
+    freshBy.set(source, readFresh(config, [...symbols], now, maxAge, instanceCachePath(config, source)));
   }
+  const freshOf = (a: Rec): Fresh => freshBy.get(sourceOf(a)) ?? freshBy.get("main")!;
+  // The page-wide spot and contract maps: main's first, then each instance's for what main lacks.
+  const spots: Record<string, number> = {};
   const marks: Record<string, number> = {};
-  for (const [contract, key] of contracts) {
-    const m = fresh.mids.get(key);
-    if (m !== undefined) marks[contract] = m;
+  let oldest: number | null = null;
+  for (const [source, symbols] of wanted) {
+    const fresh = freshBy.get(source)!;
+    if (fresh.oldest !== null) oldest = oldest === null ? fresh.oldest : Math.min(oldest, fresh.oldest);
+    for (const s of symbols) {
+      const m = fresh.mids.get(s);
+      if (!s.startsWith(".") && m !== undefined && !(s in spots)) spots[s] = m;
+    }
+    for (const [contract, key] of contracts) {
+      const m = fresh.mids.get(key);
+      if (m !== undefined && !(contract in marks)) marks[contract] = m;
+    }
   }
   return {
     session,
-    oldestQuoteAt: fresh.oldest,
+    oldestQuoteAt: oldest,
     maxAgeSeconds: maxAge,
     closedMarks: closed,
-    trades: accounts.flatMap((a) => arr(a["trades"]).map((t) => liveTrade(rec(t), fresh))),
-    accounts: accounts.map((a) => liveAccount(a, fresh)),
+    trades: accounts.flatMap((a) => arr(a["trades"]).map((t) => liveTrade(rec(t), freshOf(a)))),
+    accounts: accounts.map((a) => liveAccount(a, freshOf(a))),
     spots,
     marks,
   };

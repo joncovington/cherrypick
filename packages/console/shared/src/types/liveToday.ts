@@ -6,7 +6,8 @@
 
 import type { LiveMeicBrokerHealth } from "./liveMeic.js";
 
-export type LiveLoopId = "flies" | "meic" | "bwb";
+/** A live loop: flies, bwb, or one of MEIC's live accounts -- `meic` (the main login) or `meic.<login>`. */
+export type LiveLoopId = "flies" | "meic" | "bwb" | `meic.${string}`;
 
 export interface LiveTodayArm {
   /** Armed means armed FOR TODAY: the loop's arm record is present and dated today's ET session. */
@@ -205,6 +206,9 @@ export interface LiveTodayHand {
   /** "at mark: ..." while legs are held, "realised: ..." when flat. */
   netBasis: string | null;
   caveats: string[];
+  /** The account these are in, as every page names it (`****1234`, or `<login> ****1234` on another
+   *  broker login); absent on an evaluation written before named logins. */
+  account?: string | null;
 }
 
 export interface LiveTodayPayload {
@@ -218,4 +222,7 @@ export interface LiveTodayPayload {
   suite: LiveTodaySuite;
   /** Today's 0DTE trades placed by hand, beside the loops and outside the suite total. */
   hand: LiveTodayHand;
+  /** The same for each further account the evaluation carries a 0DTE view for (another broker
+   *  login's), one each, named by `account`; empty with one account. */
+  handOthers?: LiveTodayHand[];
 }

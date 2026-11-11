@@ -13,6 +13,8 @@ import path from "node:path";
 import type { SuiteFeatures } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
 import { moduleOn } from "../services/featuresBridge.js";
+import { streamerInstances } from "./logins.js";
+import { meicLiveAccounts } from "./meicLive.js";
 
 const TAIL_BYTES = 256 * 1024;
 const DEFAULT_LINES = 50;
@@ -118,6 +120,15 @@ export function logSources(config: ConsoleConfig): Array<{ id: string; path: str
     ["contango", "contango/contango_paper.log"],
     ["weeklyput", "weeklyput/weeklyput_paper.log"],
     ["bwb", "bwb/bwb_paper.log"],
+    ["meic-live", "meic/meic_live.log"],
+    ["meic-alerts", "meic/meic_alert_daemon.log"],
+    // Each further broker login's own: MEIC's live account there and its alert daemon, and its
+    // producer (`streamer.instances`) -- named as their writers name them.
+    ...meicLiveAccounts(config).flatMap((login) => [
+      [`meic-live.${login}`, `meic/meic_live.${login}.log`],
+      [`meic-alerts.${login}`, `meic/meic_alert_daemon.${login}.log`],
+    ]),
+    ...streamerInstances(config).map((name) => [`streamer.${name}`, `streamer/streamer.${name}.log`]),
   ].map(([id, rel]) => ({ id: id!, path: path.join(root, rel!) }));
 }
 

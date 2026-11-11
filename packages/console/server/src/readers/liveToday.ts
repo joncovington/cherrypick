@@ -53,9 +53,21 @@ import type { ConsoleConfig } from "../config.js";
 import { hasTable, num, readJson, readOnlyDb, str } from "./db.js";
 import { NO_TRADE_LOG_QUERY, readFliesAnalytics, readFliesLoopStatus, readFliesTradeLog } from "./flies.js";
 import { markSeries, positionsFor } from "./fliesLive.js";
-import { DEFAULT_DISARM, etParts, minutesOf, readBrokerHealth, readHeld, readMeicLive, readOrphans, totalsOf } from "./meicLive.js";
+import {
+  DEFAULT_DISARM,
+  etParts,
+  meicLiveAccounts,
+  meicLiveBlock,
+  meicLiveDbPath,
+  minutesOf,
+  readBrokerHealth,
+  readHeld,
+  readMeicLive,
+  readOrphans,
+  totalsOf,
+} from "./meicLive.js";
 import { readBwb, readBwbHistory } from "./bwb.js";
-import { readLiveHand } from "./liveHand.js";
+import { readLiveHandAll } from "./liveHand.js";
 import { meicLoopState } from "./meic.js";
 import { LIVE_BOOKS } from "./liveBooks.js";
 import { readLockStatus, readModuleGate } from "../services/liveLock.js";
@@ -284,12 +296,14 @@ function meicBreakerFigure(dbPath: string, session: string): number | null {
   return r.status === "ok" ? r.value : null;
 }
 
-function readMeicToday(config: ConsoleConfig, now: Date): LoopRead {
-  const p = readMeicLive(config, now);
+function readMeicToday(config: ConsoleConfig, now: Date, login: string | null = null): LoopRead {
+  // One row per MEIC live account: `meic` (the main login), `meic.<login>` for another's.
+  const extra = login && login !== "main" ? login : null;
+  const p = readMeicLive(config, now, extra);
   const session = p.session;
   const meicCfg = readJson(path.join(config.paths.cherrypick, "config", "meic.json"));
-  const live = liveBlock(meicCfg);
-  const dbPath = path.join(config.paths.meicDir, "meic_trades.db");
+  const live = extra ? meicLiveBlock(meicCfg ?? {}, extra) ?? {} : liveBlock(meicCfg);
+  const dbPath = meicLiveDbPath(config, extra);
   const arm: LiveTodayArm = {
     armed: p.arm.armed,
     date: p.arm.date,
@@ -327,12 +341,12 @@ function readMeicToday(config: ConsoleConfig, now: Date): LoopRead {
   }
   const limit = num(live["daily_loss_halt_dollars"]);
   return {
-    loop: "meic",
-    to: "/live/meic",
+    loop: extra ? `meic.${extra}` : "meic",
+    to: extra ? `/live/meic?login=${encodeURIComponent(extra)}` : "/live/meic",
     ledger: p.ledger,
     ledgerError: p.ledgerError,
     arm,
-    loopState: meicLoopState(config, now),
+    loopState: meicLoopState(config, now, extra),
     open: p.open.filter((r) => !r.working).length,
     working: p.open.filter((r) => r.working).length + p.open.filter((r) => r.putClosing).length + p.open.filter((r) => r.callClosing).length,
     workingBasis: "entry orders working, plus each side with a close order working",
@@ -588,12 +602,20 @@ export function meicOpenMark(open: LiveMeicOpenRow[]): LiveTodayLoop["mark"] {
 export function readLiveToday(config: ConsoleConfig, now: Date = new Date()): LiveTodayPayload {
   const { session, minute } = etParts(now);
   const enabled = new Map(moduleIds(config).map((m) => [m.id, m.enabled]));
-  const loops = [readFliesToday(config, session, minute), readMeicToday(config, now), readBwbToday(config, session, minute)].map(
+  const loops = [
+    readFliesToday(config, session, minute),
+    readMeicToday(config, now),
+    ...meicLiveAccounts(config).map((login) => readMeicToday(config, now, login)),
+    readBwbToday(config, session, minute),
+  ].map(
     (l): LiveTodayLoop => {
-      const withSwitch = { ...l, moduleEnabled: enabled.get(l.loop) ?? null };
+      // A MEIC live account on another login is MEIC's: the module's switch is its switch.
+      const withSwitch = { ...l, moduleEnabled: enabled.get(l.loop.split(".")[0]!) ?? null };
       return { ...withSwitch, retired: isRetired(withSwitch) };
     },
   );
+  // One hand view per account that carries one (another broker login's accounts after the first).
+  const hands = readLiveHandAll(config, session);
   return {
     generatedAt: now.toISOString(),
     session,
@@ -602,6 +624,7 @@ export function readLiveToday(config: ConsoleConfig, now: Date = new Date()): Li
     attention: loops.flatMap(attentionFor),
     suite: suiteOf(loops),
     // Beside the loops, never in `loops`: it has no arm, gate or breaker, and its net stays out of the suite total.
-    hand: readLiveHand(config, session),
+    hand: hands[0]!,
+    handOthers: hands.slice(1),
   };
 }

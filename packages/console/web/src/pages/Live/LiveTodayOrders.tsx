@@ -175,8 +175,8 @@ export function DayChains({ chains, empty }: { chains: DayChain[]; empty: string
   );
 }
 
-function MeicOrders() {
-  const { data, isLoading, isError } = useLiveMeic();
+function MeicOrders({ login = null }: { login?: string | null }) {
+  const { data, isLoading, isError } = useLiveMeic(login);
   if (isError) return <p className="pnl-neg">MEIC's live ledger could not be read.</p>;
   if (isLoading || data === undefined) return <p className="muted">Reading MEIC's live ledger…</p>;
   if (data.ledger !== "ok") return <p className="muted">{data.ledger === "absent" ? "No live ledger on this machine." : `Read failed: ${data.ledgerError ?? "unknown"}`}</p>;
@@ -194,6 +194,8 @@ function BwbOrders({ session }: { session: string }) {
 /** The loop lightbox's orders tab. */
 export function LoopOrders({ loop, session }: { loop: LiveLoopId; session: string }) {
   if (loop === "meic") return <MeicOrders />;
+  // A MEIC live account on another broker login: `meic.<login>`.
+  if (loop.startsWith("meic.")) return <MeicOrders login={loop.slice("meic.".length)} />;
   if (loop === "bwb") return <BwbOrders session={session} />;
   return <p className="muted">This loop's orders are on its own tab.</p>;
 }

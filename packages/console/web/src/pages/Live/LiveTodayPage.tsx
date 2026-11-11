@@ -70,7 +70,11 @@ function breakerWords(l: LiveTodayLoop): string {
 }
 
 function loopStateWords(l: LiveTodayLoop): string {
-  if (l.loopState === null) return l.loop === "meic" ? "no meic-live job" : "no loop record";
+  if (l.loopState === null) {
+    if (l.loop === "meic") return "no meic-live job";
+    if (l.loop.startsWith("meic.")) return `no meic-live.${l.loop.slice("meic.".length)} job`;
+    return "no loop record";
+  }
   if (l.loopState.state === "no-data") return "no iterations";
   const age = l.loopState.ageSeconds;
   return age === null ? l.loopState.state : `${l.loopState.state} · ${age < 120 ? `${Math.round(age)}s` : `${Math.round(age / 60)}m`} ago`;
@@ -550,7 +554,15 @@ export function LiveTodayView({ data: d, manage }: { data: LiveTodayPayload; man
       ))}
       {d.hand !== undefined && (
         <Section concept="add" question="What was traded by hand?">
-          <HandCard hand={d.hand} session={d.session} note={handHasTrades(d.hand) ? undefined : handNote(d)} />
+          <HandCard
+            hand={d.hand}
+            session={d.session}
+            note={handHasTrades(d.hand) ? undefined : handNote(d)}
+            showAccount={(d.handOthers ?? []).length > 0}
+          />
+          {(d.handOthers ?? []).map((h) => (
+            <HandCard key={h.account ?? "?"} hand={h} session={d.session} showAccount />
+          ))}
         </Section>
       )}
       {index >= 0 ? (

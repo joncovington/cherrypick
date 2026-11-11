@@ -28,6 +28,32 @@ def run(proposed, metrics=None, spot=50.0):
     return model.model(result, snap, RULES, "XYZ", proposed)
 
 
+def test_a_named_account_is_modelled_on_its_own_book():
+    """Another broker login's account (`account_key`) sizes against its own basis, not the first's."""
+    snap = snapshot(history(), legs(), metrics={"iv_index": "0.30", "hv_30_day_pct": "24.0"})
+    ira = snap["positions"]["accounts"][0]
+    ira.update(
+        {
+            "account_key": "main-1234",
+            "account_type": {"margin_or_cash": "Cash", "type_name": "Traditional IRA"},
+        }
+    )
+    margin = {
+        **ira,
+        "account_key": "margin-4222",
+        "login": "margin",
+        "designated": False,
+        "account_type": {"margin_or_cash": "Margin", "type_name": "Individual"},
+    }
+    snap["positions"]["accounts"].append(margin)
+    result = ev.evaluate(snap, RULES)
+    on_ira = model.model(result, snap, RULES, "XYZ", ["-1 2026-12-18 45P @ 1.05"])
+    on_margin = model.model(result, snap, RULES, "XYZ", ["-1 2026-12-18 45P @ 1.05"], "margin-4222")
+    assert on_ira["account_basis"] != on_margin["account_basis"]
+    missing = model.model(result, snap, RULES, "XYZ", ["-1 2026-12-18 45P @ 1.05"], "ghost-0000")
+    assert missing["ok"] is False and "ghost-0000" in missing["error"]
+
+
 def test_a_cash_secured_put_at_a_given_price():
     out = run(["-1 2026-12-18 45P @ 1.05"])
     assert out["ok"] and out["net"] == pytest.approx(105.0)

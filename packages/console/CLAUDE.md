@@ -183,7 +183,16 @@ alone):
 - **An account is named with its broker login** (`readers/accountName.ts`): the masked number on the
   main login, `<login> ****1234` on another (`broker.logins`). Every page keys an account by that
   name, so a reader of manage's evaluation or marks never uses the bare masked number: two logins can
-  share a last four. The console's own broker session stays the main login's.
+  share a last four. The console's own broker session stays the main login's. The rest of the suite's
+  per-login state is read per login too:
+  - **Quotes:** manage's live marks come from each account's own producer cache
+    (`stream_instances`, `instanceCachePath`), never another login's.
+  - **Hand trades:** the 0DTE hand view is one card per account.
+  - **MEIC's live accounts** (`meicLiveAccounts`: ledger, arm record, `live_accounts` block,
+    readiness via `--login`, job `meic-live.<login>`) are the `?login=` of Live → meic and their own
+    `meic.<login>` rows on Live → today.
+  - **System page:** shows each live account's arm, each producer instance's daemon and log.
+  - **Model a trade:** models against the account it was opened from.
 - **Single source of broker auth.** The console reads THE suite credential (`production:client_secret`
   / `production:refresh_token` under the `cherrypick-broker` keyring service) through Python
   (`auth/suiteBridge.ts`), since Python-keyring targets aren't addressable from Node. **It never writes

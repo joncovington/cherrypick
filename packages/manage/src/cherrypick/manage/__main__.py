@@ -220,7 +220,7 @@ def cmd_model(args) -> dict:
         return {"ok": False, "error": "no stored snapshot; run `run.py manage` first"}
     rules, _warnings, _source = _rules.load(Path(args.rules) if args.rules else None)
     result = _evaluate.evaluate(snapshot, rules)
-    return _model.model(result, snapshot, rules, args.underlying, args.leg)
+    return _model.model(result, snapshot, rules, args.underlying, args.leg, getattr(args, "account", None))
 
 
 def main() -> None:
@@ -258,6 +258,11 @@ def main() -> None:
     )
     p_model.add_argument("--session", default=None)
     p_model.add_argument("--rules", default=None)
+    p_model.add_argument(
+        "--account",
+        default=None,
+        help="the account to model against, '<login>-<last4>' (default: the designated one)",
+    )
     args = parser.parse_args()
     commands = {
         "evaluate": cmd_evaluate,

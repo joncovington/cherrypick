@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { useSearchParams } from "react-router-dom";
 import type { LiveMeicOpenRow, LiveMeicPayload } from "@console/shared";
 import { Card, DataCard, PnlCell, fmtMoney } from "../../components/DataTable";
 import { HelpSection, type CardHelpContent } from "../../components/CardHelp";
@@ -27,11 +28,13 @@ import { GuideLink } from "../../components/GuideLink";
  * slippage column -- a live fill is the broker's price, and MEIC's slippage figure is a paper
  * model's concession.
  */
-export function useLiveMeic() {
+export function useLiveMeic(login: string | null = null) {
+  // `login`: a MEIC live account on another broker login (`?login=` on the page); null = main's.
+  const extra = login && login !== "main" ? login : null;
   return useQuery<LiveMeicPayload>({
-    queryKey: ["live-meic"],
+    queryKey: ["live-meic", extra ?? "main"],
     queryFn: async () => {
-      const res = await fetch("/api/live/meic");
+      const res = await fetch(extra ? `/api/live/meic?login=${encodeURIComponent(extra)}` : "/api/live/meic");
       if (!res.ok) throw new Error(`live meic: HTTP ${res.status}`);
       return (await res.json()) as LiveMeicPayload;
     },
@@ -182,8 +185,42 @@ const HISTORY_HELP: CardHelpContent = {
   ),
 };
 
+/** One button per MEIC live account (`main`, then each other broker login's), when there is more than
+ *  one; the choice is the page's `?login=`, so a link opens that account. */
+function AccountPicker({ accounts, current, onPick }: { accounts: string[]; current: string; onPick: (login: string) => void }) {
+  if (accounts.length < 2) return null;
+  return (
+    <span className="mode-toggle" role="group" aria-label="live account">
+      {accounts.map((a) => (
+        <button
+          key={a}
+          type="button"
+          className={a === current ? "mode-btn active" : "mode-btn"}
+          aria-pressed={a === current}
+          title={a === "main" ? "MEIC's live account on the main login" : `MEIC's live account on the ${a} login`}
+          onClick={() => onPick(a)}
+        >
+          {a === "main" ? "main login" : `${a} login`}
+        </button>
+      ))}
+    </span>
+  );
+}
+
 export function MeicLivePage() {
-  const { data: d, isLoading, isError, dataUpdatedAt } = useLiveMeic();
+  const [params, setParams] = useSearchParams();
+  const login = params.get("login");
+  const { data: d, isLoading, isError, dataUpdatedAt } = useLiveMeic(login);
+  const pick = (next: string) =>
+    setParams(
+      (p) => {
+        const out = new URLSearchParams(p);
+        if (next === "main") out.delete("login");
+        else out.set("login", next);
+        return out;
+      },
+      { replace: true },
+    );
   const gap = useMeicLiveGap();
   const arm = d !== undefined ? armLabel(d) : null;
   const health = d?.brokerHealth ?? null;
@@ -264,6 +301,7 @@ export function MeicLivePage() {
   return (
     <LiveBoxes boxes={boxes}>
       <div className="pf-layout">
+        {d?.accounts && <AccountPicker accounts={d.accounts} current={d.login ?? "main"} onPick={pick} />}
         <Section concept="live" question="Can it trade today?">
           <MeicReadinessCard readiness={d?.readiness} tiles={tiles} shown={shownIcs} />
           {d && (d.orphans.orders.length > 0 || heldCount > 0) && (

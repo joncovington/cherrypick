@@ -51,14 +51,31 @@ function refused(error: string): ManageModelResult {
 }
 
 /** Validate, run manage, camelise. A bad request is refused here, before any process starts. */
-export async function readManageModel(underlying: string, legs: string[]): Promise<ManageModelResult> {
+/** An account key as manage writes it, `<login>-<last4>`: a login slug and four digits. */
+const ACCOUNT_KEY = /^[a-z0-9][a-z0-9-]{0,31}-\d{4}$/;
+
+export async function readManageModel(
+  underlying: string,
+  legs: string[],
+  accountKey: string | null = null,
+): Promise<ManageModelResult> {
   const name = underlying.toUpperCase();
   if (!UNDERLYING.test(name)) return refused("the underlying must be a ticker");
   if (legs.length === 0) return refused("no leg to model");
   if (legs.length > MAX_LEGS) return refused(`at most ${MAX_LEGS} legs`);
   const bad = legs.find((l) => !LEG.test(l));
   if (bad !== undefined) return refused(`cannot read leg "${bad}"; expected like "-1 2026-12-18 46P @ 1.05"`);
-  const res = await caller(["-m", "cherrypick.manage", "model", "--underlying", name, ...legs.flatMap((l) => ["--leg", l])]);
+  if (accountKey !== null && !ACCOUNT_KEY.test(accountKey)) return refused("the account must be like margin-1234");
+  const account = accountKey !== null ? ["--account", accountKey] : [];
+  const res = await caller([
+    "-m",
+    "cherrypick.manage",
+    "model",
+    "--underlying",
+    name,
+    ...legs.flatMap((l) => ["--leg", l]),
+    ...account,
+  ]);
   if (!res.ok || res.json === null) return refused(res.error ?? UNAVAILABLE);
   const out = camelise(res.json) as Partial<ManageModelResult>;
   if (out.ok !== true) return refused(typeof out.error === "string" ? out.error : UNAVAILABLE);

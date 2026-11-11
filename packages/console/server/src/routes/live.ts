@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import type { ConsoleConfig } from "../config.js";
 import { readFliesLive } from "../readers/fliesLive.js";
-import { readMeicLive } from "../readers/meicLive.js";
+import { meicLiveAccounts, readMeicLive } from "../readers/meicLive.js";
 import { readMeicLiveGap } from "../readers/meicLiveGap.js";
 import { readLiveToday } from "../readers/liveToday.js";
 import { readExecution } from "../services/executionBridge.js";
@@ -24,7 +24,13 @@ export function registerLiveRoutes(app: FastifyInstance, config: ConsoleConfig):
   // MEIC's live loop (the Live page's meic tab): arming, halt, orphans, held submissions, open ICs
   // and resolved history, from files only (`readers/meicLive.ts`), plus the module's own arm verdict
   // (`services/meicStatusBridge.ts`). Nothing here touches an order.
-  app.get("/api/live/meic", async () => ({ ...readMeicLive(config), readiness: await readMeicReadiness() }));
+  // `?login=<name>` reads the live account on another broker login (MEIC's `live_accounts`); only a
+  // login MEIC lists is read, so the query names a file set this reader already knows, never a path.
+  app.get("/api/live/meic", async (req) => {
+    const asked = (req.query as Record<string, unknown>)["login"];
+    const login = typeof asked === "string" && meicLiveAccounts(config).includes(asked) ? asked : null;
+    return { ...readMeicLive(config, new Date(), login), readiness: await readMeicReadiness(Date.now(), login) };
+  });
   // MEIC live against its paper twin (`live-shadow`), paired per session (`readers/meicLiveGap.ts`).
   app.get("/api/live/meic/gap", async () => readMeicLiveGap(config));
   // Every live loop's day on one payload (the Live page's today tab), composed from the per-loop

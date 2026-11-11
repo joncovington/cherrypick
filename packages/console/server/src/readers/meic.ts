@@ -643,10 +643,12 @@ export interface MeicLoopStatus {
  * when a tick is running or one finished within two minutes, as flies reads its last iteration;
  * null when the supervisor's registry names no such job.
  */
-export function meicLoopState(config: ConsoleConfig, now: Date): LiveTodayLoop["loopState"] {
+export function meicLoopState(config: ConsoleConfig, now: Date, login: string | null = null): LiveTodayLoop["loopState"] {
   const reg = readJson(path.join(config.paths.cherrypick, "state", "supervisor-jobs.json"));
   const jobs = reg?.["jobs"];
-  const job = typeof jobs === "object" && jobs !== null ? (jobs as Record<string, unknown>)["meic-live"] : undefined;
+  // `meic-live`, or `meic-live.<login>` for a live account on another broker login.
+  const id = !login || login === "main" ? "meic-live" : `meic-live.${login}`;
+  const job = typeof jobs === "object" && jobs !== null ? (jobs as Record<string, unknown>)[id] : undefined;
   if (typeof job !== "object" || job === null) return null;
   const row = job as Record<string, unknown>;
   const running = num(row["running_pid"]) !== null;

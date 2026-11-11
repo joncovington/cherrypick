@@ -971,7 +971,17 @@ export interface ManageLadder {
 }
 
 export interface ManageAccount {
+  /** How every page names and keys the account: `****1234`, or `<login> ****1234` on another
+   *  broker login (`readers/accountName.ts`). */
   account: string | null;
+  /** The broker login it sits on (`main` before named logins), that login's label (`broker.logins`),
+   *  `<login>-<last4>`, and its role: live (designated), managed (a `manage` login), paper-only. */
+  login?: string;
+  loginLabel?: string | null;
+  accountKey?: string | null;
+  role?: string | null;
+  /** Why the account could not be read (its login's token, the broker), when it could not. */
+  error?: string | null;
   netLiq: number | null;
   maintenance: number | null;
   buyingPower: number | null;

@@ -1303,6 +1303,11 @@ function account(v: unknown, rules: Record<string, unknown>, lev: Leveraged = NO
   }
   return {
     account: accountName(a),
+    login: str(a["login"]) ?? "main",
+    loginLabel: str(a["login_label"]),
+    accountKey: str(a["account_key"]),
+    role: str(a["role"]),
+    error: str(a["error"]),
     netLiq: num(a["net_liq"]),
     maintenance: num(a["maintenance"]),
     buyingPower: num(a["buying_power"]),

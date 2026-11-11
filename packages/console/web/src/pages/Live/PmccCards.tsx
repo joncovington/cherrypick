@@ -34,6 +34,7 @@ import { GuideLink } from "../../components/GuideLink";
 import { Link } from "react-router-dom";
 import { ViewSwitch, useViewChoice } from "../../components/ViewSwitch";
 import { CardRows, type CardRow } from "./CardRows";
+import { accountTitle } from "./accountTitle";
 
 /**
  * Live → pmcc: each poor man's covered call packages/manage reads on the account (`pmcc.py`),
@@ -854,7 +855,7 @@ export function PmccCards({ a: evaluated, rules = null }: { a: ManageAccount; ru
   const v = a.pmcc;
   if (v === null) {
     return (
-      <Card title={`pmcc · ${a.account ?? "?"}`}>
+      <Card title={`pmcc · ${accountTitle(a)}`}>
         <p className="muted" style={{ margin: 0 }}>
           this evaluation was written before the PMCC view: it has no PMCC for the account
         </p>
@@ -869,7 +870,7 @@ export function PmccCards({ a: evaluated, rules = null }: { a: ManageAccount; ru
   if (pmccs.length === 0) {
     return (
       <>
-        <Card title={`pmcc · ${a.account ?? "?"}`}>
+        <Card title={`pmcc · ${accountTitle(a)}`}>
           <p className="muted" style={{ margin: 0 }}>
             {noPmccText(v.recognize)}
           </p>

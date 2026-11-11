@@ -47,6 +47,7 @@ import {
   yesNo,
 } from "./manageParts";
 import { GuideLink } from "../../components/GuideLink";
+import { accountTitle } from "./accountTitle";
 
 /**
  * Live → wheel: each wheel cycle packages/manage follows on the account (`wheel.py`),
@@ -725,7 +726,7 @@ export function WheelCards({ a: evaluated }: { a: ManageAccount }) {
         ) : null}
         {a.payoff && held > 0 ? (
           <Section concept="add" tag="what if" question="What would a trade do?">
-            <PayoffStrip payoff={a.payoff} scope={scope} />
+            <PayoffStrip payoff={a.payoff} scope={scope} accountKey={a.accountKey ?? null} />
             {mixed.map((m) => (
               <p key={m.underlying} className="muted sm">
                 {m.underlying}'s payoff is the whole name's: it also counts {m.legs.join(", ")}, held outside the wheel
@@ -844,7 +845,7 @@ function WheelCycles({ a }: { a: ManageAccount }) {
       {w.cycles.length === 0 ? null : (
         <>
           <p className="muted">
-            {a.account ?? "?"} · {cycleCount(w.cycles)}
+            {accountTitle(a)} · {cycleCount(w.cycles)}
             {w.bandsMissing ? ` · skate bands: ${w.bandsMissing}` : w.bandsDay ? ` · skate bands from ${w.bandsDay}` : ""}
           </p>
           <CycleList cycles={w.cycles} near={near} />

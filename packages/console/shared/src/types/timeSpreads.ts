@@ -91,6 +91,9 @@ export interface TimeSpreadsPayload {
   account: ManageTimeSpreads | null;
   /** Why `account` is null (no evaluation that day, or none carrying time spreads). */
   accountNote: string | null;
+  /** Which account `account` sizes to, named as every page names it, when the evaluation carries
+   *  more than one (another broker login's); null or absent with one. */
+  accountName?: string | null;
   error: string | null;
 }
 

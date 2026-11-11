@@ -42,11 +42,13 @@ export function shapeReadiness(res: SpawnedJson): LiveMeicReadiness {
   return { ok: true, ready: verdict["ready"] && blockers.length === 0, blockers, warnings, openIcs, criticals };
 }
 
-async function spawnCaller(): Promise<SpawnedJson> {
-  return spawnModuleCliAsync(["-m", "cherrypick.meic.live_loop", "--status"], UNAVAILABLE);
+async function spawnCaller(login?: string | null): Promise<SpawnedJson> {
+  // A live account on another broker login reads its own verdict (`live_loop --status --login`).
+  const extra = login && login !== "main" ? ["--login", login] : [];
+  return spawnModuleCliAsync(["-m", "cherrypick.meic.live_loop", "--status", ...extra], UNAVAILABLE);
 }
 
-type Caller = () => SpawnedJson | Promise<SpawnedJson>;
+type Caller = (login?: string | null) => SpawnedJson | Promise<SpawnedJson>;
 let caller: Caller = spawnCaller;
 
 /** Swap the subprocess out in tests. Pass nothing to restore the real one. */
@@ -58,8 +60,12 @@ export function setMeicStatusCaller(fn?: Caller): void {
 const TTL_MS = 30_000;
 const cache = new AsyncMemo<LiveMeicReadiness>();
 
-export function readMeicReadiness(now = Date.now()): Promise<LiveMeicReadiness> {
-  return cache.get("status", TTL_MS, now, async () => shapeReadiness(await caller()));
+/** The verdict of one live account: main's (no login), or another broker login's. One memo each. */
+export function readMeicReadiness(now = Date.now(), login: string | null = null): Promise<LiveMeicReadiness> {
+  const extra = login && login !== "main" ? login : null;
+  return cache.get(extra ? `status:${extra}` : "status", TTL_MS, now, async () =>
+    shapeReadiness(await (extra ? caller(extra) : caller())),
+  );
 }
 
 /** Drop the memoised readout. Tests only. */
