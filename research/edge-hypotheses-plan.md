@@ -7154,9 +7154,8 @@ any arm has been computed on a quoted chain.*
   3-month curve files from 2011; results under the backtest data directory
   (`results/research/item71/`).
 - **Decides:**
-  - **A pass:** the call is the cheaper leverage on those funds; it informs how the user holds a
-    levered long in the IRA, and it names the long for the follow-up below. Nothing goes live from this
-    item.
+  - **A pass:** the call is the cheaper leverage on those funds for an account that cannot borrow,
+    and it names the long for the follow-up below. Nothing goes live from this item.
   - **A fail:** a leveraged fund (or, out of the money, a financed delta) holds the same exposure for
     less; LEAPS are not proposed as stock replacement.
   - **Next either way:** the user asked (2026-11-10) for a study of selling calls or puts against the
