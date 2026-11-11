@@ -247,6 +247,21 @@ the opening range comes from the producer's `orb.py`. `tt stream_status` reports
 
 ## The live block (arm registry)
 
+- **One live account per process** (`live_account.py`). The main login's is the `live` block, as
+  always; each further broker login MEIC trades is a `live_accounts.<login>` entry, a full live block
+  of its own, run as `live_loop --login <login>`. `live_account.activate` names the account once, at
+  startup, before anything reads a path, a credential or the config:
+  - **Files:** every live file follows `paths.live_data_dir` / `live_key` / `live_log_name`, so a
+    further account's ledger, intents, criticals, tick lock, orphans, broker health, alert inbox, arm
+    record, kill latch, published orders, open legs and stream request are its own.
+  - **Login and designation:** its session is the login's own store, and its designated account is
+    `meic:account_number` in that login's service.
+  - **Config:** the loop reads `config_view`, where nothing that sizes, selects or permits a trade is
+    inherited from `live` (shown to fail by inheriting it); only the timing keys are.
+  - **Gates:** `readiness` adds the entry's own `enabled`. A further account's tick also reads its
+    trading status (`restriction_blockers`: frozen, closing-only, margin call, and the
+    pattern-day-trader reserve under $25,000), which blocks entries only.
+  - **Main is untouched:** its paths, keys, argv and broker calls are what they were.
 - **The live block, flies' `live.arm` seam.** `live.arm` names the registry arm live
   trades (unset: the top level); `live.max_open_bp_dollars`, `wing_widths_by_symbol`,
   `entry_window_start` and `entry_window_end` apply to live alone and only narrow the arm (later start,

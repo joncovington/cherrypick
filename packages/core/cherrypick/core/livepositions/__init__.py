@@ -177,9 +177,18 @@ def publish_open_legs(module: str, legs: Iterable[dict[str, Any]], *, now_iso: s
         pass
 
 
+def account_of(live_key: str) -> str:
+    """The broker account a live loop's key trades: `<module>` is the main login's (flies, bwb,
+    meic as they always were), `<module>.<login>` that login's. Only loops on one account can hold
+    opposite legs that net at the broker."""
+    _, _, login = str(live_key).partition(".")
+    return login or "main"
+
+
 def other_modules_legs(module: str) -> dict[Key, int]:
-    """Every other live loop's published legs, netted by key as the broker would. An unreadable file
-    contributes nothing."""
+    """Every other live loop's published legs ON THE SAME ACCOUNT (`account_of`), netted by key as
+    the broker would. An unreadable file contributes nothing. A loop trading another login's account
+    is left out: its legs can never offset these at the broker."""
     import json
 
     legs: list[dict[str, Any]] = []
@@ -187,8 +196,9 @@ def other_modules_legs(module: str) -> dict[Key, int]:
         files = list(_open_legs_dir().glob("*.json"))
     except OSError:
         return {}
+    mine = account_of(module)
     for f in files:
-        if f.stem == module:
+        if f.stem == module or account_of(f.stem) != mine:
             continue
         try:
             legs.extend(json.loads(f.read_text(encoding="utf-8")).get("legs") or [])

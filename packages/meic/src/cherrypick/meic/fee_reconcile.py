@@ -397,11 +397,16 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--lookback-days", type=int, default=5)
     ap.add_argument("--db", help="Ledger path. Default: the live ledger (meic_trades.db).")
     ap.add_argument("--apply", action="store_true", help="Write the broker's fees to the ledger.")
+    ap.add_argument("--login", default=None, help="The live account on another broker login (live_accounts).")
     return ap
 
 
 def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
+    # That account's ledger, designation and broker session (`live_account`); main unchanged.
+    from cherrypick.meic import live_account
+
+    live_account.activate(args.login)
     symbol = args.symbol.strip().upper() if args.symbol else None
     conn = _core_db.connect(args.db or _paths.live_db_path(), pragmas=("journal_mode=WAL", "foreign_keys=ON"))
     try:

@@ -492,6 +492,16 @@ class Broker:
             "unrecorded": {ext: str(o.get("order_id")) for ext, o in self._unrecorded.items()},
         }
 
+    def trading_status(self) -> dict:
+        """The designated account's restrictions and day-trade standing (`core.broker.trading_status`).
+        Raises on failure: its caller blocks entries on an unreadable status, never assumes one."""
+        try:
+            self._ensure()
+            return self.run(_broker.trading_status(self._account, self._session))
+        except Exception:
+            self._reset()
+            raise
+
     def orders_today(self) -> list[dict]:
         """Every order placed today, terminal ones included, each with its external identifier."""
         try:

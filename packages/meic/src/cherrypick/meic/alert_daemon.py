@@ -24,8 +24,11 @@ _last_spawn = {"at": None}
 
 
 def daemon() -> _alerts.AlertDaemon:
+    """This live account's daemon: its inbox, pid and status beside its own ledger, its own log."""
     return _alerts.AlertDaemon(
-        "meic", os.path.dirname(str(_paths.live_db_path())), str(_paths.log_path("meic_alert_daemon.log"))
+        _paths.live_key(),
+        os.path.dirname(str(_paths.live_db_path())),
+        str(_paths.log_path(_paths.live_log_name("meic_alert_daemon"))),
     )
 
 
@@ -56,9 +59,18 @@ def on_alert(alert: dict, *, known=None, spawn=None, clock_fn=time.monotonic) ->
 
 
 def main(argv=None) -> int:
-    from cherrypick.meic import live_loop, paper
+    import argparse
+    import sys
 
-    config = paper.load_base_config()
+    from cherrypick.meic import live_account, live_loop, paper
+
+    # `--login <name>` is this module's (the live account); everything else is the core daemon's.
+    pre = argparse.ArgumentParser(add_help=False)
+    pre.add_argument("--login", default=None)
+    known, rest = pre.parse_known_args(sys.argv[1:] if argv is None else argv)
+    live_account.activate(known.login)
+    config = live_account.config_view(paper.load_base_config(), known.login)
+    argv = rest
     return daemon().main(
         make_broker=lambda: live_loop.make_broker(config, live_loop._designated_account()),
         deadline_seconds=lambda: _deadline_seconds(config),

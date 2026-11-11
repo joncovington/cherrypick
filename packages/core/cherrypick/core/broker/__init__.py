@@ -83,6 +83,34 @@ async def list_accounts(session: Any, *, account_cls: Any = None) -> list[dict]:
     ]
 
 
+async def trading_status(account: Any, session: Any) -> dict:
+    """The account's trading restrictions and day-trade standing, read-only: the day-trade count the
+    pattern-day-trader rule is judged on, and every state that limits what may be opened. Also its
+    net liq and whether it trades on margin, since the rule binds a margin account under $25,000."""
+    status = await account.get_trading_status(session)
+    balances = await account.get_balances(session)
+
+    def flag(name: str) -> bool:
+        return bool(getattr(status, name, False))
+
+    try:
+        net_liq = float(getattr(balances, "net_liquidating_value", None))
+    except (TypeError, ValueError):
+        net_liq = None
+    return {
+        "day_trade_count": int(getattr(status, "day_trade_count", 0) or 0),
+        "is_pattern_day_trader": flag("is_pattern_day_trader"),
+        "pdt_reset_on": str(getattr(status, "pdt_reset_on", "") or "") or None,
+        "is_closing_only": flag("is_closing_only"),
+        "is_frozen": flag("is_frozen"),
+        "is_risk_reducing_only": flag("is_risk_reducing_only"),
+        "is_in_margin_call": flag("is_in_margin_call"),
+        "is_in_day_trade_equity_maintenance_call": flag("is_in_day_trade_equity_maintenance_call"),
+        "margin_or_cash": getattr(account, "margin_or_cash", None),
+        "net_liquidating_value": net_liq,
+    }
+
+
 async def account_count(session: Any, *, account_cls: Any = None) -> int:
     """Number of accounts on the session — the connectivity signal both `get_connection_status`
     commands report."""
