@@ -2279,6 +2279,48 @@ def derive_jobs(
             tags=("live",),
         ),
     )
+    # One more service per extra broker login (`broker.logins`): the same read-only listener on that
+    # login's own store and its own inbox, so a fill there is heard too (manage's fill refresh, the
+    # notices). It watches one account: `alerts_account` (a last 4), else the login's only account.
+    # Off for a login with `alerts: false`, and with the whole block off.
+    block_on = bool((cfg.get("account_alerts") or {}).get("enabled", True))
+    for login in cfgmod.broker_logins(cfg)[1:]:
+        entry = next(
+            (
+                e
+                for e in ((cfg.get("broker") or {}).get("logins") or [])
+                if isinstance(e, dict) and e.get("name") == login["name"]
+            ),
+            {},
+        )
+        on = block_on and bool(entry.get("alerts", True))
+        job_id = f"account-alerts.{login['name']}"
+        argv = (pythonw, "-m", "cherrypick.core.live.account_alerts", "--login", login["name"])
+        if entry.get("alerts_account"):
+            argv += ("--account", str(entry["alerts_account"])[-4:])
+        add(
+            job_id,
+            lambda job_id=job_id, argv=argv, on=on, name=login["name"]: JobSpec(
+                id=job_id,
+                argv=argv,
+                kind=KIND_RESIDENT,
+                interval_seconds=aa["silence_seconds"],
+                window_start=aa["start"],
+                window_end=aa["end"],
+                trading_days_only=True,
+                silence_file=str(cfgmod.resident_heartbeat_path(job_id)),
+                silence_seconds=aa["silence_seconds"],
+                enabled=on,
+                enabled_reason=""
+                if on
+                else (
+                    "disabled in config (account_alerts.enabled)"
+                    if not block_on
+                    else f"disabled in config (broker.logins[{name}].alerts)"
+                ),
+                tags=("live",),
+            ),
+        )
     # LIVE order notices from that inbox (livefills.py): placed, filled and ended unfilled, seconds after
     # the broker reports them instead of the trade notifier's minutes. On whenever the service is.
     lfa = cfg.get("live_fill_alerts") or {}

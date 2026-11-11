@@ -60,12 +60,30 @@ def data_dir() -> str:
     return str(_home.data_dir("live"))
 
 
-def inbox_path() -> str:
-    return os.path.join(data_dir(), INBOX_FILENAME)
+def _is_main(login: str | None) -> bool:
+    return login in (None, "", "main")
 
 
-def status_path() -> str:
-    return os.path.join(data_dir(), STATUS_FILENAME)
+def _suffixed(filename: str, login: str | None) -> str:
+    """`account_alerts.db` for the main login (the path it always had), `account_alerts.<login>.db`
+    for an extra one: one inbox and status file per login, never shared."""
+    if _is_main(login):
+        return filename
+    stem, _, ext = filename.partition(".")
+    return f"{stem}.{login}.{ext}"
+
+
+def package_name(login: str | None = None) -> str:
+    """The heartbeat name: `account-alerts`, or `account-alerts.<login>` (its supervisor job id)."""
+    return PACKAGE if _is_main(login) else f"{PACKAGE}.{login}"
+
+
+def inbox_path(login: str | None = None) -> str:
+    return os.path.join(data_dir(), _suffixed(INBOX_FILENAME, login))
+
+
+def status_path(login: str | None = None) -> str:
+    return os.path.join(data_dir(), _suffixed(STATUS_FILENAME, login))
 
 
 # --------------------------------------------------------------------------- the inbox
@@ -132,10 +150,10 @@ def events_after(path: str, after: int | None) -> list[dict]:
     return [dict(r) for r in rows]
 
 
-def read_status() -> dict:
+def read_status(login: str | None = None) -> dict:
     """The service's own status file ({} when absent or unreadable): for the watchdog and the console."""
     try:
-        with open(status_path(), encoding="utf-8") as f:
+        with open(status_path(login), encoding="utf-8") as f:
             return json.load(f)
     except (OSError, ValueError):
         return {}
@@ -152,14 +170,16 @@ def run(
     listen_slice: float = LISTEN_SLICE_SECONDS,
     max_seconds: float | None = None,
     log: Callable[[str], None] = print,
+    login: str | None = None,
 ) -> dict:
     """Listen in slices and read today's orders after each, recording every new (order, status),
     until SIGTERM or `max_seconds`. `broker` is a `core.execution.Broker`: its
     `wait_for_order_alerts` fails closed to [] and its `orders_today` raises on failure, so a dead
-    stream is an empty slice and a dead REST read is counted, never fatal."""
+    stream is an empty slice and a dead REST read is counted, never fatal. `login` picks the
+    inbox, status file and heartbeat (None = main's, as before)."""
     now_iso = now_iso or (lambda: datetime.now().astimezone().isoformat(timespec="seconds"))
     owns = conn is None
-    conn = conn or connect(inbox_path())
+    conn = conn or connect(inbox_path(login))
     stopping = {"flag": False}
 
     def _on_signal(_signum, _frame):
@@ -194,7 +214,7 @@ def run(
         while not stopping["flag"]:
             if max_seconds is not None and clock() - began >= max_seconds:
                 break
-            _home.beat(PACKAGE)
+            _home.beat(package_name(login))
             slice_began = clock()
             pushed = broker.wait_for_order_alerts(set(), listen_slice) or []
             failed_fast = not pushed and clock() - slice_began < FAST_EMPTY_SECONDS
@@ -224,7 +244,7 @@ def run(
             except Exception as exc:  # noqa: BLE001 -- a failed read is counted, never fatal
                 state["rest_failures"] += 1
                 state["last_rest_error"] = f"{type(exc).__name__}: {exc}"[:300]
-            _write_status({**state, "heartbeat_at": now_iso()})
+            _write_status({**state, "login": login or "main", "heartbeat_at": now_iso()}, login)
             if failed_fast:
                 sleep(FAILED_SLICE_PAUSE_SECONDS)
     finally:
@@ -233,13 +253,14 @@ def run(
     return {"ok": True, **state}
 
 
-def _write_status(fields: dict) -> None:
+def _write_status(fields: dict, login: str | None = None) -> None:
     try:
         os.makedirs(data_dir(), exist_ok=True)
-        tmp = status_path() + ".tmp"
+        path = status_path(login)
+        tmp = path + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(fields, f)
-        os.replace(tmp, status_path())
+        os.replace(tmp, path)
     except OSError:
         pass
 
@@ -258,14 +279,62 @@ def make_broker(keyring_service: str):
     )
 
 
+def resolve_login_account(accounts: list[str], last4: str | None) -> str | None:
+    """The one account an extra login's service watches: the one ending in `last4`, or, with no
+    `last4`, the login's only account. None when that is not exactly one -- the service then
+    refuses its reads (`AccountNotDesignated`) and says so in its status, never picks the first."""
+    if last4:
+        matches = [n for n in accounts if str(n).endswith(str(last4)[-4:])]
+        return matches[0] if len(matches) == 1 else None
+    return accounts[0] if len(accounts) == 1 else None
+
+
+def make_login_broker(login: str, account_last4: str | None = None):
+    """A read-only `Broker` on an extra login's own store (no fallback), watching one account of it
+    (`resolve_login_account`). Nothing is designated on an extra login; the account is resolved from
+    the login's own account list each time the adapter builds."""
+    from cherrypick.core import broker as _broker
+    from cherrypick.core import execution
+    from cherrypick.core.auth import SessionManager
+    from cherrypick.core.auth import logins as _logins
+
+    sessions = SessionManager(_logins.login_store(login))
+    adapter: dict[str, Any] = {}
+
+    def _watched() -> str | None:
+        # Resolved once, then kept: the account list does not change within a session, and
+        # listing it every slice would be one more broker read every 30 seconds.
+        if adapter.get("account") is None:
+            listed = adapter["broker"].run(_broker.list_accounts(sessions.get_session()))
+            numbers = [a.get("account_number") for a in listed if a.get("account_number")]
+            adapter["account"] = resolve_login_account(numbers, account_last4)
+        return adapter["account"]
+
+    adapter["broker"] = execution.Broker(
+        get_session=sessions.get_session,
+        designated_account=_watched,
+        live_gates=lambda: ["account-alerts is read-only"],
+    )
+    return adapter["broker"]
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="account-alerts", description=__doc__.split("\n\n")[0])
     ap.add_argument("--keyring-service", help="the keyring service whose designated account to read")
+    ap.add_argument("--login", default=None, help="an extra broker login to watch instead (its own store)")
+    ap.add_argument("--account", default=None, help="with --login: the last 4 of the account to watch")
     ap.add_argument("--status", action="store_true", help="print the service's status file and exit")
     ap.add_argument("--max-seconds", type=float, default=None)
     args = ap.parse_args(argv)
     if args.status:
-        print(json.dumps(read_status(), indent=2))
+        print(json.dumps(read_status(args.login), indent=2))
+        return 0
+    if not _is_main(args.login):
+        from cherrypick.core.auth import logins as _logins
+
+        login = _logins.check_login_name(args.login)
+        out = run(make_login_broker(login, args.account), max_seconds=args.max_seconds, login=login)
+        print(json.dumps(out, default=str))
         return 0
     if not args.keyring_service:
         ap.error("--keyring-service is required")

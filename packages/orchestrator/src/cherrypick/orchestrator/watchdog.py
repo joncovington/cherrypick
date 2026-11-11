@@ -2418,16 +2418,25 @@ _LIVE_POSITIONS_FRESH_SECONDS = 20 * 60
 _ACCOUNT_REST_STALE_SECONDS = 300
 
 
-def _check_account_alerts(in_session: bool, now: datetime | None = None) -> list[Finding]:
+def _check_account_alerts(
+    in_session: bool, now: datetime | None = None, login: str | None = None
+) -> list[Finding]:
     """The account-alert service's own status file (core.live.account_alerts): a fill only its REST
     read saw means the stream is dropping events, and a REST read failing for minutes means the
-    fallback is blind too. Its silence is the supervisor's resident check. File-only."""
+    fallback is blind too. Its silence is the supervisor's resident check. File-only.
+
+    `login` reads an extra broker login's service: its findings carry the login in their ids and
+    titles, so they never merge with main's, and a REST read failing there is how a revoked or
+    expired token on that login shows (`account_alerts.<login>.rest`)."""
     from cherrypick.core.live import account_alerts as _aa
 
     if not in_session:
         return []
     now = now or datetime.now(timezone.utc)
-    status = _aa.read_status()
+    extra = login not in (None, "", "main")
+    prefix = f"account_alerts.{login}" if extra else "account_alerts"
+    on = f" ({login})" if extra else ""
+    status = _aa.read_status(login) if extra else _aa.read_status()
     if not status or status.get("day") != now.astimezone().date().isoformat():
         return []  # not started today: the supervisor's resident check says why
     findings = []
@@ -2435,16 +2444,16 @@ def _check_account_alerts(in_session: bool, now: datetime | None = None) -> list
     if missed:
         findings.append(
             Finding(
-                "account_alerts.stream",
+                f"{prefix}.stream",
                 WARN,
-                "Order stream missed fills",
+                f"Order stream missed fills{on}",
                 f"{len(missed)} fill(s) today reached the suite only through the REST read "
                 f"({', '.join(missed[-5:])}). Notices still went out; the stream is unreliable today.",
                 members=tuple(f"missed:{oid}" for oid in missed),
             )
         )
     else:
-        findings.append(Finding("account_alerts.stream", OK, "Order stream", "no fill missed today"))
+        findings.append(Finding(f"{prefix}.stream", OK, f"Order stream{on}", "no fill missed today"))
     try:
         last_ok = datetime.fromisoformat(str(status.get("last_rest_ok_at")))
         rest_age = (now - last_ok.astimezone(timezone.utc)).total_seconds()
@@ -2453,15 +2462,15 @@ def _check_account_alerts(in_session: bool, now: datetime | None = None) -> list
     if status.get("rest_failures") and (rest_age is None or rest_age > _ACCOUNT_REST_STALE_SECONDS):
         findings.append(
             Finding(
-                "account_alerts.rest",
+                f"{prefix}.rest",
                 WARN,
-                "Order REST read failing",
+                f"Order REST read failing{on}",
                 f"{status.get('rest_failures')} failed read(s); last error: {status.get('last_rest_error')}. "
                 "Only the stream is reporting order events.",
             )
         )
     else:
-        findings.append(Finding("account_alerts.rest", OK, "Order REST read", "reading"))
+        findings.append(Finding(f"{prefix}.rest", OK, f"Order REST read{on}", "reading"))
     return findings
 
 
@@ -3221,6 +3230,8 @@ def run(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
     findings += _check_kill_latches()
     findings += _check_live_positions(in_session)
     findings += _check_account_alerts(in_session)
+    for login in cfgmod.broker_login_names(cfg)[1:]:
+        findings += _check_account_alerts(in_session, login=login)
     findings += _check_fixed_time_jobs(now)
     findings += _check_notify_delivery(cfg)
     findings += _check_config_health()

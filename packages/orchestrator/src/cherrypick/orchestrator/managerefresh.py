@@ -107,6 +107,13 @@ def latest_fill(inbox: Path) -> datetime | None:
     return _when(row[0]) if row and row[0] else None
 
 
+def latest_fill_any(inboxes: list[Path]) -> datetime | None:
+    """The newest fill across several inboxes (one per broker login): a snapshot reads every
+    account, so a fill on any login is a reason to take one."""
+    found = [at for at in (latest_fill(p) for p in inboxes) if at is not None]
+    return max(found) if found else None
+
+
 def why_full(
     now: datetime,
     today: str,

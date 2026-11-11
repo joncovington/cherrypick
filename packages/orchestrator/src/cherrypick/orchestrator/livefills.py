@@ -95,6 +95,11 @@ def _who(event: dict, owners: dict[str, str]) -> tuple[str, str]:
     return "manual", " No live ledger records it and it carries no suite identifier: a manual order."
 
 
+def _who_on_login(login: str) -> tuple[str, str]:
+    """An order on an extra broker login: always manual there (no module trades it)."""
+    return f"manual ({login})", f" An order on the {login} login, which no live loop trades."
+
+
 def _notice(kind: str, event: dict, who: tuple[str, str]) -> tuple[str, str, str]:
     """(level, title, message) for one notice."""
     label, note = who
@@ -134,33 +139,54 @@ def run(
     state = _load_state()
     if state.get("day") != today or not isinstance(state.get("after"), (int, type(None))):
         state = {"day": today, "after": None, "notified": []}  # a new day (or the pre-2026-11-02 shape)
+    # One cursor per inbox: main's stays `after` (the shape a state file from before named logins has,
+    # so an upgrade picks up where it was), each extra login's in `after_by_login`.
+    if not isinstance(state.get("after_by_login"), dict):
+        state["after_by_login"] = {}
     notified = set(state.get("notified") or [])
-    read = _account.events_after(inbox or _account.inbox_path(), state.get("after"))
-    if read:
-        state["after"] = read[-1]["seq"]
-    events = [e for e in read if str(e.get("received_at") or "").startswith(today)]
-    filled_now = {str(e["order_id"]) for e in events if e["status"] == "filled"}
     owners = _owners()
     sent = []
-    for event in events:
-        kind = kind_of(event["status"])
-        oid = str(event["order_id"])
-        if kind is None or f"{oid}:{kind}" in notified:
-            continue
-        if kind == "placed" and oid in filled_now:
-            continue  # placed and filled in one pass: the fill says both
-        notified.add(f"{oid}:{kind}")
-        who = _who(event, owners)
-        level, title, message = _notice(kind, event, who)
-        notifier.notify(level, f"live.order.{oid}.{kind}", title, message)
-        sent.append({"order_id": oid, "kind": kind, "module": who[0], "status": event["status"]})
+    for login in cfgmod.broker_login_names(cfg):
+        main = login == "main"
+        path = (inbox or _account.inbox_path()) if main else _account.inbox_path(login)
+        read = _account.events_after(path, state["after"] if main else state["after_by_login"].get(login))
+        if read:
+            if main:
+                state["after"] = read[-1]["seq"]
+            else:
+                state["after_by_login"][login] = read[-1]["seq"]
+        events = [e for e in read if str(e.get("received_at") or "").startswith(today)]
+        filled_now = {str(e["order_id"]) for e in events if e["status"] == "filled"}
+        for event in events:
+            kind = kind_of(event["status"])
+            oid = str(event["order_id"])
+            if kind is None or f"{oid}:{kind}" in notified:
+                continue
+            if kind == "placed" and oid in filled_now:
+                continue  # placed and filled in one pass: the fill says both
+            notified.add(f"{oid}:{kind}")
+            # No module trades an extra login, so nothing there has an owner to wake: every order on
+            # it is announced as manual, named by its login.
+            who = _who(event, owners) if main else _who_on_login(login)
+            level, title, message = _notice(kind, event, who)
+            notifier.notify(level, f"live.order.{oid}.{kind}", title, message)
+            sent.append(
+                {"order_id": oid, "kind": kind, "module": who[0], "status": event["status"], "login": login}
+            )
     state["notified"] = sorted(notified)
     _save_state(state)
     # The owning loop confirms a fill or a death at its next tick; ask for that tick now (2026-11-02),
     # so the ledger follows the broker in seconds. An early run, never a restart: a tick already
-    # running is left alone (`supervisor.request_run`). Only a module whose ledger owns the order.
+    # running is left alone (`supervisor.request_run`). Only a module whose ledger owns the order, and
+    # only on the main login, where the live loops trade.
     loops = {n for n, m in cfgmod.enabled_modules(cfg).items() if (m.get("live") or {}).get("task_name")}
-    woken = sorted({s["module"] for s in sent if s["kind"] in ("filled", "ended") and s["module"] in loops})
+    woken = sorted(
+        {
+            s["module"]
+            for s in sent
+            if s["kind"] in ("filled", "ended") and s["module"] in loops and s["login"] == "main"
+        }
+    )
     for module in woken:
         _supervisor.request_run(f"{module}-live", by="live-fill-alerts")
     return {"ok": True, "sent": sent, "woken": woken}
