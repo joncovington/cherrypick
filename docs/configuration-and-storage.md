@@ -27,6 +27,9 @@ wholesale with **`$CHERRYPICK_HOME`**. Nothing runtime lands in a source checkou
   config/console.json             # console UI config
   data/marketdata/stream_cache.db # the canonical shared DXLink stream cache (quotes/greeks/OI) —
                                   #   written ONLY by the standalone streamer, read by every module
+  data/marketdata/<login>/stream_cache.db  # a further login's own producer (`streamer.instances`),
+                                  #   written only by it; manage reads that login's accounts from it
+  config/streamer.<login>.json    # that producer's config (optional; else main's tuning, no symbols)
   data/meic/paper_trades.db       # MEIC paper ledger (ic_trades)   ← orchestrator reads this
   data/meic/meic_trades.db        # MEIC live ledger (read only by `report --live`)
   data/earnings/paper_trades.db   # Earnings paper ledger (trades)  ← orchestrator reads this

@@ -278,6 +278,42 @@ def broker_login_names(cfg: dict[str, Any]) -> list[str]:
     return [entry["name"] for entry in broker_logins(cfg)]
 
 
+def streamer_instances(cfg: dict[str, Any]) -> list[str]:
+    """The extra producer instances to run (`streamer.instances`), each named for a broker login in
+    `broker.logins`: a name that is not a listed login is skipped, since it would have no secrets to
+    stream with. Empty with the main producer off or nothing listed -- the shape before instances."""
+    spec = cfg.get("streamer") or {}
+    if not spec.get("enabled"):
+        return []
+    known = set(broker_login_names(cfg)[1:])
+    raw = spec.get("instances")
+    out: list[str] = []
+    for name in raw if isinstance(raw, list) else []:
+        if isinstance(name, str) and name in known and name not in out:
+            out.append(name)
+    return out
+
+
+def streamer_specs(cfg: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """{label: spec} for every producer to run: `streamer` (the main one, the block as it is) and
+    `streamer.<name>` for each instance -- main's spec with `--instance <name>` on each argv, its own
+    config name for the stale-config hash, and its own `instance` key. One spec per process, so every
+    path that starts, stops, watches or recycles a producer loops over these and never builds one."""
+    spec = cfg.get("streamer") or {}
+    if not spec.get("enabled"):
+        return {}
+    out = {"streamer": spec}
+    for name in streamer_instances(cfg):
+        inst = {k: v for k, v in spec.items() if k != "instances"}
+        for key in ("status_argv", "start_argv", "stop_argv"):
+            if isinstance(spec.get(key), list):
+                inst[key] = [*spec[key], "--instance", name]
+        inst["config_name"] = f"streamer.{name}"
+        inst["instance"] = name
+        out[f"streamer.{name}"] = inst
+    return out
+
+
 def login_argv(login: str | None) -> list[str]:
     """The broker-tool argv prefix that selects `login`: nothing for `main`, so every existing
     call's argv is unchanged."""

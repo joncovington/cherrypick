@@ -133,6 +133,14 @@ hold-to-expiry module that has finished entering and is otherwise quiet.
 
 ## Invariants (do not violate)
 
+- **One writer per cache file.** `--instance <name>` runs a further producer for another broker login
+  (`streamer.instances`), and every file it touches is derived from its name: its cache
+  (`core.streamcache.instance_cache_path`), the pid and stop files beside it, its log, its config
+  (`config/streamer.<name>.json`, else main's tuning with no symbols, source or logging), its request
+  folder (`state/stream_requests/<name>/`, the active instance in `core.streamrequests`) and its
+  login's own keyring store. It never writes the shared cache, never authenticates as main, and has no
+  default underlyings. `tests/test_instances.py` was shown to fail by pointing an instance at main's
+  cache. The rest of this section is about the shared cache, which main's producer alone writes.
 - **Exactly one producer writes the cache: this daemon.** No other writer exists. A second writer means two DXLink connections into one account;
   the PID guard, the orchestrator knowing only this producer, and the engine itself enforce it — do
   not add one. `ChainStreamer` refuses the shared cache path unless constructed with

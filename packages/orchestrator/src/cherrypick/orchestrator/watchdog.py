@@ -834,6 +834,17 @@ def _streamer_subscription_budget(cfg: dict[str, Any]) -> int:
 
 
 def _check_subscription_budget(cfg: dict[str, Any]) -> list[Finding]:
+    """Main's budget finding (`streamer.budget`, as always), then one per producer instance
+    (`streamer.<login>.budget`) over that instance's own requests: each login has its own allowance,
+    so each is held to the ceiling on its own, never to a sum."""
+    findings = _check_one_budget(cfg, "streamer.budget")
+    for name in cfgmod.streamer_instances(cfg):
+        with _streamrequests.instance(name):
+            findings += _check_one_budget(cfg, f"streamer.{name}.budget")
+    return findings
+
+
+def _check_one_budget(cfg: dict[str, Any], key: str) -> list[Finding]:
     """Warn when the DECLARED registry would cost a producer more than the suite's ceiling.
 
     The 2026-08-24 outage was discovered at an open, in production: a module had declared something
@@ -857,7 +868,7 @@ def _check_subscription_budget(cfg: dict[str, Any]) -> list[Finding]:
     if not status["over"]:
         return [
             Finding(
-                "streamer.budget",
+                key,
                 OK,
                 "Subscription budget",
                 f"~{status['total']:,} of {status['budget']:,} across {status['windows']} window(s).",
@@ -866,7 +877,7 @@ def _check_subscription_budget(cfg: dict[str, Any]) -> list[Finding]:
     worst = status["worst"] or {}
     return [
         Finding(
-            "streamer.budget",
+            key,
             WARN,
             "Declared subscriptions over budget",
             f"The registry would cost ~{status['total']:,} subscriptions against a budget of "
@@ -1083,15 +1094,23 @@ def _check_producer(cfg: dict[str, Any], in_session: bool) -> list[Finding]:
     Never WARN and never restart off-session: there is nothing to stream, staleness is meaningless, and
     the first in-session tick (from NEAR_OPEN, 9:15 ET) auto-starts it before the bell.
     """
-    spec = cfg.get("streamer") or {}
-    if not spec.get("enabled"):
-        return []
+    findings: list[Finding] = []
+    for label, spec in cfgmod.streamer_specs(cfg).items():
+        # Each instance's checks read its own request folder (the growth recycle, the stamp).
+        with _streamrequests.instance(spec.get("instance")):
+            findings += _check_one_producer(label, spec, in_session)
+    return findings
+
+
+def _check_one_producer(label: str, spec: dict[str, Any], in_session: bool) -> list[Finding]:
+    """One producer's check (`_check_producer`), its findings under its own label: `streamer` for
+    main, `streamer.<login>` for an instance."""
     root = cfgmod.module_root(spec, "streamer")
     if not root.exists():
         msg = f"not found at {cfgmod.portable_path(root)}"
         if not in_session:
-            return [Finding("streamer", OK, "streamer", f"off-hours; checkout {msg}")]
-        return [Finding("streamer", WARN, "streamer checkout missing", msg)]
+            return [Finding(label, OK, label, f"off-hours; checkout {msg}")]
+        return [Finding(label, WARN, f"{label} checkout missing", msg)]
     if not in_session:
         running = None
         status: dict[str, Any] = {}
@@ -1115,8 +1134,8 @@ def _check_producer(cfg: dict[str, Any], in_session: bool) -> list[Finding]:
         else:
             start = timeutil.parse_hhmm(spec.get("session_start"), timeutil.NEAR_OPEN)
             msg = f"not running (off-hours; auto-start at the first in-session tick, {start:%H:%M} ET)"
-        return [Finding("streamer", OK, "Streamer", msg)]
-    return _check_streamer_health("streamer", root, spec)
+        return [Finding(label, OK, "Streamer" if label == "streamer" else f"Streamer ({label})", msg)]
+    return _check_streamer_health(label, root, spec)
 
 
 def _check_meic(name: str, mcfg: dict[str, Any], in_session: bool) -> list[Finding]:
@@ -3096,11 +3115,11 @@ def run_streamer_health(cfg: dict[str, Any] | None = None, *, require_enabled: b
         return {"ok": True, "skipped": "not a trading day"}
 
     findings: list[Finding] = []
-    spec = cfg.get("streamer") or {}
-    if spec.get("enabled"):
+    for label, spec in cfgmod.streamer_specs(cfg).items():
         root = cfgmod.module_root(spec, "streamer")
         if root.exists():
-            findings += _check_streamer_health("streamer", root, spec)
+            with _streamrequests.instance(spec.get("instance")):
+                findings += _check_streamer_health(label, root, spec)
 
     if not findings:
         return {"ok": True, "skipped": "no streamer configured"}

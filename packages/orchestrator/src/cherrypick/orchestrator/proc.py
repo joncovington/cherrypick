@@ -49,9 +49,8 @@ def daemons(cfg: dict[str, Any]) -> dict[str, tuple[Path, dict[str, Any], bool]]
     """{name: (root, spec, is_producer)} for the streamer, every enabled service, and the Dolt
     sql-server when it is wanted (`config.dolt_hosts`; driven through `run.py dolt-server-*`)."""
     out: dict[str, tuple[Path, dict[str, Any], bool]] = {}
-    spec = cfg.get("streamer") or {}
-    if spec.get("enabled"):
-        out["streamer"] = (cfgmod.module_root(spec, "streamer"), spec, True)
+    for label, spec in cfgmod.streamer_specs(cfg).items():  # `streamer`, then `streamer.<login>`
+        out[label] = (cfgmod.module_root(spec, "streamer"), spec, True)
     for svc in cfgmod.enabled_services(cfg):
         out[svc["id"]] = (cfgmod.module_root(svc, svc["id"]), svc, False)
     if cfgmod.dolt_hosts(cfg):

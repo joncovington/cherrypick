@@ -27,11 +27,21 @@ _MODULE = "manage"
 _log = logging.getLogger("manage")
 
 
-def held_symbols(result: dict) -> list[str]:
+def instance_of(account: dict, instances: set[str]) -> str:
+    """The producer that quotes an account: its broker login's own (`stream_instances`), else main."""
+    login = account.get("login") or "main"
+    return login if login in instances else "main"
+
+
+def held_symbols(result: dict, instance: str | None = None) -> list[str]:
     """Every streamer symbol an evaluation's marks depend on, sorted: the option legs, the
-    underlyings (shares are their own streamer symbol) and each account's benchmark."""
+    underlyings (shares are their own streamer symbol) and each account's benchmark. With
+    `instance`, only the accounts that producer quotes (`instance_of`)."""
     out: set[str] = set()
+    instances = set(result.get("stream_instances") or [])
     for account in result.get("accounts") or []:
+        if instance is not None and instance_of(account, instances) != instance:
+            continue
         bench = (account.get("portfolio") or {}).get("benchmark")
         if bench:
             out.add(str(bench))
@@ -56,7 +66,15 @@ def held_symbols(result: dict) -> list[str]:
 
 
 def write(result: dict) -> Path:
-    return _sr.write_request(_MODULE, [], legs=held_symbols(result))
+    """Main's request (`stream_requests/manage.json`, as always), then one per producer instance the
+    evaluation names (`stream_requests/<login>/manage.json`) holding that login's accounts' legs. An
+    instance whose accounts hold nothing gets an empty request, so legs closed since age out there
+    too. Returns main's path."""
+    instances = [str(i) for i in result.get("stream_instances") or []]
+    path = _sr.write_request(_MODULE, [], legs=held_symbols(result, "main" if instances else None))
+    for name in instances:
+        _sr.write_request(_MODULE, [], legs=held_symbols(result, name), instance_name=name)
+    return path
 
 
 def register(result: dict) -> None:

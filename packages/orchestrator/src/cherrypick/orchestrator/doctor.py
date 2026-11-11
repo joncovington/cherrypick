@@ -837,11 +837,10 @@ def run(cfg: dict[str, Any] | None = None, fast: bool = False) -> list[Check]:
     # so its health shows on `cherrypick doctor` and
     # the served dashboard's system card. Reads the streamer's own --status (its cache/state), never the
     # broker — a cheap local subprocess.
-    producer = cfg.get("streamer") or {}
-    if producer.get("enabled"):
+    for label, producer in cfgmod.streamer_specs(cfg).items():  # main, then each login's instance
         root = cfgmod.module_root(producer, "streamer")
         if not root.exists():
-            checks.append(Check("streamer", FAIL, f"checkout not found at {cfgmod.portable_path(root)}"))
+            checks.append(Check(label, FAIL, f"checkout not found at {cfgmod.portable_path(root)}"))
         else:
             try:
                 r = _run(root, producer["status_argv"], timeout=15)
@@ -856,7 +855,7 @@ def run(cfg: dict[str, Any] | None = None, fast: bool = False) -> list[Check]:
                     None,
                 )
                 if not running:
-                    checks.append(Check("streamer", WARN, "not running (start with: cherrypick install)"))
+                    checks.append(Check(label, WARN, "not running (start with: cherrypick install)"))
                 else:
                     fresh = f"last event {age:.0f}s ago" if age is not None else "running"
                     limit = producer.get("stale_restart_seconds", 240)
@@ -865,16 +864,16 @@ def run(cfg: dict[str, Any] | None = None, fast: bool = False) -> list[Check]:
                     if age is not None and age > limit and timeutil.is_market_hours():
                         checks.append(
                             Check(
-                                "streamer",
+                                label,
                                 WARN,
                                 f"running but silent — {fresh} (watchdog restarts at {limit}s)",
                             )
                         )
                     else:
                         quiet = "  (quiet off-hours)" if age is not None and age > limit else ""
-                        checks.append(Check("streamer", OK, f"running, {fresh}{quiet}"))
+                        checks.append(Check(label, OK, f"running, {fresh}{quiet}"))
             except Exception as exc:
-                checks.append(Check("streamer", WARN, f"status error: {exc}"))
+                checks.append(Check(label, WARN, f"status error: {exc}"))
 
     # Resident jobs: churn and self-stops. Same gap and the same reason the console got an entry
     # here on 2026-08-14 — a green doctor never meant "the loop is actually running", and for a

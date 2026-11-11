@@ -93,7 +93,11 @@ def _declared(request_dir: Path = REQUEST_DIR) -> dict[str, list[str]]:
     if not request_dir.exists():
         return {}
     out: dict[str, list[str]] = {}
-    for f in sorted(request_dir.glob("*.json")):
+    # Every producer instance's folder too (`stream_requests/<login>/`): a module declaring SPX to one
+    # producer and XSP to another is still one book on one index, so a module's rosters are merged
+    # across instances before they are judged.
+    files = sorted(request_dir.glob("*.json")) + sorted(request_dir.glob("*/*.json"))
+    for f in files:
         try:
             data = json.loads(f.read_text(encoding="utf-8"))
         except (OSError, ValueError):
@@ -101,10 +105,12 @@ def _declared(request_dir: Path = REQUEST_DIR) -> dict[str, list[str]]:
         arms = data.get("arm_rosters")
         if isinstance(arms, dict) and arms:
             for arm, symbols in arms.items():
-                out[f"{f.stem}:{arm}"] = list(symbols or [])
+                key = f"{f.stem}:{arm}"
+                out[key] = sorted({*out.get(key, []), *(symbols or [])})
             continue
         roster = data.get("entry_symbols")
-        out[f.stem] = (roster if isinstance(roster, list) else data.get("symbols")) or []
+        mine = (roster if isinstance(roster, list) else data.get("symbols")) or []
+        out[f.stem] = sorted({*out.get(f.stem, []), *mine})
     return out
 
 
@@ -138,6 +144,16 @@ def test_the_roster_is_what_a_module_enters_not_what_it_runs_off(tmp_path):
 
 
 @pytest.mark.skipif(not REQUEST_DIR.exists(), reason="no deployed stream requests on this machine")
+def test_a_module_split_across_producer_instances_is_still_judged_as_one(tmp_path):
+    """SPX declared to main's producer and XSP to another login's is the same doubled bet."""
+    (tmp_path / "mod.json").write_text(json.dumps({"symbols": ["SPX"]}), encoding="utf-8")
+    (tmp_path / "margin").mkdir()
+    (tmp_path / "margin" / "mod.json").write_text(json.dumps({"symbols": ["XSP"]}), encoding="utf-8")
+    declared = _declared(tmp_path)
+    assert declared == {"mod": ["SPX", "XSP"]}
+    assert same_index_pairs(declared["mod"])
+
+
 def test_no_module_trades_one_index_through_two_vehicles():
     offenders = {
         module: pairs for module, symbols in _declared().items() if (pairs := same_index_pairs(symbols))

@@ -1162,6 +1162,9 @@ def build(cfg: dict[str, Any]) -> dict[str, Any]:
         "account_transactions_error": account_history_error,
         "history_account": history_key,
         "accounts_history": others,
+        # The broker logins with a producer of their own (`streamer.instances`): an account on one is
+        # quoted from that producer's cache, and manage declares its legs there (`stream_request`).
+        "stream_instances": cfgmod.streamer_instances(cfg),
         "hedge_chain": hedge,
         "broker_greeks": greeks,
         "broker_greeks_error": greeks_error,
@@ -1193,16 +1196,30 @@ def stored_snapshot_path(session: str):
 def overlay_symbols(snapshot: dict[str, Any]) -> list[str]:
     """The streamer symbols a re-mark of `snapshot` can use: every held leg and every quoted
     underlying (manage's `remark.wanted`, which this must not import)."""
-    held = [
-        str(leg["symbol"])
-        for account in (snapshot.get("positions") or {}).get("accounts") or []
-        for u in account.get("underlyings") or []
-        for leg in u.get("legs") or []
-        if leg.get("symbol")
-    ]
-    out = {streamcache.occ_to_streamer_symbol(s) or s.strip() for s in held}
-    out |= {str(s) for s in snapshot.get("metrics") or {}}
-    return sorted(out)
+    return sorted({s for symbols in overlay_routes(snapshot).values() for s in symbols})
+
+
+def _account_instance(account: dict[str, Any], instances: set[str]) -> str:
+    """The producer an account's legs are quoted from: its login's own when it has one, else main."""
+    login = account.get("login") or "main"
+    return login if login in instances else "main"
+
+
+def overlay_routes(snapshot: dict[str, Any]) -> dict[str, list[str]]:
+    """{producer instance: the streamer symbols to read from its cache}. An account on a login with
+    a producer of its own (`stream_instances`) is read from that producer's cache only -- a dead
+    instance shows as its legs unpriced, never as another login's quotes passed off as its own. The
+    metrics' names (benchmark, VIX, the hedge root) are main's."""
+    instances = set(snapshot.get("stream_instances") or [])
+    routes: dict[str, set[str]] = {"main": {str(s) for s in snapshot.get("metrics") or {}}}
+    for account in (snapshot.get("positions") or {}).get("accounts") or []:
+        which = _account_instance(account, instances)
+        for u in account.get("underlyings") or []:
+            for leg in u.get("legs") or []:
+                if leg.get("symbol"):
+                    s = str(leg["symbol"])
+                    routes.setdefault(which, set()).add(streamcache.occ_to_streamer_symbol(s) or s.strip())
+    return {k: sorted(v) for k, v in routes.items()}
 
 
 def marks_overlay(session: str, *, now_iso: str, cache_path=None) -> dict[str, Any] | None:
@@ -1215,16 +1232,26 @@ def marks_overlay(session: str, *, now_iso: str, cache_path=None) -> dict[str, A
     if not path.exists():
         return None
     snapshot = json.loads(path.read_text(encoding="utf-8"))
-    cache = cache_path or streamcache.cache_path()
-    if not cache.exists():
-        return None
-    conn = connect_ro(cache)
-    try:
-        quotes = streamcache.quote_mids(
-            conn, overlay_symbols(snapshot), max_age_seconds=positions_mod.REPORT_QUOTE_MAX_AGE_SECONDS
+    quotes: dict[str, Any] = {}
+    # Each producer's cache for the symbols it serves (`overlay_routes`); main's is the shared cache
+    # (or `cache_path`, the seam tests use). A cache that is missing contributes nothing.
+    for which, symbols in overlay_routes(snapshot).items():
+        cache = (
+            (cache_path or streamcache.cache_path())
+            if which == "main"
+            else streamcache.instance_cache_path(which)
         )
-    finally:
-        conn.close()
+        if not symbols or not cache.exists():
+            continue
+        conn = connect_ro(cache)
+        try:
+            got = streamcache.quote_mids(
+                conn, symbols, max_age_seconds=positions_mod.REPORT_QUOTE_MAX_AGE_SECONDS
+            )
+        finally:
+            conn.close()
+        for symbol, quote in got.items():
+            quotes.setdefault(symbol, quote)
     if not quotes:
         return None
     return {

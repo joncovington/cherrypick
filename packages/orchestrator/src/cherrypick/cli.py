@@ -315,11 +315,11 @@ def cmd_install(cfg, force: bool = False) -> None:
     # Start the standalone market-data producer (top-level `streamer`) if enabled — the same
     # start-detached-if-down contract as a service. The watchdog keeps it alive in-session thereafter;
     # its single-instance guard prevents a duplicate start (e.g. if it's already running).
-    streamer_spec = cfg.get("streamer") or {}
-    if streamer_spec.get("enabled"):
+    # One producer per instance (`streamer.instances`, a login each), each under its own label.
+    for label, streamer_spec in cfgmod.streamer_specs(cfg).items():
         sroot = cfgmod.module_root(streamer_spec, "streamer")
-        results["streamer"] = (
-            _ensure_daemon(sroot, streamer_spec, "streamer", producer=True)
+        results[label] = (
+            _ensure_daemon(sroot, streamer_spec, label, producer=True)
             if sroot.exists()
             else {"ok": False, "detail": f"checkout not found at {sroot}"}
         )
@@ -383,8 +383,12 @@ def _stamp_service_config(
     if not sid:
         return
     try:
+        from cherrypick.core import streamrequests as _sr
+
         digest, source = servicecfg.effective_config(spec, root)
-        subs = servicecfg.subscription_snapshot() if producer else None
+        # A producer instance bound its OWN folder's union, so that is the one stamped.
+        with _sr.instance(spec.get("instance")):
+            subs = servicecfg.subscription_snapshot() if producer else None
         servicecfg.write_stamp(sid, digest, source, subs)
     except Exception:  # stamping is a convenience, never a reason to fail an install
         pass

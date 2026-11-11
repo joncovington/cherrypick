@@ -62,10 +62,11 @@ def _cache_db_path():
 
 
 # --------------------------------------------------------------------------- marks
-def _cached_marks(symbols: list[str]) -> dict[str, dict]:
-    """Fresh marks for whatever the shared cache already holds. Read-only, and absent/stale/unreadable
-    all mean the same thing to the caller: fetch it live instead."""
-    path = _cache_db_path()
+def _cached_marks(symbols: list[str], instance: str | None = None) -> dict[str, dict]:
+    """Fresh marks for whatever the shared cache already holds -- or, with `instance`, that broker
+    login's own producer's cache. Read-only, and absent/stale/unreadable all mean the same thing to
+    the caller: fetch it live instead."""
+    path = _cache_db_path() if instance is None else streamcache.instance_cache_path(instance)
     if not path.exists():
         return {}
     try:
@@ -194,7 +195,21 @@ def run(cfg: dict[str, Any] | None = None, *, account: str | None = None) -> dic
         streamer_sym = streamcache.occ_to_streamer_symbol(occ) or occ.strip()
         wanted_syms[occ] = streamer_sym
     unique = sorted(set(wanted_syms.values()))
-    marks = _cached_marks(unique)
+    # An account on a login with a producer of its own (`streamer.instances`) is marked from that
+    # producer's cache first; everything else, and anything that cache lacks, as before.
+    instances = set(cfgmod.streamer_instances(cfg))
+    marks: dict[str, dict] = {}
+    for name in sorted(instances):
+        own = sorted(
+            {
+                wanted_syms[str(pos.get("symbol") or "")]
+                for entry, pos in positions
+                if (entry.get("login") or "main") == name
+            }
+        )
+        if own:
+            marks.update(_cached_marks(own, name))
+    marks.update(_cached_marks([s for s in unique if s not in marks]))
     from_cache = len(marks)
     marks.update(_live_marks(root, [s for s in unique if s not in marks], tool))
 
