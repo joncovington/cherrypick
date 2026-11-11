@@ -159,8 +159,10 @@ def daily_loss_tripped(db_path: str, day: str, limit_dollars: float | None) -> b
         return False
     import sqlite3
 
+    # Read-only: opening a missing file read-write makes an empty one, which then reads as a ledger
+    # that holds a book. A missing ledger still fails closed below (the tick creates it first).
     try:
-        con = sqlite3.connect(db_path)
+        con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
         row = con.execute(
             "SELECT COALESCE(SUM(pnl), 0) FROM ic_trades WHERE trade_date = ?", (day,)
         ).fetchone()
@@ -787,7 +789,13 @@ def run_status(config: dict, *, designated: str | None) -> dict:
         unreadable, open_rows, pending, overdue = str(exc), [], [], []
     # The kill criteria as the next entry would meet them, never latched from a readout. No ledger yet
     # holds no closed IC: nothing for the criteria to read.
-    kill = kill_verdict(config, db_path, latch=False) if os.path.exists(db_path) else {"state": None}
+    # No ledger yet (a live account that has never traded): its criteria are judged on no trades,
+    # so unwritten criteria still read as the arming blocker they are.
+    kill = (
+        kill_verdict(config, db_path, latch=False)
+        if os.path.exists(db_path)
+        else _kill.peek(_paths.live_key(), EXECUTION_MODE, [], _live_cfg(config).get("kill"))
+    )
     try:
         intents = sorted(_read_intents(db_path))
     except IntentsUnreadable as exc:
@@ -824,7 +832,10 @@ def run_status(config: dict, *, designated: str | None) -> dict:
         else not open_rows and not [t for t in pending if t["trade_date"] == today],
         "ledger_unreadable": unreadable,
         "halt_flag": os.path.exists(halt_flag_path()),
-        "breaker_tripped": daily_loss_tripped(db_path, today, live.get("daily_loss_halt_dollars")),
+        # No ledger yet is no loss yet: a readout of a live account that has never traded says so
+        # (the tick's own check still fails closed on a missing ledger, which it creates first).
+        "breaker_tripped": os.path.exists(db_path)
+        and daily_loss_tripped(db_path, today, live.get("daily_loss_halt_dollars")),
         "orphaned_orders": read_orphans(),
         "broker_held": _execution.read_hold(_hold_path()),
         "broker_health": _execution.read_broker_health(os.path.join(_data_dir(), _execution.HEALTH_FILENAME)),

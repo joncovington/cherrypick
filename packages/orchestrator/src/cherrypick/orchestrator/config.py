@@ -299,7 +299,8 @@ def live_accounts(cfg: dict[str, Any], module: str, module_doc: dict[str, Any] |
         if login not in known or not isinstance(entry, dict):
             continue
         ledger = _home.data_dir(module) / login / f"{module}_trades.db"
-        if entry.get("enabled") is True or ledger.exists():
+        # A ledger with something in it: an empty file is not a book to manage.
+        if entry.get("enabled") is True or (ledger.exists() and ledger.stat().st_size > 0):
             out.append(login)
     return sorted(out)
 

@@ -47,6 +47,8 @@ def test_live_accounts_need_a_listed_login_and_an_enabled_entry_or_a_ledger(tmp_
     ledger = tmp_path / "data" / "meic" / "margin" / "meic_trades.db"
     ledger.parent.mkdir(parents=True)
     ledger.write_bytes(b"")
+    assert cfgmod.live_accounts(SUITE, "meic", doc) == []  # an empty file is not a book
+    ledger.write_bytes(b"SQLite format 3\x00")
     assert cfgmod.live_accounts(SUITE, "meic", doc) == ["margin"]  # off but holds history: still managed
 
 

@@ -181,6 +181,22 @@ def test_the_pdt_reserve_is_configurable():
     assert live_loop.restriction_blockers(status, {"pdt_reserve_day_trades": 1}) == []
 
 
+def test_reading_a_fresh_account_creates_no_ledger_and_reports_unwritten_kill(
+    restore, mem_keyring, monkeypatch
+):
+    # Found on the first real read: the daily-loss check opened the missing ledger read-write, made
+    # an empty file, and the empty file then read as "a ledger that holds a book".
+    monkeypatch.setattr(live_loop.paper, "live_arm_problem", lambda cfg: None)
+    monkeypatch.setattr(live_loop.paper, "load_base_config", lambda: BASE)
+    live_account.activate("margin")
+    view = live_account.config_view(BASE, "margin")
+    view["live"]["daily_loss_halt_dollars"] = 20
+    status = live_loop.run_status(view, designated=None)
+    assert not paths.live_db_path().exists()
+    assert status["kill"]["state"] == "blocked" and "kill_criteria_unwritten" in status["kill"]["reasons"]
+    assert status["breaker_tripped"] is False
+
+
 def test_a_second_account_on_the_same_index_is_warned(restore, monkeypatch):
     cfg = json.loads(json.dumps(BASE))
     cfg["live_accounts"]["margin"]["enabled"] = True
