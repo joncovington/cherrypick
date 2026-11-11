@@ -3245,18 +3245,21 @@ def evaluate(
     return {
         "eval_version": EVAL_VERSION,
         "session": session.isoformat(),
-        "snapshot_generated_at": snapshot.get("generated_at"),
+        # The whole snapshot's, never the last account's view (`account_snapshot`) left in `snapshot`.
+        "snapshot_generated_at": whole.get("generated_at"),
         "ok": bool(positions.get("ok")),
         "error": positions.get("error"),
-        "metrics_error": snapshot.get("metrics_error"),
-        "transactions_error": snapshot.get("transactions_error")
-        if "transactions" in snapshot
+        "metrics_error": whole.get("metrics_error"),
+        "transactions_error": whole.get("transactions_error")
+        if "transactions" in whole
         else "no trade history in this snapshot (taken before chains were read)",
         "marks": positions.get("marks"),
-        "pre_open": pre_open(snapshot.get("generated_at"), session, accounts),
-        "early": early(snapshot, session, rules),
+        "pre_open": pre_open(whole.get("generated_at"), session, accounts),
+        "early": early(whole, session, rules),
         "ruleset": rules.get("ruleset"),
         "rules": rules,
         "rule_warnings": list(warnings or []),
         "accounts": accounts,
+        # The logins with a producer of their own, carried for `stream_request` (absent before them).
+        "stream_instances": list(whole.get("stream_instances") or []),
     }

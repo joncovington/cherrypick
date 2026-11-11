@@ -156,6 +156,17 @@ def test_a_snapshot_from_before_named_logins_reads_as_before():
     assert theirs["wheel"]["cycles"] == [] and theirs["wheel"]["error"] == ev.NO_ACCOUNT_HISTORY
 
 
+def test_the_evaluation_s_own_fields_read_the_whole_snapshot_not_the_last_account():
+    # The last account has no history in the snapshot; the top-level history (main's) is fine.
+    ira = _acct("main-1234", "main", [share_leg(100, 51.0, 50.0)], designated=True)
+    stray = _acct("margin-5678", "margin", [share_leg(100, 51.0, 50.0)], kind="margin")
+    snap = _snapshot([ira, stray], PLAIN[:4], {})
+    snap["metrics_error"] = None
+    out = ev.evaluate(snap, RULES)
+    assert out["transactions_error"] is None
+    assert out["snapshot_generated_at"] == snap.get("generated_at")
+
+
 def test_account_snapshot_never_leaks_the_top_level_history_to_another_account():
     snap = {
         "transactions": {"XYZ": ["top"]},
