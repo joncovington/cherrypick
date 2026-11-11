@@ -210,6 +210,16 @@ if ($connected) {
 } else {
     Warn "Skipped. Market data will not flow until you connect; run this installer again to do it."
 }
+# A further tastytrade login (another set of accounts, read beside the first's; never traded).
+if ($connected -and -not $Upgrade) {
+    if (Ask "Connect another tastytrade login too?" $false) {
+        $loginName = (Read-Host "  A short name for it (lower-case letters, digits, hyphens; e.g. margin)").Trim()
+        if ($loginName) {
+            & $VPy $RunPy connect --login $loginName
+            if ($LASTEXITCODE -ne 0) { Warn "Not connected. Run: run.py connect --login $loginName" }
+        }
+    }
+}
 
 # ---------------------------------------------------------------------------------- first lists
 # The evening jobs that build the income lists' universe, once, now: otherwise a new install waits a

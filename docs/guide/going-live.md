@@ -103,6 +103,34 @@ python packages/orchestrator/run.py account --module meic --clear
 `--set` takes the last four digits of the account or its index in the list. The suite shows accounts
 masked, as `****0000`, everywhere. `account` changes configuration only; it places nothing.
 
+## A second tastytrade login
+
+The designation, and every live order, stay on the login you connected first. Another tastytrade
+login (one holding a margin account, say) can be added so the suite reads its accounts too: positions,
+balances, reconcile, manage's evaluation, the console's Live pages and the order alerts. Nothing
+trades it.
+
+```bash
+python packages/orchestrator/run.py connect --login margin
+python packages/orchestrator/run.py account --login margin
+python packages/orchestrator/run.py supervise --restart
+```
+
+`connect --login` asks for that login's OAuth client secret and refresh token (hidden; stored in its own
+keyring entry, `cherrypick-broker.margin`), checks the connection, then asks for a label and whether
+manage should evaluate its accounts. Say yes for an account you trade by hand: its positions are then
+expected, not reported as drift. It adds the login to `broker.logins` in `config.json`, backing the file
+up first. Pick a generic name (`margin`, `ira2`), never your tastytrade username or account digits: it
+appears in file names, job names and notifications. An account on that login is shown as
+`margin ****0000`.
+
+Restart the supervisor so the login's order-alert service (`account-alerts.margin`) starts. If the
+login holds more than one account, add `"alerts_account": "<last 4>"` to its `broker.logins` entry to
+say which one the service watches. `account --login` lists; it cannot designate. A login whose token
+stops working shows as that login's REST read failing in the watchdog, and its accounts as unread; the
+main login carries on. To remove it, delete its entry from `broker.logins` and run
+`python -m cherrypick.core.auth remove --login margin`.
+
 ## Two ways to arm
 
 Both write the same arm record and run the same checks. Neither is easier to get wrong than the other.

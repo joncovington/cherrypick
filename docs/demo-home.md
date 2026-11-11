@@ -12,8 +12,12 @@ any other way.
 ## Build one
 
 ```
-python scripts/demo_home.py --out ~/demo-home [--seed 7] [--day 2026-11-06] [--days 30]
+python scripts/demo_home.py --out ~/demo-home [--seed 7] [--day 2026-11-06] [--days 30] [--second-login]
 ```
+
+`--second-login` adds a second broker login (`margin`, in `broker.logins`) holding a Reg T account
+with the same masked number as the first, judged on its own history: the case every page has to keep
+apart. Without it the home has one login, as before.
 
 Run it from a checkout with the suite installed (`scripts/dev-install.ps1` or `.sh`); it uses the
 packages' own writers wherever one exists (the manage evaluation, the end-of-day review, the morning
