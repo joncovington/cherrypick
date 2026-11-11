@@ -1,7 +1,17 @@
 ---
 description: Arm (or disarm) the MEIC LIVE trading loop for TODAY, gated behind a required literal YES confirmation
-argument-hint: [--stop]
+argument-hint: [--login NAME] [--stop]
 ---
+
+`--login NAME` arms (or with `--stop` disarms) the live account on another broker login instead of the
+main one: MEIC's `live_accounts.<NAME>` entry, its own symbol, arm, caps, kill criteria and designated
+account. Add `--login NAME` to every `live_loop` command below, and read every file named below as
+that account's: the arm record is `meic.<NAME>-live-arm.json`, the ledger
+`data/meic/<NAME>/meic_trades.db`, the log `meic_live.<NAME>.log`, the job `meic-live.<NAME>`. Its
+`--status` names the account (`live_account`, `login`); say which account is being armed, by its login
+and masked number, before asking for the YES. Its own `enabled` is one more gate, and a margin
+account under $25,000 is held to the pattern-day-trader reserve, both reported in `unmet_gates` or the
+entry blockers. A warning that another live account trades the same index is said out loud.
 
 Arm the MEIC live loop for today. That means real money, real 0DTE iron condors on the pinned
 `live.symbol` (read it from `--status`; never assume SPX), against the real designated account. Arming writes the **arm record**

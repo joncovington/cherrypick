@@ -262,12 +262,15 @@ def arm_record_path(module: str) -> Path:
 
 
 def read_arm_records(cfg: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """{live key: arm record} -- `<module>` for the main login's live account, `<module>.<login>` for
+    each further one the module's config lists (`config.live_accounts`)."""
     records: dict[str, dict[str, Any]] = {}
     for name, mcfg in cfgmod.enabled_modules(cfg).items():
         if mcfg.get("live"):
-            rec = read_json(arm_record_path(name), default=None)
-            if isinstance(rec, dict) and rec:
-                records[name] = rec
+            for key in [name, *(f"{name}.{login}" for login in cfgmod.live_accounts(cfg, name))]:
+                rec = read_json(arm_record_path(key), default=None)
+                if isinstance(rec, dict) and rec:
+                    records[key] = rec
     return records
 
 

@@ -205,6 +205,60 @@ def set_shared_account(cfg: dict[str, Any], selector: str) -> dict[str, Any]:
     return {"ok": True, "scope": "shared", "designated": mask_account(full)}
 
 
+def login_designation_store(login: str, module: str) -> CredentialStore:
+    """Where `module`'s designated account on another broker login lives: that login's own keyring
+    service, entry `<module>:account_number` -- what the module's live loop reads when it runs with
+    `--login` (meic's `live_account.designation_store`; the two must agree)."""
+    from cherrypick.core.auth import logins as _logins
+
+    return CredentialStore(_logins.login_service(login), prefix=module)
+
+
+def set_login_account(cfg: dict[str, Any], module: str, login: str, selector: str) -> dict[str, Any]:
+    """Designate the account `module` trades on another broker login (`account --module <m> --login
+    <name> --set <last4>`). Only a module whose own config lists that login under `live_accounts`
+    may, and only an account the login itself lists. The caller is responsible for human
+    confirmation; only the keyring write sees the full number."""
+    from cherrypick.core.auth import logins as _logins
+
+    if module in cfgmod.PAPER_ONLY_MODULES:
+        return {"ok": False, "error": PAPER_ONLY_REFUSAL.format(module=module)}
+    try:
+        login = _logins.check_login_name(login)
+    except _logins.LoginNameError as exc:
+        return {"ok": False, "error": str(exc)}
+    if login not in cfgmod.broker_login_names(cfg)[1:]:
+        return {"ok": False, "error": f"login {login!r} is not in broker.logins"}
+    try:
+        doc = json.loads(_home.config_path(module).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        doc = {}
+    if login not in (doc.get("live_accounts") or {}):
+        return {"ok": False, "error": f"{module}'s config has no live_accounts.{login} entry"}
+    name, _mcfg, root, tool = _first_broker_module(cfg)
+    if root is None:
+        return {"ok": False, "error": _NO_BROKER_MODULE}
+    accounts_list, aerr = _broker_accounts(root, tool, login=login)
+    if aerr:
+        return {"ok": False, "error": aerr}
+    full = _resolve(accounts_list, selector)
+    if not full:
+        return {"ok": False, "error": f"could not resolve {selector!r} to a single account on {login}"}
+    try:
+        login_designation_store(login, module).set_secret(ACCOUNT_NUMBER, full)
+    except CredentialError as exc:
+        return {"ok": False, "error": str(exc)}
+    return {"ok": True, "module": module, "login": login, "designated": mask_account(full)}
+
+
+def clear_login_account(module: str, login: str) -> dict[str, Any]:
+    try:
+        login_designation_store(login, module).delete_secret(ACCOUNT_NUMBER)
+    except CredentialError as exc:
+        return {"ok": False, "error": str(exc)}
+    return {"ok": True, "module": module, "login": login, "designated": None}
+
+
 def list_login(cfg: dict[str, Any], login: str) -> dict[str, Any]:
     """An extra broker login's accounts, masked. Nothing is designated on it: designation stays on
     the main login, so this is a listing only (`account --login NAME`)."""

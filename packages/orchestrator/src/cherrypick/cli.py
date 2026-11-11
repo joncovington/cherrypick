@@ -1755,8 +1755,30 @@ def cmd_account(cfg, args) -> None:
     module = args.module
     login = getattr(args, "login", None)
     if login not in (None, "", "main"):
-        if args.set or args.clear or module:
-            _emit({"ok": False, "error": "designating an account on another login is not supported yet"})
+        # A module's live account on another login (its config's `live_accounts.<login>`): designate,
+        # clear, or (no --module) list the login's accounts.
+        if module and args.clear:
+            _emit(accounts.clear_login_account(module, login))
+            return
+        if module and args.set:
+            if not args.yes:
+                print(
+                    f"This designates the account {module} will use for LIVE orders on the {login} login."
+                    " cherrypick never places trades from this command; it only records the destination."
+                )
+                prompt = (
+                    f"Type 'yes' to set {module}'s {login} live-trading account to selection {args.set!r}: "
+                )
+                if input(prompt).strip() != "yes":
+                    _emit({"ok": False, "error": "aborted"})
+                    return
+            result = accounts.set_login_account(cfg, module, login, args.set)
+            _emit(result)
+            if not result.get("ok"):
+                sys.exit(1)
+            return
+        if args.set or args.clear:
+            _emit({"ok": False, "error": "designating on another login needs --module"})
             sys.exit(1)
         _emit(accounts.list_login(cfg, login))
         return

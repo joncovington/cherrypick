@@ -278,6 +278,32 @@ def broker_login_names(cfg: dict[str, Any]) -> list[str]:
     return [entry["name"] for entry in broker_logins(cfg)]
 
 
+def live_accounts(cfg: dict[str, Any], module: str, module_doc: dict[str, Any] | None = None) -> list[str]:
+    """The further live accounts a module trades: the logins under `live_accounts` in its OWN config
+    (`~/.cherrypick/config/<module>.json`) that are also in `broker.logins`, and that are either
+    enabled or already have a live ledger (`<data>/<module>/<login>/<module>_trades.db`, so an
+    account switched off while it still holds is still managed). The main login's live account is
+    the module's `live` block and is never listed here. `module_doc` is the module config, for tests;
+    absent, the home file is read, and an unreadable one lists nothing."""
+    if module_doc is None:
+        try:
+            module_doc = json.loads(_home.config_path(module).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return []
+    raw = module_doc.get("live_accounts") if isinstance(module_doc, dict) else None
+    if not isinstance(raw, dict):
+        return []
+    known = set(broker_login_names(cfg)[1:])
+    out = []
+    for login, entry in raw.items():
+        if login not in known or not isinstance(entry, dict):
+            continue
+        ledger = _home.data_dir(module) / login / f"{module}_trades.db"
+        if entry.get("enabled") is True or ledger.exists():
+            out.append(login)
+    return sorted(out)
+
+
 def streamer_instances(cfg: dict[str, Any]) -> list[str]:
     """The extra producer instances to run (`streamer.instances`), each named for a broker login in
     `broker.logins`: a name that is not a listed login is skipped, since it would have no secrets to

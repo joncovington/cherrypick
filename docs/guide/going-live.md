@@ -126,10 +126,36 @@ appears in file names, job names and notifications. An account on that login is 
 
 Restart the supervisor so the login's order-alert service (`account-alerts.margin`) starts. If the
 login holds more than one account, add `"alerts_account": "<last 4>"` to its `broker.logins` entry to
-say which one the service watches. `account --login` lists; it cannot designate. A login whose token
-stops working shows as that login's REST read failing in the watchdog, and its accounts as unread; the
-main login carries on. To remove it, delete its entry from `broker.logins` and run
+say which one the service watches. `account --login` on its own lists the login's accounts. A login
+whose token stops working shows as that login's REST read failing in the watchdog, and its accounts as
+unread; the main login carries on. To remove it, delete its entry from `broker.logins` and run
 `python -m cherrypick.core.auth remove --login margin`.
+
+### Trading MEIC in the second login
+
+MEIC can trade a live account on that login too, beside the main one. Add an entry for the login under
+`live_accounts` in `~/.cherrypick/config/meic.json`, by hand: it is a full live block of its own
+(symbol, arm, `gate0_confirmed`, `max_open_bp_dollars`, `wing_widths_by_symbol`,
+`max_structures_per_day`, `daily_loss_halt_dollars`, `kill`, `resting_stop`). Nothing that sizes or
+permits a trade is copied from the main `live` block; only `disarm_time` and the entry window are.
+The Config page cannot add, change or remove one.
+
+It trades only when all of these hold: `enable_live_trading`, the entry's own `enabled`, its gate-0
+line, kill criteria derived for its arm on its symbol, a designated account on that login, and that
+day's arm:
+
+```bash
+python packages/orchestrator/run.py account --module meic --login margin --set 4222
+python -m cherrypick.meic.live_loop --status --login margin
+python -m cherrypick.meic.live_loop --arm --confirm YES --login margin
+```
+
+(or `/live-meic-start --login margin`). Its loop runs as the supervisor job `meic-live.margin`, with its
+own ledger (`data/meic/margin/meic_trades.db`), kill latch, arm record, fee reconcile and catch-up
+settlement; a fill there wakes that job only. A margin account under $25,000 opens no new IC while
+fewer than `pdt_reserve_day_trades` (default 2) day trades remain, since stopping both sides of one
+IC can take two; a frozen, closing-only or margin-call account opens nothing. Arming warns when the
+main account trades the same index (SPX beside XSP is one directional bet in two accounts).
 
 ## Two ways to arm
 

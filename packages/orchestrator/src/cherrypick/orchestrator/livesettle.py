@@ -32,23 +32,31 @@ def run(cfg: dict[str, Any] | None = None, *, notifier: Notifier | None = None) 
     for name, mcfg in cfgmod.enabled_modules(cfg).items():
         if name not in MODULES:
             continue
-        try:
-            r = doctor._run(
-                cfgmod.module_root(mcfg, name),
-                ["-m", f"cherrypick.{name}.live_loop", "--settle-overdue"],
-                timeout=180,
-            )
-            out = first_json(r.stdout) or {"ok": False, "error": (r.stderr or "no JSON")[-300:]}
-        except Exception as exc:  # noqa: BLE001 -- one module failing must not stop the other
-            out = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
-        results[name] = out
-        for s in out.get("settled") or []:
-            notifier.notify(
-                "INFO",
-                f"{name}.live_settle_overdue.{s.get('session')}",
-                f"{name} LIVE book from {s.get('session')} settled (catch-up)",
-                f"Settled at {float(s.get('price') or 0):.2f}, that session's official close (yahoo_daily). "
-                "It had been left open since the session -- the machine was not running between the "
-                "close and the disarm.",
-            )
+        # The main live account, then each further one (`live_accounts`), each its own ledger.
+        for login in [None, *cfgmod.live_accounts(cfg, name)]:
+            key = name if login is None else f"{name}.{login}"
+            try:
+                r = doctor._run(
+                    cfgmod.module_root(mcfg, name),
+                    ["-m", f"cherrypick.{name}.live_loop", "--settle-overdue", *cfgmod.login_argv(login)],
+                    timeout=180,
+                )
+                out = first_json(r.stdout) or {"ok": False, "error": (r.stderr or "no JSON")[-300:]}
+            except Exception as exc:  # noqa: BLE001 -- one module failing must not stop the other
+                out = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+            results[key] = out
+            _announce(notifier, key, out)
     return {"ok": all(v.get("ok") for v in results.values()), "modules": results}
+
+
+def _announce(notifier: Notifier, name: str, out: dict[str, Any]) -> None:
+    """One notice per session a live account's catch-up settled (`name` is its live key)."""
+    for s in out.get("settled") or []:
+        notifier.notify(
+            "INFO",
+            f"{name}.live_settle_overdue.{s.get('session')}",
+            f"{name} LIVE book from {s.get('session')} settled (catch-up)",
+            f"Settled at {float(s.get('price') or 0):.2f}, that session's official close (yahoo_daily). "
+            "It had been left open since the session -- the machine was not running between the "
+            "close and the disarm.",
+        )

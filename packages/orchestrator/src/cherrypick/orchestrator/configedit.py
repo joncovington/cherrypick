@@ -46,6 +46,10 @@ GUARDED: dict[str, dict[str, str]] = {
         "/live/max_structures_per_day": "live entry budget — hand-edit deliberately, never from here",
         "/live/daily_loss_halt_dollars": "live loss halt — hand-edit deliberately, not from this surface",
         "/live/kill": "the frozen kill criteria (B1) — derived, dated and written by hand, never here",
+        # The live accounts on other broker logins, WHOLE: each entry is a full live block (its
+        # switch, symbol, arm, caps, kill criteria, attestation), so no key in it, and no entry
+        # added or removed, is this surface's to write.
+        "/live_accounts": "live accounts on other logins — written by hand, with their gates, never here",
     },
     # flies carried only the switch, the attestation and the two loss caps until 2026-09-23, while
     # bwb — whose live block is the same shape — guarded its arm selector, its margin cap and its

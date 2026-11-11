@@ -95,9 +95,15 @@ def _who(event: dict, owners: dict[str, str]) -> tuple[str, str]:
     return "manual", " No live ledger records it and it carries no suite identifier: a manual order."
 
 
-def _who_on_login(login: str) -> tuple[str, str]:
-    """An order on an extra broker login: always manual there (no module trades it)."""
-    return f"manual ({login})", f" An order on the {login} login, which no live loop trades."
+def _who_on_login(
+    login: str, event: dict | None = None, owners: dict[str, str] | None = None
+) -> tuple[str, str]:
+    """An order on an extra broker login: the live account that published it there
+    (`<module>.<login>`), else manual."""
+    owner = (owners or {}).get(str((event or {}).get("order_id")))
+    if owner and owner.partition(".")[2] == login:
+        return owner, ""
+    return f"manual ({login})", f" An order on the {login} login that no live loop there records."
 
 
 def _notice(kind: str, event: dict, who: tuple[str, str]) -> tuple[str, str, str]:
@@ -165,9 +171,9 @@ def run(
             if kind == "placed" and oid in filled_now:
                 continue  # placed and filled in one pass: the fill says both
             notified.add(f"{oid}:{kind}")
-            # No module trades an extra login, so nothing there has an owner to wake: every order on
-            # it is announced as manual, named by its login.
-            who = _who(event, owners) if main else _who_on_login(login)
+            # On another login an order is a live loop's only when THAT login's live account
+            # published it (`<module>.<login>`); anything else there is announced as manual.
+            who = _who(event, owners) if main else _who_on_login(login, event, owners)
             level, title, message = _notice(kind, event, who)
             notifier.notify(level, f"live.order.{oid}.{kind}", title, message)
             sent.append(
@@ -177,16 +183,25 @@ def run(
     _save_state(state)
     # The owning loop confirms a fill or a death at its next tick; ask for that tick now (2026-11-02),
     # so the ledger follows the broker in seconds. An early run, never a restart: a tick already
-    # running is left alone (`supervisor.request_run`). Only a module whose ledger owns the order, and
-    # only on the main login, where the live loops trade.
+    # running is left alone (`supervisor.request_run`). Only the live account whose ledger owns the
+    # order, and only when the order is on that account's own login: `meic` on main wakes
+    # `meic-live`, `meic.margin` on margin wakes `meic-live.margin`.
     loops = {n for n, m in cfgmod.enabled_modules(cfg).items() if (m.get("live") or {}).get("task_name")}
     woken = sorted(
         {
             s["module"]
             for s in sent
-            if s["kind"] in ("filled", "ended") and s["module"] in loops and s["login"] == "main"
+            if s["kind"] in ("filled", "ended") and _owner_on_login(s["module"], s["login"], loops)
         }
     )
-    for module in woken:
-        _supervisor.request_run(f"{module}-live", by="live-fill-alerts")
+    for key in woken:
+        base, _, acct = key.partition(".")
+        _supervisor.request_run(f"{base}-live" + (f".{acct}" if acct else ""), by="live-fill-alerts")
     return {"ok": True, "sent": sent, "woken": woken}
+
+
+def _owner_on_login(owner: str, login: str, loops: set[str]) -> bool:
+    """Is `owner` (a live key: `meic`, `meic.margin`) a live loop trading `login`? The key's own
+    login must be the order's: an order on one login never wakes a loop on another."""
+    base, _, acct = str(owner).partition(".")
+    return base in loops and (acct or "main") == login
