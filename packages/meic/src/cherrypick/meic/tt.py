@@ -1719,8 +1719,69 @@ async def cmd_get_greeks(args) -> dict:
 # ---------------------------------------------------------------------------
 
 
+# The verbs `--login NAME` may run on an extra broker login (`cherrypick.core.auth.logins`): the
+# account reads the orchestrator's reconcile, positions and manage snapshot make. Everything else
+# refuses before any broker call -- orders above all (no module trades an extra login), and market
+# data, which stays on the main login.
+LOGIN_READ_VERBS = frozenset(
+    {
+        "get_connection_status",
+        "list_accounts",
+        "get_account_info",
+        "get_positions",
+        "get_transactions",
+        "get_working_orders",
+    }
+)
+
+
+def _use_login(name: str) -> None:
+    """Point this process's credentials and session at an extra login's own store (no fallback to
+    the module's service or the shared one). It has no designated account: `_designated_account`
+    reads None, so an order verb would refuse even if it got this far."""
+    global _creds, get_session
+    from types import SimpleNamespace
+
+    from cherrypick.core.auth import ACCOUNT_NUMBER, SessionManager
+    from cherrypick.core.auth import logins as _logins
+
+    store = _logins.login_store(name)
+    _creds = SimpleNamespace(
+        ACCOUNT_NUMBER=ACCOUNT_NUMBER,
+        # No stored default account: a read without --account_number takes the login's first.
+        get_secret=lambda key: None if key == ACCOUNT_NUMBER else store.get_secret(key),
+        secrets_present=store.secrets_present,
+        store=SimpleNamespace(designated_account=lambda: None),
+    )
+    get_session = SessionManager(store, thread_local=True).get_session
+
+
+def _login_refusal(login: str | None, command: str | None) -> dict | None:
+    """None when `command` may run on `login`; else the refusal to print. `main` (or no flag) is
+    always today's behaviour."""
+    from cherrypick.core.auth import logins as _logins
+
+    try:
+        name = _logins.check_login_name(login)
+    except _logins.LoginNameError as exc:
+        return {"ok": False, "error": str(exc)}
+    if _logins.is_default(name) or command in LOGIN_READ_VERBS:
+        return None
+    return {
+        "ok": False,
+        "error": f"{command} does not run on login {name!r}: only account reads do "
+        f"({', '.join(sorted(LOGIN_READ_VERBS))})",
+        "reason": "login_read_only",
+    }
+
+
 def main():
     parser = argparse.ArgumentParser(description="MEICAgent tastytrade CLI")
+    parser.add_argument(
+        "--login",
+        default=None,
+        help="an extra broker login to read (account reads only); absent = the main login",
+    )
     sub = parser.add_subparsers(dest="command")
 
     sub.add_parser("get_connection_status")
@@ -1844,6 +1905,13 @@ def main():
     p_ss.add_argument("--timeout", type=float, default=6.0)
 
     args = parser.parse_args()
+
+    refusal = _login_refusal(args.login, args.command)
+    if refusal is not None:
+        _out(refusal, command=args.command)
+        sys.exit(1)
+    if args.login not in (None, "", "main"):
+        _use_login(args.login)
 
     # Sync commands (no asyncio needed)
     sync_dispatch = {

@@ -160,6 +160,11 @@ decisions per symbol, one shared account-wide risk budget.
   included), `adjust_order` and `close_position` resolve through `_trading_account`: no designation
   (unset or unreadable) is `AccountNotDesignated`, never the login's first account, and an explicit
   `--account_number` must be the designated one. Read-only commands keep `resolve_account`'s fallback.
+- **`tt --login NAME` reads an extra broker login, and only reads.** The account reads in
+  `LOGIN_READ_VERBS` run on that login's own keyring store (`cherrypick.core.auth.logins`, no
+  fallback to this module's service or the shared one); every other verb, orders and market data
+  included, refuses before any broker call (`reason: login_read_only`). An extra login has no
+  designated account. No flag, or `--login main`, is the main login as before.
 - **An entry is written ahead of its order.** The row it will need goes into
   `entry_intents.json` beside the live ledger under a minted `meic-<uuid>`, sent as the order's
   `external_identifier`; an intent that cannot be written sends no order. The saved row clears it.
