@@ -350,10 +350,19 @@
       "confidence": 30
     },
     "buying_power": {
-      "_comment": "Buying power used against a ceiling that rises with VIX: [VIX under, cap] pairs, the last bound null for anything above. The common retail table. No VIX, no band.",
+      "_comment": "Buying power used against a ceiling. On margin it rises with VIX: [VIX under, cap] pairs, the last bound null for anything above; the common retail table, written for margin, where a short put holds a fraction of its notional and the hold grows as the stock falls. No VIX, no band. An account of unknown kind is judged here too.",
       "enabled": true,
       "vix_steps": [[15, 0.25], [20, 0.3], [30, 0.35], [40, 0.4], [null, 0.5]],
-      "confidence": 40
+      "confidence": 40,
+      "cash": {
+        "_comment": "A cash account or IRA holds each short put's full strike and each spread's max loss, and neither grows when the market moves, so its buying power is judged in parts instead of by VIX: max_pct_nlv in total (the rest kept free to sell after a vol spike); stock_exposure_pct_nlv for short puts at their strikes plus shares held (the stock the account owns or can be made to own); spread_risk_pct_nlv for the buying power everything else holds, its most it can lose. stress: SPY moved by move (each name by beta x move) with IVs up iv_shift (term-weighted), losing over max_loss_pct_nlv of net liq, is a REVIEW (portfolio.stress). The figures are ours, with no published evidence. enabled false judges a cash account by the VIX table.",
+        "enabled": true,
+        "max_pct_nlv": 0.8,
+        "stock_exposure_pct_nlv": 0.65,
+        "spread_risk_pct_nlv": 0.35,
+        "confidence": 40,
+        "stress": {"move": -0.2, "iv_shift": 0.1, "max_loss_pct_nlv": 0.2, "confidence": 30}
+      }
     },
     "scenarios": {
       "_comment": "The risk matrix (SPY moves x IV shifts in vol points for a 30-day option, time held still; with iv_shift_weighting \"term\" each leg's shift is scaled by sqrt(30 / DTE) so front months move most, \"flat\" shifts every leg alike) and the risk graph ([from, to, step] of SPY moves, now and at the nearest expiry).",
@@ -458,7 +467,7 @@
       "show": 30
     }
   },
-  "_positions_comment": "Per-underlying overrides, e.g. {\"SPY\": {\"intent\": \"hedge\", \"disable\": [\"debit.stop\"], \"note\": \"portfolio hedge\"}}. intent \"pmcc\" recognises a call diagonal as a PMCC, \"diagonal\" keeps it out. Rule ids: expiry, credit.take_profit, credit.stop, credit.time_exit, credit.breached, credit.close_before_earnings, debit.stop, debit.take_profit, debit.diagonal_width, debit.price_stop, debit.time_exit, legs.short_take_profit, legs.long_vertical, roll.naked_put, roll.diagonal_short, roll.fly_off, roll.untested_side, wheel.take_profit, wheel.tested, wheel.next_leg, pmcc.width, pmcc.assignment, pmcc.roll_long, directional.take_profit, directional.stop, ex_dividend, risk.oversize, earnings_trade, portfolio.theta, portfolio.delta, portfolio.breakeven, portfolio.concentration, portfolio.buying_power, portfolio.earnings_exposure, portfolio.expiry_concentration, portfolio.vol_expansion",
+  "_positions_comment": "Per-underlying overrides, e.g. {\"SPY\": {\"intent\": \"hedge\", \"disable\": [\"debit.stop\"], \"note\": \"portfolio hedge\"}}. intent \"pmcc\" recognises a call diagonal as a PMCC, \"diagonal\" keeps it out. Rule ids: expiry, credit.take_profit, credit.stop, credit.time_exit, credit.breached, credit.close_before_earnings, debit.stop, debit.take_profit, debit.diagonal_width, debit.price_stop, debit.time_exit, legs.short_take_profit, legs.long_vertical, roll.naked_put, roll.diagonal_short, roll.fly_off, roll.untested_side, wheel.take_profit, wheel.tested, wheel.next_leg, pmcc.width, pmcc.assignment, pmcc.roll_long, directional.take_profit, directional.stop, ex_dividend, risk.oversize, earnings_trade, portfolio.theta, portfolio.delta, portfolio.breakeven, portfolio.concentration, portfolio.buying_power, portfolio.stress, portfolio.earnings_exposure, portfolio.expiry_concentration, portfolio.vol_expansion",
   "positions": {},
   "_trades_comment": "Per-trade overrides, keyed two ways. By a trade's stable ID as the cards show it (e.g. XYZ-260401-1), for that trade alone, read over positions.<SYMBOL>: {\"XYZ-260401-1\": {\"intent\": \"hedge\", \"disable\": [\"debit.stop\"], \"note\": \"...\"}}; disable lists add up with the name's. By a PMCC's long contract as the broker spells it (spaces ignored), e.g. {\"XYZ 280121C00040000\": {\"intent\": \"pmcc\", \"note\": \"bought as a PMCC\"}}. intent \"pmcc\" or \"diagonal\" decides that PMCC alone and beats positions.<SYMBOL>.intent; the Live -> pmcc card shows the key. A rolled long is a new PMCC: the old contract's intent does not carry over. continues names the long this one replaced in a roll done in two orders, e.g. {\"XYZ 280616C00040000\": {\"continues\": \"XYZ 280121C00040000\"}}, so the old long's cash and the shorts sold against it stay in the chain (a roll in one order links on its own); the card flags a possible two-order roll and gives the line to add.",
   "trades": {}

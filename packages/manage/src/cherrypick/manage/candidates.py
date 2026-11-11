@@ -42,7 +42,9 @@ The caps, each scaled by net liq, so the same rules size a larger account larger
 - **notional per name** -- a short put's strike x 100 against a share of net liq that depends on the
   account (a cash account or IRA secures it in full; margin does not, which is why leverage is held
   by notional, not buying power);
-- **buying power** -- used after the trade under the VIX-scaled cap the portfolio reading states;
+- **buying power** -- used after the trade under the cap the portfolio reading states (VIX-scaled on
+  margin, the cash total on a cash account or IRA); on a cash account a short put's strike also stays
+  under the stock-exposure cap and a spread's max loss under the spread-risk cap;
 - **delta** -- the book's beta-weighted delta stays inside its band, or moves toward it;
 - **theta** -- the book's theta stays under the band's ceiling;
 - **concentration** -- the name stays under its share of the book's gross theta.
@@ -309,6 +311,7 @@ def unit(
     delta = sum(q * MULTIPLIER * o["delta"] for o, q in legs)
     gamma = sum(q * MULTIPLIER * o["gamma"] for o, q in legs)
     return {
+        "kind": kind,
         "credit": credit,
         "natural": natural,
         "working": working,
@@ -337,12 +340,15 @@ def account_basis(account_type: dict[str, Any] | None) -> str:
 
 # The caps that measure how full the book already is, not the trade: a candidate stopped by one of
 # these is WAITING -- it fits once positions close and free the room.
-ROOM_CAPS = frozenset({"buying power", "theta ceiling", "expiry concentration"})
+SPREADS = frozenset({"put_spread", "call_spread"})
+ROOM_CAPS = frozenset(
+    {"buying power", "stock exposure", "spread risk", "theta ceiling", "expiry concentration"}
+)
 
 
 def _bp_cap(book: dict[str, Any], cfg: dict[str, Any]) -> float:
-    """The buying-power ceiling as a share of net liq: the portfolio reading's VIX-scaled band, else
-    the configured fallback."""
+    """The buying-power ceiling as a share of net liq: the portfolio reading's band (VIX-scaled on
+    margin, the cash total on a cash account), else the configured fallback."""
     cap = ((book.get("bands") or {}).get("buying_power") or {}).get("high")
     return float(cfg["max_buying_power_pct"]) if cap is None else float(cap)
 
@@ -428,6 +434,16 @@ def size(
         float(cfg["max_name_theta_share"]) * (theta_hi if theta_hi is not None else 0.003) * net_liq
     )
     notional_pct = float(cfg["notional_per_name_pct"]["margin" if basis != "cash" else "cash"])
+    # A cash account's two parts of buying power (`portfolio.cash_bands`, absent on margin): a short
+    # put adds its strike to the stock the account can be made to own, a spread its max loss to what
+    # spreads hold.
+    stock = (book.get("bands") or {}).get("stock_exposure") or {}
+    spread = (book.get("bands") or {}).get("spread_risk") or {}
+
+    def over(b: dict[str, Any], adds: float) -> bool:
+        if b.get("high") is None or b.get("value") is None:
+            return False
+        return b["value"] * net_liq + adds > b["high"] * net_liq
 
     def breaks(n: int) -> str | None:
         if u["stress_loss"] is None:
@@ -438,6 +454,10 @@ def size(
             return "notional per name"
         if not room and u["bp"] is not None and used is not None and used + n * u["bp"] > bp_cap * net_liq:
             return "buying power"
+        if not room and u.get("kind") == "short_put" and over(stock, n * u["notional"]):
+            return "stock exposure"
+        if not room and u.get("kind") in SPREADS and u["bp"] is not None and over(spread, n * u["bp"]):
+            return "spread risk"
         if not room and expiry_full:
             return "expiry concentration"
         if (

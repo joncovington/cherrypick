@@ -896,6 +896,10 @@ function candidateCaps(rules: Record<string, unknown>, basis: string | null): Ma
   };
 }
 
+function bpBasis(v: unknown): "cash" | "vix" | null {
+  return v === "cash" || v === "vix" ? v : null;
+}
+
 /** The portfolio reading, passed through. Absent on an evaluation written before it existed. */
 function portfolio(v: unknown, rules: Record<string, unknown>, lev: Leveraged = NO_LEVERAGED): ManagePortfolio | null {
   const p = rec(v);
@@ -936,7 +940,30 @@ function portfolio(v: unknown, rules: Record<string, unknown>, lev: Leveraged = 
           delta: { ...band(bands["delta"]), basis: str(rec(bands["delta"])["basis"]) },
           theta: band(bands["theta"]),
           buyingPower: bands["buying_power"]
-            ? { ...band(bands["buying_power"]), vix: num(rec(bands["buying_power"])["vix"]) }
+            ? {
+                ...band(bands["buying_power"]),
+                vix: num(rec(bands["buying_power"])["vix"]),
+                basis: bpBasis(rec(bands["buying_power"])["basis"]),
+              }
+            : null,
+          stockExposure: bands["stock_exposure"]
+            ? {
+                ...band(bands["stock_exposure"]),
+                puts: num(rec(bands["stock_exposure"])["puts"]),
+                shares: num(rec(bands["stock_exposure"])["shares"]),
+              }
+            : null,
+          spreadRisk: bands["spread_risk"]
+            ? { ...band(bands["spread_risk"]), dollars: num(rec(bands["spread_risk"])["dollars"]) }
+            : null,
+          cashStress: bands["stress"]
+            ? {
+                ...band(bands["stress"]),
+                move: num(rec(bands["stress"])["move"]),
+                ivShift: num(rec(bands["stress"])["iv_shift"]),
+                pnl: num(rec(bands["stress"])["pnl"]),
+                leftOut: strs(rec(bands["stress"])["left_out"]),
+              }
             : null,
         }
       : null,

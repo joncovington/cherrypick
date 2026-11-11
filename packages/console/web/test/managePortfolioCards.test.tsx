@@ -3,7 +3,7 @@ import { renderToString } from "react-dom/server";
 import type { ReactElement } from "react";
 import type { ManageAccount, ManageCandidate, ManageCandidateRoom, ManageCandidates, ManageDeltaIdea, ManageDeltaIdeas, ManagePortfolio } from "@console/shared";
 import { AddingTradesCard, IncomeCard, netPrice } from "../src/pages/Live/IncomeCard";
-import { BandDial, BrokerCheckBody, ContributionBars, DeltaIdeasBody, HedgeBody, deltaIdeasFirst, guidanceHelp, placesApart } from "../src/pages/Live/PortfolioCards";
+import { BandDial, BrokerCheckBody, ContributionBars, DeltaIdeasBody, HedgeBody, RoomCard, cashRoomRows, deltaIdeasFirst, guidanceHelp, placesApart } from "../src/pages/Live/PortfolioCards";
 import { incomeHelp } from "../src/pages/Live/IncomeCard";
 import { PortfolioLayout } from "../src/pages/Live/PortfolioLayout";
 import { BuyingPowerCard, LadderCard, RiskGraphCard, RiskMatrixCard, ScenarioCards, matrixHelp } from "../src/pages/Live/ScenarioCards";
@@ -63,7 +63,10 @@ function reading(over: Partial<ManagePortfolio> = {}): ManagePortfolio {
     bands: {
       delta: { low: -21.84, high: 32.76, basis: "theta", value: 5.85, inside: true },
       theta: { low: 0.001, high: 0.003, value: 0.00306, inside: false },
-      buyingPower: { low: 0, high: 0.3, value: 0.534, inside: false, vix: 19.99 },
+      buyingPower: { low: 0, high: 0.3, value: 0.534, inside: false, vix: 19.99, basis: "vix" },
+      stockExposure: null,
+      spreadRisk: null,
+      cashStress: null,
     },
     vix: 19.99,
     scenarios: {
@@ -414,8 +417,36 @@ describe("ScenarioCards", () => {
     expect(html).toContain("outside band");
     expect(html).toContain("VIX 20.0 allows up to 30%");
     // A cap the reading did not set is not invented.
-    const blind = reading({ bands: { ...reading().bands!, buyingPower: { low: 0, high: null, value: 0.534, inside: null, vix: null } } });
+    const blind = reading({ bands: { ...reading().bands!, buyingPower: { low: 0, high: null, value: 0.534, inside: null, vix: null, basis: "vix" } } });
     expect(render(<BuyingPowerCard p={blind} />)).toContain("no VIX reading");
+  });
+
+  it("holds a cash account to its flat total and lists its parts, any part outside putting the card out", () => {
+    const cash = (stockInside: boolean) =>
+      reading({
+        bands: {
+          ...reading().bands!,
+          buyingPower: { low: 0, high: 0.8, value: 0.534, inside: true, vix: 19.99, basis: "cash" },
+          stockExposure: { low: 0, high: 0.65, value: stockInside ? 0.3 : 0.7, inside: stockInside, puts: 3000, shares: 0 },
+          spreadRisk: { low: 0, high: 0.35, value: 0.25, inside: true, dollars: 2500 },
+          cashStress: { low: -0.2, high: null, value: -0.17, inside: true, move: -0.2, ivShift: 0.1, pnl: -1700, leftOut: [] },
+        },
+      });
+    const bp = render(<BuyingPowerCard p={cash(true)} />);
+    expect(bp).toContain("cash account: up to 80% in use");
+    expect(bp).not.toContain("VIX 20.0 allows");
+    const rows = cashRoomRows(cash(true)).map((r) => `${r.label} ${r.value}`);
+    expect(rows).toEqual([
+      "stock: short puts at strike + shares 30% / 65%",
+      "spreads' most they can lose 25% / 35%",
+      "SPY −20%, IV +10 -17% / -20%",
+    ]);
+    const inside = render(<RoomCard p={cash(true)} limits={null} />);
+    expect(inside).toContain("cash account");
+    expect(inside).not.toContain("outside band");
+    expect(render(<RoomCard p={cash(false)} limits={null} />)).toContain("outside band");
+    // Margin shows none of the parts.
+    expect(cashRoomRows(reading())).toEqual([]);
   });
 
   it("tints the matrix by sign, outlines its origin and orders IV-up on top", () => {

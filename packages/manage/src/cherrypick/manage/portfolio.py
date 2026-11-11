@@ -426,6 +426,8 @@ def reading(
         "realised_move": _round(realised),
         "buying_power_used": used,
         "buying_power_used_pct": _round(used / net_liq, 4) if used is not None and net_liq else None,
+        "bp_basis": bp_basis(account_type),
+        "secured": secured(trades),
         "stress": _stress(rows, bench_spot, rate, cfg["stress"]["shocks"], net_liq),
         "vol_expansion": _vol_expansion(rows, bench_spot, rate, cfg["vol_expansion"], net_liq),
         "beta_doubts": [
@@ -440,6 +442,7 @@ def reading(
         "broker_check": broker_check(trades, broker_greeks, metrics, bench_spot, rate),
     }
     out["bands"] = bands(out, cfg)
+    out["bands"].update(cash_bands(out, cfg["buying_power"], rows, rate))
     out["guidance"] = guidance(out, rules)
 
     weighted = cfg["scenarios"].get("iv_shift_weighting") == "term"
@@ -742,15 +745,147 @@ def bp_cap(vix: float | None, steps: list[list[Any]]) -> float | None:
     return None
 
 
+def bp_basis(account_type: dict[str, Any] | None) -> str:
+    """'cash' when the snapshot says the account is a cash account or an IRA, else 'margin'.
+
+    Unlike the candidates' per-unit basis (`candidates.account_basis`), an account of unknown kind is
+    NOT read as cash here: the cash caps allow more buying power in use than the VIX table, so an
+    account that cannot be placed keeps the stricter one."""
+    kind = str((account_type or {}).get("margin_or_cash") or "").lower()
+    name = str((account_type or {}).get("type_name") or "").lower()
+    return "cash" if kind == "cash" or "ira" in name else "margin"
+
+
+def secured(trades: list[dict[str, Any]]) -> dict[str, Any]:
+    """What a cash account holds as stock: each trade's short puts that no long put in the same trade
+    covers, at their strikes, and the shares held at today's spot. `puts_collateral` is what those
+    puts hold of buying power (strike less the premium taken), so the rest of the buying power used
+    is what everything else holds.
+
+    A trade's long puts cover its lowest short puts first, so the ones left secured are its highest
+    strikes, the larger hold. A leg missing its strike, cost or spot is NAMED in `left_out`, never
+    counted as zero."""
+    puts = collateral = shares = 0.0
+    left_out: list[str] = []
+    for trade in trades:
+        spot = _f(trade.get("spot"))
+        legs = trade.get("legs") or []
+        for leg in legs:
+            if leg.get("right") is None and float(leg.get("quantity") or 0.0) > 0:
+                if spot is None:
+                    left_out.append(leg.get("label") or str(leg.get("symbol")))
+                else:
+                    shares += float(leg["quantity"]) * spot
+        cover = sum(
+            float(x["quantity"])
+            for x in legs
+            if x.get("right") == "P" and float(x.get("quantity") or 0.0) > 0
+        )
+        shorts = sorted(
+            (x for x in legs if x.get("right") == "P" and float(x.get("quantity") or 0.0) < 0),
+            key=lambda x: _f(x.get("strike")) or 0.0,
+        )
+        for leg in shorts:  # lowest strike first
+            held = -float(leg["quantity"])
+            taken = min(cover, held)
+            cover -= taken
+            n = held - taken
+            if n <= 0:
+                continue
+            strike, cost = _f(leg.get("strike")), _f(leg.get("cost"))
+            if strike is None or cost is None:
+                left_out.append(leg.get("label") or str(leg.get("symbol")))
+                continue
+            puts += strike * MULTIPLIER * n
+            # `cost` is the leg's signed open cash, negative for the premium the short took in.
+            collateral += strike * MULTIPLIER * n + cost * n / held
+    return {
+        "puts": round(puts, 2),
+        "puts_collateral": round(collateral, 2),
+        "shares": round(shares, 2),
+        "left_out": left_out,
+    }
+
+
+def _cash_on(r: dict[str, Any], cfg: dict[str, Any]) -> bool:
+    cash = cfg.get("cash") or {}
+    return r.get("bp_basis") == "cash" and bool(cash) and cash.get("enabled") is not False
+
+
 def _bp_band(r: dict[str, Any], cfg: dict[str, Any]) -> dict[str, Any]:
-    cap = bp_cap(r.get("vix"), cfg["vix_steps"])
     used = r.get("buying_power_used_pct")
+    if _cash_on(r, cfg):
+        cap = float(cfg["cash"]["max_pct_nlv"])
+        return {
+            "low": 0.0,
+            "high": cap,
+            "value": used,
+            "vix": r.get("vix"),
+            "inside": (used <= cap) if used is not None else None,
+            "basis": "cash",
+        }
+    cap = bp_cap(r.get("vix"), cfg["vix_steps"])
     return {
         "low": 0.0,
         "high": cap,
         "value": used,
         "vix": r.get("vix"),
         "inside": (used <= cap) if cap is not None and used is not None else None,
+        "basis": "vix",
+    }
+
+
+def cash_bands(
+    r: dict[str, Any], cfg: dict[str, Any], rows: list[dict[str, Any]], rate: float
+) -> dict[str, Any]:
+    """A cash account's stock exposure, spread risk and stress bands, each None on margin (or with the
+    cash caps off), where buying power is judged by the VIX table alone."""
+    if not _cash_on(r, cfg):
+        return {"stock_exposure": None, "spread_risk": None, "stress": None}
+    cash = cfg["cash"]
+    net_liq, used, sec = r.get("net_liq"), r.get("buying_power_used"), r.get("secured") or {}
+    stock = float(sec.get("puts") or 0.0) + float(sec.get("shares") or 0.0)
+    stock_pct = _round(stock / net_liq, 4) if net_liq else None
+    hi_stock = float(cash["stock_exposure_pct_nlv"])
+    spread = max(used - float(sec.get("puts_collateral") or 0.0), 0.0) if used is not None else None
+    spread_pct = _round(spread / net_liq, 4) if spread is not None and net_liq else None
+    hi_spread = float(cash["spread_risk_pct_nlv"])
+    st = cash["stress"]
+    move, shift, cap = float(st["move"]), float(st["iv_shift"]), float(st["max_loss_pct_nlv"])
+    bench_spot = r.get("benchmark_spot")
+    stress_pct = pnl = None
+    left_out: list[str] = []
+    if bench_spot:
+        total, left_out = book_pnl(rows, bench_spot, rate, move, shift, 0.0, True)
+        pnl = round(total, 2)
+        stress_pct = _round(total / net_liq, 4) if net_liq else None
+    return {
+        "stock_exposure": {
+            "low": 0.0,
+            "high": hi_stock,
+            "value": stock_pct,
+            "puts": sec.get("puts"),
+            "shares": sec.get("shares"),
+            "left_out": sec.get("left_out") or [],
+            "inside": (stock_pct <= hi_stock) if stock_pct is not None else None,
+        },
+        "spread_risk": {
+            "low": 0.0,
+            "high": hi_spread,
+            "value": spread_pct,
+            "dollars": None if spread is None else round(spread, 2),
+            "inside": (spread_pct <= hi_spread) if spread_pct is not None else None,
+        },
+        "stress": {
+            "low": -cap,
+            "high": None,
+            "value": stress_pct,
+            "move": move,
+            "iv_shift": shift,
+            "pnl": pnl,
+            "left_out": left_out,
+            "inside": (stress_pct >= -cap) if stress_pct is not None else None,
+        },
     }
 
 
@@ -955,8 +1090,36 @@ def guidance(r: dict[str, Any], rules: dict[str, Any]) -> list[dict[str, Any]]:
                 )
             )
 
-    bp = (r.get("bands") or {}).get("buying_power") or {}
-    if not off("portfolio.buying_power") and bp.get("inside") is False:
+    all_bands = r.get("bands") or {}
+    bp = all_bands.get("buying_power") or {}
+    if not off("portfolio.buying_power") and bp.get("basis") == "cash":
+        over = []
+        if bp.get("inside") is False:
+            shown, bound = _apart(bp["value"], bp["high"], 0, "%")
+            over.append(
+                f"buying power used is {shown} of net liq, over the {bound} a cash account keeps in use: "
+                f"the rest is held free to sell after a volatility spike"
+            )
+        se = all_bands.get("stock_exposure") or {}
+        if se.get("inside") is False:
+            shown, bound = _apart(se["value"], se["high"], 0, "%")
+            over.append(
+                f"short puts at their strikes (${se['puts']:,.0f}) and shares (${se['shares']:,.0f}) are "
+                f"{shown} of net liq in stock, over {bound}: on the way down the account moves like that "
+                f"much stock"
+            )
+        sr = all_bands.get("spread_risk") or {}
+        if sr.get("inside") is False:
+            shown, bound = _apart(sr["value"], sr["high"], 0, "%")
+            over.append(
+                f"spreads and the other trades hold ${sr['dollars']:,.0f}, {shown} of net liq and the most "
+                f"they can lose, over {bound}"
+            )
+        if over:
+            fired.append(
+                _fire("portfolio.buying_power", cfg["buying_power"]["cash"]["confidence"], "; ".join(over))
+            )
+    elif not off("portfolio.buying_power") and bp.get("inside") is False:
         shown, bound = _apart(bp["value"], bp["high"], 0, "%")
         fired.append(
             _fire(
@@ -964,6 +1127,20 @@ def guidance(r: dict[str, Any], rules: dict[str, Any]) -> list[dict[str, Any]]:
                 cfg["buying_power"]["confidence"],
                 f"buying power used is {shown} of net liq, over the {bound} the VIX at "
                 f"{bp['vix']:.1f} allows: less room to adjust, and more to lose if the market gaps",
+            )
+        )
+
+    sb = all_bands.get("stress") or {}
+    if not off("portfolio.stress") and sb.get("inside") is False:
+        shown, bound = _apart(-sb["value"], -sb["low"], 0, "%")
+        short = " (partial: some names have no beta)" if sb["left_out"] else partial
+        fired.append(
+            _fire(
+                "portfolio.stress",
+                cfg["buying_power"]["cash"]["stress"]["confidence"],
+                f"{r['benchmark']} {sb['move']:+.0%} with IV up {sb['iv_shift'] * 100:.0f} points would lose "
+                f"${-sb['pnl']:,.0f}, {shown} of net liq, over the {bound} cap{short}",
+                _drivers(r, "bwd", 1.0),
             )
         )
 

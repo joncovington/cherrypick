@@ -12,8 +12,9 @@ range's edge is unbounded (a naked call), stated, never a number.
 
 Against the ruleset's candidate caps (`portfolio.candidates`): the worst case as a share of net liq
 (`per_trade_risk_pct`), the name's worst case with it (`notional_per_name_pct`, by the account's
-kind), and buying power in use with it (`max_buying_power_pct`). And the name's implied vol against
-its 30-day realised, shown beside each other: the one edge a short option has, never ranked on.
+kind), and buying power in use with it (the cash account's total cap, else `max_buying_power_pct`).
+And the name's implied vol against its 30-day realised, shown beside each other: the one edge a
+short option has, never ranked on.
 """
 
 from __future__ import annotations
@@ -202,6 +203,12 @@ def model(
     cands = (rules.get("portfolio") or {}).get("candidates") or {}
     per_name = cands.get("notional_per_name_pct") or {}
     name_cap = _f(per_name.get("cash" if basis == "cash" else "margin"))
+    # A cash account's total cap is the portfolio reading's (`portfolio.cash_bands`), not the
+    # candidates' margin-era fallback.
+    bp_band = ((account.get("portfolio") or {}).get("bands") or {}).get("buying_power") or {}
+    bp_cap = (
+        _f(bp_band.get("high")) if bp_band.get("basis") == "cash" else _f(cands.get("max_buying_power_pct"))
+    )
     name_before = None
     if before and before.get("curves") and before["curves"][-1]["pnl"]:
         name_before = max(0.0, -min(before["curves"][-1]["pnl"]))
@@ -223,7 +230,7 @@ def model(
         {
             "label": "buying power in use with it / net liq",
             "value": share(None if risk is None or used is None else used + risk),
-            "cap": _f(cands.get("max_buying_power_pct")),
+            "cap": bp_cap,
         },
     ]
     for c in caps:

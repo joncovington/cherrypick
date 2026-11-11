@@ -494,6 +494,15 @@ MUTANTS: tuple[Mutant, ...] = (
         attr="completeness",
         replacement="always_filled",
     ),
+    Mutant(
+        id="manage-cash-buying-power",
+        breaks="a cash account or IRA is judged by the margin VIX table, not its own caps",
+        package="manage",
+        tests=("tests/test_portfolio.py::test_a_cash_account_is_held_to_its_parts_not_the_vix_table",),
+        module="cherrypick.manage.portfolio",
+        attr="_cash_on",
+        replacement="always_false",
+    ),
 )
 
 BY_ID = {m.id: m for m in MUTANTS}

@@ -721,8 +721,19 @@ export interface ManagePortfolio {
   bands: {
     delta: ManageBand & { basis: string | null };
     theta: ManageBand;
-    /** Buying power used against a cap set by VIX; null on an evaluation from before it existed. */
-    buyingPower: (ManageBand & { vix: number | null }) | null;
+    /** Buying power used against its cap: set by VIX on margin (`basis` "vix"), a flat total on a cash
+     *  account or IRA (`basis` "cash"); null on an evaluation from before it existed. `basis` is null
+     *  on an evaluation from before the cash caps (the cap was then always VIX's). */
+    buyingPower: (ManageBand & { vix: number | null; basis: "cash" | "vix" | null }) | null;
+    /** A cash account's short puts at their strikes plus shares held, as a share of net liq; null on
+     *  margin. `puts` and `shares` in dollars. */
+    stockExposure: (ManageBand & { puts: number | null; shares: number | null }) | null;
+    /** A cash account's buying power held by everything but the short puts (their most they can lose);
+     *  null on margin. `dollars` in dollars. */
+    spreadRisk: (ManageBand & { dollars: number | null }) | null;
+    /** A cash account's stress: P&L as a share of net liq (signed, `low` the cap) at a benchmark `move`
+     *  with IVs up `ivShift`; null on margin. */
+    cashStress: (ManageBand & { move: number | null; ivShift: number | null; pnl: number | null; leftOut: string[] }) | null;
   } | null;
   guidance: ManageGuidance[];
   /** The lowest and highest confidence the evaluation's ruleset gives the portfolio rules (theta,

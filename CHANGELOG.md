@@ -11,6 +11,18 @@ beyond the latest release.
 
 ## [Unreleased]
 
+### What's new
+
+- **Buying power on a cash account or IRA.** Such an account holds each short put's full strike and
+  each spread's max loss, and neither grows when the market moves, so manage no longer holds it to the
+  VIX table written for margin. It is held to 80% in total (the rest kept free to sell after a
+  volatility spike), with short puts at their strikes plus shares under 65% of net liq and the other
+  trades' buying power under 35%. A new rule, `portfolio.stress`, flags SPY −20% with IV up 10 points
+  costing over 20% of net liq. The income list, the hedge and the trade model size against the same
+  caps, and Live → portfolio's room card lists each part. Margin accounts, and accounts of unknown kind,
+  keep the VIX table. The caps are in `portfolio.buying_power.cash`; `enabled: false` restores the VIX
+  table for a cash account.
+
 ## v0.12.1-beta — 2026-11-10 — moving delta
 The first beta: a pre-release to try before v0.12.1. `upgrade` and the version chip will not offer
 it, and a fresh install will not land on it; it is reached only by name. It adds a way to move the

@@ -357,6 +357,27 @@ def test_buying_power_is_held_under_the_vix_cap_and_past_it_nothing_fits():
     assert not over["fits"] and {r["binding"] for r in over["too_big"]} == {"buying power"}
 
 
+def _cash_book(stock=0.0, spread=0.0, used=0.0):
+    book = _book(used=used, bp_cap=0.80)
+    book["bands"]["stock_exposure"] = {"high": 0.65, "value": stock}
+    book["bands"]["spread_risk"] = {"high": 0.35, "value": spread}
+    return book
+
+
+def test_a_cash_account_holds_a_short_put_to_its_stock_cap_and_a_spread_to_its_spread_cap():
+    # Stock at 64.9%: one more put's strike (~$4,000 of $100,000) crosses 65%; a spread still fits.
+    full = _suggest({"AAA": _entry()}, _cash_book(stock=0.649, used=60_000.0))
+    assert _rows(full, "short_put")[0]["binding"] == "stock exposure"
+    assert _rows(full, "short_put")[0]["units"] == 0
+    assert _rows(full, "put_spread")[0]["units"] >= 1
+    # Spreads at 34.99%: the spread waits; the put is judged on its own caps.
+    spread_full = _suggest({"AAA": _entry()}, _cash_book(spread=0.3499, used=40_000.0))
+    assert _rows(spread_full, "put_spread")[0]["binding"] == "spread risk"
+    assert _rows(spread_full, "short_put")[0]["binding"] != "spread risk"
+    # Both are room caps: the candidate waits, sized as if there were room.
+    assert {"stock exposure", "spread risk"} <= candidates.ROOM_CAPS
+
+
 def _earnings_trade(tid, max_loss, unbounded=False):
     return {
         "trade_id": tid,

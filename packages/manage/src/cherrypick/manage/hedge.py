@@ -277,18 +277,28 @@ def _size(
     # buying-power cap; one that cannot fit a single unit says so rather than suggesting it anyway.
     net_liq, used = reading.get("net_liq"), reading.get("buying_power_used")
     cap = float(cfg["max_buying_power_pct"])
+    # A cash account's caps instead (`portfolio.cash_bands`): its total, and what spreads may hold.
+    bands = reading.get("bands") or {}
+    bp_band, spread = bands.get("buying_power") or {}, bands.get("spread_risk") or {}
+    if bp_band.get("basis") == "cash" and bp_band.get("high") is not None:
+        cap = float(bp_band["high"])
     # A debit spread is exempt from the cap (the user's call, 2026-10-18): its whole cost is its
     # worst case, and it only lowers the book's, so refusing it on buying power refuses the safer
     # trade. It is offered past the cap and says so (`past_cap`).
     if net_liq and used is not None and unit_max_loss > 0 and kind in ("credit", "collar"):
         room = cap * net_liq - used
+        what = f"{cap:.0%} buying-power cap"
+        if spread.get("high") is not None and spread.get("dollars") is not None:
+            spread_room = float(spread["high"]) * net_liq - float(spread["dollars"])
+            if spread_room < room:
+                room, what = spread_room, f"{float(spread['high']):.0%} spread-risk cap"
         fits = int(room // unit_max_loss)
         if fits < 1:
             return {
                 "kind": kind,
                 "structure": name,
-                "error": f"one spread ties up ${unit_max_loss:,.0f}, past the "
-                f"{float(cfg['max_buying_power_pct']):.0%} buying-power cap (${max(room, 0):,.0f} left)",
+                "error": f"one spread ties up ${unit_max_loss:,.0f}, past the {what} "
+                f"(${max(room, 0):,.0f} left)",
             }
         units = min(units, fits)
 
