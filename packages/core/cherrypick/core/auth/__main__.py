@@ -9,14 +9,18 @@ per-module tools use, so an orchestrator that invokes it never sees a bearer sec
 keyring *status* (present/absent) crosses process boundaries.
 
 Commands:
-    setup                       hidden-input entry of client_secret / refresh_token (blank keeps)
-    status                      {key: present} for the shared service — never values
+    setup [--login NAME]        hidden-input entry of client_secret / refresh_token (blank keeps)
+    status [--login NAME]       {key: present} for the login's service — never values
+    remove --login NAME         delete an extra login's entries (never `main`'s)
     migrate --from-service X    move a module service's secrets INTO the shared service and
                                 delete the module copies (the confirmed redesign decision), so
                                 one rotation point remains. Values never leave this process.
                                 A key whose shared value already exists and DIFFERS is skipped
                                 and reported, never silently clobbered (--overwrite to force);
                                 --keep-source copies without deleting.
+
+`--login` names a broker login (`logins.py`): absent or `main` is the shared service, any other name
+its own `cherrypick-broker.<name>` service with no fallback.
 """
 
 from __future__ import annotations
@@ -27,23 +31,39 @@ import json
 import sys
 
 from . import ALL_SECRETS, REQUIRED_SECRETS, SHARED_SERVICE, CredentialStore
+from . import logins as _logins
+
+
+def _login(args) -> str:
+    return _logins.check_login_name(getattr(args, "login", None))
 
 
 def cmd_setup(args) -> dict:
-    store = CredentialStore(SHARED_SERVICE)
+    login = _login(args)
+    store = _logins.login_store(login)
     for key in args.keys:
         value = getpass.getpass(f"{key} (input hidden, blank to keep current): ").strip()
         if value:
             store.set_secret(key, value)
-    return {"ok": True, "service": SHARED_SERVICE, "secrets": store.secrets_status()}
+    return {"ok": True, "login": login, "service": store.service_name, "secrets": store.secrets_status()}
 
 
-def cmd_status(_args) -> dict:
-    return {
-        "ok": True,
-        "service": SHARED_SERVICE,
-        "secrets": CredentialStore(SHARED_SERVICE).secrets_status(),
-    }
+def cmd_status(args) -> dict:
+    login = _login(args)
+    store = _logins.login_store(login)
+    return {"ok": True, "login": login, "service": store.service_name, "secrets": store.secrets_status()}
+
+
+def cmd_remove(args) -> dict:
+    """Delete an extra login's entries. `main` is refused: it is the shared login every module reads
+    through, and removing it is the privacy guide's deliberate per-service step, not a flag here."""
+    login = _login(args)
+    if _logins.is_default(login):
+        return {"ok": False, "login": login, "error": "refusing to remove the main login here"}
+    store = _logins.login_store(login)
+    for key in ALL_SECRETS:
+        store.delete_secret(key)
+    return {"ok": True, "login": login, "service": store.service_name, "secrets": store.secrets_status()}
 
 
 def cmd_migrate(args) -> dict:
@@ -81,14 +101,21 @@ def main(argv: list[str] | None = None) -> int:
     sub = ap.add_subparsers(dest="cmd", required=True)
     st = sub.add_parser("setup")
     st.add_argument("--keys", nargs="+", default=list(REQUIRED_SECRETS))
-    sub.add_parser("status")
+    st.add_argument("--login", default=None)
+    ss = sub.add_parser("status")
+    ss.add_argument("--login", default=None)
+    rm = sub.add_parser("remove")
+    rm.add_argument("--login", required=True)
     mg = sub.add_parser("migrate")
     mg.add_argument("--from-service", required=True)
     mg.add_argument("--keep-source", action="store_true")
     mg.add_argument("--overwrite", action="store_true")
     args = ap.parse_args(argv)
-    fn = {"setup": cmd_setup, "status": cmd_status, "migrate": cmd_migrate}[args.cmd]
-    result = fn(args)
+    fn = {"setup": cmd_setup, "status": cmd_status, "remove": cmd_remove, "migrate": cmd_migrate}[args.cmd]
+    try:
+        result = fn(args)
+    except _logins.LoginNameError as exc:
+        result = {"ok": False, "error": str(exc)}
     print(json.dumps(result))
     return 0 if result.get("ok") else 1
 
