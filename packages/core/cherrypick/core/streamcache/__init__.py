@@ -43,6 +43,15 @@ def cache_path(config: dict | None = None) -> Path:
     return _home.data_dir("marketdata") / CACHE_FILE
 
 
+def instance_cache_path(instance: str | None) -> Path:
+    """The cache a producer instance writes: the shared cache for `main` (or None), and
+    `<home>/data/marketdata/<instance>/stream_cache.db` for one on another broker login. One writer per
+    file: each instance owns its own, and its pid and stop files sit beside it. Never creates anything."""
+    if instance in (None, "", "main"):
+        return cache_path()
+    return _home.data_dir("marketdata") / str(instance) / CACHE_FILE
+
+
 # The schema every consumer shares. orb_ranges is written by packages/streamer's opening-range tracker
 # (`streamer/orb.py`) and read by MEIC. (A `stream_rest_cache` table was created here for MEIC's REST
 # sidecar until that was removed on 2026-10-18; an existing cache keeps the empty table, harmlessly.)
