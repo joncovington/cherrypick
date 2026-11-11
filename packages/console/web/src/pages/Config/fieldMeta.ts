@@ -28,7 +28,9 @@ export interface FieldMeta {
    * A single pointer here would not error on the others -- the toggles would just silently not be
    * offered, which reads as a module that has no arms.
    */
-  dynamic?: { under: string | string[]; child: string };
+  dynamic?: { under: string | string[]; child: string; labelKey?: string };
+  /* `labelKey`: `under` is an ARRAY of objects (the broker logins), edited by index and labelled by
+     each entry's `labelKey` field; an entry without one is skipped rather than shown as a number. */
   label: string;
   help?: string;
   type: FieldType;
@@ -111,6 +113,41 @@ export const FIELDS: FieldMeta[] = [
     type: "stringList",
     section: "modules",
     help: "Normally empty — the streamer subscribes to the union of every module's stream request.",
+  },
+  {
+    target: "orchestrator",
+    pointer: "/streamer/instances",
+    label: "Streamer per login",
+    help:
+      "Broker logins that run a quote producer of their own (each needs its secrets, and a name not in the broker " +
+      "logins is skipped). An account's held legs are quoted by its own login's producer. Starts or stops on " +
+      "`run.py supervise --restart`.",
+    type: "stringList",
+    section: "modules",
+  },
+  {
+    target: "orchestrator",
+    dynamic: { under: "/broker/logins", child: "/label", labelKey: "name" },
+    label: "Broker login label",
+    help: "Shown beside that login's accounts. The login's name is its keyring service and files, so it is not edited here.",
+    type: "string",
+    section: "modules",
+  },
+  {
+    target: "orchestrator",
+    dynamic: { under: "/broker/logins", child: "/manage", labelKey: "name" },
+    label: "Broker login managed",
+    help: "Its accounts join the daily position evaluation, and reconcile expects them to hold positions.",
+    type: "boolean",
+    section: "modules",
+  },
+  {
+    target: "orchestrator",
+    dynamic: { under: "/broker/logins", child: "/alerts", labelKey: "name" },
+    label: "Broker login order alerts",
+    help: "Runs account-alerts.<name> for that login. Takes effect on `run.py supervise --restart`.",
+    type: "boolean",
+    section: "modules",
   },
 
   // --- timing & cadence --------------------------------------------------------------------
@@ -544,16 +581,26 @@ export function resolveSection(
     const pointers: Array<{ pointer: string; label: string }> = [];
     if (meta.dynamic !== undefined) {
       const candidates = Array.isArray(meta.dynamic.under) ? meta.dynamic.under : [meta.dynamic.under];
+      const labelKey = meta.dynamic.labelKey;
       const under = candidates.find((p) => {
         const v = valueAt(model.doc, p);
-        return typeof v === "object" && v !== null && !Array.isArray(v);
+        return labelKey !== undefined ? Array.isArray(v) : typeof v === "object" && v !== null && !Array.isArray(v);
       });
       if (under === undefined) continue;
-      const container = valueAt(model.doc, under) as Record<string, unknown>;
-      for (const key of Object.keys(container)) {
-        // `_`-prefixed keys are the configs' docs-as-data, not entries.
-        if (key.startsWith("_")) continue;
-        pointers.push({ pointer: `${under}/${key}${meta.dynamic.child}`, label: key });
+      if (labelKey !== undefined) {
+        (valueAt(model.doc, under) as unknown[]).forEach((entry, i) => {
+          const name = typeof entry === "object" && entry !== null ? (entry as Record<string, unknown>)[labelKey] : undefined;
+          if (typeof name === "string" && name !== "") {
+            pointers.push({ pointer: `${under}/${i}${meta.dynamic!.child}`, label: name });
+          }
+        });
+      } else {
+        const container = valueAt(model.doc, under) as Record<string, unknown>;
+        for (const key of Object.keys(container)) {
+          // `_`-prefixed keys are the configs' docs-as-data, not entries.
+          if (key.startsWith("_")) continue;
+          pointers.push({ pointer: `${under}/${key}${meta.dynamic.child}`, label: key });
+        }
       }
     } else if (meta.pointer !== undefined) {
       pointers.push({ pointer: meta.pointer, label: meta.label });

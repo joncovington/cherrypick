@@ -103,6 +103,9 @@ only mutating HTTP surface — every dashboard here is GET-only. Two things make
   file, never echoed back. Every GET response carries only `secrets_status()` booleans, webhook
   set/not-set strings, and masked account numbers — the same values-never-cross-the-wire contract as
   `connect`/`account`, just enforced per-request instead of by keeping the orchestrator out of the loop.
+  A further broker login (`cherrypick-broker.<name>`) shows here read-only: its secrets set or not,
+  and each module's masked designation there. Its secrets go in only from a terminal (`connect
+  --login`), never through this page.
 
 Because it's a mutating local server, loopback binding alone isn't the whole story: every route checks
 the `Host` header (defeats DNS rebinding from a page open in your browser), and every POST additionally

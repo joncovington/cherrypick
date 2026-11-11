@@ -231,15 +231,18 @@ export function MeicLivePage() {
   const [view, setView] = useViewChoice("live-meic-open", "rows");
   const ics = d?.readiness?.ok ? d.readiness.openIcs : [];
   const shownIcs = (ic: string) => (d?.open ?? []).some((r) => icLineFor(r, [ic]) !== null);
+  // Another login's live account is `meic.<login>` in the execution record; the pair-by-pair card
+  // reads main's ledger against live-shadow, so it shows on main's account only.
+  const onMain = !d?.login || d.login === "main";
   const boxes: Box[] = [
     {
       id: "execution",
       kicker: "live vs paper ›",
       title: "Execution by week",
       tabs: [{ id: "weeks", label: "by week" }],
-      body: () => <ExecutionPanel module="meic" />,
+      body: () => <ExecutionPanel module={onMain ? "meic" : `meic.${d!.login}`} />,
     },
-    ...(gap.data && gap.data.rows.length > 0
+    ...(onMain && gap.data && gap.data.rows.length > 0
       ? [
           {
             id: "pairs",

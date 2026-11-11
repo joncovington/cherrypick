@@ -11,8 +11,11 @@ ledgers already record -- files only, no broker, nothing written.
   a module config committed during a session (the config-backup history, so at its cadence), and a
   manual close.
 - **The paper-live gap:** live net against the paper arm that mirrors it (meic `live-shadow`, bwb its
-  `live.arm`) since the first live order, split into missed entries, fill, costs and the rest, with
-  the largest named.
+  `live.arm`; a meic live account on another login, its own arm on its own symbol) since the first
+  live order, split into missed entries, fill, costs and the rest, with the largest named.
+
+Each live account is its own record: the module's name for the main login's, `meic.<login>` for each
+of meic's further live accounts.
 """
 
 from __future__ import annotations
@@ -380,38 +383,58 @@ def _records(path: Path | None, schema: str) -> list[dict]:
         conn.close()
 
 
+def _one(name: str, key: str, live_path: Path | None, paper_path: Path, mirror, symbol=None) -> dict:
+    """One live account's record. `key` is its live key (`meic`, `meic.<login>`), which its kill
+    history is filed under; the module's config commits count for every account it trades. `symbol`
+    narrows the paper mirror to the account's own instrument."""
+    if live_path is None or not live_path.exists():
+        return {"ok": False, "reason": "no live ledger"}
+    conn = _ro(live_path)
+    try:
+        orders = ORDER_READERS[name](conn)
+        closes = manual_closes(conn) if name == "meic" else []
+        working = working_sessions(conn, orders)
+    finally:
+        conn.close()
+    live = _records(live_path, SCHEMA[name])
+    paper = [
+        r
+        for r in _records(paper_path, SCHEMA[name])
+        if r.get("arm") == mirror and (symbol is None or str(r.get("symbol") or "").upper() == symbol)
+    ]
+    overrides = kill_clears(key) + config_commits(name) + closes
+    return {
+        "ok": True,
+        "mirror": mirror,
+        "weeks": weekly(orders, overrides, live),
+        "gap": gap(live, paper, working),
+        "window": window_trigger(live, paper),
+    }
+
+
 def run(cfg: dict) -> dict:
+    """{key: record}: each module's main live account under the module's name, as before, then each
+    MEIC live account on another broker login as `meic.<login>`, read from its own ledger
+    (`<data>/meic/<login>/meic_trades.db`). Such an account has no `live-shadow` of its own (that
+    follows main's `live` block), so its paper mirror is its own arm on paper, on its own symbol."""
     out = {}
     for name in MODULES:
         mcfg = (cfg.get("modules") or {}).get(name) or {}
-        live_path = cfgmod.live_db_path(mcfg, name)
-        if live_path is None or not live_path.exists():
-            out[name] = {"ok": False, "reason": "no live ledger"}
-            continue
-        conn = _ro(live_path)
-        try:
-            orders = ORDER_READERS[name](conn)
-            closes = manual_closes(conn) if name == "meic" else []
-            working = working_sessions(conn, orders)
-        finally:
-            conn.close()
-        live = _records(live_path, SCHEMA[name])
         try:
             mod_cfg = json.loads(core_home.config_path(name).read_text(encoding="utf-8"))
         except (OSError, ValueError):
             mod_cfg = {}
+        paper_path = cfgmod.paper_db_path(mcfg, name)
         mirror = MEIC_MIRROR if name == "meic" else (mod_cfg.get("live") or {}).get("arm")
-        paper = [
-            r for r in _records(cfgmod.paper_db_path(mcfg, name), SCHEMA[name]) if r.get("arm") == mirror
-        ]
-        overrides = kill_clears(name) + config_commits(name) + closes
-        out[name] = {
-            "ok": True,
-            "mirror": mirror,
-            "weeks": weekly(orders, overrides, live),
-            "gap": gap(live, paper, working),
-            "window": window_trigger(live, paper),
-        }
+        out[name] = _one(name, name, cfgmod.live_db_path(mcfg, name), paper_path, mirror)
+        if name != "meic":
+            continue
+        accounts = mod_cfg.get("live_accounts") if isinstance(mod_cfg.get("live_accounts"), dict) else {}
+        for login in cfgmod.live_accounts(cfg, name, mod_cfg):
+            entry = accounts.get(login) or {}
+            symbol = str(entry.get("symbol") or "").strip().upper() or None
+            ledger = core_home.data_dir(name) / login / f"{name}_trades.db"
+            out[f"{name}.{login}"] = _one(name, f"{name}.{login}", ledger, paper_path, entry.get("arm"), symbol)
     return out
 
 

@@ -272,7 +272,8 @@ optional per-module override layered over it. A second (or third) tastytrade log
 under its own service, `cherrypick-broker.<name>`, with no fallback to the main login's; `connect
 --login <name>` writes it and adds `<name>` to `broker.logins` in `config.json`, which holds names
 only. Reconcile, positions, the manage snapshot and the order alerts read every listed login;
-designation and orders stay on the main login. The nightly `suite-backup` holds none of these: a
+a module trades another login only through its own live account (meic
+`live_accounts.<name>`); every other order path stays on the main login. The nightly `suite-backup` holds none of these: a
 keyring entry, every login's included, is re-entered by hand after a restore on a new machine (`connect`,
 `connect --login <name>`). Slack/Discord webhooks and Telegram's bot token and chat ID live under the orchestrator's
 `cherrypick-notify` service (`secrets-set`). See [guardrails-and-modes.md](guardrails-and-modes.md).

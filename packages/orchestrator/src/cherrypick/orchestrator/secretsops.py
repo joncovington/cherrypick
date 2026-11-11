@@ -77,11 +77,42 @@ def status(cfg: dict[str, Any], store_factory=CredentialStore) -> dict[str, Any]
     return {
         "ok": True,
         "services": svc_out,
+        "logins": login_status(cfg, store_factory),
         "webhooks": notify_secrets.status(),
         # Rows the page may offer a URL field for; any other row (telegram) is status + delete only.
         "url_channels": list(notify_secrets.WEBHOOKS),
         "onboarding": accounts.onboarding_status(cfg, store_factory=store_factory),
     }
+
+
+def login_status(cfg: dict[str, Any], store_factory=CredentialStore) -> list[dict[str, Any]]:
+    """Each further broker login's keyring, READ-ONLY: `[{login, label, service, status, designated,
+    error}]`, `status` the login's own secrets set/not-set and `designated` {module: masked account}
+    for each module that trades a live account there. Never a write target: a login's secrets go in
+    from a terminal (`run.py connect --login <name>`), its designation through `account --login`,
+    each behind its own prompt. A login whose keyring cannot be read says so and the rest still show."""
+    from cherrypick.core.auth import REQUIRED_SECRETS
+    from cherrypick.core.auth import logins as _logins
+
+    modules = [n for n, m in (cfg.get("modules") or {}).items() if isinstance(m, dict)]
+    out = []
+    for entry in cfgmod.broker_logins(cfg)[1:]:
+        login = entry["name"]
+        service = _logins.login_service(login)
+        row: dict[str, Any] = {"login": login, "label": entry["label"], "service": service}
+        try:
+            store = store_factory(service)
+            row["status"] = {k: bool(store.get_secret(k)) for k in REQUIRED_SECRETS}
+            designated = {}
+            for module in modules:
+                if login in cfgmod.live_accounts(cfg, module):
+                    acct = store_factory(service, prefix=module).get_secret(ACCOUNT_NUMBER)
+                    designated[module] = mask_account(acct) if acct else None
+            row["designated"] = designated
+        except CredentialError as exc:
+            row["error"] = str(exc)
+        out.append(row)
+    return out
 
 
 def _store_for(cfg: dict[str, Any], service: str, store_factory=CredentialStore) -> CredentialStore:

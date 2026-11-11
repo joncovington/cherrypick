@@ -157,3 +157,56 @@ def test_the_live_check_keys_everything_by_its_live_account(monkeypatch):
     findings = watchdog._check_live("meic", SUITE["modules"]["meic"], NOW, False, login="margin")
     assert seen["argv"][-2:] == ["--login", "margin"]
     assert findings and all(f.key.startswith("meic.margin.") for f in findings), [f.key for f in findings]
+
+
+def _ic_ledger(path):
+    import sqlite3
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(path)
+    conn.execute(
+        "CREATE TABLE ic_trades (id INTEGER PRIMARY KEY, trade_date TEXT, created_at TEXT,"
+        " fill_confirmed_at TEXT, status TEXT, net_credit REAL, wing_width REAL, quantity INTEGER,"
+        " dollar_multiplier REAL)"
+    )
+    conn.execute(
+        "INSERT INTO ic_trades (trade_date, created_at, fill_confirmed_at, status, net_credit, wing_width,"
+        " quantity, dollar_multiplier) VALUES ('2026-11-11', '2026-11-11 12:30:00', '2026-11-11 12:31:00',"
+        " 'closed', 0.4, 2.0, 1, 100)"
+    )
+    conn.commit()
+    conn.close()
+
+
+def test_the_execution_record_reads_each_live_account_from_its_own_ledger(tmp_path, monkeypatch):
+    from cherrypick.orchestrator import execution as ex
+
+    monkeypatch.setenv("CHERRYPICK_HOME", str(tmp_path))
+    (tmp_path / "config").mkdir()
+    doc = {"live": {"arm": "pm-200"}, "live_accounts": {"margin": {"enabled": True, "arm": "pm-200", "symbol": "xsp"}}}
+    (tmp_path / "config" / "meic.json").write_text(json.dumps(doc), encoding="utf-8")
+    _ic_ledger(tmp_path / "data" / "meic" / "margin" / "meic_trades.db")
+    paper = [
+        {"arm": "pm-200", "symbol": "XSP", "session": "2026-11-11", "net_pnl": 10.0},
+        {"arm": "pm-200", "symbol": "SPX", "session": "2026-11-11", "net_pnl": 99.0},
+        {"arm": "live-shadow", "symbol": "SPX", "session": "2026-11-11", "net_pnl": 50.0},
+    ]
+    monkeypatch.setattr(ex, "_records", lambda path, schema: paper if path and "paper" in str(path) else [])
+    monkeypatch.setattr(ex, "config_commits", lambda module: [])
+    paper_db = str(tmp_path / "paper.db")
+    cfg = {**SUITE, "modules": {"meic": {"path": str(tmp_path), "paper": {"paper_db": paper_db}}}}
+    out = ex.run(cfg)
+    assert out["meic"] == {"ok": False, "reason": "no live ledger"}  # main has none: unchanged
+    m = out["meic.margin"]
+    assert m["ok"] and m["mirror"] == "pm-200"
+    assert [w["orders"] for w in m["weeks"]] == [1]
+    # Its own arm on its own symbol: never main's shadow, never the arm's SPX book.
+    assert m["window"]["baseline"] == 10.0
+
+
+def test_the_execution_record_has_no_extra_key_without_a_live_account(tmp_path, monkeypatch):
+    from cherrypick.orchestrator import execution as ex
+
+    monkeypatch.setenv("CHERRYPICK_HOME", str(tmp_path))
+    out = ex.run({"modules": {"meic": {"path": str(tmp_path)}}})
+    assert sorted(out) == ["bwb", "meic"]
