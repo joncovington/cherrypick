@@ -3,6 +3,7 @@ import path from "node:path";
 import Database from "better-sqlite3";
 import type { ManageLiveAccount, ManageLivePayload, ManageLiveTrade } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
+import { accountName } from "./accountName.js";
 import { num } from "./db.js";
 import { listSessions } from "./manage.js";
 
@@ -231,7 +232,7 @@ function liveAccount(a: Rec, fresh: Fresh): ManageLiveAccount {
   const netLiq = num(a["net_liq"]);
   const leftOut = arr(a["excluded"]).reduce<number>((s, e) => s + (num(rec(e)["legs"]) ?? 0), 0);
   return {
-    account: typeof a["account"] === "string" ? a["account"] : null,
+    account: accountName(a),
     bwd: total > 0 ? bwd : null,
     theta: total > 0 ? theta : null,
     legsWithGreeks: withGreeks,

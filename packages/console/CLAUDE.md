@@ -180,6 +180,10 @@ alone):
   - **Candles go to the feed directly** (`addCandleSubscription`/`removeCandleSubscription`): the
     SDK's `unsubscribe()` loops over every event type except Candle, so a candle subscribed through
     it can never be removed.
+- **An account is named with its broker login** (`readers/accountName.ts`): the masked number on the
+  main login, `<login> ****1234` on another (`broker.logins`). Every page keys an account by that
+  name, so a reader of manage's evaluation or marks never uses the bare masked number: two logins can
+  share a last four. The console's own broker session stays the main login's.
 - **Single source of broker auth.** The console reads THE suite credential (`production:client_secret`
   / `production:refresh_token` under the `cherrypick-broker` keyring service) through Python
   (`auth/suiteBridge.ts`), since Python-keyring targets aren't addressable from Node. **It never writes

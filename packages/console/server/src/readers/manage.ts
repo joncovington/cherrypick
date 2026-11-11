@@ -68,6 +68,7 @@ import type {
 } from "@console/shared";
 import { LEDGER_WINDOWS } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
+import { accountName } from "./accountName.js";
 import { num, readJson } from "./db.js";
 import { manageTimeSpreads } from "./timeSpreads.js";
 
@@ -1301,7 +1302,7 @@ function account(v: unknown, rules: Record<string, unknown>, lev: Leveraged = NO
     if (c !== null && ACTIONS.includes(k as ManageAction)) counts[k as ManageAction] = c;
   }
   return {
-    account: str(a["account"]),
+    account: accountName(a),
     netLiq: num(a["net_liq"]),
     maintenance: num(a["maintenance"]),
     buyingPower: num(a["buying_power"]),
@@ -1584,7 +1585,7 @@ export function readManageBandsHistory(config: ConsoleConfig): ManageBandsHistor
       const p = rec(rec(a)["portfolio"]);
       const bands = rec(p["bands"]);
       if (Object.keys(bands).length === 0) continue;
-      const account = str(rec(a)["account"]) ?? "account";
+      const account = accountName(rec(a)) ?? "account";
       const row: ManageBandsSession = {
         session,
         netLiq: num(p["net_liq"]),
