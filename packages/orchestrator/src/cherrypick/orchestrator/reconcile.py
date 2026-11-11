@@ -180,7 +180,7 @@ def _account_entry(
             "open_count": 0,
             "balances": {},
         }
-    positions = payload.get("positions") or []
+    positions, dust = drop_dust(payload.get("positions") or [])
     ai_argv = ["get_account_info"] + (["--account_number", str(number)] if number else [])
     ai = _tt(root, *ai_argv, tool=tool, **_login_kw(login))
     balances = _balances_summary(ai.get("balances")) if ai.get("ok") else {}
@@ -188,9 +188,34 @@ def _account_entry(
         **who,
         "open_positions": positions,
         "open_count": len(positions),
+        # Rows left out as dust (`drop_dust`): named, so a reader can see one was there.
+        "dust_dropped": [str(p.get("symbol") or "?") for p in dust],
         "balances": balances,
         "account_type": _account_type(ai),
     }
+
+
+# Below this many units a position is dust, not a holding: a crypto balance left at 3e-10 coins after
+# a sale is listed by the broker as an open position worth nothing, which no source can price and no
+# order can close. Options and shares are whole numbers, so they are never near it.
+DUST_QUANTITY = 1e-8
+
+
+def _quantity(row: dict[str, Any]) -> float | None:
+    try:
+        return abs(float(row.get("quantity")))
+    except (TypeError, ValueError):
+        return None
+
+
+def drop_dust(rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """(the positions held, the dust left out). A row whose quantity cannot be read is KEPT: unknown
+    is not zero, and dropping it would hide a real position."""
+    kept, dust = [], []
+    for row in rows:
+        qty = _quantity(row) if isinstance(row, dict) else None
+        (dust if qty is not None and qty < DUST_QUANTITY else kept).append(row)
+    return kept, dust
 
 
 def _account_type(info: dict[str, Any]) -> dict[str, Any]:

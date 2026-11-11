@@ -143,3 +143,35 @@ def test_broker_logins_skips_bad_and_duplicate_names():
     ]
     assert cfgmod.broker_logins({}) == [{"name": "main", "label": None, "manage": False}]
     assert cfgmod.login_argv("main") == [] and cfgmod.login_argv("margin") == ["--login", "margin"]
+
+
+def test_dust_is_left_out_and_named_and_an_unreadable_quantity_is_kept():
+    rows = [
+        {"symbol": "ETH/USD", "quantity": 3.12822465e-10},  # a crypto balance left after a sale
+        {"symbol": "ETH/USD", "quantity": "-0.000000001"},
+        {"symbol": "XYZ  261120P00050000", "quantity": 1},
+        {"symbol": "BTC/USD", "quantity": "0.0005"},  # a real fractional holding
+        {"symbol": "ABC", "quantity": None},  # unknown is not zero
+    ]
+    kept, dust = reconcile.drop_dust(rows)
+    assert [r["symbol"] for r in kept] == ["XYZ  261120P00050000", "BTC/USD", "ABC"]
+    assert [r["symbol"] for r in dust] == ["ETH/USD", "ETH/USD"]
+
+
+def test_an_account_holding_only_dust_is_flat(cfg, monkeypatch):
+    def run(root, argv, timeout=30):
+        argv = list(argv[2:])
+        cmd = argv[0]
+        if cmd == "list_accounts":
+            return _Proc({"ok": True, "accounts": [{"account_number": "5WU000001234"}]})
+        if cmd == "get_positions":
+            return _Proc({"ok": True, "positions": [{"symbol": "ETH/USD", "quantity": 3.1e-10}]})
+        return _Proc({"ok": True, "balances": {}})
+
+    monkeypatch.setattr(reconcile, "_designated_numbers", lambda cfg: set())
+    monkeypatch.setattr(reconcile.doctor, "_run", run)
+    monkeypatch.setattr(reconcile, "_paper_open_positions", lambda cfg: {})
+    result = reconcile.run(cfg)
+    [entry] = result["broker"]["accounts"]
+    assert entry["open_count"] == 0 and entry["dust_dropped"] == ["ETH/USD"]
+    assert result["verdict"] == reconcile.FLAT
