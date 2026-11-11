@@ -7053,6 +7053,117 @@ inputs (bars, dividends, statements) were read to place the target, as the targe
     rule and no dividend screen is built.
 - **Result:** not yet run.
 
+### 71. A LEAPS call as leverage: the call held, against the same dollars in a daily-reset fund or a financed delta
+
+*Source: the user, 2026-11-10, after a research review of LEAPS: "the leverage and capital efficiency
+is the point of the strategy. I don't have enough capital to purchase hundreds and hundreds of shares
+of most tickers." So the call is judged against what the same dollars buy in the same account, not
+against the shares its delta stands for. The user chose the rival (a fund at the call's leverage, the
+same dollars) and the four deep variants, then the two out-of-the-money arms when the fund was shown
+not to reach their leverage. **Look-alikes, said out loud.** Item 36 holds the same year-long long and
+reports it alone (`long-alone`, `long-alone-nostop`) against its short-call arms, never against
+another way to hold the leverage; it is no verdict on coverage. Item 64 judges defined-risk bullish
+structures against the entry delta in shares (this item's `financed` rival without the loan). The
+2026-10-04 shield study priced a held year-long long off a model. **Seen before declaring:** item 36's
+results file, including its `long-alone` rows, which are this item's `c90-45` call before any rival
+(licensed: the figures stay in the local result); and the fund check below on public bars. No rival of
+any arm has been computed on a quoted chain.*
+
+- **Question:** for a trader whose capital is the constraint, is a long-dated call the cheaper way to
+  hold leverage? Per dollar of debit, does the call held earn more, after costs, than the same dollars
+  in a fund that resets to the call's leverage every day, or (for the out-of-the-money calls) than the
+  same delta in shares financed at the bill rate?
+- **Where the edge would live:** **two prices of leverage.** A deep call charges its leverage as time
+  value: the implied financing in the strike and a bought put below it, with no dividend. A daily-reset
+  fund charges it as volatility decay (about L(L-1)σ²/2 a year), its fee and its swap spread, and pays
+  the dividend. The call's leverage drifts with its delta and its loss stops at the debit; the fund's
+  is fixed and has no floor but zero. Against the call: wide year-long quotes, paid at every roll, and
+  the variance premium is small at long maturities (Dew-Becker, Giglio, Le and Rodriguez, 2017), so the
+  call buys little that is cheap.
+- **Symbols and windows:** item 36's: XSP replayed on SPY, QQQ, IWM, GLD, SLV and SMH judged; AMZN,
+  TSLA, AMD, NVDA and PLTR reported (chosen for being popular now, so a hindsight sample). Design
+  2016-01-01 to 2021-12-31 (halves 2016-18 and 2019-21), holdout 2022-01-01 to 2026-10-23, read once
+  and only for an arm that passes the design.
+- **The arms**, one call at a time per symbol, entered the session after the last one closed, the strike
+  the listed call whose delta (solved from the mid at no rate and no yield, the broker's convention) is
+  nearest the target, the higher strike on a tie, refused when its quote fails pmcc's long spread bar:
+  - `c90-45`: 0.90 delta, pmcc's year-long expiry (the listed standard monthly nearest 360 DTE in
+    240-540), closed at 45 DTE;
+  - `c80-45`: 0.80 delta, the same expiry and close;
+  - `c90-120`: 0.90 delta, the same expiry, closed at 120 DTE (before theta speeds up; more rolls);
+  - `c90-2y`: 0.90 delta, the listed standard monthly nearest 730 DTE in 540-900, closed at 45 DTE;
+  - `c50-45` and `c30-45`: 0.50 and 0.30 delta, the year-long expiry, closed at 45 DTE.
+  The expiry is drawn from what the vendor listed on the month's first session (item 36's probes for
+  the year-long band; this item's own for the 2-year band). A close unquoted is retried next session;
+  a call held to expiry settles at intrinsic with the $5 event. No stop: the debit is the stop.
+- **The rivals**, each started every cycle with the call's own debit:
+  - `fund` (judged for the four deep arms): a daily-reset fund at the call's entry leverage (delta x
+    spot / price), on the underlying's total return, financed at the 3-month bill plus a spread, less a
+    0.95% fee, 0.02% of its value paid each way at entry and exit.
+  - `financed` (judged for `c50-45` and `c30-45`, whose 5-10x leverage no daily-reset fund survives):
+    the entry delta in shares, the debit as the margin and the rest borrowed at the bill rate, held
+    static for the cycle, dividends received.
+  - `shares` (reported only): the debit in shares, unlevered.
+- **The fund guard (public bars, gating):** the spread is fitted on 2011-2015, before either window,
+  to six real funds (SSO and UPRO on SPY, QLD and TQQQ on QQQ, UWM and TNA on IWM); a session where a
+  real fund sits more than 20 points from its multiple of the underlying is a split or a bad print the
+  files miss and is left out, counted. The three 2x funds must track the model within 1.5 points a
+  year in the design window. The 3x funds tracked with 2 to 3.5 points of noise of either sign, so they
+  gate through a handicap instead: a fund-rival arm must beat the fund credited with the model's largest
+  shortfall against any of the six in the design window. Read on 2026-11-10 (public data): spread
+  +0.55% over bills; design gaps SSO +0.4, QLD +0.8, UWM -0.8, UPRO +2.2, TQQQ +3.5, TNA -2.8 points;
+  handicap 2.8 points a year. UGL and AGQ (gold and silver at 2x) are reported.
+- **Measured:** per symbol, arm and week, the call's marked return on the debit less costs, minus the
+  rival's on the same debit, on the weeks the call was held at the previous Friday close and quoted at
+  both; the pooled equal-weight mean of the per-symbol means, as a percentage a year. Costs are pmcc's
+  fees and slippage over `tastytrade_costs`, in their own columns; 1.5x costs scales the call's fees and
+  slippage and the fund's trading cost. A cycle that holds a split is dropped and its weeks excluded,
+  for the call and every rival.
+- **Pass-or-fail rule**, per arm against its judged rival:
+  - design, all of: pooled mean above zero and above the handicap (fund-rival arms); its
+    stationary-bootstrap one-sided 95% lower bound above zero (block 8, 20,000 draws, seed 71), Holm
+    at 5% across the six arms on the bootstrap p; ahead on two thirds of judged funds; above zero in
+    each half; above zero at 1.5x costs; above zero with the best year removed;
+  - holdout, all of: pooled mean above zero and above the handicap; ahead on two thirds of judged
+    funds; above zero at 1.5x costs;
+  - a fund is judged in a window with 4 entries (3 for `c90-2y`), 120 priced weeks in the design or 90
+    in the holdout, and no more than 20% of weeks missing (a held call unquoted, or flat after a data
+    refusal); fewer than 4 judged funds is no verdict. The guards (fund, accounting, SPY's put-call
+    parity) must hold, or every arm is no verdict.
+- **Reported beside, never judged:** every rival for every arm and symbol, both windows; each one's
+  drawdown on the debit; the median entry leverage; the median financing rate implied by the call and
+  put at the call's strike, less the bill (indicative: parity is an inequality for American options);
+  results by year; refusals and counts; the stocks.
+- **Rival explanations, each with its check:**
+  - *A bull market flatters any leverage:* **Check:** every rival carries the same leverage on the same
+    dollars, so drift alone moves both sides; the halves and the 2022 holdout.
+  - *The fund model is wrong:* **Check:** the fund guard on real funds, the 2x gate and the 3x
+    handicap.
+  - *The call's capped loss is what wins, in one crash:* **Check:** best year removed; drawdowns and
+    the per-year table.
+  - *Costs:* **Check:** 1.5x costs; costs in their own columns.
+  - *One lucky arm of six:* **Check:** Holm across the six.
+  - *Hindsight names:* **Check:** the stocks are reported, never judged.
+- **Declared limits (B11):** one contract a symbol; the fund is a model, not a traded price; the
+  financed rival borrows at the bill rate, which no retail account does (a margin account pays more;
+  an IRA cannot borrow), so it flatters that rival; early exercise is not modelled; XSP's tax treatment
+  and the 2-year arm's long-term gains are not in the measure.
+- **Data:** the chain-path store (item 36's paths answer the four year-long arms; the 2-year listing
+  probes and the `c90-120` and `c90-2y` paths are fetched from this script's `listing` and `plan`
+  files), history.db (bars, splits, reconciled dividends, the leveraged funds' bars), Treasury's
+  3-month curve files from 2011; results under the backtest data directory
+  (`results/research/item71/`).
+- **Decides:**
+  - **A pass:** the call is the cheaper leverage on those funds; it informs how the user holds a
+    levered long in the IRA, and it names the long for the follow-up below. Nothing goes live from this
+    item.
+  - **A fail:** a leveraged fund (or, out of the money, a financed delta) holds the same exposure for
+    less; LEAPS are not proposed as stock replacement.
+  - **Next either way:** the user asked (2026-11-10) for a study of selling calls or puts against the
+    LEAPS once this one is done. Calls are item 36's arms on the chosen long; a put against a call is
+    a levered synthetic long, so in an IRA it is a put spread.
+- **Result:** not yet run.
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:

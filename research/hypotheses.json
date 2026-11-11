@@ -3166,6 +3166,61 @@
       "outcome": null,
       "retest": null,
       "retests": []
+    },
+    {
+      "id": 71,
+      "study": "item71",
+      "title": "A LEAPS call as leverage: the call held, against the same dollars in a daily-reset fund or a financed delta",
+      "status": "declared",
+      "legacy": false,
+      "setup": "leverage-choice",
+      "side": "bullish",
+      "structure": "long-call",
+      "window": "multi-day",
+      "measure": "per symbol, arm and week, the call's marked return on its debit less costs minus the judged rival's on the same debit (a daily-reset fund at the call's entry leverage for the four deep arms, the entry delta in shares financed at the bill for the 0.50 and 0.30 arms); pooled equal-weight mean of per-symbol means, % a year",
+      "expected": "no prior on the sign: the deep call's time value against the fund's volatility decay, fee and swap spread; the out-of-the-money calls expected to trail the financed delta",
+      "sample": "item 36's chains, XSP(SPY), QQQ, IWM, GLD, SLV, SMH judged, AMZN, TSLA, AMD, NVDA, PLTR reported; design 2016-01-01..2021-12-31, holdout 2022-01-01..2026-10-23 read once; a fund needs 4 entries (3 for the 2-year arm), 120 (design) or 90 (holdout) priced weeks and no more than 20% missing; < 4 judged funds = no verdict",
+      "rule": "design, per arm against its rival: pooled mean > 0 and > the fund handicap (fund-rival arms), stationary-bootstrap one-sided 95% lower bound > 0 (block 8, 20,000 draws, seed 71), Holm 0.05 across six arms; ahead on two thirds of judged funds; > 0 in each half, at 1.5x costs and with the best year removed; holdout pooled > 0 and > the handicap, two thirds ahead, > 0 at 1.5x costs; the fund, accounting and parity guards hold",
+      "mechanism": "two prices of leverage: the call's time value (implied financing and a bought put, no dividend) against a daily-reset fund's volatility decay, fee and swap spread; the variance premium is small at long maturities",
+      "rivals": [
+        {
+          "explanation": "a bull market flatters any leverage",
+          "check": "every rival carries the call's leverage on the same dollars; halves and the 2022 holdout"
+        },
+        {
+          "explanation": "the fund model is wrong",
+          "check": "fitted on 2011-2015 to six real leveraged funds; 2x pairs gate within 1.5 points; the 3x pairs' worst shortfall is credited to the fund"
+        },
+        {
+          "explanation": "the capped loss wins in one crash",
+          "check": "best year removed; drawdowns and the per-year table reported"
+        },
+        {
+          "explanation": "costs",
+          "check": "1.5x costs; fees and slippage in their own columns"
+        },
+        {
+          "explanation": "one lucky arm of six",
+          "check": "Holm at 5% across the six"
+        },
+        {
+          "explanation": "hindsight names",
+          "check": "the five stocks are reported, never judged"
+        }
+      ],
+      "pointer": "research/edge-hypotheses-plan.md#71-a-leaps-call-as-leverage-the-call-held-against-the-same-dollars-in-a-daily-reset-fund-or-a-financed-delta",
+      "scripts": [
+        "packages/backtest/scripts/leaps_leverage_item71.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_leaps_leverage_item71_script.py"
+      ],
+      "results": [
+        "{home}/data/backtest/results/research/item71/results.json"
+      ],
+      "outcome": null,
+      "retest": null,
+      "retests": []
     }
   ],
   "rule_changes": []
