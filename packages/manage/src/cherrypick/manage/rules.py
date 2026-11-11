@@ -405,12 +405,34 @@ DEFAULT_RULES: dict[str, Any] = {
             "max_loss_pct_nlv": 0.10,
             "confidence": 30,
         },
-        # Buying power used against a ceiling that rises with VIX: [VIX under, cap], the last bound
-        # null for "anything above". The common retail table (more room when premium is rich).
+        # Buying power used against a ceiling. On margin it rises with VIX: [VIX under, cap], the last
+        # bound null for "anything above". The common retail table (more room when premium is rich),
+        # written for margin, where a short put holds a fraction of its notional and the hold grows as
+        # the stock falls.
+        #
+        # A cash account or IRA (`cash`) holds every short put's full strike and every spread's max
+        # loss, and neither grows when the market moves, so buying power there is already the worst
+        # case. It is judged in three parts instead of one:
+        # - `max_pct_nlv`: buying power used in total, the rest kept free to sell after a vol spike;
+        # - `stock_exposure_pct_nlv`: short puts at their strikes plus shares held, which is the
+        #   stock the account owns or can be made to own (an allocation choice, not a margin one);
+        # - `spread_risk_pct_nlv`: the buying power everything else holds, its most it can lose;
+        # and a stress cap: the benchmark moved by `stress.move` (each name by beta x move) with IVs up
+        # `stress.iv_shift` (term-weighted), losing over `stress.max_loss_pct_nlv` of net liq is a
+        # REVIEW (`portfolio.stress`). The figures are ours (2026-11-10), with no published evidence.
+        # `enabled: false` judges a cash account by the VIX table too.
         "buying_power": {
             "enabled": True,
             "vix_steps": [[15, 0.25], [20, 0.30], [30, 0.35], [40, 0.40], [None, 0.50]],
             "confidence": 40,
+            "cash": {
+                "enabled": True,
+                "max_pct_nlv": 0.80,
+                "stock_exposure_pct_nlv": 0.65,
+                "spread_risk_pct_nlv": 0.35,
+                "confidence": 40,
+                "stress": {"move": -0.20, "iv_shift": 0.10, "max_loss_pct_nlv": 0.20, "confidence": 30},
+            },
         },
         # The risk matrix (benchmark moves x IV shifts in vol points, time held still) and the risk
         # graph (`graph` = [from, to, step] of benchmark moves, now and at the nearest expiry).
@@ -601,6 +623,7 @@ RULE_IDS = (
     "portfolio.breakeven",
     "portfolio.concentration",
     "portfolio.buying_power",
+    "portfolio.stress",
     "portfolio.earnings_exposure",
     "portfolio.expiry_concentration",
     "portfolio.vol_expansion",

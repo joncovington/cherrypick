@@ -838,7 +838,7 @@ and what manage left out). It draws nothing for an evaluation written before it 
 account that is not the broker tool's designated one. **Bands over time** (
 `pages/Live/BandsHistory.tsx`, `GET /api/manage/bands` → `readManageBandsHistory`) is the "over time"
 lightbox on the income, direction and room cards: every stored evaluation's delta, theta and buying-power reading against that session's
-own band (the delta band moves with theta, the buying-power cap with the VIX), amber from manage's
+own band (the delta band moves with theta, the buying-power cap with the VIX on margin), amber from manage's
 flag only; one point per session, its last run. Both tabs' header shows manage's
 `pre_open` as a red line (a snapshot taken before 09:30 ET reads yesterday's close and leaves today's
 expiring legs unpriced). The contribution cards sum the names past their five into one "others"
@@ -862,7 +862,8 @@ by the evaluated legs' marks; cash and the left-out 0DTE legs are the snapshot's
 stream is not carrying named in red: either figure is a dash while one is. While manage's evaluation
 is `early` (marks from 09:30-10:00 ET) the page says so and every action chip reads "held until
 10:00", the action in its title (`VerdictsHeld`). `ScenarioCards.tsx` adds a
-buying-power dial (the cap is manage's, set by VIX), the expiry ladder with the earnings exposure,
+buying-power dial (the cap is manage's: set by VIX on margin, a flat total on a cash account or IRA,
+whose stock, spread and stress parts the room card lists, each with its chip), the expiry ladder with the earnings exposure,
 the risk graph and the risk matrix. Every figure is manage's repricing; the matrix states which IV
 weighting manage used, and a card manage wrote no reading for is not drawn. The matrix has a horizon
 toggle (now, +7, +21 days: manage's `horizons`; it opens on +7, or the first when there is no 7-day

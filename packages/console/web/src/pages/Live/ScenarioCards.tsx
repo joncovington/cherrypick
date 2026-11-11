@@ -40,10 +40,17 @@ export function BuyingPowerCard({ p }: { p: ManagePortfolio }) {
       ) : (
         <p className="muted">no VIX reading, so no cap to set it against</p>
       )}
-      <p className="muted pf-caption">
-        {band?.vix != null ? `VIX ${band.vix.toFixed(1)} allows up to ${band.high === null ? "—" : `${Math.round(band.high * 100)}%`}` : "VIX unknown"} · the cap
-        rises with VIX, since premium is richer · less room means less to adjust with when the market moves
-      </p>
+      {band?.basis === "cash" ? (
+        <p className="muted pf-caption">
+          cash account: up to {band.high === null ? "—" : `${Math.round(band.high * 100)}%`} in use · its holds never grow when the market moves, so the
+          rest is kept free to sell after a volatility spike
+        </p>
+      ) : (
+        <p className="muted pf-caption">
+          {band?.vix != null ? `VIX ${band.vix.toFixed(1)} allows up to ${band.high === null ? "—" : `${Math.round(band.high * 100)}%`}` : "VIX unknown"} · the
+          cap rises with VIX, since premium is richer · less room means less to adjust with when the market moves
+        </p>
+      )}
     </Card>
   );
 }

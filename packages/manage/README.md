@@ -399,7 +399,8 @@ what drives it:
 | `portfolio.delta` | BWD from −0.5× to +0.75× theta (SPY shares), leaning long; ±0.5% of net liq per 1% move when theta is not positive | retail options education ("BWD within about half the theta") | None |
 | `portfolio.breakeven` | short gamma, with a break-even move under SPY's implied one-day move | option theory: theta = −½ Γ S² σ² | The identity is exact; whether acting on it pays is untested |
 | `portfolio.concentration` | one name over 25% of gross theta or gross BWD | convention | None |
-| `portfolio.buying_power` | buying power used over a cap set by VIX: 25% under 15, 30% under 20, 35% under 30, 40% under 40, 50% above | retail options education (more room when premium is rich) | None. A book using 53% against a 30% cap at VIX 20 is the case it flags |
+| `portfolio.buying_power` | on margin (or an account of unknown kind), buying power used over a cap set by VIX: 25% under 15, 30% under 20, 35% under 30, 40% under 40, 50% above. On a cash account or IRA, any of three: buying power used over 80% in total; short puts at their strikes plus shares held over 65% of net liq (`stock_exposure`); the buying power everything else holds over 35% (`spread_risk`). The reason names each part over | margin: retail options education (more room when premium is rich). Cash: ours. A cash account holds a short put's full strike and a spread's max loss, and neither grows when the market moves, so its buying power is already the worst case and the VIX table, written for margin, is several times stricter there | None. Fully collateralised index put-writing (Cboe PUT, 1986 on) matched the S&P's return with about two thirds of its volatility, a −33% worst drawdown against −51%: put notional is stock exposure, an allocation choice. Single names are less diversified than that index |
+| `portfolio.stress` | cash account or IRA only: SPY −20% (each name by beta) with IVs up 10 points, term-weighted, losing over 20% of net liq; the drivers are the names longest beta-weighted delta | ours: with the VIX table gone, a fall with vol up is the real ceiling | None |
 | `portfolio.vol_expansion` | SPY −5% with IVs up 10 points (term-weighted, time held still) losing over 10% of net liq; the drivers are the names shortest 30-day vega | ours: a spike moves price and vol together, and the stress line holds IV still | None. Vol is easy to forecast and hard to profit from, but the expansion half cannot be timed, so this bounds it rather than predicting it |
 
 Each band is written into the reading with the figure's place in it (`bands`), so the console draws
@@ -535,7 +536,9 @@ that clears every cap, all scaled by net liq:
 |---|---|
 | per-trade risk: a spread's max loss, a short put's stress loss (the name's 1st-percentile move over the holding period, at expiry, less the credit) | 3% of net liq |
 | a short put's notional (strike × 100) per name | 25% of net liq in a cash account or IRA, 50% on margin |
-| buying power used after the trade | the VIX-scaled cap (`bands.buying_power`), else 50% |
+| buying power used after the trade | the reading's cap (`bands.buying_power`: VIX-scaled on margin, 80% on a cash account), else 50% |
+| cash account: a short put's strike added to short puts and shares held | 65% of net liq (`bands.stock_exposure`) |
+| cash account: a spread's max loss added to what the other trades hold | 35% of net liq (`bands.spread_risk`) |
 | beta-weighted delta | stays inside its band, or moves toward it |
 | theta | stays under the band's ceiling |
 | one name's theta | under 25% of the theta the account may carry |
@@ -565,7 +568,7 @@ and an unknown date stays shown, marked.
 power, the theta ceiling, or an expiry whose trades already hold more downside than
 `portfolio.expiry_concentration` allows (`ROOM_CAPS`), not a cap on the trade itself -- is also listed as
 `waiting`, sized as if the book had room (`if_room`). Each carries where taking it today would leave
-the account: buying power used after it, graded against the VIX-scaled cap as `ok`, `over` (within
+the account: buying power used after it, graded against the reading's cap as `ok`, `over` (within
 `bp_warn_over`, 10 points, of it) or `far_over`, and the book's theta after it against the ceiling.
 It is the queue that opens as positions close, never a recommendation to run past a cap. A trade
 that waits is listed once; its narrowed version waits only when it does not.

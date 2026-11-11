@@ -70,7 +70,8 @@ the evaluation used.
 The same evaluation read as one book, in six questions: what needs my attention (portfolio guidance
 and the account tiles), am I being paid enough (the income dial and where the theta comes from), which
 way am I leaning (the direction dial and where the delta comes from), what happens if it moves (a
-stress table and graph), do I have room to act (buying power against a limit that rises with VIX), and
+stress table and graph), do I have room to act (buying power against a limit that rises with VIX on
+margin; on a cash account or IRA a flat total, with its stock, spread and stress parts listed), and
 what could I add. A card compares the suite's greeks with the broker's own.
 
 The direction card's **ideas** button answers "how do I move delta without closing anything?". It

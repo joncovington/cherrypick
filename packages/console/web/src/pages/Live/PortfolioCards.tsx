@@ -470,6 +470,7 @@ const GUIDANCE_TOPIC: Record<string, string> = {
   "portfolio.delta": "delta",
   "portfolio.breakeven": "break-even",
   "portfolio.buying_power": "buying power",
+  "portfolio.stress": "stress",
   "portfolio.concentration": "concentration",
   "portfolio.earnings_exposure": "earnings",
   "portfolio.expiry_concentration": "one expiry",
@@ -645,12 +646,43 @@ export function HedgeBody({ p }: { p: ManagePortfolio }) {
  * Room to act: buying power used against its VIX-scaled cap, with your limits stacked under it, each
  * at its value, its limit and manage's state. The full list and the ruleset open from it.
  */
+/** A cash account's parts of buying power, each a row: its value against its cap, and its chip. */
+export function cashRoomRows(p: ManagePortfolio): Array<{ label: string; value: string; inside: boolean | null }> {
+  const b = p.bands;
+  if (!b || b.buyingPower?.basis !== "cash") return [];
+  const share = (v: number | null) => (v === null ? "—" : `${Math.round(v * 100)}%`);
+  const rows: Array<{ label: string; value: string; inside: boolean | null }> = [];
+  if (b.stockExposure) {
+    rows.push({ label: "stock: short puts at strike + shares", value: `${share(b.stockExposure.value)} / ${share(b.stockExposure.high)}`, inside: b.stockExposure.inside });
+  }
+  if (b.spreadRisk) {
+    rows.push({ label: "spreads' most they can lose", value: `${share(b.spreadRisk.value)} / ${share(b.spreadRisk.high)}`, inside: b.spreadRisk.inside });
+  }
+  const s = b.cashStress;
+  if (s) {
+    const shock = s.move === null ? "fall" : `${p.benchmark ?? "SPY"} ${s.move > 0 ? "+" : "−"}${Math.abs(Math.round(s.move * 100))}%`;
+    const vol = s.ivShift === null ? "" : `, IV +${Math.round(s.ivShift * 100)}`;
+    rows.push({ label: `${shock}${vol}`, value: `${share(s.value)} / ${share(s.low)}`, inside: s.inside });
+  }
+  return rows;
+}
+
+/** The card's chip: on a cash account every part must be inside, and any part outside puts it out. */
+function roomInside(p: ManagePortfolio): boolean | null {
+  const band = p.bands?.buyingPower ?? null;
+  if (!band) return null;
+  const all = [band.inside, ...cashRoomRows(p).map((r) => r.inside)];
+  if (all.includes(false)) return false;
+  return all.includes(null) ? null : true;
+}
+
 export function RoomCard({ p, limits }: { p: ManagePortfolio; limits: ManageLimits | null }) {
   const band = p.bands?.buyingPower ?? null;
+  const cash = band?.basis === "cash";
   const short = (v: number) => `${Math.round(v)}`;
   const rows = (limits?.rows ?? []).filter((r) => r.id !== "buying_power");
   return (
-    <Card title="room to act" className="pf-cq" help={ROOM_HELP} controls={band && <BandChip inside={band.inside} />}>
+    <Card title="room to act" className="pf-cq" help={ROOM_HELP} controls={band && <BandChip inside={roomInside(p)} />}>
       <DialBeside
         dial={
           band && band.high !== null ? (
@@ -665,9 +697,17 @@ export function RoomCard({ p, limits }: { p: ManagePortfolio; limits: ManageLimi
             <span>buying power cap</span>
             <span className="num">
               {band?.high == null ? "—" : `${Math.round(band.high * 100)}%`}
-              {band?.vix != null ? ` · VIX ${band.vix.toFixed(1)}` : ""}
+              {cash ? " · cash account" : band?.vix != null ? ` · VIX ${band.vix.toFixed(1)}` : ""}
             </span>
           </li>
+          {cashRoomRows(p).map((r) => (
+            <li key={r.label}>
+              <span>{r.label}</span>
+              <span className="num">
+                {r.value} <BandChip inside={r.inside} />
+              </span>
+            </li>
+          ))}
           {rows.map((r) => (
             <li key={r.id}>
               <span>{r.label}</span>
@@ -810,8 +850,13 @@ export const ROOM_HELP: CardHelpContent = {
     <>
       <HelpSection title="The dial">
         <p>
-          Buying power used as a share of net liq, against a cap that rises with VIX, since premium is richer then. Less room means less
-          to adjust with when the market moves.
+          Buying power used as a share of net liq. On margin the cap rises with VIX, since premium is richer then, and less room means
+          less to adjust with when the market moves.
+        </p>
+        <p>
+          A cash account or IRA holds each short put's full strike and each spread's most it can lose, and neither grows when the market
+          moves, so it has a flat total cap that keeps cash free to sell after a volatility spike. It is judged in parts beside the dial:
+          the stock the short puts and shares amount to, what the spreads can lose, and a fall with volatility up.
         </p>
       </HelpSection>
       <HelpSection title="Your limits">

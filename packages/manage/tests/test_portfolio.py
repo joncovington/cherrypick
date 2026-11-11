@@ -480,6 +480,7 @@ def test_buying_power_over_its_vix_cap_fires_and_without_vix_there_is_no_band():
         "value": 0.4,
         "vix": 19.99,
         "inside": False,
+        "basis": "vix",
     }
     assert "portfolio.buying_power" in _rules_fired(over)
     calm = _read(trades, _metrics(XYZ=(1.0, 0.9)) | {"VIX": {"last": "45"}})
@@ -489,6 +490,121 @@ def test_buying_power_over_its_vix_cap_fires_and_without_vix_there_is_no_band():
     blind = _read(trades, _metrics(XYZ=(1.0, 0.9)))
     assert blind["bands"]["buying_power"]["high"] is None and blind["bands"]["buying_power"]["inside"] is None
     assert "portfolio.buying_power" not in _rules_fired(blind)
+
+
+# --------------------------------------------------------------------------- a cash account's buying power
+IRA = {"margin_or_cash": "Cash", "type_name": "Traditional IRA"}
+
+
+def _costed(leg, cost):
+    return {**leg, "cost": cost}
+
+
+@pytest.mark.parametrize(
+    ("kind", "basis"),
+    [
+        (IRA, "cash"),
+        ({"margin_or_cash": "Cash", "type_name": "Individual"}, "cash"),
+        ({"margin_or_cash": "Margin", "type_name": "Roth IRA"}, "cash"),
+        ({"margin_or_cash": "Margin", "type_name": "Individual"}, "margin"),
+        (None, "margin"),  # unknown keeps the stricter VIX table
+    ],
+)
+def test_the_buying_power_basis_follows_the_account_kind(kind, basis):
+    assert portfolio.bp_basis(kind) == basis
+
+
+def test_secured_counts_uncovered_short_puts_at_their_strikes_and_shares_at_spot():
+    trades = [
+        # a cash-secured put: $4,500 of stock at the strike, holding $4,500 less the $120 taken
+        _trade("AAA", 50.0, [_costed(_leg(-1, "P", 45), -120.0)]),
+        # a put spread: its long covers its short, so none of it is stock
+        _trade("BBB", 50.0, [_costed(_leg(-1, "P", 45), -100.0), _costed(_leg(1, "P", 40), 40.0)]),
+        # one long under two shorts: it covers the lower short, the 48 stays secured
+        _trade(
+            "CCC",
+            50.0,
+            [
+                _costed(_leg(1, "P", 35), 30.0),
+                _costed(_leg(-1, "P", 40), -60.0),
+                _costed(_leg(-1, "P", 48), -200.0),
+            ],
+        ),
+        # a short 2 at one strike over one long: one of the two stays secured
+        _trade("EEE", 50.0, [_costed(_leg(1, "P", 50), 300.0), _costed(_leg(-2, "P", 46), -400.0)]),
+        # shares, and a covered call on them adds no stock
+        _trade("DDD", 20.0, [_leg(200), _costed(_leg(-2, "C", 22), -60.0)]),
+    ]
+    s = portfolio.secured(trades)
+    assert s["puts"] == 4_500.0 + 4_800.0 + 4_600.0
+    assert s["puts_collateral"] == (4_500.0 - 120.0) + (4_800.0 - 200.0) + (4_600.0 - 200.0)
+    assert s["shares"] == 4_000.0 and s["left_out"] == []
+
+
+def test_a_short_put_with_no_cost_is_named_never_counted_as_zero():
+    s = portfolio.secured([_trade("AAA", 50.0, [_leg(-1, "P", 45)])])
+    assert s["puts"] == 0.0 and s["left_out"] == ["-1 45P"]
+
+
+def _cash_read(trades, used, metrics, rules=RULES, kind=IRA):
+    bal = {"net_liquidating_value": "10000", "used_derivative_buying_power": str(used)}
+    return portfolio.reading(trades, metrics, "SPY", bal, kind, rules)
+
+
+def test_a_cash_account_is_held_to_its_parts_not_the_vix_table():
+    # 60% used at VIX 19.99: over the margin table's 30%, inside the cash total of 80%.
+    trades = [_trade("XYZ", 50.0, [_costed(_leg(-1, "P", 45, dte=40), -150.0)])]
+    m = _metrics(XYZ=(1.0, 0.9)) | {"VIX": {"last": "19.99"}}
+    r = _cash_read(trades, 6_000, m)
+    b = r["bands"]
+    assert b["buying_power"]["basis"] == "cash" and b["buying_power"]["high"] == 0.80
+    assert b["buying_power"]["inside"] is True
+    assert b["stock_exposure"]["value"] == 0.45 and b["stock_exposure"]["inside"] is True
+    # what the put does not hold of the $6,000 is the spreads' and the rest's: 6,000 - (4,500 - 150)
+    assert b["spread_risk"]["dollars"] == 1_650.0 and b["spread_risk"]["inside"] is True
+    assert "portfolio.buying_power" not in _rules_fired(r)
+    margin = _cash_read(trades, 6_000, m, kind={"margin_or_cash": "Margin", "type_name": "Individual"})
+    assert margin["bands"]["buying_power"]["basis"] == "vix"
+    assert margin["bands"]["stock_exposure"] is None and margin["bands"]["stress"] is None
+    assert "portfolio.buying_power" in _rules_fired(margin)
+
+
+def test_a_cash_account_over_its_stock_or_spread_share_fires_and_names_which():
+    trades = [
+        _trade("XYZ", 50.0, [_costed(_leg(-1, "P", 45, dte=40), -150.0)]),
+        _trade("QQQ", 50.0, [_costed(_leg(-1, "P", 48, dte=40), -200.0)]),
+    ]
+    m = _metrics(XYZ=(1.0, 0.9), QQQ=(1.0, 0.9)) | {"VIX": {"last": "19.99"}}
+    r = _cash_read(trades, 9_000, m)  # $9,300 of puts at their strikes: 93% in stock
+    assert r["bands"]["stock_exposure"]["inside"] is False
+    (g,) = [g for g in r["guidance"] if g["rule"] == "portfolio.buying_power"]
+    assert "in stock, over 65%" in g["reason"] and "spreads" not in g["reason"]
+    spreads = [
+        _trade("XYZ", 50.0, [_costed(_leg(-1, "P", 45, dte=40), -100.0), _costed(_leg(1, "P", 40), 40.0)])
+    ]
+    r = _cash_read(spreads, 4_000, m)  # spreads hold 40%
+    (g,) = [g for g in r["guidance"] if g["rule"] == "portfolio.buying_power"]
+    assert "spreads and the other trades hold $4,000, 40% of net liq" in g["reason"]
+    assert "in stock" not in g["reason"]
+
+
+def test_the_cash_stress_fires_when_a_fall_with_vol_up_costs_over_its_cap():
+    # 300 shares of a beta-2 name on $10,000: SPY -20% takes it down 40%, a $6,000 loss.
+    heavy = _cash_read([_trade("XYZ", 50.0, [_leg(300)])], 0, _metrics(XYZ=(2.0, 0.9)))
+    st = heavy["bands"]["stress"]
+    assert st["pnl"] == pytest.approx(-6_000.0) and st["inside"] is False
+    assert "portfolio.stress" in _rules_fired(heavy)
+    light = _cash_read([_trade("XYZ", 50.0, [_leg(10)])], 0, _metrics(XYZ=(2.0, 0.9)))
+    assert light["bands"]["stress"]["inside"] is True and "portfolio.stress" not in _rules_fired(light)
+
+
+def test_the_cash_caps_switched_off_fall_back_to_the_vix_table():
+    rules = copy.deepcopy(RULES)
+    rules["portfolio"]["buying_power"]["cash"]["enabled"] = False
+    r = _cash_read(
+        [_trade("XYZ", 50.0, [_leg(10)])], 6_000, _metrics(XYZ=(1.0, 0.9)) | {"VIX": {"last": "19.99"}}, rules
+    )
+    assert r["bands"]["buying_power"]["basis"] == "vix" and r["bands"]["stock_exposure"] is None
 
 
 # --------------------------------------------------------------------------- against the broker's model

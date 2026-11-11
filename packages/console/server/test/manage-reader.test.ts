@@ -323,6 +323,28 @@ describe("readManage", () => {
     expect(p.ideas[1]!.effect).toBeNull();
   });
 
+  it("passes a cash account's buying-power parts through", () => {
+    const doc = evalDoc("2026-10-19");
+    const acct = (doc["accounts"] as Array<Record<string, unknown>>)[0]!;
+    acct["portfolio"] = {
+      benchmark: "SPY",
+      bands: {
+        delta: { low: -20, high: 20, basis: "net_liq", value: 1, inside: true },
+        theta: { low: 0.001, high: 0.003, value: 0.002, inside: true },
+        buying_power: { low: 0, high: 0.8, value: 0.25, vix: 19.5, inside: true, basis: "cash" },
+        stock_exposure: { low: 0, high: 0.65, value: 0.3, puts: 3000, shares: 1000, left_out: [], inside: true },
+        spread_risk: { low: 0, high: 0.35, value: 0.25, dollars: 2500, inside: true },
+        stress: { low: -0.2, high: null, value: -0.17, move: -0.2, iv_shift: 0.1, pnl: -1700, left_out: ["ABC"], inside: true },
+      },
+    };
+    fs.writeFileSync(path.join(tmp, "manage", "eval-2026-10-19.json"), JSON.stringify(doc));
+    const b = readManage(config, "2026-10-19").accounts[0]!.portfolio!.bands!;
+    expect(b.buyingPower).toEqual({ low: 0, high: 0.8, value: 0.25, vix: 19.5, inside: true, basis: "cash" });
+    expect(b.stockExposure).toEqual({ low: 0, high: 0.65, value: 0.3, inside: true, puts: 3000, shares: 1000 });
+    expect(b.spreadRisk).toEqual({ low: 0, high: 0.35, value: 0.25, inside: true, dollars: 2500 });
+    expect(b.cashStress).toEqual({ low: -0.2, high: null, value: -0.17, inside: true, move: -0.2, ivShift: 0.1, pnl: -1700, leftOut: ["ABC"] });
+  });
+
   it("passes the portfolio reading through, and an older evaluation has none", () => {
     const doc = evalDoc("2026-10-19");
     const acct = (doc["accounts"] as Array<Record<string, unknown>>)[0]!;
@@ -466,7 +488,10 @@ describe("readManage", () => {
     expect(p.realisedMove).toBeNull();
     expect(p.hedges).toBeNull();
     expect(p.netLiq).toBe(14273.72);
-    expect(p.bands?.buyingPower).toEqual({ low: 0, high: 0.3, value: 0.534, vix: 19.99, inside: false });
+    // An evaluation from before the cash caps: no basis, and no cash parts.
+    expect(p.bands?.buyingPower).toEqual({ low: 0, high: 0.3, value: 0.534, vix: 19.99, inside: false, basis: null });
+    expect(p.bands?.stockExposure).toBeNull();
+    expect(p.bands?.cashStress).toBeNull();
     expect(p.scenarios?.ivShiftWeighting).toBe("term");
     expect(p.scenarios?.matrix[0]).toEqual({ ivShift: 0.05, pnl: [-1437, -48, null] }); // a missing cell stays null
     expect(p.scenarios?.graph.curves[0]).toEqual({ horizonDays: 4, pnl: [-2533, 537, -4] });

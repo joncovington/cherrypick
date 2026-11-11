@@ -227,8 +227,12 @@ compare trades with each other. It is not a forecast.
   Early assignment is real, though often it does not happen.
 - **Buying-power bands.** A list trade is judged against your account. A short put may not exceed 25% of
   net liquidation value in notional in a cash account or IRA (50% on margin), and one trade's risk is
-  capped at 3% of net liq. Total buying power used is held to a cap that rises with the VIX: 25% under 15,
-  30% under 20, 35% under 30, 40% under 40, 50% above. A trade that does not fit shows the cap that stops
+  capped at 3% of net liq. On margin, total buying power used is held to a cap that rises with the VIX:
+  25% under 15, 30% under 20, 35% under 30, 40% under 40, 50% above. A cash account or IRA holds each
+  short put's full strike and each spread's max loss, and neither grows when the market moves, so it is
+  held to 80% in total instead, with short puts (at their strikes) plus shares under 65% of net liq and
+  spreads' max loss under 35%. A fall of 20% with volatility up is flagged when it would cost over 20% of
+  net liq. A trade that does not fit shows the cap that stops
   it, and one stopped only by how full the book is waits in a queue, sized as if there were room. Treat
   these as the suite's defaults, not rules about your account.
 - **Prices are modelled.** Credits are at a working price from an afternoon reading, and a mark is a mid,
