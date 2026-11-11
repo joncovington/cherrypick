@@ -3115,6 +3115,57 @@
       "retest_note": "No yearly re-test: the item reads the module's own forward ledger as it grows.",
       "retests": [],
       "outcome": null
+    },
+    {
+      "id": 70,
+      "study": "item70",
+      "title": "The dividend-yield put: a cash-secured put at the strike where a cheap payer's dividend yields its usual rate",
+      "status": "declared",
+      "legacy": false,
+      "setup": "dividend-yield",
+      "side": "bullish",
+      "structure": "cash-secured-put",
+      "window": "monthly",
+      "measure": "per name and arm, net less the delta-equivalent stock position over each trade with its dividends included, % of mean capital per listed year; y-strike and y-net against d16-tp50, per-name paired difference",
+      "expected": "the yield-target strike adds edge over the 16-delta put on the same screened names and months",
+      "sample": "the monthly 30-name dividend screen over today's tradable names; design entries 2025-09-01..2026-08-31, holdout 2022; 45-60 day standard monthlies; under 20 traded names or 150 trades in an arm or the base is no verdict",
+      "rule": "design: paired mean > 0 with one-sided t > 2 (Holm across 2), positive on more than half the names, own median edge > 0 and at the 3/8 stress; holdout: paired mean > 0 and own median > 0",
+      "mechanism": "a valuation anchor: a payer's yield reverts toward its own norm, so a put struck where the forward dividend yields that norm buys a cheap stock and is paid premium on top",
+      "rivals": [
+        {
+          "explanation": "the at-the-money put is more market exposure, not edge",
+          "check": "edge net of the delta-equivalent stock, dividends included"
+        },
+        {
+          "explanation": "the half-credit exit, not the strike, separates the arms",
+          "check": "d16-hold reported beside"
+        },
+        {
+          "explanation": "dividends are already in the put's price",
+          "check": "the measure's dividend term; each slice's forward carries dividends due"
+        },
+        {
+          "explanation": "survivorship in today's tradable pool flatters a yield screen",
+          "check": "stated limit; a pass read as an upper bound; the 2022 holdout"
+        },
+        {
+          "explanation": "a yield far above its norm prices a dividend cut",
+          "check": "assignments and the move after them reported per name"
+        }
+      ],
+      "pointer": "research/edge-hypotheses-plan.md#70-the-dividend-yield-put-a-cash-secured-put-at-the-strike-where-a-cheap-payers-dividend-yields-its-usual-rate",
+      "scripts": [
+        "packages/backtest/scripts/dividend_put_item70.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_dividend_put_item70_script.py"
+      ],
+      "results": [
+        "{home}/data/backtest/results/research/item70/results.json"
+      ],
+      "outcome": null,
+      "retest": null,
+      "retests": []
     }
   ],
   "rule_changes": []
