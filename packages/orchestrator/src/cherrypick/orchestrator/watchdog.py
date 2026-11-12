@@ -403,6 +403,18 @@ def _streamer_identity(status: dict[str, Any]) -> str:
     return f" [{' '.join(bits)}]" if bits else ""
 
 
+def _streamer_idle(status: dict[str, Any]) -> bool:
+    """Whether a producer has nothing to stream: it reports zero subscribed symbols AND the request
+    folder it reads (the caller's `streamrequests.instance`) asks for no symbol or leg. A missing
+    count or an unreadable folder is "cannot tell", so not idle."""
+    if status.get("subscribed_symbols") != 0:
+        return False
+    try:
+        return not _streamrequests.union_symbols() and not _streamrequests.union_legs()
+    except Exception:
+        return False
+
+
 def _streamer_stale_age(status: dict[str, Any]) -> float | None:
     """Seconds since the streamer last received ANY market event, or None if it can't be read.
 
@@ -629,7 +641,14 @@ def _check_streamer_health(label: str, root: Path, spec: dict[str, Any]) -> list
     # retries while every other symbol stays fresh (2026-07-31), OR one symbol's spot subscription
     # dying mid-flight while others keep every aggregate fresh (2026-08-17, TQQQ) — judge on
     # whichever signal fires.
-    stale_candidates = [a for a in (stale_age, underlying_age) if a is not None]
+    # A producer with nothing to stream has nothing to be silent about: it subscribed no symbol and
+    # no module asks it for one, so its event age is only the age of its last event ever (an idle
+    # login's instance, 2026-11-12, restarted every five minutes on that). It still reads as stalled
+    # on every other signal, and one that subscribed nothing while something is asked for is judged
+    # as before.
+    stale_candidates = (
+        [] if _streamer_idle(status) else [a for a in (stale_age, underlying_age) if a is not None]
+    )
     worst_stale = max(stale_candidates) if stale_candidates else None
     # ...OR a base window serving a chain dated before the session (2026-09-10) while every one of
     # the above stays healthy.
