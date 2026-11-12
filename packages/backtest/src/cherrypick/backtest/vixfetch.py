@@ -67,11 +67,16 @@ def fetch_vix(
     cadence: float | None = None,
     refetch: bool = False,
     log=print,
+    progress=None,
 ) -> dict:
-    """Fill the VIX minute series for every complete session of `symbol`'s store in [start, end]."""
+    """Fill the VIX minute series for every complete session of `symbol`'s store in [start, end].
+    `progress`, a caller's `core.progress.Reporter`, gets a `vix` phase counting the sessions asked
+    for, refused and empty ones included; the caller finishes it."""
     conn = store.connect(settings, symbol, cadence)
     try:
         days = [d for d in _sessions(conn, symbol, start, end) if refetch or not _has_vix(conn, d)]
+        if progress is not None:
+            progress.phase("vix", total=len(days), unit="sessions")
         written, empty, refused = {}, [], {}
         try:
             expirations = sorted(client.expirations(SYMBOL)) if days else []
@@ -85,6 +90,8 @@ def fetch_vix(
                 "aborted": reason,
             }
         for day in days:
+            if progress is not None:
+                progress.advance("vix", current=day)
             # The nearest expiry is sometimes a thin weekly the vendor holds nothing for (2022-12-01,
             # 2022-12-28, 2022-12-30, 2026-05-20); every expiry reports the same spot index, so the
             # next one is as good. Up to EXPIRIES_TRIED, nearest first.

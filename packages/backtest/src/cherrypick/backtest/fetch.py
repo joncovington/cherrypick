@@ -39,8 +39,11 @@ from cherrypick.core import progress as core_progress
 from cherrypick.core.clock import ET
 from cherrypick.core.streamcache import usable_quote
 
-from . import greeks, regimes, store
+from . import greeks, regimes, store, vixfetch
 from .vendor import FATAL, VendorRefusal
+
+#: The progress file's job name, which the research queue's meter reads.
+JOB = "backtest-fetch-sessions"
 
 #: The recorder's profile cadence (~5 minutes).
 PROFILE_SECONDS = 300
@@ -222,6 +225,7 @@ def fetch(
     workers: int = 1,
     stop=None,
     log=print,
+    progress=None,
 ) -> dict:
     """Fetch every 0DTE session of `symbol`'s dataset in [start, end] not already complete, at
     `cadence` (default the store's). `workers` sessions are pulled at a time, never more than
@@ -236,7 +240,11 @@ def fetch(
     fetch from 2026-10-31. What first looked like the vendor stalling under
     concurrency (2026-10-17) was this loop: a session that failed to write ended it, and the pool
     then pulled every queued day on its way out and wrote none of them. The loop now records such a
-    session as `build_error` and goes on, and the pool cancels its queue whatever ends the loop."""
+    session as `build_error` and goes on, and the pool cancels its queue whatever ends the loop.
+
+    `progress`, a caller's `core.progress.Reporter`, takes this fetch's `sessions` phase and is left
+    for the caller to finish (`fetch_with_vix`, whose bar runs to the end of the VIX pass); absent,
+    the fetch reports and finishes its own."""
     ds = _dataset(settings, symbol)
     if int(ds.get("dte", 0)) != 0:
         raise ValueError("only 0DTE datasets are built so far")
@@ -284,7 +292,7 @@ def fetch(
         }
         # Of every session in the span, the complete ones counted as done: a resumed fetch starts where
         # the last one stopped rather than at zero.
-        rep = core_progress.Reporter("backtest-fetch-sessions")
+        rep = progress or core_progress.Reporter(JOB)
         rep.phase("sessions", total=len(days), unit="sessions")
         rep.advance("sessions", report["skipped"])
         cap = max(1, int(settings["vendor"]["max_concurrent_requests"]))  # one request in flight a session
@@ -339,8 +347,47 @@ def fetch(
             pool.shutdown(wait=True, cancel_futures=True)
         if report.get("stopped"):
             rep.note("stopped: resumes from here on the next run")
-        rep.finish("failed" if report.get("aborted") else "done")
+        if progress is None:
+            rep.finish("failed" if report.get("aborted") else "done")
         report["coverage"] = store.coverage(conn, symbol)
         return report
     finally:
         conn.close()
+
+
+def fetch_with_vix(
+    settings: dict,
+    client,
+    symbol: str,
+    start: str,
+    end: str,
+    *,
+    refetch: bool = False,
+    cadence: float | None = None,
+    workers: int = 1,
+    stop=None,
+    log=print,
+) -> dict:
+    """`fetch`, then the same sessions' VIX minute series (`vixfetch`) unless the fetch aborted or
+    stopped: what the `fetch` verb runs. One progress file covers both: an outer `steps` phase of two,
+    with the step under way counted inside it, so the bar reads done only when the VIX pass is."""
+    with core_progress.Reporter(JOB) as rep:
+        rep.phase("steps", total=2, unit="steps")
+        rep.at("steps", "sessions")
+        report = fetch(
+            settings, client, symbol, start, end, refetch=refetch, cadence=cadence, workers=workers,
+            stop=stop, log=log, progress=rep,
+        )  # fmt: skip
+        if report.get("aborted"):
+            rep.finish("failed")
+            return report
+        if report.get("stopped"):
+            return report  # the VIX pass waits with the sessions not yet pulled
+        rep.close_phase("sessions")
+        rep.advance("steps", current="vix")
+        report["vix"] = vixfetch.fetch_vix(
+            settings, client, symbol, start, end, cadence=cadence, log=log, progress=rep
+        )
+        rep.close_phase("vix")
+        rep.advance("steps")
+    return report
