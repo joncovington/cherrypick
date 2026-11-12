@@ -21,7 +21,8 @@
   "datasets": [
     {"symbol": "SPX", "root": "SPXW", "dte": 0, "from": "2022-05-16"},
     {"symbol": "QQQ", "root": "QQQ", "dte": 0, "from": "2022-05-16"},
-    {"symbol": "NDX", "root": "NDXP", "dte": 0, "from": "2022-05-16"}
+    {"symbol": "NDX", "root": "NDXP", "dte": 0, "from": "2022-05-16"},
+    {"symbol": "XSP", "root": "XSP", "dte": 0, "from": "2022-05-16"}
   ],
   "windows": {
     "_comment": "Declared once and journaled; never tuned and never chosen by the advisor. The holdout is invisible to every search and is spent once per spec. Sessions from 2026-10-13 are the recorder era, used to validate the vendor data against our own recording.",

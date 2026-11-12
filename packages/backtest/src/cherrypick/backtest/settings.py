@@ -33,12 +33,13 @@ DEFAULTS: dict[str, Any] = {
         "license": {"terminated_on": None, "purge_within_days": 30},
     },
     "store": {"dir": None, "cadence_seconds": 15, "strikes_each_side": 20, "request_strike_range": 50},
-    # QQQ and NDX (item 68) are fetched by the research queue's `fetch-sessions` only, into the wide
-    # store; the nightly fetch names no dataset and stays SPX's.
+    # QQQ and NDX (item 68) and XSP (MEIC's margin live account) are fetched by the research queue's
+    # `fetch-sessions` only, into the wide store; the nightly fetch names no dataset and stays SPX's.
     "datasets": [
         {"symbol": "SPX", "root": "SPXW", "dte": 0, "from": "2022-05-16"},
         {"symbol": "QQQ", "root": "QQQ", "dte": 0, "from": "2022-05-16"},
         {"symbol": "NDX", "root": "NDXP", "dte": 0, "from": "2022-05-16"},
+        {"symbol": "XSP", "root": "XSP", "dte": 0, "from": "2022-05-16"},
     ],
     "windows": {"design": ["2022-05-16", "2025-06-30"], "holdout": ["2025-07-01", "2026-10-12"]},
 }
