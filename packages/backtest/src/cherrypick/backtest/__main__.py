@@ -129,7 +129,8 @@ def cmd_fetch(args) -> int:
     except VendorRefusal as exc:
         print(f"fetch refused: {exc}", file=sys.stderr)
         return 2
-    report = fetch.fetch(
+    # The sessions, then the same sessions' VIX minute series, under one progress bar.
+    report = fetch.fetch_with_vix(
         s,
         client,
         args.dataset,
@@ -141,14 +142,9 @@ def cmd_fetch(args) -> int:
         stop=_stop_by(args.stop_by),
         log=lambda m: print(m, file=sys.stderr),
     )
-    if not report.get("aborted") and not report.get("stopped"):
-        # The same sessions' VIX minute series, on the session already held (vixfetch).
+    if "vix" in report:
         from . import vixfetch
 
-        report["vix"] = vixfetch.fetch_vix(
-            s, client, args.dataset, args.start, args.end, cadence=args.cadence,
-            log=lambda m: print(m, file=sys.stderr),
-        )  # fmt: skip
         why = vixfetch.shortfall(report["vix"])
         if why:  # the SPX sessions are written; the VIX gap is reported, and `fetch-vix` retries it
             print(f"fetch: vix {why}", file=sys.stderr)

@@ -130,3 +130,34 @@ def test_an_empty_or_failed_session_writes_nothing(tmp_path):
     late = vixfetch.fetch_vix(s, FakeVix(expirations=("2026-09-16",)), "SPX", DAY, DAY, log=lambda _m: None)
     assert late["refused"] == {DAY: "no_vix_expiry_after_session"}
     assert regime.markets_at([_ts("09:31")], history_db=store.db_path(s, "SPX"))[0]["status"] != "measured"
+
+
+def test_the_fetch_verb_s_bar_stays_open_until_the_vix_pass_is_done(tmp_path, monkeypatch):
+    """The queue's meter reads one file for the fetch verb: the sessions, then their VIX series. The
+    bar reads done only after the VIX pass, and while it runs the file says so."""
+    import json
+
+    from test_fetch import FakeClient, _settings
+
+    target = tmp_path / "q7.json"
+    monkeypatch.setenv("CHERRYPICK_PROGRESS_FILE", str(target))
+    seen = []
+
+    class Both(FakeClient):
+        def expirations(self, root):
+            return ["2026-10-21"] if root == "VIX" else super().expirations(root)
+
+        def vix_minutes(self, day, expiration):
+            seen.append(json.loads(target.read_text(encoding="utf-8")))
+            return [(_ts("09:30"), 16.0)]
+
+    report = fetch.fetch_with_vix(_settings(), Both({DAY: _rows(DAY)}), "SPX", DAY, DAY, log=lambda _m: None)
+    assert report["fetched"] == 1 and report["vix"]["written"] == {DAY: 1}
+    (during,) = seen
+    assert during["state"] == "running", "the bar must not read done while the VIX pass runs"
+    steps, vix = during["phases"]
+    assert (steps["name"], steps["done"], steps["total"], steps["current"]) == ("steps", 1, 2, "vix")
+    assert (vix["name"], vix["total"]) == ("vix", 1)
+    after = json.loads(target.read_text(encoding="utf-8"))
+    assert after["state"] == "done"
+    assert [(p["name"], p["done"], p["total"]) for p in after["phases"]] == [("steps", 2, 2)]
