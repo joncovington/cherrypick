@@ -7258,7 +7258,15 @@ paper has no XSP record under this rule. Declared here before any of it is run.*
   - **A challenger passes:** a proposal to move the XSP account to it at a declared boundary, read with
     its sizing: a setting the account cannot carry within its own limits is not proposed, whatever it
     earns.
-- **Result:** not yet run.
+- **Result (2026-11-12, provisional): fail.**
+  The reference, live's 2× stop on 1-point wings, fails both windows: its own net is below zero after
+  XSP's fees in the design window and again in the holdout. Of the fifteen challengers, no stop at 2, 3
+  and 4 points wide passes the design window; in the holdout only 4 points passes, on too few holdout
+  trades to read as an edge. The derived kill criteria are far beyond the account's size. Every figure,
+  the coverage step and the sizing included, is in the local result
+  (`~/.cherrypick/data/backtest/results/research/item72/`).
+- **What this decides:** the fail branch: the margin login's XSP live account stays off (`enabled`
+  false) and is not armed. No challenger is proposed: the one holdout pass rests on too few trades.
 
 ## Not worth revisiting
 

@@ -3226,7 +3226,7 @@
       "id": 72,
       "study": "item72",
       "title": "MEIC's live rule on XSP: no stop, or a stop at 1x, 1.5x or 2x the credit, at four wing widths",
-      "status": "declared",
+      "status": "failed",
       "legacy": false,
       "setup": "stop-mechanics",
       "side": "neutral",
@@ -3270,8 +3270,12 @@
       "tests": [
         "packages/backtest/tests/test_meic_xsp_item72_script.py"
       ],
-      "results": [],
-      "outcome": null,
+      "results": [
+        "{home}/data/backtest/results/research/item72/study-design-2022-05-16-2025-06-30.json",
+        "{home}/data/backtest/results/research/item72/study-holdout-2025-07-01-2026-10-12.json",
+        "{home}/data/backtest/results/research/item72/kill-criteria.json"
+      ],
+      "outcome": "live's rule (s20-w1) fails both windows: it loses after XSP's fees, so the margin login's XSP live account stays off and is not armed. No stop at 2, 3 and 4 points passes the design window; of those only 4 points passes the holdout, on too few holdout trades to act on, so no arm is adopted",
       "retest": null,
       "retests": []
     }
