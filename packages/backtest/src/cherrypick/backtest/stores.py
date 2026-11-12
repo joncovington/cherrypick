@@ -52,6 +52,14 @@ STORES: list[dict[str, str]] = [
         "used_by": "item 68, MEIC's live rule on NDX (packages/backtest/scripts/meic_symbols_item68.py)",
     },
     {
+        "file": "XSP-60s-wide.db",
+        "holds": "XSP intraday (a tenth of SPX, 0DTE): quote samples, spot, GEX profiles, closes, 40 strikes "
+        "each side, at 60 s",
+        "built_by": "python -m cherrypick.backtest fetch --cadence 60 --store-tag wide --dataset XSP "
+        "(research queue)",
+        "used_by": "MEIC's margin live account on XSP: the replay its kill criteria are derived from",
+    },
+    {
         "file": "SPX-15s.db",
         "holds": "SPX intraday at 15 s, a short span: the cadence comparison beside the 60 s store",
         "built_by": "python -m cherrypick.backtest fetch --cadence 15",

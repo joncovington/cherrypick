@@ -70,7 +70,7 @@ from cherrypick.meic import paper, paper_loop, stabilization_gate
 
 SYMBOL = "SPX"
 #: Each replayable symbol's 0DTE root as the streamer spells a leg (`quotehistory.leg_symbol`).
-LEG_ROOTS = {"SPX": "SPXW", "NDX": "NDXP", "QQQ": "QQQ"}
+LEG_ROOTS = {"SPX": "SPXW", "NDX": "NDXP", "QQQ": "QQQ", "XSP": "XSP"}
 #: The first session the gex recorder kept quotes for.
 FIRST_SESSION = "2026-10-13"
 IV_RANK_LOOKBACK = 252

@@ -259,7 +259,7 @@ STORE_TAGS = ("wide",)
 
 #: The 0DTE datasets `fetch-sessions` may name (backtest `settings.DEFAULTS["datasets"]`); absent, SPX,
 #: the fetch verb's own default. Spelt here, as `STORE_TAGS` is, so a typo never queues.
-DATASETS = ("SPX", "QQQ", "NDX")
+DATASETS = ("SPX", "QQQ", "NDX", "XSP")
 
 
 def _day_arg(args: dict, key: str) -> str:
