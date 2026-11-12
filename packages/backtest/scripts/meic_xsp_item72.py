@@ -3,7 +3,8 @@
 whole credit, each at 1, 2, 3 and 4 points wide, paired against the rule live trades (2x, 1 point).
 
     python packages/backtest/scripts/meic_xsp_item72.py --step coverage
-    python packages/backtest/scripts/meic_xsp_item72.py --step study --window design|holdout --capital C [--workers N]
+    python packages/backtest/scripts/meic_xsp_item72.py --step study --window design|holdout \
+        --capital C [--workers N]
     python packages/backtest/scripts/meic_xsp_item72.py --step kill
 
 Runs the backtest's own MEIC replay (`cherrypick.backtest.runner`, MEIC's own engine) over XSP's wide
@@ -125,7 +126,9 @@ def study_registry(registry: dict, *, stress: bool) -> dict:
     if not isinstance(profiles.get(BASE_ARM), dict):
         raise SystemExit(f"the MEIC registry has no {BASE_ARM!r} arm to build on")
     live = {k: v for k, v in profiles[BASE_ARM].items() if not k.startswith("_")}
-    live.update(enabled=True, paper_entry_window_start=WINDOW[0], entry_window_end=WINDOW[1], symbols=[SYMBOL])
+    live.update(
+        enabled=True, paper_entry_window_start=WINDOW[0], entry_window_end=WINDOW[1], symbols=[SYMBOL]
+    )
     for name, (stop, width) in ARMS.items():
         profiles[name] = arm_params(live, stop, width)
     if stress:
@@ -173,13 +176,19 @@ def _session_marks(conn: sqlite3.Connection, day: str) -> list[dict]:
         hit = next(((i, ts) for i, ts in samples if ts >= target), None)
         if hit is None:
             continue
-        quotes = conn.execute("SELECT side, strike, delta FROM gex_quotes WHERE sample_id = ?", (hit[0],)).fetchall()
+        quotes = conn.execute(
+            "SELECT side, strike, delta FROM gex_quotes WHERE sample_id = ?", (hit[0],)
+        ).fetchall()
         spot = conn.execute(
-            "SELECT spot FROM gex_spot_history WHERE symbol = ? AND trade_date = ? AND ts <= ? ORDER BY ts DESC LIMIT 1",
+            "SELECT spot FROM gex_spot_history WHERE symbol = ? AND trade_date = ? AND ts <= ? "
+            "ORDER BY ts DESC LIMIT 1",
             (SYMBOL, day, hit[1]),
         ).fetchone()
         out.append(
-            {"spacing": spacing(quotes, spot[0] if spot else None), **{w: wing_inside(quotes, float(w)) for w in WIDTHS}}
+            {
+                "spacing": spacing(quotes, spot[0] if spot else None),
+                **{w: wing_inside(quotes, float(w)) for w in WIDTHS},
+            }
         )
     return out
 
@@ -215,8 +224,8 @@ def coverage(settings: dict) -> dict:
             doc["windows"][window] = row
             rep.advance("windows", current=window)
     doc["note"] = (
-        f"share of hourly {SHORT_DELTA:g}-delta shorts ({HOURS[0]}:00-{HOURS[-1]}:00) whose wing is quoted in "
-        "the same sample, per width; strike spacing within 1% of spot; quotes only, no P&L"
+        f"share of hourly {SHORT_DELTA:g}-delta shorts ({HOURS[0]}:00-{HOURS[-1]}:00) whose wing is "
+        "quoted in the same sample, per width; strike spacing within 1% of spot; quotes only, no P&L"
     )
     (out_dir() / "coverage.json").write_text(json.dumps(doc, indent=1), encoding="utf-8")
     return doc
@@ -327,7 +336,11 @@ def ledger_rows(ledger_dir: Path) -> list[dict]:
 def risk_by_session(rows: list[dict]) -> dict[str, dict[str, float]]:
     out: dict[str, dict[str, float]] = {}
     for r in rows:
-        held = (float(r.get("wing_width") or 0) - float(r.get("net_credit") or 0)) * 100 * int(r.get("quantity") or 1)
+        held = (
+            (float(r.get("wing_width") or 0) - float(r.get("net_credit") or 0))
+            * 100
+            * int(r.get("quantity") or 1)
+        )
         by_day = out.setdefault(r["arm"], {})
         by_day[r["trade_date"]] = by_day.get(r["trade_date"], 0.0) + held
     return out
@@ -408,7 +421,9 @@ def judge(reference: dict, tests: dict[str, dict], holdout: bool) -> None:
             }
             if v["width"] > 1:
                 mine, ref = v["net_over_bp"], v["reference_net_over_bp"]
-                checks["net_over_bp_at_least_reference"] = mine is not None and ref is not None and mine >= ref
+                checks["net_over_bp_at_least_reference"] = (
+                    mine is not None and ref is not None and mine >= ref
+                )
         v["checks"] = checks
         v["verdict"] = "pass" if all(checks.values()) else "fail"
 
@@ -501,7 +516,9 @@ def kill_block(trades: list[dict], span: tuple[str, str], runs: list[str]) -> di
     """The reference's kill criteria from its own trades, in the live config's `kill` shape."""
     nets = [float(r["net_pnl"]) for r in trades]
     result = killcriteria.derive(nets, sessions=len({r.get("session") for r in trades}) or None)
-    evidence = f"meic_ic arm {REFERENCE} on {SYMBOL}, item {ITEM} runs {', '.join(runs)}, {span[0]}..{span[1]}"
+    evidence = (
+        f"meic_ic arm {REFERENCE} on {SYMBOL}, item {ITEM} runs {', '.join(runs)}, {span[0]}..{span[1]}"
+    )
     return {"written": date.today().isoformat(), "evidence": evidence, **result}
 
 
