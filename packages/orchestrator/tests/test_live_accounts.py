@@ -8,6 +8,7 @@ job, argv and finding is what it was.
 from __future__ import annotations
 
 import json
+import sqlite3
 from datetime import datetime, timezone
 
 import pytest
@@ -48,8 +49,19 @@ def test_live_accounts_need_a_listed_login_and_an_enabled_entry_or_a_ledger(tmp_
     ledger.parent.mkdir(parents=True)
     ledger.write_bytes(b"")
     assert cfgmod.live_accounts(SUITE, "meic", doc) == []  # an empty file is not a book
-    ledger.write_bytes(b"SQLite format 3\x00")
+    conn = sqlite3.connect(ledger)
+    conn.execute("CREATE TABLE ic_trades (id INTEGER PRIMARY KEY)")
+    conn.execute("CREATE TABLE entry_attempts (id INTEGER PRIMARY KEY)")
+    conn.execute("INSERT INTO entry_attempts DEFAULT VALUES")
+    conn.commit()
+    # Only a schema and a blocked entry attempt: it never traded, so it is not a book.
+    assert cfgmod.live_accounts(SUITE, "meic", doc) == []
+    conn.execute("INSERT INTO ic_trades DEFAULT VALUES")
+    conn.commit()
+    conn.close()
     assert cfgmod.live_accounts(SUITE, "meic", doc) == ["margin"]  # off but holds history: still managed
+    ledger.write_bytes(b"not a database, but not empty")
+    assert cfgmod.live_accounts(SUITE, "meic", doc) == ["margin"]  # unreadable: never dropped
 
 
 def _jobs(live_accounts, arm_records=None):
@@ -183,7 +195,10 @@ def test_the_execution_record_reads_each_live_account_from_its_own_ledger(tmp_pa
 
     monkeypatch.setenv("CHERRYPICK_HOME", str(tmp_path))
     (tmp_path / "config").mkdir()
-    doc = {"live": {"arm": "pm-200"}, "live_accounts": {"margin": {"enabled": True, "arm": "pm-200", "symbol": "xsp"}}}
+    doc = {
+        "live": {"arm": "pm-200"},
+        "live_accounts": {"margin": {"enabled": True, "arm": "pm-200", "symbol": "xsp"}},
+    }
     (tmp_path / "config" / "meic.json").write_text(json.dumps(doc), encoding="utf-8")
     _ic_ledger(tmp_path / "data" / "meic" / "margin" / "meic_trades.db")
     paper = [

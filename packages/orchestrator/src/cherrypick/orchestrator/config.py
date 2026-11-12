@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import sqlite3
 import sys
 from pathlib import Path
 from typing import Any
@@ -299,10 +300,27 @@ def live_accounts(cfg: dict[str, Any], module: str, module_doc: dict[str, Any] |
         if login not in known or not isinstance(entry, dict):
             continue
         ledger = _home.data_dir(module) / login / f"{module}_trades.db"
-        # A ledger with something in it: an empty file is not a book to manage.
-        if entry.get("enabled") is True or (ledger.exists() and ledger.stat().st_size > 0):
+        if entry.get("enabled") is True or _ledger_holds_trades(ledger):
             out.append(login)
     return sorted(out)
+
+
+def _ledger_holds_trades(ledger: Path) -> bool:
+    """Whether a live ledger holds a book to manage: a row in one of its `*_trades` tables. A
+    ledger with only its schema and blocked entry attempts never traded, so it is not a book. One
+    that can't be read counts as holding trades, so an account is never dropped on a read error."""
+    try:
+        if not ledger.exists() or ledger.stat().st_size == 0:
+            return False
+        conn = sqlite3.connect(f"file:{ledger.as_posix()}?mode=ro", uri=True, timeout=5)
+        try:
+            names = conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()
+            tables = [n for (n,) in names if n.endswith("_trades")]
+            return any(conn.execute(f'SELECT 1 FROM "{t}" LIMIT 1').fetchone() for t in tables)
+        finally:
+            conn.close()
+    except (OSError, sqlite3.Error):
+        return True
 
 
 def streamer_instances(cfg: dict[str, Any]) -> list[str]:

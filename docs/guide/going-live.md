@@ -152,7 +152,8 @@ python -m cherrypick.meic.live_loop --arm --confirm YES --login margin
 
 (or `/live-meic-start --login margin`). Its loop runs as the supervisor job `meic-live.margin`, with its
 own ledger (`data/meic/margin/meic_trades.db`), kill latch, arm record, fee reconcile and catch-up
-settlement; a fill there wakes that job only. A margin account under $25,000 opens no new IC while
+settlement; a fill there wakes that job only. The job exists while the entry is `enabled` or its ledger
+holds a trade, so an account switched off before it ever traded has no job at all. A margin account under $25,000 opens no new IC while
 fewer than `pdt_reserve_day_trades` (default 2) day trades remain, since stopping both sides of one
 IC can take two; a frozen, closing-only or margin-call account opens nothing. Arming warns when the
 main account trades the same index (SPX beside XSP is one directional bet in two accounts).
