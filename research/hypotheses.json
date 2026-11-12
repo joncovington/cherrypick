@@ -3221,6 +3221,59 @@
       "outcome": null,
       "retest": null,
       "retests": []
+    },
+    {
+      "id": 72,
+      "study": "item72",
+      "title": "MEIC's live rule on XSP: no stop, or a stop at 1x, 1.5x or 2x the credit, at four wing widths",
+      "status": "declared",
+      "legacy": false,
+      "setup": "stop-mechanics",
+      "side": "neutral",
+      "structure": "iron-condor",
+      "window": "0dte",
+      "measure": "summed net per session in $ at one condor, and buying power per session, per arm: pm-200 entering 14:00-14:30 with all its gates on XSP, with no stop or a resting per-side stop at 1.0, 1.5 or 2.0x the whole credit, each 1, 2, 3 and 4 points wide; s20-w1 (live's rule) the reference",
+      "expected": "no prior on which stop wins: tight stops pay often and small, no stop rarely and up to the wing; XSP's fees on a tenth of SPX's premium may leave the reference itself without an edge",
+      "sample": "design 2022-05-16..2025-06-30, holdout 2025-07-01..2026-10-12 run straight after, counting only after a design pass; XSP's wide 60 s vendor store (40 strikes each side); sessions with a same-day expiry only; both provisional for good, MEIC history being unvalidated and XSP having no recording to validate against; < 100 sessions = no verdict",
+      "rule": "reference: own mean session net > 0 with one-sided t > 2, positive in both time-halves, still positive at 1.5x fees; then holdout mean > 0 with t > 2. Each of the fifteen challengers, paired with the reference by session: mean difference > 0 with one-sided t > 2, Holm across fifteen, difference positive in both halves, own net positive at 1.5x fees, and wider than 1 point, net over buying power >= the reference's over the same sessions; then holdout paired mean > 0 with t > 2. Reported, never judged: sizing against a capital given at run time (worst session and 99th-percentile 100-session drawdown as shares, most condors within 30%), the reference's halfway-to-natural fill stress (design), the share of entries stopped",
+      "mechanism": "SPX's premium claim on a tenth of the index, paying the same fee per contract on a tenth of the premium; the stop and the width set how much of a move the condor pays for",
+      "rivals": [
+        {
+          "explanation": "the costs on a tenth of the premium",
+          "check": "the module's own fill and XSP's fees as the verdict, halfway-to-natural reported beside the reference, every judged arm positive at 1.5x fees"
+        },
+        {
+          "explanation": "paying more by risking more",
+          "check": "a wider challenger's net over buying power at least the reference's over the same sessions"
+        },
+        {
+          "explanation": "a tight stop priced at its trigger",
+          "check": "the stop rests at the broker as live's does, filled under the replay's resting-stop model at the tick; the share of entries stopped reported"
+        },
+        {
+          "explanation": "the store's strike window",
+          "check": "a coverage step first: sessions, strike spacing and the share of 16-delta shorts whose wing is quoted at each width"
+        },
+        {
+          "explanation": "a calm span",
+          "check": "positive in both time-halves"
+        },
+        {
+          "explanation": "searching a grid",
+          "check": "Holm across the fifteen challengers; the grid fixed before any look"
+        }
+      ],
+      "pointer": "research/edge-hypotheses-plan.md#72-meics-live-rule-on-xsp-no-stop-or-a-stop-at-1x-15x-or-2x-the-credit-at-four-wing-widths",
+      "scripts": [
+        "packages/backtest/scripts/meic_xsp_item72.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_meic_xsp_item72_script.py"
+      ],
+      "results": [],
+      "outcome": null,
+      "retest": null,
+      "retests": []
     }
   ],
   "rule_changes": []

@@ -7163,6 +7163,103 @@ any arm has been computed on a quoted chain.*
     a levered synthetic long, so in an IRA it is a put spread.
 - **Result:** not yet run.
 
+### 72. MEIC's live rule on XSP: no stop, or a stop at 1x, 1.5x or 2x the credit, at four wing widths
+
+*Source: the user, 2026-11-11, putting MEIC live on a second broker login: XSP, a tenth of SPX, in a small
+margin account. Its kill criteria stand in as main's SPX criteria scaled by a tenth until they are
+derived from an XSP replay, and the user asked for that replay to "test a no stop and 1x stop against
+the 2x stop at various wing widths", adding 1.5x, widths 1 to 4. No backtest has run on XSP, and MEIC
+paper has no XSP record under this rule. Declared here before any of it is run.*
+
+- **Question:** on XSP, does the rule live trades (`pm-200` entering once a day 14:00–14:30, a per-side
+  stop at 2× the whole credit, 1-point wings) earn after costs; and does any other stop rule or width
+  beat it, session for session, without risking more per dollar earned?
+- **Where the edge would live:** **premium**, SPX's claim on a tenth of the index: a 16-delta 0DTE condor
+  is paid more than the moves that reach its shorts. XSP pays the same fee per contract on a tenth of the
+  premium, so the costs are the first thing the claim must survive. The stop and the width decide how
+  much of a move the condor pays for: a tight stop pays often and small, no stop pays rarely and up to
+  the wing.
+- **Look-alikes:** item 23 (the same rule on SPX); items 43 and 50 (width on SPX, gates off and on);
+  item 7 and the 10-18 condor study item 23 cites (stop mechanics on SPX); item 68 (the same rule on QQQ
+  and NDX).
+- **Rival explanations, each with its check:**
+  - *The costs on a tenth of the premium:* **Check:** the verdict fill is the module's own (an eighth of
+    each leg's spread from mid) with XSP's fees from `core.fees`; the reference's stress fill, halfway to
+    the natural fill, is reported beside it in the design window; every judged arm's own net must stay
+    positive at 1.5× fees.
+  - *Paying more by risking more:* a wider wing earns more credit on more buying power. **Check:** a
+    wider challenger's net over buying power must be at least the reference's over the same sessions.
+  - *A tight stop priced at its trigger:* **Check:** the stop rests at the broker as live's does (a
+    stop-limit, its limit a tenth of the trigger above, filled under the replay's own resting-stop model
+    at the tick); the share of entries with a side stopped is reported per arm.
+  - *The store's strike window:* **Check:** a coverage step first reports the sessions, the strike
+    spacing near spot and the share of hourly 16-delta shorts whose wing is quoted at each width.
+  - *A calm span:* **Check:** positive in both time-halves (the reference's net, each challenger's
+    difference).
+  - *Searching a grid:* **Check:** Holm across the fifteen challengers; the grid is fixed here.
+- **The structure:**
+  - Each arm is item 23's `live-1400` on XSP: the registry's `pm-200` (16 delta, 30-minute spacing, its
+    credit floor and call-delta ceilings) with entries 14:00–14:30, so one condor a session, `symbols`
+    set to XSP and `wing_width_points` to 1, 2, 3 or 4 points.
+  - Its stop is one of: **none** (`per_side_stop_management` off, held to the close), **1×**, **1.5×**
+    or **2×** the whole credit per side, each resting at the broker (`stop_resting`).
+  - **The reference:** `s20-w1`, the rule live trades. **Judged against it:** the other fifteen
+    (`none-w1` … `s15-w4`).
+  - **Reported, never judged:** the reference's stress-fill twin (design window only); `control`, which
+    the runner requires, pointed at XSP.
+  - The credit floor is a share of the width, so it refuses more of the wider condors. That is the rule
+    as live has it, not a tuning.
+- **Costs:** MEIC paper's own model: fees from `core.fees` for XSP, the module's slippage share, stops
+  under the resting-stop model, the rest settled at the store's close.
+- **Measured:** each session's summed net per arm, in dollars at one condor; each session's buying power
+  per arm from the run's ledgers; per arm, the share of entries with a side stopped.
+- **Sizing, reported:** each arm against a capital given at run time (the account it would trade in;
+  the figure stays in the local queue row, never here): its worst session and its 99th-percentile
+  drawdown over 100 sessions (the bootstrap the kill criteria use), each as a share of the capital, and
+  the most whole condors that drawdown allows within 30% of it. Description only: it moves no verdict
+  and writes no config.
+- **Window and sample:** the backtest's own windows over XSP's wide 60 s vendor store
+  (`XSP-60s-wide.db`, 40 strikes each side).
+  - **Design:** 2022-05-16 to 2025-06-30. **Holdout:** 2025-07-01 to 2026-10-12, run straight after the
+    design whatever it shows. It counts toward a pass only after a design pass.
+  - Only sessions with a same-day XSP expiry exist, so the early part of the design window holds fewer
+    sessions than SPX's.
+  - Neither window has run on XSP under any rule, so both are out of sample.
+  - **Both runs are provisional, and stay so:** MEIC validation has not unlocked, and XSP cannot
+    unlock it, since nothing records XSP to validate against. The holdout spends once per arm through
+    `unvalidated_holdout`.
+  - Fewer than 100 sessions in a window is no verdict.
+- **Pass-or-fail rule:**
+  - **The reference:** its own mean session net above zero with a one-sided t above 2 (a session with
+    no entry counts at zero), positive in each time-half, still positive at 1.5× fees; then the
+    holdout: mean above zero with a one-sided t above 2.
+  - **Each challenger**, paired with the reference session by session: the mean difference above zero
+    with a one-sided t above 2; Holm across the fifteen; the difference positive in each time-half; the
+    challenger's own net still positive at 1.5× fees; wider than one point, its net over buying power at
+    least the reference's over the same sessions; then the holdout: the paired mean above zero with a
+    one-sided t above 2.
+- **Declared limits (B11):** 60 s ticks; a resting stop fills under the replay's model, not a recorded
+  fill; strikes beyond the stored 40 do not exist here; the settlement print is the store's close.
+- **Name split (B9):** does not apply; one symbol.
+- **Data:** one new store, declared in `stores.STORES` and fetched by the research queue's
+  `fetch-sessions` with `dataset` XSP (`store_tag` wide). `packages/backtest/scripts/meic_xsp_item72.py --step
+  coverage`, then `--step study --window design|holdout --capital C`, builds a scratch MEIC arm registry
+  from the machine's and runs `cherrypick.backtest.runner`. Results go under the backtest data directory
+  only; this plan records the verdict.
+- **Kill criteria:** `--step kill`, after both windows, derives the reference's kill criteria from its own
+  trades across both (`core.killcriteria`, as main's were derived from SPX's), written under the
+  backtest data directory as a block in the live config's shape. A person puts it in the config; the
+  script never does.
+- **Decides:**
+  - **The reference fails:** the rule does not earn on XSP after costs; the proposal is to stop the
+    XSP account's entries.
+  - **The reference passes, no challenger does:** live stays at a 2× stop on 1-point wings, with the
+    derived kill criteria in place of the scaled ones.
+  - **A challenger passes:** a proposal to move the XSP account to it at a declared boundary, read with
+    its sizing: a setting the account cannot carry within its own limits is not proposed, whatever it
+    earns.
+- **Result:** not yet run.
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:
