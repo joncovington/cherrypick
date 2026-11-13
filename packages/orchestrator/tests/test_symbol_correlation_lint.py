@@ -154,10 +154,42 @@ def test_a_module_split_across_producer_instances_is_still_judged_as_one(tmp_pat
     assert same_index_pairs(declared["mod"])
 
 
-def test_no_module_trades_one_index_through_two_vehicles():
-    offenders = {
-        module: pairs for module, symbols in _declared().items() if (pairs := same_index_pairs(symbols))
+# Same-index pairs a module holds on purpose, each with its reason. One entry per (module, pair):
+# the module's other pairs, and the same pair in any other module, still fail.
+#
+# weeklyput, SPX + SPY: item 57 judged the 10-delta weekly put on its equity-index group (SPX,
+# SPY, QQQ, IWM) as one rule, and item 69 measures that rule in paper. It sells one contract per
+# name with no per-name position cap, so the doubled S&P exposure is part of the rule being
+# measured, not hidden from a cap that counts it twice.
+DELIBERATE_PAIRS: dict[str, set[tuple[str, str]]] = {"weeklyput": {("SPX", "SPY")}}
+
+
+def offending_pairs(declared: dict[str, list[str]]) -> dict[str, list[tuple[str, str]]]:
+    """Each module's same-index pairs, less the ones it declares on purpose."""
+    out = {}
+    for module, symbols in declared.items():
+        allowed = DELIBERATE_PAIRS.get(module, set())
+        pairs = [p for p in same_index_pairs(symbols) if p not in allowed]
+        if pairs:
+            out[module] = pairs
+    return out
+
+
+def test_a_deliberate_pair_excuses_only_itself():
+    """Verified to fail: keying the allowance by pair alone lets `other` through."""
+    declared = {
+        "weeklyput": ["IWM", "QQQ", "SPX", "SPY"],
+        "other": ["SPX", "SPY"],
+        "weeklyput:extra": ["SPX", "SPY"],
     }
+    assert offending_pairs(declared) == {"other": [("SPX", "SPY")], "weeklyput:extra": [("SPX", "SPY")]}
+    assert offending_pairs({"weeklyput": ["SPX", "SPY", "XSP"]}) == {
+        "weeklyput": [("SPX", "XSP"), ("SPY", "XSP")]
+    }
+
+
+def test_no_module_trades_one_index_through_two_vehicles():
+    offenders = offending_pairs(_declared())
     assert not offenders, (
         f"a module is configured on the same index twice: {offenders}. Per-symbol position caps "
         "count these as independent risks when they are one directional bet."

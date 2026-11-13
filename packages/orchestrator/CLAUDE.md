@@ -404,7 +404,9 @@ filename; override with `paper.sla_state_prefix`.
 - **Paper mode never calls `execute_trade`** (even a dry-run performs a real margin check); module
   live-order tools are gated behind `enable_live_trading: true`. Earnings is **defined-risk only**.
 - **Correlation risk is only PARTLY guarded.** `tests/test_symbol_correlation_lint.py` refuses two
-  vehicles on the SAME index (SPX + XSP), reading `state/stream_requests/`. Cross-index correlation
+  vehicles on the SAME index (SPX + XSP), reading `state/stream_requests/`, except a pair one module
+  holds on purpose (`DELIBERATE_PAIRS`, each with its reason: today weeklyput's SPX + SPY, item 57's
+  group as judged). Cross-index correlation
   (~0.9 SPY/QQQ; pmcc's leveraged ETFs) and earnings' same-sector names are reported, not failed —
   the latter stay a hand-kept `correlation_block_list`. Do not read the lint as covering more.
 - MEIC's full entry-gate catalogue is `../meic/GATES.md`.
