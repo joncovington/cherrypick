@@ -1,7 +1,7 @@
 """A diagonal's take profit is capped at a share of what it can make by the short's expiry.
 
-At +75% of the debit a PMCC's target sat past its whole call-away value (a $3.51 debit on a $6-wide
-spread asked for $6.14), so its take profit could never fire.
+At +75% of the debit a PMCC's target sat past its whole call-away value (the fixture's $10.00 debit on
+a $5-wide spread asks for $17.50), so its take profit could never fire.
 """
 
 from datetime import date
