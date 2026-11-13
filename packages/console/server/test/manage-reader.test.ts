@@ -695,6 +695,31 @@ describe("readManage", () => {
     expect(a.trades[0]!.wheel).toBeNull();
   });
 
+  it("passes each rule's evidence grade through, and keeps an old evaluation's number", () => {
+    const doc = evalDoc("2026-10-20");
+    const acct = (doc["accounts"] as Array<Record<string, unknown>>)[0]!;
+    const ko = (acct["trades"] as Array<Record<string, unknown>>)[0]!;
+    ko["recommendation"] = { action: "CLOSE", evidence: "practice", rule: "debit.stop", reason: "down 58%", agreeing: [], conflicts: [] };
+    ko["fired"] = [{ rule: "debit.stop", action: "CLOSE", evidence: "practice", reason: "down 58%", legs: null }];
+    acct["portfolio"] = {
+      guidance: [{ rule: "portfolio.theta", evidence: "practice", reason: "theta over the band", drivers: [] }],
+    };
+    doc["rules"] = { ruleset: "manage-2026-10", portfolio: { theta: { evidence: "practice" }, vol_expansion: { evidence: "ours" } } };
+    fs.writeFileSync(path.join(tmp, "manage", "eval-2026-10-20.json"), JSON.stringify(doc));
+    const a = readManage(config).accounts[0]!;
+    const t = a.trades.find((x) => x.tradeId === "KO")!;
+    expect(t.evidence).toBe("practice");
+    expect(t.confidence).toBeNull();
+    expect(t.fired[0]).toMatchObject({ evidence: "practice", confidence: null });
+    expect(a.portfolio!.guidance[0]).toMatchObject({ evidence: "practice", confidence: null });
+    expect(a.portfolio!.ruleEvidence).toEqual(["practice", "ours"]);
+    // An evaluation from before grades keeps its number, and has no grade.
+    fs.writeFileSync(path.join(tmp, "manage", "eval-2026-10-21.json"), JSON.stringify(evalDoc("2026-10-21")));
+    const old = readManage(config).accounts[0]!.trades.find((x) => x.tradeId === "KO")!;
+    expect(old.evidence).toBeNull();
+    expect(old.confidence).toBe(65);
+  });
+
   it("passes the short puts with no intent through, both verdicts as manage wrote them", () => {
     const doc = evalDoc("2026-10-20");
     const acct = (doc["accounts"] as Array<Record<string, unknown>>)[0]!;

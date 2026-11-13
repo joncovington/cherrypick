@@ -1,3 +1,4 @@
+import { EvidenceTag } from "../../components/EvidenceTag";
 import { useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { ManageAccount, ManageLevel, ManagePayload, ManageTrade } from "@console/shared";
@@ -31,7 +32,7 @@ import { shapeOrder } from "../../lib/legShape";
 
 /**
  * The daily position evaluation (packages/manage), read-only. Every trade in the live account judged
- * against the configured ruleset: what to do, which rule says so, at what confidence, and the levels
+ * against the configured ruleset: what to do, which rule says so, on what evidence, and the levels
  * a held trade is waiting on. The verdicts are the package's -- this page only shows them -- and it
  * holds no path that touches an order: the closing order listed is what a person would enter.
  */
@@ -271,7 +272,8 @@ export function TradeDetail({ t }: { t: ManageTrade }) {
                 <li key={i}>
                   <span className="md-rule-head">
                     <ActionChip action={f.action} /> <code>{f.rule}</code>
-                    {f.confidence !== null ? <span className="muted"> {f.confidence}</span> : null}
+                    {" "}
+                <EvidenceTag evidence={f.evidence} confidence={f.confidence} />
                   </span>
                   <span className="md-sub">
                     {f.reason}

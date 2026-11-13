@@ -1,3 +1,4 @@
+import { EvidenceTag } from "../../components/EvidenceTag";
 import { useState, type ReactNode } from "react";
 import type {
   ManageAccount,
@@ -347,7 +348,8 @@ function WheelRules({ c, trades }: { c: ManageWheelCycle; trades: ManageTrade[] 
             <li key={i}>
               <span className="md-rule-head">
                 <ActionChip action={f.action} /> <code>{f.rule}</code>
-                {f.confidence !== null ? <span className="muted"> {f.confidence}</span> : null}
+                {" "}
+                <EvidenceTag evidence={f.evidence} confidence={f.confidence} />
                 <span className="muted"> · {t.tradeId}</span>
               </span>
               <span className="md-sub">{f.reason}</span>

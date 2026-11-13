@@ -22,7 +22,7 @@ def test_override_changes_one_threshold_and_keeps_the_rest():
     rules, warnings = _rules.effective({"credit": {"take_profit": {"capture": 0.6}}})
     assert warnings == []
     assert rules["credit"]["take_profit"]["capture"] == 0.6
-    assert rules["credit"]["take_profit"]["confidence"] == 80
+    assert rules["credit"]["take_profit"]["evidence"] == "tested"
     assert rules["credit"]["stop"] == _rules.DEFAULT_RULES["credit"]["stop"]
 
 
@@ -102,7 +102,7 @@ def test_a_shape_target_may_be_added_changed_or_misspelt():
                 "take_profit": {
                     "by_shape": {
                         "iron condor": {"capture": 0.6},
-                        "1-3-2": {"capture": 0.4, "confidence": 50},
+                        "1-3-2": {"capture": 0.4, "evidence": "ours"},
                         "short straddle": {"capture": 0.3},
                         "iron condr": {"capture": 0.6},
                         "short strangle": {"captur": 0.6},
@@ -113,8 +113,8 @@ def test_a_shape_target_may_be_added_changed_or_misspelt():
     )
     by_shape = rules["credit"]["take_profit"]["by_shape"]
     assert by_shape["iron condor"] == {"capture": 0.6}
-    assert by_shape["1-3-2"] == {"capture": 0.4, "confidence": 50}
-    assert by_shape["short straddle"] == {"capture": 0.3, "confidence": 55}
+    assert by_shape["1-3-2"] == {"capture": 0.4, "evidence": "ours"}
+    assert by_shape["short straddle"] == {"capture": 0.3, "evidence": "practice"}
     assert (
         by_shape["iron butterfly"]
         == _rules.DEFAULT_RULES["credit"]["take_profit"]["by_shape"]["iron butterfly"]
@@ -123,8 +123,8 @@ def test_a_shape_target_may_be_added_changed_or_misspelt():
     assert "credit.take_profit.by_shape.iron condr: unknown shape, ignored" in warnings
     assert "credit.take_profit.by_shape.short strangle.captur: unknown key, ignored" in warnings
     # A field the entry leaves out is the rule's own.
-    assert _rules.for_shape(rules["credit"]["take_profit"], "iron condor", "capture") == (0.6, 80, True)
-    assert _rules.for_shape(rules["credit"]["take_profit"], "custom", "capture") == (0.5, 80, False)
+    assert _rules.for_shape(rules["credit"]["take_profit"], "iron condor", "capture") == (0.6, "tested", True)
+    assert _rules.for_shape(rules["credit"]["take_profit"], "custom", "capture") == (0.5, "tested", False)
 
 
 def test_unreadable_override_file_keeps_the_default(tmp_path):

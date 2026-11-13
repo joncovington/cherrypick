@@ -26,7 +26,7 @@ Five kinds, each its own `portfolio.ideas` block, one card each:
   the change is where the next trades go.
 
 A trade one card already models closing is left off the later cards. Ideas inform; they size, place
-and close nothing, and carry no confidence because none is a rule. The thresholds are ours, with no
+and close nothing, and carry no evidence grade because none is a rule. The thresholds are ours, with no
 published evidence behind them.
 """
 

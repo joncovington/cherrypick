@@ -1,3 +1,4 @@
+import { EvidenceTag } from "../../components/EvidenceTag";
 import { useContext, useState, type ReactNode } from "react";
 import type { ManageAccount, ManageBand, ManageFired, ManagePmccPosition, ManagePmccRecognize, ManagePmccRoll, ManageTrade } from "@console/shared";
 import { Card } from "../../components/DataTable";
@@ -340,7 +341,8 @@ function PmccRules({ p, trades }: { p: ManagePmccPosition; trades: ManageTrade[]
             <li key={i}>
               <span className="md-rule-head">
                 <ActionChip action={f.action} /> <code>{f.rule}</code>
-                {f.confidence !== null ? <span className="muted"> {f.confidence}</span> : null}
+                {" "}
+                <EvidenceTag evidence={f.evidence} confidence={f.confidence} />
                 <span className="muted"> · {t.tradeId}</span>
               </span>
               <span className="md-sub">{f.reason}</span>
@@ -528,14 +530,22 @@ export function PmccRolls({ p }: { p: ManagePmccPosition }) {
 
 const QUIET = new Set(["HOLD", "SETTLES"]);
 
-/** The PMCC rules that fired on the trades holding this PMCC's legs and ask for something, the most
- *  confident first. Manage's own: nothing here decides that a PMCC needs action. */
+/** The PMCC rules that fired on the trades holding this PMCC's legs and ask for something, in the
+ *  ruleset's fixed order (assignment, width, the long's roll), never by a grade. Manage's own:
+ *  nothing here decides that a PMCC needs action. */
 export function pmccActions(p: ManagePmccPosition, trades: ManageTrade[]): Array<{ t: ManageTrade; f: ManageFired }> {
   if (p.recognized === false || p.reconciled === false) return [];
   const mine = trades.filter((t) => p.tradeIds.includes(t.tradeId));
   return mine
     .flatMap((t) => t.fired.filter((f) => f.rule.startsWith("pmcc.") && !QUIET.has(f.action)).map((f) => ({ t, f })))
-    .sort((a, b) => (b.f.confidence ?? -1) - (a.f.confidence ?? -1));
+    .sort((a, b) => pmccRank(a.f.rule) - pmccRank(b.f.rule));
+}
+
+/** manage's rules.RULE_ORDER for the PMCC rules. */
+const PMCC_ORDER = ["pmcc.assignment", "pmcc.width", "pmcc.roll_long"];
+function pmccRank(rule: string): number {
+  const i = PMCC_ORDER.indexOf(rule);
+  return i < 0 ? PMCC_ORDER.length : i;
 }
 
 /** The roll to draw as the proposal: the first candidate check-roll passes, else the first priced. */
@@ -734,7 +744,7 @@ export function PmccCard({ p, trades, floor = null }: { p: ManagePmccPosition; t
         </div>
       )}
       {top ? (
-        <ActionBlock rule={top.f.rule} confidence={top.f.confidence} reason={top.f.reason}>
+        <ActionBlock rule={top.f.rule} evidence={top.f.evidence} confidence={top.f.confidence} reason={top.f.reason}>
           {roll ? <RollChain roll={roll} /> : null}
           {p.rolls && p.rolls.candidates.length > 0 ? (
             <BoxButtons>

@@ -101,7 +101,7 @@ what it may write. The package's own CLAUDE.md holds the detail.
   store. No credentials, no network, no AI — the narrative is written outside by a scheduled agent.
 - **packages/manage** — the daily position-management evaluation of the REAL account: a pure function
   of a broker snapshot (taken read-only by the orchestrator's `manage` verb) and a configurable ruleset,
-  giving each trade an action, the rule behind it and a confidence, and reading the account as one
+  giving each trade an action, the rule behind it and its evidence grade, and reading the account as one
   book (beta-weighted delta and theta against bands, an XSP hedge sized when delta leaves its band,
   income candidates sized to the account). **Advice only** — no order path, no credentials, no
   network; read on the console's Live → positions and Live → portfolio tabs. Off until

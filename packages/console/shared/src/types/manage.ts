@@ -1,6 +1,6 @@
 /**
  * The daily position-management evaluation (packages/manage), as the Live page's `manage` tab reads
- * it. Every verdict, level and confidence here is computed by the package; the console only shows
+ * it. Every verdict, level and evidence grade here is computed by the package; the console only shows
  * them. Money is whole-position dollars, signed cash flow, and every P&L is a mark P&L GROSS of fees.
  */
 
@@ -20,6 +20,9 @@ export interface ManageFired {
   rule: string;
   action: ManageAction;
   confidence: number | null;
+  /** The rule's evidence grade (manage's EVIDENCE_GRADES); null on a hold, and on an evaluation
+   *  written before grades, which carries `confidence` instead. */
+  evidence: string | null;
   reason: string;
   legs: string[] | null;
 }
@@ -109,6 +112,9 @@ export interface ManageTrade {
   nearestShortDte: number | null;
   action: ManageAction;
   confidence: number | null;
+  /** The rule's evidence grade (manage's EVIDENCE_GRADES); null on a hold, and on an evaluation
+   *  written before grades, which carries `confidence` instead. */
+  evidence: string | null;
   rule: string | null;
   reason: string;
   /** The verdict in plain English, written by packages/manage from the same numbers. */
@@ -599,6 +605,9 @@ export interface ManageGuidanceFigure {
 export interface ManageGuidance {
   rule: string;
   confidence: number | null;
+  /** The rule's evidence grade (manage's EVIDENCE_GRADES); null on a hold, and on an evaluation
+   *  written before grades, which carries `confidence` instead. */
+  evidence: string | null;
   reason: string;
   /** What drives it, largest first: an underlying and its figures, each with its kind. A
    *  concentration driver carries both shares, since either one can be what breached the cap. */
@@ -777,6 +786,9 @@ export interface ManagePortfolio {
   /** The lowest and highest confidence the evaluation's ruleset gives the portfolio rules (theta,
    *  delta, break-even, buying power, concentration); null where the evaluation embeds no ruleset. */
   ruleConfidence: { low: number; high: number } | null;
+  /** The evidence grades the evaluation's ruleset gives the portfolio rules, each once; empty
+   *  before grades (the caption then falls back to `ruleConfidence`). */
+  ruleEvidence: string[];
   underlyings: ManagePortfolioUnderlying[];
   hedges: ManageHedges | null;
   /** The direction card's ideas; null on an evaluation from before them or with them turned off. */

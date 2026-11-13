@@ -28,7 +28,7 @@ A leg the model cannot price (unpriced, no IV, past expiry) is left out and NAME
 no beta has no BWD and is named. Neither is ever counted as zero. A leg expiring today is taken at its
 moneyness (delta 1 or 0) with its remaining extrinsic as that day's theta.
 
-The bands are retail heuristics with no published out-of-sample evidence, and their confidences say so.
+The bands are retail heuristics with no published out-of-sample evidence, and their grades say so.
 Guidance fired here is REVIEW, naming what drives it: it never sizes, places or closes anything.
 """
 
@@ -949,11 +949,11 @@ def _vol_expansion(
 
 
 # --------------------------------------------------------------------------- guidance
-def _fire(rule: str, confidence: Any, reason: str, drivers: list[dict[str, Any]] | None = None) -> dict:
+def _fire(rule: str, evidence: Any, reason: str, drivers: list[dict[str, Any]] | None = None) -> dict:
     return {
         "rule": rule,
         "action": REVIEW,
-        "confidence": confidence,
+        "evidence": evidence,
         "reason": reason,
         "drivers": drivers or [],
     }
@@ -1039,7 +1039,7 @@ def guidance(r: dict[str, Any], rules: dict[str, Any]) -> list[dict[str, Any]]:
             fired.append(
                 _fire(
                     "portfolio.theta",
-                    tc["confidence"],
+                    tc["evidence"],
                     f"{stated} is {shown} of net liq, above the {bound} ceiling: "
                     f"the book is selling more gamma than the band allows{partial}",
                     drivers,
@@ -1050,7 +1050,7 @@ def guidance(r: dict[str, Any], rules: dict[str, Any]) -> list[dict[str, Any]]:
             fired.append(
                 _fire(
                     "portfolio.theta",
-                    tc["confidence"],
+                    tc["evidence"],
                     f"{stated} is {shown} of net liq, under the {bound} floor{partial}",
                 )
             )
@@ -1066,7 +1066,7 @@ def guidance(r: dict[str, Any], rules: dict[str, Any]) -> list[dict[str, Any]]:
             fired.append(
                 _fire(
                     "portfolio.delta",
-                    dc["confidence"],
+                    dc["evidence"],
                     f"beta-weighted delta {shown} {r['benchmark']} shares "
                     f"(${r['bwd_dollars_per_1pct']:+,.0f} per 1% move) is outside "
                     f"{lo:+.{places}f} to {hi:+.{places}f}"
@@ -1084,7 +1084,7 @@ def guidance(r: dict[str, Any], rules: dict[str, Any]) -> list[dict[str, Any]]:
             fired.append(
                 _fire(
                     "portfolio.breakeven",
-                    bc["confidence"],
+                    bc["evidence"],
                     f"a {shown} {r['benchmark']} move wipes out a day's theta, under the "
                     f"{bound} move its implied volatility expects{partial}",
                 )
@@ -1117,14 +1117,14 @@ def guidance(r: dict[str, Any], rules: dict[str, Any]) -> list[dict[str, Any]]:
             )
         if over:
             fired.append(
-                _fire("portfolio.buying_power", cfg["buying_power"]["cash"]["confidence"], "; ".join(over))
+                _fire("portfolio.buying_power", cfg["buying_power"]["cash"]["evidence"], "; ".join(over))
             )
     elif not off("portfolio.buying_power") and bp.get("inside") is False:
         shown, bound = _apart(bp["value"], bp["high"], 0, "%")
         fired.append(
             _fire(
                 "portfolio.buying_power",
-                cfg["buying_power"]["confidence"],
+                cfg["buying_power"]["evidence"],
                 f"buying power used is {shown} of net liq, over the {bound} the VIX at "
                 f"{bp['vix']:.1f} allows: less room to adjust, and more to lose if the market gaps",
             )
@@ -1137,7 +1137,7 @@ def guidance(r: dict[str, Any], rules: dict[str, Any]) -> list[dict[str, Any]]:
         fired.append(
             _fire(
                 "portfolio.stress",
-                cfg["buying_power"]["cash"]["stress"]["confidence"],
+                cfg["buying_power"]["cash"]["stress"]["evidence"],
                 f"{r['benchmark']} {sb['move']:+.0%} with IV up {sb['iv_shift'] * 100:.0f} points would lose "
                 f"${-sb['pnl']:,.0f}, {shown} of net liq, over the {bound} cap{short}",
                 _drivers(r, "bwd", 1.0),
@@ -1152,7 +1152,7 @@ def guidance(r: dict[str, Any], rules: dict[str, Any]) -> list[dict[str, Any]]:
         fired.append(
             _fire(
                 "portfolio.vol_expansion",
-                cfg["vol_expansion"]["confidence"],
+                cfg["vol_expansion"]["evidence"],
                 f"{r['benchmark']} {x['move']:+.0%} with IV up {x['iv_shift'] * 100:.0f} points would lose "
                 f"${-x['pnl']:,.0f}, {shown} of net liq, over the {bound} cap: the book is short the vol "
                 f"a spike brings{short}",
@@ -1177,7 +1177,7 @@ def guidance(r: dict[str, Any], rules: dict[str, Any]) -> list[dict[str, Any]]:
             fired.append(
                 _fire(
                     "portfolio.concentration",
-                    cc["confidence"],
+                    cc["evidence"],
                     f"over {cap:.0%} of the book's theta (without the legs about to expire, as the band "
                     f"reads it) or beta-weighted delta in one name: {names}",
                     [
@@ -1206,7 +1206,7 @@ def guidance(r: dict[str, Any], rules: dict[str, Any]) -> list[dict[str, Any]]:
             fired.append(
                 _fire(
                     "portfolio.earnings_exposure",
-                    ec["confidence"],
+                    ec["evidence"],
                     f"{len(earn['trades'])} trades span an earnings report before their short expires "
                     f"and can still lose ${abs(earn['downside']):,.0f}, {share:.0%} of net liq, "
                     f"over {cap:.0%}: {days}",
@@ -1221,7 +1221,7 @@ def guidance(r: dict[str, Any], rules: dict[str, Any]) -> list[dict[str, Any]]:
                 fired.append(
                     _fire(
                         "portfolio.expiry_concentration",
-                        xc["confidence"],
+                        xc["evidence"],
                         f"{len(e['trades'])} trades expiring {e['expiration']} can still lose "
                         f"${abs(e['downside']):,.0f}, {share:.0%} of net liq, over {cap:.0%}: "
                         f"{', '.join(e['trades'])}",

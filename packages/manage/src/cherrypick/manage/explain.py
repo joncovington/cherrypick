@@ -468,7 +468,7 @@ def _explain(t: dict[str, Any]) -> str:
         also = " The " + _names(rec["agreeing"]) + " points the same way."
     conflict = ""
     if rec.get("conflicts"):
-        conflict = " The " + _names(rec["conflicts"]) + " points the other way, which lowers the confidence."
+        conflict = " The " + _names(rec["conflicts"]) + " points the other way: weigh it before acting."
     rb = t.get("roll_blocked") or {}
     if rb.get("rule") == "roll.naked_put" and rb.get("reason") == "earnings":
         blocked = (

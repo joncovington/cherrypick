@@ -210,7 +210,8 @@ def test_a_fill_still_settling_blocks_the_positions_read(monkeypatch, tmp_path):
 # ------------------------------------------------------------------ the post
 def _doc(*pairs):
     trades = [
-        {"trade_id": tid, "recommendation": {"action": action, "confidence": 60}} for tid, action in pairs
+        {"trade_id": tid, "recommendation": {"action": action, "evidence": "practice"}}
+        for tid, action in pairs
     ]
     return {"session": TODAY, "accounts": [{"account": "****1234", "trades": trades}]}
 

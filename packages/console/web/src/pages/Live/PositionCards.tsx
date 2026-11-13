@@ -1,3 +1,4 @@
+import { evidenceText } from "../../components/EvidenceTag";
 import { useRef, useState, type ReactNode } from "react";
 import { ViewSwitch, useViewChoice } from "../../components/ViewSwitch";
 import { FilterSortButton, FilterSortPanel, FilterSummary, SortSection, sortRows, type SortChoice, type SortOption } from "../../components/FilterSort";
@@ -424,7 +425,7 @@ function TradeDialog({
     <CardLightbox count={trades.length} index={index} onStep={onStep} onClose={onClose}>
       {(nav) => (
         <LightboxFrame
-          kicker={[t.shape, t.kind, t.confidence !== null ? `confidence ${t.confidence}` : null].filter(Boolean).join(" · ")}
+          kicker={[t.shape, t.kind, evidenceText(t.evidence, t.confidence)].filter(Boolean).join(" · ")}
           title={t.tradeId}
           chips={
             <>

@@ -1,3 +1,4 @@
+import json
 from datetime import date
 
 import pytest
@@ -259,13 +260,32 @@ def test_oversize_states_a_fractional_budget_as_it_is_set():
     assert "the $250 per-trade budget (2.5% of net liq)" in reason
 
 
-def test_hold_carries_a_confidence_and_loses_some_to_earnings():
+def test_a_hold_carries_no_grade_and_names_earnings_inside_it():
+    # A hold is no rule, so it has no evidence grade; a report inside the trade is said, not subtracted.
     legs = [leg(-1, "P", 90, "2026-11-20", 1.00, 0.80), leg(1, "P", 85, "2026-11-20", 0.40, 0.35)]
     plain = run(legs)
     assert plain["recommendation"]["action"] == ev.HOLD
-    assert plain["recommendation"]["confidence"] == 70
+    assert plain["recommendation"]["evidence"] is None and "confidence" not in plain["recommendation"]
     earn = run(legs, metrics={"earnings_date": "2026-10-27"})
-    assert earn["recommendation"]["confidence"] == 60
+    assert earn["recommendation"]["evidence"] is None
+    assert "earnings 2026-10-27 fall inside the trade" in earn["recommendation"]["reason"]
+
+
+def test_every_rule_carries_a_known_grade_and_a_tie_follows_the_rule_order():
+    def grades(node):
+        if isinstance(node, dict):
+            for k, v in node.items():
+                if k == "evidence":
+                    yield v
+                else:
+                    yield from grades(v)
+
+    found = list(grades(_rules.DEFAULT_RULES))
+    assert found and set(found) <= set(_rules.EVIDENCE_GRADES)
+    assert "confidence" not in json.dumps(_rules.DEFAULT_RULES)
+    # Every rule a trade can fire has a place in the tie-break order.
+    trade_rules = [r for r in _rules.RULE_IDS if not r.startswith("portfolio.")]
+    assert set(trade_rules) <= set(_rules.RULE_ORDER)
 
 
 def test_position_override_disables_a_rule():

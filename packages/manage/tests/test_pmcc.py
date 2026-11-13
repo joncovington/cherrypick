@@ -318,7 +318,7 @@ def test_a_failed_width_check_is_rolled_or_closed():
     v = view_of(a)
     assert v["width"]["passes"] is False and v["width"]["pnl_if_assigned"] < 0
     f = fired(trade_of(a, NARROW))["pmcc.width"]
-    assert f["action"] == ev.ROLL_OR_CLOSE and f["confidence"] == 65
+    assert f["action"] == ev.ROLL_OR_CLOSE and f["evidence"] == "mechanics"
     assert f"loses ${-v['width']['pnl_if_assigned']:,.0f}" in f["reason"]
     assert "No roll priced" in f["reason"]  # the snapshot quotes nothing later
 
@@ -528,7 +528,7 @@ def test_a_stop_outranks_the_pmcc_roll():
     assert {"debit.stop", "pmcc.width"} <= set(fired(t))
     rec = t["recommendation"]
     assert rec["rule"] == "debit.stop" and rec["action"] == ev.CLOSE
-    assert rec["conflicts"] == ["pmcc.width"] and rec["confidence"] == 65 - 10
+    assert rec["conflicts"] == ["pmcc.width"] and rec["evidence"] == "practice"  # named, not subtracted
 
 
 def test_the_diagonal_credit_roll_is_offered_in_place_of_the_pmcc_roll():
@@ -565,7 +565,7 @@ def test_an_unreconciled_pmcc_gets_a_review_and_no_pmcc_rule():
     assert "the long's opening predates the history" in v["problems"]
     assert v["width"]["basis"] == "open_legs" and v["width"]["pnl_if_assigned_net"] is None
     names = fired(trade_of(a, NARROW))
-    assert names["pmcc_data"]["action"] == ev.REVIEW and names["pmcc_data"]["confidence"] is None
+    assert names["pmcc_data"]["action"] == ev.REVIEW and names["pmcc_data"]["evidence"] is None
     assert not any(r.startswith("pmcc.") for r in names)
 
 

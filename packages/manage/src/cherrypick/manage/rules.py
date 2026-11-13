@@ -4,8 +4,9 @@ The default is the rule set digested from the vendor's education library on 2026
 trades take profit at 50% of the credit, stop when the loss equals the credit, close at 21 DTE; debit
 trades stop at -50% and take profit at +75%; never roll a loser; never hold a physically-settled
 option into expiry). The evidence behind each number, and where outside research disagrees, is in
-this package's README; each rule's `confidence` is how much that evidence supports it, and is what an
-evaluation reports beside the rule's verdict.
+this package's README; each rule's `evidence` grades the kind of evidence behind it (EVIDENCE_GRADES),
+and is what an evaluation reports beside the rule's verdict. A grade is a category, never a number: it
+cannot be read as a probability, and it is the README's source column stated in one word.
 
 Overrides live in ``~/.cherrypick/config/manage.json`` and are merged key by key over the default, so
 a file holding one changed threshold keeps every other rule. A key the default does not have is
@@ -36,9 +37,6 @@ DEFAULT_RULES: dict[str, Any] = {
     # explain; "expiry_chain" splits by expiry, keeping a diagonal's short with the long it is sold
     # against; "underlying" makes every underlying one trade. Both fallbacks price the open legs only.
     "trade_grouping": "order_chain",
-    # A trade where no rule fired: how far the ruleset supports holding it, less a penalty when an
-    # earnings report falls inside its short legs' life.
-    "hold": {"confidence": 70, "earnings_penalty": 10},
     "risk": {
         "enabled": True,
         # Max loss budget per trade as a share of net liquidating value (the vendor's 2% rule).
@@ -46,22 +44,22 @@ DEFAULT_RULES: dict[str, Any] = {
         # A trade whose modelled remaining downside exceeds budget x this multiple is flagged.
         "oversize_multiple": 3.0,
         "oversize_action": "REVIEW",
-        "confidence": 60,
+        "evidence": "practice",
     },
     "credit": {
         "take_profit": {
             "enabled": True,
             "capture": 0.50,
-            "confidence": 80,
-            # A shape's own target, in place of `capture` and `confidence` (shapes.py names the shapes).
+            "evidence": "tested",
+            # A shape's own target, in place of `capture` and `evidence` (shapes.py names the shapes).
             # One short strike of these is nearly always in the money, so they rarely keep half: the
             # tastylive strategy guide (2023) takes them off at 25%. Outside tests found 25% loses after
-            # commissions on OTM credit trades; none tested these shapes, hence the lower confidence.
+            # commissions on OTM credit trades; none tested these shapes, hence practice, not tested.
             "by_shape": {
-                "short straddle": {"capture": 0.25, "confidence": 55},
-                "iron butterfly": {"capture": 0.25, "confidence": 55},
-                "big lizard": {"capture": 0.25, "confidence": 55},
-                "reverse big lizard": {"capture": 0.25, "confidence": 55},
+                "short straddle": {"capture": 0.25, "evidence": "practice"},
+                "iron butterfly": {"capture": 0.25, "evidence": "practice"},
+                "big lizard": {"capture": 0.25, "evidence": "practice"},
+                "reverse big lizard": {"capture": 0.25, "evidence": "practice"},
             },
         },
         "stop": {
@@ -73,7 +71,7 @@ DEFAULT_RULES: dict[str, Any] = {
             "fallback_max_loss_fraction": 0.50,
             # 70 until 2026-10-20; lowered after a declared local study of strangle management on
             # licensed history (its plan and results stay under ~/.cherrypick, by the data licence).
-            "confidence": 50,
+            "evidence": "contested",
         },
         "time_exit": {
             "enabled": True,
@@ -84,27 +82,27 @@ DEFAULT_RULES: dict[str, Any] = {
             # take profit, stop and the expiry close. The exit was tested on trades opened about 45 days
             # out; one opened inside it was only ever told to close on day one (user, 2026-11-06).
             "skip_if_entered_inside": True,
-            "confidence": 75,
+            "evidence": "tested",
         },
         # Thesis rule: a short strike is in the money and what is left to win, against what is left to
         # lose, is below the entry standard (1/3 of width = 0.5 reward per unit of risk).
-        "breached": {"enabled": True, "min_reward_to_risk": 0.50, "confidence": 70},
+        "breached": {"enabled": True, "min_reward_to_risk": 0.50, "evidence": "practice"},
         # Off by default (the rule set holds credit trades through earnings); on = close before it.
-        "close_before_earnings": {"enabled": False, "confidence": 55},
+        "close_before_earnings": {"enabled": False, "evidence": "practice"},
     },
     "debit": {
-        "stop": {"enabled": True, "loss_fraction": 0.50, "confidence": 65},
+        "stop": {"enabled": True, "loss_fraction": 0.50, "evidence": "practice"},
         "take_profit": {
             "enabled": True,
             "gain_fraction": 0.75,
-            "confidence": 65,
-            # A shape's own target, in place of `gain_fraction` and `confidence`. A calendar trades only
+            "evidence": "practice",
+            # A shape's own target, in place of `gain_fraction` and `evidence`. A calendar trades only
             # the time value between its expiries and cannot run far either way, so the strategy guide
             # takes it off at 10-25% of the debit; a zebra starts with no time value and takes 25%.
             "by_shape": {
-                "calendar": {"gain_fraction": 0.25, "confidence": 55},
-                "call zebra": {"gain_fraction": 0.25, "confidence": 55},
-                "put zebra": {"gain_fraction": 0.25, "confidence": 55},
+                "calendar": {"gain_fraction": 0.25, "evidence": "practice"},
+                "call zebra": {"gain_fraction": 0.25, "evidence": "practice"},
+                "put zebra": {"gain_fraction": 0.25, "evidence": "practice"},
             },
             # A diagonal (a PMCC among them) is worth about its width at the short's expiry: its
             # target is the lesser of `gain_fraction` of the debit and `share` of its modelled gain
@@ -124,14 +122,14 @@ DEFAULT_RULES: dict[str, Any] = {
             "enabled": True,
             "max_share_of_width": 0.75,
             "run_past_short_moves": 1.0,
-            "confidence": 60,
+            "evidence": "practice",
         },
         # A calendar's stop is the underlying's price, not the spread's: its quote is wide, and a move
         # either way is what loses it. The band is where the modelled value at the short's expiry (the
         # long at its own IV) falls to `loss_share` below the debit; outside it the trade is reviewed,
         # to close if the stock CLOSES there (an intraday touch whipsaws). A modelled level with no
         # outside test (user, 2026-11-06); the -50% debit stop stays as the backstop.
-        "price_stop": {"enabled": True, "shapes": ["calendar"], "loss_share": 0.25, "confidence": 45},
+        "price_stop": {"enabled": True, "shapes": ["calendar"], "loss_share": 0.25, "evidence": "ours"},
         "time_exit": {
             "enabled": True,
             # A debit trade carrying short legs (a diagonal) is managed when its nearest short is this close.
@@ -151,16 +149,16 @@ DEFAULT_RULES: dict[str, Any] = {
             # spread bought at 21 DTE or fewer, a long option at 14 or fewer) skips it.
             "skip_if_entered_inside": True,
             "roll_if_profitable": True,
-            "confidence": 70,
+            "evidence": "practice",
         },
     },
     "legs": {
         # A short leg that has given up this share of its premium is bought back, whatever the trade does.
-        "short_take_profit": {"enabled": True, "capture": 0.80, "confidence": 85},
+        "short_take_profit": {"enabled": True, "capture": 0.80, "evidence": "mechanics"},
         # A butterfly's (broken-wing, broken-heart) long vertical worth this share of its width is sold,
         # keeping the short spread: its value is banked rather than given back if the stock comes back
         # through the body. The tastylive strategy guide's defence (2023); no outside test.
-        "long_vertical": {"enabled": True, "share_of_width": 0.90, "confidence": 50},
+        "long_vertical": {"enabled": True, "share_of_width": 0.90, "evidence": "practice"},
     },
     "roll": {
         # A roll is only ever for a net credit; one that would cost a debit is a close instead.
@@ -176,7 +174,7 @@ DEFAULT_RULES: dict[str, Any] = {
             "out_days": 28,
             "min_credit": 0.10,
             "skip_through_earnings": True,
-            "confidence": 60,
+            "evidence": "practice",
         },
         # A diagonal (shorts expiring before a long they are sold against) rolls its SHORT STRUCTURE --
         # the shorts and any wings in their expiry -- out to the first monthly at least `out_days` later,
@@ -199,14 +197,14 @@ DEFAULT_RULES: dict[str, Any] = {
             "short_term_out_days": 7,
             "short_term_min_long_days": 21,
             "skip_through_earnings": False,
-            "confidence": 60,
+            "evidence": "ours",
         },
         # A broken-wing butterfly opened for a credit "flies off" its risk: buy the wing that makes it a
         # plain butterfly and sell the wide one, when that costs no more than `max_share_of_credit` of
         # the net credit taken in. What is left cannot lose (fees aside) and still pays most at the body.
         # The new wing is MODELLED (its IV read off the body's and the old wing's): re-quote first. The
         # tastylive strategy guide's (2023) first goal for a BWB; no outside test.
-        "fly_off": {"enabled": True, "max_share_of_credit": 1.0, "confidence": 55},
+        "fly_off": {"enabled": True, "max_share_of_credit": 1.0, "evidence": "practice"},
         # A short strangle or straddle is TESTED when one short reaches `tested_delta` while the other
         # is under `target_delta`: roll the untested short toward the money, in the same expiry, to the
         # listed strike nearest `target_delta`, when that takes in `min_credit` a share at the quoted
@@ -222,7 +220,7 @@ DEFAULT_RULES: dict[str, Any] = {
             "tested_delta": 0.40,
             "target_delta": 0.30,
             "min_credit": 0.10,
-            "confidence": 50,
+            "evidence": "contested",
         },
     },
     # The wheel (wheel.py): rules on the short options and shares of a wheel
@@ -232,14 +230,19 @@ DEFAULT_RULES: dict[str, Any] = {
         # A short whose mark is at or under its buy-to-close: the resting order's price where one is
         # working, else `btc_price` ($0.05 `btc_price_illiquid` on a wide market). The skate method's
         # exit: a GTC buy-to-close at $0.03 placed right after the fill.
-        "take_profit": {"enabled": True, "btc_price": 0.03, "btc_price_illiquid": 0.05, "confidence": 80},
+        "take_profit": {
+            "enabled": True,
+            "btc_price": 0.03,
+            "btc_price_illiquid": 0.05,
+            "evidence": "mechanics",
+        },
         # A short at or through its strike: roll or close, with the net-zero and premium-gambit rolls
         # out in time priced on the snapshot's quoted chain and each judged by check-roll. Repair, which
         # this ruleset otherwise avoids, so it never outranks a close.
-        "tested": {"enabled": True, "confidence": 50},
+        "tested": {"enabled": True, "evidence": "practice"},
         # Shares delivered by an assignment and not yet written against: name the covered call at the
         # skate call band (`band`: "fixed" or "by_expiry"). Never a strike without the band.
-        "next_leg": {"enabled": True, "band": "fixed", "confidence": 50},
+        "next_leg": {"enabled": True, "band": "fixed", "evidence": "practice"},
     },
     # The PMCC view (pmcc.py): a call diagonal is a PMCC only when its long
     # was entered at `entry_min_delta` or more, or `positions.<SYM>.intent` is "pmcc"; "diagonal"
@@ -252,7 +255,7 @@ DEFAULT_RULES: dict[str, Any] = {
     # back, and an in-the-money call is judged by its call-away against the wheel basis (else the
     # shares' own chain cost): at or over it a review to let them go, under it roll or close.
     # Confidence: option mechanics (an assignment delivers shares the account holds).
-    "covered_call": {"assigned": {"enabled": True, "confidence": 75}},
+    "covered_call": {"assigned": {"enabled": True, "evidence": "mechanics"}},
     "pmcc": {
         # The standard definition (user, 2026-11-04): the long entered at 0.70 delta or more; the short's
         # expiry and delta may vary. Neither leg's days left decides it (the long's roll is `roll_long`).
@@ -265,15 +268,15 @@ DEFAULT_RULES: dict[str, Any] = {
         # premium collected, or an assignment (the long exercised to deliver) locks in a loss. A net cost
         # over `warn_share` of the width passes but is flagged thin: a call-away then earns under a third
         # of it (tastylive enters at 75% of the width or less).
-        "width": {"enabled": True, "confidence": 65, "warn_share": 0.75},
+        "width": {"enabled": True, "evidence": "mechanics", "warn_share": 0.75},
         # The short in the money with less time value than the next dividend before an ex-date inside
         # its life, or under `near_zero_extrinsic` at any time (the pmcc package's flag).
-        "assignment": {"enabled": True, "near_zero_extrinsic": 0.05, "confidence": 65},
+        "assignment": {"enabled": True, "near_zero_extrinsic": 0.05, "evidence": "mechanics"},
         # The long at `days_left` or fewer or under `min_delta`: review a roll of
         # the long down and out.
         # 60, not the guides' 120: tastylive's PMCC study found a long bought 90-150 days out best, and
         # at 120 a long bought in that range was flagged to roll within weeks of the fill.
-        "roll_long": {"enabled": True, "days_left": 60, "min_delta": 0.70, "confidence": 45},
+        "roll_long": {"enabled": True, "days_left": 60, "min_delta": 0.70, "evidence": "practice"},
         # The short's roll candidates for a roll-or-close: one per quoted expiry after the short and
         # before the long, the next `expiries`, at most `max_delta`, costing at most `max_debit` a share.
         "roll": {"max_delta": 0.40, "max_debit": 0.10, "expiries": 5},
@@ -298,7 +301,7 @@ DEFAULT_RULES: dict[str, Any] = {
             "VIXW",
             "DJX",
         ],
-        "confidence": 90,
+        "evidence": "mechanics",
     },
     "earnings": {"enabled": True, "warn_days": 14},
     # A trade put on to hold through an earnings report: opened `min_days_before`..`max_days_before`
@@ -314,9 +317,9 @@ DEFAULT_RULES: dict[str, Any] = {
         "min_days_before": 0,
         "max_days_before": 7,
         "max_days_expiry_after": 14,
-        "confidence": 75,
+        "evidence": "ours",
     },
-    "ex_dividend": {"enabled": True, "warn_days": 10, "confidence": 80},
+    "ex_dividend": {"enabled": True, "warn_days": 10, "evidence": "mechanics"},
     # A trade whose net premium is under `max_premium_share` of its modelled max loss (a super bear or
     # bull, a risk reversal) earns from direction, not premium, so the credit and debit rules -- each a
     # percentage of that small premium -- give way to these, judged on what it can win and lose.
@@ -327,11 +330,10 @@ DEFAULT_RULES: dict[str, Any] = {
             "enabled": True,
             "share_of_max_gain": 0.50,
             "max_reward_multiple": 1.0,
-            "confidence": 65,
+            "evidence": "ours",
         },
-        "stop": {"enabled": True, "share_of_max_loss": 0.50, "confidence": 65},
+        "stop": {"enabled": True, "share_of_max_loss": 0.50, "evidence": "ours"},
     },
-    "conflict_penalty": 10,
     # Legs left out of the evaluation entirely. SPX 0DTE is the flies live loop's own book: it is
     # managed by that loop and settles in cash at the close, so judging it here only adds noise.
     "exclude": {"zero_dte_underlyings": ["SPX"]},
@@ -363,7 +365,8 @@ DEFAULT_RULES: dict[str, Any] = {
     },
     "pricing": {"rate": 0.04, "grid_low": 0.01, "grid_high": 3.0, "grid_steps": 600},
     # The account as one book (portfolio.py, portfolio-guidance-plan (archived)). Every band is a retail
-    # heuristic with no published out-of-sample evidence, hence the low confidences.
+    # heuristic with no published out-of-sample evidence: practice where retail education states it,
+    # ours where the figure is our own.
     "portfolio": {
         "enabled": True,
         # Theta per calendar day as a share of net liq. Above the ceiling the book is selling more
@@ -380,7 +383,7 @@ DEFAULT_RULES: dict[str, Any] = {
             # inside the band, not a quantity to maximise. Agreed with the operator 2026-10-30.
             "target_pct_nlv": 0.002,
             "front_dte": 2,
-            "confidence": 40,
+            "evidence": "practice",
         },
         # Beta-weighted delta band in benchmark shares: -short_per_theta x theta to +long_per_theta x
         # theta (leaning slightly long), on the theta band's figure (without the legs `front_dte`
@@ -391,21 +394,21 @@ DEFAULT_RULES: dict[str, Any] = {
             "short_per_theta": 0.5,
             "long_per_theta": 0.75,
             "fallback_pct_nlv_per_1pct": 0.005,
-            "confidence": 40,
+            "evidence": "practice",
         },
         # A short-gamma book whose break-even move is under this multiple of the benchmark's implied
         # one-day move is losing the race between theta and gamma.
-        "breakeven": {"enabled": True, "min_multiple_of_expected_move": 1.0, "confidence": 40},
+        "breakeven": {"enabled": True, "min_multiple_of_expected_move": 1.0, "evidence": "practice"},
         # One underlying over this share of the book's gross theta or gross beta-weighted delta.
-        "concentration": {"enabled": True, "max_share": 0.25, "confidence": 40},
+        "concentration": {"enabled": True, "max_share": 0.25, "evidence": "practice"},
         # What the trades with an earnings report before their nearest short expires can still lose,
         # summed, over this share of net liq. Each trade passes its own rules; on 2026-10-20 eight of
         # sixteen spanned a report, about a quarter of net liq between them, and no rule added it up.
-        "earnings_exposure": {"enabled": True, "max_pct_nlv": 0.10, "confidence": 40},
+        "earnings_exposure": {"enabled": True, "max_pct_nlv": 0.10, "evidence": "ours"},
         # What the trades whose nearest short expires on one date can still lose, over this share of
         # net liq: one expiry carries every gap and pin on that day at once (over a quarter of net liq
         # on 2026-11-20 as read on 2026-10-20). A new candidate on an expiry already over it waits.
-        "expiry_concentration": {"enabled": True, "max_pct_nlv": 0.20, "confidence": 40},
+        "expiry_concentration": {"enabled": True, "max_pct_nlv": 0.20, "evidence": "ours"},
         # When the broker's beta and its three-month correlation disagree enough to doubt the beta.
         "beta_doubt": {"min_abs_corr": 0.3, "near_zero_beta": 0.1},
         # Benchmark shocks the stress line reprices the book at, each underlying moved by beta x shock.
@@ -420,7 +423,7 @@ DEFAULT_RULES: dict[str, Any] = {
             "move": -0.05,
             "iv_shift": 0.10,
             "max_loss_pct_nlv": 0.10,
-            "confidence": 30,
+            "evidence": "ours",
         },
         # Buying power used against a ceiling. On margin it rises with VIX: [VIX under, cap], the last
         # bound null for "anything above". The common retail table (more room when premium is rich),
@@ -441,14 +444,14 @@ DEFAULT_RULES: dict[str, Any] = {
         "buying_power": {
             "enabled": True,
             "vix_steps": [[15, 0.25], [20, 0.30], [30, 0.35], [40, 0.40], [None, 0.50]],
-            "confidence": 40,
+            "evidence": "practice",
             "cash": {
                 "enabled": True,
                 "max_pct_nlv": 0.80,
                 "stock_exposure_pct_nlv": 0.65,
                 "spread_risk_pct_nlv": 0.35,
-                "confidence": 40,
-                "stress": {"move": -0.20, "iv_shift": 0.10, "max_loss_pct_nlv": 0.20, "confidence": 30},
+                "evidence": "ours",
+                "stress": {"move": -0.20, "iv_shift": 0.10, "max_loss_pct_nlv": 0.20, "evidence": "ours"},
             },
         },
         # The risk matrix (benchmark moves x IV shifts in vol points, time held still) and the risk
@@ -606,6 +609,50 @@ TRADE_INTENTS = frozenset({"pmcc", "diagonal"})
 TRADE_ID_KEYS = frozenset({"intent", "disable", "note"})
 
 # Every rule id an override's `disable` list may name.
+# The kinds of evidence a rule can rest on, strongest claim first. A rule's grade is one of these.
+EVIDENCE_GRADES = {
+    "mechanics": "follows from exchange or option mechanics, or plain arithmetic",
+    "tested": "a published test, or our own declared study, supports it",
+    "contested": "tests exist and point against it, or are mixed",
+    "practice": "practitioner doctrine (a vendor, a guide), with no test",
+    "ours": "our own rule, with no test",
+}
+
+# Which rule's reason a trade shows when several name the same action: safety first (expiry and
+# assignment), then sizing, then stops and the broken thesis, then targets, then time, then rolls and
+# reviews. A fixed order, not a number: changing a grade never changes which reason is shown.
+RULE_ORDER = (
+    "expiry",
+    "ex_dividend",
+    "pmcc.assignment",
+    "covered_call.assigned",
+    "risk.oversize",
+    "credit.stop",
+    "debit.stop",
+    "directional.stop",
+    "debit.price_stop",
+    "credit.breached",
+    "pmcc.width",
+    "debit.diagonal_width",
+    "earnings_trade",
+    "credit.close_before_earnings",
+    "credit.take_profit",
+    "debit.take_profit",
+    "directional.take_profit",
+    "legs.short_take_profit",
+    "wheel.take_profit",
+    "legs.long_vertical",
+    "credit.time_exit",
+    "debit.time_exit",
+    "roll.naked_put",
+    "roll.diagonal_short",
+    "wheel.tested",
+    "roll.fly_off",
+    "roll.untested_side",
+    "pmcc.roll_long",
+    "wheel.next_leg",
+)
+
 RULE_IDS = (
     "expiry",
     "credit.take_profit",
@@ -710,11 +757,11 @@ def _merge_by_shape(rule: dict[str, Any], over: dict[str, Any], path: str, warni
 
 
 def for_shape(rule: dict[str, Any], shape: str | None, field: str) -> tuple[float, Any, bool]:
-    """A rule's threshold and confidence for a trade of `shape`: its `by_shape` entry where it has one
-    (a field the entry leaves out is the rule's own), else the rule's. The flag is True when the shape's
-    own entry set it."""
+    """A rule's threshold and evidence grade for a trade of `shape`: its `by_shape` entry where it has
+    one (a field the entry leaves out is the rule's own), else the rule's. The flag is True when the
+    shape's own entry set it."""
     entry = (rule.get("by_shape") or {}).get(shape or "") or {}
-    return float(entry.get(field, rule[field])), entry.get("confidence", rule["confidence"]), bool(entry)
+    return float(entry.get(field, rule[field])), entry.get("evidence", rule["evidence"]), bool(entry)
 
 
 def _check_positions(rules: dict[str, Any], warnings: list[str]) -> None:
