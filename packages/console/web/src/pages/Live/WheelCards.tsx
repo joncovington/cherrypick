@@ -696,7 +696,8 @@ export function WheelCards({ a: evaluated }: { a: ManageAccount }) {
   // (2026-11-12).
   const showLook = (look?.items.length ?? 0) + (look?.expiring.length ?? 0) > 0 || cands.some((c) => !onRows.has(candidateKey(c)));
   const ledger = a.ledger ?? null;
-  const showLedger = ledger !== null && (Boolean(ledger.error) || (ledger.names?.length ?? 0) > 0);
+  // A ledger with no name in it has nothing to show, whatever its note says (no history read, say).
+  const showLedger = ledger !== null && (ledger.names?.length ?? 0) > 0;
   const showCycles = wheelHasContent(a.wheel);
   return (
     <WheelBoxes a={a}>

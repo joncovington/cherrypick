@@ -46,7 +46,8 @@ function Choice({ c, model, onDone }: { c: ManageIntentCandidate; model: ConfigM
       <div className="int-col">
         <span className="lk-sub">as it stands</span>
         <Verdict v={c.now} />
-        <button type="button" className="btn btn-quiet" onClick={() => pick("no_wheel")}>
+        {/* A full button like its neighbour: the quiet style read as plain text on the page. */}
+        <button type="button" className="btn" onClick={() => pick("no_wheel")}>
           Not a wheel
         </button>
       </div>
