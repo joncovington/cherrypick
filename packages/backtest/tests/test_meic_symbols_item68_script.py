@@ -58,12 +58,14 @@ def test_each_arm_is_live_1400_on_its_symbol_at_its_width_with_every_gate():
             assert name + st.HALFWAY_SUFFIX not in p
         assert p["pm-200"] == PM200  # the machine's arm is never changed
         assert p["control"] == {"enabled": True, "symbols": [symbol]}  # the runner's pair trades the symbol
-    assert st.ARMS == {"QQQ": {"q1": 1, "q5": 5}, "NDX": {"n40": 40, "n10": 10}}
+    # NDX was declared and dropped by the 2026-11-13 amendment: no NDXP minute greeks before 2026-05-08.
+    assert st.ARMS == {"QQQ": {"q1": 1, "q5": 5}}
+    assert st.DROPPED == {"NDX": {"n40": 40, "n10": 10}}
 
 
 def test_the_halfway_fill_twins_differ_only_by_their_fill_and_only_in_the_design_window():
-    p = st.study_registry(REGISTRY, "NDX", stress=True)["profiles"]
-    for name in st.ARMS["NDX"]:
+    p = st.study_registry(REGISTRY, "QQQ", stress=True)["profiles"]
+    for name in st.ARMS["QQQ"]:
         assert p[name + st.HALFWAY_SUFFIX] == {**p[name], "slippage_frac_of_spread": 0.25}
 
 
@@ -82,11 +84,11 @@ def test_a_wing_is_inside_only_when_its_strike_is_quoted():
     assert st.spacing(quotes, None) is None
 
 
-def test_the_study_waits_for_a_coverage_read_of_both_symbols():
+def test_the_study_waits_for_a_coverage_read_of_the_judged_symbol_only():
     assert "coverage first" in st.coverage_refusal(None, "design")
-    doc = {"symbols": {"QQQ": {"design": {"sessions": 300}}, "NDX": {"design": {"sessions": 0}}}}
-    assert "NDX" in st.coverage_refusal(doc, "design") and "QQQ" not in st.coverage_refusal(doc, "design")
-    doc["symbols"]["NDX"]["design"]["sessions"] = 280
+    doc = {"symbols": {"QQQ": {"design": {"sessions": 0}}, "NDX": {"design": {"sessions": 0}}}}
+    assert "QQQ" in st.coverage_refusal(doc, "design") and "NDX" not in st.coverage_refusal(doc, "design")
+    doc["symbols"]["QQQ"]["design"]["sessions"] = 280  # a dropped symbol's empty window no longer refuses
     assert st.coverage_refusal(doc, "design") is None
 
 
@@ -96,7 +98,7 @@ def _tests(nets_by_arm, fees=1.0):
 
 def test_a_steady_edge_passes_and_each_bar_fails_alone():
     good = [5.0 + (i % 7) for i in range(120)]
-    t = _tests({"q1": good, "q5": good, "n40": good, "n10": good})
+    t = _tests({"q1": good, "q5": good})
     st.judge(t, holdout=False)
     assert all(v["verdict"] == "pass" for v in t.values())
 
@@ -117,9 +119,9 @@ def test_a_steady_edge_passes_and_each_bar_fails_alone():
     assert not thin["q1"]["checks"]["survives_1_5x_fees"] and thin["q1"]["verdict"] == "fail"
 
 
-def test_holm_spans_the_four_arms_and_the_holdout_reads_mean_and_t_only():
+def test_holm_spans_the_judged_arms_and_the_holdout_reads_mean_and_t_only():
     marginal = [(1.0 if i % 2 else 0.0) + 0.05 for i in range(120)]
-    t = _tests({"q1": marginal, "q5": [0.0] * 120, "n40": [0.0] * 120, "n10": [0.0] * 120})
+    t = _tests({"q1": marginal, "q5": [0.0] * 120})
     st.judge(t, holdout=False)
     assert set(t["q1"]["checks"]) >= {"holm", "both_halves_positive", "survives_1_5x_fees"}
     h = _tests({"q1": [0.0] * 60 + [9.0] * 60})

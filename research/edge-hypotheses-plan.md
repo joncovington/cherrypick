@@ -6902,6 +6902,14 @@ run.*
   - **A fail:** the symbol is not added; MEIC live stays on SPX alone.
   - Either way the correlation and the net over buying power beside SPX are read with the verdict:
     they say whether a passing symbol adds to SPX or repeats it.
+- **Amendment, 2026-11-13, before any P&L was read: NDX is dropped.** The NDX fetch stored only the
+  sessions from 2026-05-08 and was refused `no_data` on every earlier one, so NDX has no session in the
+  design window or the holdout. Checked by hand on the vendor's second environment (counts only): NDXP's
+  daily expiries are listed and its end-of-day and minute quotes exist before that date, but its minute
+  greeks, which carry the index's price, start on 2026-05-08 on this subscription. The judged arms are
+  `q1` and `q5`; Holm runs across those two. Everything else stands as declared. NDX could return as its
+  own item on a store built from quotes alone (the index level from put-call parity, deltas computed),
+  declared before it is fetched.
 - **Result:** not yet run.
 
 ### 69. Item 57's unhedged arm in paper: does a close-of-session fill track the replay?

@@ -1,23 +1,24 @@
-"""Item 68, MEIC's live rule on QQQ and NDX (research/edge-hypotheses-plan.md): `pm-200` entering once a day,
-14:00-14:30, on each symbol at its SPX-equivalent wing and at the width the config gives it today.
+"""Item 68, MEIC's live rule on QQQ (research/edge-hypotheses-plan.md; NDX dropped by amendment): `pm-200`
+entering once a day, 14:00-14:30, at QQQ's SPX-equivalent wing and at the width the config gives it today.
 
     python packages/backtest/scripts/meic_symbols_item68.py --step coverage
     python packages/backtest/scripts/meic_symbols_item68.py --step study --window design|holdout [--workers N]
 
-Runs the backtest's own MEIC replay (`cherrypick.backtest.runner`, MEIC's own engine) over each symbol's
-wide 60 s vendor store (`QQQ-60s-wide.db`, `NDX-60s-wide.db`), provisionally: MEIC history has not
-unlocked, and these symbols never can (there is no paper record of them to validate against). The
-holdout is spent by this run, once (`unvalidated_holdout`). Writes under the backtest data dir
-(results/research/item68/), never into the repo: the inputs are licensed.
+Runs the backtest's own MEIC replay (`cherrypick.backtest.runner`, MEIC's own engine) over QQQ's wide
+60 s vendor store (`QQQ-60s-wide.db`), provisionally: MEIC history has not unlocked, and QQQ never can
+(there is no paper record of it to validate against). The holdout is spent by this run, once
+(`unvalidated_holdout`). Writes under the backtest data dir (results/research/item68/), never into the
+repo: the inputs are licensed.
 
-**The arms, as declared.** Each is the registry's `pm-200` with entries 14:00-14:30 (item 23's
-`live-1400`, the rule live trades, gates and all), `symbols` set to the one symbol and
-`wing_width_points` set: `q1` and `q5` on QQQ, `n40` and `n10` on NDX. 1 and 40 are SPX's 10 points
-scaled by price; 5 and 10 are the widths `wing_widths_by_symbol` gives the symbols today. `control`
-runs because the runner requires it, pointed at the symbol, and is never judged.
+**The arms.** Each is the registry's `pm-200` with entries 14:00-14:30 (item 23's `live-1400`, the rule
+live trades, gates and all), `symbols` set to QQQ and `wing_width_points` set: `q1` (SPX's 10 points
+scaled by price) and `q5` (the width `wing_widths_by_symbol` gives QQQ today). `control` runs because the
+runner requires it, pointed at the symbol, and is never judged. NDX (`n40`, `n10`) was declared too and
+dropped by the 2026-11-13 amendment, before any P&L was read: the vendor serves NDXP minute greeks only
+from 2026-05-08 on this subscription, so NDX has no session in either window (`DROPPED`).
 
 **The verdict**, per arm, the observation one session (a session with no entry counts, at zero): the
-arm's own mean net above zero with a one-sided t above 2, Holm across the four arms, positive in both
+arm's own mean net above zero with a one-sided t above 2, Holm across the judged arms, positive in both
 time-halves of the window, still positive at 1.5x fees; at least 100 sessions; then the holdout's mean
 above zero with t above 2.
 
@@ -61,7 +62,10 @@ BASE_ARM = "pm-200"
 LIVE = "live-1400"
 WINDOW = ("14:00", "14:30")
 #: The judged arms per symbol: (arm, wing width). The first is SPX's 10 points scaled by price.
-ARMS = {"QQQ": {"q1": 1, "q5": 5}, "NDX": {"n40": 40, "n10": 10}}
+ARMS = {"QQQ": {"q1": 1, "q5": 5}}
+#: Declared, then dropped by the 2026-11-13 amendment before any P&L was read: NDXP minute greeks start
+#: 2026-05-08 at the vendor on this subscription, so NDX has no session in the design or holdout window.
+DROPPED = {"NDX": {"n40": 40, "n10": 10}}
 #: The stress fill: halfway from mid to the natural fill on every leg, a quarter of its spread (the
 #: verdict fill is the model's own eighth).
 HALFWAY = {"slippage_frac_of_spread": 0.25}
@@ -431,6 +435,14 @@ def study(settings: dict, window: str, workers: int) -> dict:
         "spx_live_1400_run_id": spx_run,
         "spx_live_1400": own(spx, start, end) if spx else None,
         "arms": tests,
+        "dropped": {
+            sym: {
+                "arms": arms,
+                "why": "amendment 2026-11-13, before any P&L was read: NDXP minute greeks start 2026-05-08 "
+                "at the vendor on this subscription, so no session falls in either window",
+            }
+            for sym, arms in DROPPED.items()
+        },
         "reported": reported,
         "verdict": "pass" if any(v.get("verdict") == "pass" for v in tests.values()) else "fail",
     }

@@ -49,7 +49,8 @@ STORES: list[dict[str, str]] = [
         "at 60 s",
         "built_by": "python -m cherrypick.backtest fetch --cadence 60 --store-tag wide --dataset NDX "
         "(research queue)",
-        "used_by": "item 68, MEIC's live rule on NDX (packages/backtest/scripts/meic_symbols_item68.py)",
+        "used_by": "none: fetched for item 68, whose NDX arms were dropped (NDXP minute greeks start "
+        "2026-05-08 on this subscription, so it holds sessions from then only)",
     },
     {
         "file": "XSP-60s-wide.db",
