@@ -434,7 +434,9 @@ def run(cfg: dict) -> dict:
             entry = accounts.get(login) or {}
             symbol = str(entry.get("symbol") or "").strip().upper() or None
             ledger = core_home.data_dir(name) / login / f"{name}_trades.db"
-            out[f"{name}.{login}"] = _one(name, f"{name}.{login}", ledger, paper_path, entry.get("arm"), symbol)
+            out[f"{name}.{login}"] = _one(
+                name, f"{name}.{login}", ledger, paper_path, entry.get("arm"), symbol
+            )
     return out
 
 
