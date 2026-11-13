@@ -3017,10 +3017,10 @@
       "side": "neutral",
       "structure": "iron-condor",
       "window": "0dte",
-      "measure": "summed net per session in $ at one condor, and buying power per session, per arm: pm-200 entering 14:00-14:30 with all its gates on QQQ at 1 and 5 wide (q1, q5) and on NDX at 40 and 10 wide (n40, n10); SPX live-1400 from item 23's runs as the reference",
+      "measure": "summed net per session in $ at one condor, and buying power per session, per arm: pm-200 entering 14:00-14:30 with all its gates on QQQ at 1 and 5 wide (q1, q5) and on NDX at 40 and 10 wide (n40, n10); SPX live-1400 from item 23's runs as the reference; NDX dropped by the 2026-11-13 amendment",
       "expected": "a positive mean session net after costs on at least one arm, in both windows",
       "sample": "design 2022-05-16..2025-06-30, holdout 2025-07-01..2026-10-12 run straight after, counting only after a design pass; each symbol's wide 60 s vendor store (40 strikes each side); sessions with a same-day expiry only; both provisional for good, MEIC history being unvalidated and these symbols having no paper record to validate against; < 100 sessions = no verdict",
-      "rule": "per arm: own mean session net > 0 with one-sided t > 2, Holm across the four arms, positive in both time-halves, still positive at 1.5x fees; then holdout mean > 0 with t > 2. Reported, never judged: net over buying power and session-net correlation beside SPX live-1400, the two together, the halfway-to-natural fill stress (design), entries left open at the session's end",
+      "rule": "per arm: own mean session net > 0 with one-sided t > 2, Holm across the judged arms (q1, q5), positive in both time-halves, still positive at 1.5x fees; then holdout mean > 0 with t > 2. Reported, never judged: net over buying power and session-net correlation beside SPX live-1400, the two together, the halfway-to-natural fill stress (design), entries left open at the session's end Amended 2026-11-13 before any P&L was read: NDX dropped (NDXP minute greeks start 2026-05-08 at the vendor on this subscription, so no NDX session falls in either window); judged arms q1 and q5.",
       "mechanism": "SPX's premium claim on another 0DTE chain: a 16-delta condor is paid more than the moves that reach its shorts, if that survives the chain's spreads, strike spacing and, for QQQ, physical settlement",
       "rivals": [
         {
