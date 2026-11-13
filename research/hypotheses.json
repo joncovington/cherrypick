@@ -3324,6 +3324,57 @@
       ],
       "retest": null,
       "retests": []
+    },
+    {
+      "id": 74,
+      "study": "item74",
+      "title": "The super bull as leverage: against the same delta financed on the same capital",
+      "status": "declared",
+      "legacy": false,
+      "setup": "leverage-choice",
+      "side": "bullish",
+      "structure": "super-bull",
+      "window": "monthly",
+      "measure": "per trade, net and excess (net less the entry delta held on the same capital, the rest borrowed at the 3-month bill, over the same days) as a share of capital (the put spread's width less the net credit); four arms: the super bull on one expiry (A) and with its long call a monthly later (B), entered 35 or 52 days before the front monthly; one observation is one cycle month, equal weight across 23 names",
+      "expected": "net positive on a bull sample; the excess over the financed delta expected to fail, as the short put half failed alone in items 14 to 16",
+      "sample": "design entries 2016-01-01..2021-12-31; holdout entries 2022-01-01..front 2026-11-20 read only after a design pass; < 50 cycles or > 5% of an arm's entries without an exit mark = no verdict",
+      "rule": "per arm: mean net return on capital > 0 with a stationary-bootstrap one-sided 95% lower bound > 0 (block 3, 20,000 draws, seed 74); mean excess > 0 with its lower bound > 0 and Holm 0.05 across the four arms; excess positive in each design half; net and excess positive at 1.5x costs; then the holdout with the same checks",
+      "mechanism": "drift (shared with the rival and removed by it), put skew sold against calls bought, and for the diagonal the later long call's term structure",
+      "rivals": [
+        {
+          "explanation": "a bull market flatters any leverage",
+          "check": "the verdict is on the excess over the same delta financed on the same capital; both halves; the 2022 holdout"
+        },
+        {
+          "explanation": "one name or one year",
+          "check": "equal weight across names per cycle; by name and by year reported"
+        },
+        {
+          "explanation": "one lucky arm of four",
+          "check": "Holm at 5% across the four"
+        },
+        {
+          "explanation": "costs on four legs",
+          "check": "net and excess positive at 1.5x costs"
+        },
+        {
+          "explanation": "hindsight names",
+          "check": "declared (B11); the rival holds the same names"
+        }
+      ],
+      "pointer": "research/edge-hypotheses-plan.md#74-the-super-bull-as-leverage-against-the-same-delta-financed-on-the-same-capital",
+      "scripts": [
+        "packages/backtest/scripts/super_bull_item74.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_super_bull_item74_script.py"
+      ],
+      "results": [
+        "{home}/data/backtest/results/research/item74/study-2016-01-01-2021-12-31.json"
+      ],
+      "outcome": null,
+      "retest": null,
+      "retests": []
     }
   ],
   "rule_changes": []
