@@ -98,7 +98,8 @@ def build_close():
 
 
 def field(embed: dict, name: str) -> str:
-    return next(f["value"] for f in embed["fields"] if f["name"] == name)
+    """A field by name; "Paper" also finds "Paper (provisional)"."""
+    return next(f["value"] for f in embed["fields"] if f["name"] == name or f["name"].startswith(name + " ("))
 
 
 def all_text(embed: dict, message: str) -> str:
@@ -120,12 +121,13 @@ def test_null_renders_as_em_dash_never_zero():
         )
     )
     doc["modules"]["meic"]["health"].pop("entries")  # an artifact predating fact set v7
+    doc["fact_version"] = 6
     _, message, embed, _ = build(doc)
     paper = field(embed, "Paper")
     assert f"2 closed {DASH}" in paper
     assert f"open {DASH} at risk" in paper
-    assert f"{DASH} in" in paper
-    assert "0 in" not in paper
+    assert f"{DASH} entered" in paper
+    assert "0 entered" not in paper
     assert "$0" not in paper and "$0" not in message
 
 
@@ -181,10 +183,10 @@ def test_missing_fact_set_says_so_and_still_reports_health():
     wd = {"overall": "OK", "in_session": True, "findings": []}
     _, message, embed, snapshot = build(None, watchdog=wd)
     assert "no paper fact set for 2026-09-01 yet" in embed["description"]
-    assert "watchdog OK" in embed["description"]
+    assert "health OK" in embed["description"]
     assert snapshot["modules"] == {}
-    assert "watchdog OK" in message
-    assert not any(f["name"] == "Paper" for f in embed["fields"])
+    assert "health OK" in message
+    assert not any(f["name"].startswith("Paper") for f in embed["fields"])
 
 
 def test_watchdog_problems_surface_as_attention_and_halt_leads_the_live_field():
@@ -309,7 +311,7 @@ def test_an_armed_module_with_nothing_on_says_so():
 
 def test_live_enabled_but_unarmed_is_named_once():
     value = field(build(facts(), live_doc=live(not_armed=["bwb"], broker=None))[2], "Live")
-    assert value == "nothing live today\nnot armed: bwb"
+    assert value == "nothing live today · not armed: bwb"
 
 
 def test_an_unread_or_failed_live_read_never_reads_as_quiet():
@@ -496,7 +498,161 @@ def test_entries_lead_the_activity_line_even_with_no_closes():
         )
     )
     _, _, embed, _ = build(doc)
-    assert field(embed, "Paper").startswith("**pmcc** 2 in")
+    assert field(embed, "Paper").startswith("**pmcc** 2 entered")
+
+
+def test_a_module_switched_off_is_listed_once_not_flagged():
+    """A retired module's loop does not tick by design; flagging it every hour trains the reader to
+    skip the flag. Verified to fail: passing off=False into _paper_line puts the warning back."""
+    doc = facts(
+        meic=module_block(),
+        flies=module_block(health={"loop_ticked": False, "entries": 0}, results={"closed": 0}),
+        curve=module_block(health={"loop_ticked": True, "entries": 0}, results={"closed": 0}),
+    )
+    _, _, embed, _ = status_digest.build_digest(
+        "2026-09-01", "13:00", doc, None, None, False, None, off={"flies"}
+    )
+    paper = field(embed, "Paper")
+    assert "loop not ticked" not in paper
+    assert "quiet: curve · off: flies" in paper
+
+
+def test_a_switched_off_module_that_still_holds_something_keeps_its_line():
+    doc = facts(
+        flies=module_block(
+            health={"loop_ticked": False, "entries": 0},
+            results={"closed": 1, "net": -20.0, "wins": 0, "losses": 1},
+        )
+    )
+    _, _, embed, _ = status_digest.build_digest(
+        "2026-09-01", "13:00", doc, None, None, False, None, off={"flies"}
+    )
+    assert "**flies** 1 closed 0W/1L -$20" in field(embed, "Paper")
+
+
+def test_a_module_with_no_entry_count_is_not_shown_as_unmeasured():
+    """weeklyput's fact set has no `entries` (its day is due/entered/settled): nothing to count is
+    not the same as a count that failed, so no dash."""
+    doc = facts(weeklyput=module_block(health={"loop_ticked": True, "settled": 0}, results={"closed": 0}))
+    paper = field(build(doc)[2], "Paper")
+    assert DASH not in paper
+    assert "quiet: weeklyput" in paper
+
+
+def test_a_0dte_module_says_it_settles_at_the_close():
+    block = module_block(results={"closed": 0, "net": 0})
+    block["settles_intraday"] = True
+    paper = field(build(facts(meic=block))[2], "Paper")
+    assert "**meic** 4 entered · settles at the close" in paper
+
+
+def test_provisional_rides_the_field_name():
+    _, _, embed, _ = build(facts())
+    names = [f["name"] for f in embed["fields"]]
+    assert "Paper (provisional)" in names
+    assert "provisional figures" not in field(embed, "Paper")
+
+
+def test_an_unmet_gate_is_named_as_unmet():
+    """The gate's name states what it wants; bare, "spot above gamma flip" reads as the market."""
+    morning = {
+        "phase": {
+            "phase": "yellow",
+            "gates_met": 4,
+            "gates_total": 5,
+            "reason": "blocked by: Spot above gamma flip (x)",
+        }
+    }
+    desc = build(facts(), morning=morning)[2]["description"]
+    assert desc.startswith("market YELLOW · 4/5 gates · unmet: spot above gamma flip")
+
+
+def test_a_failed_pipeline_step_is_not_named_twice():
+    wd = {
+        "overall": "WARN",
+        "findings": [
+            {
+                "status": "WARN",
+                "title": "1 scheduled job(s) failed",
+                "message": "evening-data step fetch-x (exit 1: pipeline evening-data: step fetch-x failed"
+                " (exit 1)). logs/supervisor.log has the runs.",
+            }
+        ],
+    }
+    _, _, embed, _ = build(facts(), watchdog=wd)
+    assert field(embed, "Attention") == "WARN: 1 scheduled job(s) failed — evening-data step fetch-x (exit 1)"
+    assert "1 problem, below" in embed["description"]
+
+
+# --------------------------------------------------------------------------- the accounts field
+def trade(tid: str, pnl_net, action: str = "HOLD", reason: str | None = None) -> dict:
+    return {
+        "trade_id": tid,
+        "underlying": tid.split("-")[0],
+        "pnl_net": pnl_net,
+        "recommendation": {"action": action, "reason": reason, "rule": "r"},
+    }
+
+
+def evaluation(*accounts) -> dict:
+    return {"session": "2026-09-01", "ok": True, "error": None, "accounts": list(accounts)}
+
+
+def account(
+    trades, masked="****0001", login="main", kind="Individual", day=-12.0, bp=0.25, limits=(), near=()
+):
+    rows = [{"id": "day_loss", "value": day, "state": "within"}, *limits]
+    return {
+        "account": masked,
+        "login": login,
+        "trades": trades,
+        "portfolio": {"account_type": {"type_name": kind}, "buying_power_used_pct": bp},
+        "limits": {"rows": rows},
+        "attention": {"items": [{"underlying": n} for n in near]},
+    }
+
+
+def test_accounts_show_each_account_and_the_trades_needing_action():
+    doc = evaluation(
+        account(
+            [trade("AAA-260901-1", 30.0), trade("BBB-260901-1", -10.0)],
+            near=["BBB"],
+            limits=[{"id": "delta", "state": "over"}, {"id": "vega", "state": "no limit"}],
+        ),
+        account([trade("CCC-260901-1", -5.0, "REVIEW", "too big")], masked="****0002", login="second"),
+        account([], masked="****0003"),  # holds nothing: no line
+    )
+    _, message, embed, _ = status_digest.build_digest(
+        "2026-09-01", "13:00", facts(), None, None, False, None, accounts=doc
+    )
+    value = field(embed, "Accounts")
+    assert [f["name"] for f in embed["fields"]][:2] == ["Live", "Accounts"]
+    assert "**Individual** \\*\\*\\*\\*0001 · 2 trades · today -$12 · open +$20 · BP 25% · all hold" in value
+    assert "outside band: delta over" in value and "vega" not in value
+    assert "near a strike: BBB" in value
+    assert "second \\*\\*\\*\\*0002 · 1 trade ·" in value
+    assert "⚠ REVIEW CCC-260901-1: too big" in value
+    assert "0003" not in value
+    assert "accounts: ****0001 2 trades, 0 to act; second ****0002 1 trade, 1 to act" in message
+
+
+def test_an_unpriced_trade_makes_the_open_figure_a_dash():
+    doc = evaluation(account([trade("AAA-260901-1", 30.0), trade("BBB-260901-1", None)], day=None, bp=None))
+    value = field(
+        status_digest.build_digest("2026-09-01", "13:00", facts(), None, None, False, None, accounts=doc)[2],
+        "Accounts",
+    )
+    assert f"today {DASH} · open {DASH} · BP {DASH}" in value
+    assert "$30" not in value
+
+
+def test_accounts_field_absent_when_manage_is_off_and_says_so_when_unwritten():
+    names = [f["name"] for f in build(facts())[2]["fields"]]
+    assert "Accounts" not in names
+    embed = status_digest.build_digest(
+        "2026-09-01", "13:00", facts(), None, None, False, None, accounts={"missing": True}
+    )[2]
+    assert field(embed, "Accounts") == f"positions {DASH} (no evaluation for today yet)"
 
 
 def test_flies_completions_render_beside_entries():
@@ -507,8 +663,8 @@ def test_flies_completions_render_beside_entries():
         meic=module_block(),
     )
     paper = field(build(doc)[2], "Paper")
-    assert "**flies** 5 in (4 done)" in paper
-    assert "**meic** 4 in ·" in paper
+    assert "**flies** 5 entered (4 done)" in paper
+    assert "**meic** 4 entered ·" in paper
 
 
 # --------------------------------------------------------------------------- artifact/session guards
