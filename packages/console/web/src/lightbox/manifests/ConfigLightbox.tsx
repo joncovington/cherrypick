@@ -3,6 +3,7 @@ import { HelpSection } from "../../components/CardHelp";
 import { Section } from "../../components/Section";
 import { LockHero } from "../../pages/Config/LockHero";
 import { ConfigSection } from "../../pages/Config/ConfigSection";
+import { IntentsCard } from "../../pages/Config/IntentsCard";
 import { SECTIONS } from "../../pages/Config/fieldMeta";
 import { useConfigModel, useLockStatus } from "../../pages/Config/useConfigModel";
 import { useBoolPref, usePrefsVersion, getPref, writePref } from "../../lib/prefs";
@@ -93,6 +94,7 @@ export function ConfigLightbox({ slide }: { slide: string }) {
         <div className="pf-layout">
           <Section concept="room" tag={s.title.toLowerCase()} question={`What is configured under ${s.title.toLowerCase()}?`}>
             <ConfigSection section={s} model={model.data} updatedAt={model.dataUpdatedAt} />
+            {s.id === "rules" && <IntentsCard model={model.data} updatedAt={model.dataUpdatedAt} />}
           </Section>
         </div>
       ),

@@ -1,4 +1,5 @@
-import type { ManageAttention, ManageAttentionItem } from "@console/shared";
+import type { ReactNode } from "react";
+import type { ManageAttention, ManageAttentionItem, ManageAttentionLeg } from "@console/shared";
 import { Card } from "../../components/DataTable";
 import { HelpSection } from "../../components/CardHelp";
 
@@ -59,7 +60,10 @@ function coverage(scope: string[] | null, held: ReadonlySet<string> | null): str
   return held !== null ? " the wheel holds" : scope === null ? "" : " on a wheel name";
 }
 
-function Row({ i, nearPct }: { i: ManageAttentionItem; nearPct: number | null }) {
+/** What a row may carry beside manage's reading (the wheel tab's intent chip); null for nothing. */
+export type RowExtra = (leg: ManageAttentionLeg) => ReactNode;
+
+function Row({ i, nearPct, extra }: { i: ManageAttentionItem; nearPct: number | null; extra?: RowExtra }) {
   const fill = meterFill(i.distance, nearPct);
   const early = i.level === "early exercise";
   return (
@@ -77,6 +81,7 @@ function Row({ i, nearPct }: { i: ManageAttentionItem; nearPct: number | null })
         spot {i.spot === null ? "—" : i.spot.toFixed(2)} · time value {i.extrinsic === null ? "—" : i.extrinsic.toFixed(2)}
         {early ? ` · ${i.why}` : ""}
       </span>
+      {extra?.(i)}
     </li>
   );
 }
@@ -86,13 +91,19 @@ export function NearStrikeCard({
   a: all,
   scope = null,
   held = null,
+  hideEmpty = false,
+  extra,
 }: {
   a: ManageAttention;
   scope?: string[] | null;
   held?: ReadonlySet<string> | null;
+  /** Show nothing, not an "all clear" card, when no short qualifies (the wheel tab, 2026-11-12). */
+  hideEmpty?: boolean;
+  extra?: RowExtra;
 }) {
   const a = scoped(all, scope, held);
   const of = coverage(scope, held);
+  if (hideEmpty && a.items.length === 0) return null;
   return (
     <Card
       title="shorts near their strike"
@@ -121,7 +132,7 @@ export function NearStrikeCard({
       ) : (
         <ul className="lk-list">
           {a.items.map((i) => (
-            <Row key={`${i.symbol ?? i.leg}-${i.underlying}`} i={i} nearPct={a.nearPct} />
+            <Row key={`${i.symbol ?? i.leg}-${i.underlying}`} i={i} nearPct={a.nearPct} extra={extra} />
           ))}
         </ul>
       )}
@@ -134,13 +145,18 @@ export function ExpiringCard({
   a: all,
   scope = null,
   held = null,
+  hideEmpty = false,
+  extra,
 }: {
   a: ManageAttention;
   scope?: string[] | null;
   held?: ReadonlySet<string> | null;
+  hideEmpty?: boolean;
+  extra?: RowExtra;
 }) {
   const a = scoped(all, scope, held);
   const of = coverage(scope, held);
+  if (hideEmpty && a.expiring.length === 0) return null;
   return (
     <Card
       title={`expiring in ${a.expiringDays ?? "?"} days`}
@@ -160,17 +176,36 @@ export function ExpiringCard({
         </p>
       ) : (
         <ul className="lk-list">
-          {a.expiring.map((e) => (
-            <li key={`${e.symbol ?? e.leg}-${e.underlying}`} className="lk-li lk-li-flat">
+          {a.expiring.map((e) => {
+            const key = `${e.symbol ?? e.leg}-${e.underlying}`;
+            const leg = (
               <span className="lk-leg">
                 {e.underlying} {e.quantity > 0 ? "+" : "−"}
                 {Math.abs(e.quantity)} {e.leg} · {e.dte === 0 ? "today" : `${e.dte}d`}
               </span>
+            );
+            const away = (
               <span className="muted sm" title="from the strike; negative is in the money">
                 {e.distance === null ? "—" : `${e.distance < 0 ? "−" : ""}${pct(Math.abs(e.distance))}`}
               </span>
-            </li>
-          ))}
+            );
+            const more = extra?.(e);
+            // A row with something beside it stacks; the plain row stays the flat one it always was.
+            return more ? (
+              <li key={key} className="lk-li">
+                <div className="lk-li-top">
+                  {leg}
+                  {away}
+                </div>
+                {more}
+              </li>
+            ) : (
+              <li key={key} className="lk-li lk-li-flat">
+                {leg}
+                {away}
+              </li>
+            );
+          })}
         </ul>
       )}
     </Card>

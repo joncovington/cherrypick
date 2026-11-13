@@ -531,8 +531,46 @@ export interface ManageWheel {
   names: string[] | null;
   bandsDay: string | null;
   bandsMissing: string | null;
+  /** Short puts the wheel could hold whose name has no intent yet (manage's `intent_candidates`).
+   * Empty before 2026-11-12. */
+  intentCandidates: ManageIntentCandidate[];
   /** Why the account has no view (not the designated account, no history, the view failed). */
   error: string | null;
+}
+
+/** A verdict as manage stated it. */
+export interface ManageVerdictBrief {
+  action: string | null;
+  rule: string | null;
+  reason: string | null;
+}
+
+/**
+ * One "is this a wheel?" row: a trade of short puts alone on a name with no intent. `asWheel` is the
+ * same trade judged again with `positions.<SYM>.intent: "wheel"`, so the console shows both verdicts
+ * and works out neither.
+ */
+export interface ManageIntentCandidate {
+  tradeId: string | null;
+  underlying: string;
+  legs: string[];
+  contracts: number | null;
+  strikes: number[];
+  expiration: string | null;
+  dte: number | null;
+  cashSecured: number | null;
+  /** The price a share an assignment would cost, net of the premium kept; null with several strikes. */
+  netIfAssigned: number | null;
+  /** A report inside the put, else null. */
+  earnings: string | null;
+  history: { cyclesComplete: number; assignments: number };
+  /** False while no reconciled cycle holds the put: marking it changes nothing yet. */
+  wheelPath: boolean;
+  now: ManageVerdictBrief;
+  asWheel: ManageVerdictBrief;
+  changes: boolean;
+  /** The config key a choice sets, e.g. "positions.XYZ.intent". */
+  key: string;
 }
 
 /**

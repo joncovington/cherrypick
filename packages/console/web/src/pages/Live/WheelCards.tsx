@@ -17,7 +17,8 @@ import { CardLightbox, LightboxFrame, useOpenParam, type LightboxTab } from "../
 import { Tile } from "../Flies/PerformanceTab";
 import { Cells, HeadRow, useColumns, type Column } from "../../components/columns";
 import { fmtCash, fmtMoney, fmtPrice } from "../../lib/format";
-import { ExpiringCard, NearStrikeCard, contractKey, distanceWords } from "./AttentionCard";
+import { ExpiringCard, NearStrikeCard, contractKey, distanceWords, scoped, type RowExtra } from "./AttentionCard";
+import { IntentChip, NoIntentCard, candidateFor, candidateKey } from "./IntentChoice";
 import { PayoffStrip } from "./PayoffCard";
 import { LedgerDesk } from "./LedgerDesk";
 import { useLiveMarks } from "./LiveMarks";
@@ -679,23 +680,49 @@ export function WheelCards({ a: evaluated }: { a: ManageAccount }) {
   const scope = holding?.names ?? null;
   const held = a.payoff ? (scope === null ? a.payoff.names : a.payoff.names.filter((n) => scope.includes(n.underlying))).length : 0;
   const mixed = a.payoff && holding ? outsideLegs(a.payoff, holding) : [];
+  // Short puts with no intent: a chip where a needs-a-look row shows the put, a card for the rest.
+  const cands = a.wheel?.intentCandidates ?? [];
+  const look = a.attention ? scoped(a.attention, scope, holding?.symbols ?? null) : null;
+  const onRows = new Set<string>();
+  for (const leg of look ? [...look.items, ...look.expiring] : []) {
+    const c = candidateFor(cands, leg);
+    if (c !== null) onRows.add(candidateKey(c));
+  }
+  const chip: RowExtra = (leg) => {
+    const c = candidateFor(cands, leg);
+    return c === null ? null : <IntentChip c={c} />;
+  };
+  // A card with nothing to show is left out, and a section whose cards are all left out goes too
+  // (2026-11-12).
+  const showLook = (look?.items.length ?? 0) + (look?.expiring.length ?? 0) > 0 || cands.some((c) => !onRows.has(candidateKey(c)));
+  const ledger = a.ledger ?? null;
+  // A ledger with no name in it has nothing to show, whatever its note says (no history read, say).
+  const showLedger = ledger !== null && (ledger.names?.length ?? 0) > 0;
+  const showCycles = wheelHasContent(a.wheel);
   return (
     <WheelBoxes a={a}>
       <div className="pf-layout">
-        {a.attention ? (
+        {showLook ? (
           <Section concept="risk" tag="needs a look" question="What needs a look?">
-            <NearStrikeCard a={a.attention} scope={scope} held={holding?.symbols ?? null} />
-            <ExpiringCard a={a.attention} scope={scope} held={holding?.symbols ?? null} />
+            {a.attention ? (
+              <>
+                <NearStrikeCard a={a.attention} scope={scope} held={holding?.symbols ?? null} hideEmpty extra={chip} />
+                <ExpiringCard a={a.attention} scope={scope} held={holding?.symbols ?? null} hideEmpty extra={chip} />
+              </>
+            ) : null}
+            {cands.some((c) => !onRows.has(candidateKey(c))) ? <NoIntentCard cands={cands} shown={onRows} /> : null}
           </Section>
         ) : null}
-        {a.ledger ? (
+        {showLedger ? (
           <Section concept="income" tag="the ledger" question="How much has it made?">
             <LedgerDesk ledger={a.ledger} />
           </Section>
         ) : null}
-        <Section concept="dir" tag="each cycle" question="How does each cycle stand?">
-          <WheelCycles a={a} />
-        </Section>
+        {showCycles ? (
+          <Section concept="dir" tag="each cycle" question="How does each cycle stand?">
+            <WheelCycles a={a} />
+          </Section>
+        ) : null}
         {a.payoff && held > 0 ? (
           <Section concept="add" tag="what if" question="What would a trade do?">
             <PayoffStrip payoff={a.payoff} scope={scope} />
@@ -792,31 +819,29 @@ function CycleList({ cycles, near }: { cycles: ManageWheelCycle[]; near: Map<str
   );
 }
 
-/** The wheel's cycles, a card each, or a plain statement of why there is none. */
+/** Whether the cycles section has anything to show: a cycle, a name left out, a flagged delivery or
+ *  history outside any cycle. With none (no wheel running, or an evaluation before the wheel view)
+ *  the section is left out rather than drawn to say so (2026-11-12). */
+export function wheelHasContent(w: ManageWheel | null): boolean {
+  if (w === null) return false;
+  return (
+    w.cycles.length > 0 ||
+    leftOutText(w.leftOut) !== null ||
+    w.flagged.length > 0 ||
+    Object.values(w.outside).some((rows) => rows.length > 0)
+  );
+}
+
+/** The wheel's cycles, a card each; nothing when there are none (the section is left out then). */
 function WheelCycles({ a }: { a: ManageAccount }) {
   const w = a.wheel;
-  if (w === null) {
-    return (
-      <Card title={`wheel · ${a.account ?? "?"}`}>
-        <p className="muted" style={{ margin: 0 }}>
-          this evaluation was written before the wheel view: it has no wheel for the account
-        </p>
-      </Card>
-    );
-  }
+  if (w === null) return null;
   const flagged = w.flagged;
   const outside = Object.entries(w.outside).filter(([, rows]) => rows.length > 0);
   const near = distancesBySymbol(a.attention);
   return (
     <>
-      {w.cycles.length === 0 ? (
-        <Card title={`wheel · ${a.account ?? "?"}`}>
-          <p className="muted" style={{ margin: 0 }}>
-            {NO_WHEEL}
-          </p>
-          {w.error && <p className="muted">no wheel view for this account: {w.error}</p>}
-        </Card>
-      ) : (
+      {w.cycles.length === 0 ? null : (
         <>
           <p className="muted">
             {a.account ?? "?"} · {cycleCount(w.cycles)}

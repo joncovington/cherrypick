@@ -9560,6 +9560,78 @@ button.chip[aria-pressed][data-hue="special"],
   flex: none;
 }
 
+/* Live → wheel's "is this a wheel?" (2026-11-12): a dashed amber chip on a short put with no intent,
+   opening today's verdict beside the wheel's. Amber is the suite's provisional colour: undecided. */
+.int-chip {
+  justify-self: start;
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--warn);
+  background: transparent;
+  border: 1px dashed currentColor;
+  border-radius: 999px;
+  padding: 4px 10px;
+  min-height: 28px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.int-chip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.int-panel {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.int-col {
+  display: grid;
+  gap: 4px;
+  align-content: start;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+.int-col.is-wheel {
+  border-color: var(--pf-income);
+}
+.int-col .btn {
+  margin-top: 4px;
+  min-height: 36px;
+}
+.int-verdict {
+  font-size: 12.5px;
+}
+.int-note {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+.int-chosen {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.int-chip-wheel {
+  color: var(--pf-income);
+  border-color: var(--pf-income);
+}
+.int-undo {
+  padding: 2px 8px;
+  min-height: 0;
+  font-size: 11.5px;
+}
+.card.int-card-waiting {
+  border-color: var(--warn);
+}
+@media (max-width: 560px) {
+  .int-panel {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 /* Cards that take a whole row (an action, a note), a cycle three to a row where there is room. */
 .pf-row > .card.wh-wide {
   grid-column: 1 / -1;
