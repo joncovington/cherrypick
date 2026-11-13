@@ -106,6 +106,10 @@ DEFAULT_RULES: dict[str, Any] = {
                 "call zebra": {"gain_fraction": 0.25, "confidence": 55},
                 "put zebra": {"gain_fraction": 0.25, "confidence": 55},
             },
+            # A diagonal (a PMCC among them) is worth about its width at the short's expiry: its
+            # target is the lesser of `gain_fraction` of the debit and `share` of its modelled gain
+            # by that expiry (the long at its own IV), so it can fire at all. No outside test.
+            "max_gain_cap": {"shapes": ["diagonal"], "share": 0.75},
         },
         # A diagonal (a PMCC or its put mirror) with little left to make, judged at the short's expiry
         # on the chain's net debit (the short calls rolled for credit count). Modelled, the long at its
@@ -265,9 +269,11 @@ DEFAULT_RULES: dict[str, Any] = {
         # The short in the money with less time value than the next dividend before an ex-date inside
         # its life, or under `near_zero_extrinsic` at any time (the pmcc package's flag).
         "assignment": {"enabled": True, "near_zero_extrinsic": 0.05, "confidence": 65},
-        # The long at `days_left` or fewer (the guides' 90-120) or under `min_delta`: review a roll of
+        # The long at `days_left` or fewer or under `min_delta`: review a roll of
         # the long down and out.
-        "roll_long": {"enabled": True, "days_left": 120, "min_delta": 0.70, "confidence": 45},
+        # 60, not the guides' 120: tastylive's PMCC study found a long bought 90-150 days out best, and
+        # at 120 a long bought in that range was flagged to roll within weeks of the fill.
+        "roll_long": {"enabled": True, "days_left": 60, "min_delta": 0.70, "confidence": 45},
         # The short's roll candidates for a roll-or-close: one per quoted expiry after the short and
         # before the long, the next `expiries`, at most `max_delta`, costing at most `max_debit` a share.
         "roll": {"max_delta": 0.40, "max_debit": 0.10, "expiries": 5},
@@ -677,7 +683,7 @@ def _merge_by_shape(rule: dict[str, Any], over: dict[str, Any], path: str, warni
     (a ratio butterfly by its quantities, "1-3-2"), carrying only the rule's own fields; a shape it
     never names is reported, as a misspelt key is."""
     out = copy.deepcopy(rule["by_shape"])
-    fields = {k for k in rule if k not in ("enabled", "by_shape")}
+    fields = {k for k in rule if k not in ("enabled", "by_shape", "max_gain_cap")}
     for shape, entry in over.items():
         if shape.startswith("_"):
             continue

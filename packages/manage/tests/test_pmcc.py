@@ -254,7 +254,7 @@ def test_other_shapes_are_not_candidates(case):
 
 def test_the_long_s_days_left_never_decide_it():
     # A December long bought on 06-29 had 172 days left; under the 180-day gate it was no PMCC at all.
-    # Now its delta at entry decides, and its 66 days left today are the roll flag's.
+    # Now its delta at entry decides, and its 66 days left today are not yet the roll flag's (60).
     dec = occ("2026-12-18", "C", 40)
     price = fill(40, 0.30, day="2026-06-29", exp="2026-12-18")
     cur = legs(long=dec, long_mid=10.2, long_price=price)
@@ -266,7 +266,7 @@ def test_the_long_s_days_left_never_decide_it():
     v = view_of(evaluate(snapshot(rows, cur, hist=hist)))
     assert v["long"]["days_at_entry"] == 172 and v["long"]["dte"] == 66
     assert v["recognized"] and v["long"]["delta_at_entry"] >= 0.70
-    assert v["long"]["roll"] == ["66 days left (roll at 120)"]
+    assert v["long"]["roll"] == []
 
 
 # --------------------------------------------------------------------------- linking and money
@@ -411,14 +411,23 @@ def test_no_report_date_is_unknown_not_past():
 
 # --------------------------------------------------------------------------- pmcc.roll_long
 def test_a_long_near_its_expiry_or_its_delta_floor_is_reviewed():
-    # 100 days left, still deep: the days fire it.
-    soon = occ("2027-01-21", "C", 40)
+    # 100 days left, still deep: inside tastylive's 90-150 entry range, so no flag (it was at 120).
+    later = occ("2027-01-21", "C", 40)
     price = fill(40, 0.30, exp="2027-01-21")
+    a = evaluate(
+        snapshot(history(long=later, long_price=price), legs(long=later, long_price=price, long_mid=10.5))
+    )
+    v = view_of(a)
+    assert v["long"]["dte"] == 100 and v["long"]["roll"] == []
+    assert "pmcc.roll_long" not in fired(trade_of(a, SHORT))
+    # 52 days left: the days fire it.
+    soon = occ("2026-12-04", "C", 40)
+    price = fill(40, 0.30, exp="2026-12-04")
     a = evaluate(
         snapshot(history(long=soon, long_price=price), legs(long=soon, long_price=price, long_mid=10.5))
     )
     v = view_of(a)
-    assert v["long"]["dte"] == 100 and v["long"]["roll"] == ["100 days left (roll at 120)"]
+    assert v["long"]["dte"] == 52 and v["long"]["roll"] == ["52 days left (roll at 60)"]
     assert fired(trade_of(a, SHORT))["pmcc.roll_long"]["action"] == ev.REVIEW
     # Fallen to the money (spot 41): the delta fires it.
     a = evaluate(snapshot(history(), legs(long_mid=6.0, short_mid=0.05), spot=41.0))
@@ -539,7 +548,10 @@ def test_the_diagonal_credit_roll_is_offered_in_place_of_the_pmcc_roll():
     assert {"pmcc.assignment", "pmcc.width", "roll.diagonal_short"} <= set(fired(t))
     rec = t["recommendation"]
     assert rec["rule"] == "roll.diagonal_short" and rec["action"] == ev.ROLL_FOR_CREDIT
-    assert {"pmcc.assignment", "pmcc.width"} <= set(rec["replaces"]) and rec["conflicts"] == []
+    assert {"pmcc.assignment", "pmcc.width"} <= set(rec["replaces"])
+    # Near the most it can make by the short's expiry, the capped take profit fires too and is named
+    # as pointing the other way (take the gain rather than roll).
+    assert [c if isinstance(c, str) else c.get("rule") for c in rec["conflicts"]] == ["debit.take_profit"]
 
 
 # --------------------------------------------------------------------------- failing closed

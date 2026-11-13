@@ -48,12 +48,12 @@ COMPARISON figure: the shorts' P&L to date (closed ones realised, the open one a
 long's own cost, x 365 / days since it was bought; None under a week, flagged past 500%.
 
 **Today.** The long: delta at entry and now, extrinsic as a share of its price, days left, and a
-"roll the long" flag at `roll_long.days_left` or fewer (the guides' 90-120) or under
-`roll_long.min_delta`. The short: tested or not, against today's skate call band (`skate_bands`, moved
-to today's price as the wheel view moves it), early-assignment exposure (in the money with extrinsic
-under the next dividend before an ex-date inside its life, or under `assignment.near_zero_extrinsic`
-at any time, the pmcc package's near-zero flag; a cash-settled root never), its chance of finishing in
-the money (N(d2)), and an earnings report inside its life.
+"roll the long" flag at `roll_long.days_left` or fewer (60, under the 90-150 days a long is best
+bought at) or under `roll_long.min_delta`. The short: tested or not, against today's skate call band
+(`skate_bands`, moved to today's price as the wheel view moves it), early-assignment exposure (in the
+money with extrinsic under the next dividend before an ex-date inside its life, or under
+`assignment.near_zero_extrinsic` at any time, the pmcc package's near-zero flag; a cash-settled root
+never), its chance of finishing in the money (N(d2)), and an earnings report inside its life.
 
 **Roll candidates** (for a failed width check or an exposed short): on each quoted call expiry later
 than the short and before the long, the next `roll.expiries` of them, the strike with the most
