@@ -95,6 +95,24 @@ def test_without_a_chain_the_same_trade_keeps_the_shorts_clock_and_fires_on_day_
     assert t["exit_levels"]["time_exit"]["date"] < SOLD
 
 
+def test_a_short_sold_15_to_21_days_out_runs_on_the_longs_clock_too():
+    # Sold 15 and 21 days before a Dec 18 expiry: inside the 21-day clock the day it is sold, so it is
+    # short-dated, not skipped with no time exit and closed (not rolled) at the expiry close.
+    for sold, days in (("2026-12-03", 15), ("2026-11-27", 21)):
+        legs = diagonal(short_exp="2026-12-18")
+        t = run(date(2026, 12, 7), legs=legs, chain=opened(sold, short_exp="2026-12-18"))
+        assert t["short_term_short"] == {"expiration": "2026-12-18", "sold_on": sold, "days": days}
+        assert t["time_exit_skipped"] is None
+        assert t["exit_levels"]["time_exit"]["date"] == "2026-12-24"
+    # Sold 22 days out: outside the window, the short's own 21-day exit.
+    t = run(
+        date(2026, 12, 7),
+        legs=diagonal(short_exp="2026-12-18"),
+        chain=opened("2026-11-26", short_exp="2026-12-18"),
+    )
+    assert t["short_term_short"] is None
+
+
 def test_a_short_sold_a_month_out_keeps_the_21_day_exit():
     legs = diagonal(short_exp="2026-12-18")
     t = run(date(2026, 11, 30), legs=legs, chain=opened("2026-11-13", short_exp="2026-12-18"))

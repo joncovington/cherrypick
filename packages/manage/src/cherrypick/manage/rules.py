@@ -135,12 +135,13 @@ DEFAULT_RULES: dict[str, Any] = {
             # A trade of long options only is out before the final weeks' decay.
             "long_only_dte": 14,
             # A diagonal or calendar whose nearest short was sold this many days or fewer before its
-            # expiry is a short written week by week against the long: the 21-day clock above would fire
+            # expiry is a short-dated short written against the long: the 21-day clock above would fire
             # the day it is sold, so its time exit counts on the long it is sold against instead, at
             # `time_spread_long_dte`, and the short itself is rolled by roll.diagonal_short (user,
-            # 2026-11-06). Needs the order chain to know when the short was sold; without one the
-            # short's clock stands.
-            "short_term_short_days": 14,
+            # 2026-11-06). Matches short_leg_dte, so no short sold inside the 21-day clock falls between
+            # the two. Needs the order chain to know when the short was sold; without one the short's
+            # clock stands.
+            "short_term_short_days": 21,
             "time_spread_long_dte": 21,
             # As credit.time_exit's: a trade whose clock leg was opened inside its own exit (a debit
             # spread bought at 21 DTE or fewer, a long option at 14 or fewer) skips it.
@@ -242,6 +243,12 @@ DEFAULT_RULES: dict[str, Any] = {
     # one gets a review saying so), into the trade holding the short, ranked by action with the
     # diagonal rules it keeps: a close or stop outranks them, and the diagonal's credit roll is offered
     # in place of a roll-or-close, as it is for any close.
+    # Short calls the name's shares cover. The credit stop, breached close, oversize review and expiry
+    # close never judge them (the shares cover each risk), a loser's time exit does not buy the call
+    # back, and an in-the-money call is judged by its call-away against the wheel basis (else the
+    # shares' own chain cost): at or over it a review to let them go, under it roll or close.
+    # Confidence: option mechanics (an assignment delivers shares the account holds).
+    "covered_call": {"assigned": {"enabled": True, "confidence": 75}},
     "pmcc": {
         # The standard definition (user, 2026-11-04): the long entered at 0.70 delta or more; the short's
         # expiry and delta may vary. Neither leg's days left decides it (the long's roll is `roll_long`).
@@ -269,6 +276,9 @@ DEFAULT_RULES: dict[str, Any] = {
         "enabled": True,
         # Physically-settled legs are closed at or inside this many calendar days to expiry.
         "close_by_dte": 3,
+        # Legs all opened inside that window (read off the order chain) close on their expiry day,
+        # before its close, instead of at the first evaluation.
+        "wait_if_entered_inside": True,
         "cash_settled_roots": [
             "SPX",
             "SPXW",
@@ -289,7 +299,8 @@ DEFAULT_RULES: dict[str, Any] = {
     # days before the call (the user's practice, 2026-10-18: 1 to 7; the report's own day counts for
     # an after-the-close call since 2026-10-20), its nearest short expiring no more than
     # `max_days_expiry_after` days after it. Before the call its close, take-profit and roll rules
-    # wait, and the expiry close when the trade comes off before its legs expire; after it, close,
+    # wait, and the expiry close when the trade comes off on or before its legs' expiry day (that
+    # morning, before the close the expiry close guards); after it, close,
     # unless losing with a leg in a later expiry (the user's call, 2026-10-20: it can recover).
     # Other safety rules never wait.
     "earnings_trade": {
@@ -610,6 +621,7 @@ RULE_IDS = (
     "wheel.take_profit",
     "wheel.tested",
     "wheel.next_leg",
+    "covered_call.assigned",
     "pmcc.width",
     "pmcc.assignment",
     "pmcc.roll_long",

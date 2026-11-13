@@ -88,7 +88,7 @@
       "enabled": true,
       "short_leg_dte": 21,
       "long_only_dte": 14,
-      "short_term_short_days": 14,
+      "short_term_short_days": 21,
       "time_spread_long_dte": 21,
       "_skip_comment": "skip_if_entered_inside: a trade whose clock leg was opened inside its own exit (a debit spread bought at short_leg_dte or fewer, a long option at long_only_dte or fewer) skips it.",
       "skip_if_entered_inside": true,
@@ -166,6 +166,13 @@
       "confidence": 50
     }
   },
+  "covered_call": {
+    "_comment": "Short calls the name's shares cover (100 a contract, all of them). The credit stop, breached close, oversize review and expiry close never judge them, since the shares cover each risk, and a losing call's time exit does not buy it back. An in-the-money call is judged by its call-away against the wheel basis (else the shares' own order chain cost, never the positions' open price): at or over it a review to let the shares go or roll up and out for a credit; under it roll or close; with no basis, a review saying so.",
+    "assigned": {
+      "enabled": true,
+      "confidence": 75
+    }
+  },
   "pmcc": {
     "_comment": "The PMCC view. A call diagonal (one long call, one short call of the same size at or above its strike expiring first, no shares; neither leg's days left decides it) is a PMCC only when its long was entered at entry_min_delta or more, or positions.<SYMBOL>.intent is \"pmcc\"; \"diagonal\" keeps it out. Its rules fire only on a recognised PMCC whose orders reconcile, rank with the diagonal rules by action, and give way to the diagonal's credit roll.",
     "recognize": {
@@ -203,9 +210,10 @@
     }
   },
   "expiry": {
-    "_comment": "Physically-settled legs are closed at or inside close_by_dte; roots listed as cash-settled settle instead.",
+    "_comment": "Physically-settled legs are closed at or inside close_by_dte; roots listed as cash-settled settle instead. wait_if_entered_inside: legs all opened close_by_dte days or fewer before their expiry (read off the order chain) close on the expiry day, before its close, instead of at the first evaluation.",
     "enabled": true,
     "close_by_dte": 3,
+    "wait_if_entered_inside": true,
     "cash_settled_roots": [
       "SPX",
       "SPXW",
@@ -226,7 +234,7 @@
     "warn_days": 14
   },
   "earnings_trade": {
-    "_comment": "A trade put on to hold through an earnings report: opened min_days_before..max_days_before days before the call (0-7; the report's own day only for a call after the close), its nearest short expiring no more than max_days_expiry_after days after it. Until the call its close, take-profit and roll rules wait (shown as waiting), and so does the expiry close when the trade comes off after the call before its legs' expiry day; the day after the report (the report's own day if before the open) it closes, unless it is losing with a leg in a later expiry (diagonal, calendar), which is left to the ordinary rules. Ex-dividend, sizing and unpriced-leg rules never wait, nor does expiry for a trade closing on its expiry day. Disable per name with positions.<SYM>.disable [\"earnings_trade\"].",
+    "_comment": "A trade put on to hold through an earnings report: opened min_days_before..max_days_before days before the call (0-7; the report's own day only for a call after the close), its nearest short expiring no more than max_days_expiry_after days after it. Until the call its close, take-profit and roll rules wait (shown as waiting), and so does the expiry close when the trade comes off after the call on or before its legs' expiry day (that morning, before the close it guards); the day after the report (the report's own day if before the open) it closes, unless it is losing with a leg in a later expiry (diagonal, calendar), which is left to the ordinary rules. Ex-dividend, sizing and unpriced-leg rules never wait, nor does expiry for a trade closing on its expiry day. Disable per name with positions.<SYM>.disable [\"earnings_trade\"].",
     "enabled": true,
     "min_days_before": 0,
     "max_days_before": 7,

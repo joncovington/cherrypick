@@ -291,9 +291,13 @@ def evaluate_trade(
     trade_id: str | None = None,
     roll_out: dict[str, Any] | None = None,
     div_yield: float | None = None,
+    covered: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """`trade_id` is the trade's stable ID (tradeids.py): its own overrides (`trades.<ID>`: intent, note,
     disable) are read over the name's (`positions.<SYM>`).
+
+    `covered` is the shares covering this trade's short calls (`_share_cover`), when it is nothing but
+    short calls the name's shares cover: a covered call, judged as one (COVERED_SKIPS do not apply).
 
     `chain`, when the broker history reconciled one, sets the basis: the chain's net cash across its
     opening order and every roll, not the open legs' average prices. `seen` is the earnings trades the
@@ -310,9 +314,11 @@ def evaluate_trade(
     rate = float(pr["rate"])
     legs = _legs(raw_legs, session, spot, rate, broker_greeks, div_yield)
     override = _rules.override(rules, underlying, trade_id)
+    is_covered = bool(covered and legs and all(leg["right"] == "C" and leg["quantity"] < 0 for leg in legs))
+    skips = COVERED_SKIPS if is_covered else frozenset()
 
     def off(rule_id: str) -> bool:
-        return _rules.disabled(rules, underlying, rule_id, trade_id)
+        return rule_id in skips or _rules.disabled(rules, underlying, rule_id, trade_id)
 
     trade: dict[str, Any] = {
         "trade_id": trade_id,
@@ -346,6 +352,17 @@ def evaluate_trade(
         "wheel": None,
         "pmcc": None,
         "time_exit_skipped": None,
+        "expiry_close_due": None,
+        "covered": (
+            {
+                "shares": covered["shares"],
+                "share_cost": covered["share_cost"],
+                "basis": None,
+                "basis_source": None,
+            }
+            if is_covered
+            else None
+        ),
         "fired": [],
         "exit_levels": {},
     }
@@ -407,7 +424,7 @@ def evaluate_trade(
         )
         trade["profile"] = profile
 
-    trade["shape"] = _shapes.classify(options, cost)
+    trade["shape"] = "covered call" if is_covered else _shapes.classify(options, cost)
     # A diagonal or calendar whose short was sold close to its expiry is managed on the long's clock.
     short_term = (
         _short_term_short(options, chain, rules["debit"]["time_exit"])
@@ -479,10 +496,22 @@ def evaluate_trade(
                     [_label(leg) for leg in stale],
                 )
             )
+        if expiring and is_covered:
+            # A covered call is held into expiry: an assignment, even after the bell, delivers shares the
+            # account already holds, and the pin risk the close guards against is a question of whether
+            # the shares go, never of a position the account cannot meet.
+            trade["covered"]["held_into_expiry"] = True
+            expiring = []
+        if expiring:
+            expiring_on = min(_date(leg["expiration"]) for leg in expiring)
+            due = _expiry_close_due(trade, chain, expiring, expiring_on, session, ex)
+            # Legs opened inside the window were put on to be held into it: closing them at the first
+            # evaluation guards nothing. What the close guards against (pin and post-close exercise)
+            # comes at the expiry day's close, so that day it is due; until then it waits.
+            expiring = [] if due else expiring
         if expiring:
             whole = len(expiring) == len(options)
             soonest = min(leg["dte"] for leg in expiring)
-            expiring_on = min(_date(leg["expiration"]) for leg in expiring)
             expiry_close = _fire(
                 "expiry",
                 CLOSE if whole else CLOSE_LEGS,
@@ -620,8 +649,16 @@ def evaluate_trade(
         )
         if trade["nearest_short_dte"] is not None and not inside:
             trade["exit_levels"]["time_exit"] = {"date": _exit_day(_date(short_expiries[0]), int(te["dte"]))}
-            if not off("credit.time_exit") and 0 <= trade["nearest_short_dte"] <= int(te["dte"]):
-                winner = pnl > 0
+            winner = pnl > 0
+            # A covered call losing at its time exit means the stock has risen through the premium: the
+            # shares hold that gain, so the call is not bought back at a loss (covered_call.assigned
+            # judges it if it is in the money); a winner still rolls, for a credit only.
+            covered_loser = is_covered and not winner
+            if (
+                not off("credit.time_exit")
+                and not covered_loser
+                and 0 <= trade["nearest_short_dte"] <= int(te["dte"])
+            ):
                 fired.append(
                     _fire(
                         "credit.time_exit",
@@ -1076,6 +1113,28 @@ def evaluate_trade(
                 )
             )
 
+    # ---- a covered call: the shares cover it, so an in-the-money call is judged by what a call-away does
+    if is_covered:
+        cov = trade["covered"]
+        cycle_basis = next(
+            (
+                item["cycle"]["wheel_basis"]
+                # The call's trade holds the call, not the shares: the cycle that holds both says so.
+                for item in (wheel_ctx or {}).get("cycles") or []
+                if (item["cycle"].get("shares") or 0) > 0
+                and item["cycle"]["reconciled"]
+                and item["cycle"].get("wheel_basis") is not None
+            ),
+            None,
+        )
+        if cycle_basis is not None:
+            cov.update(basis=float(cycle_basis), basis_source="wheel basis")
+        elif cov["share_cost"] is not None:
+            cov.update(basis=float(cov["share_cost"]), basis_source="share cost")
+        assigned = _covered_call_assigned(legs, cov, rules["covered_call"]["assigned"])
+        if assigned and not off("covered_call.assigned"):
+            fired.append(assigned)
+
     # ---- a wheel cycle's shorts and shares (wheel.py): ranked with every other rule by action
     if wheel_ctx:
         fired += _wheel_rules(trade, legs, wheel_ctx, session, net_liq, metrics, rules, off)
@@ -1096,11 +1155,13 @@ def evaluate_trade(
         after = report if before_open(et["time_of_day"]) else _calendar.next_trading_day(report)
         trade["exit_levels"]["time_exit"] = {"date": after.isoformat(), "rule": "earnings_trade"}
         if not et["passed"]:
-            # The expiry close waits too when the trade comes off after the call before its legs'
-            # expiry day: the pin and post-close exercise risk it guards against is never reached. An
-            # earnings trade sits on a short expiring days after the call, so otherwise it is always
-            # inside the window and the hold could never apply. Closed on expiry day itself, it stands.
-            waits = (expiry_close,) if expiring_on is not None and after < expiring_on else ()
+            # The expiry close waits too when the trade comes off after the call on or before its
+            # legs' expiry day: the pin and post-close exercise risk it guards against comes at that
+            # day's close, after the morning the trade comes off. An earnings trade sits on a short
+            # expiring days after the call, so otherwise it is always inside the window and the hold
+            # could never apply. On the day after the call the report is out, nothing is held, and
+            # the expiry close stands beside the earnings close.
+            waits = (expiry_close,) if expiring_on is not None and after <= expiring_on else ()
             held = [f for f in fired if f["rule"].split(".")[0] in HELD_FOR_EARNINGS or f in waits]
             fired = [f for f in fired if f not in held]
             trade["held_for_earnings"] = held
@@ -1126,7 +1187,7 @@ def evaluate_trade(
 
 # The rule families an earnings trade's report outranks: closing, taking profit and rolling wait for
 # the call. Safety (expiry and assignment, ex-dividend), sizing and unpriced legs never wait, except
-# the expiry close when the trade comes off after the call before its legs expire.
+# the expiry close when the trade comes off after the call on or before its legs' expiry day.
 HELD_FOR_EARNINGS = {"credit", "debit", "directional", "legs", "roll", "wheel"}
 
 # A report before the open: the broker spells it BTO, most calendars BMO.
@@ -1668,6 +1729,89 @@ def _opened_on(chain: dict[str, Any] | None, symbols: set[str], action: str) -> 
     return max((d for d in days if d), default=None)
 
 
+# The rules a covered call is never judged by: the shares cover what each guards against. A stop or a
+# breached-strike close would buy the call back at a loss the shares have already gained, and the
+# call's modelled loss is unbounded only without them.
+COVERED_SKIPS = frozenset({"credit.stop", "credit.breached", "risk.oversize"})
+
+
+def _covered_call_assigned(
+    legs: list[dict[str, Any]], cov: dict[str, Any], cfg: dict[str, Any]
+) -> dict[str, Any] | None:
+    """A covered call in the money: what an assignment does against the basis. At or over it, the
+    call-away is the trade working (review: let it go, or roll up and out for a credit); under it, a
+    call-away loses (roll or close); with no basis known, a review saying so. None when no call is in
+    the money."""
+    itm = [leg for leg in legs if (leg["intrinsic"] or 0) > 0]
+    if not itm:
+        return None
+    labels = [_label(leg) for leg in itm]
+    basis = cov.get("basis")
+    if basis is None:
+        return _fire(
+            "covered_call.assigned",
+            REVIEW,
+            cfg["confidence"],
+            "the covered call is in the money and the shares' basis is unknown (no reconciled order chain "
+            "or wheel cycle): check whether a call-away gains before rolling or buying it back",
+            labels,
+        )
+    low = min(leg["strike"] for leg in itm)
+    per_share = low - basis
+    contracts = sum(-leg["quantity"] for leg in itm)
+    dollars = per_share * pricing.MULTIPLIER * contracts
+    where = f"the {low:g} strike against the {basis:.2f} {cov['basis_source']}"
+    if per_share >= 0:
+        return _fire(
+            "covered_call.assigned",
+            REVIEW,
+            cfg["confidence"],
+            f"the covered call is in the money: assigned, the shares go at {where}, "
+            f"${dollars:,.0f} over it. Let them be called away, or roll up and out for a net credit",
+            labels,
+        )
+    return _fire(
+        "covered_call.assigned",
+        ROLL_OR_CLOSE,
+        cfg["confidence"],
+        f"the covered call is in the money under the basis: assigned, the shares go at {where}, "
+        f"${-dollars:,.0f} under it. Roll up and out for a net credit, or buy it back",
+        labels,
+    )
+
+
+def _expiry_close_due(
+    trade: dict[str, Any],
+    chain: dict[str, Any] | None,
+    expiring: list[dict[str, Any]],
+    expiring_on: date,
+    session: date,
+    cfg: dict[str, Any],
+) -> dict[str, Any] | None:
+    """When every expiring leg was opened `close_by_dte` days or fewer before its expiry (read off the
+    order chain), the expiry close is due on the expiry day, not at the first evaluation: a weekly put
+    on at 2 DTE was otherwise told to close the day it opened. Recorded on the trade as
+    `expiry_close_due` while it waits; None when the close fires now, on the expiry day, or with no
+    chain to say when the legs were opened."""
+    if not cfg.get("wait_if_entered_inside") or session >= expiring_on:
+        return None
+    limit = int(cfg["close_by_dte"])
+    entries = []
+    for leg in expiring:
+        opened = _opened_on(chain, {_leg_symbol(leg)}, "to open")
+        if opened is None:
+            return None
+        entries.append((_date(leg["expiration"]) - opened).days)
+    if max(entries) > limit:
+        return None
+    trade["expiry_close_due"] = {
+        "date": expiring_on.isoformat(),
+        "entry_dte": max(entries),
+        "limit": limit,
+    }
+    return trade["expiry_close_due"]
+
+
 def _entered_inside(
     trade: dict[str, Any],
     chain: dict[str, Any] | None,
@@ -1900,7 +2044,13 @@ def _wheel_rules(
             )
             if hit and not off("wheel.take_profit"):
                 taking.append((leg, row, price, source))
-            if row["tested"] and not off("wheel.tested"):
+            cov = trade.get("covered") or {}
+            called_away_gains = (
+                row["right"] == "C" and cov.get("basis") is not None and leg["strike"] >= cov["basis"]
+            )
+            # A covered call at or over the basis is the cycle working: covered_call.assigned reviews
+            # it, and the wheel's repair roll does not apply.
+            if row["tested"] and not called_away_gains and not off("wheel.tested"):
                 cands = _wheel.roll_candidates(
                     row,
                     ctx.get("income"),
@@ -2583,6 +2733,36 @@ def _join_covered(
     return [merged if i == keep else g for i, g in enumerate(groups) if i != drop]
 
 
+def _share_cover(
+    groups: list[tuple[list[dict[str, Any]], dict[str, Any] | None]],
+) -> tuple[dict[str, Any] | None, set[int]]:
+    """The shares that cover a name's short calls, and which groups they cover.
+
+    A group made only of short calls sits beside the shares in a chain of its own, and alone it read as
+    a naked call: stopped at a loss when the stock rose, its loss called unbounded. When the shares
+    held cover every such short call (100 a contract, all of them; partial cover covers none), each is
+    a covered call. `share_cost` is the shares' own reconciled order chain's cost a share, else None
+    (never the positions' open price); the wheel basis, where a cycle holds the shares, is read in
+    `evaluate_trade` instead."""
+    shares = sum(_f(leg.get("quantity")) or 0.0 for g, _ in groups for leg in g if not leg.get("right"))
+    calls = [
+        i
+        for i, (g, _) in enumerate(groups)
+        if g and all(leg.get("right") == "C" and (_f(leg.get("quantity")) or 0.0) < 0 for leg in g)
+    ]
+    contracts = sum(-(_f(leg.get("quantity")) or 0.0) for i in calls for leg in groups[i][0])
+    if not calls or shares <= 0 or shares < pricing.MULTIPLIER * contracts:
+        return None, set()
+    share_groups = [(g, c) for g, c in groups if g and all(not leg.get("right") for leg in g)]
+    cost = None
+    if len(share_groups) == 1:
+        g, chain = share_groups[0]
+        held = sum(_f(leg.get("quantity")) or 0.0 for leg in g)
+        if chain and chain.get("reconciled") and held > 0:
+            cost = -float(chain["cash"]) / held
+    return {"shares": shares, "contracts": contracts, "share_cost": cost}, set(calls)
+
+
 def _pmcc_view(
     account: dict[str, Any],
     n_accounts: int,
@@ -2708,7 +2888,8 @@ def evaluate(
                 grouping_errors.append(
                     f"{u['underlying']}: covered-call grouping failed: {type(exc).__name__}: {exc}"[:300]
                 )
-            for group, chain in groups:
+            cover, covered_groups = _share_cover(groups)
+            for gi, (group, chain) in enumerate(groups):
                 # The ID first: a trade's own overrides (`trades.<ID>`) are read while it is judged.
                 ident = ids.assign(u["underlying"], group, chain)
                 trade = evaluate_trade(
@@ -2731,6 +2912,7 @@ def evaluate(
                         session.isoformat(),
                         _f((metrics.get(u["underlying"]) or {}).get("last")),
                     ),
+                    covered=cover if gi in covered_groups else None,
                 )
                 trade["trade_id"] = ident["trade_id"]
                 trade["trade_id_provisional"] = ident["provisional"]

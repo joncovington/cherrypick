@@ -130,11 +130,11 @@ def test_a_rescheduled_report_moves_the_trade_with_it():
     t = run(date(2026, 10, 21), report="2026-10-21", time_of_day="AMC", seen=SEEN)
     assert t["earnings_trade"]["report"] == "2026-10-21" and not t["earnings_trade"]["passed"]
     assert rec(t) == (ev.HOLD, "earnings_trade")
-    # Moved to 10-22 after the close, it would come off on expiry day: the expiry close stands, but
-    # not the earnings trade's own close.
+    # Moved to 10-22 after the close, it comes off the morning of expiry day: the expiry close waits
+    # with the rest, since what it guards against comes at that day's close.
     late = run(date(2026, 10, 21), report="2026-10-22", time_of_day="AMC", seen=SEEN)
-    assert not late["earnings_trade"]["passed"] and rec(late) == (ev.CLOSE, "expiry")
-    assert "earnings_trade" not in {f["rule"] for f in late["fired"]}
+    assert not late["earnings_trade"]["passed"] and rec(late) == (ev.HOLD, "earnings_trade")
+    assert "expiry" in {f["rule"] for f in late["held_for_earnings"]}
     # Next quarter's date (past the short's expiry) is not a reschedule: the record stands.
     rolled = run(date(2026, 10, 21), report="2027-01-20", seen=SEEN)
     assert rolled["earnings_trade"]["report"] == "2026-10-20" and rolled["earnings_trade"]["passed"]
@@ -221,13 +221,29 @@ def test_without_an_order_chain_there_is_no_opening_date_and_no_classification()
     assert t["earnings_trade"] is None and rec(t) == (ev.CLOSE, "credit.time_exit")
 
 
-def test_the_expiry_close_stands_when_the_trade_would_come_off_on_expiry_day():
+def test_the_expiry_close_waits_when_the_trade_comes_off_the_morning_of_expiry_day():
     # Report tomorrow (untimed, so closed the day after), physically settled short expiring that same
-    # day: the post-call close would be on expiry day, so the expiry rule still closes it now.
+    # day: the post-call close is the morning of expiry day, before the close the expiry rule guards,
+    # so it waits with the rest (a weekly earnings condor was told to close before its report).
     near = [leg(-1, "C", 192.5, 5.15, 5.72, exp="2026-10-20"), leg(1, "C", 200, 2.36, 2.74, exp="2026-10-20")]
-    t = run(date(2026, 10, 18), report="2026-10-19", opened_on="2026-10-16", legs=near)
-    assert t["earnings_trade"] is not None
-    assert rec(t) == (ev.CLOSE, "expiry")
+    for session in (date(2026, 10, 18), date(2026, 10, 19)):
+        t = run(session, report="2026-10-19", opened_on="2026-10-16", legs=near)
+        assert t["earnings_trade"] is not None and not t["earnings_trade"]["passed"]
+        assert rec(t) == (ev.HOLD, "earnings_trade"), session
+        assert "expiry" in {f["rule"] for f in t["held_for_earnings"]}
+    # Expiry day: the report is out, so the trade closes, the expiry close beside it.
+    t = run(date(2026, 10, 20), report="2026-10-19", opened_on="2026-10-16", legs=near)
+    assert t["earnings_trade"]["passed"] and rec(t)[0] == ev.CLOSE
+    assert {"earnings_trade", "expiry"} <= {f["rule"] for f in t["fired"]}
+
+
+def test_the_expiry_close_still_stands_when_the_report_falls_after_the_expiry_morning():
+    # A before-the-open report on expiry day is out that morning: nothing waits past it. A report the
+    # evening of expiry day makes no earnings trade at all (see the short's-expiry-day test above).
+    near = [leg(-1, "C", 192.5, 5.15, 5.72, exp="2026-10-20"), leg(1, "C", 200, 2.36, 2.74, exp="2026-10-20")]
+    t = run(date(2026, 10, 20), report="2026-10-20", time_of_day="BTO", opened_on="2026-10-16", legs=near)
+    assert t["earnings_trade"]["passed"] and rec(t)[0] == ev.CLOSE
+    assert "expiry" in {f["rule"] for f in t["fired"]}
 
 
 def test_the_record_carries_a_trade_past_its_report_when_the_broker_moves_on():

@@ -92,13 +92,30 @@ def _close_cash(t: dict[str, Any]) -> str:
 def _skipped(t: dict[str, Any]) -> str:
     """Why a trade opened inside its own time exit has no time exit."""
     s = t.get("time_exit_skipped")
-    if not s:
-        return ""
-    return (
-        f" It was opened {s['entry_dte']} days before its {_day(s['expiration'])} expiry, inside the "
-        f"{s['limit']}-day time exit, so that exit does not apply: it is managed by its take profit, stop "
-        "and the expiry close."
-    )
+    text = ""
+    if s:
+        text = (
+            f" It was opened {_days(s['entry_dte'])} before its {_day(s['expiration'])} expiry, inside "
+            f"the {s['limit']}-day time exit, so that exit does not apply: it is managed by its take "
+            "profit, stop and the expiry close."
+        )
+    due = t.get("expiry_close_due")
+    if due:
+        text += (
+            f" Its expiring legs were opened {_days(due['entry_dte'])} before expiry, inside the "
+            f"{due['limit']}-day expiry window, so the expiry close falls on {_day(due['date'])} itself: "
+            "close before that day's close."
+        )
+    if (t.get("covered") or {}).get("held_into_expiry"):
+        text += (
+            " The shares cover this call, so it is held into expiry: an assignment, even after the bell, "
+            "delivers shares the account already holds."
+        )
+    return text
+
+
+def _days(n: int) -> str:
+    return f"{n} day" if n == 1 else f"{n} days"
 
 
 def _band(ps: dict[str, Any]) -> str:
@@ -314,10 +331,10 @@ def _explain(t: dict[str, Any]) -> str:
         st = t.get("short_term_short")
         te_day = (t.get("exit_levels") or {}).get("time_exit", {}).get("date")
         if st and rule == "debit.time_exit":
-            # A short written week by week runs on the long's clock, not its own.
+            # A short sold inside the 21-day clock runs on the long's clock, not its own.
             when = (
-                f"The short is sold week by week, so this trade runs on its long's clock, and the long's "
-                f"time exit ({_day(te_day)}) has come. "
+                f"The short was sold {_days(st['days'])} before its expiry, so this trade runs on its long's "
+                f"clock, and the long's time exit ({_day(te_day)}) has come. "
             )
         if action == "ROLL_OR_CLOSE":
             why = (
@@ -522,6 +539,7 @@ PLAIN = {
     "wheel.tested": "wheel tested-strike roll",
     "wheel.next_leg": "wheel next-leg review",
     "wheel_data": "wheel reconciliation check",
+    "covered_call.assigned": "covered-call call-away review",
     "pmcc.width": "PMCC width check",
     "pmcc.assignment": "PMCC early-assignment check",
     "pmcc.roll_long": "PMCC long-roll review",
