@@ -298,6 +298,15 @@ assignment, naming the shares the cash already secures and the wheel breakeven. 
 as the guard. Published tests of stops on short premium (tastylive, Option Alpha, our own strangle
 and condor studies) found they cut the tail and cost return; Cboe's put-write index holds to expiry.
 
+**Possible wheel trades** (`wheel.intent_candidates`). Every trade of short puts alone whose name and
+trade carry no intent is listed for the wheel tab to ask about: its legs, the cash it ties up, the
+price a share an assignment would cost once the premium kept is counted, a report inside it, the
+name's completed cycles and assignments, and two verdicts, today's and the one it would get marked as
+a wheel. The second is the same trade judged again with `positions.<SYMBOL>.intent: "wheel"`, so it
+is never guessed; `wheel_path` is false while no reconciled cycle holds the put, and marking it then
+changes nothing yet. Any intent takes a name off the list: `"no_wheel"` says it is not a wheel and
+keeps its stop. The list judges nothing and sets nothing; the console stages the intent for Config.
+
 **Rolls are priced on the snapshot's quoted chains.** Since snapshot v14 the orchestrator reads, for
 each short a roll out in time starts from (a covered call, a PMCC's short, and a short put on a name
 holding no long put, each within 60 days of expiry), the next five listed expiries after it: before
