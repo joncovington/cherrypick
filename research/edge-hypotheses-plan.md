@@ -7340,6 +7340,95 @@ its own keep, or is the same afternoon's risk taken again. Declared here before 
   - **A fail:** live stays at one condor a session; more entries in the window are closed as a lever, and
     the short-leg-only stop is not pursued for that purpose.
 
+### 74. The super bull as leverage: against the same delta financed on the same capital
+
+*Source: the user, 2026-11-13, on a super bull they hold with its long call a monthly later (manage
+names it `super bull (diagonal)` from #1043). Its first framing judged it against shares of the same
+delta; the user corrected that, as for item 71: capital efficiency is the point, so the rival is what
+the same capital buys. **Seen before declaring:** items 14 to 16 (single-name and fund put spreads
+lost after costs at every short delta) and the literature on single-stock skew. No chain of this
+item's names has been read for it.*
+
+- **Question:** for a trader whose capital is the constraint, does a super bull, a short put spread
+  financing a long call spread, earn more per dollar of capital than the same delta held on that
+  capital and financed at the bill? On one expiry, and with the long call a monthly later?
+- **Where the edge would live:** three candidates. **Drift** (long delta), which the rival shares, so
+  the test is built around removing it. **Put skew**: the short puts are sold at a richer implied
+  volatility than the calls are bought. **Term structure**, for the diagonal: the later long call keeps
+  value past the front expiry. Items 14 to 16 found no edge in the short put half on its own, and
+  steep single-stock put skew is known to forecast underperformance, so the prior is a fail beyond
+  leverage.
+- **Look-alikes:** item 64 tests a backspread and butterflies against delta-matched shares (declared,
+  not run); item 71 tests a long call as leverage against a fund or a financed delta. No row has
+  tested a super bull.
+- **Rival explanations, each with its check:**
+  - *A bull market flatters any leverage:* **Check:** the verdict is on the excess over `financed`,
+    which holds the same delta on the same capital; both design halves; the 2022 holdout.
+  - *One name or one year:* **Check:** equal weight across names in each cycle; results by name and by
+    year.
+  - *Four arms, one lucky:* **Check:** Holm at 5% across the four.
+  - *Costs on four legs:* **Check:** net and excess still positive at 1.5x costs.
+  - *Fills:* the working price on every leg, open and close.
+- **The names (declared, chosen with hindsight):** SPY, QQQ, IWM; AAPL, MSFT, AMZN, GOOGL, META, NVDA,
+  JPM, BAC, XOM, CVX, UNH, JNJ, PG, KO, WMT, HD, COST, V, DIS, CAT. Each has weekly options and deep
+  monthly books today; the label is today's, which B11 declares. Hindsight flatters the raw return
+  more than the excess, since the rival holds the same names.
+- **The cycle:** for each name and each standard monthly expiry F, with B the next monthly, enter on
+  the session nearest 35 days before F (28 to 42) and, separately, nearest 52 (45 to 60). Strikes by
+  |delta| (Black-76 at r = 0 off each leg's mid and its chain's parity forward): F's short put nearest
+  0.30 and long put nearest 0.20 below it; the long call nearest 0.20, in F (`A`) or in B (`B`); F's
+  short call nearest 0.10 above the long call. One contract each.
+- **The four arms:** A35, B35, A52, B52.
+- **Capital:** the put spread's width less the net credit (plus the net debit): the expiry's maximum
+  loss for A, and for B the same with the long call counted at nothing, which is what an IRA holds. A
+  trade is kept only when its net premium is under a quarter of its capital (manage's directional
+  test).
+- **Exit, manage's directional rules as live from 2026-11-13:** the whole structure on the first close
+  whose gross gain reaches the lesser of half the max gain (the call spread's width plus the net
+  credit; B's long at intrinsic only) and 1x the capital; or whose gross loss reaches half the capital;
+  else 3 days or fewer before F. No time exit. A long with no bid on the close is left to expire at
+  nothing; a short is always bought back. A session where a leg does not price is passed over.
+- **Costs:** the suite's tastytrade schedule on every contract, open and close (`cherrypick.core.fees`).
+- **The rival, `financed`:** the structure's entry delta in shares, held on the same capital with the
+  rest borrowed at the 3-month bill, over the same days: the delta times the change in F's parity
+  forward (which carries the borrowing and the dividend), plus the capital's own interest at the bill.
+  `shares` (the delta without the financing) is reported only.
+- **Measured:** per trade, net and excess (net less `financed`) as a share of capital. One observation
+  is one cycle month: the equal-weight mean over the names that entered.
+- **Window and sample:** **design** entries 2016-01-01 to 2021-12-31; **holdout** entries 2022-01-01 to
+  the front expiry of 2026-11-20, read only after a design pass. Fewer than 50 cycles, or more than 5%
+  of an arm's entries without an exit mark, is no verdict.
+- **Pass-or-fail rule**, per arm, all must hold:
+  - mean net return on capital above zero, with its stationary-bootstrap one-sided 95% lower bound
+    above zero (mean block 3 cycles, 20,000 draws, seed 74);
+  - mean excess return on capital above zero, with its lower bound above zero, and Holm at 5% across
+    the four arms on the bootstrap p;
+  - excess positive in each time-half of the design window;
+  - net and excess still positive at **1.5x costs**;
+  - then the holdout, with the same checks.
+- **Minimum detectable effect (B12):** computed per arm from the design window and recorded in the
+  local result before the holdout is read.
+- **Declared limits (B11):** end-of-day marks only; deltas at r = 0; the forward of F stands in for
+  the stock in the rival and B's leg delta is taken against B's own forward; early assignment is not
+  modelled; the rival borrows at the bill, which no retail account does (an IRA cannot borrow at
+  all), so it flatters the rival; the names are today's.
+- **Reported, never judged (B13):** the put spread alone and the call side alone per dollar of their
+  own capital (the fees split evenly), which says whether financing the calls with the puts beats the
+  calls alone; `shares`; `hold` (the 3-day close alone); B less A per cycle; entry put skew (the
+  0.25-delta put's implied volatility less the call's) in terciles within each cycle, Holm across the
+  three, which decides nothing and would need its own declared test.
+- **Data:** `packages/backtest/scripts/super_bull_item74.py requests` writes the path fetch (each
+  name's monthlies from 2016, from 100 days out, 3,036 paths on 2026-11-13); `study` reads
+  `eod_chains.db` and the Treasury curve files, and loads item 59's script for the chain, forward and
+  delta. Results go under the backtest data directory only (`results/research/item74/`).
+- **Decides:**
+  - **A pass:** that arm is the cheaper leverage on these names after costs; it goes to manage's ideas
+    with its robustness report, for the user to review. Advice only.
+  - **A fail or no verdict:** a super bull is a directional bet that adds nothing over the same
+    leverage held plainly; manage keeps judging it as directional, sized to the per-trade budget, and
+    no income label is given it.
+- **Result:** not yet run.
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:

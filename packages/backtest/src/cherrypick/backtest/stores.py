@@ -70,7 +70,7 @@ STORES: list[dict[str, str]] = [
         "holds": "end-of-day option chains per (name, session, expiry), and daily expiry paths",
         "built_by": "python -m cherrypick.backtest fetch-chains --requests FILE; fetch-chain-paths",
         "used_by": "credit-spread items 14-17 (credit_spread_plan, credit_spread_item17); "
-        "item 37 (curve_item37); income checks",
+        "item 37 (curve_item37); item 74 (super_bull_item74); income checks",
     },
     {
         "file": "intraday_chains.db",
