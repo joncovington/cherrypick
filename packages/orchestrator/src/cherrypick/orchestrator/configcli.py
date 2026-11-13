@@ -73,7 +73,9 @@ def _op_save(cfg: dict[str, Any], req: dict[str, Any]) -> dict[str, Any]:
             return _err(str(exc), "not_found", pointer=edit["pointer"])
 
     expected = req.get("expected_mtime")
-    result = configedit.apply_raw_save(cfg, target, text, expected if isinstance(expected, int) else None)
+    # A browser's copy of the mtime may arrive rounded, even as a float: still the version check.
+    has = isinstance(expected, (int, float)) and not isinstance(expected, bool)
+    result = configedit.apply_raw_save(cfg, target, text, int(expected) if has else None)
     if not result.get("ok"):
         error = str(result.get("error", ""))
         code = "conflict" if "changed on disk" in error else "guarded" if "guarded" in error else "invalid"

@@ -119,7 +119,9 @@ def test_noop_raw_save_is_byte_identical_and_backupless(flies_target):
 
 def test_raw_save_mtime_conflict_refused(flies_target):
     cfg, path = flies_target
-    stale = path.stat().st_mtime_ns - 1
+    # A millisecond behind: an earlier version. (Within configedit.MTIME_TOLERANCE_NS is the same
+    # version, rounded by the browser.)
+    stale = path.stat().st_mtime_ns - 1_000_000
     out = configedit.apply_raw_save(cfg, "flies", FLIES_LIKE.replace("200", "201"), expected_mtime=stale)
     assert out["ok"] is False and "changed on disk" in out["error"]
     assert path.read_text(encoding="utf-8") == FLIES_LIKE
