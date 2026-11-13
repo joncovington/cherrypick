@@ -155,6 +155,39 @@ def test_stale_mtime_is_a_conflict(home):
     assert status == 0 and body["ok"] is False and body["code"] == "conflict"
 
 
+def test_an_mtime_rounded_by_the_browser_still_saves(home):
+    # The console's copy of the nanosecond mtime passes through a JavaScript number, which holds
+    # integers exactly only to 2**53: it comes back rounded. That is the same version, not a conflict.
+    path = home / "config" / "flies.json"
+    rounded = int(float(path.stat().st_mtime_ns))
+    status, body, _ = call(
+        home,
+        {
+            "op": "save",
+            "target": "flies",
+            "expected_mtime": rounded,
+            "edits": [{"pointer": "/defaults/wing_width", "value": 2}],
+        },
+    )
+    assert status == 0 and body["ok"] is True
+    assert json.loads(path.read_text(encoding="utf-8"))["defaults"]["wing_width"] == 2
+
+
+def test_a_save_a_second_behind_is_still_a_conflict(home):
+    path = home / "config" / "flies.json"
+    stale = path.stat().st_mtime_ns - 1_000_000_000
+    status, body, _ = call(
+        home,
+        {
+            "op": "save",
+            "target": "flies",
+            "expected_mtime": stale,
+            "edits": [{"pointer": "/defaults/wing_width", "value": 2}],
+        },
+    )
+    assert status == 0 and body["ok"] is False and body["code"] == "conflict"
+
+
 def test_a_bad_pointer_leaves_the_file_alone(home):
     before = (home / "config" / "flies.json").read_text(encoding="utf-8")
     status, body, _ = call(

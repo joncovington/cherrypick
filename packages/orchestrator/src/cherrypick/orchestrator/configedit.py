@@ -489,6 +489,18 @@ def apply_field_edit(
     return {"ok": True, "issues": issues, **written, "mtime": path.stat().st_mtime_ns}
 
 
+# How far a client's copy of a file's mtime may sit from the file's own and still be the same version.
+# The mtime is in nanoseconds (about 1.8e18 today), past the 2**53 a browser holds exactly: the
+# console's copy comes back rounded by up to 128 ns, so an exact comparison refused every Save from
+# the Config page as "changed on disk". A real edit lands far more than a microsecond later.
+MTIME_TOLERANCE_NS = 1_000
+
+
+def same_mtime(actual_ns: int, expected: int | float) -> bool:
+    """Whether a client's mtime (possibly rounded through a JavaScript number) names this version."""
+    return abs(int(actual_ns) - int(expected)) <= MTIME_TOLERANCE_NS
+
+
 def apply_raw_save(
     cfg: dict[str, Any], target_id: str, new_text: str, expected_mtime: int | None = None
 ) -> dict[str, Any]:
@@ -497,7 +509,7 @@ def apply_raw_save(
     path = _target_path(cfg, target_id)
     if not path.exists():
         return {"ok": False, "error": f"target '{target_id}' has no config file yet"}
-    if expected_mtime is not None and path.stat().st_mtime_ns != expected_mtime:
+    if expected_mtime is not None and not same_mtime(path.stat().st_mtime_ns, expected_mtime):
         return {"ok": False, "error": "changed on disk — reload before saving"}
     try:
         new_doc = json.loads(new_text)
