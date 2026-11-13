@@ -7268,6 +7268,78 @@ paper has no XSP record under this rule. Declared here before any of it is run.*
 - **What this decides:** the fail branch: the margin login's XSP live account stays off (`enabled`
   false) and is not armed. No challenger is proposed: the one holdout pass rests on too few trades.
 
+### 73. More condors in MEIC's live window: one, two and three a session between 14:00 and 14:30
+
+*Source: the user, 2026-11-12, after reading the `bp-10k` paper arm and two videos that stop only the
+short leg: the aim is "to possibly allow more 2pm-230pm trades". Live opens one condor a session in that
+window. Before any change to the stop, the first question is whether a second or third condor there earns
+its own keep, or is the same afternoon's risk taken again. Declared here before any of it is run.*
+
+- **Question:** on the rule live trades (`pm-200` entering 14:00–14:30, a per-side stop at 2× the whole
+  credit resting at the broker, 10 wide), does a second condor ten minutes after the first earn after
+  costs, and does a third, without more drawdown per dollar earned than one condor a session carries?
+- **Where the edge would live:** **premium**, the same claim the first condor makes: a 16-delta 0DTE
+  condor is paid more than the moves that reach its shorts. A later entry in the same half hour sells the
+  same afternoon again, on less time and usually the same strikes. If the claim holds per condor, more
+  condors earn more; but they settle against one closing print, so their losses arrive together.
+- **Look-alikes:** item 24 (the entry slot, one condor a session: 14:00 stays); item 48 (live's stop, one
+  condor a session: 2.0× stays); the 2026-10-19 one-a-day read of `pm-200`'s ledgers, which picked 14:00
+  as the best half hour; the `bp-*` paper arms, which stack condors through the whole day under a
+  buying-power cap.
+- **Rival explanations, each with its check:**
+  - *The same trade twice:* condors minutes apart on the same strikes are close to one larger position.
+    **Check:** each larger arm's mean session net over its 99th-percentile 100-session drawdown must be at
+    least the smaller arm's, with the drawdown bootstrapped from whole sessions, since resampling single
+    trades would break up the days they lose together. The correlation of each increment with the smaller
+    arm's session net is reported.
+  - *Fees:* each extra condor pays its own. **Check:** the increment still positive at 1.5× its own fees.
+  - *A calm span:* **Check:** the increment positive in each time-half.
+  - *An entry that changes another:* **Check:** none can here (no overlap rule, no buying-power or
+    concurrency cap that binds), so each larger arm's first entries are the smaller arm's; the share of
+    sessions where that holds is reported.
+- **The structure:**
+  - Each arm is the registry's `pm-200` (16 delta, 10 wide, its credit floor and call-delta ceilings, a
+    per-side stop at 2× the whole credit) with entries 14:00–14:30 and the stop resting at the broker as
+    live's does (`stop_resting`, its limit a tenth of the trigger above).
+  - `n1`, `n2`, `n3`: at most one, two or three condors a session (`daily_ic_trade_target`, a hard cap
+    under `stagger_entries`), at least ten minutes apart. A session whose credit floor refuses the early
+    ticks takes fewer. `pm-200` blocks no overlap, so a later condor may sit on the first one's strikes.
+  - `n1` is live's rule. **Judged:** the `second` increment (`n2 − n1`, session by session, the second
+    condor's net) and the `third` (`n3 − n2`).
+  - **Reported, never judged:** each arm's own net, t, halves, worst session and drawdown; each session's
+    buying power summed over its condors, median and largest; per arm the share of entries with a side
+    stopped; `control`, which the runner requires.
+- **Costs:** MEIC paper's own model: fees from `core.fees`, the module's slippage share, stops under the
+  resting-stop model, the rest settled at the store's close.
+- **Measured:** each session's summed net per arm, in dollars at one contract a condor.
+- **Window and sample:** the design window only, 2022-05-16 to 2025-06-30, over the 60 s vendor store
+  (`SPX-60s.db`). This window's holdout dates were read through `pm-200` and `pm-200-1400` on 2026-10-19
+  (this plan's exception), so evidence past the design has to come from sessions after 2026-10-12. The run
+  is provisional: MEIC validation has not unlocked. Fewer than 100 sessions is no verdict.
+- **Pass-or-fail rule**, per increment, all must hold, one session one observation (a session with no
+  extra condor counts at zero):
+  - the mean above zero with a one-sided t above 2. No Holm step: on 100 sessions or more, t above 2 is
+    a one-sided p below 0.024, under Holm's strictest bar for two tests, so it could never bind;
+  - positive in each time-half;
+  - still positive at **1.5× the increment's own fees**;
+  - the larger arm's mean session net over its 99th-percentile drawdown at least the smaller arm's.
+  - The proposed count is the largest k whose every increment up to k passes: a third condor that passes
+    counts for nothing when the second did not.
+- **Declared limits (B11):** 60 s ticks; each entry at the first tick that clears after its spacing; a
+  resting stop fills under the replay's model, not a recorded fill; one contract a condor, so a larger
+  live quantity is not modelled; the settlement print is the store's close.
+- **Name split (B9):** does not apply; one symbol.
+- **Data:** no new store. `packages/backtest/scripts/meic_1400_stack_item73.py --window design` builds a
+  scratch MEIC arm registry from the machine's and runs `cherrypick.backtest.runner`. Results go under the
+  backtest data directory only; this plan records the verdict.
+- **Decides:**
+  - **A pass at k:** a proposal to run `n<k>` as a paper arm beside live's rule, read on sessions after
+    2026-10-12, before any change to live's `max_structures_per_day` or its buying-power cap. The
+    short-leg-only stop the videos describe is the next question on that stacked book, declared as its
+    own item.
+  - **A fail:** live stays at one condor a session; more entries in the window are closed as a lever, and
+    the short-leg-only stop is not pursued for that purpose.
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:

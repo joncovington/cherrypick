@@ -3278,6 +3278,52 @@
       "outcome": "live's rule (s20-w1) fails both windows: it loses after XSP's fees, so the margin login's XSP live account stays off and is not armed. No stop at 2, 3 and 4 points passes the design window; of those only 4 points passes the holdout, on too few holdout trades to act on, so no arm is adopted",
       "retest": null,
       "retests": []
+    },
+    {
+      "id": 73,
+      "study": "item73",
+      "title": "More condors in MEIC's live window: one, two and three a session between 14:00 and 14:30",
+      "status": "declared",
+      "legacy": false,
+      "setup": "entry-pacing",
+      "side": "neutral",
+      "structure": "iron-condor",
+      "window": "0dte",
+      "measure": "summed net per session in $ at one contract a condor, per arm: pm-200 entering 14:00-14:30 with all its gates, its 2.0x per-side stop resting at the broker, at most one (n1, live's rule), two (n2) or three (n3) condors a session at least ten minutes apart; judged on the increments n2 - n1 and n3 - n2",
+      "expected": "no prior: a later condor sells the same afternoon on less time and usually the same strikes, so it may add premium or only add the same day's risk",
+      "sample": "design 2022-05-16..2025-06-30 over the 60 s vendor store; this window's holdout dates were read through pm-200 and pm-200-1400 on 2026-10-19, so a pass is read on sessions after 2026-10-12; provisional, MEIC history being unvalidated; < 100 sessions = no verdict",
+      "rule": "per increment, a session with no extra condor at zero: mean > 0 with one-sided t > 2 (no Holm step: t > 2 on 100+ sessions is already under Holm's strictest bar for two tests), positive in each time-half, still positive at 1.5x its own fees, and the larger arm's mean session net over its 99th-percentile 100-session drawdown (bootstrapped from whole sessions) at least the smaller arm's; the proposed count is the largest k whose every increment up to k passes. Reported, never judged: each arm's own net and drawdown, session buying power, stopped share, each increment's correlation with the smaller arm",
+      "mechanism": "SPX's 0DTE premium claim sold again in the same half hour; the condors settle against one closing print, so their losses arrive together",
+      "rivals": [
+        {
+          "explanation": "the same trade twice",
+          "check": "the larger arm's mean session net over its session-bootstrapped p99 drawdown at least the smaller arm's; the increment's correlation with the smaller arm reported"
+        },
+        {
+          "explanation": "fees",
+          "check": "the increment still positive at 1.5x its own fees"
+        },
+        {
+          "explanation": "a calm span",
+          "check": "the increment positive in each time-half"
+        },
+        {
+          "explanation": "an entry that changes another",
+          "check": "none can (no overlap rule, no binding cap), so the larger arm's first entries are the smaller arm's; the share of sessions where that holds reported"
+        }
+      ],
+      "pointer": "research/edge-hypotheses-plan.md#73-more-condors-in-meics-live-window-one-two-and-three-a-session-between-1400-and-1430",
+      "scripts": [
+        "packages/backtest/scripts/meic_1400_stack_item73.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_meic_1400_stack_item73_script.py"
+      ],
+      "results": [
+        "{home}/data/backtest/results/research/item73/study-design-2022-05-16-2025-06-30.json"
+      ],
+      "retest": null,
+      "retests": []
     }
   ],
   "rule_changes": []
