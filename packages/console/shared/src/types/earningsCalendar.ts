@@ -63,9 +63,9 @@ export interface EarningsCalendarRow {
   date: string;
   /** Before or after the open; null when no source says, never assumed. */
   timing: "bmo" | "amc" | null;
-  /** Which source gave the time: the broker (with its own date), Nasdaq's calendar or Dolt (each
-   *  for a date within a day). */
-  timingSource: "broker" | "nasdaq" | "dolt" | null;
+  /** Which source gave the time: the broker (with its own date), Nasdaq's calendar, Yahoo's (for a
+   *  date Nasdaq did not answer) or Dolt (each for a date within a day). */
+  timingSource: "broker" | "nasdaq" | "yahoo" | "dolt" | null;
   /** Where no source gives the time: the name's last timed report's, an ESTIMATE (right 97% of the
    *  time historically). It sets neither the entry session nor the reaction day. */
   usualTiming: "bmo" | "amc" | null;

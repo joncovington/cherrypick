@@ -100,9 +100,10 @@ def pick_date(
 ):
     """(date, time of day, date source, confirmed, disagreement in days, time source) for one name.
 
-    `broker` is (date, estimated[, time of day as sent]); `nasdaq` the (date, 'bmo'|'amc'|None) rows
-    Nasdaq's calendar lists for the name. A confirmed broker date wins, then Dolt's, then an
-    estimated broker date. The time of day, in order:
+    `broker` is (date, estimated[, time of day as sent]); `nasdaq` the (date, 'bmo'|'amc'|None[,
+    source]) rows the timings file lists for the name, each date Nasdaq's or, where Nasdaq did not
+    answer, Yahoo's (`source`, 'nasdaq' when absent), which is then the time source. A confirmed
+    broker date wins, then Dolt's, then an estimated broker date. The time of day, in order:
     - the broker's, when its date is the one shown -- it belongs to that date (on 2026-08-12 it was
       stale against a date already past); on 2026-10-16 it agreed with Dolt on all 179 upcoming
       names where both gave one;
@@ -124,9 +125,10 @@ def pick_date(
     broker_time = BROKER_TIMES.get(str(broker[2] or "").upper()) if broker and len(broker) > 2 else None
     if broker_time and broker[0] == d:
         return d, broker_time, src, confirmed, gap, "broker"
-    for nd, nt in sorted(nasdaq or [], key=lambda x: abs((x[0] - d).days)):
+    for row in sorted(nasdaq or [], key=lambda x: abs((x[0] - d).days)):
+        nd, nt = row[0], row[1]
         if nt in ("bmo", "amc") and abs((nd - d).days) <= 1:
-            return d, nt, src, confirmed, gap, "nasdaq"
+            return d, nt, src, confirmed, gap, (row[2] if len(row) > 2 else "nasdaq")
     when = dolt[1] if dolt and abs((dolt[0] - d).days) <= 1 else None
     timing = "bmo" if when == BMO else "amc" if when == AMC else None
     return d, timing, src, confirmed, gap, ("dolt" if timing else None)
@@ -305,15 +307,19 @@ def our_reads(day: str, symbols: list[str], conn=None, lookup=None) -> dict[str,
     return out
 
 
-def times_on_file(day: str) -> tuple[str | None, dict[str, list[tuple[date, str | None]]]]:
-    """Nasdaq's times (scripts/fetch_earnings_times.py) from the newest file fetched before the next
-    session -- the evening's own fetch, or a weekend's: (its day, {symbol: [(date, time)]})."""
+def times_on_file(day: str) -> tuple[str | None, dict[str, list[tuple[date, str | None, str]]]]:
+    """The timings file's times (scripts/fetch_earnings_times.py) from the newest file fetched before
+    the next session -- the evening's own fetch, or a weekend's: (its day, {symbol: [(date, time,
+    source)]}), the source each date's (`sources`, 'nasdaq' for a file without it)."""
     nxt = cal.next_trading_day(date.fromisoformat(day)).isoformat()
     path = _latest_file(paths.earnings_times_dir(), nxt)
+    doc = _read(path)
+    sources = doc.get("sources") or {}
     out: dict[str, list] = {}
-    for d, rows in (_read(path).get("dates") or {}).items():
+    for d, rows in (doc.get("dates") or {}).items():
+        source = sources.get(d) or "nasdaq"
         for sym, t in (rows or {}).items():
-            out.setdefault(sym, []).append((date.fromisoformat(d), t))
+            out.setdefault(sym, []).append((date.fromisoformat(d), t, source))
     return (path.stem if path else None), out
 
 

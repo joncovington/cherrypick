@@ -177,9 +177,11 @@ what is unsolved, and scheduling.
 - **The earnings calendar** (`earnings_calendar.py`, `earnings-calendar`): every announcement in the next 30 days, joined from local data
   and the local Dolt.
   - **Date and time:** a confirmed broker date wins, then Dolt's, then a broker estimate. The time of
-    day comes from the broker (with its own date), then Nasdaq's public calendar
+    day comes from the broker (with its own date), then the timings file
     (`scripts/fetch_earnings_times.py`), then Dolt; the latter two only for a date within a day. All
-    three agreed on every name two of them timed.
+    three agreed on every name two of them timed. The timings file is Nasdaq's public calendar, and
+    Yahoo's for any date Nasdaq did not answer (each date names its source, which becomes the
+    row's `timing_source`); where both timed a name they agreed on all 134.
   - **The usual time:** where none gives one, the company's last timed report is kept as a marked
     estimate (`usual_timing`; right 97% of the time on Dolt 2022-26). It never sets the entry
     session or the reaction day.
