@@ -2789,6 +2789,76 @@ def _join_covered(
     return [merged if i == keep else g for i, g in enumerate(groups) if i != drop]
 
 
+# The intent that takes a name off the candidates list without making it a wheel: a put the operator
+# would not take shares on, so it keeps its stop and its breached close.
+NO_WHEEL = "no_wheel"
+
+
+def _is_intent_candidate(trade: dict[str, Any]) -> bool:
+    """A trade the wheel could hold whose name (and the trade itself) has no intent yet: short puts
+    alone, nothing else. A spread, a condor or anything with a long option is never a wheel."""
+    legs = trade.get("legs") or []
+    return bool(
+        trade.get("intent") is None
+        and legs
+        and all(leg.get("right") == "P" and (leg.get("quantity") or 0) < 0 for leg in legs)
+    )
+
+
+def _with_intent(rules: dict[str, Any], underlying: str, intent: str) -> dict[str, Any]:
+    """The ruleset with one name's intent set, everything else as it was."""
+    out = dict(rules)
+    positions = dict(rules.get("positions") or {})
+    positions[underlying] = {**(positions.get(underlying) or {}), "intent": intent}
+    out["positions"] = positions
+    return out
+
+
+def _verdict(trade: dict[str, Any]) -> dict[str, Any]:
+    rec = trade.get("recommendation") or {}
+    return {"action": rec.get("action"), "rule": rec.get("rule"), "reason": rec.get("reason")}
+
+
+def _intent_candidate(
+    trade: dict[str, Any], as_wheel: dict[str, Any], wheel_view: dict[str, Any], trade_id: str | None
+) -> dict[str, Any]:
+    """One row of the wheel tab's "no intent yet": the put, the cash it ties up, what an assignment
+    would cost a share, any report inside it, the name's wheel history, and the verdict today beside
+    the verdict marked as a wheel. Nothing here sets an intent; the console stages it for Config."""
+    legs = trade["legs"]
+    underlying = trade["underlying"]
+    contracts = sum(-leg["quantity"] for leg in legs)
+    cash = sum(leg["strike"] * -leg["quantity"] for leg in legs) * pricing.MULTIPLIER
+    credit = -(trade.get("cost") or 0.0)
+    strikes = sorted({leg["strike"] for leg in legs})
+    shares = contracts * pricing.MULTIPLIER
+    er = trade.get("earnings") or {}
+    cycles = [c for c in wheel_view.get("cycles") or [] if c.get("underlying") == underlying]
+    now, wheeled = _verdict(trade), _verdict(as_wheel)
+    return {
+        "trade_id": trade_id,
+        "underlying": underlying,
+        "legs": [leg["label"] for leg in legs],
+        "contracts": contracts,
+        "strikes": strikes,
+        "expiration": trade.get("nearest_short_expiry"),
+        "dte": trade.get("nearest_short_dte"),
+        "cash_secured": cash,
+        # One strike: what the shares would cost once the premium kept is counted.
+        "net_if_assigned": (strikes[0] - credit / shares) if len(strikes) == 1 and shares else None,
+        "earnings": er.get("date") if er.get("before_nearest_short_expiry") else None,
+        "history": {
+            "cycles_complete": sum(1 for c in cycles if c.get("status") == "complete"),
+            "assignments": sum(int(c.get("assignments") or 0) for c in cycles),
+        },
+        "wheel_path": bool(as_wheel.get("wheel_put")),
+        "now": now,
+        "as_wheel": wheeled,
+        "changes": (now["action"], now["rule"]) != (wheeled["action"], wheeled["rule"]),
+        "key": f"positions.{underlying}.intent",
+    }
+
+
 def _share_cover(
     groups: list[tuple[list[dict[str, Any]], dict[str, Any] | None]],
 ) -> tuple[dict[str, Any] | None, set[int]]:
@@ -2895,6 +2965,7 @@ def evaluate(
         excluded = []
         dropped_legs: list[dict[str, Any]] = []
         grouping_errors: list[str] = []
+        intent_candidates: list[dict[str, Any]] = []
         # The wheel view first: its cycles are a pure reading of the history, and the wheel rules judge
         # each trade holding a cycle's legs alongside every other rule.
         wheel_view = _wheel_view(
@@ -2948,28 +3019,36 @@ def evaluate(
             for gi, (group, chain) in enumerate(groups):
                 # The ID first: a trade's own overrides (`trades.<ID>`) are read while it is judged.
                 ident = ids.assign(u["underlying"], group, chain)
-                trade = evaluate_trade(
-                    u["underlying"],
-                    group,
-                    metrics.get(u["underlying"]),
-                    session,
-                    net_liq,
-                    rules,
-                    chain,
-                    snapshot.get("earnings_trades_seen"),
-                    snapshot.get("roll_chains"),
-                    _wheel_context(wheel_view, group, snapshot, u["underlying"]),
-                    _pmcc_context(pmcc_view, group, account),
-                    snapshot.get("broker_greeks"),
-                    trade_id=ident["trade_id"],
-                    roll_out=snapshot.get("roll_out_chains"),
-                    div_yield=_pmcc._yield(
+
+                args: dict[str, Any] = {
+                    "underlying": u["underlying"],
+                    "raw_legs": group,
+                    "metrics": metrics.get(u["underlying"]),
+                    "session": session,
+                    "net_liq": net_liq,
+                    "chain": chain,
+                    "seen": snapshot.get("earnings_trades_seen"),
+                    "roll_chains": snapshot.get("roll_chains"),
+                    "wheel_ctx": _wheel_context(wheel_view, group, snapshot, u["underlying"]),
+                    "pmcc_ctx": _pmcc_context(pmcc_view, group, account),
+                    "broker_greeks": snapshot.get("broker_greeks"),
+                    "trade_id": ident["trade_id"],
+                    "roll_out": snapshot.get("roll_out_chains"),
+                    "div_yield": _pmcc._yield(
                         (snapshot.get("underlying_history") or {}).get(u["underlying"]),
                         session.isoformat(),
                         _f((metrics.get(u["underlying"]) or {}).get("last")),
                     ),
-                    covered=cover if gi in covered_groups else None,
-                )
+                    "covered": cover if gi in covered_groups else None,
+                }
+                trade = evaluate_trade(rules=rules, **args)
+                if _is_intent_candidate(trade):
+                    # What marking the name as a wheel would change today: the same trade judged
+                    # again with the intent, so the console shows both verdicts and never guesses.
+                    as_wheel = evaluate_trade(rules=_with_intent(rules, u["underlying"], "wheel"), **args)
+                    intent_candidates.append(
+                        _intent_candidate(trade, as_wheel, wheel_view, ident["trade_id"])
+                    )
                 trade["trade_id"] = ident["trade_id"]
                 trade["trade_id_provisional"] = ident["provisional"]
                 trade["merged_ids"] = ident["merged"]
@@ -3078,6 +3157,7 @@ def evaluate(
         )
         _link_wheel(wheel_view, trades)
         _link_pmcc(pmcc_view, trades)
+        wheel_view["intent_candidates"] = intent_candidates
         accounts.append(
             {
                 "account": account.get("account"),
