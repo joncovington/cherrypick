@@ -76,7 +76,8 @@ export function clearAllStaged(): void {
 
 /** Re-render on any staged change. The version number is the snapshot — the Map is mutable. */
 export function useStagedVersion(): number {
-  return useSyncExternalStore(subscribe, () => snapshotVersion);
+  // The same snapshot on the server: a server render (the tests') reads the staged edits as they are.
+  return useSyncExternalStore(subscribe, () => snapshotVersion, () => snapshotVersion);
 }
 
 export function useDirtyCount(): number {
@@ -92,11 +93,20 @@ if (typeof window !== "undefined") {
   });
 }
 
-/** Deep-ish equality good enough for config scalars, string lists, and window pairs. */
+/** Deep equality good enough for config scalars, string lists, window pairs and the per-name
+ *  override objects (`positions`), whose key order does not matter. */
 export function sameValue(a: unknown, b: unknown): boolean {
   if (a === b) return true;
   if (Array.isArray(a) && Array.isArray(b)) {
     return a.length === b.length && a.every((v, i) => sameValue(v, b[i]));
+  }
+  if (a !== null && b !== null && typeof a === "object" && typeof b === "object" && !Array.isArray(a) && !Array.isArray(b)) {
+    const ka = Object.keys(a);
+    const kb = Object.keys(b);
+    return (
+      ka.length === kb.length &&
+      ka.every((k) => Object.prototype.hasOwnProperty.call(b, k) && sameValue((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k]))
+    );
   }
   return false;
 }

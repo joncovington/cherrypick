@@ -96,7 +96,10 @@ calls written against them, until the shares are called away or sold. Each cycle
 ![Live wheel: the ledger and a card for each wheel cycle](../images/live-wheel.png)
 
 The tab answers four questions. **What needs a look?** lists shorts within 3% of their strike, and anything
-expiring in 7 days. **How much has it made?** is a ledger of puts, calls, shares and dividends. **How does
+expiring in 7 days. A short put on a name you have not marked shows `no intent`: open it to see what the
+evaluation says today beside what it would say if the name were a wheel, and choose *Wheel it* or *Not a
+wheel*. The choice waits on Config › Position rules until you save it there. Until then the put keeps its stop.
+A card with nothing to show is left off the tab. **How much has it made?** is a ledger of puts, calls, shares and dividends. **How does
 each cycle stand?** is a card per name with its net, breakeven, days, shares and the short it holds. **What
 would a trade do?** is a payoff for a trade you are thinking of.
 

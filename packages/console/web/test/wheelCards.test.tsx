@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { renderToString } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
-import type { ManageAccount, ManageAttention, ManagePayoff, ManageTrade, ManageWheel, ManageWheelCheck, ManageWheelCycle } from "@console/shared";
+import type { ManageAccount, ManageAttention, ManageAttentionItem, ManagePayoff, ManageTrade, ManageWheel, ManageWheelCheck, ManageWheelCycle } from "@console/shared";
 import { CYCLE_TABS, CycleBody, cycleKey, cyclesIn, NO_WHEEL, WheelCards, outsideLegs, wheelHolding } from "../src/pages/Live/WheelCards";
 import { writePref } from "../src/lib/prefs";
 import { scoped } from "../src/pages/Live/AttentionCard";
@@ -47,6 +47,27 @@ function check(over: Partial<ManageWheelCheck> = {}): ManageWheelCheck {
     restingBtc: [],
     btcPrice: null,
     markAtOrUnderBtc: null,
+    ...over,
+  };
+}
+
+/** The cycle's own put, near its strike, as manage's attention list writes it. */
+function nearItem(over: Partial<ManageAttentionItem> = {}): ManageAttentionItem {
+  return {
+    underlying: "XYZ",
+    symbol: "XYZ   261120P00050000",
+    leg: "2026-11-20 50P",
+    right: "P",
+    strike: 50,
+    expiration: "2026-11-20",
+    dte: 38,
+    quantity: -1,
+    spot: 50.8,
+    distance: 0.016,
+    mid: 1.2,
+    extrinsic: 1.2,
+    level: "near",
+    why: "1.6% from the strike",
     ...over,
   };
 }
@@ -209,19 +230,25 @@ function render(a: ManageAccount): string {
 }
 
 describe("the wheel tab", () => {
-  it("says plainly when no wheel is running, and why when the view has an error", () => {
-    const empty = render(account(wheel({ cycles: [] })));
-    expect(empty).toContain(NO_WHEEL);
-    expect(empty).not.toContain("no wheel view for this account");
-    const failed = render(account(wheel({ cycles: [], error: "the trade history is the designated account's" })));
-    expect(failed).toContain(NO_WHEEL);
-    expect(failed).toContain("no wheel view for this account: the trade history is the designated account's");
+  it("leaves the cycles section out when no wheel is running, rather than drawing a card to say so", () => {
+    // 2026-11-12: a card with nothing to show is hidden, and a section whose cards all are goes too.
+    for (const w of [wheel({ cycles: [] }), wheel({ cycles: [], error: "the trade history is the designated account's" })]) {
+      const out = render(account(w));
+      expect(out).not.toContain(NO_WHEEL);
+      expect(out).not.toContain("each cycle");
+    }
   });
 
-  it("an evaluation from before the wheel view says so, rather than claiming no wheel runs", () => {
+  it("an evaluation from before the wheel view shows no cycles section either", () => {
     const out = render(account(null));
-    expect(out).toContain("written before the wheel view");
-    expect(out).not.toContain(NO_WHEEL);
+    expect(out).not.toContain("written before the wheel view");
+    expect(out).not.toContain("each cycle");
+  });
+
+  it("keeps the cycles section for a name left out or a flagged delivery, with no cycle", () => {
+    const out = render(account(wheel({ cycles: [], leftOut: ["SPX"] })));
+    expect(out).toContain("each cycle");
+    expect(out).toContain("left out, cash-settled");
   });
 
   it("an open cycle shows manage's money in the suite's layout, its check and its wheel rules", () => {
@@ -428,7 +455,7 @@ describe("the wheel tab, laid out by question", () => {
 
   it("puts needs a look first, then each cycle, with the payoff last", () => {
     const a = account(wheel({ names: ["XYZ"] }));
-    a.attention = { nearPct: 0.03, expiringDays: 7, items: [], expiring: [] };
+    a.attention = { nearPct: 0.03, expiringDays: 7, items: [nearItem()], expiring: [] };
     a.payoff = { names: [{ underlying: "XYZ", pnlNow: 5, breakevens: [49], grid: [], curves: [], legs: [], spot: 50, iv: null, model: null } as never] };
     const out = text(page(a));
     expect(out.indexOf("needs a look")).toBeLessThan(out.indexOf("each cycle"));

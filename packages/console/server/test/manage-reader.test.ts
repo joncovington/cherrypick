@@ -695,6 +695,46 @@ describe("readManage", () => {
     expect(a.trades[0]!.wheel).toBeNull();
   });
 
+  it("passes the short puts with no intent through, both verdicts as manage wrote them", () => {
+    const doc = evalDoc("2026-10-20");
+    const acct = (doc["accounts"] as Array<Record<string, unknown>>)[0]!;
+    acct["wheel"] = {
+      cycles: [],
+      flagged: [],
+      outside: {},
+      left_out: [],
+      error: null,
+      intent_candidates: [
+        {
+          trade_id: "XYZ-261001-1", underlying: "XYZ", legs: ["-1 2026-11-20 50P"], contracts: 1, strikes: [50.0],
+          expiration: "2026-11-20", dte: 38, cash_secured: 5000.0, net_if_assigned: 49.0, earnings: null,
+          history: { cycles_complete: 2, assignments: 0 }, wheel_path: true,
+          now: { action: "CLOSE", rule: "credit.breached", reason: "short strike in the money" },
+          as_wheel: { action: "ROLL_OR_CLOSE", rule: "wheel.tested", reason: "roll, close or take the assignment" },
+          changes: true, key: "positions.XYZ.intent",
+        },
+      ],
+    };
+    fs.writeFileSync(path.join(tmp, "manage", "eval-2026-10-20.json"), JSON.stringify(doc));
+    const [c] = readManage(config).accounts[0]!.wheel!.intentCandidates;
+    expect(c).toEqual({
+      tradeId: "XYZ-261001-1", underlying: "XYZ", legs: ["-1 2026-11-20 50P"], contracts: 1, strikes: [50],
+      expiration: "2026-11-20", dte: 38, cashSecured: 5000, netIfAssigned: 49, earnings: null,
+      history: { cyclesComplete: 2, assignments: 0 }, wheelPath: true,
+      now: { action: "CLOSE", rule: "credit.breached", reason: "short strike in the money" },
+      asWheel: { action: "ROLL_OR_CLOSE", rule: "wheel.tested", reason: "roll, close or take the assignment" },
+      changes: true, key: "positions.XYZ.intent",
+    });
+  });
+
+  it("an evaluation from before the list reads as none, never as missing", () => {
+    const doc = evalDoc("2026-10-20");
+    const acct = (doc["accounts"] as Array<Record<string, unknown>>)[0]!;
+    acct["wheel"] = { cycles: [], flagged: [], outside: {}, left_out: [], error: null };
+    fs.writeFileSync(path.join(tmp, "manage", "eval-2026-10-20.json"), JSON.stringify(doc));
+    expect(readManage(config).accounts[0]!.wheel!.intentCandidates).toEqual([]);
+  });
+
   it("passes the wheel cycles and the wheel rules' notes through, keeping every null null", () => {
     // A cycle as packages/manage's evaluator writes it (test_wheel_rules: a put sold alone, tested).
     const doc = evalDoc("2026-10-20");

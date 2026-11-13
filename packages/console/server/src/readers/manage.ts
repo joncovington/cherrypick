@@ -24,6 +24,8 @@ import type {
   ManageExEarnings,
   ManageChainOrder,
   ManageHedges,
+  ManageIntentCandidate,
+  ManageVerdictBrief,
   ManageLadder,
   ManageScenarios,
   ManageMatrixHorizon,
@@ -714,7 +716,37 @@ function wheel(v: unknown): ManageWheel | null {
     names: Array.isArray(w["names"]) ? strs(w["names"]) : null,
     bandsDay: str(w["bands_day"]),
     bandsMissing: str(w["bands_missing"]),
+    intentCandidates: arr(w["intent_candidates"]).map(intentCandidate),
     error: str(w["error"]),
+  };
+}
+
+function verdictBrief(v: unknown): ManageVerdictBrief {
+  const r = rec(v);
+  return { action: str(r["action"]), rule: str(r["rule"]), reason: str(r["reason"]) };
+}
+
+/** One "is this a wheel?" row, passed through (manage's `wheel.intent_candidates`). */
+function intentCandidate(v: unknown): ManageIntentCandidate {
+  const c = rec(v);
+  const h = rec(c["history"]);
+  return {
+    tradeId: str(c["trade_id"]),
+    underlying: str(c["underlying"]) ?? "?",
+    legs: strs(c["legs"]),
+    contracts: num(c["contracts"]),
+    strikes: arr(c["strikes"]).map((s) => num(s)).filter((s): s is number => s !== null),
+    expiration: str(c["expiration"]),
+    dte: num(c["dte"]),
+    cashSecured: num(c["cash_secured"]),
+    netIfAssigned: num(c["net_if_assigned"]),
+    earnings: str(c["earnings"]),
+    history: { cyclesComplete: num(h["cycles_complete"]) ?? 0, assignments: num(h["assignments"]) ?? 0 },
+    wheelPath: flag(c["wheel_path"]) === true,
+    now: verdictBrief(c["now"]),
+    asWheel: verdictBrief(c["as_wheel"]),
+    changes: flag(c["changes"]) === true,
+    key: str(c["key"]) ?? "",
   };
 }
 
