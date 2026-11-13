@@ -19,6 +19,8 @@ All commands are **read-only or paper-only** except the narrow onboarding pair (
 | `connect --module <m>` | The per-module **override** layer: runs that module's own hidden-input credential tool for the OAuth secrets (the orchestrator never sees `client_secret`/`refresh_token`) and selects that module's account. Only needed when one module must differ from the suite default. | `--module meic\|earnings` |
 | `account` | List, set, or clear the **suite-wide** designated live-trading account (masked) — the default every module inherits through the store fallback chain. Configuration only. | `--set <last4\|index>`, `--clear`, `--yes` |
 | `account --module <m>` | The same, for one module's own designation (its override). Configuration only. | `--module`, `--set <last4\|index>`, `--clear`, `--yes` |
+| `connect --login <name>` | Connect another tastytrade login: its OAuth secrets by hidden input into its own keyring service (`cherrypick-broker.<name>`), a read-only connection check, then a label and the manage choice, and `<name>` added to `broker.logins` (config backed up first). Designates nothing. Restart the supervisor afterwards. | `--login` |
+| `account --login <name>` | List that login's accounts (masked). Listing only: designation stays on the main login, so `--set`/`--clear` refuse. | `--login` |
 | `migrate-home` | Move in-repo config into `~/.cherrypick` and sweep leftovers. Dry-run by default. | `--apply` (perform the move) |
 | `secrets-set` | Store a Slack/Discord webhook URL in the OS keyring (prompted without echo if `--url` omitted); for `telegram`, `--url` is the bot token and `--chat-id` the chat ID, and whichever is omitted is prompted for without echo. | `--channel slack\|discord\|telegram`, `--url`, `--chat-id` (telegram) |
 | `secrets-status` | Show which push-channel secrets are configured (secret-free). | — |
@@ -72,7 +74,7 @@ All commands are **read-only or paper-only** except the narrow onboarding pair (
 |---|---|---|
 | `report` | Unified cross-module paper P&L: totals + per-profile breakdown, **gross and net** of costs. | `--eod` (today ET), `--date YYYY-MM-DD` (one session; default all-time) |
 | `calibrate` | Per-profile calibration readings + advisory promotion recommendations (never changes risk settings). | — |
-| `execution` | Each live arm's execution record by week (B10): fills against the mid at submit, fill rate, time to fill, human overrides (a cleared kill block, an in-session config commit, a manual close), closed trades with no recorded net counted apart (`unpriced`), and the gap to its paper mirror split into missed / fill / costs / other. Read-only. | `--json` |
+| `execution` | Each live arm's execution record by week (B10): fills against the mid at submit, fill rate, time to fill, human overrides (a cleared kill block, an in-session config commit, a manual close), closed trades with no recorded net counted apart (`unpriced`), and the gap to its paper mirror split into missed / fill / costs / other. A MEIC live account on another broker login reads as `meic.<login>` from its own ledger, against its own arm on paper on its own symbol. Read-only. | `--json` |
 | `hypotheses` | Check `research/hypotheses.json` (B7): every row well formed, every pointer a real heading, a row from item 18 with a verdict names its `{home}/` result files; on this machine, an `itemN` study in the research queue or a result folder with no row; list logged rule changes due a re-read after 100 trades; `--similar` lists rejected look-alikes of a proposal. Exits 1 on a problem. | `--similar <json>` |
 | `hypotheses-board` | The studies board (packages/console/docs/pages.md, Backtest): each register row with its result files' verdicts (read as written, never worked out from figures), its run id and its research-queue rows, grouped in progress / declared / finished / observation. Reads licensed result files; the console shows it only behind the backtest gate. | — |
 | `study-report` | One study's result files read as a report (`--study itemN`, `orchestrator/studyreport.py`): every arm's own figures by window, its paired difference against its baseline (and over sessions where both entered), entries a session, net per trade, net over buying power, the gates it uses in plain words, a reading worked out from those figures, and advice on what to do next (re-run, fix data, a new study, a ruleset change to weigh, a re-read later, a register row to record), each with the figure that prompted it, by fixed rules and never a model. The register's outcome leads and decides where a script's per-arm word differs. `--since YYYY-MM-DD` lists every study with a result or a finished step since then, with its verdict counts (the Studies tab's This week). Reads licensed result files: console only, behind the backtest gate. | — |
@@ -177,10 +179,10 @@ supervisor job named `external-<id>`, which runs `external-run <id>`.
 `--date YYYY-MM-DD` (report) · `--eod` (report — scope to one
 settlement session) · `--live` (report — read the modules' separate live ledgers instead of paper; a
 deliberately separate path calibrate can never reach) · `--fast` (doctor) ·
-`--module` / `--set` / `--clear` / `--yes` (connect/account) ·
+`--module` / `--set` / `--clear` / `--yes` / `--login <name>` (connect/account) ·
 `--host` / `--port` / `--no-browser` (settings) · `--to` / `--rollback` / `--force-window` / `--yes` / `--dry-run` (upgrade) · `--dry-run` / `--apply` (migrations) · `--apply` (migrate-home,
 settings --organize) · `--organize [target]` (settings) · `--stop` (supervise — ask a running
-supervisor to exit) · `--detail` / `--account <last4>` / `--json` (positions) · `--scheduled` (reconcile — the daily job's mode; notifies on any non-FLAT
+supervisor to exit) · `--detail` / `--account <last4|login-last4>` / `--json` (positions) · `--scheduled` (reconcile — the daily job's mode; notifies on any non-FLAT
 verdict) · `--month` / `--dry-run` (archive) · `--dry-run` / `--list` / `--verify` / `--restore-to DIR` (backup) · `--channel` / `--url` (secrets) · `--detect` / `--write` / `--cap name=bool` (capabilities) · `--force` (init).
 
 ## Slash-command equivalents (Claude Code)

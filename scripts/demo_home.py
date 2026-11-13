@@ -77,8 +77,9 @@ def _friday_on_or_after(d: date) -> date:
 class Ctx:
     """Everything a section needs: where to write, the seeded generator, and the calendar."""
 
-    def __init__(self, out: Path, seed: int, day: date, days: int) -> None:
+    def __init__(self, out: Path, seed: int, day: date, days: int, second_login: bool = False) -> None:
         self.out = out
+        self.second_login = second_login
         self.seed = seed
         self.day = day
         self.days = days
@@ -269,6 +270,8 @@ def write_configs(ctx: Ctx) -> None:
         if key in cfg and isinstance(cfg[key], dict):
             cfg[key]["enabled"] = False
     cfg["manage"]["enabled"] = True
+    if ctx.second_login:
+        cfg["broker"]["logins"] = [{"name": "margin", "label": "Reg T", "manage": True}]
     write_json(ctx.p("config.json"), cfg)
 
     def patch(doc: dict, edits: dict) -> dict:
@@ -1787,6 +1790,43 @@ def write_manage(ctx: Ctx, mk: Market) -> None:
         "live_known_orders": {},
         "account_transactions": [],
     }
+    if ctx.second_login:
+        # A Reg T account on a second broker login, with the SAME masked number (the collision the
+        # account key exists for), holding the first two names and judged on its own history.
+        own = [u for u in underlyings[:2]]
+        own_names = {u["underlying"] for u in own}
+        accounts = snapshot["positions"]["accounts"]
+        accounts[0].update({"login": "main", "account_key": "main-0000", "role": "live"})
+        accounts.append(
+            {
+                "account": ACCOUNT,
+                "login": "margin",
+                "login_label": "Reg T",
+                "account_key": "margin-0000",
+                "role": "managed",
+                "designated": False,
+                "underlyings": own,
+                "account_type": {"margin_or_cash": "Margin", "type_name": "Individual"},
+                "balances": {
+                    "net_liquidating_value": 52_400.0,
+                    "derivative_buying_power": 31_000.0,
+                    "used_derivative_buying_power": 9_800.0,
+                    "maintenance_requirement": 8_400.0,
+                    "cash_balance": 21_600.0,
+                },
+            }
+        )
+        snapshot["history_account"] = "main-0000"
+        snapshot["accounts_history"] = {
+            "margin-0000": {
+                "transactions": {k: v for k, v in history.items() if k in own_names},
+                "transactions_error": None,
+                "account_transactions": [],
+                "account_transactions_error": None,
+                "working_orders": [],
+                "working_orders_error": None,
+            }
+        }
     tmp = ctx.p("state", "demo-snapshot.json")
     write_json(tmp, snapshot)
     _Args.snapshot = str(tmp)
@@ -3223,14 +3263,14 @@ def check_no_leaks(root: Path) -> None:
         raise SystemExit(f"generation failed: the real repo path or username appears in {bad[:8]}")
 
 
-def build(out: Path, seed: int, day: date, days: int) -> Ctx:
+def build(out: Path, seed: int, day: date, days: int, second_login: bool = False) -> Ctx:
     os.environ["CHERRYPICK_HOME"] = str(out)
     if out.exists():
         for child in out.iterdir():
             shutil.rmtree(child) if child.is_dir() else child.unlink()
     out.mkdir(parents=True, exist_ok=True)
     (out / MARKER).write_text("a generated demo home; see docs/demo-home.md" + chr(10), encoding="utf-8")
-    ctx = Ctx(out, seed, day, days)
+    ctx = Ctx(out, seed, day, days, second_login)
     mk = Market(ctx)
     write_configs(ctx)
     write_meic(ctx, mk)
@@ -3264,6 +3304,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--day", default="2026-11-06", help="the latest session, YYYY-MM-DD (a trading day)")
     ap.add_argument("--days", type=int, default=30, help="how many sessions of history")
     ap.add_argument(
+        "--second-login",
+        action="store_true",
+        help="add a second broker login holding a Reg T account with the same masked number",
+    )
+    ap.add_argument(
         "--keepalive",
         action="store_true",
         help="do not build: keep an existing home's heartbeats fresh (with this process's pid) until interrupted",
@@ -3285,7 +3330,7 @@ def main(argv: list[str] | None = None) -> int:
                 time.sleep(15)
         except KeyboardInterrupt:
             return 0
-    build(out, args.seed, day, args.days)
+    build(out, args.seed, day, args.days, args.second_login)
     print(f"demo home written to {out}")
     return 0
 

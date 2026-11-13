@@ -27,6 +27,8 @@ import { tailFile } from "./logs.js";
 import { pidAlive, readAlertDaemonHealth } from "../services/alertDaemon.js";
 import { readLockStatus, sessionDateEt } from "../services/liveLock.js";
 import { streamerFreshness } from "./streamcache.js";
+import { meicLiveAccounts, meicLiveBlock } from "./meicLive.js";
+import { streamerInstances } from "./logins.js";
 
 /** The supervisor counts as alive under this heartbeat age, with its pid present (`supersnap.py`). */
 const SUPERVISOR_ALIVE_S = 90;
@@ -213,13 +215,20 @@ function readDaemons(config: ConsoleConfig, wd: Watchdog): SupervisorDaemon[] {
   const data = path.join(config.paths.cherrypick, "data");
   const specs: Array<{ id: string; pidFile: string; heartbeat: string | null }> = [
     { id: "streamer", pidFile: path.join(data, "marketdata", "streamer.pid"), heartbeat: null },
+    // A producer per further broker login (`streamer.instances`): its pid beside its own cache.
+    ...streamerInstances(config).map((name) => ({
+      id: `streamer.${name}`,
+      pidFile: path.join(data, "marketdata", name, "streamer.pid"),
+      heartbeat: null,
+    })),
     { id: "gex-recorder", pidFile: path.join(data, "gex", "recorder.pid"), heartbeat: path.join(data, "gex", "recorder.heartbeat") },
   ];
   return specs.map(({ id, pidFile, heartbeat }) => {
     const pid = readPid(pidFile);
     const launch = readJson(state(config, `service-${id}.launch.json`));
-    // The watchdog's verdict names the streamer `streamer` and every other service `service.<id>`.
-    const f = wd.byKey.get(id === "streamer" ? "streamer" : `service.${id}`);
+    // The watchdog's verdict names a producer by its label (`streamer`, `streamer.<login>`) and every
+    // other service `service.<id>`.
+    const f = wd.byKey.get(id === "streamer" || id.startsWith("streamer.") ? id : `service.${id}`);
     return {
       id,
       pid,
@@ -282,6 +291,23 @@ export function moduleIds(config: ConsoleConfig): Array<{ id: string; enabled: b
     out.push({ id, enabled: m["enabled"] === true, kind: str(m["kind"]) });
   if (Array.isArray(raw)) for (const m of raw as Array<Record<string, unknown>>) push(String(m["id"] ?? m["name"] ?? "?"), m);
   else if (raw && typeof raw === "object") for (const [k, v] of Object.entries(raw)) push(k, (v ?? {}) as Record<string, unknown>);
+  return out;
+}
+
+/** Each module's main live account, then each of MEIC's on another broker login (`meic.<login>`),
+ *  live-enabled only when MEIC's master switch AND the entry's own `enabled` are. */
+function liveAccountRows<T extends { id: string; liveEnabled: boolean | null }>(
+  config: ConsoleConfig,
+  modules: T[],
+): Array<{ id: string; liveEnabled: boolean | null }> {
+  const out: Array<{ id: string; liveEnabled: boolean | null }> = modules.map((m) => ({ id: m.id, liveEnabled: m.liveEnabled }));
+  const meic = modules.find((m) => m.id === "meic");
+  if (meic === undefined) return out;
+  const meicCfg = readJson(path.join(config.paths.cherrypick, "config", "meic.json")) ?? {};
+  for (const login of meicLiveAccounts(config)) {
+    const entry = meicLiveBlock(meicCfg, login) ?? {};
+    out.push({ id: `meic.${login}`, liveEnabled: meic.liveEnabled === true && entry["enabled"] === true });
+  }
   return out;
 }
 
@@ -432,12 +458,23 @@ export function readSystemHealth(config: ConsoleConfig): SystemHealthPayload {
     label: "Streamer",
     level: findingLevel(streamer?.status),
     value: streamer?.message.split(" [")[0] ?? "no watchdog report",
-    lines: [`last event ${ageText(sf.ageSeconds)} ago`, f("streamer.budget")?.message ?? ""].filter((l) => l !== ""),
+    lines: [
+      `last event ${ageText(sf.ageSeconds)} ago`,
+      f("streamer.budget")?.message ?? "",
+      // Each further login's producer, by its own finding and budget.
+      ...streamerInstances(config).flatMap((name) => [
+        `${name}: ${f(`streamer.${name}`)?.message.split(" [")[0] ?? "no watchdog report"}`,
+        f(`streamer.${name}.budget`)?.message ? `${name}: ${f(`streamer.${name}.budget`)!.message}` : "",
+      ]),
+    ].filter((l) => l !== ""),
     source: "watchdog streamer",
   });
 
-  const liveOn = lock.modules.filter((m) => m.liveEnabled === true).map((m) => m.id);
-  const armed = lock.modules.filter((m) => armedToday(config, m.id).armed).map((m) => m.id);
+  // Every live account, not only each module's main one: MEIC's on another broker login is
+  // `meic.<login>`, with its own arm record and its own `enabled` under MEIC's master switch.
+  const liveRows = liveAccountRows(config, lock.modules);
+  const liveOn = liveRows.filter((m) => m.liveEnabled === true).map((m) => m.id);
+  const armed = liveRows.filter((m) => armedToday(config, m.id).armed).map((m) => m.id);
   checks.push({
     key: "live",
     label: "Live trading",
@@ -480,7 +517,7 @@ export function readSystemHealth(config: ConsoleConfig): SystemHealthPayload {
     },
     live: {
       halted: lock.halted,
-      modules: lock.modules.map((m) => {
+      modules: liveRows.map((m) => {
         const a = armedToday(config, m.id);
         return { id: m.id, liveEnabled: m.liveEnabled, armedToday: a.armed, armDate: a.date };
       }),

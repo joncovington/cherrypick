@@ -15,6 +15,7 @@ import type {
   TimeSpreadsPayload,
 } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
+import { accountName } from "./accountName.js";
 import { num, str } from "./db.js";
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
@@ -140,22 +141,31 @@ function termOf(v: unknown): TimeSpreadTerm {
 }
 
 /**
- * The account's sizing of a day's scan: the first account in that day's manage evaluation that carries
- * `portfolio.time_spreads`. Never returns an account number. The note says why there is nothing.
+ * The account's sizing of a day's scan: the designated account's `portfolio.time_spreads` in that
+ * day's manage evaluation, else the first account carrying one -- manage sizes the scan to every
+ * account (each against its own buying power), so with several the choice is named (`accountName`, the
+ * masked name every page uses). The note says why there is nothing.
  */
 export function readAccountTimeSpreads(
   config: ConsoleConfig,
   day: string,
-): { account: ManageTimeSpreads | null; accountNote: string | null } {
+): { account: ManageTimeSpreads | null; accountNote: string | null; accountName?: string | null } {
   let doc: Record<string, unknown>;
   try {
     doc = rec(JSON.parse(fs.readFileSync(path.join(config.paths.manageDir, `eval-${day}.json`), "utf-8")));
   } catch {
     return { account: null, accountNote: `no manage evaluation for ${day}, so nothing is sized to the account` };
   }
-  for (const a of arr(doc["accounts"])) {
-    const ts = rec(rec(a)["portfolio"])["time_spreads"];
-    if (ts !== undefined && ts !== null) return { account: manageTimeSpreads(ts), accountNote: null };
+  const carrying = arr(doc["accounts"])
+    .map(rec)
+    .filter((a) => rec(a["portfolio"])["time_spreads"] !== undefined && rec(a["portfolio"])["time_spreads"] !== null);
+  const chosen = carrying.find((a) => a["designated"] === true) ?? carrying[0];
+  if (chosen !== undefined) {
+    return {
+      account: manageTimeSpreads(rec(chosen["portfolio"])["time_spreads"]),
+      accountNote: null,
+      accountName: carrying.length > 1 ? accountName(chosen) : null,
+    };
   }
   return { account: null, accountNote: `the ${day} evaluation carries no time-spread rows, so nothing is sized to the account` };
 }

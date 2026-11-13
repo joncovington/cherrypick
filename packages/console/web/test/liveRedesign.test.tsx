@@ -90,7 +90,7 @@ afterEach(() => {
 });
 
 describe("Live → meic", () => {
-  const page = () => renderIn(<MeicLivePage />, [[["live-meic"], meicPayload()], [["live-meic-gap"], gapPayload]]);
+  const page = () => renderIn(<MeicLivePage />, [[["live-meic", "main"], meicPayload()], [["live-meic-gap"], gapPayload]]);
 
   it("leads with readiness, then what is open, then the record", () => {
     const html = page();
@@ -118,7 +118,7 @@ describe("Live → meic", () => {
     const html = page();
     expect(html).not.toContain("holds call, stop");
     // the module's line for a condor the board does not show stays in the readiness card
-    const other = renderIn(<MeicLivePage />, [[["live-meic"], meicPayload({ open: [] })], [["live-meic-gap"], gapPayload]]);
+    const other = renderIn(<MeicLivePage />, [[["live-meic", "main"], meicPayload({ open: [] })], [["live-meic-gap"], gapPayload]]);
     expect(other).toContain(MADE_UP_IC);
   });
 
@@ -150,7 +150,7 @@ describe("Live → meic", () => {
 
   it("puts the history's net rule behind its ?, and its totals in chips that wrap inside the card", () => {
     const totals = { trades: 3, sessions: 2, gross: 300, fees: 12, settlementFees: 1.5, settlementRecorded: 1.5, settlementTrades: 3, net: 286.5, feesTrades: 3, feesRecorded: 12, netRecorded: 286.5 };
-    const html = renderIn(<MeicLivePage />, [[["live-meic"], meicPayload({ totals })], [["live-meic-gap"], gapPayload]]);
+    const html = renderIn(<MeicLivePage />, [[["live-meic", "main"], meicPayload({ totals })], [["live-meic-gap"], gapPayload]]);
     expect(html).toContain('aria-label="About History — 0 resolved live"');
     expect(html).not.toContain("Gross less fees less settlement");
     const foot = html.slice(html.indexOf('class="lv-totals"'));
@@ -167,7 +167,7 @@ describe("Live → meic", () => {
   });
 
   it("still says readiness is unknown when the bridge failed, never ready", () => {
-    const html = renderIn(<MeicLivePage />, [[["live-meic"], meicPayload({ readiness: { ok: false, error: "status unavailable" } })], [["live-meic-gap"], gapPayload]]);
+    const html = renderIn(<MeicLivePage />, [[["live-meic", "main"], meicPayload({ readiness: { ok: false, error: "status unavailable" } })], [["live-meic-gap"], gapPayload]]);
     expect(html).toContain("Readiness unknown");
     expect(html).not.toContain("Ready to arm");
   });

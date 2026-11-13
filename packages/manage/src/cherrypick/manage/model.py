@@ -60,19 +60,35 @@ def _leg(raw: dict[str, Any], session: date) -> dict[str, Any]:
     }
 
 
+def _same_account(raw: dict[str, Any], evaluated: dict[str, Any]) -> bool:
+    """Is the snapshot's `raw` account the evaluation's `evaluated` one? By the account key when both
+    carry one: two broker logins can hold accounts with the same masked number."""
+    if raw.get("account_key") and evaluated.get("account_key"):
+        return raw.get("account_key") == evaluated.get("account_key")
+    return raw.get("account") == evaluated.get("account")
+
+
 def model(
     evaluation: dict[str, Any],
     snapshot: dict[str, Any],
     rules: dict[str, Any],
     underlying: str,
     proposed: list[str],
+    account_key: str | None = None,
 ) -> dict[str, Any]:
     name = underlying.upper()
     session = date.fromisoformat(str(evaluation["session"]))
     rate = float(rules["pricing"]["rate"])
     european = name in {str(s).upper() for s in ((rules.get("expiry") or {}).get("cash_settled_roots") or [])}
     accounts = evaluation.get("accounts") or []
-    account = next((a for a in accounts if a.get("designated")), accounts[0] if accounts else None)
+    # `account_key` (`<login>-<last4>`) models against that account -- another broker login's sizes
+    # on its own buying power and basis; absent, the designated account or the only one, as before.
+    if account_key:
+        account = next((a for a in accounts if a.get("account_key") == account_key), None)
+        if account is None:
+            return {"ok": False, "error": f"no account {account_key} in the evaluation"}
+    else:
+        account = next((a for a in accounts if a.get("designated")), accounts[0] if accounts else None)
     if account is None:
         return {"ok": False, "error": "the evaluation holds no account"}
     metrics = (snapshot.get("metrics") or {}).get(name) or {}
@@ -186,17 +202,13 @@ def model(
         (
             x.get("balances") or {}
             for x in ((snapshot.get("positions") or {}).get("accounts") or [])
-            if x.get("account") == account.get("account")
+            if _same_account(x, account)
         ),
         {},
     )
     used = _f(bal.get("used_derivative_buying_power"))
     raw_account = next(
-        (
-            x
-            for x in ((snapshot.get("positions") or {}).get("accounts") or [])
-            if x.get("account") == account.get("account")
-        ),
+        (x for x in ((snapshot.get("positions") or {}).get("accounts") or []) if _same_account(x, account)),
         {},
     )
     basis = _candidates.account_basis(raw_account.get("account_type"))

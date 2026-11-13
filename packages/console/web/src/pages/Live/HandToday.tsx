@@ -138,7 +138,18 @@ export const HAND_HELP: CardHelpContent = {
 
 /** The hand trades: a parent card with the money, each order as a trade card (or a row), and the lines
  *  that put a figure in doubt. Drawn alone with a reason when there is nothing to show. */
-export function HandCard({ hand: h, session, note }: { hand: LiveTodayHand; session: string; note?: string }) {
+export function HandCard({
+  hand: h,
+  session,
+  note,
+  showAccount = false,
+}: {
+  hand: LiveTodayHand;
+  session: string;
+  note?: string;
+  /** Name the account in the title: set when more than one account carries a hand view. */
+  showAccount?: boolean;
+}) {
   const [view, setView] = useViewChoice("today-hand");
   const warnings = [
     ...h.unreconciled.map(
@@ -148,12 +159,13 @@ export function HandCard({ hand: h, session, note }: { hand: LiveTodayHand; sess
   ];
   const expired = expiredWords(h.expiredHeld);
   const ok = h.status === "ok";
-  const title = h.underlyings.length > 0 ? `by hand · ${h.underlyings.join(", ")} 0DTE` : "by hand · 0DTE";
+  const where = showAccount && h.account ? ` · ${h.account}` : "";
+  const title = (h.underlyings.length > 0 ? `by hand · ${h.underlyings.join(", ")} 0DTE` : "by hand · 0DTE") + where;
   const underlying = h.underlyings[0] ?? "?";
   return (
     <Card
       title={title}
-      collapseKey="today-hand"
+      collapseKey={showAccount && h.account ? `today-hand-${h.account}` : "today-hand"}
       className="lv-12 pf-cq"
       help={HAND_HELP}
       flag="no loop manages these"

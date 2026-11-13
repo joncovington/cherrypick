@@ -37,9 +37,47 @@ def data_path(name: str) -> Path:
     return data_dir() / name
 
 
+# --------------------------------------------------------------------------- the live account
+# The live loop runs once per live account: the main login's (the `live` block, as always) and one per
+# further broker login in the config's `live_accounts` (`live_loop --login <name>`). The process names
+# its login once at startup (`live_account.activate`); every live file then follows from it. Main's
+# paths and names are byte-for-byte what they always were.
+MAIN_LOGIN = "main"
+_live_login = MAIN_LOGIN
+
+
+def set_live_login(name: str | None) -> str:
+    global _live_login
+    _live_login = MAIN_LOGIN if name in (None, "", MAIN_LOGIN) else str(name)
+    return _live_login
+
+
+def live_login() -> str:
+    return _live_login
+
+
+def live_key() -> str:
+    """The name everything keyed by module uses for this live account: `meic` for main (the arm
+    record, kill latch, published orders and open legs it always had), `meic.<login>` for another."""
+    return "meic" if _live_login == MAIN_LOGIN else f"meic.{_live_login}"
+
+
+def live_data_dir() -> Path:
+    """Where this live account's ledger and every file kept beside it live (intents, criticals, the
+    tick lock, orphans, broker health, the alert daemon's inbox): the data home for main, its own
+    `<login>/` subfolder for another, so no two live accounts ever share one."""
+    base = data_dir()
+    return base if _live_login == MAIN_LOGIN else _home.ensure(base / _live_login)
+
+
 def live_db_path() -> Path:
-    """The live trade ledger (``meic_trades.db``)."""
-    return data_path("meic_trades.db")
+    """The live trade ledger (``meic_trades.db``) of this process's live account."""
+    return live_data_dir() / "meic_trades.db"
+
+
+def live_log_name(stem: str = "meic_live") -> str:
+    """`meic_live.log` for main, `meic_live.<login>.log` for another live account."""
+    return f"{stem}.log" if _live_login == MAIN_LOGIN else f"{stem}.{_live_login}.log"
 
 
 def paper_db_path() -> Path:

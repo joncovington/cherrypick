@@ -92,11 +92,39 @@ def _balances_summary(balances: Any) -> dict[str, Any]:
     return summary
 
 
-def _tt(root, *argv: str, tool: list[str] | None = None) -> dict[str, Any]:
+def _tt(root, *argv: str, tool: list[str] | None = None, login: str | None = None) -> dict[str, Any]:
     """Run a read-only broker-tool command in a module and return its parsed JSON ({} on any
     failure). `tool` is the module's config-declared argv prefix (cfgmod.broker_tool); the
-    default stays the historical `src/tt.py` so existing callers are unchanged."""
-    return first_json(doctor._run(root, [*(tool or []), *argv], timeout=35).stdout)
+    default stays the historical `src/tt.py` so existing callers are unchanged. `login` names an
+    extra broker login (`--login`); `main` or None adds nothing, so the argv is today's."""
+    return first_json(doctor._run(root, [*(tool or []), *cfgmod.login_argv(login), *argv], timeout=35).stdout)
+
+
+# What an account is expected to hold, which decides whether its positions are drift:
+#   live        a module's designated live account -- positions expected
+#   managed     on a login flagged `manage` (broker.logins): hand-traded, evaluated by manage --
+#               positions expected
+#   paper-only  anything else: a paper-only suite should leave it flat, so a position is DRIFT
+LIVE, MANAGED, PAPER_ONLY = "live", "managed", "paper-only"
+
+
+def _login_kw(login: str | None) -> dict[str, str]:
+    """`{"login": name}` for an extra login, else nothing: main's calls stay exactly as before."""
+    return {} if login in (None, "", "main") else {"login": str(login)}
+
+
+def account_key(login: str | None, masked: str | None) -> str:
+    """`<login>-<last4>`: one account across logins. The masked form only, so nothing new is exposed;
+    the login keeps two accounts with the same last four digits on different logins apart."""
+    return f"{login or 'main'}-{str(masked or '****')[-4:]}"
+
+
+def account_label(entry: dict[str, Any]) -> str:
+    """How a report names an account: `****1234` on the main login (as before), `margin ****1234`
+    on another."""
+    login = entry.get("login") or "main"
+    masked = entry.get("account") or "****"
+    return masked if login == "main" else f"{login} {masked}"
 
 
 def _designated_numbers(cfg: dict[str, Any]) -> set[str]:
@@ -115,37 +143,79 @@ def _designated_numbers(cfg: dict[str, Any]) -> set[str]:
 
 
 def _account_entry(
-    root, number: str | None, designated: set[str], tool: list[str] | None = None
+    root,
+    number: str | None,
+    designated: set[str],
+    tool: list[str] | None = None,
+    *,
+    login: str | None = None,
+    label: str | None = None,
+    managed: bool = False,
 ) -> dict[str, Any]:
     """Positions (+ best-effort balances) for one account. `number` None = the module's default account
     (used only as a fallback when `list_accounts` yields nothing). The full number is passed to the
-    broker query and matched against the designated set, but only the masked form is ever returned."""
+    broker query and matched against the designated set, but only the masked form is ever returned.
+    `login` is the broker login it sits on (None = main); `managed` marks a login flagged `manage`."""
+    login = login or "main"
     argv = ["get_positions"] + (["--account_number", str(number)] if number else [])
-    payload = _tt(root, *argv, tool=tool)
+    payload = _tt(root, *argv, tool=tool, **_login_kw(login))
     full = number if number is not None else payload.get("account_number")
     account = mask_account(full)
-    is_designated = bool(full and full in designated)
+    # Designation lives on the main login only: an extra login's account is never "live" here.
+    is_designated = bool(full and full in designated and login == "main")
+    role = LIVE if is_designated else (MANAGED if managed else PAPER_ONLY)
+    who = {
+        "account": account,
+        "login": login,
+        "login_label": label,
+        "account_key": account_key(login, account),
+        "role": role,
+        "designated": is_designated,
+    }
     if not payload.get("ok") or "positions" not in payload:
         return {
-            "account": account,
+            **who,
             "error": (payload.get("error") or "get_positions not ok")[:200],
             "open_positions": [],
             "open_count": 0,
             "balances": {},
-            "designated": is_designated,
         }
-    positions = payload.get("positions") or []
+    positions, dust = drop_dust(payload.get("positions") or [])
     ai_argv = ["get_account_info"] + (["--account_number", str(number)] if number else [])
-    ai = _tt(root, *ai_argv, tool=tool)
+    ai = _tt(root, *ai_argv, tool=tool, **_login_kw(login))
     balances = _balances_summary(ai.get("balances")) if ai.get("ok") else {}
     return {
-        "account": account,
+        **who,
         "open_positions": positions,
         "open_count": len(positions),
+        # Rows left out as dust (`drop_dust`): named, so a reader can see one was there.
+        "dust_dropped": [str(p.get("symbol") or "?") for p in dust],
         "balances": balances,
         "account_type": _account_type(ai),
-        "designated": is_designated,
     }
+
+
+# Below this many units a position is dust, not a holding: a crypto balance left at 3e-10 coins after
+# a sale is listed by the broker as an open position worth nothing, which no source can price and no
+# order can close. Options and shares are whole numbers, so they are never near it.
+DUST_QUANTITY = 1e-8
+
+
+def _quantity(row: dict[str, Any]) -> float | None:
+    try:
+        return abs(float(row.get("quantity")))
+    except (TypeError, ValueError):
+        return None
+
+
+def drop_dust(rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """(the positions held, the dust left out). A row whose quantity cannot be read is KEPT: unknown
+    is not zero, and dropping it would hide a real position."""
+    kept, dust = [], []
+    for row in rows:
+        qty = _quantity(row) if isinstance(row, dict) else None
+        (dust if qty is not None and qty < DUST_QUANTITY else kept).append(row)
+    return kept, dust
 
 
 def _account_type(info: dict[str, Any]) -> dict[str, Any]:
@@ -160,31 +230,81 @@ def _account_type(info: dict[str, Any]) -> dict[str, Any]:
 
 
 def _query_broker(cfg: dict[str, Any], forced_module: str | None) -> dict[str, Any]:
-    """Query **every** account on the real login (tastytrade returns multiple per user), via the first
-    enabled module whose `tt.py` answers `get_positions` (MEIC has it; earnings does not). Enumerate
-    accounts with `list_accounts`, then check positions per account — a leftover position could sit in
-    any account, so a single-account check would miss it. Read-only broker calls; account numbers masked.
-    Falls back to the module's default account only if `list_accounts` yields nothing."""
+    """Query **every** account on **every** broker login (`broker.logins`; tastytrade returns several
+    accounts per login), via the first enabled module whose `tt.py` answers `get_positions` (MEIC has
+    it; earnings does not). Enumerate accounts with `list_accounts`, then check positions per account —
+    a leftover position could sit in any account, so a single-account check would miss it. Read-only
+    broker calls; account numbers masked. Falls back to the module's default account only if
+    `list_accounts` yields nothing. Main unreachable is unreachable; another login that cannot be read
+    is one erroring entry beside main's accounts."""
     modules = cfgmod.enabled_modules(cfg)
     if forced_module and forced_module in modules:
         modules = {forced_module: modules[forced_module]}
     designated = _designated_numbers(cfg)
+    logins = cfgmod.broker_logins(cfg)
+    main = logins[0]
+    found = _query_login(modules, designated, main)
+    if not found.get("ok"):
+        return {"reachable": False, "detail": found.get("detail")}
+    entries = list(found["accounts"])
+    # Every further login, through the same module first (only a broker tool that knows `--login`
+    # answers; others fail and the next is tried). One login that cannot be read is a WARN on that
+    # login, never the whole check: main's accounts were read.
+    order = {found["module"]: modules[found["module"]], **modules}
+    for login in logins[1:]:
+        extra = _query_login(order, designated, login)
+        if extra.get("ok"):
+            entries += extra["accounts"]
+        else:
+            entries.append(
+                {
+                    "account": "****",
+                    "login": login["name"],
+                    "login_label": login.get("label"),
+                    "account_key": account_key(login["name"], None),
+                    "role": MANAGED if login.get("manage") else PAPER_ONLY,
+                    "designated": False,
+                    "error": f"login {login['name']}: {str(extra.get('detail'))[:180]}",
+                    "open_positions": [],
+                    "open_count": 0,
+                    "balances": {},
+                }
+            )
+    return {
+        "reachable": True,
+        "module": found["module"],
+        "logins": [entry["name"] for entry in logins],
+        "accounts": entries,
+        "total_open": sum(e["open_count"] for e in entries),
+        # Only positions in paper-only accounts count as drift; a designated live account and an
+        # account on a `manage` login are expected to hold positions. (The key keeps its old name.)
+        "undesignated_open": sum(e["open_count"] for e in entries if e.get("role") == PAPER_ONLY),
+    }
+
+
+def _query_login(
+    modules: dict[str, dict[str, Any]], designated: set[str], login: dict[str, Any]
+) -> dict[str, Any]:
+    """Every account on one login, through the first module whose broker tool answers it:
+    `{ok, module, accounts}` or `{ok: False, detail}`."""
+    name_ = login["name"]
     last_err = "no positions-capable module found"
     for name, mcfg in modules.items():
         root = cfgmod.module_root(mcfg, name)
         if not root.exists():
             continue
         tool = cfgmod.broker_tool(mcfg, name)
+        kw = {"login": name_, "label": login.get("label"), "managed": bool(login.get("manage"))}
         try:
             numbers = [
                 a.get("account_number")
-                for a in (_tt(root, "list_accounts", tool=tool).get("accounts") or [])
+                for a in (_tt(root, "list_accounts", tool=tool, **_login_kw(name_)).get("accounts") or [])
                 if a.get("account_number")
             ]
             entries = (
-                [_account_entry(root, n, designated, tool=tool) for n in numbers]
+                [_account_entry(root, n, designated, tool=tool, **kw) for n in numbers]
                 if numbers
-                else [_account_entry(root, None, designated, tool=tool)]
+                else [_account_entry(root, None, designated, tool=tool, **kw)]
             )
         except Exception as exc:  # noqa: BLE001 — a launch failure just means try the next module
             last_err = f"{type(exc).__name__}: {exc}"
@@ -193,16 +313,8 @@ def _query_broker(cfg: dict[str, Any], forced_module: str | None) -> dict[str, A
         if entries and all(e.get("error") for e in entries):
             last_err = entries[0]["error"]
             continue
-        return {
-            "reachable": True,
-            "module": name,
-            "accounts": entries,
-            "total_open": sum(e["open_count"] for e in entries),
-            # Only positions in NON-designated (paper-only) accounts count as drift; a designated live
-            # account is expected to hold positions.
-            "undesignated_open": sum(e["open_count"] for e in entries if not e.get("designated")),
-        }
-    return {"reachable": False, "detail": last_err}
+        return {"ok": True, "module": name, "accounts": entries}
+    return {"ok": False, "detail": last_err}
 
 
 # --------------------------------------------------------------------------- entrypoint
@@ -231,6 +343,13 @@ def run(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
     }
 
 
+def _role(entry: dict[str, Any]) -> str:
+    """An entry's role; one written before roles existed reads from its designated flag."""
+    if entry.get("role"):
+        return str(entry["role"])
+    return LIVE if entry.get("designated") else PAPER_ONLY
+
+
 def summary(result: dict[str, Any]) -> str:
     """The pushed message: what is wrong, in a line or two (2026-10-09). The whole report --
     paper context, separators, a 900-character traceback with interpreter paths -- stays in the log
@@ -246,10 +365,10 @@ def summary(result: dict[str, Any]) -> str:
         )
     lines = []
     for a in broker.get("accounts") or []:
-        acct = a.get("account", "****")
+        acct = account_label(a)
         if a.get("error"):
             lines.append(f"{acct}: could not read ({str(a['error'])[:120]})")
-        elif a.get("open_positions") and not a.get("designated"):
+        elif a.get("open_positions") and _role(a) == PAPER_ONLY:
             lines.append(f"{acct}: {len(a['open_positions'])} open position(s) in a paper-only account")
     return "; ".join(lines) or "See `run.py reconcile`."
 
@@ -267,20 +386,21 @@ def format_report(result: dict[str, Any]) -> tuple[str, int]:
         lines.append(f"checked {len(accounts)} real account(s):")
         for a in accounts:
             if a.get("error"):
-                lines.append(f"[WARN] account {a.get('account', '****')}: {a['error']}")
+                lines.append(f"[WARN] account {account_label(a)}: {a['error']}")
                 continue
             positions = a.get("open_positions") or []
-            is_desig = a.get("designated")
-            tag = " (live - expected)" if is_desig else ""
-            # A designated live account is expected to hold positions, so it's never DRIFT.
-            mark = "[ OK ]" if (not positions or is_desig) else "[DRIFT]"
+            role = _role(a)
+            expected = role in (LIVE, MANAGED)
+            tag = {LIVE: " (live - expected)", MANAGED: " (managed - expected)"}.get(role, "")
+            # A designated live account and a managed one are expected to hold positions: never DRIFT.
+            mark = "[ OK ]" if (not positions or expected) else "[DRIFT]"
             if not positions:
                 state = "is flat (no open positions)"
-            elif is_desig:
+            elif expected:
                 state = f"has {len(positions)} open position(s) (expected)"
             else:
                 state = f"has {len(positions)} OPEN position(s)"
-            lines.append(f"{mark} account {a.get('account', '****')}{tag} {state}")
+            lines.append(f"{mark} account {account_label(a)}{tag} {state}")
             for p in positions[:20]:
                 sym = p.get("symbol") or p.get("underlying-symbol") or p.get("instrument-type") or "?"
                 qty = p.get("quantity") or p.get("quantity-direction") or ""

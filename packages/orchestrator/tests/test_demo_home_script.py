@@ -110,6 +110,24 @@ def test_no_forbidden_account_or_trade_ticker(homes):
     assert symbols and symbols <= ALLOWED_TRADE_NAMES, symbols - ALLOWED_TRADE_NAMES
 
 
+def test_a_second_login_home_keeps_two_equal_masked_accounts_apart(tmp_path):
+    """`--second-login`: a Reg T account on the `margin` login with the same masked number, evaluated on
+    its own history -- the collision every reader has to keep apart."""
+    home = tmp_path / "two"
+    generate(home, "--second-login")
+    cfg = json.loads((home / "config.json").read_text(encoding="utf-8"))
+    assert [e["name"] for e in cfg["broker"]["logins"]] == ["margin"]
+    ev = json.loads((home / "data" / "manage" / "eval-2026-11-06.json").read_text(encoding="utf-8"))
+    assert [(a["account"], a["account_key"], a["role"]) for a in ev["accounts"]] == [
+        ("****0000", "main-0000", "live"),
+        ("****0000", "margin-0000", "managed"),
+    ]
+    margin = ev["accounts"][1]
+    assert margin["wheel"]["error"] is None and margin["trades"]
+    text = (home / "data" / "manage" / "eval-2026-11-06.json").read_text(encoding="utf-8")
+    assert not re.search(r'"account": "(?!\*\*\*\*0000")', text)
+
+
 def test_the_screener_files_name_only_the_demo_symbols(homes):
     home = homes[0]
     income = json.loads(

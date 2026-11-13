@@ -315,11 +315,11 @@ def cmd_install(cfg, force: bool = False) -> None:
     # Start the standalone market-data producer (top-level `streamer`) if enabled — the same
     # start-detached-if-down contract as a service. The watchdog keeps it alive in-session thereafter;
     # its single-instance guard prevents a duplicate start (e.g. if it's already running).
-    streamer_spec = cfg.get("streamer") or {}
-    if streamer_spec.get("enabled"):
+    # One producer per instance (`streamer.instances`, a login each), each under its own label.
+    for label, streamer_spec in cfgmod.streamer_specs(cfg).items():
         sroot = cfgmod.module_root(streamer_spec, "streamer")
-        results["streamer"] = (
-            _ensure_daemon(sroot, streamer_spec, "streamer", producer=True)
+        results[label] = (
+            _ensure_daemon(sroot, streamer_spec, label, producer=True)
             if sroot.exists()
             else {"ok": False, "detail": f"checkout not found at {sroot}"}
         )
@@ -383,8 +383,12 @@ def _stamp_service_config(
     if not sid:
         return
     try:
+        from cherrypick.core import streamrequests as _sr
+
         digest, source = servicecfg.effective_config(spec, root)
-        subs = servicecfg.subscription_snapshot() if producer else None
+        # A producer instance bound its OWN folder's union, so that is the one stamped.
+        with _sr.instance(spec.get("instance")):
+            subs = servicecfg.subscription_snapshot() if producer else None
         servicecfg.write_stamp(sid, digest, source, subs)
     except Exception:  # stamping is a convenience, never a reason to fail an install
         pass
@@ -1151,7 +1155,9 @@ def _run_manage_marks(cfg) -> None:
     written: str | None = None
     # A trade since the stored snapshot, or no snapshot today yet: this minute takes a full one.
     snap_session, snap_at = managerefresh.stored_snapshot(cfgmod.state_file("manage.snapshot.json"))
-    fill_at = managerefresh.latest_fill(Path(account_alerts.data_dir()) / account_alerts.INBOX_FILENAME)
+    fill_at = managerefresh.latest_fill_any(
+        [Path(account_alerts.inbox_path(login)) for login in cfgmod.broker_login_names(cfg)]
+    )
     today = now.date().isoformat()
     oc = cfgmod.manage_settings(cfg)["on_change"]
     if oc["enabled"]:
@@ -1744,8 +1750,38 @@ def _account_table(listing: dict) -> None:
 def cmd_account(cfg, args) -> None:
     """List / set / clear a designated live-trading account (masked). With --module, the
     module's own designation (its override); WITHOUT --module, the SUITE-WIDE shared default
-    every module inherits through the store fallback chain."""
+    every module inherits through the store fallback chain. With --login NAME (an extra login),
+    a listing only: designation stays on the main login."""
     module = args.module
+    login = getattr(args, "login", None)
+    if login not in (None, "", "main"):
+        # A module's live account on another login (its config's `live_accounts.<login>`): designate,
+        # clear, or (no --module) list the login's accounts.
+        if module and args.clear:
+            _emit(accounts.clear_login_account(module, login))
+            return
+        if module and args.set:
+            if not args.yes:
+                print(
+                    f"This designates the account {module} will use for LIVE orders on the {login} login."
+                    " cherrypick never places trades from this command; it only records the destination."
+                )
+                prompt = (
+                    f"Type 'yes' to set {module}'s {login} live-trading account to selection {args.set!r}: "
+                )
+                if input(prompt).strip() != "yes":
+                    _emit({"ok": False, "error": "aborted"})
+                    return
+            result = accounts.set_login_account(cfg, module, login, args.set)
+            _emit(result)
+            if not result.get("ok"):
+                sys.exit(1)
+            return
+        if args.set or args.clear:
+            _emit({"ok": False, "error": "designating on another login needs --module"})
+            sys.exit(1)
+        _emit(accounts.list_login(cfg, login))
+        return
     if not module:
         if args.clear:
             _emit(accounts.clear_shared_account())
@@ -1799,7 +1835,12 @@ def cmd_account(cfg, args) -> None:
 def cmd_connect(cfg, args) -> None:
     """With --module: the per-module onboarding (override layer). Without: the SUITE wizard —
     shared login once, optional migration of per-module copies, one suite-wide designation,
-    opt-in webhooks, status panel."""
+    opt-in webhooks, status panel. With --login NAME: connect an extra broker login (its own hidden
+    secret entry, then the name added to broker.logins)."""
+    login = getattr(args, "login", None)
+    if login not in (None, "", "main"):
+        _emit(connect.run_login(cfg, login))
+        return
     if not args.module:
         _emit(connect.run_suite(cfg))
         return
@@ -2777,6 +2818,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="For account: designate this account (a last-4 or 1-based index)",
     )
     parser.add_argument("--clear", action="store_true", help="For account: unset the designated account")
+    parser.add_argument(
+        "--login",
+        default=None,
+        help="For connect/account: an extra broker login by name (broker.logins); absent = the main login",
+    )
     parser.add_argument(
         "--detect", action="store_true", help="For capabilities: probe this machine for claude and dolt"
     )

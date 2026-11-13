@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { LiveTodayHand, LiveTodayHandLeg, LiveTodayHandOrder } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
+import { accountName } from "./accountName.js";
 import { listSessions } from "./manage.js";
 
 /**
@@ -93,7 +94,22 @@ function leg(v: unknown): LiveTodayHandLeg {
   };
 }
 
-export function readLiveHand(config: ConsoleConfig, session: string): LiveTodayHand {
+/** One hand view per account the evaluation carries one for: the first is `readLiveHand`'s, the rest
+ *  (another broker login's accounts, each judged on its own history) follow, each named. */
+export function readLiveHandAll(config: ConsoleConfig, session: string): LiveTodayHand[] {
+  const first = readLiveHand(config, session);
+  if (first.status === "none") return [first];
+  let doc: Rec;
+  try {
+    doc = rec(JSON.parse(fs.readFileSync(path.join(config.paths.manageDir, `eval-${session}.json`), "utf-8")));
+  } catch {
+    return [first];
+  }
+  const withViews = arr(doc["accounts"]).map(rec).filter((a) => a["zero_dte"] !== null && a["zero_dte"] !== undefined);
+  return [first, ...withViews.slice(1).map((a) => readLiveHand(config, session, a))];
+}
+
+export function readLiveHand(config: ConsoleConfig, session: string, only?: Rec): LiveTodayHand {
   const sessions = listSessions(config);
   if (!sessions.includes(session)) {
     const last = sessions[sessions.length - 1];
@@ -105,14 +121,17 @@ export function readLiveHand(config: ConsoleConfig, session: string): LiveTodayH
   } catch {
     return empty("unread", `eval-${session}.json is unreadable`);
   }
+  // The first account with a view (the designated one, or the only one), or `only`; each account on
+  // another broker login with its own history carries its own (`readLiveHandAll`).
+  const owner = only ?? arr(doc["accounts"]).map(rec).find((a) => a["zero_dte"] !== null && a["zero_dte"] !== undefined);
+  const block = owner?.["zero_dte"] ?? undefined;
   const base = {
     evaluatedSession: session,
     snapshotAt: str(doc["snapshot_generated_at"]),
     markedAt: str(rec(doc["remark"])["at"]),
+    ...(owner ? { account: accountName(owner) } : {}),
   };
-  // The view is on the designated account (or the only one); manage leaves it null on any other.
-  const block = arr(doc["accounts"]).map((a) => rec(a)["zero_dte"]).find((z) => z !== null && z !== undefined);
-  if (block === undefined) {
+  if (block === undefined || block === null) {
     const reason =
       arr(doc["accounts"]).length === 0
         ? "today's evaluation holds no account"

@@ -192,6 +192,15 @@ elif ask "Connect now?" y; then
 else
     warn "Skipped. Market data will not flow until you connect; run this installer again to do it."
 fi
+# A further tastytrade login (another set of accounts, read beside the first's; never traded).
+CONNECTED_NOW="$("$VPY" -m cherrypick.core.auth status 2>/dev/null | "$VPY" -c "import json,sys; s=json.load(sys.stdin)['secrets']; print(bool(s.get('client_secret') and s.get('refresh_token')))" 2>/dev/null || echo False)"
+if [ "$CONNECTED_NOW" = True ] && [ "$UPGRADE" != 1 ] && ask "Connect another tastytrade login too?" n; then
+    printf '  A short name for it (lower-case letters, digits, hyphens; e.g. margin): '
+    read -r LOGIN_NAME
+    if [ -n "$LOGIN_NAME" ]; then
+        "$VPY" "$RUNPY" connect --login "$LOGIN_NAME" || warn "Not connected. Run: run.py connect --login $LOGIN_NAME"
+    fi
+fi
 
 # ------------------------------------------------------------------------------- first lists
 # The evening jobs that build the income lists' universe, once, now (run.py bootstrap says why).

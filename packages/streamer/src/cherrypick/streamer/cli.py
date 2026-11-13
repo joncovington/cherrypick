@@ -47,14 +47,42 @@ def main(argv: list[str] | None = None) -> int:
         "underlyings) and exit. DRY unless --apply.",
     )
     parser.add_argument("--apply", action="store_true", help="with --prune: actually delete what it reports")
+    parser.add_argument(
+        "--instance",
+        default=None,
+        help="run the producer for another broker login (streamer.instances): its own cache, "
+        "requests, config, log and credentials; absent = the main producer",
+    )
     args = parser.parse_args(argv)
 
-    cfg = _config.load()
+    from cherrypick.core import streamrequests as _sr
+
+    try:
+        instance = _sr.set_instance(args.instance)
+    except ValueError as exc:
+        print(json.dumps({"ok": False, "error": str(exc)}))
+        return 1
+    cfg = _config.load(instance)
+    extra = instance != _config.MAIN
 
     # Credential entry writes only the OS keyring (no broker, no daemon); emit JSON and exit.
     if args.secrets_status:
+        if extra:
+            store = _daemon.credential_store(instance)
+            print(json.dumps({k: bool(store.get_secret(k)) for k in _credentials.STREAMER_SECRETS}))
+            return 0
         print(json.dumps(_credentials.status()))
         return 0
+    if args.secrets_set and extra:
+        print(
+            json.dumps(
+                {
+                    "ok": False,
+                    "error": f"an instance's secrets are its login's: run.py connect --login {instance}",
+                }
+            )
+        )
+        return 1
     if args.secrets_set:
         written = _credentials.set_secrets()
         print(json.dumps({"ok": True, "set": written}))
@@ -99,6 +127,18 @@ def main(argv: list[str] | None = None) -> int:
                     "ok": False,
                     "error": f"Streamer already running (pid {existing}). Run 'python run.py --stop' first, "
                     f"or --status to inspect it.",
+                }
+            )
+        )
+        return 1
+
+    # An instance with no secrets for its login would connect, fail auth and be restarted forever.
+    if extra and not _daemon.credential_store(instance).secrets_present():
+        print(
+            json.dumps(
+                {
+                    "ok": False,
+                    "error": f"login {instance!r} has no secrets: run.py connect --login {instance}",
                 }
             )
         )

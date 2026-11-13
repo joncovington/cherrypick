@@ -160,6 +160,11 @@ decisions per symbol, one shared account-wide risk budget.
   included), `adjust_order` and `close_position` resolve through `_trading_account`: no designation
   (unset or unreadable) is `AccountNotDesignated`, never the login's first account, and an explicit
   `--account_number` must be the designated one. Read-only commands keep `resolve_account`'s fallback.
+- **`tt --login NAME` reads an extra broker login, and only reads.** The account reads in
+  `LOGIN_READ_VERBS` run on that login's own keyring store (`cherrypick.core.auth.logins`, no
+  fallback to this module's service or the shared one); every other verb, orders and market data
+  included, refuses before any broker call (`reason: login_read_only`). An extra login has no
+  designated account. No flag, or `--login main`, is the main login as before.
 - **An entry is written ahead of its order.** The row it will need goes into
   `entry_intents.json` beside the live ledger under a minted `meic-<uuid>`, sent as the order's
   `external_identifier`; an intent that cannot be written sends no order. The saved row clears it.
@@ -242,6 +247,21 @@ the opening range comes from the producer's `orb.py`. `tt stream_status` reports
 
 ## The live block (arm registry)
 
+- **One live account per process** (`live_account.py`). The main login's is the `live` block, as
+  always; each further broker login MEIC trades is a `live_accounts.<login>` entry, a full live block
+  of its own, run as `live_loop --login <login>`. `live_account.activate` names the account once, at
+  startup, before anything reads a path, a credential or the config:
+  - **Files:** every live file follows `paths.live_data_dir` / `live_key` / `live_log_name`, so a
+    further account's ledger, intents, criticals, tick lock, orphans, broker health, alert inbox, arm
+    record, kill latch, published orders, open legs and stream request are its own.
+  - **Login and designation:** its session is the login's own store, and its designated account is
+    `meic:account_number` in that login's service.
+  - **Config:** the loop reads `config_view`, where nothing that sizes, selects or permits a trade is
+    inherited from `live` (shown to fail by inheriting it); only the timing keys are.
+  - **Gates:** `readiness` adds the entry's own `enabled`. A further account's tick also reads its
+    trading status (`restriction_blockers`: frozen, closing-only, margin call, and the
+    pattern-day-trader reserve under $25,000), which blocks entries only.
+  - **Main is untouched:** its paths, keys, argv and broker calls are what they were.
 - **The live block, flies' `live.arm` seam.** `live.arm` names the registry arm live
   trades (unset: the top level); `live.max_open_bp_dollars`, `wing_widths_by_symbol`,
   `entry_window_start` and `entry_window_end` apply to live alone and only narrow the arm (later start,

@@ -46,6 +46,15 @@ def post_due_on_change(
     return every <= 0 or post_due(last, now, session, every)
 
 
+def account_ref(account: dict[str, Any]) -> str:
+    """How a post and its signature name an account: the masked number on the main login (as always,
+    so an existing signature is unchanged), `<login> ****1234` on another -- two logins can share a
+    last four."""
+    login = account.get("login") or "main"
+    masked = account.get("account") or ""
+    return masked if login == "main" else f"{login} {masked}"
+
+
 def signature(doc: dict[str, Any]) -> list[str]:
     """The trades needing action and what to do with each, as sorted strings: what a person reading the
     post would act on. A price move that changes no action leaves it as it was."""
@@ -53,9 +62,7 @@ def signature(doc: dict[str, Any]) -> list[str]:
     for account in doc.get("accounts") or []:
         for t in acting(account):
             what = t.get("trade_id") or t.get("underlying") or "?"
-            out.append(
-                f"{account.get('account') or ''}|{what}|{(t.get('recommendation') or {}).get('action')}"
-            )
+            out.append(f"{account_ref(account)}|{what}|{(t.get('recommendation') or {}).get('action')}")
     return sorted(out)
 
 

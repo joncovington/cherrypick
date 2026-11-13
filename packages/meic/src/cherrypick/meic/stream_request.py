@@ -74,8 +74,15 @@ def write(symbols, *, live: bool = False, arm_rosters=None) -> Path:
     concurrent reader in the streamer never sees a partial file), plus the leg source for the ledger
     this loop writes. ``live=True`` writes the LIVE loop's own file (see module docstring for why
     paper/live never share one)."""
-    module = _MODULE_LIVE if live else _MODULE
+    module = live_request_name() if live else _MODULE
     return _sr.write_request(module, symbols, leg_sources=leg_sources(live=live), arm_rosters=arm_rosters)
+
+
+def live_request_name() -> str:
+    """`meic-live` for the main live account (the file it always wrote), `meic-live.<login>` for one
+    on another broker login: each live account's legs are its own declaration."""
+    login = _paths.live_login()
+    return _MODULE_LIVE if login == _paths.MAIN_LOGIN else f"{_MODULE_LIVE}.{login}"
 
 
 def arm_rosters(config: dict, profiles: dict | None = None) -> dict[str, list[str]]:

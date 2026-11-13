@@ -93,16 +93,68 @@ export function minutesOf(hhmm: string): number | null {
   return m ? Number(m[1]) * 60 + Number(m[2]) : null;
 }
 
-/** The ledger's directory: every sibling file the loop writes sits beside `meic_trades.db`. */
-export function meicLiveDbPath(config: ConsoleConfig): string {
-  return path.join(config.paths.meicDir, "meic_trades.db");
+/** Is `login` the main broker login (the `live` block, the paths MEIC always had)? */
+function isMain(login: string | null | undefined): boolean {
+  return !login || login === "main";
 }
 
-function readArm(config: ConsoleConfig, session: string, minute: number): LiveMeicArm {
-  const record = readJson(path.join(config.paths.cherrypick, "state", "meic-live-arm.json"));
+/** The ledger of one live account: `meicDir/meic_trades.db` for the main login, `meicDir/<login>/
+ *  meic_trades.db` for one on another broker login (MEIC's `live_accounts`). Every sibling file the
+ *  loop writes sits beside it. */
+export function meicLiveDbPath(config: ConsoleConfig, login: string | null = null): string {
+  return isMain(login)
+    ? path.join(config.paths.meicDir, "meic_trades.db")
+    : path.join(config.paths.meicDir, login!, "meic_trades.db");
+}
+
+/** MEIC's live accounts beyond the main one, as the orchestrator derives their jobs
+ *  (`config.live_accounts`): an entry under `live_accounts` in MEIC's config whose login is in
+ *  `broker.logins` and that is enabled or already has a ledger with something in it. */
+export function meicLiveAccounts(config: ConsoleConfig): string[] {
+  const meicCfg = readJson(path.join(config.paths.cherrypick, "config", "meic.json")) ?? {};
+  const suite = readJson(path.join(config.paths.cherrypick, "config.json")) ?? {};
+  const broker = (typeof suite["broker"] === "object" && suite["broker"] !== null ? suite["broker"] : {}) as Record<string, unknown>;
+  const known = new Set(
+    (Array.isArray(broker["logins"]) ? broker["logins"] : [])
+      .map((e) => (typeof e === "object" && e !== null ? (e as Record<string, unknown>)["name"] : null))
+      .filter((n): n is string => typeof n === "string" && n !== "main"),
+  );
+  const raw = meicCfg["live_accounts"];
+  if (typeof raw !== "object" || raw === null) return [];
+  return Object.entries(raw as Record<string, unknown>)
+    .filter(([login, entry]) => {
+      if (!known.has(login) || typeof entry !== "object" || entry === null) return false;
+      if ((entry as Record<string, unknown>)["enabled"] === true) return true;
+      const ledger = meicLiveDbPath(config, login);
+      return fs.existsSync(ledger) && fs.statSync(ledger).size > 0;
+    })
+    .map(([login]) => login)
+    .sort();
+}
+
+/** One live account's `live` block: the main one's, or its `live_accounts.<login>` entry with the
+ *  timing it leaves out taken from `live` (MEIC's own `live_account.config_view`). */
+export function meicLiveBlock(meicCfg: Record<string, unknown>, login: string | null): Record<string, unknown> | null {
+  const base = (typeof meicCfg["live"] === "object" && meicCfg["live"] !== null ? meicCfg["live"] : {}) as Record<string, unknown>;
+  if (isMain(login)) return base;
+  const entries = (typeof meicCfg["live_accounts"] === "object" && meicCfg["live_accounts"] !== null
+    ? meicCfg["live_accounts"]
+    : {}) as Record<string, unknown>;
+  const entry = entries[login!];
+  if (typeof entry !== "object" || entry === null) return null;
+  const out = { ...(entry as Record<string, unknown>) };
+  for (const key of ["disarm_time", "disarm_grace_minutes", "entry_window_start", "entry_window_end"]) {
+    if (!(key in out) && key in base) out[key] = base[key];
+  }
+  return out;
+}
+
+function readArm(config: ConsoleConfig, session: string, minute: number, login: string | null = null): LiveMeicArm {
+  const recordName = isMain(login) ? "meic-live-arm.json" : `meic.${login}-live-arm.json`;
+  const record = readJson(path.join(config.paths.cherrypick, "state", recordName));
   const date = str(record?.["date"]);
   const meicCfg = readJson(path.join(config.paths.cherrypick, "config", "meic.json")) ?? {};
-  const live = (typeof meicCfg["live"] === "object" && meicCfg["live"] !== null ? meicCfg["live"] : {}) as Record<string, unknown>;
+  const live = meicLiveBlock(meicCfg, login) ?? {};
   const disarmTime = str(live["disarm_time"]) ?? DEFAULT_DISARM;
   const disarmMin = minutesOf(disarmTime);
   return {
@@ -113,7 +165,10 @@ function readArm(config: ConsoleConfig, session: string, minute: number): LiveMe
     disarmTime,
     pastDisarm: disarmMin !== null && minute >= disarmMin,
     halted: fs.existsSync(path.join(config.paths.cherrypick, "state", "halt-live.flag")),
-    liveEnabled: readModuleGate(config, "meic").liveEnabled,
+    // The module's master switch, and for another login's account its own `enabled` too.
+    liveEnabled: isMain(login)
+      ? readModuleGate(config, "meic").liveEnabled
+      : readModuleGate(config, "meic").liveEnabled === true && live["enabled"] === true,
     symbol: str(live["symbol"]),
   };
 }
@@ -341,18 +396,21 @@ export function markOpen(config: ConsoleConfig, open: LiveMeicOpenRow[], legs: M
   });
 }
 
-export function readMeicLive(config: ConsoleConfig, now: Date = new Date()): LiveMeicPayload {
+export function readMeicLive(config: ConsoleConfig, now: Date = new Date(), login: string | null = null): LiveMeicPayload {
   const { session, minute } = etParts(now);
-  const dbPath = meicLiveDbPath(config);
+  const dbPath = meicLiveDbPath(config, login);
   const dir = path.dirname(dbPath);
   const ledger = readOnlyDb(dbPath, (db) => readLedger(db, session));
   const value = ledger.status === "ok" ? ledger.value : null;
   return {
     generatedAt: now.toISOString(),
     session,
+    // Which live account this is, and every one MEIC has, for the page's account picker.
+    login: isMain(login) ? "main" : login!,
+    accounts: ["main", ...meicLiveAccounts(config)],
     ledger: ledger.status,
     ledgerError: ledger.status === "failed" ? ledger.error : null,
-    arm: readArm(config, session, minute),
+    arm: readArm(config, session, minute, login),
     orphans: readOrphans(dir),
     held: readHeld(dir),
     brokerHealth: readBrokerHealth(dir),

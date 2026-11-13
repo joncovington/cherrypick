@@ -15,11 +15,11 @@ export function registerManageRoutes(app: FastifyInstance, config: ConsoleConfig
   // Every stored evaluation's bands, for the bands-over-time card on Live -> portfolio.
   app.get("/api/manage/bands", async (): Promise<ManageBandsHistoryPayload> => readManageBandsHistory(config));
   // Model a trade on a held name (manage's `model`, bridged): it prices a hypothesis, sends nothing.
-  app.get<{ Querystring: { underlying?: string; leg?: string | string[] } }>(
+  app.get<{ Querystring: { underlying?: string; leg?: string | string[]; account?: string } }>(
     "/api/manage/model",
     async (req): Promise<ManageModelResult> => {
       const legs = req.query.leg === undefined ? [] : Array.isArray(req.query.leg) ? req.query.leg : [req.query.leg];
-      return readManageModel(req.query.underlying ?? "", legs);
+      return readManageModel(req.query.underlying ?? "", legs, req.query.account ?? null);
     },
   );
 }

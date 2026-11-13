@@ -70,15 +70,71 @@ from cherrypick.core.jsonio import write_json_atomic
 _log = logging.getLogger(__name__)
 
 
-def requests_dir() -> Path:
-    """The directory holding one request file per module. Not created — readers must tolerate its
-    absence (a suite with no stream consumers installed has no directory, not an error)."""
-    return _home.state_dir() / "stream_requests"
+# --------------------------------------------------------------------------- producer instances
+# One producer per broker login can run (`streamer.instances` in the suite config, each named for its
+# login). `main` is the producer every install has, reading the flat `stream_requests/` folder as
+# always; an extra instance reads `stream_requests/<name>/` and writes its own cache. Every read below
+# goes through `requests_dir()`, which follows the ACTIVE instance: the producer sets it once for its
+# process (`set_instance`), and the watchdog scopes one instance's checks with `instance(name)`, so no
+# union, estimate or snapshot has to carry the name. A consumer names the instance it writes for.
+MAIN_INSTANCE = "main"
+_active: str = MAIN_INSTANCE
 
 
-def request_path(module: str) -> Path:
-    """Where this module's request file lives (directory created if absent)."""
-    return _home.ensure(requests_dir()) / f"{module}.json"
+def _instance_name(name: str | None) -> str:
+    if name in (None, "", MAIN_INSTANCE):
+        return MAIN_INSTANCE
+    from cherrypick.core.auth import logins as _logins
+
+    if not _logins.valid_login_name(name):
+        raise ValueError(f"not a stream instance name: {name!r}")
+    return str(name)
+
+
+def active_instance() -> str:
+    return _active
+
+
+def set_instance(name: str | None) -> str:
+    """Make `name` this process's instance (the producer, at startup). Returns the name in force."""
+    global _active
+    _active = _instance_name(name)
+    return _active
+
+
+class instance:  # noqa: N801 -- used as a context manager, like a function
+    """`with instance("margin"): ...` -- every read inside follows that instance, and the previous
+    one is restored after, raise or not."""
+
+    def __init__(self, name: str | None):
+        self.name = _instance_name(name)
+        self._prev = MAIN_INSTANCE
+
+    def __enter__(self) -> str:
+        global _active
+        self._prev, _active = _active, self.name
+        return self.name
+
+    def __exit__(self, *exc) -> None:
+        global _active
+        _active = self._prev
+
+
+def requests_dir(name: str | None = None) -> Path:
+    """The directory holding one request file per module, for `name` (default: the active instance):
+    `stream_requests/` for main, `stream_requests/<name>/` for another. Not created — readers must
+    tolerate its absence (a suite with no stream consumers installed has no directory, not an
+    error). Main's folder never lists an instance's: they are subfolders, and readers glob files."""
+    which = _instance_name(name) if name is not None else _active
+    base = _home.state_dir() / "stream_requests"
+    return base if which == MAIN_INSTANCE else base / which
+
+
+def request_path(module: str, instance_name: str | None = None) -> Path:
+    """Where this module's request file lives (directory created if absent), for `instance_name`
+    (default: the active instance)."""
+    directory = requests_dir() if instance_name is None else requests_dir(instance_name)
+    return _home.ensure(directory) / f"{module}.json"
 
 
 def clean_symbols(symbols) -> list[str]:
@@ -254,8 +310,10 @@ def write_request(
     nearest_window=None,
     entry_symbols=None,
     arm_rosters=None,
+    instance_name=None,
 ) -> Path:
-    """Atomically (over)write a module's request file and return its path.
+    """Atomically (over)write a module's request file and return its path. `instance_name` names the
+    producer instance it is for (default: the active one, main unless set).
 
     ``entry_symbols``, when given, is the subset of ``symbols`` the module still ENTERS; the rest are
     held only so open positions can be marked and managed out. The producer subscribes ``symbols``
@@ -272,7 +330,7 @@ def write_request(
     best-effort behavior (log and continue) belongs in the module's ``register()`` adapter, which
     knows its own logger.
     """
-    path = request_path(module)
+    path = request_path(module, instance_name)
     payload = {
         "symbols": clean_symbols(symbols),
         "legs": [str(leg) for leg in legs],

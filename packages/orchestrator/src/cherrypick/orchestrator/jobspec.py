@@ -1012,7 +1012,7 @@ def arm_record_valid(arm: dict[str, Any] | None, live_cfg: dict[str, Any], now: 
 
 
 def _companion_job(
-    module: str, name: str, comp: Any, *, pythonw: str, cwd: str, armed: bool, why: str
+    module: str, name: str, comp: Any, *, pythonw: str, cwd: str, armed: bool, why: str, suffix: str = ""
 ) -> JobSpec:
     """A resident job for one companion an arm record names (`cherrypick.core.live.write_arm_record`).
 
@@ -1037,7 +1037,8 @@ def _companion_job(
     silence = int(comp.get("silence_seconds") or 120)
     heartbeat = comp.get("heartbeat")
     return JobSpec(
-        id=f"{module}-{name}",
+        # `suffix` is `.<login>` for a further live account's companion (its argv carries `--login`).
+        id=f"{module}-{name}{suffix}",
         argv=(pythonw, *argv),
         kind=KIND_RESIDENT,
         cwd=cwd,
@@ -1061,6 +1062,7 @@ def derive_jobs(
     arm_records: dict[str, dict[str, Any]] | None = None,
     include_retired: bool = False,
     pipelines: bool = True,
+    live_accounts: dict[str, list[str]] | None = None,
 ) -> tuple[list[JobSpec], dict[str, str]]:
     """Project config into the supervisor's job table. Returns (jobs, errors) where `errors` maps a
     job id to why its derivation failed (that job is omitted; everything else derives normally).
@@ -1326,20 +1328,38 @@ def derive_jobs(
         # LIVE loop (flies): enabled iff the module's arm record is valid right now. The job spec
         # itself is derived every pass, so arming/disarming takes effect within one loop pass.
         live = mcfg.get("live")
-        if live and live.get("task_name"):
-            armed, why = arm_record_valid(arm_records.get(name), live, now)
-            tick_argv = live.get("tick_argv") or ["-m", f"cherrypick.{name}.live_loop", "--once", "--live"]
+        # One live job per live account: the main login's (`<module>-live`, keyed `<module>` as
+        # always) and each further login's the module's own config lists (`<module>-live.<login>`,
+        # keyed `<module>.<login>`, its tick and companions run with `--login <login>`).
+        accounts = (
+            (
+                [None, *(live_accounts or {}).get(name, [])]
+                if live_accounts is not None
+                else [None, *cfgmod.live_accounts(cfg, name)]
+            )
+            if live and live.get("task_name")
+            else []
+        )
+        for login in accounts:
+            key = name if login is None else f"{name}.{login}"
+            suffix = "" if login is None else f".{login}"
+            login_args = () if login is None else ("--login", login)
+            armed, why = arm_record_valid(arm_records.get(key), live, now)
+            tick_argv = [
+                *(live.get("tick_argv") or ["-m", f"cherrypick.{name}.live_loop", "--once", "--live"]),
+                *login_args,
+            ]
             # Unarmed, a loop that manages what it holds runs in the session window anyway: its tick
             # ends without a broker call when the book is flat, and only entries need the arm.
             manages = name in MANAGES_WHILE_DISARMED and not armed
             gate = {
-                "id": f"{name}-live",
+                "id": f"{name}-live{suffix}",
                 "enabled": armed or manages,
                 "enabled_reason": f"{why}; managing what the live book holds" if manages else why,
                 "trading_days_only": manages,
             }
             add(
-                f"{name}-live",
+                f"{name}-live{suffix}",
                 lambda live=live, tick_argv=tick_argv, root=root, gate=gate, manages=manages: JobSpec(
                     **gate,
                     argv=(pythonw, *tick_argv),
@@ -1359,11 +1379,13 @@ def derive_jobs(
             # Companions the arm record names (flies' order-alert daemon): one resident job each,
             # up while the arm is valid and until the companion's own `until`, so a reboot or crash
             # restarts it instead of losing it for the day (2026-10-14).
-            for cname, comp in ((arm_records.get(name) or {}).get("companions") or {}).items():
+            for cname, comp in ((arm_records.get(key) or {}).get("companions") or {}).items():
                 add(
-                    f"{name}-{cname}",
-                    lambda name=name, cname=cname, comp=comp, armed=armed, why=why, root=root: _companion_job(
-                        name, cname, comp, pythonw=pythonw, cwd=root, armed=armed, why=why
+                    f"{name}-{cname}{suffix}",
+                    lambda name=name, cname=cname, comp=comp, armed=armed, why=why, root=root, sfx=suffix: (
+                        _companion_job(
+                            name, cname, comp, pythonw=pythonw, cwd=root, armed=armed, why=why, suffix=sfx
+                        )
                     ),
                 )
 
@@ -1416,6 +1438,21 @@ def derive_jobs(
         # Unconditional on arming by design; a module with no live path simply declares no keys.
         recon_at = paper.get("fee_reconcile_at")
         recon_argv = paper.get("fee_reconcile_argv")
+        # One per live account, each against its own ledger and login (`--login`).
+        for login in accounts[1:] if recon_at and recon_argv else []:
+            add(
+                f"{name}-fee-reconcile.{login}",
+                lambda name=name, root=root, recon_at=recon_at, recon_argv=recon_argv, login=login: JobSpec(
+                    id=f"{name}-fee-reconcile.{login}",
+                    argv=(pythonw, *recon_argv, "--login", login),
+                    kind=KIND_DAILY,
+                    cwd=root,
+                    at_et=str(recon_at),
+                    catchup_minutes=CATCHUP_MINUTES["fee-reconcile"],
+                    trading_days_only=True,
+                    tags=("network",),
+                ),
+            )
         if recon_at and recon_argv:
             add(
                 f"{name}-fee-reconcile",
@@ -2279,6 +2316,48 @@ def derive_jobs(
             tags=("live",),
         ),
     )
+    # One more service per extra broker login (`broker.logins`): the same read-only listener on that
+    # login's own store and its own inbox, so a fill there is heard too (manage's fill refresh, the
+    # notices). It watches one account: `alerts_account` (a last 4), else the login's only account.
+    # Off for a login with `alerts: false`, and with the whole block off.
+    block_on = bool((cfg.get("account_alerts") or {}).get("enabled", True))
+    for login in cfgmod.broker_logins(cfg)[1:]:
+        entry = next(
+            (
+                e
+                for e in ((cfg.get("broker") or {}).get("logins") or [])
+                if isinstance(e, dict) and e.get("name") == login["name"]
+            ),
+            {},
+        )
+        on = block_on and bool(entry.get("alerts", True))
+        job_id = f"account-alerts.{login['name']}"
+        argv = (pythonw, "-m", "cherrypick.core.live.account_alerts", "--login", login["name"])
+        if entry.get("alerts_account"):
+            argv += ("--account", str(entry["alerts_account"])[-4:])
+        add(
+            job_id,
+            lambda job_id=job_id, argv=argv, on=on, name=login["name"]: JobSpec(
+                id=job_id,
+                argv=argv,
+                kind=KIND_RESIDENT,
+                interval_seconds=aa["silence_seconds"],
+                window_start=aa["start"],
+                window_end=aa["end"],
+                trading_days_only=True,
+                silence_file=str(cfgmod.resident_heartbeat_path(job_id)),
+                silence_seconds=aa["silence_seconds"],
+                enabled=on,
+                enabled_reason=""
+                if on
+                else (
+                    "disabled in config (account_alerts.enabled)"
+                    if not block_on
+                    else f"disabled in config (broker.logins[{name}].alerts)"
+                ),
+                tags=("live",),
+            ),
+        )
     # LIVE order notices from that inbox (livefills.py): placed, filled and ended unfilled, seconds after
     # the broker reports them instead of the trade notifier's minutes. On whenever the service is.
     lfa = cfg.get("live_fill_alerts") or {}

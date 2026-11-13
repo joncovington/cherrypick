@@ -78,14 +78,23 @@ def _in_rth_clock(now_utc: float) -> bool:
     return 9 * 60 + 35 <= minutes <= 15 * 60 + 55
 
 
-def make_session_factory():
+def credential_store(instance: str | None = None) -> CredentialStore:
+    """The store the producer authenticates with: the suite chain for main, the instance's own
+    broker login (its keyring service alone, no fallback) for another."""
+    if instance not in (None, "", _config.MAIN):
+        from cherrypick.core.auth import logins as _logins
+
+        return _logins.login_store(instance)
+    return CredentialStore(_SERVICE, legacy_service_names=_LEGACY)
+
+
+def make_session_factory(instance: str | None = None):
     """A thread-local tastytrade session factory backed by the suite's keyring credentials.
 
     thread_local: the engine's DXLink loop needs a session bound to its own event loop (tastytrade's
     Session holds a loop-bound httpx client) — see ``cherrypick.core.auth``.
     """
-    store = CredentialStore(_SERVICE, legacy_service_names=_LEGACY)
-    return SessionManager(store, thread_local=True).get_session
+    return SessionManager(credential_store(instance), thread_local=True).get_session
 
 
 def build_streamer(cfg: dict, symbols: list[str] | None = None) -> ChainStreamer:
@@ -177,7 +186,7 @@ def build_streamer(cfg: dict, symbols: list[str] | None = None) -> ChainStreamer
         return _registry.union_history_days().get(symbol, 0)
 
     return ChainStreamer(
-        session_factory=make_session_factory(),
+        session_factory=make_session_factory(_config.instance_of(cfg)),
         db_path=_config.cache_path(cfg),
         symbols=reg_symbols,
         stop_file=stop_file,
@@ -323,6 +332,7 @@ def status(cfg: dict) -> dict:
 
     # The PID file — not the cache's stored pid — is authoritative for liveness, so set it last.
     pid = running_pid(cfg)
+    info["instance"] = _config.instance_of(cfg)
     info["running"] = pid is not None
     info["pid"] = pid
     info["oldest_event_age_s"] = age

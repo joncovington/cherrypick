@@ -467,6 +467,33 @@ async function renderSecrets(quiet) {
         <button data-svc="${esc(svc)}" data-key="${esc(key)}" data-op="delete">Delete</button></div>`;
     }
   }
+  // Further broker logins: status only. Their secrets go in from a terminal (connect --login), and
+  // a module's designation there through account --login, each behind its own prompt.
+  for (const lg of (data.logins || [])) {
+    const label = lg.label ? " — " + lg.label : "";
+    h += `<h3 class="sec">${esc(lg.service)}${esc(label)} (login ${esc(lg.login)})</h3>`;
+    if (lg.error) {
+      h += `<div class="card issue error">${esc(lg.error)}</div>`;
+      continue;
+    }
+    for (const [key, isSet] of Object.entries(lg.status || {})) {
+      h += `<div class="row"><span class="k">${esc(key)}
+          <span class="badge ${isSet ? "set" : "unset"}">${isSet ? "set" : "not set"}</span></span></div>`;
+    }
+    for (const [mod, acct] of Object.entries(lg.designated || {})) {
+      const badge = acct
+        ? `<span class="badge set">${esc(acct)}</span>`
+        : `<span class="badge unset">not designated</span>`;
+      h += `<div class="row"><span class="k">${esc(mod)} live account
+          ${badge}</span></div>`;
+    }
+    h += `<p class="note">Set in a terminal: <code>run.py connect --login ${esc(lg.login)}</code>` +
+      (Object.keys(lg.designated || {}).length
+        ? `, and <code>run.py account --module &lt;m&gt; --login ${esc(lg.login)}` +
+          ` --set &lt;last4&gt;</code>`
+        : "") +
+      `.</p>`;
+  }
   h += `</div><div class="card"><h2>Notification webhooks</h2>`;
   h += `<p class="note">Telegram takes a bot token and a chat ID, not a URL — set it with ` +
     `\`cherrypick secrets-set --channel telegram\` in a terminal. Rows here set a URL.</p>`;

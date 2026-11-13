@@ -97,6 +97,85 @@ def run(cfg: dict[str, Any], module: str, prompt_fn=input) -> dict[str, Any]:
     }
 
 
+# --------------------------------------------------------------------------- an extra broker login
+def add_login_to_config_text(text: str, name: str, label: str | None, manage: bool) -> str:
+    """The orchestrator config text with `name` in `broker.logins`, spliced so every other byte
+    (notes, key order) survives. An entry already there is replaced by name. A config with no
+    `broker` block gets one appended as the last top-level key."""
+    import json as _json
+
+    from . import configedit
+
+    doc = _json.loads(text)
+    entry = {"name": name, "label": label or None, "manage": bool(manage)}
+    broker = doc.get("broker") if isinstance(doc.get("broker"), dict) else None
+    if broker is not None and isinstance(broker.get("logins"), list):
+        logins = [e for e in broker["logins"] if not (isinstance(e, dict) and e.get("name") == name)]
+        return configedit.splice_value(text, "/broker/logins", [*logins, entry])
+    if broker is not None:
+        return configedit.splice_value(text, "/broker", {**broker, "logins": [entry]})
+    end = text.rstrip().rfind("}")
+    body = text[:end].rstrip()
+    sep = "" if body.endswith("{") else ","
+    block = _json.dumps({"logins": [entry]}, ensure_ascii=False)
+    return f'{body}{sep}\n  "broker": {block}\n' + text[end:]
+
+
+def run_login(cfg: dict[str, Any], login: str, prompt_fn=input) -> dict[str, Any]:
+    """Connect an extra broker login: its secrets by hidden input in a core child process (the
+    orchestrator never sees them), a read-only connection check on that login, then its name in
+    `broker.logins` (backed up first, through configedit's raw-save path). Designation stays on the
+    main login: nothing here selects an account to trade."""
+    from cherrypick.core.auth import logins as _logins
+
+    from . import configedit
+
+    try:
+        login = _logins.check_login_name(login)
+    except _logins.LoginNameError as exc:
+        return {"ok": False, "error": str(exc)}
+    if _logins.is_default(login):
+        return {"ok": False, "error": "`main` is the suite login: run `connect` without --login"}
+
+    print(f"\n[1/3] tastytrade login {login!r} (its own keyring entry; input hidden)")
+    proc = subprocess.run([cfgmod.python_exe(), "-m", "cherrypick.core.auth", "setup", "--login", login])
+    if proc.returncode != 0:
+        return {"ok": False, "error": "credential setup did not complete", "step": "setup"}
+
+    print(f"\n[2/3] Verifying {login!r}…")
+    name, _mcfg, root, tool = accounts._first_broker_module(cfg)
+    connected = None
+    if root is not None:
+        stdout = doctor._run(
+            root, [*tool, *cfgmod.login_argv(login), "get_connection_status"], timeout=35
+        ).stdout
+        connected, detail = doctor.connection_verdict(stdout)
+        print(f"      {detail if connected else 'NOT connected -- ' + detail}")
+    else:
+        print("      no broker module to check with; skipped")
+
+    print("\n[3/3] Add it to the suite")
+    label = prompt_fn("      A label to show beside its accounts (Enter for none): ").strip() or None
+    manage = (
+        prompt_fn("      Evaluate its accounts in manage (positions expected)? [y/N]: ").strip().lower()
+        == "y"
+    )
+    target = configedit._target_path(cfg, "orchestrator")
+    if not target.exists():
+        return {
+            "ok": False,
+            "error": "no orchestrator config file to add the login to",
+            "connected": connected,
+        }
+    new_text = add_login_to_config_text(target.read_text(encoding="utf-8"), login, label, manage)
+    saved = configedit.apply_raw_save(cfg, "orchestrator", new_text)
+    if not saved.get("ok"):
+        return {"ok": False, "error": saved.get("error"), "connected": connected}
+    print(f"      added to broker.logins (backup {saved.get('backup', 'not needed')})")
+    print("      Restart the supervisor (`supervise --restart`) so its jobs pick the login up.")
+    return {"ok": True, "login": login, "label": label, "manage": manage, "connected": connected}
+
+
 # --------------------------------------------------------------------------- the suite wizard
 def _shared_setup() -> bool:
     """Hidden-input entry of the SHARED login, in a core child process with the tty inherited —

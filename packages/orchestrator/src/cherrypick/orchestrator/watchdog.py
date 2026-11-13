@@ -403,6 +403,18 @@ def _streamer_identity(status: dict[str, Any]) -> str:
     return f" [{' '.join(bits)}]" if bits else ""
 
 
+def _streamer_idle(status: dict[str, Any]) -> bool:
+    """Whether a producer has nothing to stream: it reports zero subscribed symbols AND the request
+    folder it reads (the caller's `streamrequests.instance`) asks for no symbol or leg. A missing
+    count or an unreadable folder is "cannot tell", so not idle."""
+    if status.get("subscribed_symbols") != 0:
+        return False
+    try:
+        return not _streamrequests.union_symbols() and not _streamrequests.union_legs()
+    except Exception:
+        return False
+
+
 def _streamer_stale_age(status: dict[str, Any]) -> float | None:
     """Seconds since the streamer last received ANY market event, or None if it can't be read.
 
@@ -629,7 +641,14 @@ def _check_streamer_health(label: str, root: Path, spec: dict[str, Any]) -> list
     # retries while every other symbol stays fresh (2026-07-31), OR one symbol's spot subscription
     # dying mid-flight while others keep every aggregate fresh (2026-08-17, TQQQ) — judge on
     # whichever signal fires.
-    stale_candidates = [a for a in (stale_age, underlying_age) if a is not None]
+    # A producer with nothing to stream has nothing to be silent about: it subscribed no symbol and
+    # no module asks it for one, so its event age is only the age of its last event ever (an idle
+    # login's instance, 2026-11-12, restarted every five minutes on that). It still reads as stalled
+    # on every other signal, and one that subscribed nothing while something is asked for is judged
+    # as before.
+    stale_candidates = (
+        [] if _streamer_idle(status) else [a for a in (stale_age, underlying_age) if a is not None]
+    )
     worst_stale = max(stale_candidates) if stale_candidates else None
     # ...OR a base window serving a chain dated before the session (2026-09-10) while every one of
     # the above stays healthy.
@@ -834,6 +853,17 @@ def _streamer_subscription_budget(cfg: dict[str, Any]) -> int:
 
 
 def _check_subscription_budget(cfg: dict[str, Any]) -> list[Finding]:
+    """Main's budget finding (`streamer.budget`, as always), then one per producer instance
+    (`streamer.<login>.budget`) over that instance's own requests: each login has its own allowance,
+    so each is held to the ceiling on its own, never to a sum."""
+    findings = _check_one_budget(cfg, "streamer.budget")
+    for name in cfgmod.streamer_instances(cfg):
+        with _streamrequests.instance(name):
+            findings += _check_one_budget(cfg, f"streamer.{name}.budget")
+    return findings
+
+
+def _check_one_budget(cfg: dict[str, Any], key: str) -> list[Finding]:
     """Warn when the DECLARED registry would cost a producer more than the suite's ceiling.
 
     The 2026-08-24 outage was discovered at an open, in production: a module had declared something
@@ -857,7 +887,7 @@ def _check_subscription_budget(cfg: dict[str, Any]) -> list[Finding]:
     if not status["over"]:
         return [
             Finding(
-                "streamer.budget",
+                key,
                 OK,
                 "Subscription budget",
                 f"~{status['total']:,} of {status['budget']:,} across {status['windows']} window(s).",
@@ -866,7 +896,7 @@ def _check_subscription_budget(cfg: dict[str, Any]) -> list[Finding]:
     worst = status["worst"] or {}
     return [
         Finding(
-            "streamer.budget",
+            key,
             WARN,
             "Declared subscriptions over budget",
             f"The registry would cost ~{status['total']:,} subscriptions against a budget of "
@@ -1083,15 +1113,23 @@ def _check_producer(cfg: dict[str, Any], in_session: bool) -> list[Finding]:
     Never WARN and never restart off-session: there is nothing to stream, staleness is meaningless, and
     the first in-session tick (from NEAR_OPEN, 9:15 ET) auto-starts it before the bell.
     """
-    spec = cfg.get("streamer") or {}
-    if not spec.get("enabled"):
-        return []
+    findings: list[Finding] = []
+    for label, spec in cfgmod.streamer_specs(cfg).items():
+        # Each instance's checks read its own request folder (the growth recycle, the stamp).
+        with _streamrequests.instance(spec.get("instance")):
+            findings += _check_one_producer(label, spec, in_session)
+    return findings
+
+
+def _check_one_producer(label: str, spec: dict[str, Any], in_session: bool) -> list[Finding]:
+    """One producer's check (`_check_producer`), its findings under its own label: `streamer` for
+    main, `streamer.<login>` for an instance."""
     root = cfgmod.module_root(spec, "streamer")
     if not root.exists():
         msg = f"not found at {cfgmod.portable_path(root)}"
         if not in_session:
-            return [Finding("streamer", OK, "streamer", f"off-hours; checkout {msg}")]
-        return [Finding("streamer", WARN, "streamer checkout missing", msg)]
+            return [Finding(label, OK, label, f"off-hours; checkout {msg}")]
+        return [Finding(label, WARN, f"{label} checkout missing", msg)]
     if not in_session:
         running = None
         status: dict[str, Any] = {}
@@ -1115,8 +1153,8 @@ def _check_producer(cfg: dict[str, Any], in_session: bool) -> list[Finding]:
         else:
             start = timeutil.parse_hhmm(spec.get("session_start"), timeutil.NEAR_OPEN)
             msg = f"not running (off-hours; auto-start at the first in-session tick, {start:%H:%M} ET)"
-        return [Finding("streamer", OK, "Streamer", msg)]
-    return _check_streamer_health("streamer", root, spec)
+        return [Finding(label, OK, "Streamer" if label == "streamer" else f"Streamer ({label})", msg)]
+    return _check_streamer_health(label, root, spec)
 
 
 def _check_meic(name: str, mcfg: dict[str, Any], in_session: bool) -> list[Finding]:
@@ -1802,7 +1840,21 @@ def _held(status: dict | None) -> str:
     return (" Held: " + "; ".join(ics) + ".") if ics else ""
 
 
-def _check_live(name: str, mcfg: dict[str, Any], now_et: datetime, in_session: bool) -> list[Finding]:
+def _login_flag(login: str | None) -> str:
+    return f" --login {login}" if login else ""
+
+
+def _account_log(log_name: str, login: str | None) -> str:
+    """A further live account's log name: `meic_live.log` -> `meic_live.<login>.log`."""
+    if not login:
+        return log_name
+    stem, dot, ext = log_name.rpartition(".")
+    return f"{stem}.{login}.{ext}" if dot else f"{log_name}.{login}"
+
+
+def _check_live(
+    name: str, mcfg: dict[str, Any], now_et: datetime, in_session: bool, login: str | None = None
+) -> list[Finding]:
     """Watchdog the module's LIVE loop — active only when the module config carries a `live`
     block with a `task_name`.
 
@@ -1827,12 +1879,20 @@ def _check_live(name: str, mcfg: dict[str, Any], now_et: datetime, in_session: b
     if not task_name:
         return []
     label = name.upper() if len(name) <= 4 else name.capitalize()
+    # A further live account (`login`): its findings, arm record, job and status are its own --
+    # `<module>.<login>.live_*`, `<module>.<login>-live-arm.json`, `<module>-live.<login>`, `--login`.
+    key = name if login is None else f"{name}.{login}"
+    job_id = f"{name}-live" if login is None else f"{name}-live.{login}"
+    login_args = [] if login is None else ["--login", login]
+    if login is not None:
+        label = f"{label} ({login})"
+        task_name = f"{task_name}.{login}"  # no legacy task ever existed for one
     findings: list[Finding] = []
 
     status = None
     if live.get("status_argv"):
         try:
-            r = _run_module(cfgmod.module_root(mcfg), live["status_argv"], timeout=15)
+            r = _run_module(cfgmod.module_root(mcfg), [*live["status_argv"], *login_args], timeout=15)
             status = first_json(r.stdout) if r.returncode == 0 else None
         except Exception:
             status = None
@@ -1847,7 +1907,7 @@ def _check_live(name: str, mcfg: dict[str, Any], now_et: datetime, in_session: b
 
     hb_exists = supervisor.heartbeat_path().exists()
     sup_alive = _supervisor_driving()
-    arm_rec = util.read_json(supervisor.arm_record_path(name), default=None) or None
+    arm_rec = util.read_json(supervisor.arm_record_path(key), default=None) or None
     if hb_exists:
         registered = bool(arm_rec) or tasks.exists(task_name)
         armed_desc = "arm record present" if arm_rec else f"task '{task_name}' registered"
@@ -1866,7 +1926,7 @@ def _check_live(name: str, mcfg: dict[str, Any], now_et: datetime, in_session: b
     if supervisor_down_while_armed:
         findings.append(
             Finding(
-                f"{name}.live_supervisor",
+                f"{key}.live_supervisor",
                 CRITICAL,
                 f"{label} LIVE armed but the supervisor is down",
                 "The arm record says live is armed for today, but the supervisor heartbeat is "
@@ -1892,16 +1952,16 @@ def _check_live(name: str, mcfg: dict[str, Any], now_et: datetime, in_session: b
     # never ran. Remove it, and do NOT halt: halting on it re-set the suite halt on every pass after
     # the 2026-10-08 power cut, blocking the next day's live entries for a record nothing obeyed.
     if registered and past_disarm_window and hb_exists and arm_rec and not tasks.exists(task_name):
-        info = supersnap.job_run_info(f"{name}-live") or {}
+        info = supersnap.job_run_info(job_id) or {}
         if not info.get("still_running"):
             try:
-                supervisor.arm_record_path(name).unlink()
+                supervisor.arm_record_path(key).unlink()
                 removed = True
             except OSError:
                 removed = False
             findings.append(
                 Finding(
-                    f"{name}.live_disarm",
+                    f"{key}.live_disarm",
                     OK,
                     f"{label} live disarmed (stale arm record removed)",
                     f"The arm record for {arm_rec.get('date')} outlived its {disarm_hhmm} disarm because no "
@@ -1921,7 +1981,7 @@ def _check_live(name: str, mcfg: dict[str, Any], now_et: datetime, in_session: b
             pass
         findings.append(
             Finding(
-                f"{name}.live_disarm",
+                f"{key}.live_disarm",
                 CRITICAL,
                 f"{label} LIVE still running past disarm",
                 f"{armed_desc} after {disarm_hhmm}+{grace}m (armed for {armed_for}). Halt set: no new "
@@ -1944,16 +2004,16 @@ def _check_live(name: str, mcfg: dict[str, Any], now_et: datetime, in_session: b
             # SCHED_S_TASK_RUNNING equivalent, last_start/last_exit_code replace the scheduler's
             # LastRunTime/LastTaskResult. Same false-alarm posture: a quiet-but-running tick is OK.
             fresh_minutes = int(live.get("freshness_minutes", 5))
-            job = supersnap.job_state(f"{name}-live")
-            info = supersnap.job_run_info(f"{name}-live")
+            job = supersnap.job_state(job_id)
+            info = supersnap.job_run_info(job_id)
             if job is None or not job.get("enabled", False):
                 why = "missing from the supervisor registry" if job is None else "disabled"
                 findings.append(
                     Finding(
-                        f"{name}.live_fresh",
+                        f"{key}.live_fresh",
                         CRITICAL,
                         f"{label} LIVE job not running",
-                        f"{watched.capitalize()}, but supervisor job '{name}-live' is {why}"
+                        f"{watched.capitalize()}, but supervisor job '{job_id}' is {why}"
                         + (" — arming did not take. " if registered else ". ")
                         + "Check the arm record and logs/supervisor.log.",
                     )
@@ -1962,21 +2022,21 @@ def _check_live(name: str, mcfg: dict[str, Any], now_et: datetime, in_session: b
                 # enabled but never started: a just-armed loop's first tick lands within one
                 # interval — not an alarm state yet; the next watchdog tick re-judges.
                 findings.append(
-                    Finding(f"{name}.live_fresh", OK, f"{label} live loop", "armed, first tick pending")
+                    Finding(f"{key}.live_fresh", OK, f"{label} live loop", "armed, first tick pending")
                 )
             elif info["still_running"]:
-                findings.append(Finding(f"{name}.live_fresh", OK, f"{label} live loop", "tick running"))
+                findings.append(Finding(f"{key}.live_fresh", OK, f"{label} live loop", "tick running"))
             elif info.get("held"):
                 # Stopped on purpose (`run.py stop`). Not a crash, so not the CRITICAL below -- but
                 # live is armed and in session, so it is still worth one line: nothing is watching
                 # whatever this loop left resting.
                 findings.append(
                     Finding(
-                        f"{name}.live_fresh",
+                        f"{key}.live_fresh",
                         WARN,
                         f"{label} LIVE loop stopped on purpose",
-                        f"{_holds.describe(f'{name}-live', info['held'])} while {watched} and the market "
-                        f"is open — check the broker for resting orders, or `run.py start {name}-live`.",
+                        f"{_holds.describe(job_id, info['held'])} while {watched} and the market "
+                        f"is open — check the broker for resting orders, or `run.py start {job_id}`.",
                     )
                 )
             else:
@@ -2000,7 +2060,7 @@ def _check_live(name: str, mcfg: dict[str, Any], now_et: datetime, in_session: b
                         shown = f"last tick {age_min:.0f} min ago"
                     findings.append(
                         Finding(
-                            f"{name}.live_fresh",
+                            f"{key}.live_fresh",
                             CRITICAL,
                             f"{label} LIVE loop silent",
                             f"supervisor registry reports {shown} while {watched} and the market "
@@ -2008,7 +2068,7 @@ def _check_live(name: str, mcfg: dict[str, Any], now_et: datetime, in_session: b
                         )
                     )
                 else:
-                    findings.append(Finding(f"{name}.live_fresh", OK, f"{label} live loop", "fresh"))
+                    findings.append(Finding(f"{key}.live_fresh", OK, f"{label} live loop", "fresh"))
         elif in_session and not supervisor_down_while_armed:
             fresh_minutes = int(live.get("freshness_minutes", 5))
             scheduler_info = tasks.last_run_info(task_name)
@@ -2029,7 +2089,7 @@ def _check_live(name: str, mcfg: dict[str, Any], now_et: datetime, in_session: b
                         shown = f"last ran {age_min:.0f} min ago"
                     findings.append(
                         Finding(
-                            f"{name}.live_fresh",
+                            f"{key}.live_fresh",
                             CRITICAL,
                             f"{label} LIVE loop silent",
                             f"scheduler reports {shown} while the live task is armed and the market "
@@ -2037,10 +2097,12 @@ def _check_live(name: str, mcfg: dict[str, Any], now_et: datetime, in_session: b
                         )
                     )
                 else:
-                    findings.append(Finding(f"{name}.live_fresh", OK, f"{label} live loop", "fresh"))
+                    findings.append(Finding(f"{key}.live_fresh", OK, f"{label} live loop", "fresh"))
             else:
                 # POSIX (or a scheduler query failure): fall back to the log-mtime check.
-                log_path = cfgmod.module_logs_dir(name) / str(live.get("log", "flies_live.log"))
+                log_path = cfgmod.module_logs_dir(name) / _account_log(
+                    str(live.get("log", "flies_live.log")), login
+                )
                 try:
                     age_min = (now_et.timestamp() - os.path.getmtime(log_path)) / 60
                 except OSError:
@@ -2049,7 +2111,7 @@ def _check_live(name: str, mcfg: dict[str, Any], now_et: datetime, in_session: b
                     shown = "missing" if age_min is None else f"{age_min:.0f} min old"
                     findings.append(
                         Finding(
-                            f"{name}.live_fresh",
+                            f"{key}.live_fresh",
                             CRITICAL,
                             f"{label} LIVE loop silent",
                             f"live log {shown} while the live task is armed and the market is open — "
@@ -2057,13 +2119,13 @@ def _check_live(name: str, mcfg: dict[str, Any], now_et: datetime, in_session: b
                         )
                     )
                 else:
-                    findings.append(Finding(f"{name}.live_fresh", OK, f"{label} live loop", "fresh"))
+                    findings.append(Finding(f"{key}.live_fresh", OK, f"{label} live loop", "fresh"))
     elif armed_for == today and now_minute < disarm_minute:
         # (a) status says armed-for-today but the armed signal is gone mid-window.
         missing = "no arm record and no legacy task" if hb_exists else f"{task_name} not registered"
         findings.append(
             Finding(
-                f"{name}.live_task",
+                f"{key}.live_task",
                 CRITICAL,
                 f"{label} LIVE armed signal missing",
                 f"{missing}, but the module's status says armed for {armed_for}.",
@@ -2079,7 +2141,7 @@ def _check_live(name: str, mcfg: dict[str, Any], now_et: datetime, in_session: b
     if n_orphans > 0:
         findings.append(
             Finding(
-                f"{name}.live_orphans",
+                f"{key}.live_orphans",
                 CRITICAL,
                 f"{label} ORPHANED live orders",
                 f"{n_orphans} working order(s) at the broker unknown to the live "
@@ -2087,7 +2149,7 @@ def _check_live(name: str, mcfg: dict[str, Any], now_et: datetime, in_session: b
             )
         )
     elif status and "orphaned_orders" in status:
-        findings.append(Finding(f"{name}.live_orphans", OK, f"{label} live orders", "all accounted for"))
+        findings.append(Finding(f"{key}.live_orphans", OK, f"{label} live orders", "all accounted for"))
 
     # (c7) positions held and a live gate unmet (2026-11-02): the master switch off, the designation
     # unreadable. Every broker act is refused, so nothing stops, closes or settles what is open --
@@ -2097,7 +2159,7 @@ def _check_live(name: str, mcfg: dict[str, Any], now_et: datetime, in_session: b
         pending = len((status or {}).get("pending_orders") or [])
         findings.append(
             Finding(
-                f"{name}.live_unmanaged",
+                f"{key}.live_unmanaged",
                 CRITICAL,
                 f"{label} LIVE positions UNMANAGED",
                 f"{status.get('open_positions') or 0} open live position(s) and {pending} pending order(s), "
@@ -2106,7 +2168,7 @@ def _check_live(name: str, mcfg: dict[str, Any], now_et: datetime, in_session: b
             )
         )
     elif status and "unmet_gates" in status:
-        findings.append(Finding(f"{name}.live_unmanaged", OK, f"{label} live positions", "managed or flat"))
+        findings.append(Finding(f"{key}.live_unmanaged", OK, f"{label} live positions", "managed or flat"))
 
     # (c8) the loop's own CRITICAL lines today (2026-11-02): a module never talks to a notification
     # channel, so these reached only its log until the watchdog pushed them. One incident per line,
@@ -2116,7 +2178,7 @@ def _check_live(name: str, mcfg: dict[str, Any], now_et: datetime, in_session: b
         members = tuple(dict.fromkeys(f"{c.get('at')}|{c.get('message')}" for c in criticals))
         findings.append(
             Finding(
-                f"{name}.live_critical",
+                f"{key}.live_critical",
                 CRITICAL,
                 f"{label} LIVE loop reported CRITICAL",
                 "; ".join(f"{str(c.get('at'))[11:16]} {c.get('message')}" for c in criticals[-3:])
@@ -2125,7 +2187,7 @@ def _check_live(name: str, mcfg: dict[str, Any], now_et: datetime, in_session: b
             )
         )
     elif status and "criticals_today" in status:
-        findings.append(Finding(f"{name}.live_critical", OK, f"{label} live loop", "nothing critical today"))
+        findings.append(Finding(f"{key}.live_critical", OK, f"{label} live loop", "nothing critical today"))
 
     # (c3) a held submission: the broker seam refuses every live order until a submit of unknown
     # outcome is resolved, or an order found at the broker that nothing recorded is acknowledged.
@@ -2134,7 +2196,7 @@ def _check_live(name: str, mcfg: dict[str, Any], now_et: datetime, in_session: b
     if held.get("unresolved") or held.get("unrecorded"):
         findings.append(
             Finding(
-                f"{name}.live_held",
+                f"{key}.live_held",
                 CRITICAL,
                 f"{label} live submissions HELD",
                 f"unresolved {held.get('unresolved') or []}, unrecorded {held.get('unrecorded') or {}} -- "
@@ -2155,12 +2217,13 @@ def _check_live(name: str, mcfg: dict[str, Any], now_et: datetime, in_session: b
         )
         findings.append(
             Finding(
-                f"{name}.live_overdue",
+                f"{key}.live_overdue",
                 CRITICAL,
                 f"{label} LIVE book from a past session never settled",
                 f"{days}. The hourly `settle-overdue-live` job settles a session at its official "
                 "close once one is published and no entry is pending; by hand: "
-                f"`python -m cherrypick.{name}.live_loop --settle --date <session> --price <close>`; "
+                f"`python -m cherrypick.{name}.live_loop --settle{_login_flag(login)} "
+                "--date <session> --price <close>`; "
                 "cancel a pending entry whose order expired. Until then the ledger's net, the "
                 "daily-loss breaker and the margin cap read positions that no longer exist.",
             )
@@ -2173,7 +2236,7 @@ def _check_live(name: str, mcfg: dict[str, Any], now_et: datetime, in_session: b
     if unreadable:
         findings.append(
             Finding(
-                f"{name}.live_ledger",
+                f"{key}.live_ledger",
                 CRITICAL,
                 f"{label} LIVE ledger unreadable",
                 f"{unreadable}. Settlement, overdue and open-position checks cannot see the book until "
@@ -2186,7 +2249,7 @@ def _check_live(name: str, mcfg: dict[str, Any], now_et: datetime, in_session: b
     # can see an expired login, a dead network or a broker outage -- only this record can.
     if registered and in_session:
         outage = _broker_outage_finding(
-            name,
+            key,
             label,
             (status or {}).get("broker_health") or {},
             now_et,
@@ -2202,7 +2265,7 @@ def _check_live(name: str, mcfg: dict[str, Any], now_et: datetime, in_session: b
         if status.get("session_settled") is False and (status.get("open_positions") or 0) > 0:
             findings.append(
                 Finding(
-                    f"{name}.live_settle_overdue",
+                    f"{key}.live_settle_overdue",
                     WARN,
                     f"{label} LIVE settlement overdue",
                     f"{status.get('open_positions')} open live position(s) past the close still "
@@ -2211,7 +2274,7 @@ def _check_live(name: str, mcfg: dict[str, Any], now_et: datetime, in_session: b
             )
         else:
             findings.append(
-                Finding(f"{name}.live_settle_overdue", OK, f"{label} live settlement", "settled or flat")
+                Finding(f"{key}.live_settle_overdue", OK, f"{label} live settlement", "settled or flat")
             )
     return findings
 
@@ -2418,16 +2481,25 @@ _LIVE_POSITIONS_FRESH_SECONDS = 20 * 60
 _ACCOUNT_REST_STALE_SECONDS = 300
 
 
-def _check_account_alerts(in_session: bool, now: datetime | None = None) -> list[Finding]:
+def _check_account_alerts(
+    in_session: bool, now: datetime | None = None, login: str | None = None
+) -> list[Finding]:
     """The account-alert service's own status file (core.live.account_alerts): a fill only its REST
     read saw means the stream is dropping events, and a REST read failing for minutes means the
-    fallback is blind too. Its silence is the supervisor's resident check. File-only."""
+    fallback is blind too. Its silence is the supervisor's resident check. File-only.
+
+    `login` reads an extra broker login's service: its findings carry the login in their ids and
+    titles, so they never merge with main's, and a REST read failing there is how a revoked or
+    expired token on that login shows (`account_alerts.<login>.rest`)."""
     from cherrypick.core.live import account_alerts as _aa
 
     if not in_session:
         return []
     now = now or datetime.now(timezone.utc)
-    status = _aa.read_status()
+    extra = login not in (None, "", "main")
+    prefix = f"account_alerts.{login}" if extra else "account_alerts"
+    on = f" ({login})" if extra else ""
+    status = _aa.read_status(login) if extra else _aa.read_status()
     if not status or status.get("day") != now.astimezone().date().isoformat():
         return []  # not started today: the supervisor's resident check says why
     findings = []
@@ -2435,16 +2507,16 @@ def _check_account_alerts(in_session: bool, now: datetime | None = None) -> list
     if missed:
         findings.append(
             Finding(
-                "account_alerts.stream",
+                f"{prefix}.stream",
                 WARN,
-                "Order stream missed fills",
+                f"Order stream missed fills{on}",
                 f"{len(missed)} fill(s) today reached the suite only through the REST read "
                 f"({', '.join(missed[-5:])}). Notices still went out; the stream is unreliable today.",
                 members=tuple(f"missed:{oid}" for oid in missed),
             )
         )
     else:
-        findings.append(Finding("account_alerts.stream", OK, "Order stream", "no fill missed today"))
+        findings.append(Finding(f"{prefix}.stream", OK, f"Order stream{on}", "no fill missed today"))
     try:
         last_ok = datetime.fromisoformat(str(status.get("last_rest_ok_at")))
         rest_age = (now - last_ok.astimezone(timezone.utc)).total_seconds()
@@ -2453,15 +2525,15 @@ def _check_account_alerts(in_session: bool, now: datetime | None = None) -> list
     if status.get("rest_failures") and (rest_age is None or rest_age > _ACCOUNT_REST_STALE_SECONDS):
         findings.append(
             Finding(
-                "account_alerts.rest",
+                f"{prefix}.rest",
                 WARN,
-                "Order REST read failing",
+                f"Order REST read failing{on}",
                 f"{status.get('rest_failures')} failed read(s); last error: {status.get('last_rest_error')}. "
                 "Only the stream is reporting order events.",
             )
         )
     else:
-        findings.append(Finding("account_alerts.rest", OK, "Order REST read", "reading"))
+        findings.append(Finding(f"{prefix}.rest", OK, f"Order REST read{on}", "reading"))
     return findings
 
 
@@ -3087,11 +3159,11 @@ def run_streamer_health(cfg: dict[str, Any] | None = None, *, require_enabled: b
         return {"ok": True, "skipped": "not a trading day"}
 
     findings: list[Finding] = []
-    spec = cfg.get("streamer") or {}
-    if spec.get("enabled"):
+    for label, spec in cfgmod.streamer_specs(cfg).items():
         root = cfgmod.module_root(spec, "streamer")
         if root.exists():
-            findings += _check_streamer_health("streamer", root, spec)
+            with _streamrequests.instance(spec.get("instance")):
+                findings += _check_streamer_health(label, root, spec)
 
     if not findings:
         return {"ok": True, "skipped": "no streamer configured"}
@@ -3149,6 +3221,10 @@ def run(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
                 findings += _check_earnings(name, mcfg, now, is_trading)
             # The live-loop check is kind-independent: any module may declare a `live` block.
             findings += _check_live(name, mcfg, now, in_session)
+            # ...and once more for each further live account the module trades (`live_accounts`).
+            if (mcfg.get("live") or {}).get("task_name"):
+                for login in cfgmod.live_accounts(cfg, name):
+                    findings += _check_live(name, mcfg, now, in_session, login=login)
         except Exception as exc:
             findings.append(
                 Finding(
@@ -3221,6 +3297,8 @@ def run(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
     findings += _check_kill_latches()
     findings += _check_live_positions(in_session)
     findings += _check_account_alerts(in_session)
+    for login in cfgmod.broker_login_names(cfg)[1:]:
+        findings += _check_account_alerts(in_session, login=login)
     findings += _check_fixed_time_jobs(now)
     findings += _check_notify_delivery(cfg)
     findings += _check_config_health()

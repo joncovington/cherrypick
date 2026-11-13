@@ -288,9 +288,11 @@ filename; override with `paper.sla_state_prefix`.
   only through the separate `report.live_run` (`report --live`) over a module's `live_db`; a test
   asserts `calibrate` references neither `live_run` nor `live_db`.
 - **The real broker account is read only by named, read-only paths with masked accounts, never from
-  the watchdog tick.** `reconcile` enumerates **every** account on the login
-  (`list_accounts`) and flags any positions/BP a paper-only suite shouldn't have (a designated live
-  account is *expected* to hold positions); `reconcile.schedule.enabled` makes it a daily job
+  the watchdog tick.** `reconcile` enumerates **every** account on **every** broker login
+  (`broker.logins`, an extra login through `tt --login`) and flags any positions/BP a paper-only suite
+  shouldn't have. Each account has a role: `live` (designated, main login only), `managed` (on a login
+  flagged `manage`) or `paper-only`; only a paper-only account's positions are DRIFT. A login that
+  cannot be read is one erroring entry, never the whole check; `reconcile.schedule.enabled` makes it a daily job
   (`reconcile --scheduled`) that notifies on any non-FLAT verdict. `positions.py` is
   **never scheduled**, reuses `reconcile`'s
   account enumeration, writes nothing (the stream cache included), marks from the stream cache first

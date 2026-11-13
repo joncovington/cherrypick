@@ -154,3 +154,35 @@ def test_stall_check_is_session_only(monkeypatch, spy, tmp_path):
     findings = watchdog._check_producer({"streamer": _spec(path=str(tmp_path))}, in_session=False)
     assert spy["start"] == 0 and spy["stop"] == 0
     assert [f.status for f in findings] == [watchdog.OK]
+
+
+# --------------------------------------------------------------------------- an idle producer
+def _requests(monkeypatch, symbols=(), legs=()):
+    monkeypatch.setattr(watchdog._streamrequests, "union_symbols", lambda *a, **k: list(symbols))
+    monkeypatch.setattr(watchdog._streamrequests, "union_legs", lambda *a, **k: list(legs))
+
+
+def test_a_producer_with_nothing_to_stream_is_not_restarted_for_silence(monkeypatch, spy):
+    """2026-11-12: a login's instance subscribed nothing, so its event age was its last event's from
+    the evening before, and the watchdog restarted it every five minutes before the open."""
+    _requests(monkeypatch)
+    findings = _run(monkeypatch, _status(oldest_event_age_s=38564.0, subscribed_symbols=0))
+    assert spy["start"] == 0 and spy["stop"] == 0
+    assert all(f.status == watchdog.OK for f in findings if f.key == "streamer")
+
+
+def test_a_producer_that_subscribed_nothing_while_asked_for_symbols_is_still_restarted(monkeypatch, spy):
+    _requests(monkeypatch, symbols=["SPX"])
+    _run(monkeypatch, _status(oldest_event_age_s=480.0, subscribed_symbols=0))
+    assert spy["start"] == 1
+    _requests(monkeypatch, legs=[".SPXW261113P5800"])
+    _run(monkeypatch, _status(oldest_event_age_s=480.0, subscribed_symbols=0))
+    assert spy["start"] == 2
+
+
+def test_an_idle_producer_still_stalls_on_its_other_signals(monkeypatch, spy):
+    _requests(monkeypatch)
+    _run(
+        monkeypatch, _status(oldest_event_age_s=480.0, subscribed_symbols=0, chain_fetch_errors={"SPX": "x"})
+    )
+    assert spy["start"] == 1

@@ -118,7 +118,7 @@ function pct(v: number | null, digits = 1): string {
 }
 
 /** The model a trade tab: legs to add, manage's model of them on the name (`/api/manage/model`). */
-function ModelPanel({ n }: { n: ManagePayoffName }) {
+function ModelPanel({ n, accountKey = null }: { n: ManagePayoffName; accountKey?: string | null }) {
   const blank = (): DraftLeg => ({ side: "sell", qty: "1", expiry: n.curves[n.curves.length - 1]?.date ?? "", strike: "", right: "P", price: "" });
   const [rows, setRows] = useState<DraftLeg[]>([blank()]);
   const [result, setResult] = useState<ManageModelResult | null>(null);
@@ -129,6 +129,8 @@ function ModelPanel({ n }: { n: ManagePayoffName }) {
   const run = async () => {
     setBusy(true);
     const q = new URLSearchParams({ underlying: n.underlying });
+    // The account the card is on, so another broker login's is modelled on its own book.
+    if (accountKey) q.set("account", accountKey);
     for (const t of texts) if (t) q.append("leg", t);
     try {
       const res = await fetch(`/api/manage/model?${q.toString()}`);
@@ -281,7 +283,19 @@ function ModelResult({ r }: { r: ManageModelResult }) {
 
 type DialogTab = "payoff" | "model";
 
-function PayoffDialog({ names, index, onStep, onClose }: { names: ManagePayoffName[]; index: number; onStep: (to: number) => void; onClose: () => void }) {
+function PayoffDialog({
+  names,
+  index,
+  onStep,
+  onClose,
+  accountKey = null,
+}: {
+  names: ManagePayoffName[];
+  index: number;
+  onStep: (to: number) => void;
+  onClose: () => void;
+  accountKey?: string | null;
+}) {
   const n = names[index]!;
   const [dated, setDated] = useState(0);
   const [tab, setTab] = useState<DialogTab>("payoff");
@@ -310,7 +324,7 @@ function PayoffDialog({ names, index, onStep, onClose }: { names: ManagePayoffNa
           onClose={onClose}
         >
           {tab === "model" ? (
-            <ModelPanel key={n.underlying} n={n} />
+            <ModelPanel key={n.underlying} n={n} accountKey={accountKey} />
           ) : n.why ? (
             <p className="muted">no payoff: {n.why}</p>
           ) : (
@@ -358,7 +372,16 @@ function PayoffDialog({ names, index, onStep, onClose }: { names: ManagePayoffNa
 
 /** The strip of held names, each with manage's P&L now; one opens its payoff. `scope` (the wheel's
  *  names) keeps only those. */
-export function PayoffStrip({ payoff, scope = null }: { payoff: ManagePayoff; scope?: string[] | null }) {
+export function PayoffStrip({
+  payoff,
+  scope = null,
+  accountKey = null,
+}: {
+  payoff: ManagePayoff;
+  scope?: string[] | null;
+  /** The account's `<login>-<last4>`, for the model a trade tab. */
+  accountKey?: string | null;
+}) {
   const lightbox = useOpenParam("payoff");
   const names = scope === null ? payoff.names : payoff.names.filter((n) => scope.includes(n.underlying));
   if (names.length === 0) return null;
@@ -398,7 +421,7 @@ export function PayoffStrip({ payoff, scope = null }: { payoff: ManagePayoff; sc
           </button>
         ))}
       </div>
-      {index >= 0 ? <PayoffDialog names={names} index={index} onStep={(to) => lightbox.step(order[to] ?? "")} onClose={lightbox.close} /> : null}
+      {index >= 0 ? <PayoffDialog names={names} index={index} onStep={(to) => lightbox.step(order[to] ?? "")} onClose={lightbox.close} accountKey={accountKey} /> : null}
     </Card>
   );
 }

@@ -186,3 +186,51 @@ def test_the_reporting_webhook_is_settable_but_never_a_push_channel(env):
     # Listed as an alert channel by mistake, it receives nothing: the notifier skips the name.
     res = Notifier({"channels": ["discord_reporting"]}).notify("INFO", "test", "t", "m")
     assert res["discord_reporting"]["ok"] is False
+
+
+class _PrefixStore:
+    """A store keyed `<prefix>:<key>`, as the real one is, so a module's designation on a login is
+    told apart from the login's own entries."""
+
+    mem: dict = {}
+
+    def __init__(self, service, legacy_service_names=(), prefix="production"):
+        self.service, self.prefix = service, prefix
+
+    def get_secret(self, key):
+        return _PrefixStore.mem.get(self.service, {}).get(f"{self.prefix}:{key}")
+
+    def secrets_status(self):
+        from cherrypick.core.auth import ALL_SECRETS
+
+        return {k: bool(self.get_secret(k)) for k in ALL_SECRETS}
+
+
+def test_each_further_login_shows_read_only_with_its_designation_masked(env, monkeypatch):
+    cfg, _ = env
+    cfg = {**cfg, "broker": {"logins": [{"name": "margin", "label": "Reg T"}, {"name": "ira2"}]}}
+    monkeypatch.setattr(
+        secretsops.cfgmod, "live_accounts", lambda c, m, doc=None: ["margin"] if m == "meic" else []
+    )
+    cfg["modules"] = {**cfg["modules"], "meic": {"enabled": True}}
+    _PrefixStore.mem = {
+        "cherrypick-broker.margin": {
+            "production:client_secret": SECRET_VALUE,
+            "production:refresh_token": SECRET_VALUE,
+            "meic:account_number": ACCOUNT,
+        },
+    }
+    out = secretsops.status(cfg, store_factory=_PrefixStore)
+    assert SECRET_VALUE not in json.dumps(out) and ACCOUNT not in json.dumps(out)
+    margin, ira2 = out["logins"]
+    assert margin["service"] == "cherrypick-broker.margin" and margin["label"] == "Reg T"
+    assert margin["status"] == {"client_secret": True, "refresh_token": True}
+    assert margin["designated"] == {"meic": "****9876"}
+    assert ira2["status"] == {"client_secret": False, "refresh_token": False} and ira2["designated"] == {}
+    # Never writable: the page's set/delete only reach the derived services.
+    assert "cherrypick-broker.margin" not in secretsops.services(cfg, _PrefixStore)
+
+
+def test_no_further_login_lists_nothing(env):
+    cfg, _ = env
+    assert secretsops.status(cfg, store_factory=_FakeStore)["logins"] == []

@@ -103,6 +103,9 @@ only mutating HTTP surface — every dashboard here is GET-only. Two things make
   file, never echoed back. Every GET response carries only `secrets_status()` booleans, webhook
   set/not-set strings, and masked account numbers — the same values-never-cross-the-wire contract as
   `connect`/`account`, just enforced per-request instead of by keeping the orchestrator out of the loop.
+  A further broker login (`cherrypick-broker.<name>`) shows here read-only: its secrets set or not,
+  and each module's masked designation there. Its secrets go in only from a terminal (`connect
+  --login`), never through this page.
 
 Because it's a mutating local server, loopback binding alone isn't the whole story: every route checks
 the `Host` header (defeats DNS rebinding from a page open in your browser), and every POST additionally
@@ -162,7 +165,10 @@ entries) live in the OS keyring, never in files, env vars, or logs.
 login lives once in the shared `cherrypick-broker` keyring service, which every module's store reads
 *through* as a fallback; a module's own service, when set, always wins — that's the override and
 per-module rotation layer, and it's what `connect --module` writes. The suite-wide account designation
-follows the same shape (shared default, per-module override). Secrets are still only ever typed into
+follows the same shape (shared default, per-module override). A further tastytrade login is a name in
+`broker.logins` with its tokens in its own `cherrypick-broker.<name>` service and no fallback either
+way; it is read (accounts, positions, history, order events) and never traded: nothing is designated
+on it, and a broker tool's order verbs refuse `--login`. Secrets are still only ever typed into
 module/core child processes with the tty inherited — the orchestrator process never sees a bearer
 secret; the status surfaces (doctor's onboarding line, the Live Ops card) show presence and *source*
 (own/shared/missing), never values.

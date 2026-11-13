@@ -55,7 +55,7 @@ def test_the_snapshot_carries_each_underlyings_trade_history(monkeypatch):
         },
     )
     snap = managesnap.build({})
-    assert snap["snapshot_version"] == 18
+    assert snap["snapshot_version"] == 19
     # v18: the Cboe SPX/VIX history, null with a reason where the files are missing
     assert snap["spot_vol_history"] is not None or snap["spot_vol_history_error"]
     # v16: the loops' published order ids, read from the (isolated, empty) state folder

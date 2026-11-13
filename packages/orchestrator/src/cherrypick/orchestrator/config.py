@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import sqlite3
 import sys
 from pathlib import Path
 from typing import Any
@@ -243,6 +244,127 @@ def broker_tool(module_cfg: dict[str, Any], name: str | None = None) -> list[str
     through config-declared argv, like everything else."""
     fallback = ["-m", f"cherrypick.{name}.tt"] if name else []
     return list(module_cfg.get("broker_tool") or _module_default(name, "broker_tool") or fallback)
+
+
+def broker_logins(cfg: dict[str, Any]) -> list[dict[str, Any]]:
+    """Every broker login the suite reads, `main` first: `[{"name", "label", "manage"}]`.
+
+    `main` is the shared login every module reads through, always present. `broker.logins` adds
+    others (`[{"name": "margin", "label": "Reg T", "manage": true}]`), each kept in its own keyring
+    service (`cherrypick.core.auth.logins`). Absent, empty or malformed means `main` only, so a config
+    from before named logins reads exactly as before. A bad or duplicate name is skipped, never
+    guessed at. `manage: true` puts that login's accounts in manage's evaluated set and marks them
+    as expected to hold positions (reconcile's `managed` role); `main`'s own flag defaults false,
+    since its designated account is evaluated already."""
+    from cherrypick.core.auth import logins as _logins
+
+    raw = ((cfg.get("broker") or {}) if isinstance(cfg.get("broker"), dict) else {}).get("logins")
+    out = [{"name": _logins.DEFAULT_LOGIN, "label": None, "manage": False}]
+    seen = {_logins.DEFAULT_LOGIN}
+    for entry in raw if isinstance(raw, list) else []:
+        if not isinstance(entry, dict):
+            continue
+        name = entry.get("name")
+        if name == _logins.DEFAULT_LOGIN:
+            out[0] = {**out[0], "label": entry.get("label") or None, "manage": bool(entry.get("manage"))}
+            continue
+        if not _logins.valid_login_name(name) or name in seen:
+            continue
+        seen.add(name)
+        out.append({"name": name, "label": entry.get("label") or None, "manage": bool(entry.get("manage"))})
+    return out
+
+
+def broker_login_names(cfg: dict[str, Any]) -> list[str]:
+    return [entry["name"] for entry in broker_logins(cfg)]
+
+
+def live_accounts(cfg: dict[str, Any], module: str, module_doc: dict[str, Any] | None = None) -> list[str]:
+    """The further live accounts a module trades: the logins under `live_accounts` in its OWN config
+    (`~/.cherrypick/config/<module>.json`) that are also in `broker.logins`, and that are either
+    enabled or already have a live ledger (`<data>/<module>/<login>/<module>_trades.db`, so an
+    account switched off while it still holds is still managed). The main login's live account is
+    the module's `live` block and is never listed here. `module_doc` is the module config, for tests;
+    absent, the home file is read, and an unreadable one lists nothing."""
+    if module_doc is None:
+        try:
+            module_doc = json.loads(_home.config_path(module).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return []
+    raw = module_doc.get("live_accounts") if isinstance(module_doc, dict) else None
+    if not isinstance(raw, dict):
+        return []
+    known = set(broker_login_names(cfg)[1:])
+    out = []
+    for login, entry in raw.items():
+        if login not in known or not isinstance(entry, dict):
+            continue
+        ledger = _home.data_dir(module) / login / f"{module}_trades.db"
+        if entry.get("enabled") is True or _ledger_holds_trades(ledger):
+            out.append(login)
+    return sorted(out)
+
+
+def _ledger_holds_trades(ledger: Path) -> bool:
+    """Whether a live ledger holds a book to manage: a row in one of its `*_trades` tables. A
+    ledger with only its schema and blocked entry attempts never traded, so it is not a book. One
+    that can't be read counts as holding trades, so an account is never dropped on a read error."""
+    try:
+        if not ledger.exists() or ledger.stat().st_size == 0:
+            return False
+        conn = sqlite3.connect(f"file:{ledger.as_posix()}?mode=ro", uri=True, timeout=5)
+        try:
+            names = conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()
+            tables = [n for (n,) in names if n.endswith("_trades")]
+            return any(conn.execute(f'SELECT 1 FROM "{t}" LIMIT 1').fetchone() for t in tables)
+        finally:
+            conn.close()
+    except (OSError, sqlite3.Error):
+        return True
+
+
+def streamer_instances(cfg: dict[str, Any]) -> list[str]:
+    """The extra producer instances to run (`streamer.instances`), each named for a broker login in
+    `broker.logins`: a name that is not a listed login is skipped, since it would have no secrets to
+    stream with. Empty with the main producer off or nothing listed -- the shape before instances."""
+    spec = cfg.get("streamer") or {}
+    if not spec.get("enabled"):
+        return []
+    known = set(broker_login_names(cfg)[1:])
+    raw = spec.get("instances")
+    out: list[str] = []
+    for name in raw if isinstance(raw, list) else []:
+        if isinstance(name, str) and name in known and name not in out:
+            out.append(name)
+    return out
+
+
+def streamer_specs(cfg: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """{label: spec} for every producer to run: `streamer` (the main one, the block as it is) and
+    `streamer.<name>` for each instance -- main's spec with `--instance <name>` on each argv, its own
+    config name for the stale-config hash, and its own `instance` key. One spec per process, so every
+    path that starts, stops, watches or recycles a producer loops over these and never builds one."""
+    spec = cfg.get("streamer") or {}
+    if not spec.get("enabled"):
+        return {}
+    out = {"streamer": spec}
+    for name in streamer_instances(cfg):
+        inst = {k: v for k, v in spec.items() if k != "instances"}
+        for key in ("status_argv", "start_argv", "stop_argv"):
+            if isinstance(spec.get(key), list):
+                inst[key] = [*spec[key], "--instance", name]
+        inst["config_name"] = f"streamer.{name}"
+        inst["instance"] = name
+        out[f"streamer.{name}"] = inst
+    return out
+
+
+def login_argv(login: str | None) -> list[str]:
+    """The broker-tool argv prefix that selects `login`: nothing for `main`, so every existing
+    call's argv is unchanged."""
+    from cherrypick.core.auth import logins as _logins
+
+    return [] if login in (None, "", _logins.DEFAULT_LOGIN) else ["--login", str(login)]
 
 
 def module_keyring_service(module_cfg: dict[str, Any], name: str | None = None) -> str | None:

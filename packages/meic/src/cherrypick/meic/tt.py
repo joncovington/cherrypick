@@ -362,6 +362,23 @@ async def _get_account(account_number: str | None = None):
     )
 
 
+async def _read_account(args):
+    """The account a READ verb acts on: `--account_suffix` (a last 4, matched against the login's own
+    account list, exactly one or an error) or `--account_number`, else `_get_account`'s fallback. The
+    suffix exists because the orchestrator's snapshot holds only masked numbers; it never reaches an
+    order verb, which resolves through `_trading_account` alone."""
+    suffix = getattr(args, "account_suffix", None)
+    if not suffix:
+        return await _get_account(getattr(args, "account_number", None))
+    listed = await _broker.list_accounts(get_session())
+    matches = [
+        a["account_number"] for a in listed if str(a.get("account_number") or "").endswith(str(suffix))
+    ]
+    if len(matches) != 1:
+        raise RuntimeError(f"--account_suffix {suffix}: {len(matches)} accounts match on this login")
+    return await _get_account(matches[0])
+
+
 def _designated_account() -> str | None:
     """This module's designated live account (`cherrypick account --module meic --set <last4>`), or
     None when it is unset or the keyring cannot be read. A seam, so tests never read a real keyring."""
@@ -529,7 +546,7 @@ async def cmd_get_transactions(args) -> dict:
     try:
         if not args.account_wide and not args.underlyings:
             return {"ok": False, "error": "get_transactions needs --underlyings or --account_wide"}
-        account = await _get_account(getattr(args, "account_number", None))
+        account = await _read_account(args)
         session = get_session()
         since = date.fromisoformat(args.since)
         if args.account_wide:
@@ -1035,7 +1052,7 @@ def _select_put_spread(puts, wing_width, short_delta, greeks):
 
 async def cmd_get_working_orders(args) -> dict:
     try:
-        account = await _get_account(getattr(args, "account_number", None))
+        account = await _read_account(args)
         session = get_session()
         orders = await account.get_live_orders(session)
         return {
@@ -1719,8 +1736,69 @@ async def cmd_get_greeks(args) -> dict:
 # ---------------------------------------------------------------------------
 
 
+# The verbs `--login NAME` may run on an extra broker login (`cherrypick.core.auth.logins`): the
+# account reads the orchestrator's reconcile, positions and manage snapshot make. Everything else
+# refuses before any broker call -- orders above all (no module trades an extra login), and market
+# data, which stays on the main login.
+LOGIN_READ_VERBS = frozenset(
+    {
+        "get_connection_status",
+        "list_accounts",
+        "get_account_info",
+        "get_positions",
+        "get_transactions",
+        "get_working_orders",
+    }
+)
+
+
+def _use_login(name: str) -> None:
+    """Point this process's credentials and session at an extra login's own store (no fallback to
+    the module's service or the shared one). It has no designated account: `_designated_account`
+    reads None, so an order verb would refuse even if it got this far."""
+    global _creds, get_session
+    from types import SimpleNamespace
+
+    from cherrypick.core.auth import ACCOUNT_NUMBER, SessionManager
+    from cherrypick.core.auth import logins as _logins
+
+    store = _logins.login_store(name)
+    _creds = SimpleNamespace(
+        ACCOUNT_NUMBER=ACCOUNT_NUMBER,
+        # No stored default account: a read without --account_number takes the login's first.
+        get_secret=lambda key: None if key == ACCOUNT_NUMBER else store.get_secret(key),
+        secrets_present=store.secrets_present,
+        store=SimpleNamespace(designated_account=lambda: None),
+    )
+    get_session = SessionManager(store, thread_local=True).get_session
+
+
+def _login_refusal(login: str | None, command: str | None) -> dict | None:
+    """None when `command` may run on `login`; else the refusal to print. `main` (or no flag) is
+    always today's behaviour."""
+    from cherrypick.core.auth import logins as _logins
+
+    try:
+        name = _logins.check_login_name(login)
+    except _logins.LoginNameError as exc:
+        return {"ok": False, "error": str(exc)}
+    if _logins.is_default(name) or command in LOGIN_READ_VERBS:
+        return None
+    return {
+        "ok": False,
+        "error": f"{command} does not run on login {name!r}: only account reads do "
+        f"({', '.join(sorted(LOGIN_READ_VERBS))})",
+        "reason": "login_read_only",
+    }
+
+
 def main():
     parser = argparse.ArgumentParser(description="MEICAgent tastytrade CLI")
+    parser.add_argument(
+        "--login",
+        default=None,
+        help="an extra broker login to read (account reads only); absent = the main login",
+    )
     sub = parser.add_subparsers(dest="command")
 
     sub.add_parser("get_connection_status")
@@ -1737,6 +1815,7 @@ def main():
     p_tx.add_argument("--account_wide", action="store_true")
     p_tx.add_argument("--since", required=True, help="YYYY-MM-DD")
     p_tx.add_argument("--account_number", default=None)
+    p_tx.add_argument("--account_suffix", default=None, help="the account by its last 4 (read-only)")
 
     p_mo = sub.add_parser("get_market_overview")
     p_mo.add_argument("--symbols", nargs="+", required=True)
@@ -1767,6 +1846,7 @@ def main():
 
     p_wo = sub.add_parser("get_working_orders")
     p_wo.add_argument("--account_number", default=None)
+    p_wo.add_argument("--account_suffix", default=None, help="the account by its last 4 (read-only)")
 
     p_et = sub.add_parser("execute_trade")
     p_et.add_argument("--order", required=True, help="JSON order spec")
@@ -1844,6 +1924,13 @@ def main():
     p_ss.add_argument("--timeout", type=float, default=6.0)
 
     args = parser.parse_args()
+
+    refusal = _login_refusal(args.login, args.command)
+    if refusal is not None:
+        _out(refusal, command=args.command)
+        sys.exit(1)
+    if args.login not in (None, "", "main"):
+        _use_login(args.login)
 
     # Sync commands (no asyncio needed)
     sync_dispatch = {

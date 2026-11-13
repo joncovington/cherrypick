@@ -121,6 +121,10 @@ export interface LiveMeicPayload {
   generatedAt: string;
   /** Today's ET session, the date every per-day gate is measured against. */
   session: string;
+  /** The broker login of the live account shown (`main`, or another login's, MEIC's `live_accounts`),
+   *  and every live account MEIC has, main first. Absent before live accounts existed. */
+  login?: string;
+  accounts?: string[];
   /** `absent`: no live ledger on this machine; `failed`: the read threw (`ledgerError`). */
   ledger: "ok" | "absent" | "failed";
   ledgerError: string | null;

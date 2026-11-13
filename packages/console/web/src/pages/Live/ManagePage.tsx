@@ -19,6 +19,7 @@ import { PmccCards } from "./PmccCards";
 import { WheelCards } from "./WheelCards";
 import { PositionCards } from "./PositionCards";
 import { pricingBox } from "./PricingBox";
+import { accountTitle } from "./accountTitle";
 import {
   LiveMarksContext,
   LiveStatus,
@@ -386,7 +387,7 @@ export function AccountTiles({ a, oversize }: { a: ManageAccount; oversize: numb
   // it is the holding table's row count. The P&L stays gross because the evaluation writes no
   // account net (the tables' P&L is each trade's net); the label and hover say so.
   const tiles = useColumns([
-    { key: "liq", node: <Tile key="liq" label={`net liq · ${a.account ?? "?"}`} value={fmtMoney(a.netLiq)} /> },
+    { key: "liq", node: <Tile key="liq" label={`net liq · ${accountTitle(a)}`} value={fmtMoney(a.netLiq)} /> },
     {
       key: "budget",
       detailOnly: true,
@@ -460,6 +461,11 @@ function PositionsAccount({ a, loading, oversize }: { a: ManageAccount; loading:
   return (
     <div className="pf-layout">
       <AccountTiles a={a} oversize={oversize} />
+      {a.error ? (
+        <StateLine tone="warn">
+          {a.account ?? "this account"} could not be read: {a.error}
+        </StateLine>
+      ) : null}
       <Section concept="dir" question="What does each trade need?">
         <Card title="positions" collapseKey={`positions-board-${a.account ?? "?"}`} className="lv-12" help={POSITIONS_HELP}>
           <PositionCards trades={a.trades} loading={loading} inSession={inSession} detail={(t) => <TradeDetail t={t} />} />

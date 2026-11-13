@@ -248,7 +248,7 @@ export function TimeSpreadsTab() {
               ...(filters.maxDebit !== null ? [`debit ≤ ${filters.maxDebit.toFixed(2)}`] : []),
               `by ${sortLabel}${sort.reversed ? ", reversed" : ""}`,
             ],
-            note: `${shown.length} of ${views.length}${a && a.sourceSession && a.sourceSession !== d.day ? ` · that evaluation sized the ${a.sourceSession} scan, so cards may not match` : ""}${a ? "" : " · unmarked: no account sizing"}`,
+            note: `${shown.length} of ${views.length}${a && a.sourceSession && a.sourceSession !== d.day ? ` · that evaluation sized the ${a.sourceSession} scan, so cards may not match` : ""}${a ? "" : " · unmarked: no account sizing"}${d.accountName ? ` · sized to ${d.accountName}` : ""}`,
             onReset: reset,
             panel: (
               <>

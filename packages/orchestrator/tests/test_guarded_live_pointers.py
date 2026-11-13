@@ -167,6 +167,22 @@ def test_meic_guards_the_rules_that_widen_its_live_loop():
     } <= set(GUARDED["meic"])
 
 
+def test_meic_live_accounts_are_guarded_whole():
+    """A live account on another broker login is a full live block; the settings surface may change
+    none of it -- not a cap inside an entry, not an entry added, not one removed."""
+    from cherrypick.orchestrator.configedit import guard_violations
+
+    base = {"live_accounts": {"margin": {"enabled": False, "symbol": "XSP", "max_open_bp_dollars": 90}}}
+    for new in (
+        {"live_accounts": {"margin": {"enabled": True, "symbol": "XSP", "max_open_bp_dollars": 90}}},
+        {"live_accounts": {"margin": {"enabled": False, "symbol": "XSP", "max_open_bp_dollars": 900}}},
+        {"live_accounts": {}},
+        {"live_accounts": {**base["live_accounts"], "ira2": {"enabled": True}}},
+    ):
+        assert guard_violations("meic", base, new) == ["/live_accounts"], new
+    assert guard_violations("meic", base, base) == []
+
+
 def test_bwb_keeps_every_live_sizing_and_admission_rule_guarded():
     """bwb's live block carries the arm, the floor, both caps and both breakers beside the switch;
     a surface that cannot arm the loop but can widen it once armed is the flies lesson again."""

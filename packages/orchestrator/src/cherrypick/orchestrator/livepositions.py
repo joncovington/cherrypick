@@ -64,31 +64,52 @@ def _expected(cfg: dict[str, Any]) -> dict[str, dict[str, Any]]:
         if name not in LIVE_MODULES:
             continue
         root = cfgmod.module_root(mcfg, name)
-        try:
-            r = doctor._run(root, ["-m", f"cherrypick.{name}.live_loop", "--expected-legs"], timeout=30)
-            payload = first_json(r.stdout)
-        except Exception as exc:  # noqa: BLE001 -- one module failing is an UNKNOWN, not a crash
-            payload = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
-        out[name] = (
-            payload if payload.get("ok") else {"ok": False, "error": payload.get("error") or "no JSON"}
-        )
+        # The main live account (keyed `<module>`) and each further one (`<module>.<login>`).
+        for login in [None, *cfgmod.live_accounts(cfg, name)]:
+            key = name if login is None else f"{name}.{login}"
+            try:
+                r = doctor._run(
+                    root,
+                    ["-m", f"cherrypick.{name}.live_loop", "--expected-legs", *cfgmod.login_argv(login)],
+                    timeout=30,
+                )
+                payload = first_json(r.stdout)
+            except Exception as exc:  # noqa: BLE001 -- one module failing is an UNKNOWN, not a crash
+                payload = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+            out[key] = (
+                payload if payload.get("ok") else {"ok": False, "error": payload.get("error") or "no JSON"}
+            )
     return out
 
 
+def _login_of(key: str) -> str | None:
+    """`meic` -> None (main), `meic.margin` -> "margin"."""
+    _, _, login = key.partition(".")
+    return login or None
+
+
 def _designated(cfg: dict[str, Any], module: str) -> str | None:
+    """A live key's designated account: the module's own keyring for main, the module's entry in the
+    login's own service (`<module>:account_number`) for a further live account."""
     from . import accounts  # local: accounts imports reconcile at load
 
+    base, _, login = module.partition(".")
+    if login:
+        return accounts._designated_number(accounts.login_designation_store(login, base))
     return accounts._designated_number(accounts.keyring_store(cfg, module))
 
 
-def _broker_positions(cfg: dict[str, Any], number: str) -> dict[str, Any]:
-    """`get_positions` for one account through the first module whose broker tool answers it."""
+def _broker_positions(cfg: dict[str, Any], number: str, login: str | None = None) -> dict[str, Any]:
+    """`get_positions` for one account through the first module whose broker tool answers it, on
+    `login` (None = main)."""
     last = "no positions-capable module"
     for name, mcfg in cfgmod.enabled_modules(cfg).items():
         root = cfgmod.module_root(mcfg, name)
         if not root.exists():
             continue
-        entry = reconcile._account_entry(root, number, {number}, tool=cfgmod.broker_tool(mcfg, name))
+        entry = reconcile._account_entry(
+            root, number, {number}, tool=cfgmod.broker_tool(mcfg, name), **reconcile._login_kw(login)
+        )
         if not entry.get("error"):
             return {"ok": True, "positions": entry.get("open_positions") or []}
         last = entry["error"]
@@ -183,7 +204,10 @@ def run(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
     cfg = cfgmod.load_config() if cfg is None else cfg
     expected = _expected(cfg)
     accounts_of = {m: _designated(cfg, m) for m in expected}
-    result = evaluate(expected, accounts_of, lambda n: _broker_positions(cfg, n), recent_state())
+    login_of_number = {n: _login_of(m) for m, n in accounts_of.items() if n}
+    result = evaluate(
+        expected, accounts_of, lambda n: _broker_positions(cfg, n, login_of_number.get(n)), recent_state()
+    )
     result["generated_at"] = datetime.now(timezone.utc).isoformat()
     _jsonio.write_json_atomic(state_path(), result)
     return result

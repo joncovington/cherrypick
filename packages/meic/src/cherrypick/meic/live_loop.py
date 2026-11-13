@@ -80,6 +80,7 @@ from cherrypick.core import streamcache as _streamcache  # noqa: E402
 from cherrypick.core.streamcache import occ_to_streamer_symbol as _occ_to_streamer  # noqa: E402
 
 from cherrypick.meic import credentials as _creds  # noqa: E402
+from cherrypick.meic import live_account as _live_account  # noqa: E402
 from cherrypick.meic import (
     live_orders,  # noqa: E402
     paper,  # noqa: E402  (the pure decision functions + paper-DB helpers this loop reuses)
@@ -103,6 +104,13 @@ def halt_flag_path() -> str:
 
 def _designated_account() -> str | None:
     return _creds.store.designated_account()
+
+
+def login_argv() -> list[str]:
+    """`--login <name>` for a process this live account spawns (its first tick, its alert daemon), so
+    the child is the same account; nothing for main, whose argv is as it always was."""
+    login = _paths.live_login()
+    return [] if login == _paths.MAIN_LOGIN else ["--login", login]
 
 
 def readiness(config: dict, *, designated: str | None) -> list[str]:
@@ -130,8 +138,14 @@ def readiness(config: dict, *, designated: str | None) -> list[str]:
     problem = paper.live_arm_problem(config)
     if problem:
         unmet.append(problem)
+    # A live account on another broker login (`live_accounts.<login>`) also needs its own switch.
+    disabled = _live_account.enabled_problem(config)
+    if disabled:
+        unmet.append(disabled)
     if not designated:
-        unmet.append("no designated account -- run `cherrypick account --module meic --set <last4>`")
+        login = (config.get("_live_account") or {}).get("login")
+        where = f" --login {login}" if login else ""
+        unmet.append(f"no designated account -- run `cherrypick account --module meic{where} --set <last4>`")
     return unmet
 
 
@@ -145,8 +159,10 @@ def daily_loss_tripped(db_path: str, day: str, limit_dollars: float | None) -> b
         return False
     import sqlite3
 
+    # Read-only: opening a missing file read-write makes an empty one, which then reads as a ledger
+    # that holds a book. A missing ledger still fails closed below (the tick creates it first).
     try:
-        con = sqlite3.connect(db_path)
+        con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
         row = con.execute(
             "SELECT COALESCE(SUM(pnl), 0) FROM ic_trades WHERE trade_date = ?", (day,)
         ).fetchone()
@@ -180,7 +196,7 @@ def kill_verdict(config: dict, db_path: str, *, latch: bool = True) -> dict:
     except sqlite3.Error as exc:
         return {"state": _kill.BLOCKED, "reasons": [f"live ledger unreadable: {exc}"]}
     criteria = _live_cfg(config).get("kill")
-    verdict = (_kill.gate if latch else _kill.peek)("meic", EXECUTION_MODE, records, criteria)
+    verdict = (_kill.gate if latch else _kill.peek)(_paths.live_key(), EXECUTION_MODE, records, criteria)
     if verdict["state"] == _kill.BLOCKED:
         return verdict
     blind = _kill.unrecorded(records, EXECUTION_MODE, criteria)
@@ -195,6 +211,43 @@ def kill_verdict(config: dict, db_path: str, *, latch: bool = True) -> dict:
             ],
         }
     return verdict
+
+
+# The pattern-day-trader rule: a margin account under this net liq may make at most PDT_LIMIT day
+# trades in five sessions. A 0DTE IC is opened and, when stopped or force-closed, closed the same day:
+# each side's close is a day trade, so one IC can need two. Entries stop while fewer than
+# `live.pdt_reserve_day_trades` (default 2) remain, so a stop is never the order that cannot be sent.
+PDT_EQUITY = 25_000.0
+PDT_LIMIT = 3
+PDT_RESERVE_DEFAULT = 2
+
+
+def restriction_blockers(status: dict, live_cfg: dict) -> list[str]:
+    """Why this account may open nothing new, from its trading status (`Broker.trading_status`).
+    Pure. Closes are never blocked here: this gates entries only."""
+    out = []
+    for flag, why in (
+        ("is_frozen", "account frozen"),
+        ("is_closing_only", "account is closing-only"),
+        ("is_risk_reducing_only", "account is risk-reducing-only"),
+        ("is_in_margin_call", "account is in a margin call"),
+        ("is_in_day_trade_equity_maintenance_call", "account is in a day-trade equity call"),
+    ):
+        if status.get(flag):
+            out.append(f"restricted: {why}")
+    margin = str(status.get("margin_or_cash") or "").lower() == "margin"
+    net_liq = status.get("net_liquidating_value")
+    if margin and not status.get("is_pattern_day_trader"):
+        under = net_liq is None or float(net_liq) < PDT_EQUITY
+        reserve = int(live_cfg.get("pdt_reserve_day_trades", PDT_RESERVE_DEFAULT))
+        left = PDT_LIMIT - int(status.get("day_trade_count") or 0)
+        if under and left < reserve:
+            out.append(
+                f"pattern_day_trader: {max(left, 0)} day trade(s) left of {PDT_LIMIT} under "
+                f"${PDT_EQUITY:,.0f} net liq; an IC may need {reserve} to be stopped"
+                + (f" (resets {status['pdt_reset_on']})" if status.get("pdt_reset_on") else "")
+            )
+    return out
 
 
 def entry_blockers(config: dict, db_path: str, day: str, *, halt_present: bool) -> list[str]:
@@ -318,7 +371,7 @@ def disarm_min(config: dict) -> int:
 
 
 def arm_stamp_date() -> str | None:
-    return _live.arm_record_date("meic")
+    return _live.arm_record_date(_paths.live_key())
 
 
 def should_disarm(config: dict, now_min: int, today: str) -> str | None:
@@ -340,7 +393,7 @@ def _spawn_first_tick() -> None:
         exe = exe[:-10] + "pythonw.exe"
     flags = 0x00000008 | 0x08000000 | 0x00000200 if os.name == "nt" else 0  # DETACHED|NO_WINDOW|NEW_GROUP
     subprocess.Popen(
-        [exe, "-m", "cherrypick.meic.live_loop", "--once", "--live"],
+        [exe, "-m", "cherrypick.meic.live_loop", "--once", "--live", *login_argv()],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         creationflags=flags,
@@ -358,7 +411,7 @@ def alert_daemon_companion(config: dict | None) -> dict | None:
     from cherrypick.meic import alert_daemon
 
     return {
-        "argv": ["-m", "cherrypick.meic.alert_daemon"],
+        "argv": ["-m", "cherrypick.meic.alert_daemon", *login_argv()],
         "heartbeat": alert_daemon.daemon().status_path,
         "silence_seconds": 120,
         "until": live.get("disarm_time") or DEFAULT_DISARM,
@@ -402,6 +455,12 @@ def arm_verdict(status: dict) -> dict:
     held_n = (status.get("open_positions") or 0) + len(status.get("pending_orders") or [])
     if held_n:
         warnings.append(f"{held_n} live position(s) or order(s) already held")
+    if status.get("same_index_elsewhere"):
+        warnings.append(
+            "another live account trades this index: "
+            + ", ".join(status["same_index_elsewhere"])
+            + " -- one directional bet in two accounts, each capped on its own"
+        )
     return {"ready": not blockers, "blockers": blockers, "warnings": warnings}
 
 
@@ -421,7 +480,7 @@ def install_task(config: dict | None = None) -> dict:
     now = _pl._now_et()
     companion = alert_daemon_companion(config)
     return _live.arm(
-        "meic",
+        _paths.live_key(),
         date=now.strftime("%Y-%m-%d"),
         at=now.isoformat(timespec="seconds"),
         armed_by=ARMED_BY,
@@ -431,7 +490,7 @@ def install_task(config: dict | None = None) -> dict:
 
 
 def uninstall_task() -> dict:
-    return _live.disarm("meic")
+    return _live.disarm(_paths.live_key())
 
 
 # --------------------------------------------------------------------------- caps and sweep
@@ -517,7 +576,7 @@ def _sweep_orphans(broker, db_path: str, symbol: str, log) -> int | None:
         path=_orphans_path(),
         now_iso=_pl._now_et().isoformat(timespec="seconds"),
         log=log,
-        module="meic",
+        module=_paths.live_key(),
     )
 
 
@@ -730,7 +789,13 @@ def run_status(config: dict, *, designated: str | None) -> dict:
         unreadable, open_rows, pending, overdue = str(exc), [], [], []
     # The kill criteria as the next entry would meet them, never latched from a readout. No ledger yet
     # holds no closed IC: nothing for the criteria to read.
-    kill = kill_verdict(config, db_path, latch=False) if os.path.exists(db_path) else {"state": None}
+    # No ledger yet (a live account that has never traded): its criteria are judged on no trades,
+    # so unwritten criteria still read as the arming blocker they are.
+    kill = (
+        kill_verdict(config, db_path, latch=False)
+        if os.path.exists(db_path)
+        else _kill.peek(_paths.live_key(), EXECUTION_MODE, [], _live_cfg(config).get("kill"))
+    )
     try:
         intents = sorted(_read_intents(db_path))
     except IntentsUnreadable as exc:
@@ -767,7 +832,10 @@ def run_status(config: dict, *, designated: str | None) -> dict:
         else not open_rows and not [t for t in pending if t["trade_date"] == today],
         "ledger_unreadable": unreadable,
         "halt_flag": os.path.exists(halt_flag_path()),
-        "breaker_tripped": daily_loss_tripped(db_path, today, live.get("daily_loss_halt_dollars")),
+        # No ledger yet is no loss yet: a readout of a live account that has never traded says so
+        # (the tick's own check still fails closed on a missing ledger, which it creates first).
+        "breaker_tripped": os.path.exists(db_path)
+        and daily_loss_tripped(db_path, today, live.get("daily_loss_halt_dollars")),
         "orphaned_orders": read_orphans(),
         "broker_held": _execution.read_hold(_hold_path()),
         "broker_health": _execution.read_broker_health(os.path.join(_data_dir(), _execution.HEALTH_FILENAME)),
@@ -777,9 +845,40 @@ def run_status(config: dict, *, designated: str | None) -> dict:
         "daily_loss_halt_dollars": live.get("daily_loss_halt_dollars"),
         "kill": {"state": kill.get("state"), "reasons": kill.get("reasons") or []},
         "live_db": db_path,
+        # Which live account this status is (`meic` / `meic.<login>`), and the others that trade the
+        # same index: two accounts on SPX and XSP are one directional bet, each capped on its own.
+        "live_account": _paths.live_key(),
+        "login": _paths.live_login(),
+        "same_index_elsewhere": same_index_elsewhere(config),
     }
     status["arm_ready"] = arm_verdict(status)
     return status
+
+
+# One index, its vehicles: what the same-index check reads across live accounts.
+INDEX_OF = {"SPX": "SPX", "XSP": "SPX", "SPY": "SPX", "NDX": "NDX", "QQQ": "NDX", "RUT": "RUT", "IWM": "RUT"}
+
+
+def same_index_elsewhere(config: dict) -> list[str]:
+    """The OTHER live accounts in MEIC's config (main's `live` and each enabled `live_accounts`
+    entry) whose symbol is on this account's index, as `<login>:<symbol>`. Reads the config file, not
+    the broker. A warning at arming, never a block: whether to run one bet in two accounts is a
+    decision, not an error."""
+    mine = str(_live_cfg(config).get("symbol") or "").upper()
+    if not mine:
+        return []
+    base = paper.load_base_config()
+    accounts = {_paths.MAIN_LOGIN: (base.get("live") or {}, True)}
+    for login, entry in _live_account.entries(base).items():
+        accounts[login] = (entry, entry.get("enabled") is True)
+    out = []
+    for login, (live, enabled) in accounts.items():
+        symbol = str(live.get("symbol") or "").upper()
+        if login == _paths.live_login() or not enabled or not symbol:
+            continue
+        if INDEX_OF.get(symbol, symbol) == INDEX_OF.get(mine, mine):
+            out.append(f"{login}:{symbol}")
+    return sorted(out)
 
 
 _extract_order_id = _execution.order_id_of  # one reading of a placement result, suite-wide
@@ -1273,7 +1372,7 @@ def _manage_entry(
     # flies and bwb trade SPX in this account too (2026-10-15): a leg opposite one they hold or have
     # working would net at the broker into a position neither ledger describes. Refused, not repaired;
     # the next tick evaluates afresh.
-    clash = _livepos.cross_module_conflict("meic", symbol, spec)
+    clash = _livepos.cross_module_conflict(_paths.live_key(), symbol, spec)
     if clash is not None:
         log(f"entry refused: {_livepos.describe(clash)} sits opposite another live loop's leg")
         return {
@@ -1776,7 +1875,7 @@ def run_once(
     orphans = _sweep_orphans(broker, db_path, symbol, log)
     # What this loop holds or has working, for flies' and bwb's entries to check against (2026-10-15).
     _livepos.publish_open_legs(
-        "meic",
+        _paths.live_key(),
         expected_legs(config, db_path, include_pending=True)["legs"],
         now_iso=_pl._now_et().isoformat(timespec="seconds"),
     )
@@ -1799,6 +1898,14 @@ def run_once(
         block.append("orphan_sweep_failed")
     elif orphans:
         block.append(f"orphaned_orders ({orphans})")
+    # A live account on another login (or one that asks, `live.restriction_check`) reads its trading
+    # status first: an account under the pattern-day-trader rule must keep the day trades a stop could
+    # need, and a restricted one opens nothing. Main's tick makes no extra call unless asked.
+    if live and (config.get("_live_account") or _live_cfg(config).get("restriction_check")):
+        try:
+            block += restriction_blockers(broker.trading_status(), _live_cfg(config))
+        except Exception as exc:  # noqa: BLE001 -- unreadable is not unrestricted: block, never assume
+            block.append(f"trading_status_unreadable ({type(exc).__name__}: {exc})"[:200])
     # The arm's written kill criteria (B1): reduce, then block and latch. Entries only.
     kill = kill_verdict(config, db_path)
     if kill["state"] == _kill.BLOCKED:
@@ -1823,7 +1930,7 @@ def run_once(
         if entry.get("entry") == "placed":
             # The working order, now, not at the next tick: the other loops check against it from here.
             _livepos.publish_open_legs(
-                "meic",
+                _paths.live_key(),
                 expected_legs(config, db_path, include_pending=True)["legs"],
                 now_iso=_pl._now_et().isoformat(timespec="seconds"),
             )
@@ -2006,6 +2113,9 @@ def expected_legs(cfg: dict, db_path: str, *, include_pending: bool = False) -> 
     return {
         "ok": True,
         "module": "meic",
+        # Which live account this is (`meic`, or `meic.<login>`) and its broker login.
+        "live_account": _paths.live_key(),
+        "login": _paths.live_login(),
         "underlyings": sorted(symbols | ({live_symbol} if live_symbol else set())),
         # Armed means today's arm record (2026-10-14), not the master switch, which stays on.
         "armed_today": arm_stamp_date() == _pl._now_et().strftime("%Y-%m-%d"),
@@ -2062,18 +2172,29 @@ def main(argv=None) -> int:
     ap.add_argument("--date", help="YYYY-MM-DD, with --settle")
     ap.add_argument("--price", type=float, help="the official settlement print, with --settle")
     ap.add_argument("--symbol", help="with --settle: only this symbol (default: every symbol held that day)")
+    ap.add_argument(
+        "--login",
+        default=None,
+        help="the live account on another broker login (live_accounts.<login>); absent = the main one",
+    )
     args = ap.parse_args(argv)
-
-    cfg = paper.load_base_config()
 
     def out(payload: dict) -> int:
         print(json.dumps(payload, indent=2, default=str))
         return 0 if payload.get("ok", True) else 1
 
+    # The live account first, before anything reads a path, a credential or the config: everything
+    # below is that account's (`live_account`). Main's process is unchanged.
+    try:
+        _live_account.activate(args.login)
+        cfg = _live_account.config_view(paper.load_base_config(), args.login)
+    except _live_account.LiveAccountError as exc:
+        return out({"ok": False, "error": str(exc)})
+
     if args.arm or args.install_task:
         return out(
             _live.arm_from_cli(
-                "meic",
+                _paths.live_key(),
                 lambda: install_task(cfg),
                 confirm=args.confirm,
                 prompted=args.arm,
@@ -2341,7 +2462,7 @@ def _quiet(message: str) -> None:
 def log_file():
     """One JSON line per tick (2026-10-14): what the watchdog's freshness fallback and a person
     tailing the loop read. Account numbers are masked at the sink, the flies/bwb rule."""
-    return _paths.log_path("meic_live.log")
+    return _paths.log_path(_paths.live_log_name())
 
 
 def _append_log(line: str) -> None:

@@ -98,3 +98,55 @@ def test_the_day_s_loss_posts_once_when_crossed_and_not_before(tmp_path):
     # No figure (a leg unmarked) is never a cross.
     blank = day_eval(tmp_path, "2026-11-06", {"pnl": None, "alert": -270.0, "crossed": None})
     assert managealert.run_day_loss(blank, "2026-11-06", state, n) is False
+
+
+def test_the_day_s_loss_posts_once_a_session_per_account_across_logins(tmp_path):
+    state, n = tmp_path / "day.json", FakeNotifier()
+    crossed = {"pnl": -310.5, "alert": -270.0, "crossed": True}
+
+    def two(ira_crossed, margin_crossed):
+        doc = {
+            "session": "2026-11-04",
+            "accounts": [
+                {
+                    "account": "****1234",
+                    "limits": {"day_loss": crossed if ira_crossed else {"crossed": False}},
+                },
+                {
+                    "account": "****1234",
+                    "login": "margin",
+                    "limits": {"day_loss": crossed if margin_crossed else {"crossed": False}},
+                },
+            ],
+        }
+        p = tmp_path / f"eval-{ira_crossed}-{margin_crossed}.json"
+        p.write_text(json.dumps(doc), encoding="utf-8")
+        return str(p)
+
+    assert managealert.run_day_loss(two(True, False), "2026-11-04", state, n) is True
+    # The margin account crosses later the same session: its own post, named by its login.
+    assert managealert.run_day_loss(two(True, True), "2026-11-04", state, n) is True
+    assert "margin ****1234" in n.sent[1][3]
+    assert managealert.run_day_loss(two(True, True), "2026-11-04", state, n) is False and len(n.sent) == 2
+
+
+def test_the_same_name_in_another_login_s_account_posts_for_that_account(tmp_path):
+    state, n = tmp_path / "alerts.json", FakeNotifier()
+    one = {"underlying": "AAA", "leg": "50P", "level": "near", "why": "x"}
+    doc = {"session": "2026-11-04", "accounts": [{"account": "****1234", "attention": {"items": [one]}}]}
+    p = tmp_path / "e1.json"
+    p.write_text(json.dumps(doc), encoding="utf-8")
+    assert managealert.run(str(p), "2026-11-04", state, n) == ["AAA"]
+    doc["accounts"].append({"account": "****1234", "login": "margin", "attention": {"items": [one]}})
+    p.write_text(json.dumps(doc), encoding="utf-8")
+    assert managealert.run(str(p), "2026-11-04", state, n) == ["AAA"]
+    assert "AAA (margin ****1234)" in n.sent[1][2]
+    assert json.loads(state.read_text(encoding="utf-8"))["names"] == ["AAA", "margin ****1234|AAA"]
+    assert managealert.run(str(p), "2026-11-04", state, n) == []
+
+
+def test_an_old_day_loss_state_counts_as_posted_this_session(tmp_path):
+    state, n = tmp_path / "day.json", FakeNotifier()
+    state.write_text(json.dumps({"session": "2026-11-04", "pnl": -300.0}), encoding="utf-8")
+    hit = day_eval(tmp_path, "2026-11-04", {"pnl": -310.5, "alert": -270.0, "crossed": True})
+    assert managealert.run_day_loss(hit, "2026-11-04", state, n) is False and n.sent == []
