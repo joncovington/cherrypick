@@ -234,7 +234,8 @@ describe("Live → positions", () => {
   });
 
   it("keeps the snapshot and ruleset line out of the head, naming only a default ruleset", () => {
-    expect(page(manage({ rulesSource: "/x/manage.json" }))).not.toContain("snapshot ");
+    expect(page(manage({ rulesSource: "/x/manage.json" }))).not.toContain("· snapshot");
+    expect(page(manage({ rulesSource: "/x/manage.json" }))).not.toContain("/x/manage.json");
     expect(page(manage({ rulesSource: "/x/manage.json" }))).not.toContain("the shipped default");
     expect(page(manage({ rulesSource: null }))).toContain("ruleset manage-test: the shipped default");
   });
