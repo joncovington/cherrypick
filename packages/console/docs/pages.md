@@ -682,7 +682,8 @@ the Advisor page only.
 `/live` lands), the account-wide `positions`, `portfolio`, `wheel` and `pmcc`, and one per live loop with a page of its
 own (`flies`, `meic`; each hidden when that module's live switch is off and the loop is idle, see *What is off*). The
 account-wide set is `LIVE_ACCOUNT_WIDE` in `lib/visibility.ts`, the one copy: those tabs are always shown and wear the
-suite badge. The simple view lists `today`, the four account views and `meic` (flies is retired and off by default). The execution record
+suite badge. When the evaluation holds more than one account, a select in their header picks the one they draw
+(`?acct=`, which rides along between the tabs): the first, the main login's, by default, or `all accounts`. The simple view lists `today`, the four account views and `meic` (flies is retired and off by default). The execution record
 (B10, below) is a card on its arm's own tab (MEIC's, the
 only live ledger it reads), and `/live/execution` lands on `meic`. `test/manifestSlides.test.ts` holds every manifest's tabs equal to its `navGroups.ts` declaration. The
 `flies` tab is the pilot's day over `GET /api/live/flies` (`routes/live.ts` → `readers/fliesLive.ts`), composing existing readers
