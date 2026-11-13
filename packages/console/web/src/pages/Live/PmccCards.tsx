@@ -552,7 +552,7 @@ function splitQuote(text: string): { text: string; quote: string | null } {
 /** The proposed roll as an order chain, the way the positions tab draws a roll: its legs under a
  *  "proposed · roll" step and its price, then what manage's check-roll says it leaves. */
 export function RollChain({ roll }: { roll: ManagePmccRoll }) {
-  const legs = chainLegs(roll.legs, null);
+  const legs = chainLegs(roll.legs);
   const price = fmtPrice(roll.net);
   return (
     <ol className="pos-chain" aria-label="the proposed roll">

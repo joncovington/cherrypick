@@ -26,6 +26,7 @@ import {
   useManageLive,
 } from "./LiveMarks";
 import { GuideLink } from "../../components/GuideLink";
+import { shapeOrder } from "../../lib/legShape";
 
 /**
  * The daily position evaluation (packages/manage), read-only. Every trade in the live account judged
@@ -215,7 +216,7 @@ export function TradeDetail({ t }: { t: ManageTrade }) {
         {t.order && (
           <DetailCard title="closing order" aside={<span className="md-price">{net(t.order.netPrice, t.order.netSide)}</span>}>
             <ul className="md-orders">
-              {t.order.legs.map((l, i) => (
+              {shapeOrder(t.order.legs, (l) => ({ action: l.side, text: l.leg })).map((l, i) => (
                 <li key={i}>
                   <span className="md-order-head">
                     {l.side} {l.quantity} × {l.leg}
@@ -232,7 +233,7 @@ export function TradeDetail({ t }: { t: ManageTrade }) {
         {t.roll && (
           <DetailCard title="proposed roll" aside={<span className="md-price">{t.roll.credit === null ? "—" : `${t.roll.credit.toFixed(2)} cr`}</span>}>
             <ul className="md-orders">
-              {t.roll.legs.map((l, i) => (
+              {shapeOrder(t.roll.legs, (l) => ({ action: /^[BS]T[OC](?=\s)/.exec(l)?.[0] ?? null, text: l })).map((l, i) => (
                 <li key={i}>
                   <span className="md-order-head">{l}</span>
                 </li>
@@ -287,7 +288,7 @@ export function TradeDetail({ t }: { t: ManageTrade }) {
           <HeadRow cols={legCols} />
         </thead>
         <tbody>
-          {t.legs.map((l, i) => (
+          {shapeOrder(t.legs, (l) => ({ action: null, text: `${l.expiration ?? ""} ${l.label}` })).map((l, i) => (
             <tr key={i}>
               <Cells cols={legCols} row={l} />
             </tr>

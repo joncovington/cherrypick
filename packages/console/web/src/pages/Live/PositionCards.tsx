@@ -10,6 +10,7 @@ import { ACTION_LABEL, ActionChip, Kv, Money, tone } from "./manageParts";
 import { useLiveMarks } from "./LiveMarks";
 import { useQuote } from "../../lib/useQuote";
 import { liveTrade } from "./liveLegs";
+import { shapeOrder } from "../../lib/legShape";
 import { useTickFlash } from "../../lib/useTickFlash";
 import type { QuoteState } from "../../lib/wsClient";
 import { chipState, formatChange, formatPct, formatPrice } from "../../components/shell/FuturesTicker";
@@ -64,16 +65,13 @@ export interface ChainLeg {
   text: string;
 }
 
-/** An order's legs, one per line: the side that set the net first (a debit's buys, a credit's sells). */
-export function chainLegs(legs: string[], side: "cr" | "db" | null): ChainLeg[] {
+/** An order's legs, one per line, in the structure's shape (`lib/legShape.ts`). */
+export function chainLegs(legs: string[]): ChainLeg[] {
   const parsed = legs.map((l): ChainLeg => {
     const [, action, text] = /^(BTO|STO|BTC|STC)\s+(.*)$/.exec(l) ?? [];
     return action && text !== undefined ? { action, buy: action.startsWith("B"), text } : { action: null, buy: null, text: l };
   });
-  if (side === null) return parsed;
-  const first = side === "db";
-  // A stable sort keeps the broker's order within each side.
-  return [...parsed].sort((a, b) => Number(b.buy === first) - Number(a.buy === first));
+  return shapeOrder(parsed, (l) => l);
 }
 
 function priceText(price: number | null, side: "cr" | "db" | null): string {
@@ -94,7 +92,7 @@ export function chainSteps(t: ManageTrade): ChainStep[] {
         cash: o.net,
         fees: o.fees,
         total,
-        legs: chainLegs(o.legs, o.netSide),
+        legs: chainLegs(o.legs),
       };
     });
   }

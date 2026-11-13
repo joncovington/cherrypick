@@ -165,15 +165,22 @@ describe("the positions cards", () => {
     expect(text(renderToString(<SpotLine q={live} evaluated={99} closed={pre} />))).toBe("102.50 +2.50 +2.50% close");
   });
 
-  it("puts each leg on its own line, a buy green and a sell red, the side that set the net first", () => {
-    // A debit opens with its buys on top, a credit with its sells, the broker's order kept within a side.
-    const debit = chainLegs(["STO 1 2026-12-18 106C @ 0.80", "BTO 1 2028-12-15 100C @ 9.00"], "db");
+  it("puts each leg on its own line, a buy green and a sell red, in the structure's shape", () => {
+    // Low strike up: the diagonal's long 100C above its short 106C.
+    const debit = chainLegs(["STO 1 2026-12-18 106C @ 0.80", "BTO 1 2028-12-15 100C @ 9.00"]);
     expect(debit.map((l) => l.action)).toEqual(["BTO", "STO"]);
     expect(debit[0]).toEqual({ action: "BTO", buy: true, text: "1 2028-12-15 100C @ 9.00" });
-    expect(chainLegs(["BTO 1 90P", "STO 1 95P", "BTO 1 110C", "STO 1 105C"], "cr").map((l) => l.text)).toEqual(["1 95P", "1 105C", "1 90P", "1 110C"]);
-    expect(chainSteps(rolled)[1].legs.map((l) => l.action)).toEqual(["STO", "BTC"]);
+    // An iron condor reads bought / sold / sold / bought, whatever order the broker sent.
+    expect(chainLegs(["STO 1 95P", "STO 1 105C", "BTO 1 90P", "BTO 1 110C"]).map((l) => `${l.action} ${l.text}`)).toEqual([
+      "BTO 1 90P",
+      "STO 1 95P",
+      "STO 1 105C",
+      "BTO 1 110C",
+    ]);
+    // A roll closes before it opens.
+    expect(chainSteps(rolled)[1].legs.map((l) => l.action)).toEqual(["BTC", "STO"]);
     // A line with no action keeps its text and gets no chip.
-    expect(chainLegs(["exercise 1 100C"], "db")).toEqual([{ action: null, buy: null, text: "exercise 1 100C" }]);
+    expect(chainLegs(["exercise 1 100C"])).toEqual([{ action: null, buy: null, text: "exercise 1 100C" }]);
     const html = renderToString(<PositionCard t={rolled} onOpen={() => undefined} />);
     expect(html).toContain('class="pos-leg-act is-sell">STO');
     expect(html).toContain('class="pos-leg-act is-buy">BTC');

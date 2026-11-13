@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { useListView } from "../../components/ViewSwitch";
 import type { ManageCandidate, ManageDeltaIdea, ManageHedgeSuggestion, ManageHedges, TimeSpreadStructure } from "@console/shared";
 import { fmtCash, fmtMoney } from "../../lib/format";
+import { shapeOrder } from "../../lib/legShape";
 import { tone } from "./manageParts";
 
 /**
@@ -95,7 +96,7 @@ export function TradeCard({ m }: { m: TradeCardModel }) {
               <span className="pos-step-price">{m.open.price}</span>
             </div>
             <ul className="pos-legs">
-              {m.legs.map((l, j) => (
+              {shapeOrder(m.legs, (l) => ({ action: l.tag ?? null, text: l.text })).map((l, j) => (
                 <li key={j} className="pos-leg">
                   <span className={`pos-leg-act ${l.buy ? "is-buy" : "is-sell"}`}>{l.tag ?? (l.buy ? "BTO" : "STO")}</span>
                   <span>{l.text}</span>

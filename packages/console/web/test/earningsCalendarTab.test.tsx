@@ -172,8 +172,8 @@ describe("the earnings tab", () => {
 
   it("shows each leg as the order chain with its bid and ask, open interest and volume, and whether the spread passes", () => {
     const html = card(row({ trade: trade() }));
-    // A credit spread reads short first: STO the 100, BTO the 95.
-    expect(html.indexOf("100P")).toBeLessThan(html.indexOf("95P"));
+    // A put credit spread reads in its shape, low strike up: BTO the 95, STO the 100.
+    expect(html.indexOf("95P")).toBeLessThan(html.indexOf("100P"));
     expect(html).toContain(">STO<");
     expect(html).toContain(">BTO<");
     expect(html).toContain("1.00 / 1.10 · OI 500 · vol 50");
