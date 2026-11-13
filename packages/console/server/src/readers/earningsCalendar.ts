@@ -236,7 +236,10 @@ function row(v: unknown): EarningsCalendarRow | null {
     date,
     timing: r["timing"] === "bmo" || r["timing"] === "amc" ? r["timing"] : null,
     timingSource:
-      r["timing_source"] === "broker" || r["timing_source"] === "nasdaq" || r["timing_source"] === "dolt"
+      r["timing_source"] === "broker" ||
+      r["timing_source"] === "nasdaq" ||
+      r["timing_source"] === "yahoo" ||
+      r["timing_source"] === "dolt"
         ? r["timing_source"]
         : null,
     usualTiming: r["usual_timing"] === "bmo" || r["usual_timing"] === "amc" ? r["usual_timing"] : null,

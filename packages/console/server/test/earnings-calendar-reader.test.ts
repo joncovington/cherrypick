@@ -74,6 +74,8 @@ beforeEach(() => {
         edge: "sb",
         suggestion: { kind: "credit" },
       },
+      { ...NFLX, symbol: "WMT", timing: "bmo", timing_source: "yahoo" },
+      { ...NFLX, symbol: "ODD", timing_source: "guess" },
       { symbol: "BROKEN" },
     ],
   });
@@ -92,7 +94,10 @@ describe("readEarningsCalendar", () => {
 
   it("carries every field across and drops a row without its date", () => {
     const rows = Object.fromEntries(readEarningsCalendar(config).rows.map((r) => [r.symbol, r]));
-    expect(Object.keys(rows)).toEqual(["NFLX", "META"]);
+    expect(Object.keys(rows)).toEqual(["NFLX", "META", "WMT", "ODD"]);
+    // A time Yahoo gave for a date Nasdaq did not answer keeps its source; an unknown one is none.
+    expect(rows["WMT"]).toMatchObject({ timing: "bmo", timingSource: "yahoo" });
+    expect(rows["ODD"]!.timingSource).toBeNull();
     expect(rows["NFLX"]).toMatchObject({
       company: "Netflix, Inc.",
       timing: "amc",

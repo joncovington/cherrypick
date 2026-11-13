@@ -289,6 +289,25 @@ def test_an_untimed_report_takes_the_timings_files_time_for_the_same_date(tmp_pa
     assert metrics["SPY"]["earnings_time"] is None
 
 
+def test_a_date_yahoo_answered_is_marked_as_yahoos(tmp_path):
+    (tmp_path / "2026-11-12.json").write_text(
+        json.dumps(
+            {
+                "dates": {"2026-11-13": {"CLF": "bmo"}, "2026-11-14": {"RTX": "amc"}},
+                "sources": {"2026-11-13": "nasdaq", "2026-11-14": "yahoo"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    metrics = {
+        "CLF": {"earnings_date": "2026-11-13", "earnings_time": None},
+        "RTX": {"earnings_date": "2026-11-14", "earnings_time": None},
+    }
+    managesnap.fill_earnings_times(metrics, managesnap.earnings_times(date(2026, 11, 12), tmp_path))
+    assert (metrics["CLF"]["earnings_time"], metrics["CLF"]["earnings_time_source"]) == ("BTO", "nasdaq")
+    assert (metrics["RTX"]["earnings_time"], metrics["RTX"]["earnings_time_source"]) == ("AMC", "yahoo")
+
+
 def test_a_stale_or_missing_timings_file_fills_nothing(tmp_path):
     _times_file(tmp_path, "2026-10-01", {"2026-10-19": {"CLF": "bmo"}})
     assert managesnap.earnings_times(date(2026, 10, 18), tmp_path) == {}

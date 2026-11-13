@@ -124,6 +124,12 @@ def test_nasdaq_times_come_after_the_brokers_and_before_dolts():
     assert ec.pick_date((oct21, AMC), (oct21, False), [(date(2026, 10, 28), "bmo")])[5] == "dolt"
 
 
+def test_a_date_yahoo_answered_for_nasdaq_is_timed_as_yahoos():
+    oct21 = date(2026, 10, 21)
+    got = ec.pick_date((oct21, AMC), (oct21, False), [(oct21, "bmo", "yahoo")])
+    assert (got[1], got[5]) == ("bmo", "yahoo")
+
+
 def test_the_usual_time_is_the_last_timed_report_within_400_days():
     hist = [(date(2026, 4, 20), AMC), (date(2026, 7, 21), BMO), (date(2025, 1, 2), AMC)]
     assert ec.usual_time(hist, date(2026, 10, 20)) == "bmo"
@@ -138,7 +144,20 @@ def test_the_times_file_is_the_newest_fetched_before_the_next_session():
     for day, t in (("2026-10-15", "amc"), ("2026-10-17", "bmo"), ("2026-10-20", "amc")):
         _write(folder / f"{day}.json", {"dates": {"2026-10-21": {"PM": t}}})
     at, times = ec.times_on_file("2026-10-16")
-    assert at == "2026-10-17" and times["PM"] == [(date(2026, 10, 21), "bmo")]
+    # A file without `sources` is all Nasdaq's.
+    assert at == "2026-10-17" and times["PM"] == [(date(2026, 10, 21), "bmo", "nasdaq")]
+
+
+def test_each_date_in_the_times_file_carries_its_own_source():
+    _write(
+        paths.earnings_times_dir() / "2026-11-12.json",
+        {
+            "dates": {"2026-11-13": {"PM": "bmo"}, "2026-11-16": {"PM": "amc"}},
+            "sources": {"2026-11-13": "nasdaq", "2026-11-16": "yahoo"},
+        },
+    )
+    _, times = ec.times_on_file("2026-11-12")
+    assert times["PM"] == [(date(2026, 11, 13), "bmo", "nasdaq"), (date(2026, 11, 16), "amc", "yahoo")]
 
 
 def test_the_side_and_the_read_are_ours_and_the_brokers_never_the_vendors():
