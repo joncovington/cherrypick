@@ -315,7 +315,17 @@ def evaluate_trade(
     legs = _legs(raw_legs, session, spot, rate, broker_greeks, div_yield)
     override = _rules.override(rules, underlying, trade_id)
     is_covered = bool(covered and legs and all(leg["right"] == "C" and leg["quantity"] < 0 for leg in legs))
-    skips = COVERED_SKIPS if is_covered else frozenset()
+    # A short put on a name the operator wheels (intent "wheel", the name's or the trade's own), held
+    # by a cycle that reconciles: assignment is the wheel's next step, so the stop and the breached
+    # close give way to wheel.tested's roll, close or take the assignment (user, 2026-11-12: opt in
+    # per name, so a put the operator would not take shares on keeps them).
+    is_wheel_put = bool(
+        override.get("intent") == "wheel"
+        and legs
+        and all(leg["right"] == "P" and leg["quantity"] < 0 for leg in legs)
+        and any(item["cycle"]["reconciled"] for item in (wheel_ctx or {}).get("cycles") or [])
+    )
+    skips = COVERED_SKIPS if is_covered else WHEEL_PUT_SKIPS if is_wheel_put else frozenset()
 
     def off(rule_id: str) -> bool:
         return rule_id in skips or _rules.disabled(rules, underlying, rule_id, trade_id)
@@ -353,6 +363,7 @@ def evaluate_trade(
         "pmcc": None,
         "time_exit_skipped": None,
         "expiry_close_due": None,
+        "wheel_put": is_wheel_put,
         "covered": (
             {
                 "shares": covered["shares"],
@@ -721,10 +732,33 @@ def evaluate_trade(
             db["take_profit"], trade["shape"], "gain_fraction"
         )
         trade["exit_levels"]["stop"] = {"close_value": debit * (1 - float(db["stop"]["loss_fraction"]))}
+        # A diagonal is worth about its width at the short's expiry, so a target past what it can make
+        # there never fires (a PMCC at +75% of its debit sat above its whole call-away value): take
+        # the lesser of the debit target and `share` of its modelled gain at that expiry.
+        cap = db["take_profit"].get("max_gain_cap") or {}
+        capped_by = None
+        if (
+            trade["shape"] in (cap.get("shapes") or [])
+            and profile
+            and debit > 0
+            and profile["max_gain_from_open"] > 0
+        ):
+            ceiling = float(cap["share"]) * profile["max_gain_from_open"] / debit
+            if ceiling < gain:
+                gain, capped_by = (
+                    ceiling,
+                    {
+                        "share": float(cap["share"]),
+                        "max_gain": profile["max_gain_from_open"],
+                        "horizon": profile["horizon"],
+                        "modelled": True,
+                    },
+                )
         trade["exit_levels"]["take_profit"] = {
             "close_value": debit * (1 + gain),
             "target": gain,
             "by_shape": trade["shape"] if gain_shaped else None,
+            "capped_by_max_gain": capped_by,
         }
         if not off("debit.stop") and ret is not None and ret <= -float(db["stop"]["loss_fraction"]):
             fired.append(
@@ -743,7 +777,15 @@ def evaluate_trade(
                     TAKE_PROFIT,
                     gain_confidence,
                     f"up {ret:.0%} on the ${debit:,.0f} debit: take profit, roll or add "
-                    f"(target +{gain:.0%}" + (f", a {trade['shape']}'s own" if gain_shaped else "") + ")",
+                    f"(target +{gain:.0%}"
+                    + (f", a {trade['shape']}'s own" if gain_shaped and not capped_by else "")
+                    + (
+                        f", {capped_by['share']:.0%} of the ${capped_by['max_gain']:,.0f} it can make by "
+                        f"{capped_by['horizon']} (modelled)"
+                        if capped_by
+                        else ""
+                    )
+                    + ")",
                 )
             )
         ps = db["price_stop"]
@@ -1733,6 +1775,9 @@ def _opened_on(chain: dict[str, Any] | None, symbols: set[str], action: str) -> 
 # breached-strike close would buy the call back at a loss the shares have already gained, and the
 # call's modelled loss is unbounded only without them.
 COVERED_SKIPS = frozenset({"credit.stop", "credit.breached", "risk.oversize"})
+# The rules a wheel put (intent "wheel") is never judged by: a stop or a breached close would buy back,
+# at a loss, a put the operator means to be assigned on. The sizing review stays as the guard.
+WHEEL_PUT_SKIPS = frozenset({"credit.stop", "credit.breached"})
 
 
 def _covered_call_assigned(
@@ -2089,10 +2134,21 @@ def _wheel_rules(
             trade.setdefault("leg_orders", {})["wheel.take_profit"] = _order([leg for leg, *_ in taking])
         if tested:
             parts = []
-            for _, row, cands in tested:
+            for tleg, row, cands in tested:
+                choice = "roll out in time or close. "
+                if row["right"] == "P" and trade.get("wheel_put"):
+                    # A name the operator wheels: assignment is the next step, not a failure.
+                    shares = -tleg["quantity"] * pricing.MULTIPLIER
+                    be = (cycle.get("breakeven") or {}).get("price")
+                    choice = (
+                        "roll out in time for a credit, close, or take the assignment "
+                        f"({shares:g} shares at {tleg['strike']:g}, the cash already secures them"
+                        + (f"; wheel breakeven {be:.2f}" if be is not None else "")
+                        + "). "
+                    )
                 parts.append(
                     f"the {row['leg']} is tested ({row['spot']:g} at or through the strike): "
-                    "roll out in time or close. "
+                    + choice
                     + (
                         f"Rolls to {cands['expiration']} at "
                         + (

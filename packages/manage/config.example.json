@@ -67,6 +67,11 @@
         "calendar": {"gain_fraction": 0.25, "confidence": 55},
         "call zebra": {"gain_fraction": 0.25, "confidence": 55},
         "put zebra": {"gain_fraction": 0.25, "confidence": 55}
+      },
+      "max_gain_cap": {
+        "_comment": "A diagonal (a PMCC among them) is worth about its width at the short's expiry, so gain_fraction of its debit can sit past anything it can make. Its target is the lesser of that and share of its modelled gain by the short's expiry (the long at its own IV). No outside test.",
+        "shapes": ["diagonal"],
+        "share": 0.75
       }
     },
     "diagonal_width": {
@@ -198,7 +203,7 @@
     "roll_long": {
       "_comment": "Review rolling the long when it has days_left or fewer, or its delta is under min_delta.",
       "enabled": true,
-      "days_left": 120,
+      "days_left": 60,
       "min_delta": 0.7,
       "confidence": 45
     },
