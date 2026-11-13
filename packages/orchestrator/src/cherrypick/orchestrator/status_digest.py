@@ -1,14 +1,18 @@
 """Hourly suite status digest — one Discord card: the day so far, live first.
 
-The card answers three questions in reading order: what is live money doing, how did the paper
-arms do, and does anything need fixing. Live leads because it is the only part a person might act
-on mid-session; paper is one line per module; health is shown only when something is wrong (loop
-iterations, mark counts and blocked-attempt tallies are the console's job, not a phone's).
+The card answers four questions in reading order: what is live money doing, how do the real
+accounts stand, how did the paper arms do, and does anything need fixing. Live leads because it is
+the only part a person might act on mid-session; each account is one line plus the trades needing
+action; paper is one line per module that is switched on (or still holds something); health is
+shown only when something is wrong (loop iterations, mark counts and blocked-attempt tallies are
+the console's job, not a phone's).
 
 Composes what the suite already records rather than computing anything new: the review package's
 fact set (refreshed to a provisional build for today), the live ledgers through `report.live_run`
 plus flies' own book roll-up and live marks, the broker reconcile snapshot, the arm records, the
-watchdog's last snapshot, the morning overview pack's phase, and the live halt flag. The one
+day's position evaluation (packages/manage's `eval-<session>.json`, re-marked every minute by
+`manage-marks`), the watchdog's last snapshot, the morning overview pack's phase, and the live
+halt flag. The one
 subprocess is `python -m cherrypick.review build` — this package drives the review by subprocess,
 never by import, and an extra provisional build is the same idempotent operation the 16:30
 review-provisional job performs.
@@ -29,6 +33,7 @@ Two suite conventions this module must never regress on:
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 import subprocess
 from datetime import datetime
@@ -40,7 +45,7 @@ from cherrypick.core.config import first_present as _first_present
 from cherrypick.notify import Notifier
 
 from . import config as cfgmod
-from . import liveops, report, timeutil
+from . import liveops, managepost, report, timeutil
 from .util import CREATE_NO_WINDOW, read_json
 
 
@@ -266,43 +271,61 @@ def _live_inputs(cfg: dict, session: str) -> dict:
 def _status_line(
     morning: dict | None, watchdog: dict | None, facts: dict | None, session: str
 ) -> tuple[str, str, str]:
-    """(one-line card description, phase lowercase or '', watchdog overall or '')."""
+    """(card description, one line per fact; phase lowercase or ''; watchdog overall or '').
+
+    `market` is the morning pack's phase with its gate count; when it is not green, the gate that is
+    NOT met is named as `unmet:` -- the gate's name states the condition it wants, so printed bare
+    ("spot above gamma flip") it reads as the market's state, the opposite of what it means.
+    `health` is the watchdog's overall word and how many findings the Attention field lists."""
     bits: list[str] = []
     phase = ""
     if morning:
         ph = morning.get("phase") or {}
         phase = str(ph.get("phase") or "").lower()
-        s = phase.upper() or _DASH
+        s = f"market {phase.upper() or _DASH}"
         if ph.get("gates_met") is not None and ph.get("gates_total") is not None:
-            s += f" {ph['gates_met']}/{ph['gates_total']}"
+            s += f" · {ph['gates_met']}/{ph['gates_total']} gates"
         if phase != "green" and ph.get("reason"):
             # The gate's name only; its reference figures are the morning card's job.
             reason = str(ph["reason"]).removeprefix("blocked by: ").split(" (")[0]
-            s += f" ({reason[:1].lower()}{reason[1:]})"
+            s += f" · unmet: {reason[:1].lower()}{reason[1:]}"
         bits.append(s)
     else:
-        bits.append(f"phase {_DASH}")
+        bits.append(f"market {_DASH}")
     overall = str((watchdog or {}).get("overall") or "")
-    wd = f"watchdog {overall or _DASH}"
+    wd = f"health {overall or _DASH}"
     if watchdog is None:
-        wd += " (no snapshot)"
+        wd += " (no watchdog snapshot)"
     else:
+        bad = len(_bad_findings(watchdog))
+        if bad:
+            wd += f" · {bad} problem{'s' if bad != 1 else ''}, below"
         age = _age_minutes(watchdog.get("ts"))
         if age is not None and age > _STALE_MINUTES:
             wd += f" ({age}m old)"
     bits.append(wd)
     if facts is None:
         bits.append(f"no paper fact set for {session} yet")
-    return " · ".join(bits), phase, overall
+    return "\n".join(bits), phase, overall
+
+
+def _bad_findings(watchdog: dict | None) -> list[dict]:
+    return [f for f in (watchdog or {}).get("findings") or [] if f.get("status") not in (None, "OK")]
+
+
+# A failed pipeline step's message quotes the step's own last_error, which repeats the step and the
+# exit code it has just named: "... (exit 1: pipeline evening-data: step X failed (exit 1))".
+_PIPELINE_ECHO = re.compile(r" \(exit (\d+): pipeline [^:()]+: step [^()]+ failed \(exit \d+\)\)")
 
 
 def _attention_lines(watchdog: dict | None) -> list[str]:
     """Non-OK findings, title plus the first sentence of the message — the job names, not the
     runbook prose that follows them."""
-    bad = [f for f in (watchdog or {}).get("findings") or [] if f.get("status") not in (None, "OK")]
+    bad = _bad_findings(watchdog)
     lines = []
     for f in bad[:_MAX_FINDINGS]:
         msg = str(f.get("message") or "").split(". ")[0].rstrip(".")
+        msg = _PIPELINE_ECHO.sub(r" (exit \1)", msg)
         line = f"{f.get('status')}: {f.get('title')}"
         lines.append(f"{line} — {msg}"[:200] if msg else line)
     if len(bad) > _MAX_FINDINGS:
@@ -428,19 +451,26 @@ def _live_field(live: dict | None, halted: bool) -> tuple[str, str | None]:
             and not carried.get("positions")
         ):
             lines.append("no live entries yet")
-    if not modules:
-        lines.append("nothing live today")
-    if live.get("not_armed"):
-        lines.append("not armed: " + ", ".join(live["not_armed"]))
     severity = None
+    bline = None
     if modules or live.get("broker"):
         bline, severity = _broker_line(live.get("broker"))
-        lines.append(("⚠ " if severity else "") + bline)
+        bline = ("⚠ " if severity else "") + bline
+    not_armed = "not armed: " + ", ".join(live["not_armed"]) if live.get("not_armed") else None
+    if not modules:
+        # A quiet live day is one line: nothing on, what could be armed, and the broker's word.
+        lines.append(" · ".join(x for x in ("nothing live today", not_armed, bline) if x))
+    else:
+        lines.extend(x for x in (not_armed, bline) if x)
     return "\n".join(lines), severity
 
 
-def _paper_line(name: str, block: dict, prev_mod: dict | None) -> tuple[str, bool]:
-    """(one line, quiet). Quiet = measured and nothing happened: folded into one 'quiet:' line."""
+def _paper_line(
+    name: str, block: dict, prev_mod: dict | None, off: bool = False, legacy: bool = False
+) -> tuple[str, bool]:
+    """(one line, quiet). Quiet = measured and nothing happened: folded into one 'quiet:' line (or
+    the 'off:' list, for a module switched off in config). `legacy` = a fact set from before v7,
+    which carried no entry count."""
     if not block.get("ok"):
         return f"**{name}** ⚠ unreadable: {block.get('reason') or 'unknown'}", False
     prev_mod = prev_mod or {}
@@ -450,13 +480,19 @@ def _paper_line(name: str, block: dict, prev_mod: dict | None) -> tuple[str, boo
     entries, completions, closed = health.get("entries"), health.get("completions"), results.get("closed")
 
     parts = []
-    if entries is None:
-        parts.append(f"{_DASH} in")
+    # A module whose fact set has no `entries` at all (weeklyput's day is due/entered/settled) has
+    # nothing to count; only a present-but-null count, or a set from before the count existed, is
+    # an unmeasured one.
+    counts_entries = "entries" in health or legacy
+    if counts_entries and entries is None:
+        parts.append(f"{_DASH} entered")
     elif entries:
-        s = f"{entries} in"
+        s = f"{entries} entered"
         if completions:
             s += f" ({completions} done)"
         parts.append(s)
+        if block.get("settles_intraday") and not closed:
+            parts.append("settles at the close")
     if closed:
         s = _closed_bit(closed, results.get("net"), results.get("wins"), results.get("losses"))
         prev_closed, prev_net = prev_mod.get("closed"), prev_mod.get("net")
@@ -474,7 +510,8 @@ def _paper_line(name: str, block: dict, prev_mod: dict | None) -> tuple[str, boo
         parts.append(f"{carried['positions']} open {_dollars(carried.get('capital_at_risk'))} at risk{tail}")
 
     flags = []
-    if health and not health.get("loop_ticked"):
+    if health and not health.get("loop_ticked") and not off:
+        # A module switched off in config has no loop to tick; only one that should run is flagged.
         flags.append("⚠ loop not ticked")
     conc = block.get("concentration") or {}
     if conc.get("sign_flips_without_largest"):
@@ -485,6 +522,86 @@ def _paper_line(name: str, block: dict, prev_mod: dict | None) -> tuple[str, boo
     if not parts and not flags:
         return name, True
     return f"**{name}** " + " · ".join(parts + flags), False
+
+
+_MAX_ACTING = 3  # trades needing action listed per account; the manage post has the rest
+
+
+def _esc(s: str) -> str:
+    """A masked account (`****1234`) inside Discord markdown: unescaped, its stars open bold."""
+    return s.replace("*", "\\*")
+
+
+def _accounts_field(doc: dict | None) -> tuple[list[str], list[str]]:
+    """(field lines, message bits) from the day's position evaluation.
+
+    One line per account holding trades: its type, how many trades, the day's P&L (the evaluation's
+    `day_loss` row), the open trades' P&L net of fees, and buying power used. Under it: the trades
+    the rules say need action (`managepost.acting`, the manage post's own list), the limits outside
+    their band, and the short options near a strike. Advice only, like the evaluation; an account
+    with no trades spends no line. `{"missing": True}` = manage is on but nothing is written for
+    today yet."""
+    if doc is None:
+        return [], []
+    if doc.get("missing"):
+        return [f"positions {_DASH} (no evaluation for today yet)"], [f"accounts {_DASH}"]
+    if not doc.get("ok", True) or doc.get("error"):
+        return [f"⚠ evaluation failed: {doc.get('error') or 'unknown'}"[:200]], ["accounts failed"]
+    lines: list[str] = []
+    bits: list[str] = []
+    if doc.get("early") or doc.get("pre_open"):
+        lines.append("_early marks: verdicts wait for the open to settle_")
+    mark_ts = (doc.get("remark") or {}).get("at") or doc.get("snapshot_generated_at")
+    age = _age_minutes(mark_ts)
+    if age is not None and age > _STALE_MINUTES:
+        lines.append(f"⚠ marks {age}m old")
+    for a in doc.get("accounts") or []:
+        ref = managepost.account_ref(a)
+        if a.get("error"):
+            lines.append(f"⚠ {_esc(ref)} unreadable: {a['error']}"[:200])
+            bits.append(f"{ref} unreadable")
+            continue
+        trades = a.get("trades") or []
+        if not trades:
+            continue
+        pf = a.get("portfolio") or {}
+        kind = (pf.get("account_type") or {}).get("type_name")
+        rows = {r.get("id"): r for r in (a.get("limits") or {}).get("rows") or []}
+        nets = [t.get("pnl_net") for t in trades]
+        open_pnl = None if any(x is None for x in nets) else sum(nets)
+        bp = pf.get("buying_power_used_pct")
+        acting = managepost.acting(a)
+        head = f"**{kind}** {_esc(ref)}" if kind else f"**{_esc(ref)}**"
+        parts = [
+            f"{len(trades)} trade{'s' if len(trades) != 1 else ''}",
+            f"today {_money((rows.get('day_loss') or {}).get('value'))}",
+            f"open {_money(open_pnl)}",
+            f"BP {_DASH if bp is None else f'{bp:.0%}'}",
+        ]
+        if not acting:
+            parts.append("all hold")
+        lines.append(f"{head} · " + " · ".join(parts))
+        for t in acting[:_MAX_ACTING]:
+            rec = t.get("recommendation") or {}
+            what = t.get("trade_id") or t.get("underlying") or "?"
+            why = rec.get("reason") or rec.get("rule")
+            lines.append((f"⚠ {rec.get('action')} {what}" + (f": {why}" if why else ""))[:160])
+        if len(acting) > _MAX_ACTING:
+            lines.append(f"…and {len(acting) - _MAX_ACTING} more to act on")
+        outside = [
+            f"{str(i).replace('_', ' ')} {r['state']}"
+            for i, r in rows.items()
+            if r.get("state") in ("over", "under")
+        ]
+        if outside:
+            lines.append("outside band: " + ", ".join(outside))
+        near = sorted({str(i.get("underlying")) for i in (a.get("attention") or {}).get("items") or []})
+        if near:
+            lines.append("near a strike: " + ", ".join(near))
+        bits.append(f"{ref} {parts[0]}, {len(acting)} to act")
+    if not bits and not lines:
+        lines.append("no open trades")
+    return lines, bits
 
 
 def _card_color(phase: str, overall: str, broker: str | None = None, halted: bool = False) -> int:
@@ -507,11 +624,15 @@ def build_digest(
     prev: dict | None,
     close: bool = False,
     live: dict | None = None,
+    accounts: dict | None = None,
+    off: frozenset[str] | set[str] = frozenset(),
 ) -> tuple[str, str, dict, dict]:
     """The digest as (title, canonical message, Discord embed, snapshot-for-next-delta).
 
-    Pure over its inputs so tests can pin the two conventions (null renders as an em dash; no
-    suite-level net anywhere in the output) without touching a file or a clock.
+    `accounts` is the day's position evaluation (None: manage is off, no field); `off` names the
+    modules switched off in config, listed once instead of each flagged for a loop that is not
+    meant to run. Pure over its inputs so tests can pin the two conventions (null renders as an em
+    dash; no suite-level net anywhere in the output) without touching a file or a clock.
     """
     # The close card is the same composition with the day settled — the 0DTE books have expired by
     # 16:35, so its figures are the day's final intraday word, delta'd against the last hourly post.
@@ -520,15 +641,24 @@ def build_digest(
     live_value, broker_severity = _live_field(live, halted)
 
     fields = [{"name": "Live", "value": live_value[:_FIELD_MAX]}]
+    account_lines, account_bits = _accounts_field(accounts)
+    if account_lines:
+        fields.append({"name": "Accounts", "value": "\n".join(account_lines)[:_FIELD_MAX]})
     snapshot: dict[str, Any] = {"session": session, "hhmm": hhmm, "modules": {}}
     msg_bits: list[str] = []
 
     prev_modules = (prev or {}).get("modules") or {}
     paper_lines: list[str] = []
     quiet: list[str] = []
+    switched_off: list[str] = []
+    legacy = int((facts or {}).get("fact_version") or 0) < 7
     for name, block in ((facts or {}).get("modules") or {}).items():
-        line, is_quiet = _paper_line(name, block, prev_modules.get(name))
-        (quiet if is_quiet else paper_lines).append(line)
+        is_off = name in off
+        line, is_quiet = _paper_line(name, block, prev_modules.get(name), off=is_off, legacy=legacy)
+        if is_quiet:
+            (switched_off if is_off else quiet).append(line)
+        else:
+            paper_lines.append(line)
         results = block.get("results") or {}
         if block.get("ok"):
             # Only what the next post's "since last" reads.
@@ -538,12 +668,21 @@ def build_digest(
                 msg_bits.append(f"{name} {_money(results.get('net'))}/{closed}")
         else:
             msg_bits.append(f"{name} unreadable")
-    if quiet:
-        paper_lines.append("quiet: " + ", ".join(quiet))
-    if facts is not None and facts.get("status") and facts["status"] != "final":
-        paper_lines.append(f"_{facts['status']} figures_")
+    tail = [
+        x
+        for x in (
+            "quiet: " + ", ".join(quiet) if quiet else "",
+            "off: " + ", ".join(switched_off) if switched_off else "",
+        )
+        if x
+    ]
+    if tail:
+        paper_lines.append(" · ".join(tail))
     if paper_lines:
-        fields.append({"name": "Paper", "value": "\n".join(paper_lines)[:_FIELD_MAX]})
+        # Provisional until the next morning's final review; the field name says so, not a line.
+        status_word = (facts or {}).get("status")
+        label = f"Paper ({status_word})" if status_word and status_word != "final" else "Paper"
+        fields.append({"name": label, "value": "\n".join(paper_lines)[:_FIELD_MAX]})
 
     attention = _attention_lines(watchdog)
     if attention:
@@ -551,11 +690,13 @@ def build_digest(
 
     # The halt is already in the message as LIVE HALTED; don't spend a live slot repeating it.
     live_bits = [ln for ln in live_value.splitlines() if ln and not ln.startswith("**") and ln != _HALT_LINE]
-    message = f"Suite {'close' if close else 'digest'} {hhmm} ET — {status}"
+    message = f"Suite {'close' if close else 'digest'} {hhmm} ET — {status.replace(chr(10), ' · ')}"
     if halted:
         message += " · LIVE HALTED"
     if live_bits:
         message += " | live: " + "; ".join(live_bits[:3])
+    if account_bits:
+        message += " | accounts: " + "; ".join(account_bits)
     if msg_bits:
         message += " | paper: " + " · ".join(msg_bits)
 
@@ -584,13 +725,29 @@ def run(cfg: dict | None = None, force: bool = False, close: bool = False) -> di
     watchdog = read_json(cfgmod.STATE_DIR / "watchdog.last.json")
     halted = liveops.halt_flag_path().exists()
     live = _live_inputs(cfg, session)
+    accounts = None
+    if cfgmod.manage_settings(cfg)["enabled"]:
+        accounts = _load_session_artifact(corehome.data_dir("manage") / f"eval-{session}.json", session) or {
+            "missing": True
+        }
+    off = set(cfg.get("modules") or {}) - set(cfgmod.enabled_modules(cfg))
 
     prev = read_json(_state_path())
     if not (isinstance(prev, dict) and prev.get("session") == session):
         prev = None  # yesterday's watermark must not produce a delta against today
 
     title, message, embed, snapshot = build_digest(
-        session, hhmm, facts, watchdog, morning, halted, prev, close=close, live=live
+        session,
+        hhmm,
+        facts,
+        watchdog,
+        morning,
+        halted,
+        prev,
+        close=close,
+        live=live,
+        accounts=accounts,
+        off=off,
     )
     notifier = Notifier({**cfg.get("notify", {}), "channels": settings["channels"]})
     # No inputs fingerprinted: the provisional fact set is rebuilt every hour by design, so every
