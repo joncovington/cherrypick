@@ -333,6 +333,12 @@ DEFAULT_RULES: dict[str, Any] = {
             "evidence": "ours",
         },
         "stop": {"enabled": True, "share_of_max_loss": 0.50, "evidence": "ours"},
+        # Off: the 21-day exit is short premium's (most of the credit is earned by then, the gamma left
+        # is not worth the rest). A near-even-money trade earns from direction and takes its payoff's
+        # shape only near expiry, so closing at 21 days cuts its upside more than its capped downside.
+        # It is managed by its target, its stop and the expiry close. On, it closes at `dte` on the
+        # nearest short, as the credit exit does.
+        "time_exit": {"enabled": False, "dte": 21, "skip_if_entered_inside": True, "evidence": "practice"},
     },
     # Legs left out of the evaluation entirely. SPX 0DTE is the flies live loop's own book: it is
     # managed by that loop and settles in cash at the close, so judging it here only adds noise.
@@ -644,6 +650,7 @@ RULE_ORDER = (
     "legs.long_vertical",
     "credit.time_exit",
     "debit.time_exit",
+    "directional.time_exit",
     "roll.naked_put",
     "roll.diagonal_short",
     "wheel.tested",
@@ -680,6 +687,7 @@ RULE_IDS = (
     "pmcc.roll_long",
     "directional.take_profit",
     "directional.stop",
+    "directional.time_exit",
     "ex_dividend",
     "risk.oversize",
     "earnings_trade",

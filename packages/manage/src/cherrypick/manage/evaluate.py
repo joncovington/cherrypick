@@ -592,18 +592,19 @@ def evaluate_trade(
                     f"(stop at {stop_share:.0%})",
                 )
             )
-        te = rules["credit"]["time_exit"]
+        # Its own time exit, off by default (rules.py says why): with it off there is no exit date.
+        te = dr["time_exit"]
         inside = (
-            _entered_inside(trade, chain, short_expiries[0], int(te["dte"]), te, "credit.time_exit")
-            if trade["nearest_short_dte"] is not None
+            _entered_inside(trade, chain, short_expiries[0], int(te["dte"]), te, "directional.time_exit")
+            if trade["nearest_short_dte"] is not None and not off("directional.time_exit")
             else None
         )
-        if trade["nearest_short_dte"] is not None and not inside:
+        if trade["nearest_short_dte"] is not None and not off("directional.time_exit") and not inside:
             trade["exit_levels"]["time_exit"] = {"date": _exit_day(_date(short_expiries[0]), int(te["dte"]))}
-            if not off("credit.time_exit") and 0 <= trade["nearest_short_dte"] <= int(te["dte"]):
+            if 0 <= trade["nearest_short_dte"] <= int(te["dte"]):
                 fired.append(
                     _fire(
-                        "credit.time_exit",
+                        "directional.time_exit",
                         TAKE_PROFIT if pnl > 0 else CLOSE,
                         te["evidence"],
                         f"nearest short is {trade['nearest_short_dte']} DTE (exit at {te['dte']}); "

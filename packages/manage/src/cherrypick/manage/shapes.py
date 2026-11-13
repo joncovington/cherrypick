@@ -11,6 +11,10 @@ Shapes, one expiry unless said otherwise:
   short the lower call, long the higher call), put strikes at or below the call strikes. OIC calls it a
   double bear spread. Bearish, defined risk both ways, usually opened near even money.
 - super bull: the mirror -- a short put spread below a long call spread.
+- super bull (diagonal) / super bear (diagonal): across two expiries, a super bull whose long call
+  expires after the other legs (a call diagonal over the short put spread), and the mirror, a super
+  bear whose long put does (a put diagonal under the short call spread). The payoff is modelled at the
+  front expiry, with the later long valued there.
 - jade lizard: a short put (no long put) with a short call spread above it, taken in for at least the
   call spread's width, which leaves no upside risk. big lizard: the same with the short put at the
   short call's strike. reverse jade lizard / reverse big lizard: the mirror -- a short call (no long
@@ -69,6 +73,9 @@ def classify(options: list[dict[str, Any]], cost: float | None) -> str:
     if len(expiries) > 1:
         if _ratio(options):
             return "ratio time spread"
+        super_diagonal = _super_diagonal(options)
+        if super_diagonal:
+            return super_diagonal
         shorts = [leg for leg in options if leg["quantity"] < 0]
         if shorts and min(s["expiration"] for s in shorts) < max(leg["expiration"] for leg in options):
             strikes = {leg["strike"] for leg in options}
@@ -201,6 +208,36 @@ def _broken_heart(legs: list[dict[str, Any]]) -> str | None:
     return "broken-heart butterfly" if short_width > long_width + 1e-9 else None
 
 
+def _super_diagonal(legs: list[dict[str, Any]]) -> str | None:
+    """A super bull or bear whose long on the side it is betting on expires after the other three legs,
+    one size throughout.
+
+    super bull (diagonal): a short put spread with a call diagonal above it -- the long call below the
+    short call and later, the short put at or below the long call.
+    super bear (diagonal): the mirror -- a short call spread with a put diagonal below it, the long put
+    above the short put and later, the long put at or below the short call.
+    """
+    if len(legs) != 4:
+        return None
+    puts, calls = _vertical(legs, "P"), _vertical(legs, "C")
+    if puts is None or calls is None:
+        return None
+    (p_long, p_short), (c_long, c_short) = puts, calls
+    if abs(p_short["quantity"]) != abs(c_short["quantity"]):
+        return None
+    if (
+        p_long["expiration"] == p_short["expiration"] == c_short["expiration"] < c_long["expiration"]
+        and p_long["strike"] < p_short["strike"] <= c_long["strike"] < c_short["strike"]
+    ):
+        return "super bull (diagonal)"
+    if (
+        c_long["expiration"] == c_short["expiration"] == p_short["expiration"] < p_long["expiration"]
+        and p_short["strike"] < p_long["strike"] <= c_short["strike"] < c_long["strike"]
+    ):
+        return "super bear (diagonal)"
+    return None
+
+
 def _ratio(legs: list[dict[str, Any]]) -> str | None:
     """Long-short-long at three strikes of one right, the wings together matching the body but not 1-2-1:
     its quantities read from the top strike ("1-3-2"), reduced. None for anything else, a 1-2-1 included
@@ -241,6 +278,8 @@ NAMES = frozenset(
         "long call",
         "super bear",
         "super bull",
+        "super bull (diagonal)",
+        "super bear (diagonal)",
         "iron butterfly",
         "iron condor",
         "jade lizard",
@@ -267,7 +306,16 @@ NAMES = frozenset(
 
 # The shapes that own a direction and are usually opened near even money: judged on what they can win
 # and lose, never on a percentage of their premium.
-DIRECTIONAL = frozenset({"super bear", "super bull", "risk reversal (bear)", "risk reversal (bull)"})
+DIRECTIONAL = frozenset(
+    {
+        "super bear",
+        "super bull",
+        "super bear (diagonal)",
+        "super bull (diagonal)",
+        "risk reversal (bear)",
+        "risk reversal (bull)",
+    }
+)
 # Also judged on risk when bought cheaply against a large tail: a broken-wing butterfly's premium says
 # little about what it can lose on the wide-wing side (GLD on 2026-10-13: $193 in, $1,693 at risk), and
 # a broken-heart butterfly gives up nearly all its credit to put the gap between its two spreads.

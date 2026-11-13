@@ -111,10 +111,15 @@ a debit trade like any other.
 Three shape families change how a trade is judged:
 
 - **Super bear / super bull / risk reversal.** A super bear is a long put spread below a short call
-  spread (OIC's double bear spread); a super bull is the mirror. A risk reversal is long one side and short
+  spread (OIC's double bear spread); a super bull is the mirror. Their diagonal forms, `super bull
+  (diagonal)` and `super bear (diagonal)`, move the long on the side the trade bets on to a later
+  expiry; their max gain and loss are modelled at the front expiry with that long valued there, and
+  they are judged as directional, not by the diagonal rules. A risk reversal is long one side and short
   the other. These earn from direction, and are usually opened near even money. When the net premium is
   under a quarter of the modelled max loss, the trade is `directional`: it takes profit at half its max
-  gain (capped at 1x its risk), stops at half its max loss, and exits at 21 DTE. Percentages of a $23 credit
+  gain (capped at 1x its risk), stops at half its max loss, and is held to the expiry close: no 21-day
+  exit, which is short premium's rule and would cut a directional payoff before it takes its shape
+  (`directional.time_exit`, off by default). Percentages of a $23 credit
   measure nothing; CCC on 2026-01-12 (invented) was being closed on a $24 loss against a $260 risk.
 - **Lizards.** A jade lizard (and the variant with a put wing) or a big lizard, taken in for at least
   the call spread's width, has no upside risk, so an in-the-money call is not a broken thesis: the
@@ -199,6 +204,7 @@ presenter who cuts losers rather than the one who repairs them, and checked agai
 | `risk.oversize` | modelled downside > 3× (2% of net liq) | review | practice | vendor's 2%-per-trade rule | Direction supported (fractional Kelly); the numbers are convention |
 | `directional.take_profit` | a `directional` trade (net premium under ¼ of its modelled max loss) at half its modelled max gain, capped at 1× its risk | take profit | ours | our rule: a percentage of a small premium measures nothing | No outside test |
 | `directional.stop` | a `directional` trade at half its modelled max loss | close | ours | our rule | No outside test |
+| `directional.time_exit` | off; on, a `directional` trade at 21 DTE on its nearest short, skipped when that short was opened inside 21 days | take profit or close | practice | the credit exit's convention, borrowed | None for directional trades. The 21-day exit is short premium's; our put-spread studies (items 15 and 16) found it no better than holding, and a directional trade takes its payoff's shape only near expiry |
 | `earnings_trade` | an **earnings trade**: opened 0–7 days before a report (the report's own day only for one after the close), its nearest short expiring no more than 14 days after (on the report's day only for a report before the open). Before the call it holds, and its close, take-profit, stop and roll rules wait, and so does the expiry close when the trade comes off after the call on or before its legs' expiry day (that morning, before the close it guards); after the call (the day after the report, or the report's day when before the open) it closes, unless it is losing with a leg in a later expiry (a diagonal, a calendar), which can recover and is left to the ordinary rules (`kept`). That day, not expiry less 21 days, is its time exit: the report's day when before the open (the broker's `BTO`, a calendar's `BMO`), else the next trading day. An untimed report waits the extra day, so the snapshot fills a time the broker leaves blank from the timings file for the same date: Nasdaq's calendar, or Yahoo's where Nasdaq did not answer (`earnings_time_source` names which). A rescheduled report, or a corrected time, moves the trade with it |  hold, then close | ours | your practice: earnings trades go on 1–7 days before the call and come off after it; the report's own day counts before an after-the-close call, the expiry close waits when the post-call close comes first, expiry morning included, and a losing multi-expiry trade is kept after the call | None tested here. Safety rules (expiry and assignment, ex-dividend), sizing and unpriced legs never wait, except that expiry close; on the day after the call nothing waits, and the expiry close stands beside the earnings close |
 
 **An earnings trade is remembered past its report.** The day after a report the broker may already

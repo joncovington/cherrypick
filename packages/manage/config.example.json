@@ -285,6 +285,12 @@
       "enabled": true,
       "share_of_max_loss": 0.5,
       "evidence": "ours"
+    },
+    "time_exit": {
+      "enabled": false,
+      "dte": 21,
+      "skip_if_entered_inside": true,
+      "evidence": "practice"
     }
   },
   "exclude": {

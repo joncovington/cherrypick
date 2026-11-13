@@ -593,6 +593,16 @@ SHAPE_NOTES = {
         "This is a super bull: a long call spread above a short put spread, opened near even money. It earns "
         "from the stock rising, so it is judged on what it can win and lose, not on its small premium."
     ),
+    "super bear (diagonal)": (
+        "This is a super bear (diagonal): a put diagonal, its long put expiring later, below a short call "
+        "spread, opened near even money. It earns from the stock falling, so it is judged on what it can "
+        "win and lose at the front expiry, with the long put valued there, not on its small premium."
+    ),
+    "super bull (diagonal)": (
+        "This is a super bull (diagonal): a call diagonal, its long call expiring later, above a short put "
+        "spread, opened near even money. It earns from the stock rising, so it is judged on what it can "
+        "win and lose at the front expiry, with the long call valued there, not on its small premium."
+    ),
     "risk reversal (bear)": (
         "This is a bearish risk reversal: long puts paid for by short calls. It earns from the stock "
         "falling, "
