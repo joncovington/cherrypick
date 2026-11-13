@@ -398,3 +398,64 @@ def test_a_cheap_broken_wing_butterfly_is_judged_on_its_tail():
     assert "debit.stop" not in fired(t)
     assert t["recommendation"]["rule"] == "risk.oversize"
     assert "broken-wing butterfly" in t["explanation"]
+
+
+# A super bull with its long call a month later: the 95/90 put spread and the 115 call in November, the
+# 110 call in December, opened for a $5 debit. Invented; the shape is the account's 2026-11-12 trade.
+SUPER_BULL_DIAGONAL = [
+    leg(-1, "P", 95, NOV, 1.60, 1.60),
+    leg(1, "P", 90, NOV, 0.60, 0.60),
+    leg(1, "C", 110, DEC, 1.30, 1.30),
+    leg(-1, "C", 115, NOV, 0.25, 0.25),
+]
+# The mirror: the 105/110 call spread and the 85 put in November, the 90 put in December.
+SUPER_BEAR_DIAGONAL = [
+    leg(-1, "C", 105, NOV, 1.60, 1.60),
+    leg(1, "C", 110, NOV, 0.60, 0.60),
+    leg(1, "P", 90, DEC, 1.30, 1.30),
+    leg(-1, "P", 85, NOV, 0.25, 0.25),
+]
+
+
+@pytest.mark.parametrize(
+    "legs, name",
+    [(SUPER_BULL_DIAGONAL, "super bull (diagonal)"), (SUPER_BEAR_DIAGONAL, "super bear (diagonal)")],
+)
+def test_a_super_with_its_long_a_month_later_is_judged_on_its_risk_not_the_diagonal_rules(legs, name):
+    assert shapes.classify(opts(legs), cost(legs)) == name
+    assert name in shapes.NAMES
+    t = run(legs)
+    assert t["shape"] == name
+    assert t["kind"] == "directional"
+    assert "debit.diagonal_width" not in fired(t)
+    d = t["directional"]
+    # At November's expiry: the $500 spread against it, plus the $5 debit, less what the December long
+    # is still worth that far out of the money -- a little.
+    assert 400 < d["max_loss"] <= 505
+    assert d["max_gain"] > d["max_loss"]
+    assert f"This is a {name}" in t["explanation"]
+
+
+@pytest.mark.parametrize(
+    "legs",
+    [
+        # The put spread in December with the long call: no longer one front expiry for the three.
+        [{**x, "expiration": DEC} if x["right"] == "P" else x for x in SUPER_BULL_DIAGONAL],
+        # The long call above the short call: a bear call diagonal over a short put spread.
+        [
+            leg(-1, "P", 95, NOV, 1.60, 1.60),
+            leg(1, "P", 90, NOV, 0.60, 0.60),
+            leg(1, "C", 120, DEC, 0.40, 0.40),
+            leg(-1, "C", 115, NOV, 0.25, 0.25),
+        ],
+        # The long call below the short put: the call side overlaps the put side.
+        [
+            leg(-1, "P", 95, NOV, 1.60, 1.60),
+            leg(1, "P", 90, NOV, 0.60, 0.60),
+            leg(1, "C", 92, DEC, 9.00, 9.00),
+            leg(-1, "C", 115, NOV, 0.25, 0.25),
+        ],
+    ],
+)
+def test_near_misses_of_a_super_diagonal_stay_diagonals(legs):
+    assert shapes.classify(opts(legs), cost(legs)) == "diagonal"

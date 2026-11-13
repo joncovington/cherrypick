@@ -111,7 +111,10 @@ a debit trade like any other.
 Three shape families change how a trade is judged:
 
 - **Super bear / super bull / risk reversal.** A super bear is a long put spread below a short call
-  spread (OIC's double bear spread); a super bull is the mirror. A risk reversal is long one side and short
+  spread (OIC's double bear spread); a super bull is the mirror. Their diagonal forms, `super bull
+  (diagonal)` and `super bear (diagonal)`, move the long on the side the trade bets on to a later
+  expiry; their max gain and loss are modelled at the front expiry with that long valued there, and
+  they are judged as directional, not by the diagonal rules. A risk reversal is long one side and short
   the other. These earn from direction, and are usually opened near even money. When the net premium is
   under a quarter of the modelled max loss, the trade is `directional`: it takes profit at half its max
   gain (capped at 1x its risk), stops at half its max loss, and exits at 21 DTE. Percentages of a $23 credit
