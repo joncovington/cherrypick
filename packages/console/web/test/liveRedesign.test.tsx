@@ -233,6 +233,13 @@ describe("Live → positions", () => {
     expect(notEvaluatedWords([])).toBeNull();
   });
 
+  it("keeps the snapshot and ruleset line out of the head, naming only a default ruleset", () => {
+    expect(page(manage({ rulesSource: "/x/manage.json" }))).not.toContain("· snapshot");
+    expect(page(manage({ rulesSource: "/x/manage.json" }))).not.toContain("/x/manage.json");
+    expect(page(manage({ rulesSource: "/x/manage.json" }))).not.toContain("the shipped default");
+    expect(page(manage({ rulesSource: null }))).toContain("ruleset manage-test: the shipped default");
+  });
+
   it("moves the method line behind the header's ?", () => {
     const html = page(manage());
     expect(html).not.toContain("advice only: marks are mids");

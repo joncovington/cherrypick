@@ -566,11 +566,22 @@ function EvalHead({ card, wrap }: { card: ReactNode; wrap: boolean }) {
   );
 }
 
-function evalHelp(view: keyof typeof VIEW_TITLE): CardHelpContent {
+function evalHelp(view: keyof typeof VIEW_TITLE, data: ManagePayload | undefined): CardHelpContent {
   return {
     title: "Reading the evaluation",
     body: (
       <>
+        <HelpSection title="This reading">
+          <p>
+            Session {data?.session ?? "—"}, snapshot {etStamp(data?.snapshotGeneratedAt ?? null) ?? data?.snapshotGeneratedAt ?? "—"},
+            ruleset {data?.ruleset ?? "—"} ({data?.rulesSource ?? "shipped default"}).
+          </p>
+          <p>
+            Live marks re-price the newest evaluation from the stream on its own basis and levels; the verdicts stay the
+            evaluation&apos;s. The head shows a line only when something qualifies the reading: a late snapshot, legs not
+            streaming, closing marks, a default ruleset or a rule warning.
+          </p>
+        </HelpSection>
         <HelpSection title="What this is">
           <p>
             Manage&apos;s evaluation of every trade in the account against the ruleset, every 30 minutes from 10:00 to 16:35 ET. Advice only:
@@ -739,7 +750,7 @@ function EvaluationPage({ view }: { view: keyof typeof VIEW_TITLE }) {
         title={title}
         updatedAt={snapMs ?? undefined}
         isError={isError}
-        help={evalHelp(view)}
+        help={evalHelp(view, data)}
         controls={
           <>
             {accountPicker}
@@ -749,11 +760,13 @@ function EvaluationPage({ view }: { view: keyof typeof VIEW_TITLE }) {
           </>
         }
       >
-        <p className="muted" style={{ margin: 0 }}>
-          {data?.session ?? "…"} · snapshot {etStamp(data?.snapshotGeneratedAt ?? null) ?? data?.snapshotGeneratedAt ?? "—"}
-          {snapMs !== null && newest ? `, ${ageText(nowMs - snapMs)} old` : ""} · ruleset {data?.ruleset ?? "—"} (
-          {data?.rulesSource ?? "shipped default"})
-        </p>
+        {/* The session, the snapshot's time and the ruleset are in the ? help: the selects show the
+            session and the card's "as of" the time, so the head carries only what qualifies the reading. */}
+        {data && !data.rulesSource && (
+          <p className="muted" style={{ margin: 0 }}>
+            ruleset {data.ruleset ?? "—"}: the shipped default (no <code>manage.json</code>)
+          </p>
+        )}
         {late !== null && (
           <p
             className="pnl-neg"
@@ -763,7 +776,10 @@ function EvaluationPage({ view }: { view: keyof typeof VIEW_TITLE }) {
             greek and verdict here is older than the schedule says
           </p>
         )}
-        <LiveStatus />
+        <LiveStatus
+          accounts={chosen === ALL_ACCOUNTS || chosen === null ? null : [chosen]}
+          day={view === "positions" || view === "portfolio"}
+        />
         {data?.error && <p className="pnl-neg">evaluation error: {data.error}</p>}
         {data?.snapshotStale && (
           <p className="pnl-neg" title="the watchdog's manage.snapshot_version check; no broker read is made to fix it">
