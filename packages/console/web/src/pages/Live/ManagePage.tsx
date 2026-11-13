@@ -1,6 +1,7 @@
 import { EvidenceTag } from "../../components/EvidenceTag";
 import { useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useSearchParams } from "react-router-dom";
 import type { ManageAccount, ManageLevel, ManagePayload, ManageTrade } from "@console/shared";
 import { Card } from "../../components/DataTable";
 import { HelpSection, type CardHelpContent } from "../../components/CardHelp";
@@ -634,6 +635,25 @@ export function rulesetBox(ruleset: string | null | undefined, rules: Record<str
   };
 }
 
+/** The query key the account select writes. It rides along on every tab link, so the choice holds
+ *  from positions to portfolio, wheel and pmcc. */
+export const ACCOUNT_PARAM = "acct";
+export const ALL_ACCOUNTS = "all";
+
+const accountKey = (a: Pick<ManageAccount, "account">) => a.account ?? "?";
+
+/**
+ * Which account the tabs draw: the one the query names when the evaluation has it, every account
+ * when asked for `all`, and otherwise the first (the main login's). With one account there is no
+ * select and that account is the page; null only when there is none.
+ */
+export function pickAccount(names: string[], asked: string | null): string | null {
+  if (names.length === 0) return null;
+  if (names.length === 1) return names[0]!;
+  if (asked === ALL_ACCOUNTS) return ALL_ACCOUNTS;
+  return asked !== null && names.includes(asked) ? asked : names[0]!;
+}
+
 /**
  * The four tabs read one evaluation file (2026-10-18: split from the single `manage` tab, whose dozen
  * account cards had buried the action list; 2026-10-20: the wheel, then the PMCCs). Each keeps the
@@ -653,6 +673,30 @@ function EvaluationPage({ view }: { view: keyof typeof VIEW_TITLE }) {
   // Live marks only beside the newest evaluation, and only on the views that show marks or greeks.
   const wantLive = newest && (view === "positions" || view === "portfolio" || view === "wheel" || view === "pmcc");
   const live = liveMarks(useManageLive(wantLive).data);
+  const accounts = data?.accounts ?? [];
+  const [params, setParams] = useSearchParams();
+  const chosen = pickAccount(accounts.map(accountKey), params.get(ACCOUNT_PARAM));
+  const shown = chosen === ALL_ACCOUNTS ? accounts : accounts.filter((a) => accountKey(a) === chosen);
+  const accountPicker =
+    accounts.length > 1 ? (
+      <select
+        className="chip review-session-select"
+        value={chosen ?? ""}
+        onChange={(e) => {
+          const next = new URLSearchParams(params);
+          next.set(ACCOUNT_PARAM, e.target.value);
+          setParams(next, { replace: true });
+        }}
+        aria-label="account"
+      >
+        {accounts.map((a) => (
+          <option key={accountKey(a)} value={accountKey(a)}>
+            {accountTitle(a)}
+          </option>
+        ))}
+        <option value={ALL_ACCOUNTS}>all accounts</option>
+      </select>
+    ) : null;
   const picker =
     sessions.length > 1 ? (
       <select
@@ -698,6 +742,7 @@ function EvaluationPage({ view }: { view: keyof typeof VIEW_TITLE }) {
         help={evalHelp(view)}
         controls={
           <>
+            {accountPicker}
             {picker}
             <BoxButton id="ruleset">ruleset</BoxButton>
             <BoxButton id="pricing">pricing</BoxButton>
@@ -759,7 +804,7 @@ function EvaluationPage({ view }: { view: keyof typeof VIEW_TITLE }) {
         }
       />
       <VerdictsHeld.Provider value={data?.early ? (data.early.verdictsFrom ?? "10:00") : null}>
-        {(data?.accounts ?? []).map((a) =>
+        {shown.map((a) =>
           view === "positions" ? (
             <PositionsAccount key={a.account ?? "?"} a={a} loading={isLoading} oversize={oversizeMultiple(data?.rules)} />
           ) : view === "portfolio" ? (

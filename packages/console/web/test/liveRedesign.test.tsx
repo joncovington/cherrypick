@@ -6,7 +6,7 @@ import type { LiveFliesPayload, LiveMeicOpenRow, LiveMeicPayload, LivePosition, 
 import { ListViewContext, useViewChoice } from "../src/components/ViewSwitch";
 import { writePref } from "../src/lib/prefs";
 import { LivePage, positionModel } from "../src/pages/Live/LivePage";
-import { PositionsPage, notEvaluatedWords, rulesetBox } from "../src/pages/Live/ManagePage";
+import { ALL_ACCOUNTS, PositionsPage, notEvaluatedWords, pickAccount, rulesetBox } from "../src/pages/Live/ManagePage";
 import { MeicLivePage, icLineFor, keptShare, openModel, stopWords } from "../src/pages/Live/MeicLivePage";
 import { MeicReadinessCard } from "../src/pages/Live/MeicReadinessCard";
 import { handModel } from "../src/pages/Live/HandToday";
@@ -246,6 +246,56 @@ describe("Live → positions", () => {
     expect(rules).toContain("risk.oversize_multiple");
     expect(rules).toContain("take_profit");
     expect(text(renderToString(<>{box.body("raw")}</>))).toContain('"oversize_multiple": 2');
+  });
+
+  const twoAccounts = () => {
+    const base = manage().accounts[0]!;
+    return manage({
+      accounts: [
+        { ...base, account: "****1234", netLiq: 100000 },
+        { ...base, account: "other ****7777", loginLabel: "Other", netLiq: 5000 },
+      ],
+    } as Partial<ManagePayload>);
+  };
+  const pageAt = (url: string, m: ManagePayload) => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    qc.setQueryData(["manage", "latest"], m);
+    return text(
+      renderToString(
+        <QueryClientProvider client={qc}>
+          <MemoryRouter initialEntries={[url]}>
+            <PositionsPage />
+          </MemoryRouter>
+        </QueryClientProvider>,
+      ),
+    );
+  };
+
+  it("draws one account at a time, the first unless the select names another", () => {
+    const first = pageAt("/live/positions", twoAccounts());
+    expect(first).toContain('aria-label="account"');
+    expect(first).toContain("net liq · ****1234");
+    expect(first).not.toContain("net liq · other ****7777");
+    const second = pageAt("/live/positions?acct=other%20****7777", twoAccounts());
+    expect(second).toContain("net liq · other ****7777 (Other)");
+    expect(second).not.toContain("net liq · ****1234");
+    const all = pageAt("/live/positions?acct=all", twoAccounts());
+    expect(all).toContain("net liq · ****1234");
+    expect(all).toContain("net liq · other ****7777");
+  });
+
+  it("draws no account select with one account", () => {
+    expect(pageAt("/live/positions?acct=gone", manage())).not.toContain('aria-label="account"');
+    expect(pageAt("/live/positions?acct=gone", manage())).toContain("net liq · ****1234");
+  });
+
+  it("picks the named account, all, or the first when the name is unknown", () => {
+    expect(pickAccount([], "x")).toBeNull();
+    expect(pickAccount(["a"], "b")).toBe("a");
+    expect(pickAccount(["a", "b"], null)).toBe("a");
+    expect(pickAccount(["a", "b"], "b")).toBe("b");
+    expect(pickAccount(["a", "b"], "gone")).toBe("a");
+    expect(pickAccount(["a", "b"], ALL_ACCOUNTS)).toBe(ALL_ACCOUNTS);
   });
 });
 
