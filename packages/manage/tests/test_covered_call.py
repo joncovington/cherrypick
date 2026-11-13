@@ -25,7 +25,7 @@ def test_a_call_the_shares_cover_is_a_covered_call_and_its_call_away_is_reviewed
     names = fired(t)
     assert not {"credit.stop", "credit.breached", "risk.oversize"} & set(names)
     f = names["covered_call.assigned"]
-    assert f["action"] == ev.REVIEW and f["confidence"] == 75
+    assert f["action"] == ev.REVIEW and f["evidence"] == "mechanics"
     # Shares with a call written against them are a wheel cycle too: its basis counts the premium.
     assert "49.22 wheel basis" in f["reason"] and "$578 over it" in f["reason"]
     assert t["recommendation"]["rule"] == "covered_call.assigned"

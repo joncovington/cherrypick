@@ -14,7 +14,7 @@ def test_a_naked_short_put_told_to_close_rolls_out_for_a_credit_instead():
     rec = t["recommendation"]
     assert rec["action"] == ev.ROLL_FOR_CREDIT
     assert rec["replaces"] == ["credit.breached"]
-    assert rec["conflicts"] == [] and rec["confidence"] == 60  # its trigger is not counted against it
+    assert rec["conflicts"] == [] and rec["evidence"] == "practice"  # its trigger is not counted against it
     roll = t["roll"]
     assert roll["expiration"] == "2026-12-18" and roll["strike"] == 16
     assert roll["credit"] > 0.10

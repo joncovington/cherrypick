@@ -1,3 +1,4 @@
+import { EvidenceTag } from "../../components/EvidenceTag";
 import type { ReactNode } from "react";
 import type { ManageBand, ManageDeltaIdeas, ManageGuidance, ManageGuidanceFigure, ManageLimits, ManageLiveAccount, ManagePortfolio, ManagePremium } from "@console/shared";
 import { Card } from "../../components/DataTable";
@@ -500,13 +501,13 @@ function driverFigure(f: ManageGuidanceFigure, benchmark: string | null): string
 }
 
 /** One guidance item as its own small card: the topic as an amber chip (every item is a review), the
- *  rule's confidence, its reason, and what drives it. */
+ *  rule's evidence grade, its reason, and what drives it. */
 function GuidanceItem({ g, benchmark }: { g: ManageGuidance; benchmark: string | null }) {
   return (
     <section className="md-card" title={g.rule}>
       <header>
         <span className="chip chip-warn">{guidanceTopic(g.rule)}</span>
-        {g.confidence !== null ? <span className="muted pf-guide-conf">confidence {g.confidence}</span> : null}
+        <EvidenceTag evidence={g.evidence} confidence={g.confidence} className="pf-guide-conf" />
       </header>
       <p className="pf-guide-reason">{g.reason}</p>
       {g.drivers.length > 0 && (
@@ -523,9 +524,11 @@ function GuidanceItem({ g, benchmark }: { g: ManageGuidance; benchmark: string |
   );
 }
 
-/** The ruleset's own confidence for the portfolio rules, as the caption states it: one figure when
- *  they agree, the range when they do not, and none when the evaluation embeds no ruleset. */
-function confidenceText(c: ManagePortfolio["ruleConfidence"]): string {
+/** The ruleset's own grades for the portfolio rules, as the caption states them; an evaluation
+ *  written before grades states its old confidence (one figure, or the range), and one with no
+ *  ruleset states nothing. */
+function confidenceText(c: ManagePortfolio["ruleConfidence"], grades: string[] = []): string {
+  if (grades.length) return ` (evidence: ${grades.join(", ")})`;
   if (!c) return "";
   return c.low === c.high ? ` at confidence ${c.low}` : ` at confidence ${c.low}–${c.high}`;
 }
@@ -833,10 +836,10 @@ export function guidanceHelp(p: ManagePortfolio): CardHelpContent {
     body: (
       <>
         <HelpWarn title="No published evidence">
-          <p>Retail heuristics{confidenceText(p.ruleConfidence)}: no published evidence stands behind these bands.</p>
+          <p>Retail heuristics{confidenceText(p.ruleConfidence, p.ruleEvidence ?? [])}: no published evidence stands behind these bands.</p>
         </HelpWarn>
         <HelpSection title="Each item">
-          <p>A portfolio rule the book is outside of today: its reason, the rule's confidence, and the names driving it in each figure's own unit.</p>
+          <p>A portfolio rule the book is outside of today: its reason, the rule's evidence grade, and the names driving it in each figure's own unit.</p>
         </HelpSection>
         <GuideLink to="/help/live#portfolio" />
       </>

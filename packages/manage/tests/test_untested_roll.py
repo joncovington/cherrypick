@@ -84,7 +84,7 @@ def test_a_tested_strangle_whose_untested_side_has_premium_left_gets_a_review():
     t = run(legs, spot, chain(spot, range(85, 112)))
     assert "legs.short_take_profit" not in fired(t)
     assert fired(t)["roll.untested_side"] == ev.REVIEW
-    # A naked strangle's unbounded loss is also a review, at a higher confidence: it heads the
+    # A naked strangle's unbounded loss is also a review, earlier in the rule order: it heads the
     # recommendation, and the roll is named beside it.
     rec = t["recommendation"]
     assert rec["action"] == ev.REVIEW and rec["rule"] == "risk.oversize"

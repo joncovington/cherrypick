@@ -89,24 +89,25 @@ def _money(x: Any) -> str:
 def _line(t: dict[str, Any]) -> str:
     rec = t.get("recommendation") or {}
     action = str(rec.get("action") or "?").replace("_", " ")
-    conf = rec.get("confidence")
+    # The rule's evidence grade; an evaluation written before grades carries its old number instead.
+    grade = rec.get("evidence") if rec.get("evidence") is not None else rec.get("confidence")
     what = " ".join(str(x) for x in (t.get("trade_id") or t.get("underlying"), t.get("shape")) if x)
-    head = f"**{what}**: {action}" + (f" ({conf})" if conf is not None else "")
+    head = f"**{what}**: {action}" + (f" ({grade})" if grade is not None else "")
     why = rec.get("reason") or rec.get("rule")
     return f"{head} · {_money(t.get('pnl_gross'))} gross" + (f" · {why}" if why else "")
 
 
 def acting(account: dict[str, Any]) -> list[dict[str, Any]]:
-    """The account's trades needing action, most urgent first, then by confidence."""
+    """The account's trades needing action, most urgent first; within an action, in the evaluation's
+    own order (a grade is a kind of evidence, not a rank)."""
     out = [
         t
         for t in account.get("trades") or []
         if str((t.get("recommendation") or {}).get("action") or "HOLD") not in QUIET
     ]
 
-    def key(t: dict[str, Any]) -> tuple[int, int]:
-        rec = t.get("recommendation") or {}
-        return _ORDER.get(str(rec.get("action")), 1), -int(rec.get("confidence") or 0)
+    def key(t: dict[str, Any]) -> int:
+        return _ORDER.get(str((t.get("recommendation") or {}).get("action")), 1)
 
     return sorted(out, key=key)
 

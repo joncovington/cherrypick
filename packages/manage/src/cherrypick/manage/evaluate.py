@@ -7,9 +7,9 @@ same answer twice.
 Each underlying is one trade. Its net open cost decides what kind of trade it is (a net credit is a
 credit trade, a net debit a debit trade), and each rule that fires names an action. The trade's
 recommendation is the most decisive action fired (CLOSE before TAKE_PROFIT before ROLL_OR_CLOSE
-before CLOSE_LEGS before REVIEW), at that rule's configured confidence, less a penalty for every rule
-that fired pointing the other way. A trade where nothing fired is a HOLD, and carries the levels at
-which the rules would fire.
+before CLOSE_LEGS before REVIEW), ties broken by a fixed rule order, with that rule's evidence grade
+and the rules that fired pointing the other way named beside it. A trade where nothing fired is a
+HOLD, and carries the levels at which the rules would fire.
 
 Money follows the suite layout: signed cash flow (a credit received is +), whole-position dollars, and
 every P&L here is a mark P&L GROSS of fees -- the broker snapshot carries no fee record.
@@ -119,8 +119,8 @@ def _band_text(low: float | None, high: float | None) -> str:
     return " / ".join(f"{x:,.2f}" if x is not None else "none" for x in (low, high))
 
 
-def _fire(rule: str, action: str, confidence: Any, reason: str, legs: list[str] | None = None) -> dict:
-    return {"rule": rule, "action": action, "confidence": confidence, "reason": reason, "legs": legs}
+def _fire(rule: str, action: str, evidence: Any, reason: str, legs: list[str] | None = None) -> dict:
+    return {"rule": rule, "action": action, "evidence": evidence, "reason": reason, "legs": legs}
 
 
 # --------------------------------------------------------------------------- leg facts
@@ -488,7 +488,7 @@ def evaluate_trade(
                 _fire(
                     "expiry",
                     SETTLES,
-                    ex["confidence"],
+                    ex["evidence"],
                     "cash-settled legs at expiry settle on the official print",
                     [_label(leg) for leg in settled],
                 )
@@ -502,7 +502,7 @@ def evaluate_trade(
                 _fire(
                     "expiry",
                     REVIEW,
-                    ex["confidence"],
+                    ex["evidence"],
                     "physically-settled legs past expiry are still listed: check for assignment or exercise",
                     [_label(leg) for leg in stale],
                 )
@@ -526,7 +526,7 @@ def evaluate_trade(
             expiry_close = _fire(
                 "expiry",
                 CLOSE if whole else CLOSE_LEGS,
-                ex["confidence"],
+                ex["evidence"],
                 f"physically-settled legs expire in {soonest} day(s); never hold into expiry "
                 "(pin and post-close exercise risk)",
                 [_label(leg) for leg in expiring],
@@ -576,7 +576,7 @@ def evaluate_trade(
                 _fire(
                     "directional.take_profit",
                     TAKE_PROFIT,
-                    dr["take_profit"]["confidence"],
+                    dr["take_profit"]["evidence"],
                     f"up ${pnl:,.0f}, past the ${target:,.0f} target "
                     f"(the lesser of {tp_share:.0%} of the ${max_gain:,.0f} it can make and "
                     f"{float(dr['take_profit']['max_reward_multiple']):g}x the ${max_loss:,.0f} at risk)",
@@ -587,7 +587,7 @@ def evaluate_trade(
                 _fire(
                     "directional.stop",
                     CLOSE,
-                    dr["stop"]["confidence"],
+                    dr["stop"]["evidence"],
                     f"down ${-pnl:,.0f}, {-pnl / max_loss:.0%} of the ${max_loss:,.0f} it can lose "
                     f"(stop at {stop_share:.0%})",
                 )
@@ -605,7 +605,7 @@ def evaluate_trade(
                     _fire(
                         "credit.time_exit",
                         TAKE_PROFIT if pnl > 0 else CLOSE,
-                        te["confidence"],
+                        te["evidence"],
                         f"nearest short is {trade['nearest_short_dte']} DTE (exit at {te['dte']}); "
                         "a directional trade is closed rather than rolled into the last weeks",
                     )
@@ -623,7 +623,7 @@ def evaluate_trade(
             stop_at = float(cr["stop"]["fallback_max_loss_fraction"]) * max_loss
             stop_basis = "max_loss"
         trade["exit_levels"]["stop"] = {"close_value": -(credit + stop_at), "basis": stop_basis}
-        tp_capture, tp_confidence, tp_shaped = _rules.for_shape(cr["take_profit"], trade["shape"], "capture")
+        tp_capture, tp_evidence, tp_shaped = _rules.for_shape(cr["take_profit"], trade["shape"], "capture")
         trade["exit_levels"]["take_profit"] = {
             "close_value": -(credit * (1 - tp_capture)),
             "target": tp_capture,
@@ -635,7 +635,7 @@ def evaluate_trade(
                 _fire(
                     "credit.stop",
                     CLOSE,
-                    cr["stop"]["confidence"],
+                    cr["stop"]["evidence"],
                     f"loss ${loss:,.0f} has reached the stop (${stop_at:,.0f}, "
                     + ("the credit" if stop_basis == "credit" else "half the max loss")
                     + ")",
@@ -646,7 +646,7 @@ def evaluate_trade(
                 _fire(
                     "credit.take_profit",
                     TAKE_PROFIT,
-                    tp_confidence,
+                    tp_evidence,
                     f"{trade['capture']:.0%} of the ${credit:,.0f} credit captured (target {tp_capture:.0%}"
                     + (f", a {trade['shape']}'s own" if tp_shaped else "")
                     + ")",
@@ -674,7 +674,7 @@ def evaluate_trade(
                     _fire(
                         "credit.time_exit",
                         ROLL_OR_CLOSE if winner and te["roll_if_profitable"] else CLOSE,
-                        te["confidence"],
+                        te["evidence"],
                         f"nearest short is {trade['nearest_short_dte']} DTE (exit at {te['dte']}); "
                         + (
                             "profitable, so it may roll out to ~45 DTE, for a net credit only"
@@ -699,7 +699,7 @@ def evaluate_trade(
                         _fire(
                             "credit.breached",
                             CLOSE,
-                            br["confidence"],
+                            br["evidence"],
                             f"short strike in the money and ${profile['upside_from_now']:,.0f} "
                             "left to win against "
                             f"${downside:,.0f} left to lose ({ratio:.2f}, "
@@ -718,7 +718,7 @@ def evaluate_trade(
                 _fire(
                     "credit.close_before_earnings",
                     CLOSE,
-                    eb["confidence"],
+                    eb["evidence"],
                     f"earnings {trade['earnings']['date']} fall inside the short legs' life",
                 )
             )
@@ -728,7 +728,7 @@ def evaluate_trade(
         debit = basis
         db = rules["debit"]
         ret = trade["capture"]
-        gain, gain_confidence, gain_shaped = _rules.for_shape(
+        gain, gain_evidence, gain_shaped = _rules.for_shape(
             db["take_profit"], trade["shape"], "gain_fraction"
         )
         trade["exit_levels"]["stop"] = {"close_value": debit * (1 - float(db["stop"]["loss_fraction"]))}
@@ -765,7 +765,7 @@ def evaluate_trade(
                 _fire(
                     "debit.stop",
                     CLOSE,
-                    db["stop"]["confidence"],
+                    db["stop"]["evidence"],
                     f"down {-ret:.0%} on the ${debit:,.0f} debit "
                     f"(stop at -{float(db['stop']['loss_fraction']):.0%})",
                 )
@@ -775,7 +775,7 @@ def evaluate_trade(
                 _fire(
                     "debit.take_profit",
                     TAKE_PROFIT,
-                    gain_confidence,
+                    gain_evidence,
                     f"up {ret:.0%} on the ${debit:,.0f} debit: take profit, roll or add "
                     f"(target +{gain:.0%}"
                     + (f", a {trade['shape']}'s own" if gain_shaped and not capped_by else "")
@@ -814,7 +814,7 @@ def evaluate_trade(
                         _fire(
                             "debit.price_stop",
                             REVIEW,
-                            ps["confidence"],
+                            ps["evidence"],
                             f"the underlying at {spot:,.2f} is {side} the price stop "
                             f"({_band_text(low, high)}, where the trade is modelled to lose {share:.0%} of "
                             f"the debit by {expiries[0]}); close if it closes there",
@@ -850,7 +850,7 @@ def evaluate_trade(
                 _fire(
                     "debit.time_exit",
                     ROLL_OR_CLOSE if winner and te["roll_if_profitable"] else CLOSE,
-                    te["confidence"],
+                    te["evidence"],
                     f"{clock} is {when} DTE (exit at {limit}); "
                     + (
                         "profitable, so the shorts may roll out, for a net credit only"
@@ -869,7 +869,7 @@ def evaluate_trade(
         trade["diagonal_check"] = check
         if check["flag"]:
             fired.append(
-                _fire("debit.diagonal_width", REVIEW, dw["confidence"], _diagonal_reason(check, cost, share))
+                _fire("debit.diagonal_width", REVIEW, dw["evidence"], _diagonal_reason(check, cost, share))
             )
 
     # ---- short legs that have given up most of their premium
@@ -900,7 +900,7 @@ def evaluate_trade(
                 _fire(
                     "legs.short_take_profit",
                     CLOSE_LEGS,
-                    lt["confidence"],
+                    lt["evidence"],
                     f"{len(done)} short leg(s) have given up "
                     f"{min(leg['capture'] for leg in done):.0%}+ of their premium; "
                     "buy them back (with the wings that only protected them)",
@@ -938,7 +938,7 @@ def evaluate_trade(
                 _fire(
                     "legs.long_vertical",
                     CLOSE_LEGS,
-                    lv["confidence"],
+                    lv["evidence"],
                     f"the long spread is worth ${worth:,.0f}, {worth / width:.0%} of its ${width:,.0f} width "
                     f"(sell at {share:.0%}); sell it and keep the short spread, "
                     f"${rest_cost:,.0f} to buy back, ${rest_width:,.0f} wide",
@@ -964,7 +964,7 @@ def evaluate_trade(
                 _fire(
                     "roll.fly_off",
                     REVIEW,
-                    fo["confidence"],
+                    fo["evidence"],
                     f"buy the {fly['new_strike']:g}{fly['right']} and sell the "
                     f"{fly['old_strike']:g}{fly['right']} for about ${fly['debit']:,.0f} (modelled) against "
                     f"the ${-cost:,.0f} taken in: a plain butterfly that keeps ${fly['kept']:,.0f} "
@@ -1009,7 +1009,7 @@ def evaluate_trade(
                     _fire(
                         "roll.untested_side",
                         ROLL_FOR_CREDIT if instead else REVIEW,
-                        ur["confidence"],
+                        ur["evidence"],
                         f"the {roll['tested_strike']:g}{roll['tested_right']} is tested "
                         f"({abs(roll['tested_delta']):.2f} delta): roll the untested "
                         f"{roll['from_strike']:g}{roll['right']} to the {roll['to_strike']:g}{roll['right']} "
@@ -1045,7 +1045,7 @@ def evaluate_trade(
                 _fire(
                     "ex_dividend",
                     REVIEW,
-                    xr["confidence"],
+                    xr["evidence"],
                     f"in-the-money short call(s) over the {trade['ex_dividend']['date']} ex-date "
                     "with less time value than "
                     + (f"the ~${est_div:.2f} dividend" if est_div else "the dividend (amount unknown)")
@@ -1065,7 +1065,7 @@ def evaluate_trade(
                 _fire(
                     "risk.oversize",
                     str(rk["oversize_action"]).upper(),
-                    rk["confidence"],
+                    rk["evidence"],
                     (
                         "loss is unbounded on the modelled grid"
                         if profile["unbounded_low"]
@@ -1102,7 +1102,7 @@ def evaluate_trade(
                 _fire(
                     "roll.naked_put",
                     ROLL_FOR_CREDIT,
-                    rp["confidence"],
+                    rp["evidence"],
                     f"roll the short {roll['strike']:g} put out to {roll['expiration']} for about "
                     f"{roll['credit']:.2f} cr (modelled) instead of closing it; "
                     "close if it will not fill for a credit",
@@ -1144,7 +1144,7 @@ def evaluate_trade(
                 _fire(
                     "roll.diagonal_short",
                     ROLL_FOR_CREDIT,
-                    rd["confidence"],
+                    rd["evidence"],
                     f"roll the {roll['from']} short structure out to {roll['expiration']} "
                     "at the same strikes "
                     f"for about {roll['credit']:.2f} cr "
@@ -1218,7 +1218,7 @@ def evaluate_trade(
                 _fire(
                     "earnings_trade",
                     CLOSE,
-                    rules["earnings_trade"]["confidence"],
+                    rules["earnings_trade"]["evidence"],
                     f"the {et['report']} report is out: an earnings trade is closed after the call",
                 )
             )
@@ -1796,7 +1796,7 @@ def _covered_call_assigned(
         return _fire(
             "covered_call.assigned",
             REVIEW,
-            cfg["confidence"],
+            cfg["evidence"],
             "the covered call is in the money and the shares' basis is unknown (no reconciled order chain "
             "or wheel cycle): check whether a call-away gains before rolling or buying it back",
             labels,
@@ -1810,7 +1810,7 @@ def _covered_call_assigned(
         return _fire(
             "covered_call.assigned",
             REVIEW,
-            cfg["confidence"],
+            cfg["evidence"],
             f"the covered call is in the money: assigned, the shares go at {where}, "
             f"${dollars:,.0f} over it. Let them be called away, or roll up and out for a net credit",
             labels,
@@ -1818,7 +1818,7 @@ def _covered_call_assigned(
     return _fire(
         "covered_call.assigned",
         ROLL_OR_CLOSE,
-        cfg["confidence"],
+        cfg["evidence"],
         f"the covered call is in the money under the basis: assigned, the shares go at {where}, "
         f"${-dollars:,.0f} under it. Roll up and out for a net credit, or buy it back",
         labels,
@@ -2122,7 +2122,7 @@ def _wheel_rules(
                 _fire(
                     "wheel.take_profit",
                     TAKE_PROFIT,
-                    wr["take_profit"]["confidence"],
+                    wr["take_profit"]["evidence"],
                     "; ".join(
                         f"the {row['leg']} is marked {row['mid']:.2f}, at or under its {price:.2f} "
                         f"buy-to-close ({source}): buy it back, nothing is left to earn"
@@ -2172,7 +2172,7 @@ def _wheel_rules(
                 _fire(
                     "wheel.tested",
                     ROLL_OR_CLOSE,
-                    wr["tested"]["confidence"],
+                    wr["tested"]["evidence"],
                     " | ".join(parts),
                     [leg["label"] for leg, *_ in tested],
                 )
@@ -2220,7 +2220,7 @@ def _wheel_rules(
                     _fire(
                         "wheel.next_leg",
                         REVIEW,
-                        wr["next_leg"]["confidence"],
+                        wr["next_leg"]["evidence"],
                         f"{free:g} shares delivered by assignment are not written against: {what}",
                     )
                 )
@@ -2312,7 +2312,7 @@ def _pmcc_rules(
                 _fire(
                     "pmcc.width",
                     ROLL_OR_CLOSE,
-                    cfg["width"]["confidence"],
+                    cfg["width"]["evidence"],
                     f"the {short['leg']} is {width['width']:g} over the {long['leg']}, but the long has cost "
                     f"{width['net_cost_per_share']:.2f} a share net of every premium: an assignment there "
                     f"loses ${-width['pnl_if_assigned']:,.0f}. Roll the short up and out, or close. "
@@ -2328,7 +2328,7 @@ def _pmcc_rules(
                 _fire(
                     "pmcc.assignment",
                     ROLL_OR_CLOSE,
-                    cfg["assignment"]["confidence"],
+                    cfg["assignment"]["evidence"],
                     f"the {short['leg']} is {exposure['why']}: early assignment is likely. Roll it out "
                     f"(or up and out), or buy it back. {rolls_text}",
                     [short_leg["label"]] if short_leg else None,
@@ -2341,7 +2341,7 @@ def _pmcc_rules(
                 _fire(
                     "pmcc.roll_long",
                     REVIEW,
-                    cfg["roll_long"]["confidence"],
+                    cfg["roll_long"]["evidence"],
                     f"the long {long['leg']} is at "
                     + " and ".join(long["roll"])
                     + ": review rolling it to a "
@@ -2389,11 +2389,19 @@ def _decide(trade: dict[str, Any], rules: dict[str, Any], legs: list[dict[str, A
     return trade
 
 
+def _rule_rank(rule: str) -> int:
+    """A rule's place in the fixed tie-break order; a data review or an unknown rule sorts last."""
+    try:
+        return _rules.RULE_ORDER.index(rule)
+    except ValueError:
+        return len(_rules.RULE_ORDER)
+
+
 def _recommend(trade: dict[str, Any], rules: dict[str, Any], legs: list[dict[str, Any]]) -> dict[str, Any]:
     fired = trade["fired"]
     if not fired:
-        hold = rules["hold"]
-        confidence = int(hold["confidence"])
+        # A hold is no rule, so it has no grade: nothing fired.
+        evidence = None
         reason = "no rule fired; hold with the exit levels resting"
         rule = "hold"
         et = trade.get("earnings_trade")
@@ -2402,9 +2410,9 @@ def _recommend(trade: dict[str, Any], rules: dict[str, Any], legs: list[dict[str
             and not et["passed"]
             and not _rules.disabled(rules, trade["underlying"], "earnings_trade", trade.get("trade_id"))
         ):
-            # Held FOR the report, not in spite of it: the report is the trade, so no earnings penalty.
+            # Held FOR the report, not in spite of it: the earnings-trade rule is what holds it.
             rule = "earnings_trade"
-            confidence = int(rules["earnings_trade"]["confidence"])
+            evidence = rules["earnings_trade"]["evidence"]
             reason = f"an earnings trade: hold through the {et['report']} report and close after the call"
             held = trade.get("held_for_earnings") or []
             if held:
@@ -2412,11 +2420,10 @@ def _recommend(trade: dict[str, Any], rules: dict[str, Any], legs: list[dict[str
                     f"{f['rule']} ({f['action'].lower()})" for f in held
                 )
         elif trade.get("earnings") and trade["earnings"]["before_nearest_short_expiry"]:
-            confidence -= int(hold["earnings_penalty"])
             reason += f"; earnings {trade['earnings']['date']} fall inside the trade"
         trade["recommendation"] = {
             "action": HOLD,
-            "confidence": max(0, confidence),
+            "evidence": evidence,
             "rule": rule,
             "reason": reason,
             "agreeing": [],
@@ -2424,7 +2431,9 @@ def _recommend(trade: dict[str, Any], rules: dict[str, Any], legs: list[dict[str
         }
         trade["order"] = None
         return trade
-    ranked = sorted(fired, key=lambda f: (PRIORITY.get(f["action"], 9), -(f["confidence"] or 0)))
+    # The most decisive action first; between rules naming the same action, the fixed rule order
+    # (rules.RULE_ORDER: safety, sizing, stops, targets, time, rolls), never a grade.
+    ranked = sorted(fired, key=lambda f: (PRIORITY.get(f["action"], 9), _rule_rank(f["rule"])))
     chosen = ranked[0]
     direction = DIRECTION.get(chosen["action"])
     conflicts = [
@@ -2437,12 +2446,10 @@ def _recommend(trade: dict[str, Any], rules: dict[str, Any], legs: list[dict[str
     if chosen["action"] == ROLL_FOR_CREDIT:
         replaces = [f["rule"] for f in fired if f["action"] in (CLOSE, ROLL_OR_CLOSE, CLOSE_LEGS)]
         conflicts = [r for r in conflicts if r not in replaces]
-    confidence = chosen["confidence"]
-    if confidence is not None and conflicts:
-        confidence = max(0, confidence - int(rules["conflict_penalty"]) * len(conflicts))
+    # A rule pointing the other way is named in `conflicts`; it does not lower anything.
     trade["recommendation"] = {
         "action": chosen["action"],
-        "confidence": confidence,
+        "evidence": chosen["evidence"],
         "rule": chosen["rule"],
         "reason": chosen["reason"],
         "agreeing": [f["rule"] for f in fired if f is not chosen and f["action"] == chosen["action"]],

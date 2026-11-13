@@ -32,7 +32,7 @@ ties up its width as collateral, earnings fall before the new expiry, a debit wh
 for credit only. Every leg is priced at its quoted mid, its delta at its own IV (the portfolio
 reading's model), so the before and after are one model's figures; the mid is not a fill and each
 idea also states the natural price where every leg is quoted. Ideas inform; they size, place and close
-nothing, and carry no confidence because none is a rule.
+nothing, and carry no evidence grade because none is a rule.
 """
 
 from __future__ import annotations

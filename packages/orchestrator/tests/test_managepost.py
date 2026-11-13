@@ -8,12 +8,12 @@ from cherrypick.orchestrator import config as cfgmod
 from cherrypick.orchestrator import managepost
 
 
-def _trade(tid, action, conf, pnl, reason="why", shape="butterfly"):
+def _trade(tid, action, grade, pnl, reason="why", shape="butterfly"):
     return {
         "trade_id": tid,
         "shape": shape,
         "pnl_gross": pnl,
-        "recommendation": {"action": action, "confidence": conf, "rule": "r", "reason": reason},
+        "recommendation": {"action": action, "evidence": grade, "rule": "r", "reason": reason},
     }
 
 
@@ -26,19 +26,31 @@ def _doc(*trades, accounts=None):
 
 def test_lists_only_acting_trades_most_urgent_first():
     doc = _doc(
-        _trade("SPY#1", "REVIEW", 60, 39.5),
-        _trade("GOOGL", "HOLD", 60, 212.5),
-        _trade("X", "SETTLES", 90, 1.0),
-        _trade("META", "REVIEW", 70, 54.0),
-        _trade("CLF", "CLOSE", 65, 22.0, reason="the report is out"),
+        _trade("SPY#1", "REVIEW", "practice", 39.5),
+        _trade("GOOGL", "HOLD", None, 212.5),
+        _trade("X", "SETTLES", "mechanics", 1.0),
+        _trade("META", "REVIEW", "ours", 54.0),
+        _trade("CLF", "CLOSE", "ours", 22.0, reason="the report is out"),
     )
     title, message, embed = managepost.build(doc, "16:35")
     lines = message.splitlines()
-    assert [ln.split("**")[1] for ln in lines[:3]] == ["CLF butterfly", "META butterfly", "SPY#1 butterfly"]
+    # Within REVIEW, the evaluation's own order: a grade is not a rank.
+    assert [ln.split("**")[1] for ln in lines[:3]] == ["CLF butterfly", "SPY#1 butterfly", "META butterfly"]
     assert "GOOGL" not in message and "SETTLES" not in message
-    assert lines[0] == "**CLF butterfly**: CLOSE (65) · +$22.00 gross · the report is out"
+    assert lines[0] == "**CLF butterfly**: CLOSE (ours) · +$22.00 gross · the report is out"
     assert title == "Positions to manage, 2026-10-19 16:35 ET: 3 of 5"
     assert embed["description"] == message and embed["color"] == 0xE5534B
+
+
+def test_an_evaluation_from_before_grades_still_shows_its_number():
+    old = {
+        "trade_id": "A",
+        "shape": "condor",
+        "pnl_gross": 1.0,
+        "recommendation": {"action": "CLOSE", "confidence": 65},
+    }
+    _, message, _ = managepost.build(_doc(old), "10:00")
+    assert message.startswith("**A condor**: CLOSE (65)")
 
 
 def test_all_hold_still_posts_and_says_so():

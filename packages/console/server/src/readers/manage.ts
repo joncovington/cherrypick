@@ -1,6 +1,6 @@
 /**
  * The daily position-management evaluation: read packages/manage's `eval-<session>.json`, shape it
- * for the page, derive nothing. The verdicts, exit levels and confidences are the package's; a
+ * for the page, derive nothing. The verdicts, exit levels and evidence grades are the package's; a
  * console that recomputed any of them would be a second ruleset waiting to disagree with the first.
  *
  * Fields are read defensively -- the artifact is versioned and will gain fields -- and an absent
@@ -208,6 +208,7 @@ function fired(v: unknown): ManageFired {
     rule: str(f["rule"]) ?? "?",
     action: action(f["action"]),
     confidence: num(f["confidence"]),
+    evidence: str(f["evidence"]),
     reason: str(f["reason"]) ?? "",
     legs: Array.isArray(f["legs"]) ? strs(f["legs"]) : null,
   };
@@ -244,6 +245,7 @@ function trade(v: unknown): ManageTrade {
     nearestShortDte: num(t["nearest_short_dte"]),
     action: action(r["action"]),
     confidence: num(r["confidence"]),
+    evidence: str(r["evidence"]),
     rule: str(r["rule"]),
     reason: str(r["reason"]) ?? "",
     explanation: str(t["explanation"]),
@@ -917,6 +919,14 @@ function ruleConfidence(rules: Record<string, unknown>): ManagePortfolio["ruleCo
   return all.length ? { low: Math.min(...all), high: Math.max(...all) } : null;
 }
 
+/** The evidence grades the evaluation's own ruleset gives the portfolio rules, each once, in rule
+ *  order; empty before grades. */
+function ruleEvidence(rules: Record<string, unknown>): string[] {
+  const cfg = rec(rules["portfolio"]);
+  const all = PORTFOLIO_RULES.map((r) => str(rec(cfg[r])["evidence"])).filter((g): g is string => g !== null);
+  return [...new Set(all)];
+}
+
 /** The candidates' sizing caps from the evaluation's ruleset. The notional cap follows
  *  `candidates.size`: the cash figure for a cash basis, the margin figure for any other. */
 function candidateCaps(rules: Record<string, unknown>, basis: string | null): ManageCandidates["caps"] {
@@ -1005,11 +1015,13 @@ function portfolio(v: unknown, rules: Record<string, unknown>, lev: Leveraged = 
       return {
         rule: str(g["rule"]) ?? "?",
         confidence: num(g["confidence"]),
+        evidence: str(g["evidence"]),
         reason: str(g["reason"]) ?? "",
         drivers: arr(g["drivers"]).map((d) => drivers(str(g["rule"]), rec(d))),
       };
     }),
     ruleConfidence: ruleConfidence(rules),
+    ruleEvidence: ruleEvidence(rules),
     underlyings: arr(p["underlyings"]).map((raw) => {
       const u = rec(raw);
       return {

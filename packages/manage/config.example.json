@@ -1,37 +1,45 @@
 {
-  "_comment": "Position-management ruleset. Copy to ~/.cherrypick/config/manage.json and keep only what you change: the file is merged key by key over this default, and a key the default does not have is reported, not applied. Every rule carries `confidence` (0-100), reported beside its verdict. Money is gross of fees.",
+  "_comment": "Position-management ruleset. Copy to ~/.cherrypick/config/manage.json and keep only what you change: the file is merged key by key over this default, and a key the default does not have is reported, not applied. Every rule carries `evidence`, the kind of evidence behind it, reported beside its verdict: mechanics (exchange or option mechanics, or arithmetic), tested (a published test or our own declared study supports it), contested (tests point against it, or are mixed), practice (practitioner doctrine, no test) or ours (our own rule, no test). Money is gross of fees.",
   "ruleset": "manage-2026-10",
   "trade_grouping": "order_chain",
-  "hold": {
-    "confidence": 70,
-    "earnings_penalty": 10
-  },
   "risk": {
     "enabled": true,
     "max_risk_pct": 0.02,
     "oversize_multiple": 3.0,
     "oversize_action": "REVIEW",
-    "confidence": 60
+    "evidence": "practice"
   },
   "credit": {
     "_comment": "A trade opened for a net credit. capture = share of the credit kept; stop fires when the loss reaches loss_multiple_of_credit x the credit; time_exit acts at the nearest short's DTE (a winner may roll, a loser closes).",
     "take_profit": {
       "enabled": true,
       "capture": 0.5,
-      "confidence": 80,
+      "evidence": "tested",
       "by_shape": {
-        "_comment": "A shape's own capture and confidence, in place of the rule's (a field left out is the rule's). Any shape manage names may be added, a ratio butterfly by its quantities (\"1-3-2\"); a shape it never names is reported. One short strike of these is nearly always in the money, so the tastylive strategy guide (2023) takes them off at 25%.",
-        "short straddle": {"capture": 0.25, "confidence": 55},
-        "iron butterfly": {"capture": 0.25, "confidence": 55},
-        "big lizard": {"capture": 0.25, "confidence": 55},
-        "reverse big lizard": {"capture": 0.25, "confidence": 55}
+        "_comment": "A shape's own capture and evidence, in place of the rule's (a field left out is the rule's). Any shape manage names may be added, a ratio butterfly by its quantities (\"1-3-2\"); a shape it never names is reported. One short strike of these is nearly always in the money, so the tastylive strategy guide (2023) takes them off at 25%.",
+        "short straddle": {
+          "capture": 0.25,
+          "evidence": "practice"
+        },
+        "iron butterfly": {
+          "capture": 0.25,
+          "evidence": "practice"
+        },
+        "big lizard": {
+          "capture": 0.25,
+          "evidence": "practice"
+        },
+        "reverse big lizard": {
+          "capture": 0.25,
+          "evidence": "practice"
+        }
       }
     },
     "stop": {
       "enabled": true,
       "loss_multiple_of_credit": 1.0,
       "fallback_max_loss_fraction": 0.5,
-      "confidence": 50
+      "evidence": "contested"
     },
     "time_exit": {
       "_comment": "skip_if_entered_inside: a trade whose nearest short was opened dte days or fewer before its expiry (read off the order chain) skips this exit and is managed by its take profit, stop and the expiry close.",
@@ -39,16 +47,16 @@
       "dte": 21,
       "roll_if_profitable": true,
       "skip_if_entered_inside": true,
-      "confidence": 75
+      "evidence": "tested"
     },
     "breached": {
       "enabled": true,
       "min_reward_to_risk": 0.5,
-      "confidence": 70
+      "evidence": "practice"
     },
     "close_before_earnings": {
       "enabled": false,
-      "confidence": 55
+      "evidence": "practice"
     }
   },
   "debit": {
@@ -56,21 +64,32 @@
     "stop": {
       "enabled": true,
       "loss_fraction": 0.5,
-      "confidence": 65
+      "evidence": "practice"
     },
     "take_profit": {
       "enabled": true,
       "gain_fraction": 0.75,
-      "confidence": 65,
+      "evidence": "practice",
       "by_shape": {
-        "_comment": "A shape's own gain_fraction and confidence. A calendar trades only the time value between its expiries, so the strategy guide takes it off at 10-25% of the debit; a zebra starts with no time value and takes 25%.",
-        "calendar": {"gain_fraction": 0.25, "confidence": 55},
-        "call zebra": {"gain_fraction": 0.25, "confidence": 55},
-        "put zebra": {"gain_fraction": 0.25, "confidence": 55}
+        "_comment": "A shape's own gain_fraction and evidence. A calendar trades only the time value between its expiries, so the strategy guide takes it off at 10-25% of the debit; a zebra starts with no time value and takes 25%.",
+        "calendar": {
+          "gain_fraction": 0.25,
+          "evidence": "practice"
+        },
+        "call zebra": {
+          "gain_fraction": 0.25,
+          "evidence": "practice"
+        },
+        "put zebra": {
+          "gain_fraction": 0.25,
+          "evidence": "practice"
+        }
       },
       "max_gain_cap": {
         "_comment": "A diagonal (a PMCC among them) is worth about its width at the short's expiry, so gain_fraction of its debit can sit past anything it can make. Its target is the lesser of that and share of its modelled gain by the short's expiry (the long at its own IV). No outside test.",
-        "shapes": ["diagonal"],
+        "shapes": [
+          "diagonal"
+        ],
         "share": 0.75
       }
     },
@@ -79,14 +98,16 @@
       "enabled": true,
       "max_share_of_width": 0.75,
       "run_past_short_moves": 1.0,
-      "confidence": 60
+      "evidence": "practice"
     },
     "price_stop": {
       "_comment": "A calendar's stop on the underlying's price: the band where its modelled value at the short's expiry (the long at its own IV) falls loss_share below the debit. Outside it the trade is reviewed, to close if the stock closes there. No outside test; the debit stop stays as the backstop.",
       "enabled": true,
-      "shapes": ["calendar"],
+      "shapes": [
+        "calendar"
+      ],
       "loss_share": 0.25,
-      "confidence": 45
+      "evidence": "ours"
     },
     "time_exit": {
       "_comment": "A diagonal or calendar whose nearest short was sold short_term_short_days or fewer before its expiry (read off the order chain) runs on the long's clock instead: the time exit fires when the long it is sold against reaches time_spread_long_dte.",
@@ -98,7 +119,7 @@
       "_skip_comment": "skip_if_entered_inside: a trade whose clock leg was opened inside its own exit (a debit spread bought at short_leg_dte or fewer, a long option at long_only_dte or fewer) skips it.",
       "skip_if_entered_inside": true,
       "roll_if_profitable": true,
-      "confidence": 70
+      "evidence": "practice"
     }
   },
   "legs": {
@@ -106,13 +127,13 @@
     "short_take_profit": {
       "enabled": true,
       "capture": 0.8,
-      "confidence": 85
+      "evidence": "mechanics"
     },
     "long_vertical": {
       "_comment": "A butterfly's (broken-wing, broken-heart) long spread worth share_of_width of its width is sold, keeping the short spread.",
       "enabled": true,
       "share_of_width": 0.9,
-      "confidence": 50
+      "evidence": "practice"
     }
   },
   "roll": {
@@ -122,7 +143,7 @@
       "out_days": 28,
       "min_credit": 0.1,
       "skip_through_earnings": true,
-      "confidence": 60
+      "evidence": "practice"
     },
     "diagonal_short": {
       "enabled": true,
@@ -133,13 +154,13 @@
       "short_term_out_days": 7,
       "short_term_min_long_days": 21,
       "skip_through_earnings": false,
-      "confidence": 60
+      "evidence": "ours"
     },
     "fly_off": {
       "_comment": "A broken-wing butterfly opened for a credit: buy the wing that makes it a plain butterfly and sell the wide one, when that costs at most max_share_of_credit of the net credit. The new wing is modelled.",
       "enabled": true,
       "max_share_of_credit": 1.0,
-      "confidence": 55
+      "evidence": "practice"
     },
     "untested_side": {
       "_comment": "A short strangle or straddle with one short at tested_delta or more and the other under target_delta: roll the untested short toward the money, same expiry, to the listed strike nearest target_delta, for at least min_credit a share at the snapshot's quoted mids (roll_chains). A review; in place of the short-leg buy-back when that names the untested leg; never in place of a stop. Never past the tested strike: an inversion ranks below closing or rolling out in time, so it is only recorded, never proposed. Off by default since 2026-10-20; set enabled to true to use it.",
@@ -147,7 +168,7 @@
       "tested_delta": 0.4,
       "target_delta": 0.3,
       "min_credit": 0.1,
-      "confidence": 50
+      "evidence": "contested"
     }
   },
   "wheel": {
@@ -157,25 +178,25 @@
       "enabled": true,
       "btc_price": 0.03,
       "btc_price_illiquid": 0.05,
-      "confidence": 80
+      "evidence": "mechanics"
     },
     "tested": {
       "_comment": "A short at or through its strike: roll or close. The net-zero and premium-gambit rolls out in time are priced on the snapshot's quoted chain and each judged by check-roll.",
       "enabled": true,
-      "confidence": 50
+      "evidence": "practice"
     },
     "next_leg": {
       "_comment": "Shares an assignment delivered and not yet written against: name the covered call at the skate call band (band: fixed or by_expiry). No strike without the band.",
       "enabled": true,
       "band": "fixed",
-      "confidence": 50
+      "evidence": "practice"
     }
   },
   "covered_call": {
     "_comment": "Short calls the name's shares cover (100 a contract, all of them). The credit stop, breached close, oversize review and expiry close never judge them, since the shares cover each risk, and a losing call's time exit does not buy it back. An in-the-money call is judged by its call-away against the wheel basis (else the shares' own order chain cost, never the positions' open price): at or over it a review to let the shares go or roll up and out for a credit; under it roll or close; with no basis, a review saying so.",
     "assigned": {
       "enabled": true,
-      "confidence": 75
+      "evidence": "mechanics"
     }
   },
   "pmcc": {
@@ -191,21 +212,21 @@
     "width": {
       "_comment": "Roll or close when the short strike less the long strike does not exceed the long's net cost per share after every premium collected: an assignment there locks in a loss. A net cost over warn_share of the width passes but is flagged thin (a call-away then earns under a third of the cost).",
       "enabled": true,
-      "confidence": 65,
+      "evidence": "mechanics",
       "warn_share": 0.75
     },
     "assignment": {
       "_comment": "Roll or close a short in the money with less time value than the next dividend before an ex-date inside its life, or under near_zero_extrinsic at any time.",
       "enabled": true,
       "near_zero_extrinsic": 0.05,
-      "confidence": 65
+      "evidence": "mechanics"
     },
     "roll_long": {
       "_comment": "Review rolling the long when it has days_left or fewer, or its delta is under min_delta.",
       "enabled": true,
       "days_left": 60,
       "min_delta": 0.7,
-      "confidence": 45
+      "evidence": "practice"
     },
     "roll": {
       "_comment": "The short's roll candidates: one per quoted expiry after the short and before the long, the next `expiries`, delta at most max_delta, a roll costing at most max_debit a share.",
@@ -232,7 +253,7 @@
       "VIXW",
       "DJX"
     ],
-    "confidence": 90
+    "evidence": "mechanics"
   },
   "earnings": {
     "enabled": true,
@@ -244,12 +265,12 @@
     "min_days_before": 0,
     "max_days_before": 7,
     "max_days_expiry_after": 14,
-    "confidence": 75
+    "evidence": "ours"
   },
   "ex_dividend": {
     "enabled": true,
     "warn_days": 10,
-    "confidence": 80
+    "evidence": "mechanics"
   },
   "directional": {
     "enabled": true,
@@ -258,15 +279,14 @@
       "enabled": true,
       "share_of_max_gain": 0.5,
       "max_reward_multiple": 1.0,
-      "confidence": 65
+      "evidence": "ours"
     },
     "stop": {
       "enabled": true,
       "share_of_max_loss": 0.5,
-      "confidence": 65
+      "evidence": "ours"
     }
   },
-  "conflict_penalty": 10,
   "exclude": {
     "zero_dte_underlyings": [
       "SPX"
@@ -301,7 +321,7 @@
     "grid_steps": 600
   },
   "portfolio": {
-    "_comment": "The account as one book: beta-weighted delta (in SPY shares, on the broker's beta), theta per calendar day, the break-even move and a stress line. Retail heuristics with no published out-of-sample evidence, hence confidence 40. Guidance is REVIEW, naming what drives it. enabled: false turns all of it off; the reading is still recorded.",
+    "_comment": "The account as one book: beta-weighted delta (in SPY shares, on the broker's beta), theta per calendar day, the break-even move and a stress line. Retail heuristics with no published out-of-sample evidence: practice, or ours where the figure is our own. Guidance is REVIEW, naming what drives it. enabled: false turns all of it off; the reading is still recorded.",
     "enabled": true,
     "theta": {
       "_comment": "Theta as a share of net liq per day. Above max the book sells more gamma than the band allows; under min only informs. The band, concentration and the candidates' theta cap leave out option legs front_dte days or less from expiry, whose theta is about to vanish; the raw figure is shown beside it.",
@@ -311,7 +331,7 @@
       "_target_pct_nlv": "The premium pace's target on the same figure: theta to hold inside the band, not to maximise.",
       "target_pct_nlv": 0.002,
       "front_dte": 2,
-      "confidence": 40
+      "evidence": "practice"
     },
     "delta": {
       "_comment": "BWD band: -short_per_theta x theta to +long_per_theta x theta SPY shares, on theta without the legs theta.front_dte days or less from expiry. Never narrower than, and with no positive theta equal to, +/- the BWD whose 1% move costs fallback_pct_nlv_per_1pct of net liq.",
@@ -319,31 +339,31 @@
       "short_per_theta": 0.5,
       "long_per_theta": 0.75,
       "fallback_pct_nlv_per_1pct": 0.005,
-      "confidence": 40
+      "evidence": "practice"
     },
     "breakeven": {
       "_comment": "A short-gamma book whose break-even SPY move is under this multiple of SPY's implied one-day move.",
       "enabled": true,
       "min_multiple_of_expected_move": 1.0,
-      "confidence": 40
+      "evidence": "practice"
     },
     "concentration": {
       "_comment": "One underlying over max_share of the book's gross theta or gross beta-weighted delta. A position can be excused with positions.<SYM>.disable.",
       "enabled": true,
       "max_share": 0.25,
-      "confidence": 40
+      "evidence": "practice"
     },
     "earnings_exposure": {
       "_comment": "What the trades with an earnings report before their nearest short expires can still lose, summed, over max_pct_nlv of net liq. Each trade passes its own rules; this adds them up.",
       "enabled": true,
-      "max_pct_nlv": 0.10,
-      "confidence": 40
+      "max_pct_nlv": 0.1,
+      "evidence": "ours"
     },
     "expiry_concentration": {
       "_comment": "What the trades whose nearest short expires on one date can still lose, over max_pct_nlv of net liq. A new income candidate on an expiry already over it waits.",
       "enabled": true,
-      "max_pct_nlv": 0.20,
-      "confidence": 40
+      "max_pct_nlv": 0.2,
+      "evidence": "ours"
     },
     "beta_doubt": {
       "_comment": "Flag a broker beta whose sign disagrees with its three-month correlation (|corr| >= min_abs_corr), or that is near zero beside a strong correlation.",
@@ -352,39 +372,90 @@
     },
     "stress": {
       "_comment": "SPY shocks the book is repriced at, each underlying moved by beta x shock, IV and time held still.",
-      "shocks": [-0.1, 0.05]
+      "shocks": [
+        -0.1,
+        0.05
+      ]
     },
     "vol_expansion": {
-      "_comment": "The book repriced at a vol expansion: SPY moved by move (each name by beta x move) with IVs up iv_shift vol points for a 30-day option, term-weighted as the risk matrix is, time held still. Over max_loss_pct_nlv of net liq is a REVIEW naming the names shortest vega. No published band exists: the shock and the cap are ours, hence confidence 30.",
+      "_comment": "The book repriced at a vol expansion: SPY moved by move (each name by beta x move) with IVs up iv_shift vol points for a 30-day option, term-weighted as the risk matrix is, time held still. Over max_loss_pct_nlv of net liq is a REVIEW naming the names shortest vega. No published band exists: the shock and the cap are ours.",
       "enabled": true,
       "move": -0.05,
       "iv_shift": 0.1,
       "max_loss_pct_nlv": 0.1,
-      "confidence": 30
+      "evidence": "ours"
     },
     "buying_power": {
       "_comment": "Buying power used against a ceiling. On margin it rises with VIX: [VIX under, cap] pairs, the last bound null for anything above; the common retail table, written for margin, where a short put holds a fraction of its notional and the hold grows as the stock falls. No VIX, no band. An account of unknown kind is judged here too.",
       "enabled": true,
-      "vix_steps": [[15, 0.25], [20, 0.3], [30, 0.35], [40, 0.4], [null, 0.5]],
-      "confidence": 40,
+      "vix_steps": [
+        [
+          15,
+          0.25
+        ],
+        [
+          20,
+          0.3
+        ],
+        [
+          30,
+          0.35
+        ],
+        [
+          40,
+          0.4
+        ],
+        [
+          null,
+          0.5
+        ]
+      ],
+      "evidence": "practice",
       "cash": {
         "_comment": "A cash account or IRA holds each short put's full strike and each spread's max loss, and neither grows when the market moves, so its buying power is judged in parts instead of by VIX: max_pct_nlv in total (the rest kept free to sell after a vol spike); stock_exposure_pct_nlv for short puts at their strikes plus shares held (the stock the account owns or can be made to own); spread_risk_pct_nlv for the buying power everything else holds, its most it can lose. stress: SPY moved by move (each name by beta x move) with IVs up iv_shift (term-weighted), losing over max_loss_pct_nlv of net liq, is a REVIEW (portfolio.stress). The figures are ours, with no published evidence. enabled false judges a cash account by the VIX table.",
         "enabled": true,
         "max_pct_nlv": 0.8,
         "stock_exposure_pct_nlv": 0.65,
         "spread_risk_pct_nlv": 0.35,
-        "confidence": 40,
-        "stress": {"move": -0.2, "iv_shift": 0.1, "max_loss_pct_nlv": 0.2, "confidence": 30}
+        "evidence": "ours",
+        "stress": {
+          "move": -0.2,
+          "iv_shift": 0.1,
+          "max_loss_pct_nlv": 0.2,
+          "evidence": "ours"
+        }
       }
     },
     "scenarios": {
       "_comment": "The risk matrix (SPY moves x IV shifts in vol points for a 30-day option, time held still; with iv_shift_weighting \"term\" each leg's shift is scaled by sqrt(30 / DTE) so front months move most, \"flat\" shifts every leg alike) and the risk graph ([from, to, step] of SPY moves, now and at the nearest expiry).",
-      "moves": [-0.1, -0.05, -0.02, -0.01, 0.0, 0.01, 0.02, 0.05, 0.1],
-      "iv_shifts": [-0.05, 0.0, 0.05],
+      "moves": [
+        -0.1,
+        -0.05,
+        -0.02,
+        -0.01,
+        0.0,
+        0.01,
+        0.02,
+        0.05,
+        0.1
+      ],
+      "iv_shifts": [
+        -0.05,
+        0.0,
+        0.05
+      ],
       "iv_shift_weighting": "term",
-      "graph": [-0.15, 0.15, 0.01],
+      "graph": [
+        -0.15,
+        0.15,
+        0.01
+      ],
       "_horizons": "The matrix again at each of these many days on, nothing done meanwhile (legs expiring by then at intrinsic): with time held still it shows what the book risks and never the decay it is paid.",
-      "horizons": [0, 7, 21],
+      "horizons": [
+        0,
+        7,
+        21
+      ],
       "realistic": {
         "_comment": "A row with IV moved as VIX has moved when SPX moved this much: over windows of the horizon's trading days (never under min_window_days) since `since`, from the snapshot's Cboe closes, VIX's median end/start ratio among the windows whose SPX return was within `band` of the move's size (never under min_band). Fewer than min_windows such windows and the cell is blank. The shift is today's VIX x (ratio - 1) for a 30-day option, term-weighted like the other rows.",
         "enabled": true,
@@ -402,7 +473,20 @@
       "index_bucket": {
         "_comment": "Broad indexes that move together, and the share of net liq they may risk between them (each trade's modelled downside from now, summed).",
         "enabled": true,
-        "names": ["SPY", "QQQ", "IWM", "DIA", "XSP", "SPX", "NDX", "RUT", "VOO", "IVV", "RSP", "MDY"],
+        "names": [
+          "SPY",
+          "QQQ",
+          "IWM",
+          "DIA",
+          "XSP",
+          "SPX",
+          "NDX",
+          "RUT",
+          "VOO",
+          "IVV",
+          "RSP",
+          "MDY"
+        ],
         "max_pct_nlv": 0.05
       },
       "trade_size": {
@@ -463,7 +547,10 @@
       "delta_tolerance": 0.05,
       "spread_min_credit": 0.0,
       "per_trade_risk_pct": 0.03,
-      "notional_per_name_pct": {"cash": 0.25, "margin": 0.5},
+      "notional_per_name_pct": {
+        "cash": 0.25,
+        "margin": 0.5
+      },
       "max_buying_power_pct": 0.5,
       "max_name_theta_share": 0.25,
       "max_units": 10,

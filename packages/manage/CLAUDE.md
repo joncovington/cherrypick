@@ -2,7 +2,7 @@
 
 > Operating contract for the suite's daily **position-management evaluation**. Suite-wide context is
 > in the root [documentation index](../../docs/README.md); the ruleset, its sources and the evidence
-> behind each confidence are in this package's [README](README.md).
+> behind each rule's evidence grade are in this package's [README](README.md).
 
 Every trading day this package answers **what should happen to each position in the real account,
 by which rule, and how sure is the ruleset** — the question that was being answered by hand, a
@@ -30,7 +30,7 @@ import it. The closing order an evaluation lists is what a person would enter, p
 ## The artifact is the product
 
 - `eval-<session>.json` — the evaluation, and the only thing any surface reads (the console's
-  Live → positions and Live → portfolio tabs). Nothing downstream re-derives a verdict, a level or a confidence.
+  Live → positions and Live → portfolio tabs). Nothing downstream re-derives a verdict, a level or an evidence grade.
 - `snapshot-<session>.json` — the snapshot it was judged on, kept so `reevaluate` can re-run a past
   session under changed rules and get the same answer twice.
 - `marks-<session>.json` — between full snapshots (every 30 minutes, sooner after a fill or a change in held positions: the orchestrator's `manage.on_change`), the stream cache's quotes the
@@ -92,17 +92,20 @@ of that day, not today's.
   that cannot be solved is unknown and recognises nothing; a PMCC whose linked orders do not replay to
   today's legs gets a review only.
 - **P&L is a mark.** Gross always; net of the chain's recorded fees where a chain reconciled, and null (never gross relabelled) where it did not.
-- **The ruleset is data.** Thresholds and confidences live in `rules.DEFAULT_RULES` and the operator's
+- **The ruleset is data.** Thresholds and evidence grades live in `rules.DEFAULT_RULES` and the operator's
   `~/.cherrypick/config/manage.json`; an override key the default lacks is reported, never applied.
   `config.example.json` is the documented default and `tests/test_rules.py` fails if it drifts.
 
 ## Changing a rule
 
-A new rule needs: a default block with `confidence`, an id in `RULE_IDS`, an action from the fixed
+A new rule needs: a default block with `evidence` (one of `rules.EVIDENCE_GRADES`), an id in
+`RULE_IDS` and a place in `RULE_ORDER` (the tie-break between rules naming one action), an action from the fixed
 vocabulary (`ROLL_FOR_CREDIT`, `CLOSE`, `TAKE_PROFIT`, `ROLL_OR_CLOSE`, `CLOSE_LEGS`, `REVIEW`,
 `SETTLES`, `HOLD`), a test that
 shows it firing and not firing, the regenerated example, and a README row with its source and the
-outside evidence. Its confidence is a statement about evidence — say where it came from.
+outside evidence. Its grade states the kind of evidence, never a likelihood: `tested` needs a
+published test or our own declared study behind it, `contested` when tests point against it, and say
+where it came from. No number ranks rules: a recommendation is chosen by action, then RULE_ORDER.
 
 Package guardrails, on top of the root's:
 

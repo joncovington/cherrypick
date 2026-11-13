@@ -266,7 +266,7 @@ def test_a_short_straddle_takes_profit_at_a_quarter_of_its_credit():
     assert t["shape"] == "short straddle"
     assert fired(t)["credit.take_profit"] == ev.TAKE_PROFIT
     assert t["recommendation"]["rule"] == "credit.take_profit"
-    assert t["recommendation"]["confidence"] == 55
+    assert t["recommendation"]["evidence"] == "practice"
     assert t["exit_levels"]["take_profit"]["by_shape"] == "short straddle"
     assert "a quarter of the credit" in t["explanation"] and "target is its own" in t["explanation"]
 

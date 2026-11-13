@@ -75,7 +75,7 @@ def fired(trade):
 def test_a_short_marked_at_its_buy_to_close_is_taken():
     t = trade_of(evaluate(OPENED, [opt_leg(PUT, -1, 0.03, 1.00)], 60.0), PUT)
     f = fired(t)["wheel.take_profit"]
-    assert f["action"] == ev.TAKE_PROFIT and f["confidence"] == 80
+    assert f["action"] == ev.TAKE_PROFIT and f["evidence"] == "mechanics"
     assert "0.03 buy-to-close (the default)" in f["reason"]
     assert t["wheel"][0]["take_profit"][0]["hit"] is True
 
@@ -133,7 +133,7 @@ def test_the_take_profit_buys_back_the_call_never_sells_the_shares():
 def test_a_tested_put_alone_is_rolled_or_closed_with_both_rolls_priced():
     t = trade_of(evaluate(OPENED, [opt_leg(PUT, -1, 1.20, 1.00)], 50.0, income=INCOME), PUT)
     f = fired(t)["wheel.tested"]
-    assert f["action"] == ev.ROLL_OR_CLOSE and f["confidence"] == 50
+    assert f["action"] == ev.ROLL_OR_CLOSE and f["evidence"] == "practice"
     assert t["recommendation"]["rule"] == "wheel.tested"
     assert [row["side"] for row in t["order"]["legs"]] == ["BTC"]
     (roll,) = t["wheel"][0]["rolls"]
@@ -254,7 +254,7 @@ def test_after_an_assignment_the_next_leg_waits_for_the_band():
     acct = evaluate(ASSIGNED, [share_leg(100, 49.0, 50.0)], 49.0, income=INCOME)
     t = trade_of(acct, "XYZ")
     f = fired(t)["wheel.next_leg"]
-    assert f["action"] == ev.REVIEW and f["confidence"] == 50
+    assert f["action"] == ev.REVIEW and f["evidence"] == "practice"
     assert "band not in the snapshot" in f["reason"]
     assert t["wheel"][0]["next_leg"]["strike"] is None
 
