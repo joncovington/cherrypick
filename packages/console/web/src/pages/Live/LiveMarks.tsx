@@ -106,12 +106,21 @@ export function LiveCaptureCell({ id }: { id: string }) {
   );
 }
 
-/** One line under the page head: how live the live columns are. */
-export function LiveStatus() {
+/**
+ * Under the page head, only what qualifies the live columns: nothing while every trade streams in the
+ * session, a line when marks are partial or closing marks. `accounts` limits the account lines to the
+ * accounts the page draws (null: all); `day` shows each one's day P&L and net liq even when every leg
+ * streams, otherwise an account gets a line only when a leg is not streaming.
+ */
+export function LiveStatus({ accounts = null, day = true }: { accounts?: string[] | null; day?: boolean }) {
   const live = useLiveMarks();
   if (!live) return null;
   const p = live.payload;
   const whole = p.trades.filter((t) => t.pnlGross !== null).length;
+  const lines = p.accounts
+    .filter((a) => accounts === null || accounts.includes(a.account ?? "?"))
+    .filter((a) => day || a.legsMarked < a.legsTotal)
+    .map((a) => <LiveAccountLine key={a.account ?? "?"} a={a} closed={p.closedMarks} />);
   if (whole === 0) {
     return (
       <p className="muted" style={{ margin: 0 }}>
@@ -121,17 +130,22 @@ export function LiveStatus() {
       </p>
     );
   }
+  const partial = whole < p.trades.length;
   return (
     <>
-      <p className="muted" style={{ margin: 0 }}>
-        {p.closedMarks ? "closing marks, the market out of its session" : "live marks"}: {whole} of {p.trades.length} trades
-        from the stream
-        {p.oldestQuoteAt !== null ? `, oldest quote ${ageText(Date.now() - p.oldestQuoteAt)} old` : ""} · on the evaluation's basis
-        and levels; the verdicts are the evaluation's
-      </p>
-      {p.accounts.map((a) => (
-        <LiveAccountLine key={a.account ?? "?"} a={a} closed={p.closedMarks} />
-      ))}
+      {partial || p.closedMarks ? (
+        <p
+          className="muted"
+          style={{ margin: 0 }}
+          title={`on the evaluation's basis and levels; the verdicts are the evaluation's${
+            p.oldestQuoteAt !== null ? ` · oldest quote ${ageText(Date.now() - p.oldestQuoteAt)} old` : ""
+          }`}
+        >
+          {p.closedMarks ? "closing marks, the market out of its session" : "live marks"}
+          {partial ? `: ${p.trades.length - whole} of ${p.trades.length} trades without a live mark (a leg not streaming)` : ""}
+        </p>
+      ) : null}
+      {lines}
     </>
   );
 }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { renderToString } from "react-dom/server";
 import type { ReactElement } from "react";
-import type { ManageLivePayload, ManageLiveTrade } from "@console/shared";
+import type { ManageLiveAccount, ManageLivePayload, ManageLiveTrade } from "@console/shared";
 import { LiveCaptureCell, LiveMarksContext, LivePnlCell, LiveStatus, liveMarks } from "../src/pages/Live/LiveMarks";
 
 /**
@@ -15,7 +15,7 @@ function trade(over: Partial<ManageLiveTrade> = {}): ManageLiveTrade {
 }
 
 function payload(trades: ManageLiveTrade[]): ManageLivePayload {
-  return { session: "2026-10-22", oldestQuoteAt: Date.now() - 4000, maxAgeSeconds: 120, trades, accounts: [], spots: {} };
+  return { session: "2026-10-22", oldestQuoteAt: Date.now() - 4000, maxAgeSeconds: 120, closedMarks: false, trades, accounts: [], spots: {} };
 }
 
 function render(p: ManageLivePayload | null, el: ReactElement): string {
@@ -50,5 +50,35 @@ describe("live marks", () => {
   it("says when nothing is streaming, and shows nothing off the newest evaluation", () => {
     expect(render(payload([trade({ pnlGross: null })]), <LivePnlCell id="GLW" />)).toContain("live marks: none streaming");
     expect(render(null, <LivePnlCell id="GLW" />)).not.toContain("live marks:");
+  });
+});
+
+describe("the live status lines", () => {
+  const acct = (account: string, legsMarked: number): ManageLiveAccount => ({
+    account, bwd: null, theta: null, legsWithGreeks: 4, legsTotal: 4, legsMarked, dayPl: legsMarked === 4 ? 10 : null, netLiqEstimate: null, legsLeftOut: 0,
+  });
+  const status = (p: ManageLivePayload, props: { accounts?: string[] | null; day?: boolean }) =>
+    renderToString(
+      <LiveMarksContext.Provider value={liveMarks(p)}>
+        <LiveStatus {...props} />
+      </LiveMarksContext.Provider>,
+    ).replace(/<!-- -->/g, "");
+
+  it("says nothing while every trade streams in the session", () => {
+    expect(status(payload([trade()]), { day: false })).toBe("");
+  });
+
+  it("names the trades without a live mark, and says when the marks are closing marks", () => {
+    expect(status(payload([trade(), trade({ tradeId: "X", pnlGross: null })]), { day: false })).toContain("1 of 2 trades without a live mark");
+    expect(status({ ...payload([trade()]), closedMarks: true }, { day: false })).toContain("closing marks");
+  });
+
+  it("draws only the chosen account, and off the day views only one with a leg not streaming", () => {
+    const p = { ...payload([trade()]), accounts: [acct("****1111", 4), acct("****2222", 3)] };
+    const day = status(p, { accounts: ["****1111"], day: true });
+    expect(day).toContain("****1111");
+    expect(day).not.toContain("****2222");
+    expect(status(p, { accounts: ["****1111"], day: false })).toBe("");
+    expect(status(p, { accounts: null, day: false })).toContain("****2222");
   });
 });
