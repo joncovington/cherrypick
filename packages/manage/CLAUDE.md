@@ -67,6 +67,10 @@ of that day, not today's.
   link does not reach (no reconciled link), a lone short call and the one lone long call covering it (later or equal expiry,
   lower or equal strike, its quantity), both reconciled chains and no shares on the name, are one
   trade too (`grouped_by: "covered call"`), its basis the two chains.
+- **A short call the shares cover is never judged as naked.** A trade of short calls alone, on a name
+  whose shares cover every one of them, is a `covered call` (`_share_cover`): the rules in
+  `COVERED_SKIPS` and the expiry close never judge it, and `covered_call.assigned` judges its
+  call-away against the wheel basis, else the shares' chain cost, never the positions' open price.
 - **Credit or debit is decided by the net open cost**, never by the strategy's name.
 - **`None` is not zero.** An unpriced leg makes the trade `REVIEW` with no rule judged; a field with
   no input is null.

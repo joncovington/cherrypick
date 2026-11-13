@@ -235,6 +235,8 @@ NAMES = frozenset(
         "diagonal",
         "naked put",
         "naked call",
+        # Short calls alone the name's shares cover: named by evaluate, which knows the shares.
+        "covered call",
         "long put",
         "long call",
         "super bear",
