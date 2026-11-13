@@ -101,7 +101,7 @@ def test_verdict_flat_when_all_accounts_empty(env, monkeypatch):
         "_query_broker",
         lambda cfg, forced: {
             "reachable": True,
-            "accounts": [_flat_acct("****4222"), _flat_acct("****8569")],
+            "accounts": [_flat_acct("****7777"), _flat_acct("****6666")],
             "total_open": 0,
             "undesignated_open": 0,
         },
@@ -119,7 +119,7 @@ def test_verdict_drift_when_any_account_has_positions(env, monkeypatch):
         "_query_broker",
         lambda cfg, forced: {
             "reachable": True,
-            "accounts": [_flat_acct("****4222"), _pos_acct("****8569")],
+            "accounts": [_flat_acct("****7777"), _pos_acct("****6666")],
             "total_open": 1,
             "undesignated_open": 1,
         },
@@ -127,7 +127,7 @@ def test_verdict_drift_when_any_account_has_positions(env, monkeypatch):
     out = reconcile.run(cfg)
     assert out["verdict"] == reconcile.DRIFT
     text, worst = reconcile.format_report(out)
-    assert "DRIFT" in text and "1 OPEN position" in text and "****8569" in text and worst == 2
+    assert "DRIFT" in text and "1 OPEN position" in text and "****6666" in text and worst == 2
     assert "checked 2 real account(s)" in text
 
 
@@ -139,7 +139,7 @@ def test_designated_live_account_with_positions_is_expected_not_drift(env, monke
         "_query_broker",
         lambda cfg, forced: {
             "reachable": True,
-            "accounts": [_flat_acct("****4222"), _pos_acct("****8569", designated=True)],
+            "accounts": [_flat_acct("****7777"), _pos_acct("****6666", designated=True)],
             "total_open": 1,
             "undesignated_open": 0,
         },
@@ -177,13 +177,13 @@ def test_query_broker_checks_every_account_and_masks(env, monkeypatch):
         if cmd == "list_accounts":
             return _Proc(
                 '{"ok": true, "accounts": ['
-                '{"account_number": "5WU111114222"}, {"account_number": "5WU222228569"}]}'
+                '{"account_number": "5WU111117777"}, {"account_number": "5WU222226666"}]}'
             )
         num = argv[argv.index("--account_number") + 1]
         if cmd == "get_positions":
             seen_position_accounts.append(num)
             # the SECOND account carries a position — must not be missed
-            positions = [] if num == "5WU111114222" else [{"symbol": "AAPL", "quantity": 1}]
+            positions = [] if num == "5WU111117777" else [{"symbol": "AAPL", "quantity": 1}]
             import json as _json
 
             return _Proc(_json.dumps({"ok": True, "account_number": num, "positions": positions}))
@@ -193,14 +193,14 @@ def test_query_broker_checks_every_account_and_masks(env, monkeypatch):
     broker = reconcile._query_broker(cfg, None)
     assert broker["reachable"] is True
     # BOTH accounts were queried by their full number...
-    assert seen_position_accounts == ["5WU111114222", "5WU222228569"]
+    assert seen_position_accounts == ["5WU111117777", "5WU222226666"]
     # ...and the drift in the second account is captured
     assert broker["total_open"] == 1
     accounts = {a["account"]: a for a in broker["accounts"]}
-    assert set(accounts) == {"****4222", "****8569"}
-    assert accounts["****8569"]["open_count"] == 1
+    assert set(accounts) == {"****7777", "****6666"}
+    assert accounts["****6666"]["open_count"] == 1
     # never leak a full account number anywhere in the returned structure
-    assert "111114222" not in str(broker) and "222228569" not in str(broker)
+    assert "111117777" not in str(broker) and "222226666" not in str(broker)
 
 
 def test_balances_summary_matches_the_sdks_underscored_keys():

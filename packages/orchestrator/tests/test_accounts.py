@@ -17,8 +17,8 @@ from cherrypick.orchestrator import config as cfgmod
 pytestmark = pytest.mark.unit
 
 _ACCTS = [
-    {"account_number": "5WU111114222", "nickname": "Main", "account_type": "Individual"},
-    {"account_number": "5WU222228569", "nickname": None, "account_type": "Individual"},
+    {"account_number": "5WU111117777", "nickname": "Main", "account_type": "Individual"},
+    {"account_number": "5WU222226666", "nickname": None, "account_type": "Individual"},
 ]
 
 
@@ -104,35 +104,35 @@ def test_list_accounts_masks_and_marks_none_designated(env):
     _, cfg = env
     out = accounts.list_accounts(cfg, "meic")
     assert out["ok"] is True
-    assert [a["account"] for a in out["accounts"]] == ["****4222", "****8569"]
+    assert [a["account"] for a in out["accounts"]] == ["****7777", "****6666"]
     assert all(a["designated"] is False for a in out["accounts"])
     assert out["designated"] is None
     assert out["live_enabled"] is False
-    assert "111114222" not in json.dumps(out) and "222228569" not in json.dumps(out)
+    assert "111117777" not in json.dumps(out) and "222226666" not in json.dumps(out)
 
 
 def test_set_by_last4_writes_full_number_returns_masked(env):
     _, cfg = env
-    out = accounts.set_account(cfg, "meic", "8569")
-    assert out["ok"] is True and out["designated"] == "****8569"
+    out = accounts.set_account(cfg, "meic", "6666")
+    assert out["ok"] is True and out["designated"] == "****6666"
     # the FULL number is what the module will read from its keyring
-    assert _FakeStore._mem["meicagent-test"]["account_number"] == "5WU222228569"
+    assert _FakeStore._mem["meicagent-test"]["account_number"] == "5WU222226666"
     # never leak the full number in the returned payload
-    assert "222228569" not in json.dumps(out)
+    assert "222226666" not in json.dumps(out)
 
 
 def test_set_by_index(env):
     _, cfg = env
     out = accounts.set_account(cfg, "meic", "1")
-    assert out["ok"] is True and out["designated"] == "****4222"
-    assert _FakeStore._mem["meicagent-test"]["account_number"] == "5WU111114222"
+    assert out["ok"] is True and out["designated"] == "****7777"
+    assert _FakeStore._mem["meicagent-test"]["account_number"] == "5WU111117777"
 
 
 def test_set_then_list_marks_designated(env):
     _, cfg = env
     accounts.set_account(cfg, "meic", "2")
     out = accounts.list_accounts(cfg, "meic")
-    assert out["designated"] == "****8569"
+    assert out["designated"] == "****6666"
     assert [a["designated"] for a in out["accounts"]] == [False, True]
 
 
@@ -175,11 +175,11 @@ def test_suite_wide_probe_resolves_the_known_module_broker_tool(env, monkeypatch
         return {"ok": True, "accounts": _ACCTS}
 
     monkeypatch.setattr(accounts, "_tt", spy)
-    out = accounts.set_shared_account(cfg, "8569")
-    assert out["ok"] is True and out["designated"] == "****8569"
+    out = accounts.set_shared_account(cfg, "6666")
+    assert out["ok"] is True and out["designated"] == "****6666"
     assert seen == [["-m", "cherrypick.meic.tt"]]
     out = accounts.list_shared(cfg)
-    assert out["ok"] is True and out["designated"] == "****8569"
+    assert out["ok"] is True and out["designated"] == "****6666"
     assert seen == [["-m", "cherrypick.meic.tt"], ["-m", "cherrypick.meic.tt"]]
 
 
@@ -230,7 +230,7 @@ def test_suite_wide_probe_uses_a_config_declared_broker_tool(env, monkeypatch):
         ("bwb", True, {"keyring_service": "bwbagent-test", "broker_tool": BWB_TOOL}),
     )
     seen = _spy_tt(monkeypatch)
-    assert accounts.set_shared_account(cfg, "8569")["ok"] is True
+    assert accounts.set_shared_account(cfg, "6666")["ok"] is True
     assert seen == [("bwb", BWB_TOOL)]
 
 
@@ -282,24 +282,24 @@ def test_keyring_store_falls_back_to_shared_service(fallback_env):
     designated" even though it would in fact trade the shared account once armed, and `reconcile`
     could raise a false DRIFT alert against that very account."""
     cfg, shared = fallback_env
-    _FakeStoreWithFallback._mem[shared] = {"account_number": "5WU222228569"}
+    _FakeStoreWithFallback._mem[shared] = {"account_number": "5WU222226666"}
     store = accounts.keyring_store(cfg, "flies")
-    assert accounts._designated_number(store) == "5WU222228569"
+    assert accounts._designated_number(store) == "5WU222226666"
 
 
 def test_keyring_store_own_designation_wins_over_shared(fallback_env):
     cfg, shared = fallback_env
-    _FakeStoreWithFallback._mem[shared] = {"account_number": "5WU222228569"}
-    _FakeStoreWithFallback._mem["fliesagent-test"] = {"account_number": "5WU111114222"}
+    _FakeStoreWithFallback._mem[shared] = {"account_number": "5WU222226666"}
+    _FakeStoreWithFallback._mem["fliesagent-test"] = {"account_number": "5WU111117777"}
     store = accounts.keyring_store(cfg, "flies")
-    assert accounts._designated_number(store) == "5WU111114222"
+    assert accounts._designated_number(store) == "5WU111117777"
 
 
 def test_list_accounts_marks_shared_inherited_designation(fallback_env):
     cfg, shared = fallback_env
-    _FakeStoreWithFallback._mem[shared] = {"account_number": "5WU222228569"}
+    _FakeStoreWithFallback._mem[shared] = {"account_number": "5WU222226666"}
     out = accounts.list_accounts(cfg, "flies")
-    assert out["designated"] == "****8569"
+    assert out["designated"] == "****6666"
     assert [a["designated"] for a in out["accounts"]] == [False, True]
 
 
@@ -307,8 +307,8 @@ def test_reconcile_designated_numbers_includes_shared_fallback(fallback_env):
     from cherrypick.orchestrator import reconcile
 
     cfg, shared = fallback_env
-    _FakeStoreWithFallback._mem[shared] = {"account_number": "5WU222228569"}
-    assert reconcile._designated_numbers(cfg) == {"5WU222228569"}
+    _FakeStoreWithFallback._mem[shared] = {"account_number": "5WU222226666"}
+    assert reconcile._designated_numbers(cfg) == {"5WU222226666"}
 
 
 def test_list_accounts_reads_flies_nested_live_convention(fallback_env):
@@ -327,7 +327,7 @@ def test_list_accounts_reads_flies_nested_live_convention(fallback_env):
 def test_earnings_refuses_an_account_designation_and_writes_nothing(env):
     _, cfg = env
     before = json.dumps(_FakeStore._mem, sort_keys=True)
-    out = accounts.set_account(cfg, "earnings", "8569")
+    out = accounts.set_account(cfg, "earnings", "6666")
     assert out == {"ok": False, "error": "earnings is paper-only since v0.12.0; it needs no trading account."}
     assert json.dumps(_FakeStore._mem, sort_keys=True) == before
 
@@ -338,7 +338,7 @@ def test_the_account_command_exits_non_zero_for_earnings(env, capsys):
     from cherrypick import cli
 
     _, cfg = env
-    args = SimpleNamespace(module="earnings", set="8569", clear=False, yes=True)
+    args = SimpleNamespace(module="earnings", set="6666", clear=False, yes=True)
     with pytest.raises(SystemExit) as exc:
         cli.cmd_account(cfg, args)
     assert exc.value.code == 1

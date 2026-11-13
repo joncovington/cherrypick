@@ -48,7 +48,7 @@ def test_connect_delegates_secrets_and_sets_account(env, monkeypatch):
             "ok": True,
             "module": module,
             "accounts": [
-                {"account": "****4222", "nickname": None, "type": "Individual", "designated": False}
+                {"account": "****7777", "nickname": None, "type": "Individual", "designated": False}
             ],
             "designated": None,
             "live_enabled": True,
@@ -58,12 +58,12 @@ def test_connect_delegates_secrets_and_sets_account(env, monkeypatch):
 
     def fake_set(cfg, module, sel):
         set_calls["sel"] = sel
-        return {"ok": True, "designated": "****4222"}
+        return {"ok": True, "designated": "****7777"}
 
     monkeypatch.setattr(accounts, "set_account", fake_set)
 
     out = connect.run(cfg, "meic", prompt_fn=lambda _p: "1")
-    assert out["ok"] is True and out["connected"] is True and out["account"] == "****4222"
+    assert out["ok"] is True and out["connected"] is True and out["account"] == "****7777"
     # bearer-secret step: the module's own tool, tty inherited (NOT captured)
     assert calls["argv"][1:] == [
         "-m",
@@ -99,8 +99,8 @@ def test_connect_skip_account_leaves_unchanged(env, monkeypatch):
         lambda cfg, module: {
             "ok": True,
             "module": module,
-            "accounts": [{"account": "****4222"}],
-            "designated": "****4222",
+            "accounts": [{"account": "****7777"}],
+            "designated": "****7777",
             "live_enabled": False,
         },
     )
