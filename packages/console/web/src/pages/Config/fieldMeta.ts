@@ -499,6 +499,23 @@ export const FIELDS: FieldMeta[] = [
     step: 0.05,
     section: "rules",
   },
+  {
+    target: "manage",
+    pointer: "/directional/time_exit/enabled",
+    label: "Near-even-money trades: close at 21 DTE",
+    help: "Off by default: a super bull or bear or a risk reversal is held to its target, its stop or the expiry close. On, it closes when its nearest short reaches the days below, as a credit trade does.",
+    type: "boolean",
+    section: "rules",
+  },
+  {
+    target: "manage",
+    pointer: "/directional/time_exit/dte",
+    label: "Near-even-money time exit (DTE of the nearest short)",
+    type: "number",
+    min: 0,
+    max: 365,
+    section: "rules",
+  },
 
   // --- the console's own pacing (the `dev` section until 2026-10-30, its only field) ---------
   {

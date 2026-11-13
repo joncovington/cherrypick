@@ -459,3 +459,33 @@ def test_a_super_with_its_long_a_month_later_is_judged_on_its_risk_not_the_diago
 )
 def test_near_misses_of_a_super_diagonal_stay_diagonals(legs):
     assert shapes.classify(opts(legs), cost(legs)) == "diagonal"
+
+
+def _super_bull_at(expiry):
+    return [
+        leg(-1, "P", 95, expiry, 1.60, 1.60),
+        leg(1, "P", 90, expiry, 0.60, 0.60),
+        leg(1, "C", 105, expiry, 1.30, 1.30),
+        leg(-1, "C", 110, expiry, 0.25, 0.25),
+    ]
+
+
+def test_a_directional_trade_has_no_time_exit_by_default():
+    # 17 days to its expiry on the session, inside the credit exit's 21: held to its target, its stop
+    # or the expiry close, with no exit date to show.
+    t = run(_super_bull_at("2026-10-30"))
+    assert t["kind"] == "directional"
+    assert t["nearest_short_dte"] == 17
+    assert not {"directional.time_exit", "credit.time_exit", "debit.time_exit"} & set(fired(t))
+    assert "time_exit" not in t["exit_levels"]
+    assert "whatever happens" not in t["explanation"]
+
+
+def test_a_directional_time_exit_switched_on_closes_at_its_days():
+    on = ev._rules.effective({"directional": {"time_exit": {"enabled": True}}})[0]
+    t = run(_super_bull_at("2026-10-30"), rules=on)
+    assert fired(t)["directional.time_exit"] == ev.CLOSE  # flat at mid less nothing: not a winner
+    assert t["exit_levels"]["time_exit"]["date"] == "2026-10-09"
+    early = run(_super_bull_at(NOV), rules=on)  # 38 days out: the date stands, nothing fires yet
+    assert "directional.time_exit" not in fired(early)
+    assert early["exit_levels"]["time_exit"]["date"] == "2026-10-30"
