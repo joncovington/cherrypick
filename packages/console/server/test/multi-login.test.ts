@@ -215,8 +215,8 @@ describe("model a trade", () => {
       argv = a;
       return { ok: true, json: { ok: true }, error: null };
     });
-    await readManageModel("SPY", ["-1 2026-12-18 46P @ 1.05"], "margin-4222");
-    expect(argv.slice(-2)).toEqual(["--account", "margin-4222"]);
+    await readManageModel("SPY", ["-1 2026-12-18 46P @ 1.05"], "margin-7777");
+    expect(argv.slice(-2)).toEqual(["--account", "margin-7777"]);
     const bad = await readManageModel("SPY", ["-1 2026-12-18 46P @ 1.05"], "../x");
     expect(bad.ok).toBe(false);
   });

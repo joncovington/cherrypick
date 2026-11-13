@@ -145,7 +145,7 @@ line, kill criteria derived for its arm on its symbol, a designated account on t
 day's arm:
 
 ```bash
-python packages/orchestrator/run.py account --module meic --login margin --set 4222
+python packages/orchestrator/run.py account --module meic --login margin --set 7777
 python -m cherrypick.meic.live_loop --status --login margin
 python -m cherrypick.meic.live_loop --arm --confirm YES --login margin
 ```

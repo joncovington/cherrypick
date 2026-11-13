@@ -148,9 +148,9 @@ def test_designating_needs_the_module_s_own_entry(monkeypatch, tmp_path):
     monkeypatch.setenv("CHERRYPICK_HOME", str(tmp_path))
     (tmp_path / "config").mkdir()
     (tmp_path / "config" / "meic.json").write_text(json.dumps({"live_accounts": {}}), encoding="utf-8")
-    out = accounts.set_login_account(SUITE, "meic", "margin", "4222")
+    out = accounts.set_login_account(SUITE, "meic", "margin", "7777")
     assert out["ok"] is False and "live_accounts.margin" in out["error"]
-    assert accounts.set_login_account(SUITE, "meic", "ghost", "4222")["ok"] is False
+    assert accounts.set_login_account(SUITE, "meic", "ghost", "7777")["ok"] is False
 
 
 def test_the_live_check_keys_everything_by_its_live_account(monkeypatch):

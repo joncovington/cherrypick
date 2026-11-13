@@ -40,7 +40,7 @@ def test_a_named_account_is_modelled_on_its_own_book():
     )
     margin = {
         **ira,
-        "account_key": "margin-4222",
+        "account_key": "margin-7777",
         "login": "margin",
         "designated": False,
         "account_type": {"margin_or_cash": "Margin", "type_name": "Individual"},
@@ -48,7 +48,7 @@ def test_a_named_account_is_modelled_on_its_own_book():
     snap["positions"]["accounts"].append(margin)
     result = ev.evaluate(snap, RULES)
     on_ira = model.model(result, snap, RULES, "XYZ", ["-1 2026-12-18 45P @ 1.05"])
-    on_margin = model.model(result, snap, RULES, "XYZ", ["-1 2026-12-18 45P @ 1.05"], "margin-4222")
+    on_margin = model.model(result, snap, RULES, "XYZ", ["-1 2026-12-18 45P @ 1.05"], "margin-7777")
     assert on_ira["account_basis"] != on_margin["account_basis"]
     missing = model.model(result, snap, RULES, "XYZ", ["-1 2026-12-18 45P @ 1.05"], "ghost-0000")
     assert missing["ok"] is False and "ghost-0000" in missing["error"]
