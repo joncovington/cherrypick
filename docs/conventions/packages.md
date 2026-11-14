@@ -75,6 +75,12 @@ what it may write. The package's own CLAUDE.md holds the detail.
   default in the example. Reads the
   technicals package's pure indicator functions (`sma`, `ema`, `rsi`) and nothing else of it:
   the second package, after fundamentals, to declare that dependency.
+- **packages/ladder** — ⚠️ EXPERIMENTAL. The share dip ladder in paper on leveraged index funds
+  (TQQQ first): a lot bought 7% down, each lot sold on its own at +4%, no stop. Arms `chain`,
+  `once` (item 26, which failed) and `decay` (item 27's passing target). **Paper-only,
+  credential-free**, a stream-cache consumer: fills are resting limits tested against one quote a
+  minute, the reference close is a posted close (`stream_summary`), never a last trade. Writes only
+  its own ledger and its stream request. Not yet scheduled by the orchestrator. No live path.
 - **packages/bwb** — **Retired 2026-11-08; off by default; may be reinstated** (the owner switched
   entries off; the module goes off once flat; reinstating means `modules.bwb.enabled` and the arms'
   `enabled`). Daily-laddered SPX put broken-wing butterflies, ~7 DTE, held to expiry; was paper by

@@ -6,7 +6,7 @@
 
 cherrypick is an **experimental prototype**, written to learn about and research options strategies.
 It is not a finished product, a trading service, or a recommendation of any strategy. Parts of it are
-marked **EXPERIMENTAL** (calendars, contango, weeklyput and ensemble) and are less tested still. Flies, bwb, PMCC and curve are retired and off by default.
+marked **EXPERIMENTAL** (calendars, contango, weeklyput, ensemble and ladder) and are less tested still. Flies, bwb, PMCC and curve are retired and off by default.
 
 It is provided **"as is", without warranty of any kind**, under the MIT License ([LICENSE](LICENSE)).
 The authors are not liable for any loss or damage arising from its use.

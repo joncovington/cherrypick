@@ -1,0 +1,51 @@
+{
+  "_header": "===== cherrypick-ladder -- the share dip ladder in paper (EXPERIMENTAL, paper-only) =====",
+  "_what_this_is": "Buy a lot of a leveraged index fund when it trades 7% under its previous session's close (chain: 7% under the last lot bought while lots are open), and sell each lot on its own at +4% of its cost. No stop, no time limit. Item 26's rule (failed its history test) as the Discord group trades it, with item 27's decay target (passed) as a third arm. Copy to ~/.cherrypick/config/ladder.json (or a git-ignored config.json here).",
+  "_source_note": "stream_cache_db overrides the shared stream cache path; null means the suite default.",
+  "source": {
+    "stream_cache_db": null
+  },
+  "defaults_header": "===== sizing, caps, hours =====",
+  "_sizing_note": "lot_dollars buys whole shares at the buy level, never more than the dollars; a lot that rounds under min_shares is refused (lot_too_small). max_open_lots caps one arm's open lots on one fund, max_open_lots_total one arm's across every fund. Each arm keeps its own book.",
+  "_fill_note": "A buy fills at its level when the fund's ask is at or under it; a sell fills at its target when the bid is at or over it. Both are resting limits, so the fill is the limit price and slippage is zero by construction. Fees are core.fees' stock pass-throughs: none on a buy, SEC fee and FINRA TAF on a sell.",
+  "_hours_note": "session_start to session_end (ET) on trading days: tastytrade's equity day, 08:15 to 20:00. The stream cache only holds quotes while the streamer runs (08:45 to about 20:00), so nothing fills overnight even on a fund the broker trades overnight.",
+  "_reference_note": "The reference close is the previous session's posted close (stream_summary), never a last trade. A session without one does not buy (no_reference_close).",
+  "defaults": {
+    "lot_dollars": 1000,
+    "min_shares": 3,
+    "max_open_lots": 3,
+    "max_open_lots_total": 6,
+    "drop": 0.07,
+    "gain": 0.04,
+    "max_quote_age_seconds": 120,
+    "session_start": "08:15",
+    "session_end": "20:00"
+  },
+  "names_header": "===== the funds =====",
+  "_names_note": "One fund per index and leverage. A fund may set its own lot_dollars, min_shares and max_open_lots; enabled false stops new lots and keeps managing the open ones.",
+  "names": {
+    "TQQQ": {}
+  },
+  "arms_header": "===== the arms =====",
+  "_arms_note": "entry: once (at most one lot a session, at 93% of the previous close) or chain (the first lot at 93% of the previous close, each further lot at 93% of the last lot bought). target: fixed (104% of cost) or decay (104% to day 30, breakeven after costs to day 120, then 95% of cost).",
+  "arms": {
+    "chain": {
+      "_summary": "The group's rule as posted: lots 7% apart, each sold at +4%.",
+      "entry": "chain",
+      "target": "fixed",
+      "enabled": true
+    },
+    "once": {
+      "_summary": "Item 26's base arm: one lot a session at 93% of the previous close, each sold at +4%.",
+      "entry": "once",
+      "target": "fixed",
+      "enabled": true
+    },
+    "decay": {
+      "_summary": "Item 27's passing arm: once, with the target falling to breakeven after day 30 and 95% of cost after day 120.",
+      "entry": "once",
+      "target": "decay",
+      "enabled": true
+    }
+  }
+}

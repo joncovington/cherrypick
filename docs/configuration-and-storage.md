@@ -21,6 +21,7 @@ wholesale with **`$CHERRYPICK_HOME`**. Nothing runtime lands in a source checkou
   config/contango.json            # Contango engine config (experimental)
   config/weeklyput.json           # Weeklyput engine config (experimental)
   config/ensemble.json            # Ensemble arms, symbols and loop knobs (experimental)
+  config/ladder.json              # Ladder funds, lot size, caps and arms (experimental)
   config/manage.json              # manage's ruleset and portfolio bands
   config/backtest.json            # backtest store and runs (the vendor key lives in the keyring)
   config/gex.json                 # GEX engine config
@@ -47,6 +48,7 @@ wholesale with **`$CHERRYPICK_HOME`**. Nothing runtime lands in a source checkou
   data/weeklyput/paper_trades.db  # Weeklyput paper ledger (weeklyput_positions / weeklyput_entries)
   data/ensemble/paper_trades.db   # Ensemble paper ledger (ensemble_positions / ensemble_legs / ensemble_entries)
   data/ensemble/replay/           # Ensemble replay record: one JSON line per decision tick, with its snapshot
+  data/ladder/paper_trades.db     # Ladder paper ledger (ladder_positions: one row per lot)
   data/manage/                    # eval-<day>.json evaluations of the real account
   data/backtest/                  # the licensed vendor store and its results (purgeable; the backup skips it)
   data/console/                   # the console's own store

@@ -134,6 +134,10 @@ suite once collected $4.00 of credit against $4.96 of fees.
   in paper: an arm is configuration (an arm added in config trades with no code change), and one
   deterministic decision serves both the backtest and the paper loop. Paper-only and credential-free: a
   position is a ledger row, never an order. See [packages/ensemble](packages/ensemble).
+- **Ladder** — ⚠️ **EXPERIMENTAL, paper-only.** A share dip ladder on leveraged index funds (TQQQ
+  first): a lot bought when the fund is 7% down, each lot sold on its own at +4%, no stop. Its rule
+  failed research item 26; the paper run watches it at real quotes beside item 27's `decay` target.
+  Not yet scheduled by the orchestrator. See [packages/ladder](packages/ladder).
 - **BWB** — **Retired 2026-11-08, off by default.** A daily-laddered SPX put broken-wing butterfly entered at the expected move for a net
   credit, ~7 DTE, held to expiry. Four books trade the identical base structure and differ only in
   whether a reversal-triggered add-on fires (never / delta touch / confirmed bounce / gamma-flip
