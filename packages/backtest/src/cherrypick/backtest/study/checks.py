@@ -1,9 +1,9 @@
-"""The three verdict bars every new study is judged on (the user's choice, 2026-11-14), and the
-verdict block that holds them.
+"""The three verdict bars every new study is judged on (2026-11-14), and the verdict block that
+holds them.
 
-The user trades for capital efficiency, a small delta for the portfolio's size, omnidirectional
-structures and no tail risk. Holding the same delta in shares is not a rival they would choose, so
-these three bars decide a verdict; same-capital rivals (a long call or put at the same max loss, one
+The suite's book is run for capital efficiency, a small delta for its size, omnidirectional
+structures and no tail risk. Holding the same delta in shares is not a rival such a book would
+choose, so these three bars decide a verdict; same-capital rivals (a long call or put at the same max loss, one
 side of a structure alone, the plain condor or strangle at the same buying power) are reported beside
 it and never judged:
 
