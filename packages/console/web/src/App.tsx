@@ -2,7 +2,7 @@ import { Routes, Route, Navigate, useLocation, useParams } from "react-router-do
 import { Shell } from "./components/shell/Shell";
 import { ModuleRoute } from "./pages/ModuleRoute";
 import { NotFoundPage } from "./pages/NotFoundPage";
-import { movedChartUrl } from "./pages/Chart/chartRoute";
+import { movedChartUrl, type MovedChartTab } from "./pages/Chart/chartRoute";
 
 /** A moved page whose links carry a query (`/reports/chart?symbol=MSFT`): the query goes with it. */
 function MovedTo({ to }: { to: string }) {
@@ -11,7 +11,7 @@ function MovedTo({ to }: { to: string }) {
 }
 
 /** An old chart URL onto the one chart, its query translated (`movedChartUrl`). */
-function MovedChart({ from }: { from: "intraday" | "technicals" }) {
+function MovedChart({ from }: { from: MovedChartTab }) {
   const { search } = useLocation();
   return <Navigate to={movedChartUrl(from, search)} replace />;
 }
@@ -33,11 +33,13 @@ export default function App() {
             page, matching every other page's page-in-the-URL convention. */}
         <Route path="morning" element={<Navigate to="/reports" replace />} />
         <Route path="review" element={<Navigate to="/reports/eod" replace />} />
-        {/* The intraday and technicals charts are one chart (`/charts/chart`); links and bookmarks
-            still say `/charts/intraday?product=ES`, `/charts/technicals?symbol=X` and the older
-            `/reports/chart?symbol=X`. A static segment outranks `:module/:slide`. */}
+        {/* The intraday, technicals and profile tabs are one chart (`/charts/chart`); links and
+            bookmarks still say `/charts/intraday?product=ES`, `/charts/technicals?symbol=X`,
+            `/charts/profile?symbol=X&day=D` and the older `/reports/chart?symbol=X`. A static segment
+            outranks `:module/:slide`. */}
         <Route path="charts/intraday" element={<MovedChart from="intraday" />} />
         <Route path="charts/technicals" element={<MovedChart from="technicals" />} />
+        <Route path="charts/profile" element={<MovedChart from="profile" />} />
         <Route path="reports/chart" element={<MovedChart from="technicals" />} />
         {/* The slice reports moved from Backtest to Compare (2026-10-30). Compare's tab fails closed on
             the same feature, so with it off the redirect lands on Compare's first tab. */}

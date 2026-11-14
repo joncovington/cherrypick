@@ -54,24 +54,36 @@ export function intradayReason(live: boolean, liveSymbols: readonly string[]): s
   return live ? null : `the live feed carries ${liveSymbols.join(", ")} only`;
 }
 
+/** A retired Charts tab whose links and bookmarks still arrive. */
+export type MovedChartTab = "intraday" | "technicals" | "profile";
+
 /**
  * An old chart URL on the one chart, its query carried. `/charts/intraday?product=ES&period=15m`
  * names the live chart's product and width; `/charts/technicals?symbol=X` the daily chart, whose
- * symbol defaulted to SPX. Every other key (profile, sessions, hide, show, setup, side, levels) is
- * the view's own and goes as it is.
+ * symbol defaulted to SPX; `/charts/profile?symbol=SPX&sessions=10` the recorded sessions, now the
+ * sessions panel under the 15-minute chart (the width that reaches furthest back), its `sessions`
+ * becoming the panel's `days` (the chart's own `sessions` counts histograms). Every other key
+ * (profile, hide, show, setup, side, levels, composite, measure, day) is the view's own and goes as it is.
  */
-export function movedChartUrl(from: "intraday" | "technicals", search: string): string {
+export function movedChartUrl(from: MovedChartTab, search: string): string {
   const old = new URLSearchParams(search);
   const next = new URLSearchParams();
+  const renamed = new Set(["product", "period", "symbol", "tf"]);
   if (from === "intraday") {
     next.set("symbol", liveLabel((old.get("product") ?? "ES").toUpperCase()));
     const period = old.get("period");
     if (isTimeframe(period) && period !== "1d") next.set("tf", period);
-  } else {
+  } else if (from === "technicals") {
     next.set("symbol", chartSymbol(old.get("symbol") ?? "SPX"));
     next.set("tf", "1d");
+  } else {
+    next.set("symbol", chartSymbol(old.get("symbol") ?? "SPX"));
+    next.set("tf", "15m");
+    renamed.add("sessions");
+    const days = old.get("sessions");
+    if (days !== null) next.set("days", days);
   }
-  for (const [k, v] of old) if (!["product", "period", "symbol", "tf"].includes(k)) next.append(k, v);
+  for (const [k, v] of old) if (!renamed.has(k)) next.append(k, v);
   // A slash is legal in a query; left encoded, "/ES" would read "%2FES" in the address bar.
   return `/charts/chart?${next.toString().replace(/%2F/g, "/")}`;
 }

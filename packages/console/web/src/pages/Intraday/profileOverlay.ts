@@ -44,7 +44,7 @@ export interface SessionProfiles {
 
 /**
  * The newest session's profile and the one before it. The row size is the symbol's fixed one
- * (`rowSizeFor`, the same as the Profile tab and the morning pack); a symbol without one takes it from
+ * (`rowSizeFor`, the same as the sessions panel and the morning pack); a symbol without one takes it from
  * the oldest bar held, so it stays put while the series is open (a row size that moved with the last
  * price would re-cut the histogram mid-session). `symbol` is the profile store's name ("SPX", "/ES").
  */
@@ -322,7 +322,7 @@ export function sessionChoice(raw: string | null): SessionChoice {
 /**
  * The profiles the histograms draw: the newest `n` sessions, oldest first. The newest is the one the
  * lines read (`profiles.latest`), so histogram and lines never disagree. The older ones come from the
- * recorded bars where the store keeps the symbol, by the Profile tab's own rule (`buildView`: the
+ * recorded bars where the store keeps the symbol, by the sessions panel's own rule (`buildView`: the
  * recorded bars, then live ones only after the newest of them), else from the live 15-minute series
  * (seven days). Every one is on the newest's row grid; one that is not is left out rather than drawn
  * on a different scale.
