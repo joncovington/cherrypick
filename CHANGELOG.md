@@ -27,6 +27,13 @@ beyond the latest release.
   claim of an edge. Experimental, paper-only and off by default: turn it on with `modules.ladder.enabled` after
   copying `packages/ladder/config.example.json` to `~/.cherrypick/config/ladder.json`. The suite reads
   its lots like any other module's trades, so they land in the report, the compare and the review.
+- **Market Profile on the intraday chart.** Charts → intraday now also draws SPX, SPY, NDX and QQQ
+  beside the futures. By default it overlays the session's Market Profile: time spent at each price as a
+  shaded histogram, plus lines for the point of control, the value area (70% of the time), the first
+  hour's range and the prior session's levels. Turn it off with the `profile off` button. The profile
+  covers the regular session, 09:30–16:00 ET, for every symbol, a future's overnight excluded. It is a
+  chart and nothing trades on it. The same arithmetic is in `cherrypick.core.marketprofile` for
+  research.
 
 ## v0.13.0 — 2026-11-13 — evidence and accounts
 About 45 pull requests since v0.12.0, and it includes everything in the v0.12.1 beta (delta ideas, the

@@ -5,7 +5,8 @@ import { ModuleFrame } from "../ModuleFrame";
 import type { SlideDef } from "../types";
 
 /**
- * The suite's charts: the live intraday futures chart over the console's own DXLink session, and
+ * The suite's charts: the live intraday chart (futures plus SPX, SPY, NDX and QQQ, with a Market
+ * Profile overlay) over the console's own DXLink session, and
  * the technicals package's one-name chart (`/charts/technicals?symbol=MSFT`), which was Reports'
  * `chart` tab until 2026-10-01, and the setups watchlist over every technicals chart
  * (`/charts/setups`). This manifest holds the page list and nothing else.
