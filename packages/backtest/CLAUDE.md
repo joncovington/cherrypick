@@ -29,6 +29,11 @@ expunged within 30 days of termination** (§8(e)). Two consequences shape the wh
   the root `scripts/`: every item study on the engine and the fetchers that fill its stores. Other
   scripts stay at the root. The research queue and the study chain accept both folders, and a change
   here runs every CI job, because other packages' tests load these scripts by path.
+- **A new study takes shared pieces from the study kit** (`cherrypick.backtest.study`: calendars,
+  chains), never by loading another study's script. The kit is copied from recorded scripts and
+  pinned to them by test; a finished study keeps its own copy until a logged correction moves it.
+  Its constraints (no defaults for declared parameters, no trading rules, costs from core) are in
+  the package docstring and #1068.
 - **The data must stay purgeable.** It lives in one directory carrying a marker file
   (`paths.LICENSED_MARKER`); `purge` removes only marked directories (dry run by default), and the
   nightly backup skips any marked directory (`orchestrator/backup.py` spells the same name; a test
