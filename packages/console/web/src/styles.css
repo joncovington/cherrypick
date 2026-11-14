@@ -11119,6 +11119,16 @@ button.chip[aria-pressed][data-hue="special"],
   width: 100%;
   height: auto;
 }
+/* The vol curve scales with its box, so its labels are in the curve's own units: a step above the
+   shared axis font, and a larger step on a phone, where the box is half the curve's width. */
+svg.vol-curve text {
+  font-size: 11px;
+}
+@media (max-width: 640px) {
+  svg.vol-curve text {
+    font-size: 17px;
+  }
+}
 .mb-sectors {
   display: grid;
   grid-template-columns: repeat(var(--mb-n, 11), minmax(0, 1fr));
