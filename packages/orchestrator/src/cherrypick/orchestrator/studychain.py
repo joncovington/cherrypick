@@ -22,6 +22,10 @@ backtest data directory (`$BACKTEST_DATA_DIR`, else the home's `data/backtest`, 
 - A fetch whose requests or plan file is an earlier step's declared `output` gets an empty placeholder
   (`{"requests": []}` or `{"sessions": {}}`) so it can be queued; that earlier step overwrites it
   before the fetch can start, and a failed earlier step holds the fetch.
+- A fetch step may declare `"repeat": N` (1 to `MAX_REPEAT`): it is unrolled into N rows (`step`,
+  `step-2`, ...), each after the one before, so a later pass retries what an earlier one could
+  not get, and a pass with nothing left to do is done. A plan that must plan again from what was
+  fetched declares its second plan and fetch steps explicitly.
 - Every step is checked before any row is added: one live row per name, and each kind's arguments. A
   chain is queued whole or not at all.
 
@@ -40,7 +44,16 @@ from cherrypick.core import home as _home
 
 from . import researchqueue as rq
 
-STEP_KEYS = frozenset({"step", "kind", "args", "task_args", "output", "priority"})
+STEP_KEYS = frozenset({"step", "kind", "args", "task_args", "output", "priority", "repeat"})
+#: The most passes a repeated fetch unrolls to.
+MAX_REPEAT = 10
+
+
+def step_names(step: str, repeat: int = 1) -> list[str]:
+    """A step's row names: itself, then `-2`, `-3`, ... for each further pass of a repeated fetch."""
+    return [step] + [f"{step}-{i}" for i in range(2, repeat + 1)]
+
+
 ITEM = re.compile(r"_item(\d+)\.py$")
 #: The empty file a fetch accepts, by the argument naming its input.
 PLACEHOLDERS = {"requests": {"requests": []}, "plan": {"sessions": {}}}
@@ -74,9 +87,18 @@ def check(chain, name: str = "CHAIN") -> list[dict]:
             raise BadChain(
                 f"{name}: step {i + 1} needs step and kind, and only {', '.join(sorted(STEP_KEYS))}"
             )
-        if s["step"] in seen:
-            raise BadChain(f"{name}: step {s['step']!r} appears twice")
-        seen.add(s["step"])
+        repeat = s.get("repeat", 1)
+        if "repeat" in s:
+            if s["kind"] == "script":
+                raise BadChain(
+                    f"{name}: step {s['step']!r}: only a fetch repeats (a re-run retries what it missed)"
+                )
+            if type(repeat) is not int or not 1 <= repeat <= MAX_REPEAT:
+                raise BadChain(f"{name}: step {s['step']!r}: repeat is a whole number, 1 to {MAX_REPEAT}")
+        for n in step_names(s["step"], repeat):
+            if n in seen:
+                raise BadChain(f"{name}: step {n!r} appears twice")
+            seen.add(n)
         if s["kind"] == "script" and "task_args" in s:
             raise BadChain(f"{name}: step {s['step']!r} is a script: its task is the script, with args")
         if s["kind"] != "script" and "args" in s:
@@ -122,18 +144,22 @@ def plan_rows(
             task = {"path": script_rel, "args": list(s.get("args", []))}
         else:
             task = dict(s.get("task_args") or {})
-        rows.append(
-            {
-                "study": study,
-                "step": s["step"],
-                "kind": s["kind"],
-                "args": task,
-                "output": s.get("output"),
-                "after": prev,
-                "priority": int(s.get("priority", 0)),
-            }
-        )
-        prev = f"{study}/{s['step']}"
+        # A repeated fetch is unrolled into one row a pass, each after the one before: a later pass
+        # retries what an earlier one could not get (a refusal), and finds nothing to do (done) when
+        # the first got it all.
+        for name in step_names(s["step"], s.get("repeat", 1)):
+            rows.append(
+                {
+                    "study": study,
+                    "step": name,
+                    "kind": s["kind"],
+                    "args": dict(task),
+                    "output": s.get("output"),
+                    "after": prev,
+                    "priority": int(s.get("priority", 0)),
+                }
+            )
+            prev = f"{study}/{name}"
     return rows
 
 
