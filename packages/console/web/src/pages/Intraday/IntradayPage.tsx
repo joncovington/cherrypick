@@ -15,6 +15,7 @@ import {
 import { CANDLE_PERIODS, type CandleBar, type CandlePeriod, type FuturesTickerEntry } from "@console/shared";
 import { useFuturesTicker } from "../../lib/api";
 import { useCandles } from "../../lib/useCandles";
+import { CardHelpButton, HelpSection, type CardHelpContent } from "../../components/CardHelp";
 import { useWsState } from "../../lib/useQuote";
 import { wsClient } from "../../lib/wsClient";
 import { canvasPalette as _pal, hexOf } from "../../components/chart/cssvars";
@@ -22,8 +23,12 @@ import { tokenAlpha } from "../../components/chart/cssvars";
 import type { MarketProfile } from "../../lib/marketProfile";
 import {
   dashFor,
+  hiddenRoles,
+  hideParam,
   LINE_LEGEND,
   lineStyleFor,
+  OPTIONAL_LINES,
+  type ProfileLine,
   ProfileHistogram,
   profileLines,
   sessionProfiles,
@@ -159,10 +164,14 @@ function LiveCandles({
   entry,
   period,
   profile,
+  hidden,
+  onToggleLine,
 }: {
   entry: FuturesTickerEntry & { streamerSymbol: string };
   period: CandlePeriod;
   profile: boolean;
+  hidden: ReadonlySet<ProfileLine["role"]>;
+  onToggleLine: (role: ProfileLine["role"]) => void;
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const [info, setInfo] = useState<ChartInfo>({ loaded: false, count: 0, last: null, updatedAt: null });
@@ -271,13 +280,13 @@ function LiveCandles({
     const series = seriesRef.current;
     histRef.current?.setProfile(profile ? profiles.latest : null);
     if (series === null) return;
-    const want = profile ? profileLines(profiles) : [];
+    const want = profile ? profileLines(profiles, hidden) : [];
     const key = want.map((l) => `${l.key}:${l.price}`).join("|");
     if (key === linesRef.current.key) return;
     for (const line of linesRef.current.lines) series.removePriceLine(line);
     const lines = want.map((l) => series.createPriceLine({ price: l.price, title: l.title, ...lineStyleFor(l.role, OVERLAY) }));
     linesRef.current = { key, lines };
-  }, [profile, profiles]);
+  }, [profile, profiles, hidden]);
 
   const live = ws.dxlink === "connected";
   const precision = PRECISION[entry.product] ?? 2;
@@ -302,33 +311,95 @@ function LiveCandles({
       </div>
       {profile && profileBars.length > 0 && <ProfileReadout profiles={profiles} precision={precision} />}
       <div ref={hostRef} style={{ height: "560px" }} />
-      {profile && profileBars.length > 0 && <ProfileLegend />}
+      {profile && profileBars.length > 0 && <ProfileLegend hidden={hidden} onToggle={onToggleLine} />}
     </>
   );
 }
 
-/** What each horizontal line is: a swatch drawn in the line's own colour and stroke, and its meaning. */
-function ProfileLegend() {
+function Swatch({ role }: { role: ProfileLine["role"] }) {
+  const s = lineStyleFor(role, OVERLAY);
   return (
-    <ul
-      aria-label="profile lines"
-      style={{ listStyle: "none", margin: "8px 0 0", padding: 0, display: "flex", flexWrap: "wrap", gap: "4px 18px", fontSize: "0.85em" }}
-    >
-      {LINE_LEGEND.map(({ role, label, meaning }) => {
-        const s = lineStyleFor(role, OVERLAY);
-        return (
-          <li key={role} style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
-            <svg width="28" height="8" aria-hidden="true" style={{ flex: "none" }}>
-              <line x1="0" y1="4" x2="28" y2="4" stroke={s.color} strokeWidth="2" strokeDasharray={dashFor(s.lineStyle)} />
-            </svg>
-            <strong>{label}</strong>
-            <span className="muted">{meaning}</span>
-          </li>
-        );
-      })}
-    </ul>
+    <svg width="24" height="8" aria-hidden="true" style={{ flex: "none" }}>
+      <line x1="0" y1="4" x2="24" y2="4" stroke={s.color} strokeWidth="2" strokeDasharray={dashFor(s.lineStyle)} />
+    </svg>
   );
 }
+
+const OPTIONAL = new Set(OPTIONAL_LINES.map((o) => o.role));
+
+/**
+ * The legend under the chart, which is also where lines are switched: POC and the value area are
+ * always drawn and listed plainly; IBH/IBL, pPOC and pVAH/pVAL are buttons that show or hide their
+ * lines (and so their price-axis labels). Each entry's meaning is its tooltip and in the help box.
+ */
+function ProfileLegend({ hidden, onToggle }: { hidden: ReadonlySet<ProfileLine["role"]>; onToggle: (role: ProfileLine["role"]) => void }) {
+  return (
+    <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "6px 14px", marginTop: 8, fontSize: "0.85em" }}>
+      {LINE_LEGEND.filter((e) => !OPTIONAL.has(e.role)).map(({ role, label, meaning }) => (
+        <span key={role} title={meaning} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <Swatch role={role} />
+          <strong>{label}</strong>
+        </span>
+      ))}
+      <div className="mode-toggle" role="group" aria-label="optional profile lines">
+        {LINE_LEGEND.filter((e) => OPTIONAL.has(e.role)).map(({ role, label, meaning }) => {
+          const on = !hidden.has(role);
+          return (
+            <button
+              key={role}
+              type="button"
+              className={on ? "mode-btn active" : "mode-btn"}
+              aria-pressed={on}
+              title={`${on ? "Hide" : "Show"}: ${meaning}`}
+              onClick={() => onToggle(role)}
+              style={{ display: "inline-flex", alignItems: "center", gap: 6, opacity: on ? 1 : 0.55 }}
+            >
+              <Swatch role={role} />
+              {label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/** The page's help box: what the chart is, how the profile is built, and what each line means. */
+const INTRADAY_HELP: CardHelpContent = {
+  title: "Reading the intraday chart",
+  body: (
+    <>
+      <HelpSection title="The chart">
+        <p>
+          Extended hours, times in ET. CME futures trade Sunday 18:00 to Friday 17:00 ET with a daily break from 17:00
+          to 18:00; the axis skips periods with no bars, so the break and weekends close up rather than showing as
+          gaps. The bar in progress updates about once a second while the market trades.
+        </p>
+      </HelpSection>
+      <HelpSection title="Market Profile">
+        <p>
+          Built from 15-minute candles over the regular session, 09:30–16:00 ET, for every symbol (a future's
+          overnight is left out), in 30-minute periods lettered A–M. The shaded histogram on the right is the newest
+          session's time at each price: the brighter rows are its value area (70% of the time), the amber row its
+          point of control. SPX and NDX carry no volume, so theirs is time only. Chart only: no module reads it.
+        </p>
+      </HelpSection>
+      <HelpSection title="The lines">
+        <ul>
+          {LINE_LEGEND.map(({ role, label, meaning }) => (
+            <li key={role}>
+              <strong>{label}</strong>: {meaning}
+              {OPTIONAL.has(role) ? " (switch it with its button under the chart)" : " (always drawn)"}.
+            </li>
+          ))}
+          <li>
+            The coloured line whose label is the price itself is the last trade.
+          </li>
+        </ul>
+      </HelpSection>
+    </>
+  ),
+};
 
 function Toggle<T extends string>({
   value,
@@ -367,6 +438,18 @@ export function IntradayPage() {
   };
 
   const profile = params.get("profile") !== "off";
+  const hideRaw = params.get("hide");
+  const hidden = useMemo(() => hiddenRoles(hideRaw), [hideRaw]);
+  const toggleLine = (role: ProfileLine["role"]): void => {
+    const nextHidden = new Set(hidden);
+    if (nextHidden.has(role)) nextHidden.delete(role);
+    else nextHidden.add(role);
+    const next = new URLSearchParams(params);
+    const value = hideParam(nextHidden);
+    if (value === "") next.delete("hide");
+    else next.set("hide", value);
+    setParams(next, { replace: true });
+  };
 
   const entries = [...CASH_INSTRUMENTS, ...(data?.entries ?? [])];
   const entry = entries.find((e) => e.product === product);
@@ -380,6 +463,7 @@ export function IntradayPage() {
           {entry?.label ?? labelOf(product)} {entry?.contract !== null && entry?.contract !== undefined ? `(${entry.contract})` : ""} ·{" "}
           {period} candles
         </h2>
+        <CardHelpButton cardTitle="Intraday chart" help={INTRADAY_HELP} />
         <span className="chip">chart only</span>
         <div style={{ marginLeft: "auto", display: "flex", flexWrap: "wrap", gap: 8, minWidth: 0 }}>
           <Toggle value={product} options={products} onChange={(v) => set("product", v)} label="symbol" render={labelOf} />
@@ -411,22 +495,9 @@ export function IntradayPage() {
           entry={{ ...entry, streamerSymbol: entry.streamerSymbol }}
           period={period}
           profile={profile}
+          hidden={hidden}
+          onToggleLine={toggleLine}
         />
-      )}
-      <p className="muted" style={{ fontSize: "0.85em", marginTop: 8 }}>
-        Extended hours, times in ET. CME futures trade Sunday 18:00 to Friday 17:00 ET with a daily break from 17:00
-        to 18:00; the axis skips periods with no bars, so the break and weekends close up rather than showing as
-        gaps. The bar in progress updates about once a second while the contract trades.
-      </p>
-      {profile && (
-        <p className="muted" style={{ fontSize: "0.85em", marginTop: 4 }}>
-          Market Profile: the regular session, 09:30–16:00 ET, for every symbol (a future's overnight is left out), in
-          30-minute periods A–M, built from 15-minute candles. The shaded histogram is the newest session's time at
-          each price; the brighter rows are its value area (70% of the time) and the amber row its point of control.
-          Each line is named on the price axis and in the legend under the chart; the coloured line that ends in
-          the price itself is the last trade. SPX and NDX carry no volume, so theirs is time only. Chart only: no
-          module reads it.
-        </p>
       )}
     </section>
   );

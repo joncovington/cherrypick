@@ -4,7 +4,15 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { CandleBar } from "@console/shared";
 
-import { LINE_LEGEND, lineStyleFor, profileLines, sessionProfiles } from "../src/pages/Intraday/profileOverlay";
+import {
+  hiddenRoles,
+  hideParam,
+  LINE_LEGEND,
+  lineStyleFor,
+  OPTIONAL_LINES,
+  profileLines,
+  sessionProfiles,
+} from "../src/pages/Intraday/profileOverlay";
 
 /**
  * The Intraday chart's profile overlay: which sessions it draws, when it calls one developing, and
@@ -55,6 +63,21 @@ describe("Intraday profile overlay", () => {
       return `${s.color}|${s.lineStyle}`;
     });
     expect(new Set(looks).size).toBe(roles.length);
+  });
+
+  it("hides only the optional groups a ?hide= names, and never POC or the value area", () => {
+    const p = sessionProfiles(SPX, at(20, 0));
+    const keys = (hide: string | null) => profileLines(p, hiddenRoles(hide)).map((l) => l.key);
+    expect(keys(null)).toEqual(["poc", "vah", "val", "ibh", "ibl", "ppoc", "pvah", "pval"]);
+    expect(keys("ib")).toEqual(["poc", "vah", "val", "ppoc", "pvah", "pval"]);
+    expect(keys("ppoc,pva")).toEqual(["poc", "vah", "val", "ibh", "ibl"]);
+    expect(keys("ib,ppoc,pva,poc,va,junk")).toEqual(["poc", "vah", "val"]);
+  });
+
+  it("writes ?hide= back in a stable order and empty when nothing is hidden", () => {
+    expect(hideParam(hiddenRoles("pva,ib"))).toBe("ib,pva");
+    expect(hideParam(new Set())).toBe("");
+    expect(OPTIONAL_LINES.map((o) => o.role)).toEqual(["ib", "prior-poc", "prior-va"]);
   });
 
   it("draws nothing without regular-session bars", () => {

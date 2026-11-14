@@ -287,7 +287,11 @@ the setups watchlist:
     line above the chart. Every line is named on the price axis and in a legend under the chart
     (`LINE_LEGEND`); colour says the level (amber POC, accent value area, grey IB), the stroke whose
     it is (the prior session's dotted), and a test fails if a line loses its label or two kinds look
-    alike. An index's zero-volume bars are left blank rather than drawn along the bottom. Built from the 15-minute series (subscribed alongside whatever width is
+    alike. POC and the value area are always drawn; IBH/IBL, pPOC and pVAH/pVAL are buttons in the
+    legend that show or hide their lines and axis labels, kept in `?hide=ib,ppoc,pva`
+    (`OPTIONAL_LINES`). What the chart is, how the profile is built and what each line means sit in
+    the card's help box (the ? beside its title), not under the chart. An index's zero-volume bars
+    are left blank rather than drawn along the bottom. Built from the 15-minute series (subscribed alongside whatever width is
     drawn; seven days of history, so the prior session is always held) through `lib/marketProfile.ts`,
     a mirror of `cherrypick.core.marketprofile` pinned to the shared fixture (docs/mirrors.md). The
     regular session 09:30–16:00 ET for every symbol; a future's overnight is left out. Rows from
