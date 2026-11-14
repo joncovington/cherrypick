@@ -12,7 +12,10 @@ import {
   OPTIONAL_LINES,
   profileLines,
   sessionProfiles,
+  untestedBars,
+  untestedCandidates,
 } from "../src/pages/Intraday/profileOverlay";
+import { recordedProfileSymbol } from "../src/pages/Intraday/IntradayPage";
 
 /**
  * The Intraday chart's profile overlay: which sessions it draws, when it calls one developing, and
@@ -55,7 +58,7 @@ describe("Intraday profile overlay", () => {
 
   it("names every line on the axis and in the legend, and draws no two kinds alike", () => {
     const colours = { poc: "#a", va: "#b", muted: "#c", rowFill: "", vaFill: "", pocFill: "" };
-    const roles = [...new Set(profileLines(sessionProfiles(SPX, at(20, 0))).map((l) => l.role))];
+    const roles = [...new Set(profileLines(sessionProfiles(SPX, at(20, 0)), new Set(), [["2026-11-10", 6800]]).map((l) => l.role))];
     expect(LINE_LEGEND.map((e) => e.role)).toEqual(roles);
     const looks = roles.map((r) => {
       const s = lineStyleFor(r, colours);
@@ -77,7 +80,41 @@ describe("Intraday profile overlay", () => {
   it("writes ?hide= back in a stable order and empty when nothing is hidden", () => {
     expect(hideParam(hiddenRoles("pva,ib"))).toBe("ib,pva");
     expect(hideParam(new Set())).toBe("");
-    expect(OPTIONAL_LINES.map((o) => o.role)).toEqual(["ib", "prior-poc", "prior-va"]);
+    expect(OPTIONAL_LINES.map((o) => o.role)).toEqual(["ib", "prior-poc", "prior-va", "untested-poc"]);
+  });
+
+  it("draws each untested POC through its row's middle, named by its session, hidden by ?hide=npoc", () => {
+    const p = sessionProfiles(SPX, at(20, 0));
+    const lines = profileLines(p, new Set(), [["2026-11-06", 6800], ["2026-11-10", 6850]]);
+    const npoc = lines.filter((l) => l.role === "untested-poc");
+    expect(npoc.map((l) => [l.title, l.price])).toEqual([
+      ["nPOC Nov 6", 6801],
+      ["nPOC Nov 10", 6851],
+    ]);
+    expect(profileLines(p, hiddenRoles("npoc"), [["2026-11-06", 6800]]).some((l) => l.role === "untested-poc")).toBe(false);
+  });
+
+  it("names only sessions the chart has no POC line for yet", () => {
+    const p = sessionProfiles(SPX, at(20, 0)); // newest 11-13, prior 11-12
+    expect(untestedCandidates(["2026-11-10", "2026-11-11", "2026-11-12", "2026-11-13"], p)).toEqual(["2026-11-10", "2026-11-11"]);
+  });
+
+  it("reads recorded bars, then live ones only after the newest recorded bar", () => {
+    const rec = [
+      { t: 100, o: 1, h: 1, l: 1, c: 1, v: 0 },
+      { t: 200, o: 2, h: 2, l: 2, c: 2, v: 0 },
+    ];
+    const live = [
+      { t: 150, o: 9, h: 9, l: 9, c: 9, v: 0 },
+      { t: 300, o: 3, h: 3, l: 3, c: 3, v: 0 },
+    ];
+    expect(untestedBars(rec, live).map((b) => b.t)).toEqual([100, 200, 300]);
+    expect(untestedBars([], live).map((b) => b.t)).toEqual([150, 300]);
+  });
+
+  it("asks the store only for the symbols it records", () => {
+    expect(["SPX", "SPY", "NDX", "QQQ", "ES", "NQ"].map(recordedProfileSymbol)).toEqual(["SPX", "SPY", "NDX", "QQQ", "/ES", "/NQ"]);
+    expect(["CL", "GC", "ZB"].map(recordedProfileSymbol)).toEqual(["", "", ""]);
   });
 
   it("draws nothing without regular-session bars", () => {

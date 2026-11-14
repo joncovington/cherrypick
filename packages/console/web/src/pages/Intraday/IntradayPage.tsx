@@ -13,8 +13,9 @@ import {
   type UTCTimestamp,
   type WhitespaceData,
 } from "lightweight-charts";
-import { CANDLE_PERIODS, type CandleBar, type CandlePeriod, type FuturesTickerEntry } from "@console/shared";
-import { useFuturesTicker } from "../../lib/api";
+import { CANDLE_PERIODS, PROFILE_SYMBOLS, type CandleBar, type CandlePeriod, type FuturesTickerEntry } from "@console/shared";
+import { useFuturesTicker, useProfileBars } from "../../lib/api";
+import { untestedPocs } from "../../lib/marketProfile";
 import { useCandles } from "../../lib/useCandles";
 import { CardHelpButton, HelpSection, type CardHelpContent } from "../../components/CardHelp";
 import { useWsState } from "../../lib/useQuote";
@@ -33,6 +34,8 @@ import {
   ProfileHistogram,
   profileLines,
   sessionProfiles,
+  untestedBars,
+  untestedCandidates,
   type OverlayColours,
   type SessionProfiles,
 } from "./profileOverlay";
@@ -60,6 +63,15 @@ export const CASH_INSTRUMENTS: FuturesTickerEntry[] = [
   { product: "QQQ", label: "QQQ", name: "Nasdaq-100 ETF", contract: null, streamerSymbol: "QQQ", expiration: null, reason: null },
 ];
 const isCash = (product: string): boolean => CASH_INSTRUMENTS.some((e) => e.product === product);
+
+/** How many recorded sessions back the untested-POC lines look. */
+const UNTESTED_SESSIONS = 20;
+
+/** The profile-bars store's name for a chart product, or "" for one it does not record. */
+export function recordedProfileSymbol(product: string): string {
+  const name = isCash(product) ? product : `/${product}`;
+  return (PROFILE_SYMBOLS as readonly string[]).includes(name) ? name : "";
+}
 
 const OVERLAY: OverlayColours = {
   poc: PAL.amber,
@@ -157,7 +169,15 @@ interface ChartInfo {
 const SESSION_DAY = new Intl.DateTimeFormat("en-US", { timeZone: "UTC", month: "short", day: "numeric" });
 const sessionLabel = (iso: string): string => SESSION_DAY.format(Date.parse(`${iso}T12:00:00Z`));
 
-function ProfileReadout({ profiles, precision }: { profiles: SessionProfiles; precision: number }) {
+function ProfileReadout({
+  profiles,
+  precision,
+  untested,
+}: {
+  profiles: SessionProfiles;
+  precision: number;
+  untested: ReadonlyArray<readonly [string, number]> | null;
+}) {
   const { latest, prior, developing } = profiles;
   if (latest === null) return <div className="intraday-status muted">profile: no regular-session bars yet</div>;
   const f = (x: number): string => x.toFixed(precision);
@@ -179,6 +199,15 @@ function ProfileReadout({ profiles, precision }: { profiles: SessionProfiles; pr
       <span> · {latest.volumeTotal > 0 && latest.volumePoc !== null ? `vPOC ${f(latest.volumePoc)}` : "TPO only (no volume)"}</span>
       <span> · rows of {latest.rowSize}</span>
       {prior !== null && <span> · {one(prior, `prior ${sessionLabel(prior.session)}:`)}</span>}
+      {untested !== null && (
+        <span>
+          {" "}
+          · untested POCs:{" "}
+          {untested.length === 0
+            ? "none"
+            : untested.map(([s, poc]) => `${f(poc)} (${sessionLabel(s)})`).join(", ")}
+        </span>
+      )}
     </div>
   );
 }
@@ -208,6 +237,21 @@ function LiveCandles({
   // The profile reads the 15-minute series whatever width is drawn (the same series when it is 15m).
   const profileBars = useCandles(profile ? symbol : "", "15m");
   const profiles = useMemo(() => sessionProfiles(profileBars), [profileBars]);
+
+  // Untested POCs need more history than the live 15-minute series holds: the recorded bars, extended
+  // hours, for the symbols the profile-bars job keeps. Off (no request) for any other contract, and
+  // when the profile or its nPOC lines are switched off.
+  const recordedSymbol = profile && !hidden.has("untested-poc") ? recordedProfileSymbol(entry.product) : "";
+  const { data: recorded } = useProfileBars(recordedSymbol, UNTESTED_SESSIONS, "extended");
+  const untested = useMemo((): Array<[string, number]> => {
+    const rowSize = profiles.latest?.rowSize;
+    if (recordedSymbol === "" || recorded === undefined || !recorded.available || rowSize === undefined) return [];
+    return untestedPocs(untestedBars(recorded.bars, profileBars), {
+      sessions: untestedCandidates(recorded.sessions, profiles),
+      rowSize,
+      barSeconds: recorded.barSeconds,
+    });
+  }, [recordedSymbol, recorded, profiles, profileBars]);
 
   useEffect(() => {
     const el = hostRef.current;
@@ -311,13 +355,13 @@ function LiveCandles({
     const series = seriesRef.current;
     histRef.current?.setProfile(profile ? profiles.latest : null);
     if (series === null) return;
-    const want = profile ? profileLines(profiles, hidden) : [];
+    const want = profile ? profileLines(profiles, hidden, untested) : [];
     const key = want.map((l) => `${l.key}:${l.price}`).join("|");
     if (key === linesRef.current.key) return;
     for (const line of linesRef.current.lines) series.removePriceLine(line);
     const lines = want.map((l) => series.createPriceLine({ price: l.price, title: l.title, ...lineStyleFor(l.role, OVERLAY) }));
     linesRef.current = { key, lines };
-  }, [profile, profiles, hidden]);
+  }, [profile, profiles, hidden, untested]);
 
   const live = ws.dxlink === "connected";
   const precision = PRECISION[entry.product] ?? 2;
@@ -341,7 +385,7 @@ function LiveCandles({
         )}
         {!live && <span className="chip" style={{ marginLeft: 8 }}>feed {ws.dxlink} — not live</span>}
       </div>
-      {profile && profileBars.length > 0 && <ProfileReadout profiles={profiles} precision={precision} />}
+      {profile && profileBars.length > 0 && <ProfileReadout profiles={profiles} precision={precision} untested={recordedSymbol === "" || recorded === undefined || !recorded.available ? null : untested} />}
       <div ref={hostRef} style={{ height: "560px" }} />
       {profile && profileBars.length > 0 && <ProfileLegend hidden={hidden} onToggle={onToggleLine} />}
     </>

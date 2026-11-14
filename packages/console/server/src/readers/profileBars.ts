@@ -12,7 +12,7 @@
  * empty chart that reads as a quiet market.
  */
 import path from "node:path";
-import { PROFILE_SYMBOLS, type CandleBar, type ProfileBarsPayload, type ProfileSymbol } from "@console/shared";
+import { PROFILE_SYMBOLS, type CandleBar, type ProfileBarsPayload, type ProfileHours, type ProfileSymbol } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
 import { readOnlyDb } from "./db.js";
 
@@ -53,11 +53,12 @@ export function foldBars(rows: ReadonlyArray<{ ts_ms: number; o: number; h: numb
   return [...out.values()];
 }
 
-function absent(symbol: ProfileSymbol, reason: string): ProfileBarsPayload {
+function absent(symbol: ProfileSymbol, reason: string, hours: ProfileHours): ProfileBarsPayload {
   return {
     symbol,
     available: false,
     reason,
+    hours,
     sessions: [],
     barSeconds: PROFILE_BAR_SECONDS,
     bars: [],
@@ -67,8 +68,17 @@ function absent(symbol: ProfileSymbol, reason: string): ProfileBarsPayload {
   };
 }
 
-export function readProfileBars(config: ConsoleConfig, symbol: ProfileSymbol, sessions: number): ProfileBarsPayload {
+export function readProfileBars(
+  config: ConsoleConfig,
+  symbol: ProfileSymbol,
+  sessions: number,
+  hours: ProfileHours = "regular",
+): ProfileBarsPayload {
   const dbPath = profileBarsPath(config);
+  // Extended: every bar from the oldest session's day on, overnight and after the newest session
+  // included, for the untested-POC rule (a future's overnight can trade through a POC). The sessions
+  // are still the regular sessions held; a profile reads only their regular hours either way.
+  const hoursClause = hours === "extended" ? "" : "AND et_time >= '09:30' AND et_time < '16:00'";
   const outcome = readOnlyDb(dbPath, (db) => {
     const days = db
       .prepare<[string, number], { et_day: string }>(
@@ -80,27 +90,39 @@ export function readProfileBars(config: ConsoleConfig, symbol: ProfileSymbol, se
       .reverse();
     if (days.length === 0) return null;
     const marks = days.map(() => "?").join(",");
+    const dayClause = hours === "extended" ? "et_day >= ?" : `et_day IN (${marks})`;
     const rows = db
       .prepare(
-        `SELECT ts_ms, open AS o, high AS h, low AS l, close AS c, volume AS v, et_day, contract FROM profile_bars ` +
-          `WHERE symbol = ? AND et_day IN (${marks}) AND et_time >= '09:30' AND et_time < '16:00' ORDER BY ts_ms`,
+        `SELECT ts_ms, open AS o, high AS h, low AS l, close AS c, volume AS v, et_day, et_time, contract FROM profile_bars ` +
+          `WHERE symbol = ? AND ${dayClause} ${hoursClause} ORDER BY ts_ms`,
       )
-      .all(symbol, ...days) as Array<{ ts_ms: number; o: number; h: number; l: number; c: number; v: number; et_day: string; contract: string }>;
+      .all(symbol, ...(hours === "extended" ? [days[0]!] : days)) as Array<{
+      ts_ms: number;
+      o: number;
+      h: number;
+      l: number;
+      c: number;
+      v: number;
+      et_day: string;
+      et_time: string;
+      contract: string;
+    }>;
     const contracts: Record<string, string> = {};
-    for (const r of rows) contracts[r.et_day] ??= r.contract;
+    for (const r of rows) if (r.et_time >= "09:30" && r.et_time < "16:00") contracts[r.et_day] ??= r.contract;
     const fetched = db
       .prepare<[string], { f: number | null }>("SELECT MAX(fetched_at) AS f FROM profile_bars WHERE symbol = ?")
       .get(symbol);
     return { days, rows, contracts, fetchedAt: fetched?.f ?? null };
   });
-  if (outcome.status === "absent") return absent(symbol, "no profile bars recorded yet: the profile-bars job (17:15 ET) has not run");
-  if (outcome.status === "failed") return absent(symbol, `the profile bar store could not be read: ${outcome.error}`);
-  if (outcome.value === null) return absent(symbol, `no regular-session bars recorded for ${symbol}`);
+  if (outcome.status === "absent") return absent(symbol, "no profile bars recorded yet: the profile-bars job (17:15 ET) has not run", hours);
+  if (outcome.status === "failed") return absent(symbol, `the profile bar store could not be read: ${outcome.error}`, hours);
+  if (outcome.value === null) return absent(symbol, `no regular-session bars recorded for ${symbol}`, hours);
   const { days, rows, contracts, fetchedAt } = outcome.value;
   return {
     symbol,
     available: true,
     reason: null,
+    hours,
     sessions: days,
     barSeconds: PROFILE_BAR_SECONDS,
     bars: foldBars(rows),

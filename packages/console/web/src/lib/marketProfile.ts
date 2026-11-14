@@ -134,6 +134,32 @@ interface Bar {
   v: number;
 }
 
+/**
+ * Mirror of `untested_pocs`: [session, POC] for each of `sessions` whose POC row, [poc, poc + rowSize),
+ * no bar starting at or after that session's 16:00 ET close reached, oldest first. Every bar passed
+ * counts, overnight included. A session with no bars is skipped.
+ */
+export function untestedPocs(
+  bars: readonly CandleBar[],
+  opts: { sessions: readonly string[]; rowSize: number; barSeconds: number },
+): Array<[string, number]> {
+  const { rowSize, barSeconds } = opts;
+  const later = bars
+    .filter((b) => Number.isFinite(b.l) && Number.isFinite(b.h) && b.l > 0 && b.h > 0)
+    .map((b) => ({ ...etClock(b.t), l: b.l, h: b.h }));
+  const out: Array<[string, number]> = [];
+  for (const session of [...new Set(opts.sessions)].sort()) {
+    const p = buildProfile(bars, { rowSize, barSeconds, session });
+    if (p === null) continue;
+    const top = p.poc + rowSize;
+    const touched = later.some(
+      (b) => (b.date > session || (b.date === session && b.seconds >= SESSION_CLOSE_MIN * 60)) && b.l < top && b.h >= p.poc,
+    );
+    if (!touched) out.push([session, p.poc]);
+  }
+  return out;
+}
+
 export interface CompositeRow {
   price: number;
   tpo: number;
