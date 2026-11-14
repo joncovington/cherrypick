@@ -51,18 +51,19 @@ export interface ProfileLine {
   key: string;
   price: number;
   title: string;
-  role: "poc" | "va" | "ib" | "prior-poc" | "prior-va";
+  role: "poc" | "va" | "ib" | "prior-poc" | "prior-va" | "untested-poc";
 }
 
 /**
  * The line groups a viewer can switch off, each under its key in the page's `?hide=` parameter. POC
- * and the value area are the profile itself and always drawn; these three are context, and with all
+ * and the value area are the profile itself and always drawn; these four are context, and with all
  * of them on the price axis carries eight labels.
  */
 export const OPTIONAL_LINES: { role: ProfileLine["role"]; param: string }[] = [
   { role: "ib", param: "ib" },
   { role: "prior-poc", param: "ppoc" },
   { role: "prior-va", param: "pva" },
+  { role: "untested-poc", param: "npoc" },
 ];
 
 /** The roles a `?hide=` value switches off; unknown keys are ignored. */
@@ -79,8 +80,39 @@ export function hideParam(hidden: ReadonlySet<ProfileLine["role"]>): string {
 }
 
 /** The price lines a pair of profiles asks for, in a stable order, less any hidden group. */
-export function profileLines(profiles: SessionProfiles, hidden: ReadonlySet<ProfileLine["role"]> = new Set()): ProfileLine[] {
-  return allLines(profiles).filter((l) => !hidden.has(l.role));
+export function profileLines(
+  profiles: SessionProfiles,
+  hidden: ReadonlySet<ProfileLine["role"]> = new Set(),
+  untested: ReadonlyArray<readonly [string, number]> = [],
+): ProfileLine[] {
+  const row = profiles.latest?.rowSize ?? 0;
+  const npoc: ProfileLine[] = untested.map(([session, poc]) => ({
+    key: `npoc-${session}`,
+    price: poc + row / 2,
+    title: `nPOC ${shortDay(session)}`,
+    role: "untested-poc",
+  }));
+  return [...allLines(profiles), ...npoc].filter((l) => !hidden.has(l.role));
+}
+
+const SHORT_DAY = new Intl.DateTimeFormat("en-US", { timeZone: "UTC", month: "short", day: "numeric" });
+const shortDay = (iso: string): string => SHORT_DAY.format(Date.parse(`${iso}T12:00:00Z`));
+
+/** Sessions the untested-POC lines may name: the recorded ones, less the two the chart already draws a
+ *  POC for (the newest and the prior, from the live candles). */
+export function untestedCandidates(recordedSessions: readonly string[], profiles: SessionProfiles): string[] {
+  const drawn = new Set([profiles.latest?.session, profiles.prior?.session]);
+  return recordedSessions.filter((s) => !drawn.has(s));
+}
+
+/**
+ * The bars the untested-POC rule reads: the recorded ones (extended hours) and, after the newest of
+ * them, the live candles, so a touch since the 17:15 recording counts at once. Live bars from before
+ * that point are dropped rather than mixed with the recorded minutes of the same time.
+ */
+export function untestedBars(recorded: readonly CandleBar[], live: readonly CandleBar[]): CandleBar[] {
+  const last = recorded.at(-1)?.t ?? -Infinity;
+  return [...recorded, ...live.filter((b) => b.t > last)];
 }
 
 function allLines({ latest, prior }: SessionProfiles): ProfileLine[] {
@@ -131,6 +163,8 @@ export function lineStyleFor(role: ProfileLine["role"], c: OverlayColours) {
       return { ...base, color: c.poc, lineStyle: LineStyle.Dotted };
     case "prior-va":
       return { ...base, color: c.va, lineStyle: LineStyle.Dotted };
+    case "untested-poc":
+      return { ...base, color: c.poc, lineStyle: LineStyle.LargeDashed };
   }
 }
 
@@ -141,6 +175,12 @@ export const LINE_LEGEND: { role: ProfileLine["role"]; label: string; meaning: s
   { role: "ib", label: "IBH / IBL", meaning: "initial balance: the high and low of the first hour (09:30–10:30)" },
   { role: "prior-poc", label: "pPOC", meaning: "the prior session's point of control" },
   { role: "prior-va", label: "pVAH / pVAL", meaning: "the prior session's value area" },
+  {
+    role: "untested-poc",
+    label: "nPOC",
+    meaning:
+      "untested POCs: earlier sessions' points of control that no later trade, overnight included, has reached (recorded symbols only: SPX, SPY, NDX, QQQ, /ES, /NQ)",
+  },
 ];
 
 /** An SVG stroke-dasharray matching a line style, for the legend's swatches. */

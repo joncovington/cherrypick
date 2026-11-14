@@ -40,6 +40,11 @@ The rules, fixed once and stated so they cannot drift:
 summed across the sessions (rows on the same `row_size` grid, so they line up), then the same POC and
 value-area rules over the sums. A session with no bars adds nothing and is not listed.
 
+**An untested POC** (`untested_pocs`) is a session's point of control that no later bar has traded
+into: no bar starting at or after that session's close (16:00 ET on its date) has a range reaching the
+POC's row, `[poc, poc + row_size)`. Every bar passed counts, overnight and pre-market included, so pass
+a future's extended hours to see its overnight touches.
+
 No day-type label: which shapes count as "trend" or "neutral" is a definition a study declares, not
 something this module decides. `default_row_size` is a convenience for display; a study fixes its row
 size in its declaration.
@@ -339,6 +344,39 @@ def build_profile(
         volume_total=volume_total,
         volume_poc=_price(lo_idx + _point_of_control(volume), row_size) if volume_total > 0 else None,
     )
+
+
+def untested_pocs(
+    bars: Iterable,
+    *,
+    sessions: Iterable[_dt.date],
+    row_size: float,
+    bar_seconds: int,
+    close_min: int = SESSION_CLOSE_MIN,
+) -> list[tuple[_dt.date, float]]:
+    """(session, POC) for each of `sessions` whose POC row no later bar reached, oldest first.
+
+    A session's profile is `build_profile` over its regular session; "later" is every bar starting at
+    or after `close_min` ET on that session's date, whatever its hours. A session with no bars is
+    skipped. A bar with a missing or non-positive price is ignored, as in `build_profile`."""
+    bars = list(bars)
+    later_bars = []
+    for bar in bars:
+        lo, hi = _field(bar, "l"), _field(bar, "h")
+        if lo > 0 and hi > 0 and math.isfinite(lo) and math.isfinite(hi):
+            later_bars.append((_field(bar, "t"), lo, hi))
+    out = []
+    for day in sorted(set(sessions)):
+        p = build_profile(bars, row_size=row_size, bar_seconds=bar_seconds, session=day)
+        if p is None:
+            continue
+        end = _dt.datetime(
+            day.year, day.month, day.day, close_min // 60, close_min % 60, tzinfo=ET
+        ).timestamp()
+        top = p.poc + row_size
+        if not any(t >= end and lo < top and hi >= p.poc for t, lo, hi in later_bars):
+            out.append((day, p.poc))
+    return out
 
 
 @dataclass(frozen=True)

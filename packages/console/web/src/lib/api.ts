@@ -268,13 +268,15 @@ export function useMorningReport(session?: string) {
 }
 
 
-/** The Profile tab's recorded bars: one symbol's newest `sessions` regular sessions, 5-minute bars. */
-export function useProfileBars(symbol: string, sessions: number) {
+/** The recorded profile bars: one symbol's newest `sessions` sessions, 5-minute bars, regular hours (the
+ *  Profile tab) or extended (the intraday chart's untested POCs). An empty symbol fetches nothing. */
+export function useProfileBars(symbol: string, sessions: number, hours: "regular" | "extended" = "regular") {
   return useQuery<ProfileBarsPayload>({
-    queryKey: ["profile-bars", symbol, sessions],
+    queryKey: ["profile-bars", symbol, sessions, hours],
+    enabled: symbol !== "",
     queryFn: () =>
       getJson<ProfileBarsPayload>(
-        `/api/charts/profile-bars?symbol=${encodeURIComponent(symbol)}&sessions=${sessions}`,
+        `/api/charts/profile-bars?symbol=${encodeURIComponent(symbol)}&sessions=${sessions}&hours=${hours}`,
       ),
     // The recorder writes once a day (17:15 ET); a viewer left open picks it up within the hour.
     refetchInterval: 3_600_000,

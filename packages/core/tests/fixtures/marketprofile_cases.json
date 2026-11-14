@@ -1,5 +1,5 @@
 {
- "_note": "Market Profile cases for core.marketprofile.build_profile, build_composite and default_row_size. Read by packages/core/tests/test_marketprofile.py and by the console's web/test/marketProfile.test.ts, which pins its TypeScript port (web/src/lib/marketProfile.ts) to the same answers. Change both implementations or neither. The first case and the first composite are also worked by hand in the Python test; the rest are seeded random walks whose expected profiles the module produced when this file was made, so they pin the two implementations to each other. A composite's `bars_from` names the case whose bars it reads.",
+ "_note": "Market Profile cases for core.marketprofile.build_profile, build_composite, untested_pocs and default_row_size. Read by packages/core/tests/test_marketprofile.py and by the console's web/test/marketProfile.test.ts, which pins its TypeScript port (web/src/lib/marketProfile.ts) to the same answers. Change both implementations or neither. The first case and the first composite are also worked by hand in the Python test; the rest are seeded random walks whose expected profiles the module produced when this file was made, so they pin the two implementations to each other. A composite's `bars_from` names the case whose bars it reads.",
  "row_sizes": [[6800, 2.0], [25000, 10.0], [600, 0.2], [680, 0.2], [100, 0.025], [50, 0.02], [21000, 5.0], [5.3, 0.002]],
  "cases": [
   {
@@ -1008,6 +1008,43 @@
     {"price": 25340.0, "tpo": 1, "volume": 1471.6666666666665}
    ]
    }
+  }
+ ],
+ "untested": [
+  {
+   "name": "hand-worked untested POCs: an overnight touch and an edge that misses",
+   "row_size": 1,
+   "bar_seconds": 1800,
+   "sessions": ["2026-11-10", "2026-11-11", "2026-11-12"],
+   "bars": [
+    {"t": 1794321000, "o": 101.0, "h": 102.8, "l": 100.2, "c": 101.5, "v": 0},
+    {"t": 1794322800, "o": 101.5, "h": 101.9, "l": 101.1, "c": 101.6, "v": 0},
+    {"t": 1794407400, "o": 106.0, "h": 107.9, "l": 105.1, "c": 106.2, "v": 0},
+    {"t": 1794409200, "o": 106.2, "h": 106.5, "l": 106.0, "c": 106.4, "v": 0},
+    {"t": 1794430800, "o": 105.9, "h": 105.99, "l": 105.5, "c": 105.6, "v": 0},
+    {"t": 1794493800, "o": 104.0, "h": 104.5, "l": 103.0, "c": 103.5, "v": 0},
+    {"t": 1794495600, "o": 103.5, "h": 103.8, "l": 103.2, "c": 103.4, "v": 0},
+    {"t": 1794531600, "o": 100.8, "h": 100.9, "l": 100.5, "c": 100.6, "v": 0},
+    {"t": 1794535200, "o": 107.2, "h": 107.5, "l": 107.0, "c": 107.1, "v": 0},
+    {"t": 1794556800, "o": 101.0, "h": 101.0, "l": 101.0, "c": 101.0, "v": 0}
+   ],
+   "expected": [["2026-11-11", 106.0], ["2026-11-12", 103.0]]
+  },
+  {
+   "name": "SPX-like, two sessions",
+   "row_size": 2.0,
+   "bar_seconds": 900,
+   "sessions": ["2026-11-12", "2026-11-13"],
+   "bars_from": "SPX-like, 15m, two sessions, no volume (newest by default)",
+   "expected": [["2026-11-13", 6844.0]]
+  },
+  {
+   "name": "/NQ-like, overnight bars count as later",
+   "row_size": 10.0,
+   "bar_seconds": 900,
+   "sessions": ["2026-11-12", "2026-11-13"],
+   "bars_from": "/NQ-like, 15m, overnight and after-hours bars ignored",
+   "expected": [["2026-11-13", 25180.0]]
   }
  ]
 }

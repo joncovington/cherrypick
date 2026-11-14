@@ -119,6 +119,30 @@ def test_fixture_composites(case):
             assert got[key] == value, key
 
 
+def _untested(case: dict) -> list[tuple[dt.date, float]]:
+    by_name = {c["name"]: c for c in CASES["cases"]}
+    bars = case["bars"] if "bars" in case else by_name[case["bars_from"]]["bars"]
+    return mp.untested_pocs(
+        bars,
+        sessions=[dt.date.fromisoformat(s) for s in case["sessions"]],
+        row_size=case["row_size"],
+        bar_seconds=case["bar_seconds"],
+    )
+
+
+def test_hand_worked_untested_pocs():
+    # POCs: 11-10 101, 11-11 106, 11-12 103. An overnight bar on 11-13 at 101.0 reaches row 101; a bar at
+    # 11-11's 16:00 close tops out at 105.99, under row 106, and one at 21:00 on 11-12 bottoms at 107.0,
+    # row 106's top (both edges shown to fail when widened); 11-12's own bars never count against 11-12.
+    got = _untested(CASES["untested"][0])
+    assert got == [(dt.date(2026, 11, 11), 106.0), (dt.date(2026, 11, 12), 103.0)]
+
+
+@pytest.mark.parametrize("case", CASES["untested"], ids=[c["name"] for c in CASES["untested"]])
+def test_fixture_untested_pocs(case):
+    assert [[d.isoformat(), poc] for d, poc in _untested(case)] == case["expected"]
+
+
 def test_a_composite_of_one_session_is_that_sessions_profile():
     case = next(c for c in CASES["cases"] if c["name"].startswith("/NQ"))
     p = _case(case)

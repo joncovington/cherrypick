@@ -81,6 +81,23 @@ describe("profile bars reader", () => {
     expect(p.fetchedAt).not.toBeNull();
   });
 
+  it("with extended hours, sends every bar from the oldest session's day on, overnight included", () => {
+    seed([
+      { symbol: "/ES", day: "2026-11-11", hh: 9, mm: 30, px: 90, contract: "/ESZ26:XCME" }, // outside the span asked
+      { symbol: "/ES", day: "2026-11-12", hh: 4, mm: 0, px: 50, contract: "/ESZ26:XCME" },
+      { symbol: "/ES", day: "2026-11-12", hh: 9, mm: 30, px: 100, contract: "/ESZ26:XCME" },
+      { symbol: "/ES", day: "2026-11-12", hh: 20, mm: 0, px: 110, contract: "/ESZ26:XCME" },
+      { symbol: "/ES", day: "2026-11-13", hh: 9, mm: 30, px: 120, contract: "/ESZ26:XCME" },
+      { symbol: "/ES", day: "2026-11-14", hh: 3, mm: 0, px: 130, contract: "/ESZ26:XCME" }, // after the newest session
+    ]);
+    const p = readProfileBars(config, "/ES", 2, "extended");
+    expect(p.hours).toBe("extended");
+    expect(p.sessions).toEqual(["2026-11-12", "2026-11-13"]);
+    expect(p.bars.map((b) => b.o)).toEqual([50, 100, 110, 120, 130]);
+    expect(p.contracts).toEqual({ "2026-11-12": "/ESZ26:XCME", "2026-11-13": "/ESZ26:XCME" });
+    expect(readProfileBars(config, "/ES", 2).bars.map((b) => b.o)).toEqual([100, 120]);
+  });
+
   it("is unavailable for a symbol the store holds nothing for", () => {
     seed([{ symbol: "SPX", day: "2026-11-13", hh: 9, mm: 30, px: 7000 }]);
     const p = readProfileBars(config, "NDX", 10);

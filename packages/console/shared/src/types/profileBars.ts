@@ -13,8 +13,13 @@ export type ProfileSymbol = (typeof PROFILE_SYMBOLS)[number];
  * thousand bars rather than eight thousand. The profiles themselves are built in the browser by
  * `lib/marketProfile` (the mirror of `cherrypick.core.marketprofile`).
  */
+/** `regular`: the sessions' 09:30-16:00 bars only (the Profile tab). `extended`: every bar from the
+ *  oldest session's day on, overnight included (the untested-POC rule, which counts any later trade). */
+export type ProfileHours = "regular" | "extended";
+
 export interface ProfileBarsPayload {
   symbol: ProfileSymbol;
+  hours: ProfileHours;
   /** False when the store is missing or holds nothing for the symbol; `reason` says which. */
   available: boolean;
   reason: string | null;
@@ -22,7 +27,7 @@ export interface ProfileBarsPayload {
   sessions: string[];
   /** The width of each bar in `bars`, seconds. */
   barSeconds: number;
-  /** Regular session only (09:30-16:00 ET), oldest first; `t` is the bar's start in epoch seconds. */
+  /** Oldest first, regular session only unless `hours` is extended; `t` is the bar's start in epoch seconds. */
   bars: CandleBar[];
   /** The contract each session's bars came from (a future's month; a cash symbol is itself). */
   contracts: Record<string, string>;

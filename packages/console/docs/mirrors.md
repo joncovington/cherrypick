@@ -24,7 +24,9 @@ a mirror with a test against the module itself. These are the current ones.
   bridge would add a process per bar). Both implementations answer
   `packages/core/tests/fixtures/marketprofile_cases.json`: one hand-worked session and one hand-worked
   composite (the guard; a one-row value-area expansion fails it on both sides), seeded sessions shaped
-  like SPX, NDX, QQQ, /NQ (overnight bars included) and SPY on an EDT date, and composites of them.
+  like SPX, NDX, QQQ, /NQ (overnight bars included) and SPY on an EDT date, composites of them, and
+  untested POCs (`untestedPocs`; a hand-worked case with both edges of a row, each shown to fail when
+  widened).
   Runs unconditionally; no ledger involved. The Profile tab's reader (`readers/profileBars.ts`,
   `server/test/profile-bars.test.ts`) builds its test table from `scripts/fetch_profile_bars.py`'s own
   SCHEMA, so a renamed column fails there.

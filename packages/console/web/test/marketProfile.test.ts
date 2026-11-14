@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { CandleBar } from "@console/shared";
 
-import { buildComposite, buildProfile, defaultRowSize, sessionDates } from "../src/lib/marketProfile";
+import { buildComposite, buildProfile, defaultRowSize, sessionDates, untestedPocs } from "../src/lib/marketProfile";
 
 /**
  * The Intraday chart's profile is a TypeScript mirror of `cherrypick.core.marketprofile`. Both answer
@@ -26,7 +26,24 @@ interface FixtureCase {
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURE = JSON.parse(
   fs.readFileSync(path.join(HERE, "..", "..", "..", "core", "tests", "fixtures", "marketprofile_cases.json"), "utf-8"),
-) as { row_sizes: [number, number][]; cases: FixtureCase[]; composites: FixtureComposite[] };
+) as { row_sizes: [number, number][]; cases: FixtureCase[]; composites: FixtureComposite[]; untested: FixtureUntested[] };
+
+interface FixtureUntested {
+  name: string;
+  row_size: number;
+  bar_seconds: number;
+  sessions: string[];
+  bars?: CandleBar[];
+  bars_from?: string;
+  expected: Array<[string, number]>;
+}
+
+describe("untestedPocs mirrors core.marketprofile.untested_pocs", () => {
+  it.each(FIXTURE.untested.map((c) => [c.name, c] as const))("%s", (_name, c) => {
+    const bars = c.bars ?? FIXTURE.cases.find((k) => k.name === c.bars_from)!.bars;
+    expect(untestedPocs(bars, { sessions: c.sessions, rowSize: c.row_size, barSeconds: c.bar_seconds })).toEqual(c.expected);
+  });
+});
 
 interface FixtureComposite {
   name: string;
