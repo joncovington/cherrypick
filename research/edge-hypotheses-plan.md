@@ -7572,6 +7572,103 @@ is read.*
     additional rules expected.
 - **Result:** not yet run.
 
+### 76. The ladder's stuck lots: covered calls sold after day 18, at three strike rules
+
+*Source: the user, 2026-11-13. The Discord group posted its method: a lot not sold at +4% within 18
+days moves to their "trade hospital", where they sell calls against it until it recovers. Their sheet
+shows calls about 5% over the lot's cost, one to five months out. The user asked to adjust the strike
+to recover premium, and chose three strike rules, judged together. Declared after items 26 (failed),
+27 (`decay` passed) and 29 (options in place of the lot failed on crossing costs). No option quote
+for this question has been read.*
+
+- **Question:** once a ladder lot has been open 18 days, does selling covered calls against it until
+  it is called away or recovers make more than holding it for its +4% target, after the calls'
+  costs?
+- **Where the edge would live:** in **premium**, not a signal. A leveraged fund's calls are rich, and
+  a stuck lot is mostly waiting. Against that: a call caps the sharp rebound that is a stuck lot's
+  way out, and a lot far under its cost earns little for a call at or over its cost. Item 29 found
+  the options' crossing costs decide this kind of question.
+- **Names:** SOXL and TQQQ, item 29's, whose chains the subscription serves from 2016.
+- **The lots:** item 26's `once` at a cap of 3 lots a name, **100 shares a lot** (a call covers 100):
+  a lot at 93% of the previous close, filled on daily bars as item 26 fills them, item 26's 0.05% a
+  side on shares. Every arm, the baseline included, judges **the same lots**: the lots `once-3`
+  opens with the baseline's exits, so a call arm's longer or shorter hold never changes which lots
+  exist.
+- **The hospital:** a lot still open at the close of the first session 18 or more calendar days
+  after its buy session enters the hospital at that close. Before that, every arm treats it as item
+  26 does.
+- **The call:** one contract a lot, sold at the hospital close and again at each expiry that does
+  not end the lot. The expiry 35 to 60 calendar days out nearest 45 (the earlier on a tie); none, and
+  the lot waits for the next session that has one, counted. Held to its expiry, never bought back
+  early.
+- **The strike rules,** read at the sale's close C, the lot's cost P per share and the premium
+  already banked on the lot B per share, among strikes quoted on both sides:
+  - **`breakeven`:** the lowest strike K with K + B + (this call's bid) >= P. A call-away then never
+    realises a loss. When no listed strike qualifies, the highest listed strike, counted.
+  - **`delta30`:** the strike whose delta is nearest 0.30 (Black-Scholes from its mid, the 3-month
+    bill rate, no dividend, calendar days), the lower on a tie. It may sit under P.
+  - **`cost5`:** the lowest strike at or above 1.05 P, the group's practice; none listed, the
+    highest, counted.
+- **At each expiry:** a close at or over K assigns the call: the shares go at K and the lot ends. A
+  close under K lets it expire; the lot then ends if that close is at or over 104% of P (sold at the
+  close), and otherwise sells the next call at that close.
+- **The baseline, `hold`:** the same lot with no call, held to its +4% target as item 26 exits it.
+  **Reported beside, unjudged:** item 27's `decay` on the same lots.
+- **Measured,** per hospital lot: the arm's whole-lot net (shares, premiums, fees, assignment) less
+  `hold`'s, in dollars per 100 shares. A lot open at the window's end is marked at that close, its
+  open call at the ask. Reported beside: the days each arm spends in the hospital, capital-days,
+  premium banked, how many lots end below cost (a realised loss, possible only under `delta30`), the
+  rebound given up (lots where `hold` sold above the strike that capped the arm), and the worst lot.
+- **Costs:** calls sold at the bid (the natural); mid reported. The suite's tastytrade schedule
+  (`cherrypick.core.fees`): $1.00 a contract to open, exchange and regulatory fees on every
+  contract, the broker's assignment fee on an assignment, nothing to let a call expire. Shares pay
+  item 26's 0.05% a side.
+- **Windows:**
+  - **Design:** 2016-05-02 to 2024-12-31 (lots bought in it; a lot is followed to its end or the
+    window's).
+  - **Holdout:** 2025-01-02 to the last session the bars hold when `plan` runs, recorded in the plan
+    file, counting only after a design pass.
+  - Fewer than 30 hospital lots across both names in the design window is no verdict; a holdout with
+    fewer than 10 is read and reported, and the verdict is then provisional.
+- **Pass-or-fail rule,** per arm, all must hold:
+  - in the design window, the mean paired difference above zero with a one-sided t above 2, one lot
+    one observation, Holm across the 3;
+  - positive in each time-half of the design window and on each name;
+  - still positive with option fees at 1.5x and every call sold $0.05 under the bid;
+  - then the holdout's mean paired difference above zero.
+- **Rival explanations, each with its check:**
+  - *A bull market lifting every stuck lot:* each arm is paired with `hold` on the same lot, whose
+    drift is in both.
+  - *Costs read too kindly:* the verdict is at the bid; mid is reported only.
+  - *One volatility regime:* the design holds 2018, 2020 and 2022's falls, and both halves must
+    agree.
+  - *One name:* positive on each of the two.
+  - *Premium bought with locked-in losses:* the realised-loss count and the rebound given up are
+    reported for every arm.
+  - *Three arms, one lucky:* Holm across the three.
+- **Minimum detectable effect (B12):** from the design window's own spread of paired differences,
+  recorded in the local result before the holdout is read.
+- **Declared limits (B11):** end-of-day quotes only, so a call is sold at the close and assignment is
+  read at the expiry's close. Early assignment is not modelled; the funds' small distributions are
+  ignored. Black-Scholes deltas, not the vendor's. The call is never managed before its expiry. A
+  split ex-date inside a call's life closes the call at the session before at its ask and sells a new
+  one at that session's close on the new basis; the shares follow the split.
+- **Data:** ThetaData Options Standard end-of-day chains for SOXL and TQQQ, as daily paths from each
+  sale to its expiry, fetched by a research-queue `fetch-chain-paths` row into the backtest store.
+  Expiries come from item 29's listing. The replay is `packages/backtest/scripts/share_ladder_item76.py`,
+  run as `item76/plan`, `item76/fetch-chains` and `item76/study`. The paths are known from the share
+  closes alone: under every strike rule a lot has ended by the first call expiry whose close is at or
+  over 104% of its cost (a close that high either assigns the call or lets it expire and sells the
+  shares), so `plan` lists each hospital lot's chain of expiries up to that one or the window's end.
+  Results are derived from licensed data, so they stay under
+  `~/.cherrypick/data/backtest/results/research/item76/`, and this plan records the verdict without
+  figures.
+- **Decides:**
+  - **A pass:** the passing strike rule becomes a hospital arm in the `ladder` module, paper first,
+    at 100-share lots; the lot size is the user's call.
+  - **A fail or no verdict:** the module keeps counting the hospital and sells no calls.
+- **Result:** not yet run.
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:
