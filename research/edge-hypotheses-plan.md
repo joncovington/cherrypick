@@ -7652,7 +7652,7 @@ for this question has been read.*
   read at the expiry's close. Early assignment is not modelled; the funds' small distributions are
   ignored. Black-Scholes deltas, not the vendor's. The call is never managed before its expiry. A
   split ex-date inside a call's life closes the call at the session before at its ask and sells a new
-  one at that session's close on the new basis; the shares follow the split.
+  one at the ex-date session's close, on the post-split chain; the shares follow the split.
 - **Settled with the replay, before the history was fetched (2026-11-13):**
   - The bars are the technicals history's raw daily bars. The ladder's fills and ratios read them
     split-adjusted; strikes are read against the day's raw close, and the lot's cost P and the banked
