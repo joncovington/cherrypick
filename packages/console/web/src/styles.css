@@ -89,6 +89,32 @@
   box-sizing: border-box;
 }
 
+/* One scrollbar for every scrolling box: a thin rounded thumb on an invisible track, in the
+   theme's grid tones so it follows light and dark. The standard pair is what current Chromium
+   and Firefox read; the -webkit- rules serve older WebKit. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--chart-grid-strong) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--chart-grid-strong);
+  border-radius: 3px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--text-dim);
+}
+
 body {
   margin: 0;
   background: var(--canvas);

@@ -196,6 +196,10 @@ _PAGE = r"""<!DOCTYPE html>
 <title>cherrypick settings</title>
 <style>
   :root { color-scheme: dark; }
+  * { scrollbar-width:thin; scrollbar-color:#33414d transparent; }
+  *::-webkit-scrollbar { width:6px; height:6px; }
+  *::-webkit-scrollbar-track { background:transparent; }
+  *::-webkit-scrollbar-thumb { background:#33414d; border-radius:3px; }
   body { margin:0; font:14px/1.5 system-ui,sans-serif; background:#12161a; color:#d7dee5; }
   header { padding:14px 22px; background:#181e24; border-bottom:1px solid #232c34; }
   header b { font-size:16px; }
