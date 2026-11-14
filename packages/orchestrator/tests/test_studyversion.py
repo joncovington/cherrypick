@@ -61,7 +61,7 @@ def test_the_stamp_sits_beside_the_result_and_reads_back(tmp_path):
 def test_a_result_is_stale_once_the_log_grows_past_its_stamp():
     assert sv.state({"version": 1}, [ONE, TWO]) | {} == {
         "version": 1, "current": 2, "commit": None, "script": None, "stale": True,
-        "since": [{"on": "2026-11-02", "what": "c", "before_read": True}],
+        "since": [{"on": "2026-11-02", "what": "c", "before_read": True}], "changed_files": [],
     }  # fmt: skip
     assert sv.state({"version": 2}, [ONE, TWO])["stale"] is False
     unstamped = sv.state(None, [ONE])

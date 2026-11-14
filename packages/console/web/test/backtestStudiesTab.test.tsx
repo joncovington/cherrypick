@@ -14,6 +14,7 @@ import {
   StudyDialogBody,
   StudyTiles,
   Verdicts,
+  VersionNote,
   armsLine,
   chipLabel,
   controlScale,
@@ -245,7 +246,7 @@ describe("studies tab", () => {
         { arm: "w25", verdict: "pass" },
       ],
       summary: "mixed",
-      version: { version: 2, current: 3, commit: null, stale: true, since: [{ on: "2026-10-30", what: "fees per leg", beforeRead: true }], error: null },
+      version: { version: 2, current: 3, commit: null, stale: true, since: [{ on: "2026-10-30", what: "fees per leg", beforeRead: true }], changedFiles: [], error: null },
     });
     const m = tileModel(row({ results: [stale] }));
     expect(m.stale).toBe(true);
@@ -560,5 +561,19 @@ describe("links between the tabs", () => {
     expect(out).toContain("the interval is below zero");
     expect(out).toContain("same measured nothing");
     expect(html(<RunPlainEnglish r={r} />)).toContain("No study in the register names this run.");
+  });
+});
+
+describe("a stale result says why (#1082)", () => {
+  const base = { version: 1, current: 1, commit: null, stale: true, since: [], changedFiles: [], error: null };
+  it("names the files that changed when no correction was logged", () => {
+    const out = html(<VersionNote v={{ ...base, changedFiles: ["packages/backtest/scripts/iwm_condor_item59.py"] }} />);
+    expect(out).toContain("code it ran on has changed");
+    expect(out).toContain("iwm_condor_item59.py");
+  });
+  it("keeps the correction reading when a correction landed", () => {
+    const out = html(<VersionNote v={{ ...base, current: 2, since: [{ on: "2026-11-14", what: "a fix", beforeRead: true }] }} />);
+    expect(out).toContain("now v2");
+    expect(out).not.toContain("code it ran on");
   });
 });

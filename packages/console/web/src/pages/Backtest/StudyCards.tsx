@@ -114,6 +114,23 @@ export function VersionNote({ v }: { v: StudyVersion }) {
     return v.version !== null ? <span className="muted"> · replay v{v.version}</span> : null;
   }
   const n = v.since.length;
+  const changed = v.changedFiles ?? [];
+  if (n === 0 && changed.length > 0) {
+    // Stale on code, not on a logged correction: a file it ran on has changed since (#1082).
+    return (
+      <>
+        <span className="chip chip-warn"> stale: code it ran on has changed</span>
+        <ul className="muted" style={{ margin: "0.25em 0 0", paddingLeft: "1.1em" }}>
+          {changed.map((f) => (
+            <li key={f}>
+              <code>{f}</code>
+            </li>
+          ))}
+        </ul>
+        <span className="muted"> rerun to read it on the current code</span>
+      </>
+    );
+  }
   return (
     <>
       <span className="chip chip-warn">
