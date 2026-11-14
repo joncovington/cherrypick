@@ -8,6 +8,7 @@ import {
   buildComposite,
   buildProfile,
   defaultRowSize,
+  rowSizeFor,
   etInstant,
   overnightProfile,
   sessionDates,
@@ -34,7 +35,9 @@ interface FixtureCase {
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURE = JSON.parse(
   fs.readFileSync(path.join(HERE, "..", "..", "..", "core", "tests", "fixtures", "marketprofile_cases.json"), "utf-8"),
-) as { row_sizes: [number, number][]; cases: FixtureCase[]; composites: FixtureComposite[]; untested: FixtureUntested[] };
+) as {
+  row_sizes: [number, number][];
+  symbol_row_sizes: [string, number, number][]; cases: FixtureCase[]; composites: FixtureComposite[]; untested: FixtureUntested[] };
 
 interface FixtureUntested {
   name: string;
@@ -144,6 +147,10 @@ const KEYS: Record<string, string> = {
 };
 
 describe("marketProfile mirrors core.marketprofile", () => {
+  it.each(FIXTURE.symbol_row_sizes)("row size for %s at %d is %d", (symbol, price, size) => {
+    expect(rowSizeFor(symbol, price)).toBe(size);
+  });
+
   it.each(FIXTURE.row_sizes)("default row size for %d is %d", (price, size) => {
     expect(defaultRowSize(price)).toBe(size);
   });
