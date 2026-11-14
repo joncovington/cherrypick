@@ -22,6 +22,17 @@ def test_termination_starts_a_thirty_day_clock():
     assert late["overdue"] is True and late["days_left"] == -1
 
 
+def test_results_are_kept_then_reviewed_in_the_last_week_then_purged():
+    # The user's decision (2026-11-14): keep the 30 days, a final review, then delete by the deadline.
+    s = settings.resolve({"vendor": {"license": {"terminated_on": "2026-11-01"}}})
+    phase = {d: licensing.status(s, today=date(2026, *d))["phase"] for d in
+             ((10, 31), (11, 1), (11, 23), (11, 24), (11, 30), (12, 1), (12, 2))}  # fmt: skip
+    assert phase == {(10, 31): "active", (11, 1): "keeping", (11, 23): "keeping", (11, 24): "final_review",
+                     (11, 30): "final_review", (12, 1): "purge_due", (12, 2): "overdue"}  # fmt: skip
+    assert licensing.status(s, today=date(2026, 11, 2))["review_from"] == "2026-11-24"
+    assert licensing.status(settings.resolve({}), today=date(2026, 11, 2))["phase"] == "active"
+
+
 def _seed(s):
     vendor = paths.ensure_vendor_dir(s)
     (vendor / "SPX-2026-10.db").write_bytes(b"x" * 10)
