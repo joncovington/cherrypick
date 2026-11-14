@@ -7653,6 +7653,37 @@ for this question has been read.*
   ignored. Black-Scholes deltas, not the vendor's. The call is never managed before its expiry. A
   split ex-date inside a call's life closes the call at the session before at its ask and sells a new
   one at that session's close on the new basis; the shares follow the split.
+- **Settled with the replay, before the history was fetched (2026-11-13):**
+  - The bars are the technicals history's raw daily bars. The ladder's fills and ratios read them
+    split-adjusted; strikes are read against the day's raw close, and the lot's cost P and the banked
+    premium B are restated on each sale's own basis.
+  - A window's ladder starts fresh at its first session. A lot sold by the baseline in the hospital
+    session itself was not open at that close and is no hospital lot; a hospital session after the
+    window's last does not count.
+  - B is the premium received at the bid, gross of fees, less the buy-back of any call closed at a
+    split or at the window's end.
+  - A lot waiting for an expiry (none in range, no chain for the sale's close, or no strike the rule
+    can pick, `delta30` with no delta among them) has no target and no exit, and the next session is
+    tried. Each waiting session is counted. A call is not sold on the session before a split's
+    ex-date; the old call, closed there at the ask, is replaced on the ex-date session's close, on the
+    new basis, because the vendor's chain for the session before is on the old basis and a call sold
+    there would meet the same split again.
+  - After a split the call covers the lot's shares as a fractional number of contracts, and its
+    premium and fees follow that number pro rata.
+  - An expiry that falls on a non-session ends at the last session before it, and one past the
+    window's last session is not reached: the call is marked at the window's end.
+  - A lot marked at the window's end pays no exit cost on the shares, as item 26 marks; its open call
+    is bought back at the ask with the closing fee. A call with no two-sided quote at a mark is read
+    at its last earlier quote in the call's life, else at intrinsic value; both are counted.
+  - The assignment fee is the schedule's $5 an assignment. The shares go at the strike and pay item
+    26's 0.05%, with no further share-disposal charge.
+  - The stress takes the options' fees at 1.5x and every call sold $0.05 under the bid, and any call
+    bought back $0.05 over the ask. It reprices the natural's path; it does not re-pick strikes.
+  - "Ends below cost" counts an assignment where the strike plus every premium banked is under the
+    lot's cost. The time-halves split the lots by their buy session.
+  - `decay` is item 27's exit schedule (104% to day 30, breakeven after costs to day 120, 95% of cost
+    after) filled as item 27 fills, on the same lots from the session after the buy, with no calls.
+  - `plan` records the earlier of the two names' last sessions as the holdout's end.
 - **Data:** ThetaData Options Standard end-of-day chains for SOXL and TQQQ, as daily paths from each
   sale to its expiry, fetched by a research-queue `fetch-chain-paths` row into the backtest store.
   Expiries come from item 29's listing. The replay is `packages/backtest/scripts/share_ladder_item76.py`,
