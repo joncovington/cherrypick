@@ -13,7 +13,7 @@ A page the suite has switched off is not shown (see *What is off is not shown* b
 |---|---|---|---|
 | Live | `/live` | today, positions, portfolio, wheel, pmcc, flies, meic | Real money first: what is open at the broker, the book as a whole, the wheel, and one tab per live loop (flies and meic only while their live switch is on or the loop still holds something). `/` redirects here. |
 | Reports | `/reports` | morning, eod, external | The morning pack, the end-of-day review, and **External reports**: the tabs people add with a script of their own (`/reports/external/<id>`). |
-| Charts | `/charts` | intraday, profile, technicals, setups | Intraday charts, the recorded sessions' Market Profiles, the technicals cards, and the setups the technicals package finds. |
+| Charts | `/charts` | chart, profile, setups | One chart for every symbol (live intraday candles or the technicals daily chart), the recorded sessions' Market Profiles, and the setups the technicals package finds. |
 | GEX | `/gex` | gex, iv skew | Dealer gamma by strike for the recorded day, and the IV skew. Reads the market; trades nothing. |
 | GEX panel | `/gexpanel` | panel | Experimental, SPX only: a walls panel on the recorded data. |
 | Screeners | `/screeners` | two groups, eight tabs. Screens: earnings, earnings record, signal board, skate. Income lists: puts & calls, credit spreads, time spreads, fair value | The suite's own screens and income lists. The Dolt-backed tabs show a set-up card, not a blank, without Dolt. |
@@ -278,8 +278,24 @@ with no source named in the code: the file says its own title and source.
   over 512 KiB are refused unparsed. The folder is `data/external/` (`config.paths.externalDir`).
   Read-only; the console never runs a script.
 
-**Charts** (`/charts`, `lightbox/manifests/ChartsLightbox.tsx`) — four tabs: three charts and
-the setups watchlist:
+**Charts** (`/charts`, `lightbox/manifests/ChartsLightbox.tsx`) — three tabs: one chart for every
+symbol, the recorded sessions' profiles, and the setups watchlist:
+
+- `/charts/chart?symbol=/ES&tf=5m` (`pages/Chart/OneChartPage.tsx`; its rules, pure and tested, in
+  `chartRoute.ts`, `web/test/chartRoute.test.ts`) is one chart. `symbol` is the profile store's
+  spelling (a future with its slash, a cash symbol or stock as itself; `/ES` when absent), and `tf`
+  picks the source, each view keeping its own reader and nothing merged across them: `1m|5m|15m` the
+  intraday view, `1d` the daily view (both below). The header holds a symbol box (any name; the
+  suggestions are the live symbols and every charted name), a chip per live symbol, and the four
+  timeframes. A live symbol (`liveEntryFor`: the four cash symbols and the futures map's products)
+  opens on 5m, any other on 1d (`resolveTimeframe`). A timeframe that cannot draw the symbol stays on
+  the header, disabled, its reason the tooltip: intraday names what the feed carries; daily says the
+  technicals feature is off, the symbol is a future, or the report job charts no such name
+  (`dailyReason`). A symbol neither view can draw gets both reasons in place of the chart. The tab is
+  never hidden; with technicals off it loses only 1d. `/charts/intraday?product=ES&period=15m` and
+  `/charts/technicals?symbol=X` (and the older `/reports/chart?symbol=X`) redirect here, product and
+  period becoming symbol and tf, technicals becoming `tf=1d` (SPX when it named none), every other key
+  carried (`movedChartUrl`).
 
 - `/charts/profile?symbol=SPX&sessions=10&composite=5` (`pages/Profile/ProfilePage.tsx`) is the
   recorded sessions' Market Profiles side by side, oldest left, for SPX, SPY, NDX, QQQ, /ES and /NQ
@@ -307,10 +323,10 @@ the setups watchlist:
     and names the symbols that have it.
   Chart only.
 
-- `/charts/intraday?product=ES&period=5m&profile=on&sessions=5` is a live chart (1m/5m/15m) over the console's
-  own DXLink session, extended hours included (`market/candles.ts`, `pages/Intraday/IntradayPage.tsx`),
-  for the futures and four cash symbols (`product=SPX|SPY|NDX|QQQ`, `CASH_INSTRUMENTS`, each its own
-  DXLink symbol). A future's contract is the futures ticker's, from `state/futures_contracts.json`.
+- The chart's **intraday view** (`tf=1m|5m|15m`, `IntradayView` in `pages/Intraday/IntradayPage.tsx`;
+  its own keys `profile=on&sessions=5&hide=&show=`) is a live chart over the console's own DXLink
+  session, extended hours included (`market/candles.ts`), for the futures and four cash symbols
+  (`symbol=SPX|SPY|NDX|QQQ`, `CASH_INSTRUMENTS`, each its own DXLink symbol). A future's contract is the futures ticker's, from `state/futures_contracts.json`.
   - **Market Profile overlay** (`profile=on` by default; `pages/Intraday/profileOverlay.ts`): the
     newest sessions' TPO histograms behind the candles (value area brighter, POC amber; see
     Histograms below) and price lines for the newest session's POC, VAH/VAL, IBH/IBL and the prior
@@ -367,9 +383,9 @@ the setups watchlist:
     A view with no day change in it would have no date at all, so the status line names the span
     in view ("showing Thu Nov 12 18:00 – Fri Nov 13 16:55 ET", `visibleSpanLabel`), following
     scrolls and zooms.
-- `/charts/technicals?symbol=X` draws `data/technicals/charts/<X>.json` (`readers/technicals.ts`,
-  `pages/Morning/ChartPage.tsx`); it was Reports' `chart` tab, and `/reports/chart` redirects here
-  with its query. Shown only while the technicals feature is on. The symbol becomes a file name, so the
+- The chart's **daily view** (`tf=1d`, `TechnicalsView` in `pages/Morning/ChartPage.tsx`) draws
+  `data/technicals/charts/<X>.json` (`readers/technicals.ts`). Offered only while the technicals feature
+  is on. The symbol becomes a file name, so the
   reader accepts only ticker characters; a test sends `../` and was shown to fail with the pattern
   loosened.
   - Its arrows are ONE entry/exit setup family at a time (`?setup=`, `?side=long|short|both`,
@@ -385,7 +401,7 @@ the setups watchlist:
     or red would read as a gain or a loss.
 - `/charts/setups` is the setups watchlist (`pages/Setups/SetupsPage.tsx`, `GET /api/technicals/setups`
   over `charts/setups-index.json`): recent entries and exits, or open positions, long and short,
-  each symbol linking to its chart with the setup and side selected; nothing on it is vendor data. Gated with the technicals tab. The page filters and sorts
+  each symbol linking to its chart with the setup and side selected; nothing on it is vendor data. Shown only while the technicals feature is on. The page filters and sorts
   and splits a position into entry and exit lines; every value is the package's. "Move" is close to
   close and never called P&L, and nothing ranks a signal's quality. "Tested edge" swaps in the
   study's confirmed rule's rows (`tested`), which overlap the setup rows and are never shown with

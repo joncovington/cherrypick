@@ -379,14 +379,13 @@ export const COMPARE_SLIDES = [
 ] as const satisfies readonly NavSlide[];
 
 /**
- * Charts: the live intraday chart (futures and four cash symbols), the recorded sessions' Market Profiles,
- * and the technicals package's one-name chart.
- * `technicals` was Reports' `chart` tab; `/reports/chart` redirects here with its query string.
+ * Charts: one chart for every symbol (live intraday candles or the technicals package's daily chart),
+ * the recorded sessions' Market Profiles, and the setups watchlist. `/charts/intraday`,
+ * `/charts/technicals` and `/reports/chart` redirect to `chart` with their query translated.
  */
 export const CHARTS_SLIDES = [
-  { id: "intraday", label: "intraday" },
+  { id: "chart", label: "chart" },
   { id: "profile", label: "profile" },
-  { id: "technicals", label: "technicals" },
   { id: "setups", label: "setups" },
 ] as const satisfies readonly NavSlide[];
 

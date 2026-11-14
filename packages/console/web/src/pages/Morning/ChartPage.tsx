@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, type ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   createChart,
@@ -505,31 +505,14 @@ function SignalsCard({ c }: { c: TechnicalsChart }) {
 }
 
 /**
- * What the tab opens on when the URL names no symbol: the index itself. Dolt carries no cash
- * indexes, so SPX's chart is built from the broker's daily candles (scripts/fetch_index_bars.py,
- * landed by packages/technicals since 2026-10-01). It has no volume and no rank.
+ * The daily view of the Charts page's one chart (`/charts/chart?symbol=X&tf=1d`): the symbol is the
+ * page's, picked in its header; the setup, side and levels are this view's own query keys.
  */
-const DEFAULT_SYMBOL = "SPX";
-
-export function ChartPage() {
+export function TechnicalsView({ symbol }: { symbol: string }) {
   const [params, setParams] = useSearchParams();
-  const symbol = params.get("symbol")?.toUpperCase() || DEFAULT_SYMBOL;
   const setupParam = params.get("setup");
   const { data, isLoading, isError } = useTechnicalsChart(symbol);
   const c = data?.chart ?? null;
-  const index = data?.index;
-  const known = new Set((index?.symbols ?? []).map((s) => s.symbol));
-  // The box is for picking the next name, so it empties on every navigation; the name being
-  // shown is the heading above the chart.
-  const [draft, setDraft] = useState("");
-
-  const go = (s: string) => {
-    const next = new URLSearchParams(params);
-    if (s) next.set("symbol", s.toUpperCase());
-    else next.delete("symbol");
-    setParams(next);
-    setDraft("");
-  };
   const last = c ? c.bars[c.bars.length - 1] : undefined;
   // `?setup=` names a family (trend following unless the URL names another the file carries) and
   // `?side=` which of its positions are drawn, long by default. A short's own id ("trend-short"), as a
@@ -569,56 +552,18 @@ export function ChartPage() {
   };
 
   return (
-    <div className="page">
-      <div className="page-title-row">
-        <h1>Chart</h1>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (draft.trim()) go(draft.trim());
-          }}
-        >
-          <input
-            className="chip review-session-select"
-            list="technicals-symbols"
-            value={draft}
-            placeholder="symbol"
-            aria-label="Symbol"
-            onChange={(e) => {
-              const v = e.target.value;
-              // A pick from the suggestions arrives as a replacement (or, in some browsers, as a
-              // plain Event); a keystroke arrives as insertText. Only a pick navigates, or typing
-              // "A" on the way to "AAPL" would open A's chart.
-              const inputType = (e.nativeEvent as InputEvent).inputType;
-              const picked = inputType === undefined || inputType === "insertReplacementText";
-              if (picked && known.has(v.toUpperCase())) go(v);
-              else setDraft(v);
-            }}
-          />
-          <datalist id="technicals-symbols">
-            {(index?.symbols ?? []).map((s) => (
-              <option key={s.symbol} value={s.symbol} />
-            ))}
-          </datalist>
-        </form>
-        {c && <span className="card-asof">close of {c.session}</span>}
-      </div>
-
+    <>
       {isError && <p className="muted">Could not read the technicals store.</p>}
       {isLoading && <p className="muted">Reading the chart…</p>}
-      {!isLoading && !isError && symbol === undefined && (
-        <p className="muted">
-          Pick a name — {index?.symbols.length ?? 0} charted.
-        </p>
-      )}
-      {!isLoading && !isError && symbol !== undefined && c === null && (
-        <p className="muted">No chart for {symbol}. The report job charts every stock the technicals store holds.</p>
+      {!isLoading && !isError && c === null && (
+        <p className="muted">No daily chart for {symbol}. The report job charts every stock the technicals store holds.</p>
       )}
 
       {c && (
         <>
           <div className="chart-symbol-row">
             <h2 className="chart-symbol">{c.symbol}</h2>
+            <span className="card-asof">close of {c.session}</span>
             {c.sentiment && (
               <span
                 className={`chip ${c.sentiment === "Bullish" ? "pnl-pos" : c.sentiment === "Bearish" ? "pnl-neg" : ""}`}
@@ -663,6 +608,6 @@ export function ChartPage() {
           <SignalsCard c={c} />
         </>
       )}
-    </div>
+    </>
   );
 }

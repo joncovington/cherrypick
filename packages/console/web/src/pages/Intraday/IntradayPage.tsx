@@ -14,7 +14,8 @@ import {
   type WhitespaceData,
 } from "lightweight-charts";
 import { CANDLE_PERIODS, PROFILE_SYMBOLS, type CandleBar, type CandlePeriod, type FuturesTickerEntry } from "@console/shared";
-import { useFuturesTicker, useProfileBars } from "../../lib/api";
+import { useProfileBars } from "../../lib/api";
+import { isCash, liveLabel } from "./liveSymbols";
 import { buildComposite, overnightProfile, untestedPocs, type MarketComposite } from "../../lib/marketProfile";
 import { useCandles } from "../../lib/useCandles";
 import { CardHelpButton, HelpSection, type CardHelpContent } from "../../components/CardHelp";
@@ -62,15 +63,8 @@ const PAL = _pal();
  * mirror of `cherrypick.core.marketprofile` pinned by the shared fixture.
  */
 
-/** Cash symbols the chart offers beside the futures, profiled over the same regular session. An
- *  index (SPX, NDX) carries no volume, so its profile is TPO only. */
-export const CASH_INSTRUMENTS: FuturesTickerEntry[] = [
-  { product: "SPX", label: "SPX", name: "S&P 500 index", contract: null, streamerSymbol: "SPX", expiration: null, reason: null },
-  { product: "SPY", label: "SPY", name: "S&P 500 ETF", contract: null, streamerSymbol: "SPY", expiration: null, reason: null },
-  { product: "NDX", label: "NDX", name: "Nasdaq-100 index", contract: null, streamerSymbol: "NDX", expiration: null, reason: null },
-  { product: "QQQ", label: "QQQ", name: "Nasdaq-100 ETF", contract: null, streamerSymbol: "QQQ", expiration: null, reason: null },
-];
-const isCash = (product: string): boolean => CASH_INSTRUMENTS.some((e) => e.product === product);
+/** An intraday candle width (the socket also serves 1d, which the chart's daily view does not use). */
+export type IntradayPeriod = (typeof CANDLE_PERIODS)[number];
 
 /** How many recorded sessions back the untested-POC lines look. */
 const UNTESTED_SESSIONS = 20;
@@ -179,7 +173,6 @@ export function histogramNote(h: { asked: number; drawn: number; sessions: reado
   return `${head}; that is all the history held`;
 }
 
-const isPeriod = (p: string | null): p is CandlePeriod => p !== null && (CANDLE_PERIODS as readonly string[]).includes(p);
 
 interface ChartInfo {
   loaded: boolean;
@@ -597,12 +590,14 @@ function Toggle<T extends string>({
   );
 }
 
-export function IntradayPage() {
+/**
+ * The intraday view of the Charts page's one chart (`/charts/chart?symbol=/ES&tf=5m`): the symbol and
+ * candle width are the page's, picked in its header and resolved to a live entry there; the profile,
+ * its sessions and its line groups are this view's own query keys.
+ */
+export function IntradayView({ entry, period }: { entry: FuturesTickerEntry; period: IntradayPeriod }) {
   const [params, setParams] = useSearchParams();
-  const { data, isError } = useFuturesTicker();
-  const product = params.get("product") ?? "ES";
-  const periodParam = params.get("period");
-  const period: CandlePeriod = isPeriod(periodParam) ? periodParam : "5m";
+  const product = entry.product;
   const set = (key: string, value: string): void => {
     const next = new URLSearchParams(params);
     next.set(key, value);
@@ -627,23 +622,15 @@ export function IntradayPage() {
     setParams(next, { replace: true });
   };
 
-  const entries = [...CASH_INSTRUMENTS, ...(data?.entries ?? [])];
-  const entry = entries.find((e) => e.product === product);
-  const products = entries.map((e) => e.product);
-  const labelOf = (p: string): string => (isCash(p) ? p : `/${p}`);
-
   return (
     <section className="card">
       <div className="card-head">
         <h2>
-          {entry?.label ?? labelOf(product)} {entry?.contract !== null && entry?.contract !== undefined ? `(${entry.contract})` : ""} ·{" "}
-          {period} candles
+          {entry.label ?? liveLabel(product)} {entry.contract !== null ? `(${entry.contract})` : ""} · {period} candles
         </h2>
         <CardHelpButton cardTitle="Intraday chart" help={INTRADAY_HELP} />
         <span className="chip">chart only</span>
         <div style={{ marginLeft: "auto", display: "flex", flexWrap: "wrap", gap: 8, minWidth: 0 }}>
-          <Toggle value={product} options={products} onChange={(v) => set("product", v)} label="symbol" render={labelOf} />
-          <Toggle value={period} options={CANDLE_PERIODS} onChange={(v) => set("period", v)} label="candle width" />
           <Toggle
             value={profile ? "on" : "off"}
             options={["on", "off"] as const}
@@ -662,17 +649,7 @@ export function IntradayPage() {
           )}
         </div>
       </div>
-      {entry === undefined ? (
-        data === undefined && !isError ? (
-          <p className="muted">loading…</p>
-        ) : data === undefined ? (
-          <p className="muted">Could not read the futures contract map from the console server.</p>
-        ) : (
-          <p className="muted">
-            {labelOf(product)} is not one of the chart's symbols ({products.map(labelOf).join(", ")}).
-          </p>
-        )
-      ) : entry.streamerSymbol === null ? (
+      {entry.streamerSymbol === null ? (
         <p className="muted">No contract for /{product}: {entry.reason ?? "unknown"} (see scripts/refresh_futures_contracts.py).</p>
       ) : (
         <LiveCandles
