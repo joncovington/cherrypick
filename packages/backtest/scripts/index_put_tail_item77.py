@@ -70,6 +70,14 @@ SPLIT = "2021-06-01"
 FORWARD_AFTER = i57.FORWARD_AFTER
 RATE_STALE_DAYS = 10
 
+REPLAY_CORRECTIONS = (
+    {"on": "2026-11-14", "what": "the tail bar's 99th-percentile drawdown is no longer rounded to the "
+     "cent: the kit's bootstrap runs on the returns scaled up and scales the drawdown back",
+     "why": "killcriteria rounds a drawdown to the cent, so on returns on buying power the first run "
+     "recorded it to the nearest whole percent; neither model's tail verdict was near the bar",
+     "decided": "suite rule: a number recorded wrong is fixed at once", "before_read": False},
+)  # fmt: skip
+
 
 def cash_bp(strike: float, premium: float) -> float:
     """A cash-secured put's hold: the strike's cash less the premium taken in."""

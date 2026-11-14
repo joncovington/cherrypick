@@ -30,6 +30,9 @@ from cherrypick.core import killcriteria
 from cherrypick.core.stats import mean_sd, t_cdf
 
 PASS, FAIL, NO_VERDICT = "pass", "fail", "no verdict"
+#: The tail bar's bootstrap runs on the series times this, so cent rounding cannot swallow a drawdown
+#: measured in returns (a fraction of buying power) rather than dollars.
+TAIL_SCALE = 1_000_000
 NOT_APPLICABLE = "not applicable"
 
 
@@ -91,11 +94,16 @@ def tail_check(
     if n < min_n:
         return {"n": n, "verdict": NO_VERDICT, "why": f"{n} trades, under {min_n}"}
     mean, _ = mean_sd(nets)
-    dd = killcriteria.derive(list(nets), sessions=sessions, horizon=per_year, resamples=resamples, seed=seed)
+    # `killcriteria` rounds a drawdown to the cent (it was written for dollars); a study judging returns
+    # on buying power would lose its drawdown to that rounding, so the bootstrap runs on the series
+    # scaled by `TAIL_SCALE` and the drawdown is scaled back. A positive scale leaves the resampled
+    # paths, and so the percentile, the same.
+    scaled = [x * TAIL_SCALE for x in nets]
+    dd = killcriteria.derive(scaled, sessions=sessions, horizon=per_year, resamples=resamples, seed=seed)
     if dd.get("insufficient"):
         return {"n": n, "verdict": NO_VERDICT, "why": f"under {dd['min_evidence']} trades for the bootstrap"}
     year = mean * per_year
-    p99 = dd["drawdown_block"]
+    p99 = dd["drawdown_block"] / TAIL_SCALE
     ok = mean > 0 and p99 < year
     return {
         "n": n,
