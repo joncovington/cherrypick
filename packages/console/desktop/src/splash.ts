@@ -21,7 +21,7 @@ export function splashHtml(status: ConsoleStatus, url: string): string {
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>cherrypick console</title><style>
   :root { --canvas:#0f1115; --surface:#1a1d23; --border:#262a32; --text:#ffffff; --muted:#9ca3af; --accent-live:#d23f57; }
-  * { box-sizing: border-box; }
+  * { box-sizing: border-box; scrollbar-width: thin; scrollbar-color: #3d4653 transparent; }
   body { margin:0; height:100vh; display:flex; align-items:center; justify-content:center;
          background:var(--canvas); color:var(--text);
          font:14px/1.6 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif; }
