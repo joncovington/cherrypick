@@ -2340,6 +2340,60 @@ def cmd_hypotheses(cfg, args) -> None:
         sys.exit(1)
 
 
+def _git_out(root, *argv: str) -> str:
+    from cherrypick.orchestrator.util import CREATE_NO_WINDOW
+
+    r = subprocess.run(
+        ["git", "-C", str(root), *argv],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=120,
+        creationflags=CREATE_NO_WINDOW,
+    )
+    return r.stdout if r.returncode == 0 else ""
+
+
+def cmd_study_times() -> None:
+    """#1090: each study's stage dates (declared, script, queued, fetched, studied, recorded) and the
+    queue's split of its time, from the register's git history and the research queue. Times only."""
+    from cherrypick.orchestrator import studytimes
+
+    root = hypotheses.repo_root()
+    reg = hypotheses.load()
+    history = []
+    commit = None
+    # Each commit with the path the register had then (followed across its move from docs/). Newest
+    # first, reversed here: git's --follow does not combine with --reverse.
+    log = _git_out(
+        root, "log", "--follow", "--format=@%H %cI", "--name-only", "--", "research/hypotheses.json"
+    )
+    for line in log.splitlines():
+        if line.startswith("@"):
+            commit = line[1:].split(" ", 1)
+        elif line.strip() and commit:
+            text = _git_out(root, "show", f"{commit[0]}:{line.strip()}")
+            try:
+                history.append((commit[1], json.loads(text)))
+            except ValueError:
+                pass
+            commit = None
+    history.reverse()
+    rows = reg.get("hypotheses", [])
+    scripts = {s for r in rows for s in (r.get("scripts") or [])[:1]}
+    dates = {}
+    for s in scripts:
+        added = _git_out(root, "log", "--follow", "--diff-filter=A", "--format=%cI", "--", s).split()
+        dates[s] = added[-1] if added else None
+    plan_dates = {}
+    for r in rows:
+        if isinstance(r.get("id"), int) and r["id"] >= 18 and not r.get("legacy"):
+            found = _git_out(root, "log", "--follow", "-S", f"### {r['id']}. ", "--format=%cI", "--",
+                             "research/edge-hypotheses-plan.md").split()  # fmt: skip
+            plan_dates[r["id"]] = found[-1] if found else None
+    _emit(studytimes.report(reg, history, dates, _queue_rows(), plan_dates=plan_dates))
+
+
 def cmd_hypotheses_board() -> None:
     """The studies board: each register row with its result files' verdicts and its queue rows.
     Reads result files under the home, licensed ones included, so the console shows it only behind
@@ -2697,6 +2751,7 @@ def build_parser() -> argparse.ArgumentParser:
             "execution",
             "hypotheses",
             "hypotheses-board",
+            "study-times",
             "study-report",
             "retests",
             "run-earnings-entry",
@@ -3152,6 +3207,7 @@ def main() -> None:
         "execution": lambda: cmd_execution(cfg, args),
         "hypotheses": lambda: cmd_hypotheses(cfg, args),
         "hypotheses-board": cmd_hypotheses_board,
+        "study-times": cmd_study_times,
         "study-report": lambda: cmd_study_report(args),
         "retests": lambda: cmd_retests(args),
         "notify-trades": lambda: cmd_notify_trades(cfg, dry_run=args.dry_run),
