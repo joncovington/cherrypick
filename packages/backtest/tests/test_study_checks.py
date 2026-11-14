@@ -92,3 +92,15 @@ def test_no_bar_has_a_default_a_declaration_must_fix():
     ):
         params = inspect.signature(fn).parameters
         assert {k for k in required if params[k].default is inspect.Parameter.empty} == required
+
+
+def test_the_tail_bar_keeps_its_precision_on_returns_as_well_as_dollars():
+    # killcriteria rounds a drawdown to the cent: on returns (fractions of buying power) that would read
+    # a 0.4% drawdown as 0. The same series in dollars and in returns must give the same drawdown.
+    dollars = steady(400, 3.0, 40.0, seed=8)
+    returns = [x / 10_000 for x in dollars]
+    a = ck.tail_check(dollars, per_year=50, min_n=200, **BOOT)
+    b = ck.tail_check(returns, per_year=50, min_n=200, **BOOT)
+    assert a["drawdown_p99_year"] > 0
+    assert abs(b["drawdown_p99_year"] * 10_000 - a["drawdown_p99_year"]) < 0.02
+    assert a["verdict"] == b["verdict"]
