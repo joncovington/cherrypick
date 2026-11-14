@@ -1,0 +1,30 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "cherrypick-ensemble"
+version = "0.1.0"
+description = "A rules engine for short-dated option arms: one decision function for the backtest and the paper loop"
+requires-python = ">=3.11"
+license = "MIT"
+# cherrypick-core is a sibling in-repo package (packages/core), installed editable alongside this one.
+# Deliberately NO broker dependency: paper-only, credential-free, a pure stream-cache consumer.
+dependencies = ["cherrypick-core", "cherrypick-technicals"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff==0.16.10"]
+
+[tool.pytest.ini_options]
+testpaths  = ["tests"]
+pythonpath = ["tests", "src"]
+
+[tool.ruff]
+# line-length + lint.select come from the suite-wide ../../ruff.toml.
+extend = "../../ruff.toml"
+target-version = "py311"
+
+[tool.hatch.build.targets.wheel]
+# src-layout PEP 420 namespace: src/cherrypick/ has NO __init__.py.
+only-include = ["src/cherrypick"]
+sources = ["src"]
