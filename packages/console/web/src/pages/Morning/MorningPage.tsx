@@ -300,7 +300,8 @@ function VolCurve({ points }: { points: MorningVolCurvePoint[] }) {
   if (measured.length < 2) return <p className="muted">not enough of the curve is measured to draw it</p>;
   const width = 620;
   const height = 150;
-  const m = { l: 34, r: 14, t: 14, b: 22 };
+  // Room either side for a centred label on the end points, at the phone's larger label size too.
+  const m = { l: 34, r: 34, t: 18, b: 24 };
   const ys = measured.map((p) => p.value as number);
   const lo = Math.min(...ys);
   const hi = Math.max(...ys);
@@ -312,7 +313,7 @@ function VolCurve({ points }: { points: MorningVolCurvePoint[] }) {
     m.t + ((hi + pad - v) / (hi - lo + 2 * pad || 1)) * (height - m.t - m.b);
   const path = measured.map((p, i) => `${i ? "L" : "M"}${X(i)},${Y(p.value as number)}`).join(" ");
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} className="chart" role="img" aria-label="VIX term structure">
+    <svg viewBox={`0 0 ${width} ${height}`} className="chart vol-curve" role="img" aria-label="VIX term structure">
       <path d={path} fill="none" stroke={VOL_INK} strokeWidth={2} />
       {measured.map((p, i) => (
         <g key={p.symbol}>
