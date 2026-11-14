@@ -58,6 +58,27 @@ describe("Profile tab view", () => {
     expect(buildView(payload({ available: false, bars: [], sessions: [] }), 5)).toBeNull();
   });
 
+  it("adds the sessions the live candles hold beyond the store, and only those", () => {
+    const end12 = Date.parse("2026-11-12T21:00:00Z") / 1000; // 16:00 ET
+    const recorded = payload({ sessions: ["2026-11-12"], bars: SPX.filter((b) => b.t < end12) });
+    // the live series overlaps the recorded day; only its bars after the newest recorded bar count
+    const v = buildView(recorded, 2, SPX)!;
+    expect(v.profiles.map((p) => p.session)).toEqual(["2026-11-12", "2026-11-13"]);
+    expect(v.live).toEqual(["2026-11-13"]);
+    expect(v.composite?.sessions).toEqual(["2026-11-12", "2026-11-13"]);
+    const direct = buildProfile(SPX, { rowSize: 2, barSeconds: 900, session: "2026-11-13" })!;
+    expect([v.profiles[1]!.poc, v.profiles[1]!.val, v.profiles[1]!.vah]).toEqual([direct.poc, direct.val, direct.vah]);
+    // a live bar inside the recorded day changes nothing recorded
+    const tampered = SPX.map((b) => (b.t < end12 ? { ...b, h: b.h + 500 } : b));
+    expect(buildView(recorded, 2, tampered)!.profiles[0]).toEqual(v.profiles[0]);
+  });
+
+  it("with nothing recorded yet, still draws the live sessions", () => {
+    const v = buildView(payload({ available: false, bars: [], sessions: [], reason: "not run" }), 0, SPX)!;
+    expect(v.live).toEqual(["2026-11-12", "2026-11-13"]);
+    expect(buildView(payload(), 0, []).live).toEqual([]);
+  });
+
   it("reads value as higher, lower or overlapping by the value areas' outer edges", () => {
     const base = buildProfile(SPX, { rowSize: 2, barSeconds: 900, session: "2026-11-12" })!;
     const shift = (d: number) => ({ ...base, val: base.val + d, vah: base.vah + d });

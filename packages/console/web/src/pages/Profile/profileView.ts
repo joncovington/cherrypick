@@ -1,5 +1,12 @@
-import type { ProfileBarsPayload } from "@console/shared";
-import { buildComposite, buildProfile, defaultRowSize, type MarketComposite, type MarketProfile } from "../../lib/marketProfile";
+import type { CandleBar, ProfileBarsPayload } from "@console/shared";
+import {
+  buildComposite,
+  buildProfile,
+  defaultRowSize,
+  sessionDates,
+  type MarketComposite,
+  type MarketProfile,
+} from "../../lib/marketProfile";
 
 /**
  * What the Profile tab draws, from the recorded bars: every session's profile and a composite of the
@@ -14,24 +21,40 @@ export interface ProfileView {
   /** Lowest and highest row price over everything drawn. */
   low: number;
   high: number;
+  /** Sessions built from the live candles because the store does not hold them yet (today, and any
+   *  session the 17:15 job has not recorded), newest last. */
+  live: string[];
 }
 
 /**
- * One row size for every column, so their rows line up: `defaultRowSize` of the first bar sent (the
- * oldest), which stays put while the same span is shown.
+ * Every session's profile, the recorded ones and then any the live candles hold beyond the newest of
+ * them, on one row grid: `defaultRowSize` of the first bar (the oldest), which stays put while the same
+ * span is shown. Live bars are used only after the newest recorded bar, never mixed with recorded
+ * minutes of the same time. The live series is 15-minute; every 15-minute bar also starts on the
+ * recorded 5-minute grid, so one bar width serves both.
  */
-export function buildView(payload: ProfileBarsPayload, compositeSessions: number): ProfileView | null {
-  if (!payload.available || payload.bars.length === 0) return null;
-  const rowSize = defaultRowSize(payload.bars[0]!.c);
+export function buildView(
+  payload: ProfileBarsPayload,
+  compositeSessions: number,
+  liveBars: readonly CandleBar[] = [],
+): ProfileView | null {
+  const recorded = payload.available ? payload.bars : [];
+  const lastRecorded = recorded.at(-1)?.t ?? -Infinity;
+  const newestRecorded = payload.available ? (payload.sessions.at(-1) ?? "") : "";
+  const after = liveBars.filter((b) => b.t > lastRecorded);
+  const live = sessionDates(after).filter((d) => d > newestRecorded);
+  const bars = [...recorded, ...after];
+  if (bars.length === 0) return null;
+  const sessions = [...(payload.available ? payload.sessions : []), ...live];
+  const rowSize = defaultRowSize(bars[0]!.c);
   const opts = { rowSize, barSeconds: payload.barSeconds };
-  const profiles = payload.sessions
-    .map((session) => buildProfile(payload.bars, { ...opts, session }))
+  const profiles = sessions
+    .map((session) => buildProfile(bars, { ...opts, session }))
     .filter((p): p is MarketProfile => p !== null);
   if (profiles.length === 0) return null;
-  const composite =
-    compositeSessions > 0 ? buildComposite(payload.bars, { ...opts, sessions: payload.sessions.slice(-compositeSessions) }) : null;
+  const composite = compositeSessions > 0 ? buildComposite(bars, { ...opts, sessions: sessions.slice(-compositeSessions) }) : null;
   const rowPrices = profiles.flatMap((p) => [p.rows[0]!.price, p.rows.at(-1)!.price]);
-  return { rowSize, profiles, composite, low: Math.min(...rowPrices), high: Math.max(...rowPrices) };
+  return { rowSize, profiles, composite, low: Math.min(...rowPrices), high: Math.max(...rowPrices), live };
 }
 
 /** Every period of a full regular session, A (09:30) to M (15:30). */
