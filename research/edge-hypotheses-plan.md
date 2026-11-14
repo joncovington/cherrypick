@@ -7862,6 +7862,67 @@ is the textbook tail trade. It runs in paper today as `packages/weeklyput` (item
   defined-risk version, a put credit spread at the same buying power, is the next item, declared
   before it runs.
 
+### 78. Item 57's weekly index put as a put credit spread, under the three bars
+
+Declared 2026-11-14, before any of it is computed. Item 77's tail-bar fail branch named this as the
+next item: the defined-risk version of item 57's put, at the buying power it holds. The licence on the
+vendor data ends on 2026-11-16, so this is read once, before then.
+
+- **Question:** does item 57's short put, with a lower put bought against it, earn more than the bill
+  on the buying power the spread holds, earn back a bad year within a year, and earn more than its own
+  delta would have?
+- **The trades:** item 57's names (SPX through its weekly root, SPY, QQQ, IWM) and expiries (every
+  non-monthly weekly in item 57's sample, read from item 57's recorded requests), the put nearest 10
+  delta sold at the close 7 calendar days before expiry (the next session when that day is not one),
+  and a lower put bought at the same close; held to expiry, settled at the expiry close's parity
+  forward. The legs come from the study kit's `Chain` (two-sided quotes, Black-76 at r = 0 on the
+  chain's parity forward), so a short strike can differ from item 57's in a few cycles; the naked put
+  is re-read by this same code beside the spreads, so the comparison is like for like.
+- **Two arms, by the long leg:** `long5`, the put nearest 5 delta below the short; `long3`, nearest 3
+  delta. No Holm step: at a t of 2 on 80 cycles or more a passing p is under 0.024, below Holm's
+  strictest bar for two arms, so it could never bind (item 77's reasoning).
+- **Buying power:** the width less the credit, the same in a cash account and under Reg T for a
+  defined-risk spread.
+- **Measured:** each trade's return on that buying power; per cycle, the equal-weight mean over the
+  names present; one cycle one observation.
+- **Costs:** the suite's slippage on both legs, the opening fee for two legs with one sold (the index
+  exchange fee on SPX), and item 46's settlement: an in-the-money index leg pays the settlement fee, an
+  in-the-money fund leg an assignment round trip on 100 shares (an upper bound when both legs finish in
+  the money).
+- **The three bars** (`cherrypick.backtest.study.rule`, `RULE` in the script), per arm, all must hold:
+  - **capital:** the cycle's return less the 3-month bill (the curve's last reading before the entry)
+    over the trade's days, mean above zero with a one-sided t of 2 or more;
+  - **tail:** the 99th-percentile one-year drawdown of a stationary bootstrap of the cycles (10,000
+    draws, seed 78, a year being the sample's own cycles a year) under one year of mean return;
+  - **delta:** the cycle's return less its entry delta (both legs) financed on the same buying power,
+    mean above zero with a one-sided t of 2 or more.
+  - Fewer than 80 cycles is no verdict.
+- **Windows:** item 57's whole sample through 2026-10-16, one run with no split. Items 57 and 77 read
+  the short leg on it, so the verdict is **provisional by declaration**; the cycles expiring after
+  2026-10-30 (item 57's forward read, fetched by its forward retest) are the fresh evidence and are
+  reported beside it.
+- **Reported, never judged:** the naked short put by this code on item 77's Reg T model under the same
+  bars; each arm's mean excess over the bill in each half (split 2021-06-01) and on each name; the
+  forward cycles; each arm's skips by reason and its mean buying power a trade.
+- **Rival explanations, each with its check:**
+  - *The long put costs more than the tail it removes:* the capital bar, with the naked put beside it.
+  - *The sample lacks the crash the long put is for:* the tail bar reads the sample's own losses only;
+    2018, 2020 and 2022 are in it, and the halves are reported.
+  - *The return is the index's drift on a long delta:* the delta bar, on the spread's own smaller delta.
+  - *A width too narrow to sell anything:* a cycle whose spread takes no credit is a skip, counted.
+- **Data:** item 57's chain-path store; nothing is fetched (item 57's paths hold every session's whole
+  chain). `packages/backtest/scripts/index_put_spread_item78.py plan|study`, queued as `item78/plan` and
+  `item78/study` after item 57's forward fetch. The study reads the store only through `Inputs` and
+  records its fingerprint. Results are derived from licensed data, so they stay under
+  `~/.cherrypick/data/backtest/results/research/item78/`, and this plan records the verdict without
+  figures.
+- **Decides:**
+  - **A pass on an arm:** the defined-risk put earns its capital and its tail on this evidence; a
+    weeklyput spread arm in paper is the proposal, the user's call, and the paper record is its only
+    later evidence once the vendor data is gone.
+  - **A fail on every arm:** short index puts at 7 days are closed for the suite in both forms; the
+    weeklyput arm stays a paper record of a tail-risk trade.
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:

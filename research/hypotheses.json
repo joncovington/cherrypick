@@ -3611,6 +3611,53 @@
       "retest": null,
       "retest_note": "A retest of item 57 itself; the forward cycles after 2026-10-30 are reported beside it.",
       "retests": []
+    },
+    {
+      "id": 78,
+      "study": "item78",
+      "title": "Item 57's weekly index put as a put credit spread, under the three bars",
+      "status": "declared",
+      "legacy": false,
+      "setup": "variance-premium",
+      "side": "neutral",
+      "structure": "put-credit-spread",
+      "window": "weekly",
+      "measure": "item 57's short 10-delta put on its weekly expiries with a lower put bought (nearest 5 or 3 delta), held to expiry, each trade's return on its buying power (width less credit), per cycle the equal-weight mean over the names present",
+      "expected": "no prior: the long put should cut the tail item 77 failed on, at a cost in premium that may leave nothing above the bill",
+      "sample": "item 57's whole sample through 2026-10-16, one run, no split; provisional by declaration (items 57 and 77 read the short leg), the cycles after 2026-10-30 reported as the fresh evidence; < 80 cycles = no verdict",
+      "rule": "per arm (long5, long3), all of: capital (return less the 3-month bill on the buying power over the days, mean > 0, one-sided t >= 2); tail (99th-percentile one-year drawdown of a stationary bootstrap of the cycles, 10,000 draws, seed 78, under one year of mean return); delta (return less the entry delta financed on the same buying power, mean > 0, one-sided t >= 2); no Holm step, which could not bind at t >= 2 on 80 cycles",
+      "mechanism": "the index variance premium item 46 found at 7 days, with its tail bought back",
+      "rivals": [
+        {
+          "explanation": "the long put costs more than the tail it removes",
+          "check": "the capital bar, the naked put reported beside"
+        },
+        {
+          "explanation": "a crash the sample lacks",
+          "check": "the tail bar on the sample's own losses; halves reported; 2018, 2020 and 2022 in the sample"
+        },
+        {
+          "explanation": "the index's drift on a long delta",
+          "check": "the delta bar"
+        },
+        {
+          "explanation": "a width too narrow to sell anything",
+          "check": "a spread with no credit is a counted skip"
+        }
+      ],
+      "pointer": "research/edge-hypotheses-plan.md#78-item-57s-weekly-index-put-as-a-put-credit-spread-under-the-three-bars",
+      "scripts": [
+        "packages/backtest/scripts/index_put_spread_item78.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_index_put_spread_item78_script.py"
+      ],
+      "results": [
+        "{home}/data/backtest/results/research/item78/results.json"
+      ],
+      "retest": null,
+      "retest_note": "Read once before the vendor licence ends (2026-11-16); no later retest is possible on vendor data.",
+      "retests": []
     }
   ],
   "rule_changes": []
