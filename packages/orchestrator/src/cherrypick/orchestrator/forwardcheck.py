@@ -98,13 +98,15 @@ def observations(trades: list[dict], spec: dict, arm: str | None = None) -> dict
     return {s: agg(vs) for s, vs in sorted(by.items())}
 
 
-def judge(spec: dict, obs: dict[str, float], ref: dict | None) -> dict:
+def judge(spec: dict, obs: dict[str, float], ref: dict | None, *, licence_ended: bool = False) -> dict:
     n = len(obs)
     out: dict[str, Any] = {"n": n, "min_obs": spec["min_obs"]}
-    if ref is None:
+    if ref is None and not licence_ended:
         return {**out, "state": COLLECTING, "why": "the backtest reference cannot be read here"}
     if n < spec["min_obs"]:
         return {**out, "state": COLLECTING}
+    if ref is None:
+        return {**out, **paper_alone(spec, obs)}
     mean = statistics.fmean(obs.values())
     z = (mean - ref["mean"]) / (ref["sd"] / math.sqrt(n)) if ref["sd"] else 0.0
     if z <= spec["kill_z"]:
@@ -116,24 +118,47 @@ def judge(spec: dict, obs: dict[str, float], ref: dict | None) -> dict:
     return {**out, "state": state, "paper_mean": mean, "reference_mean": ref["mean"], "z": round(z, 2)}
 
 
-def check(row: dict, trades: list[dict], read) -> dict:
+def paper_alone(spec: dict, obs: dict[str, float]) -> dict:
+    """Once the licence has ended and the backtest reference was purged with its data (#1091), the
+    paper arm is judged on its own record: its mean in its own standard errors (t), `kill` at t at
+    or under `kill_z`, `drift` at a mean at or under zero, `confirm` otherwise. Said so (`basis`)."""
+    values = list(obs.values())
+    mean = statistics.fmean(values)
+    sd = statistics.stdev(values) if len(values) > 1 else 0.0
+    t = mean / (sd / math.sqrt(len(values))) if sd else 0.0
+    if t <= spec["kill_z"]:
+        state = KILL
+    elif mean <= 0:
+        state = DRIFT
+    else:
+        state = CONFIRM
+    return {
+        "state": state,
+        "paper_mean": mean,
+        "t": round(t, 2),
+        "basis": "paper alone: the reference was purged",
+    }
+
+
+def check(row: dict, trades: list[dict], read, *, licence_ended: bool = False) -> dict:
     """One row's forward check: its state, and any arms reported beside it."""
     spec = row["forward"]
-    out = judge(spec, observations(trades, spec), reference(spec, read))
+    out = judge(spec, observations(trades, spec), reference(spec, read), licence_ended=licence_ended)
     beside = {a: len(observations(trades, spec, a)) for a in spec.get("beside", [])}
     return {"id": row["id"], "study": row["study"], "module": spec["module"], "arm": spec["arm"],
             **out, "beside_obs": beside}  # fmt: skip
 
 
-def run(reg: dict, trades_for, read) -> list[dict]:
+def run(reg: dict, trades_for, read, *, licence_ended: bool = False) -> list[dict]:
     """Every row that declares a forward check. `trades_for(module, schema)` returns that module's
-    closed paper trades (`core.ledgers`), or [] when it cannot be read."""
+    closed paper trades (`core.ledgers`), or [] when it cannot be read. With `licence_ended`, a check
+    whose reference is gone judges the paper arm alone (`paper_alone`)."""
     out = []
     for row in reg.get("hypotheses", []):
         if not row.get("forward") or problems(row["forward"]):
             continue
         spec = row["forward"]
-        out.append(check(row, trades_for(spec["module"], spec["schema"]), read))
+        out.append(check(row, trades_for(spec["module"], spec["schema"]), read, licence_ended=licence_ended))
     return out
 
 
