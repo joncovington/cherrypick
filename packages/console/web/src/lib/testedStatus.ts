@@ -43,6 +43,11 @@ export const TESTED_STATUS: Readonly<Record<string, TestedStatus>> = {
       "The unhedged arm passed item 57's checks in replay; the hedged arm failed. Paper reads it forward, and under 80 cycles that is a forward read, not a verdict.",
     source: "packages/weeklyput/CLAUDE.md",
   },
+  ensemble: {
+    words:
+      "The arms are a third-party portfolio's rules, read over all history in one pass (item 75). Paper reads them forward, and a few weeks of paper is a forward read, not a verdict.",
+    source: "packages/ensemble/CLAUDE.md",
+  },
   contango: {
     words: "In replay (2018–26) the gate buys drawdown, not return: holding SVXY outright earned more.",
     source: "packages/contango/CLAUDE.md",

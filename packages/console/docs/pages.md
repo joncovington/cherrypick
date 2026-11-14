@@ -36,6 +36,7 @@ A page the suite has switched off is not shown (see *What is off is not shown* b
 | Curve | `/curve` | today, regime, positions, history, decisions, arms, performance, analysis, costs, advisor, help | Retired; ships off. |
 | Contango | `/contango` | today, regime, positions, history, decisions, arms, performance, analysis, costs, help | Experimental; paper only. |
 | Weekly put | `/weeklyput` | today, cycles, positions, history, decisions, performance, costs, help (8 tabs) | Experimental; paper only. |
+| Ensemble | `/ensemble` | today, positions, history, decisions, performance, costs, help (7 tabs) | Experimental; paper only. The arms are whatever the ledger names. |
 | Flies | `/flies` | session, summary, forest, timeline, positions, history, books, opening range, attempts, decisions, gates vs control, live vs paper, selector, regime cuts, intraday agent, completion, performance, analysis, costs, advisor, help | Retired; ships off. |
 
 The simple view shows a shorter tab list per page (`ModuleNavDecl.simple`); the detail view shows all.

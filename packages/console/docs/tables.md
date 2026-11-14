@@ -28,6 +28,7 @@ net — each money header's `title` stating its definition.
 | earnings | `readers/earnings.ts` `earningsTradeCash` | `earnings-trade-standard` | `entry_cost`/`exit_cost` carry slippage and (exit) settlement fee; history is closed trades across both books |
 | calendars, pmcc, curve | `readers/positionCash.ts`, `components/TradeMoney.tsx` | `position-trade-standard` (via curve), `pmcc-`/`calendars-trade-standard` on fixtures from each module's `db.connect` | exit kinds add `assigned`; calendars' history is per week and arm, net null until every position (shares included) has closed, totals over finished weeks only |
 | contango | `readers/contango.ts` `contangoTradeCash` | `contango-trade-standard`, on a fixture from its `db.connect` | a stint is a fund bought and sold: entry (the purchase) + exit (the sale) + distributions = gross; slippage charged as a cost; settlement never recorded, so `n/r` |
+| ensemble | `readers/ensemble.ts` `ensembleTradeCash` | `ensemble-reader`, on a fixture from its `db.py` schema | a structure of any number of legs: entry (the cash at the mid, credit +, debit −) + exit = gross; the three costs are three ledger columns; `exitKind` is `settled` when held to the posted close, else `closed`, with the arm's own `exit_reason` beside it. Arms come from the rows, never a list. Net and drawdown by arm are `lineOf` in the same file, the ledger's `analytics.py` sum |
 
 ## History-table controls
 
