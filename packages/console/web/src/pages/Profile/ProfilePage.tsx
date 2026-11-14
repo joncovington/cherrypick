@@ -6,6 +6,7 @@ import { useCandles } from "../../lib/useCandles";
 import { CardHelpButton, HelpSection, type CardHelpContent } from "../../components/CardHelp";
 import type { MarketComposite, MarketProfile } from "../../lib/marketProfile";
 import { buildView, partialPeriods, valueRelation, type ProfileView } from "./profileView";
+import { SessionDetail } from "./SessionDetail";
 
 /**
  * Charts → profile: the recorded sessions' Market Profiles side by side, oldest left, with a composite
@@ -74,6 +75,22 @@ const PROFILE_HELP: CardHelpContent = {
           be read against the levels of the span.
         </p>
       </HelpSection>
+      <HelpSection title="One session up close">
+        <p>
+          Click a column (or a row of the table) to open that session full size below the chart: every TPO letter,
+          the first hour (A and B) in blue with its bracket, the POC in amber, single prints and tails marked, the
+          open and close, and the session's facts beside it. Hover a row for its letters with their times and its
+          volume. Click the same column again, or close, to put it away; the open session is kept in the address.
+        </p>
+      </HelpSection>
+      <HelpSection title="Time or volume">
+        <p>
+          <strong>time</strong> draws each row by how long price spent there (the letters).{" "}
+          <strong>volume</strong> draws it by how much traded there, with the volume POC in amber; the tinted value
+          area stays the time-based one. Volume is spread evenly over each bar's range, as every profile built from
+          candles is. SPX and NDX are indexes and carry no volume, so for them only time is offered.
+        </p>
+      </HelpSection>
       <HelpSection title="The table">
         <p>
           Each session's POC, value area, initial balance (the first hour's range) and full range. Value is higher
@@ -95,12 +112,27 @@ const PROFILE_HELP: CardHelpContent = {
   ),
 };
 
-/** The plot: a shared price axis, one column per session, the composite at the right. */
-function ProfilePlot({ view, precision }: { view: ProfileView; precision: number }) {
+export type Measure = "time" | "volume";
+
+/** The plot: a shared price axis, one column per session, the composite at the right. A column is a
+ *  button: clicking it (or Enter on it) opens that session's detail below. */
+function ProfilePlot({
+  view,
+  precision,
+  measure,
+  selected,
+  onSelect,
+}: {
+  view: ProfileView;
+  precision: number;
+  measure: Measure;
+  selected: string | null;
+  onSelect: (session: string) => void;
+}) {
   const { rowSize, profiles, composite } = view;
   const nRows = Math.round((view.high - view.low) / rowSize) + 1;
   const rowH = Math.max(3, Math.min(13, PLOT_HEIGHT / nRows));
-  const letters = rowH >= 10;
+  const letters = rowH >= 10 && measure === "time";
   const cellW = letters ? 8 : 4;
   const plotH = nRows * rowH;
   const y = (price: number): number => TOP_PAD + ((view.high - price) / rowSize) * rowH; // top of the row at `price`
@@ -155,13 +187,19 @@ function ProfilePlot({ view, precision }: { view: ProfileView; precision: number
             letters={letters}
             plotH={TOP_PAD + plotH}
             live={view.live.includes(p.session)}
+            measure={measure}
+            selected={selected === p.session}
+            onSelect={onSelect}
           />
         ))}
-        {composite !== null && <CompositeColumn c={composite} x={compX} y={y} rowH={rowH} plotH={TOP_PAD + plotH} />}
+        {composite !== null && <CompositeColumn c={composite} x={compX} y={y} rowH={rowH} plotH={TOP_PAD + plotH} measure={measure} />}
       </svg>
     </div>
   );
 }
+
+/** A row's bar length as a share of the column's longest, by the chosen measure. */
+const share = (value: number, max: number): number => (max > 0 ? value / max : 0);
 
 function SessionColumn({
   p,
@@ -173,6 +211,9 @@ function SessionColumn({
   letters,
   plotH,
   live,
+  measure,
+  selected,
+  onSelect,
 }: {
   p: MarketProfile;
   x: number;
@@ -183,18 +224,43 @@ function SessionColumn({
   letters: boolean;
   plotH: number;
   live: boolean;
+  measure: Measure;
+  selected: boolean;
+  onSelect: (session: string) => void;
 }) {
+  const byVolume = measure === "volume";
+  const maxVol = Math.max(...p.rows.map((r) => r.volume));
+  const peak = byVolume ? p.volumePoc : p.poc;
+  const top = y(p.rows.at(-1)!.price);
+  const bottom = y(p.rows[0]!.price) + rowH;
   return (
-    <g>
+    <g
+      role="button"
+      tabIndex={0}
+      aria-label={`${dayLabel(p.session)} ${monthDay(p.session)}: open the session's detail`}
+      aria-pressed={selected}
+      onClick={() => onSelect(p.session)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onSelect(p.session);
+        }
+      }}
+      style={{ cursor: "pointer", outline: "none" }}
+    >
+      <title>{`${dayLabel(p.session)} ${monthDay(p.session)} · POC ${p.poc} · click for the letters`}</title>
+      {/* the whole column is the hit area, empty rows included */}
+      <rect x={x - 5} y={TOP_PAD} width={w + 10} height={plotH - TOP_PAD + LABEL_H - 4} fill="transparent" />
+      {selected && <rect x={x - 5} y={top - 3} width={w + 10} height={bottom - top + 6} fill="none" stroke="var(--accent)" rx={3} />}
       <rect x={x - 3} y={y(p.vah)} width={w + 6} height={y(p.val) - y(p.vah) + rowH} fill="var(--accent)" opacity={0.16} />
       {p.rows.map((r) => {
         const n = r.letters.length;
         if (n === 0) return null;
-        const top = y(r.price);
-        const poc = r.price === p.poc;
+        const rowTop = y(r.price);
+        const hot = r.price === peak;
         if (letters) {
           return (
-            <text key={r.price} x={x} y={top + rowH * 0.82} fontSize={rowH * 0.92} fontFamily="var(--num-face)" fill={poc ? "var(--amber-line)" : "var(--text)"} fontWeight={poc ? 700 : 400}>
+            <text key={r.price} x={x} y={rowTop + rowH * 0.82} fontSize={rowH * 0.92} fontFamily="var(--num-face)" fill={hot ? "var(--amber-line)" : "var(--text)"} fontWeight={hot ? 700 : 400}>
               {r.letters.split("").map((ch, i) => (
                 <tspan key={i} x={x + i * cellW}>
                   {ch}
@@ -203,11 +269,21 @@ function SessionColumn({
             </text>
           );
         }
+        const len = byVolume ? share(r.volume, maxVol) * w : n * cellW;
+        if (len <= 0) return null;
         return (
-          <rect key={r.price} x={x} y={top + 0.5} width={n * cellW} height={Math.max(1, rowH - 1)} fill={poc ? "var(--amber-line)" : "var(--text-muted)"} opacity={poc ? 0.95 : 0.7} />
+          <rect
+            key={r.price}
+            x={x}
+            y={rowTop + 0.5}
+            width={Math.max(1, len)}
+            height={Math.max(1, rowH - 1)}
+            fill={hot ? "var(--amber-line)" : byVolume ? "var(--accent)" : "var(--text-muted)"}
+            opacity={hot ? 0.95 : 0.7}
+          />
         );
       })}
-      <text x={x} y={plotH + 14} fontSize={11} fill="var(--text)">
+      <text x={x} y={plotH + 14} fontSize={11} fill={selected ? "var(--accent)" : "var(--text)"} fontWeight={selected ? 700 : 400}>
         {dayLabel(p.session)}
       </text>
       <text x={x} y={plotH + 27} fontSize={10} fill={live ? "var(--accent)" : "var(--text-muted)"}>
@@ -218,21 +294,38 @@ function SessionColumn({
   );
 }
 
-function CompositeColumn({ c, x, y, rowH, plotH }: { c: MarketComposite; x: number; y: (price: number) => number; rowH: number; plotH: number }) {
-  const maxTpo = Math.max(...c.rows.map((r) => r.tpo));
+function CompositeColumn({
+  c,
+  x,
+  y,
+  rowH,
+  plotH,
+  measure,
+}: {
+  c: MarketComposite;
+  x: number;
+  y: (price: number) => number;
+  rowH: number;
+  plotH: number;
+  measure: Measure;
+}) {
+  const byVolume = measure === "volume";
+  const value = (r: MarketComposite["rows"][number]): number => (byVolume ? r.volume : r.tpo);
+  const max = Math.max(...c.rows.map(value));
+  const peak = byVolume ? c.volumePoc : c.poc;
   return (
     <g>
       <rect x={x - 3} y={y(c.vah)} width={COMPOSITE_W + 6} height={y(c.val) - y(c.vah) + rowH} fill="var(--accent)" opacity={0.16} />
       {c.rows.map((r) =>
-        r.tpo === 0 ? null : (
+        value(r) <= 0 ? null : (
           <rect
             key={r.price}
             x={x}
             y={y(r.price) + 0.5}
-            width={Math.max(1, (r.tpo / maxTpo) * COMPOSITE_W)}
+            width={Math.max(1, share(value(r), max) * COMPOSITE_W)}
             height={Math.max(1, rowH - 1)}
-            fill={r.price === c.poc ? "var(--amber-line)" : "var(--accent)"}
-            opacity={r.price === c.poc ? 0.95 : 0.55}
+            fill={r.price === peak ? "var(--amber-line)" : "var(--accent)"}
+            opacity={r.price === peak ? 0.95 : 0.55}
           />
         ),
       )}
@@ -240,7 +333,7 @@ function CompositeColumn({ c, x, y, rowH, plotH }: { c: MarketComposite; x: numb
         composite
       </text>
       <text x={x} y={plotH + 27} fontSize={10} fill="var(--text-muted)">
-        {c.sessions.length} sessions
+        {c.sessions.length} sessions{byVolume ? " · volume" : ""}
       </text>
     </g>
   );
@@ -252,12 +345,16 @@ function LevelsTable({
   liveContract,
   precision,
   future,
+  selected,
+  onSelect,
 }: {
   view: ProfileView;
   contracts: Record<string, string>;
   liveContract: string;
   precision: number;
   future: boolean;
+  selected: string | null;
+  onSelect: (session: string) => void;
 }) {
   const f = (v: number | null): string => (v === null ? "—" : v.toFixed(precision));
   const rows = [...view.profiles].reverse();
@@ -280,9 +377,24 @@ function LevelsTable({
             const i = view.profiles.indexOf(p);
             const prior = i > 0 ? view.profiles[i - 1]! : null;
             return (
-              <tr key={p.session}>
+              <tr
+                key={p.session}
+                onClick={() => onSelect(p.session)}
+                style={{ cursor: "pointer", background: selected === p.session ? "var(--surface-raised)" : undefined }}
+                aria-selected={selected === p.session}
+              >
                 <td>
-                  {dayLabel(p.session)} {monthDay(p.session).split(" ")[0]}
+                  <button
+                    type="button"
+                    className="link-btn"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onSelect(p.session);
+                    }}
+                    style={{ background: "none", border: 0, padding: 0, color: "inherit", font: "inherit", cursor: "pointer", fontWeight: selected === p.session ? 700 : 400 }}
+                  >
+                    {dayLabel(p.session)} {monthDay(p.session).split(" ")[0]}
+                  </button>
                   {partialPeriods(p) !== null && (
                     <span className="muted" title="The session's bars cover only these 30-minute periods (A is 09:30, M is 15:30).">
                       {" "}
@@ -347,6 +459,18 @@ export function ProfilePage() {
     [data, compositeN, liveBars],
   );
   const precision = 2;
+  // Volume at price exists only where the symbol carries volume: never SPX or NDX.
+  const hasVolume = view !== null && view.profiles.some((p) => p.volumeTotal > 0);
+  const measure: Measure = hasVolume && params.get("measure") === "volume" ? "volume" : "time";
+  // The session whose detail is open (`?day=`), clicking its column or row again closes it.
+  const day = params.get("day");
+  const selected = view?.profiles.find((p) => p.session === day);
+  const select = (session: string): void => {
+    const next = new URLSearchParams(params);
+    if (session === day) next.delete("day");
+    else next.set("day", session);
+    setParams(next, { replace: true });
+  };
 
   return (
     <section className="card">
@@ -364,6 +488,20 @@ export function ProfilePage() {
             label="composite"
             render={(v) => (v === "off" ? "no composite" : `composite ${v}`)}
           />
+          <div className="mode-toggle" role="group" aria-label="measure">
+            {(["time", "volume"] as const).map((m) => (
+              <button
+                key={m}
+                type="button"
+                className={measure === m ? "mode-btn active" : "mode-btn"}
+                disabled={m === "volume" && !hasVolume}
+                title={m === "volume" && !hasVolume ? `${symbol} is an index and carries no volume` : `bars by ${m} at price`}
+                onClick={() => set("measure", m)}
+              >
+                {m}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
       {data === undefined ? (
@@ -386,13 +524,23 @@ export function ProfilePage() {
             )}
             {data.fetchedAt !== null && <> · recorded {new Date(data.fetchedAt).toLocaleString("en-US", { timeZone: "America/New_York", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23" })} ET</>}
           </div>
-          <ProfilePlot view={view} precision={precision} />
+          <ProfilePlot view={view} precision={precision} measure={measure} selected={selected?.session ?? null} onSelect={select} />
+          {selected !== undefined && (
+            <SessionDetail
+              p={selected}
+              precision={precision}
+              live={view.live.includes(selected.session)}
+              onClose={() => select(selected.session)}
+            />
+          )}
           <LevelsTable
             view={view}
             contracts={data.contracts}
             liveContract={liveSymbol || "—"}
             precision={precision}
             future={symbol.startsWith("/")}
+            selected={selected?.session ?? null}
+            onSelect={select}
           />
         </>
       )}
