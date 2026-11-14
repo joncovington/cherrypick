@@ -635,6 +635,15 @@ MUTANTS: tuple[Mutant, ...] = (
         attr="value_area",
         replacement="one_row_value_area",
     ),
+    Mutant(
+        id="watchdog-profile-bars-short",
+        breaks="the watchdog lets a symbol missing most of a session's profile bars pass as complete",
+        package="orchestrator",
+        tests=("tests/test_watchdog_profile_bars.py::test_a_short_or_missing_symbol_warns_once_per_symbol",),
+        module="cherrypick.orchestrator.watchdog",
+        attr="_PROFILE_BARS_SLACK_MIN",
+        replacement="never_a_leftover",
+    ),
 )
 
 BY_ID = {m.id: m for m in MUTANTS}

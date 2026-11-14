@@ -1678,6 +1678,115 @@ def _last_judgeable_session(now_et: datetime) -> str:
         day -= timedelta(days=1)
 
 
+# The symbols scripts/fetch_profile_bars.py records (its SYMBOLS); a test pins the two together.
+PROFILE_BARS_SYMBOLS = ("SPX", "SPY", "NDX", "QQQ", "/ES", "/NQ")
+# Judged this long after the job's time, so its two retries have had their chance.
+_PROFILE_BARS_GRACE = timedelta(hours=3)
+# Minutes a symbol may lack from a full regular session before it counts as incomplete.
+_PROFILE_BARS_SLACK_MIN = 3
+
+
+def _profile_bars_db() -> Path:
+    return core_home.data_dir("market-files") / "profile_bars.db"
+
+
+def _profile_bars_session(now_et: datetime, at_hhmm: str) -> tuple[str, str] | None:
+    """(session, its close hh:mm): the latest trading day whose recorder run is `_PROFILE_BARS_GRACE`
+    past, or None if none is within the last fortnight."""
+    from cherrypick.core import calendar as _calendar
+
+    hh, mm = (int(x) for x in at_hhmm.split(":"))
+    day = now_et.date()
+    for _ in range(15):
+        if _calendar.is_trading_day(day):
+            due = datetime(day.year, day.month, day.day, hh, mm, tzinfo=now_et.tzinfo) + _PROFILE_BARS_GRACE
+            if now_et >= due:
+                return day.isoformat(), _calendar.session_close_hhmm(day)
+        day -= timedelta(days=1)
+    return None
+
+
+def _check_profile_bars(cfg: dict[str, Any], now_et: datetime) -> list[Finding]:
+    """Did the `profile-bars` job keep the last session's minutes for every symbol? (2026-11-14.)
+
+    The broker hands back only its newest 8,000 one-minute bars -- about six days of a future -- so a
+    run that fails quietly for a week loses those days for good, and the Profile tab would only show
+    them as missing columns. The job's own exit says whether ONE run worked; this says whether the
+    STORE holds the session, whichever run wrote it. Each symbol short of a full regular session (less
+    `_PROFILE_BARS_SLACK_MIN`) is a `members` entry, so a session's gaps notify once and the next
+    complete session posts the all-clear. A plain read of the store; nothing is run."""
+    tc = cfgmod.technicals_settings(cfg)
+    if not (tc.get("switch") and tc.get("profile_bars")):
+        return []
+    judged = _profile_bars_session(now_et, tc.get("profile_bars_at", "17:15"))
+    if judged is None:
+        return []
+    session, close = judged
+    ch, cm = (int(x) for x in close.split(":"))
+    expected = (ch * 60 + cm) - (9 * 60 + 30)
+    path = _profile_bars_db()
+    if not path.exists():
+        return [
+            Finding(
+                "recording.profile_bars",
+                WARN,
+                "Profile bars never recorded",
+                f"{path} does not exist: the profile-bars job (17:15 ET) has not written. Check its last "
+                "error on the System page.",
+                members=(f"{session}:store",),
+            )
+        ]
+    import sqlite3
+
+    try:
+        conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=5)
+        try:
+            held = dict(
+                conn.execute(
+                    "SELECT symbol, COUNT(*) FROM profile_bars WHERE et_day = ? AND et_time >= '09:30' "
+                    "AND et_time < ? GROUP BY symbol",
+                    (session, close),
+                ).fetchall()
+            )
+        finally:
+            conn.close()
+    except sqlite3.Error as exc:
+        return [
+            Finding(
+                "recording.profile_bars",
+                WARN,
+                "Profile bars unreadable",
+                f"{path}: {type(exc).__name__}: {exc}",
+            )
+        ]
+    short = {
+        sym: held.get(sym, 0)
+        for sym in PROFILE_BARS_SYMBOLS
+        if held.get(sym, 0) < expected - _PROFILE_BARS_SLACK_MIN
+    }
+    if not short:
+        return [
+            Finding(
+                "recording.profile_bars",
+                OK,
+                "Profile bars complete",
+                f"{session}: all {len(PROFILE_BARS_SYMBOLS)} symbols hold the session's {expected} minutes.",
+            )
+        ]
+    listed = "; ".join(f"{sym} {n}/{expected} min" for sym, n in short.items())
+    return [
+        Finding(
+            "recording.profile_bars",
+            WARN,
+            f"{session}: profile bars incomplete for {len(short)} symbol(s)",
+            f"The profile-bars store is short of {session}'s regular session for: {listed}. The broker keeps "
+            "only its newest 8,000 minutes (about six days of a future), so rerun "
+            "`python scripts/fetch_profile_bars.py` before then, after checking the job's last error.",
+            members=tuple(f"{session}:{sym}" for sym in short),
+        )
+    ]
+
+
 def _check_recording_coverage(cfg: dict[str, Any], now_et: datetime) -> list[Finding]:
     """Did the gex recorder keep a whole session of every series it owns? (2026-10-14.)
 
@@ -3320,6 +3429,16 @@ def run(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
     # Was last night's advice actually applied? Deterministic, and it replaced an AI checkpoint
     # that never once caught this (see _check_advice_enactment).
     findings += _check_advice_enactment(cfg, now, is_trading)
+    # Does the profile-bars store hold the last session for every symbol? The broker keeps only days
+    # of minutes, so a quiet failure has a deadline (see _check_profile_bars).
+    try:
+        findings += _check_profile_bars(cfg, now)
+    except Exception as exc:
+        findings.append(
+            Finding(
+                "recording.profile_bars", WARN, "Profile bars check failed", f"{type(exc).__name__}: {exc}"
+            )
+        )
     # Did the recorder keep every series it owns for the last finished session? Its heartbeat cannot
     # say (see _check_recording_coverage).
     try:

@@ -159,6 +159,13 @@ D` by subprocess and caches the verdict in `state/recording_coverage.json`. Each
 is a `members` entry, so a session's gaps notify once. The recorder's heartbeat cannot see this: the spot trail and quotes can stop while the process and
 its GEX series run on, and the quote history lost cannot be fetched again.
 
+**Profile bars** (`_check_profile_bars`). Three hours after the `profile-bars` job's time (its retries
+done), the watchdog reads `data/market-files/profile_bars.db` read-only for the latest trading
+session: each of `PROFILE_BARS_SYMBOLS` (pinned to the script's SYMBOLS by a test) must hold the
+session's regular-hours minutes (the calendar's close, so a half-day expects fewer), less a 3-minute
+allowance. Each short symbol is a `members` entry; a missing store warns. The deadline is the broker's:
+it keeps only its newest 8,000 minutes, about six days of a future. Off when the job is off.
+
 **Read side.** `report.py` (`run(session=…)` scopes to one settlement day) and `calibrate.py`, over the
 ledger readers in **`cherrypick.core.ledgers`**. Read-only and file-only. The console is the one page
 that composes it; this package serves nothing of its own. `logrotate.py` (`archive`, the monthly
