@@ -225,3 +225,8 @@ def test_the_holdout_is_refused_without_the_flag(capsys):
 
 def test_a_flat_smile_has_no_skew():
     assert abs(m.skew(chains()["F"])) < 0.01
+
+
+def test_a_chain_with_no_parity_forward_has_no_skew():
+    puts = [(float(k), "PUT", 1.0, 1.1) for k in range(60, 100)]
+    assert m.skew(ic.Chain(puts, ENTRY, F)) is None

@@ -159,6 +159,10 @@ class Chain:
         return bs.delta(self.forward, q["strike"], self.years, iv, q["right"], 0.0)
 
     def otm(self, right: str) -> list[dict]:
+        """Out-of-the-money quotes on `right`, nearest the money first. Empty without a forward: with
+        no forward there is no money to measure from, and `delta` could price none of them anyway."""
+        if not self.forward:
+            return []
         if right == "P":
             ks = sorted((k for k in self.by["P"] if k < self.forward), reverse=True)
         else:
