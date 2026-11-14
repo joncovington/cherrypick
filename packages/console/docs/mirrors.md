@@ -19,11 +19,15 @@ a mirror with a test against the module itself. These are the current ones.
   forest sentence says what the floor knows and no more ("from 7659 upward", "at or below 7645",
   "locked").
 - `web/test/marketProfile.test.ts` — `web/src/lib/marketProfile.ts` is a port of
-  `cherrypick.core.marketprofile` (the Intraday chart's profile overlay draws from candles already in
-  the browser, so a bridge would add a process per bar). Both implementations answer
-  `packages/core/tests/fixtures/marketprofile_cases.json`: one hand-worked session (the guard; a
-  one-row value-area expansion fails it on both sides) and seeded sessions shaped like SPX, NDX, QQQ,
-  /NQ (overnight bars included) and SPY on an EDT date. Runs unconditionally; no ledger involved.
+  `cherrypick.core.marketprofile`, `buildProfile` and `buildComposite` (the Intraday chart's overlay
+  draws from candles already in the browser, and the Profile tab rebuilds as its controls change, so a
+  bridge would add a process per bar). Both implementations answer
+  `packages/core/tests/fixtures/marketprofile_cases.json`: one hand-worked session and one hand-worked
+  composite (the guard; a one-row value-area expansion fails it on both sides), seeded sessions shaped
+  like SPX, NDX, QQQ, /NQ (overnight bars included) and SPY on an EDT date, and composites of them.
+  Runs unconditionally; no ledger involved. The Profile tab's reader (`readers/profileBars.ts`,
+  `server/test/profile-bars.test.ts`) builds its test table from `scripts/fetch_profile_bars.py`'s own
+  SCHEMA, so a renamed column fails there.
 - **Model a trade is bridged** (`services/manageModelBridge.ts`): `/api/manage/model`
   runs `python -m cherrypick.manage model` with the name and the leg text, refused here before any
   process starts unless both read as manage reads them (`LEG`, `server/test/manage-model-bridge.test.ts`).

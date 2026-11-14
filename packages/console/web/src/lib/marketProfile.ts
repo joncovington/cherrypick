@@ -134,6 +134,99 @@ interface Bar {
   v: number;
 }
 
+export interface CompositeRow {
+  price: number;
+  tpo: number;
+  volume: number;
+}
+
+export interface MarketComposite {
+  sessions: string[];
+  rowSize: number;
+  rows: CompositeRow[];
+  high: number;
+  low: number;
+  poc: number;
+  val: number;
+  vah: number;
+  tpoTotal: number;
+  volumeTotal: number;
+  volumePoc: number | null;
+}
+
+/** Mirror of `build_composite`: the sessions' profiles merged, each row's TPOs and volume summed,
+ *  then the same POC and value-area rules. A session with no bars adds nothing and is not listed. */
+export function buildComposite(
+  bars: readonly CandleBar[],
+  opts: { sessions: readonly string[]; rowSize: number; barSeconds: number },
+): MarketComposite | null {
+  const { rowSize, barSeconds } = opts;
+  const profiles = [...new Set(opts.sessions)]
+    .sort()
+    .map((session) => buildProfile(bars, { rowSize, barSeconds, session }))
+    .filter((p): p is MarketProfile => p !== null);
+  if (profiles.length === 0) return null;
+  const tpo = new Map<number, number>();
+  const vol = new Map<number, number>();
+  for (const p of profiles) {
+    for (const r of p.rows) {
+      const i = rowOf(r.price, rowSize);
+      tpo.set(i, (tpo.get(i) ?? 0) + r.letters.length);
+      vol.set(i, (vol.get(i) ?? 0) + r.volume);
+    }
+  }
+  const lo = Math.min(...tpo.keys());
+  const hi = Math.max(...tpo.keys());
+  const counts: number[] = [];
+  const volume: number[] = [];
+  for (let i = lo; i <= hi; i++) {
+    counts.push(tpo.get(i) ?? 0);
+    volume.push(vol.get(i) ?? 0);
+  }
+  const poc = pointOfControl(counts);
+  const [loVa, hiVa] = valueArea(counts, poc);
+  const price = (i: number): number => tidy((lo + i) * rowSize);
+  const volumeTotal = volume.reduce((s, x) => s + x, 0);
+  return {
+    sessions: profiles.map((p) => p.session),
+    rowSize,
+    rows: counts.map((n, i) => ({ price: price(i), tpo: n, volume: volume[i]! })),
+    high: Math.max(...profiles.map((p) => p.high)),
+    low: Math.min(...profiles.map((p) => p.low)),
+    poc: price(poc),
+    val: price(loVa),
+    vah: price(hiVa),
+    tpoTotal: counts.reduce((s, n) => s + n, 0),
+    volumeTotal,
+    volumePoc: volumeTotal > 0 ? price(pointOfControl(volume)) : null,
+  };
+}
+
+/** Mirror of `value_area`: the (low, high) row indices of the CBOT two-row expansion from `poc`. */
+export function valueArea(counts: readonly number[], poc: number, share = VALUE_AREA_SHARE): [number, number] {
+  const total = counts.reduce((s, n) => s + n, 0);
+  let lo = poc;
+  let hi = poc;
+  let acc = counts[poc]!;
+  while (acc < share * total) {
+    const upRows: number[] = [];
+    for (let i = hi + 1; i < Math.min(hi + 3, counts.length); i++) upRows.push(i);
+    const dnRows: number[] = [];
+    for (let i = lo - 1; i > Math.max(lo - 3, -1); i--) dnRows.push(i);
+    if (upRows.length === 0 && dnRows.length === 0) break;
+    const up = upRows.reduce((s, i) => s + counts[i]!, 0);
+    const dn = dnRows.reduce((s, i) => s + counts[i]!, 0);
+    if (upRows.length > 0 && (up >= dn || dnRows.length === 0)) {
+      hi = upRows.at(-1)!;
+      acc += up;
+    } else {
+      lo = dnRows.at(-1)!;
+      acc += dn;
+    }
+  }
+  return [lo, hi];
+}
+
 export function buildProfile(
   bars: readonly CandleBar[],
   opts: { rowSize: number; barSeconds: number; session?: string | null },
@@ -195,25 +288,7 @@ export function buildProfile(
   const counts = letters.map((s) => s.length);
   const total = counts.reduce((s, n) => s + n, 0);
   const poc = pointOfControl(counts);
-  let loVa = poc;
-  let hiVa = poc;
-  let acc = counts[poc]!;
-  while (acc < VALUE_AREA_SHARE * total) {
-    const upRows: number[] = [];
-    for (let i = hiVa + 1; i < Math.min(hiVa + 3, nRows); i++) upRows.push(i);
-    const dnRows: number[] = [];
-    for (let i = loVa - 1; i > Math.max(loVa - 3, -1); i--) dnRows.push(i);
-    if (upRows.length === 0 && dnRows.length === 0) break;
-    const up = upRows.reduce((s, i) => s + counts[i]!, 0);
-    const dn = dnRows.reduce((s, i) => s + counts[i]!, 0);
-    if (upRows.length > 0 && (up >= dn || dnRows.length === 0)) {
-      hiVa = upRows.at(-1)!;
-      acc += up;
-    } else {
-      loVa = dnRows.at(-1)!;
-      acc += dn;
-    }
-  }
+  const [loVa, hiVa] = valueArea(counts, poc);
 
   const runOfSingles = (from: number, step: number): number => {
     let k = 0;

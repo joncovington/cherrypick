@@ -13,7 +13,7 @@ A page the suite has switched off is not shown (see *What is off is not shown* b
 |---|---|---|---|
 | Live | `/live` | today, positions, portfolio, wheel, pmcc, flies, meic | Real money first: what is open at the broker, the book as a whole, the wheel, and one tab per live loop (flies and meic only while their live switch is on or the loop still holds something). `/` redirects here. |
 | Reports | `/reports` | morning, eod, external | The morning pack, the end-of-day review, and **External reports**: the tabs people add with a script of their own (`/reports/external/<id>`). |
-| Charts | `/charts` | intraday, technicals, setups | Intraday charts, the technicals cards, and the setups the technicals package finds. |
+| Charts | `/charts` | intraday, profile, technicals, setups | Intraday charts, the recorded sessions' Market Profiles, the technicals cards, and the setups the technicals package finds. |
 | GEX | `/gex` | gex, iv skew | Dealer gamma by strike for the recorded day, and the IV skew. Reads the market; trades nothing. |
 | GEX panel | `/gexpanel` | panel | Experimental, SPX only: a walls panel on the recorded data. |
 | Screeners | `/screeners` | two groups, eight tabs. Screens: earnings, earnings record, signal board, skate. Income lists: puts & calls, credit spreads, time spreads, fair value | The suite's own screens and income lists. The Dolt-backed tabs show a set-up card, not a blank, without Dolt. |
@@ -274,8 +274,20 @@ with no source named in the code: the file says its own title and source.
   over 512 KiB are refused unparsed. The folder is `data/external/` (`config.paths.externalDir`).
   Read-only; the console never runs a script.
 
-**Charts** (`/charts`, `lightbox/manifests/ChartsLightbox.tsx`) — three tabs: two charts and
+**Charts** (`/charts`, `lightbox/manifests/ChartsLightbox.tsx`) — four tabs: three charts and
 the setups watchlist:
+
+- `/charts/profile?symbol=SPX&sessions=10&composite=5` (`pages/Profile/ProfilePage.tsx`) is the
+  recorded sessions' Market Profiles side by side, oldest left, for SPX, SPY, NDX, QQQ, /ES and /NQ
+  (5, 10 or 20 sessions), a composite of the newest 5, 10 or 20 at the right with its POC and value
+  area drawn faintly across every column, and a table of each session's POC, value area, value against
+  the prior session (higher / lower / overlapping, by the value areas' outer edges, `valueRelation`),
+  initial balance, range and, for a future, its contract. The bars are the `profile-bars` job's
+  (`GET /api/charts/profile-bars`, `readers/profileBars.ts`: regular session only, minutes folded into
+  5-minute bars, which keep every period's rows); the profiles are built in the browser by
+  `lib/marketProfile` (docs/mirrors.md), on one row grid for every column. A session that holds only
+  some periods (the oldest, cut mid-day by the feed's 8,000-bar cap; a half-day) is labelled with them
+  (`partialPeriods`), not shown as a full day. An empty store says the job has not run. Chart only.
 
 - `/charts/intraday?product=ES&period=5m&profile=on` is a live chart (1m/5m/15m) over the console's
   own DXLink session, extended hours included (`market/candles.ts`, `pages/Intraday/IntradayPage.tsx`),

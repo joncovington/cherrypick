@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { CandleBar } from "@console/shared";
 
-import { buildProfile, defaultRowSize, sessionDates } from "../src/lib/marketProfile";
+import { buildComposite, buildProfile, defaultRowSize, sessionDates } from "../src/lib/marketProfile";
 
 /**
  * The Intraday chart's profile is a TypeScript mirror of `cherrypick.core.marketprofile`. Both answer
@@ -26,7 +26,48 @@ interface FixtureCase {
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURE = JSON.parse(
   fs.readFileSync(path.join(HERE, "..", "..", "..", "core", "tests", "fixtures", "marketprofile_cases.json"), "utf-8"),
-) as { row_sizes: [number, number][]; cases: FixtureCase[] };
+) as { row_sizes: [number, number][]; cases: FixtureCase[]; composites: FixtureComposite[] };
+
+interface FixtureComposite {
+  name: string;
+  row_size: number;
+  bar_seconds: number;
+  sessions: string[];
+  bars?: CandleBar[];
+  bars_from?: string;
+  expected: Record<string, unknown> & { rows: { price: number; tpo: number; volume: number }[] };
+}
+
+/** The Python key each composite field answers for. */
+const COMPOSITE_KEYS: Record<string, string> = {
+  sessions: "sessions",
+  rowSize: "row_size",
+  high: "high",
+  low: "low",
+  poc: "poc",
+  val: "val",
+  vah: "vah",
+  tpoTotal: "tpo_total",
+  volumeTotal: "volume_total",
+  volumePoc: "volume_poc",
+};
+
+describe("buildComposite mirrors core.marketprofile.build_composite", () => {
+  it.each(FIXTURE.composites.map((c) => [c.name, c] as const))("%s", (_name, c) => {
+    const bars = c.bars ?? FIXTURE.cases.find((k) => k.name === c.bars_from)!.bars;
+    const got = buildComposite(bars, { sessions: c.sessions, rowSize: c.row_size, barSeconds: c.bar_seconds });
+    expect(got).not.toBeNull();
+    const p = got!;
+    expect(p.rows.map((r) => [r.price, r.tpo])).toEqual(c.expected.rows.map((r) => [r.price, r.tpo]));
+    p.rows.forEach((r, i) => expect(r.volume).toBeCloseTo(c.expected.rows[i]!.volume, 6));
+    for (const [ts, py] of Object.entries(COMPOSITE_KEYS)) {
+      const want = c.expected[py];
+      const have = (p as unknown as Record<string, unknown>)[ts];
+      if (typeof want === "number") expect(have, ts).toBeCloseTo(want, 6);
+      else expect(have, ts).toEqual(want);
+    }
+  });
+});
 
 /** The Python key each mirror field answers for. */
 const KEYS: Record<string, string> = {

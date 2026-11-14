@@ -77,6 +77,59 @@ def test_fixture_cases(case):
             assert got[key] == value, key
 
 
+def _composite(case: dict) -> mp.Composite | None:
+    by_name = {c["name"]: c for c in CASES["cases"]}
+    bars = case["bars"] if "bars" in case else by_name[case["bars_from"]]["bars"]
+    return mp.build_composite(
+        bars,
+        sessions=[dt.date.fromisoformat(s) for s in case["sessions"]],
+        row_size=case["row_size"],
+        bar_seconds=case["bar_seconds"],
+    )
+
+
+def test_hand_worked_composite():
+    # 11-12: A 100.0-102.5 (rows 100-102, 30 shares); 11-13: A 101.0-103.2 (rows 101-103, 30), B 101.1-101.9
+    # (row 101, 5); 11-11 is asked for and has no bars
+    c = _composite(CASES["composites"][0])
+    assert c.sessions == (dt.date(2026, 11, 12), dt.date(2026, 11, 13))
+    assert [(r.price, r.tpo, r.volume) for r in c.rows] == [
+        (100.0, 1, 10.0),
+        (101.0, 3, 25.0),
+        (102.0, 2, 20.0),
+        (103.0, 1, 10.0),
+    ]
+    # need 4.9 of 7: POC 101 holds 3, + rows 102-103 (3 vs 1 below) = 6
+    assert (c.poc, c.val, c.vah, c.tpo_total) == (101.0, 101.0, 103.0, 7)
+    assert (c.low, c.high, c.volume_poc) == (100.0, 103.2, 101.0)
+
+
+@pytest.mark.parametrize("case", CASES["composites"], ids=[c["name"] for c in CASES["composites"]])
+def test_fixture_composites(case):
+    got = _composite(case).as_dict()
+    want = case["expected"]
+    assert got.keys() == want.keys()
+    for key, value in want.items():
+        if key == "rows":
+            assert [(r["price"], r["tpo"]) for r in got[key]] == [(r["price"], r["tpo"]) for r in value]
+            assert [r["volume"] for r in got[key]] == pytest.approx([r["volume"] for r in value])
+        elif isinstance(value, float):
+            assert got[key] == pytest.approx(value), key
+        else:
+            assert got[key] == value, key
+
+
+def test_a_composite_of_one_session_is_that_sessions_profile():
+    case = next(c for c in CASES["cases"] if c["name"].startswith("/NQ"))
+    p = _case(case)
+    c = mp.build_composite(case["bars"], sessions=[p.session], row_size=case["row_size"], bar_seconds=900)
+    assert [(r.price, r.tpo) for r in c.rows] == [(r.price, r.tpo) for r in p.rows]
+    assert (c.poc, c.val, c.vah) == (p.poc, p.val, p.vah)
+    assert (
+        mp.build_composite(case["bars"], sessions=[dt.date(2026, 1, 2)], row_size=10, bar_seconds=900) is None
+    )
+
+
 @pytest.mark.parametrize(("price", "size"), CASES["row_sizes"])
 def test_default_row_size(price, size):
     assert mp.default_row_size(price) == size
