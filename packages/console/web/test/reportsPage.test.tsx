@@ -79,11 +79,12 @@ function setMorning(deployment: unknown): void {
   morning = { sessions: ["2026-08-17"], current, note: null } as unknown as MorningPayload;
 }
 
-function renderMorning(): string {
+/** The report is tabbed (`?view=`); no view is the Brief. Each block's card lives on one tab. */
+function renderMorning(view?: string): string {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return renderToString(
     <QueryClientProvider client={client}>
-      <MemoryRouter initialEntries={["/reports"]}>
+      <MemoryRouter initialEntries={[view === undefined ? "/reports" : `/reports?view=${view}`]}>
         <MorningPage />
       </MemoryRouter>
     </QueryClientProvider>,
@@ -116,25 +117,35 @@ describe("the report pages render", () => {
 describe("the deployment card survives every shape of missing block", () => {
   it("renders the score and its record-only framing when the block is there", () => {
     setMorning(DEPLOYMENT);
-    const html = renderMorning();
+    const html = renderMorning("risk");
     expect(html).toContain("Deployment score");
     expect(html).toContain("71.3");
     expect(html).toContain("record-only");
     expect(html).toContain("FULL DEPLOY");
   });
 
+  it("the Brief carries the score as record-only beside the phase", () => {
+    setMorning(DEPLOYMENT);
+    const html = renderMorning().replace(/<!-- -->/g, "");
+    expect(html).toContain("Deployment score");
+    expect(html).toContain("71.3");
+    expect(html).toContain("record-only · 4 of 5 signals");
+  });
+
   it("an unmeasured signal shows an em dash, never a zero contribution", () => {
     setMorning(DEPLOYMENT);
-    const html = renderMorning();
+    const html = renderMorning("risk");
     expect(html).toContain("Credit proxy");
     expect(html).toContain("—");
   });
 
   it("a null block simply omits the card", () => {
     setMorning(null);
-    const html = renderMorning();
-    expect(html).toContain("Morning report");
-    expect(html).not.toContain("Deployment score");
+    for (const view of [undefined, "risk"]) {
+      const html = renderMorning(view);
+      expect(html).toContain("Morning report");
+      expect(html).not.toContain("Deployment score");
+    }
   });
 
   it("an ABSENT block omits the card too — this is the one that blanked the page", () => {
@@ -142,14 +153,16 @@ describe("the deployment card survives every shape of missing block", () => {
     // and omit it entirely. `deployment === null` sails past undefined; the first property read
     // then throws and React renders nothing at all.
     setMorning("absent");
-    const html = renderMorning();
-    expect(html).toContain("Morning report");
-    expect(html).not.toContain("Deployment score");
+    for (const view of [undefined, "risk"]) {
+      const html = renderMorning(view);
+      expect(html).toContain("Morning report");
+      expect(html).not.toContain("Deployment score");
+    }
   });
 
   it("a scoreless block says why instead of showing a number", () => {
     setMorning({ ...DEPLOYMENT, score: null, zone: null, reason: "only 2 of 5 signals measured" });
-    expect(renderMorning()).toContain("only 2 of 5 signals measured");
+    expect(renderMorning("risk")).toContain("only 2 of 5 signals measured");
   });
 });
 
@@ -178,7 +191,7 @@ const PROXIES = {
 function setCommodities(premarket: unknown): string {
   const current = { ...PACK_BASE, readings: { ...PACK_BASE.readings, ...PROXIES }, premarket };
   morning = { sessions: ["2026-08-17"], current, note: null } as unknown as MorningPayload;
-  return renderMorning();
+  return renderMorning("tape");
 }
 
 describe("the scorecard fronts the S&P, crude and gold as futures", () => {
@@ -270,7 +283,7 @@ describe("the hot-options card", () => {
       reason: null,
     };
     morning = { sessions: ["2026-10-03"], current: { ...PACK_BASE, hotOptions }, note: null } as unknown as MorningPayload;
-    return renderMorning();
+    return renderMorning("options");
   }
 
   it("every column sorts, and the rows start in the pack's ranking with its stored rank as the #", () => {
@@ -279,5 +292,68 @@ describe("the hot-options card", () => {
       expect(html).toContain(`<button type="button" class="th-sort">${label}</button>`);
     }
     expect(html.indexOf("NVDA")).toBeLessThan(html.indexOf(">F<"));
+  });
+
+  it("a long ranking shows its top five and offers the rest", () => {
+    const names = ["AAPL", "MSFT", "NVDA", "TSLA", "AMZN", "META", "GOOG"];
+    morning = {
+      sessions: ["2026-10-03"],
+      current: { ...PACK_BASE, hotOptions: { ...HOT_BASE, equities: names.map(row) } },
+      note: null,
+    } as unknown as MorningPayload;
+    const html = renderMorning("options").replace(/<!-- -->/g, "");
+    expect(html).toContain(">AMZN<");
+    expect(html).not.toContain(">META<");
+    expect(html).toContain("show all 7");
+  });
+});
+
+const HOT_BASE = {
+  session: "2026-10-02",
+  lagSessions: 0,
+  listingsAsOf: null,
+  totalContracts: 1000,
+  totalPutCall: 0.8,
+  underlyings: 7,
+  baselineSessions: 0,
+  indexes: [],
+  equities: [],
+  funds: [],
+  unclassified: [],
+  classification: null,
+  reason: null,
+};
+
+describe("the morning report's tabs", () => {
+  it("opens on the Brief, with every tab in the strip and Brief selected", () => {
+    setMorning(DEPLOYMENT);
+    const html = renderMorning();
+    for (const label of ["Brief", "Risk", "Tape", "Options", "Calendar"]) expect(html).toContain(`>${label}</button>`);
+    expect(html).toMatch(/aria-selected="true" class="study-tab is-on">Brief</);
+    expect(html).toContain("Session phase");
+    expect(html).not.toContain("Scorecard");
+  });
+
+  it("an unknown view falls back to the Brief rather than an empty page", () => {
+    setMorning(DEPLOYMENT);
+    const html = renderMorning("nonsense");
+    expect(html).toMatch(/aria-selected="true" class="study-tab is-on">Brief</);
+    expect(html).toContain("Session phase");
+  });
+
+  it("each block's card is on its own tab and nowhere else", () => {
+    setMorning(DEPLOYMENT);
+    expect(renderMorning("tape")).toContain("Scorecard");
+    expect(renderMorning("risk")).not.toContain("Scorecard");
+    expect(renderMorning("risk")).toContain("Gates");
+    expect(renderMorning("tape")).not.toContain("FULL DEPLOY");
+  });
+
+  it("the Brief's tiles are buttons that open their detail", () => {
+    setMorning(DEPLOYMENT);
+    const html = renderMorning();
+    for (const label of ["Open the pre-market detail", "Open the gamma levels", "Open the vol term structure", "Open the expected move and yields"]) {
+      expect(html).toContain(`aria-label="${label}"`);
+    }
   });
 });
