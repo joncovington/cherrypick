@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   createChart,
@@ -6,26 +6,60 @@ import {
   HistogramSeries,
   type CandlestickData,
   type HistogramData,
+  type IPriceLine,
+  type ISeriesApi,
   type Time,
   type UTCTimestamp,
 } from "lightweight-charts";
 import { CANDLE_PERIODS, type CandleBar, type CandlePeriod, type FuturesTickerEntry } from "@console/shared";
 import { useFuturesTicker } from "../../lib/api";
+import { useCandles } from "../../lib/useCandles";
 import { useWsState } from "../../lib/useQuote";
 import { wsClient } from "../../lib/wsClient";
 import { canvasPalette as _pal, hexOf } from "../../components/chart/cssvars";
 import { tokenAlpha } from "../../components/chart/cssvars";
+import type { MarketProfile } from "../../lib/marketProfile";
+import {
+  lineStyleFor,
+  ProfileHistogram,
+  profileLines,
+  sessionProfiles,
+  type OverlayColours,
+  type SessionProfiles,
+} from "./profileOverlay";
 
 const PAL = _pal();
 
 /**
- * A live intraday futures chart: 1-, 5- or 15-minute candles over the console's own DXLink session,
- * extended hours included, the bar in progress moving as the tape trades.
+ * A live intraday chart: 1-, 5- or 15-minute candles over the console's own DXLink session, extended
+ * hours included, the bar in progress moving as the tape trades. Futures and four cash symbols
+ * (SPX, SPY, NDX, QQQ).
  *
- * The contract is the futures ticker's (`state/futures_contracts.json`, the broker's answer), never
- * assembled here. History arrives whole when the feed's snapshot ends; after that each message is the
- * bar in progress, or a new one. The chart draws what the feed sent and computes nothing.
+ * A future's contract is the futures ticker's (`state/futures_contracts.json`, the broker's answer),
+ * never assembled here; a cash symbol is its own DXLink symbol. History arrives whole when the feed's
+ * snapshot ends; after that each message is the bar in progress, or a new one. The candles are drawn
+ * as the feed sent them. The Market Profile overlay (`profileOverlay.ts`) is the one derivation, a
+ * mirror of `cherrypick.core.marketprofile` pinned by the shared fixture.
  */
+
+/** Cash symbols the chart offers beside the futures, profiled over the same regular session. An
+ *  index (SPX, NDX) carries no volume, so its profile is TPO only. */
+export const CASH_INSTRUMENTS: FuturesTickerEntry[] = [
+  { product: "SPX", label: "SPX", name: "S&P 500 index", contract: null, streamerSymbol: "SPX", expiration: null, reason: null },
+  { product: "SPY", label: "SPY", name: "S&P 500 ETF", contract: null, streamerSymbol: "SPY", expiration: null, reason: null },
+  { product: "NDX", label: "NDX", name: "Nasdaq-100 index", contract: null, streamerSymbol: "NDX", expiration: null, reason: null },
+  { product: "QQQ", label: "QQQ", name: "Nasdaq-100 ETF", contract: null, streamerSymbol: "QQQ", expiration: null, reason: null },
+];
+const isCash = (product: string): boolean => CASH_INSTRUMENTS.some((e) => e.product === product);
+
+const OVERLAY: OverlayColours = {
+  poc: PAL.amber,
+  va: PAL.accent,
+  muted: PAL.textMuted,
+  rowFill: tokenAlpha("--text-muted", 0.14),
+  vaFill: tokenAlpha("--accent", 0.22),
+  pocFill: tokenAlpha("--amber-line", 0.45),
+};
 
 const UP = hexOf("--pos", "#3af3a0");
 const DOWN = hexOf("--neg", "#ee6760");
@@ -90,11 +124,55 @@ interface ChartInfo {
   updatedAt: number | null;
 }
 
-function LiveCandles({ entry, period }: { entry: FuturesTickerEntry & { streamerSymbol: string }; period: CandlePeriod }) {
+const SESSION_DAY = new Intl.DateTimeFormat("en-US", { timeZone: "UTC", month: "short", day: "numeric" });
+const sessionLabel = (iso: string): string => SESSION_DAY.format(Date.parse(`${iso}T12:00:00Z`));
+
+function ProfileReadout({ profiles, precision }: { profiles: SessionProfiles; precision: number }) {
+  const { latest, prior, developing } = profiles;
+  if (latest === null) return <div className="intraday-status muted">profile: no regular-session bars yet</div>;
+  const f = (x: number): string => x.toFixed(precision);
+  const one = (p: MarketProfile, label: string) => (
+    <span>
+      {label} <strong>POC {f(p.poc)}</strong> · VA {f(p.val)}–{f(p.vah + p.rowSize)}
+    </span>
+  );
+  const periods = latest.periods.length > 1 ? `${latest.periods[0]}–${latest.periods.at(-1)}` : latest.periods;
+  return (
+    <div className="intraday-status muted">
+      {one(latest, `${sessionLabel(latest.session)}${developing ? ` (developing, ${periods})` : ""}:`)}
+      {latest.ibLow !== null && latest.ibHigh !== null && (
+        <span>
+          {" "}
+          · IB {f(latest.ibLow)}–{f(latest.ibHigh)}
+        </span>
+      )}
+      <span> · {latest.volumeTotal > 0 && latest.volumePoc !== null ? `vPOC ${f(latest.volumePoc)}` : "TPO only (no volume)"}</span>
+      <span> · rows of {latest.rowSize}</span>
+      {prior !== null && <span> · {one(prior, `prior ${sessionLabel(prior.session)}:`)}</span>}
+    </div>
+  );
+}
+
+function LiveCandles({
+  entry,
+  period,
+  profile,
+}: {
+  entry: FuturesTickerEntry & { streamerSymbol: string };
+  period: CandlePeriod;
+  profile: boolean;
+}) {
   const hostRef = useRef<HTMLDivElement>(null);
   const [info, setInfo] = useState<ChartInfo>({ loaded: false, count: 0, last: null, updatedAt: null });
   const ws = useWsState();
   const symbol = entry.streamerSymbol;
+  const seriesRef = useRef<ISeriesApi<"Candlestick", Time> | null>(null);
+  const histRef = useRef<ProfileHistogram | null>(null);
+  const linesRef = useRef<{ key: string; lines: IPriceLine[] }>({ key: "", lines: [] });
+
+  // The profile reads the 15-minute series whatever width is drawn (the same series when it is 15m).
+  const profileBars = useCandles(profile ? symbol : "", "15m");
+  const profiles = useMemo(() => sessionProfiles(profileBars), [profileBars]);
 
   useEffect(() => {
     const el = hostRef.current;
@@ -130,6 +208,11 @@ function LiveCandles({ entry, period }: { entry: FuturesTickerEntry & { streamer
       priceLineVisible: false,
     });
     volume.priceScale().applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
+    const histogram = new ProfileHistogram(OVERLAY);
+    candles.attachPrimitive(histogram);
+    seriesRef.current = candles;
+    histRef.current = histogram;
+    linesRef.current = { key: "", lines: [] };
 
     let lastT = -Infinity;
     let framed = false;
@@ -173,9 +256,26 @@ function LiveCandles({ entry, period }: { entry: FuturesTickerEntry & { streamer
     return () => {
       off();
       wsClient.releaseCandles(symbol, period);
+      seriesRef.current = null;
+      histRef.current = null;
+      linesRef.current = { key: "", lines: [] };
       chart.remove();
     };
   }, [symbol, period, entry.product]);
+
+  // The overlay follows the profile; price lines are rebuilt only when a level actually moves (the
+  // 15-minute bar in progress is re-sent about once a second).
+  useEffect(() => {
+    const series = seriesRef.current;
+    histRef.current?.setProfile(profile ? profiles.latest : null);
+    if (series === null) return;
+    const want = profile ? profileLines(profiles) : [];
+    const key = want.map((l) => `${l.key}:${l.price}`).join("|");
+    if (key === linesRef.current.key) return;
+    for (const line of linesRef.current.lines) series.removePriceLine(line);
+    const lines = want.map((l) => series.createPriceLine({ price: l.price, title: l.title, ...lineStyleFor(l.role, OVERLAY) }));
+    linesRef.current = { key, lines };
+  }, [profile, profiles]);
 
   const live = ws.dxlink === "connected";
   const precision = PRECISION[entry.product] ?? 2;
@@ -198,6 +298,7 @@ function LiveCandles({ entry, period }: { entry: FuturesTickerEntry & { streamer
         )}
         {!live && <span className="chip" style={{ marginLeft: 8 }}>feed {ws.dxlink} — not live</span>}
       </div>
+      {profile && profileBars.length > 0 && <ProfileReadout profiles={profiles} precision={precision} />}
       <div ref={hostRef} style={{ height: "560px" }} />
     </>
   );
@@ -239,39 +340,67 @@ export function IntradayPage() {
     setParams(next, { replace: true });
   };
 
-  const entries = data?.entries ?? [];
+  const profile = params.get("profile") !== "off";
+
+  const entries = [...CASH_INSTRUMENTS, ...(data?.entries ?? [])];
   const entry = entries.find((e) => e.product === product);
   const products = entries.map((e) => e.product);
+  const labelOf = (p: string): string => (isCash(p) ? p : `/${p}`);
 
   return (
     <section className="card">
       <div className="card-head">
         <h2>
-          {entry?.label ?? `/${product}`} {entry?.contract !== null && entry?.contract !== undefined ? `(${entry.contract})` : ""} ·{" "}
+          {entry?.label ?? labelOf(product)} {entry?.contract !== null && entry?.contract !== undefined ? `(${entry.contract})` : ""} ·{" "}
           {period} candles
         </h2>
         <span className="chip">chart only</span>
         <div style={{ marginLeft: "auto", display: "flex", flexWrap: "wrap", gap: 8, minWidth: 0 }}>
-          {products.length > 0 && (
-            <Toggle value={product} options={products} onChange={(v) => set("product", v)} label="contract" render={(p) => `/${p}`} />
-          )}
+          <Toggle value={product} options={products} onChange={(v) => set("product", v)} label="symbol" render={labelOf} />
           <Toggle value={period} options={CANDLE_PERIODS} onChange={(v) => set("period", v)} label="candle width" />
+          <Toggle
+            value={profile ? "on" : "off"}
+            options={["on", "off"] as const}
+            onChange={(v) => set("profile", v)}
+            label="market profile"
+            render={(v) => `profile ${v}`}
+          />
         </div>
       </div>
-      {data === undefined ? (
-        isError ? <p className="muted">Could not read the futures contract map from the console server.</p> : <p className="muted">loading…</p>
-      ) : entry === undefined ? (
-        <p className="muted">/{product} is not one of the ticker's contracts ({products.map((p) => `/${p}`).join(", ")}).</p>
+      {entry === undefined ? (
+        data === undefined && !isError ? (
+          <p className="muted">loading…</p>
+        ) : data === undefined ? (
+          <p className="muted">Could not read the futures contract map from the console server.</p>
+        ) : (
+          <p className="muted">
+            {labelOf(product)} is not one of the chart's symbols ({products.map(labelOf).join(", ")}).
+          </p>
+        )
       ) : entry.streamerSymbol === null ? (
         <p className="muted">No contract for /{product}: {entry.reason ?? "unknown"} (see scripts/refresh_futures_contracts.py).</p>
       ) : (
-        <LiveCandles key={`${entry.streamerSymbol}|${period}`} entry={{ ...entry, streamerSymbol: entry.streamerSymbol }} period={period} />
+        <LiveCandles
+          key={`${entry.streamerSymbol}|${period}`}
+          entry={{ ...entry, streamerSymbol: entry.streamerSymbol }}
+          period={period}
+          profile={profile}
+        />
       )}
       <p className="muted" style={{ fontSize: "0.85em", marginTop: 8 }}>
         Extended hours, times in ET. CME futures trade Sunday 18:00 to Friday 17:00 ET with a daily break from 17:00
         to 18:00; the axis skips periods with no bars, so the break and weekends close up rather than showing as
         gaps. The bar in progress updates about once a second while the contract trades.
       </p>
+      {profile && (
+        <p className="muted" style={{ fontSize: "0.85em", marginTop: 4 }}>
+          Market Profile: the regular session, 09:30–16:00 ET, for every symbol (a future's overnight is left out), in
+          30-minute periods A–M, built from 15-minute candles. The shaded histogram is the newest session's time at
+          each price; the brighter rows are its value area (70% of the time) and the amber row its point of control.
+          Lines: POC, VAH/VAL and the initial balance (IBH/IBL, the first hour), and the prior session's pPOC and
+          pVAH/pVAL. SPX and NDX carry no volume, so theirs is time only. Chart only: no module reads it.
+        </p>
+      )}
     </section>
   );
 }

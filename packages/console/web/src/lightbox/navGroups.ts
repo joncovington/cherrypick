@@ -379,7 +379,7 @@ export const COMPARE_SLIDES = [
 ] as const satisfies readonly NavSlide[];
 
 /**
- * Charts (2026-10-01): the live intraday futures chart and the technicals package's one-name chart.
+ * Charts: the live intraday chart (futures and four cash symbols) and the technicals package's one-name chart.
  * `technicals` was Reports' `chart` tab; `/reports/chart` redirects here with its query string.
  */
 export const CHARTS_SLIDES = [

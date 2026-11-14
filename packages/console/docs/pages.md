@@ -277,9 +277,20 @@ with no source named in the code: the file says its own title and source.
 **Charts** (`/charts`, `lightbox/manifests/ChartsLightbox.tsx`) — three tabs: two charts and
 the setups watchlist:
 
-- `/charts/intraday?product=ES&period=5m` is a live futures chart (1m/5m/15m) over the console's own
-  DXLink session, extended hours included (`market/candles.ts`, `pages/Intraday/IntradayPage.tsx`).
-  The contract is the futures ticker's, from `state/futures_contracts.json`. What the feed does, as
+- `/charts/intraday?product=ES&period=5m&profile=on` is a live chart (1m/5m/15m) over the console's
+  own DXLink session, extended hours included (`market/candles.ts`, `pages/Intraday/IntradayPage.tsx`),
+  for the futures and four cash symbols (`product=SPX|SPY|NDX|QQQ`, `CASH_INSTRUMENTS`, each its own
+  DXLink symbol). A future's contract is the futures ticker's, from `state/futures_contracts.json`.
+  - **Market Profile overlay** (`profile=on` by default; `pages/Intraday/profileOverlay.ts`): the
+    newest regular session's TPO histogram behind the candles (value area brighter, POC amber) and
+    price lines for POC, VAH/VAL, IBH/IBL and the prior session's pPOC/pVAH/pVAL, with a readout
+    line above the chart. Built from the 15-minute series (subscribed alongside whatever width is
+    drawn; seven days of history, so the prior session is always held) through `lib/marketProfile.ts`,
+    a mirror of `cherrypick.core.marketprofile` pinned to the shared fixture (docs/mirrors.md). The
+    regular session 09:30–16:00 ET for every symbol; a future's overnight is left out. Rows from
+    `defaultRowSize` of the oldest bar held, so they stay put while the series is open. SPX and NDX
+    carry no volume, so theirs is time only. Chart only; no module reads it.
+  What the feed does, as
   `scripts/probe_candles.py` measured it, and the rule each finding set (`server/test/candles.test.ts`,
   each case shown to fail):
   - `X{=1m}` comes back labelled `X{=m}`, so events are matched by the parsed period, never by the
