@@ -3430,6 +3430,61 @@
       "outcome": null,
       "retest": null,
       "retests": []
+    },
+    {
+      "id": 76,
+      "study": "item76",
+      "title": "The ladder's stuck lots: covered calls sold after day 18, at three strike rules",
+      "status": "declared",
+      "legacy": false,
+      "setup": "dip-buy",
+      "side": "bullish",
+      "structure": "covered-call",
+      "window": "multi-day",
+      "measure": "per hospital lot (an item 26 once-3 lot of 100 shares still open 18 days after its buy), the arm's whole-lot net less holding the same lot to its +4% target, in dollars per 100 shares; arms: breakeven, delta30 and cost5 strikes on one call a lot, 35 to 60 days out nearest 45, sold at the bid; item 27's decay exit reported beside",
+      "expected": "a positive mean paired difference after the calls' costs, from premium on a lot that is mostly waiting",
+      "sample": "SOXL and TQQQ lots bought in the design window 2016-05-02..2024-12-31, holdout 2025-01-02..the last session the bars hold when plan runs, counting only after a design pass; < 30 hospital lots in the design window = no verdict, a holdout < 10 = provisional",
+      "rule": "per arm: design mean paired difference > 0 with one-sided t > 2, one lot one observation, Holm across 3; positive in each design half and on each name; positive with option fees at 1.5x and every call sold $0.05 under the bid; then holdout mean > 0",
+      "mechanism": "premium: a leveraged fund's calls are rich and a stuck lot is mostly waiting; against it, a call caps the sharp rebound that is a stuck lot's way out",
+      "rivals": [
+        {
+          "explanation": "a bull market lifting every stuck lot",
+          "check": "each arm paired with hold on the same lot, whose drift is in both"
+        },
+        {
+          "explanation": "costs read too kindly",
+          "check": "verdict at the bid; mid reported only"
+        },
+        {
+          "explanation": "one volatility regime",
+          "check": "design holds 2018, 2020 and 2022's falls; both time-halves must agree"
+        },
+        {
+          "explanation": "one name",
+          "check": "positive on each of SOXL and TQQQ"
+        },
+        {
+          "explanation": "premium bought with locked-in losses",
+          "check": "realised-loss count and the rebound given up reported for every arm"
+        },
+        {
+          "explanation": "three arms, one lucky",
+          "check": "Holm across the three"
+        }
+      ],
+      "pointer": "research/edge-hypotheses-plan.md#76-the-ladders-stuck-lots-covered-calls-sold-after-day-18-at-three-strike-rules",
+      "scripts": [
+        "packages/backtest/scripts/share_ladder_item76.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_share_ladder_item76_script.py"
+      ],
+      "results": [
+        "{home}/data/backtest/results/research/item76/results.json"
+      ],
+      "outcome": null,
+      "retest": null,
+      "retests": []
     }
   ],
   "rule_changes": []
