@@ -135,10 +135,19 @@ def check(reg: dict, *, root: Path | None = None) -> list[str]:
                     problems.append(f"{tag}: result {p} is already row {owners[p]}'s")
                 owners.setdefault(p, rid)
         problems += _chain_problems(row, tag, root)
+        if "retest_forward" in row:
+            problems += [f"{tag}: {p}" for p in forward_problems(row["retest_forward"])]
+            script = (
+                (row["retest_forward"] or {}).get("script")
+                if isinstance(row["retest_forward"], dict)
+                else None
+            )
+            if isinstance(script, str) and not (root / script).is_file():
+                problems.append(f"{tag}: retest_forward script {script} does not exist")
         if "forward" in row:
-            from .forwardcheck import problems as forward_problems
+            from .forwardcheck import problems as forwardcheck_problems
 
-            problems += [f"{tag}: {p}" for p in forward_problems(row["forward"])]
+            problems += [f"{tag}: {p}" for p in forwardcheck_problems(row["forward"])]
         if row.get("outcome") is not None and not isinstance(row.get("outcome"), str):
             problems.append(f"{tag}: outcome is the decision in words")
         pointer = str(row.get("pointer") or "")
@@ -551,6 +560,75 @@ def _fill(value, year: int):
     if isinstance(value, dict):
         return {k: _fill(v, year) for k, v in value.items()}
     return value
+
+
+def _fill_forward(value, subs: dict[str, str]):
+    if isinstance(value, str):
+        for k, v in subs.items():
+            value = value.replace("{" + k + "}", v)
+        return value
+    if isinstance(value, list):
+        return [_fill_forward(v, subs) for v in value]
+    if isinstance(value, dict):
+        return {k: _fill_forward(v, subs) for k, v in value.items()}
+    return value
+
+
+def forward_problems(recipe) -> list[str]:
+    """What is wrong with a row's `retest_forward`: `{"script": <repo path>, "steps": [<CHAIN step>]}`."""
+    from . import studychain
+
+    if (
+        not isinstance(recipe, dict)
+        or set(recipe) != {"script", "steps"}
+        or not isinstance(recipe["script"], str)
+    ):
+        return ["retest_forward is {script, steps}"]
+    try:
+        studychain.check(recipe["steps"], "retest_forward")
+    except studychain.BadChain as exc:
+        return [str(exc)]
+    return []
+
+
+def forward_plan(reg: dict, today, results_for=None) -> dict:
+    """#1085: this month's forward retest of every passed row that declares `retest_forward`: its
+    steps over the sessions since it was declared, through `today`, as queue rows named
+    `forward-<YYYY-MM>-<step>`, each after the one before. Strings may carry `{through}` (today),
+    `{stamp}` (the month), `{results}` and `{home}`. A month already recorded under `retests`
+    (`"forward": "<YYYY-MM>"`) is skipped. Passed rows without a recipe are listed: one that says
+    why (`retest_note`) is a decision, the rest need one."""
+    from . import studychain
+
+    results_for = results_for or studychain.results_for
+    stamp = today.strftime("%Y-%m")
+    chains, missing, declined, done = {}, [], [], []
+    for r in reg.get("hypotheses", []):
+        if r.get("status") != "passed":
+            continue
+        if any(t.get("forward") == stamp for t in r.get("retests") or []):
+            done.append(r["study"])
+            continue
+        recipe = r.get("retest_forward")
+        if not recipe:
+            (declined if r.get("retest_note") else missing).append(r["study"])
+            continue
+        if forward_problems(recipe):
+            missing.append(r["study"])
+            continue
+        subs = {"through": today.isoformat(), "stamp": stamp}
+        steps = [{**_fill_forward(s, subs), "step": f"forward-{stamp}-{s['step']}"} for s in recipe["steps"]]
+        chains[r["study"]] = {
+            "script": recipe["script"],
+            "rows": studychain.plan_rows(steps, r["study"], recipe["script"], results_for(r["study"])),
+        }
+    return {
+        "stamp": stamp,
+        "chains": chains,
+        "needs_recipe": missing,
+        "declined": declined,
+        "already_recorded": done,
+    }
 
 
 def retest_plan(reg: dict, year: int) -> dict:

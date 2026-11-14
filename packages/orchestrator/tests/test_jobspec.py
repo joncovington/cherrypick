@@ -319,6 +319,7 @@ def test_derive_full_suite_job_table():
         "earnings-dolt",
         "reconcile",
         "log-archive",
+        "research-retests",
         "config-backup",
         "suite-backup",
         "futures-contracts",

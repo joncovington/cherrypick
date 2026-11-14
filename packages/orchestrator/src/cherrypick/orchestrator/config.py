@@ -918,11 +918,19 @@ def research_queue_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     supervisor looks for a ready row. The ThetaData blackout follows `backtest.fetch_at`: from
     `blackout_before_minutes` before it to `blackout_after_minutes` after, on trading days."""
     q = cfg.get("research_queue", {}) or {}
+    fr = q.get("forward_retests", {}) or {}
     return {
         "enabled": bool(q.get("enabled", True)),
         "interval_seconds": int(q.get("interval_seconds", 60)),
         "blackout_before_minutes": int(q.get("blackout_before_minutes", 15)),
         "blackout_after_minutes": int(q.get("blackout_after_minutes", 105)),
+        # The monthly forward retests of passed items (#1085): OFF by default, since each queues
+        # vendor fetches; `day` of the month and `at` (local) as the log archive takes them.
+        "forward_retests": {
+            "enabled": bool(fr.get("enabled", False)),
+            "day": int(fr.get("day", 2)),
+            "at": str(fr.get("at", "05:00")),
+        },
     }
 
 

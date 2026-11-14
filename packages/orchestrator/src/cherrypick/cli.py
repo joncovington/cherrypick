@@ -2603,9 +2603,29 @@ def _board():
 
 
 def cmd_retests(args) -> None:
-    """B14: the year's re-test rows; --apply queues them (each `<study>/retest-<year>`)."""
+    """B14: the year's re-test rows; --apply queues them (each `<study>/retest-<year>`). With
+    --forward (#1085): this month's forward retest of each passed item that declares one, queued as
+    its chain (`forward-<YYYY-MM>-<step>`), whole or not at all, a study already live left alone."""
     from cherrypick.orchestrator import researchqueue
 
+    if args.forward:
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+
+        from cherrypick.orchestrator import studychain
+
+        plan = hypotheses.forward_plan(hypotheses.load(), datetime.now(ZoneInfo("America/New_York")).date())
+        if args.apply:
+            queued, refused = {}, {}
+            for study, c in plan["chains"].items():
+                try:
+                    out = studychain.queue_rows(c["rows"], study)
+                    queued[study] = [a["name"] for a in out["added"]]
+                except researchqueue.Refused as exc:
+                    refused[study] = str(exc)
+            plan["queued"], plan["refused"] = queued, refused
+        _emit(plan)
+        return
     if not args.year:
         sys.exit("retests needs --year")
     plan = hypotheses.retest_plan(hypotheses.load(), args.year)
@@ -2961,6 +2981,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--module", default=None, help="For connect/account: which module to target")
     parser.add_argument("--year", type=int, default=None, help="For retests: the year to re-run on")
+    parser.add_argument(
+        "--forward",
+        action="store_true",
+        help="For retests: each passed item's forward retest this month, on sessions since it was declared",
+    )
     parser.add_argument(
         "--similar",
         default=None,
