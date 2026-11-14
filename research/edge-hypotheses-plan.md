@@ -7779,6 +7779,66 @@ for this question has been read.*
 - **What this decides:** the fail branch: the `ladder` module keeps counting the hospital and sells no
   calls.
 
+### 77. Item 57's weekly index put under the three bars: the bill on its buying power, its tail, and its delta
+
+Declared 2026-11-14, before any of it is computed. **A retest of item 57, said out loud:** the same
+trades on the same weekly expiries, judged on the three bars every new study now meets (the
+declaration template). Item 57 passed on mean net in bp of the forward notional; that measure cannot
+see the capital a short put holds or the shape of its losses, and a short 10-delta put held to expiry
+is the textbook tail trade. It runs in paper today as `packages/weeklyput` (item 69).
+
+- **Question:** does item 57's unhedged 10-delta put earn more than the bill on the buying power it
+  holds, earn back a bad year within a year, and earn more than its own delta would have?
+- **The trades:** item 57's unhedged arm exactly as item 57 built them (`trade_pair` over its chain-path
+  store): SPX, SPY, QQQ and IWM, the put nearest 10 delta sold 7 days before each non-monthly weekly
+  expiry in item 57's sample, held to expiry, item 46's costs and settlement. Nothing is re-chosen.
+- **Measured:** each trade's return on its buying power; per cycle, the equal-weight mean over the
+  names present; one cycle one observation (SPX's notional is ten times SPY's, so dollars would read
+  SPX alone).
+- **Two buying-power models, both judged:**
+  - `cash`: cash-secured, the strike x 100 less the premium (an IRA's hold);
+  - `margin`: Reg T on a naked put, the larger of a share of the underlying less the put's
+    out-of-the-money amount and 10% of the strike, plus the premium; the share is 15% on SPX (a
+    broad-based index option) and 20% on SPY, QQQ and IWM. The entry forward stands in for the spot.
+- **The three bars** (`cherrypick.backtest.study.checks`), per model, all must hold:
+  - **capital:** the cycle's return less the 3-month bill (the curve's last reading before the entry
+    session) over the trade's days, mean above zero with a one-sided t of 2 or more;
+  - **tail:** the 99th-percentile drawdown over one year of cycles (a stationary bootstrap of the
+    cycles in time order, 10,000 draws, seed 77) under one year of mean return, a year being the
+    sample's own cycles a year;
+  - **delta:** the cycle's return less its entry delta financed on the same buying power (the forward's
+    move on the short put's entry delta, plus the bill on the capital), mean above zero with a
+    one-sided t of 2 or more.
+  - Fewer than 80 cycles (item 46's floor) is no verdict. No Holm step: at a t of 2 on 80 cycles or
+    more a passing p is under 0.024, below Holm's strictest bar for two models, so it could never bind.
+- **Windows:** item 57's whole sample, read once. It was read by item 57, so the verdict is
+  **provisional by declaration**; the cycles after 2026-10-30, item 57's forward read, are the fresh
+  evidence and are reported beside it.
+- **Reported, never judged:** item 57's hedged arm under both models and the three bars; the mean
+  excess over the bill in each half of the sample (split 2021-06-01, item 57's) and on each name; the
+  forward cycles; the same-capital rival a short-premium book would pick instead, a put credit spread
+  at the same buying power, is a further item if this one fails on the tail.
+- **Rival explanations, each with its check:**
+  - *The premium is real but the capital earns more in bills:* the capital bar.
+  - *The sample lacks the crash that would sink it:* the tail bar reads the sample's own losses only;
+    2018, 2020 and 2022 are in it, and the halves are reported.
+  - *The return is the index's drift on a long delta:* the delta bar.
+  - *The margin model flatters it:* the cash model is judged beside it.
+- **Data:** item 57's chain-path store; nothing is fetched. The script is
+  `packages/backtest/scripts/index_put_tail_item77.py study`, run as `item77/study`. Results are derived
+  from licensed data, so they stay under `~/.cherrypick/data/backtest/results/research/item77/`, and
+  this plan records the verdict without figures.
+- **Decides:**
+  - **A pass under a model:** the weeklyput paper arm keeps running, and its console page reads its
+    trades on that model's buying power and the three bars; a size for any later live proposal comes
+    from that model's tail bar.
+  - **A fail on the tail bar:** the weeklyput arm is a tail-risk trade on this evidence. Whether it keeps
+    running in paper is the user's call; the defined-risk version (a put credit spread at the same
+    buying power) is the next item, declared before it runs.
+  - **A fail on the capital or delta bar only:** the premium does not pay for the capital it holds, or
+    is the index's drift; the weeklyput arm is not proposed for live.
+- **Result:** not yet run.
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:
