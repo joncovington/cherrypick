@@ -49,6 +49,7 @@ import sys
 from pathlib import Path
 
 from cherrypick.backtest.study import rule as kit_rule
+from cherrypick.backtest.study.inputs import Inputs
 
 #: The correction log: one entry per fix to this replay, oldest first (orchestrator/studyversion.py).
 REPLAY_CORRECTIONS = ()
@@ -89,9 +90,20 @@ def requests() -> list[dict]:
     raise NotImplementedError("item {n}: list the paths the declaration needs")
 
 
-def trades() -> dict[str, list[dict]]:
+def chain_store():
+    import sqlite3
+
+    from cherrypick.backtest import paths, settings
+
+    db = paths.vendor_dir(settings.load()) / "eod_chains.db"
+    return sqlite3.connect(f"file:{{db}}?mode=ro", uri=True)
+
+
+def trades(inputs: Inputs, conn) -> dict[str, list[dict]]:
     """Each arm's trades from one run over the whole history, each with its entry `date`, `net`,
-    `bp`, `days`, `rate` and, when the delta bar applies, `financed` (see the kit's `rule`)."""
+    `bp`, `days`, `rate` and, when the delta bar applies, `financed` (see the kit's `rule`). Read
+    the store only through `inputs` (`inputs.sessions`, `inputs.chain`): the paths this study asked
+    for, never another study's."""
     raise NotImplementedError("item {n}: replay the declared rule")
 
 
@@ -103,8 +115,15 @@ def cmd_plan(args) -> int:
 
 
 def cmd_study(args) -> int:
-    block = kit_rule.evaluate(RULE, trades())
+    inputs = Inputs(out_dir() / "path_requests.json")
+    conn = chain_store()
+    try:
+        block = kit_rule.evaluate(RULE, trades(inputs, conn))
+        read = inputs.fingerprint(conn)
+    finally:
+        conn.close()
     doc = {{"licence": "derived from licensed vendor data: never commit or publish", "item": {n}, **block}}
+    doc["inputs"] = read
     path = Path(args.out) if args.out else out_dir() / "results.json"
     path.write_text(json.dumps(doc, indent=1, default=str), encoding="utf-8")
     print(json.dumps({{"written": str(path), "verdict": doc["verdict"]}}))

@@ -14,7 +14,9 @@ with the one recorded:
 
 A study is `identical`, `differs` (with the JSON paths that moved, never their values), `expected`
 (it differs, and its script's correction log grew since the recorded run: the stamp says which
-version wrote the result), `failed` (its run exited non-zero, with its last line) or `skipped` (why).
+version wrote the result), `inputs_changed` (it differs, and its own `inputs` fingerprint moved: the
+paths it declared hold other data now, so its code is not what changed; the study kit's `Inputs`),
+`failed` (its run exited non-zero, with its last line) or `skipped` (why).
 The report goes under the backtest results directory, like every result here, and the script exits
 1 when any study differs or failed, so a research-queue row notifies.
 
@@ -201,8 +203,13 @@ def reproduce(
         out.update(compare_folders(keep / "before", folder, since))
         if out["status"] == "differs":
             now, recorded = _corrections(scripts[-1]), _recorded_version(keep / "before")
+            moved = [p for ps in out["moved"].values() for p in ps]
             if now is not None and recorded is not None and now > recorded:
                 out.update(status="expected", why=f"its correction log grew from version {recorded} to {now}")
+            elif any(p.startswith("inputs.") for p in moved):
+                # The study's own `inputs` fingerprint (the kit's `Inputs`) moved: its declared paths
+                # hold more or other data than when it ran, so the code is not what changed.
+                out.update(status="inputs_changed", why="the inputs it declared hold different data now")
         dest = out_root / study
         dest.mkdir(parents=True, exist_ok=True)
         for name in out.get("files", []):
