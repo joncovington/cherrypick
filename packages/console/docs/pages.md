@@ -307,14 +307,14 @@ the setups watchlist:
     and names the symbols that have it.
   Chart only.
 
-- `/charts/intraday?product=ES&period=5m&profile=on` is a live chart (1m/5m/15m) over the console's
+- `/charts/intraday?product=ES&period=5m&profile=on&sessions=5` is a live chart (1m/5m/15m) over the console's
   own DXLink session, extended hours included (`market/candles.ts`, `pages/Intraday/IntradayPage.tsx`),
   for the futures and four cash symbols (`product=SPX|SPY|NDX|QQQ`, `CASH_INSTRUMENTS`, each its own
   DXLink symbol). A future's contract is the futures ticker's, from `state/futures_contracts.json`.
   - **Market Profile overlay** (`profile=on` by default; `pages/Intraday/profileOverlay.ts`): the
-    newest regular session's TPO histogram behind the candles (value area brighter, POC amber) and
-    price lines for POC, VAH/VAL, IBH/IBL and the prior session's pPOC/pVAH/pVAL, with a readout
-    line above the chart. Every line is named on the price axis and in a legend under the chart
+    newest sessions' TPO histograms behind the candles (value area brighter, POC amber; see
+    Histograms below) and price lines for the newest session's POC, VAH/VAL, IBH/IBL and the prior
+    session's pPOC/pVAH/pVAL, with a readout line above the chart. Every line is named on the price axis and in a legend under the chart
     (`LINE_LEGEND`); colour says the level (amber POC, accent value area, grey IB), the stroke whose
     it is (the prior session's dotted), and a test fails if a line loses its label or two kinds look
     alike. POC and the value area are always drawn; IBH/IBL, pPOC and pVAH/pVAL are buttons in the
@@ -342,6 +342,14 @@ the setups watchlist:
     symbol's fixed `rowSizeFor` (the Profile tab's and the morning pack's), or for another contract
     `defaultRowSize` of the oldest bar held, so they stay put while the series is open. SPX and NDX
     carry no volume, so theirs is time only. Chart only; no module reads it.
+  - **Histograms** (`?sessions=1|5|10`, default 5, the newest included; `recentProfiles`): each
+    session's rows grow rightward from its first regular-session bar on the chart (`sessionAnchors`),
+    all on one count scale so their widths compare, a full session's longest row spanning 60% of that
+    session's width at the current zoom. The newest is the profile the lines read; older ones come
+    from the recorded bars by the Profile tab's `buildView` where the store keeps the symbol, else
+    from the live 15-minute series, and one on another row grid is left out. A session older than the
+    drawn candles reach is not drawn (a series loads one day at 1m, three at 5m, seven at 15m), and
+    the readout says how many of those asked are drawn and why fewer.
   What the feed does, as
   `scripts/probe_candles.py` measured it, and the rule each finding set (`server/test/candles.test.ts`,
   each case shown to fail):

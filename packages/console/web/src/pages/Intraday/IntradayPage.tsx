@@ -40,6 +40,10 @@ import {
   untestedCandidates,
   overnightSession,
   compositeSessions,
+  recentProfiles,
+  sessionAnchors,
+  sessionChoice,
+  SESSION_CHOICES,
   type OverlayColours,
   type SessionProfiles,
 } from "./profileOverlay";
@@ -161,6 +165,20 @@ const toCandle = (b: CandleBar): CandlestickData<Time> => ({
 const toVolume = (b: CandleBar): HistogramData<Time> | WhitespaceData<Time> =>
   b.v > 0 ? { time: b.t as UTCTimestamp, value: b.v, color: b.c >= b.o ? UP_VOL : DOWN_VOL } : { time: b.t as UTCTimestamp };
 
+const PERIOD_SECONDS: Record<CandlePeriod, number> = { "1m": 60, "5m": 300, "15m": 900, "1d": 86_400 };
+
+/**
+ * The readout's histogram note: how many of the sessions asked for are drawn, and when fewer, why. A
+ * session can be built but not drawn (older than the candles this width loads), or not held at all.
+ */
+export function histogramNote(h: { asked: number; drawn: number; sessions: readonly string[] }): string {
+  const span = h.sessions.length > 1 ? ` (${sessionLabel(h.sessions[0]!)}–${sessionLabel(h.sessions.at(-1)!)})` : "";
+  const head = `histograms: ${h.drawn} of ${h.asked} sessions${span}`;
+  if (h.drawn >= h.asked) return head;
+  if (h.drawn < h.sessions.length) return `${head}; the rest are older than this candle width loads (15m loads the most)`;
+  return `${head}; that is all the history held`;
+}
+
 const isPeriod = (p: string | null): p is CandlePeriod => p !== null && (CANDLE_PERIODS as readonly string[]).includes(p);
 
 interface ChartInfo {
@@ -179,12 +197,15 @@ function ProfileReadout({
   untested,
   overnight,
   composite,
+  histograms,
 }: {
   profiles: SessionProfiles;
   precision: number;
   untested: ReadonlyArray<readonly [string, number]> | null;
   overnight: MarketComposite | null;
   composite: MarketComposite | null;
+  /** Sessions asked for, how many the drawn candles reach, and which were built (oldest first). */
+  histograms: { asked: number; drawn: number; sessions: string[] };
 }) {
   const { latest, prior, developing } = profiles;
   if (latest === null) return <div className="intraday-status muted">profile: no regular-session bars yet</div>;
@@ -206,6 +227,7 @@ function ProfileReadout({
       )}
       <span> · {latest.volumeTotal > 0 && latest.volumePoc !== null ? `vPOC ${f(latest.volumePoc)}` : "TPO only (no volume)"}</span>
       <span> · rows of {latest.rowSize}</span>
+      {histograms.asked > 1 && <span> · {histogramNote(histograms)}</span>}
       {prior !== null && <span> · {one(prior, `prior ${sessionLabel(prior.session)}:`)}</span>}
       {untested !== null && (
         <span>
@@ -241,10 +263,13 @@ function LiveCandles({
   profile,
   hidden,
   onToggleLine,
+  sessions,
 }: {
   entry: FuturesTickerEntry & { streamerSymbol: string };
   period: CandlePeriod;
   profile: boolean;
+  /** How many sessions' histograms to draw, newest included. */
+  sessions: number;
   hidden: ReadonlySet<ProfileLine["role"]>;
   onToggleLine: (role: ProfileLine["role"]) => void;
 }) {
@@ -265,9 +290,12 @@ function LiveCandles({
   // Untested POCs need more history than the live 15-minute series holds: the recorded bars, extended
   // hours, for the symbols the profile-bars job keeps. Off (no request) for any other contract, and
   // when the profile or its nPOC lines are switched off.
-  // The recorded bars serve the untested POCs and the composite; fetched only while either is on.
+  // The recorded bars serve the untested POCs, the composite and the older sessions' histograms;
+  // fetched only while one of them is on.
   const recordedSymbol =
-    profile && (!hidden.has("untested-poc") || !hidden.has("composite-poc")) ? recordedProfileSymbol(entry.product) : "";
+    profile && (!hidden.has("untested-poc") || !hidden.has("composite-poc") || sessions > 1)
+      ? recordedProfileSymbol(entry.product)
+      : "";
   const { data: recorded } = useProfileBars(recordedSymbol, UNTESTED_SESSIONS, "extended");
   const untested = useMemo((): Array<[string, number]> => {
     const rowSize = profiles.latest?.rowSize;
@@ -300,6 +328,19 @@ function LiveCandles({
       barSeconds: recorded.barSeconds,
     });
   }, [hidden, recorded, profiles]);
+
+  // The sessions the histograms draw, and how many of them the drawn candles reach (a narrow candle
+  // loads fewer days, so a 1-minute chart cannot show five sessions). `info.count` moves as the drawn
+  // series grows.
+  const recent = useMemo(
+    () => (profile ? recentProfiles(profiles, profileBars, recordedSymbol === "" ? undefined : recorded, sessions) : []),
+    [profile, profiles, profileBars, recordedSymbol, recorded, sessions],
+  );
+  const drawnCount = info.count;
+  const onChart = useMemo(
+    () => (drawnCount === 0 ? 0 : sessionAnchors(wsClient.getCandles(symbol, period), recent.map((p) => p.session)).size),
+    [recent, symbol, period, drawnCount],
+  );
 
   useEffect(() => {
     const el = hostRef.current;
@@ -337,7 +378,7 @@ function LiveCandles({
       priceLineVisible: false,
     });
     volume.priceScale().applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
-    const histogram = new ProfileHistogram(OVERLAY);
+    const histogram = new ProfileHistogram(OVERLAY, () => wsClient.getCandles(symbol, period), PERIOD_SECONDS[period]);
     candles.attachPrimitive(histogram);
     seriesRef.current = candles;
     histRef.current = histogram;
@@ -401,7 +442,7 @@ function LiveCandles({
   // 15-minute bar in progress is re-sent about once a second).
   useEffect(() => {
     const series = seriesRef.current;
-    histRef.current?.setProfile(profile ? profiles.latest : null);
+    histRef.current?.setProfiles(recent);
     if (series === null) return;
     const want = profile ? profileLines(profiles, hidden, untested, overnight, composite) : [];
     const key = want.map((l) => `${l.key}:${l.price}`).join("|");
@@ -409,7 +450,7 @@ function LiveCandles({
     for (const line of linesRef.current.lines) series.removePriceLine(line);
     const lines = want.map((l) => series.createPriceLine({ price: l.price, title: l.title, ...lineStyleFor(l.role, OVERLAY) }));
     linesRef.current = { key, lines };
-  }, [profile, profiles, hidden, untested, overnight, composite]);
+  }, [profile, profiles, recent, hidden, untested, overnight, composite]);
 
   const live = ws.dxlink === "connected";
   const precision = PRECISION[entry.product] ?? 2;
@@ -436,6 +477,7 @@ function LiveCandles({
       {profile && profileBars.length > 0 && <ProfileReadout profiles={profiles} precision={precision} untested={recordedSymbol === "" || hidden.has("untested-poc") || recorded === undefined || !recorded.available ? null : untested}
           composite={composite}
           overnight={overnight}
+          histograms={{ asked: sessions, drawn: onChart, sessions: recent.map((p) => p.session) }}
         />}
       <div ref={hostRef} style={{ height: "560px" }} />
       {profile && profileBars.length > 0 && <ProfileLegend hidden={hidden} onToggle={onToggleLine} />}
@@ -506,9 +548,12 @@ const INTRADAY_HELP: CardHelpContent = {
       <HelpSection title="Market Profile">
         <p>
           Built from 15-minute candles over the regular session, 09:30–16:00 ET, for every symbol (a future's
-          overnight is left out), in 30-minute periods lettered A–M. The shaded histogram on the right is the newest
-          session's time at each price: the brighter rows are its value area (70% of the time), the amber row its
-          point of control. SPX and NDX carry no volume, so theirs is time only. Chart only: no module reads it.
+          overnight is left out), in 30-minute periods lettered A–M. Each shaded histogram is one session's time at
+          each price, drawn from that session's 09:30 bar: the brighter rows are its value area (70% of the time),
+          the amber row its point of control. The sessions button picks how many (1, 5 or 10, newest included); all
+          share one scale, so a wider row spent longer at its price. A narrow candle loads fewer days (1m one day,
+          5m three, 15m seven), so the readout says when fewer sessions are drawn than asked. The lines are the
+          newest session's. SPX and NDX carry no volume, so theirs is time only. Chart only: no module reads it.
         </p>
       </HelpSection>
       <HelpSection title="The lines">
@@ -565,6 +610,7 @@ export function IntradayPage() {
   };
 
   const profile = params.get("profile") !== "off";
+  const sessions = sessionChoice(params.get("sessions"));
   const hideRaw = params.get("hide");
   const showRaw = params.get("show");
   const hidden = useMemo(() => hiddenRoles(hideRaw, showRaw), [hideRaw, showRaw]);
@@ -605,6 +651,15 @@ export function IntradayPage() {
             label="market profile"
             render={(v) => `profile ${v}`}
           />
+          {profile && (
+            <Toggle
+              value={sessions}
+              options={SESSION_CHOICES}
+              onChange={(v) => set("sessions", v)}
+              label="profile sessions"
+              render={(v) => (v === "1" ? "1 session" : `${v} sessions`)}
+            />
+          )}
         </div>
       </div>
       {entry === undefined ? (
@@ -627,6 +682,7 @@ export function IntradayPage() {
           profile={profile}
           hidden={hidden}
           onToggleLine={toggleLine}
+          sessions={Number(sessions)}
         />
       )}
     </section>
