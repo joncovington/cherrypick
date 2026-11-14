@@ -1,5 +1,5 @@
 {
- "_note": "Market Profile cases for core.marketprofile.build_profile and default_row_size. Read by packages/core/tests/test_marketprofile.py and by the console's web/test/marketProfile.test.ts, which pins its TypeScript port (web/src/lib/marketProfile.ts) to the same answers. Change both implementations or neither. The first case is also worked by hand in the Python test; the rest are seeded random walks whose expected profiles the module produced when this file was made, so they pin the two implementations to each other.",
+ "_note": "Market Profile cases for core.marketprofile.build_profile, build_composite and default_row_size. Read by packages/core/tests/test_marketprofile.py and by the console's web/test/marketProfile.test.ts, which pins its TypeScript port (web/src/lib/marketProfile.ts) to the same answers. Change both implementations or neither. The first case and the first composite are also worked by hand in the Python test; the rest are seeded random walks whose expected profiles the module produced when this file was made, so they pin the two implementations to each other. A composite's `bars_from` names the case whose bars it reads.",
  "row_sizes": [[6800, 2.0], [25000, 10.0], [600, 0.2], [680, 0.2], [100, 0.025], [50, 0.02], [21000, 5.0], [5.3, 0.002]],
  "cases": [
   {
@@ -880,6 +880,132 @@
     {"price": 682.6, "letters": "E", "volume": 15190.5},
     {"price": 682.8, "letters": "E", "volume": 9775.5},
     {"price": 683.0, "letters": "E", "volume": 7893.5}
+   ]
+   }
+  }
+ ],
+ "composites": [
+  {
+   "name": "hand-worked composite: two sessions, row 1",
+   "row_size": 1,
+   "bar_seconds": 1800,
+   "sessions": ["2026-11-12", "2026-11-13", "2026-11-11"],
+   "bars": [
+    {"t": 1794493800, "o": 101.0, "h": 102.5, "l": 100.0, "c": 102.0, "v": 30},
+    {"t": 1794580200, "o": 102.0, "h": 103.2, "l": 101.0, "c": 101.5, "v": 30},
+    {"t": 1794582000, "o": 101.5, "h": 101.9, "l": 101.1, "c": 101.8, "v": 5}
+   ],
+   "expected": {
+    "sessions": ["2026-11-12", "2026-11-13"],
+    "row_size": 1,
+    "high": 103.2,
+    "low": 100.0,
+    "poc": 101.0,
+    "val": 101.0,
+    "vah": 103.0,
+    "tpo_total": 7,
+    "volume_total": 65.0,
+    "volume_poc": 101.0,
+    "rows": [
+    {"price": 100.0, "tpo": 1, "volume": 10.0},
+    {"price": 101.0, "tpo": 3, "volume": 25.0},
+    {"price": 102.0, "tpo": 2, "volume": 20.0},
+    {"price": 103.0, "tpo": 1, "volume": 10.0}
+   ]
+   }
+  },
+  {
+   "name": "SPX-like, both sessions merged",
+   "row_size": 2.0,
+   "bar_seconds": 900,
+   "sessions": ["2026-11-12", "2026-11-13"],
+   "bars_from": "SPX-like, 15m, two sessions, no volume (newest by default)",
+   "expected": {
+    "sessions": ["2026-11-12", "2026-11-13"],
+    "row_size": 2.0,
+    "high": 6858.26,
+    "low": 6797.04,
+    "poc": 6838.0,
+    "val": 6814.0,
+    "vah": 6846.0,
+    "tpo_total": 150,
+    "volume_total": 0.0,
+    "volume_poc": null,
+    "rows": [
+    {"price": 6796.0, "tpo": 2, "volume": 0.0},
+    {"price": 6798.0, "tpo": 2, "volume": 0.0},
+    {"price": 6800.0, "tpo": 2, "volume": 0.0},
+    {"price": 6802.0, "tpo": 2, "volume": 0.0},
+    {"price": 6804.0, "tpo": 2, "volume": 0.0},
+    {"price": 6806.0, "tpo": 2, "volume": 0.0},
+    {"price": 6808.0, "tpo": 2, "volume": 0.0},
+    {"price": 6810.0, "tpo": 2, "volume": 0.0},
+    {"price": 6812.0, "tpo": 5, "volume": 0.0},
+    {"price": 6814.0, "tpo": 6, "volume": 0.0},
+    {"price": 6816.0, "tpo": 6, "volume": 0.0},
+    {"price": 6818.0, "tpo": 6, "volume": 0.0},
+    {"price": 6820.0, "tpo": 5, "volume": 0.0},
+    {"price": 6822.0, "tpo": 5, "volume": 0.0},
+    {"price": 6824.0, "tpo": 7, "volume": 0.0},
+    {"price": 6826.0, "tpo": 7, "volume": 0.0},
+    {"price": 6828.0, "tpo": 7, "volume": 0.0},
+    {"price": 6830.0, "tpo": 5, "volume": 0.0},
+    {"price": 6832.0, "tpo": 6, "volume": 0.0},
+    {"price": 6834.0, "tpo": 6, "volume": 0.0},
+    {"price": 6836.0, "tpo": 7, "volume": 0.0},
+    {"price": 6838.0, "tpo": 10, "volume": 0.0},
+    {"price": 6840.0, "tpo": 7, "volume": 0.0},
+    {"price": 6842.0, "tpo": 8, "volume": 0.0},
+    {"price": 6844.0, "tpo": 9, "volume": 0.0},
+    {"price": 6846.0, "tpo": 7, "volume": 0.0},
+    {"price": 6848.0, "tpo": 6, "volume": 0.0},
+    {"price": 6850.0, "tpo": 3, "volume": 0.0},
+    {"price": 6852.0, "tpo": 2, "volume": 0.0},
+    {"price": 6854.0, "tpo": 2, "volume": 0.0},
+    {"price": 6856.0, "tpo": 1, "volume": 0.0},
+    {"price": 6858.0, "tpo": 1, "volume": 0.0}
+   ]
+   }
+  },
+  {
+   "name": "/NQ-like, one session (the composite of one is its profile)",
+   "row_size": 10.0,
+   "bar_seconds": 900,
+   "sessions": ["2026-11-13"],
+   "bars_from": "/NQ-like, 15m, overnight and after-hours bars ignored",
+   "expected": {
+    "sessions": ["2026-11-13"],
+    "row_size": 10.0,
+    "high": 25348.18,
+    "low": 25148.22,
+    "poc": 25180.0,
+    "val": 25160.0,
+    "vah": 25280.0,
+    "tpo_total": 67,
+    "volume_total": 69119.0,
+    "volume_poc": 25180.0,
+    "rows": [
+    {"price": 25140.0, "tpo": 1, "volume": 1125.5},
+    {"price": 25150.0, "tpo": 1, "volume": 1789.75},
+    {"price": 25160.0, "tpo": 4, "volume": 4892.7},
+    {"price": 25170.0, "tpo": 5, "volume": 6400.7},
+    {"price": 25180.0, "tpo": 7, "volume": 7592.45},
+    {"price": 25190.0, "tpo": 5, "volume": 5173.7},
+    {"price": 25200.0, "tpo": 6, "volume": 6005.35},
+    {"price": 25210.0, "tpo": 4, "volume": 4376.15},
+    {"price": 25220.0, "tpo": 4, "volume": 4130.433333333333},
+    {"price": 25230.0, "tpo": 4, "volume": 2982.766666666667},
+    {"price": 25240.0, "tpo": 4, "volume": 2982.766666666667},
+    {"price": 25250.0, "tpo": 2, "volume": 2069.7833333333333},
+    {"price": 25260.0, "tpo": 1, "volume": 1301.45},
+    {"price": 25270.0, "tpo": 1, "volume": 957.25},
+    {"price": 25280.0, "tpo": 3, "volume": 1672.8833333333332},
+    {"price": 25290.0, "tpo": 3, "volume": 1974.2166666666667},
+    {"price": 25300.0, "tpo": 3, "volume": 1974.2166666666667},
+    {"price": 25310.0, "tpo": 3, "volume": 3099.55},
+    {"price": 25320.0, "tpo": 3, "volume": 4317.883333333333},
+    {"price": 25330.0, "tpo": 2, "volume": 2827.8333333333335},
+    {"price": 25340.0, "tpo": 1, "volume": 1471.6666666666665}
    ]
    }
   }

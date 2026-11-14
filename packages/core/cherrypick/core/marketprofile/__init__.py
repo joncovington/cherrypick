@@ -36,6 +36,10 @@ The rules, fixed once and stated so they cannot drift:
   more is a tail by the usual reading, one is not). **Poor** extreme: two or more TPOs share the
   extreme row. **Single prints** are the single-TPO rows that are not part of a tail.
 
+**A composite** (`build_composite`) is several sessions' profiles merged: each row's TPOs and volume
+summed across the sessions (rows on the same `row_size` grid, so they line up), then the same POC and
+value-area rules over the sums. A session with no bars adds nothing and is not listed.
+
 No day-type label: which shapes count as "trend" or "neutral" is a definition a study declares, not
 something this module decides. `default_row_size` is a convenience for display; a study fixes its row
 size in its declaration.
@@ -332,6 +336,92 @@ def build_profile(
         poor_high=counts[-1] >= 2,
         poor_low=counts[0] >= 2,
         single_prints=singles,
+        volume_total=volume_total,
+        volume_poc=_price(lo_idx + _point_of_control(volume), row_size) if volume_total > 0 else None,
+    )
+
+
+@dataclass(frozen=True)
+class CompositeRow:
+    price: float  # the row's lower edge
+    tpo: int
+    volume: float
+
+
+@dataclass(frozen=True)
+class Composite:
+    sessions: tuple[_dt.date, ...]  # the sessions that had bars, oldest first
+    row_size: float
+    rows: tuple[CompositeRow, ...]  # low to high, every row in the range
+    high: float
+    low: float
+    poc: float
+    val: float
+    vah: float
+    tpo_total: int
+    volume_total: float
+    volume_poc: float | None
+
+    def as_dict(self) -> dict:
+        return {
+            "sessions": [d.isoformat() for d in self.sessions],
+            "row_size": self.row_size,
+            "rows": [{"price": r.price, "tpo": r.tpo, "volume": r.volume} for r in self.rows],
+            "high": self.high,
+            "low": self.low,
+            "poc": self.poc,
+            "val": self.val,
+            "vah": self.vah,
+            "tpo_total": self.tpo_total,
+            "volume_total": self.volume_total,
+            "volume_poc": self.volume_poc,
+        }
+
+
+def build_composite(
+    bars: Iterable,
+    *,
+    sessions: Iterable[_dt.date],
+    row_size: float,
+    bar_seconds: int,
+    value_area_share: float = VALUE_AREA_SHARE,
+) -> Composite | None:
+    """Several sessions merged into one profile, or None when none of them has bars. Each session is
+    built by `build_profile` (same session clock, same rows); a row's TPOs and volume are summed."""
+    bars = list(bars)
+    profiles = [
+        p
+        for d in sorted(set(sessions))
+        if (p := build_profile(bars, row_size=row_size, bar_seconds=bar_seconds, session=d)) is not None
+    ]
+    if not profiles:
+        return None
+    tpo: dict[int, int] = {}
+    vol: dict[int, float] = {}
+    for p in profiles:
+        for r in p.rows:
+            i = _row(r.price, row_size)
+            tpo[i] = tpo.get(i, 0) + r.tpo
+            vol[i] = vol.get(i, 0.0) + r.volume
+    lo_idx, hi_idx = min(tpo), max(tpo)
+    counts = [tpo.get(i, 0) for i in range(lo_idx, hi_idx + 1)]
+    volume = [vol.get(i, 0.0) for i in range(lo_idx, hi_idx + 1)]
+    poc = _point_of_control(counts)
+    lo_va, hi_va = value_area(counts, poc, value_area_share)
+    volume_total = sum(volume)
+    return Composite(
+        sessions=tuple(p.session for p in profiles),
+        row_size=row_size,
+        rows=tuple(
+            CompositeRow(price=_price(lo_idx + i, row_size), tpo=counts[i], volume=volume[i])
+            for i in range(len(counts))
+        ),
+        high=max(p.high for p in profiles),
+        low=min(p.low for p in profiles),
+        poc=_price(lo_idx + poc, row_size),
+        val=_price(lo_idx + lo_va, row_size),
+        vah=_price(lo_idx + hi_va, row_size),
+        tpo_total=sum(counts),
         volume_total=volume_total,
         volume_poc=_price(lo_idx + _point_of_control(volume), row_size) if volume_total > 0 else None,
     )

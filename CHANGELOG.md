@@ -45,6 +45,11 @@ beyond the latest release.
   this is what lets profiles be compared across weeks. It reads the broker and changes nothing; turn
   it off with `technicals.profile_bars: false`. After upgrading, run `python run.py supervise
   --restart` so the supervisor picks up the new job.
+- **Charts → profile.** A new tab shows the recorded sessions' Market Profiles side by side (5, 10 or
+  20 days) for SPX, SPY, NDX, QQQ, /ES and /NQ, with a composite of the newest 5, 10 or 20 sessions and
+  a table of each day's point of control, value area, first-hour range and whether value moved higher,
+  lower or overlapped the day before. It reads the bars the `profile-bars` job keeps, so it fills in
+  as that job runs. A chart only; nothing trades on it.
 
 ## v0.13.0 — 2026-11-13 — evidence and accounts
 About 45 pull requests since v0.12.0, and it includes everything in the v0.12.1 beta (delta ideas, the

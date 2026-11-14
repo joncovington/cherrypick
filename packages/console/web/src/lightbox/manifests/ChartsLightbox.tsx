@@ -1,4 +1,5 @@
 import { IntradayPage } from "../../pages/Intraday/IntradayPage";
+import { ProfilePage } from "../../pages/Profile/ProfilePage";
 import { ChartPage } from "../../pages/Morning/ChartPage";
 import { SetupsPage } from "../../pages/Setups/SetupsPage";
 import { ModuleFrame } from "../ModuleFrame";
@@ -13,6 +14,7 @@ import type { SlideDef } from "../types";
  */
 export const slides: SlideDef[] = [
   { id: "intraday", label: "intraday", render: () => <IntradayPage /> },
+  { id: "profile", label: "profile", render: () => <ProfilePage /> },
   { id: "technicals", label: "technicals", render: () => <ChartPage /> },
   { id: "setups", label: "setups", render: () => <SetupsPage /> },
 ];

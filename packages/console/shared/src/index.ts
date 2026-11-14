@@ -32,6 +32,7 @@ export * from "./types/regimeCuts.js";
 export * from "./types/fliesAgent.js";
 export * from "./types/fliesEvidence.js";
 export * from "./types/openingRange.js";
+export * from "./types/profileBars.js";
 export * from "./types/futures.js";
 export * from "./types/system.js";
 export * from "./types/help.js";

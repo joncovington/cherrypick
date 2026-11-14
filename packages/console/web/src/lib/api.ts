@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { normalizeAdvisorPayload } from "./advisorShape";
 import type {
+  ProfileBarsPayload,
   ArmCostsPayload,
   EquityPayload,
   ExternalReportsPayload,
@@ -266,6 +267,20 @@ export function useMorningReport(session?: string) {
   });
 }
 
+
+/** The Profile tab's recorded bars: one symbol's newest `sessions` regular sessions, 5-minute bars. */
+export function useProfileBars(symbol: string, sessions: number) {
+  return useQuery<ProfileBarsPayload>({
+    queryKey: ["profile-bars", symbol, sessions],
+    queryFn: () =>
+      getJson<ProfileBarsPayload>(
+        `/api/charts/profile-bars?symbol=${encodeURIComponent(symbol)}&sessions=${sessions}`,
+      ),
+    // The recorder writes once a day (17:15 ET); a viewer left open picks it up within the hour.
+    refetchInterval: 3_600_000,
+    placeholderData: (prev) => prev,
+  });
+}
 
 export function useTechnicalsChart(symbol?: string) {
   return useQuery<TechnicalsChartPayload>({
