@@ -94,6 +94,101 @@
         "curve 2026-10-30 (undeclared arms off); pmcc and bwb entries off 2026-11-08; flies retired 2026-10-19."
       ],
       "migrations": []
+    },
+    "v0.13.0": {
+      "upgrading": [
+        "An ordinary upgrade from v0.12.0 or the v0.12.1 beta, which this release includes: run `python run.py upgrade`, then `python run.py supervise --restart`, restart any resident job and restart the console.",
+        "The suite can read a second broker login beside the first (`broker.logins`, `streamer.instances`, MEIC `live_accounts`). It is off until you add one; Live gains an account select when there is more than one account.",
+        "manage's rules carry an evidence grade (mechanics, tested, contested, practice, ours) in place of a confidence number, and ties between rules follow a fixed order. A leftover `confidence`, `hold` or `conflict_penalty` in manage.json is reported as unknown and ignored.",
+        "A cash account or IRA is held to its own buying-power caps (80% total, 65% short puts and shares, 35% spreads, and a -20% stress line) instead of the VIX table. Margin accounts keep the table.",
+        "manage learned covered calls, wheel puts by intent, the super bull and bear, and a directional time exit (off by default); a diagonal's target is capped at 75% of its modelled gain, the PMCC long rolls at 60 days left and `short_term_short_days` is 21.",
+        "Earnings times come from Yahoo's calendar for any date Nasdaq's does not answer.",
+        "A new package, `packages/ensemble`, holds a rules engine for short-dated option arms. It is paper-only, has no loop yet and nothing in it is switched on."
+      ],
+      "manual_steps": [
+        "Run `python run.py supervise --restart`, then restart any resident job (a job reads its config only when it starts) and restart the console."
+      ],
+      "config_changes": [
+        {
+          "file": "manage.json",
+          "key": "confidence, hold, conflict_penalty",
+          "note": "Removed. Each rule has an `evidence` grade instead; the old keys are reported as unknown and ignored."
+        },
+        {
+          "file": "manage.json",
+          "key": "evidence",
+          "note": "New on every rule block (mechanics, tested, contested, practice or ours), also inside a shape's own override."
+        },
+        {
+          "file": "manage.json",
+          "key": "portfolio.buying_power.cash",
+          "note": "New: the cash account and IRA caps (max_pct_nlv 0.8, stock_exposure_pct_nlv 0.65, spread_risk_pct_nlv 0.35, stress). `enabled: false` restores the VIX table for a cash account."
+        },
+        {
+          "file": "manage.json",
+          "key": "directional.time_exit",
+          "note": "New, off by default: the 21-day exit for directional trades."
+        },
+        {
+          "file": "manage.json",
+          "key": "covered_call.assigned",
+          "note": "New: judges an in-the-money covered call by its call-away."
+        },
+        {
+          "file": "manage.json",
+          "key": "debit.take_profit.max_gain_cap",
+          "note": "New: a diagonal's target is the lesser of its take-profit and 75% of its modelled gain."
+        },
+        {
+          "file": "manage.json",
+          "key": "pmcc.roll_long.days_left",
+          "note": "Default 120 becomes 60. A value you set is kept."
+        },
+        {
+          "file": "manage.json",
+          "key": "debit.time_exit.short_term_short_days",
+          "note": "Default 14 becomes 21. A value you set is kept."
+        },
+        {
+          "file": "manage.json",
+          "key": "expiry.wait_if_entered_inside",
+          "note": "New, on: legs all opened three days or fewer before expiry close on the expiry day."
+        },
+        {
+          "file": "manage.json",
+          "key": "positions.<SYMBOL>.intent",
+          "note": "`wheel` and `no_wheel` are accepted values; Config > Position rules > Intents edits them."
+        },
+        {
+          "file": "config.json",
+          "key": "broker.logins",
+          "note": "New and optional, default []: further broker logins, each with its own keyring entry."
+        },
+        {
+          "file": "config.json",
+          "key": "streamer.instances",
+          "note": "New and optional, default []: one producer per further login."
+        },
+        {
+          "file": "meic.json",
+          "key": "live_accounts",
+          "note": "New and optional, default {}: a full live block per further login. Off until its own gate, enable and arm are set."
+        },
+        {
+          "file": "backtest.json",
+          "key": "datasets",
+          "note": "The example gains an XSP entry beside QQQ and NDX."
+        }
+      ],
+      "measurement_boundaries": [
+        "2026-11-10, manage: a cash account or IRA is judged by the cash buying-power caps, not the VIX table.",
+        "2026-11-13, manage: wheel puts by intent, the capped diagonal target, the PMCC long's roll at 60 days, covered calls, short_term_short_days 21, and the expiry rules for earnings trades and for trades opened inside three days of expiry. On the stored sessions seven verdicts changed, each an earnings trade now held through its report.",
+        "2026-11-13, manage: evidence grades replace confidence, so a rule tie is broken by a fixed order and a reason can differ under the same action.",
+        "2026-11-13, manage: super bull and super bear are named before the diagonal test, and directional trades no longer take the credit 21-day exit.",
+        "2026-11-13, manage: with a second login, a trade is numbered per login.",
+        "2026-11-09 to 2026-11-12, earnings times: the times file was empty until the Yahoo fallback; names it could not time lost their time of day."
+      ],
+      "migrations": []
     }
   }
 }
