@@ -98,6 +98,7 @@ removed in v0.12.0; your own scheduled reports are the `external-<id>` jobs belo
 | `morning-factpack` | daily **08:30**, trading days | `run.py morning` | on | the overview's fact pack and GREEN/YELLOW/RED phase |
 | `morning-narrative` | daily **09:00**, trading days | `scripts/morning_narrative.py` | off, needs `claude` | |
 | `vol-curve-bars` | daily **16:30**, trading days | `scripts/fetch_vol_curve_bars.py` | on | 5m and 1h bars of the VIX term structure and SPX, kept in `~/.cherrypick/data/market-files/vol_curve_bars.db`; the feed itself keeps only months |
+| `profile-bars` | daily **17:15**, trading days | `scripts/fetch_profile_bars.py` | on | 1-minute bars of SPX, SPY, NDX, QQQ, /ES and /NQ (extended hours, with volume; a future from the futures map's active month, never overwritten across a roll), kept in `~/.cherrypick/data/market-files/profile_bars.db` for Market Profile; the feed itself gives only its newest 8,000 bars, about six days of a future |
 | `report-edition` / `-retry`, `report-charts` | daily 07:00 / 08:15, 17:15, trading days | `scripts/fetch_vendor_edition.py` | off | `market_report.collector`; needs both vendor keys set |
 | `external-<id>` (one per `external_reports` entry) | daily at the entry's `at_et` (default trading days only), 240 min catch-up | `run.py external-run <id>`, which runs the entry's own script under `~/.cherrypick` | none until listed | `external_reports` in config.json ([guide](guide/external-reports.md)); a refused entry (script outside the home, bad id or time) is listed off with the reason; the report lands in `data/external/<id>.json` |
 | `universe-measure` (at 11:00 and 14:00), `universe-daily`, `universe-watchlist` | daily 18:00, 18:30, trading days | `scripts/build_stock_universe.py` | off | `market_report.universe` / `universe_watchlist` |
@@ -240,7 +241,7 @@ that runs long delays the later ones instead of leaving them to read yesterday's
   `jobs.failed` warning: `morning-data step technicals-land (exit 2: ...)`.
 - **Left as jobs of their own** because nothing in the chain reads them or they read nothing from it:
   `earnings-moves`, `universe-daily` and `-watchlist`, `backtest-fetch`, the vendor collector's jobs,
-  `technicals-income-lists`, `report-income-chains`, `vol-curve-bars`, `pmcc-earnings-refresh`, the
+  `technicals-income-lists`, `report-income-chains`, `vol-curve-bars`, `profile-bars`, `pmcc-earnings-refresh`, the
   morning `market-files` retry and the late `technicals-earnings-calendar` pass.
 
 ## Dependency order and the clock

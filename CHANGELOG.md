@@ -39,6 +39,12 @@ beyond the latest release.
   ("Fri 13 09:30"), and the line above it says which days are in view. The same arithmetic is in
   `cherrypick.core.marketprofile` for
   research.
+- **Profile bars are kept.** A new job, `profile-bars`, saves 1-minute bars of SPX, SPY, NDX, QQQ, /ES
+  and /NQ every trading day at 17:15 ET into `~/.cherrypick/data/market-files/profile_bars.db`. The
+  broker's feed only ever hands back its newest 8,000 one-minute bars (about six days of a future), so
+  this is what lets profiles be compared across weeks. It reads the broker and changes nothing; turn
+  it off with `technicals.profile_bars: false`. After upgrading, run `python run.py supervise
+  --restart` so the supervisor picks up the new job.
 
 ## v0.13.0 — 2026-11-13 — evidence and accounts
 About 45 pull requests since v0.12.0, and it includes everything in the v0.12.1 beta (delta ideas, the
