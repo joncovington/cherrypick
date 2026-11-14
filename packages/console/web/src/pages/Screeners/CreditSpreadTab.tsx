@@ -10,6 +10,7 @@ import { FAIR_TITLE, earningsText, fairText } from "./OwnListTab";
 import { BoxOpenButton, PanelChoice, ScreenerCard, ScreenerLayout, SessionSelect, SymbolSearch, useParamState, useScreenerBoxes, type ScreenerBox } from "./ScreenerParts";
 import { Section } from "../../components/Section";
 import { GuideLink } from "../../components/GuideLink";
+import { chartHref } from "../Chart/chartRoute";
 
 /**
  * Our own credit-spread list (2026-10-24): the chart setups' fresh entries as spreads on the 30-45 day
@@ -276,7 +277,7 @@ export function creditModel(
   return {
     key: boxId(r),
     symbol: r.symbol,
-    symbolHref: `/charts/technicals?symbol=${encodeURIComponent(r.symbol)}`,
+    symbolHref: chartHref(r.symbol, "1d"),
     spot: money(r.spot),
     shape: `${r.spread === "put" ? "bull put" : "bear call"} ${r.short.strike}${long === null ? "" : `/${long}`}${right} · ${r.dte} d · ${dayMonth(r.expiry)}${
       // A name signalling both sides says so here, not as a chip: two chips stacked made the row two lines.

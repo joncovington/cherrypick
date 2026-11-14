@@ -16,6 +16,7 @@ import { ChoiceGroup, FliesLayout } from "./FliesFilter";
 import { Section } from "../../components/Section";
 import { clockTime, structureLabel, wingWidth } from "./structure";
 import { fmtCash, fmtPrice } from "../../lib/format";
+import { chartHref } from "../Chart/chartRoute";
 
 interface Summary {
   trades: number;
@@ -375,7 +376,7 @@ export function logModel(r: FliesTradeLogRow): TradeCardModel {
   return {
     key: `${r.tradeDate}-${r.entryTime ?? ""}-${r.arm ?? ""}-${r.kind ?? ""}-${r.center ?? ""}-${r.side ?? ""}-${r.price ?? ""}`,
     symbol: r.symbol,
-    symbolHref: `/charts/technicals?symbol=${encodeURIComponent(r.symbol)}`,
+    symbolHref: chartHref(r.symbol, "1d"),
     spot: null,
     shape: `${structureLabel(r.kind, r.side)} · ${fmtNum(r.center, 0)}${wing === "—" ? "" : ` · ${wing} wide`}`,
     chips: (

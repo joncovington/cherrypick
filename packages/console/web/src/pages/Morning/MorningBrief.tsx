@@ -1,6 +1,7 @@
 import type { CSSProperties, ReactNode } from "react";
 import type { MorningFuture, MorningPack } from "@console/shared";
 import { dayLabel, gateMarks, sectorCounts, sparkPoints, upcomingDays, type MorningView } from "./brief";
+import { chartHref } from "../Chart/chartRoute";
 
 /**
  * The morning report's Brief tab: the morning on one screen. The verdict strip (phase, each gate as a
@@ -240,7 +241,7 @@ function ProfileMini({ pack }: { pack: MorningPack }) {
               </span>
             ) : (
               <span key={sym} className="mb-prow">
-                <a href={`/charts/profile?symbol=${encodeURIComponent(sym)}&day=${s.session}`}>{sym}</a>
+                <a href={chartHref(sym, "15m", { day: s.session })}>{sym}</a>
                 <span className="mb-poc">{f(s.poc)}</span>
                 <span>
                   {f(s.val)}–{f(s.vah)}

@@ -12,6 +12,7 @@ import { Section } from "../../components/Section";
 import { SkateRecordSection } from "./SkateRecord";
 import { beatsMonthly, otherBand, skateCounts, skateViews, type SkateView } from "./skateRows";
 import { GuideLink } from "../../components/GuideLink";
+import { chartHref } from "../Chart/chartRoute";
 
 /**
  * The Skate tab: covered calls above a name's recent range
@@ -154,7 +155,7 @@ export function skateModel(v: SkateView, c: SkateConfig | null): TradeCardModel 
   return {
     key: `${v.row.symbol}-${v.row.side}`,
     symbol: v.row.symbol,
-    symbolHref: `/charts/technicals?symbol=${encodeURIComponent(v.row.symbol)}`,
+    symbolHref: chartHref(v.row.symbol, "1d"),
     spot: v.row.spot === null ? null : v.row.spot.toFixed(2),
     shape: `${word} ${p.strike}${right} · ${shortDate(v.best.expiry)} · ${p.days} d`,
     chips: (

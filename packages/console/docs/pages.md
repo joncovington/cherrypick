@@ -313,7 +313,9 @@ symbol, and the setups watchlist:
   `/charts/technicals?symbol=X`, `/charts/profile?symbol=X&sessions=N` (and the older
   `/reports/chart?symbol=X`) redirect here, product and period becoming symbol and tf, technicals
   becoming `tf=1d` (SPX when it named none), profile becoming `tf=15m` with its `sessions` as `days`,
-  every other key carried (`movedChartUrl`).
+  every other key carried (`movedChartUrl`). Every link to a chart in the console is built by
+  `chartHref(symbol, tf, extra)`, the one place the URL is spelt; `web/test/chartLinks.test.ts` fails on
+  a hand-built `/charts/...?` link anywhere but the redirects.
 
 - The chart's **sessions panel** (`SessionsPanel` in `pages/Profile/ProfilePage.tsx`; its own keys
   `days=10&composite=5&measure=&day=`), under the intraday view for the symbols the `profile-bars` job

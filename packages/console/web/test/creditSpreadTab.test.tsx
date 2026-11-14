@@ -126,7 +126,7 @@ describe("our credit-spread list", () => {
 
   it("links a card's symbol to its chart", () => {
     payload = base([row({ symbol: "AAA" })]);
-    expect(render()).toContain('href="/charts/technicals?symbol=AAA"');
+    expect(render()).toContain('href="/charts/chart?symbol=AAA&amp;tf=1d"');
   });
 
   it("draws a setup as a trade card: the credit for the contract, the max loss as the bar, the order that opens it", () => {

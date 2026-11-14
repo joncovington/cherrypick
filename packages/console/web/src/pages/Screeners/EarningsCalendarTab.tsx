@@ -22,6 +22,7 @@ import { TradeCards, dayMonth, type TradeCardLeg, type TradeCardModel } from "..
 import { ScreenerLayout } from "./ScreenerParts";
 import { Section } from "../../components/Section";
 import { GuideLink } from "../../components/GuideLink";
+import { chartHref } from "../Chart/chartRoute";
 
 /**
  * The earnings calendar (2026-10-17; docs/history/earnings-screener-plan.md (tag archive/docs-2026-11)): every announcement in the
@@ -202,7 +203,7 @@ export function earningsModel(r: EarningsCalendarRow): TradeCardModel {
   return {
     key: `${r.date}-${r.symbol}`,
     symbol: r.symbol,
-    symbolHref: `/charts/technicals?symbol=${encodeURIComponent(r.symbol)}`,
+    symbolHref: chartHref(r.symbol, "1d"),
     spot: r.company,
     shape: [strong, word && `${word} ${strikes}`, moveWord && `exp. move ${moveWord}`].filter(Boolean).join(" · "),
     chips: (

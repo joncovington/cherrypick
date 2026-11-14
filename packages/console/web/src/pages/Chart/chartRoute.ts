@@ -18,6 +18,17 @@ export const DEFAULT_INTRADAY: Timeframe = "5m";
 
 const isTimeframe = (raw: string | null): raw is Timeframe => raw !== null && (TIMEFRAMES as readonly string[]).includes(raw);
 
+/**
+ * A link to the one chart, the only place the console spells one: `chartHref("MSFT", "1d")` for a
+ * name's daily chart, `chartHref("SPX", "15m", { day })` for a session's letters under the chart.
+ * Extra keys are the view's own (setup, side, day, ...) and follow in the order given.
+ */
+export function chartHref(symbol: string, tf: Timeframe, extra: Record<string, string> = {}): string {
+  const q = new URLSearchParams({ symbol, tf, ...extra });
+  // A slash is legal in a query; left encoded, "/ES" would read "%2FES" in the address bar.
+  return `/charts/chart?${q.toString().replace(/%2F/g, "/")}`;
+}
+
 /** `?symbol=` read back: trimmed, upper case, the default when empty. */
 export function chartSymbol(raw: string | null): string {
   const s = (raw ?? "").trim().toUpperCase();

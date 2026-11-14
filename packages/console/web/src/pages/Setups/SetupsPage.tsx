@@ -2,6 +2,7 @@ import { Fragment, useState, type ReactNode } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import type { SetupRead, SetupReadLevel, TechnicalsWatchlistRow } from "@console/shared";
 import { useSetupsWatchlist } from "../../lib/api";
+import { chartHref } from "../Chart/chartRoute";
 
 /**
  * The setups watchlist: every entry and exit the technicals chart setups made lately, long and
@@ -82,8 +83,8 @@ function eventText(l: Line): string {
 }
 
 function chartLink(r: TechnicalsWatchlistRow): string {
-  const side = r.side === "short" ? "&side=short" : "";
-  return `/charts/technicals?symbol=${encodeURIComponent(r.symbol)}&setup=${r.family}${side}`;
+  const side: Record<string, string> = r.side === "short" ? { side: "short" } : {};
+  return chartHref(r.symbol, "1d", { setup: r.family, ...side });
 }
 
 function TrendCell({ label, score }: { label: string | null; score: number | null }) {
