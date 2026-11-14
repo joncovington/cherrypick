@@ -1840,7 +1840,7 @@
       "id": 45,
       "study": "item45",
       "title": "A published GEX share strategy, out of sample: buy the calm after an implied-vol spike",
-      "status": "declared",
+      "status": "no_verdict",
       "legacy": false,
       "setup": "iv-spike-reversal",
       "side": "bullish",
@@ -1884,9 +1884,12 @@
       "tests": [
         "packages/backtest/tests/test_gex_strategy_item45_script.py"
       ],
-      "results": null,
+      "results": [
+        "{home}/data/backtest/results/research/item45/pilot.json"
+      ],
       "retest": null,
-      "retests": []
+      "retests": [],
+      "outcome": "no verdict for want of data: the pilot accepted neither the 1-minute nor the 5-minute sampled bars against the broker's 15-minute bars, so cell N was never fetched and no rule output was read; the rule stays untested"
     },
     {
       "id": 46,
