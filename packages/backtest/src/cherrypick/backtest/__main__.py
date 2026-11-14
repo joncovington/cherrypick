@@ -727,7 +727,7 @@ def main(argv: list[str] | None = None) -> int:
     rn = sub.add_parser("run", help="replay a module's arms over the store's sessions (results stay local)")
     rn.add_argument("module", choices=("flies", "meic"))
     rn.add_argument("--arms", default="control", help="comma-separated; control always runs beside them")
-    rn.add_argument("--window", required=True, choices=("validation", "design", "holdout"))
+    rn.add_argument("--window", required=True, choices=("validation", "design", "holdout", "all"))
     rn.add_argument("--dataset", default="SPX")
     rn.add_argument("--from", dest="start", default=None, help="a sub-span of the window")
     rn.add_argument("--to", dest="end", default=None)

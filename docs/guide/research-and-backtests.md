@@ -162,9 +162,11 @@ python -m cherrypick.backtest run meic --arms control --window design --cadence 
 - `validate` compares the vendor's sessions with the suite's own recording. **History stays locked until it
   passes**, and each module (MEIC, flies) unlocks its own.
 - `run` replays a module's arms. `control` always runs beside the arms you name, and each arm is paired
-  with it. The windows are `validation`, `design` and `holdout`. The holdout needs `--spend-holdout` and
-  is spent once per spec. A design run is recorded as a trial, so a result is judged against how many
-  things were tried.
+  with it. The windows are `validation`, `design`, `holdout` and `all`: `all` is one run over the whole
+  history that a study cuts at its declared split dates afterwards. The holdout needs `--spend-holdout`
+  and is spent once per spec, and so does an `all` run that reaches the holdout's dates (a forward run
+  wholly after them spends nothing). A design or `all` run is recorded as a trial, so a result is
+  judged against how many things were tried.
 - While history is locked, `--provisional` runs the design window anyway. It is marked provisional
   everywhere, records no trial and is a look, not evidence.
 

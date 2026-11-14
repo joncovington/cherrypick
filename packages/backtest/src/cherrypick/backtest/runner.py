@@ -80,7 +80,9 @@ MODULE = "flies"
 SCHEMA = "fly_book"
 FILL_MODEL = "flies-paper-legged"
 VALIDATION_START = "2026-10-13"
-WINDOWS = ("validation", "design", "holdout")
+#: `all` is one run over the whole history, cut at a study's declared splits afterwards (#1077).
+ALL = "all"
+WINDOWS = ("validation", "design", "holdout", ALL)
 
 
 class RunRefused(ValueError):
@@ -574,7 +576,17 @@ MODULES = {
 def _window(settings: dict, name: str) -> tuple[str, str]:
     if name == "validation":
         return VALIDATION_START, "9999-12-31"
+    if name == ALL:
+        # One run over the whole history (#1077): from the design window's start through whatever
+        # the store holds; a study cuts it at its declared splits afterwards (`study.rule.cut`).
+        return settings["windows"]["design"][0], "9999-12-31"
     return tuple(settings["windows"][name])
+
+
+def reads_holdout(settings: dict, lo: str, hi: str) -> bool:
+    """Whether a span [lo, hi] reaches into the holdout window's dates."""
+    h_lo, h_hi = settings["windows"]["holdout"]
+    return lo <= h_hi and hi >= h_lo
 
 
 def run(
@@ -625,9 +637,9 @@ def run(
     if unvalidated_holdout and not (provisional and window == "holdout" and spend_holdout):
         raise RunRefused("an unvalidated holdout is a provisional holdout run that spends the holdout")
     if provisional and (
-        window not in ("design", *(("holdout",) if unvalidated_holdout else ())) or extra_arms
+        window not in ("design", ALL, *(("holdout",) if unvalidated_holdout else ())) or extra_arms
     ):
-        raise RunRefused("a provisional run is the design window only, and never the advisor's specs")
+        raise RunRefused("a provisional run is the design window or all of it, never the advisor's specs")
     cadence = store.cadence_of(settings, cadence)
     arms = list(dict.fromkeys(["control", *arms]))  # control always runs: every result is paired with it
     config, config_paths = mod.load()
@@ -648,7 +660,10 @@ def run(
             f"(python -m cherrypick.backtest validate --module {module})"
         )
     rconn = results.connect()
-    if window == "holdout":
+    # A run over all of history reads the holdout's dates when its span reaches them, so it spends
+    # the holdout as a holdout run does; a forward run wholly after the holdout reads none of them.
+    spends = window == "holdout" or (window == ALL and reads_holdout(settings, lo, hi))
+    if spends:
         if not spend_holdout:
             raise RunRefused("the holdout is spent once per spec: pass --spend-holdout to spend it")
         # control is never judged, only paired with, so it never spends the holdout (2026-10-29)
@@ -879,7 +894,7 @@ def run(
                 "VALUES (?,?,?,?,?,?,?,?)",
                 (run_id, arm, hashes[arm], day, v["net"], v["gross"], v["fees"], v["trades"]),
             )
-        if window == "holdout" and arm != "control":
+        if spends and arm != "control":
             results.spend_holdout(rconn, module=mod.name, spec_hash=hashes[arm], arm=arm, run_id=run_id)
     rconn.commit()
     rconn.close()
@@ -897,7 +912,7 @@ def _summarise(rconn, run_id, arms, specs, hashes, per_arm, window, *, provision
     provisional run records no trial (it is a look, not an evaluation), but its own statistics
     are still deflated by the trials already on record."""
     mod = mod or MODULES[MODULE]
-    if window == "design" and not provisional:
+    if window in ("design", ALL) and not provisional:
         for arm in arms:
             values = [v["net"] for _, v in sorted(per_arm[arm].items())]
             m = stats.moments(values)
