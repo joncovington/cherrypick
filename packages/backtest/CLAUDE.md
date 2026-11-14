@@ -37,6 +37,9 @@ expunged within 30 days of termination** (§8(e)). Two consequences shape the wh
 - **A new study declares its queue chain** as a module-level `CHAIN` literal (plan, fetches,
   study), and is queued with `run.py queue-chain --script <path>`, never row by row
   (`orchestrator/studychain.py`; item 76's script is the example).
+- **A new study starts from the scaffold:** `python tools/study_new.py itemNN <name>` writes its
+  script (the correction log, an unfilled `RULE`, the `CHAIN`, `plan` and `study` writing the kit's
+  verdict block) and its test file, whose rule test fails until the declaration fills `RULE`.
 - **A change to shared study code is reproduced before it merges.** From the PR's worktree (its
   packages first on `PYTHONPATH`), `python packages/backtest/scripts/reproduce_studies.py run`
   re-runs the standing sample (`SAMPLE`; `--studies` for others) by each study's last queue command
