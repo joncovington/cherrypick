@@ -200,6 +200,23 @@ def queue_chain(
         raise BadChain(f"{script_rel} declares no CHAIN")
     study = study_of(script, study)
     rows = plan_rows(chain, study, script_rel, results or results_for(study), after)
+    return queue_rows(rows, study, dry_run=dry_run, path=path, root=root, tracked=tracked, stores=stores)
+
+
+def queue_rows(
+    rows: list[dict],
+    study: str,
+    *,
+    dry_run: bool = False,
+    path: Path | None = None,
+    root: Path | None = None,
+    tracked=None,
+    stores=None,
+) -> dict:
+    """Queue planned rows whole (`plan_rows`' output): checked first, placeholders made, each row
+    added in order, and the rows already added cancelled if a later one is refused. Shared by
+    `queue-chain` and the forward retests (`hypotheses.forward_plan`)."""
+    root = root or rq.repo_root()
     holders = placeholders(rows)
     live = {
         f"{r['study']}/{r['step']}": r["status"] for r in rq.rows(path, study=study) if r["status"] in rq.LIVE

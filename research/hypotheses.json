@@ -2554,6 +2554,41 @@
         },
         "kill_z": -2.0,
         "drift_z": -1.0
+      },
+      "retest_forward": {
+        "script": "packages/backtest/scripts/index_put_weekly_item57.py",
+        "steps": [
+          {
+            "step": "plan",
+            "kind": "script",
+            "args": [
+              "plan",
+              "--through",
+              "{through}",
+              "--out",
+              "{results}/path_requests-forward.json"
+            ],
+            "output": "{results}/path_requests-forward.json"
+          },
+          {
+            "step": "fetch",
+            "kind": "fetch-chain-paths",
+            "task_args": {
+              "requests": "{results}/path_requests-forward.json"
+            },
+            "repeat": 2
+          },
+          {
+            "step": "study",
+            "kind": "script",
+            "args": [
+              "study",
+              "--out",
+              "{results}/forward-{stamp}.json"
+            ],
+            "output": "{results}/forward-{stamp}.json"
+          }
+        ]
       }
     },
     {

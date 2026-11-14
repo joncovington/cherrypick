@@ -48,6 +48,7 @@ CATCHUP_MINUTES = {
     "exit": 120,
     "reconcile": 240,
     "log-archive": 7 * 24 * 60,
+    "research-retests": 7 * 24 * 60,
     # A missed night is worth running late in the day rather than not at all; the online backup API
     # makes a copy under a writing loop safe.
     "suite-backup": 20 * 60,
@@ -2784,6 +2785,22 @@ def derive_jobs(
             catchup_minutes=CATCHUP_MINUTES["log-archive"],
             enabled=la["enabled"],
             enabled_reason="" if la["enabled"] else "disabled in config (log_archive)",
+        ),
+    )
+
+    fr = cfgmod.research_queue_settings(cfg)["forward_retests"]
+    add(
+        "research-retests",
+        lambda: JobSpec(
+            id="research-retests",
+            argv=_run_py(pythonw, launcher, "retests", "--forward", "--apply"),
+            kind=KIND_MONTHLY,
+            at_et=fr["at"],
+            day_of_month=fr["day"],
+            catchup_minutes=CATCHUP_MINUTES["research-retests"],
+            trading_days_only=False,
+            enabled=fr["enabled"],
+            enabled_reason="" if fr["enabled"] else "disabled in config (research_queue.forward_retests)",
         ),
     )
 
