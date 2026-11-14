@@ -161,6 +161,12 @@ jobs:
             # fundamentals reads technicals for prices (its bars, splits, security list), the one
             # package besides core another declares; both siblings in the same resolve.
             uv pip install -e ../core -e ../technicals -e ".[dev]"
+          elif [ "${{ matrix.package }}" == "ensemble" ]; then
+            # ensemble reads technicals' indicator functions; both siblings in the same resolve.
+            uv pip install -e ../core -e ../technicals -e ".[dev]"
+          elif [ "${{ matrix.package }}" == "backtest" ]; then
+            # item 75's driver and tests load the ensemble engine (which reads technicals).
+            uv pip install -e ../core -e ../technicals -e ../ensemble -e ".[dev]"
           else
             # packages/core is not on PyPI (Private :: Do Not Upload); every consumer declares it as
             # a plain named dependency, so it is installed in the same resolve, from its directory.
