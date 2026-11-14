@@ -160,6 +160,85 @@ export function untestedPocs(
   return out;
 }
 
+export const OVERNIGHT_START_MIN = 18 * 60;
+
+/** The epoch seconds of an ET wall-clock minute on a date: EDT (UTC-4) or EST (UTC-5), whichever the
+ *  instant is on. */
+export function etInstant(date: string, minuteOfDay: number): number {
+  const [y, m, d] = date.split("-").map(Number) as [number, number, number];
+  const wall = Date.UTC(y, m - 1, d, Math.floor(minuteOfDay / 60), minuteOfDay % 60) / 1000;
+  for (const off of [4, 5]) {
+    const t = wall + off * 3600;
+    const c = etClock(t);
+    if (c.date === date && c.seconds === minuteOfDay * 60) return t;
+  }
+  return wall + 5 * 3600;
+}
+
+const dayBefore = (date: string): string => {
+  const [y, m, d] = date.split("-").map(Number) as [number, number, number];
+  return new Date(Date.UTC(y, m - 1, d - 1)).toISOString().slice(0, 10);
+};
+
+/** Mirror of `overnight_profile`: bars starting in [18:00 ET the day before `session`, 09:30 ET on it),
+ *  counted per 30-minute period from 18:00 (more periods than letters), with the same POC and
+ *  value-area rules. Null when the window has no bars. */
+export function overnightProfile(
+  bars: readonly CandleBar[],
+  opts: { session: string; rowSize: number; barSeconds: number },
+): MarketComposite | null {
+  const { session, rowSize, barSeconds } = opts;
+  const periodS = PERIOD_MINUTES * 60;
+  if (barSeconds <= 0 || periodS % barSeconds !== 0) throw new Error(`barSeconds ${barSeconds} must divide the period`);
+  const t0 = etInstant(dayBefore(session), OVERNIGHT_START_MIN);
+  const t1 = etInstant(session, SESSION_OPEN_MIN);
+  const byPeriod = new Map<number, Array<{ h: number; l: number; v: number }>>();
+  for (const b of bars) {
+    if (b.t < t0 || b.t >= t1) continue;
+    if ((b.t - t0) % barSeconds !== 0) throw new Error(`bar at ${b.t} does not start on a ${barSeconds}s boundary from 18:00`);
+    if (!(b.h > 0 && b.l > 0 && Number.isFinite(b.h) && Number.isFinite(b.l))) continue;
+    const p = Math.floor((b.t - t0) / periodS);
+    if (!byPeriod.has(p)) byPeriod.set(p, []);
+    byPeriod.get(p)!.push({ h: b.h, l: b.l, v: Number.isFinite(b.v) && b.v > 0 ? b.v : 0 });
+  }
+  if (byPeriod.size === 0) return null;
+  const all = [...byPeriod.values()].flat();
+  const loIdx = Math.min(...all.map((b) => rowOf(b.l, rowSize)));
+  const hiIdx = Math.max(...all.map((b) => rowOf(b.h, rowSize)));
+  const nRows = hiIdx - loIdx + 1;
+  const counts = new Array<number>(nRows).fill(0);
+  const volume = new Array<number>(nRows).fill(0);
+  for (const period of byPeriod.values()) {
+    const touched = new Set<number>();
+    for (const b of period) {
+      const a = rowOf(b.l, rowSize) - loIdx;
+      const z = rowOf(b.h, rowSize) - loIdx;
+      for (let i = a; i <= z; i++) {
+        touched.add(i);
+        volume[i] = volume[i]! + b.v / (z - a + 1);
+      }
+    }
+    for (const i of touched) counts[i] = counts[i]! + 1;
+  }
+  const poc = pointOfControl(counts);
+  const [loVa, hiVa] = valueArea(counts, poc);
+  const price = (i: number): number => tidy((loIdx + i) * rowSize);
+  const volumeTotal = volume.reduce((s, x) => s + x, 0);
+  return {
+    sessions: [session],
+    rowSize,
+    rows: counts.map((n, i) => ({ price: price(i), tpo: n, volume: volume[i]! })),
+    high: Math.max(...all.map((b) => b.h)),
+    low: Math.min(...all.map((b) => b.l)),
+    poc: price(poc),
+    val: price(loVa),
+    vah: price(hiVa),
+    tpoTotal: counts.reduce((s, n) => s + n, 0),
+    volumeTotal,
+    volumePoc: volumeTotal > 0 ? price(pointOfControl(volume)) : null,
+  };
+}
+
 export interface CompositeRow {
   price: number;
   tpo: number;

@@ -14,8 +14,10 @@ import {
   sessionProfiles,
   untestedBars,
   untestedCandidates,
+  overnightSession,
 } from "../src/pages/Intraday/profileOverlay";
 import { recordedProfileSymbol } from "../src/pages/Intraday/IntradayPage";
+import { overnightProfile } from "../src/lib/marketProfile";
 
 /**
  * The Intraday chart's profile overlay: which sessions it draws, when it calls one developing, and
@@ -27,6 +29,30 @@ const FIXTURE = JSON.parse(
   fs.readFileSync(path.join(HERE, "..", "..", "..", "core", "tests", "fixtures", "marketprofile_cases.json"), "utf-8"),
 ) as { cases: { name: string; bars: CandleBar[] }[] };
 const SPX = FIXTURE.cases.find((c) => c.name.startsWith("SPX-like, 15m, two"))!.bars;
+const NQ = FIXTURE.cases.find((c) => c.name.startsWith("/NQ-like"))!.bars;
+const ON = overnightProfile(NQ, { session: "2026-11-13", rowSize: 10, barSeconds: 900 });
+
+describe("the overnight lines", () => {
+  it("draws the overnight's high, POC (through its row's middle) and low, hidden by ?hide=on", () => {
+    const p = sessionProfiles(NQ, Date.UTC(2026, 10, 13, 22, 0));
+    const on = profileLines(p, new Set(), [], ON).filter((l) => l.role === "overnight");
+    expect(on.map((l) => [l.title, l.price])).toEqual([
+      ["ONH", ON!.high],
+      ["ON POC", ON!.poc + 5],
+      ["ONL", ON!.low],
+    ]);
+    expect(profileLines(p, hiddenRoles("on"), [], ON).some((l) => l.role === "overnight")).toBe(false);
+  });
+
+  it("shows the overnight under way, or the one before the newest session", () => {
+    const bar = (iso: string) => [{ t: Date.parse(iso) / 1000, o: 1, h: 1, l: 1, c: 1, v: 0 }];
+    expect(overnightSession(bar("2026-11-13T12:00:00Z"))).toBe("2026-11-13"); // Fri 07:00 ET, before the open
+    expect(overnightSession(bar("2026-11-13T15:00:00Z"))).toBe("2026-11-13"); // Fri 10:00, the session's own
+    expect(overnightSession(bar("2026-11-13T21:55:00Z"))).toBe("2026-11-13"); // Fri 16:55, the weekend reads Friday's
+    expect(overnightSession(bar("2026-11-15T23:15:00Z"))).toBe("2026-11-16"); // Sun 18:15, Monday's
+    expect(overnightSession([])).toBeNull();
+  });
+});
 
 /** 2026-11-13 at an ET wall-clock time (EST, UTC-5). */
 const at = (hh: number, mm: number): number => Date.UTC(2026, 10, 13, hh + 5, mm);
@@ -58,7 +84,7 @@ describe("Intraday profile overlay", () => {
 
   it("names every line on the axis and in the legend, and draws no two kinds alike", () => {
     const colours = { poc: "#a", va: "#b", muted: "#c", rowFill: "", vaFill: "", pocFill: "" };
-    const roles = [...new Set(profileLines(sessionProfiles(SPX, at(20, 0)), new Set(), [["2026-11-10", 6800]]).map((l) => l.role))];
+    const roles = [...new Set(profileLines(sessionProfiles(SPX, at(20, 0)), new Set(), [["2026-11-10", 6800]], ON).map((l) => l.role))];
     expect(LINE_LEGEND.map((e) => e.role)).toEqual(roles);
     const looks = roles.map((r) => {
       const s = lineStyleFor(r, colours);
@@ -80,7 +106,7 @@ describe("Intraday profile overlay", () => {
   it("writes ?hide= back in a stable order and empty when nothing is hidden", () => {
     expect(hideParam(hiddenRoles("pva,ib"))).toBe("ib,pva");
     expect(hideParam(new Set())).toBe("");
-    expect(OPTIONAL_LINES.map((o) => o.role)).toEqual(["ib", "prior-poc", "prior-va", "untested-poc"]);
+    expect(OPTIONAL_LINES.map((o) => o.role)).toEqual(["ib", "prior-poc", "prior-va", "untested-poc", "overnight"]);
   });
 
   it("draws each untested POC through its row's middle, named by its session, hidden by ?hide=npoc", () => {

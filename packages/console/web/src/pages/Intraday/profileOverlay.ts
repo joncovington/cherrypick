@@ -9,7 +9,16 @@ import {
   type Time,
 } from "lightweight-charts";
 import type { CandleBar } from "@console/shared";
-import { buildProfile, defaultRowSize, etClock, sessionDates, SESSION_CLOSE_MIN, type MarketProfile } from "../../lib/marketProfile";
+import {
+  buildProfile,
+  defaultRowSize,
+  etClock,
+  OVERNIGHT_START_MIN,
+  sessionDates,
+  SESSION_CLOSE_MIN,
+  type MarketComposite,
+  type MarketProfile,
+} from "../../lib/marketProfile";
 
 /**
  * The Market Profile overlay on the Intraday chart: the newest regular session's TPO histogram behind
@@ -51,12 +60,12 @@ export interface ProfileLine {
   key: string;
   price: number;
   title: string;
-  role: "poc" | "va" | "ib" | "prior-poc" | "prior-va" | "untested-poc";
+  role: "poc" | "va" | "ib" | "prior-poc" | "prior-va" | "untested-poc" | "overnight";
 }
 
 /**
  * The line groups a viewer can switch off, each under its key in the page's `?hide=` parameter. POC
- * and the value area are the profile itself and always drawn; these four are context, and with all
+ * and the value area are the profile itself and always drawn; these five are context, and with all
  * of them on the price axis carries eight labels.
  */
 export const OPTIONAL_LINES: { role: ProfileLine["role"]; param: string }[] = [
@@ -64,6 +73,7 @@ export const OPTIONAL_LINES: { role: ProfileLine["role"]; param: string }[] = [
   { role: "prior-poc", param: "ppoc" },
   { role: "prior-va", param: "pva" },
   { role: "untested-poc", param: "npoc" },
+  { role: "overnight", param: "on" },
 ];
 
 /** The roles a `?hide=` value switches off; unknown keys are ignored. */
@@ -84,6 +94,7 @@ export function profileLines(
   profiles: SessionProfiles,
   hidden: ReadonlySet<ProfileLine["role"]> = new Set(),
   untested: ReadonlyArray<readonly [string, number]> = [],
+  overnight: MarketComposite | null = null,
 ): ProfileLine[] {
   const row = profiles.latest?.rowSize ?? 0;
   const npoc: ProfileLine[] = untested.map(([session, poc]) => ({
@@ -92,7 +103,30 @@ export function profileLines(
     title: `nPOC ${shortDay(session)}`,
     role: "untested-poc",
   }));
-  return [...allLines(profiles), ...npoc].filter((l) => !hidden.has(l.role));
+  const on: ProfileLine[] =
+    overnight === null
+      ? []
+      : [
+          { key: "onh", price: overnight.high, title: "ONH", role: "overnight" },
+          { key: "onpoc", price: overnight.poc + overnight.rowSize / 2, title: "ON POC", role: "overnight" },
+          { key: "onl", price: overnight.low, title: "ONL", role: "overnight" },
+        ];
+  return [...allLines(profiles), ...npoc, ...on].filter((l) => !hidden.has(l.role));
+}
+
+/**
+ * Which overnight a future's chart shows: the one in progress, or the one before the newest session.
+ * From 18:00 ET the overnight under way belongs to the next calendar day's session (Sunday evening's to
+ * Monday); before then, to the newest bar's own date (its overnight, before 09:30, already ended or
+ * still running). A weekend reads Friday's.
+ */
+export function overnightSession(bars: readonly CandleBar[]): string | null {
+  const last = bars.at(-1);
+  if (last === undefined) return null;
+  const { date, seconds } = etClock(last.t);
+  if (seconds < OVERNIGHT_START_MIN * 60) return date;
+  const [y, m, d] = date.split("-").map(Number) as [number, number, number];
+  return new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10);
 }
 
 const SHORT_DAY = new Intl.DateTimeFormat("en-US", { timeZone: "UTC", month: "short", day: "numeric" });
@@ -165,6 +199,8 @@ export function lineStyleFor(role: ProfileLine["role"], c: OverlayColours) {
       return { ...base, color: c.va, lineStyle: LineStyle.Dotted };
     case "untested-poc":
       return { ...base, color: c.poc, lineStyle: LineStyle.LargeDashed };
+    case "overnight":
+      return { ...base, color: c.muted, lineStyle: LineStyle.Solid };
   }
 }
 
@@ -180,6 +216,12 @@ export const LINE_LEGEND: { role: ProfileLine["role"]; label: string; meaning: s
     label: "nPOC",
     meaning:
       "untested POCs: earlier sessions' points of control that no later trade, overnight included, has reached (recorded symbols only: SPX, SPY, NDX, QQQ, /ES, /NQ)",
+  },
+  {
+    role: "overnight",
+    label: "ONH / ON POC / ONL",
+    meaning:
+      "a future's overnight session (18:00 the evening before to 09:30 ET): its high, its point of control and its low (futures only)",
   },
 ];
 

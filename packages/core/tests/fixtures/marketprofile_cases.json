@@ -1,5 +1,5 @@
 {
- "_note": "Market Profile cases for core.marketprofile.build_profile, build_composite, untested_pocs and default_row_size. Read by packages/core/tests/test_marketprofile.py and by the console's web/test/marketProfile.test.ts, which pins its TypeScript port (web/src/lib/marketProfile.ts) to the same answers. Change both implementations or neither. The first case and the first composite are also worked by hand in the Python test; the rest are seeded random walks whose expected profiles the module produced when this file was made, so they pin the two implementations to each other. A composite's `bars_from` names the case whose bars it reads.",
+ "_note": "Market Profile cases for core.marketprofile.build_profile, build_composite, untested_pocs, overnight_profile and default_row_size. Read by packages/core/tests/test_marketprofile.py and by the console's web/test/marketProfile.test.ts, which pins its TypeScript port (web/src/lib/marketProfile.ts) to the same answers. Change both implementations or neither. The first case and the first composite are also worked by hand in the Python test; the rest are seeded random walks whose expected profiles the module produced when this file was made, so they pin the two implementations to each other. A composite's `bars_from` names the case whose bars it reads.",
  "row_sizes": [[6800, 2.0], [25000, 10.0], [600, 0.2], [680, 0.2], [100, 0.025], [50, 0.02], [21000, 5.0], [5.3, 0.002]],
  "cases": [
   {
@@ -1045,6 +1045,93 @@
    "sessions": ["2026-11-12", "2026-11-13"],
    "bars_from": "/NQ-like, 15m, overnight and after-hours bars ignored",
    "expected": [["2026-11-13", 25180.0]]
+  }
+ ],
+ "overnight": [
+  {
+   "name": "hand-worked overnight: Thu 18:00 to Fri 09:30, a bar either side ignored",
+   "row_size": 1,
+   "bar_seconds": 1800,
+   "session": "2026-11-13",
+   "bars": [
+    {"t": 1794522600, "o": 92.0, "h": 95.0, "l": 90.0, "c": 93.0, "v": 9},
+    {"t": 1794524400, "o": 101.0, "h": 102.5, "l": 100.2, "c": 102.0, "v": 30},
+    {"t": 1794526200, "o": 101.5, "h": 101.8, "l": 101.0, "c": 101.2, "v": 10},
+    {"t": 1794556800, "o": 102.0, "h": 103.1, "l": 101.5, "c": 103.0, "v": 30},
+    {"t": 1794578400, "o": 102.2, "h": 102.4, "l": 102.0, "c": 102.3, "v": 10},
+    {"t": 1794580200, "o": 110.0, "h": 111.0, "l": 110.0, "c": 110.5, "v": 9}
+   ],
+   "expected": {
+    "sessions": ["2026-11-13"],
+    "row_size": 1,
+    "high": 103.1,
+    "low": 100.2,
+    "poc": 101.0,
+    "val": 101.0,
+    "vah": 103.0,
+    "tpo_total": 8,
+    "volume_total": 80.0,
+    "volume_poc": 101.0,
+    "rows": [
+    {"price": 100.0, "tpo": 1, "volume": 10.0},
+    {"price": 101.0, "tpo": 3, "volume": 30.0},
+    {"price": 102.0, "tpo": 3, "volume": 30.0},
+    {"price": 103.0, "tpo": 1, "volume": 10.0}
+   ]
+   }
+  },
+  {
+   "name": "/NQ-like, the overnight before 11-13",
+   "row_size": 10.0,
+   "bar_seconds": 900,
+   "session": "2026-11-13",
+   "bars_from": "/NQ-like, 15m, overnight and after-hours bars ignored",
+   "expected": {
+    "sessions": ["2026-11-13"],
+    "row_size": 10.0,
+    "high": 25270.48,
+    "low": 24965.02,
+    "poc": 25120.0,
+    "val": 25000.0,
+    "vah": 25160.0,
+    "tpo_total": 151,
+    "volume_total": 184491.0,
+    "volume_poc": 25110.0,
+    "rows": [
+    {"price": 24960.0, "tpo": 1, "volume": 868.0},
+    {"price": 24970.0, "tpo": 1, "volume": 868.0},
+    {"price": 24980.0, "tpo": 3, "volume": 3158.2666666666664},
+    {"price": 24990.0, "tpo": 4, "volume": 4494.933333333333},
+    {"price": 25000.0, "tpo": 4, "volume": 4494.933333333333},
+    {"price": 25010.0, "tpo": 4, "volume": 5123.8},
+    {"price": 25020.0, "tpo": 9, "volume": 9322.3},
+    {"price": 25030.0, "tpo": 8, "volume": 8468.199999999999},
+    {"price": 25040.0, "tpo": 7, "volume": 8165.366666666667},
+    {"price": 25050.0, "tpo": 7, "volume": 7183.866666666667},
+    {"price": 25060.0, "tpo": 4, "volume": 3866.1666666666665},
+    {"price": 25070.0, "tpo": 3, "volume": 3684.3},
+    {"price": 25080.0, "tpo": 5, "volume": 5751.033333333333},
+    {"price": 25090.0, "tpo": 7, "volume": 8124.383333333333},
+    {"price": 25100.0, "tpo": 8, "volume": 12385.550000000001},
+    {"price": 25110.0, "tpo": 9, "volume": 15839.216666666667},
+    {"price": 25120.0, "tpo": 10, "volume": 12797.766666666666},
+    {"price": 25130.0, "tpo": 9, "volume": 14342.783333333335},
+    {"price": 25140.0, "tpo": 6, "volume": 11303.35},
+    {"price": 25150.0, "tpo": 4, "volume": 3719.3500000000004},
+    {"price": 25160.0, "tpo": 3, "volume": 2330.266666666667},
+    {"price": 25170.0, "tpo": 2, "volume": 902.3333333333334},
+    {"price": 25180.0, "tpo": 2, "volume": 1509.1666666666665},
+    {"price": 25190.0, "tpo": 2, "volume": 3054.083333333333},
+    {"price": 25200.0, "tpo": 3, "volume": 5107.333333333333},
+    {"price": 25210.0, "tpo": 5, "volume": 5779.75},
+    {"price": 25220.0, "tpo": 6, "volume": 7750.0},
+    {"price": 25230.0, "tpo": 5, "volume": 3755.75},
+    {"price": 25240.0, "tpo": 4, "volume": 4236.25},
+    {"price": 25250.0, "tpo": 3, "volume": 3176.0},
+    {"price": 25260.0, "tpo": 2, "volume": 1722.75},
+    {"price": 25270.0, "tpo": 1, "volume": 1205.75}
+   ]
+   }
   }
  ]
 }

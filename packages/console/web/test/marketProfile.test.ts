@@ -4,7 +4,15 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { CandleBar } from "@console/shared";
 
-import { buildComposite, buildProfile, defaultRowSize, sessionDates, untestedPocs } from "../src/lib/marketProfile";
+import {
+  buildComposite,
+  buildProfile,
+  defaultRowSize,
+  etInstant,
+  overnightProfile,
+  sessionDates,
+  untestedPocs,
+} from "../src/lib/marketProfile";
 
 /**
  * The Intraday chart's profile is a TypeScript mirror of `cherrypick.core.marketprofile`. Both answer
@@ -37,6 +45,29 @@ interface FixtureUntested {
   bars_from?: string;
   expected: Array<[string, number]>;
 }
+
+describe("overnightProfile mirrors core.marketprofile.overnight_profile", () => {
+  const overnight = (FIXTURE as unknown as { overnight: Array<FixtureComposite & { session: string }> }).overnight;
+  it.each(overnight.map((c) => [c.name, c] as const))("%s", (_name, c) => {
+    const bars = c.bars ?? FIXTURE.cases.find((k) => k.name === c.bars_from)!.bars;
+    const got = overnightProfile(bars, { session: c.session, rowSize: c.row_size, barSeconds: c.bar_seconds });
+    expect(got).not.toBeNull();
+    const p = got!;
+    expect(p.rows.map((r) => [r.price, r.tpo])).toEqual(c.expected.rows.map((r) => [r.price, r.tpo]));
+    p.rows.forEach((r, i) => expect(r.volume).toBeCloseTo(c.expected.rows[i]!.volume, 6));
+    for (const [ts, py] of Object.entries(COMPOSITE_KEYS)) {
+      const want = c.expected[py];
+      const have = (p as unknown as Record<string, unknown>)[ts];
+      if (typeof want === "number") expect(have, ts).toBeCloseTo(want, 6);
+      else expect(have, ts).toEqual(want);
+    }
+  });
+
+  it("places 18:00 and 09:30 ET on the right instant either side of a clock change", () => {
+    expect(etInstant("2026-11-13", 18 * 60)).toBe(Date.parse("2026-11-13T23:00:00Z") / 1000); // EST
+    expect(etInstant("2026-07-15", 9 * 60 + 30)).toBe(Date.parse("2026-07-15T13:30:00Z") / 1000); // EDT
+  });
+});
 
 describe("untestedPocs mirrors core.marketprofile.untested_pocs", () => {
   it.each(FIXTURE.untested.map((c) => [c.name, c] as const))("%s", (_name, c) => {
