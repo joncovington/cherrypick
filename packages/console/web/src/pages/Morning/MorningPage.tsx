@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useMorningReport } from "../../lib/api";
 import type {
   MorningGate,
@@ -10,6 +11,9 @@ import type {
   MorningFuture,
   MorningHotOptions,
   MorningHotOptionsRow,
+  MorningLevels,
+  MorningPremarket,
+  MorningVolRegime,
 } from "@console/shared";
 import { NoteMarkdown } from "../Review/NoteMarkdown";
 import { AXIS_FONT, SERIES_COLORS, LevelStrip } from "../../components/Charts";
@@ -21,6 +25,9 @@ import { HelpSection, type CardHelpContent } from "../../components/CardHelp";
 import { FilterGroup } from "../../components/FilterSort";
 import { Section } from "../../components/Section";
 import { useFilterPanel } from "../useFilterPanel";
+import { CardLightbox, LightboxFrame, useOpenParam } from "../Backtest/CardLightbox";
+import { MorningBrief, type BriefDetail } from "./MorningBrief";
+import { morningViews, viewFrom, type MorningView } from "./brief";
 
 /**
  * The morning report. Renders the fact pack and computes nothing.
@@ -370,26 +377,36 @@ const VOL_HELP: CardHelpContent = {
   ),
 };
 
+function VolRegimeChips({ v }: { v: MorningVolRegime }) {
+  return (
+    <>
+      {v.shape !== null && <span className="chip">{v.shape}</span>}
+      {v.measuredPoints !== null && v.totalPoints !== null && (
+        <span className="card-asof">
+          {v.measuredPoints} of {v.totalPoints} points measured
+        </span>
+      )}
+    </>
+  );
+}
+
 function VolRegimeCard({ pack }: { pack: MorningPack }) {
   // Absent, not just null — same reason as DeploymentCard: a server process older than this bundle
   // omits the field entirely, and `=== null` sails straight past undefined.
   const v = pack.volRegime;
   if (!v) return null;
+  return (
+    <Card title="Vol term structure" flag="record-only" help={VOL_HELP} controls={<VolRegimeChips v={v} />}>
+      <VolRegimeBody v={v} />
+    </Card>
+  );
+}
+
+/** The vol term structure's content, shared by its card (Risk tab) and the Brief's lightbox. */
+function VolRegimeBody({ v }: { v: MorningVolRegime }) {
   const season = v.seasonality;
   return (
-    <Card
-      title="Vol term structure" flag="record-only" help={VOL_HELP}
-      controls={
-        <>
-          {v.shape !== null && <span className="chip">{v.shape}</span>}
-          {v.measuredPoints !== null && v.totalPoints !== null && (
-            <span className="card-asof">
-              {v.measuredPoints} of {v.totalPoints} points measured
-            </span>
-          )}
-        </>
-      }
-    >
+    <>
 
       <VolCurve points={v.curve} />
 
@@ -455,7 +472,7 @@ function VolRegimeCard({ pack }: { pack: MorningPack }) {
             : `VIX is ${signedPct(season.vixVsNormPct)} against its ${MONTHS[(season.month ?? 1) - 1] ?? "monthly"} norm of ${fmt(season.norm, 2)}, across ${season.years ?? 0} years.`}
         </p>
       )}
-    </Card>
+    </>
   );
 }
 
@@ -474,6 +491,8 @@ function calendarHelp(c: MorningPack["calendar"]): CardHelpContent {
   };
 }
 
+const EARNINGS_TOP = 10;
+
 function CalendarCard({ pack }: { pack: MorningPack }) {
   const c = pack.calendar;
   const yesNo = (v: boolean | null) => (v === null ? "—" : v ? "yes" : "no");
@@ -486,6 +505,8 @@ function CalendarCard({ pack }: { pack: MorningPack }) {
     expiration: (r) => r.expiration,
     spot: (r) => r.spot,
   });
+  const [allEarnings, setAllEarnings] = useState(false);
+  const earningsShown = allEarnings ? earnings : earnings.slice(0, EARNINGS_TOP);
   return (
     <Card title="Calendar" help={calendarHelp(c)}>
       {c === null ? (
@@ -554,7 +575,14 @@ function CalendarCard({ pack }: { pack: MorningPack }) {
 
       {c?.earnings && (
         <>
-          <h3>Earnings, next seven days</h3>
+          <h3 className="mb-table-head">
+            Earnings, next seven days
+            {earnings.length > EARNINGS_TOP && (
+              <button type="button" className="mb-link" onClick={() => setAllEarnings(!allEarnings)}>
+                {allEarnings ? `show first ${String(EARNINGS_TOP)}` : `show all ${String(earnings.length)}`}
+              </button>
+            )}
+          </h3>
           {c.earnings.reason !== null ? (
             <p className="muted">Not available ({c.earnings.reason}).</p>
           ) : c.earnings.rows.length === 0 ? (
@@ -573,7 +601,7 @@ function CalendarCard({ pack }: { pack: MorningPack }) {
                 </tr>
               </thead>
               <tbody>
-                {earnings.map((r) => (
+                {earningsShown.map((r) => (
                   <tr key={`${r.date}-${r.symbol}`}>
                     <td>{r.date}</td>
                     <td className="muted">
@@ -618,23 +646,31 @@ function changeReason(f: MorningFuture): string {
 function PremarketCard({ pack }: { pack: MorningPack }) {
   const p = pack.premarket;
   if (!p) return null;
-  const futures = [
+  return (
+    <Card title="Pre-market" controls={<PremarketChips p={p} />}>
+      <PremarketBody p={p} />
+    </Card>
+  );
+}
+
+function premarketFutures(p: MorningPremarket): string[] {
+  return [
     ...FUTURES_ORDER.filter((k) => p.futures[k] !== undefined),
     ...Object.keys(p.futures).filter((k) => !FUTURES_ORDER.includes(k)),
   ];
+}
+
+function PremarketChips({ p }: { p: MorningPremarket }) {
+  return p.measuredFutures !== null ? (
+    <span className="card-asof">
+      {p.measuredFutures} of {premarketFutures(p).length} futures live
+    </span>
+  ) : null;
+}
+
+function PremarketBody({ p }: { p: MorningPremarket }) {
+  const futures = premarketFutures(p);
   return (
-    <Card
-      title="Pre-market"
-      controls={
-        <>
-          {p.measuredFutures !== null && (
-            <span className="card-asof">
-              {p.measuredFutures} of {futures.length} futures live
-            </span>
-          )}
-        </>
-      }
-    >
       <div className="table-scroll">
       <table className="data-table">
         <thead>
@@ -681,7 +717,6 @@ function PremarketCard({ pack }: { pack: MorningPack }) {
         </tbody>
       </table>
       </div>
-    </Card>
   );
 }
 
@@ -772,19 +807,24 @@ export function ProfileLevelsCard({ pack }: { pack: MorningPack }) {
 }
 
 function MovesYieldsCard({ pack }: { pack: MorningPack }) {
+  if (!pack.moves && !pack.yields) return null;
+  return (
+    <Card title="Expected move and yields" controls={<MovesYieldsChips pack={pack} />}>
+      <MovesYieldsBody pack={pack} />
+    </Card>
+  );
+}
+
+function MovesYieldsChips({ pack }: { pack: MorningPack }) {
+  return pack.yields?.session ? <span className="card-asof">Treasury curve, {pack.yields.session}</span> : null;
+}
+
+function MovesYieldsBody({ pack }: { pack: MorningPack }) {
   const m = pack.moves;
   const y = pack.yields;
-  if (!m && !y) return null;
   const tenors = y ? [...TENORS.filter((t) => t in y.yields), ...Object.keys(y.yields).filter((t) => !TENORS.includes(t))] : [];
   return (
-    <Card
-      title="Expected move and yields"
-      controls={
-        <>
-          {y?.session && <span className="card-asof">Treasury curve, {y.session}</span>}
-        </>
-      }
-    >
+    <>
       {m && (
         <div className="stats-grid">
           <div className="stat-tile">
@@ -854,7 +894,7 @@ function MovesYieldsCard({ pack }: { pack: MorningPack }) {
             </p>
           </>
         ))}
-    </Card>
+    </>
   );
 }
 
@@ -862,6 +902,7 @@ function count(v: number | null | undefined): string {
   return v === null || v === undefined ? "—" : v.toLocaleString();
 }
 
+const HOT_TOP = 5;
 
 function HotRows({
   title,
@@ -882,9 +923,19 @@ function HotRows({
     rel: (r) => r.relativeVolume,
     customer: (r) => r.customerSidePct,
   });
+  // The top five rows first; the rest one click away, so the tab is not a wall of tables.
+  const [all, setAll] = useState(false);
+  const shown = all ? sorted : sorted.slice(0, HOT_TOP);
   return (
     <>
-      <h3>{title}</h3>
+      <h3 className="mb-table-head">
+        {title}
+        {sorted.length > HOT_TOP && (
+          <button type="button" className="mb-link" onClick={() => setAll(!all)}>
+            {all ? "show top 5" : `show all ${String(sorted.length)}`}
+          </button>
+        )}
+      </h3>
       <div className="table-scroll">
       <table className="data-table">
         <thead>
@@ -900,7 +951,7 @@ function HotRows({
           </tr>
         </thead>
         <tbody>
-          {sorted.map((r) => (
+          {shown.map((r) => (
             <tr key={r.symbol}>
               <td className="muted">{count(r.rank)}</td>
               <td>
@@ -1015,6 +1066,167 @@ function GatesCard({ current }: { current: MorningPack }) {
   );
 }
 
+function GammaBody({ levels }: { levels: MorningLevels }) {
+  return (
+    <>
+      {/* The levels' spatial relationship is the reading — "just above the flip, short
+          of the call wall" — and a row of tiles makes the reader do that arithmetic.
+          The tiles stay beneath for the exact figures and their basis labels. */}
+      <LevelStrip
+        levels={[
+          { label: "put wall", value: levels.putWall, color: "var(--neg)" },
+          { label: "flip", value: levels.zeroGamma, color: "var(--accent)" },
+          { label: "call wall", value: levels.callWall, color: "var(--pos)" },
+        ]}
+        marker={{
+          label: "spot",
+          value: levels.referencePrice,
+          muted: levels.referenceBasis !== "live",
+        }}
+      />
+      <div className="stats-grid">
+        <div className="stat-tile">
+          <span className="stat-label">zero gamma (flip)</span>
+          <span className="stat-value">{fmt(levels.zeroGamma, 0)}</span>
+        </div>
+        <div className="stat-tile">
+          <span className="stat-label">call wall</span>
+          <span className="stat-value">{fmt(levels.callWall, 0)}</span>
+        </div>
+        <div className="stat-tile">
+          <span className="stat-label">put wall</span>
+          <span className="stat-value">{fmt(levels.putWall, 0)}</span>
+        </div>
+        <div className="stat-tile">
+          <span className="stat-label">reference price</span>
+          <span className={`stat-value ${levels.referenceBasis !== "live" ? "muted" : ""}`}>{fmt(levels.referencePrice)}</span>
+          {levels.referenceBasis !== null && <span className="stat-label muted">{levels.referenceBasis}</span>}
+        </div>
+      </div>
+    </>
+  );
+}
+
+function gammaTitle(levels: MorningLevels | null): string {
+  return `Gamma levels${levels?.symbol ? ` · ${levels.symbol}` : ""}`;
+}
+
+function GammaChips({ levels }: { levels: MorningLevels | null }) {
+  return levels?.session ? <span className="card-asof">as of {levels.session}</span> : null;
+}
+
+function GammaCard({ pack }: { pack: MorningPack }) {
+  const levels = pack.levels;
+  return (
+    <Card title={gammaTitle(levels)} controls={<GammaChips levels={levels} />}>
+      {levels === null ? <p className="muted">No levels in this pack.</p> : <GammaBody levels={levels} />}
+    </Card>
+  );
+}
+
+function SectorBoardCard({ pack }: { pack: MorningPack }) {
+  const sectors = pack.sectors;
+  return (
+    <Card
+      title="Sector board"
+      controls={
+        <>
+          {sectors !== null && sectors.measured !== null && (
+            <span className="card-asof">
+              {sectors.measured} of {sectors.board.length} measured
+            </span>
+          )}
+          {sectors?.strongest && <span className="chip chip-ok">strongest {sectors.strongest.symbol}</span>}
+          {sectors?.weakest && <span className="chip chip-warn">weakest {sectors.weakest.symbol}</span>}
+        </>
+      }
+    >
+      {sectors === null || sectors.board.length === 0 ? (
+        <p className="muted">No sector board in this pack.</p>
+      ) : (
+        <div className="table-scroll">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Symbol</th>
+                <th>Sector</th>
+                <th>Change</th>
+                <th>Close</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rankedBoard(sectors.board).map((row) => (
+                <tr key={row.symbol}>
+                  <td>{row.symbol}</td>
+                  <td className="muted">{row.sector ?? "—"}</td>
+                  <td className={pnlClass(row.changePct)}>{signedPct(row.changePct)}</td>
+                  <td className={row.close === null ? "muted" : ""}>{fmt(row.close)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+/** "08:30 ET" from the pack's ISO stamp; an unparseable stamp shows as written. */
+function generatedEt(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return `${d.toLocaleTimeString("en-GB", { timeZone: "America/New_York", hour: "2-digit", minute: "2-digit" })} ET`;
+}
+
+/** The Brief's four tiles open these, in this order; the lightbox steps through the ones the pack has. */
+const DETAILS: { id: BriefDetail; title: (p: MorningPack) => string; has: (p: MorningPack) => boolean }[] = [
+  { id: "premarket", title: () => "Pre-market", has: (p) => !!p.premarket },
+  { id: "gamma", title: (p) => gammaTitle(p.levels), has: (p) => p.levels !== null },
+  { id: "vol", title: () => "Vol term structure", has: (p) => !!p.volRegime },
+  { id: "moves", title: () => "Expected move and yields", has: (p) => !!p.moves || !!p.yields },
+];
+
+function detailChips(id: BriefDetail, p: MorningPack): ReactNode {
+  if (id === "premarket") return p.premarket ? <PremarketChips p={p.premarket} /> : null;
+  if (id === "gamma") return <GammaChips levels={p.levels} />;
+  if (id === "vol") return p.volRegime ? <VolRegimeChips v={p.volRegime} /> : null;
+  return <MovesYieldsChips pack={p} />;
+}
+
+function detailBody(id: BriefDetail, p: MorningPack): ReactNode {
+  if (id === "premarket") return p.premarket ? <PremarketBody p={p.premarket} /> : null;
+  if (id === "gamma") return p.levels ? <GammaBody levels={p.levels} /> : null;
+  if (id === "vol") return p.volRegime ? <VolRegimeBody v={p.volRegime} /> : null;
+  return <MovesYieldsBody pack={p} />;
+}
+
+function BriefLightbox({ pack, open, onStep, onClose }: { pack: MorningPack; open: string; onStep: (id: string) => void; onClose: () => void }) {
+  const items = DETAILS.filter((d) => d.has(pack));
+  const index = items.findIndex((d) => d.id === open);
+  if (index < 0) return null;
+  const item = items[index]!;
+  return (
+    <CardLightbox count={items.length} index={index} onStep={(to) => onStep(items[to]!.id)} onClose={onClose}>
+      {(nav) => (
+        <LightboxFrame
+          kicker={`Morning report · ${pack.session}`}
+          title={item.title(pack)}
+          chips={detailChips(item.id, pack)}
+          tabs={[]}
+          tab="detail"
+          onTab={() => undefined}
+          position={nav.position}
+          onPrev={nav.prev}
+          onNext={nav.next}
+          onClose={onClose}
+        >
+          <div className="mb-detail">{detailBody(item.id, pack)}</div>
+        </LightboxFrame>
+      )}
+    </CardLightbox>
+  );
+}
+
 const NARRATIVE_HELP: CardHelpContent = {
   title: "About the narrative",
   body: (
@@ -1025,7 +1237,11 @@ const NARRATIVE_HELP: CardHelpContent = {
 };
 
 /** `tabs` is the Reports page's tab strip, rendered inside this page's own title row. Optional so
- *  the page still stands alone if it is ever routed to directly. */
+ *  the page still stands alone if it is ever routed to directly.
+ *
+ *  The report is tabbed (`?view=`, Brief by default): Brief answers the morning on one screen and the
+ *  other tabs hold each block's detail, so the page no longer scrolls through ten screens of cards.
+ *  The Brief's tiles open their block in a lightbox (`?detail=`), so a link opens one. */
 export function MorningPage({ tabs }: { tabs?: ReactNode } = {}) {
   const [session, setSession] = useState<string | undefined>(undefined);
   const { data, isLoading, isError } = useMorningReport(session);
@@ -1034,10 +1250,19 @@ export function MorningPage({ tabs }: { tabs?: ReactNode } = {}) {
   const features = useFeatures();
   const showTechnicals = isFeatureOn("technicals", features);
   const showNarrative = isFeatureOn("morning_narrative", features);
+  const views = morningViews({ technicals: showTechnicals, narrative: showNarrative });
+  const [params, setParams] = useSearchParams();
+  const view = viewFrom(params.get("view"), views);
+  const detail = useOpenParam("detail");
+  const pick = (v: MorningView) => {
+    const next = new URLSearchParams(params);
+    if (v === "brief") next.delete("view");
+    else next.set("view", v);
+    next.delete("detail");
+    setParams(next, { replace: true });
+  };
 
   const current = data?.current ?? null;
-  const levels = current?.levels ?? null;
-  const sectors = current?.sectors ?? null;
   const latest = data?.sessions[data.sessions.length - 1];
   const sessionFilter = useFilterPanel({
     parts: [session === undefined || session === latest ? "latest session" : `session ${session}`],
@@ -1067,7 +1292,10 @@ export function MorningPage({ tabs }: { tabs?: ReactNode } = {}) {
         {tabs}
         {current && <span className="chip">{current.session}</span>}
         {current && <span className="card-asof">fact pack v{current.factVersion ?? "?"}</span>}
+        {current?.generatedAt && <span className="card-asof mb-hide-narrow">generated {generatedEt(current.generatedAt)}</span>}
+        {pickSession ? <span className="mb-session">{sessionFilter.button}</span> : null}
       </div>
+      {pickSession ? sessionFilter.body : null}
 
       {isError && <p className="muted">Could not read the overview store.</p>}
       {isLoading && !current && <p className="muted">Reading the overview store…</p>}
@@ -1076,162 +1304,79 @@ export function MorningPage({ tabs }: { tabs?: ReactNode } = {}) {
       )}
 
       {current && (
-        <div className="pf-layout">
-          <Section concept="stand" tag="the verdict" question="What kind of session is it?">
-          <PhaseBanner pack={current} />
-
-          <GatesCard current={current} />
-
-          <Card
-            title="Scorecard"
-            className="lv-12"
-            controls={
-              <>
-                {current.generatedAt !== null && <span className="card-asof">generated {current.generatedAt}</span>}
-                {pickSession ? sessionFilter.button : null}
-              </>
-            }
-          >
-            {pickSession ? sessionFilter.body : null}
-            <div className="stats-grid">
-              {SCORECARD.map(({ reading, future }) => scorecardTile(current, reading, future))}
-            </div>
-          </Card>
-
-          <DeploymentCard pack={current} />
-          </Section>
-
-          <Section concept="risk" tag="vol and gamma" question="Where is the risk?">
-            <Card
-              title={`Gamma levels ${levels?.symbol !== null && levels?.symbol !== undefined ? `· ${levels.symbol}` : ""}`}
-              controls={
-                levels?.session !== null && levels?.session !== undefined ? <span className="card-asof">as of {levels.session}</span> : null
-              }
-            >
-              {levels === null ? (
-                <p className="muted">No levels in this pack.</p>
-              ) : (
-                <>
-                  {/* The levels' spatial relationship is the reading — "just above the flip, short
-                      of the call wall" — and a row of tiles makes the reader do that arithmetic.
-                      The tiles stay beneath for the exact figures and their basis labels. */}
-                  <LevelStrip
-                    levels={[
-                      { label: "put wall", value: levels.putWall, color: "var(--neg)" },
-                      { label: "flip", value: levels.zeroGamma, color: "var(--accent)" },
-                      { label: "call wall", value: levels.callWall, color: "var(--pos)" },
-                    ]}
-                    marker={{
-                      label: "spot",
-                      value: levels.referencePrice,
-                      muted: levels.referenceBasis !== "live",
-                    }}
-                  />
-                  <div className="stats-grid">
-                  <div className="stat-tile">
-                    <span className="stat-label">zero gamma (flip)</span>
-                    <span className="stat-value">{fmt(levels.zeroGamma, 0)}</span>
-                  </div>
-                  <div className="stat-tile">
-                    <span className="stat-label">call wall</span>
-                    <span className="stat-value">{fmt(levels.callWall, 0)}</span>
-                  </div>
-                  <div className="stat-tile">
-                    <span className="stat-label">put wall</span>
-                    <span className="stat-value">{fmt(levels.putWall, 0)}</span>
-                  </div>
-                  <div className="stat-tile">
-                    <span className="stat-label">reference price</span>
-                    <span className={`stat-value ${levels.referenceBasis !== "live" ? "muted" : ""}`}>
-                      {fmt(levels.referencePrice)}
-                    </span>
-                    {levels.referenceBasis !== null && (
-                      <span className="stat-label muted">{levels.referenceBasis}</span>
-                    )}
-                  </div>
-                  </div>
-                </>
-              )}
-            </Card>
-
-            <VolRegimeCard pack={current} />
-          </Section>
-
-          <Section concept="dir" tag="before the open" question="What is moving before the open?">
-          <PremarketCard pack={current} />
-
-          <Card
-            title="Sector board"
-            controls={
-              <>
-                {sectors !== null && sectors.measured !== null && (
-                  <span className="card-asof">{sectors.measured} of {sectors.board.length} measured</span>
-                )}
-                {sectors?.strongest && (
-                  <span className="chip chip-ok">strongest {sectors.strongest.symbol}</span>
-                )}
-                {sectors?.weakest && (
-                  <span className="chip chip-warn">weakest {sectors.weakest.symbol}</span>
-                )}
-              </>
-            }
-          >
-            {sectors === null || sectors.board.length === 0 ? (
-              <p className="muted">No sector board in this pack.</p>
-            ) : (
-              <div className="table-scroll">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Symbol</th>
-                    <th>Sector</th>
-                    <th>Change</th>
-                    <th>Close</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rankedBoard(sectors.board).map((row) => (
-                    <tr key={row.symbol}>
-                      <td>{row.symbol}</td>
-                      <td className="muted">{row.sector ?? "—"}</td>
-                      <td className={pnlClass(row.changePct)}>{signedPct(row.changePct)}</td>
-                      <td className={row.close === null ? "muted" : ""}>{fmt(row.close)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              </div>
-            )}
-          </Card>
-
-          <MovesYieldsCard pack={current} />
-          <ProfileLevelsCard pack={current} />
-          </Section>
-
-          {showTechnicals && <TechnicalsCards t={data?.technicals} />}
-
-          <Section concept="add" tag="activity" question="Where is the options activity?">
-            <HotOptionsCard pack={current} />
-          </Section>
-
-          <Section concept="room" tag="calendar" question="What is on the calendar?">
-            <CalendarCard pack={current} />
-          </Section>
-
-          {!showNarrative ? null : data?.note ? (
-            <Section concept="edge" tag="interpretation" question="What does the note say?">
-              <Card
-                title="Narrative"
-                className="review-note"
-                help={NARRATIVE_HELP}
+        <>
+          <div className="study-tabs mb-tabs" role="tablist" aria-label="Morning report sections">
+            {views.map((v) => (
+              <button
+                key={v.id}
+                type="button"
+                role="tab"
+                aria-selected={view === v.id}
+                className={view === v.id ? "study-tab is-on" : "study-tab"}
+                onClick={() => pick(v.id)}
               >
-                <NoteMarkdown text={data.note} />
-              </Card>
-            </Section>
-          ) : (
-            <p className="muted">No narrative for this session.</p>
-          )}
-        </div>
+                {v.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="pf-layout" role="tabpanel" aria-label={views.find((v) => v.id === view)?.label}>
+            {view === "brief" && <MorningBrief pack={current} onOpen={(d) => detail.show(d)} onView={pick} />}
+
+            {view === "risk" && (
+              <>
+                <Section concept="stand" tag="the verdict" question="What kind of session is it?">
+                  <PhaseBanner pack={current} />
+                  <GatesCard current={current} />
+                  <DeploymentCard pack={current} />
+                </Section>
+                <Section concept="risk" tag="vol and gamma" question="Where is the risk?">
+                  <GammaCard pack={current} />
+                  <VolRegimeCard pack={current} />
+                </Section>
+              </>
+            )}
+
+            {view === "tape" && (
+              <Section concept="dir" tag="before the open" question="What is moving before the open?">
+                <Card title="Scorecard" className="lv-12">
+                  <div className="stats-grid">{SCORECARD.map(({ reading, future }) => scorecardTile(current, reading, future))}</div>
+                </Card>
+                <PremarketCard pack={current} />
+                <SectorBoardCard pack={current} />
+                <MovesYieldsCard pack={current} />
+                <ProfileLevelsCard pack={current} />
+              </Section>
+            )}
+
+            {view === "charts" && showTechnicals && <TechnicalsCards t={data?.technicals} />}
+
+            {view === "options" && (
+              <Section concept="add" tag="activity" question="Where is the options activity?">
+                <HotOptionsCard pack={current} />
+              </Section>
+            )}
+
+            {view === "calendar" && (
+              <Section concept="room" tag="calendar" question="What is on the calendar?">
+                <CalendarCard pack={current} />
+              </Section>
+            )}
+
+            {view === "note" &&
+              (data?.note ? (
+                <Section concept="edge" tag="interpretation" question="What does the note say?">
+                  <Card title="Narrative" className="review-note" help={NARRATIVE_HELP}>
+                    <NoteMarkdown text={data.note} />
+                  </Card>
+                </Section>
+              ) : (
+                <p className="muted">No narrative for this session.</p>
+              ))}
+          </div>
+
+          {detail.open !== null && <BriefLightbox pack={current} open={detail.open} onStep={detail.step} onClose={detail.close} />}
+        </>
       )}
     </div>
   );

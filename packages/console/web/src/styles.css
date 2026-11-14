@@ -10719,3 +10719,335 @@ button.chip[aria-pressed][data-hue="special"],
   margin: 0 0 0.6rem;
   max-width: 110ch;
 }
+
+/* The morning report's tabs and its Brief tab (pages/Morning/MorningBrief.tsx). The Brief puts the
+   headline of each block on one screen: a verdict strip, four tiles that open their block in the
+   lightbox, the profile and calendar side by side, and the sector board as one strip. It folds on
+   its own width: tiles 4 → 2 → 1, the pair stacks, the strip's cells wrap. */
+.mb-tabs {
+  margin: 0 0 0.9rem;
+}
+.mb-session {
+  margin-left: auto;
+}
+.mb {
+  container: mb / inline-size;
+  display: grid;
+  gap: 0.75rem;
+}
+.mb-kicker {
+  font-size: 0.7rem;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.mb-kicker-row {
+  display: flex;
+  gap: 0.5rem;
+  width: 100%;
+}
+.mb-more {
+  margin-left: auto;
+  color: var(--accent);
+  text-transform: none;
+  letter-spacing: 0;
+}
+.mb-verdict {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: stretch;
+}
+.mb-verdict-main {
+  flex: 1 1 28rem;
+  min-width: 0;
+  display: grid;
+  gap: 0.45rem;
+  align-content: start;
+}
+.mb-verdict-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+}
+.mb-phase {
+  font-weight: 700;
+}
+.mb-count {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+.mb-reason {
+  margin: 0;
+}
+.mb-gates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+.mb-gate {
+  font-family: var(--num-face);
+  font-size: 0.75rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  padding: 0.15rem 0.5rem;
+  white-space: nowrap;
+}
+.mb-gate-ok {
+  color: var(--pos);
+  border-color: color-mix(in srgb, var(--pos) 40%, transparent);
+}
+.mb-gate-warn {
+  color: var(--warn);
+  border-color: color-mix(in srgb, var(--warn) 45%, transparent);
+}
+.mb-gate-missing {
+  color: var(--text-muted);
+}
+.mb-deploy {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.15rem;
+  min-width: 10rem;
+  padding-left: 1rem;
+  border-left: 1px solid var(--border);
+}
+.mb-score {
+  font-family: var(--num-face);
+  font-size: 1.6rem;
+  font-weight: 600;
+}
+.mb-score .muted {
+  font-size: 0.8rem;
+}
+.mb-foot {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+.mb-tiles {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.6rem;
+}
+.mb-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.mb-tile:hover {
+  border-color: var(--chart-grid-strong);
+}
+.mb-tile:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.mb-big {
+  font-family: var(--num-face);
+  font-size: 1.05rem;
+  color: var(--text);
+}
+.mb-big.muted {
+  color: var(--text-muted);
+}
+.mb-big-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+.mb-sub {
+  font-size: 0.85rem;
+}
+.mb-line {
+  font-family: var(--num-face);
+  font-size: 0.8rem;
+}
+.mb-spark polyline {
+  fill: none;
+  stroke: var(--amber-line);
+  stroke-width: 2;
+}
+.mb-spark circle {
+  fill: var(--amber-line);
+}
+.mb-spark circle.mb-spark-now {
+  fill: var(--text);
+}
+.mb-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.6rem;
+}
+.mb-panel {
+  display: grid;
+  gap: 0.5rem;
+  align-content: start;
+  min-width: 0;
+}
+.mb-panel-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+.mb-link {
+  margin-left: auto;
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--accent);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  cursor: pointer;
+}
+.mb-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.mb-table-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.75rem;
+}
+.mb-table-head .mb-link {
+  margin-left: 0;
+}
+.mb-pgrid {
+  display: grid;
+  grid-template-columns: 4.5rem repeat(3, minmax(0, 1fr));
+  gap: 0.25rem 0.6rem;
+  font-family: var(--num-face);
+  font-size: 0.8rem;
+}
+.mb-prow {
+  display: contents;
+}
+.mb-prow-wide {
+  grid-column: span 3;
+}
+.mb-colhead {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+.mb-poc {
+  color: var(--amber-line);
+}
+.mb-days {
+  display: grid;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+}
+.mb-day {
+  display: grid;
+  grid-template-columns: 4.5rem minmax(0, 1fr);
+  gap: 0.5rem;
+}
+.mb-daylabel {
+  font-family: var(--num-face);
+  color: var(--text-muted);
+}
+.mb-daylabel.mb-today {
+  color: var(--warn);
+}
+.mb-pair > .mb-panel:only-child {
+  grid-column: 1 / -1;
+}
+.mb-detail {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+}
+.mb-detail svg.chart {
+  width: 100%;
+  height: auto;
+}
+.mb-sectors {
+  display: grid;
+  grid-template-columns: repeat(var(--mb-n, 11), minmax(0, 1fr));
+  gap: 0.35rem;
+  font-family: var(--num-face);
+  font-size: 0.75rem;
+  text-align: center;
+}
+.mb-sector {
+  display: grid;
+  gap: 0.1rem;
+  padding: 0.35rem 0.2rem;
+  border-radius: 6px;
+  background: var(--surface-sunken);
+}
+.mb-sector-up {
+  background: color-mix(in srgb, var(--pos) var(--mb-w, 10%), var(--surface-sunken));
+}
+.mb-sector-down {
+  background: color-mix(in srgb, var(--neg) var(--mb-w, 10%), var(--surface-sunken));
+}
+.mb-sector-none {
+  color: var(--text-muted);
+}
+.mb-sector-sym {
+  color: var(--text);
+  font-weight: 600;
+}
+@container mb (max-width: 62rem) {
+  .mb-tiles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .mb-sectors {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+}
+@container mb (max-width: 46rem) {
+  .mb-pair {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .mb-deploy {
+    width: 100%;
+    padding: 0.6rem 0 0;
+    border-left: 0;
+    border-top: 1px solid var(--border);
+  }
+}
+@container mb (max-width: 34rem) {
+  .mb-tiles {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .mb-pgrid {
+    grid-template-columns: 3.5rem repeat(2, minmax(0, 1fr));
+  }
+  .mb-pgrid .mb-hide-narrow {
+    display: none;
+  }
+  .mb-prow-wide {
+    grid-column: span 2;
+  }
+  .mb-sectors {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+@media (max-width: 640px) {
+  .page-title-row .mb-hide-narrow {
+    display: none;
+  }
+  /* The strip scrolls sideways on a phone: no bar, and a fade at the edge says there is more. The
+     padding lets the last tab scroll clear of the fade. */
+  .mb-tabs {
+    scrollbar-width: none;
+    padding-right: 2.25rem;
+    -webkit-mask-image: linear-gradient(to right, black calc(100% - 2.25rem), transparent);
+    mask-image: linear-gradient(to right, black calc(100% - 2.25rem), transparent);
+  }
+  .mb-tabs::-webkit-scrollbar {
+    display: none;
+  }
+}

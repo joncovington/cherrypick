@@ -218,6 +218,16 @@ four tabs, because its write actions are wired through page-spanning state (`nav
 a second place its shape is decided. The tab is in the URL (`/reports/eod`) because reports get sent, and
 `/morning` and `/review` redirect rather than 404.
 
+- **The morning report is tabbed** (`?view=`, `pages/Morning/brief.ts`): Brief (the default), Risk,
+  Tape, Charts, Options, Calendar, Note. Charts leaves the strip when technicals is off, Note when the
+  narrative is; any other `view` reads as Brief. Each card is on one tab only. The session picker sits
+  in the title row, and long tables (hot options, earnings) show their top rows with "show all".
+- **Brief** (`pages/Morning/MorningBrief.tsx`) is the morning on one screen: the phase with the pack's
+  own reason, each gate as a chip, the deployment score beside it as record-only; four tiles
+  (pre-market, gamma, vol curve, expected move) that open their block in a lightbox (`?detail=`, the
+  Backtest page's `CardLightbox`, stepping through the four); the profile levels and the next three
+  calendar dates side by side; and the sector board as one strip. Its figures are the pack's; it only
+  groups and orders them. It folds on its own width: tiles 4 → 2 → 1, sectors 11 → 6 → 4.
 - **Market profile, prior session** (`ProfileLevelsCard`, fact version 6, `shapeProfile`): the pack's
   `profile` block as it states it, one row a symbol linking to its Profile tab on that day
   (`/charts/profile?symbol=…&day=…`); an unmeasured symbol shows its reason, a malformed untested-POC
