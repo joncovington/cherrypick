@@ -7535,6 +7535,27 @@ is read.*
   period runs without that gate for the period, and the row says so. The GLD chains are fetched
   intraday only for the sessions the entry filters can pass; a session not fetched counts as not
   entered. A position open at the last stored session is settled at that close.
+- **Readings fixed before the run** (the source's text left each open; `packages/ensemble/CLAUDE.md`
+  holds them in full):
+  - the standard-deviation move is the move from the previous close over one day's sigma taken from the
+    previous close's VIX;
+  - the GEX ratio is (call gex + put gex) divided by the smaller of call gex and the absolute put gex over
+    the window of strikes; a window the store cannot fill (the 60 s store keeps 20 strikes each side, the
+    50-strike window asks for 100) is capped at the strikes it holds;
+  - intraday RSI(14) and Stoch(14,3,3) read completed five-minute bars; reward/risk is read at the
+    structure's mid; "up to $X" sizes to the largest whole count within X and never fewer than one;
+  - a strike "just above the previous close" is the listed strike nearest it; the opening-range arm
+    evaluates once, at the first minute above the range's high;
+  - the first-weekly, month-end, quarter-end, options-expiry and PMI days are computed from the calendar
+    (PMI as the first and third trading days of the month); sentiment releases are the second and fourth
+    Fridays unless the suite's own record has the date; CPI dates are known only where the suite's FRED
+    history reaches, and an arm runs without that gate where it does not, the row counting those
+    sessions;
+  - a sold leg needs a bid: a structure without one is skipped and counted, which may remove most of the
+    1DTE GLD spread's days;
+  - a position expiring today stops counting toward an arm's open limit at that day's open; the SPX
+    day-before-expiry fly is marked on the fetched five-minute bars on day one (a touch is tested on the
+    one-minute spot and closes on the latest bar) and on the one-minute store on day two.
 - **Reported, never judged (B13):** per arm and combined: the scorecard, the neighbours of each declared
   threshold (plateau or lone peak), the result at 1.5x and 2x costs, `drawdown_range`, each calendar
   year, and the descriptive 2022-05 to 2023-06 row; each arm with its filters off (what the gates
