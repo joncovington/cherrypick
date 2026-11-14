@@ -62,9 +62,12 @@ A test is **declared before it is run.** The declaration fixes four things, and 
 the data is read, because a rule changed after the fact is no longer a test:
 
 1. **The rule:** what is measured, and how a trade is built.
-2. **The windows:** the data it may use. A design window is where the rule is set and looked at. A
-   holdout is data held back and read **once**, to check that the result was not fitted to the design
-   window.
+2. **The windows:** the data it may use, and the split dates that divide it. The study runs **once over
+   the whole history**, and the result is cut afterwards at the declared dates: a design part, where
+   the rule is set and looked at, and a holdout part, read **once** to check that the result was not
+   fitted to the design part. A declaration may name several splits (walk-forward folds, say). Each
+   trade belongs to the part holding its entry session. Only the declared splits decide the verdict;
+   any other cut of the same run (years, regimes) is reported beside it, never judged.
 3. **The pass test:** the statistic and the bar, in words and numbers, and that it must hold in both
    halves of time. Larger studies add that it holds in both halves of the names.
 4. **The sample:** how many sessions or trades it needs, so that "no result" is read as "too few to see an

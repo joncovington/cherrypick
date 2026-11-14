@@ -120,9 +120,10 @@ it. They are run under rules meant to stop you from fooling yourself.
   rewritten to fit what came out.
 - **The verdict is after costs.** A pass means net of fees, settlement and slippage. An idea that wins
   before costs and loses after them is a fail.
-- **History is split.** The design window is where an idea is tried and tuned. A holdout is kept unseen
-  until the design is fixed, and is spent once. A result that works on the design window and not on the
-  holdout is a fail.
+- **History is split.** A study runs once over the whole history and its result is cut at split dates
+  fixed before the run. The design part is where an idea is tried and tuned. The holdout part counts
+  only after the design passes, and is spent once. A result that works on the design part and not on
+  the holdout is a fail. Other cuts of the same run, such as each year, are context, not verdicts.
 - **A verdict has three values:** pass, fail or open (not yet measurable). "Underpowered" is not "failed":
   too few sessions simply means it has not been measured.
 - **A verdict is a statement about that rule on that data.** A pass says the declared rule had an edge
