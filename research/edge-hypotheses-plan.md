@@ -65,6 +65,11 @@ written are not re-judged. The arithmetic is `cherrypick.core.robustness`
   bar. Holding the same delta in shares is not a rival; the same-capital rivals the user would pick
   are reported beside the verdict. Declarations already written keep their own rules, and one
   re-read under these bars is a new item, said out loud as a retest.
+- **The rule and the chain as data, in the study's script** (from item 78): a `RULE` literal holding
+  the bars' parameters and the split dates, evaluated by `cherrypick.backtest.study.rule` over one
+  run (its verdict block is what the queue and the register read), and a `CHAIN` literal of the
+  queue steps, queued with `run.py queue-chain`. Both land with the declaration, before any run;
+  `cherrypick hypotheses` lists a row from item 78 whose script has no `RULE`.
 - **A result file the board can read:** a top-level `verdict` (one word, or one per arm, or per arm
   as `{"verdict": ...}`), its `window`, and the `run_id` when the study ran through the runner.
 - **Declared limits** (B11): how a position open at a name's last bar is settled (the last close; no

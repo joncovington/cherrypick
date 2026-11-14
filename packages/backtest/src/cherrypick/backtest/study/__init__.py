@@ -15,7 +15,9 @@ The kit's constraints (#1068's design comment), in short:
 - **Deterministic**, and tested harder than any one study (property tests on synthetic chains).
 
 Modules: `calendars` (monthly expiries, entry sessions), `chains` (one expiry's end-of-day chain:
-its parity forward, Black-76 deltas at r = 0, out-of-the-money strikes, nearest strike by delta) and
+its parity forward, Black-76 deltas at r = 0, out-of-the-money strikes, nearest strike by delta),
 `checks` (the three verdict bars every new study is judged on: return on buying power over the bill,
-a bad year earned back within a year, edge beyond the financed delta; and the verdict block).
+a bad year earned back within a year, edge beyond the financed delta) and `rule` (a script's
+declared RULE: one run cut at its split dates, a holdout read only after a pass, and the verdict
+block the queue and the register read).
 """

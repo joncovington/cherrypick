@@ -621,6 +621,26 @@ def test_a_script_that_printed_a_refusal_fails_even_on_exit_0(queue, files, monk
     assert row["status"] == "failed" and "requests not fetched" in row["note"]
 
 
+def test_a_verdict_block_with_an_arm_judged_on_no_trades_fails(queue, files, monkeypatch, tmp_path):
+    # Items 47 and 54 ran on zero trades (a C/P key against a CALL/PUT store) and exited 0.
+    monkeypatch.setattr(rq, "repo_root", lambda: files["root"])
+    monkeypatch.setattr(rq, "git_tracked", _tracked)
+    monkeypatch.setattr(rq, "stamp_output", lambda row: 0)
+    out = tmp_path / "out" / "results.json"
+    out.parent.mkdir()
+    out.write_text(json.dumps({"rule": {}, "arms": {"A": {"n": 40}, "B": {"n": 0}}}), encoding="utf-8")
+    rq.add("item54", "script", {"path": "scripts/study.py"}, step="study", output=str(out), path=queue,
+           root=files["root"], tracked=_tracked)  # fmt: skip
+    row, _ = _ran(queue, "{}")
+    assert row["status"] == "failed" and "arm(s) B" in row["note"]
+    # Every arm judged something: done. A file that is not a verdict block is left alone.
+    out.write_text(json.dumps({"rule": {}, "arms": {"A": {"n": 40}}}), encoding="utf-8")
+    rq.add("item54", "script", {"path": "scripts/study.py"}, step="study", output=str(out), path=queue,
+           root=files["root"], tracked=_tracked)  # fmt: skip
+    assert _ran(queue, "{}")[0]["status"] == "done"
+    assert rq.zero_trade_arms({"arms": {"A": {"n": 0}}}) == [] and rq.zero_trade_arms(None) == []
+
+
 def test_a_failure_says_the_last_thing_the_task_wrote(queue, files, tmp_path):
     rq.add("item74", "fetch-chains", {"requests": str(files["req"])}, step="study", path=queue)
     log = tmp_path / "logs" / "1.log"
