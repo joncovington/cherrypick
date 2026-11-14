@@ -7436,6 +7436,141 @@ item's names has been read for it.*
     leverage held plainly; manage keeps judging it as directional, sized to the per-trade budget, and
     no income label is given it.
 - **Result:** not yet run.
+### 75. A third-party portfolio of eight short-dated option rules, read over all history at once
+
+*Source: the user, 2026-11-13. A third-party portfolio publishes eight rule sets (settings and a bot
+decision tree for each) at two sizes; the user chose the larger and approved a paper reproduction plus a
+backtest of all eight over every session the data allows. **The user chose no design/holdout split:**
+the verdict is read over the whole history in one pass. This declares the rules and the pass bar before
+any of it is run. More rules from the same source are expected, so the engine is configuration: a new
+rule is a new arm entry, and a new entry is declared as its own item or as an amendment here before it
+is read.*
+
+- **Question:** does each of the eight rules, as a trader would run it (the bot's decision tree, not
+  only the stated backtest settings), earn after the suite's costs and fill model on the SPX and GLD
+  history we can reconstruct, and does the portfolio of the eight earn more than its drawdown?
+- **Where the edge would live:** three claims, one per family. **Premium** in the four short-premium
+  SPX arms (an 0DTE iron fly at the prior close, a 0DTE iron condor, a 0DTE put spread, an opening-range
+  put spread): the chain overprices the move to the close. **Gamma pin** in the 1DTE iron fly at the
+  largest absolute-GEX strike. **Drift or reversion** in the three long-premium arms (a 20-day and a
+  1DTE GLD call spread, a 0DTE long put): bought convexity with a filter that picks the day.
+- **Look-alikes already in the register:** item 9 (the 13:45 condor with a trend gate: failed); item 10
+  (a fly pinned to the prior close: failed); item 11 (the 1DTE GEX-strike fly: retired unrun, no store
+  held its entry); item 12 (GEX levels as a gate: failed); items 14 to 16 (credit spreads: no edge after
+  costs at any short delta); item 58 (the closing fly: failed); item 60 (event-gated flies: failed); item
+  61 (the 13:45 condor read on 2025-26: observation); item 65 (the intraday premium map). This item
+  retests none of them as such: it tests the third party's whole rule, filters and sizing included. A
+  pass here would contradict items 9, 10 and 12 on the arms that resemble them, and says so.
+- **Rival explanations, each with its check:**
+  - *Costs:* **Check:** every verdict is at the suite's slippage model; the stress and mid are reported.
+  - *One year or one regime:* **Check:** the pass needs both time-halves; each calendar year is reported.
+  - *Filters fitted to the sample (the source tuned them on its own history):* **Check:** the sessions
+    from 2022-05 to 2023-06 precede the source's own tested window, which starts 2023-07; they are
+    reported as their own descriptive row. They are not a holdout (the user chose none) and judge
+    nothing.
+  - *Eight arms, one lucky:* **Check:** Holm at 5% across the eight on the bootstrap p.
+  - *Bot versus backtest settings:* the bot's tree adds rules the stated settings omit (the 13:00 put
+    spread only when the opening-range arm holds nothing that day; the 1DTE fly skips a PMI release
+    through its expiry). **Check:** where feasible both variants run; the bot's tree is the verdict
+    variant and the other is reported.
+- **The arms** (names are ours; each is one config entry in `cherrypick.ensemble`):
+  - `iron-fly-1000`: SPX 0DTE iron fly, 10:00, Mon/Wed/Fri, short strikes one cent above the previous
+    close, 10-point wings, up to $250 of risk; skipped on PMI and sentiment release days; entered only
+    with the day's move within +/-1.1 standard deviations, expected move at least 0.3%, mid at most
+    9.65, bid/ask at most $2.00.
+  - `iron-condor-1345`: SPX 0DTE iron condor, 13:45, Mon/Tue/Thu/Fri, short put 5 points below spot,
+    short call 10 above that put, 5-point wings, 2 contracts; VIX below 20, spot above its 10-day EMA,
+    reward/risk at least 95%.
+  - `put-spread-1300`: SPX 0DTE put spread, 13:00, Mon/Tue/Fri, short put at least 0.05% below spot,
+    10 wide, 2 contracts; skipped on a services PMI day and on days the opening-range arm holds a
+    position; change within -0.5 to +2 SD, intraday RSI(14) below 70, Stoch(14,3,3) above 50, GEX ratio
+    over the 50 nearest strikes above 0.
+  - `iron-fly-1dte-1330`: SPX iron fly to the next market day, 13:30, every weekday, short strikes at
+    the largest absolute-GEX strike of the 6 nearest, wings 0.5% or the nearest listed beyond, the call
+    wing matched to the put wing, 1 contract, up to 2 open; skipped when a PMI release falls from today
+    through the expiry; gap at least -0.75%, spot above its 30-day SMA, the 20-nearest max-GEX strike
+    within 0.5% of spot on each side, reward/risk at least 200%; closed at a 15% profit or an index
+    touch of -0.5%.
+  - `gld-call-spread-20d`: GLD call spread about 20 days out, 12:30, long 0.30 delta, short 15 dollars
+    above, 2 contracts, reward/risk at least 450%, one entry per 14 calendar days, up to 2 open, closed
+    an hour before expiry.
+  - `long-put-1030`: SPX 0DTE long put at -0.10 delta or nearer to zero, 10:30, Wed/Thu, up to $300;
+    skipped on CPI and monthly-expiry days; VIX change at most 0% and index change at least 0% from
+    the previous close.
+  - `gld-call-spread-1dte`: GLD call spread to the next market day, 12:20, long 0.50 delta, short 10
+    dollars above, 3 contracts, reward/risk at least 200%, change 0% to 0.7%, up to 2 open; skipped
+    from today through expiry on FOMC, CPI and quarter end; closed 15 minutes before expiry.
+  - `orb-put-spread`: SPX 0DTE put spread, entered on the first break above the 60-minute opening
+    high, no later than 13:00, Mon/Tue/Fri, short -0.35 delta, 20 wide, 1 contract; skipped on FOMC,
+    month-end and first-weekly days; mid at least 0.15, bid/ask at most $2.00, GEX ratio over 16 and
+    over 2 nearest strikes at least -1.5, put GEX over the 4 strikes above at most -90 million; stopped
+    on a spot touch 10 points below entry.
+  - Sizes are the source's larger set, taken as stated; "up to $X" sizes to the largest whole contract
+    count whose maximum loss stays within $X, minimum one.
+- **Costs and fills:** fees from `cherrypick.core.fees`; the **verdict fill** is the suite's slippage
+  model (`fees.slippage_dollars`); halfway from mid to the natural fill is the **stress**; mid is
+  context. The source's stated slippage ($0.03 to $0.05 a structure) is reported beside them.
+- **Window and sample:** every session the stores hold, from 2022-05-16 for the SPX arms to the last
+  stored session, **one pass, no design/holdout split** (declared by the user). Fewer than 100 entered
+  sessions in an arm is no verdict for it. GLD arms run from the first session whose intraday chain is
+  stored.
+- **Pass-or-fail rule**, per arm, all must hold (one entered session one observation, net at the
+  verdict fill, dollars at the source's sizes):
+  - mean net above zero with a one-sided stationary-bootstrap 95% lower bound above zero (mean block 5
+    sessions, 20,000 draws, seed 75), and Holm at 5% across the eight on the bootstrap p;
+  - net positive in each time-half of the whole history;
+  - net at or above zero at the **stress fill**;
+  - net still positive at 1.5x fees.
+  - The **portfolio** (all eight stacked, as sized) passes when its net is positive at the verdict and
+    stress fills and its 99th-percentile 100-session drawdown (whole-session bootstrap) is smaller than
+    its mean session net times 100.
+- **Minimum detectable effect (B12):** computed per arm from the stored sample and recorded in the
+  local result file.
+- **Name split (B9):** does not apply; two symbols, each with its own arms.
+- **Declared limits (B11):** the history is read once, so a pass is a fact about these sessions and
+  not a holdout-confirmed edge; the paper arms, read forward from the day they run, are the only fresh
+  evidence. 60 s quotes; entries at the first minute at or after the entry time; an opening-range break
+  at the first minute whose high exceeds the opening high; spot-touch stops are checked per minute; GEX
+  is the profile of the stored chain; delta is the vendor's. An event date that cannot be rebuilt for a
+  period runs without that gate for the period, and the row says so. The GLD chains are fetched
+  intraday only for the sessions the entry filters can pass; a session not fetched counts as not
+  entered. A position open at the last stored session is settled at that close.
+- **Readings fixed before the run** (the source's text left each open; `packages/ensemble/CLAUDE.md`
+  holds them in full):
+  - the standard-deviation move is the move from the previous close over one day's sigma taken from the
+    previous close's VIX;
+  - the GEX ratio is (call gex + put gex) divided by the smaller of call gex and the absolute put gex over
+    the window of strikes; a window the store cannot fill (the 60 s store keeps 20 strikes each side, the
+    50-strike window asks for 100) is capped at the strikes it holds;
+  - intraday RSI(14) and Stoch(14,3,3) read completed five-minute bars; reward/risk is read at the
+    structure's mid; "up to $X" sizes to the largest whole count within X and never fewer than one;
+  - a strike "just above the previous close" is the listed strike nearest it; the opening-range arm
+    evaluates once, at the first minute above the range's high;
+  - the first-weekly, month-end, quarter-end, options-expiry and PMI days are computed from the calendar
+    (PMI as the first and third trading days of the month); sentiment releases are the second and fourth
+    Fridays unless the suite's own record has the date; CPI dates are known only where the suite's FRED
+    history reaches, and an arm runs without that gate where it does not, the row counting those
+    sessions;
+  - a sold leg needs a bid: a structure without one is skipped and counted, which may remove most of the
+    1DTE GLD spread's days;
+  - a position expiring today stops counting toward an arm's open limit at that day's open; the SPX
+    day-before-expiry fly is marked on the fetched five-minute bars on day one (a touch is tested on the
+    one-minute spot and closes on the latest bar) and on the one-minute store on day two.
+- **Reported, never judged (B13):** per arm and combined: the scorecard, the neighbours of each declared
+  threshold (plateau or lone peak), the result at 1.5x and 2x costs, `drawdown_range`, each calendar
+  year, and the descriptive 2022-05 to 2023-06 row; each arm with its filters off (what the gates
+  contribute); the bot-tree and stated-settings variants side by side.
+- **Data:** no rule enters beyond this section. The SPX store exists (`SPX-60s.db`); the SPX 1DTE
+  chains across two sessions and GLD's intraday chains are fetched by the research queue first; public
+  event dates are rebuilt by a committed script into `~/.cherrypick`. Scripts are
+  `packages/backtest/scripts/ensemble_item75.py` over `cherrypick.ensemble`. Results go under the
+  backtest data directory only (`results/research/item75/`); this plan records the verdict.
+- **Decides:**
+  - **A pass for an arm:** that arm is built as a paper arm in the ensemble module and read forward
+    before any live consideration, and the failed look-alike items above are annotated.
+  - **A fail:** the arm is not built; if all fail, the module stays scaffolded and disabled for the
+    additional rules expected.
+- **Result:** not yet run.
 
 ## Not worth revisiting
 
