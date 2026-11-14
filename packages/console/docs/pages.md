@@ -317,7 +317,7 @@ the setups watchlist:
     (`LINE_LEGEND`); colour says the level (amber POC, accent value area, grey IB), the stroke whose
     it is (the prior session's dotted), and a test fails if a line loses its label or two kinds look
     alike. POC and the value area are always drawn; IBH/IBL, pPOC and pVAH/pVAL are buttons in the
-    legend that show or hide their lines and axis labels, kept in `?hide=ib,ppoc,pva,npoc,on`
+    legend that show or hide their lines and axis labels, kept in `?hide=ib,ppoc,pva,npoc,on`; the composite lines are the one group off by default, shown by `?show=comp`
     (`OPTIONAL_LINES`). **nPOC** lines are untested POCs: for the symbols the `profile-bars` job
     records (SPX, SPY, NDX, QQQ, /ES, /NQ; `recordedProfileSymbol`), each of the last 20 recorded
     sessions' POC that no later bar, overnight included, has reached (`untestedPocs`, the mirror of
@@ -329,7 +329,10 @@ the setups watchlist:
     of `core.marketprofile.overnight_profile`, from the live 15-minute series, which carries extended
     hours). The overnight shown is the one under way, or the one before the newest session
     (`overnightSession`: from 18:00 it is the next day's, a weekend reads Friday's), also in the
-    readout. What the chart is, how the profile is built and what each line means sit in
+    readout. **cPOC / cVAH / cVAL** (off by default, `?show=comp`, both switched together;
+    `compositeSessions`): the composite of the five newest recorded sessions, today excluded while it
+    trades so the levels hold still through the day, from the recorded bars (`buildComposite`),
+    amber and blue in sparse dots, also in the readout. What the chart is, how the profile is built and what each line means sit in
     the card's help box (the ? beside its title), not under the chart. An index's zero-volume bars
     are left blank rather than drawn along the bottom. Built from the 15-minute series (subscribed alongside whatever width is
     drawn; seven days of history, so the prior session is always held) through `lib/marketProfile.ts`,
