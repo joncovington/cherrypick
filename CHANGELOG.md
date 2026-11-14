@@ -11,17 +11,131 @@ beyond the latest release.
 
 ## [Unreleased]
 
+## v0.13.0 — 2026-11-13 — evidence and accounts
+About 45 pull requests since v0.12.0, and it includes everything in the v0.12.1 beta (delta ideas, the
+PMCC-only tab, the wheel tab's state choice). The suite can now read a second broker login beside the
+first, and manage judges a cash account or IRA by its own buying-power caps instead of the margin
+table. Manage's rules carry an evidence grade where they carried a confidence number, and it learned
+covered calls, the super bull, wheel puts by intent and a few time-exit corrections. Earnings times
+come from Yahoo's calendar where Nasdaq's refuses. A new package, `ensemble`, holds a rules engine for
+short-dated option arms; it is backtest-only and nothing in it is switched on. This is an ordinary
+upgrade from v0.12.0 (or from the beta); there is nothing to do by hand.
+
+### Upgrading
+
+- **From v0.12.0 or the v0.12.1 beta:** `python packages/orchestrator/run.py upgrade` (or
+  `upgrade.cmd` / `./upgrade.sh`). It refuses while a live loop is armed or holds a position, as every
+  upgrade does. Afterwards run `python run.py supervise --restart` and restart any resident job (a job
+  reads its config only when it starts), and restart the console to load its new server code.
+- **Nothing is required by hand, and no data migrates.** A second broker login is off until you add
+  one; the example configs gain only optional keys.
+- **manage.json: `confidence`, `hold` and `conflict_penalty` are gone.** Each rule now has an
+  `evidence` grade. A leftover `confidence` is reported as an unknown key and ignored; delete it when
+  convenient. Reasons and rule ties can read differently (below).
+- **Cash accounts and IRAs** are held to new buying-power caps (80% in total, and so on). Set
+  `portfolio.buying_power.cash.enabled` to false in manage.json to keep the VIX table for such an
+  account.
+- **Earnings times** come from Yahoo's calendar where Nasdaq answers 403. This needs `yfinance`
+  (already a technicals dependency); without it the fallback is skipped and listed as failed.
+- **Measurement boundaries:** manage's verdicts and caps moved on 2026-11-10 to 2026-11-13 (table in
+  the detail). Do not pool a manage figure across them.
+
 ### What's new
 
-- **Buying power on a cash account or IRA.** Such an account holds each short put's full strike and
-  each spread's max loss, and neither grows when the market moves, so manage no longer holds it to the
-  VIX table written for margin. It is held to 80% in total (the rest kept free to sell after a
+- **A second broker login across the suite (#1037).** Add one under `broker.logins` in `config.json`
+  (`run.py connect --login NAME`; the installers offer it). Each login has its own keyring entry, its
+  own streamer producer (`streamer.instances`), and MEIC can have a live account per login
+  (`live_accounts.<login>` in meic.json). The orchestrator reads, alerts on and settles each login's
+  accounts, manage judges every account on its own history, and the console names and reads each
+  login's own account. Off by default: with no extra login the job table is unchanged, and an extra
+  login's live account stays off until its own gate, enable and arm are set.
+- **An account select on Live (#1041).** With more than one account, positions, portfolio, wheel and
+  pmcc draw the first account by default, another by name, or all. The choice is `?acct=` in the
+  address and holds across the tabs. The Live head now shows only what qualifies the reading (#1044).
+- **Evidence grades replace confidence (#1040).** A rule is graded mechanics, tested, contested,
+  practice or ours, by the kind of evidence behind it, and `RULE_ORDER` (safety, sizing, stops, targets,
+  time, rolls) breaks ties between rules naming the same action. The console and the Discord post show
+  the grade. The credit stop and the untested-side roll are `contested`.
+- **Buying power on a cash account or IRA (#1026).** A cash account holds each short put's full strike
+  and each spread's max loss, neither of which grows when the market moves, so manage no longer holds
+  it to the VIX table written for margin. It is held to 80% in total (the rest kept free to sell after a
   volatility spike), with short puts at their strikes plus shares under 65% of net liq and the other
   trades' buying power under 35%. A new rule, `portfolio.stress`, flags SPY −20% with IV up 10 points
   costing over 20% of net liq. The income list, the hedge and the trade model size against the same
   caps, and Live → portfolio's room card lists each part. Margin accounts, and accounts of unknown kind,
   keep the VIX table. The caps are in `portfolio.buying_power.cash`; `enabled: false` restores the VIX
   table for a cash account.
+- **manage learned more shapes and cases.**
+  - Covered calls (short calls the shares cover) are no longer called naked; `covered_call.assigned`
+    judges an in-the-money one by its call-away (#1033).
+  - Wheel puts by intent: a short put on a name with `intent: "wheel"` is judged by `wheel.tested`
+    (roll, close or take assignment) rather than the credit stop (#1034). Live → wheel lists the short
+    puts with no intent, with both verdicts, and asks whether each is a wheel; the choice is staged and
+    saved in Config → Position rules → Intents (#1035, #1036).
+  - Super bull and super bear (diagonal) are named before the diagonal test, and directional trades
+    get their own time exit, `directional.time_exit`, off by default (#1043).
+  - A diagonal's target is capped at 75% of its modelled gain (`debit.take_profit.max_gain_cap`), the
+    PMCC long is flagged for rolling at 60 days left (was 120), and `short_term_short_days` is 21
+    (was 14) (#1033, #1034).
+  - The wheel tab keeps to the wheel's own legs, not every trade on its names (#1017).
+- **The v0.12.1 beta's changes**, folded in: the portfolio tab's **ideas** button (what drives your
+  delta and the rolls that would move it, each priced; a PMCC rolled under its own rules), put
+  calendars' rolls quoted from the broker, the PMCC tab holding PMCCs only with a **time spreads**
+  filter on positions, the wheel tab's state choice, cards or rows on the wheel and PMCC tabs, and live
+  prices on the wheel, PMCC, positions and portfolio tabs (#1018 to #1021).
+- **Earnings times keep coming (#1030).** Nasdaq's calendar has answered 403 since 2026-11-09 and the
+  times file went empty. Every date it does not answer is now read from Yahoo's calendar; the file
+  records each date's source, and a run that gets nothing writes nothing, so the last good file stays.
+- **Console.** Guide screenshots expand on a click and the guide reads on a tablet and a phone (#1013);
+  the futures ticker fits small screens (#1014); a silent DXLink session is rebuilt overnight (#1015); a
+  sleeping tab no longer strobes the tick flash on waking (#1016); every order's legs are drawn in the
+  shape of the structure, puts before calls from the lowest strike up (#1032).
+- **Fixes.** A config save no longer fails with "changed on disk" because the browser rounded the
+  file's mtime (#1039). The hourly status digest shows the real accounts, lists switched-off modules
+  once as `off:` and says plainer things (#1047). Weeklyput's SPX plus SPY pair is held on purpose, so
+  the same-index lint allows that one pair (#1048).
+- **A new package, `packages/ensemble` (#1052).** A rules engine for short-dated option arms: an arm is
+  configuration and one pure function decides. Paper-only and credential-free, with no loop, ledger,
+  config or console page yet, so it does nothing on an install. It serves research item 75, whose
+  backtest driver is in `packages/backtest` (#1053).
+- **Research.** Items 70 to 75 were declared (a dividend-yield put, LEAPS as leverage, MEIC on XSP by
+  stop and width, one to three 14:00 condors, the super bull as leverage, the ensemble's rules). Item 72
+  failed, so the margin login's XSP live account stays off; item 68 dropped NDX before any P&L was read.
+  Verdicts and declarations are in `research/`.
+
+### In detail
+
+**Measurement boundaries.** manage's verdicts are advice, but a series of them breaks here.
+
+| Area | Date | What it splits |
+|---|---|---|
+| manage | 2026-11-10 | The cash-account buying-power caps judge a cash account or IRA (#1026). Margin and unknown-kind accounts are unchanged. |
+| manage | 2026-11-13 | Wheel puts by intent, the capped diagonal target, the PMCC long's roll at 60 days, covered calls, `short_term_short_days` 21 and the expiry rules for earnings trades and for trades opened inside three days of expiry (#1033, #1034). On 25 stored sessions seven verdicts changed, each an earnings trade now held through its report. |
+| manage | 2026-11-13 | Evidence grades replace confidence (#1040): actions were identical on 25 stored sessions; 2 of 300 trade-days show a different reason under the same CLOSE. |
+| manage | 2026-11-13 | Super bull and bear are named before the diagonal test, and directional trades lose the credit 21-day exit (#1043). |
+| manage | 2026-11-13 | A second login's trade is numbered per login (`-2`), where a single-login history numbered across logins (#1037). |
+| Earnings times | 2026-11-09 | The times file was empty from here until the Yahoo fallback (#1030); names it could not time lost their time of day in between. |
+
+**manage**
+
+- Snapshot and rule changes are in What's new; config keys are in `packages/manage/config.example.json`
+  (`evidence` on each rule, `covered_call`, `directional.time_exit`, `debit.take_profit.max_gain_cap`,
+  `expiry.wait_if_entered_inside`, `portfolio.buying_power.cash`, `portfolio.delta_ideas`).
+- The README cites item 53 for trades opened inside 21 days: no challenger beat the current rules
+  (#1049).
+
+**Broker logins**
+
+- New keys: `broker.logins` and `streamer.instances` in `config.json`, `live_accounts` in `meic.json`.
+  MEIC `tt --login` reads another login. A live account that never traded gets no job. Reconcile leaves
+  dust positions out, and the watchdog no longer calls a producer with nothing to stream stalled.
+- The orchestrator's account tests use invented digits (#1038).
+
+**Backtest**
+
+- An XSP dataset beside QQQ and NDX (`XSP-60s-wide.db`), a single progress bar for a fetch and its VIX
+  pass, and open-interest plan alias `SPXW-1D` (#1027, #1028, #1053). Vendor data stays under
+  `~/.cherrypick`.
 
 ## v0.12.1-beta — 2026-11-10 — moving delta
 The first beta: a pre-release to try before v0.12.1. `upgrade` and the version chip will not offer
