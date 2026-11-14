@@ -9,6 +9,7 @@ import { BoxOpenButton, ScreenerCard, ScreenerLayout, SessionSelect, SymbolSearc
 import { Section } from "../../components/Section";
 import { Dial, ValuationDetail, flagText, money, needsGrowth, pct, stateLabel, stretch, stretchText, type DetailSection } from "./ValuationDetail";
 import { GuideLink } from "../../components/GuideLink";
+import { chartHref } from "../Chart/chartRoute";
 
 export { ValuationDetail, stretch } from "./ValuationDetail";
 
@@ -153,7 +154,7 @@ function ValueCard({ r, onOpen }: { r: ValuationRow; onOpen: () => void }) {
       <span className="pos-card-head">
         <span className="pos-card-titles">
           <span className="pos-card-sym-line">
-            <Link className="pos-card-sym module-link" to={`/charts/technicals?symbol=${encodeURIComponent(r.symbol)}`} title={`Open ${r.symbol}'s chart`}>
+            <Link className="pos-card-sym module-link" to={chartHref(r.symbol, "1d")} title={`Open ${r.symbol}'s chart`}>
               {r.symbol}
             </Link>
             {r.spot === null ? null : <span className="pos-card-spot">{money(r.spot)}</span>}

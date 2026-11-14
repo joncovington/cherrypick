@@ -59,7 +59,7 @@ function render(url: string): string {
     .replace(/&#x27;/g, "'");
 }
 
-const symbols = (html: string) => [...html.matchAll(/symbol=([A-Z]+)"/g)].map((m) => m[1]);
+const symbols = (html: string) => [...html.matchAll(/symbol=([A-Z]+)&(?:amp;)?tf=1d"/g)].map((m) => m[1]);
 
 describe("the signal board tab", () => {
   it("lists bullish then bearish at two or more by default, and never a tie", () => {

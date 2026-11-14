@@ -8,6 +8,7 @@ import { FilterGroup, FilterSortButton, FilterSortPanel, FilterSummary, FilterSw
 import { ScreenerLayout } from "./ScreenerParts";
 import { Section } from "../../components/Section";
 import { GuideLink } from "../../components/GuideLink";
+import { chartHref } from "../Chart/chartRoute";
 
 /**
  * The signal board (2026-10-17): each listed stock's count of methods agreeing on one side, from our
@@ -46,7 +47,7 @@ function BoardList({ rows, data, side, min }: { rows: SignalBoardRow[]; data: Si
       {rows.map((r) => (
         <li key={r.symbol} className="sb-row">
           <span className="sb-name">
-            <Link className="module-link mono" to={`/charts/technicals?symbol=${encodeURIComponent(r.symbol)}`} title={`Open ${r.symbol}'s chart`}>
+            <Link className="module-link mono" to={chartHref(r.symbol, "1d")} title={`Open ${r.symbol}'s chart`}>
               {r.symbol}
             </Link>
             <span className="muted sb-sector">{r.sector ?? "—"}</span>

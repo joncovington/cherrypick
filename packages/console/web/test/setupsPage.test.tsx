@@ -75,7 +75,9 @@ function render(url: string): string {
 }
 
 const symbols = (html: string) =>
-  [...html.matchAll(/href="\/charts\/technicals\?symbol=([A-Z]+)&setup=(\w+)(&side=short)?"/g)].map((m) => `${m[1]}:${m[2]}${m[3] ? ":short" : ""}`);
+  [...html.matchAll(/href="\/charts\/chart\?symbol=([A-Z]+)&(?:amp;)?tf=1d&(?:amp;)?setup=(\w+)(&(?:amp;)?side=short)?"/g)].map(
+    (m) => `${m[1]}:${m[2]}${m[3] ? ":short" : ""}`,
+  );
 
 describe("the setups watchlist page", () => {
   it("lists the last 5 sessions' entries and exits, each symbol linking to its chart with that setup", () => {

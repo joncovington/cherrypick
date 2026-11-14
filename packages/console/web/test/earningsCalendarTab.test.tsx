@@ -150,7 +150,7 @@ describe("the earnings tab", () => {
   });
 
   it("links the card's symbol to its chart", () => {
-    expect(card(row({ trade: trade() }))).toContain('href="/charts/technicals?symbol=AAA"');
+    expect(card(row({ trade: trade() }))).toContain('href="/charts/chart?symbol=AAA&amp;tf=1d"');
   });
 
   it("groups by day under a heading with its count", () => {

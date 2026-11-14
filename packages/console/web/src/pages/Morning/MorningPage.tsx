@@ -28,6 +28,7 @@ import { useFilterPanel } from "../useFilterPanel";
 import { CardLightbox, LightboxFrame, useOpenParam } from "../Backtest/CardLightbox";
 import { MorningBrief, type BriefDetail } from "./MorningBrief";
 import { morningViews, viewFrom, type MorningView } from "./brief";
+import { chartHref } from "../Chart/chartRoute";
 
 /**
  * The morning report. Renders the fact pack and computes nothing.
@@ -771,7 +772,7 @@ export function ProfileLevelsCard({ pack }: { pack: MorningPack }) {
                 ) : (
                   <tr key={sym}>
                     <td>
-                      <a href={`/charts/chart?symbol=${encodeURIComponent(sym)}&tf=15m&day=${s.session}`}>{sym}</a>
+                      <a href={chartHref(sym, "15m", { day: s.session })}>{sym}</a>
                     </td>
                     <td>{f(s.poc)}</td>
                     <td>

@@ -5,6 +5,7 @@ import { BarChart, SignedBar } from "../../components/Charts";
 import { Card, SortTh, sortRows, useSort } from "../../components/DataTable";
 import { HelpSection } from "../../components/CardHelp";
 import { Section } from "../../components/Section";
+import { chartHref } from "../Chart/chartRoute";
 
 /**
  * The technicals report on the Morning tab: breadth, stages by sector, rotation, the relative-
@@ -225,7 +226,7 @@ function LeadersCard({ t }: { t: TechnicalsReport }) {
             {leaders.map((l) => (
               <tr key={l.symbol}>
                 <td>
-                  <Link to={`/charts/technicals?symbol=${encodeURIComponent(l.symbol)}`}>{l.symbol}</Link>
+                  <Link to={chartHref(l.symbol, "1d")}>{l.symbol}</Link>
                 </td>
                 <td className="muted">{l.sector ?? "—"}</td>
                 <td className={l.return6mPct === null ? "muted" : l.return6mPct >= 0 ? "pnl-pos" : "pnl-neg"}>
@@ -252,7 +253,7 @@ function MoverRows({ rows }: { rows: TechnicalsMover[] }) {
       {rows.map((m) => (
         <tr key={m.symbol}>
           <td>
-            <Link to={`/charts/technicals?symbol=${encodeURIComponent(m.symbol)}`}>{m.symbol}</Link>
+            <Link to={chartHref(m.symbol, "1d")}>{m.symbol}</Link>
           </td>
           <td className="muted">{m.sector ?? "—"}</td>
           <td className={m.changePct === null ? "muted" : m.changePct >= 0 ? "pnl-pos" : "pnl-neg"}>

@@ -50,7 +50,7 @@ describe("positions", () => {
   it("is a trade card with the entry cash signed and the symbol linked to its chart", () => {
     const m = positionModel(pos({}));
     expect(m.cash).toBe(110);
-    expect(m.symbolHref).toBe("/charts/technicals?symbol=XYZ");
+    expect(m.symbolHref).toBe("/charts/chart?symbol=XYZ&tf=1d");
     expect(m.shape).toContain("5890");
   });
   it("draws the order chain from the row's structure, at its quantity", () => {

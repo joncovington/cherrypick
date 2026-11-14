@@ -19,6 +19,7 @@ import { TradeListCard } from "../Live/TradeListCard";
 import { ChoiceGroup, FliesLayout } from "./FliesFilter";
 import { Section } from "../../components/Section";
 import { clockTime, structureLabel, structureLegs, wingWidth } from "./structure";
+import { chartHref } from "../Chart/chartRoute";
 
 /**
  * The positions and books tabs (2026-11-06), in the portfolio tab's layout: a position is a trade card
@@ -84,7 +85,7 @@ export function positionModel(p: FliesPositionRow): TradeCardModel {
   return {
     key: p.positionId,
     symbol: p.symbol,
-    symbolHref: `/charts/technicals?symbol=${encodeURIComponent(p.symbol)}`,
+    symbolHref: chartHref(p.symbol, "1d"),
     spot: null,
     shape: `${structureLabel(p.kind, p.side)} · ${fmtNum(p.center, 0)}${wing === "—" ? "" : ` · ${wing} wide`}`,
     chips: (

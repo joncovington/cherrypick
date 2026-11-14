@@ -21,6 +21,7 @@ import { ExpiryNote } from "./ExpiryNote";
 import { ScreenerLayout } from "./ScreenerParts";
 import { Section } from "../../components/Section";
 import { GuideLink } from "../../components/GuideLink";
+import { chartHref } from "../Chart/chartRoute";
 
 /**
  * The earnings calendar's forward record (2026-10-17; docs/history/earnings-screener-plan.md (tag archive/docs-2026-11), step 5): every
@@ -275,7 +276,7 @@ export function EarningsRecordTab() {
                             </button>
                           </td>
                           <td>
-                            <Link className="module-link" to={`/charts/technicals?symbol=${encodeURIComponent(r.symbol)}`}>
+                            <Link className="module-link" to={chartHref(r.symbol, "1d")}>
                               {r.symbol}
                             </Link>
                           </td>
