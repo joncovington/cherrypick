@@ -202,6 +202,11 @@ bound from the live chain rather than inheriting a number.
 **Rules for the widened window:**
 - **It is gated on whether ANY arm can still enter**, advised twins included, through
   `paper_loop.session_books`: asking only about control starves a twin of deep strikes.
+- **A paced arm asks only for the symbols it will reach.** A held-long arm with
+  `entry_symbols_per_session` gets the widened window and the year-long expiry only on the symbols
+  `paper_loop.paced_reach` predicts its walk enters today (the entry phase's own order, counter and
+  refusals). The rest would be subscribed for nothing. A predicted symbol whose snapshot then fails
+  leaves the next one unwindowed, costing one entry that day.
 - **The hint is declared downward only.** Open legs stay subscribed, so window risk is confined to
   entry pricing.
 - **The producer persists every listed expiry** (`stream_expirations`). A request for a date the

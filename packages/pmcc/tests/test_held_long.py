@@ -581,6 +581,45 @@ def test_the_year_long_date_is_asked_for_only_while_a_held_long_arm_can_enter(ca
     assert "TQQQ" not in after.get("window_hints", {})
 
 
+def _two_symbol_paced(cache, shield):
+    shield["symbols"] = ["TQQQ", "SLV"]
+    shield["occ_roots"]["SLV"] = "SLV"
+    shield["settlement_style"]["SLV"] = "physical"
+    shield["dividends"]["SLV"] = {"declared_through": "2099-12-31", "ex_dates": []}
+    for arm in ("shield", "shield_hold"):
+        shield["arms"][arm]["entry_symbols_per_session"] = 1
+    _entry_market(cache, "TQQQ")
+    _entry_market(cache, "SLV")
+
+
+def test_a_paced_arm_asks_for_the_year_long_date_only_on_the_symbol_it_will_reach(cache, shield, tmp_path):
+    _two_symbol_paced(cache, shield)
+    conn = db.connect(str(tmp_path / "paper.db"))
+    request = _request(cache, shield, conn, tmp_path)
+    asked = [s for s in ("TQQQ", "SLV") if LEAP in request["expirations"].get(s, [])]
+    assert asked == ["TQQQ"]  # the walk's first symbol; pacing stops it before SLV
+    # The weekly short is still asked for on both: the listing is read from it.
+    assert all("2026-09-04" in request["expirations"][s] for s in ("TQQQ", "SLV"))
+
+
+def test_the_paced_reach_names_the_symbol_the_entry_phase_opens(cache, shield, tmp_path):
+    _two_symbol_paced(cache, shield)
+    conn = db.connect(str(tmp_path / "paper.db"))
+    reach = paper_loop.paced_reach(shield, conn, cache_path=cache.path, day=MONDAY.date().isoformat())
+    paper_loop.run_once(shield, conn, cache_path=cache.path, when=MONDAY)
+    entered = {p["symbol"] for p in db.open_positions(conn)}
+    assert reach == {"shield": entered, "shield_hold": entered}
+
+
+def test_an_unpaced_arm_keeps_the_year_long_date_on_every_symbol(cache, shield, tmp_path):
+    _two_symbol_paced(cache, shield)
+    for arm in ("shield", "shield_hold"):
+        del shield["arms"][arm]["entry_symbols_per_session"]
+    conn = db.connect(str(tmp_path / "paper.db"))
+    request = _request(cache, shield, conn, tmp_path)
+    assert all(LEAP in request["expirations"][s] for s in ("TQQQ", "SLV"))
+
+
 def test_control_off_drops_its_plan_dates_but_keeps_the_held_long_entry_short(cache, shield, tmp_path):
     """Control retired (2026-10-06): its ~21-DTE long date was still requested for every symbol,
     and the held-long entry's short was only covered because it happened to equal control's plan

@@ -123,6 +123,9 @@ def write(config: dict, conn, db_path: str, *, cache_path: str, today: date | No
 
     arms, _ = _paper_loop.session_books(config, today.isoformat())
     max_positions = int(defaults.get("max_positions", 3))
+    # A paced held-long arm enters only the first symbols its walk reaches; the rest get no widened
+    # window and no year-long expiry today. See `paper_loop.paced_reach`.
+    reach = _paper_loop.paced_reach(config, conn, cache_path=cache_path, day=today.isoformat())
     # Held-long dates: the next weekly short of every held-long position, and the listed ~1-year
     # long a held-long arm would enter today -- asked for only while that arm can still enter.
     held_longs, extra = held_long_dates(conn, config, today)
@@ -147,7 +150,7 @@ def write(config: dict, conn, db_path: str, *, cache_path: str, today: date | No
                 extra.setdefault(symbol, set()).add(plan["short_expiration"])
     for symbol in entry_symbols:
         for target, _pct in stream_window.entry_targets(
-            conn, cache_path, symbol, today, config, arms, max_positions
+            conn, cache_path, symbol, today, config, arms, max_positions, reach=reach
         ):
             extra.setdefault(symbol, set()).add(target)
     # The skew sampler's dates (skew.py), every configured symbol, every session: a held-long arm
@@ -167,6 +170,7 @@ def write(config: dict, conn, db_path: str, *, cache_path: str, today: date | No
         config,
         arms=arms,
         max_positions=max_positions,
+        reach=reach,
     )
     return _sr.write_request(
         _MODULE,
