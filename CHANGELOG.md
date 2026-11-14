@@ -44,7 +44,8 @@ beyond the latest release.
   broker's feed only ever hands back its newest 8,000 one-minute bars (about six days of a future), so
   this is what lets profiles be compared across weeks. It reads the broker and changes nothing; turn
   it off with `technicals.profile_bars: false`. After upgrading, run `python run.py supervise
-  --restart` so the supervisor picks up the new job.
+  --restart` so the supervisor picks up the new job. If a session's bars come up short for any symbol,
+  the watchdog warns that evening (from 20:15 ET), while the broker still has the minutes to refetch.
 - **Charts → profile.** A new tab shows the recorded sessions' Market Profiles side by side (5, 10 or
   20 days) for SPX, SPY, NDX, QQQ, /ES and /NQ, with a composite of the newest 5, 10 or 20 sessions and
   a table of each day's point of control, value area, first-hour range and whether value moved higher,
