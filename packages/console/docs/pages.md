@@ -1117,6 +1117,12 @@ chipped, with its greeks' time; the GEX page keeps the last session's. The last 
 close had every wall on the strikes beside spot and no move left. Without the next session's chain
 (a holiday, or nothing streaming it) the last session's shows, as before.
 
+- **Profile levels** (the chart's `profile levels` toggle, off by default; `pages/GexPanel/profileLevels.ts`):
+  SPX's Market Profile levels beside the walls, the intraday chart's own (`sessionProfiles` over the
+  live 15-minute candles with SPX's fixed row size, untested POCs from the recorded bars plus the live
+  ones): today's POC while the session runs, the prior session's pPOC, pVAH and pVAL (outside the
+  session the newest finished one, since the panel then shows the next session's chain), and nPOC
+  lines. Both series are subscribed only while the toggle is on. Display only; nothing compares them.
 - **Walls** are the common call and put walls: the three largest call-gamma strikes above spot and put-gamma strikes below
   it, with the side's volume over its OI. Ranking on net left a put-heavy chain with no call wall. A
   toggle weights the gamma by **open interest** (the broker's once-a-day count) or **the session's
