@@ -15,7 +15,7 @@ import {
 } from "lightweight-charts";
 import { CANDLE_PERIODS, PROFILE_SYMBOLS, type CandleBar, type CandlePeriod, type FuturesTickerEntry } from "@console/shared";
 import { useFuturesTicker, useProfileBars } from "../../lib/api";
-import { untestedPocs } from "../../lib/marketProfile";
+import { overnightProfile, untestedPocs, type MarketComposite } from "../../lib/marketProfile";
 import { useCandles } from "../../lib/useCandles";
 import { CardHelpButton, HelpSection, type CardHelpContent } from "../../components/CardHelp";
 import { useWsState } from "../../lib/useQuote";
@@ -36,6 +36,7 @@ import {
   sessionProfiles,
   untestedBars,
   untestedCandidates,
+  overnightSession,
   type OverlayColours,
   type SessionProfiles,
 } from "./profileOverlay";
@@ -173,10 +174,12 @@ function ProfileReadout({
   profiles,
   precision,
   untested,
+  overnight,
 }: {
   profiles: SessionProfiles;
   precision: number;
   untested: ReadonlyArray<readonly [string, number]> | null;
+  overnight: MarketComposite | null;
 }) {
   const { latest, prior, developing } = profiles;
   if (latest === null) return <div className="intraday-status muted">profile: no regular-session bars yet</div>;
@@ -206,6 +209,13 @@ function ProfileReadout({
           {untested.length === 0
             ? "none"
             : untested.map(([s, poc]) => `${f(poc)} (${sessionLabel(s)})`).join(", ")}
+        </span>
+      )}
+      {overnight !== null && (
+        <span>
+          {" "}
+          · overnight before {sessionLabel(overnight.sessions[0]!)}: H {f(overnight.high)} · POC {f(overnight.poc)} · L{" "}
+          {f(overnight.low)}
         </span>
       )}
     </div>
@@ -252,6 +262,16 @@ function LiveCandles({
       barSeconds: recorded.barSeconds,
     });
   }, [recordedSymbol, recorded, profiles, profileBars]);
+
+  // A future's overnight (18:00-09:30 ET) from the same live 15-minute series, which carries the
+  // extended hours; a cash symbol has none worth the name.
+  const isFuture = !isCash(entry.product);
+  const overnight = useMemo((): MarketComposite | null => {
+    const rowSize = profiles.latest?.rowSize;
+    if (!isFuture || !profile || hidden.has("overnight") || rowSize === undefined) return null;
+    const session = overnightSession(profileBars);
+    return session === null ? null : overnightProfile(profileBars, { session, rowSize, barSeconds: 900 });
+  }, [isFuture, profile, hidden, profiles, profileBars]);
 
   useEffect(() => {
     const el = hostRef.current;
@@ -355,13 +375,13 @@ function LiveCandles({
     const series = seriesRef.current;
     histRef.current?.setProfile(profile ? profiles.latest : null);
     if (series === null) return;
-    const want = profile ? profileLines(profiles, hidden, untested) : [];
+    const want = profile ? profileLines(profiles, hidden, untested, overnight) : [];
     const key = want.map((l) => `${l.key}:${l.price}`).join("|");
     if (key === linesRef.current.key) return;
     for (const line of linesRef.current.lines) series.removePriceLine(line);
     const lines = want.map((l) => series.createPriceLine({ price: l.price, title: l.title, ...lineStyleFor(l.role, OVERLAY) }));
     linesRef.current = { key, lines };
-  }, [profile, profiles, hidden, untested]);
+  }, [profile, profiles, hidden, untested, overnight]);
 
   const live = ws.dxlink === "connected";
   const precision = PRECISION[entry.product] ?? 2;
@@ -385,7 +405,9 @@ function LiveCandles({
         )}
         {!live && <span className="chip" style={{ marginLeft: 8 }}>feed {ws.dxlink} — not live</span>}
       </div>
-      {profile && profileBars.length > 0 && <ProfileReadout profiles={profiles} precision={precision} untested={recordedSymbol === "" || recorded === undefined || !recorded.available ? null : untested} />}
+      {profile && profileBars.length > 0 && <ProfileReadout profiles={profiles} precision={precision} untested={recordedSymbol === "" || recorded === undefined || !recorded.available ? null : untested}
+          overnight={overnight}
+        />}
       <div ref={hostRef} style={{ height: "560px" }} />
       {profile && profileBars.length > 0 && <ProfileLegend hidden={hidden} onToggle={onToggleLine} />}
     </>

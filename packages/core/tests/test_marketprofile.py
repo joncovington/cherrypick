@@ -143,6 +143,49 @@ def test_fixture_untested_pocs(case):
     assert [[d.isoformat(), poc] for d, poc in _untested(case)] == case["expected"]
 
 
+def _overnight(case: dict) -> mp.Composite | None:
+    by_name = {c["name"]: c for c in CASES["cases"]}
+    bars = case["bars"] if "bars" in case else by_name[case["bars_from"]]["bars"]
+    return mp.overnight_profile(
+        bars,
+        session=dt.date.fromisoformat(case["session"]),
+        row_size=case["row_size"],
+        bar_seconds=case["bar_seconds"],
+    )
+
+
+def test_hand_worked_overnight():
+    # Thu 18:00 100.2-102.5, 18:30 101.0-101.8, Fri 03:00 101.5-103.1, 09:00 102.0-102.4; a 17:30 bar and the
+    # 09:30 open are outside the window
+    o = _overnight(CASES["overnight"][0])
+    assert [(r.price, r.tpo) for r in o.rows] == [(100.0, 1), (101.0, 3), (102.0, 3), (103.0, 1)]
+    # 101 and 102 tie on 3, half a row each side of the middle: the lower. Need 5.6 of 8: 3 + rows 102-103 (4)
+    assert (o.poc, o.val, o.vah, o.tpo_total) == (101.0, 101.0, 103.0, 8)
+    assert (o.low, o.high) == (100.2, 103.1)
+    assert o.sessions == (dt.date(2026, 11, 13),)
+    assert (
+        mp.overnight_profile(
+            CASES["overnight"][0]["bars"], session=dt.date(2026, 11, 20), row_size=1, bar_seconds=1800
+        )
+        is None
+    )
+
+
+@pytest.mark.parametrize("case", CASES["overnight"], ids=[c["name"] for c in CASES["overnight"]])
+def test_fixture_overnight(case):
+    got = _overnight(case).as_dict()
+    want = case["expected"]
+    assert got.keys() == want.keys()
+    for key, value in want.items():
+        if key == "rows":
+            assert [(r["price"], r["tpo"]) for r in got[key]] == [(r["price"], r["tpo"]) for r in value]
+            assert [r["volume"] for r in got[key]] == pytest.approx([r["volume"] for r in value])
+        elif isinstance(value, float):
+            assert got[key] == pytest.approx(value), key
+        else:
+            assert got[key] == value, key
+
+
 def test_a_composite_of_one_session_is_that_sessions_profile():
     case = next(c for c in CASES["cases"] if c["name"].startswith("/NQ"))
     p = _case(case)

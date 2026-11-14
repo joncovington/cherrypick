@@ -45,6 +45,11 @@ into: no bar starting at or after that session's close (16:00 ET on its date) ha
 POC's row, `[poc, poc + row_size)`. Every bar passed counts, overnight and pre-market included, so pass
 a future's extended hours to see its overnight touches.
 
+**An overnight profile** (`overnight_profile`) is a future's session before the open: from 18:00 ET the
+calendar day before `session` to 09:30 ET on it (Sunday evening for a Monday). Its 30-minute periods
+(31 of them) outnumber the letters, so it is counted, not lettered: each row's TPOs are the periods
+that touched it, and the same POC and value-area rules apply. Returned as a `Composite` of one session.
+
 No day-type label: which shapes count as "trend" or "neutral" is a definition a study declares, not
 something this module decides. `default_row_size` is a convenience for display; a study fixes its row
 size in its declaration.
@@ -414,6 +419,86 @@ class Composite:
             "volume_total": self.volume_total,
             "volume_poc": self.volume_poc,
         }
+
+
+OVERNIGHT_START_MIN = 18 * 60
+
+
+def overnight_profile(
+    bars: Iterable,
+    *,
+    session: _dt.date,
+    row_size: float,
+    bar_seconds: int,
+    period_minutes: int = PERIOD_MINUTES,
+    value_area_share: float = VALUE_AREA_SHARE,
+) -> Composite | None:
+    """The overnight before `session`: bars starting in [18:00 ET the day before, 09:30 ET on it), or
+    None when there are none. Rows, POC and value area as `build_profile`; the TPOs are counted per
+    30-minute period from 18:00, since there are more periods than letters."""
+    if not (row_size > 0 and math.isfinite(row_size)):
+        raise ValueError(f"row_size must be positive, got {row_size!r}")
+    period_s = period_minutes * 60
+    if bar_seconds <= 0 or period_s % bar_seconds != 0:
+        raise ValueError(f"bar_seconds {bar_seconds} must divide the {period_minutes}-minute period")
+    eve = session - _dt.timedelta(days=1)
+    start = _dt.datetime(
+        eve.year, eve.month, eve.day, OVERNIGHT_START_MIN // 60, OVERNIGHT_START_MIN % 60, tzinfo=ET
+    )
+    end = _dt.datetime(
+        session.year, session.month, session.day, SESSION_OPEN_MIN // 60, SESSION_OPEN_MIN % 60, tzinfo=ET
+    )
+    t0, t1 = start.timestamp(), end.timestamp()
+    by_period: dict[int, list[tuple[float, float, float]]] = {}
+    for bar in bars:
+        t = _field(bar, "t")
+        if not t0 <= t < t1:
+            continue
+        if (t - t0) % bar_seconds != 0:
+            raise ValueError(
+                f"bar at {_et(t).isoformat()} does not start on a {bar_seconds}s boundary from 18:00"
+            )
+        h, low = _field(bar, "h"), _field(bar, "l")
+        if not (h > 0 and low > 0 and math.isfinite(h) and math.isfinite(low)):
+            continue
+        v = _field(bar, "v") if (isinstance(bar, Mapping) and "v" in bar) or hasattr(bar, "v") else 0.0
+        v = v if math.isfinite(v) and v > 0 else 0.0
+        by_period.setdefault(int((t - t0) // period_s), []).append((h, low, v))
+    if not by_period:
+        return None
+    lo_idx = min(_row(b[1], row_size) for p in by_period.values() for b in p)
+    hi_idx = max(_row(b[0], row_size) for p in by_period.values() for b in p)
+    n_rows = hi_idx - lo_idx + 1
+    counts = [0] * n_rows
+    volume = [0.0] * n_rows
+    for period in by_period.values():
+        touched: set[int] = set()
+        for h, low, v in period:
+            a, b = _row(low, row_size) - lo_idx, _row(h, row_size) - lo_idx
+            touched.update(range(a, b + 1))
+            for i in range(a, b + 1):
+                volume[i] += v / (b - a + 1)
+        for i in touched:
+            counts[i] += 1
+    poc = _point_of_control(counts)
+    lo_va, hi_va = value_area(counts, poc, value_area_share)
+    volume_total = sum(volume)
+    return Composite(
+        sessions=(session,),
+        row_size=row_size,
+        rows=tuple(
+            CompositeRow(price=_price(lo_idx + i, row_size), tpo=counts[i], volume=volume[i])
+            for i in range(n_rows)
+        ),
+        high=max(b[0] for p in by_period.values() for b in p),
+        low=min(b[1] for p in by_period.values() for b in p),
+        poc=_price(lo_idx + poc, row_size),
+        val=_price(lo_idx + lo_va, row_size),
+        vah=_price(lo_idx + hi_va, row_size),
+        tpo_total=sum(counts),
+        volume_total=volume_total,
+        volume_poc=_price(lo_idx + _point_of_control(volume), row_size) if volume_total > 0 else None,
+    )
 
 
 def build_composite(
