@@ -58,6 +58,13 @@ written are not re-judged. The arithmetic is `cherrypick.core.robustness`
   each trade counted in the part holding its entry session. The holdout part counts only after a
   design pass. Cuts not named here are reported, never judged. Declarations already written keep
   their own windows.
+- **The three bars** (`cherrypick.backtest.study.checks`), each with its declared t bar, sample
+  floor, trades per year, resamples and seed: capital (net less the bill on the buying power held),
+  tail (the 99th-percentile one-year drawdown under a year of mean net), and delta for a structure
+  with net delta (net less the financed delta on the same capital). A pass needs every applicable
+  bar. Holding the same delta in shares is not a rival; the same-capital rivals the user would pick
+  are reported beside the verdict. Declarations already written keep their own rules, and one
+  re-read under these bars is a new item, said out loud as a retest.
 - **A result file the board can read:** a top-level `verdict` (one word, or one per arm, or per arm
   as `{"verdict": ...}`), its `window`, and the `run_id` when the study ran through the runner.
 - **Declared limits** (B11): how a position open at a name's last bar is settled (the last close; no
