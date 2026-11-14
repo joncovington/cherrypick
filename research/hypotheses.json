@@ -3491,6 +3491,54 @@
       "outcome": "all three strike rules fail the design window (breakeven and delta30 trail holding the lot; cost5's t is under 2 and it fails Holm and the per-name check), so the ladder keeps counting the hospital and sells no calls",
       "retest": null,
       "retests": []
+    },
+    {
+      "id": 77,
+      "study": "item77",
+      "title": "Item 57's weekly index put under the three bars: the bill on its buying power, its tail, and its delta",
+      "status": "declared",
+      "legacy": false,
+      "setup": "variance-premium",
+      "side": "neutral",
+      "structure": "short-put",
+      "window": "weekly",
+      "measure": "item 57's unhedged trades (the index 10-delta put sold 7 days before each non-monthly weekly, held to expiry), each trade's return on its buying power under two models (cash-secured; Reg T naked put at 15% SPX / 20% funds, 10% strike floor), per cycle the equal-weight mean over the names present",
+      "expected": "no prior: item 57's premium passed on notional, but a cash-secured 10-delta put's weekly premium is small against the bill on its strike, and its losses come rarely and large",
+      "sample": "item 57's whole sample, read once; provisional by declaration (item 57 read it), the cycles after 2026-10-30 reported as the fresh evidence; < 80 cycles = no verdict",
+      "rule": "per buying-power model, all of: capital (return less the 3-month bill on the buying power over the days, mean > 0, one-sided t >= 2); tail (99th-percentile one-year drawdown of a stationary bootstrap of the cycles, 10,000 draws, seed 77, under one year of mean return); delta (return less the entry delta financed on the same buying power, mean > 0, one-sided t >= 2); no Holm step, which could not bind at t >= 2 on 80 cycles",
+      "mechanism": "the index variance premium item 46 found at 7 days, now charged for the capital it holds and for its tail",
+      "rivals": [
+        {
+          "explanation": "the capital earns more in bills",
+          "check": "the capital bar"
+        },
+        {
+          "explanation": "a crash the sample lacks",
+          "check": "the tail bar on the sample's own losses; halves reported; 2018, 2020 and 2022 in the sample"
+        },
+        {
+          "explanation": "the index's drift on a long delta",
+          "check": "the delta bar"
+        },
+        {
+          "explanation": "the margin model flatters it",
+          "check": "the cash-secured model judged beside it"
+        }
+      ],
+      "pointer": "research/edge-hypotheses-plan.md#77-item-57s-weekly-index-put-under-the-three-bars-the-bill-on-its-buying-power-its-tail-and-its-delta",
+      "scripts": [
+        "packages/backtest/scripts/index_put_tail_item77.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_index_put_tail_item77_script.py"
+      ],
+      "results": [
+        "{home}/data/backtest/results/research/item77/results.json"
+      ],
+      "outcome": null,
+      "retest": null,
+      "retest_note": "A retest of item 57 itself; the forward cycles after 2026-10-30 are reported beside it.",
+      "retests": []
     }
   ],
   "rule_changes": []
