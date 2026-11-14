@@ -136,6 +136,16 @@ class Entry:
     slippage: dict  # fill kind -> dollars for the whole position, one fill
     fees_open: float
 
+    def to_dict(self) -> dict:
+        """JSON-able form (the paper ledger keeps the entry whole; round-trips through `from_dict`)."""
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, d: dict) -> Entry:
+        d = dict(d)
+        d["legs"] = [Leg(**g) for g in d["legs"]]
+        return cls(**d)
+
 
 @dataclass
 class Decision:

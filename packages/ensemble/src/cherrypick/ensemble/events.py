@@ -19,9 +19,12 @@ Labels
 
 from __future__ import annotations
 
+import json
 from datetime import date, timedelta
+from pathlib import Path
 
 from cherrypick.core import calendar as cal
+from cherrypick.core import home
 
 RULE_LABELS = ("PMI-Mfg", "PMI-Svcs", "OPEX", "FOMC", "MonthEnd", "QuarterEnd", "FirstWeekly")
 
@@ -89,3 +92,15 @@ class EventCalendar:
             unknown = unknown or v is None
             d += timedelta(days=1)
         return None if unknown else False
+
+
+def load_calendar(path=None) -> EventCalendar:
+    """The event data `packages/backtest/scripts/event_history_item75.py` wrote, if any
+    (`<home>/data/public/item75/events.json`, or `path`). Without it only the rule labels answer, and
+    every data label (CPI, sentiment) is unknown, which passes its gate and is recorded `unknown`."""
+    p = Path(path) if path else home.data_dir("public") / "item75" / "events.json"
+    try:
+        doc = json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return EventCalendar()
+    return EventCalendar(doc.get("data"), doc.get("covered"))
