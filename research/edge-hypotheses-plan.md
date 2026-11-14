@@ -7440,7 +7440,14 @@ item's names has been read for it.*
   - **A fail or no verdict:** a super bull is a directional bet that adds nothing over the same
     leverage held plainly; manage keeps judging it as directional, sized to the per-trade budget, and
     no income label is given it.
-- **Result:** not yet run.
+- **Result (2026-11-14): fail, all four arms, in the design window.**
+  Every arm's mean net return on capital is below zero after costs, and every arm trails the
+  financed delta it is judged against, in both time-halves and at 1.5x costs; no check holds for
+  any arm. With no design pass the holdout is not read. Every figure, the skips and the MDE included,
+  is in the local result (`~/.cherrypick/data/backtest/results/research/item74/`).
+- **What this decides:** the fail branch: a super bull is a directional bet that adds nothing over
+  the same leverage held plainly; manage keeps judging it as directional, sized to the per-trade
+  budget, with no income label.
 ### 75. A third-party portfolio of eight short-dated option rules, read over all history at once
 
 *Source: the user, 2026-11-13. A third-party portfolio publishes eight rule sets (settings and a bot
