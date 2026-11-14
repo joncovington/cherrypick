@@ -85,18 +85,49 @@ export interface OverlayColours {
   pocFill: string;
 }
 
+/**
+ * How each line is drawn. Every line carries its name on the price axis (an unlabelled line was a
+ * line nobody could read). Colour says what the level is (amber POC, accent value area, grey initial
+ * balance); the stroke says whose it is: today's solid or dashed, the prior session's dotted.
+ */
 export function lineStyleFor(role: ProfileLine["role"], c: OverlayColours) {
+  const base = { lineWidth: 1 as const, axisLabelVisible: true };
   switch (role) {
     case "poc":
-      return { color: c.poc, lineStyle: LineStyle.Solid, lineWidth: 1 as const, axisLabelVisible: true };
+      return { ...base, color: c.poc, lineStyle: LineStyle.Solid };
     case "va":
-      return { color: c.va, lineStyle: LineStyle.Dashed, lineWidth: 1 as const, axisLabelVisible: true };
+      return { ...base, color: c.va, lineStyle: LineStyle.Dashed };
     case "ib":
-      return { color: c.muted, lineStyle: LineStyle.Dotted, lineWidth: 1 as const, axisLabelVisible: false };
+      return { ...base, color: c.muted, lineStyle: LineStyle.LargeDashed };
     case "prior-poc":
-      return { color: c.poc, lineStyle: LineStyle.Dotted, lineWidth: 1 as const, axisLabelVisible: false };
+      return { ...base, color: c.poc, lineStyle: LineStyle.Dotted };
     case "prior-va":
-      return { color: c.muted, lineStyle: LineStyle.LargeDashed, lineWidth: 1 as const, axisLabelVisible: false };
+      return { ...base, color: c.va, lineStyle: LineStyle.Dotted };
+  }
+}
+
+/** The legend under the chart, one entry per line, in the order the lines are drawn. */
+export const LINE_LEGEND: { role: ProfileLine["role"]; label: string; meaning: string }[] = [
+  { role: "poc", label: "POC", meaning: "point of control: the price traded at longest today" },
+  { role: "va", label: "VAH / VAL", meaning: "value area high and low: where 70% of today's time was spent" },
+  { role: "ib", label: "IBH / IBL", meaning: "initial balance: the high and low of the first hour (09:30–10:30)" },
+  { role: "prior-poc", label: "pPOC", meaning: "the prior session's point of control" },
+  { role: "prior-va", label: "pVAH / pVAL", meaning: "the prior session's value area" },
+];
+
+/** An SVG stroke-dasharray matching a line style, for the legend's swatches. */
+export function dashFor(style: LineStyle): string {
+  switch (style) {
+    case LineStyle.Dotted:
+      return "1 3";
+    case LineStyle.Dashed:
+      return "5 3";
+    case LineStyle.LargeDashed:
+      return "9 4";
+    case LineStyle.SparseDotted:
+      return "1 5";
+    default:
+      return "none";
   }
 }
 

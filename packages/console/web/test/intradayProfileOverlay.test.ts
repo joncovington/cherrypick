@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { CandleBar } from "@console/shared";
 
-import { profileLines, sessionProfiles } from "../src/pages/Intraday/profileOverlay";
+import { LINE_LEGEND, lineStyleFor, profileLines, sessionProfiles } from "../src/pages/Intraday/profileOverlay";
 
 /**
  * The Intraday chart's profile overlay: which sessions it draws, when it calls one developing, and
@@ -43,6 +43,18 @@ describe("Intraday profile overlay", () => {
     expect(byKey.val).toBe(l.val);
     expect(byKey.ibh).toBe(l.ibHigh);
     expect(Object.keys(byKey)).toEqual(["poc", "vah", "val", "ibh", "ibl", "ppoc", "pvah", "pval"]);
+  });
+
+  it("names every line on the axis and in the legend, and draws no two kinds alike", () => {
+    const colours = { poc: "#a", va: "#b", muted: "#c", rowFill: "", vaFill: "", pocFill: "" };
+    const roles = [...new Set(profileLines(sessionProfiles(SPX, at(20, 0))).map((l) => l.role))];
+    expect(LINE_LEGEND.map((e) => e.role)).toEqual(roles);
+    const looks = roles.map((r) => {
+      const s = lineStyleFor(r, colours);
+      expect(s.axisLabelVisible, r).toBe(true);
+      return `${s.color}|${s.lineStyle}`;
+    });
+    expect(new Set(looks).size).toBe(roles.length);
   });
 
   it("draws nothing without regular-session bars", () => {
