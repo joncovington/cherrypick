@@ -8,7 +8,10 @@ Never figures: licensed results stay under `~/.cherrypick`, so the register can 
 - `check`: every row is well formed, and every pointer names a heading that exists. Rows from item 18
   on must fill every field, and one with a verdict names its result files; legacy rows (1-17) point
   to the prose that holds theirs. On this machine the command also lists queue studies with no row
-  (`unregistered`).
+  (`unregistered`). A row and its plan section agree on whether the verdict is recorded: a verdict
+  status with a Result that still says "not yet run" is a problem, and so is a declared row whose
+  Result is written (`result_state`, #1067). On this machine it also lists `awaiting_verdict`:
+  declared rows whose result file is written, so a verdict waits to be recorded.
 - `similar`: before a new hypothesis is declared, the rejected rows with the same setup, side,
   structure and window, so a retest is a choice the declaration says out loud.
 - `rereads`: every logged rule change, and whether it has had its first `REREAD_AFTER` trades and is
@@ -87,6 +90,7 @@ def check(reg: dict, *, root: Path | None = None) -> list[str]:
     problems, seen_ids, seen_studies = [], set(), set()
     owners: dict[str, int] = {}
     docs: dict[str, set[str]] = {}
+    texts: dict[str, str] = {}
     for row in reg.get("hypotheses", []):
         rid = row.get("id")
         tag = f"row {rid}"
@@ -138,11 +142,14 @@ def check(reg: dict, *, root: Path | None = None) -> list[str]:
             continue
         if file not in docs:
             try:
-                docs[file] = anchors((root / file).read_text(encoding="utf-8"))
+                texts[file] = (root / file).read_text(encoding="utf-8")
             except OSError:
-                docs[file] = set()
+                texts[file] = ""
+            docs[file] = anchors(texts[file])
         if frag not in docs[file]:
             problems.append(f"{tag}: pointer {pointer} names no heading")
+        elif not row.get("legacy"):
+            problems += _result_problems(row, tag, result_state(texts[file], frag))
         recipe = row.get("retest")
         if recipe is not None and not (
             isinstance(recipe, dict) and recipe.get("kind") and isinstance(recipe.get("args"), dict)
@@ -153,6 +160,70 @@ def check(reg: dict, *, root: Path | None = None) -> list[str]:
         if missing:
             problems.append(f"rule change {i}: must state {', '.join(missing)}")
     return problems
+
+
+HEADING = re.compile(r"^(#{1,6}) (.+)$", re.M)
+RESULT_LINE = "- **Result"
+PENDING = "not yet run"
+
+
+def result_state(md: str, frag: str) -> str | None:
+    """Whether the plan section under heading `frag` records its result: "pending" when its first
+    `- **Result` line says not yet run, "recorded" when it says anything else, None when the section
+    has no such line or no heading matches (a legacy layout, which this does not judge)."""
+    heads = list(HEADING.finditer(md))
+    for i, m in enumerate(heads):
+        if _anchor(m.group(2)) != frag:
+            continue
+        level = len(m.group(1))
+        end = next((n.start() for n in heads[i + 1 :] if len(n.group(1)) <= level), len(md))
+        for line in md[m.end() : end].splitlines():
+            if line.startswith(RESULT_LINE):
+                return "pending" if PENDING in line else "recorded"
+        return None
+    return None
+
+
+def _result_problems(row: dict, tag: str, state: str | None) -> list[str]:
+    """The register and its plan section must agree on whether the verdict is recorded (#1067): a
+    verdict row whose Result still says not yet run, or a declared row whose Result is written."""
+    status = row.get("status")
+    if status in VERDICTS and state == "pending":
+        return [f"{tag}: status {status} but its plan Result still says {PENDING}"]
+    if status == "declared" and state == "recorded":
+        return [f"{tag}: its plan Result is recorded but its status is still declared"]
+    return []
+
+
+def awaiting_verdict(reg: dict, tasks: list[dict], *, home: Path | None = None) -> list[dict]:
+    """Declared rows whose study has written a result: the register lists the file and it exists, or,
+    with none listed, a `study*` queue step finished `done` and its output exists. A plan or fetch
+    step's output is not a result. Read on this machine only (results live under the home)."""
+    base = home or core_home.home()
+    out = []
+    for row in reg.get("hypotheses", []):
+        if row.get("status") != "declared":
+            continue
+        listed = [
+            base / p.removeprefix(RESULT_PREFIX) for p in row.get("results") or [] if isinstance(p, str)
+        ]
+        if listed:
+            written = [str(p) for p in listed if p.is_file()]
+        else:
+            written = sorted(
+                {
+                    str(Path(t["output"]).expanduser())
+                    for t in tasks
+                    if t.get("study") == row.get("study")
+                    and str(t.get("step") or "").startswith("study")
+                    and t.get("status") == "done"
+                    and t.get("output")
+                    and Path(t["output"]).expanduser().is_file()
+                }
+            )
+        if written:
+            out.append({"id": row.get("id"), "study": row.get("study"), "written": written})
+    return out
 
 
 def _chain_problems(row: dict, tag: str, root: Path) -> list[str]:
