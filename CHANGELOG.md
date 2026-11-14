@@ -35,7 +35,9 @@ beyond the latest release.
   the price axis gets crowded, and the ? beside the chart's title explains every line. Turn the whole
   overlay off with the `profile off` button. The profile
   covers the regular session, 09:30–16:00 ET, for every symbol, a future's overnight excluded. It is a
-  chart and nothing trades on it. The same arithmetic is in `cherrypick.core.marketprofile` for
+  chart and nothing trades on it. The chart's time axis now names the day where each session starts
+  ("Fri 13 09:30"), and the line above it says which days are in view. The same arithmetic is in
+  `cherrypick.core.marketprofile` for
   research.
 
 ## v0.13.0 — 2026-11-13 — evidence and accounts
