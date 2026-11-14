@@ -303,7 +303,8 @@ the setups watchlist:
     extremes, volume POC). All read off the profile the column drew.
   - **Measure** (`?measure=time|volume`): volume redraws each column and the composite by volume at
     price, the volume POC in amber; the tinted value area stays the time-based one. Offered only when
-    the symbol carries volume (never SPX or NDX), else the button says why.
+    the symbol carries volume (never SPX or NDX); for those a note under the chart's header says why
+    and names the symbols that have it.
   Chart only.
 
 - `/charts/intraday?product=ES&period=5m&profile=on` is a live chart (1m/5m/15m) over the console's

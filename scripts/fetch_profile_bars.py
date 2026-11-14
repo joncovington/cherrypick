@@ -66,6 +66,10 @@ QUIET_GAP_S = 3.0
 MAX_WAIT_S = 300.0
 REMOVE = 0x02
 SNAP_SNIP = 0x10
+# The feed hands back at most this many bars a request. It does not always say so: asked for 40 days
+# of SPX on 2026-11-14 it returned exactly 8,000 from 10-19 and ended with SNAP_END, not SNAP_SNIP
+# (SNAP_SNIP came only when asked for about 100 days). A symbol that reaches the cap was clipped.
+FEED_CAP = 8000
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS profile_bars (
@@ -131,7 +135,8 @@ def is_minute(label: str) -> bool:
 
 async def fetch(session, starts: dict[str, datetime], sdk=None):
     """Candles per streamer symbol: ({streamer symbol: {ts_ms: bar}}, {symbols the feed clipped}).
-    REMOVE events and priceless candles are dropped; a missing volume is 0."""
+    REMOVE events and priceless candles are dropped; a missing volume is 0. Clipped is the feed's
+    SNAP_SNIP flag or a symbol that came back with `FEED_CAP` bars, since the flag is not always sent."""
     if sdk is None:
         from tastytrade import DXLinkStreamer
         from tastytrade.dxfeed import Candle
@@ -176,6 +181,8 @@ async def fetch(session, starts: dict[str, datetime], sdk=None):
             vol = streamcache.to_float(getattr(event, "volume", None))
             px["volume"] = vol if vol is not None and vol > 0 else 0.0
             bars.setdefault(base, {})[ts] = px
+    # The flag is not always sent; the count is what says the feed stopped at its cap.
+    clipped.update(sym for sym, got in bars.items() if len(got) >= FEED_CAP)
     return bars, clipped
 
 
