@@ -62,6 +62,12 @@ expunged within 30 days of termination** (§8(e)). Two consequences shape the wh
   nightly backup skips any marked directory (`orchestrator/backup.py` spells the same name; a test
   here holds the two equal). The operator records the end of a subscription in
   `vendor.license.terminated_on`, and `licensing.status` turns it into a purge deadline.
+- **At the end of a subscription the results are kept, reviewed once, then deleted** (the user's
+  decision). `licensing.status` reports the phase: `keeping` from the termination, `final_review`
+  for the last week before `purge_by` (read the results one last time, write up anything still
+  worth knowing without figures, queue nothing new), then `purge_due`: `purge --derived --apply`
+  removes the stores and every result together, inside the licence's 30 days. A recorded verdict
+  stands without its data, read as not reproducible; retests and reproduce rows stop with it.
 
 ## The fence
 
