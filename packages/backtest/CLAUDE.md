@@ -37,6 +37,13 @@ expunged within 30 days of termination** (§8(e)). Two consequences shape the wh
 - **A new study declares its queue chain** as a module-level `CHAIN` literal (plan, fetches,
   study), and is queued with `run.py queue-chain --script <path>`, never row by row
   (`orchestrator/studychain.py`; item 76's script is the example).
+- **A change to shared study code is reproduced before it merges.** From the PR's worktree (its
+  packages first on `PYTHONPATH`), `python packages/backtest/scripts/reproduce_studies.py run`
+  re-runs the standing sample (`SAMPLE`; `--studies` for others) by each study's last queue command
+  and compares every result file with the recorded one, restoring the recorded folder whatever
+  happens. Merge on `identical`, or on `expected` (the study's correction log grew); a `differs`
+  is read before anything merges. After the merge, a `reproduce/run` queue row confirms the live
+  checkout. Do not run it by hand while the queue runs one of the sample's studies.
 - **The data must stay purgeable.** It lives in one directory carrying a marker file
   (`paths.LICENSED_MARKER`); `purge` removes only marked directories (dry run by default), and the
   nightly backup skips any marked directory (`orchestrator/backup.py` spells the same name; a test
