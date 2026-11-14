@@ -3329,7 +3329,7 @@
       "id": 74,
       "study": "item74",
       "title": "The super bull as leverage: against the same delta financed on the same capital",
-      "status": "declared",
+      "status": "failed",
       "legacy": false,
       "setup": "leverage-choice",
       "side": "bullish",
@@ -3372,7 +3372,7 @@
       "results": [
         "{home}/data/backtest/results/research/item74/study-2016-01-01-2021-12-31.json"
       ],
-      "outcome": null,
+      "outcome": "all four arms fail the design window: each loses after costs and trails the financed delta in both halves and at 1.5x costs, so the holdout is not read; manage keeps judging a super bull as a directional bet with no income label",
       "retest": null,
       "retests": []
     },
