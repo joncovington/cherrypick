@@ -2343,6 +2343,8 @@ def cmd_hypotheses(cfg, args) -> None:
         "awaiting_verdict": hypotheses.awaiting_verdict(reg, tasks),
         # From item 78 on, a declaration's pass rule is data (a RULE literal); listed, not yet a failure.
         "rule_missing": hypotheses.rule_missing(reg),
+        # Forward retest results written but not yet recorded in the register (#1085).
+        "forward_unread": hypotheses.forward_unread(reg),
         # How many passes chance alone would give at the usual per-item bar (#1079); reported only.
         "false_passes": hypotheses.false_passes(reg, alpha=hypotheses.FALSE_PASS_ALPHA)["overall"],
         # The next free item number here and on origin/main as last fetched: fetch before declaring.
@@ -2487,7 +2489,12 @@ def cmd_forward_checks(cfg) -> None:
         finally:
             conn.close()
 
-    out = forwardcheck.run(hypotheses.load(), trades_for, forwardcheck.read_result(core_home.home()))
+    from cherrypick.orchestrator import vendorlicence
+
+    ended = vendorlicence.ended(vendorlicence.status())
+    out = forwardcheck.run(
+        hypotheses.load(), trades_for, forwardcheck.read_result(core_home.home()), licence_ended=ended
+    )
     _emit({"ok": True, "checks": out})
 
 
@@ -2597,7 +2604,10 @@ def _board():
         return studyversion.state(stamped, log, root)
 
     reg = hypotheses.load()
-    out = hypotheses.board(reg, queue, read, notes, version, _key)
+    from cherrypick.orchestrator import vendorlicence
+
+    ended = vendorlicence.ended(vendorlicence.status())
+    out = hypotheses.board(reg, queue, read, notes, version, _key, licence_ended=ended)
     out["unregistered"] = hypotheses.unregistered(reg, set(out["unregistered"]) | _study_folders())
     return out, read
 
@@ -2612,9 +2622,21 @@ def cmd_retests(args) -> None:
         from datetime import datetime
         from zoneinfo import ZoneInfo
 
-        from cherrypick.orchestrator import studychain
+        from cherrypick.orchestrator import studychain, vendorlicence
 
-        plan = hypotheses.forward_plan(hypotheses.load(), datetime.now(ZoneInfo("America/New_York")).date())
+        names = {
+            f"{r['study']}/{r['step']}"
+            for r in researchqueue.rows(limit=100_000)
+            if r["status"] != "cancelled"
+        }
+        lic = vendorlicence.status()
+        plan = hypotheses.forward_plan(
+            hypotheses.load(),
+            datetime.now(ZoneInfo("America/New_York")).date(),
+            queued=names,
+            licence_ended=vendorlicence.ended(lic),
+        )
+        plan["licence"] = lic
         if args.apply:
             queued, refused = {}, {}
             for study, c in plan["chains"].items():
@@ -2625,6 +2647,9 @@ def cmd_retests(args) -> None:
                     refused[study] = str(exc)
             plan["queued"], plan["refused"] = queued, refused
         _emit(plan)
+        # A refused chain is work the job could not do: exit non-zero so the supervisor says so.
+        if plan.get("refused"):
+            sys.exit(1)
         return
     if not args.year:
         sys.exit("retests needs --year")

@@ -73,7 +73,10 @@ expunged within 30 days of termination** (§8(e)). Two consequences shape the wh
   for the last week before `purge_by` (read the results one last time, write up anything still
   worth knowing without figures, queue nothing new), then `purge_due`: `purge --derived --apply`
   removes the stores and every result together, inside the licence's 30 days. A recorded verdict
-  stands without its data, read as not reproducible; retests and reproduce rows stop with it.
+  stands without its data, read as not reproducible (the studies board marks it
+  `not_reproducible`). From the termination the research queue refuses and cancels vendor fetches,
+  the forward retests skip every study on the stores (studies on public data go on), and a forward
+  check whose reference is purged judges its paper arm alone.
 
 ## The fence
 

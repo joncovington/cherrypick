@@ -423,6 +423,7 @@ def board(
     notes=lambda path: None,
     version=lambda path: None,
     key=lambda path: path,
+    licence_ended: bool = False,
 ) -> dict:
     """The studies board: each register row joined with its result
     files' verdicts and its research-queue rows. `read(path)` returns `(data, modified)` for a
@@ -476,10 +477,17 @@ def board(
     rows.sort(key=lambda x: x["id"] or 0, reverse=True)
     rows.sort(key=lambda x: x["last_activity"] or "", reverse=True)
     rows.sort(key=lambda x: GROUPS.index(x["group"]))
+    if licence_ended:
+        # The stores and their results are purged with the licence (#1091): a result no longer on
+        # disk is not reproducible, and its verdict stands on the register's words.
+        for row in rows:
+            for x in row["results"]:
+                x["not_reproducible"] = not x["present"]
     return {
         "rows": rows,
         "unregistered": unregistered(reg, by_study),
         "false_passes": false_passes(reg, alpha=FALSE_PASS_ALPHA),
+        "licence_ended": licence_ended,
     }
 
 
@@ -591,18 +599,35 @@ def forward_problems(recipe) -> list[str]:
     return []
 
 
-def forward_plan(reg: dict, today, results_for=None) -> dict:
+def uses_vendor(recipe: dict) -> bool:
+    """Whether a forward recipe rests on the licensed stores: a script under the backtest package
+    (every study there reads them) or any fetch step."""
+    script = str(recipe.get("script") or "")
+    return script.startswith("packages/backtest/") or any(
+        str(s.get("kind", "")).startswith("fetch") for s in recipe.get("steps") or []
+    )
+
+
+def forward_plan(
+    reg: dict, today, results_for=None, *, queued=frozenset(), licence_ended: bool = False
+) -> dict:
     """#1085: this month's forward retest of every passed row that declares `retest_forward`: its
     steps over the sessions since it was declared, through `today`, as queue rows named
     `forward-<YYYY-MM>-<step>`, each after the one before. Strings may carry `{through}` (today),
     `{stamp}` (the month), `{results}` and `{home}`. A month already recorded under `retests`
     (`"forward": "<YYYY-MM>"`) is skipped. Passed rows without a recipe are listed: one that says
-    why (`retest_note`) is a decision, the rest need one."""
+    why (`retest_note`) is a decision, the rest need one.
+
+    `queued` holds the `study/step` names already in the research queue (any status but cancelled):
+    a month whose rows are there is skipped as `already_queued`, so a second run in a month (by hand,
+    or a catch-up after a restart) queues nothing twice. With `licence_ended`, a recipe that rests on
+    the vendor's stores (`uses_vendor`) is skipped as `licence_ended` (the user's decision, #1091)."""
     from . import studychain
 
     results_for = results_for or studychain.results_for
     stamp = today.strftime("%Y-%m")
     chains, missing, declined, done = {}, [], [], []
+    already, lapsed = [], []
     for r in reg.get("hypotheses", []):
         if r.get("status") != "passed":
             continue
@@ -616,6 +641,12 @@ def forward_plan(reg: dict, today, results_for=None) -> dict:
         if forward_problems(recipe):
             missing.append(r["study"])
             continue
+        if licence_ended and uses_vendor(recipe):
+            lapsed.append(r["study"])
+            continue
+        if any(name.startswith(f"{r['study']}/forward-{stamp}-") for name in queued):
+            already.append(r["study"])
+            continue
         subs = {"through": today.isoformat(), "stamp": stamp}
         steps = [{**_fill_forward(s, subs), "step": f"forward-{stamp}-{s['step']}"} for s in recipe["steps"]]
         chains[r["study"]] = {
@@ -628,7 +659,28 @@ def forward_plan(reg: dict, today, results_for=None) -> dict:
         "needs_recipe": missing,
         "declined": declined,
         "already_recorded": done,
+        "already_queued": already,
+        "licence_ended": lapsed,
     }
+
+
+def forward_unread(reg: dict, *, home=None) -> list[dict]:
+    """Forward retest results written but not yet recorded: a passed row with a recipe whose study's
+    result folder holds `forward-<YYYY-MM>.json` for a month its `retests` does not name. Listed
+    by `cherrypick hypotheses`; the reading goes into the register by a docs PR, as every verdict."""
+    from . import studychain
+
+    out = []
+    for r in reg.get("hypotheses", []):
+        if r.get("status") != "passed" or not r.get("retest_forward"):
+            continue
+        folder = studychain.results_for(r["study"]) if home is None else home / r["study"]
+        recorded = {t.get("forward") for t in r.get("retests") or []}
+        for f in sorted(folder.glob("forward-????-??.json")) if folder.is_dir() else []:
+            month = f.stem.removeprefix("forward-")
+            if month not in recorded:
+                out.append({"id": r["id"], "study": r["study"], "month": month, "file": str(f)})
+    return out
 
 
 def retest_plan(reg: dict, year: int) -> dict:

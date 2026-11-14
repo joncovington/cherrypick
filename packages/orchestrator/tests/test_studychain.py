@@ -24,6 +24,7 @@ raise SystemExit("never imported")
 @pytest.fixture(autouse=True)
 def no_backtest_read(monkeypatch):
     monkeypatch.setattr(rq, "backtest_stores", lambda: None)
+    monkeypatch.setattr(rq, "_vendor_licence", lambda: None)  # unknown, never ended: no subprocess
 
 
 @pytest.fixture

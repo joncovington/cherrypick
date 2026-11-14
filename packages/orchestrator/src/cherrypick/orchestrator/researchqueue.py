@@ -96,6 +96,7 @@ from cherrypick.core import home as _home
 from cherrypick.core import procs as _procs
 from cherrypick.core import progress as _progress
 
+from . import vendorlicence
 from .util import CREATE_NO_WINDOW, pid_alive
 
 ET = ZoneInfo("America/New_York")
@@ -708,6 +709,7 @@ def add(
     root: Path | None = None,
     tracked: Callable[[Path, Path], bool] | None = None,
     stores: Callable[[], dict | None] | None = None,
+    licence: Callable[[], dict | None] | None = None,
 ) -> dict:
     """Queue one task, named `study/step` (step defaults to the kind). Everything is checked now, so
     a row the runner would refuse is never added: the kind and arguments (`build_argv`), both names
@@ -730,6 +732,12 @@ def add(
     if output is not None:
         check_store_output(output, (stores or backtest_stores)())
     needs = ",".join(KINDS[kind][0])
+    if THETADATA in KINDS[kind][0]:
+        lic = (licence or _vendor_licence)()
+        if vendorlicence.ended(lic):
+            raise Refused(
+                f"the vendor licence ended on {lic.get('terminated_on')}: no new vendor data is fetched"
+            )
     with connect(path) as conn:
         live = conn.execute(
             "SELECT id, status FROM tasks WHERE study = ? AND step = ? AND status IN (?, ?)",
@@ -905,6 +913,34 @@ def log_dir() -> Path:
 # The run: one task per call, as the supervisor's job.
 
 
+def _vendor_licence() -> dict | None:
+    return vendorlicence.status()
+
+
+def cancel_lapsed(conn: sqlite3.Connection, licence: Callable[[], dict | None]) -> list[dict]:
+    """Once the vendor licence has ended (#1091), cancel every queued row that needs the vendor
+    session, each with a note saying so; the cancelled rows. The licence is asked only when such a
+    row is queued, and an unreadable licence cancels nothing."""
+    rows = [
+        dict(r)
+        for r in conn.execute("SELECT id, study, step, needs FROM tasks WHERE status = 'queued'").fetchall()
+        if THETADATA in (r["needs"] or "").split(",")
+    ]
+    if not rows:
+        return []
+    lic = licence()
+    if not vendorlicence.ended(lic):
+        return []
+    note = f"cancelled: the vendor licence ended on {lic.get('terminated_on')}; no new vendor data is fetched"
+    with conn:
+        for r in rows:
+            conn.execute(
+                "UPDATE tasks SET status = 'cancelled', finished_at = ?, note = ? WHERE id = ?",
+                (_now_iso(), note, r["id"]),
+            )
+    return rows
+
+
 def run_next(
     cfg: dict[str, Any] | None = None,
     *,
@@ -913,6 +949,7 @@ def run_next(
     is_trading_day: Callable[[date], bool] | None = None,
     spawn: Callable[..., subprocess.Popen] = subprocess.Popen,
     notify: Callable[[str, str, str], Any] | None = None,
+    licence: Callable[[], dict | None] | None = None,
 ) -> dict:
     """Recover orphaned rows, then run the first ready row by `run_order` (a study whose inputs are
     in, then the highest priority, then the oldest) to its end. Returns what it did."""
@@ -935,6 +972,13 @@ def run_next(
         # every pass, and a row released (its prerequisite re-queued) and held again notifies again.
         for row, why in newly_held:
             notify("WARNING", f"Research task held: {name(row)}", why.removeprefix(HELD).strip())
+        cancelled = cancel_lapsed(conn, licence or _vendor_licence)
+        if cancelled:
+            notify(
+                "WARNING",
+                f"Research fetches cancelled: the vendor licence has ended ({len(cancelled)})",
+                ", ".join(name(r) for r in cancelled),
+            )
         with conn:
             if conn.execute("SELECT 1 FROM tasks WHERE status = 'running'").fetchone():
                 return {"ok": True, "ran": None, "why": "a task is running", "recovered": recovered}

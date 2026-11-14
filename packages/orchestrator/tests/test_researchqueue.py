@@ -32,6 +32,7 @@ def _at(s: str) -> datetime:
 def no_backtest_read(monkeypatch):
     """No test spawns the backtest to ask where its stores live; the store check's own tests pass one."""
     monkeypatch.setattr(rq, "backtest_stores", lambda: None)
+    monkeypatch.setattr(rq, "_vendor_licence", lambda: None)  # unknown, never ended: no subprocess
 
 
 @pytest.fixture
