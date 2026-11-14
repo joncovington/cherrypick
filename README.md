@@ -130,6 +130,9 @@ suite once collected $4.00 of credit against $4.96 of fees.
   not a standard monthly and held to expiry, unhedged. The paper run measures whether a
   close-of-session fill tracks the study's replay (item 69). Paper-only and credential-free. See
   [packages/weeklyput](packages/weeklyput).
+- **Ensemble** — ⚠️ **EXPERIMENTAL, off by default, no loop yet.** A rules engine for short-dated option arms:
+  an arm is configuration and one deterministic decision serves both the backtest (research item 75) and,
+  later, a paper loop. Paper-only and credential-free. See [packages/ensemble](packages/ensemble).
 - **BWB** — **Retired 2026-11-08, off by default.** A daily-laddered SPX put broken-wing butterfly entered at the expected move for a net
   credit, ~7 DTE, held to expiry. Four books trade the identical base structure and differ only in
   whether a reversal-triggered add-on fires (never / delta touch / confirmed bounce / gamma-flip
