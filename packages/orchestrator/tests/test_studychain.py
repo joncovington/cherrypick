@@ -95,6 +95,45 @@ def test_a_sample_fetch_and_the_full_fetch_share_one_placeholder(repo, tmp_path)
     assert len(out["placeholders"]) == 1 and len(out["added"]) == 4
 
 
+def test_a_repeated_fetch_unrolls_into_passes_each_after_the_last(repo, tmp_path):
+    # Item 52 refused three times on requests a random vendor error left unanswered: a later pass
+    # retries them, and a pass with nothing left to do is done (#1096).
+    rel = _script(repo, '''CHAIN = (
+    {"step": "plan", "kind": "script", "args": ["plan"], "output": "{results}/r.json"},
+    {"step": "fetch", "kind": "fetch-chain-paths",
+     "task_args": {"requests": "{results}/r.json"}, "repeat": 3},
+    {"step": "study", "kind": "script", "args": ["study"], "output": "{results}/out.json"},
+)''', "rpt_item96.py")  # fmt: skip
+    out = sc.queue_chain(rel, path=tmp_path / "q.db", root=repo, tracked=_tracked, results=tmp_path / "r96")
+    names = [a["name"] for a in out["added"]]
+    assert names == ["item96/plan", "item96/fetch", "item96/fetch-2", "item96/fetch-3", "item96/study"]
+    rows = {r["step"]: r for r in rq.rows(tmp_path / "q.db")}
+    assert rows["fetch-3"]["after"] == "item96/fetch-2" and rows["study"]["after"] == "item96/fetch-3"
+    assert len(out["placeholders"]) == 1
+
+
+@pytest.mark.parametrize(
+    "step, why",
+    [
+        ('{"step": "s", "kind": "script", "repeat": 2}', "only a fetch repeats"),
+        ('{"step": "f", "kind": "fetch-oi", "task_args": {}, "repeat": 0}', "whole number"),
+        ('{"step": "f", "kind": "fetch-oi", "task_args": {}, "repeat": 11}', "whole number"),
+    ],
+)
+def test_a_bad_repeat_is_refused(repo, step, why):
+    rel = _script(repo, f"CHAIN = ({step},)", "bad_item97.py")
+    with pytest.raises(sc.BadChain, match=why):
+        sc.read_chain(repo / rel)
+
+
+def test_a_repeat_whose_pass_names_clash_with_another_step_is_refused(repo):
+    chain = ('CHAIN = ({"step": "f", "kind": "fetch-oi", "task_args": {}, "repeat": 2},'
+             ' {"step": "f-2", "kind": "fetch-oi", "task_args": {}})')  # fmt: skip
+    rel = _script(repo, chain, "clash_item98.py")
+    with pytest.raises(sc.BadChain, match="appears twice"):
+        sc.read_chain(repo / rel)
+
+
 def test_a_chain_with_a_live_step_queues_nothing(repo, tmp_path):
     rel = _script(repo, ITEM76_LIKE)
     _queue(repo, tmp_path, rel)
