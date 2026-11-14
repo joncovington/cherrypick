@@ -54,7 +54,22 @@ twice, and never a free-text label.
 back to `queued` (a fetch stopped by a blackout, to resume after it). A finished row's `result`
 points to what it produced (`result_of`): a fetch's counts and the request or plan file it worked
 through; a script's declared `output`, which must exist (exit 0 without it is `failed`); always its
-log, `logs/research-queue/<id>.log`. Each finish and each failure is one notification.
+log, `logs/research-queue/<id>.log`. Each finish and each failure is one notification, and a failure's
+says the last line the task wrote.
+
+**A row that did nothing is not done** (`postcheck`, 2026-11-14). Exit 0 is not enough:
+- a session fetch that reports another symbol than its row's `dataset` failed (item 68's fetches
+  ran SPX for QQQ and NDX rows and exited 0);
+- a fetch that had requests to work through and fetched none of them failed (all empty or refused);
+  one with nothing left to do (a resume over a complete store) is done;
+- a fetch done with at least `THIN_SHARE` of its requests empty or refused is done, with the share in
+  its note and a warning in place of the plain notice;
+- a script that printed a report with a `refused` key failed, whatever its exit code.
+
+**The job runs only the code it started on** (`watch_code`, 2026-11-14). `run_ready` keeps picking
+rows for as long as any is ready, so a merge mid-chain never reached it (#825's priority, #967's
+`dataset`). Before each row it compares the source of the modules it had loaded with what is on disk
+now, and on a change it stops and leaves the rest of the chain to the next interval's fresh process.
 
 Deterministic, no AI. This module reads and writes only its own table and log files, and drives the
 fetches and scripts by subprocess -- it imports no other package.
@@ -62,13 +77,14 @@ fetches and scripts by subprocess -- it imports no other package.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
 import sqlite3
 import subprocess
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -494,6 +510,63 @@ def outcome(row: dict, exit_code: int, report: dict, now: datetime) -> str:
     return "done"
 
 
+#: A finished fetch with this share of its requests empty or refused, or more, is done but said out loud.
+THIN_SHARE = 0.5
+
+
+def _row_args(row: dict) -> dict:
+    return json.loads(row["args"]) if isinstance(row.get("args"), str) else (row.get("args") or {})
+
+
+def postcheck(row: dict, report: dict) -> tuple[str | None, str | None]:
+    """A row that exited 0 and finished: (why it did nothing and so failed, or None; a warning to put
+    on a done row, or None). Judged from the report the task printed last; a report without the
+    counts a check reads leaves the row as it was."""
+    kind = row["kind"]
+    if kind == "script":
+        why = report.get("refused")
+        return (f"exited 0 but refused: {why}", None) if why else (None, None)
+    if kind == "fetch-sessions":
+        want = str(_row_args(row).get("dataset", "SPX")).upper()
+        got = report.get("symbol")
+        if got is not None and str(got).upper() != want:
+            return f"fetched {got}, not the row's dataset {want}", None
+        if "fetched" not in report:
+            return None, None
+        todo = int(report.get("sessions", 0)) - int(report.get("skipped", 0))
+        fetched, missed = int(report["fetched"]), int(report.get("refused", 0))
+        unit = "sessions"
+    elif kind in FETCH_STORES:
+        if "complete" not in report:
+            return None, None
+        fetched = int(report["complete"])
+        missed = int(report.get("empty", 0)) + int(report.get("refused", 0))
+        todo = int(report["todo"]) if "todo" in report else fetched + missed
+        unit = "requests"
+    else:
+        return None, None
+    if todo <= 0:
+        return None, None
+    if fetched == 0:
+        return f"nothing fetched: {missed} of {todo} {unit} empty or refused", None
+    if missed / todo >= THIN_SHARE:
+        return None, f"{missed} of {todo} {unit} empty or refused"
+    return None, None
+
+
+def last_line(log: Path, limit: int = 4096) -> str | None:
+    """The last non-blank line a task wrote to its log, or None."""
+    try:
+        with log.open("rb") as fh:
+            fh.seek(0, os.SEEK_END)
+            fh.seek(max(0, fh.tell() - limit))
+            tail = fh.read().decode("utf-8", errors="replace")
+    except OSError:
+        return None
+    lines = [ln.strip() for ln in tail.splitlines() if ln.strip()]
+    return lines[-1][:300] if lines else None
+
+
 # ------------------------------------------------------------------------------------------------
 # The table.
 
@@ -877,9 +950,20 @@ def run_next(
         status = outcome(pick, proc.returncode, report, now())
         result = result_of(pick, report, log)
         note = "stopped for the backtest-fetch window; resumes after it" if status == "queued" else None
+        warning = None
         # A script that exits 0 without writing the conclusion it declared has not concluded.
         if status == "done" and result.get("output_exists") is False:
             status, note = "failed", f"exited 0 but its declared output {pick['output']} was not written"
+        # Nor has a row that did nothing it was asked to (`postcheck`).
+        if status == "done":
+            why, warning = postcheck(pick, report)
+            if why:
+                status, note = "failed", why
+            elif warning:
+                note = warning
+        if status == "failed" and note is None:
+            said = report.get("refused") or report.get("error") or last_line(log)
+            note = f"exit {proc.returncode}: {said}" if said else f"exit {proc.returncode}"
         if pick["kind"] == "script" and result.get("output_exists"):
             result["version"] = stamp_output(pick)
         with conn:
@@ -897,10 +981,14 @@ def run_next(
             )
         title = name(pick)
         if status == "failed":
-            notify("WARNING", f"Research task failed: {title}", note or f"exit {proc.returncode}; log {log}")
+            notify("WARNING", f"Research task failed: {title}", f"{note}; log {log}")
         elif status in ("done", "stopped"):
             where = result.get("output") or result.get("input") or str(log)
-            notify("INFO", f"Research task {status}: {title}", f"{_summary(report) or 'finished'}; {where}")
+            said = f"{_summary(report) or 'finished'}; {where}"
+            if warning:
+                notify("WARNING", f"Research task {status} with gaps: {title}", f"{warning}; {said}")
+            else:
+                notify("INFO", f"Research task {status}: {title}", said)
         return {
             "ok": status != "failed",
             "ran": pick["id"],
@@ -912,18 +1000,56 @@ def run_next(
         conn.close()
 
 
+def _loaded_sources() -> list[Path]:
+    """The source files of every module this process has loaded from the repo checkout."""
+    root = repo_root().resolve()
+    out = set()
+    for mod in list(sys.modules.values()):
+        f = getattr(mod, "__file__", None)
+        if not f or not f.endswith(".py"):
+            continue
+        p = Path(f).resolve()
+        if root in p.parents:
+            out.add(p)
+    return sorted(out)
+
+
+def _digest(p: Path) -> str | None:
+    try:
+        return hashlib.sha256(p.read_bytes()).hexdigest()
+    except OSError:
+        return None
+
+
+def watch_code(files: Iterable[Path] | None = None) -> Callable[[], bool]:
+    """A check that says whether any of `files` (default: the source of every repo module loaded now)
+    differs from what it was when the watch began. Only the files loaded at the start are watched: a
+    module imported later is read from disk then, so it is already the new code."""
+    pinned = {p: _digest(p) for p in (_loaded_sources() if files is None else files)}
+    return lambda: any(_digest(p) != h for p, h in pinned.items())
+
+
 def run_ready(
     load_cfg: Callable[[], dict[str, Any]],
     *,
     run: Callable[[dict[str, Any]], dict] | None = None,
+    code_changed: Callable[[], bool] | None = None,
 ) -> dict:
     """Run ready rows one after another until none is ready: the `research-queue` job. Config is
     read again before each row, so a blackout or interval changed mid-chain applies to the next one.
     It stops after a row put back to `queued` (a fetch stopped for the blackout), so a row is never
-    retried in a loop; every other outcome is final, and a finished row is never picked again."""
+    retried in a loop; every other outcome is final, and a finished row is never picked again. It
+    also stops, before starting a row, once its own code has changed on disk (`watch_code`): the
+    next interval's process runs the rest on the new code."""
     run = run or run_next
+    code_changed = code_changed or watch_code()
     ran: list[dict] = []
+    out: dict = {}
     while True:
+        if code_changed():
+            ok = all(r.get("ok", True) for r in ran)
+            why = "the queue's code changed on disk since this job started; the next run takes the rest"
+            return {"ok": ok, "ran": [r["ran"] for r in ran], "runs": ran, "last": out, "restart": why}
         out = run(load_cfg())
         if out.get("ran") is None:
             break

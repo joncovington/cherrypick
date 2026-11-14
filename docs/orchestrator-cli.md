@@ -138,6 +138,18 @@ does not repeat it); `queue-list` and the console show the reason. To release a 
 the prerequisite**: the new row is the newest of that name, so the held row waits for it and runs once
 it is done. There is no need to cancel and re-queue the held row itself.
 
+**A row that did nothing is not done.** Exit 0 is not enough. A session fetch that reports a symbol
+other than its row's `dataset` has failed, and so has a fetch that had requests to work through and
+fetched none of them. A fetch with nothing left to do (a resume over a complete store) is done. A
+fetch done with half or more of its requests empty or refused is done too, with that share in its
+note and a WARNING notification in place of the INFO one. A script that prints a report with a
+`refused` key has failed, whatever its exit code. A failure's note and notification carry the last
+line the task wrote (a traceback's error line, or the refusal).
+
+**`queue-run` runs only the code it started on.** Before each row it compares the source of the
+modules it loaded with what is on disk; once a merge has changed one, it stops and the next interval's
+fresh process runs the rest of the chain. No restart of `research-queue` is needed after a queue change.
+
 ## Reminders (`orchestrator/reminders.py`, 2026-11-01)
 
 A dated note to the user, kept as a row (`state/reminders.db`) so it outlives the session that set

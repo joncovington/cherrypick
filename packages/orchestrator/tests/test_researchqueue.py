@@ -540,3 +540,119 @@ def test_an_output_that_is_no_store_or_unknown_stores_is_not_judged(files, tmp_p
     rq.cancel(1, db)
     # The backtest could not say where its stores live: the check cannot fire, and says so in its doc.
     assert _script_row(files, db, str(tmp_path / "SPX-60s.db"), None)["status"] == "queued"
+
+
+# --- a row that did nothing, and what a failure says ---------------------------------------------
+
+
+def _ran(db, out, code=0, now="2026-10-24T20:00"):
+    """One run with the whole notification kept: (level, title, message)."""
+    sent = []
+    rq.run_next(
+        path=db,
+        now=lambda: _at(now),
+        is_trading_day=_weekday,
+        spawn=lambda argv, **kw: _Proc(code, out),
+        notify=lambda level, title, msg: sent.append((level, title, msg)),
+    )
+    return rq.rows(db)[0], sent
+
+
+@pytest.fixture
+def queue(tmp_path, monkeypatch):
+    monkeypatch.setattr(rq, "session_held", lambda state_dir=None: False)
+    monkeypatch.setattr(rq, "log_dir", lambda: tmp_path / "logs")
+    return tmp_path / "q.db"
+
+
+def _sessions(db, dataset=None):
+    args = {"store_tag": "wide", "from": "2024-01-02", "to": "2024-01-31"}
+    if dataset:
+        args["dataset"] = dataset
+    rq.add("item68", "fetch-sessions", args, step="fetch", path=db)
+
+
+def test_a_session_fetch_that_fetched_another_symbol_fails(queue):
+    # Item 68, 2026-11-12: a runner that dropped `dataset` fetched SPX for a QQQ row, skipped every
+    # session as already held and exited 0.
+    _sessions(queue, "QQQ")
+    row, sent = _ran(queue, '{"symbol": "SPX", "sessions": 21, "fetched": 0, "refused": 0, "skipped": 21}')
+    assert row["status"] == "failed" and "SPX" in row["note"] and "QQQ" in row["note"]
+    assert sent[0][:2] == ("WARNING", "Research task failed: item68/fetch")
+
+
+def test_a_fetch_that_fetched_nothing_it_was_asked_for_fails(queue, files):
+    rq.add("item54", "fetch-chains", {"requests": str(files["req"])}, path=queue)
+    row, _ = _ran(queue, '{"asked": 40, "already": 0, "todo": 40, "complete": 0, "empty": 12, "refused": 28}')
+    assert row["status"] == "failed" and "nothing fetched" in row["note"]
+    rq.add("item68", "fetch-sessions", {"store_tag": "wide", "from": "2024-01-02", "to": "2024-01-31",
+           "dataset": "NDX"}, step="all-refused", path=queue)  # fmt: skip
+    row, _ = _ran(queue, '{"symbol": "NDX", "sessions": 21, "fetched": 0, "refused": 21, "skipped": 0}')
+    assert row["status"] == "failed" and "nothing fetched" in row["note"]
+
+
+def test_a_fetch_with_nothing_left_to_do_or_mostly_fetched_is_done(queue, files):
+    # A resumed fetch whose requests were all already held did nothing, rightly.
+    rq.add("item54", "fetch-chains", {"requests": str(files["req"])}, path=queue)
+    row, sent = _ran(
+        queue, '{"asked": 40, "already": 40, "todo": 0, "complete": 0, "empty": 0, "refused": 0}'
+    )
+    assert row["status"] == "done" and row["note"] is None and sent[0][0] == "INFO"
+    _sessions(queue, "QQQ")
+    row, sent = _ran(queue, '{"symbol": "QQQ", "sessions": 21, "fetched": 20, "refused": 1, "skipped": 0}')
+    assert row["status"] == "done" and row["note"] is None and sent[0][0] == "INFO"
+
+
+def test_a_fetch_mostly_refused_is_done_but_said_out_loud(queue):
+    # Item 68's NDX store: most sessions refused no_data, some fetched. Partial data is data; the share
+    # goes on the row and the notification is a warning.
+    _sessions(queue, "NDX")
+    row, sent = _ran(queue, '{"symbol": "NDX", "sessions": 20, "fetched": 4, "refused": 16, "skipped": 0}')
+    assert row["status"] == "done" and "16 of 20" in row["note"]
+    assert sent[0][0] == "WARNING" and "16 of 20" in sent[0][2]
+
+
+def test_a_script_that_printed_a_refusal_fails_even_on_exit_0(queue, files, monkeypatch):
+    monkeypatch.setattr(rq, "repo_root", lambda: files["root"])
+    monkeypatch.setattr(rq, "git_tracked", _tracked)
+    rq.add("item52", "script", {"path": "scripts/study.py"}, step="study", path=queue,
+           root=files["root"], tracked=_tracked)  # fmt: skip
+    row, _ = _ran(queue, '{"refused": "requests not fetched", "missing_chain_requests": 116}')
+    assert row["status"] == "failed" and "requests not fetched" in row["note"]
+
+
+def test_a_failure_says_the_last_thing_the_task_wrote(queue, files, tmp_path):
+    rq.add("item74", "fetch-chains", {"requests": str(files["req"])}, step="study", path=queue)
+    log = tmp_path / "logs" / "1.log"
+
+    def spawn(argv, stderr=None, **kw):
+        stderr.write("Traceback (most recent call last):\n  File x\nTypeError: '<' not supported\n\n")
+        return _Proc(1, "")
+
+    sent = []
+    rq.run_next(path=queue, now=lambda: _at("2026-10-24T20:00"), is_trading_day=_weekday, spawn=spawn,
+                notify=lambda level, title, msg: sent.append((level, title, msg)))  # fmt: skip
+    row = rq.rows(queue)[0]
+    assert row["status"] == "failed" and "TypeError: '<' not supported" in row["note"]
+    assert "TypeError" in sent[0][2] and str(log) in sent[0][2]
+
+
+# --- the job restarts itself on new code ---------------------------------------------------------
+
+
+def test_the_job_stops_between_rows_once_its_code_has_changed():
+    replies = iter([{"ok": True, "ran": 1, "status": "done"}, {"ok": True, "ran": 2, "status": "done"}])
+    changed = iter([False, True])
+    out = rq.run_ready(dict, run=lambda cfg: next(replies), code_changed=lambda: next(changed))
+    # Row 1 ran on the code the job started with; row 2 is left for a fresh process.
+    assert out["ran"] == [1] and out["ok"] and "code" in out["restart"]
+    assert next(replies)["ran"] == 2
+
+
+def test_the_code_watch_sees_a_change_to_a_loaded_source_file(tmp_path):
+    src = tmp_path / "mod.py"
+    src.write_text("x = 1\n", encoding="utf-8")
+    changed = rq.watch_code([src])
+    assert changed() is False
+    src.write_text("x = 2\n", encoding="utf-8")
+    assert changed() is True
