@@ -14,8 +14,8 @@ Every closed reader yields the same record shape, keyed by `paper.trade_schema`:
     {arm, symbol, strategy, gross_pnl, cost, net_pnl, slippage, capital, max_profit, session,
      experiment_id}
 
-plus, for the multi-day schemas (earnings, dc_week, pmcc, curve_vx, bwb_132, contango_etf, weeklyput_put),
-`entry_session` -- the session the position was entered, where `session` is the one it closed
+plus, for the multi-day schemas (earnings, dc_week, pmcc, curve_vx, bwb_132, contango_etf, weeklyput_put,
+ensemble_trade), `entry_session` -- the session the position was entered, where `session` is the one it closed
 (added 2026-10-12 for `core.compare`, which pairs those arms on the entry they share).
 
 `outcome` (added 2026-10-26, meic_ic and fly_book only) is how the trade ended, in the module's own
@@ -75,6 +75,14 @@ formula from `capital` alone.
                  strike x 100 x quantity, the put's cash-secured maximum loss; the session is the
                  expiry (the print may post, and the row close, on the next morning); `outcome`
                  is `exit_reason` (expired / settled / assigned).
+  - "ensemble_trade": ensemble's `ensemble_positions`, one defined-risk structure (any arm) closed by a
+                 touch, a profit target, a time exit, or held to the expiry's posted close; closed =
+                 status 'closed'; net = net_pnl as stored (gross - fees - settlement - slippage, each
+                 its own column; fills at mid, net at the suite's slippage model); tag = arm;
+                 capital = the structure's maximum loss at the mid (a debit structure's debit);
+                 `max_profit` is the structure's ceiling when it has one; the session is the day the
+                 trade ended (the expiry for a held position, whose print may post the next morning);
+                 `outcome` is `exit_reason` (touch / profit_target / time / settlement).
 
 The cost split (added 2026-10-12, for the suite's money layout in the root `CLAUDE.md`): beside
 `cost` -- each module's TOTAL cost, unchanged, so `net_pnl = gross_pnl - cost` still holds -- every
@@ -180,6 +188,7 @@ SLIPPAGE_BASIS = {
     "bwb_132": SLIPPAGE_COST,
     "contango_etf": SLIPPAGE_COST,
     "weeklyput_put": SLIPPAGE_COST,
+    "ensemble_trade": SLIPPAGE_COST,
 }
 
 
@@ -241,6 +250,14 @@ _TRADE_COLUMNS = {
         "entry_spot": "entry_spot",
         "exit_spot": "settle_price",
     },
+    # The underlying at entry and at the close; a held position's close is the posted print.
+    "ensemble_trade": {
+        "position_id": "position_id",
+        "entry_time": "entry_time",
+        "exit_time": "exit_time",
+        "entry_spot": "entry_spot",
+        "exit_spot": "exit_spot",
+    },
 }
 
 
@@ -292,6 +309,7 @@ ROW_NET = {
     # contango stores the whole layout on the row (gross - fees - slippage = net); read, not derived.
     "contango_etf": lambda r: r["net_pnl"],
     "weeklyput_put": lambda r: r["net_pnl"],
+    "ensemble_trade": lambda r: r["net_pnl"],
 }
 
 
@@ -962,6 +980,69 @@ def _weeklyput_open(conn) -> list[dict]:
     ]
 
 
+def _ensemble_closed(conn, start: str | None = None, end: str | None = None) -> list[dict]:
+    """ensemble's closed structures, any arm. The module stores the whole money layout on the row
+    (entry value + exit value = gross; gross - fees - settlement - slippage = net), so this reads it
+    rather than re-deriving it. `fees` there is the trading fees of the open and the close together;
+    `settlement` the cash-settlement charge, `slippage` the suite's model at the mid fill. The session is
+    the day the trade ended (the expiry for a held position). `max_profit` is the structure's ceiling
+    in whole-position dollars when it has one; `capital` its maximum loss at the mid."""
+    where, params = _session_where("exit_session", start, end)
+    ent_col, has_ent = _entry_select(conn, "ensemble_positions")
+    rows = conn.execute(
+        "SELECT arm, symbol, quantity, entry_value, max_profit, capital, gross_pnl, fees, settlement, "
+        f"slippage, net_pnl, exit_reason, exit_session{ent_col}"
+        f"{_trade_select(conn, 'ensemble_positions', 'ensemble_trade')} "
+        f"FROM ensemble_positions WHERE status = 'closed'{where}",
+        params,
+    ).fetchall()
+    out = []
+    for r in rows:
+        cost = _round2(_plus(_plus(r["fees"], r["settlement"]), r["slippage"]))
+        ceiling = (
+            None if r["max_profit"] is None else round(r["max_profit"] * 100 * int(r["quantity"] or 1), 2)
+        )
+        out.append(
+            {
+                "arm": r["arm"],
+                "experiment_id": None,
+                "symbol": r["symbol"],
+                "strategy": "ensemble_trade",
+                "gross_pnl": r["gross_pnl"],
+                "cost": cost,
+                "net_pnl": r["net_pnl"],
+                "slippage": r["slippage"],
+                **_cost_split("ensemble_trade", cost, r["settlement"], r["slippage"]),
+                "entry_credit": r["entry_value"],
+                "capital": r["capital"],
+                "max_profit": ceiling,
+                "session": r["exit_session"] or "",
+                "entry_session": r["entry_session"] if has_ent else None,
+                "outcome": r["exit_reason"],
+                **_trade_fields(r, "ensemble_trade"),
+            }
+        )
+    return out
+
+
+def _ensemble_open(conn) -> list[dict]:
+    """ensemble's open structures: a short-dated structure may be held overnight (the day-before-expiry
+    fly, the 20-day spread), and the rest close the day they open."""
+    rows = conn.execute(
+        "SELECT arm, symbol, capital, entry_session FROM ensemble_positions WHERE status = 'open'"
+    ).fetchall()
+    return [
+        {
+            "arm": r["arm"],
+            "symbol": r["symbol"],
+            "strategy": "ensemble_trade",
+            "capital": r["capital"],
+            "session": r["entry_session"] or "",
+        }
+        for r in rows
+    ]
+
+
 BWB_UNTAGGED = "unassigned"
 
 
@@ -1092,7 +1173,9 @@ ERA_SCHEMAS = frozenset({"pmcc"})
 # read, from what every ledger already records -- so every row already written has it too, with no
 # backfill. A schema whose `capital` is not a defined max loss has no R: contango holds a fund (its
 # capital is the purchase, not a structure's worst case) and flies' per-trade rows carry no capital.
-R_SCHEMAS = frozenset({"meic_ic", "earnings", "dc_week", "pmcc", "curve_vx", "bwb_132", "weeklyput_put"})
+R_SCHEMAS = frozenset(
+    {"meic_ic", "earnings", "dc_week", "pmcc", "curve_vx", "bwb_132", "weeklyput_put", "ensemble_trade"}
+)
 
 
 def r_multiple(record: dict, schema: str) -> float | None:
@@ -1129,6 +1212,7 @@ READERS = {
         "bwb_132": _bwb_closed,
         "contango_etf": _contango_closed,
         "weeklyput_put": _weeklyput_closed,
+        "ensemble_trade": _ensemble_closed,
     }.items()
 }
 
@@ -1235,6 +1319,7 @@ OPEN_READERS = {
     "bwb_132": _bwb_open,
     "contango_etf": _contango_open,
     "weeklyput_put": _weeklyput_open,
+    "ensemble_trade": _ensemble_open,
 }
 
 

@@ -320,6 +320,28 @@ def _weeklyput_path(conn, position_id: str) -> dict:
     )
 
 
+def _ensemble_path(conn, position_id: str) -> dict:
+    """The structure's gross at mid on each usable mark (the entry value plus what closing would bring),
+    from the entry (0) to the gross it finished at."""
+    if not _cols(conn, "ensemble_marks"):
+        return {"recorded": False, "reason": "this ledger keeps no position marks"}
+    row = conn.execute(
+        "SELECT entry_time, exit_time, gross_pnl FROM ensemble_positions WHERE position_id = ?",
+        (position_id,),
+    ).fetchone()
+    if row is None:
+        return {"recorded": False, "reason": f"no position {position_id!r}"}
+    sql = (
+        "SELECT m.ts, CASE WHEN m.usable = 1 AND m.mark_value IS NOT NULL "
+        "THEN p.entry_value + m.mark_value END "
+        "FROM ensemble_marks m JOIN ensemble_positions p ON p.position_id = m.position_id "
+        "WHERE m.position_id = ? ORDER BY m.ts, m.id"
+    )
+    return _recorded_path(
+        conn, sql, position_id, "gross_at_mid", row["entry_time"], row["exit_time"], row["gross_pnl"]
+    )
+
+
 def _flies_path(conn, position_id: str) -> dict:
     if not _cols(conn, "fly_live_marks"):
         return {"recorded": False, "reason": "this ledger keeps no position marks"}
@@ -521,6 +543,8 @@ def excursion(conn, schema: str, position_id: str, *, history_db=None) -> dict:
         return _leg_path(conn, schema, position_id)
     if schema == "earnings":
         return _earnings_path(conn, position_id)
+    if schema == "ensemble_trade":
+        return _ensemble_path(conn, position_id)
     if schema == "weeklyput_put":
         return _weeklyput_path(conn, position_id)
     if schema == "fly_book":

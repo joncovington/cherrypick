@@ -20,6 +20,7 @@ wholesale with **`$CHERRYPICK_HOME`**. Nothing runtime lands in a source checkou
   config/curve.json               # Curve engine config (experimental)
   config/contango.json            # Contango engine config (experimental)
   config/weeklyput.json           # Weeklyput engine config (experimental)
+  config/ensemble.json            # Ensemble arms, symbols and loop knobs (experimental)
   config/manage.json              # manage's ruleset and portfolio bands
   config/backtest.json            # backtest store and runs (the vendor key lives in the keyring)
   config/gex.json                 # GEX engine config
@@ -44,6 +45,8 @@ wholesale with **`$CHERRYPICK_HOME`**. Nothing runtime lands in a source checkou
   data/curve/paper_trades.db      # Curve paper ledger (curve_positions)
   data/contango/paper_trades.db   # Contango paper ledger (contango_positions / contango_sessions)
   data/weeklyput/paper_trades.db  # Weeklyput paper ledger (weeklyput_positions / weeklyput_entries)
+  data/ensemble/paper_trades.db   # Ensemble paper ledger (ensemble_positions / ensemble_legs / ensemble_entries)
+  data/ensemble/replay/           # Ensemble replay record: one JSON line per decision tick, with its snapshot
   data/manage/                    # eval-<day>.json evaluations of the real account
   data/backtest/                  # the licensed vendor store and its results (purgeable; the backup skips it)
   data/console/                   # the console's own store
@@ -92,6 +95,7 @@ configure their own engine and nothing else:
 | `~/.cherrypick/config/curve.json` | Curve | The VXX spread construction, the VIX/VIX3M regime thresholds, books, `advice` bounds. EXPERIMENTAL; off by default. |
 | `~/.cherrypick/config/contango.json` | Contango | The arms and their two thresholds, the decision time. EXPERIMENTAL; off by default. |
 | `~/.cherrypick/config/weeklyput.json` | Weeklyput | The names, the entry window, the put band, the marking cadence. EXPERIMENTAL; off by default. |
+| `~/.cherrypick/config/ensemble.json` | Ensemble | The arms (the shipped eight with your changes over them, or new ones), each underlying's OCC root and stream window, the loop's knobs. EXPERIMENTAL; off by default. |
 | `~/.cherrypick/config/manage.json` | Manage | The ruleset each trade is judged by and the portfolio bands; read by `run.py manage`. Keep only what you change. |
 | `~/.cherrypick/config/backtest.json` | Backtest | The vendor store and the runs; the vendor key lives in the keyring (`python -m cherrypick.backtest key set`), never here. |
 | `~/.cherrypick/config/gex.json` | GEX | `symbols`, the shared stream-cache source path, serve host/port, history DB path. |

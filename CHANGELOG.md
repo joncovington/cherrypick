@@ -22,6 +22,13 @@ beyond the latest release.
   caps, and Live → portfolio's room card lists each part. Margin accounts, and accounts of unknown kind,
   keep the VIX table. The caps are in `portfolio.buying_power.cash`; `enabled: false` restores the VIX
   table for a cash account.
+- **Ensemble, in paper.** Eight short-dated SPX and GLD option arms (0DTE and 1DTE flies, a condor and
+  put spreads, an opening-range put spread, a long put and two GLD call spreads) now trade in paper
+  through one decision function, the same one their backtest uses. Experimental and off by default: turn
+  on `modules.ensemble.enabled` after copying `packages/ensemble/config.example.json` to
+  `~/.cherrypick/config/ensemble.json`. An arm added in that file trades with no code change. Every
+  decision, taken or refused, is kept with the gate that decided it and the snapshot it saw, so paper can
+  be replayed against the backtest. A position is a ledger row, never an order.
 
 ## v0.12.1-beta — 2026-11-10 — moving delta
 The first beta: a pre-release to try before v0.12.1. `upgrade` and the version chip will not offer

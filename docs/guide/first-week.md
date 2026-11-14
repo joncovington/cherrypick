@@ -33,7 +33,7 @@ you will notice.
 ### What is on and what is off
 
 A fresh install runs MEIC and, if you installed Dolt, earnings, both on paper. The experimental modules
-(calendars, contango, weeklyput) and the retired ones (flies, bwb, PMCC, curve) ship switched off, and
+(calendars, contango, weeklyput, ensemble) and the retired ones (flies, bwb, PMCC, curve) ship switched off, and
 so does the AI advisor and the written narratives. The daily evaluation of your real account is also
 off until you turn it on with the "Daily position evaluation" switch on Config's `rules` tab, because it reads your
 account every day. A job that is off still appears in the supervisor's table, with the reason it is

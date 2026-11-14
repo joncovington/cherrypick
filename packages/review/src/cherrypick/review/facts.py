@@ -102,6 +102,10 @@ MODULES = {
     # weeklyput (2026-11-08) sells seven days before an expiry and holds to its posted close, which
     # arrives the next morning when the expiry is a Friday; the ledger books it to the expiry.
     "weeklyput": {"schema": "weeklyput_put", "settles_intraday": False},
+    # ensemble (2026-11-13) closes most arms the day they open (a touch, a time exit, the posted close the
+    # next morning), and holds the day-before-expiry and 20-day arms overnight; the ledger books a trade to
+    # the day it ended.
+    "ensemble": {"schema": "ensemble_trade", "settles_intraday": False},
 }
 
 
@@ -386,6 +390,55 @@ def _weeklyput_health(conn, session: str) -> dict:
     }
 
 
+#: Why an ensemble arm-day ends `missed` for a reason that is the loop's or the feed's and not the arm's
+#: rules: no spot, no previous close, a spot record that began late, no cached chain for the expiry, no tick
+#: inside the window. Every other refusal (a gate, an event day, a strike the rule found nowhere) is the
+#: arm doing its job, and is a decision.
+ENSEMBLE_INPUT_REFUSALS = frozenset(
+    {"no_spot", "no_prev_close", "trail_incomplete", "no_expiry", "no_tick_in_window", "stream_cache_missing"}
+)
+
+
+def _ensemble_day(conn, session: str) -> list:
+    return _rows(
+        conn, "SELECT arm, outcome, refusal FROM ensemble_entries WHERE entry_session = ?", (session,)
+    )
+
+
+def _ensemble_health(conn, session: str) -> dict:
+    """ensemble's arms each decide inside their own entry window, so the finding is arm-days entered
+    against arm-days due. An arm that declined on its rules is a decision, not a failure; one that
+    `missed` for an input reason (`ENSEMBLE_INPUT_REFUSALS`) is the failure signal, named with that
+    reason. `pending` on a closed session means the loop never reached the end of the window. No row at
+    all is a session on which no arm trades its weekday."""
+    rows = _ensemble_day(conn, session)
+    iterations = _scalar(
+        conn, "SELECT COUNT(*) FROM ensemble_loop_iterations WHERE session_date = ?", (session,)
+    )
+    return {
+        "loop_ticked": bool(iterations),
+        "iterations": iterations,
+        "due": len(rows) or None,
+        "entered": sum(1 for r in rows if r["outcome"] == "entered") if rows else None,
+        "declined": sum(
+            1 for r in rows if r["outcome"] == "missed" and r["refusal"] not in ENSEMBLE_INPUT_REFUSALS
+        )
+        or None,
+        "missed": {
+            r["arm"]: r["refusal"]
+            for r in rows
+            if r["outcome"] == "missed" and r["refusal"] in ENSEMBLE_INPUT_REFUSALS
+        }
+        or None,
+        "pending": sum(1 for r in rows if r["outcome"] == "pending") or None,
+        "settled": _scalar(
+            conn,
+            "SELECT COUNT(*) FROM ensemble_positions WHERE status = 'closed' AND exit_session = ?",
+            (session,),
+        ),
+    }
+
+
 HEALTH_READERS = {
     "meic": _meic_health,
     "flies": _flies_health,
@@ -396,6 +449,7 @@ HEALTH_READERS = {
     "curve": _curve_health,
     "contango": _contango_health,
     "weeklyput": _weeklyput_health,
+    "ensemble": _ensemble_health,
 }
 
 
@@ -637,6 +691,26 @@ def _weeklyput_expected(conn, session: str) -> dict:
     }
 
 
+def _ensemble_expected(conn, session: str) -> dict:
+    """ensemble's expectation is that every arm due on a session reaches a decision: the rules are
+    deterministic given the chain, so what can go wrong is an arm that never got to decide (a stale feed,
+    a spot record that began late, a loop that did not tick). Expected = arm-days due, observed = arm-days
+    decided (entered, or declined on the arm's own rules). The money is the closed trades', read from the
+    ledger."""
+    rows = _ensemble_day(conn, session)
+    decided = sum(
+        1
+        for r in rows
+        if r["outcome"] == "entered"
+        or (r["outcome"] == "missed" and r["refusal"] not in ENSEMBLE_INPUT_REFUSALS)
+    )
+    return {
+        "basis": "arm_days_due_vs_decided",
+        "expected": len(rows) or None,
+        "observed": decided if rows else None,
+    }
+
+
 EXPECTED_READERS = {
     "meic": _meic_expected,
     "flies": _flies_expected,
@@ -647,6 +721,7 @@ EXPECTED_READERS = {
     "curve": _curve_expected,
     "contango": _contango_expected,
     "weeklyput": _weeklyput_expected,
+    "ensemble": _ensemble_expected,
 }
 
 
