@@ -15,7 +15,7 @@ import {
 } from "lightweight-charts";
 import { CANDLE_PERIODS, PROFILE_SYMBOLS, type CandleBar, type CandlePeriod, type FuturesTickerEntry } from "@console/shared";
 import { useFuturesTicker, useProfileBars } from "../../lib/api";
-import { overnightProfile, untestedPocs, type MarketComposite } from "../../lib/marketProfile";
+import { buildComposite, overnightProfile, untestedPocs, type MarketComposite } from "../../lib/marketProfile";
 import { useCandles } from "../../lib/useCandles";
 import { CardHelpButton, HelpSection, type CardHelpContent } from "../../components/CardHelp";
 import { useWsState } from "../../lib/useQuote";
@@ -27,6 +27,8 @@ import {
   dashFor,
   hiddenRoles,
   hideParam,
+  showParam,
+  toggleRole,
   LINE_LEGEND,
   lineStyleFor,
   OPTIONAL_LINES,
@@ -37,6 +39,7 @@ import {
   untestedBars,
   untestedCandidates,
   overnightSession,
+  compositeSessions,
   type OverlayColours,
   type SessionProfiles,
 } from "./profileOverlay";
@@ -175,11 +178,13 @@ function ProfileReadout({
   precision,
   untested,
   overnight,
+  composite,
 }: {
   profiles: SessionProfiles;
   precision: number;
   untested: ReadonlyArray<readonly [string, number]> | null;
   overnight: MarketComposite | null;
+  composite: MarketComposite | null;
 }) {
   const { latest, prior, developing } = profiles;
   if (latest === null) return <div className="intraday-status muted">profile: no regular-session bars yet</div>;
@@ -218,6 +223,14 @@ function ProfileReadout({
           {f(overnight.low)}
         </span>
       )}
+      {composite !== null && (
+        <span>
+          {" "}
+          · {composite.sessions.length}-session composite ({sessionLabel(composite.sessions[0]!)}–
+          {sessionLabel(composite.sessions.at(-1)!)}): POC {f(composite.poc)} · VA {f(composite.val)}–
+          {f(composite.vah + composite.rowSize)}
+        </span>
+      )}
     </div>
   );
 }
@@ -252,17 +265,20 @@ function LiveCandles({
   // Untested POCs need more history than the live 15-minute series holds: the recorded bars, extended
   // hours, for the symbols the profile-bars job keeps. Off (no request) for any other contract, and
   // when the profile or its nPOC lines are switched off.
-  const recordedSymbol = profile && !hidden.has("untested-poc") ? recordedProfileSymbol(entry.product) : "";
+  // The recorded bars serve the untested POCs and the composite; fetched only while either is on.
+  const recordedSymbol =
+    profile && (!hidden.has("untested-poc") || !hidden.has("composite-poc")) ? recordedProfileSymbol(entry.product) : "";
   const { data: recorded } = useProfileBars(recordedSymbol, UNTESTED_SESSIONS, "extended");
   const untested = useMemo((): Array<[string, number]> => {
     const rowSize = profiles.latest?.rowSize;
-    if (recordedSymbol === "" || recorded === undefined || !recorded.available || rowSize === undefined) return [];
+    if (recordedSymbol === "" || hidden.has("untested-poc") || recorded === undefined || !recorded.available || rowSize === undefined)
+      return [];
     return untestedPocs(untestedBars(recorded.bars, profileBars), {
       sessions: untestedCandidates(recorded.sessions, profiles),
       rowSize,
       barSeconds: recorded.barSeconds,
     });
-  }, [recordedSymbol, recorded, profiles, profileBars]);
+  }, [recordedSymbol, hidden, recorded, profiles, profileBars]);
 
   // A future's overnight (18:00-09:30 ET) from the same live 15-minute series, which carries the
   // extended hours; a cash symbol has none worth the name.
@@ -273,6 +289,17 @@ function LiveCandles({
     const session = overnightSession(profileBars);
     return session === null ? null : overnightProfile(profileBars, { session, rowSize, barSeconds: 900 });
   }, [isFuture, profile, hidden, profiles, profileBars]);
+
+  // The composite of the newest finished sessions, off unless `?show=comp`.
+  const composite = useMemo((): MarketComposite | null => {
+    const rowSize = profiles.latest?.rowSize;
+    if (hidden.has("composite-poc") || recorded === undefined || !recorded.available || rowSize === undefined) return null;
+    return buildComposite(recorded.bars, {
+      sessions: compositeSessions(recorded.sessions, profiles),
+      rowSize,
+      barSeconds: recorded.barSeconds,
+    });
+  }, [hidden, recorded, profiles]);
 
   useEffect(() => {
     const el = hostRef.current;
@@ -376,13 +403,13 @@ function LiveCandles({
     const series = seriesRef.current;
     histRef.current?.setProfile(profile ? profiles.latest : null);
     if (series === null) return;
-    const want = profile ? profileLines(profiles, hidden, untested, overnight) : [];
+    const want = profile ? profileLines(profiles, hidden, untested, overnight, composite) : [];
     const key = want.map((l) => `${l.key}:${l.price}`).join("|");
     if (key === linesRef.current.key) return;
     for (const line of linesRef.current.lines) series.removePriceLine(line);
     const lines = want.map((l) => series.createPriceLine({ price: l.price, title: l.title, ...lineStyleFor(l.role, OVERLAY) }));
     linesRef.current = { key, lines };
-  }, [profile, profiles, hidden, untested, overnight]);
+  }, [profile, profiles, hidden, untested, overnight, composite]);
 
   const live = ws.dxlink === "connected";
   const precision = PRECISION[entry.product] ?? 2;
@@ -406,7 +433,8 @@ function LiveCandles({
         )}
         {!live && <span className="chip" style={{ marginLeft: 8 }}>feed {ws.dxlink} — not live</span>}
       </div>
-      {profile && profileBars.length > 0 && <ProfileReadout profiles={profiles} precision={precision} untested={recordedSymbol === "" || recorded === undefined || !recorded.available ? null : untested}
+      {profile && profileBars.length > 0 && <ProfileReadout profiles={profiles} precision={precision} untested={recordedSymbol === "" || hidden.has("untested-poc") || recorded === undefined || !recorded.available ? null : untested}
+          composite={composite}
           overnight={overnight}
         />}
       <div ref={hostRef} style={{ height: "560px" }} />
@@ -538,15 +566,18 @@ export function IntradayPage() {
 
   const profile = params.get("profile") !== "off";
   const hideRaw = params.get("hide");
-  const hidden = useMemo(() => hiddenRoles(hideRaw), [hideRaw]);
+  const showRaw = params.get("show");
+  const hidden = useMemo(() => hiddenRoles(hideRaw, showRaw), [hideRaw, showRaw]);
   const toggleLine = (role: ProfileLine["role"]): void => {
-    const nextHidden = new Set(hidden);
-    if (nextHidden.has(role)) nextHidden.delete(role);
-    else nextHidden.add(role);
+    const nextHidden = toggleRole(hidden, role);
     const next = new URLSearchParams(params);
-    const value = hideParam(nextHidden);
-    if (value === "") next.delete("hide");
-    else next.set("hide", value);
+    for (const [key, value] of [
+      ["hide", hideParam(nextHidden)],
+      ["show", showParam(nextHidden)],
+    ] as const) {
+      if (value === "") next.delete(key);
+      else next.set(key, value);
+    }
     setParams(next, { replace: true });
   };
 

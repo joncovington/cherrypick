@@ -7,6 +7,9 @@ import type { CandleBar } from "@console/shared";
 import {
   hiddenRoles,
   hideParam,
+  showParam,
+  toggleRole,
+  compositeSessions,
   LINE_LEGEND,
   lineStyleFor,
   OPTIONAL_LINES,
@@ -31,6 +34,45 @@ const FIXTURE = JSON.parse(
 const SPX = FIXTURE.cases.find((c) => c.name.startsWith("SPX-like, 15m, two"))!.bars;
 const NQ = FIXTURE.cases.find((c) => c.name.startsWith("/NQ-like"))!.bars;
 const ON = overnightProfile(NQ, { session: "2026-11-13", rowSize: 10, barSeconds: 900 });
+
+describe("the composite lines", () => {
+  it("are off until ?show=comp, and the rest are on until ?hide=", () => {
+    expect([...hiddenRoles(null)].sort()).toEqual(["composite-poc", "composite-va"]);
+    expect(hiddenRoles(null, "comp").size).toBe(0);
+    expect([...hiddenRoles("ib", "comp")]).toEqual(["ib"]);
+    expect(hiddenRoles("comp", null).has("composite-poc")).toBe(true); // ?hide= cannot show it
+  });
+
+  it("switch together, and write back to ?show= only while on", () => {
+    const off = hiddenRoles(null);
+    const on = toggleRole(off, "composite-va");
+    expect(on.has("composite-poc") || on.has("composite-va")).toBe(false);
+    expect([showParam(on), hideParam(on)]).toEqual(["comp", ""]);
+    const offAgain = toggleRole(on, "composite-poc");
+    expect([showParam(offAgain), hideParam(offAgain)]).toEqual(["", ""]);
+    // a default-on group still writes to ?hide=
+    expect(hideParam(toggleRole(on, "ib"))).toBe("ib");
+  });
+
+  it("draw the composite's POC through its row's middle and its value area by outer edges", () => {
+    const p = sessionProfiles(NQ, Date.UTC(2026, 10, 13, 22, 0));
+    const lines = profileLines(p, new Set(), [], null, ON).filter((l) => l.role.startsWith("composite"));
+    expect(lines.map((l) => [l.key, l.price])).toEqual([
+      ["cpoc", ON!.poc + 5],
+      ["cvah", ON!.vah + 10],
+      ["cval", ON!.val],
+    ]);
+    expect(profileLines(p, hiddenRoles(null), [], null, ON).some((l) => l.role.startsWith("composite"))).toBe(false);
+  });
+
+  it("merge the newest five finished sessions, never today's while it trades", () => {
+    const recorded = ["2026-11-06", "2026-11-09", "2026-11-10", "2026-11-11", "2026-11-12", "2026-11-13"];
+    const during = sessionProfiles(SPX, at(12, 0)); // 11-13 developing
+    const after = sessionProfiles(SPX, at(20, 0));
+    expect(compositeSessions(recorded, during)).toEqual(["2026-11-06", "2026-11-09", "2026-11-10", "2026-11-11", "2026-11-12"]);
+    expect(compositeSessions(recorded, after)).toEqual(["2026-11-09", "2026-11-10", "2026-11-11", "2026-11-12", "2026-11-13"]);
+  });
+});
 
 describe("the overnight lines", () => {
   it("draws the overnight's high, POC (through its row's middle) and low, hidden by ?hide=on", () => {
@@ -84,7 +126,7 @@ describe("Intraday profile overlay", () => {
 
   it("names every line on the axis and in the legend, and draws no two kinds alike", () => {
     const colours = { poc: "#a", va: "#b", muted: "#c", rowFill: "", vaFill: "", pocFill: "" };
-    const roles = [...new Set(profileLines(sessionProfiles(SPX, at(20, 0)), new Set(), [["2026-11-10", 6800]], ON).map((l) => l.role))];
+    const roles = [...new Set(profileLines(sessionProfiles(SPX, at(20, 0)), new Set(), [["2026-11-10", 6800]], ON, ON).map((l) => l.role))];
     expect(LINE_LEGEND.map((e) => e.role)).toEqual(roles);
     const looks = roles.map((r) => {
       const s = lineStyleFor(r, colours);
@@ -106,7 +148,7 @@ describe("Intraday profile overlay", () => {
   it("writes ?hide= back in a stable order and empty when nothing is hidden", () => {
     expect(hideParam(hiddenRoles("pva,ib"))).toBe("ib,pva");
     expect(hideParam(new Set())).toBe("");
-    expect(OPTIONAL_LINES.map((o) => o.role)).toEqual(["ib", "prior-poc", "prior-va", "untested-poc", "overnight"]);
+    expect(OPTIONAL_LINES.map((o) => o.role)).toEqual(["ib", "prior-poc", "prior-va", "untested-poc", "overnight", "composite-poc", "composite-va"]);
   });
 
   it("draws each untested POC through its row's middle, named by its session, hidden by ?hide=npoc", () => {

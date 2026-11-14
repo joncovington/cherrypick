@@ -65,33 +65,69 @@ export interface ProfileLine {
   key: string;
   price: number;
   title: string;
-  role: "poc" | "va" | "ib" | "prior-poc" | "prior-va" | "untested-poc" | "overnight";
+  role: "poc" | "va" | "ib" | "prior-poc" | "prior-va" | "untested-poc" | "overnight" | "composite-poc" | "composite-va";
 }
 
 /**
- * The line groups a viewer can switch off, each under its key in the page's `?hide=` parameter. POC
- * and the value area are the profile itself and always drawn; these five are context, and with all
- * of them on the price axis carries eight labels.
+ * The line groups a viewer can switch, each under a key. POC and the value area are the profile
+ * itself and always drawn; the rest are context, and with all of them on the price axis carries a
+ * dozen labels. Most are on until named in `?hide=`; the composite (`defaultOn: false`) is off until
+ * named in `?show=`. Roles sharing a key switch together (the composite's POC and value area).
  */
-export const OPTIONAL_LINES: { role: ProfileLine["role"]; param: string }[] = [
-  { role: "ib", param: "ib" },
-  { role: "prior-poc", param: "ppoc" },
-  { role: "prior-va", param: "pva" },
-  { role: "untested-poc", param: "npoc" },
-  { role: "overnight", param: "on" },
+export const OPTIONAL_LINES: { role: ProfileLine["role"]; param: string; defaultOn: boolean }[] = [
+  { role: "ib", param: "ib", defaultOn: true },
+  { role: "prior-poc", param: "ppoc", defaultOn: true },
+  { role: "prior-va", param: "pva", defaultOn: true },
+  { role: "untested-poc", param: "npoc", defaultOn: true },
+  { role: "overnight", param: "on", defaultOn: true },
+  { role: "composite-poc", param: "comp", defaultOn: false },
+  { role: "composite-va", param: "comp", defaultOn: false },
 ];
 
-/** The roles a `?hide=` value switches off; unknown keys are ignored. */
-export function hiddenRoles(hide: string | null): Set<ProfileLine["role"]> {
-  const keys = new Set((hide ?? "").split(",").map((s) => s.trim()));
-  return new Set(OPTIONAL_LINES.filter((o) => keys.has(o.param)).map((o) => o.role));
+const keysOf = (raw: string | null): Set<string> => new Set((raw ?? "").split(",").map((s) => s.trim()));
+
+/** The roles hidden by a `?hide=` and a `?show=` value: a default-on group named in `hide`, and a
+ *  default-off group not named in `show`. Unknown keys are ignored. */
+export function hiddenRoles(hide: string | null, show: string | null = null): Set<ProfileLine["role"]> {
+  const h = keysOf(hide);
+  const s = keysOf(show);
+  return new Set(OPTIONAL_LINES.filter((o) => (o.defaultOn ? h.has(o.param) : !s.has(o.param))).map((o) => o.role));
 }
 
-/** `hiddenRoles` back to its `?hide=` value, in a stable order; empty when nothing is hidden. */
+const paramsWhere = (pick: (o: (typeof OPTIONAL_LINES)[number]) => boolean): string =>
+  [...new Set(OPTIONAL_LINES.filter(pick).map((o) => o.param))].join(",");
+
+/** `hiddenRoles` back to its `?hide=` value (the default-on groups hidden), in a stable order. */
 export function hideParam(hidden: ReadonlySet<ProfileLine["role"]>): string {
-  return OPTIONAL_LINES.filter((o) => hidden.has(o.role))
-    .map((o) => o.param)
-    .join(",");
+  return paramsWhere((o) => o.defaultOn && hidden.has(o.role));
+}
+
+/** `hiddenRoles` back to its `?show=` value (the default-off groups shown), in a stable order. */
+export function showParam(hidden: ReadonlySet<ProfileLine["role"]>): string {
+  return paramsWhere((o) => !o.defaultOn && !hidden.has(o.role));
+}
+
+/** How many sessions the intraday chart's composite merges. */
+export const COMPOSITE_SESSIONS = 5;
+
+/** The sessions the chart's composite merges: the newest `n` recorded ones, never today's while it is
+ *  still trading (a composite of finished sessions holds still through the day). */
+export function compositeSessions(recorded: readonly string[], profiles: SessionProfiles, n = COMPOSITE_SESSIONS): string[] {
+  const today = profiles.developing ? profiles.latest?.session : undefined;
+  return recorded.filter((s) => s !== today).slice(-n);
+}
+
+/** Switch a role's whole group: every role sharing its key turns on or off with it. */
+export function toggleRole(hidden: ReadonlySet<ProfileLine["role"]>, role: ProfileLine["role"]): Set<ProfileLine["role"]> {
+  const param = OPTIONAL_LINES.find((o) => o.role === role)?.param;
+  const group = OPTIONAL_LINES.filter((o) => o.param === param).map((o) => o.role);
+  const next = new Set(hidden);
+  const turnOn = hidden.has(role);
+  for (const r of group) {
+    if (turnOn) next.delete(r);
+    else next.add(r);
+  }
+  return next;
 }
 
 /** The price lines a pair of profiles asks for, in a stable order, less any hidden group. */
@@ -100,6 +136,7 @@ export function profileLines(
   hidden: ReadonlySet<ProfileLine["role"]> = new Set(),
   untested: ReadonlyArray<readonly [string, number]> = [],
   overnight: MarketComposite | null = null,
+  composite: MarketComposite | null = null,
 ): ProfileLine[] {
   const row = profiles.latest?.rowSize ?? 0;
   const npoc: ProfileLine[] = untested.map(([session, poc]) => ({
@@ -116,7 +153,15 @@ export function profileLines(
           { key: "onpoc", price: overnight.poc + overnight.rowSize / 2, title: "ON POC", role: "overnight" },
           { key: "onl", price: overnight.low, title: "ONL", role: "overnight" },
         ];
-  return [...allLines(profiles), ...npoc, ...on].filter((l) => !hidden.has(l.role));
+  const comp: ProfileLine[] =
+    composite === null
+      ? []
+      : [
+          { key: "cpoc", price: composite.poc + composite.rowSize / 2, title: `cPOC ${composite.sessions.length}d`, role: "composite-poc" },
+          { key: "cvah", price: composite.vah + composite.rowSize, title: `cVAH ${composite.sessions.length}d`, role: "composite-va" },
+          { key: "cval", price: composite.val, title: `cVAL ${composite.sessions.length}d`, role: "composite-va" },
+        ];
+  return [...allLines(profiles), ...npoc, ...on, ...comp].filter((l) => !hidden.has(l.role));
 }
 
 /**
@@ -204,6 +249,10 @@ export function lineStyleFor(role: ProfileLine["role"], c: OverlayColours) {
       return { ...base, color: c.va, lineStyle: LineStyle.Dotted };
     case "untested-poc":
       return { ...base, color: c.poc, lineStyle: LineStyle.LargeDashed };
+    case "composite-poc":
+      return { ...base, color: c.poc, lineStyle: LineStyle.SparseDotted, lineWidth: 2 as const };
+    case "composite-va":
+      return { ...base, color: c.va, lineStyle: LineStyle.SparseDotted, lineWidth: 2 as const };
     case "overnight":
       return { ...base, color: c.muted, lineStyle: LineStyle.Solid };
   }
@@ -227,6 +276,17 @@ export const LINE_LEGEND: { role: ProfileLine["role"]; label: string; meaning: s
     label: "ONH / ON POC / ONL",
     meaning:
       "a future's overnight session (18:00 the evening before to 09:30 ET): its high, its point of control and its low (futures only)",
+  },
+  {
+    role: "composite-poc",
+    label: "cPOC",
+    meaning:
+      "the composite of the five newest finished sessions (today excluded while it trades): its point of control; off by default, switched with cVAH / cVAL (recorded symbols only)",
+  },
+  {
+    role: "composite-va",
+    label: "cVAH / cVAL",
+    meaning: "the same composite's value area; off by default, switched with cPOC",
   },
 ];
 

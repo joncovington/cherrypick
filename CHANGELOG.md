@@ -35,7 +35,8 @@ beyond the latest release.
   the price axis gets crowded, and the ? beside the chart's title explains every line. For the recorded
   symbols it also marks untested POCs (nPOC): earlier sessions' points of control that no trade since,
   overnight included, has reached, listed in the line above the chart too; for /ES and /NQ, the
-  overnight session's high, point of control and low (ONH, ON POC, ONL). Turn the whole
+  overnight session's high, point of control and low (ONH, ON POC, ONL); and, off until you switch it
+  on, the 5-session composite's POC and value area (cPOC, cVAH, cVAL). Turn the whole
   overlay off with the `profile off` button. The profile
   covers the regular session, 09:30–16:00 ET, for every symbol, a future's overnight excluded. It is a
   chart and nothing trades on it. The chart's time axis now names the day where each session starts
