@@ -59,6 +59,7 @@ STRATEGY = {
     "cherrypick.contango",
     "cherrypick.weeklyput",
     "cherrypick.ensemble",
+    "cherrypick.ladder",
     "cherrypick.gex",
     "cherrypick.advisor",
 }

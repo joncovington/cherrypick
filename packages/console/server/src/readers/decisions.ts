@@ -7,6 +7,7 @@ import { resolveBwbSession } from "./bwb.js";
 import { resolveContangoSession } from "./contango.js";
 import { resolveWeeklyputSession } from "./weeklyput.js";
 import { resolveEnsembleSession } from "./ensemble.js";
+import { resolveLadderSession } from "./ladder.js";
 
 /**
  * The collapsed decision journal (`core.ledgerstore.record_decision`'s own table) -- one row per
@@ -74,6 +75,11 @@ const SPECS: Record<DecisionsModule, Spec> = {
     dir: (c) => c.paths.weeklyputDir,
     table: "weeklyput_decisions",
     resolveSession: resolveWeeklyputSession,
+  },
+  ladder: {
+    dir: (c) => c.paths.ladderDir,
+    table: "ladder_decisions",
+    resolveSession: resolveLadderSession,
   },
 };
 

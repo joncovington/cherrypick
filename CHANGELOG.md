@@ -20,6 +20,11 @@ beyond the latest release.
   `~/.cherrypick/config/ensemble.json`. An arm added in that file trades with no code change. Every
   decision, taken or refused, is kept with the gate that decided it and the snapshot it saw, so paper can
   be replayed against the backtest. A position is a ledger row, never an order.
+- **Ladder, a share dip ladder in paper.** A new package, `ladder`, buys a leveraged index fund (TQQQ to
+  start) in lots when it falls 7% and sells each lot on its own at +4%, with three arms: `chain` (each
+  further lot 7% under the last), `once` (one lot a session) and `decay` (the target falls to breakeven
+  after a month). Its rule failed research item 26, so this is for watching it at real quotes, not a
+  claim of an edge. Experimental and paper-only; the orchestrator does not schedule it yet.
 
 ## v0.13.0 — 2026-11-13 — evidence and accounts
 About 45 pull requests since v0.12.0, and it includes everything in the v0.12.1 beta (delta ideas, the

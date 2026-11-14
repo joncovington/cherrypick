@@ -480,6 +480,8 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
     return readWeeklyputHistory(config, { arm, symbol, range: parseDateRange(q) });
   });
   app.get("/api/weeklyput/decisions", async () => readDecisions(config, "weeklyput", null));
+  // ladder (paper, no page yet): its decision journal through the shared card's reader.
+  app.get("/api/ladder/decisions", async () => readDecisions(config, "ladder", null));
   app.get("/api/weeklyput/status", async () => readWeeklyputStatus(weeklyputDbPath(config)));
   app.get("/api/weeklyput/cycles", async () => readWeeklyputCycles(weeklyputDbPath(config)));
   app.get("/api/weeklyput/summary", async () => readWeeklyputSummary(weeklyputDbPath(config)));

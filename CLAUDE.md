@@ -7,7 +7,7 @@ changing a package you don't know.
 
 Packages: `packages/orchestrator`, `packages/meic`, `packages/earnings`, `packages/gex`,
 `packages/streamer`, `packages/flies` (retired 2026-10-19), `packages/calendars`, `packages/pmcc`,
-`packages/curve` (retired 2026-11-01), `packages/contango`, `packages/weeklyput`, `packages/ensemble`, `packages/bwb`, `packages/overview`, `packages/technicals`, `packages/fundamentals`,
+`packages/curve` (retired 2026-11-01), `packages/contango`, `packages/weeklyput`, `packages/ensemble`, `packages/ladder`, `packages/bwb`, `packages/overview`, `packages/technicals`, `packages/fundamentals`,
 `packages/console`, `packages/review`, `packages/manage`, `packages/advisor`, `packages/backtest`.
 `cherrypick.core` is `packages/core`, an editable dependency of each. Users install with the root
 `install.*`; developers run `scripts/dev-install.ps1`/`.sh`.
