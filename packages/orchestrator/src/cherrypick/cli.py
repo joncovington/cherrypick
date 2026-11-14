@@ -2310,7 +2310,8 @@ def cmd_hypotheses(cfg, args) -> None:
     """B7: check the register, list rule changes due a re-read, and (--similar) rejected look-alikes."""
     reg = hypotheses.load()
     problems = hypotheses.check(reg)
-    studies = {r["study"] for r in _queue_rows()} | _study_folders()
+    tasks = _queue_rows()
+    studies = {r["study"] for r in tasks} | _study_folders()
     problems += [
         f"study {s} (queue or result folder): no register row" for s in hypotheses.unregistered(reg, studies)
     ]
@@ -2321,6 +2322,8 @@ def cmd_hypotheses(cfg, args) -> None:
         "ok": not problems,
         "problems": problems,
         "rereads": hypotheses.rereads(reg, _trades_since(cfg)),
+        # Declared rows whose result is written here: a verdict to record (a list, never a failure).
+        "awaiting_verdict": hypotheses.awaiting_verdict(reg, tasks),
         # The next free item number here and on origin/main as last fetched: fetch before declaring.
         "next_id": hypotheses.next_id(reg, main_reg, plan_md=plan),
     }
