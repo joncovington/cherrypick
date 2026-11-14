@@ -63,7 +63,7 @@ broker, no network, no streamer: the stream cache is read by the paper loop, whi
 ## What the paper loop needs (not built)
 
 Stream requests for the SPX and GLD chains at the entry minutes plus the one-minute spot trail; a
-`Snapshot` built from them with `snapshot.build`; the event data from `scripts/fetch_event_history.py`'s
+`Snapshot` built from them with `snapshot.build`; the event data from `packages/backtest/scripts/event_history_item75.py`'s
 output; a ledger of entries and trades; an orchestrator job; a console page. Entries are measured against
 item 75's replay, as weeklyput's are against item 57's.
 
