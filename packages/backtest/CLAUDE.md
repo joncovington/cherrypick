@@ -34,6 +34,9 @@ expunged within 30 days of termination** (§8(e)). Two consequences shape the wh
   pinned to them by test; a finished study keeps its own copy until a logged correction moves it.
   Its constraints (no defaults for declared parameters, no trading rules, costs from core) are in
   the package docstring and #1068.
+- **A new study declares its queue chain** as a module-level `CHAIN` literal (plan, fetches,
+  study), and is queued with `run.py queue-chain --script <path>`, never row by row
+  (`orchestrator/studychain.py`; item 76's script is the example).
 - **The data must stay purgeable.** It lives in one directory carrying a marker file
   (`paths.LICENSED_MARKER`); `purge` removes only marked directories (dry run by default), and the
   nightly backup skips any marked directory (`orchestrator/backup.py` spells the same name; a test

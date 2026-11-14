@@ -74,6 +74,18 @@ s29 = _load("share_ladder_item29", HERE / "share_ladder_item29.py")
 s27 = _load("share_ladder_item27", HERE.parents[2] / "scripts" / "share_ladder_item27.py")
 sl = s27.sl  # item 26
 
+#: The research-queue chain (`run.py queue-chain --script <this file>`), as rows 336-338 were queued
+#: by hand: the plan writes the path requests, the fetch reads them, the study runs.
+CHAIN = (
+    {"step": "plan", "kind": "script", "args": ["plan"], "output": "{results}/path_requests.json"},
+    {
+        "step": "fetch-chains",
+        "kind": "fetch-chain-paths",
+        "task_args": {"requests": "{results}/path_requests.json"},
+    },
+    {"step": "study", "kind": "script", "args": ["study"], "output": "{results}/results.json"},
+)
+
 NAMES = s29.NAMES
 DROP, GAIN, COST = sl.DROP, sl.GAIN, sl.COST
 CAP = 3

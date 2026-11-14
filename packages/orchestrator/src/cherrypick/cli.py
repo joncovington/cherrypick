@@ -1915,6 +1915,23 @@ def cmd_queue_add(args) -> None:
     _emit({"ok": True, **out})
 
 
+def cmd_queue_chain(args) -> None:
+    """Queue a study script's CHAIN whole (orchestrator/studychain.py): every step in order, each
+    after the one before; nothing is queued when any step is refused."""
+    from cherrypick.orchestrator import researchqueue as rq
+    from cherrypick.orchestrator import studychain
+
+    if not args.script:
+        _emit({"ok": False, "error": "queue-chain needs --script <repo-relative study script>"})
+        sys.exit(2)
+    try:
+        out = studychain.queue_chain(args.script, study=args.study, after=args.after, dry_run=args.dry_run)
+    except (rq.Refused, studychain.BadChain, OSError, SyntaxError) as exc:
+        _emit({"ok": False, "error": str(exc)})
+        sys.exit(2)
+    _emit(out)
+
+
 def cmd_queue_list(cfg, args) -> None:
     """The queue's rows, newest first, each queued one with why it waits now."""
     from datetime import datetime
@@ -2789,6 +2806,7 @@ def build_parser() -> argparse.ArgumentParser:
             "secrets-delete",
             "settings",
             "queue-add",
+            "queue-chain",
             "queue-list",
             "queue-cancel",
             "queue-priority",
@@ -3105,6 +3123,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="For queue-add: wait for this row (study/step) to finish done; held if it fails",
     )
     parser.add_argument(
+        "--script",
+        default=None,
+        help="For queue-chain: the study script whose CHAIN to queue, repo-relative",
+    )
+    parser.add_argument(
         "--task-id", type=int, default=None, help="For queue-cancel / queue-priority: the row"
     )
     parser.add_argument(
@@ -3245,6 +3268,7 @@ def main() -> None:
         "secrets-delete": lambda: cmd_secrets_delete(args.channel),
         "settings": lambda: cmd_settings(cfg, args),
         "queue-add": lambda: cmd_queue_add(args),
+        "queue-chain": lambda: cmd_queue_chain(args),
         "queue-list": lambda: cmd_queue_list(cfg, args),
         "queue-cancel": lambda: cmd_queue_cancel(args),
         "queue-priority": lambda: cmd_queue_priority(args),
