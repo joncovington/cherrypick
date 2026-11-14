@@ -3380,7 +3380,7 @@
       "id": 75,
       "study": "item75",
       "title": "A third-party portfolio of eight short-dated option rules, read over all history at once",
-      "status": "declared",
+      "status": "passed",
       "legacy": false,
       "setup": "portfolio-whole-rule",
       "side": "two-sided",
@@ -3425,9 +3425,9 @@
         "packages/ensemble/tests/test_engine.py"
       ],
       "results": [
-        "{home}/data/backtest/results/research/item75/study-2022-05-16-all.json"
+        "{home}/data/backtest/results/research/item75/study-all.json"
       ],
-      "outcome": null,
+      "outcome": "two of eight arms pass over the whole history read once: the 13:45 iron condor and the 10:30 long put; four fail and the 13:00 put spread and 1DTE GLD call spread are no verdict; the eight stacked as sized pass. The two passing arms are read forward in paper before any live consideration",
       "retest": null,
       "retests": []
     },
@@ -3435,7 +3435,7 @@
       "id": 76,
       "study": "item76",
       "title": "The ladder's stuck lots: covered calls sold after day 18, at three strike rules",
-      "status": "declared",
+      "status": "failed",
       "legacy": false,
       "setup": "dip-buy",
       "side": "bullish",
@@ -3482,7 +3482,7 @@
       "results": [
         "{home}/data/backtest/results/research/item76/results.json"
       ],
-      "outcome": null,
+      "outcome": "all three strike rules fail the design window (breakeven and delta30 trail holding the lot; cost5's t is under 2 and it fails Holm and the per-name check), so the ladder keeps counting the hospital and sells no calls",
       "retest": null,
       "retests": []
     }
