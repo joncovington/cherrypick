@@ -1,5 +1,6 @@
 import {
   LineStyle,
+  type IChartApi,
   type IPrimitivePaneRenderer,
   type IPrimitivePaneView,
   type ISeriesApi,
@@ -8,7 +9,8 @@ import {
   type SeriesType,
   type Time,
 } from "lightweight-charts";
-import type { CandleBar } from "@console/shared";
+import type { CandleBar, ProfileBarsPayload } from "@console/shared";
+import { buildView } from "../Profile/profileView";
 import {
   buildProfile,
   rowSizeFor,
@@ -16,14 +18,15 @@ import {
   OVERNIGHT_START_MIN,
   sessionDates,
   SESSION_CLOSE_MIN,
+  SESSION_OPEN_MIN,
   type MarketComposite,
   type MarketProfile,
 } from "../../lib/marketProfile";
 
 /**
- * The Market Profile overlay on the Intraday chart: the newest regular session's TPO histogram behind
- * the candles, and price lines for its POC, value area and initial balance, plus the prior session's
- * POC and value area.
+ * The Market Profile overlay on the Intraday chart: the newest few regular sessions' TPO histograms
+ * behind the candles, each from its own open, and price lines for the newest session's POC, value
+ * area and initial balance, plus the prior session's POC and value area.
  *
  * Built from the 15-minute candles (7 days of history on subscribe, so the prior session is always
  * there; 15 divides the 30-minute period, so each period's high and low are exact) through
@@ -306,30 +309,99 @@ export function dashFor(style: LineStyle): string {
   }
 }
 
-/** Share of the pane's width the longest row takes. */
-const HIST_WIDTH = 0.22;
+/** How many sessions' histograms the chart draws (`?sessions=`), newest included. */
+export const SESSION_CHOICES = ["1", "5", "10"] as const;
+export type SessionChoice = (typeof SESSION_CHOICES)[number];
+export const DEFAULT_SESSIONS: SessionChoice = "5";
+
+/** `?sessions=` read back: one of the choices, else the default. */
+export function sessionChoice(raw: string | null): SessionChoice {
+  return (SESSION_CHOICES as readonly string[]).includes(raw ?? "") ? (raw as SessionChoice) : DEFAULT_SESSIONS;
+}
+
+/**
+ * The profiles the histograms draw: the newest `n` sessions, oldest first. The newest is the one the
+ * lines read (`profiles.latest`), so histogram and lines never disagree. The older ones come from the
+ * recorded bars where the store keeps the symbol, by the Profile tab's own rule (`buildView`: the
+ * recorded bars, then live ones only after the newest of them), else from the live 15-minute series
+ * (seven days). Every one is on the newest's row grid; one that is not is left out rather than drawn
+ * on a different scale.
+ */
+export function recentProfiles(
+  profiles: SessionProfiles,
+  live: readonly CandleBar[],
+  recorded: ProfileBarsPayload | undefined,
+  n: number,
+): MarketProfile[] {
+  const latest = profiles.latest;
+  if (latest === null || n < 1) return [];
+  if (n === 1) return [latest];
+  const opts = { rowSize: latest.rowSize, barSeconds: PROFILE_BAR_SECONDS };
+  const all =
+    recorded !== undefined && recorded.available
+      ? (buildView(recorded, 0, live)?.profiles ?? [])
+      : sessionDates(live)
+          .map((session) => buildProfile(live, { ...opts, session }))
+          .filter((p): p is MarketProfile => p !== null);
+  const older = all.filter((p) => p.session < latest.session && p.rowSize === latest.rowSize);
+  return [...older.slice(-(n - 1)), latest];
+}
+
+/**
+ * Where each session's histogram starts: the time of its first regular-session bar among the bars the
+ * chart draws. A session the chart holds no bar of (a 1-minute chart loads one day) is absent, and its
+ * histogram is not drawn.
+ */
+export function sessionAnchors(bars: readonly CandleBar[], sessions: readonly string[]): Map<string, number> {
+  const want = new Set(sessions);
+  const out = new Map<string, number>();
+  for (const b of bars) {
+    const { date, seconds } = etClock(b.t);
+    if (!want.has(date) || out.has(date)) continue;
+    if (seconds >= SESSION_OPEN_MIN * 60 && seconds < SESSION_CLOSE_MIN * 60) out.set(date, b.t);
+  }
+  return out;
+}
+
+/** Share of a full session's width on the chart that the longest row takes. */
+const SESSION_FILL = 0.6;
+const SESSION_SECONDS = (SESSION_CLOSE_MIN - SESSION_OPEN_MIN) * 60;
 
 type DrawTarget = Parameters<IPrimitivePaneRenderer["draw"]>[0];
 
-/** The histogram: one bar per row, growing leftward from the pane's right edge, behind the candles. */
+/**
+ * The histograms: each session's rows growing rightward from its own first regular-session bar, behind
+ * the candles. One count scale serves every session drawn, so their widths compare; a full session's
+ * longest row spans `SESSION_FILL` of that session's width at the current zoom.
+ */
 export class ProfileHistogram implements ISeriesPrimitive<Time> {
-  private profile: MarketProfile | null = null;
+  private profiles: MarketProfile[] = [];
   private series: ISeriesApi<SeriesType, Time> | null = null;
+  private chart: IChartApi | null = null;
   private requestUpdate: (() => void) | null = null;
   private readonly view: IPrimitivePaneView;
+  private anchorsKey = "";
+  private anchors = new Map<string, number>();
 
-  constructor(private readonly colours: OverlayColours) {
+  /** `bars` reads the series the chart draws; `barSeconds` is its candle width. */
+  constructor(
+    private readonly colours: OverlayColours,
+    private readonly bars: () => readonly CandleBar[],
+    private readonly barSeconds: number,
+  ) {
     const renderer: IPrimitivePaneRenderer = { draw: () => {}, drawBackground: (t) => this.draw(t) };
     this.view = { zOrder: () => "bottom", renderer: () => renderer };
   }
 
   attached(param: SeriesAttachedParameter<Time>): void {
     this.series = param.series;
+    this.chart = param.chart;
     this.requestUpdate = param.requestUpdate;
   }
 
   detached(): void {
     this.series = null;
+    this.chart = null;
     this.requestUpdate = null;
   }
 
@@ -337,33 +409,55 @@ export class ProfileHistogram implements ISeriesPrimitive<Time> {
     return [this.view];
   }
 
-  setProfile(p: MarketProfile | null): void {
-    this.profile = p;
+  setProfiles(ps: MarketProfile[]): void {
+    this.profiles = ps;
     this.requestUpdate?.();
   }
 
+  /** The anchors, recomputed only when the drawn bars or the sessions change (a draw runs every frame
+   *  of a scroll). */
+  private anchorsFor(): Map<string, number> {
+    const bars = this.bars();
+    const sessions = this.profiles.map((p) => p.session);
+    const key = `${bars.length}:${bars[0]?.t ?? ""}:${sessions.join(",")}`;
+    if (key !== this.anchorsKey) {
+      this.anchorsKey = key;
+      this.anchors = sessionAnchors(bars, sessions);
+    }
+    return this.anchors;
+  }
+
   private draw(target: DrawTarget): void {
-    const p = this.profile;
     const series = this.series;
-    if (p === null || series === null) return;
-    const maxTpo = Math.max(...p.rows.map((r) => r.letters.length));
+    const chart = this.chart;
+    if (this.profiles.length === 0 || series === null || chart === null) return;
+    const maxTpo = Math.max(0, ...this.profiles.flatMap((p) => p.rows.map((r) => r.letters.length)));
     if (maxTpo === 0) return;
-    target.useBitmapCoordinateSpace(({ context: ctx, bitmapSize, horizontalPixelRatio: hr, verticalPixelRatio: vr }) => {
-      const right = bitmapSize.width;
-      const span = bitmapSize.width * HIST_WIDTH;
-      for (const r of p.rows) {
-        const n = r.letters.length;
-        if (n === 0) continue;
-        const yTop = series.priceToCoordinate(r.price + p.rowSize);
-        const yBot = series.priceToCoordinate(r.price);
-        if (yTop === null || yBot === null) continue;
-        const top = Math.round(Math.min(yTop, yBot) * vr);
-        // Leave a hairline between rows once they are tall enough to show one.
-        const h = Math.max(1, Math.round(Math.abs(yBot - yTop) * vr) - (Math.abs(yBot - yTop) >= 4 ? Math.round(vr) : 0));
-        const w = Math.max(Math.round(hr), Math.round((n / maxTpo) * span));
-        ctx.fillStyle =
-          r.price === p.poc ? this.colours.pocFill : r.price >= p.val && r.price <= p.vah ? this.colours.vaFill : this.colours.rowFill;
-        ctx.fillRect(right - w, top, w, h);
+    const anchors = this.anchorsFor();
+    const ts = chart.timeScale();
+    const spacing = ts.options().barSpacing;
+    const fullWidth = (SESSION_SECONDS / this.barSeconds) * spacing * SESSION_FILL;
+    target.useBitmapCoordinateSpace(({ context: ctx, horizontalPixelRatio: hr, verticalPixelRatio: vr }) => {
+      for (const p of this.profiles) {
+        const t = anchors.get(p.session);
+        if (t === undefined) continue;
+        const x = ts.timeToCoordinate(t as Time);
+        if (x === null) continue;
+        const left = Math.round((x - spacing / 2) * hr);
+        for (const r of p.rows) {
+          const n = r.letters.length;
+          if (n === 0) continue;
+          const yTop = series.priceToCoordinate(r.price + p.rowSize);
+          const yBot = series.priceToCoordinate(r.price);
+          if (yTop === null || yBot === null) continue;
+          const top = Math.round(Math.min(yTop, yBot) * vr);
+          // Leave a hairline between rows once they are tall enough to show one.
+          const h = Math.max(1, Math.round(Math.abs(yBot - yTop) * vr) - (Math.abs(yBot - yTop) >= 4 ? Math.round(vr) : 0));
+          const w = Math.max(Math.round(hr), Math.round((n / maxTpo) * fullWidth * hr));
+          ctx.fillStyle =
+            r.price === p.poc ? this.colours.pocFill : r.price >= p.val && r.price <= p.vah ? this.colours.vaFill : this.colours.rowFill;
+          ctx.fillRect(left, top, w, h);
+        }
       }
     });
   }

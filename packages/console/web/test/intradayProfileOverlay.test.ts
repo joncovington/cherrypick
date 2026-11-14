@@ -18,9 +18,13 @@ import {
   untestedBars,
   untestedCandidates,
   overnightSession,
+  recentProfiles,
+  sessionAnchors,
+  sessionChoice,
 } from "../src/pages/Intraday/profileOverlay";
-import { recordedProfileSymbol } from "../src/pages/Intraday/IntradayPage";
-import { overnightProfile } from "../src/lib/marketProfile";
+import { histogramNote, recordedProfileSymbol } from "../src/pages/Intraday/IntradayPage";
+import { buildProfile, overnightProfile, sessionDates } from "../src/lib/marketProfile";
+import type { ProfileBarsPayload } from "@console/shared";
 
 /**
  * The Intraday chart's profile overlay: which sessions it draws, when it calls one developing, and
@@ -189,5 +193,66 @@ describe("Intraday profile overlay", () => {
     const p = sessionProfiles([]);
     expect(p.latest).toBeNull();
     expect(profileLines(p)).toEqual([]);
+    expect(recentProfiles(p, [], undefined, 5)).toEqual([]);
+  });
+});
+
+describe("the session histograms", () => {
+  const p = sessionProfiles(SPX, at(20, 0), "SPX");
+  const recordedOf = (bars: CandleBar[]): ProfileBarsPayload => ({
+    symbol: "SPX",
+    hours: "extended",
+    available: true,
+    reason: null,
+    sessions: sessionDates(bars),
+    barSeconds: 900,
+    bars,
+    contracts: {},
+    newestSession: sessionDates(bars).at(-1) ?? null,
+    fetchedAt: null,
+  });
+
+  it("reads ?sessions= as 1, 5 or 10, five by default", () => {
+    expect(["1", "5", "10", null, "3", "all"].map(sessionChoice)).toEqual(["1", "5", "10", "5", "5", "5"]);
+  });
+
+  it("draws one session as the newest alone, the very profile the lines read", () => {
+    const one = recentProfiles(p, SPX, undefined, 1);
+    expect(one).toHaveLength(1);
+    expect(one[0]).toBe(p.latest);
+  });
+
+  it("draws the newest few, oldest first, ending on the lines' profile", () => {
+    const five = recentProfiles(p, SPX, undefined, 5);
+    expect(five.map((x) => x.session)).toEqual(["2026-11-12", "2026-11-13"]);
+    expect(five.at(-1)).toBe(p.latest);
+    expect(recentProfiles(p, SPX, undefined, 2).map((x) => x.session)).toEqual(["2026-11-12", "2026-11-13"]);
+  });
+
+  it("builds older sessions from the recorded bars where the store has them", () => {
+    const priorOnly = SPX.filter((b) => b.t * 1000 < at(0, 0));
+    expect(sessionDates(priorOnly)).toEqual(["2026-11-12"]);
+    const fromStore = recentProfiles(p, SPX, recordedOf(priorOnly), 5);
+    expect(fromStore.map((x) => x.session)).toEqual(["2026-11-12", "2026-11-13"]);
+    expect(fromStore[0]).toEqual(buildProfile(priorOnly, { rowSize: 2.5, barSeconds: 900, session: "2026-11-12" }));
+    // A store on another row grid is left out rather than drawn to a different scale.
+    const other = sessionProfiles(SPX, at(20, 0));
+    expect(recentProfiles(other, SPX, recordedOf(priorOnly), 5).map((x) => x.session)).toEqual(["2026-11-13"]);
+  });
+
+  it("starts each histogram at its session's first regular-session bar, and skips a session the chart lacks", () => {
+    const anchors = sessionAnchors(NQ, ["2026-11-13", "2026-11-01"]);
+    expect([...anchors.keys()]).toEqual(["2026-11-13"]);
+    const first = NQ.find((b) => b.t * 1000 >= at(9, 30))!;
+    expect(anchors.get("2026-11-13")).toBe(first.t);
+    // the overnight bars before 09:30 are on the chart but never anchor a session
+    expect(NQ.some((b) => b.t < first.t)).toBe(true);
+  });
+
+  it("says how many sessions are drawn, and why fewer than asked", () => {
+    const s = ["2026-11-11", "2026-11-12", "2026-11-13"];
+    expect(histogramNote({ asked: 3, drawn: 3, sessions: s })).toBe("histograms: 3 of 3 sessions (Nov 11–Nov 13)");
+    expect(histogramNote({ asked: 5, drawn: 2, sessions: s })).toMatch(/2 of 5 .*older than this candle width loads/);
+    expect(histogramNote({ asked: 5, drawn: 3, sessions: s })).toMatch(/3 of 5 .*all the history held/);
   });
 });
