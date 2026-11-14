@@ -7923,6 +7923,60 @@ vendor data ends on 2026-11-16, so this is read once, before then.
   - **A fail on every arm:** short index puts at 7 days are closed for the suite in both forms; the
     weeklyput arm stays a paper record of a tail-risk trade.
 
+### 79. Item 64's bullish structures on the three bars, against the delta financed on the same capital
+
+Declared 2026-11-14, before any of it is computed. **A retest of item 64, said out loud:** item 64
+judged its four structures against the same delta held in shares, and shares are no longer the
+suite's control (the capital-efficiency baseline is the delta financed on the same capital). The
+licence on the vendor data ends on 2026-11-16, so this is read once, before then.
+
+- **Question:** does any of item 64's four defined-risk bullish structures earn more than the bill on
+  the capital the broker holds, earn back a bad year within a year, and earn more than its own entry
+  delta financed on that capital?
+- **The trades:** item 64's exactly, built by item 64's own `trades` over its stored chain paths (the
+  call backspread A, the spreads with a back-month long call B, the 1-3-2 put broken-wing butterfly C,
+  and the 1-3-2 calendarized D, on its ten slow large caps), entries planned from 2016-01-01 through
+  2026-10-31, the last whose cycle has closed in the store. Nothing is re-chosen.
+- **Measured:** each trade's net over its capital (item 64's: the debit, or the broker's held maximum
+  loss); per front expiry, the equal-weight mean over the names that entered; one cycle one
+  observation.
+- **The three bars** (`cherrypick.backtest.study.rule`, `RULE` in the script), per structure, all must
+  hold:
+  - **capital:** the cycle's return less the 3-month bill over its days held, mean above zero with a
+    one-sided t of 2.3 or more;
+  - **tail:** the 99th-percentile one-year drawdown of a stationary bootstrap of the cycles (10,000
+    draws, seed 79, a year being the sample's own cycles a year) under one year of mean return;
+  - **delta:** the cycle's return less its entry delta financed on the same capital (item 64's shares
+    term, the delta times the forward's change, plus the bill on the capital), mean above zero with a
+    one-sided t of 2.3 or more.
+  - The t of 2.3 keeps a Holm step across the four structures from binding (at 100 cycles a passing p
+    is under 0.0125). Fewer than 100 cycles is no verdict (the tail bar's own floor), and so is item
+    64's data rule: more than 5% of a structure's entries without an exit mark.
+- **Windows:** one run, judged whole. A split at item 64's boundary would leave the part before it
+  (about 70 cycles) under the tail bar's floor, so the rest would never be read. Item 64 read the
+  cycles before 2022-01-01, so the verdict is **provisional by declaration**; the cycles from then
+  on (item 64's holdout, never read) are reported apart as the fresh evidence.
+- **Reported, never judged:** per structure, the mean return over the bill and over the financed
+  delta on the cycles item 64 read and on the fresh ones; each structure's skips and its share of
+  entries without an exit mark. Item 64's D less C test is not repeated: it rests on two structures
+  that had no verdict.
+- **Rival explanations, each with its check:**
+  - *The capital earns more in bills:* the capital bar.
+  - *The return is the stocks' drift on a long delta:* the delta bar, on the financed delta.
+  - *A crash the sample lacks:* the tail bar reads the sample's own losses only; 2018, 2020 and 2022
+    are in it.
+  - *Missing exit marks hide the losers:* item 64's 5% data rule.
+- **Data:** item 64's chain-path store; nothing is fetched (its paths run to the 2026-12 expiry).
+  `packages/backtest/scripts/bullish_structures_bars_item79.py study`, queued as `item79/study`.
+  Results are derived from licensed data, so they stay under
+  `~/.cherrypick/data/backtest/results/research/item79/`, and this plan records the verdict without
+  figures.
+- **Decides:**
+  - **A pass on a structure:** it goes to manage's IRA ideas as a defined-risk way to hold delta, the
+    fresh cycles its evidence and the paper record its only later one.
+  - **A fail on every structure:** none of the four is an IRA idea; item 64's no-verdict structures
+    stay unjudged for want of exit marks if the data rule binds.
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:

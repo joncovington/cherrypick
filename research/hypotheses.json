@@ -3658,6 +3658,53 @@
       "retest": null,
       "retest_note": "Read once before the vendor licence ends (2026-11-16); no later retest is possible on vendor data.",
       "retests": []
+    },
+    {
+      "id": 79,
+      "study": "item79",
+      "title": "Item 64's bullish structures on the three bars, against the delta financed on the same capital",
+      "status": "declared",
+      "legacy": false,
+      "setup": "directional",
+      "side": "bullish",
+      "structure": "defined-risk-bullish",
+      "window": "monthly",
+      "measure": "item 64's trades (structures A-D on its ten slow large caps), each trade's net over its capital, per front expiry the equal-weight mean over the names that entered",
+      "expected": "no prior: item 64 found none beat shares, but shares hold more capital than the financed delta charges",
+      "sample": "entries planned 2016-01-01..2026-10-31, one run judged whole; provisional by declaration (item 64 read the cycles before 2022-01-01), the cycles from then reported as the fresh evidence; < 100 cycles, or > 5% of a structure's entries without an exit mark = no verdict",
+      "rule": "per structure, all of: capital (return less the 3-month bill on the capital over the days held, mean > 0, one-sided t >= 2.3); tail (99th-percentile one-year drawdown of a stationary bootstrap of the cycles, 10,000 draws, seed 79, under one year of mean return); delta (return less the entry delta financed on the same capital, mean > 0, one-sided t >= 2.3); t 2.3 keeps Holm across four from binding",
+      "mechanism": "defined-risk long delta, charged for its capital and judged against the same delta financed",
+      "rivals": [
+        {
+          "explanation": "the capital earns more in bills",
+          "check": "the capital bar"
+        },
+        {
+          "explanation": "the stocks' drift on a long delta",
+          "check": "the delta bar on the financed delta"
+        },
+        {
+          "explanation": "a crash the sample lacks",
+          "check": "the tail bar on the sample's own losses; 2018, 2020 and 2022 in the sample"
+        },
+        {
+          "explanation": "missing exit marks hide the losers",
+          "check": "item 64's 5% data rule"
+        }
+      ],
+      "pointer": "research/edge-hypotheses-plan.md#79-item-64s-bullish-structures-on-the-three-bars-against-the-delta-financed-on-the-same-capital",
+      "scripts": [
+        "packages/backtest/scripts/bullish_structures_bars_item79.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_bullish_structures_bars_item79_script.py"
+      ],
+      "results": [
+        "{home}/data/backtest/results/research/item79/results.json"
+      ],
+      "retest": null,
+      "retest_note": "A retest of item 64 itself, read once before the vendor licence ends (2026-11-16).",
+      "retests": []
     }
   ],
   "rule_changes": []
