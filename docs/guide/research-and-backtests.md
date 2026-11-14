@@ -69,7 +69,18 @@ the data is read, because a rule changed after the fact is no longer a test:
    trade belongs to the part holding its entry session. Only the declared splits decide the verdict;
    any other cut of the same run (years, regimes) is reported beside it, never judged.
 3. **The pass test:** the statistic and the bar, in words and numbers, and that it must hold in both
-   halves of time. Larger studies add that it holds in both halves of the names.
+   halves of time. Larger studies add that it holds in both halves of the names. Every new study is
+   judged on three bars, which suit a book run for capital efficiency, a small delta and no tail risk:
+   - **capital:** each trade's net, less the T-bill rate on its buying power over the days it was
+     held, is above zero with a one-sided t at the declared bar;
+   - **tail:** a bad year is earned back within a year: the 99th-percentile drawdown over one year of
+     trades (a bootstrap of the study's own trades) is smaller than a year of mean net;
+   - **delta**, for a structure with net delta: its net less the same delta financed on the same
+     capital is above zero, so the result is not just the market's direction.
+   Holding the same delta in shares is not a rival. Same-capital rivals (a long call or put at the
+   same maximum loss, one side of a structure alone, the plain condor or strangle at the same buying
+   power) are reported beside the verdict, never judged. A share-holding module (the ladder) is
+   judged against holding its own shares, which is the choice it makes.
 4. **The sample:** how many sessions or trades it needs, so that "no result" is read as "too few to see an
    edge larger than X" and not as "no edge".
 
