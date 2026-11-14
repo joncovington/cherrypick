@@ -10,6 +10,7 @@ import { HelpSection, type CardHelpContent } from "../../components/CardHelp";
 import { FilterGroup } from "../../components/FilterSort";
 import { Section } from "../../components/Section";
 import { useFilterPanel } from "../useFilterPanel";
+import { attention, collapsedArms, moduleAnchor, shownArms, splitModules, type Flag } from "./summary";
 
 /**
  * The suite review. Renders the fact set and computes nothing.
@@ -18,10 +19,10 @@ import { useFilterPanel } from "../useFilterPanel";
  * markdown render, this page and the narrative all read that one file, so they cannot hold different
  * opinions about a session.
  *
- * Built from the console's own primitives (`card`, `stats-grid`/`stat-tile`, `data-table`, `chip`,
- * `dot`) rather than a parallel look. The first version of this page invented class names that did
- * not exist — `.page-head`, `.data`, `.findings` — so half of it rendered unstyled, which is most of
- * why it read flat.
+ * One summary table, one row a module that traded (or carried a position, or could not be read);
+ * a row opens to its arms, top three by net and then "n more". Modules with no trades share one
+ * line under the table. What needs attention comes first, each line linking to its module's row.
+ * The era's totals sit last, folded to one line until opened.
  *
  * Two rules the styling has to carry, not just the numbers:
  * - **Null is not zero.** An unmeasured value renders as an em dash, never 0.00. A cost never
@@ -56,217 +57,199 @@ function pnlClass(v: number | null | undefined): string {
   return v > 0 ? "pnl-pos" : "pnl-neg";
 }
 
-interface Flag {
-  level: "warn" | "err";
-  text: string;
-}
-
-/** What a reader needs before anything else. An empty list is a real and good answer. */
-function attention(modules: ReviewModule[]): Flag[] {
-  const out: Flag[] = [];
-  for (const m of modules) {
-    if (!m.ok) {
-      out.push({ level: "err", text: `${m.module} could not be read — ${m.reason}` });
-      continue;
-    }
-    if (m.loopTicked === false) {
-      out.push({ level: "err", text: `${m.module} did not tick at all — a stopped loop, not a quiet day` });
-    }
-    if (m.errors) out.push({ level: "err", text: `${m.module} logged ${m.errors} iteration error(s)` });
-    if (m.suspectedBreak) {
-      out.push({
-        level: "warn",
-        text:
-          `${m.module} looks like a regime change with no journaled break — ${m.suspectedBreak.trades} trades ` +
-          `against a trailing median of ${Math.round(m.suspectedBreak.trailingMedian)} (${m.suspectedBreak.ratio}×)`,
-      });
-    }
-    if (m.breaks === null) {
-      out.push({
-        level: "warn",
-        text: `${m.module} does not track measurement breaks — its trend assumes a continuity nothing verified`,
-      });
-    }
-  }
-  return out;
-}
-
-/** Arms that used one centring rule all session are that rule's arm, not independent observations. */
-function collapsedArms(m: ReviewModule): string[] {
-  const byRule = new Map<string, string[]>();
-  for (const a of m.arms) {
-    if (!a.centredBy) continue;
-    byRule.set(a.centredBy, [...(byRule.get(a.centredBy) ?? []), a.arm]);
-  }
-  return [...byRule.entries()]
-    .filter(([, arms]) => arms.length > 1)
-    .map(([rule, arms]) => `${arms.slice().sort().join(", ")} all centred ${rule}`);
-}
-
-/**
- * A proportion bar behind an arm's net. Deliberately scaled to the largest ABSOLUTE net in the
- * group, so a loss and a win of the same size read as the same weight in opposite colours — the
- * alternative scales losses against wins and makes a bad arm look small.
- */
-function ArmBar({ net, peak }: { net: number; peak: number }) {
-  return <SignedBar value={net} maxAbs={peak} compact />;
-}
-
-function ModuleCard({ m }: { m: ReviewModule }) {
-  if (!m.ok) {
-    return (
-      <Card title={m.module} className="review-module" controls={<span className="chip chip-missing">unreadable</span>}>
-        <p className="muted">{m.reason}</p>
-      </Card>
+/** The row's short note: expected against observed, and the flags a reader should not miss. */
+function rowNote(m: ReviewModule): ReactNode {
+  const parts: ReactNode[] = [];
+  if (m.expected !== null || m.observed !== null) {
+    parts.push(
+      <span key="eo">
+        {money(m.expected)} <span className="muted">exp</span> → {money(m.observed)} <span className="muted">obs</span>
+      </span>,
     );
   }
+  if (m.singleEvent && m.closed > 0) {
+    parts.push(
+      <span key="ev" className="chip chip-warn" title="Trades sharing a symbol and session share one market event">
+        {count(m.events)} event
+      </span>,
+    );
+  }
+  if (m.carriedPositions > 0) parts.push(<span key="cr" className="chip">{m.carriedPositions} carried</span>);
+  return parts.length === 0 ? <span className="muted">—</span> : <span className="rv-note-parts">{parts}</span>;
+}
+
+function ArmsTable({ m }: { m: ReviewModule }) {
+  const [all, setAll] = useState(false);
+  const { shown, more } = shownArms(m.arms, all);
+  // Scaled to the largest ABSOLUTE net among all the arms, shown or not, so a loss and a win of the
+  // same size read as the same weight in opposite colours, and opening "more" does not rescale.
   const peak = m.arms.reduce((max, a) => Math.max(max, Math.abs(a.net)), 0);
-
   return (
-    <Card
-      title={m.module}
-      className="review-module"
-      help={MODULE_HELP}
-      controls={
-        <>
-          {m.closed === 0 && <span className="chip">no trades</span>}
-          {m.singleEvent && m.closed > 0 && (
-            <span className="chip chip-warn" title="Trades sharing a symbol and session share one market event">
-              {count(m.events)} event
-            </span>
-          )}
-          <span className="card-asof">
-            {count(m.n)} row{m.n === 1 ? "" : "s"}
-          </span>
-        </>
-      }
-    >
-
-      <div className="stats-grid">
-        <div className="stat-tile">
-          <span className="stat-label">Net</span>
-          <span className={`stat-value ${pnlClass(m.net)}`}>{money(m.net)}</span>
-        </div>
-        <div className="stat-tile">
-          <span className="stat-label">Return on risk</span>
-          <span className={`stat-value ${pnlClass(m.onMaxRisk)}`}>{pct(m.onMaxRisk)}</span>
-        </div>
-        <div className="stat-tile">
-          <span className="stat-label">Closed</span>
-          <span className="stat-value">{count(m.closed)}</span>
-        </div>
-        <div className="stat-tile">
-          <span className="stat-label">Won / lost</span>
-          <span className="stat-value">
-            {count(m.wins)} / {count(m.closed - m.wins)}
-          </span>
-        </div>
-        <div className="stat-tile">
-          <span className="stat-label">Capital at risk</span>
-          <span className="stat-value">{money(m.capitalAtRisk)}</span>
-        </div>
-      </div>
-
-      {m.arms.length > 1 && (
-        <>
-          <div className="review-subhead">By arm</div>
-          <div className="table-scroll">
-          <table className="data-table data-table-labelled">
-            <thead>
-              <tr>
-                <th>Arm</th>
-                <th>Centred by</th>
-                <th />
-                <th>Net</th>
-                <th>Return</th>
-                <th>Closed</th>
-                <th>Wins</th>
+    <>
+      <div className="table-scroll">
+        <table className="data-table rv-arms">
+          <thead>
+            <tr>
+              <th>Arm</th>
+              <th className="rv-share">Share of net</th>
+              <th>Net</th>
+              <th className="rv-ret">Return</th>
+              <th>Closed</th>
+              <th>Wins</th>
+            </tr>
+          </thead>
+          <tbody>
+            {shown.map((a: ReviewArm) => (
+              <tr key={a.arm}>
+                <td className="rv-arm" title={a.centredBy ? `${a.arm} · centred ${a.centredBy}` : a.arm}>
+                  {a.arm}
+                </td>
+                <td className="rv-share arm-bar-cell">
+                  <SignedBar value={a.net} maxAbs={peak} compact />
+                </td>
+                <td className={pnlClass(a.net)}>{money(a.net)}</td>
+                <td className={`rv-ret ${pnlClass(a.onMaxRisk)}`}>{pct(a.onMaxRisk)}</td>
+                <td>{count(a.closed)}</td>
+                <td>{count(a.wins)}</td>
               </tr>
-            </thead>
-            <tbody>
-              {m.arms.map((a: ReviewArm) => (
-                <tr key={a.arm}>
-                  <td>{a.arm}</td>
-                  <td className="muted">{a.centredBy ?? "—"}</td>
-                  <td className="arm-bar-cell">
-                    <ArmBar net={a.net} peak={peak} />
-                  </td>
-                  <td className={pnlClass(a.net)}>{money(a.net)}</td>
-                  <td className={pnlClass(a.onMaxRisk)}>{pct(a.onMaxRisk)}</td>
-                  <td>{count(a.closed)}</td>
-                  <td>{count(a.wins)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          </div>
-          {collapsedArms(m).map((c) => (
-            <p className="review-caveat" key={c}>
-              <span className="dot status-warn" /> {c} — not independent this session. A GEX-centred arm
-              degrades to ATM when no open interest is cached, at which point it is the control arm under
-              another name.
-            </p>
-          ))}
-        </>
-      )}
-
-      <div className="review-expected">
-        <span className="stat-label">Expected vs observed</span>
-        <span className="muted"> · {m.expectedBasis ?? "no model"}</span>
-        <div>
-          {m.expected === null && m.observed === null ? (
-            <span className="muted">nothing to compare this session</span>
-          ) : (
-            <span className="review-expected-figures">
-              {money(m.expected)} <span className="muted">expected</span> → {money(m.observed)}{" "}
-              <span className="muted">observed</span>
-              {m.expected === null && <span className="muted"> (no model recorded)</span>}
-            </span>
-          )}
-        </div>
+            ))}
+          </tbody>
+        </table>
       </div>
-
-      {m.carriedPositions > 0 && (
-        <p className="review-caveat">
-          <span className="dot status-warn" /> {m.carriedPositions} position(s) carried overnight,{" "}
-          {money(m.carriedCapital)} at risk
-          {m.carriedCapitalUnknown > 0 ? ` (+${m.carriedCapitalUnknown} of unknown capital)` : ""} — no realised P&amp;L until they settle.
-        </p>
+      {(more > 0 || all) && m.arms.length > 3 && (
+        <button type="button" className="rv-link" onClick={() => setAll(!all)}>
+          {all ? "show top 3" : `${String(more)} more`}
+        </button>
       )}
-    </Card>
+    </>
   );
 }
 
-const MODULE_HELP: CardHelpContent = {
-  title: "Reading a module's session",
-  body: (
-    <HelpSection title="By arm">
-      <p>
-        The arms traded the same underlying in the same session, so the table is a paired comparison. An arm's bar is scaled to the
-        largest absolute net in the group, so a loss and a win of the same size read as the same weight in opposite colours. Return is on
-        the maximum risk.
+function ModuleDetail({ m }: { m: ReviewModule }) {
+  if (!m.ok) return <p className="muted">{m.reason}</p>;
+  return (
+    <div className="rv-detail">
+      {m.arms.length > 1 && <ArmsTable m={m} />}
+      {collapsedArms(m).map((c) => (
+        <p className="review-caveat" key={c}>
+          <span className="dot status-warn" /> {c} — not independent this session. A GEX-centred arm degrades to ATM when no open interest
+          is cached, at which point it is the control arm under another name.
+        </p>
+      ))}
+      <p className="rv-line">
+        <span className="stat-label">Expected vs observed</span>
+        <span className="muted"> · {m.expectedBasis ?? "no model"} · </span>
+        {m.expected === null && m.observed === null ? (
+          <span className="muted">nothing to compare this session</span>
+        ) : (
+          <>
+            {money(m.expected)} <span className="muted">expected</span> → {money(m.observed)} <span className="muted">observed</span>
+            {m.expected === null && <span className="muted"> (no model recorded)</span>}
+          </>
+        )}
       </p>
-    </HelpSection>
+      {m.carriedPositions > 0 && (
+        <p className="review-caveat">
+          <span className="dot status-warn" /> {m.carriedPositions} position(s) carried overnight, {money(m.carriedCapital)} at risk
+          {m.carriedCapitalUnknown > 0 ? ` (+${String(m.carriedCapitalUnknown)} of unknown capital)` : ""} — no realised P&amp;L until they
+          settle.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function ModuleRows({ m, open, onToggle }: { m: ReviewModule; open: boolean; onToggle: () => void }) {
+  return (
+    <>
+      <tr id={moduleAnchor(m.module)} className={open ? "rv-row is-open" : "rv-row"}>
+        <td>
+          <button type="button" className="rv-toggle" aria-expanded={open} onClick={onToggle}>
+            <span className="rv-caret" aria-hidden>
+              {open ? "▾" : "▸"}
+            </span>
+            {m.module}
+          </button>
+        </td>
+        {m.ok ? (
+          <>
+            <td className={pnlClass(m.net)}>{money(m.net)}</td>
+            <td className={`rv-ret ${pnlClass(m.onMaxRisk)}`}>{pct(m.onMaxRisk)}</td>
+            <td className="rv-car muted">{money(m.capitalAtRisk)}</td>
+            <td>{count(m.closed)}</td>
+            <td>
+              {count(m.wins)} / {count(m.closed - m.wins)}
+            </td>
+            <td className="rv-note">{rowNote(m)}</td>
+          </>
+        ) : (
+          <td colSpan={6}>
+            <span className="chip chip-missing">unreadable</span>
+          </td>
+        )}
+      </tr>
+      {open && (
+        <tr className="rv-open">
+          <td colSpan={7}>
+            <ModuleDetail m={m} />
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}
+
+function FlagLine({ f, linkable, onJump }: { f: Flag; linkable: boolean; onJump: (module: string) => void }) {
+  return (
+    <li>
+      <span className={`dot ${f.level === "err" ? "status-err" : "status-warn"}`} />
+      <span>
+        {f.module !== null &&
+          (linkable ? (
+            <button type="button" className="rv-jump" onClick={() => onJump(f.module!)}>
+              {f.module}
+            </button>
+          ) : (
+            <strong>{f.module}</strong>
+          ))}
+        {f.module !== null ? " " : ""}
+        {f.text}
+      </span>
+    </li>
+  );
+}
+
+const SUMMARY_HELP: CardHelpContent = {
+  title: "Reading the summary",
+  body: (
+    <>
+      <HelpSection title="Rows">
+        <p>
+          One row a module that closed a trade, carried a position or could not be read; the rest share the line beneath. Open a row for its
+          arms, largest net first. The arms traded the same underlying in the same session, so they are a paired comparison. An arm's bar is
+          scaled to the largest absolute net among them, so a loss and a win of the same size read as the same weight. Return is on the
+          maximum risk.
+        </p>
+      </HelpSection>
+      <HelpSection title="No suite total">
+        <p>
+          Deliberately: these books differ in scale by more than an order of magnitude, so a combined figure would describe the largest one
+          and imply it described all of them.
+        </p>
+      </HelpSection>
+    </>
   ),
 };
 
 const ATTENTION_HELP: CardHelpContent = {
   title: "What this review is",
   body: (
-    <>
-      <HelpSection title="Where the figures come from">
-        <p>
-          Every figure is read from the fact set the review package writes after the close; the page computes nothing. An unmeasured value
-          is a dash, never 0.00.
-        </p>
-      </HelpSection>
-      <HelpSection title="No suite total">
-        <p>
-          Deliberately: these books differ in scale by more than an order of magnitude, so a combined figure would describe the largest one
-          and imply it described all three.
-        </p>
-      </HelpSection>
-    </>
+    <HelpSection title="Where the figures come from">
+      <p>
+        Every figure is read from the fact set the review package writes after the close; the page computes nothing. An unmeasured value is
+        a dash, never 0.00.
+      </p>
+    </HelpSection>
   ),
 };
 
@@ -300,10 +283,28 @@ export function ReviewPage({ tabs }: { tabs?: ReactNode } = {}) {
   // The written note leaves the page when the suite turns the review narrative off; the fact set
   // is the review package's and always shows.
   const showNarrative = isFeatureOn("review_narrative", useFeatures());
+  // Rows the reader opened; null until they touch one, which leaves the first row open.
+  const [opened, setOpened] = useState<Set<string> | null>(null);
+  const [eraOpen, setEraOpen] = useState(false);
 
   const current = data?.current ?? null;
   const modules = current?.modules ?? [];
-  const flags = attention(modules);
+  const flags = attention(modules, current?.status ?? null);
+  const { rows, idle } = splitModules(modules);
+  const openSet = opened ?? new Set(rows.length > 0 ? [rows[0]!.module] : []);
+  const toggle = (module: string) => {
+    const next = new Set(openSet);
+    if (next.has(module)) next.delete(module);
+    else next.add(module);
+    setOpened(next);
+  };
+  const jump = (module: string) => {
+    const next = new Set(openSet);
+    next.add(module);
+    setOpened(next);
+    requestAnimationFrame(() => document.getElementById(moduleAnchor(module))?.scrollIntoView({ block: "start", behavior: "smooth" }));
+  };
+  const closedTotal = modules.reduce((n, m) => n + (m.ok ? m.closed : 0), 0);
   const latest = data?.sessions[data.sessions.length - 1];
   const sessionFilter = useFilterPanel({
     parts: [session === undefined || session === latest ? "latest session" : `session ${session}`],
@@ -324,69 +325,90 @@ export function ReviewPage({ tabs }: { tabs?: ReactNode } = {}) {
       </FilterGroup>
     ),
   });
+  const pickSession = data !== undefined && data.sessions.length > 1;
+  const rowModules = new Set(rows.map((m) => m.module));
 
   return (
     <div className="page">
       <div className="page-title-row">
         <h1>Suite review</h1>
         {tabs}
-        {current && (
-          <span className={`chip ${current.status === "final" ? "chip-ok" : "chip-warn"}`}>{current.status}</span>
-        )}
+        {current && <span className={`chip ${current.status === "final" ? "chip-ok" : "chip-warn"}`}>{current.status}</span>}
         {current && <span className="chip">paper</span>}
         {current && <span className="chip">{current.session}</span>}
-        {current && <span className="card-asof">fact set v{current.factVersion}</span>}
+        {current && (
+          <span className="card-asof rv-meta">
+            fact set v{current.factVersion} · {count(closedTotal)} closed · {modules.length} modules read
+          </span>
+        )}
+        {pickSession ? <span className="rv-session">{sessionFilter.button}</span> : null}
       </div>
+      {pickSession ? sessionFilter.body : null}
 
       {isError && <p className="muted">Could not read the review store.</p>}
       {isLoading && !current && <p className="muted">Reading the review store…</p>}
-      {!isLoading && !isError && !current && (
-        <p className="muted">No fact set has been written yet. The review runs after the close.</p>
-      )}
+      {!isLoading && !isError && !current && <p className="muted">No fact set has been written yet. The review runs after the close.</p>}
 
       {current && (
         <div className="pf-layout">
           <Section concept="stand" tag="the session" question="What needs my attention?">
-          <Card
-            title="Needs attention"
-            className={`review-attention ${flags.length > 0 ? "review-attention-flagged" : ""}`}
-            help={ATTENTION_HELP}
-            controls={
-              <>
-                {flags.length === 0 && <span className="chip chip-ok">clear</span>}
-                {flags.length > 0 && <span className="chip chip-warn">{flags.length}</span>}
-                {data && data.sessions.length > 1 ? sessionFilter.button : null}
-              </>
-            }
-          >
-            {data && data.sessions.length > 1 ? sessionFilter.body : null}
-            {flags.length === 0 ? (
-              <p className="muted">
-                Every module ticked, none errored, and no unjournaled regime change.
-              </p>
-            ) : (
-              <ul className="review-flags">
-                {flags.map((f) => (
-                  <li key={f.text}>
-                    <span className={`dot ${f.level === "err" ? "status-err" : "status-warn"}`} />
-                    {f.text}
-                  </li>
-                ))}
-              </ul>
-            )}
-            {current.status === "provisional" && (
-              <p className="review-caveat">
-                <span className="dot status-warn" /> Provisional — the overnight module has not settled, so
-                its realised P&amp;L lands in the next session.
-              </p>
-            )}
-          </Card>
+            <Card
+              title="Needs attention"
+              className={`review-attention ${flags.length > 0 ? "review-attention-flagged" : ""}`}
+              help={ATTENTION_HELP}
+              controls={flags.length === 0 ? <span className="chip chip-ok">clear</span> : <span className="chip chip-warn">{flags.length}</span>}
+            >
+              {flags.length === 0 ? (
+                <p className="muted">Every module ticked, none errored, and no unjournaled regime change.</p>
+              ) : (
+                <ul className="review-flags rv-flags">
+                  {flags.map((f) => (
+                    <FlagLine key={`${f.module ?? ""}${f.text}`} f={f} linkable={f.module !== null && rowModules.has(f.module)} onJump={jump} />
+                  ))}
+                </ul>
+              )}
+            </Card>
           </Section>
 
           <Section concept="hist" tag="by module" question="How did each module do?">
-            {modules.map((m) => (
-              <ModuleCard key={m.module} m={m} />
-            ))}
+            <Card title="Modules" help={SUMMARY_HELP} className="rv-summary">
+              {rows.length === 0 ? (
+                <p className="muted">No module closed a trade or carried a position this session.</p>
+              ) : (
+                <div className="table-scroll">
+                  <table className="data-table rv-table">
+                    <thead>
+                      <tr>
+                        <th>Module</th>
+                        <th>Net</th>
+                        <th className="rv-ret">Return on risk</th>
+                        <th className="rv-car">Capital at risk</th>
+                        <th>Closed</th>
+                        <th>Won / lost</th>
+                        <th className="rv-note">Expected vs observed · flags</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map((m) => (
+                        <ModuleRows key={m.module} m={m} open={openSet.has(m.module)} onToggle={() => toggle(m.module)} />
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              {idle.length > 0 && (
+                <p className="rv-idle">
+                  <span className="muted">No trades:</span>{" "}
+                  {idle.map((i, n) => (
+                    <span key={i.module}>
+                      {n > 0 && " · "}
+                      <strong>{i.module}</strong>
+                      {i.note && <span className="muted"> ({i.note})</span>}
+                    </span>
+                  ))}
+                </p>
+              )}
+            </Card>
           </Section>
 
           {showNarrative && current.note && (
@@ -401,42 +423,62 @@ export function ReviewPage({ tabs }: { tabs?: ReactNode } = {}) {
 
       {data && data.era.sessions > 0 && (
         <div className="pf-layout">
-        <Section concept="hist" tag="the era" question="What has the era done?">
-        <Card
-          title={data.era.eraFrom !== null ? "This era" : "All time"}
-          help={ERA_HELP}
-          controls={
-            <span className="card-asof" title={data.era.eraNote ?? undefined}>
-              {data.era.eraFrom !== null && <>era from {data.era.eraFrom} · </>}
-              {data.era.sessions} sessions{data.era.from !== null && <> · {data.era.from} → {data.era.to}</>}
-            </span>
-          }
-        >
-          <div className="stats-grid">
-            {Object.keys(data.era.netByModule).map((name) => {
-              // Small multiples: the same shape per module, read side by side. The line is the
-              // running total of the sessions summed into the tile above it — one pass, one story.
-              const trend = data.era.trendByModule[name] ?? [];
-              return (
-                <div className="stat-tile" key={name}>
-                  <span className="stat-label">{name}</span>
-                  <span className={`stat-value ${pnlClass(data.era.netByModule[name])}`}>
-                    {compactMoney(data.era.netByModule[name])}
+          <Section concept="hist" tag="the era" question="What has the era done?">
+            <Card
+              title={data.era.eraFrom !== null ? "This era" : "All time"}
+              help={ERA_HELP}
+              controls={
+                <>
+                  <span className="card-asof" title={data.era.eraNote ?? undefined}>
+                    {data.era.eraFrom !== null && <>era from {data.era.eraFrom} · </>}
+                    {data.era.sessions} sessions
+                    {data.era.from !== null && (
+                      <>
+                        {" "}
+                        · {data.era.from} → {data.era.to}
+                      </>
+                    )}
                   </span>
-                  <Sparkline
-                    values={trend.map((t) => t.net)}
-                    title={`${name}: cumulative net across ${trend.length} session${trend.length === 1 ? "" : "s"}`}
-                  />
-                  <span className="stat-label">
-                    {count(data.era.closedByModule[name])} closed
-                    {trend.length === 1 && <span className="muted"> · 1 session</span>}
-                  </span>
+                  <button type="button" className="chip rv-era-toggle" aria-expanded={eraOpen} onClick={() => setEraOpen(!eraOpen)}>
+                    {eraOpen ? "hide" : "show"}
+                  </button>
+                </>
+              }
+            >
+              {!eraOpen ? (
+                <p className="rv-era-line">
+                  {Object.keys(data.era.netByModule).map((name, n) => (
+                    <span key={name}>
+                      {n > 0 && " · "}
+                      {name} <span className={pnlClass(data.era.netByModule[name])}>{compactMoney(data.era.netByModule[name])}</span>
+                    </span>
+                  ))}
+                </p>
+              ) : (
+                <div className="stats-grid">
+                  {Object.keys(data.era.netByModule).map((name) => {
+                    // Small multiples: the same shape per module, read side by side. The line is the
+                    // running total of the sessions summed into the tile above it — one pass, one story.
+                    const trend = data.era.trendByModule[name] ?? [];
+                    return (
+                      <div className="stat-tile" key={name}>
+                        <span className="stat-label">{name}</span>
+                        <span className={`stat-value ${pnlClass(data.era.netByModule[name])}`}>{compactMoney(data.era.netByModule[name])}</span>
+                        <Sparkline
+                          values={trend.map((t) => t.net)}
+                          title={`${name}: cumulative net across ${String(trend.length)} session${trend.length === 1 ? "" : "s"}`}
+                        />
+                        <span className="stat-label">
+                          {count(data.era.closedByModule[name])} closed
+                          {trend.length === 1 && <span className="muted"> · 1 session</span>}
+                        </span>
+                      </div>
+                    );
+                  })}
                 </div>
-              );
-            })}
-          </div>
-        </Card>
-        </Section>
+              )}
+            </Card>
+          </Section>
         </div>
       )}
     </div>
