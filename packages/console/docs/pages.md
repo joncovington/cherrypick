@@ -284,7 +284,10 @@ the setups watchlist:
   - **Market Profile overlay** (`profile=on` by default; `pages/Intraday/profileOverlay.ts`): the
     newest regular session's TPO histogram behind the candles (value area brighter, POC amber) and
     price lines for POC, VAH/VAL, IBH/IBL and the prior session's pPOC/pVAH/pVAL, with a readout
-    line above the chart. Built from the 15-minute series (subscribed alongside whatever width is
+    line above the chart. Every line is named on the price axis and in a legend under the chart
+    (`LINE_LEGEND`); colour says the level (amber POC, accent value area, grey IB), the stroke whose
+    it is (the prior session's dotted), and a test fails if a line loses its label or two kinds look
+    alike. An index's zero-volume bars are left blank rather than drawn along the bottom. Built from the 15-minute series (subscribed alongside whatever width is
     drawn; seven days of history, so the prior session is always held) through `lib/marketProfile.ts`,
     a mirror of `cherrypick.core.marketprofile` pinned to the shared fixture (docs/mirrors.md). The
     regular session 09:30–16:00 ET for every symbol; a future's overnight is left out. Rows from

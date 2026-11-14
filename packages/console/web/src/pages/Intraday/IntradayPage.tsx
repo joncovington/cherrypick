@@ -10,6 +10,7 @@ import {
   type ISeriesApi,
   type Time,
   type UTCTimestamp,
+  type WhitespaceData,
 } from "lightweight-charts";
 import { CANDLE_PERIODS, type CandleBar, type CandlePeriod, type FuturesTickerEntry } from "@console/shared";
 import { useFuturesTicker } from "../../lib/api";
@@ -20,6 +21,8 @@ import { canvasPalette as _pal, hexOf } from "../../components/chart/cssvars";
 import { tokenAlpha } from "../../components/chart/cssvars";
 import type { MarketProfile } from "../../lib/marketProfile";
 import {
+  dashFor,
+  LINE_LEGEND,
   lineStyleFor,
   ProfileHistogram,
   profileLines,
@@ -109,11 +112,10 @@ const toCandle = (b: CandleBar): CandlestickData<Time> => ({
   low: b.l,
   close: b.c,
 });
-const toVolume = (b: CandleBar): HistogramData<Time> => ({
-  time: b.t as UTCTimestamp,
-  value: b.v,
-  color: b.c >= b.o ? UP_VOL : DOWN_VOL,
-});
+/** A bar with no volume (every bar of an index: SPX, NDX) is left blank, not drawn as a zero-height bar,
+ *  which ran along the bottom of the chart as a stray unexplained line. */
+const toVolume = (b: CandleBar): HistogramData<Time> | WhitespaceData<Time> =>
+  b.v > 0 ? { time: b.t as UTCTimestamp, value: b.v, color: b.c >= b.o ? UP_VOL : DOWN_VOL } : { time: b.t as UTCTimestamp };
 
 const isPeriod = (p: string | null): p is CandlePeriod => p !== null && (CANDLE_PERIODS as readonly string[]).includes(p);
 
@@ -300,7 +302,31 @@ function LiveCandles({
       </div>
       {profile && profileBars.length > 0 && <ProfileReadout profiles={profiles} precision={precision} />}
       <div ref={hostRef} style={{ height: "560px" }} />
+      {profile && profileBars.length > 0 && <ProfileLegend />}
     </>
+  );
+}
+
+/** What each horizontal line is: a swatch drawn in the line's own colour and stroke, and its meaning. */
+function ProfileLegend() {
+  return (
+    <ul
+      aria-label="profile lines"
+      style={{ listStyle: "none", margin: "8px 0 0", padding: 0, display: "flex", flexWrap: "wrap", gap: "4px 18px", fontSize: "0.85em" }}
+    >
+      {LINE_LEGEND.map(({ role, label, meaning }) => {
+        const s = lineStyleFor(role, OVERLAY);
+        return (
+          <li key={role} style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+            <svg width="28" height="8" aria-hidden="true" style={{ flex: "none" }}>
+              <line x1="0" y1="4" x2="28" y2="4" stroke={s.color} strokeWidth="2" strokeDasharray={dashFor(s.lineStyle)} />
+            </svg>
+            <strong>{label}</strong>
+            <span className="muted">{meaning}</span>
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 
@@ -397,8 +423,9 @@ export function IntradayPage() {
           Market Profile: the regular session, 09:30–16:00 ET, for every symbol (a future's overnight is left out), in
           30-minute periods A–M, built from 15-minute candles. The shaded histogram is the newest session's time at
           each price; the brighter rows are its value area (70% of the time) and the amber row its point of control.
-          Lines: POC, VAH/VAL and the initial balance (IBH/IBL, the first hour), and the prior session's pPOC and
-          pVAH/pVAL. SPX and NDX carry no volume, so theirs is time only. Chart only: no module reads it.
+          Each line is named on the price axis and in the legend under the chart; the coloured line that ends in
+          the price itself is the last trade. SPX and NDX carry no volume, so theirs is time only. Chart only: no
+          module reads it.
         </p>
       )}
     </section>

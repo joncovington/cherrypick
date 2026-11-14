@@ -30,7 +30,8 @@ beyond the latest release.
 - **Market Profile on the intraday chart.** Charts → intraday now also draws SPX, SPY, NDX and QQQ
   beside the futures. By default it overlays the session's Market Profile: time spent at each price as a
   shaded histogram, plus lines for the point of control, the value area (70% of the time), the first
-  hour's range and the prior session's levels. Turn it off with the `profile off` button. The profile
+  hour's range and the prior session's levels, each named on the price axis and in a legend under the
+  chart. Turn it off with the `profile off` button. The profile
   covers the regular session, 09:30–16:00 ET, for every symbol, a future's overnight excluded. It is a
   chart and nothing trades on it. The same arithmetic is in `cherrypick.core.marketprofile` for
   research.
