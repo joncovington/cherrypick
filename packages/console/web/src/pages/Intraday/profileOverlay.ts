@@ -54,8 +54,36 @@ export interface ProfileLine {
   role: "poc" | "va" | "ib" | "prior-poc" | "prior-va";
 }
 
-/** The price lines a pair of profiles asks for, in a stable order. */
-export function profileLines({ latest, prior }: SessionProfiles): ProfileLine[] {
+/**
+ * The line groups a viewer can switch off, each under its key in the page's `?hide=` parameter. POC
+ * and the value area are the profile itself and always drawn; these three are context, and with all
+ * of them on the price axis carries eight labels.
+ */
+export const OPTIONAL_LINES: { role: ProfileLine["role"]; param: string }[] = [
+  { role: "ib", param: "ib" },
+  { role: "prior-poc", param: "ppoc" },
+  { role: "prior-va", param: "pva" },
+];
+
+/** The roles a `?hide=` value switches off; unknown keys are ignored. */
+export function hiddenRoles(hide: string | null): Set<ProfileLine["role"]> {
+  const keys = new Set((hide ?? "").split(",").map((s) => s.trim()));
+  return new Set(OPTIONAL_LINES.filter((o) => keys.has(o.param)).map((o) => o.role));
+}
+
+/** `hiddenRoles` back to its `?hide=` value, in a stable order; empty when nothing is hidden. */
+export function hideParam(hidden: ReadonlySet<ProfileLine["role"]>): string {
+  return OPTIONAL_LINES.filter((o) => hidden.has(o.role))
+    .map((o) => o.param)
+    .join(",");
+}
+
+/** The price lines a pair of profiles asks for, in a stable order, less any hidden group. */
+export function profileLines(profiles: SessionProfiles, hidden: ReadonlySet<ProfileLine["role"]> = new Set()): ProfileLine[] {
+  return allLines(profiles).filter((l) => !hidden.has(l.role));
+}
+
+function allLines({ latest, prior }: SessionProfiles): ProfileLine[] {
   const out: ProfileLine[] = [];
   if (latest !== null) {
     const half = latest.rowSize / 2;
@@ -106,7 +134,7 @@ export function lineStyleFor(role: ProfileLine["role"], c: OverlayColours) {
   }
 }
 
-/** The legend under the chart, one entry per line, in the order the lines are drawn. */
+/** The legend under the chart (and the help box's list), one entry per line kind, in drawing order. */
 export const LINE_LEGEND: { role: ProfileLine["role"]; label: string; meaning: string }[] = [
   { role: "poc", label: "POC", meaning: "point of control: the price traded at longest today" },
   { role: "va", label: "VAH / VAL", meaning: "value area high and low: where 70% of today's time was spent" },
