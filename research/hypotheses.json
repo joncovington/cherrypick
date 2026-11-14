@@ -3415,10 +3415,14 @@
       ],
       "pointer": "research/edge-hypotheses-plan.md#75-a-third-party-portfolio-of-eight-short-dated-option-rules-read-over-all-history-at-once",
       "scripts": [
-        "packages/backtest/scripts/ensemble_item75.py"
+        "packages/backtest/scripts/ensemble_item75.py",
+        "packages/backtest/scripts/event_history_item75.py"
       ],
       "tests": [
-        "packages/backtest/tests/test_ensemble_item75_script.py"
+        "packages/backtest/tests/test_ensemble_item75_script.py",
+        "packages/backtest/tests/test_ensemble_item75_chains.py",
+        "packages/backtest/tests/test_event_history_item75.py",
+        "packages/ensemble/tests/test_engine.py"
       ],
       "results": [
         "{home}/data/backtest/results/research/item75/study-2022-05-16-all.json"

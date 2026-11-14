@@ -113,3 +113,23 @@ def test_the_store_sits_in_the_marked_licensed_directory():
     oifetch.connect(s).close()
     assert oifetch.db_path(s).parent == paths.vendor_dir(s)
     assert (paths.vendor_dir(s) / paths.LICENSED_MARKER).exists()
+
+
+def test_the_day_before_expiry_alias_asks_the_index_root_and_keeps_two_expiries():
+    s = _settings()
+    client = FakeClient()
+    oifetch.fetch_plan(s, client, [(DAY, "SPXW-1D")], log=lambda m: None)
+    assert client.calls == [("SPXW", DAY)]  # the vendor is asked for the root, not the alias
+    conn = oifetch.connect(s)
+    rows = [tuple(r) for r in conn.execute("SELECT symbol, expiration, right, strike FROM oi_contracts")]
+    assert rows == [("SPXW-1D", "2026-10-15", "P", 95.0)]  # the session itself; 10-16 is not in the fake
+    # a weekly-only index root would have dropped a Monday-to-Tuesday pair; the alias keeps it
+    assert oifetch.keep(
+        {("2026-10-19", "CALL", 5.0): 3, ("2026-10-20", "PUT", 5.0): 4, ("2026-10-21", "PUT", 5.0): 9},
+        "2026-10-19",
+        "SPXW-1D",
+    ) == [("2026-10-19", "C", 5.0, 3), ("2026-10-20", "P", 5.0, 4)]
+    assert (
+        oifetch.keep({("2026-10-19", "CALL", 5.0): 3, ("2026-10-20", "PUT", 5.0): 4}, "2026-10-19", "SPXW")
+        == []
+    )
