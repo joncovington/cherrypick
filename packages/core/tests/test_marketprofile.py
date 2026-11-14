@@ -256,3 +256,15 @@ def test_refuses_rather_than_guesses():
     assert mp.build_profile([], row_size=1, bar_seconds=60) is None
     bad = [{"t": _t(d, 9, 30), "o": 0, "h": 0, "l": 0, "c": 0, "v": 0}]  # the feed's empty sentinel
     assert mp.build_profile(bad, row_size=1, bar_seconds=1800, session=d) is None
+
+
+def test_the_fixture_is_what_its_generator_builds():
+    """scripts/make_marketprofile_fixture.py rebuilt in memory equals the committed file: a module change
+    that moves any expected answer, or a hand edit of the fixture, fails here first."""
+    import importlib.util
+
+    script = Path(__file__).resolve().parents[3] / "scripts" / "make_marketprofile_fixture.py"
+    spec = importlib.util.spec_from_file_location("make_marketprofile_fixture", script)
+    gen = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(gen)
+    assert json.loads(gen.build_text()) == CASES

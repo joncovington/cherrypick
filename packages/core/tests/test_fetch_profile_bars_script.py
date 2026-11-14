@@ -119,6 +119,15 @@ def test_snap_snip_marks_the_symbol_clipped():
     assert clipped == {"SPY"}
 
 
+def test_a_symbol_at_the_feeds_cap_is_clipped_without_the_flag(monkeypatch):
+    # 2026-11-14: 40 days of SPX came back as exactly 8,000 bars ending SNAP_END, with no SNAP_SNIP
+    monkeypatch.setattr(fpb, "FEED_CAP", 3)
+    full = [_ev("SPY{=m}", T0 + timedelta(minutes=i)) for i in range(3)]
+    short = [_ev("QQQ{=m}", T0 + timedelta(minutes=i)) for i in range(2)]
+    _, clipped = _fetch(full + short, symbols=("SPY", "QQQ"))
+    assert clipped == {"SPY"}
+
+
 def test_a_bar_still_forming_is_not_stored():
     conn = fpb.connect(":memory:")
     done_bar = NOW - timedelta(minutes=1)  # ends exactly now

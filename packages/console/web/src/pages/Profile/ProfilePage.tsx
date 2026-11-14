@@ -495,7 +495,11 @@ export function ProfilePage() {
                 type="button"
                 className={measure === m ? "mode-btn active" : "mode-btn"}
                 disabled={m === "volume" && !hasVolume}
-                title={m === "volume" && !hasVolume ? `${symbol} is an index and carries no volume` : `bars by ${m} at price`}
+                title={
+                  m === "volume" && !hasVolume
+                    ? `${symbol} is an index and has no traded volume; pick SPY, QQQ, /ES or /NQ`
+                    : `bars by ${m} at price`
+                }
                 onClick={() => set("measure", m)}
               >
                 {m}
@@ -524,6 +528,12 @@ export function ProfilePage() {
             )}
             {data.fetchedAt !== null && <> · recorded {new Date(data.fetchedAt).toLocaleString("en-US", { timeZone: "America/New_York", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23" })} ET</>}
           </div>
+          {!hasVolume && (
+            <p className="muted" style={{ fontSize: "0.85em", margin: "4px 0 0" }}>
+              Volume view is off for {symbol}: it is an index and has no traded volume. Pick SPY, QQQ, /ES or /NQ to see
+              volume at price.
+            </p>
+          )}
           <ProfilePlot view={view} precision={precision} measure={measure} selected={selected?.session ?? null} onSelect={select} />
           {selected !== undefined && (
             <SessionDetail
