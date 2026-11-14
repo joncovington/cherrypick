@@ -3496,7 +3496,7 @@
       "id": 77,
       "study": "item77",
       "title": "Item 57's weekly index put under the three bars: the bill on its buying power, its tail, and its delta",
-      "status": "declared",
+      "status": "failed",
       "legacy": false,
       "setup": "variance-premium",
       "side": "neutral",
@@ -3535,7 +3535,7 @@
       "results": [
         "{home}/data/backtest/results/research/item77/results.json"
       ],
-      "outcome": null,
+      "outcome": "provisional: fails under both buying-power models; cash-secured fails all three bars, Reg T margin passes the capital bar but fails the tail bar (a bad year is not earned back within a year) and the delta bar. The weeklyput arm is a tail-risk trade on this evidence, not proposed for live; whether it keeps running in paper is the user's call; a same-buying-power put credit spread is the next item",
       "retest": null,
       "retest_note": "A retest of item 57 itself; the forward cycles after 2026-10-30 are reported beside it.",
       "retests": []
