@@ -85,6 +85,9 @@ class Snapshot:
     open_positions: list[OpenPosition] = field(default_factory=list)
     listed_expiries: list[str] = field(default_factory=list)
     close_minute: int = 960
+    #: How many strikes the source holds per expiry, when fewer than an arm asks for (the 60 s store keeps
+    #: 20 each side): a window is capped at it and the check value says so. None: no cap.
+    gex_strike_cap: int | None = None
 
     @property
     def session_date(self) -> date:

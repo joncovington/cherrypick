@@ -93,7 +93,8 @@ def stoch(ctx, min=None, max=None, k=14, k_smooth=3, d_smooth=3, bars=5):
     return _between(v, min, max), v
 
 
-def _window(rows: list[dict], spot: float, n: int, mode: str) -> list[dict]:
+def _window(rows: list[dict], spot: float, n: int, mode: str, cap: int | None = None) -> list[dict]:
+    n = min(n, cap) if cap else n
     if mode == "above":
         rows = sorted((r for r in rows if r["strike"] > spot), key=lambda r: r["strike"])
     elif mode == "below":
@@ -101,6 +102,11 @@ def _window(rows: list[dict], spot: float, n: int, mode: str) -> list[dict]:
     else:
         rows = sorted(rows, key=lambda r: (abs(r["strike"] - spot), r["strike"]))
     return rows[:n]
+
+
+def _need(ctx, strikes: int) -> int:
+    cap = ctx.snap.gex_strike_cap
+    return min(strikes, cap) if cap else strikes
 
 
 def gex_ratio_of(rows: list[dict]) -> float | None:
@@ -113,21 +119,23 @@ def gex_ratio_of(rows: list[dict]) -> float | None:
 
 
 def gex_ratio(ctx, strikes, mode="nearest", min=None, max=None):
-    rows = _window(ctx.snap.gex.get(ctx.expiry) or [], ctx.snap.spot, strikes, mode)
-    v = gex_ratio_of(rows) if len(rows) == strikes else None
+    rows = _window(ctx.snap.gex.get(ctx.expiry) or [], ctx.snap.spot, strikes, mode, ctx.snap.gex_strike_cap)
+    v = gex_ratio_of(rows) if len(rows) == _need(ctx, strikes) else None
     return _between(v, min, max), v
 
 
 def gex_put_total(ctx, strikes, mode="above", min=None, max=None):
     """The window's summed put gex (negative dollars)."""
-    rows = _window(ctx.snap.gex.get(ctx.expiry) or [], ctx.snap.spot, strikes, mode)
-    v = sum(r["put_gex"] for r in rows) if len(rows) == strikes else None
+    rows = _window(ctx.snap.gex.get(ctx.expiry) or [], ctx.snap.spot, strikes, mode, ctx.snap.gex_strike_cap)
+    v = sum(r["put_gex"] for r in rows) if len(rows) == _need(ctx, strikes) else None
     return _between(v, min, max), v
 
 
 def gex_max_otm(ctx, strikes, side, max):
     """How far out of the money the largest-|gex| strike of the N nearest sits, on `side`."""
-    rows = _window(ctx.snap.gex.get(ctx.expiry) or [], ctx.snap.spot, strikes, "nearest")
+    rows = _window(
+        ctx.snap.gex.get(ctx.expiry) or [], ctx.snap.spot, strikes, "nearest", ctx.snap.gex_strike_cap
+    )
     if not rows:
         return False, None
     top = max_by_abs(rows)

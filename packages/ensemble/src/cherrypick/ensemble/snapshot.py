@@ -41,6 +41,7 @@ def build(
     open_positions: list[OpenPosition] | None = None,
     close_minute: int = 960,
     with_gex: bool = True,
+    gex_strike_cap: int | None = None,
 ) -> Snapshot:
     """`quotes` maps an expiry (ISO) to its quote rows. GEX is built per expiry unless `with_gex` is off
     (a driver whose arms read none skips the cost)."""
@@ -64,4 +65,5 @@ def build(
         open_positions=list(open_positions or []),
         listed_expiries=sorted(quotes),
         close_minute=close_minute,
+        gex_strike_cap=gex_strike_cap,
     )
