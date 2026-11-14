@@ -83,6 +83,18 @@ def test_the_fetch_gets_a_placeholder_only_for_a_file_an_earlier_step_writes(rep
     assert rq.rows(tmp_path / "q2.db") == []
 
 
+def test_a_sample_fetch_and_the_full_fetch_share_one_placeholder(repo, tmp_path):
+    rel = _script(repo, '''CHAIN = (
+    {"step": "plan", "kind": "script", "args": ["plan"], "output": "{results}/r.json"},
+    {"step": "fetch-sample", "kind": "fetch-chain-paths",
+     "task_args": {"requests": "{results}/r.json", "limit": 20}},
+    {"step": "smoke", "kind": "script", "args": ["study", "--smoke"], "output": "{results}/smoke.json"},
+    {"step": "fetch-chains", "kind": "fetch-chain-paths", "task_args": {"requests": "{results}/r.json"}},
+)''', "smoke_item95.py")  # fmt: skip
+    out = sc.queue_chain(rel, path=tmp_path / "q.db", root=repo, tracked=_tracked, results=tmp_path / "r95")
+    assert len(out["placeholders"]) == 1 and len(out["added"]) == 4
+
+
 def test_a_chain_with_a_live_step_queues_nothing(repo, tmp_path):
     rel = _script(repo, ITEM76_LIKE)
     _queue(repo, tmp_path, rel)

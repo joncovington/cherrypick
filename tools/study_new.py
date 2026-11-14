@@ -66,8 +66,17 @@ RULE = {{
 }}
 
 #: The research-queue chain, queued with `run.py queue-chain --script <this file>`.
+#: A sample of the paths is fetched first and the study runs on it (`smoke`), so a crash or an arm that
+#: judges no trades shows in minutes, not after the whole fetch (#1072); the queue's study-first
+#: rule runs the smoke as soon as the sample is in.
 CHAIN = (
     {{"step": "plan", "kind": "script", "args": ["plan"], "output": "{{results}}/path_requests.json"}},
+    {{
+        "step": "fetch-sample",
+        "kind": "fetch-chain-paths",
+        "task_args": {{"requests": "{{results}}/path_requests.json", "limit": 20}},
+    }},
+    {{"step": "smoke", "kind": "script", "args": ["study", "--smoke"], "output": "{{results}}/smoke.json"}},
     {{
         "step": "fetch-chains",
         "kind": "fetch-chain-paths",
@@ -124,7 +133,11 @@ def cmd_study(args) -> int:
         conn.close()
     doc = {{"licence": "derived from licensed vendor data: never commit or publish", "item": {n}, **block}}
     doc["inputs"] = read
-    path = Path(args.out) if args.out else out_dir() / "results.json"
+    if args.smoke:
+        # A look at the sample, never a verdict: the queue fails it on an arm with no trades.
+        doc = {{**doc, "smoke": True, "verdict": "smoke"}}
+    name = "smoke.json" if args.smoke else "results.json"
+    path = Path(args.out) if args.out else out_dir() / name
     path.write_text(json.dumps(doc, indent=1, default=str), encoding="utf-8")
     print(json.dumps({{"written": str(path), "verdict": doc["verdict"]}}))
     return 0
@@ -136,6 +149,8 @@ def main(argv: list[str] | None = None) -> int:
     for name, fn in (("plan", cmd_plan), ("study", cmd_study)):
         p = sub.add_parser(name)
         p.add_argument("--out", default=None)
+        if name == "study":
+            p.add_argument("--smoke", action="store_true", help="run on the sample fetched so far")
         p.set_defaults(fn=fn)
     args = ap.parse_args(argv)
     return args.fn(args)
@@ -168,8 +183,8 @@ def test_the_declared_rule_is_complete():
     kit_rule.check_rule(m.RULE)
 
 
-def test_the_chain_plans_fetches_then_studies():
-    assert [s["step"] for s in m.CHAIN] == ["plan", "fetch-chains", "study"]
+def test_the_chain_samples_smokes_then_fetches_and_studies():
+    assert [s["step"] for s in m.CHAIN] == ["plan", "fetch-sample", "smoke", "fetch-chains", "study"]
 
 
 @pytest.mark.skip(reason="item {n}: write the replay's tests on invented trades")
