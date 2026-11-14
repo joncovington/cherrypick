@@ -15,7 +15,7 @@
   `fundamentals.db` (SEC facts and filers, Dolt's annual statements, the revenue consensus), `sec/`,
   `damodaran/` and `valuation/<session>.json`.
 - **Reads technicals for prices only** (bars, splits, the security list, the sector map, the liquidity
-  verdict, the broker's IV file): the one package besides core another declares as a dependency.
+  verdict, the broker's IV file): one of two packages besides core that declare it as a dependency (ensemble, for its indicator functions, is the other).
   **Technicals never imports this package**; it reads the fair-value file by path
   (`technicals.paths.fair_value_dir()`), so there is no cycle. CI reruns this package when technicals
   changes (`scripts/ci_changed_packages.py`, `DEPENDENTS`), and every installer installs technicals
