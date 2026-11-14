@@ -268,6 +268,10 @@ FETCH_STORES = {
     "fetch-sessions": "0DTE store variant",
 }
 
+#: The fetches that take a `limit` (a sample of the requests, for a smoke row), and its bound.
+LIMITED = ("fetch-chains", "fetch-chain-paths")
+MAX_LIMIT = 100_000
+
 #: The modules `validate` knows (backtest `validate.CHECKS`), checked here so a typo never queues.
 VALIDATE_MODULES = ("flies", "meic")
 
@@ -321,6 +325,14 @@ def build_argv(
     if kind in ("fetch-chains", "fetch-chain-paths", "fetch-intraday-chains", "fetch-addon-weeklies"):
         argv = [python, "-m", "cherrypick.backtest", kind]
         argv += ["--requests", _file_arg(args, "requests"), "--workers", _workers(args, 3)]
+        # A sample fetch for a smoke row (#1072): at most `limit` requests this run.
+        if "limit" in args:
+            if kind not in LIMITED:
+                raise Refused(f"{kind} takes no 'limit'")
+            n = args["limit"]
+            if type(n) is not int or not 1 <= n <= MAX_LIMIT:
+                raise Refused(f"'limit' is a whole number of requests, 1 to {MAX_LIMIT}")
+            argv += ["--limit", str(n)]
     elif kind in ("fetch-flow", "fetch-oi"):
         argv = [python, "-m", "cherrypick.backtest", kind]
         argv += ["--plan", _file_arg(args, "plan"), "--workers", _workers(args, 3)]

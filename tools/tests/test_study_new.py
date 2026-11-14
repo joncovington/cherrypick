@@ -46,8 +46,9 @@ def test_the_script_declares_its_log_an_unfilled_rule_and_its_chain(repo):
     lit = _literals(repo / script)
     assert lit["REPLAY_CORRECTIONS"] == ()
     assert lit["RULE"]["t_bar"] is None and lit["RULE"]["tail"]["seed"] == 78
-    assert [s["step"] for s in lit["CHAIN"]] == ["plan", "fetch-chains", "study"]
-    assert lit["CHAIN"][1]["task_args"] == {"requests": "{results}/path_requests.json"}
+    assert [s["step"] for s in lit["CHAIN"]] == ["plan", "fetch-sample", "smoke", "fetch-chains", "study"]
+    assert lit["CHAIN"][1]["task_args"]["limit"] == 20 and lit["CHAIN"][2]["args"] == ["study", "--smoke"]
+    assert lit["CHAIN"][3]["task_args"] == {"requests": "{results}/path_requests.json"}
 
 
 def test_nothing_is_overwritten(repo):

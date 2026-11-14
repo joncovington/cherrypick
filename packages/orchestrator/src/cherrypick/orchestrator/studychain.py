@@ -139,13 +139,16 @@ def plan_rows(
 
 def placeholders(rows: list[dict]) -> list[tuple[Path, dict]]:
     """The input files a fetch row names that an EARLIER row of the chain declares as its output and
-    that do not exist yet: each with the empty content the fetch accepts."""
-    out, outputs = [], set()
+    that do not exist yet: each once (a sample fetch and the full fetch name the same file), with the
+    empty content the fetch accepts."""
+    out, outputs, seen = [], set(), set()
     for r in rows:
         for key, empty in PLACEHOLDERS.items():
             f = r["args"].get(key) if r["kind"] != "script" else None
             if isinstance(f, str) and Path(f).as_posix() in outputs and not Path(f).exists():
-                out.append((Path(f), empty))
+                if Path(f).as_posix() not in seen:
+                    seen.add(Path(f).as_posix())
+                    out.append((Path(f), empty))
         if r.get("output"):
             outputs.add(Path(r["output"]).as_posix())
     return out

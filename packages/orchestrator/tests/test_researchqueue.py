@@ -80,6 +80,17 @@ def test_a_path_fetch_needs_the_vendor_session_and_is_bounded_by_its_stop_by(fil
     assert out["input"] == "req.json" and out["store"] == "backtest eod_chains.db"
 
 
+def test_a_sample_fetch_takes_a_bounded_whole_limit_on_the_chain_fetches_only(files):
+    # #1072: a smoke row's sample fetch is the same fetch with `--limit`.
+    argv = rq.build_argv("fetch-chain-paths", {"requests": str(files["req"]), "limit": 20}, PY)
+    assert argv[-2:] == ["--limit", "20"]
+    for bad in (0, -1, 2.5, "20", True, rq.MAX_LIMIT + 1):
+        with pytest.raises(rq.Refused, match="limit"):
+            rq.build_argv("fetch-chain-paths", {"requests": str(files["req"]), "limit": bad}, PY)
+    with pytest.raises(rq.Refused, match="takes no 'limit'"):
+        rq.build_argv("fetch-intraday-chains", {"requests": str(files["req"]), "limit": 5}, PY)
+
+
 def test_an_intraday_chain_fetch_takes_requests_needs_the_vendor_session_and_is_bounded(files):
     argv = rq.build_argv("fetch-intraday-chains", {"requests": str(files["req"])}, PY, "2026-11-02T18:30")
     cmd = [PY, "-m", "cherrypick.backtest", "fetch-intraday-chains", "--requests", str(files["req"])]
