@@ -1,7 +1,8 @@
 import { useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import { PROFILE_SYMBOLS, type ProfileSymbol } from "@console/shared";
-import { useProfileBars } from "../../lib/api";
+import { useFuturesTicker, useProfileBars } from "../../lib/api";
+import { useCandles } from "../../lib/useCandles";
 import { CardHelpButton, HelpSection, type CardHelpContent } from "../../components/CardHelp";
 import type { MarketComposite, MarketProfile } from "../../lib/marketProfile";
 import { buildView, partialPeriods, valueRelation, type ProfileView } from "./profileView";
@@ -84,7 +85,10 @@ const PROFILE_HELP: CardHelpContent = {
         <p>
           The <code>profile-bars</code> job saves 1-minute bars of SPX, SPY, NDX, QQQ, /ES and /NQ at 17:15 ET each
           trading day; the broker only ever hands back its newest 8,000, so history grows from the day the job
-          started. A future is its active contract, named in the table. SPX and NDX carry no volume.
+          started. A future is its active contract, named in the table. SPX and NDX carry no volume. Today,
+          and any session the job has not recorded yet, is drawn from the live 15-minute candles and
+          marked <em>live</em>; it moves as the session trades and is replaced by the recorded minutes after
+          17:15 ET.
         </p>
       </HelpSection>
     </>
@@ -140,7 +144,18 @@ function ProfilePlot({ view, precision }: { view: ProfileView; precision: number
           </>
         )}
         {columns.map(({ p, x: cx, w }) => (
-          <SessionColumn key={p.session} p={p} x={cx} w={w} y={y} rowH={rowH} cellW={cellW} letters={letters} plotH={TOP_PAD + plotH} />
+          <SessionColumn
+            key={p.session}
+            p={p}
+            x={cx}
+            w={w}
+            y={y}
+            rowH={rowH}
+            cellW={cellW}
+            letters={letters}
+            plotH={TOP_PAD + plotH}
+            live={view.live.includes(p.session)}
+          />
         ))}
         {composite !== null && <CompositeColumn c={composite} x={compX} y={y} rowH={rowH} plotH={TOP_PAD + plotH} />}
       </svg>
@@ -157,6 +172,7 @@ function SessionColumn({
   cellW,
   letters,
   plotH,
+  live,
 }: {
   p: MarketProfile;
   x: number;
@@ -166,6 +182,7 @@ function SessionColumn({
   cellW: number;
   letters: boolean;
   plotH: number;
+  live: boolean;
 }) {
   return (
     <g>
@@ -193,8 +210,8 @@ function SessionColumn({
       <text x={x} y={plotH + 14} fontSize={11} fill="var(--text)">
         {dayLabel(p.session)}
       </text>
-      <text x={x} y={plotH + 27} fontSize={10} fill="var(--text-muted)">
-        {monthDay(p.session).split(" ")[0]}
+      <text x={x} y={plotH + 27} fontSize={10} fill={live ? "var(--accent)" : "var(--text-muted)"}>
+        {live ? "live" : monthDay(p.session).split(" ")[0]}
         {partialPeriods(p) !== null && ` ${partialPeriods(p)}`}
       </text>
     </g>
@@ -229,7 +246,19 @@ function CompositeColumn({ c, x, y, rowH, plotH }: { c: MarketComposite; x: numb
   );
 }
 
-function LevelsTable({ view, contracts, precision, future }: { view: ProfileView; contracts: Record<string, string>; precision: number; future: boolean }) {
+function LevelsTable({
+  view,
+  contracts,
+  liveContract,
+  precision,
+  future,
+}: {
+  view: ProfileView;
+  contracts: Record<string, string>;
+  liveContract: string;
+  precision: number;
+  future: boolean;
+}) {
   const f = (v: number | null): string => (v === null ? "—" : v.toFixed(precision));
   const rows = [...view.profiles].reverse();
   return (
@@ -260,8 +289,16 @@ function LevelsTable({ view, contracts, precision, future }: { view: ProfileView
                       · periods {partialPeriods(p)} only
                     </span>
                   )}
+                  {view.live.includes(p.session) && (
+                    <span style={{ color: "var(--accent)" }} title="From the live candles; the profile-bars job records it at 17:15 ET.">
+                      {" "}
+                      · live
+                    </span>
+                  )}
                 </td>
-                {future && <td className="muted">{contracts[p.session] ?? "—"}</td>}
+                {future && (
+                  <td className="muted">{view.live.includes(p.session) ? liveContract : (contracts[p.session] ?? "—")}</td>
+                )}
                 <td style={NUM}>{f(p.poc)}</td>
                 <td style={NUM}>
                   {f(p.val)}–{f(p.vah + p.rowSize)}
@@ -297,8 +334,18 @@ export function ProfilePage() {
   };
 
   const { data, isError } = useProfileBars(symbol, Number(sessions));
+  // The live candles, for the sessions the store does not hold yet: a cash symbol is its own DXLink
+  // symbol, a future the futures map's contract (none until the map has loaded).
+  const ticker = useFuturesTicker();
+  const liveSymbol = symbol.startsWith("/")
+    ? (ticker.data?.entries.find((e) => `/${e.product}` === symbol)?.streamerSymbol ?? "")
+    : symbol;
+  const liveBars = useCandles(liveSymbol, "15m");
   const compositeN = compositeChoice === "off" ? 0 : Number(compositeChoice);
-  const view = useMemo(() => (data === undefined ? null : buildView(data, compositeN)), [data, compositeN]);
+  const view = useMemo(
+    () => (data === undefined ? null : buildView(data, compositeN, liveBars)),
+    [data, compositeN, liveBars],
+  );
   const precision = 2;
 
   return (
@@ -321,12 +368,15 @@ export function ProfilePage() {
       </div>
       {data === undefined ? (
         <p className="muted">{isError ? "Could not read the profile bars from the console server." : "loading…"}</p>
-      ) : !data.available || view === null ? (
+      ) : view === null ? (
         <p className="muted">{data.reason ?? "No regular-session bars to profile."}</p>
       ) : (
         <>
+          {!data.available && <p className="muted">{data.reason} Showing the live candles only.</p>}
           <div className="intraday-status muted">
-            {monthDay(data.sessions[0]!)} – {monthDay(data.sessions.at(-1)!)} · {view.profiles.length} sessions · rows of {view.rowSize}
+            {monthDay(view.profiles[0]!.session)} – {monthDay(view.profiles.at(-1)!.session)} · {view.profiles.length} sessions · rows of{" "}
+            {view.rowSize}
+            {view.live.length > 0 && <> · {view.live.map(monthDay).join(", ")} from the live candles</>}
             {view.composite !== null && (
               <>
                 {" "}
@@ -337,7 +387,13 @@ export function ProfilePage() {
             {data.fetchedAt !== null && <> · recorded {new Date(data.fetchedAt).toLocaleString("en-US", { timeZone: "America/New_York", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23" })} ET</>}
           </div>
           <ProfilePlot view={view} precision={precision} />
-          <LevelsTable view={view} contracts={data.contracts} precision={precision} future={symbol.startsWith("/")} />
+          <LevelsTable
+            view={view}
+            contracts={data.contracts}
+            liveContract={liveSymbol || "—"}
+            precision={precision}
+            future={symbol.startsWith("/")}
+          />
         </>
       )}
     </section>

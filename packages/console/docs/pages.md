@@ -287,7 +287,11 @@ the setups watchlist:
   5-minute bars, which keep every period's rows); the profiles are built in the browser by
   `lib/marketProfile` (docs/mirrors.md), on one row grid for every column. A session that holds only
   some periods (the oldest, cut mid-day by the feed's 8,000-bar cap; a half-day) is labelled with them
-  (`partialPeriods`), not shown as a full day. An empty store says the job has not run. Chart only.
+  (`partialPeriods`), not shown as a full day. Today, and any session the job has not recorded yet,
+  comes from the symbol's live 15-minute candles (a future's contract from the futures map), marked
+  "live" and joining the composite; live bars are used only after the newest recorded bar
+  (`buildView`). An empty store says the job has not run, and the live sessions are still drawn.
+  Chart only.
 
 - `/charts/intraday?product=ES&period=5m&profile=on` is a live chart (1m/5m/15m) over the console's
   own DXLink session, extended hours included (`market/candles.ts`, `pages/Intraday/IntradayPage.tsx`),
