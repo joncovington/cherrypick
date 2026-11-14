@@ -7570,7 +7570,17 @@ is read.*
     before any live consideration, and the failed look-alike items above are annotated.
   - **A fail:** the arm is not built; if all fail, the module stays scaffolded and disabled for the
     additional rules expected.
-- **Result:** not yet run.
+- **Result (2026-11-14): two arms pass, the portfolio passes.**
+  The 13:45 iron condor and the 10:30 long put pass every check. The opening-range put spread, the
+  10:00 iron fly, the 1DTE 13:30 iron fly and the 20-day GLD call spread fail. The 13:00 put spread and
+  the 1DTE GLD call spread are no verdict, with too few entered sessions. The eight stacked as sized
+  pass: net positive at the verdict and stress fills, and the 99th-percentile 100-session drawdown
+  below 100 sessions of mean net. The history was read once, so these are facts about these sessions,
+  not a holdout-confirmed edge. Every figure is in the local result
+  (`~/.cherrypick/data/backtest/results/research/item75/study-all.json`).
+- **What this decides:** the iron condor 1345 and long put 1030 arms are kept as paper arms and read
+  forward before any live consideration. The other six do not pass; whether their paper arms stay on
+  is the user's call, and none of them is considered for live.
 
 ### 76. The ladder's stuck lots: covered calls sold after day 18, at three strike rules
 
@@ -7698,7 +7708,13 @@ for this question has been read.*
   - **A pass:** the passing strike rule becomes a hospital arm in the `ladder` module, paper first,
     at 100-share lots; the lot size is the user's call.
   - **A fail or no verdict:** the module keeps counting the hospital and sells no calls.
-- **Result:** not yet run.
+- **Result (2026-11-14): fail, all three arms.**
+  The breakeven and delta30 strikes trail holding the lot in the design window, and fail every check.
+  The cost5 strike's mean difference is above zero but its t is under 2, and it fails Holm and the
+  per-name check; with no design pass the holdout does not count. Every figure is in the local result
+  (`~/.cherrypick/data/backtest/results/research/item76/`).
+- **What this decides:** the fail branch: the `ladder` module keeps counting the hospital and sells no
+  calls.
 
 ## Not worth revisiting
 
