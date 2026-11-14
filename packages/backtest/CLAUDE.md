@@ -47,6 +47,11 @@ expunged within 30 days of termination** (§8(e)). Two consequences shape the wh
   happens. Merge on `identical`, or on `expected` (the study's correction log grew); a `differs`
   is read before anything merges. After the merge, a `reproduce/run` queue row confirms the live
   checkout. Do not run it by hand while the queue runs one of the sample's studies.
+- **The stores have a committed contract** (`storecontract.py`, `store_contract.json`): each table's
+  columns and the spellings its coded columns hold (the chain stores spell a right `CALL`/`PUT`,
+  the open-interest store `C`/`P`). CI holds each store's DDL and the kit's readers to it; a study's
+  fixtures take their spellings from `storecontract.rights`. After a store's schema or spellings
+  change, `python packages/backtest/scripts/store_contract.py check` says so and `write` updates it.
 - **The data must stay purgeable.** It lives in one directory carrying a marker file
   (`paths.LICENSED_MARKER`); `purge` removes only marked directories (dry run by default), and the
   nightly backup skips any marked directory (`orchestrator/backup.py` spells the same name; a test

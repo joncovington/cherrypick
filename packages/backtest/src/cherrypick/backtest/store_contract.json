@@ -1,0 +1,333 @@
+{
+ "eod_chains.db": {
+  "eod_chain_paths": {
+   "columns": [
+    [
+     "symbol",
+     "TEXT"
+    ],
+    [
+     "expiration",
+     "TEXT"
+    ],
+    [
+     "start",
+     "TEXT"
+    ],
+    [
+     "through",
+     "TEXT"
+    ],
+    [
+     "status",
+     "TEXT"
+    ],
+    [
+     "sessions",
+     "INTEGER"
+    ],
+    [
+     "rows",
+     "INTEGER"
+    ],
+    [
+     "detail",
+     "TEXT"
+    ],
+    [
+     "fetched_at",
+     "REAL"
+    ]
+   ],
+   "codes": {
+    "status": [
+     "complete",
+     "empty",
+     "refused"
+    ]
+   }
+  },
+  "eod_chain_quotes": {
+   "columns": [
+    [
+     "symbol",
+     "TEXT"
+    ],
+    [
+     "session",
+     "TEXT"
+    ],
+    [
+     "expiration",
+     "TEXT"
+    ],
+    [
+     "strike",
+     "REAL"
+    ],
+    [
+     "right",
+     "TEXT"
+    ],
+    [
+     "bid",
+     "REAL"
+    ],
+    [
+     "ask",
+     "REAL"
+    ],
+    [
+     "close",
+     "REAL"
+    ],
+    [
+     "volume",
+     "REAL"
+    ],
+    [
+     "bid_size",
+     "REAL"
+    ],
+    [
+     "ask_size",
+     "REAL"
+    ]
+   ],
+   "codes": {
+    "right": [
+     "CALL",
+     "PUT"
+    ]
+   }
+  },
+  "eod_chain_requests": {
+   "columns": [
+    [
+     "symbol",
+     "TEXT"
+    ],
+    [
+     "session",
+     "TEXT"
+    ],
+    [
+     "expiration",
+     "TEXT"
+    ],
+    [
+     "status",
+     "TEXT"
+    ],
+    [
+     "rows",
+     "INTEGER"
+    ],
+    [
+     "detail",
+     "TEXT"
+    ],
+    [
+     "fetched_at",
+     "REAL"
+    ]
+   ],
+   "codes": {
+    "status": [
+     "complete",
+     "empty",
+     "refused"
+    ]
+   }
+  }
+ },
+ "intraday_chains.db": {
+  "intraday_chain_quotes": {
+   "columns": [
+    [
+     "symbol",
+     "TEXT"
+    ],
+    [
+     "session",
+     "TEXT"
+    ],
+    [
+     "expiration",
+     "TEXT"
+    ],
+    [
+     "bar",
+     "TEXT"
+    ],
+    [
+     "strike",
+     "REAL"
+    ],
+    [
+     "right",
+     "TEXT"
+    ],
+    [
+     "bid",
+     "REAL"
+    ],
+    [
+     "ask",
+     "REAL"
+    ],
+    [
+     "delta",
+     "REAL"
+    ],
+    [
+     "iv",
+     "REAL"
+    ],
+    [
+     "underlying",
+     "REAL"
+    ]
+   ],
+   "codes": {
+    "right": [
+     "CALL",
+     "PUT"
+    ]
+   }
+  },
+  "intraday_chain_requests": {
+   "columns": [
+    [
+     "symbol",
+     "TEXT"
+    ],
+    [
+     "session",
+     "TEXT"
+    ],
+    [
+     "expiration",
+     "TEXT"
+    ],
+    [
+     "start",
+     "TEXT"
+    ],
+    [
+     "end",
+     "TEXT"
+    ],
+    [
+     "interval",
+     "TEXT"
+    ],
+    [
+     "status",
+     "TEXT"
+    ],
+    [
+     "rows",
+     "INTEGER"
+    ],
+    [
+     "bars",
+     "INTEGER"
+    ],
+    [
+     "detail",
+     "TEXT"
+    ],
+    [
+     "fetched_at",
+     "REAL"
+    ]
+   ],
+   "codes": {
+    "status": [
+     "complete",
+     "empty",
+     "refused"
+    ]
+   }
+  }
+ },
+ "open_interest.db": {
+  "oi_contracts": {
+   "columns": [
+    [
+     "symbol",
+     "TEXT"
+    ],
+    [
+     "session",
+     "TEXT"
+    ],
+    [
+     "expiration",
+     "TEXT"
+    ],
+    [
+     "right",
+     "TEXT"
+    ],
+    [
+     "strike",
+     "REAL"
+    ],
+    [
+     "open_interest",
+     "INTEGER"
+    ]
+   ],
+   "codes": {
+    "right": [
+     "C",
+     "P"
+    ]
+   }
+  },
+  "oi_days": {
+   "columns": [
+    [
+     "symbol",
+     "TEXT"
+    ],
+    [
+     "session",
+     "TEXT"
+    ],
+    [
+     "status",
+     "TEXT"
+    ],
+    [
+     "reason",
+     "TEXT"
+    ],
+    [
+     "contracts",
+     "INTEGER"
+    ],
+    [
+     "expirations",
+     "INTEGER"
+    ],
+    [
+     "vendor_seconds",
+     "REAL"
+    ],
+    [
+     "fetched_at",
+     "TEXT"
+    ]
+   ],
+   "codes": {
+    "status": [
+     "complete",
+     "refused"
+    ]
+   }
+  }
+ }
+}
