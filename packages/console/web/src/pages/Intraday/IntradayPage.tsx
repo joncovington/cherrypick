@@ -8,6 +8,7 @@ import {
   type HistogramData,
   type IPriceLine,
   type ISeriesApi,
+  TickMarkType,
   type Time,
   type UTCTimestamp,
   type WhitespaceData,
@@ -85,7 +86,8 @@ const ET_SECONDS = new Intl.DateTimeFormat("en-US", {
   second: "2-digit",
   hourCycle: "h23",
 });
-const ET_DAY = new Intl.DateTimeFormat("en-US", { timeZone: ET, month: "short", day: "numeric" });
+const ET_DAY = new Intl.DateTimeFormat("en-US", { timeZone: ET, weekday: "short", month: "short", day: "numeric" });
+const ET_WEEKDAY_DATE = new Intl.DateTimeFormat("en-US", { timeZone: ET, weekday: "short", day: "numeric" });
 const ET_STAMP = new Intl.DateTimeFormat("en-US", {
   timeZone: ET,
   weekday: "short",
@@ -97,14 +99,35 @@ const ET_STAMP = new Intl.DateTimeFormat("en-US", {
 });
 
 /**
- * The time axis on the session's clock, wherever the viewer sits. The library places its day ticks
- * at UTC midnight, which is 19:00 or 20:00 ET, so a day tick is labelled with its ET time and only
- * ET midnight carries a date; dating the UTC tick put "Oct 1" at 20:00 on Oct 1.
+ * The time axis on the session's clock, wherever the viewer sits.
+ *
+ * The library marks a new day (`TickMarkType.DayOfMonth` or heavier) on the first bar of each UTC day:
+ * a cash symbol's 09:30 open, or 19:00/20:00 ET on a future. That tick is where days part, so it
+ * carries the ET weekday and date of its own instant beside its ET time ("Thu 13 09:30"); with only
+ * the time, a week of cash sessions read as a row of bold "09:30"s and no day could be told apart.
+ * Dating it with the UTC day instead put "Oct 1" at 20:00 on Oct 1 (the first browser check). ET
+ * midnight, where a future has a bar, is the date alone ("Fri Nov 14"); every other tick is the time.
  */
-export function etTickMark(time: Time): string {
+const ET_DATE_ONLY = new Intl.DateTimeFormat("en-CA", { timeZone: ET, year: "numeric", month: "2-digit", day: "2-digit" });
+
+/**
+ * The span the chart shows, on the ET clock, for the status line: "Thu Nov 12 18:00 – Fri Nov 13
+ * 16:55 ET", or "Fri Nov 13 05:30–16:55 ET" within one day. `from` and `to` are bar starts in epoch
+ * seconds (the library's visible time range).
+ */
+export function visibleSpanLabel(from: number, to: number): string {
+  const day = (t: number): string => ET_DAY.format(t * 1000).replace(",", "");
+  const hm = (t: number): string => ET_TIME.format(t * 1000);
+  if (ET_DATE_ONLY.format(from * 1000) === ET_DATE_ONLY.format(to * 1000)) return `${day(from)} ${hm(from)}–${hm(to)} ET`;
+  return `${day(from)} ${hm(from)} – ${day(to)} ${hm(to)} ET`;
+}
+
+export function etTickMark(time: Time, tickMarkType: TickMarkType = TickMarkType.Time): string {
   const ms = (time as number) * 1000;
   const hm = ET_TIME.format(ms);
-  return hm === "00:00" ? ET_DAY.format(ms) : hm;
+  if (hm === "00:00") return ET_DAY.format(ms).replace(",", "");
+  if (tickMarkType <= TickMarkType.DayOfMonth) return `${ET_WEEKDAY_DATE.format(ms).replace(/^(\d+) (\w+)$/, "$2 $1")} ${hm}`;
+  return hm;
 }
 
 /** Decimals a product's price needs: bond futures trade in 32nds. */
@@ -175,6 +198,7 @@ function LiveCandles({
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const [info, setInfo] = useState<ChartInfo>({ loaded: false, count: 0, last: null, updatedAt: null });
+  const [span, setSpan] = useState<{ from: number; to: number } | null>(null);
   const ws = useWsState();
   const symbol = entry.streamerSymbol;
   const seriesRef = useRef<ISeriesApi<"Candlestick", Time> | null>(null);
@@ -200,6 +224,8 @@ function LiveCandles({
         secondsVisible: false,
         rightOffset: 5,
         tickMarkFormatter: etTickMark,
+        // A day-change label ("Thu 13 09:30") is wider than the default eight characters allow for.
+        tickMarkMaxCharacterLength: 12,
       },
       localization: { timeFormatter: (time: Time) => `${ET_STAMP.format((time as number) * 1000)} ET` },
     });
@@ -224,6 +250,10 @@ function LiveCandles({
     seriesRef.current = candles;
     histRef.current = histogram;
     linesRef.current = { key: "", lines: [] };
+    // The days in view, for the status line: a view with no day change in it has no date on its axis.
+    const onRange = (r: { from: Time; to: Time } | null): void =>
+      setSpan(r === null ? null : { from: r.from as number, to: r.to as number });
+    chart.timeScale().subscribeVisibleTimeRangeChange(onRange);
 
     let lastT = -Infinity;
     let framed = false;
@@ -270,6 +300,7 @@ function LiveCandles({
       seriesRef.current = null;
       histRef.current = null;
       linesRef.current = { key: "", lines: [] };
+      chart.timeScale().unsubscribeVisibleTimeRangeChange(onRange);
       chart.remove();
     };
   }, [symbol, period, entry.product]);
@@ -305,6 +336,7 @@ function LiveCandles({
             <span> · bar {ET_TIME.format(info.last.t * 1000)} ET</span>
             {info.updatedAt !== null && <span> · updated {ET_SECONDS.format(info.updatedAt)} ET</span>}
             <span> · {info.count} bars</span>
+            {span !== null && <span> · showing {visibleSpanLabel(span.from, span.to)}</span>}
           </>
         )}
         {!live && <span className="chip" style={{ marginLeft: 8 }}>feed {ws.dxlink} — not live</span>}

@@ -308,8 +308,12 @@ the setups watchlist:
     is ever drawn.
   - The bar in progress is re-sent under its own time, so a live event replaces the bar at `t`.
   - Series are viewer-gated with a 30s linger, like quotes, and resubscribe from the newest bar held
-    after a feed rebuild. The axis is ET (`etTickMark`); the library's day ticks fall at UTC midnight
-    and are labelled with their ET time.
+    after a feed rebuild. The axis is ET (`etTickMark`). The library marks a new day on the first bar
+    of each UTC day (a cash open, or 19:00/20:00 ET on a future); that tick carries its own ET
+    weekday, date and time ("Fri 13 09:30"), never the UTC date, and ET midnight is the date alone.
+    A view with no day change in it would have no date at all, so the status line names the span
+    in view ("showing Thu Nov 12 18:00 – Fri Nov 13 16:55 ET", `visibleSpanLabel`), following
+    scrolls and zooms.
 - `/charts/technicals?symbol=X` draws `data/technicals/charts/<X>.json` (`readers/technicals.ts`,
   `pages/Morning/ChartPage.tsx`); it was Reports' `chart` tab, and `/reports/chart` redirects here
   with its query. Shown only while the technicals feature is on. The symbol becomes a file name, so the
