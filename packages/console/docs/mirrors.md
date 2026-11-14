@@ -27,7 +27,8 @@ a mirror with a test against the module itself. These are the current ones.
   like SPX, NDX, QQQ, /NQ (overnight bars included) and SPY on an EDT date, composites of them,
   untested POCs (`untestedPocs`; a hand-worked case with both edges of a row, each shown to fail when
   widened) and overnight profiles (`overnightProfile`; a hand-worked night with a bar either side of
-  the window, its end shown to fail when widened; `etInstant` places the window on EDT or EST).
+  the window, its end shown to fail when widened; `etInstant` places the window on EDT or EST), and
+  the fixed row sizes (`rowSizeFor`, the fixture's `symbol_row_sizes`).
   Runs unconditionally; no ledger involved. The Profile tab's reader (`readers/profileBars.ts`,
   `server/test/profile-bars.test.ts`) builds its test table from `scripts/fetch_profile_bars.py`'s own
   SCHEMA, so a renamed column fails there.

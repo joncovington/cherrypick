@@ -289,7 +289,7 @@ the setups watchlist:
   initial balance, range and, for a future, its contract. The bars are the `profile-bars` job's
   (`GET /api/charts/profile-bars`, `readers/profileBars.ts`: regular session only, minutes folded into
   5-minute bars, which keep every period's rows); the profiles are built in the browser by
-  `lib/marketProfile` (docs/mirrors.md), on one row grid for every column. A session that holds only
+  `lib/marketProfile` (docs/mirrors.md), on one row grid for every column (`rowSizeFor`, the symbol's fixed size). A session that holds only
   some periods (the oldest, cut mid-day by the feed's 8,000-bar cap; a half-day) is labelled with them
   (`partialPeriods`), not shown as a full day. Today, and any session the job has not recorded yet,
   comes from the symbol's live 15-minute candles (a future's contract from the futures map), marked
@@ -334,7 +334,8 @@ the setups watchlist:
     are left blank rather than drawn along the bottom. Built from the 15-minute series (subscribed alongside whatever width is
     drawn; seven days of history, so the prior session is always held) through `lib/marketProfile.ts`,
     a mirror of `cherrypick.core.marketprofile` pinned to the shared fixture (docs/mirrors.md). The
-    regular session 09:30–16:00 ET for every symbol; a future's overnight is left out. Rows from
+    regular session 09:30–16:00 ET for every symbol; a future's overnight is left out. Rows are the
+    symbol's fixed `rowSizeFor` (the Profile tab's and the morning pack's), or for another contract
     `defaultRowSize` of the oldest bar held, so they stay put while the series is open. SPX and NDX
     carry no volume, so theirs is time only. Chart only; no module reads it.
   What the feed does, as

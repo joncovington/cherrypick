@@ -2,7 +2,7 @@ import type { CandleBar, ProfileBarsPayload } from "@console/shared";
 import {
   buildComposite,
   buildProfile,
-  defaultRowSize,
+  rowSizeFor,
   sessionDates,
   type MarketComposite,
   type MarketProfile,
@@ -28,7 +28,8 @@ export interface ProfileView {
 
 /**
  * Every session's profile, the recorded ones and then any the live candles hold beyond the newest of
- * them, on one row grid: `defaultRowSize` of the first bar (the oldest), which stays put while the same
+ * them, on one row grid: the symbol's fixed `rowSizeFor` (the intraday chart's and the morning pack's), or for a
+ * symbol without one `defaultRowSize` of the first bar (the oldest), which stays put while the same
  * span is shown. Live bars are used only after the newest recorded bar, never mixed with recorded
  * minutes of the same time. The live series is 15-minute; every 15-minute bar also starts on the
  * recorded 5-minute grid, so one bar width serves both.
@@ -46,7 +47,7 @@ export function buildView(
   const bars = [...recorded, ...after];
   if (bars.length === 0) return null;
   const sessions = [...(payload.available ? payload.sessions : []), ...live];
-  const rowSize = defaultRowSize(bars[0]!.c);
+  const rowSize = rowSizeFor(payload.symbol, bars[0]!.c);
   const opts = { rowSize, barSeconds: payload.barSeconds };
   const profiles = sessions
     .map((session) => buildProfile(bars, { ...opts, session }))

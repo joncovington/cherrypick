@@ -34,7 +34,7 @@ const payload = (over: Partial<ProfileBarsPayload> = {}): ProfileBarsPayload => 
 describe("Profile tab view", () => {
   it("profiles every session on one grid, oldest first, with a composite of the newest N", () => {
     const v = buildView(payload(), 1)!;
-    expect(v.rowSize).toBe(2);
+    expect(v.rowSize).toBe(2.5); // SPX's fixed row size, whatever the price
     expect(v.profiles.map((p) => p.session)).toEqual(["2026-11-12", "2026-11-13"]);
     expect(v.composite?.sessions).toEqual(["2026-11-13"]);
     expect(v.low).toBe(Math.min(...v.profiles.map((p) => p.rows[0]!.price)));
@@ -66,7 +66,7 @@ describe("Profile tab view", () => {
     expect(v.profiles.map((p) => p.session)).toEqual(["2026-11-12", "2026-11-13"]);
     expect(v.live).toEqual(["2026-11-13"]);
     expect(v.composite?.sessions).toEqual(["2026-11-12", "2026-11-13"]);
-    const direct = buildProfile(SPX, { rowSize: 2, barSeconds: 900, session: "2026-11-13" })!;
+    const direct = buildProfile(SPX, { rowSize: 2.5, barSeconds: 900, session: "2026-11-13" })!;
     expect([v.profiles[1]!.poc, v.profiles[1]!.val, v.profiles[1]!.vah]).toEqual([direct.poc, direct.val, direct.vah]);
     // a live bar inside the recorded day changes nothing recorded
     const tampered = SPX.map((b) => (b.t < end12 ? { ...b, h: b.h + 500 } : b));

@@ -11,7 +11,7 @@ import {
 import type { CandleBar } from "@console/shared";
 import {
   buildProfile,
-  defaultRowSize,
+  rowSizeFor,
   etClock,
   OVERNIGHT_START_MIN,
   sessionDates,
@@ -40,14 +40,19 @@ export interface SessionProfiles {
 }
 
 /**
- * The newest session's profile and the one before it. The row size comes from the oldest bar held,
- * so it stays fixed while the series is open (a row size that moved with the last price would
- * re-cut the histogram mid-session).
+ * The newest session's profile and the one before it. The row size is the symbol's fixed one
+ * (`rowSizeFor`, the same as the Profile tab and the morning pack); a symbol without one takes it from
+ * the oldest bar held, so it stays put while the series is open (a row size that moved with the last
+ * price would re-cut the histogram mid-session). `symbol` is the profile store's name ("SPX", "/ES").
  */
-export function sessionProfiles(bars: readonly CandleBar[], nowMs: number = Date.now()): SessionProfiles {
+export function sessionProfiles(
+  bars: readonly CandleBar[],
+  nowMs: number = Date.now(),
+  symbol = "",
+): SessionProfiles {
   const dates = sessionDates(bars);
   if (dates.length === 0 || bars.length === 0) return { latest: null, prior: null, developing: false };
-  const rowSize = defaultRowSize(bars[0]!.c);
+  const rowSize = rowSizeFor(symbol, bars[0]!.c);
   const opts = { rowSize, barSeconds: PROFILE_BAR_SECONDS };
   const latest = buildProfile(bars, { ...opts, session: dates.at(-1)! });
   const prior = dates.length >= 2 ? buildProfile(bars, { ...opts, session: dates.at(-2)! }) : null;

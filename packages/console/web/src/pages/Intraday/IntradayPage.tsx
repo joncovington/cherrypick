@@ -246,7 +246,8 @@ function LiveCandles({
 
   // The profile reads the 15-minute series whatever width is drawn (the same series when it is 15m).
   const profileBars = useCandles(profile ? symbol : "", "15m");
-  const profiles = useMemo(() => sessionProfiles(profileBars), [profileBars]);
+  const storeName = recordedProfileSymbol(entry.product);
+  const profiles = useMemo(() => sessionProfiles(profileBars, Date.now(), storeName), [profileBars, storeName]);
 
   // Untested POCs need more history than the live 15-minute series holds: the recorded bars, extended
   // hours, for the symbols the profile-bars job keeps. Off (no request) for any other contract, and

@@ -62,6 +62,15 @@ export interface MarketProfile {
 
 const tidy = (x: number): number => Number(x.toPrecision(10));
 
+/** Mirror of `ROW_SIZES`: one row size per recorded symbol, so every surface cuts the same rows
+ *  (`defaultRowSize` reads a price, and each surface reads a different one). */
+export const ROW_SIZES: Readonly<Record<string, number>> = { SPX: 2.5, "/ES": 2.5, NDX: 10, "/NQ": 10, SPY: 0.2, QQQ: 0.2 };
+
+/** Mirror of `row_size_for`: the symbol's fixed row size, else `defaultRowSize(price)`. */
+export function rowSizeFor(symbol: string, price: number): number {
+  return ROW_SIZES[symbol] ?? defaultRowSize(price);
+}
+
 /** A display row size: ROW_FRACTION of the price, to the nearest 1/2/2.5/5 step on a log scale. */
 export function defaultRowSize(price: number): number {
   if (!(price > 0 && Number.isFinite(price))) throw new Error(`price must be positive, got ${price}`);
