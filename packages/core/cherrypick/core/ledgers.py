@@ -941,9 +941,13 @@ def _weeklyput_closed(conn, start: str | None = None, end: str | None = None) ->
     credit, the put's ceiling at expiry."""
     where, params = _session_where("settle_session", start, end)
     ent_col, has_ent = _entry_select(conn, "weeklyput_positions")
+    # net_bp (net over the entry forward notional) is item 57's own measure, read by its forward
+    # check (orchestrator/forwardcheck.py); an older file without the column reads None.
+    has_bp = "net_bp" in _table_cols(conn, "weeklyput_positions")
+    bp_col = ", net_bp" if has_bp else ""
     rows = conn.execute(
         "SELECT arm, symbol, strike, quantity, entry_value, gross_pnl, fees, settlement, slippage, "
-        f"net_pnl, exit_reason, settle_session{ent_col}"
+        f"net_pnl, exit_reason, settle_session{bp_col}{ent_col}"
         f"{_trade_select(conn, 'weeklyput_positions', 'weeklyput_put')} "
         f"FROM weeklyput_positions WHERE status = 'closed'{where}",
         params,
@@ -965,6 +969,7 @@ def _weeklyput_closed(conn, start: str | None = None, end: str | None = None) ->
                 "slippage": r["slippage"],
                 **_cost_split("weeklyput_put", cost, r["settlement"], r["slippage"]),
                 "entry_credit": r["entry_value"],
+                "net_bp": r["net_bp"] if has_bp else None,
                 "capital": _weeklyput_capital(r),
                 "max_profit": r["entry_value"],
                 "session": r["settle_session"] or "",

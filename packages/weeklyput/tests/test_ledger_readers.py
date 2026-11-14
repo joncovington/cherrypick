@@ -66,6 +66,8 @@ def test_closed_puts_carry_the_whole_money_layout_and_add_up(config, conn, stock
     assert ledgers.ROW_NET["weeklyput_put"](db.position(conn, f"unhedged:SPX:{EXP}")) == pytest.approx(
         closed["SPX"]["net_pnl"]
     )
+    # Item 57's own measure rides along for its forward check (orchestrator/forwardcheck.py).
+    assert closed["SPX"]["net_bp"] == db.position(conn, f"unhedged:SPX:{EXP}")["net_bp"] is not None
 
 
 def test_the_excursion_path_runs_from_entry_to_the_recorded_gross(config, conn, stocked):
