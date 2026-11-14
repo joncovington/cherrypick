@@ -57,6 +57,12 @@ expunged within 30 days of termination** (§8(e)). Two consequences shape the wh
   the open-interest store `C`/`P`). CI holds each store's DDL and the kit's readers to it; a study's
   fixtures take their spellings from `storecontract.rights`. After a store's schema or spellings
   change, `python packages/backtest/scripts/store_contract.py check` says so and `write` updates it.
+- **Each chain store has a quality report** (`storequality.py`; `scripts/store_quality.py run`, a
+  `quality/run` queue row after a fetch): per symbol and year the sessions, chains, strikes a
+  chain, the two-sided, zero-bid and crossed shares, the intraday store's missing delta and iv,
+  and each store's request outcomes, written to `results/quality/` (local: derived from licensed
+  data). A declaration names the coverage it needs, and its study checks it with
+  `storequality.meets` before judging anything.
 - **The data must stay purgeable.** It lives in one directory carrying a marker file
   (`paths.LICENSED_MARKER`); `purge` removes only marked directories (dry run by default), and the
   nightly backup skips any marked directory (`orchestrator/backup.py` spells the same name; a test
