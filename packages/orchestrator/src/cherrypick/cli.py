@@ -2343,6 +2343,8 @@ def cmd_hypotheses(cfg, args) -> None:
         "awaiting_verdict": hypotheses.awaiting_verdict(reg, tasks),
         # From item 78 on, a declaration's pass rule is data (a RULE literal); listed, not yet a failure.
         "rule_missing": hypotheses.rule_missing(reg),
+        # How many passes chance alone would give at the usual per-item bar (#1079); reported only.
+        "false_passes": hypotheses.false_passes(reg, alpha=hypotheses.FALSE_PASS_ALPHA)["overall"],
         # The next free item number here and on origin/main as last fetched: fetch before declaring.
         "next_id": hypotheses.next_id(reg, main_reg, plan_md=plan),
     }

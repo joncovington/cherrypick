@@ -463,7 +463,51 @@ def board(
     rows.sort(key=lambda x: x["id"] or 0, reverse=True)
     rows.sort(key=lambda x: x["last_activity"] or "", reverse=True)
     rows.sort(key=lambda x: GROUPS.index(x["group"]))
-    return {"rows": rows, "unregistered": unregistered(reg, by_study)}
+    return {
+        "rows": rows,
+        "unregistered": unregistered(reg, by_study),
+        "false_passes": false_passes(reg, alpha=FALSE_PASS_ALPHA),
+    }
+
+
+#: The usual per-item bar: a one-sided t above 2 on the sample sizes the register's items use is a p
+#: near 0.025, so that is the chance a null item passes. Reported, never a bar.
+FALSE_PASS_ALPHA = 0.025
+JUDGED = ("passed", "failed", "no_verdict")
+
+
+def _binom_tail(n: int, k: int, p: float) -> float:
+    """P(X >= k) for X ~ Binomial(n, p)."""
+    from math import comb
+
+    return float(sum(comb(n, i) * p**i * (1 - p) ** (n - i) for i in range(k, n + 1)))
+
+
+def false_passes(reg: dict, *, alpha: float, by: str = "structure") -> dict:
+    """How many of the register's passes chance alone would give (#1079). Holm runs inside a study,
+    nothing across them: with n items judged at a per-item bar `alpha`, about n x alpha would pass
+    with no edge at all. Overall and per family (`by`, a register tag), each with the binomial chance
+    of seeing that many passes or more from luck alone. A `no_verdict` item counts as judged (it was
+    tried); a retired or declared one does not. Reported beside the pass count, never a verdict."""
+
+    def summary(rows: list[dict]) -> dict:
+        n, k = len(rows), sum(1 for r in rows if r.get("status") == "passed")
+        return {"judged": n, "passed": k, "expected_by_chance": round(n * alpha, 2),
+                "p_this_many_by_chance": round(_binom_tail(n, k, alpha), 4) if n else None}  # fmt: skip
+
+    judged = [r for r in reg.get("hypotheses", []) if r.get("status") in JUDGED]
+    fams: dict[str, list[dict]] = {}
+    for r in judged:
+        fams.setdefault(str(r.get(by) or "none"), []).append(r)
+    return {
+        "alpha": alpha,
+        "by": by,
+        "overall": summary(judged),
+        "families": {
+            f: {**summary(rs), "passed_ids": sorted(r["id"] for r in rs if r.get("status") == "passed")}
+            for f, rs in sorted(fams.items())
+        },  # fmt: skip
+    }
 
 
 def similar(reg: dict, proposal: dict) -> list[dict]:
