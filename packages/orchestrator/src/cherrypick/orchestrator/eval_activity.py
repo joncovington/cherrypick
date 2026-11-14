@@ -444,7 +444,13 @@ _READERS = {
 # refusal, and the review's health reader counts due against entered.
 # ensemble is weeklyput's case: it ticks every minute but acts only inside an arm's entry window, on an open
 # position and when a close posts, and an arm-day it could not trade is an `ensemble_entries` row.
-NOT_APPLICABLE = frozenset({"earnings", "dc_week", "contango_etf", "weeklyput_put", "ensemble_trade"})
+# ladder is the same: it ticks every minute in its hours but acts only when a fund's price reaches a level (a
+# buy limit or a lot's target), so most ticks and most sessions rightly do nothing and an evaluation count
+# would read them as not evaluating. A tick that could not look (no quote, no posted close) is a
+# `ladder_snapshots` row with its status and a `ladder_decisions` row.
+NOT_APPLICABLE = frozenset(
+    {"earnings", "dc_week", "contango_etf", "weeklyput_put", "ensemble_trade", "ladder_lot"}
+)
 
 
 def assess(

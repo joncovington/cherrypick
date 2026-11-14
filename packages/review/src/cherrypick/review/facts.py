@@ -106,6 +106,9 @@ MODULES = {
     # next morning), and holds the day-before-expiry and 20-day arms overnight; the ledger books a trade to
     # the day it ended.
     "ensemble": {"schema": "ensemble_trade", "settles_intraday": False},
+    # ladder (2026-11-13) holds a share lot until its target is reached, for days or weeks, and sells it
+    # inside the session; the ledger books a lot to the day it was sold.
+    "ladder": {"schema": "ladder_lot", "settles_intraday": False},
 }
 
 
@@ -439,6 +442,33 @@ def _ensemble_health(conn, session: str) -> dict:
     }
 
 
+def _ladder_health(conn, session: str) -> dict:
+    """ladder acts only when a fund's price reaches a level, so a session with no lot bought or sold is
+    the rule working and there is nothing due to count against. The finding is whether the loop looked:
+    ticks in the session, and the ticks on which a fund had no fresh quote (the feed, never the rule).
+    Lots bought and sold that session, and the lots still unsold, are read from the ledger."""
+    iterations = _scalar(
+        conn, "SELECT COUNT(*) FROM ladder_loop_iterations WHERE session_date = ?", (session,)
+    )
+    return {
+        "loop_ticked": bool(iterations),
+        "iterations": iterations,
+        "no_quote_ticks": _scalar(
+            conn,
+            "SELECT COUNT(*) FROM ladder_snapshots WHERE trade_date = ? AND status != 'ok'",
+            (session,),
+        )
+        or None,
+        "bought": _scalar(conn, "SELECT COUNT(*) FROM ladder_positions WHERE buy_session = ?", (session,)),
+        "settled": _scalar(
+            conn,
+            "SELECT COUNT(*) FROM ladder_positions WHERE status = 'closed' AND sell_session = ?",
+            (session,),
+        ),
+        "open_lots": _scalar(conn, "SELECT COUNT(*) FROM ladder_positions WHERE status = 'open'"),
+    }
+
+
 HEALTH_READERS = {
     "meic": _meic_health,
     "flies": _flies_health,
@@ -450,6 +480,7 @@ HEALTH_READERS = {
     "contango": _contango_health,
     "weeklyput": _weeklyput_health,
     "ensemble": _ensemble_health,
+    "ladder": _ladder_health,
 }
 
 
@@ -711,6 +742,13 @@ def _ensemble_expected(conn, session: str) -> dict:
     }
 
 
+def _ladder_expected(conn, session: str) -> dict:
+    """ladder has no expectation to hold it to: a buy or a sale happens when a price reaches a level, and
+    on most sessions it rightly does not. Nothing is due, so nothing is expected or observed; the loop's
+    ticks and the feed's misses are its health, and the money is the sold lots', read from the ledger."""
+    return {"basis": "levels_reached_only", "expected": None, "observed": None}
+
+
 EXPECTED_READERS = {
     "meic": _meic_expected,
     "flies": _flies_expected,
@@ -722,6 +760,7 @@ EXPECTED_READERS = {
     "contango": _contango_expected,
     "weeklyput": _weeklyput_expected,
     "ensemble": _ensemble_expected,
+    "ladder": _ladder_expected,
 }
 
 

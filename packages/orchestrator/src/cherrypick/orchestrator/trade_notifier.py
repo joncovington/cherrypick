@@ -1789,6 +1789,71 @@ def _ensemble_process(conn, st: dict, notifier: Notifier, name: str) -> dict:
     return _run_stages(conn, st, notifier, name, stages)
 
 
+# cherrypick-ladder keys on a text `position_id` ("<arm>:<fund>:<buy session>:<n>"), one per share lot,
+# with two notifiable moments: a lot is bought and it is sold at its target. A lot has no other event
+# (no stop, no time limit), and a lot can be bought and sold in the same session.
+def _ladder_seed(conn) -> dict:
+    rows = conn.execute("SELECT position_id, status FROM ladder_positions").fetchall()
+    return {
+        "notified_entry_ids": [r["position_id"] for r in rows],
+        "notified_exit_ids": [r["position_id"] for r in rows if r["status"] == "closed"],
+    }
+
+
+def _fmt_ladder_entry(r) -> str:
+    return (
+        f"🟢 Ladder paper BUY — {r['quantity']} {r['symbol']} @ {r['buy_price']:.2f} "
+        f"(${r['entry_value']:+,.2f}, target {r['target_price']:.2f}) [{_arm(r)}]"
+    )
+
+
+def _embed_ladder_entry(r) -> dict:
+    details = (
+        f"{r['quantity']} {r['symbol']} @ {r['buy_price']:.2f} · ${r['entry_value']:+,.2f} · "
+        f"target {r['target_price']:.2f}"
+    )
+    return _embed(COLOR_ENTRY, f"BUY · {r['symbol']} ladder lot"[:256], details, footer=_arm(r))
+
+
+def _fmt_ladder_exit(r) -> str:
+    return (
+        f"🏁 Ladder paper SELL — {r['quantity']} {r['symbol']} @ {r['sell_price']:.2f}, "
+        f"net {_signed(_net('ladder_lot', r))} ({r['exit_reason']}) [{_arm(r)}]"
+    )
+
+
+def _embed_ladder_exit(r) -> dict:
+    details = (
+        f"net {_signed(_net('ladder_lot', r))} (gross {_signed(r['gross_pnl'])}, "
+        f"fees ${r['fees'] or 0:.2f}, settlement ${r['settlement'] or 0:.2f}, "
+        f"slippage ${r['slippage'] or 0:.2f}) · {r['exit_reason']} · held {r['hold_days']} days "
+        f"since {r['buy_session']}"
+    )
+    return _embed(COLOR_EXIT, f"SELL · {r['symbol']} ladder lot"[:256], details, footer=_arm(r))
+
+
+def _ladder_process(conn, st: dict, notifier: Notifier, name: str) -> dict:
+    stages = [
+        (
+            "notified_exit_ids",
+            "exit",
+            "Paper closed",
+            _fmt_ladder_exit,
+            _embed_ladder_exit,
+            "SELECT * FROM ladder_positions WHERE status = 'closed'",
+        ),
+        (
+            "notified_entry_ids",
+            "entry",
+            "Paper entry",
+            _fmt_ladder_entry,
+            _embed_ladder_entry,
+            "SELECT * FROM ladder_positions",
+        ),
+    ]
+    return _run_stages(conn, st, notifier, name, stages)
+
+
 # cherrypick-bwb keys on a text `position_id` and ladders daily like pmcc, with four notifiable
 # moments: it opens (the base 1-3-2 put broken-wing fly), its add-on may FIRE (the reversal
 # trigger — keyed by position_id since only one add-on ever fires per position), its short legs
@@ -1920,6 +1985,7 @@ _SCHEMAS = {
     "contango_etf": (_contango_seed, _contango_process),
     "weeklyput_put": (_weeklyput_seed, _weeklyput_process),
     "ensemble_trade": (_ensemble_seed, _ensemble_process),
+    "ladder_lot": (_ladder_seed, _ladder_process),
 }
 
 

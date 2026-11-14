@@ -1,7 +1,9 @@
 # cherrypick-ladder
 
-> **EXPERIMENTAL and paper-only.** The orchestrator does not schedule it yet; run the paper loop by
-> hand with the commands below.
+> **EXPERIMENTAL, paper-only and off by default.** To turn it on, copy `config.example.json` to
+> `~/.cherrypick/config/ladder.json` and set `modules.ladder.enabled` in the suite's config; the
+> orchestrator then runs the paper loop as the `ladder-paper` job. Or run it by hand with the
+> commands below.
 
 ladder buys a leveraged index fund in lots when it falls 7% and sells each lot on its own at +4% of
 what it paid. It starts with TQQQ and three arms: `chain` (the Discord group's rule: each further lot

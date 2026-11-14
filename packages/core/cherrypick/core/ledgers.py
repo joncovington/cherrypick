@@ -15,7 +15,8 @@ Every closed reader yields the same record shape, keyed by `paper.trade_schema`:
      experiment_id}
 
 plus, for the multi-day schemas (earnings, dc_week, pmcc, curve_vx, bwb_132, contango_etf, weeklyput_put,
-ensemble_trade), `entry_session` -- the session the position was entered, where `session` is the one it closed
+ensemble_trade, ladder_lot), `entry_session` -- the session the position was entered,
+where `session` is the one it closed
 (added 2026-10-12 for `core.compare`, which pairs those arms on the entry they share).
 
 `outcome` (added 2026-10-26, meic_ic and fly_book only) is how the trade ended, in the module's own
@@ -83,6 +84,14 @@ formula from `capital` alone.
                  `max_profit` is the structure's ceiling when it has one; the session is the day the
                  trade ended (the expiry for a held position, whose print may post the next morning);
                  `outcome` is `exit_reason` (touch / profit_target / time / settlement).
+  - "ladder_lot": ladder's `ladder_positions`, one share lot (any arm) bought on a dip and sold at its
+                 own target; closed = status 'closed'; net = net_pnl as stored (gross - fees -
+                 settlement - slippage, each its own column; fills at the resting limit, so
+                 slippage and settlement are zero and fees are the sale's pass-throughs); tag = arm;
+                 capital = the lot's purchase (shares x buy price), all of it at risk in a fund and
+                 no defined maximum loss, so no R multiple; the session is the sale's; `entry_session`
+                 the buy's; `outcome` is `exit_reason` (target_gain / target_breakeven /
+                 target_floor).
 
 The cost split (added 2026-10-12, for the suite's money layout in the root `CLAUDE.md`): beside
 `cost` -- each module's TOTAL cost, unchanged, so `net_pnl = gross_pnl - cost` still holds -- every
@@ -112,7 +121,8 @@ them reports None for a row that never recorded the value. A consumer reads them
 says which records lacked them, never treats an absent spot as no move. Every schema now supplies
 them (2026-10-17): fly_book all four; meic_ic and earnings the two times (neither records an
 underlying price); dc_week, pmcc, curve_vx and bwb_132 all four, exit spot only for a position that
-settled at expiry; contango_etf all four, its "spot" being the held fund's own mid.
+settled at expiry; contango_etf all four, its "spot" being the held fund's own mid;
+ladder_lot all four, the fund's bid at the buy and at the sale.
 
 `None` never means zero anywhere in here. A row written before an instrumentation column existed
 reports `slippage: None` and `capital: None`, because "not recorded" and "was zero" are different
@@ -189,6 +199,7 @@ SLIPPAGE_BASIS = {
     "contango_etf": SLIPPAGE_COST,
     "weeklyput_put": SLIPPAGE_COST,
     "ensemble_trade": SLIPPAGE_COST,
+    "ladder_lot": SLIPPAGE_COST,
 }
 
 
@@ -258,6 +269,14 @@ _TRADE_COLUMNS = {
         "entry_spot": "entry_spot",
         "exit_spot": "exit_spot",
     },
+    # The fund's own bid at the buy and at the sale (a share lot's "spot" is the fund itself).
+    "ladder_lot": {
+        "position_id": "position_id",
+        "entry_time": "buy_time",
+        "exit_time": "sell_time",
+        "entry_spot": "buy_bid",
+        "exit_spot": "sell_bid",
+    },
 }
 
 
@@ -310,6 +329,7 @@ ROW_NET = {
     "contango_etf": lambda r: r["net_pnl"],
     "weeklyput_put": lambda r: r["net_pnl"],
     "ensemble_trade": lambda r: r["net_pnl"],
+    "ladder_lot": lambda r: r["net_pnl"],
 }
 
 
@@ -1043,6 +1063,68 @@ def _ensemble_open(conn) -> list[dict]:
     ]
 
 
+def _ladder_capital(r) -> float | None:
+    """The lot's purchase in whole-position dollars (`entry_value` is the signed cash flow, so negative)."""
+    return None if r["entry_value"] is None else round(abs(float(r["entry_value"])), 2)
+
+
+def _ladder_closed(conn, start: str | None = None, end: str | None = None) -> list[dict]:
+    """ladder's sold lots, any arm. The module stores the whole money layout on the row (purchase +
+    sale = gross; gross - fees - settlement - slippage = net), so this reads it rather than
+    re-deriving it. Fills are resting limits, so slippage and settlement are zero and `fees` is the
+    sale's SEC fee and FINRA TAF. `capital` is the lot's purchase; the session is the sale's."""
+    where, params = _session_where("sell_session", start, end)
+    ent_col, has_ent = _entry_select(conn, "ladder_positions", "buy_session")
+    rows = conn.execute(
+        "SELECT arm, symbol, entry_value, gross_pnl, fees, settlement, slippage, net_pnl, "
+        f"exit_reason, sell_session{ent_col}"
+        f"{_trade_select(conn, 'ladder_positions', 'ladder_lot')} "
+        f"FROM ladder_positions WHERE status = 'closed'{where}",
+        params,
+    ).fetchall()
+    out = []
+    for r in rows:
+        cost = _round2(_plus(_plus(r["fees"], r["settlement"]), r["slippage"]))
+        out.append(
+            {
+                "arm": r["arm"],
+                "experiment_id": None,
+                "symbol": r["symbol"],
+                "strategy": "ladder_lot",
+                "gross_pnl": r["gross_pnl"],
+                "cost": cost,
+                "net_pnl": r["net_pnl"],
+                "slippage": r["slippage"],
+                **_cost_split("ladder_lot", cost, r["settlement"], r["slippage"]),
+                "entry_credit": None,
+                "capital": _ladder_capital(r),
+                "max_profit": None,
+                "session": r["sell_session"] or "",
+                "entry_session": r["buy_session"] if has_ent else None,
+                "outcome": r["exit_reason"],
+                **_trade_fields(r, "ladder_lot"),
+            }
+        )
+    return out
+
+
+def _ladder_open(conn) -> list[dict]:
+    """ladder's unsold lots: no stop and no time limit, so a lot is held overnight, often for weeks."""
+    rows = conn.execute(
+        "SELECT arm, symbol, entry_value, buy_session FROM ladder_positions WHERE status = 'open'"
+    ).fetchall()
+    return [
+        {
+            "arm": r["arm"],
+            "symbol": r["symbol"],
+            "strategy": "ladder_lot",
+            "capital": _ladder_capital(r),
+            "session": r["buy_session"] or "",
+        }
+        for r in rows
+    ]
+
+
 BWB_UNTAGGED = "unassigned"
 
 
@@ -1213,6 +1295,7 @@ READERS = {
         "contango_etf": _contango_closed,
         "weeklyput_put": _weeklyput_closed,
         "ensemble_trade": _ensemble_closed,
+        "ladder_lot": _ladder_closed,
     }.items()
 }
 
@@ -1320,6 +1403,7 @@ OPEN_READERS = {
     "contango_etf": _contango_open,
     "weeklyput_put": _weeklyput_open,
     "ensemble_trade": _ensemble_open,
+    "ladder_lot": _ladder_open,
 }
 
 

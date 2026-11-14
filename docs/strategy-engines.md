@@ -3,7 +3,7 @@
 **What this covers:** a suite-level overview of what each trading strategy actually does, so you
 can decide which one(s) fit your goals before diving into an individual module's own docs. The suite
 ships these strategy modules: MEIC, and Earnings (paper-only), which are on in a fresh install
-(Earnings only where Dolt is set up); Calendars, Contango, Weeklyput and Ensemble, which are
+(Earnings only where Dolt is set up); Calendars, Contango, Weeklyput, Ensemble and Ladder, which are
 **EXPERIMENTAL and off by default**; and Flies, BWB, PMCC and Curve, which are **retired and off by default** (kept so each can be reinstated) — plus the GEX engine the console renders. MEIC, Earnings and Flies get a full
 section below; the others a short one. Each module's own docs (linked) are the source of truth for its
 internals.
@@ -20,8 +20,9 @@ internals.
 | Contango | SVXY/SHV switch on VIX/VIX3M | **off** (experimental) | none |
 | Weeklyput | index 10-delta put, 7 days, weekly expiries | **off** (experimental) | none |
 | Ensemble | eight short-dated SPX and GLD option arms | **off** (experimental) | none |
+| Ladder | dip-bought lots of a leveraged index fund, each sold at +4% | **off** (experimental) | none |
 
-Every shipped example config runs `control` alone except contango's (`control` and `flipexit`), weeklyput's (`unhedged`), ensemble's (its eight) and the four retired modules', which ship with every arm off (PMCC's examples name `shield`, `shield_hold` and `shield_guard`; its `control` is retired too). Any other arm named below is added in a machine's own
+Every shipped example config runs `control` alone except contango's (`control` and `flipexit`), weeklyput's (`unhedged`), ensemble's (its eight), ladder's (`chain`, `once`, `decay`) and the four retired modules', which ship with every arm off (PMCC's examples name `shield`, `shield_hold` and `shield_guard`; its `control` is retired too). Any other arm named below is added in a machine's own
 config. BWB, calendars and curve build their comparison books into the module and run them unless the
 config sets that book's `enabled` to `false`, as their examples do.
 
@@ -190,6 +191,17 @@ snapshot it saw, so paper can be replayed against the backtest. Paper-only and c
 position is a ledger row, never an order.
 
 → Depth: [`ensemble/README.md`](../packages/ensemble/README.md), [`ensemble/CLAUDE.md`](../packages/ensemble/CLAUDE.md).
+
+## Ladder — the share dip ladder, in paper (EXPERIMENTAL, off by default)
+
+A lot of a leveraged index fund (TQQQ first) is bought when its ask reaches 7% under the previous
+close, and each lot is sold on its own when the bid reaches +4% of its cost, with no stop and no time
+limit. Three arms: `chain` (each further lot 7% under the last, the Discord group's rule), `once` (one
+lot a session, research item 26) and `decay` (item 27's target, which falls to breakeven after a
+month). Item 26 failed its history test; this runs the rule at real quotes to watch it, and says
+nothing about an edge. Paper-only and credential-free: a lot is a ledger row, never an order.
+
+→ Depth: [`ladder/README.md`](../packages/ladder/README.md), [`ladder/CLAUDE.md`](../packages/ladder/CLAUDE.md).
 
 ## Variance testing with arms (the distinguishing capability)
 

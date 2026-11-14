@@ -3,6 +3,8 @@
 ⚠️ **EXPERIMENTAL.** The share dip ladder in paper, on leveraged index funds (TQQQ first): buy a lot
 7% down, sell each lot on its own at +4% of its cost, no stop, no time limit. **Paper-only,
 credential-free, no live path** (posture: root file). Ledger: `~/.cherrypick/data/ladder/paper_trades.db`.
+Off by default: the orchestrator runs `--once` every 60 s on trading days as the `ladder-paper` job once
+`modules.ladder.enabled` is set (trade schema `ladder_lot`); the loop gates its own hours.
 
 ## Why it exists
 

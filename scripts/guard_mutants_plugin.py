@@ -144,6 +144,25 @@ def _decide_all_unstacked():
     return patched
 
 
+def _target_is_a_cent():
+    """ladder's `rules.target` pricing every lot's sale at a cent: a lot sold the first tick its bid is
+    looked at, the sale-only-at-the-target rule the module exists to hold broken."""
+    return lambda *_args, **_kwargs: 0.01
+
+
+def _buy_level_above():
+    """ladder's `rules.buy_level` ten per cent above the rule's own number: a lot bought on a price
+    that has not fallen as far as the rule says."""
+    rules = importlib.import_module("cherrypick.ladder.rules")
+    real = rules.buy_level
+
+    def patched(*args, **kwargs):
+        level = real(*args, **kwargs)
+        return None if level is None else round(level * 1.1, 2)
+
+    return patched
+
+
 def _ignore_as_of(rows, _as_of):
     """flies' intraday pack reading every row regardless of its instant: the look-ahead the
     truncation test exists to catch."""
@@ -241,6 +260,8 @@ REPLACEMENTS = {
     "ensemble_fill_after_window": _ensemble_fill_after_window,
     "decide_all_unstacked": lambda: _decide_all_unstacked(),
     "ignore_as_of": lambda: _ignore_as_of,
+    "target_is_a_cent": _target_is_a_cent,
+    "buy_level_above": _buy_level_above,
     "uncapped": lambda: _uncapped,
     "agent_fails_open": lambda: _agent_fails_open,
     "no_t": lambda: _no_t,
@@ -443,6 +464,24 @@ MUTANTS: tuple[Mutant, ...] = (
         module="cherrypick.ensemble.paper",
         attr="decide_all",
         replacement="decide_all_unstacked",
+    ),
+    Mutant(
+        id="ladder-sell-only-at-target",
+        breaks="ladder sells a lot below its target",
+        package="ladder",
+        tests=("tests/test_paper_loop.py::test_a_lot_sells_at_its_target_and_frees_its_slot",),
+        module="cherrypick.ladder.rules",
+        attr="target",
+        replacement="target_is_a_cent",
+    ),
+    Mutant(
+        id="ladder-buy-only-at-level",
+        breaks="ladder buys a lot above its level",
+        package="ladder",
+        tests=("tests/test_paper_loop.py::test_nothing_buys_above_the_level",),
+        module="cherrypick.ladder.rules",
+        attr="buy_level",
+        replacement="buy_level_above",
     ),
     Mutant(
         id="flies-intraday-pack-lookahead",
