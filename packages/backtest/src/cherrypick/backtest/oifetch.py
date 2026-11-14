@@ -71,6 +71,13 @@ def status(conn, symbol: str, session: str) -> str | None:
 #: exchange is shut.
 WEEKLY_ONLY = {"SPXW": 10}
 
+#: A plan symbol that is an alias: the vendor root it asks, and which of that root's expiries it keeps.
+#: `SPXW-1D` is item 75's SPXW day-before-expiry book: the session's own expiry and the next trading
+#: day's, whichever weekday, which `WEEKLY_ONLY` would drop on four days out of five. Stored under the
+#: alias, so the two readings never mix.
+ALIASES = {"SPXW-1D": "SPXW"}
+NEXT_SESSION_ONLY = {"SPXW-1D"}
+
 
 def is_weekly(expiration: str) -> bool:
     """Whether the date is a weekly expiry: a Friday, or the Thursday before a Friday holiday."""
@@ -87,6 +94,13 @@ def keep(report: dict, session: str, symbol: str | None = None) -> list[tuple[st
     pure. [(expiration, right, strike, open_interest)]. For a `WEEKLY_ONLY` root, only its weekly
     expiries and only through that root's shorter horizon."""
     first = date.fromisoformat(session)
+    if (symbol or "").upper() in NEXT_SESSION_ONLY:
+        from cherrypick.core import calendar as cal
+
+        wanted = {session, cal.next_trading_day(first).isoformat()}
+        return sorted(
+            (exp, right[0], strike, n) for (exp, right, strike), n in report.items() if exp in wanted
+        )
     weekly_days = WEEKLY_ONLY.get((symbol or "").upper())
     last = (first + timedelta(days=weekly_days or MAX_DAYS)).isoformat()
     return sorted(
@@ -135,7 +149,7 @@ def record_refusal(conn, symbol: str, session: str, refusal: VendorRefusal) -> N
 def _vendor_day(client, sym: str, session: str) -> tuple[dict, float]:
     """One name-day's vendor call, timed. Runs on a worker thread: it touches no store."""
     t = time.monotonic()
-    report = client.open_interest_all(sym, session)
+    report = client.open_interest_all(ALIASES.get(sym, sym), session)
     return report, time.monotonic() - t
 
 

@@ -80,7 +80,9 @@ STORES: list[dict[str, str]] = [
         "used_by": (
             "item 31, the earnings module's paper rule (packages/backtest/scripts/earnings_item31.py); "
             "item 37 morning sample (packages/backtest/scripts/curve_item37.py); "
-            "item 38, the calendars module's rule (packages/backtest/scripts/calendars_item38.py)"
+            "item 38, the calendars module's rule (packages/backtest/scripts/calendars_item38.py); "
+            "item 75, GLD call spreads and SPXW's day-before-expiry chains "
+            "(packages/backtest/scripts/ensemble_item75.py)"
         ),
     },
     {
@@ -93,7 +95,9 @@ STORES: list[dict[str, str]] = [
         "file": "open_interest.db",
         "holds": "open interest per contract per name and session, expiries within 100 days",
         "built_by": "python -m cherrypick.backtest fetch-oi --plan FILE",
-        "used_by": "item 30, monthly-expiry GEX walls (packages/backtest/scripts/gex_walls_item30.py)",
+        "used_by": "item 30, monthly-expiry GEX walls (packages/backtest/scripts/gex_walls_item30.py); "
+        "item 75, the plan symbol SPXW-1D keeps the session's and the next session's SPXW expiries "
+        "(packages/backtest/scripts/ensemble_item75.py)",
     },
     {
         "file": "addon_weeklies.db",
