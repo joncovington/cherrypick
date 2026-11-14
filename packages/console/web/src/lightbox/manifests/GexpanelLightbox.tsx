@@ -2,6 +2,11 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { fmtGexDollars } from "../../pages/Gex/GexProfileChart";
 import { LevelsChart, type Level } from "../../pages/GexPanel/LevelsChart";
+import { profileLevels } from "../../pages/GexPanel/profileLevels";
+import { sessionProfiles, untestedBars, untestedCandidates } from "../../pages/Intraday/profileOverlay";
+import { untestedPocs } from "../../lib/marketProfile";
+import { useCandles } from "../../lib/useCandles";
+import { useProfileBars } from "../../lib/api";
 import { asOfIsToday, formatAsOf } from "./GexLightbox";
 import { GexOiNote } from "../../components/GexOiNote";
 import { ModuleFrame } from "../ModuleFrame";
@@ -336,7 +341,25 @@ export function GexpanelLightbox({ slide }: { slide: string }) {
   const p = q.data;
   // Volume first: open interest does not stream from the broker (GexOiNote), so it is the open's count all day.
   const [basis, setBasis] = useState<Basis>("volume");
-  const levels = useMemo(() => (p?.ok ? levelsOf(p, basis) : []), [p, basis]);
+  // SPX's Market Profile levels beside the walls, off by default (the panel is already dense). Both
+  // series are subscribed only while the toggle is on.
+  const [showProfile, setShowProfile] = useState(false);
+  const liveBars = useCandles(showProfile ? "SPX" : "", "15m");
+  const { data: recorded } = useProfileBars(showProfile ? "SPX" : "", 20, "extended");
+  const profiles = useMemo(() => sessionProfiles(liveBars, Date.now(), "SPX"), [liveBars]);
+  const untested = useMemo((): Array<[string, number]> => {
+    const rowSize = profiles.latest?.rowSize;
+    if (!showProfile || recorded === undefined || !recorded.available || rowSize === undefined) return [];
+    return untestedPocs(untestedBars(recorded.bars, liveBars), {
+      sessions: untestedCandidates(recorded.sessions, profiles),
+      rowSize,
+      barSeconds: recorded.barSeconds,
+    });
+  }, [showProfile, recorded, profiles, liveBars]);
+  const levels = useMemo(
+    () => [...(p?.ok ? levelsOf(p, basis) : []), ...(showProfile ? profileLevels(profiles, untested) : [])],
+    [p, basis, showProfile, profiles, untested],
+  );
   const sigma = p?.moves?.straddle ?? p?.moves?.iv ?? null;
   const fit = sigma !== null ? sigma.move * 1.5 : (p?.spot ?? 0) * 0.01;
 
@@ -349,7 +372,26 @@ export function GexpanelLightbox({ slide }: { slide: string }) {
           <div className="gexp-layout">
             <Panel p={p} basis={basis} setBasis={setBasis} />
             <section className="card view-fade gexp-chart">
-              <h2>SPX today, with the panel&apos;s levels</h2>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                <h2>SPX today, with the panel&apos;s levels</h2>
+                <div className="mode-toggle" role="group" aria-label="market profile levels" style={{ marginLeft: "auto" }}>
+                  <button
+                    type="button"
+                    className={showProfile ? "mode-btn active" : "mode-btn"}
+                    aria-pressed={showProfile}
+                    onClick={() => setShowProfile((v) => !v)}
+                    title="Add SPX's Market Profile levels: today's POC, the prior session's POC and value area, and untested POCs"
+                  >
+                    profile levels
+                  </button>
+                </div>
+              </div>
+              {showProfile && (
+                <p className="muted" style={{ fontSize: "0.85em", margin: "4px 0 0" }}>
+                  Amber: POC (today, solid), pPOC (prior, dotted), nPOC (untested, dashed). Blue dotted: the prior
+                  session&apos;s value area. Display only; the panel compares nothing.
+                </p>
+              )}
               {(p.spotHistory?.length ?? 0) > 1 ? (
                 <LevelsChart trail={p.spotHistory!} levels={levels} spot={p.spot} fitWithin={fit} />
               ) : (
