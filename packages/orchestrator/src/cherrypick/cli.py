@@ -2459,6 +2459,38 @@ def cmd_draft_verdict(args) -> None:
         sys.exit(1)
 
 
+def cmd_forward_checks(cfg) -> None:
+    """#1080: each passing item's paper arm against its backtest (collecting, confirm, drift or kill).
+    Reads the module ledgers through core.ledgers and the local result files; writes nothing."""
+    import sqlite3
+
+    from cherrypick.core import home as core_home
+    from cherrypick.core import ledgers
+
+    from cherrypick.orchestrator import forwardcheck
+
+    modules = cfg.get("modules") or {}
+
+    def trades_for(module: str, schema: str) -> list[dict]:
+        mcfg = modules.get(module)
+        reader = ledgers.READERS.get(schema)
+        if not mcfg or reader is None:
+            return []
+        path = cfgmod.paper_db_path(mcfg, module)
+        if not path.exists():
+            return []
+        conn = ledgers.connect_ro(path)
+        try:
+            return reader(conn)
+        except sqlite3.Error:
+            return []
+        finally:
+            conn.close()
+
+    out = forwardcheck.run(hypotheses.load(), trades_for, forwardcheck.read_result(core_home.home()))
+    _emit({"ok": True, "checks": out})
+
+
 def cmd_hypotheses_board() -> None:
     """The studies board: each register row with its result files' verdicts and its queue rows.
     Reads result files under the home, licensed ones included, so the console shows it only behind
@@ -2818,6 +2850,7 @@ def build_parser() -> argparse.ArgumentParser:
             "hypotheses-board",
             "study-times",
             "draft-verdict",
+            "forward-checks",
             "study-report",
             "retests",
             "run-earnings-entry",
@@ -3284,6 +3317,7 @@ def main() -> None:
         "hypotheses-board": cmd_hypotheses_board,
         "study-times": cmd_study_times,
         "draft-verdict": lambda: cmd_draft_verdict(args),
+        "forward-checks": lambda: cmd_forward_checks(cfg),
         "study-report": lambda: cmd_study_report(args),
         "retests": lambda: cmd_retests(args),
         "notify-trades": lambda: cmd_notify_trades(cfg, dry_run=args.dry_run),

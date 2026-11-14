@@ -135,6 +135,10 @@ def check(reg: dict, *, root: Path | None = None) -> list[str]:
                     problems.append(f"{tag}: result {p} is already row {owners[p]}'s")
                 owners.setdefault(p, rid)
         problems += _chain_problems(row, tag, root)
+        if "forward" in row:
+            from .forwardcheck import problems as forward_problems
+
+            problems += [f"{tag}: {p}" for p in forward_problems(row["forward"])]
         if row.get("outcome") is not None and not isinstance(row.get("outcome"), str):
             problems.append(f"{tag}: outcome is the decision in words")
         pointer = str(row.get("pointer") or "")

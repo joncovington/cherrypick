@@ -70,6 +70,7 @@ written are not re-judged. The arithmetic is `cherrypick.core.robustness`
   run (its verdict block is what the queue and the register read), and a `CHAIN` literal of the
   queue steps, queued with `run.py queue-chain`. Both land with the declaration, before any run;
   `cherrypick hypotheses` lists a row from item 78 whose script has no `RULE`.
+- **A pass declares its forward check** before its paper arm trades: a `forward` block in the register row (module, arm, measure, start, minimum observations, the reference in the local result, kill and drift bars), read by `run.py forward-checks`.
 - **A result file the board can read:** a top-level `verdict` (one word, or one per arm, or per arm
   as `{"verdict": ...}`), its `window`, and the `run_id` when the study ran through the runner.
 - **Declared limits** (B11): how a position open at a name's last bar is settled (the last close; no
@@ -6175,6 +6176,7 @@ untouched sample of the same trade. Declared before any weekly path is fetched.*
   (`~/.cherrypick/data/backtest/results/research/item57/`).
 - **What this decides:** the pass branch. A paper arm needs a home, a module that sells it, and
   that is the user's choice; nothing changes until then. The forward cycles are read as they finish.
+- **Forward check (declared 2026-11-14, before any paper trade):** the weeklyput paper arm (`unhedged`) is read against this study by `run.py forward-checks`: each settled cycle's equal-weight mean `net_bp` from 2026-11-09, against the backtest's mean per cycle and the spread its own t implies. Collecting until 30 cycles; then kill at z of -2 or below, drift at -1 or below or a paper mean at or under zero, confirm otherwise. A kill is a recommendation, never a config change. Item 77 has since failed this trade under the three bars; the forward check reads whether paper even matches the backtest it was proposed from.
 
 ### 58. The closing fly: a 0DTE SPX iron fly sold at 15:55 and held to the settlement
 
@@ -7410,6 +7412,7 @@ its own keep, or is the same afternoon's risk taken again. Declared here before 
   buying-power cap, which fits one condor. Nothing changes live's `max_structures_per_day` or its
   cap until that forward read is judged on the three bars. The short-leg-only stop is the next
   question on that stacked book, as its own item.
+- **Forward check (declared 2026-11-14, before any paper trade):** `pm1400-n3` is read against this study's `n3` by `run.py forward-checks`: its net per session from 2026-11-16, against the replay's mean session net and the spread its own t implies, `pm1400-n1` counted beside it. Collecting until 40 sessions; then kill at z of -2 or below, drift at -1 or below or a paper mean at or under zero, confirm otherwise. The increment over `pm1400-n1` is judged on the three bars when the forward read is done; nothing changes live before then.
 
 ### 74. The super bull as leverage: against the same delta financed on the same capital
 

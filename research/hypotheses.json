@@ -2537,7 +2537,24 @@
       "retest": null,
       "retest_note": "No yearly re-test: the forward read of cycles after 2026-10-30 is this study's own re-test, reported beside the verdict.",
       "retests": [],
-      "outcome": "the unhedged arm passes every check over the weekly expiries item 46 never read; the hedged arm fails before the cost stress; a paper arm needs a module to sell it, the user's choice, and the forward cycles are read as they finish"
+      "outcome": "the unhedged arm passes every check over the weekly expiries item 46 never read; the hedged arm fails before the cost stress; a paper arm needs a module to sell it, the user's choice, and the forward cycles are read as they finish",
+      "forward": {
+        "module": "weeklyput",
+        "schema": "weeklyput_put",
+        "arm": "unhedged",
+        "measure": "cycle_mean",
+        "field": "net_bp",
+        "since": "2026-11-09",
+        "min_obs": 30,
+        "reference": {
+          "file": "{home}/data/backtest/results/research/item57/results.json",
+          "mean": "arms.unhedged.mean_bp",
+          "t": "arms.unhedged.t",
+          "n": "arms.unhedged.cycles"
+        },
+        "kill_z": -2.0,
+        "drift_z": -1.0
+      }
     },
     {
       "id": 58,
@@ -3329,7 +3346,27 @@
       ],
       "retest": null,
       "retests": [],
-      "outcome": "provisional pass at k = 3: the second and third condor each pass in the design window; the proposal is an n3 paper arm beside live's rule, read on sessions after 2026-10-12, before any change to live"
+      "outcome": "provisional pass at k = 3: the second and third condor each pass in the design window; the proposal is an n3 paper arm beside live's rule, read on sessions after 2026-10-12, before any change to live",
+      "forward": {
+        "module": "meic",
+        "schema": "meic_ic",
+        "arm": "pm1400-n3",
+        "measure": "session_sum",
+        "field": "net_pnl",
+        "since": "2026-11-16",
+        "min_obs": 40,
+        "reference": {
+          "file": "{home}/data/backtest/results/research/item73/study-design-2022-05-16-2025-06-30.json",
+          "mean": "arms.n3.own.mean_net",
+          "t": "arms.n3.own.t",
+          "n": "arms.n3.own.n"
+        },
+        "kill_z": -2.0,
+        "drift_z": -1.0,
+        "beside": [
+          "pm1400-n1"
+        ]
+      }
     },
     {
       "id": 74,
