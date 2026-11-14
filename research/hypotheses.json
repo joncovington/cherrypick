@@ -3375,6 +3375,57 @@
       "outcome": null,
       "retest": null,
       "retests": []
+    },
+    {
+      "id": 75,
+      "study": "item75",
+      "title": "A third-party portfolio of eight short-dated option rules, read over all history at once",
+      "status": "declared",
+      "legacy": false,
+      "setup": "portfolio-whole-rule",
+      "side": "two-sided",
+      "structure": "options",
+      "window": "intraday",
+      "measure": "per entered session, net at the suite's slippage model in dollars at the source's sizes, per arm (eight) and stacked; stress at halfway to natural, mid as context",
+      "expected": "most arms fail after costs, as items 9, 10, 12 and 14 to 16 did; the long-premium GLD arms are the unknown",
+      "sample": "every stored session from 2022-05-16, one pass with no design/holdout split (user's choice); 2022-05..2023-06 reported as a descriptive row; < 100 entered sessions in an arm = no verdict",
+      "rule": "per arm: mean net > 0 with a stationary-bootstrap one-sided 95% lower bound > 0 (block 5, 20,000 draws, seed 75) and Holm 0.05 across eight; net positive in each time-half; net >= 0 at the stress fill; net > 0 at 1.5x fees; portfolio: net positive at verdict and stress fills and 99th-percentile 100-session drawdown below 100x mean session net",
+      "mechanism": "premium (chain overprices the move to the close) for the short-premium arms, a gamma pin for the 1DTE fly, drift or reversion with a day filter for the long-premium arms",
+      "rivals": [
+        {
+          "explanation": "costs",
+          "check": "verdict at the suite's slippage model; stress and mid reported; positive at 1.5x fees"
+        },
+        {
+          "explanation": "one year or one regime",
+          "check": "positive in both time-halves; each calendar year reported"
+        },
+        {
+          "explanation": "filters fitted to the source's own sample",
+          "check": "2022-05..2023-06 precedes the source's window and is reported as a descriptive row; each arm also run with filters off"
+        },
+        {
+          "explanation": "eight arms, one lucky",
+          "check": "Holm at 5% across the eight"
+        },
+        {
+          "explanation": "bot decision tree differs from the stated settings",
+          "check": "both variants run where feasible; the tree is the verdict variant"
+        }
+      ],
+      "pointer": "research/edge-hypotheses-plan.md#75-a-third-party-portfolio-of-eight-short-dated-option-rules-read-over-all-history-at-once",
+      "scripts": [
+        "packages/backtest/scripts/ensemble_item75.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_ensemble_item75_script.py"
+      ],
+      "results": [
+        "{home}/data/backtest/results/research/item75/study-2022-05-16-all.json"
+      ],
+      "outcome": null,
+      "retest": null,
+      "retests": []
     }
   ],
   "rule_changes": []
