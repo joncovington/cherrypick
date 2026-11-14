@@ -2418,6 +2418,47 @@ def cmd_study_times() -> None:
     _emit(studytimes.report(reg, history, dates, _queue_rows(), plan_dates=plan_dates))
 
 
+def cmd_draft_verdict(args) -> None:
+    """#1074: draft a kit study's Result paragraph and register outcome from its verdict block.
+    Prints the draft; writes nothing. Refuses a draft that would carry a study figure."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    from cherrypick.core import home as core_home
+
+    from cherrypick.orchestrator import verdictdraft
+
+    reg = hypotheses.load()
+    row = next((r for r in reg.get("hypotheses", []) if r.get("study") == args.study), None)
+    if row is None:
+        _emit({"ok": False, "error": f"no register row for {args.study!r}"})
+        sys.exit(2)
+    block, source = None, None
+    for p in row.get("results") or []:
+        path = core_home.home() / p.removeprefix(hypotheses.RESULT_PREFIX)
+        try:
+            doc = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if isinstance(doc, dict) and "rule" in doc and isinstance(doc.get("arms"), dict):
+            block, source = doc, path
+            break
+    if block is None:
+        _emit(
+            {
+                "ok": False,
+                "error": "no kit verdict block among the row's results (a study on the kit writes one)",
+            }
+        )
+        sys.exit(2)
+    day = datetime.now(ZoneInfo("America/New_York")).date().isoformat()
+    where = "~/" + source.parent.relative_to(core_home.home().parent).as_posix() + "/"
+    out = verdictdraft.draft(row["id"], block, day=day, provisional=args.provisional, results_dir=where)
+    _emit({"ok": not out["figures"], "study": args.study, **out})
+    if out["figures"]:
+        sys.exit(1)
+
+
 def cmd_hypotheses_board() -> None:
     """The studies board: each register row with its result files' verdicts and its queue rows.
     Reads result files under the home, licensed ones included, so the console shows it only behind
@@ -2776,6 +2817,7 @@ def build_parser() -> argparse.ArgumentParser:
             "hypotheses",
             "hypotheses-board",
             "study-times",
+            "draft-verdict",
             "study-report",
             "retests",
             "run-earnings-entry",
@@ -2948,7 +2990,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--provisional",
         action="store_true",
-        help="For review: build the provisional pass (the default; accepted so the job argv is explicit)",
+        help=(
+            "For review: build the provisional pass (the default; accepted so the job argv is explicit). "
+            "For draft-verdict: the verdict is provisional by declaration"
+        ),
     )
     parser.add_argument(
         "--yes", action="store_true", help="For account --set and upgrade: skip the confirmation prompt"
@@ -3238,6 +3283,7 @@ def main() -> None:
         "hypotheses": lambda: cmd_hypotheses(cfg, args),
         "hypotheses-board": cmd_hypotheses_board,
         "study-times": cmd_study_times,
+        "draft-verdict": lambda: cmd_draft_verdict(args),
         "study-report": lambda: cmd_study_report(args),
         "retests": lambda: cmd_retests(args),
         "notify-trades": lambda: cmd_notify_trades(cfg, dry_run=args.dry_run),
