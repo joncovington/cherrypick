@@ -482,6 +482,55 @@ def _held_long_entries_today(conn, config: dict, day: str) -> set[str]:
     return out
 
 
+def paced_reach(config: dict, conn, *, cache_path: str, day: str) -> dict:
+    """`{arm: symbols it can still reach on `day`}` for each paced held-long arm
+    (`entry_symbols_per_session`) on the session's roster -- the stream request's copy of
+    `_try_entries`' pacing gate, built from the same roster, params and cap.
+
+    The widened window is asked for once, when the process starts, so it has to name in advance the
+    symbols the walk will reach: the same order, the same shared counter, the same free-slot, plan and
+    short-guard refusals, each passing symbol taken as an entry. Without it a paced arm's first
+    session asks for a deep window and a year-long expiry on every symbol while the gate lets it open
+    one or two: `shield_guard` on eleven symbols declared ~18,200 subscriptions against a budget of
+    14,000. The one refusal this cannot see is the snapshot's own; a predicted symbol that fails
+    there leaves the next one unwindowed for the day, which costs one entry a day, never a quote."""
+    arms, advised = session_books(config, day)
+    decision = advice_decision(config, day) if advised else None
+    max_positions = int((config.get("defaults") or {}).get("max_positions", 3))
+    sim = _held_long_entries_today(conn, config, day)
+    params_by_arm = {b: arm_params(config, b, advised, decision) for b in arms}
+    held = [b for b in arms if management.is_held_long(params_by_arm[b])]
+    reach: dict[str, set[str]] = {
+        b: set(sim) for b in held if params_by_arm[b].get("entry_symbols_per_session") is not None
+    }
+    if not reach:
+        return {}
+    today = date.fromisoformat(day)
+    for symbol in _symbols(config, day):
+        listed: list[str] | None = None
+        entering = False
+        for b in held:
+            if (
+                db.open_position_for(conn, symbol, b) is not None
+                or db.open_position_count(conn, b) >= max_positions
+            ):
+                continue
+            limit = params_by_arm[b].get("entry_symbols_per_session")
+            if limit is not None and symbol not in sim and len(sim) >= int(limit):
+                continue
+            if listed is None:
+                listed = provider.listed_expirations(cache_path, symbol)
+            dates = clock.held_long_plan(today, listed, params_by_arm[b])
+            if dates is None or _entry_guards(config, symbol, dates, day) is not None:
+                continue
+            if b in reach:
+                reach[b].add(symbol)
+            entering = True
+        if entering:
+            sim.add(symbol)
+    return reach
+
+
 def _refuse_entry(
     conn, day: str, symbol: str, arm: str, reason: str, *, attempt: bool = True, **extra
 ) -> None:

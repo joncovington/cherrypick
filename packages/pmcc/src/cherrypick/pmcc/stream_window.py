@@ -140,9 +140,16 @@ def evaluate(
     )
 
 
-def entry_possible(conn, symbol: str, arms: list[str], max_positions: int) -> bool:
+def _reachable(reach: dict | None, arm: str, symbol: str) -> bool:
+    """Whether a paced arm's walk reaches `symbol` today (`paper_loop.paced_reach`); an arm absent
+    from `reach` is not paced and reaches everything."""
+    return reach is None or arm not in reach or symbol in reach[arm]
+
+
+def entry_possible(conn, symbol: str, arms: list[str], max_positions: int, reach: dict | None = None) -> bool:
     """Whether ANY arm could still open `symbol` — the same condition `paper_loop`'s entry phase
-    uses to decide it has something to do (a free (symbol, arm) slot, under the arm's cap).
+    uses to decide it has something to do (a free (symbol, arm) slot, under the arm's cap, and for a
+    paced held-long arm its walk reaching the symbol today: `reach`).
 
     Deliberately the same test rather than an approximation of it: this decides whether the widened
     window is subscribed at all, so a window that disagreed with the entry gate would either starve
@@ -156,7 +163,9 @@ def entry_possible(conn, symbol: str, arms: list[str], max_positions: int) -> bo
     it in on the 27th. An A/B whose two arms cannot enter the same days is not an A/B.
     """
     return any(
-        db.open_position_for(conn, symbol, b) is None and db.open_position_count(conn, b) < max_positions
+        db.open_position_for(conn, symbol, b) is None
+        and db.open_position_count(conn, b) < max_positions
+        and _reachable(reach, b, symbol)
         for b in arms
     )
 
@@ -171,15 +180,19 @@ def entry_targets(
     max_positions: int,
     *,
     ignore_slots: bool = False,
+    reach: dict | None = None,
 ) -> list[tuple[str, float]]:
     """`[(expiration, deep_window_pct)]` the deep long would be sought in today, one per arm KIND
     that can still enter `symbol`: control's weekly plan long, a held-long arm's listed ~1-year long.
     The stream request asks for these dates and sizes its deep window on them. `ignore_slots` keeps
-    the no-roster contract: a caller passing no roster gets the width whatever the slots hold."""
+    the no-roster contract: a caller passing no roster gets the width whatever the slots hold.
+    `reach` drops a paced arm from a symbol its walk does not reach today."""
     out: dict[str, float] = {}
     for arm in arms:
         held = db.open_position_for(conn, symbol, arm) is not None
-        if not ignore_slots and (held or db.open_position_count(conn, arm) >= max_positions):
+        if not ignore_slots and (
+            held or db.open_position_count(conn, arm) >= max_positions or not _reachable(reach, arm, symbol)
+        ):
             continue
         params = management.effective_params({"arm": arm}, config)
         if management.is_held_long(params):
@@ -203,6 +216,7 @@ def hints_for_symbols(
     deep_window_pct: float | None = None,
     arms: list[str] | None = None,
     max_positions: int = 1,
+    reach: dict | None = None,
 ) -> dict[str, dict[str, int]]:
     """`{symbol: {"down": width, "up": margin}}` — max(structural need, escalated width) per symbol,
     entries only where the result exceeds `base_width` (absent/empty is the request payload's own
@@ -241,7 +255,7 @@ def hints_for_symbols(
         today = None
     for symbol in symbols:
         symbol = symbol.strip().upper()
-        if roster and not entry_possible(conn, symbol, roster, max_positions):
+        if roster and not entry_possible(conn, symbol, roster, max_positions, reach):
             continue
         # The date(s) the deep long is sought in, per arm kind that can still enter: control's
         # ~21-DTE long, a held-long arm's listed ~1-year long. Counting strikes only there is the
@@ -258,6 +272,7 @@ def hints_for_symbols(
                 roster or ["control"],
                 max_positions,
                 ignore_slots=not roster,
+                reach=reach,
             )
             if today is not None
             else []
