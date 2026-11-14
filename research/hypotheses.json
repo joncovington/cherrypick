@@ -2825,7 +2825,7 @@
       "id": 64,
       "study": "item64",
       "title": "Defined-risk bullish structures on slow large caps, against holding the same delta in shares",
-      "status": "declared",
+      "status": "failed",
       "legacy": false,
       "setup": "structure-choice",
       "side": "bullish",
@@ -2865,10 +2865,12 @@
       "tests": [
         "packages/backtest/tests/test_backspread_bwb_item64_script.py"
       ],
-      "results": [],
+      "results": [
+        "{home}/data/backtest/results/research/item64/study-2016-01-01-2021-12-31.json"
+      ],
       "retest": null,
       "retests": [],
-      "outcome": null
+      "outcome": "A fails and B, C and D are no verdict (more than 5% of entries without an exit mark); none beats the same delta in shares, so none goes to manage's IRA ideas. D less C passes as computed but rests on two no-verdict structures, so it is read as provisional"
     },
     {
       "id": 65,
@@ -3011,7 +3013,7 @@
       "id": 68,
       "study": "item68",
       "title": "MEIC's live rule on QQQ and NDX: a second symbol for the live loop",
-      "status": "declared",
+      "status": "failed",
       "legacy": false,
       "setup": "symbol-choice",
       "side": "neutral",
@@ -3059,10 +3061,13 @@
       "tests": [
         "packages/backtest/tests/test_meic_symbols_item68_script.py"
       ],
-      "results": [],
+      "results": [
+        "{home}/data/backtest/results/research/item68/study-design-2022-05-16-2025-06-30.json",
+        "{home}/data/backtest/results/research/item68/study-holdout-2025-07-01-2026-10-12.json"
+      ],
       "retest": null,
       "retests": [],
-      "outcome": null
+      "outcome": "provisional: both QQQ arms fail the design window (q5 positive but its t is under 2), so QQQ is not added and MEIC live stays on SPX alone"
     },
     {
       "id": 69,
@@ -3120,7 +3125,7 @@
       "id": 70,
       "study": "item70",
       "title": "The dividend-yield put: a cash-secured put at the strike where a cheap payer's dividend yields its usual rate",
-      "status": "declared",
+      "status": "failed",
       "legacy": false,
       "setup": "dividend-yield",
       "side": "bullish",
@@ -3163,7 +3168,7 @@
       "results": [
         "{home}/data/backtest/results/research/item70/results.json"
       ],
-      "outcome": null,
+      "outcome": "both yield arms trail the 16-delta rule in the design window and the holdout, so the short-put list keeps its rule and no dividend screen is built",
       "retest": null,
       "retests": []
     },
@@ -3171,7 +3176,7 @@
       "id": 71,
       "study": "item71",
       "title": "A LEAPS call as leverage: the call held, against the same dollars in a daily-reset fund or a financed delta",
-      "status": "declared",
+      "status": "failed",
       "legacy": false,
       "setup": "leverage-choice",
       "side": "bullish",
@@ -3218,7 +3223,7 @@
       "results": [
         "{home}/data/backtest/results/research/item71/results.json"
       ],
-      "outcome": null,
+      "outcome": "five arms fail against their rivals and c90-2y is no verdict: a leveraged fund or financed delta holds the same exposure for less, so LEAPS are not proposed as stock replacement",
       "retest": null,
       "retests": []
     },
@@ -3283,7 +3288,7 @@
       "id": 73,
       "study": "item73",
       "title": "More condors in MEIC's live window: one, two and three a session between 14:00 and 14:30",
-      "status": "declared",
+      "status": "passed",
       "legacy": false,
       "setup": "entry-pacing",
       "side": "neutral",
@@ -3323,7 +3328,8 @@
         "{home}/data/backtest/results/research/item73/study-design-2022-05-16-2025-06-30.json"
       ],
       "retest": null,
-      "retests": []
+      "retests": [],
+      "outcome": "provisional pass at k = 3: the second and third condor each pass in the design window; the proposal is an n3 paper arm beside live's rule, read on sessions after 2026-10-12, before any change to live"
     },
     {
       "id": 74,
