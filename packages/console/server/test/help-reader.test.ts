@@ -87,12 +87,20 @@ describe("readHelpImage", () => {
   });
 });
 
+/**
+ * One test per page, not one loop over the whole guide: a single test reading every page outgrew the
+ * 5 s default under the parallel `pnpm test` run (#1140), and a failure here names the page.
+ */
 describe("the real docs/guide", () => {
-  it("parses, and every listed page is served", () => {
-    const idx = readHelpIndex();
+  const idx = readHelpIndex();
+  const pages = idx.groups.flatMap((g) => g.pages);
+
+  it("parses, and lists pages", () => {
     expect(idx.error).toBeNull();
-    const pages = idx.groups.flatMap((g) => g.pages);
     expect(pages.length).toBeGreaterThan(0);
-    for (const p of pages) expect(readHelpPage(p.slug), `${p.slug} under ${GUIDE_DIR}`).not.toBeNull();
+  });
+
+  it.each(pages.map((p) => [p.slug]))("serves %s", (slug) => {
+    expect(readHelpPage(slug), `${slug} under ${GUIDE_DIR}`).not.toBeNull();
   });
 });
