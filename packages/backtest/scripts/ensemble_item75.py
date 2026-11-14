@@ -16,7 +16,7 @@ The verdict is the declaration's, per arm: net at the suite's slippage model abo
 stationary-bootstrap lower bound above zero (mean block 5, 20,000 draws, seed 75), Holm at 5% across the
 arms; positive in both time-halves; not below zero at the stress fill; positive at 1.5x fees. Fewer than
 100 entered sessions is no verdict. The 2022-05..2023-06 sessions are reported as a descriptive row and
-judge nothing. `study` refuses to run until the declaration is merged (`DECLARATION_MERGED`).
+judge nothing. `study` refuses to run while `DECLARATION_MERGED` is False; the declaration (#1050) is merged.
 
 Where an input cannot be rebuilt (an event date, a chain that was not fetched, a zero bid on a sold leg)
 the arm runs without it for that session and the row says how many sessions that was.
@@ -50,8 +50,8 @@ ET = ZoneInfo("America/New_York")
 ITEM = 75
 STORE_START = "2022-05-16"
 SOURCE_WINDOW_START = "2023-07-01"
-#: Flipped to True by the commit that merges the declaration, never before: no figure is read until then.
-DECLARATION_MERGED = False
+#: True since the declaration merged (#1050). No figure was read before.
+DECLARATION_MERGED = True
 
 #: Corrections to how this replay reads its data (working-rules): one entry per fix, with the date, the
 #: change, the reading that prompted it, who decided, and whether it came before any arm was read.

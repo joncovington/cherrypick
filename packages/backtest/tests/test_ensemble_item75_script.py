@@ -98,8 +98,9 @@ def ctx(events=QUIET):
     return {"events": events, "entries": {}, "open": []}
 
 
-def test_the_study_refuses_to_run_before_the_declaration_is_merged(capsys):
-    assert m.DECLARATION_MERGED is False
+def test_the_study_refuses_to_run_while_the_declaration_flag_is_off(capsys, monkeypatch):
+    assert m.DECLARATION_MERGED is True  # #1050 merged
+    monkeypatch.setattr(m, "DECLARATION_MERGED", False)
     assert m.main(["study"]) == 2
     assert "not merged" in capsys.readouterr().err
 
