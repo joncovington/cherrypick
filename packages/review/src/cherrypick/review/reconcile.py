@@ -67,6 +67,11 @@ _INDEPENDENT = {
         "COALESCE(SUM(COALESCE(fees, 0) + COALESCE(settlement, 0) + COALESCE(slippage, 0)), 0) cost "
         "FROM ensemble_positions WHERE status = 'closed' AND exit_session = ?"
     ),
+    "ladder": (
+        "SELECT COUNT(*) n, COALESCE(SUM(gross_pnl), 0) gross, "
+        "COALESCE(SUM(COALESCE(fees, 0) + COALESCE(settlement, 0) + COALESCE(slippage, 0)), 0) cost "
+        "FROM ladder_positions WHERE status = 'closed' AND sell_session = ?"
+    ),
 }
 
 # Rows a module has voided: still `settled` with their P&L, but not evidence, so the fact set leaves

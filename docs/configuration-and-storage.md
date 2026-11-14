@@ -98,6 +98,7 @@ configure their own engine and nothing else:
 | `~/.cherrypick/config/contango.json` | Contango | The arms and their two thresholds, the decision time. EXPERIMENTAL; off by default. |
 | `~/.cherrypick/config/weeklyput.json` | Weeklyput | The names, the entry window, the put band, the marking cadence. EXPERIMENTAL; off by default. |
 | `~/.cherrypick/config/ensemble.json` | Ensemble | The arms (the shipped eight with your changes over them, or new ones), each underlying's OCC root and stream window, the loop's knobs. EXPERIMENTAL; off by default. |
+| `~/.cherrypick/config/ladder.json` | Ladder | The funds, lot size and caps, the drop and gain, the hours, and the arms (`chain`, `once`, `decay`). EXPERIMENTAL; off by default. |
 | `~/.cherrypick/config/manage.json` | Manage | The ruleset each trade is judged by and the portfolio bands; read by `run.py manage`. Keep only what you change. |
 | `~/.cherrypick/config/backtest.json` | Backtest | The vendor store and the runs; the vendor key lives in the keyring (`python -m cherrypick.backtest key set`), never here. |
 | `~/.cherrypick/config/gex.json` | GEX | `symbols`, the shared stream-cache source path, serve host/port, history DB path. |

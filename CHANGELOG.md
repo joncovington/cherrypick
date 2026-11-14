@@ -24,7 +24,9 @@ beyond the latest release.
   start) in lots when it falls 7% and sells each lot on its own at +4%, with three arms: `chain` (each
   further lot 7% under the last), `once` (one lot a session) and `decay` (the target falls to breakeven
   after a month). Its rule failed research item 26, so this is for watching it at real quotes, not a
-  claim of an edge. Experimental and paper-only; the orchestrator does not schedule it yet.
+  claim of an edge. Experimental, paper-only and off by default: turn it on with `modules.ladder.enabled` after
+  copying `packages/ladder/config.example.json` to `~/.cherrypick/config/ladder.json`. The suite reads
+  its lots like any other module's trades, so they land in the report, the compare and the review.
 
 ## v0.13.0 — 2026-11-13 — evidence and accounts
 About 45 pull requests since v0.12.0, and it includes everything in the v0.12.1 beta (delta ideas, the

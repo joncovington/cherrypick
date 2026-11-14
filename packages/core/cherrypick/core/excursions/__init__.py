@@ -62,6 +62,7 @@ LEG_SCHEMAS = {
 
 NOT_RECORDED = {
     "contango_etf": "contango records one fund mid a day, not a position mark path",
+    "ladder_lot": "ladder keeps no mark path: a lot records its lowest bid while held, not a series",
 }
 
 #: The path handed back is thinned to about this many points; best, worst, entry and end are kept.

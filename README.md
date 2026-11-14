@@ -38,7 +38,7 @@ or *book*; those spellings keep working.)
 Because each arm changes one lever against a shared control, you can measure the isolated effect of a
 single idea rather than confounding several at once. **A base install runs only the `control` arm in
 MEIC, earnings and calendars**; flies, bwb, curve and PMCC are retired and ship with every arm off (see their status lines),
-contango runs its two arms, weeklyput its one, `unhedged`, and ensemble its eight. Any further arms are your own machine's configuration under
+contango runs its two arms, weeklyput its one, `unhedged`, ensemble its eight, and ladder its three (`chain`, `once`, `decay`). Any further arms are your own machine's configuration under
 `~/.cherrypick/config/` (MEIC's in `meic.risk.json`). BWB, calendars and curve also build comparison
 books into the module (bwb's add-on triggers, calendars' `path`, curve's `noflip` and `near`); their shipped examples switch
 each one off with `enabled: false`, and you switch one on in your own config. With Claude Code
@@ -134,10 +134,12 @@ suite once collected $4.00 of credit against $4.96 of fees.
   in paper: an arm is configuration (an arm added in config trades with no code change), and one
   deterministic decision serves both the backtest and the paper loop. Paper-only and credential-free: a
   position is a ledger row, never an order. See [packages/ensemble](packages/ensemble).
-- **Ladder** — ⚠️ **EXPERIMENTAL, paper-only.** A share dip ladder on leveraged index funds (TQQQ
+- **Ladder** — ⚠️ **EXPERIMENTAL, off by default.** A share dip ladder on leveraged index funds (TQQQ
   first): a lot bought when the fund is 7% down, each lot sold on its own at +4%, no stop. Its rule
   failed research item 26; the paper run watches it at real quotes beside item 27's `decay` target.
-  Not yet scheduled by the orchestrator. See [packages/ladder](packages/ladder).
+  Paper-only and credential-free: a lot is a ledger row, never an order. To turn it on, set
+  `modules.ladder.enabled` after copying `packages/ladder/config.example.json` to
+  `~/.cherrypick/config/ladder.json`. See [packages/ladder](packages/ladder).
 - **BWB** — **Retired 2026-11-08, off by default.** A daily-laddered SPX put broken-wing butterfly entered at the expected move for a net
   credit, ~7 DTE, held to expiry. Four books trade the identical base structure and differ only in
   whether a reversal-triggered add-on fires (never / delta touch / confirmed bounce / gamma-flip
@@ -422,7 +424,7 @@ ones. Paper and live ledgers are separate files, never queryable through one con
 - **Paper by default.** Every engine ships with live trading off, and the orchestrator that schedules
   them never places, cancels, or closes an order itself. Opening a module's live gate is on you — and
   once open, that module's loop trades within its own limits without asking again.
-- **Experimental and retired modules are off.** Calendars, contango, weeklyput and ensemble (experimental) and flies, bwb, PMCC and curve (retired) ship switched off.
+- **Experimental and retired modules are off.** Calendars, contango, weeklyput, ensemble and ladder (experimental) and flies, bwb, PMCC and curve (retired) ship switched off.
 - **Your data stays yours.** Trades and credentials live on your machine (credentials in your operating
   system's secure keyring — never in a plain file).
 - **Set-and-forget.** Once installed, it runs on a schedule and recovers from common hiccups by itself.

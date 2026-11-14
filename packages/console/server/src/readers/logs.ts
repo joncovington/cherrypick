@@ -120,6 +120,7 @@ export function logSources(config: ConsoleConfig): Array<{ id: string; path: str
     ["contango", "contango/contango_paper.log"],
     ["weeklyput", "weeklyput/weeklyput_paper.log"],
     ["ensemble", "ensemble/ensemble_paper.log"],
+    ["ladder", "ladder/ladder_paper.log"],
     ["bwb", "bwb/bwb_paper.log"],
     ["meic-live", "meic/meic_live.log"],
     ["meic-alerts", "meic/meic_alert_daemon.log"],
@@ -134,7 +135,7 @@ export function logSources(config: ConsoleConfig): Array<{ id: string; path: str
 }
 
 /** The Overview's merged view: watchdog, notify and the trading modules' own loops. */
-const DEFAULT_SOURCES = new Set(["watchdog", "notify", "meic", "flies", "earnings", "calendars", "pmcc", "curve", "contango", "weeklyput", "ensemble", "bwb"]);
+const DEFAULT_SOURCES = new Set(["watchdog", "notify", "meic", "flies", "earnings", "calendars", "pmcc", "curve", "contango", "weeklyput", "ensemble", "ladder", "bwb"]);
 
 /**
  * The merged default view leaves out a module the suite has turned off (`features`, decided in

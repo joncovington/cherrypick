@@ -38,6 +38,7 @@ Arms live in each module's own config file under `~/.cherrypick/config/`. On Win
 | Contango | `contango.json` | `arms` | `control`, `flipexit` |
 | Weeklyput | `weeklyput.json` | `arms` | `unhedged` |
 | Ensemble | `ensemble.json` | `arms` | the eight of research item 75 |
+| Ladder | `ladder.json` | `arms` | `chain`, `once`, `decay` |
 
 MEIC keeps its arms in a second file, apart from its base settings. If it has no `meic.risk.json` it
 reads the shipped `config.risk.example.json`, which holds `control` alone. Copy that file into
@@ -94,7 +95,7 @@ After an edit:
 
 ## When an edit takes effect
 
-Most paper modules (MEIC, earnings, contango, weeklyput, ensemble) run as a fresh process every minute, so they
+Most paper modules (MEIC, earnings, contango, weeklyput, ensemble, ladder) run as a fresh process every minute, so they
 read their config on the next tick. That is the danger: an edit made at 11:00 changes the arm **in the
 middle of a session**, and that day's rows mix two rules.
 

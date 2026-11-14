@@ -358,6 +358,31 @@
         "freshness_minutes": 10
       }
     },
+    "ladder": {
+      "_comment": "EXPERIMENTAL, off by default: switch on with modules.ladder.enabled once you have read its package README and copied packages/ladder/config.example.json to ~/.cherrypick/config/ladder.json. ladder: the share dip ladder in paper (packages/ladder) on leveraged index funds: a lot bought 7% under the previous close, each lot sold on its own at +4% of its cost, no stop and no time limit. Paper-only and credential-free: no keyring_service, no broker_tool, no live block, and a lot is a ledger row, never an order. It reads the stream cache only and gates its own hours (08:15 to 20:00 ET), so the job ticks every minute on trading days and the loop returns at once outside them. It acts only when a price reaches a level, so it has no eval-activity reader (eval_activity.NOT_APPLICABLE); a tick that could not look is a row in ladder_snapshots and ladder_decisions.",
+      "enabled": false,
+      "path": "../ladder",
+      "paper": {
+        "kind": "self_healing",
+        "tick_interval_seconds": 60,
+        "silence_seconds": 240,
+        "status_argv": [
+          "-m",
+          "cherrypick.ladder.paper_loop",
+          "--status"
+        ],
+        "once_argv": [
+          "-m",
+          "cherrypick.ladder.paper_loop",
+          "--once"
+        ],
+        "paper_db": "~/.cherrypick/data/ladder/paper_trades.db",
+        "notify_trades": true,
+        "trade_schema": "ladder_lot",
+        "log": "ladder_paper.log",
+        "freshness_minutes": 10
+      }
+    },
     "bwb": {
       "_comment": "SPX daily-laddered put broken-wing-butterfly module (packages/bwb): enters one BWB per enabled book every session at the expected move, ~7DTE, PM-settled; the books differ only in whether/when a reversal-triggered put credit spread add-on turns the fly into a 1-3-2. Paper by default and the paper loop is credential-free; market data comes entirely from the shared stream cache via the streamer's `expirations`/`window_hints` request fields. Since 2026-09-18 it also has a narrow LIVE path (one arm, per-day armed via /live-bwb-start, the full daily ladder under a worst-case cap, no closing orders) -- the keyring_service/broker_tool/live_db/live keys below are that path's, and the paper loop touches none of them.",
       "enabled": false,

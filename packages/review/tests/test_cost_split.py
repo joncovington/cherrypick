@@ -66,6 +66,7 @@ def test_every_module_states_its_slippage_basis():
         "contango": "cost",
         "weeklyput": "cost",
         "ensemble": "cost",
+        "ladder": "cost",
     }
 
 

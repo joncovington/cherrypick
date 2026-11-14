@@ -80,7 +80,8 @@ what it may write. The package's own CLAUDE.md holds the detail.
   `once` (item 26, which failed) and `decay` (item 27's passing target). **Paper-only,
   credential-free**, a stream-cache consumer: fills are resting limits tested against one quote a
   minute, the reference close is a posted close (`stream_summary`), never a last trade. Writes only
-  its own ledger and its stream request. Not yet scheduled by the orchestrator. No live path.
+  its own ledger (trade schema `ladder_lot`) and its stream request. Off by default in the example: the
+  orchestrator runs it as `ladder-paper` once `modules.ladder.enabled` is set. No live path.
 - **packages/bwb** — **Retired 2026-11-08; off by default; may be reinstated** (the owner switched
   entries off; the module goes off once flat; reinstating means `modules.bwb.enabled` and the arms'
   `enabled`). Daily-laddered SPX put broken-wing butterflies, ~7 DTE, held to expiry; was paper by

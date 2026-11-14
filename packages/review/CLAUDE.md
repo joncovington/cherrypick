@@ -94,7 +94,7 @@ merely failing. Proving the code equals itself is worthless; the failures worth 
 differences (the earnings reader does no SQL date pushdown, which would report every closed trade as
 settling today). Run it after any change to a collector and after any module changes its schema.
 
-Every reviewed schema has its own independent query, bwb, curve, contango, weeklyput and ensemble included. A session
+Every reviewed schema has its own independent query, bwb, curve, contango, weeklyput, ensemble and ladder included. A session
 still trading is left out and named in `skipped`, because the status digest refreshes today's
 provisional set through the day; every closed session is checked.
 
