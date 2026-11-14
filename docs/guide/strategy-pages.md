@@ -1,6 +1,6 @@
 # Strategy pages
 
-Each trading module has its own page in the console: `/meic`, `/earnings`, `/calendars`, `/contango` and `/weeklyput`. The `/experiments` page sits above them with one card per paper experiment. Four retired modules, `/flies`, `/bwb`, `/pmcc` and `/curve`, ship switched off.
+Each trading module has its own page in the console: `/meic`, `/earnings`, `/calendars`, `/contango`, `/weeklyput` and `/ensemble`. The `/experiments` page sits above them with one card per paper experiment. Four retired modules, `/flies`, `/bwb`, `/pmcc` and `/curve`, ship switched off.
 
 ## What you see
 
@@ -78,9 +78,13 @@ The chart is the ratio, session by session, against the two thresholds. Below it
 
 Sells the put nearest 10 delta on four index and fund underlyings, seven days before each weekly expiry that is not a standard monthly, and holds it to expiry. Paper-only and experimental. It is judged by the cycle, one expiry at a time, not by the single put. Tabs: `summary` ("today"), `cycles`, `positions`, `history`, `decisions`, `performance`, `costs` and `guide` ("help"). `cycles` shows what each expiry earned, name by name, and which names were missed. An in-the-money fund put near expiry is flagged assignment-exposed: early assignment is measured, never modelled, so those results are an upper bound.
 
+## Ensemble (`/ensemble`)
+
+A set of short-dated option structures, each placed by its own rule. An arm is one configured variant, and the arms on the page are whatever the ledger names, so one you add to the config appears with no other change. Paper-only and experimental. Tabs: `summary` ("today"), `positions`, `history`, `decisions`, `performance`, `costs` and `guide` ("help"). `summary` lists each arm that was due today as entered, pending or missed, and for one that did not enter, the check that blocked it and the value it read. `positions` draws every open structure as the order that opened it, every leg in the chain. `performance` shows each arm's net and drawdown with all the arms stacked beneath, and the net at the stress and mid fills beside it as context. P&L is net at the suite's slippage model.
+
 ## Experiments (`/experiments`)
 
-One tab, `experiments`: a card for each of the four paper experiments (PMCC, calendars, curve, contango) whose module is switched on, with net all time, what is open now, and links into the module's own `today`, `positions`, `history` and `performance`. A retired experiment loses its card. A last card holds the retired flies record.
+One tab, `experiments`: a card for each of the paper experiments (PMCC, calendars, curve, contango, weekly put, ensemble) whose module is switched on, with net all time, what is open now, and links into the module's own `today`, `positions`, `history` and `performance`. A retired experiment loses its card. A last card holds the retired flies record.
 
 ## Retired modules
 

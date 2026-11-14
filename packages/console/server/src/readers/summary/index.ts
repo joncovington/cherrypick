@@ -7,6 +7,7 @@ import { readContangoSummary } from "./contango.js";
 import { readCalendarsSummary } from "./calendars.js";
 import { readPmccSummary } from "./pmcc.js";
 import { readWeeklyputSummary } from "./weeklyput.js";
+import { readEnsembleSummary } from "./ensemble.js";
 
 /** Each module's simplified-view summary reader, by module id (`GET /api/summary/:module`).
  *  MEIC is absent on purpose: it keeps its own richer slide (`/api/meic/summary`). */
@@ -19,4 +20,5 @@ export const SUMMARY_READERS: Readonly<Record<string, SummaryReader>> = {
   calendars: readCalendarsSummary,
   pmcc: readPmccSummary,
   weeklyput: readWeeklyputSummary,
+  ensemble: readEnsembleSummary,
 };

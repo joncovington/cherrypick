@@ -33,6 +33,7 @@ export interface ConsoleConfig {
     curveDir: string;
     contangoDir: string;
     weeklyputDir: string;
+    ensembleDir: string;
     bwbDir: string;
     gexDir: string;
     reviewDir: string;
@@ -106,6 +107,7 @@ export function loadConfig(): ConsoleConfig {
       curveDir: path.join(data, "curve"),
       contangoDir: path.join(data, "contango"),
       weeklyputDir: path.join(data, "weeklyput"),
+      ensembleDir: path.join(data, "ensemble"),
       bwbDir: path.join(data, "bwb"),
       gexDir: path.join(data, "gex"),
       reviewDir: path.join(data, "review"),

@@ -77,6 +77,7 @@ export const EXPERIMENT_LINKS: readonly NavLinkDef[] = [
   { to: "/curve", label: "Curve" },
   { to: "/contango", label: "Contango" },
   { to: "/weeklyput", label: "Weekly put" },
+  { to: "/ensemble", label: "Ensemble" },
   { to: "/flies", label: "Flies" },
 ];
 
