@@ -214,6 +214,12 @@ is paper's arithmetic. Control always runs beside the named arms; every arm is p
   entry, `symbols`, cadence, fill model): re-running a spec adds nothing, changing a parameter adds
   one. DSR deflates by this count.
 - **`holdout`** needs `--spend-holdout` and is spent once per spec, ever. `control` never spends it: it runs beside every arm unjudged, and spending it refused every later study's holdout.
+- **`all`** is one run over the whole history, from the design window's start (or `--from`) through
+  what the store holds (or `--to`), for a study declared with split dates: it cuts the sessions at
+  them afterwards (`study.rule.cut`). A span that reaches the holdout's dates reads them, so it needs
+  `--spend-holdout`, spends it per spec as a holdout run does, and is refused once spent; a forward
+  run wholly after the holdout (a forward retest) spends nothing. It counts as a trial as a design
+  run does, and runs provisionally as a design run may while history is locked.
 
 Statistics (`stats.py`) are per session, never annualised: PSR, DSR at the trial count, minimum track
 record, and a stationary-bootstrap interval. The fill model is flies paper's own (`FILL_MODEL`).

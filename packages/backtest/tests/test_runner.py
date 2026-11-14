@@ -4,6 +4,7 @@ evaluation is a trial counted once per spec, and that a holdout is spent once.""
 from __future__ import annotations
 
 import json
+from datetime import date, timedelta
 
 import pytest
 from test_fetch import FakeClient, _rows
@@ -634,3 +635,40 @@ def test_a_dirty_checkout_or_a_live_owner_is_never_resumed(world, clean_commit, 
     monkeypatch.setattr(runner.looplock, "pid_alive", lambda pid: True)  # its owner still runs
     report, replayed = _rerun(s)
     assert "resumed" not in report and len(replayed) == 2
+
+
+def test_a_run_over_all_of_history_spends_the_holdout_its_span_reaches_and_counts_a_trial(world):
+    # #1077: one run over the whole history, cut at a study's declared splits afterwards.
+    s, _ = world
+    _unlock(s)
+    with pytest.raises(runner.RunRefused, match="spend-holdout"):
+        _run(s, "all")
+    report = _run(s, "all", spend_holdout=True)
+    assert report["arms"]["range-high"]["summary"]["sessions"] > 0
+    conn = results.connect()
+    assert results.trial_count(conn, "flies") >= 1
+    assert results.holdout_spent(conn, "flies", report["arms"]["range-high"]["spec_hash"])
+    assert not results.holdout_spent(conn, "flies", report["arms"]["control"]["spec_hash"])
+    with pytest.raises(runner.RunRefused, match="already spent"):
+        _run(s, "all", spend_holdout=True)
+
+
+def test_a_forward_run_wholly_after_the_holdout_spends_nothing(world):
+    # A forward retest reads only sessions after the holdout window: it needs no spend, and a later
+    # run over all of history can still spend it.
+    s, _ = world
+    _unlock(s)
+    after = date.fromisoformat(s["windows"]["holdout"][1]) + timedelta(days=1)
+    report = _run(s, "all", start=after.isoformat())
+    conn = results.connect()
+    assert not results.holdout_spent(conn, "flies", report["arms"]["range-high"]["spec_hash"])
+    _run(s, "all", spend_holdout=True)
+
+
+def test_reads_holdout_is_any_overlap_with_its_dates(world):
+    s, _ = world
+    lo, hi = s["windows"]["holdout"]
+    past = (date.fromisoformat(hi) + timedelta(days=1)).isoformat()
+    assert runner.reads_holdout(s, "2020-01-01", lo) and runner.reads_holdout(s, hi, "2030-01-01")
+    assert not runner.reads_holdout(s, "2020-01-01", "2020-12-31")
+    assert not runner.reads_holdout(s, past, "2030-01-01")
