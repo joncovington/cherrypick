@@ -34,6 +34,7 @@ export interface ConsoleConfig {
     contangoDir: string;
     weeklyputDir: string;
     ensembleDir: string;
+    ladderDir: string;
     bwbDir: string;
     gexDir: string;
     reviewDir: string;
@@ -108,6 +109,7 @@ export function loadConfig(): ConsoleConfig {
       contangoDir: path.join(data, "contango"),
       weeklyputDir: path.join(data, "weeklyput"),
       ensembleDir: path.join(data, "ensemble"),
+      ladderDir: path.join(data, "ladder"),
       bwbDir: path.join(data, "bwb"),
       gexDir: path.join(data, "gex"),
       reviewDir: path.join(data, "review"),
