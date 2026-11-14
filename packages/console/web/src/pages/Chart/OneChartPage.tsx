@@ -6,13 +6,15 @@ import { isFeatureOn } from "../../lib/visibility";
 import { IntradayView } from "../Intraday/IntradayPage";
 import { CASH_INSTRUMENTS, liveEntryFor, liveLabel } from "../Intraday/liveSymbols";
 import { TechnicalsView } from "../Morning/ChartPage";
+import { isProfileSymbol, SessionsPanel } from "../Profile/ProfilePage";
 import { chartSymbol, dailyReason, intradayReason, resolveTimeframe, TIMEFRAMES, type Timeframe } from "./chartRoute";
 
 /**
  * Charts → chart: one chart for every symbol. The header picks the symbol (a live chip or any name
  * typed) and the timeframe; the timeframe picks the source, each with its own reader: 1m/5m/15m the
- * live DXLink candles with the Market Profile overlay (`IntradayView`), 1d the technicals package's
- * chart file (`TechnicalsView`). Nothing is merged across the two. A timeframe that cannot draw the
+ * live DXLink candles with the Market Profile overlay (`IntradayView`) and, for a symbol the
+ * profile-bars job records, the recorded sessions side by side under it (`SessionsPanel`); 1d the
+ * technicals package's chart file (`TechnicalsView`). Nothing is merged across the sources. A timeframe that cannot draw the
  * symbol stays on the header, disabled, with its reason as its tooltip; a symbol neither can draw
  * gets both reasons in place of the chart.
  */
@@ -108,7 +110,14 @@ function ChartBody({
   futuresFailed: boolean;
 }) {
   if (pending) return <p className="muted">loading…</p>;
-  if (tf !== "1d" && entry !== undefined) return <IntradayView entry={entry} period={tf} />;
+  if (tf !== "1d" && entry !== undefined) {
+    return (
+      <>
+        <IntradayView entry={entry} period={tf} />
+        {isProfileSymbol(symbol) && <SessionsPanel symbol={symbol} />}
+      </>
+    );
+  }
   if (tf === "1d" && noDaily === null) return <TechnicalsView symbol={symbol} />;
   // Neither view can draw it: say both reasons, so the empty page is explained.
   return (

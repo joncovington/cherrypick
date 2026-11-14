@@ -9,7 +9,7 @@ import {
 } from "../../lib/marketProfile";
 
 /**
- * What the Profile tab draws, from the recorded bars: every session's profile and a composite of the
+ * What the chart's sessions panel draws, from the recorded bars: every session's profile and a composite of the
  * newest `compositeSessions` of them, all on one row grid. Built by `lib/marketProfile` (the mirror of
  * `cherrypick.core.marketprofile`); this module only chooses the sessions and the grid.
  */

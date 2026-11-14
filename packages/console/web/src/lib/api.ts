@@ -269,7 +269,7 @@ export function useMorningReport(session?: string) {
 
 
 /** The recorded profile bars: one symbol's newest `sessions` sessions, 5-minute bars, regular hours (the
- *  Profile tab) or extended (the intraday chart's untested POCs). An empty symbol fetches nothing. */
+ *  sessions panel) or extended (the intraday chart's untested POCs). An empty symbol fetches nothing. */
 export function useProfileBars(symbol: string, sessions: number, hours: "regular" | "extended" = "regular") {
   return useQuery<ProfileBarsPayload>({
     queryKey: ["profile-bars", symbol, sessions, hours],

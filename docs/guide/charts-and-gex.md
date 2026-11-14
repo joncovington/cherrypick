@@ -1,7 +1,7 @@
 # Charts and GEX
 
-Three read-only places to look at price and gamma. Charts is `/charts`, with tabs `/charts/chart`,
-`/charts/profile` and `/charts/setups`. GEX is `/gex`, with tabs `/gex/gex` and `/gex/skew`. The GEX
+Three read-only places to look at price and gamma. Charts is `/charts`, with tabs `/charts/chart` and
+`/charts/setups`. GEX is `/gex`, with tabs `/gex/gex` and `/gex/skew`. The GEX
 panel, `/gexpanel` (one tab, `/gexpanel/panel`), is experimental. None of them can place an order.
 
 ## Charts
@@ -17,13 +17,15 @@ panel, `/gexpanel` (one tab, `/gexpanel/panel`), is experimental. None of them c
     them, one histogram per session (1, 5 or 10 sessions; 5 to begin with). A `chart only` chip is a reminder
     that nothing here trades. A line above the chart gives the last price, the time of the last bar in
     Eastern time, and how many bars are loaded. A second line gives the profile's levels.
+    For SPX, SPY, NDX, QQQ, `/ES` and `/NQ`, **sessions side by side** sits under the chart: the recorded
+    sessions' profiles in columns (5, 10 or 20 days, further back than the candles reach), a composite of
+    the newest few, time or volume at price, and a table of each session's levels. Click a column or a row
+    to open that session's letters in full.
   - **Daily** (`1d`): price bars, RSI 14 in a middle pane and a short-term trend score (-4 to +4) under it.
     Chips beside the name show the sentiment (Bullish, Bearish or Neutral, from the close against two moving
     averages) and the IV rank. Buttons pick a setup family and a side, and whether to draw our own support
     and resistance levels. Arrows mark where that setup would have opened and closed a position. Under the
     chart, **Scan-rule matches** lists the sessions where a scan rule matched.
-- **Profile** (`/charts/profile`) shows the recorded sessions' Market Profiles side by side, with a table of
-  each session's levels.
 - **Setups** (`/charts/setups`) is a watchlist, **Setup signals**: every entry and exit the chart setups
   made lately, and every position they still hold, across every charted name. Switch between **Entries &
   exits** and **Open positions**, narrow by window (`1d`, `5d`, `20d`), event, family, side, a relative-strength

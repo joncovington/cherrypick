@@ -42,7 +42,7 @@ describe("Morning market profile card", () => {
     );
     // React separates adjacent text with comments; read the text as a viewer does
     const html = raw.replace(/<!-- -->/g, "");
-    expect(html).toContain('href="/charts/profile?symbol=SPX&amp;day=2026-11-13"');
+    expect(html).toContain('href="/charts/chart?symbol=SPX&amp;tf=15m&amp;day=2026-11-13"');
     expect(html).toContain("7512.50–7560.00");
     expect(html).toContain("tail 21 / poor");
     expect(html).toContain("7735.00 (10-28)");

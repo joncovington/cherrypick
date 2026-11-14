@@ -4,7 +4,7 @@ import { LETTERS, SESSION_OPEN_MIN, PERIOD_MINUTES, type MarketProfile } from ".
  * One session's profile at full size: the TPO letters on every row, the value area tinted, the POC row
  * in amber, the initial balance (periods A and B) as a bracket and in the accent colour, single prints
  * and tails marked, the open and close, and each row's letters, times and volume on hover. Opened by
- * clicking a session's column on the Profile tab. Everything here is read off the profile the column
+ * clicking a session's column in the chart's sessions panel. Everything here is read off the profile the column
  * already drew (`lib/marketProfile`); nothing is computed that the column did not have.
  */
 

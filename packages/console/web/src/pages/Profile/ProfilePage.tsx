@@ -9,10 +9,11 @@ import { buildView, partialPeriods, valueRelation, type ProfileView } from "./pr
 import { SessionDetail } from "./SessionDetail";
 
 /**
- * Charts → profile: the recorded sessions' Market Profiles side by side, oldest left, with a composite
- * of the newest few at the right and a table of each session's levels. Reads the bars the
- * `profile-bars` job keeps (`/api/charts/profile-bars`); the profiles are built here by the mirror of
- * `cherrypick.core.marketprofile`. Chart only: no module reads it.
+ * The Charts chart's sessions panel: the recorded sessions' Market Profiles side by side, oldest left,
+ * with a composite of the newest few at the right and a table of each session's levels. It reaches
+ * further back (up to 20 sessions) than the candles over it, which load at most seven days. Reads the
+ * bars the `profile-bars` job keeps (`/api/charts/profile-bars`); the profiles are built here by the
+ * mirror of `cherrypick.core.marketprofile`. Chart only: no module reads it.
  */
 
 const SESSION_CHOICES = ["5", "10", "20"] as const;
@@ -56,7 +57,7 @@ function Toggle<T extends string>({
 }
 
 const PROFILE_HELP: CardHelpContent = {
-  title: "Reading the profile tab",
+  title: "Reading the sessions side by side",
   body: (
     <>
       <HelpSection title="What each column is">
@@ -429,15 +430,19 @@ function LevelsTable({
   );
 }
 
-const isSymbol = (s: string | null): s is ProfileSymbol => s !== null && (PROFILE_SYMBOLS as readonly string[]).includes(s);
+/** Whether the profile-bars job records a Charts symbol, and so whether the chart has a sessions panel. */
+export const isProfileSymbol = (s: string | null): s is ProfileSymbol => s !== null && (PROFILE_SYMBOLS as readonly string[]).includes(s);
 const pick = <T extends string>(raw: string | null, options: readonly T[], fallback: T): T =>
   raw !== null && (options as readonly string[]).includes(raw) ? (raw as T) : fallback;
 
-export function ProfilePage() {
+/**
+ * The chart's sessions panel, under the intraday view for a recorded symbol: the page's symbol, and its
+ * own keys `days` (how many recorded sessions, side by side), `composite`, `measure` and `day` (the
+ * session whose letters are open). `days`, not `sessions`: that key is the chart's histogram count.
+ */
+export function SessionsPanel({ symbol }: { symbol: ProfileSymbol }) {
   const [params, setParams] = useSearchParams();
-  const rawSymbol = params.get("symbol");
-  const symbol: ProfileSymbol = isSymbol(rawSymbol) ? rawSymbol : "SPX";
-  const sessions = pick(params.get("sessions"), SESSION_CHOICES, "10");
+  const sessions = pick(params.get("days"), SESSION_CHOICES, "10");
   const compositeChoice = pick(params.get("composite"), COMPOSITE_CHOICES, "5");
   const set = (key: string, value: string): void => {
     const next = new URLSearchParams(params);
@@ -475,12 +480,11 @@ export function ProfilePage() {
   return (
     <section className="card">
       <div className="card-head">
-        <h2>{symbol} · market profile by session</h2>
-        <CardHelpButton cardTitle="Market profile" help={PROFILE_HELP} />
+        <h2>{symbol} · sessions side by side</h2>
+        <CardHelpButton cardTitle="Sessions side by side" help={PROFILE_HELP} />
         <span className="chip">chart only</span>
         <div style={{ marginLeft: "auto", display: "flex", flexWrap: "wrap", gap: 8, minWidth: 0 }}>
-          <Toggle value={symbol} options={PROFILE_SYMBOLS} onChange={(v) => set("symbol", v)} label="symbol" />
-          <Toggle value={sessions} options={SESSION_CHOICES} onChange={(v) => set("sessions", v)} label="sessions" render={(v) => `${v} days`} />
+          <Toggle value={sessions} options={SESSION_CHOICES} onChange={(v) => set("days", v)} label="recorded sessions" render={(v) => `${v} days`} />
           <Toggle
             value={compositeChoice}
             options={COMPOSITE_CHOICES}

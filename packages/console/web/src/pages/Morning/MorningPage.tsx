@@ -731,7 +731,7 @@ const extremeLabel = (poor: boolean, tail: number | null): string =>
   poor ? "poor" : tail !== null && tail >= 2 ? `tail ${tail}` : "single";
 
 /** The prior session's Market Profile levels (fact version 6), one row a symbol, each linking to its
- *  Profile tab. Record-only: read off the pack, nothing re-derived. */
+ *  sessions panel. Record-only: read off the pack, nothing re-derived. */
 export function ProfileLevelsCard({ pack }: { pack: MorningPack }) {
   const prof = pack.profile;
   if (!prof) return null;
@@ -771,7 +771,7 @@ export function ProfileLevelsCard({ pack }: { pack: MorningPack }) {
                 ) : (
                   <tr key={sym}>
                     <td>
-                      <a href={`/charts/profile?symbol=${encodeURIComponent(sym)}&day=${s.session}`}>{sym}</a>
+                      <a href={`/charts/chart?symbol=${encodeURIComponent(sym)}&tf=15m&day=${s.session}`}>{sym}</a>
                     </td>
                     <td>{f(s.poc)}</td>
                     <td>

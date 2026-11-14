@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import type { FuturesTickerEntry } from "@console/shared";
 import { chartSymbol, dailyReason, intradayReason, movedChartUrl, resolveTimeframe } from "../src/pages/Chart/chartRoute";
 import { liveEntryFor } from "../src/pages/Intraday/liveSymbols";
+import { isProfileSymbol } from "../src/pages/Profile/ProfilePage";
 
 /**
  * The Charts page's one chart: which symbol and timeframe a URL draws, why a timeframe is disabled,
@@ -80,5 +81,22 @@ describe("the old chart URLs", () => {
       "/charts/chart?symbol=MSFT&tf=1d&setup=trend&side=short&levels=all",
     );
     expect(movedChartUrl("technicals", "")).toBe("/charts/chart?symbol=SPX&tf=1d");
+  });
+
+  it("send the profile tab to the sessions panel under the 15-minute chart, its sessions as days", () => {
+    // The morning pack's link: a symbol and the session to open.
+    expect(movedChartUrl("profile", "?symbol=/ES&day=2026-11-13")).toBe("/charts/chart?symbol=/ES&tf=15m&day=2026-11-13");
+    // `sessions` was the tab's day count; on the chart it counts histograms, so it becomes `days`.
+    expect(movedChartUrl("profile", "?symbol=QQQ&sessions=20&composite=10&measure=volume")).toBe(
+      "/charts/chart?symbol=QQQ&tf=15m&days=20&composite=10&measure=volume",
+    );
+    expect(movedChartUrl("profile", "")).toBe("/charts/chart?symbol=SPX&tf=15m");
+  });
+});
+
+describe("the sessions panel", () => {
+  it("is under the chart only for the symbols the profile-bars job records", () => {
+    expect(["SPX", "SPY", "NDX", "QQQ", "/ES", "/NQ"].every(isProfileSymbol)).toBe(true);
+    expect(["/CL", "/GC", "ES", "MSFT", null].some(isProfileSymbol)).toBe(false);
   });
 });

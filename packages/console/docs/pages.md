@@ -13,7 +13,7 @@ A page the suite has switched off is not shown (see *What is off is not shown* b
 |---|---|---|---|
 | Live | `/live` | today, positions, portfolio, wheel, pmcc, flies, meic | Real money first: what is open at the broker, the book as a whole, the wheel, and one tab per live loop (flies and meic only while their live switch is on or the loop still holds something). `/` redirects here. |
 | Reports | `/reports` | morning, eod, external | The morning pack, the end-of-day review, and **External reports**: the tabs people add with a script of their own (`/reports/external/<id>`). |
-| Charts | `/charts` | chart, profile, setups | One chart for every symbol (live intraday candles or the technicals daily chart), the recorded sessions' Market Profiles, and the setups the technicals package finds. |
+| Charts | `/charts` | chart, setups | One chart for every symbol (live intraday candles with the recorded sessions' Market Profiles under them, or the technicals daily chart), and the setups the technicals package finds. |
 | GEX | `/gex` | gex, iv skew | Dealer gamma by strike for the recorded day, and the IV skew. Reads the market; trades nothing. |
 | GEX panel | `/gexpanel` | panel | Experimental, SPX only: a walls panel on the recorded data. |
 | Screeners | `/screeners` | two groups, eight tabs. Screens: earnings, earnings record, signal board, skate. Income lists: puts & calls, credit spreads, time spreads, fair value | The suite's own screens and income lists. The Dolt-backed tabs show a set-up card, not a blank, without Dolt. |
@@ -236,8 +236,8 @@ a second place its shape is decided. The tab is in the URL (`/reports/eod`) beca
   one line of nets until opened. There is no suite total, by design. Capital at risk leaves the table
   first as it narrows, then the note and the arms' bars, then return.
 - **Market profile, prior session** (`ProfileLevelsCard`, fact version 6, `shapeProfile`): the pack's
-  `profile` block as it states it, one row a symbol linking to its Profile tab on that day
-  (`/charts/profile?symbol=…&day=…`); an unmeasured symbol shows its reason, a malformed untested-POC
+  `profile` block as it states it, one row a symbol linking to that session's detail under its chart
+  (`/charts/chart?symbol=…&tf=15m&day=…`); an unmeasured symbol shows its reason, a malformed untested-POC
   entry is dropped, and an older pack has no card.
 - The Morning tab also shows `packages/technicals`' report (`data/technicals/report-<session>.json`,
   `readTechnicals` in `readers/overview.ts`, `pages/Morning/TechnicalsCards.tsx`). **It is the last
@@ -295,8 +295,8 @@ with no source named in the code: the file says its own title and source.
   over 512 KiB are refused unparsed. The folder is `data/external/` (`config.paths.externalDir`).
   Read-only; the console never runs a script.
 
-**Charts** (`/charts`, `lightbox/manifests/ChartsLightbox.tsx`) — three tabs: one chart for every
-symbol, the recorded sessions' profiles, and the setups watchlist:
+**Charts** (`/charts`, `lightbox/manifests/ChartsLightbox.tsx`) — two tabs: one chart for every
+symbol, and the setups watchlist:
 
 - `/charts/chart?symbol=/ES&tf=5m` (`pages/Chart/OneChartPage.tsx`; its rules, pure and tested, in
   `chartRoute.ts`, `web/test/chartRoute.test.ts`) is one chart. `symbol` is the profile store's
@@ -309,14 +309,17 @@ symbol, the recorded sessions' profiles, and the setups watchlist:
   the header, disabled, its reason the tooltip: intraday names what the feed carries; daily says the
   technicals feature is off, the symbol is a future, or the report job charts no such name
   (`dailyReason`). A symbol neither view can draw gets both reasons in place of the chart. The tab is
-  never hidden; with technicals off it loses only 1d. `/charts/intraday?product=ES&period=15m` and
-  `/charts/technicals?symbol=X` (and the older `/reports/chart?symbol=X`) redirect here, product and
-  period becoming symbol and tf, technicals becoming `tf=1d` (SPX when it named none), every other key
-  carried (`movedChartUrl`).
+  never hidden; with technicals off it loses only 1d. `/charts/intraday?product=ES&period=15m`,
+  `/charts/technicals?symbol=X`, `/charts/profile?symbol=X&sessions=N` (and the older
+  `/reports/chart?symbol=X`) redirect here, product and period becoming symbol and tf, technicals
+  becoming `tf=1d` (SPX when it named none), profile becoming `tf=15m` with its `sessions` as `days`,
+  every other key carried (`movedChartUrl`).
 
-- `/charts/profile?symbol=SPX&sessions=10&composite=5` (`pages/Profile/ProfilePage.tsx`) is the
-  recorded sessions' Market Profiles side by side, oldest left, for SPX, SPY, NDX, QQQ, /ES and /NQ
-  (5, 10 or 20 sessions), a composite of the newest 5, 10 or 20 at the right with its POC and value
+- The chart's **sessions panel** (`SessionsPanel` in `pages/Profile/ProfilePage.tsx`; its own keys
+  `days=10&composite=5&measure=&day=`), under the intraday view for the symbols the `profile-bars` job
+  records (`isProfileSymbol`: SPX, SPY, NDX, QQQ, /ES and /NQ), is the recorded sessions' Market
+  Profiles side by side, oldest left (5, 10 or 20 days: further back than the candles over it, which
+  load at most seven), a composite of the newest 5, 10 or 20 at the right with its POC and value
   area drawn faintly across every column, and a table of each session's POC, value area, value against
   the prior session (higher / lower / overlapping, by the value areas' outer edges, `valueRelation`),
   initial balance, range and, for a future, its contract. The bars are the `profile-bars` job's
@@ -372,14 +375,14 @@ symbol, the recorded sessions' profiles, and the setups watchlist:
     drawn; seven days of history, so the prior session is always held) through `lib/marketProfile.ts`,
     a mirror of `cherrypick.core.marketprofile` pinned to the shared fixture (docs/mirrors.md). The
     regular session 09:30–16:00 ET for every symbol; a future's overnight is left out. Rows are the
-    symbol's fixed `rowSizeFor` (the Profile tab's and the morning pack's), or for another contract
+    symbol's fixed `rowSizeFor` (the sessions panel's and the morning pack's), or for another contract
     `defaultRowSize` of the oldest bar held, so they stay put while the series is open. SPX and NDX
     carry no volume, so theirs is time only. Chart only; no module reads it.
   - **Histograms** (`?sessions=1|5|10`, default 5, the newest included; `recentProfiles`): each
     session's rows grow rightward from its first regular-session bar on the chart (`sessionAnchors`),
     all on one count scale so their widths compare, a full session's longest row spanning 60% of that
     session's width at the current zoom. The newest is the profile the lines read; older ones come
-    from the recorded bars by the Profile tab's `buildView` where the store keeps the symbol, else
+    from the recorded bars by the sessions panel's `buildView` where the store keeps the symbol, else
     from the live 15-minute series, and one on another row grid is left out. A session older than the
     drawn candles reach is not drawn (a series loads one day at 1m, three at 5m, seven at 15m), and
     the readout says how many of those asked are drawn and why fewer.
