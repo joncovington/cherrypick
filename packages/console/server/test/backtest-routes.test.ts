@@ -135,6 +135,7 @@ const STUDIES = {
             script: "packages/backtest/scripts/meic_delta_grid_item23.py",
             stale: true,
             since: [{ on: "2026-11-01", what: "a fix", before_read: true }, { what: "no date" }],
+            changed_files: ["packages/backtest/scripts/iwm_condor_item59.py", 7],
           },
         },
       ],
@@ -524,6 +525,8 @@ describe("the gate is open", () => {
         commit: "abc1234",
         stale: true,
         since: [{ on: "2026-11-01", what: "a fix", beforeRead: true }],
+        // A non-string entry is dropped, not shown.
+        changedFiles: ["packages/backtest/scripts/iwm_condor_item59.py"],
         error: null,
       },
     });

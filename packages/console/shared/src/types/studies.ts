@@ -87,6 +87,8 @@ export interface StudyVersion {
   stale: boolean;
   /** The corrections the file predates, oldest first. */
   since: StudyCorrection[];
+  /** Repo files the result rests on that differ now: code it ran on has changed since (#1082). */
+  changedFiles: string[];
   /** The script's log could not be read. */
   error: string | null;
 }

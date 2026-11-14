@@ -118,6 +118,7 @@ function toVersion(v: unknown): StudyVersion | null {
     commit: s(r["commit"]),
     stale: r["stale"] === true,
     since,
+    changedFiles: list(r["changed_files"]).filter((f): f is string => typeof f === "string"),
     error: s(r["error"]),
   };
 }

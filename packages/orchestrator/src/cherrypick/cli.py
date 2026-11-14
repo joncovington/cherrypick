@@ -2594,7 +2594,7 @@ def _board():
             log = studyversion.corrections(root / script) if script else None
         except studyversion.BadLog as exc:
             return {**(studyversion.state(stamped, []) or {}), "error": str(exc)}
-        return studyversion.state(stamped, log)
+        return studyversion.state(stamped, log, root)
 
     reg = hypotheses.load()
     out = hypotheses.board(reg, queue, read, notes, version, _key)
