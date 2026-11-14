@@ -52,7 +52,9 @@ beyond the latest release.
   20 days) for SPX, SPY, NDX, QQQ, /ES and /NQ, with a composite of the newest 5, 10 or 20 sessions and
   a table of each day's point of control, value area, first-hour range and whether value moved higher,
   lower or overlapped the day before. It reads the bars the `profile-bars` job keeps, so it fills in
-  as that job runs; today is drawn from the live candles, marked "live", until it is recorded. A chart
+  as that job runs; today is drawn from the live candles, marked "live", until it is recorded. Click a
+  day to open it full size with every letter and its facts, and switch the bars between time and volume
+  at price (where the symbol has volume). A chart
   only; nothing trades on it.
 
 ## v0.13.0 — 2026-11-13 — evidence and accounts

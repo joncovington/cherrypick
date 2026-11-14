@@ -291,6 +291,15 @@ the setups watchlist:
   comes from the symbol's live 15-minute candles (a future's contract from the futures map), marked
   "live" and joining the composite; live bars are used only after the newest recorded bar
   (`buildView`). An empty store says the job has not run, and the live sessions are still drawn.
+  - **Session detail** (`?day=YYYY-MM-DD`, `SessionDetail.tsx`): clicking a column or a table row
+    opens that session full size below the chart (clicking it again closes it): every TPO letter, the
+    first hour's letters and bracket in the accent colour, the POC row in amber, single prints and
+    tails marked in the margin, the open and close, a hover per row with its letters' period times
+    (`periodStart`) and volume, and the session's facts (value area, IB, extensions, poor or tailed
+    extremes, volume POC). All read off the profile the column drew.
+  - **Measure** (`?measure=time|volume`): volume redraws each column and the composite by volume at
+    price, the volume POC in amber; the tinted value area stays the time-based one. Offered only when
+    the symbol carries volume (never SPX or NDX), else the button says why.
   Chart only.
 
 - `/charts/intraday?product=ES&period=5m&profile=on` is a live chart (1m/5m/15m) over the console's
