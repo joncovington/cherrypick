@@ -19,5 +19,6 @@ its parity forward, Black-76 deltas at r = 0, out-of-the-money strikes, nearest 
 `checks` (the three verdict bars every new study is judged on: return on buying power over the bill,
 a bad year earned back within a year, edge beyond the financed delta) and `rule` (a script's
 declared RULE: one run cut at its split dates, a holdout read only after a pass, and the verdict
-block the queue and the register read).
+block the queue and the register read) and `inputs` (the chain paths a study declared in its own
+requests file, the only ones it may read, and a fingerprint of what they hold).
 """

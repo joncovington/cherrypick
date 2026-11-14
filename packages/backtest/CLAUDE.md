@@ -33,7 +33,10 @@ expunged within 30 days of termination** (§8(e)). Two consequences shape the wh
   chains), never by loading another study's script. The kit is copied from recorded scripts and
   pinned to them by test; a finished study keeps its own copy until a logged correction moves it.
   Its constraints (no defaults for declared parameters, no trading rules, costs from core) are in
-  the package docstring and #1068.
+  the package docstring and #1068. **A new study reads the chain store only through `Inputs`**
+  (the paths its own requests file names) and writes `Inputs.fingerprint` into its result as
+  `inputs`, so another study's fetch cannot move its result and the reproduce step can tell a data
+  change (`inputs_changed`) from a code change.
 - **A new study declares its queue chain** as a module-level `CHAIN` literal (plan, fetches,
   study), and is queued with `run.py queue-chain --script <path>`, never row by row
   (`orchestrator/studychain.py`; item 76's script is the example).

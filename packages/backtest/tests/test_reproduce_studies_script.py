@@ -23,8 +23,10 @@ out = Path(sys.argv[1])
 mode = sys.argv[2]
 if mode == "crash":
     raise SystemExit("TypeError: a chain had no forward")
-value = 2 if mode == "moved" else 1
-out.write_text(json.dumps({"verdict": {"A": "fail"}, "arms": {"A": {"mean": value}}, "at": "now"}))
+value = 2 if mode in ("moved", "more-data") else 1
+inputs = {"sha256": "b" if mode == "more-data" else "a"}
+doc = {"verdict": {"A": "fail"}, "arms": {"A": {"mean": value}}, "inputs": inputs, "at": "now"}
+out.write_text(json.dumps(doc))
 """
 
 
@@ -36,7 +38,7 @@ def world(tmp_path, monkeypatch):
     research = tmp_path / "results" / "research"
     folder = research / "item90"
     folder.mkdir(parents=True)
-    recorded = {"verdict": {"A": "fail"}, "arms": {"A": {"mean": 1}}, "at": "then"}
+    recorded = {"verdict": {"A": "fail"}, "arms": {"A": {"mean": 1}}, "inputs": {"sha256": "a"}, "at": "then"}
     (folder / "results.json").write_text(json.dumps(recorded), encoding="utf-8")
     (folder / "results.version.json").write_text(json.dumps({"version": 0}), encoding="utf-8")
     (folder / "notes.md").write_text("kept", encoding="utf-8")
@@ -88,6 +90,12 @@ def test_a_crash_is_failed_with_its_last_line_and_the_folder_is_restored(world):
     _queue(world, "crash")
     out = _run(world)
     assert out["status"] == "failed" and "no forward" in out["said"]
+
+
+def test_a_difference_with_its_declared_inputs_moved_is_inputs_changed(world):
+    _queue(world, "more-data")
+    out = _run(world)
+    assert out["status"] == "inputs_changed" and "inputs.sha256" in out["moved"]["results.json"]
 
 
 def test_a_difference_after_a_logged_correction_is_expected(world, monkeypatch):
