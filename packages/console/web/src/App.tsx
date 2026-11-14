@@ -2,11 +2,18 @@ import { Routes, Route, Navigate, useLocation, useParams } from "react-router-do
 import { Shell } from "./components/shell/Shell";
 import { ModuleRoute } from "./pages/ModuleRoute";
 import { NotFoundPage } from "./pages/NotFoundPage";
+import { movedChartUrl } from "./pages/Chart/chartRoute";
 
 /** A moved page whose links carry a query (`/reports/chart?symbol=MSFT`): the query goes with it. */
 function MovedTo({ to }: { to: string }) {
   const { search } = useLocation();
   return <Navigate to={`${to}${search}`} replace />;
+}
+
+/** An old chart URL onto the one chart, its query translated (`movedChartUrl`). */
+function MovedChart({ from }: { from: "intraday" | "technicals" }) {
+  const { search } = useLocation();
+  return <Navigate to={movedChartUrl(from, search)} replace />;
 }
 
 function HelpRoute() {
@@ -26,9 +33,12 @@ export default function App() {
             page, matching every other page's page-in-the-URL convention. */}
         <Route path="morning" element={<Navigate to="/reports" replace />} />
         <Route path="review" element={<Navigate to="/reports/eod" replace />} />
-        {/* The technicals chart moved to the Charts page (2026-10-01); morning-pack links and
-            bookmarks still say `/reports/chart?symbol=X`. A static segment outranks `:module/:slide`. */}
-        <Route path="reports/chart" element={<MovedTo to="/charts/technicals" />} />
+        {/* The intraday and technicals charts are one chart (`/charts/chart`); links and bookmarks
+            still say `/charts/intraday?product=ES`, `/charts/technicals?symbol=X` and the older
+            `/reports/chart?symbol=X`. A static segment outranks `:module/:slide`. */}
+        <Route path="charts/intraday" element={<MovedChart from="intraday" />} />
+        <Route path="charts/technicals" element={<MovedChart from="technicals" />} />
+        <Route path="reports/chart" element={<MovedChart from="technicals" />} />
         {/* The slice reports moved from Backtest to Compare (2026-10-30). Compare's tab fails closed on
             the same feature, so with it off the redirect lands on Compare's first tab. */}
         <Route path="backtest/slices" element={<MovedTo to="/compare/slices" />} />

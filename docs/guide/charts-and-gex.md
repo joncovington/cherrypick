@@ -1,42 +1,49 @@
 # Charts and GEX
 
-Three read-only places to look at price and gamma. Charts is `/charts`, with tabs `/charts/intraday`,
-`/charts/technicals` and `/charts/setups`. GEX is `/gex`, with tabs `/gex/gex` and `/gex/skew`. The GEX
+Three read-only places to look at price and gamma. Charts is `/charts`, with tabs `/charts/chart`,
+`/charts/profile` and `/charts/setups`. GEX is `/gex`, with tabs `/gex/gex` and `/gex/skew`. The GEX
 panel, `/gexpanel` (one tab, `/gexpanel/panel`), is experimental. None of them can place an order.
 
 ## Charts
 
 ### What you see
 
-- **Intraday** (`/charts/intraday`) is a live candlestick chart of a futures contract, with volume under it.
-  The buttons pick the contract (the futures in the ticker strip across the top of the console, such as `/ES`
-  and `/NQ`) and the candle width (`1m`, `5m` or `15m`). A `chart only` chip is a reminder
-  that nothing here trades. A line above the chart gives the last price, the time of the last bar in
-  Eastern time, and how many bars are loaded.
-- **Technicals** (`/charts/technicals`) is one name's chart: price bars, RSI 14 in a middle pane and a
-  short-term trend score (-4 to +4) under it. A symbol box at the top picks the name; with no symbol in the
-  address it opens on SPX. Chips beside the name show the sentiment (Bullish, Bearish or Neutral, from the
-  close against two moving averages) and the IV rank. Buttons pick a setup family and a side, and whether to
-  draw our own support and resistance levels. Arrows mark where that setup would have opened and closed a
-  position. Under the chart, **Scan-rule matches** lists the sessions where a scan rule matched.
+- **Chart** (`/charts/chart`) is one chart for any symbol. At the top, a symbol box takes any name, and
+  buttons pick a live symbol (SPX, SPY, NDX, QQQ and the futures in the ticker strip, such as `/ES` and
+  `/NQ`) and the timeframe (`1m`, `5m`, `15m` or `1d`). It opens on `/ES` at `5m`. A symbol the live feed
+  does not carry, such as a stock, opens on `1d`. A timeframe that cannot draw the symbol is greyed out,
+  and hovering over it says why.
+  - **Intraday** (`1m`, `5m`, `15m`): live candles with volume under them, and the Market Profile drawn over
+    them, one histogram per session (1, 5 or 10 sessions; 5 to begin with). A `chart only` chip is a reminder
+    that nothing here trades. A line above the chart gives the last price, the time of the last bar in
+    Eastern time, and how many bars are loaded. A second line gives the profile's levels.
+  - **Daily** (`1d`): price bars, RSI 14 in a middle pane and a short-term trend score (-4 to +4) under it.
+    Chips beside the name show the sentiment (Bullish, Bearish or Neutral, from the close against two moving
+    averages) and the IV rank. Buttons pick a setup family and a side, and whether to draw our own support
+    and resistance levels. Arrows mark where that setup would have opened and closed a position. Under the
+    chart, **Scan-rule matches** lists the sessions where a scan rule matched.
+- **Profile** (`/charts/profile`) shows the recorded sessions' Market Profiles side by side, with a table of
+  each session's levels.
 - **Setups** (`/charts/setups`) is a watchlist, **Setup signals**: every entry and exit the chart setups
   made lately, and every position they still hold, across every charted name. Switch between **Entries &
   exits** and **Open positions**, narrow by window (`1d`, `5d`, `20d`), event, family, side, a relative-strength
   floor (`RS ≥ 7`) or a symbol. Each row opens "the read" (why it fired, its record, direction, volatility,
   levels and a structure lean), and the symbol opens its chart with that setup drawn.
 
-The Technicals and Setups tabs are built from files the technicals package writes after the close, and they
-disappear if the suite's technicals feature is switched off. On a fresh install, or on the demo, they can be
-empty until a first nightly run has written them: Technicals then says "No chart for" the name, and Setups
-says "No watchlist yet".
+The daily chart and the Setups tab are built from files the technicals package writes after the close. If
+the suite's technicals feature is switched off, Setups disappears and `1d` is greyed out. On a fresh install,
+or on the demo, they can be empty until a first nightly run has written them: the daily chart then says "No
+daily chart for" the name, and Setups says "No watchlist yet".
 
 ### How to read it
 
-- Intraday draws what the feed sends and computes nothing. Extended hours are included and the time axis is
+- The intraday candles are what the feed sends; the profile is the one thing worked out from them. A narrow
+  candle loads fewer days (one at `1m`, three at `5m`, seven at `15m`), so the line above the chart says when
+  fewer sessions' profiles are drawn than you asked for. Extended hours are included and the time axis is
   Eastern. CME futures trade from Sunday 18:00 to Friday 17:00 with a break from 17:00 to 18:00, and the axis
   skips periods with no bars, so a weekend does not show as a gap. If the data feed is down a chip says "feed
   ... not live".
-- Technicals and Setups cards carry a `record-only` chip. The arrows are a rule walked over history, not a
+- The daily chart and Setups cards carry a `record-only` chip. The arrows are a rule walked over history, not a
   recommendation. "Move" on Setups is close to close in the trade's direction and is never P&L.
 - A rule match is a pattern on the chart, not a trade idea.
 - Setups cuts the list to options-tradable names by default (see the verdict explained in
@@ -48,8 +55,8 @@ says "No watchlist yet".
 
 ### What to do
 
-Use Intraday for a quick look at the day. Use Technicals to check a name before you look at it as a
-candidate on [screeners.md](screeners.md). Treat Setups as a place to find names to look at, not a list to
+Use the chart at an intraday width for a quick look at the day, and at `1d` to check a name before you look
+at it as a candidate on [screeners.md](screeners.md). Treat Setups as a place to find names to look at, not a list to
 act on.
 
 ## GEX

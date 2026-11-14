@@ -219,7 +219,7 @@ what is unsolved, and scheduling.
   `report`: last 250 sessions of adjusted bars (the grid's whole calendar year when longer), the
   level grid, CCI 14 and 5, RSI 14, both trend scores, scan matches per session. Where the vendor chart was captured the file carries its levels
   (each marked whether our grid produces it; gap levels marked against our gap edges,
-  `chart_version` 2), trend grades, rank and bar agreement. The console's `/charts/technicals` page draws
+  `chart_version` 2), trend grades, rank and bar agreement. The console's daily chart (`/charts/chart?tf=1d`) draws
   **our grid's extremes, never levels claimed as the vendor's** — it is built to show where we
   differ. Per-session matches come from `signal_days` (one pass); a test pins it equal to
   `signals.readings` on every day and fails when the CCI-5 lag breaks. ~15 MB per session, overwritten.
@@ -344,7 +344,7 @@ overview stays credential-free and network-free.
   calendar and `scripts/fetch_headlines.py`'s titles (08:45 ET; six RSS
   feeds; title, link and time only, no article bodies); a mover with no reported reason is marked
   unexplained. Headlines and prose stay in `scripts/morning_narrative.py`, never in a package.
-- **The chart view** (`/charts/technicals`, `chart.py`): our candles, levels, CCI and signal marker
+- **The chart view** (`/charts/chart?tf=1d`, `chart.py`): our candles, levels, CCI and signal marker
   for a name.
 - **The stock universe** (`scripts/build_stock_universe.py`: `harvest`, `measure`, `build`,
   `watchlist`; 11:00, 14:00 and after the close; off by default, `market_report.universe`). Candidates

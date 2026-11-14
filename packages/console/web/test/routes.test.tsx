@@ -343,10 +343,10 @@ describe("a page the suite has turned off", () => {
     expect(html).toContain('href="/config"');
   });
 
-  it("Charts loses its technicals tab when technicals is off, and keeps the live intraday chart", () => {
+  it("Charts keeps its one chart when technicals is off, and loses the setups", () => {
+    expect(renderWith("/charts", base)).toContain('href="/charts/chart"');
     expect(renderWith("/charts", base)).not.toContain('href="/charts/technicals"');
-    expect(renderWith("/charts", base)).toContain('href="/charts/intraday"');
-    expect(renderWith("/charts", { ...base, features: { ...base.features, technicals: true } })).toContain('href="/charts/technicals"');
+    expect(renderWith("/charts", base)).not.toContain('href="/charts/intraday"');
     // The setups watchlist reads the same package's files, so it follows the same switch.
     expect(renderWith("/charts", base)).not.toContain('href="/charts/setups"');
     expect(renderWith("/charts", { ...base, features: { ...base.features, technicals: true } })).toContain('href="/charts/setups"');

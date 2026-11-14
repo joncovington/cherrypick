@@ -118,7 +118,8 @@ export function isSlideVisible(module: string, slide: string, f: Features, inUse
   if (slide === "advisor" && isTradingModuleId(module)) {
     return isFeatureOn("advisor", f) && !isAdvisorPaused(f);
   }
-  if (module === "charts" && (slide === "technicals" || slide === "setups")) return isFeatureOn("technicals", f);
+  // The one chart stays either way: with technicals off it loses only its daily timeframe.
+  if (module === "charts" && slide === "setups") return isFeatureOn("technicals", f);
   // A Live tab named for a module (flies, meic) follows that module's live master switch, but only
   // once that loop is idle. A switch turned off mid-session leaves a position open, an order
   // working, an orphan or an overdue settlement that only this tab shows, and Live Today links

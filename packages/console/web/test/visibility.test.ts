@@ -121,13 +121,13 @@ describe("gex, the advisor and the reports", () => {
   });
 
 
-  it("the technicals chart follows technicals; the narratives follow their own features", () => {
+  it("the setups follow technicals; the one chart stays; the narratives follow their own features", () => {
     const off = withOff({ features: { advisor: true, technicals: false, review_narrative: false, morning_narrative: true } });
-    expect(isSlideVisible("charts", "technicals", off)).toBe(false);
-    // The live intraday chart is the console's own feed: technicals being off does not hide it.
-    expect(isSlideVisible("charts", "intraday", off)).toBe(true);
+    expect(isSlideVisible("charts", "setups", off)).toBe(false);
+    // The one chart's intraday view is the console's own feed: technicals being off costs it only 1d.
+    expect(isSlideVisible("charts", "chart", off)).toBe(true);
     expect(isSlideVisible("reports", "morning", off)).toBe(true);
-    expect(isSlideVisible("charts", "technicals", ALL_ON)).toBe(true);
+    expect(isSlideVisible("charts", "setups", ALL_ON)).toBe(true);
     expect(isFeatureOn("technicals", off)).toBe(false);
     expect(isFeatureOn("review_narrative", off)).toBe(false);
     expect(isFeatureOn("morning_narrative", off)).toBe(true);

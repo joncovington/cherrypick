@@ -114,7 +114,7 @@ A fund, a bank or a REIT reads "no fair value".
 
 ## What to do
 
-- Use the screens to build a short list, then look at each name's chart (`/charts/technicals`) and at the
+- Use the screens to build a short list, then look at each name's chart (`/charts/chart`, at `1d`) and at the
   trade on the Live pages (see [live.md](live.md)) before doing anything with your own money.
 - Leave the filters on until you know what they hide: the filter line says "n of m names" and counts each
   hidden group once, so you can see what you are missing.

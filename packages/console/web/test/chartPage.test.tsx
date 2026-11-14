@@ -61,14 +61,16 @@ vi.mock("../src/lib/api", () => ({
   useTechnicalsChart: () => ({ data: payload, isLoading: false, isError: false }),
 }));
 
-const { ChartPage } = await import("../src/pages/Morning/ChartPage");
+const { TechnicalsView } = await import("../src/pages/Morning/ChartPage");
 
+/** The daily view at `url`; its symbol is the page's, read here as the page reads it. */
 function render(url: string, c: TechnicalsChart): string {
   payload = { index: { session: c.session, symbols: [{ symbol: c.symbol, vendor: false }] }, chart: c };
+  const symbol = new URL(url, "http://x").searchParams.get("symbol") ?? c.symbol;
   const html = renderToString(
     <QueryClientProvider client={new QueryClient()}>
       <MemoryRouter initialEntries={[url]}>
-        <ChartPage />
+        <TechnicalsView symbol={symbol} />
       </MemoryRouter>
     </QueryClientProvider>,
   );
