@@ -228,6 +228,13 @@ a second place its shape is decided. The tab is in the URL (`/reports/eod`) beca
   Backtest page's `CardLightbox`, stepping through the four); the profile levels and the next three
   calendar dates side by side; and the sector board as one strip. Its figures are the pack's; it only
   groups and orders them. It folds on its own width: tiles 4 → 2 → 1, sectors 11 → 6 → 4.
+- **The EOD review is one summary table** (`pages/Review/summary.ts`): a row for each module that
+  closed a trade, carried a position or could not be read; every other module shares the "No trades"
+  line beneath it. A row opens to its arms, largest net first, three then "n more"; the first row
+  starts open. **Needs attention** comes first, and each line naming a module with a row links to it
+  (a provisional session names each module carrying positions). The era's totals sit last, folded to
+  one line of nets until opened. There is no suite total, by design. Capital at risk leaves the table
+  first as it narrows, then the note and the arms' bars, then return.
 - **Market profile, prior session** (`ProfileLevelsCard`, fact version 6, `shapeProfile`): the pack's
   `profile` block as it states it, one row a symbol linking to its Profile tab on that day
   (`/charts/profile?symbol=…&day=…`); an unmeasured symbol shows its reason, a malformed untested-POC

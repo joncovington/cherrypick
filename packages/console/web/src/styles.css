@@ -2000,6 +2000,154 @@ select.text-input {
   margin: 0 0 0.85rem;
 }
 
+/* The suite review's summary (pages/Review/ReviewPage.tsx): one row a module, a row opening to its
+   arms. It folds on its own width: capital at risk goes first, then the note and the arms' bars,
+   then return; the table scrolls inside its card before the page ever does. The width it folds on
+   is `.pf-layout`'s own container (`pf`). */
+.rv-session {
+  margin-left: auto;
+}
+.rv-flags {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.35rem 1.5rem;
+}
+.rv-flags .dot {
+  flex: none;
+}
+.rv-jump {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.rv-jump:hover {
+  text-decoration: underline;
+}
+.rv-table td,
+.rv-table th {
+  vertical-align: middle;
+}
+.rv-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 2.25rem;
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--text);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.rv-toggle:focus-visible,
+.rv-jump:focus-visible,
+.rv-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.rv-caret {
+  width: 0.7rem;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+.rv-note-parts {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85em;
+}
+.rv-row.is-open > td {
+  border-bottom-color: transparent;
+}
+.rv-open > td {
+  padding: 0 0.75rem 0.85rem 1.85rem;
+}
+.rv-detail {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.6rem 0.75rem;
+  border-radius: 10px;
+  background: var(--surface-sunken);
+}
+.rv-arms {
+  font-size: 0.9em;
+}
+.rv-arm {
+  max-width: min(22rem, 46vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--num-face);
+}
+.rv-share {
+  width: 9rem;
+}
+.rv-line {
+  margin: 0;
+  font-size: 0.9em;
+}
+.rv-link {
+  justify-self: start;
+  background: none;
+  border: 0;
+  padding: 0.2rem 0;
+  color: var(--accent);
+  font: inherit;
+  font-size: 0.85em;
+  cursor: pointer;
+}
+.rv-idle {
+  margin: 0.6rem 0 0;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.9em;
+}
+.rv-era-line {
+  margin: 0;
+  font-family: var(--num-face);
+  font-size: 0.85rem;
+}
+.rv-era-toggle {
+  cursor: pointer;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.8rem;
+}
+@container pf (max-width: 62rem) {
+  .rv-car {
+    display: none;
+  }
+}
+@container pf (max-width: 48rem) {
+  .rv-flags {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .rv-note,
+  .rv-share {
+    display: none;
+  }
+  .rv-open > td {
+    padding-left: 0.5rem;
+  }
+}
+@container pf (max-width: 30rem) {
+  .rv-ret {
+    display: none;
+  }
+}
+@media (max-width: 640px) {
+  .page-title-row .rv-meta {
+    display: none;
+  }
+}
+
 /* A standalone-bold paragraph ("**What happened**" alone on its line) is a section label, not
    emphasis — the same divider the module cards use for "By arm", so the note reads as a sequence
    of sections rather than one wall of prose. No border on the first one; it sits right under the

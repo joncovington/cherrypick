@@ -59,12 +59,13 @@ const DEPLOYMENT = {
 let morning: MorningPayload;
 // `era` is not optional to the page — it reads `data.era.sessions` unguarded — and casting
 // this fixture through `unknown` is what let an incomplete one compile. Kept minimal but complete.
-const review = {
+const EMPTY_REVIEW = {
   sessions: [],
   current: null,
   note: null,
   era: { eraFrom: null, eraNote: null, sessions: 0, from: null, to: null },
 } as unknown as ReviewPayload;
+let review: ReviewPayload = EMPTY_REVIEW;
 
 vi.mock("../src/lib/api", () => ({
   useMorningReport: () => ({ data: morning, isLoading: false, isError: false }),
@@ -355,5 +356,95 @@ describe("the morning report's tabs", () => {
     for (const label of ["Open the pre-market detail", "Open the gamma levels", "Open the vol term structure", "Open the expected move and yields"]) {
       expect(html).toContain(`aria-label="${label}"`);
     }
+  });
+});
+
+describe("the suite review's summary table", () => {
+  const module = (over: Record<string, unknown>) => ({
+    module: "meic",
+    ok: true,
+    reason: null,
+    loopTicked: true,
+    iterations: 10,
+    errors: 0,
+    closed: 0,
+    net: 0,
+    gross: 0,
+    cost: 0,
+    wins: 0,
+    capitalAtRisk: null,
+    onMaxRisk: null,
+    n: 0,
+    events: null,
+    singleEvent: false,
+    breaks: [],
+    suspectedBreak: null,
+    expectedBasis: null,
+    expected: null,
+    observed: null,
+    carriedPositions: 0,
+    carriedCapital: null,
+    carriedCapitalUnknown: 0,
+    arms: [],
+    ...over,
+  });
+  const arm = (name: string, net: number) => ({ arm: name, closed: 1, net, wins: net > 0 ? 1 : 0, capitalAtRisk: null, onMaxRisk: null, centredBy: null });
+
+  function withReview(modules: unknown[], status = "final"): string {
+    review = {
+      ...EMPTY_REVIEW,
+      sessions: ["2026-11-13"],
+      current: { session: "2026-11-13", status, factVersion: 10, generatedAt: null, modules, note: null },
+    } as unknown as ReviewPayload;
+    try {
+      return renderReview().replace(/<!-- -->/g, "");
+    } finally {
+      review = EMPTY_REVIEW;
+    }
+  }
+
+  it("one row a module that traded, the first open with its top three arms, the idle ones on one line", () => {
+    const html = withReview([
+      module({ module: "meic", closed: 5, net: 120, wins: 3, arms: [arm("w15", 90), arm("w20", 60), arm("ctl", -10), arm("pm", -20), arm("late", 0)] }),
+      module({ module: "earnings", closed: 2, net: -40, wins: 1, arms: [arm("a", -40), arm("b", 0)] }),
+      module({ module: "contango" }),
+      module({ module: "flies", loopTicked: false }),
+    ]);
+    expect(html).toContain(`id="review-mod-meic"`);
+    expect(html).toContain(`id="review-mod-earnings"`);
+    expect(html).not.toContain(`id="review-mod-contango"`);
+    expect(html).toMatch(/No trades:.*contango.*flies.*loop did not tick/s);
+    // meic is open: its three largest arms and a count of the rest; earnings is closed.
+    expect(html).toContain(">w15<");
+    expect(html).toContain(">late<");
+    expect(html).not.toContain(">ctl<");
+    expect(html).not.toContain(">pm<");
+    expect(html).toContain("2 more");
+    expect(html).not.toContain(">a<");
+  });
+
+  it("an attention line names its module as a link to that row", () => {
+    const html = withReview([module({ module: "bwb", closed: 3, net: 5, wins: 2, suspectedBreak: { ratio: 0.12, trades: 3, trailingMedian: 25 } })]);
+    expect(html).toContain(`class="rv-jump">bwb</button>`);
+    expect(html).toContain("looks like a regime change with no journaled break");
+  });
+
+  it("a module with no row is named in plain text, not a link to nowhere", () => {
+    const html = withReview([module({ module: "flies", loopTicked: false })]);
+    expect(html).toContain("<strong>flies</strong> did not tick at all");
+    expect(html).not.toContain(`class="rv-jump">flies`);
+  });
+
+  it("an unreadable store gets a row that says so", () => {
+    const html = withReview([module({ module: "earnings", ok: false, reason: "database is locked" })]);
+    expect(html).toContain(`id="review-mod-earnings"`);
+    expect(html).toContain("unreadable");
+    expect(html).toContain("could not be read — database is locked");
+  });
+
+  it("no suite total: the table has no total row", () => {
+    const html = withReview([module({ module: "meic", closed: 1, net: 10, wins: 1 }), module({ module: "earnings", closed: 1, net: 20, wins: 1 })]);
+    expect(html).not.toMatch(/>\s*total\s*</i);
+    expect(html).not.toContain("30.00");
   });
 });
