@@ -18,7 +18,13 @@ The tabs answer two different questions, and the difference matters.
   `manage.at` (10:00 ET) and at any further times in `manage.also_at`, and again when the account
   changes. The console only reads that file. The verdicts, the
   levels and the prices are the evaluation's; the page shows them. `today` also reads it, for its
-  "what to do today" list.
+  "what to do today" list. Held legs are re-priced from live quotes between evaluations where every
+  leg has a fresh one; the verdicts and levels are never re-judged, and with no fresh quote the
+  evaluation's figure stands.
+- **More than one account.** If you have connected a second broker login, the four account tabs show
+  an account select in the header: the first (main) login's account by default, another by name, or
+  all accounts. The choice is `?acct=` in the address and holds as you move between the tabs. With
+  one account there is no select.
 - **The suite's own live loops.** `meic` (and the retired `flies`) show one module's live loop: whether
   it is armed for today, what it has open and what it has settled. These are trades the suite placed
   itself, on a day you armed it. `today` adds up all the loops on one page.
@@ -51,14 +57,21 @@ the net reads `n/r` and the MEIC card says `no ledger`, because no live session 
 ![Live positions: the evaluation header, four tiles, and a card for each trade](../images/live-positions.png)
 
 The header says which evaluation you are reading: the session, the snapshot time and how old it is,
-and the ruleset. Below it, tiles show net liquidating value (the account number is masked), the
+and the ruleset (the header names the ruleset only when it is the shipped default; the rest is under
+its `?`, "This reading"). A line about live marks appears only when some trade has no live mark.
+Below it, tiles show net liquidating value (the account number is masked), the
 per-trade budget, the size at which a trade is flagged for review, mark P&L and how many trades need
 action. The per-trade budget and review tiles show in detail view only.
 
 Then a card per trade, such as `IWM-261019-1`: its action chip (`take profit`, `roll for credit`,
 `hold`, `review`), its net P&L, how much of the credit is captured, days to the nearest short leg, and
-the order chain that built it, each order with its legs and signed cash. Open a card for the exit
-levels, the closing order a person would enter, the rules that fired and the legs. Filters are
+the order chain that built it, each order with its legs and signed cash (puts before calls, each
+from the lowest strike up). Open a card for the exit levels, the closing order a person would enter,
+the rules that fired and the legs. Each rule carries an evidence grade, the kind of evidence behind
+it: `mechanics` (follows from option mechanics or arithmetic), `tested` (a published test or our own
+study supports it), `contested` (tests point against it or are mixed), `practice` (practitioner
+doctrine, no test) or `ours` (our own rule, no test). It is not a probability. When two rules name the
+same action, a fixed order decides: safety, sizing, stops, targets, time, then rolls. Filters are
 `all`, `needs action`, `rolled` and `time spreads` (every calendar and diagonal, calls or puts); sorts
 include P&L, days to the nearest short and needs action first. A `ruleset` button opens the settings
 the evaluation used.

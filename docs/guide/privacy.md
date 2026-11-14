@@ -18,7 +18,8 @@ These are the only outside connections it makes.
   generic name and nothing else. To turn it off, set `"update_check": false` in
   `~/.cherrypick/config/console.json`.
 - **Free public data.** Scheduled fetches pull public files and quotes: Cboe volatility-index history,
-  Treasury and Federal Reserve rates, SEC filings data, Yahoo for prices and adjusted history, exchange
+  Treasury and Federal Reserve rates, SEC filings data, Yahoo for prices, adjusted history and, where
+  Nasdaq's earnings calendar does not answer, the time of day of an earnings report, exchange
   and clearing-house lists, a few public headline feeds, and similar. Each is an ordinary download. The
   requests name the symbol or file wanted and nothing about you.
 
