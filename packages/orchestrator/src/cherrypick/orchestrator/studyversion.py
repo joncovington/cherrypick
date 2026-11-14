@@ -33,6 +33,7 @@ from __future__ import annotations
 import ast
 import hashlib
 import json
+import re
 import subprocess
 from datetime import datetime
 from pathlib import Path
@@ -106,6 +107,10 @@ def commit(root: Path) -> str | None:
     return r.stdout.strip() or None
 
 
+#: A string a study script uses to load a sibling script by name (`iwm_condor_item59`, `x_item59.py`).
+SCRIPT_NAME = re.compile(r"^[A-Za-z0-9_]{1,80}(\.py)?$")
+
+
 def _module_file(module: str, root: Path) -> Path | None:
     """The repo file a `cherrypick.*` module lives in (a package's src layout, or core's)."""
     parts = module.split(".")
@@ -152,9 +157,17 @@ def dependencies(script: Path, root: Path) -> list[str]:
             for f in found:
                 seen.add(f.resolve())  # direct imports: recorded, not followed
             if is_script and isinstance(node, ast.Constant) and isinstance(node.value, str):
+                # Only a string shaped like a script's name: a docstring is not a path, and asking the
+                # filesystem about one fails outright on Linux (a name too long).
+                if not SCRIPT_NAME.match(node.value):
+                    continue
                 name = node.value if node.value.endswith(".py") else f"{node.value}.py"
                 sib = p.parent / name
-                if "/" not in node.value and "\\" not in node.value and sib.is_file() and sib.resolve() != p:
+                try:
+                    found = sib.is_file()
+                except OSError:
+                    found = False
+                if found and sib.resolve() != p:
                     todo.append(sib.resolve())
     return sorted(q.relative_to(root).as_posix() for q in seen if root in q.parents)
 

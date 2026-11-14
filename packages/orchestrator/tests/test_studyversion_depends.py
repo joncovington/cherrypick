@@ -25,6 +25,9 @@ def repo(tmp_path):
     scripts.mkdir(parents=True)
     (scripts / "chain_item59.py").write_text("from cherrypick.core import home\n", encoding="utf-8")
     (scripts / "study_item90.py").write_text(
+        # A long docstring with a newline: not a script name, and never asked of the filesystem (on
+        # Linux that fails outright, "File name too long").
+        '"""' + "A study. " * 60 + '\nMore."""\n'
         "from cherrypick.core import bs\n"
         "from cherrypick.backtest.study import checks\n"
         "import json\n"
