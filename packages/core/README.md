@@ -45,6 +45,7 @@ cherrypick/core/
   live/            the per-day arm record and dead-man's switch a live loop runs under
   livepositions/   broker positions against the live ledgers; the cross-loop opposite-leg rule
   looplock/        single-instance guards for the suite's loops
+  marketprofile/   one session's Market Profile: TPO rows, POC, value area, IB (derived, never recorded)
   marketregime/    daily-bar market regime (derived, never recorded)
   metrics/         the shared calibration metric bundle
   openingrange/    the 09:30-10:00 ET opening range (derived, never recorded)

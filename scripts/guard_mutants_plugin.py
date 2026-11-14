@@ -243,6 +243,22 @@ def _always_filled(pack):
     return {k: "filled" for k in pack if not str(k).startswith("_") and k not in ("pack_version", "now")}
 
 
+def _one_row_value_area(counts, poc, share=0.70):
+    """marketprofile's value area grown one row at a time instead of the CBOT two-row expansion."""
+    lo = hi = poc
+    acc, total = counts[poc], sum(counts)
+    while acc < share * total and (lo > 0 or hi < len(counts) - 1):
+        up = counts[hi + 1] if hi + 1 < len(counts) else -1
+        dn = counts[lo - 1] if lo > 0 else -1
+        if up >= dn:
+            hi += 1
+            acc += up
+        else:
+            lo -= 1
+            acc += dn
+    return lo, hi
+
+
 REPLACEMENTS = {
     "always_true": lambda: _always_true,
     "whole_day": lambda: _whole_day,
@@ -272,6 +288,7 @@ REPLACEMENTS = {
     "gate_sees_ahead": lambda: _gate_sees_ahead,
     "replay_overwrites": lambda: _replay_overwrites,
     "always_filled": lambda: _always_filled,
+    "one_row_value_area": lambda: _one_row_value_area,
 }
 
 
@@ -608,6 +625,15 @@ MUTANTS: tuple[Mutant, ...] = (
         module="cherrypick.manage.portfolio",
         attr="_cash_on",
         replacement="always_false",
+    ),
+    Mutant(
+        id="marketprofile-value-area",
+        breaks="the Market Profile value area grows one row at a time, not by the CBOT two-row expansion",
+        package="core",
+        tests=("tests/test_marketprofile.py::test_hand_worked_profile",),
+        module="cherrypick.core.marketprofile",
+        attr="value_area",
+        replacement="one_row_value_area",
     ),
 )
 
