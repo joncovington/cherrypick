@@ -3,9 +3,9 @@ holds them.
 
 The suite's book is run for capital efficiency, a small delta for its size, omnidirectional
 structures and no tail risk. Holding the same delta in shares is not a rival such a book would
-choose, so these three bars decide a verdict; same-capital rivals (a long call or put at the same max loss, one
-side of a structure alone, the plain condor or strangle at the same buying power) are reported beside
-it and never judged:
+choose, so these three bars decide a verdict; same-capital rivals (a long call or put at the same
+max loss, one side of a structure alone, the plain condor or strangle at the same buying power) are
+reported beside it and never judged:
 
 1. **Capital** (`capital_check`): each trade's net less the T-bill rate earned on its buying power
    over the days it was held. Passes on a mean above zero with a one-sided t at or above the bar.
