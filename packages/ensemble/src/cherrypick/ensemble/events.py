@@ -14,7 +14,7 @@ Labels
     QuarterEnd          the last trading day of March, June, September and December
     FirstWeekly         the first Friday of the month (the Thursday when that is a holiday): the first
                         weekly-cycle expiry
-    CPI, Sentiment      data: no rule publishes them (see `scripts/fetch_event_history.py`)
+    CPI, Sentiment      data: no rule publishes them (see `packages/backtest/scripts/event_history_item75.py`)
 """
 
 from __future__ import annotations
