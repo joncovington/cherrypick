@@ -41,6 +41,7 @@ from . import files as _files
 from . import gates as _gates
 from . import occ as _occ
 from . import paths as _paths
+from . import profile as _profile
 from . import score as _score
 from . import symbols as _symbols
 
@@ -52,7 +53,9 @@ from . import symbols as _symbols
 # keeps its meaning.
 # 5: + the record-only `hot_options` block, OCC's prior-session option volume ranked the way the
 # Hot Options Report ranks it (2026-10-01). Additive.
-FACT_VERSION = 5
+# 6: + the record-only `profile` block, the prior session's Market Profile levels for SPX, NDX, /ES and
+# /NQ from the profile-bars store, and their untested POCs (2026-11-14). Additive.
+FACT_VERSION = 6
 PACK = "overview.morning"
 
 # A pre-open quote older than this is not "live". Two hours spans the 07:00 producer start the
@@ -871,6 +874,7 @@ def build(session: str | None = None, now: datetime | None = None) -> dict:
         "moves": _moves(readings, history),
         "yields": _yields(session),
         "hot_options": _occ.block_for(session),
+        "profile": _profile.block_for(session),
         "calendar": _calendar_block(session),
     }
 

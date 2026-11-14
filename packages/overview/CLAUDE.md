@@ -100,6 +100,21 @@ prior-session moves.
 None of the files or tape readings feed a gate or the deployment score. They are fact-pack v4
 additions; a v3 pack still renders.
 
+## The market profile block
+
+`profile` (`profile.py`, fact version 6): for SPX, NDX, /ES and /NQ, the last regular session before the
+pack's own, its POC, value area (outer edges), initial balance, high, low and close, poor or tailed
+extremes, single prints, and the untested POCs of the 20 sessions before it. Read-only from
+`market-files/profile_bars.db` (the `profile-bars` job's store), only bars dated before the session,
+and built by `cherrypick.core.marketprofile` with each symbol's fixed `row_size_for`, so the levels are
+the Profile tab's and the intraday chart's.
+
+- **The store ends at the prior session's 17:00**: the recorder runs at 17:15, so an untested POC is
+  untested *through the prior close* (`untested_through`) and an overnight touch is not seen here.
+  The overnight itself is not in the pack for the same reason; the intraday chart draws it.
+- A missing store is `no_profile_bars`, a symbol with nothing recorded `no_session_recorded`.
+- Record-only: no gate, phase or score reads it.
+
 ## The deployment score is a measurement, not a gate
 
 `score.py` blends five signals into a 0–100 `deployment` block: VIX percentile over its trailing

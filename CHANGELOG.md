@@ -57,6 +57,10 @@ beyond the latest release.
   day to open it full size with every letter and its facts, and switch the bars between time and volume
   at price (where the symbol has volume). A chart
   only; nothing trades on it.
+- **Market profile in the morning pack.** The pack (fact version 6) and the Morning tab now carry the
+  prior session's profile levels for SPX, NDX, /ES and /NQ: point of control, value area, first-hour
+  range, range and close, whether the high and low were poor or tailed, and the untested POCs, each
+  linking to that day on the Profile tab. Record-only; no gate or score reads it.
 
 ## v0.13.0 — 2026-11-13 — evidence and accounts
 About 45 pull requests since v0.12.0, and it includes everything in the v0.12.1 beta (delta ideas, the

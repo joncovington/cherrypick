@@ -692,6 +692,85 @@ function bp(v: number | null | undefined): string {
   return `${v > 0 ? "+" : ""}${v} bp`;
 }
 
+const extremeLabel = (poor: boolean, tail: number | null): string =>
+  poor ? "poor" : tail !== null && tail >= 2 ? `tail ${tail}` : "single";
+
+/** The prior session's Market Profile levels (fact version 6), one row a symbol, each linking to its
+ *  Profile tab. Record-only: read off the pack, nothing re-derived. */
+export function ProfileLevelsCard({ pack }: { pack: MorningPack }) {
+  const prof = pack.profile;
+  if (!prof) return null;
+  const rows = Object.entries(prof.symbols);
+  const f = (v: number | null): string => (v === null ? "—" : v.toFixed(2));
+  const through = rows.find(([, s]) => s.untestedThrough)?.[1].untestedThrough ?? null;
+  return (
+    <Card
+      title="Market profile, prior session"
+      controls={through ? <span className="card-asof">untested through {through}'s close</span> : undefined}
+    >
+      {rows.length === 0 ? (
+        <p className="muted">Not measured ({prof.reason ?? "no profile bars"}).</p>
+      ) : (
+        <div className="table-scroll">
+          <table className="data-table num-from-1">
+            <thead>
+              <tr>
+                <th>symbol</th>
+                <th>POC</th>
+                <th>value area</th>
+                <th>initial balance</th>
+                <th>range (close)</th>
+                <th>high / low</th>
+                <th>untested POCs</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(([sym, s]) =>
+                s.session === null ? (
+                  <tr key={sym}>
+                    <td>{sym}</td>
+                    <td colSpan={6} className="muted">
+                      not measured ({s.reason ?? "—"})
+                    </td>
+                  </tr>
+                ) : (
+                  <tr key={sym}>
+                    <td>
+                      <a href={`/charts/profile?symbol=${encodeURIComponent(sym)}&day=${s.session}`}>{sym}</a>
+                    </td>
+                    <td>{f(s.poc)}</td>
+                    <td>
+                      {f(s.val)}–{f(s.vah)}
+                    </td>
+                    <td>{s.ibLow === null ? "—" : `${f(s.ibLow)}–${f(s.ibHigh)}`}</td>
+                    <td>
+                      {f(s.low)}–{f(s.high)} ({f(s.close)})
+                    </td>
+                    <td>
+                      {extremeLabel(s.poorHigh, s.tailHigh)} / {extremeLabel(s.poorLow, s.tailLow)}
+                    </td>
+                    <td>
+                      {s.untestedPocs.length === 0
+                        ? "none"
+                        : s.untestedPocs.map((u) => `${f(u.poc)} (${u.session.slice(5)})`).join(", ")}
+                    </td>
+                  </tr>
+                ),
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <p className="muted" style={{ fontSize: "0.85em", marginTop: 6 }}>
+        The regular session (09:30–16:00 ET) from the profile-bars store. A poor high or low has two or more
+        TPOs at the extreme row; a tail is a run of single prints there. Untested POCs are earlier sessions'
+        points of control no trade has reached since, counted through the prior close (an overnight touch is
+        not seen here; the intraday chart sees it). Record-only.
+      </p>
+    </Card>
+  );
+}
+
 function MovesYieldsCard({ pack }: { pack: MorningPack }) {
   const m = pack.moves;
   const y = pack.yields;
@@ -1126,6 +1205,7 @@ export function MorningPage({ tabs }: { tabs?: ReactNode } = {}) {
           </Card>
 
           <MovesYieldsCard pack={current} />
+          <ProfileLevelsCard pack={current} />
           </Section>
 
           {showTechnicals && <TechnicalsCards t={data?.technicals} />}
