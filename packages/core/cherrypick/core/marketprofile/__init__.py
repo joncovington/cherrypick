@@ -142,6 +142,18 @@ class Profile:
         }
 
 
+# One row size per recorded symbol, so every surface (the intraday chart, the Profile tab, the morning
+# pack) cuts the same rows. `default_row_size` reads a price, and each surface reads a different one; near
+# a step (ES around 7,450 sits between 2 and 2.5) two surfaces drew the same session's POC half a row
+# apart. The sizes are `default_row_size` at the symbols' November 2026 levels, frozen.
+ROW_SIZES = {"SPX": 2.5, "/ES": 2.5, "NDX": 10.0, "/NQ": 10.0, "SPY": 0.2, "QQQ": 0.2}
+
+
+def row_size_for(symbol: str, price: float) -> float:
+    """The display row size for a symbol: its fixed `ROW_SIZES` entry, else `default_row_size(price)`."""
+    return ROW_SIZES.get(symbol) or default_row_size(price)
+
+
 def default_row_size(price: float) -> float:
     """A display row size for a price: `ROW_FRACTION` of it, rounded to the nearest 1/2/2.5/5 step
     (nearest on a log scale)."""

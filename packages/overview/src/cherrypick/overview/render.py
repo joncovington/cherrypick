@@ -58,6 +58,44 @@ def _hot_rows(rows: list[dict]) -> list[str]:
     return out
 
 
+def _extreme(poor: bool, tail: int) -> str:
+    return "poor" if poor else (f"tail {tail}" if tail >= 2 else "single")
+
+
+def _profile(prof: dict) -> list[str]:
+    """The prior session's Market Profile levels, one row a symbol. Record-only."""
+    out = ["## Market profile (prior session)", ""]
+    symbols = prof.get("symbols") or {}
+    if not symbols:
+        out += [f"Not measured ({prof.get('reason') or DASH}).", ""]
+        return out
+    out.append(
+        "| Symbol | Session | POC | Value area | Initial balance | Range (close) | High / low "
+        "| Untested POCs |"
+    )
+    out.append("|---|---|---|---|---|---|---|---|")
+    for sym, s in symbols.items():
+        if not s.get("session"):
+            out.append(f"| {sym} | not measured ({s.get('reason') or DASH}) | | | | | | |")
+            continue
+        ib = f"{s['ib_low']:.2f}–{s['ib_high']:.2f}" if s.get("ib_low") is not None else DASH
+        untested = (
+            ", ".join(f"{u['poc']:.2f} ({u['session'][5:]})" for u in s.get("untested_pocs") or []) or "none"
+        )
+        extremes = f"{_extreme(s['poor_high'], s['tail_high'])} / {_extreme(s['poor_low'], s['tail_low'])}"
+        out.append(
+            f"| {sym} | {s['session']} | {s['poc']:.2f} | {s['val']:.2f}–{s['vah']:.2f} | {ib} | "
+            f"{s['low']:.2f}–{s['high']:.2f} ({s['close']:.2f}) | {extremes} | {untested} |"
+        )
+    out += [
+        "",
+        "_Regular session, 09:30–16:00 ET, from the profile-bars store. Untested POCs are untested "
+        "through the prior session's close; an overnight touch is not counted here. Record-only._",
+        "",
+    ]
+    return out
+
+
 def _hot_options(hot: dict) -> list[str]:
     """OCC's prior-session volume, the Hot Options Report's split. Contracts, not OCC's sides."""
     lines = [f"## Hot options ({hot.get('session') or 'not measured'})", ""]
@@ -268,6 +306,10 @@ def render(session: str) -> str | None:
         else:
             lines.append(f"Not measured ({yields.get('reason', DASH)}).")
         lines.append("")
+
+    prof = pack.get("profile") or {}
+    if prof:
+        lines.extend(_profile(prof))
 
     hot = pack.get("hot_options") or {}
     if hot:

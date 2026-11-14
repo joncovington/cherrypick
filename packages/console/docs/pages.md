@@ -218,6 +218,10 @@ four tabs, because its write actions are wired through page-spanning state (`nav
 a second place its shape is decided. The tab is in the URL (`/reports/eod`) because reports get sent, and
 `/morning` and `/review` redirect rather than 404.
 
+- **Market profile, prior session** (`ProfileLevelsCard`, fact version 6, `shapeProfile`): the pack's
+  `profile` block as it states it, one row a symbol linking to its Profile tab on that day
+  (`/charts/profile?symbol=…&day=…`); an unmeasured symbol shows its reason, a malformed untested-POC
+  entry is dropped, and an older pack has no card.
 - The Morning tab also shows `packages/technicals`' report (`data/technicals/report-<session>.json`,
   `readTechnicals` in `readers/overview.ts`, `pages/Morning/TechnicalsCards.tsx`). **It is the last
   report dated strictly before the pack's session** — a same-day report was written after that

@@ -332,6 +332,38 @@ export interface MorningPack {
   yields: MorningYields | null;
   /** Absent before fact version 5. */
   hotOptions: MorningHotOptions | null;
+  /** Absent before fact version 6. */
+  profile: MorningProfile | null;
+}
+
+/** One symbol's prior-session Market Profile levels (overview's `profile` block). Record-only. */
+export interface MorningProfileSymbol {
+  session: string | null;
+  rowSize: number | null;
+  poc: number | null;
+  /** The value area by its rows' outer edges. */
+  val: number | null;
+  vah: number | null;
+  ibLow: number | null;
+  ibHigh: number | null;
+  high: number | null;
+  low: number | null;
+  close: number | null;
+  poorHigh: boolean;
+  poorLow: boolean;
+  tailHigh: number | null;
+  tailLow: number | null;
+  singlePrints: number | null;
+  volumePoc: number | null;
+  untestedPocs: Array<{ session: string; poc: number }>;
+  /** Untested POCs are untested through this session's close (an overnight touch is not counted). */
+  untestedThrough: string | null;
+  reason: string | null;
+}
+
+export interface MorningProfile {
+  symbols: Record<string, MorningProfileSymbol>;
+  reason: string | null;
 }
 
 // --------------------------------------------------------------------------- Technicals report

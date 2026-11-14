@@ -346,6 +346,41 @@ describe("the hot-options block", () => {
   });
 });
 
+describe("the market profile block", () => {
+  it("passes each symbol's prior-session levels through, an unmeasured symbol with its reason", () => {
+    const pack = minimalPack("2026-11-16");
+    pack["fact_version"] = 6;
+    pack["profile"] = {
+      source: "profile_bars",
+      reason: null,
+      symbols: {
+        SPX: {
+          session: "2026-11-13", basis: "prior", row_size: 2.5, periods: "ABCDEFGHIJKLM", poc: 7557.5, val: 7512.5,
+          vah: 7560.0, ib_low: 7499.4, ib_high: 7621.78, high: 7621.78, low: 7499.4, close: 7560.87, poor_high: false,
+          poor_low: false, tail_high: 21, tail_low: 2, single_prints: 0, volume_poc: null,
+          untested_pocs: [{ session: "2026-10-28", poc: 7735.0 }, { session: "bad" }],
+          untested_through: "2026-11-13", reason: null,
+        },
+        NDX: { session: null, reason: "no_session_recorded" },
+      },
+    };
+    writePack("2026-11-16", pack);
+    const p = readMorning(config).current?.profile;
+    expect(p?.symbols["SPX"]).toMatchObject({
+      session: "2026-11-13", poc: 7557.5, val: 7512.5, vah: 7560, ibLow: 7499.4, tailHigh: 21, poorHigh: false,
+      volumePoc: null, untestedThrough: "2026-11-13",
+    });
+    // a malformed entry is dropped, never shown as a level
+    expect(p?.symbols["SPX"]?.untestedPocs).toEqual([{ session: "2026-10-28", poc: 7735 }]);
+    expect(p?.symbols["NDX"]).toMatchObject({ session: null, poc: null, reason: "no_session_recorded", untestedPocs: [] });
+  });
+
+  it("a pack before fact version 6 has no block", () => {
+    writePack("2026-11-13", minimalPack("2026-11-13"));
+    expect(readMorning(config, "2026-11-13").current?.profile).toBeNull();
+  });
+});
+
 describe("the technicals report", () => {
   function writeReport(session: string, extra: Record<string, unknown> = {}): void {
     fs.mkdirSync(path.join(tmp, "technicals"), { recursive: true });

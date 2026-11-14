@@ -197,6 +197,17 @@ def test_a_composite_of_one_session_is_that_sessions_profile():
     )
 
 
+@pytest.mark.parametrize(("symbol", "price", "size"), CASES["symbol_row_sizes"])
+def test_row_size_for(symbol, price, size):
+    assert mp.row_size_for(symbol, price) == size
+
+
+def test_a_recorded_symbol_keeps_its_row_size_whatever_the_price():
+    # ES around 7,450 sits on default_row_size's step between 2 and 2.5; the table holds it still
+    assert {mp.default_row_size(7400.0), mp.default_row_size(7500.0)} == {2.0, 2.5}
+    assert mp.row_size_for("/ES", 7400.0) == mp.row_size_for("/ES", 7500.0) == 2.5
+
+
 @pytest.mark.parametrize(("price", "size"), CASES["row_sizes"])
 def test_default_row_size(price, size):
     assert mp.default_row_size(price) == size

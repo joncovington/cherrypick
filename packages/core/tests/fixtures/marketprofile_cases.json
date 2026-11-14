@@ -1,6 +1,7 @@
 {
  "_note": "Market Profile cases for core.marketprofile.build_profile, build_composite, untested_pocs, overnight_profile and default_row_size. Read by packages/core/tests/test_marketprofile.py and by the console's web/test/marketProfile.test.ts, which pins its TypeScript port (web/src/lib/marketProfile.ts) to the same answers. Change both implementations or neither. The first case and the first composite are also worked by hand in the Python test; the rest are seeded random walks whose expected profiles the module produced when this file was made, so they pin the two implementations to each other. A composite's `bars_from` names the case whose bars it reads.",
  "row_sizes": [[6800, 2.0], [25000, 10.0], [600, 0.2], [680, 0.2], [100, 0.025], [50, 0.02], [21000, 5.0], [5.3, 0.002]],
+ "symbol_row_sizes": [["SPX", 7449.0, 2.5], ["/ES", 7460.0, 2.5], ["NDX", 25000.0, 10.0], ["/NQ", 27900.0, 10.0], ["SPY", 680.0, 0.2], ["QQQ", 676.0, 0.2], ["IWM", 230.0, 0.05]],
  "cases": [
   {
    "name": "hand-worked: four 30-minute periods, row 1",

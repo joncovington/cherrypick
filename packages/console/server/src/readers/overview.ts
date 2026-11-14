@@ -39,6 +39,8 @@ import type {
   MorningMoves,
   MorningYields,
   MorningHotOptions,
+  MorningProfile,
+  MorningProfileSymbol,
   MorningHotOptionsRow,
   TechnicalsReport,
   TechnicalsBreadthDay,
@@ -451,6 +453,39 @@ function shapeHotOptions(raw: unknown): MorningHotOptions {
   };
 }
 
+function shapeProfile(raw: unknown): MorningProfile {
+  const p = rec(raw);
+  const symbols: Record<string, MorningProfileSymbol> = {};
+  for (const [sym, v] of Object.entries(rec(p["symbols"]))) {
+    const s = rec(v);
+    symbols[sym] = {
+      session: str(s["session"]),
+      rowSize: num(s["row_size"]),
+      poc: num(s["poc"]),
+      val: num(s["val"]),
+      vah: num(s["vah"]),
+      ibLow: num(s["ib_low"]),
+      ibHigh: num(s["ib_high"]),
+      high: num(s["high"]),
+      low: num(s["low"]),
+      close: num(s["close"]),
+      poorHigh: s["poor_high"] === true,
+      poorLow: s["poor_low"] === true,
+      tailHigh: num(s["tail_high"]),
+      tailLow: num(s["tail_low"]),
+      singlePrints: num(s["single_prints"]),
+      volumePoc: num(s["volume_poc"]),
+      untestedPocs: (Array.isArray(s["untested_pocs"]) ? s["untested_pocs"] : [])
+        .map((u) => rec(u))
+        .filter((u) => typeof u["session"] === "string" && typeof u["poc"] === "number")
+        .map((u) => ({ session: u["session"] as string, poc: u["poc"] as number })),
+      untestedThrough: str(s["untested_through"]),
+      reason: str(s["reason"]),
+    };
+  }
+  return { symbols, reason: str(p["reason"]) };
+}
+
 function shapePack(session: string, facts: Record<string, unknown>): MorningPack {
   const readings: Record<string, MorningReading> = {};
   for (const [key, raw] of Object.entries(rec(facts["readings"]))) {
@@ -477,6 +512,8 @@ function shapePack(session: string, facts: Record<string, unknown>): MorningPack
     yields: facts["yields"] !== undefined ? shapeYields(facts["yields"]) : null,
     // Fact version 5.
     hotOptions: facts["hot_options"] !== undefined ? shapeHotOptions(facts["hot_options"]) : null,
+    // Fact version 6.
+    profile: facts["profile"] !== undefined ? shapeProfile(facts["profile"]) : null,
   };
 }
 
