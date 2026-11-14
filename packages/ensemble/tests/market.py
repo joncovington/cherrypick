@@ -65,6 +65,7 @@ def spx_snapshot(
     width=300.0,
     oi_call=1000,
     oi_put=1000,
+    gex_strike_cap=None,
 ):
     """`expiries` maps an expiry to its years to run (default today's, 6 hours out)."""
     expiries = expiries or {session: 6.0 / (24 * 365)}
@@ -85,6 +86,7 @@ def spx_snapshot(
         vix=vix,
         vix_prev_close=vix_prev_close,
         events=CALENDAR,
+        gex_strike_cap=gex_strike_cap,
         entries=entries,
         open_positions=open_positions,
     )

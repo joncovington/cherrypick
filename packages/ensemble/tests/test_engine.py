@@ -416,3 +416,18 @@ def test_payoff_extremes():
     assert pricing.payoff_extremes(naked, 3.0) == (None, None)
     lp = [Leg("l", "P", 1, 100.0)]
     assert pricing.payoff_extremes(lp, -3.0) == (97.0, 3.0)
+
+
+def test_a_store_that_holds_fewer_strikes_than_a_window_caps_it_and_says_so():
+    kw = {
+        "minute": 780,
+        "oi_call": 3000,
+        "width": 100.0,
+        "tr": [(m, 5990.0 + (m - 570) * 0.02 + (3 if (m // 5) % 2 else 0)) for m in range(570, 781)],
+        "expiries": {MON: 3.0 / 8760},
+    }
+    narrow = spx_snapshot(**kw)  # 41 strikes, the arm asks for 50
+    assert engine.decide(A["put-spread-1300"], narrow).reason == "gate:gex_ratio"
+    capped = spx_snapshot(**kw, gex_strike_cap=41)
+    d = engine.decide(A["put-spread-1300"], capped)
+    assert d.enter, d.checks
