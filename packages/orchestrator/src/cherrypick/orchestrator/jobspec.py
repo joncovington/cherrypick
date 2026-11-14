@@ -139,6 +139,9 @@ CATCHUP_MINUTES = {
     # Bars are keyed by their start and the fetch restates the last few sessions, so a late run is
     # the same fetch; the feed keeps months of 5m, so a missed day is still there the next.
     "vol-curve-bars": 12 * 60,
+    # Same shape as vol-curve-bars, but the feed keeps only 8,000 one-minute bars (about six days of a
+    # future), so a missed day is still there the next morning, not a week later.
+    "profile-bars": 12 * 60,
     # The vendor's sessions for the last few trading days; idempotent (complete sessions are
     # skipped), so a late run is the same fetch and the next night's covers a missed one anyway.
     "backtest-fetch": 12 * 60,
@@ -290,6 +293,7 @@ RETRY_ON_FAILURE = {
     "market-files": 2,
     "technicals-index-bars": 2,
     "vol-curve-bars": 2,
+    "profile-bars": 2,
     "technicals-iv-rank": 2,
     "technicals-dollar-volume": 2,
     "technicals-dividends": 2,
@@ -1821,6 +1825,24 @@ def derive_jobs(
             trading_days_only=True,
             enabled=vcb_on,
             enabled_reason="" if vcb_on else "disabled in config (technicals.vol_curve_bars)",
+        ),
+    )
+    pfb_on = tc_free and tc["profile_bars"]
+    add(
+        "profile-bars",
+        lambda: JobSpec(
+            id="profile-bars",
+            # A script, not package code: it reads the broker (DXLink 1-minute candles of SPX, SPY,
+            # NDX, QQQ and the futures map's /ES and /NQ) with the shared credential, read-only. After
+            # the futures' 17:00 close, so the day's last bar is finished. No Dolt, so it follows the
+            # block's switch, not the Dolt capability.
+            argv=(pythonw, _suite_script(launcher, "fetch_profile_bars.py")),
+            kind=KIND_DAILY,
+            at_et=tc["profile_bars_at"],
+            catchup_minutes=CATCHUP_MINUTES["profile-bars"],
+            trading_days_only=True,
+            enabled=pfb_on,
+            enabled_reason="" if pfb_on else "disabled in config (technicals.profile_bars)",
         ),
     )
     ivr_on = tc_free and tc["iv_rank"]

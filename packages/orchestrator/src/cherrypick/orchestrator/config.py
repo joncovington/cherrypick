@@ -804,6 +804,11 @@ def technicals_settings(cfg: dict[str, Any]) -> dict[str, Any]:
         # read-only.
         "vol_curve_bars": bool(tc.get("vol_curve_bars", True)),
         "vol_curve_bars_at": tc.get("vol_curve_bars_at", "16:30"),
+        # `profile_bars_at`: scripts/fetch_profile_bars.py, 1-minute bars of SPX, SPY, NDX, QQQ, /ES and
+        # /NQ for Market Profile (the feed gives only its newest 8,000). After the futures' 17:00 close,
+        # so the day's last bars are finished. No Dolt; the shared broker credential, read-only.
+        "profile_bars": bool(tc.get("profile_bars", True)),
+        "profile_bars_at": tc.get("profile_bars_at", "17:15"),
     }
 
 
