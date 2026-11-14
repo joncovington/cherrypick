@@ -7399,10 +7399,12 @@ its own keep, or is the same afternoon's risk taken again. Declared here before 
   arm's. Provisional, as declared: MEIC history is not yet validated, and this window's holdout dates
   were read before the declaration, so the pass is confirmed only on sessions after 2026-10-12. Every
   figure is in the local result (`~/.cherrypick/data/backtest/results/research/item73/`).
-- **What this decides:** the pass branch at k = 3: a proposal to run `n3` as a paper arm beside
-  live's rule, read on sessions after 2026-10-12, before any change to live's
-  `max_structures_per_day` or its buying-power cap. Building that arm is the user's call; nothing
-  changes live. The short-leg-only stop is the next question on that stacked book, as its own item.
+- **What this decides:** the pass branch at k = 3: `n3` runs as a paper arm, `pm1400-n3`, from
+  2026-11-16, beside its one-condor twin `pm1400-n1`, both built as this replay built them, so the
+  increment is read forward on the same sessions. `live-shadow` is not the twin: it follows live's
+  buying-power cap, which fits one condor. Nothing changes live's `max_structures_per_day` or its
+  cap until that forward read is judged on the three bars. The short-leg-only stop is the next
+  question on that stacked book, as its own item.
 
 ### 74. The super bull as leverage: against the same delta financed on the same capital
 
@@ -7837,7 +7839,19 @@ is the textbook tail trade. It runs in paper today as `packages/weeklyput` (item
     buying power) is the next item, declared before it runs.
   - **A fail on the capital or delta bar only:** the premium does not pay for the capital it holds, or
     is the index's drift; the weeklyput arm is not proposed for live.
-- **Result:** not yet run.
+- **Result (2026-11-14, provisional): fail under both models, on the tail bar among others.**
+  Cash-secured fails all three bars: after the bill on the strike it holds, the return is not
+  distinguishable from zero, a bad year is not earned back within a year, and it earns nothing beyond
+  its delta. Under Reg T margin the return beats the bill on the buying power, but the 99th-percentile
+  one-year drawdown is several times a year of mean return, and the edge beyond its financed delta is
+  under the t bar. Item 57's hedged arm fails all three under both models. No forward cycle is in the
+  store yet. The first run recorded the drawdown rounded to the cent of a return; corrected and run
+  again (version 1), with the same verdict. Every figure is in the local result
+  (`~/.cherrypick/data/backtest/results/research/item77/`).
+- **What this decides:** the tail-bar fail branch: on this evidence the weeklyput arm is a tail-risk
+  trade. Whether it keeps running in paper is the user's call; it is not proposed for live. The
+  defined-risk version, a put credit spread at the same buying power, is the next item, declared
+  before it runs.
 
 ## Not worth revisiting
 

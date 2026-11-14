@@ -24,6 +24,7 @@ a break on the arms it touches. A boundary date is a fact about the data.
 | 2026-10-25 | A closed live IC with no net (`pnl` or `fees` NULL) refuses new ICs. |
 | 2026-10-27 | A manual (agent-path) opening order obeys the loop's entry rules. |
 | 2026-11-02 | The arm gates new ICs only (management runs unarmed); settlement asks the broker first; entries are written ahead of their order; the manage-only snapshot; `MAX_LIVE_QUANTITY` of one. `live.resting_stop` is available, off by default: **switching it on is a measurement boundary against `live-shadow`.** |
+| 2026-11-16 | `pm1400-n1` and `pm1400-n3` added (`arm_added` breaks): `pm-200` at 14:00-14:30, entries at least 10 minutes apart, the resting stop modelled, one and three condors a session, research item 73's arms read forward. No other arm changes. |
 
 Other facts about the data:
 
