@@ -3,7 +3,7 @@
 **What this covers:** a suite-level overview of what each trading strategy actually does, so you
 can decide which one(s) fit your goals before diving into an individual module's own docs. The suite
 ships these strategy modules: MEIC, and Earnings (paper-only), which are on in a fresh install
-(Earnings only where Dolt is set up); Calendars, Contango and Weeklyput, which are
+(Earnings only where Dolt is set up); Calendars, Contango, Weeklyput and Ensemble, which are
 **EXPERIMENTAL and off by default**; and Flies, BWB, PMCC and Curve, which are **retired and off by default** (kept so each can be reinstated) — plus the GEX engine the console renders. MEIC, Earnings and Flies get a full
 section below; the others a short one. Each module's own docs (linked) are the source of truth for its
 internals.
@@ -19,8 +19,9 @@ internals.
 | Curve | VXX call credit spreads, regime-gated | **off** (retired 2026-11-01) | none |
 | Contango | SVXY/SHV switch on VIX/VIX3M | **off** (experimental) | none |
 | Weeklyput | index 10-delta put, 7 days, weekly expiries | **off** (experimental) | none |
+| Ensemble | eight short-dated SPX and GLD option arms | **off** (experimental) | none |
 
-Every shipped example config runs `control` alone except contango's (`control` and `flipexit`), weeklyput's (`unhedged`) and the four retired modules', which ship with every arm off (PMCC's examples name `shield`, `shield_hold` and `shield_guard`; its `control` is retired too). Any other arm named below is added in a machine's own
+Every shipped example config runs `control` alone except contango's (`control` and `flipexit`), weeklyput's (`unhedged`), ensemble's (its eight) and the four retired modules', which ship with every arm off (PMCC's examples name `shield`, `shield_hold` and `shield_guard`; its `control` is retired too). Any other arm named below is added in a machine's own
 config. BWB, calendars and curve build their comparison books into the module and run them unless the
 config sets that book's `enabled` to `false`, as their examples do.
 
@@ -176,6 +177,19 @@ the same trades, so the paper run measures execution, not the premium again. Ear
 the ETF puts is measured, never modelled. Paper-only and credential-free.
 
 → Depth: [`weeklyput/README.md`](../packages/weeklyput/README.md), [`weeklyput/CLAUDE.md`](../packages/weeklyput/CLAUDE.md).
+
+## Ensemble — research item 75's eight arms, in paper (EXPERIMENTAL, off by default)
+
+Eight short-dated SPX and GLD arms, each one configured variant of a single decision function that the
+backtest and the paper loop both call: 0DTE iron fly, iron condor and put spread, a 1DTE iron fly on the
+largest-GEX strike, an opening-range put spread, a 0DTE long put, and two GLD call spreads. An arm is
+configuration, so a new one added in `ensemble.json` trades with no code change. Each decides inside its
+own entry window, closes on its own touch, profit target or time exit (or is held to the expiry's posted
+close), and every decision, taken or refused, is recorded with the gate that decided it and with the
+snapshot it saw, so paper can be replayed against the backtest. Paper-only and credential-free: a
+position is a ledger row, never an order.
+
+→ Depth: [`ensemble/README.md`](../packages/ensemble/README.md), [`ensemble/CLAUDE.md`](../packages/ensemble/CLAUDE.md).
 
 ## Variance testing with arms (the distinguishing capability)
 

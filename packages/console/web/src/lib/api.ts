@@ -12,6 +12,9 @@ import type {
   WeeklyputPayload,
   WeeklyputStatus,
   WeeklyputSummary,
+  EnsembleHistory,
+  EnsemblePayload,
+  EnsemblePerformance,
   CurveEquity,
   OverviewPayload,
   StatusPayload,
@@ -1277,6 +1280,38 @@ export function useWeeklyputHistory(filter: { arm: string | null; from: string |
   return useQuery<WeeklyputHistory>({
     queryKey: ["weeklyput-history", filter],
     queryFn: () => getJson<WeeklyputHistory>(`/api/weeklyput/history?${params.toString()}`),
+    refetchInterval: 60_000,
+    placeholderData: (prev) => prev,
+  });
+}
+
+/** ensemble's ledger: every arm the ledger names, what each holds, and today's register. */
+export function useEnsemble() {
+  return useQuery<EnsemblePayload>({
+    queryKey: ["ensemble"],
+    queryFn: () => getJson<EnsemblePayload>("/api/ensemble"),
+    refetchInterval: 30_000,
+  });
+}
+
+/** Each arm's closed trades, net and drawdown, and the arms stacked. */
+export function useEnsemblePerformance() {
+  return useQuery<EnsemblePerformance>({
+    queryKey: ["ensemble-performance"],
+    queryFn: () => getJson<EnsemblePerformance>("/api/ensemble/performance"),
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+  });
+}
+
+/** Closed structures over the date range (by the session they ended), with totals over all of them. */
+export function useEnsembleHistory(filter: { arm: string | null; from: string | null; to: string | null }) {
+  const params = new URLSearchParams();
+  if (filter.arm !== null) params.set("arm", filter.arm);
+  rangeParams(params, filter);
+  return useQuery<EnsembleHistory>({
+    queryKey: ["ensemble-history", filter],
+    queryFn: () => getJson<EnsembleHistory>(`/api/ensemble/history?${params.toString()}`),
     refetchInterval: 60_000,
     placeholderData: (prev) => prev,
   });

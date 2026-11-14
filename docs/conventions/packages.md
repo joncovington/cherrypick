@@ -68,8 +68,11 @@ what it may write. The package's own CLAUDE.md holds the detail.
 - **packages/ensemble** — ⚠️ EXPERIMENTAL. A rules engine for short-dated option arms, declared as
   research item 75 (eight SPX and GLD arms from a third-party portfolio). An arm is configuration;
   `engine.decide` is one pure decision over a `Snapshot`, called by the backtest driver
-  (`packages/backtest/scripts/ensemble_item75.py`) and, in a later change, by a paper loop.
-  **Paper-only, credential-free, no live path**; no loop, ledger or console page yet. Reads the
+  (`packages/backtest/scripts/ensemble_item75.py`) and by its paper loop, which takes any arm
+  `arms.load_arms` returns. **Paper-only, credential-free, no live path**: a position is a row in
+  `~/.cherrypick/data/ensemble/paper_trades.db` (trade schema `ensemble_trade`), never an order; it reads
+  the stream cache and never writes it, and writes a local replay record of every decision tick. Off by
+  default in the example. Reads the
   technicals package's pure indicator functions (`sma`, `ema`, `rsi`) and nothing else of it:
   the second package, after fundamentals, to declare that dependency.
 - **packages/bwb** — **Retired 2026-11-08; off by default; may be reinstated** (the owner switched

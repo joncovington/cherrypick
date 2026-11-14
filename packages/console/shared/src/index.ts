@@ -9,6 +9,7 @@ export * from "./types/modules.js";
 export * from "./types/nav.js";
 export * from "./types/contango.js";
 export * from "./types/weeklyput.js";
+export * from "./types/ensemble.js";
 export * from "./types/moduleLists.js";
 export * from "./types/costs.js";
 export * from "./types/ws-protocol.js";

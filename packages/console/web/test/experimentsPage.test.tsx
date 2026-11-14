@@ -10,15 +10,15 @@ describe("an experiment switched off", () => {
     ({
       ok: true,
       capabilities: {},
-      modules: Object.fromEntries(["pmcc", "calendars", "curve", "contango", "weeklyput"].map((m) => [m, { configured: true, enabled: m === "pmcc" ? pmcc : true, missing: [] }])),
+      modules: Object.fromEntries(["pmcc", "calendars", "curve", "contango", "weeklyput", "ensemble"].map((m) => [m, { configured: true, enabled: m === "pmcc" ? pmcc : true, missing: [] }])),
       services: {},
       features: {},
     }) as unknown as Parameters<typeof shownExperiments>[0];
 
   it("loses its card with its pages, and an unread answer shows every card", () => {
-    expect(shownExperiments(on(false)).map((e) => e.id)).toEqual(["calendars", "curve", "contango", "weeklyput"]);
-    expect(shownExperiments(on(true)).map((e) => e.id)).toEqual(["pmcc", "calendars", "curve", "contango", "weeklyput"]);
-    expect(shownExperiments(undefined)).toHaveLength(5);
+    expect(shownExperiments(on(false)).map((e) => e.id)).toEqual(["calendars", "curve", "contango", "weeklyput", "ensemble"]);
+    expect(shownExperiments(on(true)).map((e) => e.id)).toEqual(["pmcc", "calendars", "curve", "contango", "weeklyput", "ensemble"]);
+    expect(shownExperiments(undefined)).toHaveLength(6);
   });
 });
 

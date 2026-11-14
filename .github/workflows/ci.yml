@@ -226,6 +226,8 @@ jobs:
           args=(-e "packages/core[dev,broker]")
           for p in $(python scripts/guard_mutants.py --list-packages); do
             if [ "$p" != core ]; then args+=(-e "packages/$p[dev]"); fi
+            # ensemble reads technicals' indicator functions: both siblings in the same resolve.
+            if [ "$p" == ensemble ]; then args+=(-e "packages/technicals"); fi
           done
           uv pip install "${args[@]}"
       - name: Each guard fails under its mutant

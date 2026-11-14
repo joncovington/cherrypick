@@ -106,6 +106,44 @@ def _enter_after_window():
     return patched
 
 
+def _ensemble_fill_after_window():
+    """ensemble's entry window read as open until the bell, both where the loop asks (`feed.entry_window`)
+    and where the engine does (`entry_due`): an arm entering after its window closed, the late fill the
+    after-window rule exists to forbid. The rule is held twice, so the mutant breaks both."""
+    engine = importlib.import_module("cherrypick.ensemble.engine")
+    feed = importlib.import_module("cherrypick.ensemble.feed")
+    model = importlib.import_module("cherrypick.ensemble.model")
+    real_due, real_window = engine.entry_due, feed.entry_window
+
+    def due(arm, snap):
+        e = arm["entry"]
+        if e["kind"] == "time":
+            return model.hhmm(e["at"]) <= snap.minute, snap.minute
+        return real_due(arm, snap)
+
+    engine.entry_due = due
+
+    def window(arm):
+        return real_window(arm)[0], 960
+
+    return window
+
+
+def _decide_all_unstacked():
+    """ensemble's `paper.decide_all` deciding every arm on the snapshot as it was, so an arm that enters
+    is not seen by the arms after it (the cross-arm gate and the limits would read a book that is behind)."""
+    engine = importlib.import_module("cherrypick.ensemble.engine")
+
+    def patched(arms, snap, *, costs=None):
+        return [
+            engine.decide(a, snap, costs=costs)
+            for _, a in sorted(arms.items())
+            if a.get("enabled", True) and a["symbol"] == snap.symbol
+        ]
+
+    return patched
+
+
 def _ignore_as_of(rows, _as_of):
     """flies' intraday pack reading every row regardless of its instant: the look-ahead the
     truncation test exists to catch."""
@@ -200,6 +238,8 @@ REPLACEMENTS = {
     "features_read_ahead": _features_read_ahead,
     "decide_after_window": _decide_after_window,
     "enter_after_window": _enter_after_window,
+    "ensemble_fill_after_window": _ensemble_fill_after_window,
+    "decide_all_unstacked": lambda: _decide_all_unstacked(),
     "ignore_as_of": lambda: _ignore_as_of,
     "uncapped": lambda: _uncapped,
     "agent_fails_open": lambda: _agent_fails_open,
@@ -376,6 +416,33 @@ MUTANTS: tuple[Mutant, ...] = (
         module="cherrypick.weeklyput.paper_loop",
         attr="record_misses",
         replacement="enter_after_window",
+    ),
+    Mutant(
+        id="ensemble-no-fill-after-window",
+        breaks="ensemble enters an arm after its entry window closed",
+        package="ensemble",
+        tests=("tests/test_paper_loop.py::test_nothing_fills_after_the_window",),
+        module="cherrypick.ensemble.feed",
+        attr="entry_window",
+        replacement="ensemble_fill_after_window",
+    ),
+    Mutant(
+        id="ensemble-trail-complete",
+        breaks="ensemble feeds an arm a spot record that began late, a partial morning",
+        package="ensemble",
+        tests=("tests/test_paper_loop.py::test_a_trail_that_began_late_refuses_the_arms_that_read_it",),
+        module="cherrypick.ensemble.feed",
+        attr="trail_complete",
+        replacement="always_true",
+    ),
+    Mutant(
+        id="ensemble-arms-stack",
+        breaks="ensemble decides each arm blind to the arms that entered before it",
+        package="ensemble",
+        tests=("tests/test_paper_sequence.py::test_a_later_arm_sees_the_arm_that_entered_before_it",),
+        module="cherrypick.ensemble.paper",
+        attr="decide_all",
+        replacement="decide_all_unstacked",
     ),
     Mutant(
         id="flies-intraday-pack-lookahead",

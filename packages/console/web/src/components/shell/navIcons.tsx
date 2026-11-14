@@ -100,6 +100,17 @@ function WeeklyputIcon() {
   );
 }
 
+/* Three stacked payoff hinges, each a little offset from the last: several arms laid over one another. */
+function EnsembleIcon() {
+  return (
+    <Svg>
+      <path d="M3 7h5l3 4h4" />
+      <path d="M5 12h5l3 4h4" opacity="0.7" />
+      <path d="M7 17h5l3 4h4" opacity="0.4" />
+    </Svg>
+  );
+}
+
 /* A ladder of long puts stepped downward — the daily put broken-wing butterfly. */
 /* A butterfly at rest, side profile — the insect on the name (broken-wing butterfly). One
    wing up, one drooped short: the asymmetry is the broken wing itself, and the pose keeps it
@@ -281,6 +292,7 @@ const ICONS: Record<string, (p: NavIconProps) => ReactNode> = {
   "/curve": CurveIcon,
   "/contango": ContangoIcon,
   "/weeklyput": WeeklyputIcon,
+  "/ensemble": EnsembleIcon,
   "/bwb": BwbIcon,
   "/calendars": CalendarsIcon,
   "/earnings": EarningsIcon,

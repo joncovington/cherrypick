@@ -6,6 +6,7 @@ import { resolvePmccSession } from "./pmcc.js";
 import { resolveBwbSession } from "./bwb.js";
 import { resolveContangoSession } from "./contango.js";
 import { resolveWeeklyputSession } from "./weeklyput.js";
+import { resolveEnsembleSession } from "./ensemble.js";
 
 /**
  * The collapsed decision journal (`core.ledgerstore.record_decision`'s own table) -- one row per
@@ -63,6 +64,11 @@ const SPECS: Record<DecisionsModule, Spec> = {
     dir: (c) => c.paths.contangoDir,
     table: "contango_decisions",
     resolveSession: resolveContangoSession,
+  },
+  ensemble: {
+    dir: (c) => c.paths.ensembleDir,
+    table: "ensemble_decisions",
+    resolveSession: resolveEnsembleSession,
   },
   weeklyput: {
     dir: (c) => c.paths.weeklyputDir,

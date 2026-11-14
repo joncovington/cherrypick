@@ -442,7 +442,9 @@ _READERS = {
 # (once a week, per name) and when an expiry's close posts, so a per-session evaluation count would
 # read every other day as "not evaluating". A cycle it missed is a `weeklyput_entries` row with the
 # refusal, and the review's health reader counts due against entered.
-NOT_APPLICABLE = frozenset({"earnings", "dc_week", "contango_etf", "weeklyput_put"})
+# ensemble is weeklyput's case: it ticks every minute but acts only inside an arm's entry window, on an open
+# position and when a close posts, and an arm-day it could not trade is an `ensemble_entries` row.
+NOT_APPLICABLE = frozenset({"earnings", "dc_week", "contango_etf", "weeklyput_put", "ensemble_trade"})
 
 
 def assess(

@@ -11,6 +11,16 @@ beyond the latest release.
 
 ## [Unreleased]
 
+### What's new
+
+- **Ensemble, in paper.** Eight short-dated SPX and GLD option arms (0DTE and 1DTE flies, a condor and
+  put spreads, an opening-range put spread, a long put and two GLD call spreads) now trade in paper
+  through one decision function, the same one their backtest uses. Experimental and off by default: turn
+  on `modules.ensemble.enabled` after copying `packages/ensemble/config.example.json` to
+  `~/.cherrypick/config/ensemble.json`. An arm added in that file trades with no code change. Every
+  decision, taken or refused, is kept with the gate that decided it and the snapshot it saw, so paper can
+  be replayed against the backtest. A position is a ledger row, never an order.
+
 ## v0.13.0 — 2026-11-13 — evidence and accounts
 About 45 pull requests since v0.12.0, and it includes everything in the v0.12.1 beta (delta ideas, the
 PMCC-only tab, the wheel tab's state choice). The suite can now read a second broker login beside the

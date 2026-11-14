@@ -1,7 +1,7 @@
 # console (unified web UI)
 
-The suite's only read surface: one app over every module's read models — the Live page, the nine
-trading modules (MEIC, earnings, calendars, contango, weeklyput, and the retired flies, bwb, PMCC and curve, which ship off by default), GEX,
+The suite's only read surface: one app over every module's read models — the Live page, the ten
+trading modules (MEIC, earnings, calendars, contango, weeklyput, ensemble, and the retired flies, bwb, PMCC and curve, which ship off by default), GEX,
 Charts, Screeners, Compare, Backtest and System — plus the advisor and the reports. Every module
 remains a producer this package reads; it touches none of their code. The dashboards it replaced
 survive only at the `pre-console-only` tag, so **no path here touches an order** —

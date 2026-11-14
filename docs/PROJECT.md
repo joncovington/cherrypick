@@ -37,6 +37,7 @@ in parallel and compare which entry rules actually add edge — see
 | **Curve** | **VXX call credit spreads** gated by a daily VIX/VIX3M regime read. **Retired 2026-11-01.** | Off |
 | **Contango** | The same VIX/VIX3M signal held in shares: SVXY in contango, T-bills (SHV) otherwise. **EXPERIMENTAL.** | Off |
 | **Weeklyput** | The index put nearest 10 delta (SPX, SPY, QQQ, IWM), sold a week before each non-monthly weekly expiry and held to its close, unhedged. **EXPERIMENTAL.** | Off |
+| **Ensemble** | Eight short-dated SPX and GLD option arms (0DTE and 1DTE flies, condor and spreads, an opening-range put spread, a long put, GLD call spreads), each a configured variant of one decision function. **EXPERIMENTAL.** | Off |
 
 The experimental modules are newer and less tested; switch one on deliberately if you want it (the
 console's **Config** page, or `modules.<name>.enabled` in `~/.cherrypick/config.json`).
