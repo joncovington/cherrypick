@@ -2341,6 +2341,8 @@ def cmd_hypotheses(cfg, args) -> None:
         "rereads": hypotheses.rereads(reg, _trades_since(cfg)),
         # Declared rows whose result is written here: a verdict to record (a list, never a failure).
         "awaiting_verdict": hypotheses.awaiting_verdict(reg, tasks),
+        # From item 78 on, a declaration's pass rule is data (a RULE literal); listed, not yet a failure.
+        "rule_missing": hypotheses.rule_missing(reg),
         # The next free item number here and on origin/main as last fetched: fetch before declaring.
         "next_id": hypotheses.next_id(reg, main_reg, plan_md=plan),
     }

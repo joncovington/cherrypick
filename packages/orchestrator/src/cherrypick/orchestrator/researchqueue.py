@@ -64,7 +64,9 @@ says the last line the task wrote.
   one with nothing left to do (a resume over a complete store) is done;
 - a fetch done with at least `THIN_SHARE` of its requests empty or refused is done, with the share in
   its note and a warning in place of the plain notice;
-- a script that printed a report with a `refused` key failed, whatever its exit code.
+- a script that printed a report with a `refused` key failed, whatever its exit code;
+- a script whose declared output is a study kit verdict block (`rule` and `arms`) with an arm judged
+  on no trades failed (`zero_trade_arms`).
 
 **The job runs only the code it started on** (`watch_code`, 2026-11-14). `run_ready` keeps picking
 rows for as long as any is ready, so a merge mid-chain never reached it (#825's priority, #967's
@@ -518,14 +520,46 @@ def _row_args(row: dict) -> dict:
     return json.loads(row["args"]) if isinstance(row.get("args"), str) else (row.get("args") or {})
 
 
-def postcheck(row: dict, report: dict) -> tuple[str | None, str | None]:
+#: The largest declared output the zero-trade check reads; a bigger file is left unread.
+OUTPUT_READ_LIMIT = 50 * 1024 * 1024
+
+
+def output_doc(row: dict) -> dict | None:
+    """A script row's declared output as JSON, when it is a JSON object under `OUTPUT_READ_LIMIT`."""
+    out = row.get("output")
+    if not out or not str(out).endswith(".json"):
+        return None
+    p = Path(out).expanduser()
+    try:
+        if p.stat().st_size > OUTPUT_READ_LIMIT:
+            return None
+        doc = json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return doc if isinstance(doc, dict) else None
+
+
+def zero_trade_arms(doc: dict | None) -> list[str]:
+    """The arms a study kit verdict block (top-level `rule` and `arms`, each arm with its `n`) judged
+    on no trades: a study that read nothing it was asked to (items 47 and 54 ran on zero trades)."""
+    if not isinstance(doc, dict) or "rule" not in doc or not isinstance(doc.get("arms"), dict):
+        return []
+    return sorted(a for a, b in doc["arms"].items() if isinstance(b, dict) and b.get("n") == 0)
+
+
+def postcheck(row: dict, report: dict, doc: dict | None = None) -> tuple[str | None, str | None]:
     """A row that exited 0 and finished: (why it did nothing and so failed, or None; a warning to put
-    on a done row, or None). Judged from the report the task printed last; a report without the
-    counts a check reads leaves the row as it was."""
+    on a done row, or None). Judged from the report the task printed last and, for a script, its
+    declared output (`doc`); a report without the counts a check reads leaves the row as it was."""
     kind = row["kind"]
     if kind == "script":
         why = report.get("refused")
-        return (f"exited 0 but refused: {why}", None) if why else (None, None)
+        if why:
+            return f"exited 0 but refused: {why}", None
+        empty = zero_trade_arms(doc)
+        if empty:
+            return f"judged no trades in arm(s) {', '.join(empty)}", None
+        return None, None
     if kind == "fetch-sessions":
         want = str(_row_args(row).get("dataset", "SPX")).upper()
         got = report.get("symbol")
@@ -956,7 +990,7 @@ def run_next(
             status, note = "failed", f"exited 0 but its declared output {pick['output']} was not written"
         # Nor has a row that did nothing it was asked to (`postcheck`).
         if status == "done":
-            why, warning = postcheck(pick, report)
+            why, warning = postcheck(pick, report, output_doc(pick) if pick["kind"] == "script" else None)
             if why:
                 status, note = "failed", why
             elif warning:

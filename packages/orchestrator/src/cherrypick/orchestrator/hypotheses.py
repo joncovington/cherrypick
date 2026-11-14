@@ -53,6 +53,8 @@ ITEM_STUDY = re.compile(r"^item\d+$")
 REREAD_AFTER = 100
 #: From this item on a row names its scripts and tests (the study chain), as it must every other field.
 CHAIN_FROM = 18
+#: From this item on the first script declares its pass rule as data (`RULE`, the study kit's `rule`).
+RULE_FROM = 78
 CHAIN_PATHS: dict[str, tuple[str, ...]] = {"scripts": SCRIPT_DIRS, "tests": ("packages/",)}
 PLAN_HEADING = re.compile(r"^### (\d+)\.", re.M)
 SLUG = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
@@ -256,6 +258,42 @@ def _chain_problems(row: dict, tag: str, root: Path) -> list[str]:
             elif not (root / p).is_file():
                 out.append(f"{tag}: {key} path {p} does not exist")
     return out
+
+
+def rule_missing(reg: dict, *, root: Path | None = None) -> list[str]:
+    """Rows from `RULE_FROM` on whose first script declares no `RULE` literal (the study kit's
+    `rule`): a pass rule still held only in prose. Listed by `cherrypick hypotheses`, not yet a
+    failure, so a declaration written before the rule existed is not blocked."""
+    root = root or repo_root()
+    out = []
+    for row in reg.get("hypotheses", []):
+        rid, scripts = row.get("id"), row.get("scripts") or []
+        if not isinstance(rid, int) or rid < RULE_FROM or row.get("legacy") or row.get("status") == "retired":
+            continue
+        first = root / scripts[0] if scripts and isinstance(scripts[0], str) else None
+        if first is not None and first.is_file() and not declares(first, "RULE"):
+            out.append(f"row {rid}: {scripts[0]} declares no RULE literal")
+    return out
+
+
+def declares(script: Path, name: str) -> bool:
+    """Whether the script assigns `name` at module level to a literal (parsed, never imported)."""
+    import ast
+
+    try:
+        tree = ast.parse(script.read_text(encoding="utf-8"))
+    except (OSError, SyntaxError):
+        return False
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and any(
+            isinstance(t, ast.Name) and t.id == name for t in node.targets
+        ):
+            try:
+                ast.literal_eval(node.value)
+            except ValueError:
+                return False
+            return True
+    return False
 
 
 def next_id(*registers: dict, plan_md: str = "") -> int:

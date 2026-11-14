@@ -145,7 +145,8 @@ other than its row's `dataset` has failed, and so has a fetch that had requests 
 fetched none of them. A fetch with nothing left to do (a resume over a complete store) is done. A
 fetch done with half or more of its requests empty or refused is done too, with that share in its
 note and a WARNING notification in place of the INFO one. A script that prints a report with a
-`refused` key has failed, whatever its exit code. A failure's note and notification carry the last
+`refused` key has failed, whatever its exit code, and so has one whose declared output is a study kit
+verdict block with an arm judged on no trades. A failure's note and notification carry the last
 line the task wrote (a traceback's error line, or the refusal).
 
 **`queue-run` runs only the code it started on.** Before each row it compares the source of the
