@@ -60,6 +60,14 @@ def test_the_forward_is_parity_at_the_strikes_nearest_the_money():
     assert ic.parity_forward({}, {}) is None
 
 
+def test_a_chain_with_no_parity_forward_offers_no_strike():
+    # Puts only: no strike is two-sided on both rights, so there is no forward to say which side is OTM.
+    c = ic.Chain([(float(k), "PUT", 1.0, 1.1) for k in range(150, 200)], "2024-01-30", EXPIRY)
+    assert c.forward is None
+    assert c.otm("P") == [] and c.otm("C") == []
+    assert c.nearest("P", 0.16) is None and c.nearest("C", 0.16) is None
+
+
 def test_the_condor_shorts_sit_near_16_delta_and_the_longs_further_out_near_5():
     c = chain()
     legs = ic.pick_condor(c)
