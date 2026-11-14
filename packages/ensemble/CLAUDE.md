@@ -2,8 +2,8 @@
 
 ⚠️ **EXPERIMENTAL.** A rules engine for short-dated option arms, declared as research item 75 (eight SPX
 and GLD arms from a third-party portfolio, read over all history in one pass). **Paper-only,
-credential-free, no live path** (posture: root file). There is no paper loop, ledger or console page yet:
-this package is the engine, its tests and the scaffold the loop is added to.
+credential-free, no live path** (posture: root file). The package is the engine and its paper loop: a
+position is a ledger row (`~/.cherrypick/data/ensemble/paper_trades.db`), never an order. Off by default.
 
 ## What it is
 
@@ -58,16 +58,66 @@ natural fill) and **mid** (context). Per-share prices are signed so a credit is 
 ## Dependencies
 
 `cherrypick-core` and the technicals package's pure indicator functions (`sma`, `ema`, `rsi`) only. No
-broker, no network, no streamer: the stream cache is read by the paper loop, which does not exist yet.
+broker, no network, no streamer: the loop reads the stream cache and never writes it.
 
-## What the paper loop needs (not built)
+## The paper loop
 
-Stream requests for the SPX and GLD chains at the entry minutes plus the one-minute spot trail; a
-`Snapshot` built from them with `snapshot.build`; the event data from `packages/backtest/scripts/event_history_item75.py`'s
-output; a ledger of entries and trades; an orchestrator job; a console page. Entries are measured against
-item 75's replay, as weeklyput's are against item 57's.
+`python -m cherrypick.ensemble.paper_loop --once` (the orchestrator ticks it every 60 s while
+`modules.ensemble.enabled`). It takes any arm `arms.load_arms` returns: nothing in the loop is written for
+an arm, only for what an arm reads (`feed.reads`).
+
+- **Config** (`config.example.json`, copied to `~/.cherrypick/config/ensemble.json`): `arms` laid over the
+  shipped arms (a new name is a new arm), `symbols` (the OCC root and the stream window per underlying),
+  `defaults` (quote and spot age, mark interval, stream lead, trail grace), `events.path`. A misspelt arm
+  key stops the loop with its path. A resident loop reads the file at start; the orchestrator's `--once`
+  reads it each tick.
+- **Snapshot** (`feed.py`, `provider.py`): quote rows, spot, daily bars and the posted close come from the
+  stream cache only (read-only), in the shape the backtest's store rows have, and go through
+  `snapshot.build`. A quote older than `max_quote_age_seconds`, a crossed one or a chain the cache does not
+  hold is a refusal named on the arm, never a guess. Greeks and open interest are read only for an arm that
+  places a strike by delta or reads GEX; the VIX only for an arm that reads it.
+- **The spot trail.** The cache keeps only the last print, so the loop records one sample a minute per
+  symbol (`ensemble_trail`) and builds the opening range and the five-minute bars from that. A trail that
+  began more than `trail_grace_minutes` after the open (a loop started at noon) refuses every arm that reads
+  it for the day (`trail_incomplete`) rather than feed it a partial morning. The opening-range entry is
+  single-shot on the first minute above the range, so a tick that misses that minute does not trade it.
+- **Decisions.** `paper.decide_all` over the arms of the day whose entry is due, stacked in arm-name order
+  so a later arm sees an earlier arm's entry (`no_position_today`), as the backtest stacks them. Each
+  decision is a journal row (`ensemble_decisions`, the engine's first failing check and the value it read)
+  and each arm-day a register row (`ensemble_entries`: entered, pending, or missed with the last reason).
+  **Nothing fills after the entry window.**
+- **The replay record.** Every decision tick writes one line to
+  `~/.cherrypick/data/ensemble/replay/<session>.jsonl`: the compact snapshot, the arms as they stood and the
+  decisions. `python run.py replay <file>` runs them again through `paper.replay` and lists where the
+  decisions differ, which is how paper is compared with the backtest's path. Event labels are read from the
+  current event file on replay.
+- **Fills.** Entries and closes at the mid with the suite's slippage model (`core.fees`) as its own cost,
+  fees from `core.fees`, per `docs/conventions/money-layout.md`. `net_pnl` is the verdict fill; `net_stress`
+  and `net_mid` are kept beside it.
+- **Exits** are the arm's, read from the rules the position was entered under (`exit_json`): a spot touch, a
+  profit target and minutes before expiry are checked every tick and close at the legs' quotes (a close whose
+  legs do not price is retried); otherwise the position is held to the expiry's **posted close**
+  (`stream_summary`, usually the next morning), never a last trade, and settled at intrinsic. A GLD position
+  held to settlement is settled at intrinsic with the engine's cash-settlement charge, as the backtest does;
+  a physically delivered ETF leg is not modelled.
+- **Stream request** (`stream_request.py`): the arms' symbols with `history_days` for the longest moving
+  average, VIX when an arm reads it, `expirations` and a `window_hints` strike window for an arm only from
+  `stream_lead_minutes` before its entry window to two minutes after it, and every open position's legs
+  through a ledger `leg_source`.
+- **Events** (`events.load_calendar`): the file `packages/backtest/scripts/event_history_item75.py` writes.
+  Without coverage for a date a data label passes its gate and is recorded `unknown`.
+
+`ensemble_positions` holds the whole money layout on the row: `entry_value` + `exit_value` = `gross_pnl`;
+`gross_pnl` - `fees` (open plus close) - `settlement` - `slippage` = `net_pnl`. `exit_reason` is `touch`,
+`profit_target`, `time` or `settlement`.
+
+Entries are measured against item 75's replay, as weeklyput's are against item 57's. Measurement-affecting
+changes (a window, a gate, an arm's rule, the fill) go to a declared boundary with a `measurement_breaks`
+row.
 
 ## Tests
 
-`python -m pytest` from this directory. `tests/market.py` invents Black-Scholes quotes; each gate is shown
-firing and failing; a new gate is shown to fail by breaking its invariant on purpose (working-rules).
+`python -m pytest` from this directory. `tests/market.py` invents Black-Scholes quotes and
+`tests/cachebuilder.py` writes them into a stream cache built through the real DDL; each gate is shown
+firing and failing; a new gate or loop guard is shown to fail by breaking its invariant on purpose
+(working-rules).

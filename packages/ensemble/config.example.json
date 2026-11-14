@@ -1,0 +1,41 @@
+{
+  "_header": "===== cherrypick-ensemble -- the eight arms of research item 75 in paper (EXPERIMENTAL, paper-only) =====",
+  "_what_this_is": "Short-dated SPX and GLD option arms, each one configured variant decided by the same engine the backtest uses (engine.decide). Paper only: a position is a ledger row, never an order. Copy to ~/.cherrypick/config/ensemble.json (or a git-ignored config.json here). The orchestrator runs the loop only while modules.ensemble.enabled is true.",
+  "_source_note": "stream_cache_db overrides the shared stream cache path; null means the suite default.",
+  "source": {
+    "stream_cache_db": null
+  },
+  "events": {
+    "_note": "path of the event-date file the arms' skip_events read (CPI and sentiment dates); null means ~/.cherrypick/data/public/item75/events.json, written by packages/backtest/scripts/event_history_item75.py. Without it only the computed labels answer and a data label is recorded unknown for the day.",
+    "path": null
+  },
+  "defaults_header": "===== the loop's knobs =====",
+  "_defaults_note": "max_quote_age_seconds: a quote older than this is not priced against. spot_max_age_seconds: the spot a decision or a trail sample is built on. mark_interval_minutes: open positions are marked this often. stream_lead_minutes: the stream request widens for an arm this long before its entry window opens. trail_grace_minutes: a spot record that began later than this after the open cannot give the opening range or the five-minute bars, so an arm that reads them is refused for the day. Slippage is core.fees' model (tastytrade_costs overrides it here, as in any module).",
+  "defaults": {
+    "max_quote_age_seconds": 90,
+    "spot_max_age_seconds": 90,
+    "mark_interval_minutes": 15,
+    "stream_lead_minutes": 10,
+    "trail_grace_minutes": 3,
+    "settle_alert_sessions": 2,
+    "history_margin_days": 15
+  },
+  "symbols_header": "===== the underlyings the arms trade =====",
+  "_symbols_note": "root is the OCC root a chain must carry (SPXW keeps the AM-settled SPX monthly out); window_strikes is the ATM window, in strikes a side, the stream request asks for while an arm is about to enter. A symbol an arm uses that is not listed here falls back to the index roots the code knows (SPX is SPXW) and to the symbol itself.",
+  "symbols": {
+    "SPX": {"root": "SPXW", "window_strikes": 60},
+    "GLD": {"root": "GLD", "window_strikes": 40}
+  },
+  "arms_header": "===== the arms =====",
+  "_arms_note": "The shipped arms are in cherrypick.ensemble.arms; an entry here is laid over the arm of the same name (top-level keys replaced), and an entry under a new name is a new arm. A misspelt key is refused with its path and the loop does not start. Set enabled to false to switch one off. Names are the suite's own.",
+  "arms": {
+    "iron-fly-1000": {"enabled": true},
+    "iron-condor-1345": {"enabled": true},
+    "put-spread-1300": {"enabled": true},
+    "iron-fly-1dte-1330": {"enabled": true},
+    "gld-call-spread-20d": {"enabled": true},
+    "long-put-1030": {"enabled": true},
+    "gld-call-spread-1dte": {"enabled": true},
+    "orb-put-spread": {"enabled": true}
+  }
+}
