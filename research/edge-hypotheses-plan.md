@@ -6626,6 +6626,17 @@ fetched paths are read.*
   - **D beats C:** calendarizing pays for its capital; otherwise the same-month 1-3-2 is the IRA form.
   - **A fail or no verdict:** records that these structures add nothing beyond holding the shares on
     slow large caps.
+- **Result (2026-11-14): A fails; B, C and D are no verdict; none beats the shares.**
+  The backspread (A) trails the same delta in shares in the design window and fails every check but
+  the cost stress. B, C and D each have more than 5% of their entries without an exit mark, the
+  declared no-verdict floor; each trails the shares in the design window as well. D less C passes its
+  checks as computed, but on two structures that are themselves no verdict, so it is read as a
+  provisional reading, not a pass. Holdout not read without a design pass. Every figure, the skips
+  and the MDE included, is in the local result
+  (`~/.cherrypick/data/backtest/results/research/item64/`).
+- **What this decides:** the fail-or-no-verdict branch: these structures add nothing beyond holding
+  the shares on slow large caps, and none goes to manage's IRA ideas. With no structure passing, the
+  D-against-C choice of IRA form does not arise.
 
 ### 65. The intraday premium map: implied against realised odds of SPX closing near its price, by time of day
 
@@ -6915,7 +6926,15 @@ run.*
   `q1` and `q5`; Holm runs across those two. Everything else stands as declared. NDX could return as its
   own item on a store built from quotes alone (the index level from put-call parity, deltas computed),
   declared before it is fetched.
-- **Result:** not yet run.
+- **Result (2026-11-14, provisional): fail, both QQQ arms.**
+  `q1` fails every design check. `q5`'s mean session net is above zero and positive in both halves
+  and at 1.5x fees, but its t is under 2 and it fails Holm. With no design pass the holdout, run
+  straight after, does not count; it reads the same way. Provisional for good, as declared: there is
+  no paper record of QQQ to validate the replay against. Every figure, the SPX reference and the
+  coverage step included, is in the local result
+  (`~/.cherrypick/data/backtest/results/research/item68/`).
+- **What this decides:** the fail branch: QQQ is not added, and MEIC live stays on SPX alone. The
+  multi-symbol loop and QQQ's physical-settlement work are not needed for this item.
 
 ### 69. Item 57's unhedged arm in paper: does a close-of-session fill track the replay?
 
@@ -7064,7 +7083,13 @@ inputs (bars, dividends, statements) were read to place the target, as the targe
     one, a paper arm; nothing goes live from this item.
   - **A fail:** the yield anchor adds nothing over the 16-delta rule; the short-put list keeps its
     rule and no dividend screen is built.
-- **Result:** not yet run.
+- **Result (2026-11-14): fail, both arms.**
+  `y-strike` and `y-net` each trail `d16-tp50` in the design window: the paired mean is below zero,
+  fewer than half the names are positive, and the arm's own median edge is below zero, at the stress
+  too. The holdout reads the same way. Both windows had enough names and trades for a verdict. Every
+  figure is in the local result (`~/.cherrypick/data/backtest/results/research/item70/`).
+- **What this decides:** the fail branch: the yield anchor adds nothing over the 16-delta rule; the
+  short-put list keeps its rule and no dividend screen is built.
 
 ### 71. A LEAPS call as leverage: the call held, against the same dollars in a daily-reset fund or a financed delta
 
@@ -7174,7 +7199,15 @@ any arm has been computed on a quoted chain.*
   - **Next either way:** the user asked (2026-11-10) for a study of selling calls or puts against the
     LEAPS once this one is done. Calls are item 36's arms on the chosen long; a put against a call is
     a levered synthetic long, so in an IRA it is a put spread.
-- **Result:** not yet run.
+- **Result (2026-11-14): fail; five arms fail and `c90-2y` is no verdict.**
+  The guards (fund, accounting, SPY's put-call parity) hold. Each of `c90-45`, `c80-45`, `c90-120`,
+  `c50-45` and `c30-45` fails against its judged rival in the design window; `c90-2y` has too few
+  judged funds for a verdict. Every figure is in the local result
+  (`~/.cherrypick/data/backtest/results/research/item71/`).
+- **What this decides:** the fail branch: a leveraged fund (or, out of the money, a financed delta)
+  holds the same exposure for less, and LEAPS are not proposed as stock replacement. No arm passed, so
+  none is named as the long for the follow-up; whether the call- or put-selling study goes ahead on
+  some other long is the user's call.
 
 ### 72. MEIC's live rule on XSP: no stop, or a stop at 1x, 1.5x or 2x the credit, at four wing widths
 
@@ -7352,6 +7385,17 @@ its own keep, or is the same afternoon's risk taken again. Declared here before 
     own item.
   - **A fail:** live stays at one condor a session; more entries in the window are closed as a lever, and
     the short-leg-only stop is not pursued for that purpose.
+- **Result (2026-11-14, provisional): pass at k = 3.**
+  Both increments pass every check in the design window: the second condor over one, and the third
+  over two, each above zero with t above 2, positive in both halves, positive at 1.5x their own fees,
+  and with the larger arm's mean session net over its 99th-percentile drawdown at least the smaller
+  arm's. Provisional, as declared: MEIC history is not yet validated, and this window's holdout dates
+  were read before the declaration, so the pass is confirmed only on sessions after 2026-10-12. Every
+  figure is in the local result (`~/.cherrypick/data/backtest/results/research/item73/`).
+- **What this decides:** the pass branch at k = 3: a proposal to run `n3` as a paper arm beside
+  live's rule, read on sessions after 2026-10-12, before any change to live's
+  `max_structures_per_day` or its buying-power cap. Building that arm is the user's call; nothing
+  changes live. The short-leg-only stop is the next question on that stacked book, as its own item.
 
 ### 74. The super bull as leverage: against the same delta financed on the same capital
 
