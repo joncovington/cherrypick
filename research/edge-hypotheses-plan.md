@@ -53,6 +53,11 @@ written are not re-judged. The arithmetic is `cherrypick.core.robustness`
   `results` make the study chain the console shows step by step (2026-11-07). A `retest` recipe (the research queue's kind and args) lets B14 re-run it.
   When the result lands, the row's status changes, `results` names the files as `{home}/...` paths
   and `outcome` says the decision in words (2026-10-29, for the Backtest page's studies board).
+- **Windows as split dates on one run:** the study replays the whole history once, and the
+  declaration names the split dates its verdict reads (one design/holdout date, or several folds),
+  each trade counted in the part holding its entry session. The holdout part counts only after a
+  design pass. Cuts not named here are reported, never judged. Declarations already written keep
+  their own windows.
 - **A result file the board can read:** a top-level `verdict` (one word, or one per arm, or per arm
   as `{"verdict": ...}`), its `window`, and the `run_id` when the study ran through the runner.
 - **Declared limits** (B11): how a position open at a name's last bar is settled (the last close; no
