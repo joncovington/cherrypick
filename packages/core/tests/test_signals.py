@@ -264,7 +264,20 @@ SPECS = [
     {"kind": "new_extreme", "side": "high", "lookback": 6},
     {"kind": "consecutive", "n": 2, "direction": "down", "seed": False, "latest": "11:00"},
     cross(100, only_when=[{"kind": "new_extreme", "side": "high", "lookback": "session"}]),
+    {"kind": "distance", "side": "high", "lookback": "session", "direction": "beyond", "pct": 0.3},
+    {"kind": "distance", "side": "low", "lookback": 8, "direction": "within", "pct": 0.1, "reset": 0.2},
+    {"kind": "event", "event": "fomc", "timing": "before", "days": 1, "unit": "sessions", "at": "10:00"},
+    {"kind": "candle", "pattern": "bullish_engulfing"},
+    {"kind": "candle", "pattern": "inside_bar", "first_of_day": True},
+    cross(
+        100,
+        only_when=[
+            {"kind": "event", "event": "fomc", "timing": "on", "days": 0, "unit": "sessions", "at": "09:30"}
+        ],
+    ),
 ]
+
+EVENTS = {"fomc": [DAY2]}
 
 
 def random_bars(seed):
@@ -284,8 +297,8 @@ def random_bars(seed):
 def test_the_event_form_fires_only_where_the_state_holds(seed):
     bs = random_bars(seed)
     for spec in SPECS:
-        st = sg.state(spec, bs)
-        for f in sg.firings(spec, bs):
+        st = sg.state(spec, bs, EVENTS)
+        for f in sg.firings(spec, bs, EVENTS):
             assert st[f.index] is True, (spec, f)
 
 
@@ -295,12 +308,116 @@ def test_no_firing_reads_a_later_bar(seed):
     there. A signal that peeked at the next bar would change its past when the future is cut off."""
     bs = random_bars(seed)
     for spec in SPECS:
-        full = sg.firings(spec, bs)
+        full = sg.firings(spec, bs, EVENTS)
         for k in range(1, len(bs) + 1, 3):
-            assert sg.firings(spec, bs[:k]) == [f for f in full if f.index < k], (spec, k)
+            assert sg.firings(spec, bs[:k], EVENTS) == [f for f in full if f.index < k], (spec, k)
 
 
 def test_the_random_specs_fire_at_all():
     """The properties above mean little if nothing fires: most of the specs fire on some seed."""
-    hits = sum(any(sg.firings(spec, random_bars(s)) for s in range(6)) for spec in SPECS)
+    hits = sum(any(sg.firings(spec, random_bars(s), EVENTS) for s in range(6)) for spec in SPECS)
     assert hits >= len(SPECS) - 2
+
+
+# --- distance -----------------------------------------------------------------------------------------
+
+
+def test_distance_within_and_beyond_a_high():
+    bs = bars([100, 102, 101.9, 100.5, 101.95])
+    within = {"kind": "distance", "side": "high", "lookback": "session", "direction": "within", "pct": 0.2}
+    # The first bar is the session's high so far (0% away); it stays within through bar 2, bar 3 is
+    # 1.5% under the 102 high, and bar 4 is back within 0.2%.
+    assert fired(within, bs) == [0, 4]
+    assert fired({**within, "direction": "beyond", "pct": 1.0}, bs) == [3]
+
+
+# --- market events ------------------------------------------------------------------------------------
+
+
+def event(timing, days, unit="sessions", at="10:00", label="fomc"):
+    return {"kind": "event", "event": label, "timing": timing, "days": days, "unit": unit, "at": at}
+
+
+def three_days():
+    # Friday 2026-01-09, Monday 01-12, Tuesday 01-13.
+    return (
+        bars([100] * 12, session="2026-01-09")
+        + bars([100] * 12, session="2026-01-12")
+        + bars([100] * 12, session="2026-01-13")
+    )
+
+
+def test_an_event_fires_once_at_its_time_on_its_target_session():
+    bs = three_days()
+    got = sg.firings(event("on", 0), bs, {"fomc": ["2026-01-12"]})
+    assert [(f.session, f.minute) for f in got] == [("2026-01-12", 600)]
+
+
+def test_sessions_before_skip_the_weekend_and_calendar_days_do_not():
+    bs = three_days()
+    ev = {"fomc": ["2026-01-12"]}
+    assert [f.session for f in sg.firings(event("before", 1), bs, ev)] == ["2026-01-09"]
+    # One calendar day before a Monday is a Sunday: no session, so it never fires.
+    assert sg.firings(event("before", 1, unit="calendar"), bs, ev) == []
+    assert [f.session for f in sg.firings(event("after", 1), bs, ev)] == ["2026-01-13"]
+
+
+def test_an_event_the_caller_did_not_supply_is_refused():
+    with pytest.raises(ValueError, match="no dates given for event 'cpi'"):
+        sg.firings(event("on", 0, label="cpi"), three_days(), {"fomc": []})
+    with pytest.raises(ValueError, match="signal.days"):
+        sg.validate(event("on", 1))
+
+
+# --- candles ------------------------------------------------------------------------------------------
+
+
+def bar(o, h, lo, c, i=0, session=DAY1):
+    return Bar(session, 570 + 5 * i, 575 + 5 * i, o, h, lo, c)
+
+
+def pattern(name, **params):
+    return {"kind": "candle", "pattern": name, **params}
+
+
+def test_each_pattern_on_a_bar_built_for_it_and_not_on_its_mirror():
+    cases = {
+        "doji": [bar(100, 101, 99, 100.05)],
+        "hammer": [bar(100, 100.6, 97, 100.5)],
+        "shooting_star": [bar(100, 103, 99.9, 99.5)],
+        "bullish_engulfing": [bar(101, 101.2, 99.8, 100), bar(99.9, 101.5, 99.7, 101.3, 1)],
+        "bearish_engulfing": [bar(100, 101.2, 99.8, 101), bar(101.1, 101.3, 99.5, 99.7, 1)],
+        "inside_bar": [bar(100, 102, 98, 101), bar(100.5, 101, 99, 100, 1)],
+        "outside_bar": [bar(100, 101, 99, 100.5), bar(100.5, 102, 98, 99, 1)],
+    }
+    params = {"doji": {"body_pct": 10}, "hammer": {"body_pct": 30, "shadow_ratio": 2}}
+    params["shooting_star"] = params["hammer"]
+    mirror_of = {
+        "hammer": "shooting_star",
+        "shooting_star": "hammer",
+        "bullish_engulfing": "bearish_engulfing",
+        "bearish_engulfing": "bullish_engulfing",
+    }
+    for name, bs in cases.items():
+        spec = pattern(name, **params.get(name, {}))
+        assert fired(spec, bs) == [len(bs) - 1], name
+        if name in mirror_of:
+            assert fired(spec, mirror(bs)) == [], name
+            other = mirror_of[name]
+            assert fired(pattern(other, **params.get(other, {})), mirror(bs)) == [len(bs) - 1], name
+
+
+def test_a_candle_fires_on_every_bar_it_appears_on():
+    bs = [bar(100, 103, 97, 101, 0), bar(100.5, 102, 98, 100, 1), bar(100.2, 101, 99, 100.4, 2)]
+    assert fired(pattern("inside_bar"), bs) == [1, 2]
+
+
+def test_a_candle_takes_no_confirmation_or_reset():
+    with pytest.raises(ValueError, match="signal.confirm"):
+        sg.validate(pattern("inside_bar", confirm=2))
+    with pytest.raises(ValueError, match="signal.reset"):
+        sg.validate(pattern("inside_bar", reset=1))
+    with pytest.raises(ValueError, match="needs 'shadow_ratio'"):
+        sg.validate(pattern("hammer", body_pct=30))
+    with pytest.raises(ValueError, match="unknown key 'body_pct'"):
+        sg.validate(pattern("inside_bar", body_pct=30))

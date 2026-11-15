@@ -31,13 +31,36 @@ signal is evaluated at each bar's close, and a firing's `minute` is the bar's `e
   they stop is not a firing: it does not count toward `first_of_day`, but the signal is spent as if
   it had fired, since the cross happened.
 
-**Arming.** A *session* kind (gap, change, opening range, prior session, a session extreme) starts
-every session armed: a gap is news at the open. A *continuous* kind (crosses, ranges, consecutive
-closes, an N-bar extreme) is armed only after it has been seen false, so a series that is already
-above 70 when its window fills has not crossed anything. With `seed: false` its indicator is
-computed within each session and arming starts over each session; with `seed: true` earlier
-sessions' bars warm the indicator and arming carries across the close. An N-bar extreme's window
-spans the close by definition, so its arming always carries.
+**Arming.** A *session* kind (gap, change, opening range, prior session, a session extreme or
+distance, a market event) starts every session armed: a gap is news at the open. A *continuous* kind
+(crosses, ranges, consecutive closes, an N-bar extreme or distance) is armed only after it has been
+seen false, so a series that is already above 70 when its window fills has not crossed anything.
+With `seed: false` its indicator is computed within each session and arming starts over each
+session; with `seed: true` earlier sessions' bars warm the indicator and arming carries across the
+close. An N-bar window spans the close by definition, so its arming always carries. A *candle*
+pattern is a fact about one bar (and the bar before it), so it is armed on every bar: two inside
+bars in a row are two firings. A candle takes no `confirm` and no `reset`.
+
+**Market events** come from the caller: `firings(spec, bars, events={"fomc": [...ISO dates]})`. A
+label the spec names and the caller does not supply is refused, never read as "no events". The
+event kind fires once on each target session, on the first bar that ends at or after its `at`
+time; its target is the event date itself, or `days` sessions (trading days, `core.calendar`) or
+calendar days before or after it. A calendar-day target that is not a trading day never fires.
+
+**Candlestick patterns**, on one bar's body (|close - open|), range (high - low) and shadows:
+
+- `doji`: a body no more than `body_pct` percent of a non-zero range.
+- `hammer`: a body no more than `body_pct` percent of the range, a lower shadow at least
+  `shadow_ratio` times the body, and an upper shadow no longer than the body.
+  `shooting_star` is its mirror (the long shadow above).
+- `bullish_engulfing`: the bar before closed down, this one closes up, and this body covers that
+  one (opens at or under its close, closes at or over its open) and is larger. `bearish_engulfing`
+  is its mirror.
+- `inside_bar`: a high under the bar before's high and a low over its low. `outside_bar`: a high over
+  it and a low under it.
+
+A pattern says nothing about the trend it appears in; that is what `only_when` is for. The bar
+before is the previous bar in the series, across the close for intraday bars.
 
 The defaults above are the identity of each rule (confirm once, no reset, no limit), not choices a
 study inherits: a kind's own parameters have no defaults at all.
@@ -47,7 +70,9 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
+from datetime import date, timedelta
 
+from cherrypick.core import calendar as cal
 from cherrypick.core import indicators as ind
 
 OPEN_MINUTE = 570  # 09:30 ET
@@ -344,11 +369,120 @@ def _consecutive(spec: Mapping, bars: Sequence[Bar]) -> Series:
     return state, None
 
 
+def _distance(spec: Mapping, bars: Sequence[Bar]) -> Series:
+    """How far the close sits from the window's high (or low), in percent of it. The window includes
+    the bar itself: the session so far, or the last N bars."""
+    side, look, pct = spec["side"], spec["lookback"], float(spec["pct"])
+    within = spec["direction"] == "within"
+    state: list[bool | None] = [None] * len(bars)
+    value: list[float | None] = [None] * len(bars)
+    first = [a for a, b in _sessions(bars) for _ in range(a, b)]
+    for i in range(len(bars)):
+        a = first[i] if look == "session" else i - int(look) + 1
+        if a < 0:
+            continue
+        if side == "high":
+            ext = max(bars[j].high for j in range(a, i + 1))
+            d = (ext - bars[i].close) / ext * 100.0
+        else:
+            ext = min(bars[j].low for j in range(a, i + 1))
+            d = (bars[i].close - ext) / ext * 100.0
+        v = pct - d if within else d - pct
+        state[i], value[i] = v >= 0, v
+    return state, value
+
+
+def _event_targets(spec: Mapping, dates: Iterable[str]) -> set[str]:
+    n, timing, unit = int(spec["days"]), spec["timing"], spec["unit"]
+    out = set()
+    for text in dates:
+        d = date.fromisoformat(str(text))
+        if timing == "on":
+            t = d
+        elif unit == "calendar":
+            t = d + timedelta(days=n if timing == "after" else -n)
+        elif timing == "after":
+            t = cal.nth_trading_day(d, n)
+        else:
+            t = d
+            for _ in range(n):
+                t = cal.previous_trading_day(t)
+        out.add(t.isoformat())
+    return out
+
+
+def _event(spec: Mapping, bars: Sequence[Bar], events: Mapping[str, Iterable[str]] | None) -> Series:
+    label = spec["event"]
+    if events is None or label not in events:
+        raise ValueError(f"signal: no dates given for event {label!r}")
+    targets = _event_targets(spec, events[label])
+    at = _minute(spec["at"])
+    return [b.session in targets and b.end >= at for b in bars], None
+
+
+def _candle_parts(b: Bar) -> tuple[float, float, float, float]:
+    """(body, range, upper shadow, lower shadow)."""
+    return abs(b.close - b.open), b.high - b.low, b.high - max(b.open, b.close), min(b.open, b.close) - b.low
+
+
+def _is_pattern(spec: Mapping, prev: Bar | None, b: Bar) -> bool | None:
+    p = spec["pattern"]
+    body, rng, upper, lower = _candle_parts(b)
+    if p == "doji":
+        return rng > 0 and body <= spec["body_pct"] / 100.0 * rng
+    if p in ("hammer", "shooting_star"):
+        long, short = (lower, upper) if p == "hammer" else (upper, lower)
+        return (
+            rng > 0
+            and body <= spec["body_pct"] / 100.0 * rng
+            and long >= spec["shadow_ratio"] * body
+            and short <= body
+        )
+    if prev is None:
+        return None
+    if p == "inside_bar":
+        return b.high < prev.high and b.low > prev.low
+    if p == "outside_bar":
+        return b.high > prev.high and b.low < prev.low
+    prev_body = abs(prev.close - prev.open)
+    if p == "bullish_engulfing":
+        return (
+            prev.close < prev.open
+            and b.close > b.open
+            and b.open <= prev.close
+            and b.close >= prev.open
+            and body > prev_body
+        )
+    return (
+        prev.close > prev.open
+        and b.close < b.open
+        and b.open >= prev.close
+        and b.close <= prev.open
+        and body > prev_body
+    )
+
+
+def _candle(spec: Mapping, bars: Sequence[Bar]) -> Series:
+    return [_is_pattern(spec, bars[i - 1] if i else None, bars[i]) for i in range(len(bars))], None
+
+
+#: Each candle pattern's own parameters, beyond `pattern`.
+CANDLES: dict[str, tuple[str, ...]] = {
+    "doji": ("body_pct",),
+    "hammer": ("body_pct", "shadow_ratio"),
+    "shooting_star": ("body_pct", "shadow_ratio"),
+    "bullish_engulfing": (),
+    "bearish_engulfing": (),
+    "inside_bar": (),
+    "outside_bar": (),
+}
+
+
 @dataclass(frozen=True)
 class _Kind:
-    fn: Callable[[Mapping, Sequence[Bar]], Series]
+    fn: Callable[..., Series]
     params: dict[str, Callable[[object], bool]]
-    session: bool  # armed afresh at every session's first bar
+    arm: str  # "session": armed at every open; "continuous": armed on a false state; "each": every bar
 
 
 def _is_dir(*allowed: str) -> Callable[[object], bool]:
@@ -371,6 +505,10 @@ def _src_or_num(v: object) -> bool:
     return _num(v) or isinstance(v, Mapping)
 
 
+def _lookback(v: object) -> bool:
+    return v == "session" or _pos_int(v)
+
+
 KINDS: dict[str, _Kind] = {
     "cross": _Kind(
         _cross,
@@ -380,7 +518,7 @@ KINDS: dict[str, _Kind] = {
             "direction": _is_dir("above", "below"),
             "seed": _flag,
         },
-        False,
+        "continuous",
     ),
     "range": _Kind(
         _range,
@@ -391,29 +529,53 @@ KINDS: dict[str, _Kind] = {
             "direction": _is_dir("enters", "exits"),
             "seed": _flag,
         },
-        False,
+        "continuous",
     ),
-    "gap": _Kind(_gap, {"direction": _is_dir("up", "down"), "pct": _num}, True),
-    "gap_fill": _Kind(_gap_fill, {"min_pct": _num}, True),
+    "gap": _Kind(_gap, {"direction": _is_dir("up", "down"), "pct": _num}, "session"),
+    "gap_fill": _Kind(_gap_fill, {"min_pct": _num}, "session"),
     "change": _Kind(
         _change,
         {"from": _is_dir("open", "prior_close"), "direction": _is_dir("up", "down"), "pct": _num},
-        True,
+        "session",
     ),
-    "opening_range": _Kind(_opening_range, {"minutes": _pos_int, "side": _is_dir("above", "below")}, True),
-    "prior_session": _Kind(_prior_session, {"side": _is_dir("high", "low")}, True),
+    "opening_range": _Kind(
+        _opening_range, {"minutes": _pos_int, "side": _is_dir("above", "below")}, "session"
+    ),
+    "prior_session": _Kind(_prior_session, {"side": _is_dir("high", "low")}, "session"),
     "new_extreme": _Kind(
         _new_extreme,
-        {"side": _is_dir("high", "low"), "lookback": lambda v: v == "session" or _pos_int(v)},
-        True,  # a session lookback; an N-bar lookback is continuous (see _is_session)
+        {"side": _is_dir("high", "low"), "lookback": _lookback},
+        "session",  # a session lookback; an N-bar lookback is continuous (see _arm_mode)
+    ),
+    "distance": _Kind(
+        _distance,
+        {
+            "side": _is_dir("high", "low"),
+            "lookback": _lookback,
+            "direction": _is_dir("within", "beyond"),
+            "pct": lambda v: _num(v) and v >= 0,
+        },
+        "session",  # as new_extreme
     ),
     "consecutive": _Kind(
-        _consecutive, {"n": _pos_int, "direction": _is_dir("up", "down"), "seed": _flag}, False
+        _consecutive, {"n": _pos_int, "direction": _is_dir("up", "down"), "seed": _flag}, "continuous"
     ),
+    "event": _Kind(
+        _event,
+        {
+            "event": lambda v: isinstance(v, str) and bool(v),
+            "timing": _is_dir("before", "on", "after"),
+            "days": lambda v: isinstance(v, int) and not isinstance(v, bool) and v >= 0,
+            "unit": _is_dir("sessions", "calendar"),
+            "at": lambda v: isinstance(v, str) and _hhmm_ok(v),
+        },
+        "session",
+    ),
+    "candle": _Kind(_candle, {"pattern": lambda v: v in CANDLES}, "each"),
 }
 
 #: Kinds whose state has no distance to measure, so `reset` means nothing for them.
-_NO_VALUE = frozenset({"gap_fill", "consecutive"})
+_NO_VALUE = frozenset({"gap_fill", "consecutive", "event", "candle"})
 
 _RULES: dict[str, Callable[[object], bool]] = {
     "confirm": _pos_int,
@@ -461,14 +623,21 @@ def validate(spec: object, path: str = "signal") -> None:
     if kind is None:
         raise ValueError(f"{path}.kind: unknown kind {spec.get('kind')!r}")
     keys = set(spec) - {"kind"}
-    unknown = keys - set(kind.params) - set(_RULES)
+    params = dict(kind.params)
+    if spec["kind"] == "candle" and spec.get("pattern") in CANDLES:
+        params.update({p: lambda v: _num(v) and v >= 0 for p in CANDLES[spec["pattern"]]})
+    unknown = keys - set(params) - set(_RULES)
     if unknown:
         raise ValueError(f"{path}: unknown key {sorted(unknown)[0]!r}")
-    for key, ok in kind.params.items():
+    for key, ok in params.items():
         if key not in spec:
             raise ValueError(f"{path}: {spec['kind']} needs {key!r}")
         if not ok(spec[key]):
             raise ValueError(f"{path}.{key}: bad value {spec[key]!r}")
+    if spec["kind"] == "event" and (spec["days"] == 0) != (spec["timing"] == "on"):
+        raise ValueError(f"{path}.days: 0 with timing 'on', at least 1 before or after")
+    if spec["kind"] == "candle" and spec.get("confirm", 1) != 1:
+        raise ValueError(f"{path}.confirm: a candle pattern is one bar and takes no confirmation")
     for key in ("a", "b"):
         if isinstance(spec.get(key), Mapping):
             _validate_source(spec[key], f"{path}.{key}")
@@ -483,24 +652,30 @@ def validate(spec: object, path: str = "signal") -> None:
         validate(other, f"{path}.only_when[{i}]")
 
 
-def _is_session(spec: Mapping) -> bool:
-    if spec["kind"] == "new_extreme":
-        return spec["lookback"] == "session"
-    return KINDS[spec["kind"]].session
+def _arm_mode(spec: Mapping) -> str:
+    if spec["kind"] in ("new_extreme", "distance") and spec["lookback"] != "session":
+        return "continuous"
+    return KINDS[spec["kind"]].arm
 
 
-def _kind_series(spec: Mapping, bars: Sequence[Bar]) -> Series:
+Events = Mapping[str, Iterable[str]] | None
+
+
+def _kind_series(spec: Mapping, bars: Sequence[Bar], events: Events = None) -> Series:
     """The kind's (state, value) per bar: the one place a definition is evaluated."""
+    if spec["kind"] == "event":
+        return _event(spec, bars, events)
     return KINDS[spec["kind"]].fn(spec, bars)
 
 
 # --- the two forms ----------------------------------------------------------------------------------
 
 
-def state(spec: Mapping, bars: Sequence[Bar]) -> list[bool | None]:
-    """The state form: whether the signal's condition holds at each bar (None: not yet defined)."""
+def state(spec: Mapping, bars: Sequence[Bar], events: Events = None) -> list[bool | None]:
+    """The state form: whether the signal's condition holds at each bar (None: not yet defined).
+    `events` maps an event label to its ISO dates, for the event kind."""
     validate(spec)
-    return _kind_series(spec, bars)[0]
+    return _kind_series(spec, bars, events)[0]
 
 
 def _candidates(
@@ -512,10 +687,11 @@ def _candidates(
     reset: float,
     session_armed: bool,
     carry: bool,
+    every_bar: bool = False,
 ) -> list[int]:
     """The bars where the signal fires before the filters: a run of `confirm` true states that began
     while armed. Arming: at each session start for a session kind; otherwise on a false state (past the
-    reset distance, if any), carried across sessions only when `carry`."""
+    reset distance, if any), carried across sessions only when `carry`; on every bar with `every_bar`."""
     out: list[int] = []
     armed, run = False, 0
     for i, s in enumerate(states):
@@ -526,6 +702,8 @@ def _candidates(
                 armed = True
             elif not carry:
                 armed = False
+        if every_bar:
+            armed = True
         if s is None:
             run = 0
             continue
@@ -546,22 +724,24 @@ def _candidates(
     return out
 
 
-def firings(spec: Mapping, bars: Sequence[Bar]) -> list[Firing]:
-    """The event form: every bar where the signal fired, with the firing rules applied."""
+def firings(spec: Mapping, bars: Sequence[Bar], events: Events = None) -> list[Firing]:
+    """The event form: every bar where the signal fired, with the firing rules applied. `events` maps an
+    event label to its ISO dates, for the event kind (here or in `only_when`)."""
     validate(spec)
-    states, values = _kind_series(spec, bars)
-    session_kind = _is_session(spec)
+    states, values = _kind_series(spec, bars, events)
+    mode = _arm_mode(spec)
     picks = _candidates(
         states,
         values,
         bars,
         confirm=spec.get("confirm", 1),
         reset=float(spec.get("reset", 0)),
-        session_armed=session_kind,
-        # An N-bar extreme has no `seed`: its window spans the close by definition, so arming does too.
-        carry=not session_kind and bool(spec.get("seed", True)),
+        session_armed=mode == "session",
+        # An N-bar window has no `seed`: it spans the close by definition, so arming does too.
+        carry=mode == "continuous" and bool(spec.get("seed", True)),
+        every_bar=mode == "each",
     )
-    filters = [state(other, bars) for other in spec.get("only_when", ())]
+    filters = [state(other, bars, events) for other in spec.get("only_when", ())]
     picks = [i for i in picks if all(f[i] is True for f in filters)]
     latest = spec.get("latest")
     if latest is not None:
