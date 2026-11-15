@@ -40,6 +40,10 @@ and core acts today, from the window's open, on a firing on the previous trading
 that stop before that day read `stale_bars`. The item 75 backtest driver carries no daily bars, so a
 daily signal is backtested only once the automation driver exists (#1201).
 
+**Volume.** The trail is spot only, so a signal that reads bar volume (a volume-weighted VWAP, relative
+volume, a volume ratio; `core.signals.needs_volume`) is refused at load. A VWAP with equal weights reads
+no volume and passes.
+
 **One firing rule.** An intraday signal reads the earlier sessions too, as a signal study over the whole
 history does: a seeded indicator is warm at the open, arming carries across the close, and a gap or a
 prior-session break has the prior session. So for an arm that reads one (`arms.reads_prior_trail`) the

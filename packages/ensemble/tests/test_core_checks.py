@@ -193,6 +193,19 @@ def test_an_event_the_calendar_cannot_answer_is_never_read_as_quiet():
     assert engine.decide(arm, dataclasses.replace(snap, events=None)).checks[-1][2] == "event_dates_unknown"
 
 
+def test_a_signal_that_reads_volume_is_refused_while_the_bars_carry_none():
+    vwap = {"name": "vwap", "anchor": "session", "price": "hlc3", "weight": "volume"}
+    over = {"kind": "cross", "a": {"name": "close"}, "b": vwap, "direction": "above", "seed": False}
+    trig = {"signal": over, "window": {"open": "09:45", "close": "15:00"}, "within": 5}
+    assert any("reads bar volume" in x for x in arms.validate(trigger_arm(trig, bar_minutes=5)))
+    exit_arm = copy.deepcopy(A["iron-fly-1000"])
+    exit_arm["exit"] = {"signal": {"trigger": trig, "bar_minutes": 5}}
+    assert any("exit.signal.trigger.signal: reads bar volume" in x for x in arms.validate(exit_arm))
+    # Equal weights read no volume: the declared index stand-in passes.
+    equal = {**trig, "signal": {**over, "b": {**vwap, "weight": "equal"}}}
+    assert not arms.validate(trigger_arm(equal, bar_minutes=5))
+
+
 # --- signal exits ---------------------------------------------------------------------------------------
 
 FALL = {
