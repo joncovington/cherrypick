@@ -110,12 +110,16 @@ def trigger_due(entry: dict, snap: Snapshot) -> tuple[bool, object]:
     event the signal names. The value is the minute it fired when due, else the reason it is not:
     `event_dates_unknown` when the calendar cannot say whether an event falls in reach."""
     minute = snap.minute
-    bars = signals.from_trail(
-        snap.session,
-        [(m, s) for m, s in snap.trail if m <= minute],
-        entry.get("bar_minutes", 1),
-        until=minute,
-    )
+    if entry["trigger"].get("daily"):
+        # Completed sessions only: core drops any of today's, and the snapshot carries none.
+        bars = signals.daily([r for r in snap.daily if r["session"] < snap.session])
+    else:
+        bars = signals.from_trail(
+            snap.session,
+            [(m, s) for m, s in snap.trail if m <= minute],
+            entry.get("bar_minutes", 1),
+            until=minute,
+        )
     now = datetime.fromisoformat(snap.session).replace(hour=minute // 60, minute=minute % 60, tzinfo=ET)
     try:
         due = entrychecks.entry_due(

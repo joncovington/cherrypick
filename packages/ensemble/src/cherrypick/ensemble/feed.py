@@ -19,6 +19,7 @@ from datetime import date, datetime, timedelta
 
 from cherrypick.core import calendar as _cal
 
+from . import arms as arms_mod
 from . import db, provider
 from . import indicators as ind
 from .model import Chain, OpenPosition, Snapshot, hhmm
@@ -40,7 +41,8 @@ def reads(arm: dict) -> dict:
         "gex": gex,
         "greeks": gex or "delta" in rules,
         "vix": any(g in VIX_GATES for g in gates),
-        "closes": max(mas) if mas else 1,
+        "closes": max([*mas, arms_mod.DAILY_HISTORY if arms_mod.reads_daily(arm) else 1]),
+        "daily": arms_mod.reads_daily(arm),
         "events": bool((arm.get("skip_events") or {}).get("labels")),
     }
 
@@ -109,6 +111,7 @@ def market(cache_path: str, conn, symbol: str, when: datetime, params: dict, *, 
         "spot": spot,
         "prev_close": float(bars[-1]["close"]),
         "closes": [float(b["close"]) for b in bars],
+        "bars": bars,
         "trail": trail,
         "trail_complete": trail_complete(trail, int(params["trail_grace_minutes"])),
         "day_open": provider.day_open(cache_path, symbol, today) or (trail[0][1] if trail else spot),
@@ -190,6 +193,7 @@ def snapshot_for(
         open_positions=open_positions(conn, today),
         close_minute=_cal_close_minute(today),
         with_gex=any(n["gex"] for n in needs),
+        daily=m["bars"] if any(n["daily"] for n in needs) else None,
     )
     return snap, info
 
