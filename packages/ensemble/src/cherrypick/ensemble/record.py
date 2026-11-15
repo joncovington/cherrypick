@@ -72,6 +72,19 @@ def read(path: Path) -> list[dict]:
     return [json.loads(x) for x in path.read_text(encoding="utf-8").splitlines() if x.strip()]
 
 
+def as_they_ran(arms: dict[str, dict]) -> dict[str, dict]:
+    """Recorded arms with what they ran under made explicit: a record from before `limits.per_day` was a
+    stated field ran one entry a day (the engine refused a second), so that is filled in, never anything
+    the record does not imply."""
+    out = {}
+    for name, arm in arms.items():
+        lim = arm.get("limits") or {}
+        if "per_day" not in lim:
+            arm = {**arm, "limits": {"max_open": 1, **lim, "per_day": 1}}
+        out[name] = arm
+    return out
+
+
 def replay_file(
     path: Path, events=None, *, costs: dict | None = None, arms: dict | None = None
 ) -> list[dict]:
@@ -80,7 +93,7 @@ def replay_file(
     what a changed arm would have done on the same market)."""
     out = []
     for rec in read(path):
-        use = arms if arms is not None else rec["arms"]
+        use = arms if arms is not None else as_they_ran(rec["arms"])
         again = paper.replay(use, rec["snapshot"], events, costs=costs)
         out.append(
             {

@@ -18,7 +18,9 @@ that defaulted silently would change what is measured):
     legs          [{"name", "right": "C"|"P", "side": 1|-1, "strike": <strikes rule>}] in placement order
     gates         [{"gate": <gates.REGISTRY name>, ...}]
     size          {"contracts": N} or {"max_risk": dollars}
-    limits        {"max_open": N, "every_days": N, "one_per_expiry": bool}
+    limits        {"max_open": N, "per_day": 1, "every_days": N, "one_per_expiry": bool}: `max_open` and
+                  `per_day` required, no default (`per_day` is 1: the entry register keeps one row per
+                  arm and day)
     exit          {} (hold to settlement) with any of "close_before_expiry_min", "profit_target_pct",
                   "touch": {"pct": -0.5} or {"points": -10},
                   "signal": {"trigger": <core.entrychecks trigger>, "bar_minutes": N} (the entry
@@ -77,6 +79,8 @@ TOP_KEYS = {
     "exit",
     "note",
 }
+LIMIT_KEYS = {"max_open", "per_day", "every_days", "one_per_expiry"}
+
 EXIT_KEYS = {
     "close_before_expiry_min",
     "profit_target_pct",
@@ -116,7 +120,7 @@ ARMS: dict[str, dict] = {
             {"gate": "bid_ask", "max": 2.0},
         ],
         "size": {"max_risk": 250, "minimum": 1},
-        "limits": {"max_open": 1},
+        "limits": {"max_open": 1, "per_day": 1},
         "exit": {},
     },
     "iron-condor-1345": {
@@ -140,7 +144,7 @@ ARMS: dict[str, dict] = {
             {"gate": "reward_risk", "min": 95},
         ],
         "size": {"contracts": 2},
-        "limits": {"max_open": 1},
+        "limits": {"max_open": 1, "per_day": 1},
         "exit": {},
     },
     "put-spread-1300": {
@@ -165,7 +169,7 @@ ARMS: dict[str, dict] = {
             {"gate": "bid_ask", "max": 2.0},
         ],
         "size": {"contracts": 2},
-        "limits": {"max_open": 1},
+        "limits": {"max_open": 1, "per_day": 1},
         "exit": {},
     },
     "iron-fly-1dte-1330": {
@@ -198,7 +202,7 @@ ARMS: dict[str, dict] = {
             {"gate": "reward_risk", "min": 200},
         ],
         "size": {"contracts": 1},
-        "limits": {"max_open": 2},
+        "limits": {"max_open": 2, "per_day": 1},
         "exit": {"profit_target_pct": 15, "touch": {"pct": -0.5}},
     },
     "gld-call-spread-20d": {
@@ -216,7 +220,7 @@ ARMS: dict[str, dict] = {
         ],
         "gates": [{"gate": "reward_risk", "min": 450}],
         "size": {"contracts": 2},
-        "limits": {"max_open": 2, "every_days": 14, "one_per_expiry": True},
+        "limits": {"max_open": 2, "per_day": 1, "every_days": 14, "one_per_expiry": True},
         "exit": {"close_before_expiry_min": 60},
     },
     "long-put-1030": {
@@ -234,7 +238,7 @@ ARMS: dict[str, dict] = {
             {"gate": "change_pct", "min": 0},
         ],
         "size": {"max_risk": 300, "minimum": 1},
-        "limits": {"max_open": 1},
+        "limits": {"max_open": 1, "per_day": 1},
         "exit": {},
     },
     "gld-call-spread-1dte": {
@@ -255,7 +259,7 @@ ARMS: dict[str, dict] = {
             {"gate": "reward_risk", "min": 200},
         ],
         "size": {"contracts": 3},
-        "limits": {"max_open": 2},
+        "limits": {"max_open": 2, "per_day": 1},
         "exit": {"close_before_expiry_min": 15},
     },
     "orb-put-spread": {
@@ -279,7 +283,7 @@ ARMS: dict[str, dict] = {
             {"gate": "bid_ask", "max": 2.0},
         ],
         "size": {"contracts": 1},
-        "limits": {"max_open": 1},
+        "limits": {"max_open": 1, "per_day": 1},
         "exit": {"touch": {"points": -10}},
     },
 }
@@ -323,6 +327,20 @@ def validate(arm: dict) -> list[str]:
             ec.validate([gates_mod.check_of(g)], gates_mod.CONDITIONS, f"{name}.gates[{i}]")
         except ValueError as exc:
             p.append(str(exc).replace(f"{name}.gates[{i}][0]", f"{name}.gates[{i}]"))
+    lim = arm.get("limits")
+    if not isinstance(lim, dict):
+        p.append(f"{name}.limits: required, with max_open and per_day")
+    else:
+        extra = set(lim) - LIMIT_KEYS
+        if extra:
+            p.append(f"{name}.limits: unknown key {sorted(extra)[0]!r}")
+        mo = lim.get("max_open")
+        if not (isinstance(mo, int) and not isinstance(mo, bool) and mo >= 1):
+            p.append(f"{name}.limits.max_open: required, a whole number of at least 1")
+        if lim.get("per_day") != 1 or isinstance(lim.get("per_day"), bool):
+            p.append(
+                f"{name}.limits.per_day: required, and 1 (the entry register keeps one row per arm and day)"
+            )
     size = arm["size"]
     if not ({"contracts"} == set(size) or set(size) in ({"max_risk"}, {"max_risk", "minimum"})):
         p.append(f"{name}.size: {size!r}")

@@ -440,3 +440,36 @@ def test_the_feed_reads_the_index_closes_before_today_and_none_without_an_index(
     assert feed.vol_history("SPX", date(2026, 11, 16), 5) == [1.0, 2.0]
     assert feed.vol_history("TSLA", date(2026, 11, 16), 5) == []
     assert feed.vol_history("SPX", date(2026, 11, 16), 0) == []
+
+
+# --- the safeguards, stated --------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("limits", "message"),
+    [
+        (None, "limits: required"),
+        ({"per_day": 1}, "limits.max_open: required"),
+        ({"max_open": 1}, "limits.per_day: required"),
+        ({"max_open": 1, "per_day": 2}, "limits.per_day: required, and 1"),
+        ({"max_open": 0, "per_day": 1}, "limits.max_open"),
+        ({"max_open": 1, "per_day": 1, "max_opne": 2}, "unknown key 'max_opne'"),
+    ],
+)
+def test_every_arm_states_its_safeguards(limits, message):
+    arm = copy.deepcopy(A["iron-fly-1000"])
+    if limits is None:
+        arm.pop("limits")
+    else:
+        arm["limits"] = limits
+    assert any(message in x for x in arms.validate(arm)), arms.validate(arm)
+    assert all(a["limits"]["per_day"] == 1 and a["limits"]["max_open"] >= 1 for a in A.values())
+
+
+def test_a_replay_record_from_before_per_day_runs_under_one_a_day():
+    from cherrypick.ensemble import record
+
+    old = {"iron-fly-1000": {**A["iron-fly-1000"], "limits": {"max_open": 2}}}
+    ran = record.as_they_ran(old)
+    assert ran["iron-fly-1000"]["limits"] == {"max_open": 2, "per_day": 1}
+    assert record.as_they_ran({"x": {"name": "x"}})["x"]["limits"] == {"max_open": 1, "per_day": 1}

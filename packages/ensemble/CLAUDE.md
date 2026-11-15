@@ -13,6 +13,11 @@ arm is a new entry (or a machine override read by `arms.load_arms`); an unknown 
 path. A new kind of filter is one function in `gates.REGISTRY`, a new strike rule one branch in
 `strikes.pick`.
 
+**Safeguards are stated, never defaulted.** Every arm's `limits` names `max_open` and `per_day`; the
+engine reads them with no fallback, so an arm cannot run under a cap it did not state. `per_day` is 1:
+the entry register keeps one row per arm and day. A replay record from before `per_day` existed runs
+under what its arms ran under, one a day (`record.as_they_ran`).
+
 **Gates run through `core.entrychecks`.** Each gate is a core condition (`gates.CONDITIONS`, core's
 registry extended, its parameters read from the gate function's signature), so `arms.validate` refuses a
 misspelt gate parameter at load and a gate's result is recorded as every module's are. The engine still

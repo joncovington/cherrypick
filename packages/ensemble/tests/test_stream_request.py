@@ -86,6 +86,7 @@ def test_a_new_arm_on_a_new_symbol_needs_no_code(tmp_path):
             },
         ],
         "size": {"contracts": 1},
+        "limits": {"max_open": 1, "per_day": 1},
     }
     config = make_config(("tlt-spread",), {"tlt-spread": new})
     arms = config_mod.load_arms(config)
