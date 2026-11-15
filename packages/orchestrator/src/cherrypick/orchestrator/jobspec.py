@@ -119,6 +119,8 @@ CATCHUP_MINUTES = {
     "technicals-yahoo-adjusted": 240,
     # Local files only; a late check is the same check, and the next morning's covers a missed one.
     "technicals-adjust-check": 12 * 60,
+    # The source registry's spans: read-only and idempotent, so a late run is the same run.
+    "sources-inventory": 12 * 60,
     "technicals-liquidity": 120,
     # A rerun rebuilds the same session's list from the same files; its readers run at 18:50-19:10.
     "technicals-securities": 120,
@@ -298,6 +300,7 @@ RETRY_ON_FAILURE = {
     "vol-curve-bars": 2,
     "profile-bars": 2,
     "gold-bars": 2,
+    "sources-inventory": 1,
     "technicals-iv-rank": 2,
     "technicals-dollar-volume": 2,
     "technicals-dividends": 2,
@@ -1761,6 +1764,26 @@ def derive_jobs(
             enabled_reason=""
             if adjust_on
             else "disabled in config (technicals.adjust_check) or with technicals-land",
+        ),
+    )
+    add(
+        "sources-inventory",
+        lambda: JobSpec(
+            id="sources-inventory",
+            # The source registry (`cherrypick.core.sources`): each store's span per symbol, read-only,
+            # into state/sources_inventory.json, which the console and the builder answer coverage
+            # from. Dolt only where something here reads it; a store not on this machine is `absent`,
+            # never a failure. Exits 1 only when a store that is here could not be read. A job of its
+            # own, not a pipeline step, so it runs on a machine with every data job off: 09:00, after
+            # the morning landings and the evening's fetches, before the open.
+            argv=(pythonw, "-m", "cherrypick.core.sources", "inventory")
+            + (() if cfgmod.dolt_read(cfg) else ("--no-dolt",)),
+            kind=KIND_DAILY,
+            at_et="09:00",
+            catchup_minutes=CATCHUP_MINUTES["sources-inventory"],
+            trading_days_only=False,
+            enabled=True,
+            enabled_reason="",
         ),
     )
     yahoo_adj_on = tc["enabled"] and tc["adjust_check"]

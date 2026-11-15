@@ -247,13 +247,19 @@ Open a tile for five tabs:
 - **Money is net,** whole-position dollars, with fees shown as a cost already taken out, as everywhere. See
   [money-layout.md](../conventions/money-layout.md).
 
-### `queue`, `runs` and `data`
+### `queue`, `sources`, `runs` and `data`
 
 `queue` is what the supervisor is doing now: the running task with its progress, what is up next and why
 each row waits, and anything that failed in the last 7 days. `runs` is one tile per replay, with a summary
 of each arm against `control`, its equity line, health checks and settings. The health checks list the
 warnings first, such as a result resting on its best five sessions. `data` shows the licence clock
 and a tile per store with what it holds and which sessions were refused.
+
+`sources` lists every data store the suite holds, ours and the vendor's: what it holds, its cadence,
+the expiries a chain carries, how many symbols and which dates, read each morning by the
+`sources-inventory` job. Its form answers "does our data cover this?": pick a field, a symbol and
+dates, and it names the store that covers them, or says why none does (it starts too late, ends too
+early, or is thin inside the window). The vendor's stores show only while their results may be shown.
 
 ## What to do
 

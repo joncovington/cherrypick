@@ -18,7 +18,10 @@ beyond the latest release.
   is licensed. `inventory` reads each one's span per symbol, read-only, into
   `~/.cherrypick/state/sources_inventory.json`, and `coverage --field chain --symbol QCOM --from ... --to
   ... --expiry monthly` says which source covers a request, or why none does (it starts too late, ends
-  too early, or is thin inside the window). A data file nobody declared is named.
+  too early, or is thin inside the window). A data file nobody declared is named. The
+  `sources-inventory` job reads it every morning at 09:00, and the Backtest page's **sources** tab lists
+  every source with its span and answers the coverage question. A store not on the machine is listed
+  as absent, not a failure.
 - **Ensemble, in paper.** Eight short-dated SPX and GLD option arms (0DTE and 1DTE flies, a condor and
   put spreads, an opening-range put spread, a long put and two GLD call spreads) now trade in paper
   through one decision function, the same one their backtest uses. Experimental and off by default: turn
