@@ -330,6 +330,7 @@ REPLACEMENTS = {
     "iv_falls_back_to_mid": _iv_falls_back_to_mid,
     "nothing_missing": lambda: lambda *_a, **_k: set(),
     "due_forever": lambda: lambda *_a, **_k: 10**6,
+    "gate_always_passes": lambda: lambda _gate, _ctx: (True, None),
 }
 
 
@@ -734,6 +735,15 @@ MUTANTS: tuple[Mutant, ...] = (
         module="cherrypick.core.entrychecks",
         attr="_until",
         replacement="due_forever",
+    ),
+    Mutant(
+        id="ensemble-gate-through-core-passes",
+        breaks="an ensemble gate run through core passes whatever its own function says",
+        package="ensemble",
+        tests=("tests/test_core_checks.py::test_every_market_gate_through_core_equals_its_own_function",),
+        module="cherrypick.ensemble.gates",
+        attr="run",
+        replacement="gate_always_passes",
     ),
 )
 

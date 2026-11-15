@@ -19,8 +19,10 @@ is the one signed ratio whose cut-offs (0 and -1.5) can both bind.
 
 from __future__ import annotations
 
+import inspect
 from dataclasses import dataclass, field
 
+from cherrypick.core import entrychecks as ec
 from cherrypick.core.structures import expected_move
 
 from . import indicators as ind
@@ -209,10 +211,66 @@ REGISTRY = {
 }
 
 
+#: Which of core's stages each gate belongs to, by what it reads: the underlying and VIX (`signal`), the
+#: chain (`chain`), or the chosen legs (`structure`). A label for the builder and `core.trace`: the
+#: engine still runs a gate when ensemble's own stage says so, in the arm's order.
+CORE_STAGE = {
+    "sd_change": "signal",
+    "change_pct": "signal",
+    "gap_pct": "signal",
+    "vix_level": "signal",
+    "vix_change_pct": "signal",
+    "above_ma": "signal",
+    "rsi": "signal",
+    "stoch": "signal",
+    "no_position_today": "signal",
+    "gex_ratio": "chain",
+    "gex_put_total": "chain",
+    "gex_max_otm": "chain",
+    "expected_move_pct": "chain",
+    "mid_price": "structure",
+    "bid_ask": "structure",
+    "reward_risk": "structure",
+}
+
+
+def _any(_v: object) -> bool:
+    return True
+
+
+def _condition(name: str, fn) -> ec.Condition:
+    """A gate as a core condition: its parameters are its function's (those with a default are
+    optional), it reads the engine's `Ctx` from the context's `ensemble` entry, and it takes no bound
+    it does not name."""
+    sig = list(inspect.signature(fn).parameters.values())[1:]
+    required = {p.name: _any for p in sig if p.default is inspect.Parameter.empty}
+    optional = {p.name: _any for p in sig if p.default is not inspect.Parameter.empty}
+    return ec.Condition(
+        name,
+        CORE_STAGE[name],
+        lambda c, p, _fn=fn: _fn(c.extra["ensemble"], **p),
+        lambda _p: {"ensemble"},
+        required,
+        optional,
+    )
+
+
+#: Core's conditions with ensemble's gates added: what `run` evaluates through.
+CONDITIONS = ec.CORE.extended(*(_condition(name, fn) for name, (_, fn) in REGISTRY.items()))
+
+
+def check_of(gate: dict) -> dict:
+    """An arm's gate as a core condition spec."""
+    return {"check": gate["gate"], **{k: v for k, v in gate.items() if k not in ("gate", "off")}}
+
+
 def run(gate: dict, ctx: Ctx):
-    params = {k: v for k, v in gate.items() if k not in ("gate", "off")}
-    stage_fn = REGISTRY[gate["gate"]]
-    return stage_fn[1](ctx, **params)
+    """The gate's (ok, value), evaluated by `core.entrychecks` over this engine's context."""
+    verdict = ec.evaluate(
+        [check_of(gate)], ec.Context(extra={"ensemble": ctx}), stages=ec.STAGES, registry=CONDITIONS
+    )
+    check = verdict.checks[0]
+    return check.passed, check.value
 
 
 def stage_of(gate: dict) -> str:

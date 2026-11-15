@@ -162,10 +162,10 @@ jobs:
             # package besides core another declares; both siblings in the same resolve.
             uv pip install -e ../core -e ../technicals -e ".[dev]"
           elif [ "${{ matrix.package }}" == "ensemble" ]; then
-            # ensemble reads technicals' indicator functions; both siblings in the same resolve.
-            uv pip install -e ../core -e ../technicals -e ".[dev]"
+            # ensemble reads core only (its indicators are core.indicators).
+            uv pip install -e ../core -e ".[dev]"
           elif [ "${{ matrix.package }}" == "backtest" ]; then
-            # item 75's driver and tests load the ensemble engine (which reads technicals).
+            # item 75's driver and tests load the ensemble engine; several scripts read technicals.
             uv pip install -e ../core -e ../technicals -e ../ensemble -e ".[dev]"
           else
             # packages/core is not on PyPI (Private :: Do Not Upload); every consumer declares it as

@@ -19,7 +19,10 @@ beyond the latest release.
   on `modules.ensemble.enabled` after copying `packages/ensemble/config.example.json` to
   `~/.cherrypick/config/ensemble.json`. An arm added in that file trades with no code change. Every
   decision, taken or refused, is kept with the gate that decided it and the snapshot it saw, so paper can
-  be replayed against the backtest. A position is a ledger row, never an order.
+  be replayed against the backtest. A position is a ledger row, never an order. An arm can enter on a
+  signal (a cross, a breakout, a gap and the like, on bars of the minutes it names) with a `trigger`
+  entry, and a misspelt gate setting in the file is refused when the arms load instead of at the first
+  decision.
 - **Ladder, a share dip ladder in paper.** A new package, `ladder`, buys a leveraged index fund (TQQQ to
   start) in lots when it falls 7% and sells each lot on its own at +4%, with three arms: `chain` (each
   further lot 7% under the last), `once` (one lot a session) and `decay` (the target falls to breakeven

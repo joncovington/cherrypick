@@ -7,14 +7,18 @@ backtest driver and the paper loop, which differ only in how they BUILD the snap
 from __future__ import annotations
 
 import math
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from cherrypick.core import calendar as cal
+from cherrypick.core import entrychecks, signals
 
 from . import gates as gates_mod
 from . import indicators as ind
 from . import pricing, strikes
 from .model import Chain, Decision, Entry, Leg, Snapshot, hhmm
+
+ET = ZoneInfo("America/New_York")
 
 
 # --------------------------------------------------------------------------- expiry and trigger
@@ -49,8 +53,25 @@ def breakout_minute(trail, minutes: int, latest: int) -> int | None:
     return None
 
 
+def trigger_due(entry: dict, snap: Snapshot) -> tuple[bool, object]:
+    """A `trigger` entry: `core.entrychecks.entry_due` on the trail cut into `bar_minutes` bars completed
+    by the snapshot's minute. The value is the minute it fired when due, else the reason it is not."""
+    minute = snap.minute
+    bars = signals.from_trail(
+        snap.session,
+        [(m, s) for m, s in snap.trail if m <= minute],
+        entry.get("bar_minutes", 1),
+        until=minute,
+    )
+    now = datetime.fromisoformat(snap.session).replace(hour=minute // 60, minute=minute % 60, tzinfo=ET)
+    due = entrychecks.entry_due(entry["trigger"], now=now, bars=bars)
+    return due.due, due.fired if due.due else due.reason
+
+
 def entry_due(arm: dict, snap: Snapshot) -> tuple[bool, object]:
     e = arm["entry"]
+    if e["kind"] == "trigger":
+        return trigger_due(e, snap)
     if e["kind"] == "time":
         at = hhmm(e["at"])
         return at <= snap.minute < at + e.get("window", 5), snap.minute

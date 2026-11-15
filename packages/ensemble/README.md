@@ -10,7 +10,7 @@ the readings the engine fixes, the money layout and the loop.
 ## Commands
 
 ```bash
-pip install -e ../core -e ../technicals -e .[dev]
+pip install -e ../core -e .[dev]
 python -m pytest
 ruff format . && ruff check .
 

@@ -9,6 +9,9 @@ that defaulted silently would change what is measured):
     expiry        {"kind": "dte"|"market_days"|"calendar", "days": N, "tolerance": D}
     entry         {"kind": "time", "at": "HH:MM", "window": minutes}
                   {"kind": "orb", "minutes": 60, "direction": "above", "latest": "HH:MM", "single_shot": bool}
+                  {"kind": "trigger", "trigger": <core.entrychecks trigger>, "bar_minutes": N}
+                  (a `core.signals` firing on the trail cut into N-minute bars, or a fixed time; event
+                  signals are refused, since the engine hands core no event dates)
     weekdays      [0..4], Monday = 0
     skip_events   {"labels": [...], "through_expiry": bool}
     legs          [{"name", "right": "C"|"P", "side": 1|-1, "strike": <strikes rule>}] in placement order
@@ -23,7 +26,31 @@ from __future__ import annotations
 
 import copy
 
+from cherrypick.core import entrychecks as ec
+
 from . import gates as gates_mod
+
+
+def _trigger_problems(name: str, entry: dict) -> list[str]:
+    """A `trigger` entry's problems: core's validation of the trigger, its bar width, and no event signal."""
+    where = f"{name}.entry"
+    extra = set(entry) - {"kind", "trigger", "bar_minutes"}
+    if extra:
+        return [f"{where}: unknown key {sorted(extra)[0]!r}"]
+    try:
+        ec.validate_trigger(entry.get("trigger"), f"{where}.trigger")
+    except ValueError as exc:
+        return [str(exc)]
+    trigger = entry["trigger"]
+    if "signal" not in trigger:
+        return [] if "bar_minutes" not in entry else [f"{where}.bar_minutes: a fixed time reads no bars"]
+    bars = entry.get("bar_minutes")
+    if not (isinstance(bars, int) and not isinstance(bars, bool) and bars > 0):
+        return [f"{where}.bar_minutes: a signal trigger needs a positive number of minutes"]
+    if "events" in ec.CORE.get("signal").needs({"spec": trigger["signal"]}):
+        return [f"{where}.trigger.signal: an event signal needs event dates the engine does not pass"]
+    return []
+
 
 TOP_KEYS = {
     "name",
@@ -252,8 +279,10 @@ def validate(arm: dict) -> list[str]:
         return p + [f"{name}: missing {k!r}" for k in missing]
     if arm["expiry"].get("kind") not in ("dte", "market_days", "calendar"):
         p.append(f"{name}.expiry.kind: {arm['expiry'].get('kind')!r}")
-    if arm["entry"].get("kind") not in ("time", "orb"):
+    if arm["entry"].get("kind") not in ("time", "orb", "trigger"):
         p.append(f"{name}.entry.kind: {arm['entry'].get('kind')!r}")
+    if arm["entry"].get("kind") == "trigger":
+        p.extend(_trigger_problems(name, arm["entry"]))
     if not all(isinstance(d, int) and 0 <= d <= 4 for d in arm["weekdays"]):
         p.append(f"{name}.weekdays: {arm['weekdays']!r}")
     seen: set[str] = set()
@@ -271,6 +300,11 @@ def validate(arm: dict) -> list[str]:
     for i, g in enumerate(arm.get("gates", [])):
         if g.get("gate") not in gates_mod.REGISTRY:
             p.append(f"{name}.gates[{i}]: unknown gate {g.get('gate')!r}")
+            continue
+        try:
+            ec.validate([gates_mod.check_of(g)], gates_mod.CONDITIONS, f"{name}.gates[{i}]")
+        except ValueError as exc:
+            p.append(str(exc).replace(f"{name}.gates[{i}][0]", f"{name}.gates[{i}]"))
     size = arm["size"]
     if not ({"contracts"} == set(size) or set(size) in ({"max_risk"}, {"max_risk", "minimum"})):
         p.append(f"{name}.size: {size!r}")

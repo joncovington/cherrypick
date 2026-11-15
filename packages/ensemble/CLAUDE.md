@@ -13,6 +13,19 @@ arm is a new entry (or a machine override read by `arms.load_arms`); an unknown 
 path. A new kind of filter is one function in `gates.REGISTRY`, a new strike rule one branch in
 `strikes.pick`.
 
+**Gates run through `core.entrychecks`.** Each gate is a core condition (`gates.CONDITIONS`, core's
+registry extended, its parameters read from the gate function's signature), so `arms.validate` refuses a
+misspelt gate parameter at load and a gate's result is recorded as every module's are. The engine still
+runs the gates in the arm's own order, market gates before the legs and structure gates after, so a
+decision's first failure and its checks are what they were (item 75 reproduces identical). `CORE_STAGE`
+labels each gate with core's stage by what it reads, for the builder and `core.trace`.
+
+**A `trigger` entry** (`{"kind": "trigger", "trigger": ..., "bar_minutes": N}`) is `core.entrychecks`'
+trigger: a `core.signals` firing on the trail cut into N-minute bars, or a fixed time. The shipped arms
+keep their `time` and `orb` entries: the opening-range entry fires on the minute its spot crosses, a core
+signal at a bar's close a minute later, so moving them would be a measurement change. An event signal is
+refused here, since the engine hands core no event dates.
+
 `engine.decide(arm, snapshot)` is the one decision: pure and deterministic, it returns the entry (legs,
 quantity, prices at mid, natural and working, the slippage for each fill kind, the opening fee) or the
 first failing check, with every check it read. `manage` says whether an open position should close now,
@@ -57,7 +70,7 @@ natural fill) and **mid** (context). Per-share prices are signed so a credit is 
 
 ## Dependencies
 
-`cherrypick-core` and the technicals package's pure indicator functions (`sma`, `ema`, `rsi`) only. No
+`cherrypick-core` only, its indicators (`core.indicators`) and entry checks (`core.entrychecks`) included. No
 broker, no network, no streamer: the loop reads the stream cache and never writes it.
 
 ## The paper loop
