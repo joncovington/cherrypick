@@ -294,9 +294,27 @@ def _credit_now(pos: Position, chain: Chain) -> float | None:
     return sum(n * (x["bid"] + x["ask"]) / 2 for x, n in q)
 
 
+def position_delta(pos: Position, chain: Chain) -> float | None:
+    """The structure's delta per unit (each leg's quoted delta times its side), None when a leg is not
+    listed or carries no delta: a missing delta is no reading, never zero."""
+    total = 0.0
+    for leg in pos.entry.legs:
+        q = chain.get(leg.strike, leg.right)
+        if q is None or q.get("delta") is None:
+            return None
+        total += leg.side * float(q["delta"])
+    return total
+
+
 def manage(pos: Position, snap: Snapshot) -> tuple[str, object] | None:
-    """The exit due now, as (kind, detail), or None. Touch first, then profit target, then a signal, then
-    the time exit; held to settlement when the arm has none.
+    """The exit due now, as (kind, detail), or None, checked in this order: a touch, a credit-multiple
+    stop, the profit target, a delta limit, a signal, a DTE, then minutes before expiry; held to
+    settlement when the arm has none.
+
+    - `stop_credit_multiple: m`: a credit entry closes when its loss reaches m times the credit
+      received (a debit entry has no credit to measure, and this rule never fires on one).
+    - `delta_limit: x`: closes when the structure's delta per unit reaches x either way.
+    - `close_at_dte: n`: closes at the first tick of a session n or fewer calendar days before expiry.
 
     A `signal` exit is a trigger of the entry's shape (`{"trigger": ..., "bar_minutes": N}`) read on the
     position's underlying: due when it fires inside its window. On the entry day only a firing after the
@@ -310,16 +328,28 @@ def manage(pos: Position, snap: Snapshot) -> tuple[str, object] | None:
         if crossed:
             return "touch", limit
     chain = snap.chains.get(e.expiry)
-    if r.get("profit_target_pct") and chain is not None and e.max_profit:
-        now = _credit_now(pos, chain)
-        if now is not None:
-            gained = e.prices["mid"] + now
-            if gained >= r["profit_target_pct"] / 100.0 * e.max_profit - 1e-9:
-                return "profit_target", gained
+    now = _credit_now(pos, chain) if chain is not None else None
+    credit = e.prices["mid"]
+    if r.get("stop_credit_multiple") and now is not None and credit > 0:
+        loss = -(credit + now)
+        if loss >= r["stop_credit_multiple"] * credit - 1e-9:
+            return "stop", loss
+    if r.get("profit_target_pct") and now is not None and e.max_profit:
+        gained = credit + now
+        if gained >= r["profit_target_pct"] / 100.0 * e.max_profit - 1e-9:
+            return "profit_target", gained
+    if r.get("delta_limit") is not None and chain is not None:
+        delta = position_delta(pos, chain)
+        if delta is not None and abs(delta) >= r["delta_limit"] - 1e-12:
+            return "delta", round(delta, 4)
     if r.get("signal"):
         due, fired = trigger_due(r["signal"], snap)
         if due and (snap.session > e.session or fired > e.minute):
             return "signal", fired
+    if r.get("close_at_dte") is not None:
+        dte = (date.fromisoformat(e.expiry) - date.fromisoformat(snap.session)).days
+        if dte <= r["close_at_dte"] and snap.session > e.session:
+            return "dte", dte
     if r.get("close_before_expiry_min") is not None and snap.session == e.expiry:
         if snap.minute >= snap.close_minute - r["close_before_expiry_min"]:
             return "time", snap.minute

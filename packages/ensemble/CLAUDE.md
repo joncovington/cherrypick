@@ -48,7 +48,15 @@ closes a position when its signal fires on the underlying, inside its window. `m
 the touch and the profit target and before the time exit. On the entry day only a firing after the
 entry minute counts, and core takes the day's first firing in the window, so a signal that first fired
 before the entry does not exit that day. The backtest driver and the paper loop both run it through
-`manage`, so a signal exit is backtested exactly as it trades.
+`manage`, so a signal exit is backtested exactly as it trades. Paper manages a position on a snapshot
+that carries what its exit reads (`feed.position_snapshot`): today's recorded trail, the earlier
+sessions or the daily bars, the event calendar, and each leg's delta for a delta limit.
+
+**The other exits**, checked in this order with the touch first: `stop_credit_multiple` (a credit entry's
+loss at m times its credit; a debit entry has no credit and it never fires there), the profit target,
+`delta_limit` (the structure's delta per unit either way; a leg without a delta is no reading, never
+zero), the signal, `close_at_dte` (calendar days to expiry, from the first tick of that session, never
+on the entry day), then minutes before expiry.
 
 `engine.decide(arm, snapshot)` is the one decision: pure and deterministic, it returns the entry (legs,
 quantity, prices at mid, natural and working, the slippage for each fill kind, the opening fee) or the
@@ -132,7 +140,8 @@ an arm, only for what an arm reads (`feed.reads`).
   fees from `core.fees`, per `docs/conventions/money-layout.md`. `net_pnl` is the verdict fill; `net_stress`
   and `net_mid` are kept beside it.
 - **Exits** are the arm's, read from the rules the position was entered under (`exit_json`): a spot touch, a
-  profit target, a signal and minutes before expiry are checked every tick and close at the legs' quotes (a close whose
+  credit-multiple stop, a profit target, a delta limit, a signal, a DTE and minutes before expiry are
+  checked every tick and close at the legs' quotes (a close whose
   legs do not price is retried); otherwise the position is held to the expiry's **posted close**
   (`stream_summary`, usually the next morning), never a last trade, and settled at intrinsic. A GLD position
   held to settlement is settled at intrinsic with the engine's cash-settlement charge, as the backtest does;
@@ -146,7 +155,7 @@ an arm, only for what an arm reads (`feed.reads`).
 
 `ensemble_positions` holds the whole money layout on the row: `entry_value` + `exit_value` = `gross_pnl`;
 `gross_pnl` - `fees` (open plus close) - `settlement` - `slippage` = `net_pnl`. `exit_reason` is `touch`,
-`profit_target`, `signal`, `time` or `settlement`.
+`stop`, `profit_target`, `delta`, `signal`, `dte`, `time` or `settlement`.
 
 Entries are measured against item 75's replay, as weeklyput's are against item 57's. Measurement-affecting
 changes (a window, a gate, an arm's rule, the fill) go to a declared boundary with a `measurement_breaks`

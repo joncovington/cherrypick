@@ -148,28 +148,38 @@ def chain_rows(
         conn.close()
 
 
-def leg_rows(db_path, legs: list[dict], *, max_age_seconds: float) -> list[dict] | None:
+def leg_rows(db_path, legs: list[dict], *, max_age_seconds: float, greeks: bool = False) -> list[dict] | None:
     """Quote rows for a position's legs (ledger rows with `strike`, `right`, `streamer_symbol`), or None
-    when any leg has no usable quote: a mark or a close priced off part of a structure is a guess."""
+    when any leg has no usable quote: a mark or a close priced off part of a structure is a guess. With
+    `greeks`, each row carries the leg's `delta` (None when the feed has none fresh enough)."""
     conn = _open(db_path)
     if conn is None or not legs:
         return None
     try:
         syms = [g["streamer_symbol"] for g in legs]
-        quotes, _ = _sc.usable_quotes(conn, syms, time.time(), max_age_seconds)
+        now = time.time()
+        quotes, _ = _sc.usable_quotes(conn, syms, now, max_age_seconds)
+        gk = (
+            _sc.greeks_for(conn, syms, now_ts=now, max_age_seconds=max_age_seconds * GREEKS_AGE_FACTOR)
+            if greeks
+            else {}
+        )
     finally:
         conn.close()
     if any(s not in quotes for s in syms):
         return None
-    return [
-        {
+    out = []
+    for g in legs:
+        row = {
             "strike": g["strike"],
             "right": g["right"],
             "bid": quotes[g["streamer_symbol"]]["bid"],
             "ask": quotes[g["streamer_symbol"]]["ask"],
         }
-        for g in legs
-    ]
+        if greeks:
+            row["delta"] = (gk.get(g["streamer_symbol"]) or {}).get("delta")
+        out.append(row)
+    return out
 
 
 def posted_close(db_path, symbol: str, session: date, *, today: date | None = None) -> float | None:

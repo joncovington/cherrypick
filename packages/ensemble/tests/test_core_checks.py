@@ -331,3 +331,54 @@ def test_the_snapshot_keeps_only_completed_days_and_round_trips():
     )  # fmt: skip
     assert [r["session"] for r in snap.daily] == [r["session"] for r in rows[:2]]
     assert model.Snapshot.from_dict(snap.to_dict()).daily == snap.daily
+
+
+# --- the stop, the delta limit and the DTE exit -----------------------------------------------------------
+
+
+def test_a_credit_multiple_stop_closes_at_its_loss_and_not_before():
+    _, pos = held({"stop_credit_multiple": 0.1})  # an 8.74 credit with 1.26 of risk: a 0.87 loss
+    credit = pos.entry.prices["mid"]
+    assert credit > 0
+    assert engine.manage(pos, spx_snapshot(minute=630)) is None
+    far = spx_snapshot(minute=630, spot=5940.0)
+    kind, loss = engine.manage(pos, far)
+    assert kind == "stop" and loss >= 0.1 * credit - 1e-9
+
+
+def test_a_delta_limit_reads_the_legs_deltas_and_never_guesses():
+    _, pos = held({"delta_limit": 0.02})  # the fly's delta peaks near 0.023 at 5960
+    assert engine.manage(pos, spx_snapshot(minute=630)) is None
+    kind, delta = engine.manage(pos, spx_snapshot(minute=630, spot=5960.0))
+    assert kind == "delta" and abs(delta) >= 0.02
+    # One leg with no delta is no reading: taken as zero, the long put's missing delta would push the
+    # total past the limit at an unmoved spot.
+    snap = spx_snapshot(minute=630)
+    for rows in snap.chains.values():
+        for r in rows.rows:
+            if (float(r["strike"]), r["right"]) == (5990.0, "P"):
+                r["delta"] = None
+    assert engine.manage(pos, snap) is None
+
+
+def test_a_dte_exit_closes_on_the_session_it_reaches_and_never_on_the_entry_day():
+    arm, pos = held({"close_at_dte": 3})
+    pos.entry = dataclasses.replace(pos.entry, expiry="2026-11-20")
+    two_out = {"2026-11-20": 4.0 / 365}
+    assert engine.manage(pos, spx_snapshot(minute=630, expiries=two_out)) is None  # entry day, 4 days out
+    assert engine.manage(pos, spx_snapshot(session="2026-11-17", minute=571, expiries=two_out)) == ("dte", 3)
+
+
+@pytest.mark.parametrize(
+    ("exit_rules", "message"),
+    [
+        ({"stop_credit_multiple": 0}, "exit.stop_credit_multiple"),
+        ({"delta_limit": 7}, "exit.delta_limit"),
+        ({"close_at_dte": -1}, "exit.close_at_dte"),
+        ({"close_at_dte": 2.5}, "exit.close_at_dte"),
+    ],
+)
+def test_a_bad_exit_value_is_refused(exit_rules, message):
+    arm = copy.deepcopy(A["iron-fly-1000"])
+    arm["exit"] = exit_rules
+    assert any(message in x for x in arms.validate(arm)), arms.validate(arm)

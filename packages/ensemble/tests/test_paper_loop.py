@@ -247,3 +247,38 @@ def test_a_positive_net_and_a_drawdown_are_read_from_the_ledger(tmp_path):
     s = analytics.summary(w.conn)
     assert s["combined"]["trades"] == 1 and set(s["arms"]) == {"iron-fly-1000"}
     assert s["combined"]["net"] == s["arms"]["iron-fly-1000"]["net"]
+
+
+DOWN_EXIT = {
+    "signal": {
+        "trigger": {
+            "signal": {
+                "kind": "cross",
+                "a": {"name": "close"},
+                "b": 5995.0,
+                "direction": "below",
+                "seed": True,
+            },
+            "window": {"open": "09:30", "close": "15:45"},
+            "within": None,
+        },
+        "bar_minutes": 1,
+    }
+}
+
+
+def test_a_signal_exit_closes_a_paper_position_on_its_signal(tmp_path):
+    """Paper manages a position on a snapshot carrying the recorded trail, so a signal exit fires in paper
+    as it does in the backtest (the position snapshot used to carry no trail, and it never fired)."""
+    w = world(tmp_path, overrides={"iron-fly-1000": {"exit": DOWN_EXIT}})
+    assert tick(w, at(10, 0))["entries"] == {"iron-fly-1000": "entered"}
+    pid = f"iron-fly-1000:{DAY}"
+    for i, px in enumerate([5999.0, 5997.0, 5993.0]):
+        w.cache.last("SPX", px)
+        tick(w, at(10, 1 + i))
+        assert db.position(w.conn, pid)["status"] == "open", i
+    # The 10:03 bar closed under 5995; it completes at 10:04, and that tick closes the position.
+    w.cache.last("SPX", 5990.0)
+    tick(w, at(10, 4))
+    done = db.position(w.conn, pid)
+    assert done["status"] == "closed" and done["exit_reason"] == "signal"

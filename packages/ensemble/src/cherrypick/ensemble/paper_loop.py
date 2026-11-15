@@ -228,7 +228,9 @@ def _minutes_since(ts: str | None, when: datetime) -> float | None:
     return (when - then).total_seconds() / 60.0
 
 
-def run_positions(config: dict, conn, *, cache_path: str, when: datetime, force_mark: bool = False) -> dict:
+def run_positions(
+    config: dict, conn, *, cache_path: str, when: datetime, force_mark: bool = False, evts=None
+) -> dict:
     """Ask `engine.manage` of every open position; close what is due, mark the rest."""
     params = config_mod.defaults(config)
     age = float(params["max_quote_age_seconds"])
@@ -237,12 +239,24 @@ def run_positions(config: dict, conn, *, cache_path: str, when: datetime, force_
         if date.fromisoformat(pos["expiration"]) < when.date():
             continue  # expired, waiting on its posted close
         legs = db.legs(conn, pos["position_id"])
-        rows = provider.leg_rows(cache_path, legs, max_age_seconds=age)
+        exit_rules = json.loads(pos.get("exit_json") or "{}")
+        rows = provider.leg_rows(
+            cache_path, legs, max_age_seconds=age, greeks=exit_rules.get("delta_limit") is not None
+        )
         spot = provider.read_spot(
             cache_path, pos["symbol"], max_age_seconds=float(params["spot_max_age_seconds"])
         )
         if spot is not None:
-            snap = feed.position_snapshot(pos, rows or [], spot, when)
+            snap = feed.position_snapshot(
+                pos,
+                rows or [],
+                spot,
+                when,
+                exit_rules=exit_rules,
+                conn=conn,
+                cache_path=cache_path,
+                events=evts,
+            )
             if rows is None:
                 snap.chains.clear()
             sig = engine.manage(_position(pos), snap)
@@ -529,7 +543,7 @@ def run_once(
 
     evts = evts if evts is not None else events.load_calendar((config.get("events") or {}).get("path"))
     record_spots(config, arms, conn, cache_path=cache_path, when=when)
-    managed = run_positions(config, conn, cache_path=cache_path, when=when)
+    managed = run_positions(config, conn, cache_path=cache_path, when=when, evts=evts)
     entered = run_entries(
         config, arms, conn, cache_path=cache_path, when=when, evts=evts, replay_to=replay_to
     )

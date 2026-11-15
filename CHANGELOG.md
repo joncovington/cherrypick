@@ -13,6 +13,11 @@ beyond the latest release.
 
 ### What's new
 
+- **Ensemble: three more exits, and signal exits in paper.** `stop_credit_multiple` closes a credit
+  position when its loss reaches m times the credit, `delta_limit` when the structure's delta reaches a
+  limit, `close_at_dte` a set number of days before expiry. Paper's position snapshot now carries the
+  recorded trail, earlier sessions, daily bars, the event calendar and leg deltas: without them a signal
+  exit could never fire in paper, though it fired in the backtest.
 - **One firing rule for intraday signals.** In the ensemble's engine an intraday signal now reads the
   previous five sessions as well as today's, as a signal study does, so a seeded indicator is warm at
   the open and a gap or prior-session signal has the prior session. A test holds that the study,
