@@ -8169,6 +8169,72 @@ recent median, and the profile's claim is about extension, not size.
   step is a MEIC paper-arm item that sizes or skips entries on it, declared on the three bars with its
   forward check, before any arm trades. The `extension` pass adds nothing a module should act on.
 
+### 82. MEIC's live rule skipping days whose first hour is wide against its recent median
+
+Declared 2026-11-14, before any of it is computed: item 81's next step. Item 81 found that a first hour
+wide against its own recent median forecasts a wider rest of the day. MEIC's live arm sells a condor
+after 14:00 against that range, so the question is whether it should stand aside on such days.
+`cherrypick hypotheses --similar` names item 33 (the same arm skipping FOMC days, failed) as the
+nearest look-alike: same arm and shape, a different day rule.
+
+- **Question:** on days whose first hour is half again as wide as its 20-session median, does MEIC's
+  live arm earn less than on other days, by enough that skipping them raises what it earns, and does
+  the arm with those days skipped clear the three bars?
+- **The trades:** `live-1400` (item 23's reference arm: the registry's `pm-200` entering once a day,
+  14:00-14:30, gates and all, the rule MEIC trades live), as replayed in two stored runs of **one
+  spec** of the arm: `20261028-065012-0174bd` (design window) and `20261028-173006-c9b430` (holdout
+  window). Nothing is replayed and no holdout is spent; together they are one run over
+  2022-05-16..2026-10-12. The script refuses if the two runs do not share one spec. Each trade day's
+  net is the run's `session_results` (paper's arithmetic, costs in); its buying power is each
+  condor's wider wing less its credit, times its multiplier and quantity, from the run's own ledger.
+  A later design-only run of a newer spec exists; it has no holdout run, so it is not read.
+- **The day rule:** skip when `w` ≥ ln 1.5, `w` being item 81's feature (the log of the first hour's
+  range over the prior close, against its median across the prior 20 sessions), known at 10:30 from
+  SPX's one-minute prices in the licensed store. A day with no `w` (too little history) is in neither
+  arm and is counted.
+- **Windows:** one run cut at **2025-07-01**; each later part read only after the part before it passed.
+- **The rule, two literals in the script:**
+  - **`GATE_RULE`, the paired question:** in the design, at least 40 skipped trade days (fewer is no
+    verdict); the skipped days' mean net **below zero** (skipping must give up a loss, not merely a
+    smaller gain) and below the kept days' mean, with a one-sided permutation p under 0.05 (the skip
+    label redrawn at random over the design's trade days, the same count, 10,000 draws, seed 82); the
+    kept-minus-skipped gap positive in each design half (split 2023-12-01). Then the holdout: the gap
+    positive; fewer than 15 skipped holdout days makes a pass provisional.
+  - **`RULE`, the three bars on the gated arm `skip_wide`** (`cherrypick.backtest.study.rule`): capital
+    (net less the 3-month bill on its buying power over one day, one-sided t ≥ 2), tail (the
+    99th-percentile one-year drawdown, a stationary bootstrap of its trades, 10,000 draws, seed 82, a year
+    being the sample's own trades a year, under a year of mean net), delta not applicable (a condor is
+    neutral); fewer than 200 design trades is no verdict, fewer than 60 in the holdout part likewise.
+  - **A pass needs both.** A gate pass with a bar fail says skipping helps an arm that does not clear the
+    bars on its own; recorded as such, not a pass.
+- **Provisional by declaration:** MEIC's history has not unlocked (its 60-second validation); every
+  MEIC study on the store is provisional until it does, as item 33 was.
+- **Minimum detectable effect:** with about one design trade day in six or seven skipped (some 100 of the
+  design's trade days) and a session net spread of a few times its mean, the permutation test detects a
+  gap of roughly half a session's spread; the run reports the measured figure beside the verdict.
+- **Reported, never judged:** the ungated arm on the three bars (`control_bars`); the gap at the
+  neighbouring thresholds ln 1.25 and ln 2.
+- **Rival explanations, each with its check:**
+  - *Wide first hours are event days:* item 33 (FOMC) already failed as a skip rule on this arm; an
+    event-only effect would show as a gap that item 33's days carry. Reported through the neighbours, not
+    a separate test, since the calendar does not reach the whole history.
+  - *Skipping wins by shrinking a losing arm:* the zero check (skipped days must lose) and the three bars
+    on the gated arm.
+  - *One regime:* both design halves.
+  - *The threshold:* fixed at ln 1.5 here; its neighbours reported.
+- **Declared limits:** one symbol, so no name split; MEIC's replay is the 60-second store; a day the run
+  holds no ledger for is dropped and counted.
+- **Data and results:** `packages/backtest/scripts/meic_wide_first_hour_item82.py study`, run as
+  `item82/study`. Results stay under `~/.cherrypick/data/backtest/results/research/item82/`, and this
+  plan records the verdict without figures. It runs before the vendor licence ends on 2026-11-16.
+- **Decides:**
+  - **A pass (gate and bars):** propose a MEIC paper arm `skip-wide-hour` beside control, differing only
+    in this day rule, with a `forward` block declared before it trades; nothing live changes.
+  - **A gate pass, a bar fail:** skipping helps, but the arm does not clear the bars either way; no arm
+    is proposed, and the bar fail is the finding.
+  - **A gate fail or no verdict:** the range forecast is real (item 81) but does not move what MEIC's
+    live arm earns; MEIC keeps entering on wide days.
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:

@@ -3816,6 +3816,53 @@
       "retest": null,
       "retest_note": "Read once before the vendor licence ends (2026-11-16); a forecast, so a later MEIC paper-arm item carries any use of it.",
       "retests": []
+    },
+    {
+      "id": 82,
+      "study": "item82",
+      "title": "MEIC's live rule skipping days whose first hour is wide against its recent median",
+      "status": "declared",
+      "legacy": false,
+      "setup": "event-gate",
+      "side": "neutral",
+      "structure": "iron-condor",
+      "window": "0dte",
+      "measure": "live-1400's trade days (one 0DTE SPX condor entered 14:00-14:30) from two stored MEIC runs of one spec, each day's net from session_results and buying power from the run's ledger; a day is skipped when item 81's w (first hour over its 20-session median, log) is at least ln 1.5",
+      "expected": "skipped days lose money, so the arm without them earns more and clears the three bars",
+      "sample": "the stored design and holdout runs of live-1400 (2022-05-16..2026-10-12), one run cut at 2025-07-01; < 40 skipped design days = no verdict; provisional by declaration while MEIC history is locked",
+      "rule": "GATE_RULE: skipped days' design mean net < 0 and below the kept mean, one-sided permutation p < 0.05 (10,000 draws, seed 82), gap positive in each design half (2023-12-01), then positive in the holdout; RULE: the gated arm on the three bars (capital t >= 2 over one day's bill on its buying power, tail at 10,000 draws seed 82, delta not applicable), 200 design and 60 holdout trades; a pass needs both",
+      "mechanism": "a wide first hour forecasts a wider rest of the day (item 81), and a short condor loses to range",
+      "rivals": [
+        {
+          "explanation": "wide first hours are event days",
+          "check": "item 33's FOMC skip already failed on this arm; neighbours reported"
+        },
+        {
+          "explanation": "skipping wins by shrinking a losing arm",
+          "check": "skipped days must lose, and the gated arm must clear the three bars"
+        },
+        {
+          "explanation": "one regime",
+          "check": "the gap positive in both design halves"
+        },
+        {
+          "explanation": "the threshold",
+          "check": "fixed at ln 1.5; ln 1.25 and ln 2 reported"
+        }
+      ],
+      "pointer": "research/edge-hypotheses-plan.md#82-meics-live-rule-skipping-days-whose-first-hour-is-wide-against-its-recent-median",
+      "scripts": [
+        "packages/backtest/scripts/meic_wide_first_hour_item82.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_meic_wide_first_hour_item82_script.py"
+      ],
+      "results": [
+        "{home}/data/backtest/results/research/item82/results.json"
+      ],
+      "retest": null,
+      "retest_note": "Read once before the vendor licence ends (2026-11-16); a pass is followed by a paper arm with its forward block, not a retest.",
+      "retests": []
     }
   ],
   "rule_changes": []
