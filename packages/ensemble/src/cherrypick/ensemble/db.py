@@ -76,6 +76,7 @@ CREATE TABLE IF NOT EXISTS ensemble_positions (
     worst_mark_time     TEXT,
     best_mark_value     REAL,
     best_mark_time      TEXT,
+    peak_pnl            REAL,
     created_at          TEXT,
     updated_at          TEXT
 );
@@ -203,7 +204,7 @@ CREATE TABLE IF NOT EXISTS measurement_breaks (
 """
 
 # Columns added after the first release, per table. Empty at birth.
-_ADDED_COLUMNS: dict[str, dict[str, str]] = {"ensemble_positions": {}}
+_ADDED_COLUMNS: dict[str, dict[str, str]] = {"ensemble_positions": {"peak_pnl": "REAL"}}
 
 _ENV = "ENSEMBLE_DB_PATH"
 
@@ -281,6 +282,15 @@ def open_expirations(conn) -> dict[str, list[str]]:
     ):
         out.setdefault(r["symbol"], []).append(r["expiration"])
     return out
+
+
+def set_peak_pnl(conn, position_id: str, value: float) -> None:
+    """The best open P&L a trailing stop has read (`engine.Position.peak_pnl`), kept between ticks."""
+    conn.execute(
+        "UPDATE ensemble_positions SET peak_pnl = ? WHERE position_id = ? AND status = 'open'",
+        (value, position_id),
+    )
+    conn.commit()
 
 
 def legs(conn, position_id: str) -> list[dict]:

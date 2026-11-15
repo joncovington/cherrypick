@@ -82,7 +82,9 @@ def _stub_arm(pos: dict) -> dict:
 
 
 def _position(pos: dict) -> engine.Position:
-    return engine.Position(Entry.from_dict(json.loads(pos["entry_json"])), _stub_arm(pos))
+    return engine.Position(
+        Entry.from_dict(json.loads(pos["entry_json"])), _stub_arm(pos), peak_pnl=pos.get("peak_pnl")
+    )
 
 
 # --------------------------------------------------------------------------- the close
@@ -259,9 +261,12 @@ def run_positions(
             )
             if rows is None:
                 snap.chains.clear()
-            sig = engine.manage(_position(pos), snap)
+            held = _position(pos)
+            sig = engine.manage(held, snap)
+            if held.peak_pnl is not None and held.peak_pnl != pos.get("peak_pnl"):
+                db.set_peak_pnl(conn, pos["position_id"], held.peak_pnl)
             if sig is not None:
-                trade = engine.close_position(_position(pos), sig[0], snap, costs=config)
+                trade = engine.close_position(held, sig[0], snap, costs=config)
                 if trade is None:
                     out["pending_close"] += 1
                     _log(f"{pos['position_id']}: {sig[0]} is due but the legs do not price yet; retrying")
