@@ -282,3 +282,53 @@ def test_a_signal_exit_closes_a_paper_position_on_its_signal(tmp_path):
     tick(w, at(10, 4))
     done = db.position(w.conn, pid)
     assert done["status"] == "closed" and done["exit_reason"] == "signal"
+
+
+INTRADAY_TRIGGER = {
+    "kind": "trigger",
+    "trigger": {
+        "signal": {"kind": "cross", "a": {"name": "close"}, "b": 6001.0, "direction": "above", "seed": True},
+        "window": {"open": "09:45", "close": "11:00"},
+        "within": 30,
+    },
+    "bar_minutes": 1,
+}
+
+
+def test_an_intraday_trigger_arm_enters_through_the_paper_loop(tmp_path):
+    """A trigger entry runs end to end in paper: its window comes from the trigger (it used to raise in
+    `feed.entry_window`, so turning such an arm on stopped the loop), the loop's recorded trail feeds the
+    signal, and it enters on the tick after the bar that fired."""
+    w = world(tmp_path, overrides={"iron-fly-1000": {"entry": INTRADAY_TRIGGER}})
+    assert arms_mod.validate(w.arms["iron-fly-1000"]) == []
+    for minute, px in ((45, 6000.0), (46, 6000.5), (47, 6000.8)):
+        w.cache.last("SPX", px)
+        assert tick(w, at(9, minute))["entries"].get("iron-fly-1000") != "entered"
+    w.cache.last("SPX", 6002.0)  # the 09:48 bar closes above 6001
+    tick(w, at(9, 48))
+    out = tick(w, at(9, 49))  # that bar completes at 09:49: due now
+    assert out["entries"] == {"iron-fly-1000": "entered"}
+
+
+def test_a_daily_trigger_arm_enters_through_the_paper_loop(tmp_path):
+    """A daily signal reads the stream cache's completed daily bars: the previous close crossed 5900, so
+    the arm enters at its window's open."""
+    daily = {
+        "kind": "trigger",
+        "trigger": {
+            "signal": {
+                "kind": "cross",
+                "a": {"name": "close"},
+                "b": 5900.0,
+                "direction": "above",
+                "seed": True,
+            },
+            "window": {"open": "10:00", "close": "10:30"},
+            "within": 10,
+            "daily": True,
+        },
+    }
+    w = world(tmp_path, overrides={"iron-fly-1000": {"entry": daily}})
+    assert arms_mod.validate(w.arms["iron-fly-1000"]) == []
+    assert tick(w, at(9, 59))["entries"].get("iron-fly-1000") != "entered"
+    assert tick(w, at(10, 0))["entries"] == {"iron-fly-1000": "entered"}

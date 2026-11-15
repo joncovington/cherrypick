@@ -19,6 +19,7 @@ from . import pricing, strikes
 from .model import Chain, Decision, Entry, Leg, Snapshot, hhmm
 
 ET = ZoneInfo("America/New_York")
+OHLC = ("open", "high", "low", "close")
 
 
 # --------------------------------------------------------------------------- expiry and trigger
@@ -111,8 +112,11 @@ def trigger_due(entry: dict, snap: Snapshot) -> tuple[bool, object]:
     `event_dates_unknown` when the calendar cannot say whether an event falls in reach."""
     minute = snap.minute
     if entry["trigger"].get("daily"):
-        # Completed sessions only: core drops any of today's, and the snapshot carries none.
-        bars = signals.daily([r for r in snap.daily if r["session"] < snap.session])
+        # Completed sessions only, and only whole bars: a day the feed holds no open (or high, low, close)
+        # for is absent, never filled in, so a missing yesterday reads `stale_bars`.
+        bars = signals.daily(
+            [r for r in snap.daily if r["session"] < snap.session and all(r.get(k) is not None for k in OHLC)]
+        )
     else:
         # Earlier sessions first (the snapshot carries them for an arm that reads an intraday signal),
         # then today's bars completed by now: what a signal study over the whole history sees.
