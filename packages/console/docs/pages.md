@@ -397,7 +397,9 @@ symbol, and the setups watchlist:
     from the live 15-minute series, and one on another row grid is left out. A session older than the
     drawn candles reach is not drawn (5m and 15m load 16 days, enough for ten sessions; 1m loads four days, capped near three
     days of futures bars), and
-    the readout says how many of those asked are drawn and why fewer.
+    the readout says how many of those asked are drawn and why fewer. Picking 5 or 10 frames the
+    chart from the oldest session drawn to the newest bar (again while more of them arrive, never on
+    a later bar); picking 1 returns to the opening view.
   What the feed does, as
   `scripts/probe_candles.py` measured it, and the rule each finding set (`server/test/candles.test.ts`,
   each case shown to fail):

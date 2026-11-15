@@ -6,6 +6,7 @@ import {
   HistogramSeries,
   type CandlestickData,
   type HistogramData,
+  type IChartApi,
   type IPriceLine,
   type ISeriesApi,
   TickMarkType,
@@ -272,6 +273,9 @@ function LiveCandles({
   const ws = useWsState();
   const symbol = entry.streamerSymbol;
   const seriesRef = useRef<ISeriesApi<"Candlestick", Time> | null>(null);
+  const chartRef = useRef<IChartApi | null>(null);
+  // What the sessions framing last fitted: the series and choice, and how many sessions it reached.
+  const framedRef = useRef<{ key: string; reached: number }>({ key: "", reached: 0 });
   const histRef = useRef<ProfileHistogram | null>(null);
   const linesRef = useRef<{ key: string; lines: IPriceLine[] }>({ key: "", lines: [] });
 
@@ -339,6 +343,31 @@ function LiveCandles({
     [recent, symbol, period, drawnCount],
   );
 
+  // Picking 5 or 10 sessions frames the chart from the oldest one drawn to the newest bar, so the
+  // choice shows; picking 1 goes back to the opening view. It frames on the pick, and again only while
+  // more of the asked sessions arrive (the recorded bars load after the candles), never on a later
+  // bar, so a scroll of the viewer's own stands.
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (chart === null || drawnCount === 0) return;
+    const key = `${symbol}|${period}|${sessions}|${profile}`;
+    const prev = framedRef.current;
+    const bars = wsClient.getCandles(symbol, period);
+    if (sessions <= 1 || !profile) {
+      // The first draw frames itself; only a change back to one session needs this.
+      if (prev.key !== "" && prev.key !== key) chart.timeScale().setVisibleLogicalRange({ from: bars.length - INITIAL_BARS, to: bars.length + 5 });
+      framedRef.current = { key, reached: 1 };
+      return;
+    }
+    if (prev.key === key && onChart <= prev.reached) return;
+    const anchors = sessionAnchors(bars, recent.slice(0, -1).map((p) => p.session));
+    const oldest = Math.min(...anchors.values());
+    framedRef.current = { key, reached: onChart };
+    if (!Number.isFinite(oldest)) return;
+    const from = bars.findIndex((b) => b.t === oldest);
+    if (from >= 0) chart.timeScale().setVisibleLogicalRange({ from: from - 5, to: bars.length + 5 });
+  }, [symbol, period, sessions, profile, onChart, recent, drawnCount]);
+
   useEffect(() => {
     const el = hostRef.current;
     if (el === null) return;
@@ -378,6 +407,7 @@ function LiveCandles({
     const histogram = new ProfileHistogram(OVERLAY, () => wsClient.getCandles(symbol, period), PERIOD_SECONDS[period]);
     candles.attachPrimitive(histogram);
     seriesRef.current = candles;
+    chartRef.current = chart;
     histRef.current = histogram;
     linesRef.current = { key: "", lines: [] };
     // The days in view, for the status line: a view with no day change in it has no date on its axis.
@@ -428,6 +458,8 @@ function LiveCandles({
       off();
       wsClient.releaseCandles(symbol, period);
       seriesRef.current = null;
+      chartRef.current = null;
+      framedRef.current = { key: "", reached: 0 };
       histRef.current = null;
       linesRef.current = { key: "", lines: [] };
       chart.timeScale().unsubscribeVisibleTimeRangeChange(onRange);
