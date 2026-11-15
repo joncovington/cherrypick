@@ -9,14 +9,15 @@ import { backtestOn, invalidateFeatures } from "../src/services/featuresBridge.j
 import type { SpawnedJson } from "../src/services/moduleCli.js";
 
 /**
- * The Backtest page shows results computed from licensed vendor history, so its routes FAIL CLOSED:
- * each refuses with the unknown-route 404 unless the orchestrator's features answer was read and
- * says `backtest: true`. The browser hiding the page is never what keeps the data in. The features
- * answer is driven through the real config-bridge seam, so the gate under test is the one the
- * server runs.
+ * The Backtest page is open, but every route that serves results computed from licensed vendor
+ * history FAILS CLOSED: it refuses with the unknown-route 404 unless the orchestrator's features
+ * answer was read and says `backtest_results: true`. The queue's rows and the studies board answer
+ * every reader (the orchestrator withholds a licensed result's figures itself). The features answer
+ * is driven through the real config-bridge seam, so the gate under test is the one the server runs.
  *
- * Shown to fail: with `backtestOn` loosened to fail open (`!features.ok || ... !== false`), the
- * "features failed" and "key absent" cases served 200 and spawned the bridge.
+ * Shown to fail: with `backtestResultsOn` loosened to fail open (`!features.ok || ... !== false`), the
+ * "features failed" and "key absent" cases served 200 and spawned the bridge; with it reading
+ * `backtest` instead, the licence-ended case 404'd.
  */
 
 const RUN_ID = "20261017-093000-a1b2c3";
@@ -183,43 +184,50 @@ afterEach(() => {
 const closed: Array<[string, BridgeResult]> = [
   ["features failed", features(null)],
   ["the key is absent", features({})],
-  ["the feature is false", features({ backtest: false })],
+  ["the feature is false", features({ backtest_results: false })],
+  // New vendor work allowed says nothing about showing results: only `backtest_results` opens them.
+  ["only the vendor-work feature is true", features({ backtest: true })],
 ];
 
 describe("the gate is closed", () => {
   for (const [name, f] of closed) {
-    it(`both routes 404 when ${name}, and nothing is spawned`, async () => {
+    it(`the licensed routes 404 when ${name} and spawn nothing; the queue and the board still answer`, async () => {
       setBridgeCaller(() => f);
       stubBacktest(() => ({ ok: true, json: OVERVIEW, error: null }));
       const a = await app.inject({ method: "GET", url: "/api/backtest/overview" });
       const b = await app.inject({ method: "GET", url: `/api/backtest/runs/${RUN_ID}` });
+      expect(a.statusCode).toBe(404);
+      expect(b.statusCode).toBe(404);
+      // The unknown-API body, so a closed gate reads as no route at all.
+      expect(a.json()).toEqual({ error: "not found" });
+      expect(a.body).not.toContain("SPX");
+      expect(spawned).toEqual([]);
       stubQueue({ ok: true, json: QUEUE, error: null });
       const c = await app.inject({ method: "GET", url: "/api/backtest/queue" });
       stubStudies({ ok: true, json: STUDIES, error: null });
       const d = await app.inject({ method: "GET", url: "/api/backtest/studies" });
-      expect(a.statusCode).toBe(404);
-      expect(b.statusCode).toBe(404);
-      expect(c.statusCode).toBe(404);
-      expect(d.statusCode).toBe(404);
-      expect(d.body).not.toContain("item23");
-      expect(studiesSpawns).toBe(0);
-      // The unknown-API body, so a closed gate reads as no route at all.
-      expect(a.json()).toEqual({ error: "not found" });
-      expect(a.body).not.toContain("SPX");
-      expect(c.body).not.toContain("item17");
-      expect(spawned).toEqual([]);
-      expect(queueSpawns).toBe(0);
+      expect(c.statusCode).toBe(200);
+      expect(d.statusCode).toBe(200);
+      expect(queueSpawns).toBe(1);
+      expect(studiesSpawns).toBe(1);
     });
   }
 
+  it("the licensed routes answer after the licence ends, while its results may still be shown", async () => {
+    setBridgeCaller(() => features({ backtest: false, backtest_results: true }));
+    stubBacktest(() => ({ ok: true, json: OVERVIEW, error: null }));
+    expect((await app.inject({ method: "GET", url: "/api/backtest/overview" })).statusCode).toBe(200);
+    expect(spawned).toEqual([{ kind: "overview" }]);
+  });
+
   it("a bad run id is a 404 too while closed: the gate is checked first", async () => {
-    setBridgeCaller(() => features({ backtest: false }));
+    setBridgeCaller(() => features({ backtest_results: false }));
     const r = await app.inject({ method: "GET", url: "/api/backtest/runs/..%2F..%2Fetc" });
     expect(r.statusCode).toBe(404);
   });
 
   it("the trade log is a 404 while closed, whatever the arm, and nothing is spawned", async () => {
-    setBridgeCaller(() => features({ backtest: false }));
+    setBridgeCaller(() => features({ backtest_results: false }));
     stubBacktest(() => ({ ok: true, json: { ok: true, trades: [] }, error: null }));
     for (const arm of ["pm-200", "../x"]) {
       const r = await app.inject({ method: "GET", url: `/api/backtest/runs/${RUN_ID}/trades?arm=${encodeURIComponent(arm)}` });
@@ -233,7 +241,7 @@ describe("the gate is closed", () => {
 
 describe("the gate is open", () => {
   it("serves the overview through the bridge", async () => {
-    setBridgeCaller(() => features({ backtest: true }));
+    setBridgeCaller(() => features({ backtest_results: true }));
     stubBacktest(() => ({ ok: true, json: OVERVIEW, error: null }));
     const r = await app.inject({ method: "GET", url: "/api/backtest/overview" });
     expect(r.statusCode).toBe(200);
@@ -244,7 +252,7 @@ describe("the gate is open", () => {
   });
 
   it("serves a run's report, and passes the module's refusal on as an error", async () => {
-    setBridgeCaller(() => features({ backtest: true }));
+    setBridgeCaller(() => features({ backtest_results: true }));
     stubBacktest((req) =>
       req.kind === "run" && req.id === RUN_ID
         ? { ok: true, json: { ok: true, report: { run_id: RUN_ID, arms: {} } }, error: null }
@@ -258,7 +266,7 @@ describe("the gate is open", () => {
   });
 
   it("attaches the run's cards to its report, and hands a chosen capital to the module", async () => {
-    setBridgeCaller(() => features({ backtest: true }));
+    setBridgeCaller(() => features({ backtest_results: true }));
     const cards = { ok: true, account: { capital: 900, basis: "peak_risk", peak_risk: 900 }, arms: {} };
     stubBacktest(() => ({ ok: true, json: { ok: true, report: { run_id: RUN_ID, arms: {} }, cards }, error: null }));
     const r = await app.inject({ method: "GET", url: `/api/backtest/runs/${RUN_ID}` });
@@ -271,7 +279,7 @@ describe("the gate is open", () => {
   });
 
   it("refuses a capital that is not whole dollars with 400 and spawns nothing", async () => {
-    setBridgeCaller(() => features({ backtest: true }));
+    setBridgeCaller(() => features({ backtest_results: true }));
     stubBacktest(() => ({ ok: true, json: OVERVIEW, error: null }));
     for (const bad of ["0", "-5", "1e6", "50000.5", "0050", "abc", "", "--id", "12345678901"]) {
       const r = await app.inject({ method: "GET", url: `/api/backtest/runs/${RUN_ID}?capital=${encodeURIComponent(bad)}` });
@@ -281,7 +289,7 @@ describe("the gate is open", () => {
   });
 
   it("hands the compounded lens's risk percent to the module beside the account", async () => {
-    setBridgeCaller(() => features({ backtest: true }));
+    setBridgeCaller(() => features({ backtest_results: true }));
     stubBacktest(() => ({ ok: true, json: { ok: true, report: { run_id: RUN_ID, arms: {} } }, error: null }));
     await app.inject({ method: "GET", url: `/api/backtest/runs/${RUN_ID}?capital=50000&risk=1.5` });
     await app.inject({ method: "GET", url: `/api/backtest/runs/${RUN_ID}?risk=3&unit=stop` });
@@ -292,7 +300,7 @@ describe("the gate is open", () => {
   });
 
   it("refuses a risk unit the package does not declare with 400 and spawns nothing", async () => {
-    setBridgeCaller(() => features({ backtest: true }));
+    setBridgeCaller(() => features({ backtest_results: true }));
     stubBacktest(() => ({ ok: true, json: OVERVIEW, error: null }));
     for (const bad of ["delta", "STOP", "", "--id", "max_loss "]) {
       const r = await app.inject({ method: "GET", url: `/api/backtest/runs/${RUN_ID}?unit=${encodeURIComponent(bad)}` });
@@ -302,7 +310,7 @@ describe("the gate is open", () => {
   });
 
   it("hands the sizing check's drawdown cap to the module, and refuses one that is not a percent", async () => {
-    setBridgeCaller(() => features({ backtest: true }));
+    setBridgeCaller(() => features({ backtest_results: true }));
     stubBacktest(() => ({ ok: true, json: { ok: true, report: { run_id: RUN_ID, arms: {} } }, error: null }));
     await app.inject({ method: "GET", url: `/api/backtest/runs/${RUN_ID}?capital=50000&dd=30` });
     expect(spawned).toEqual([{ kind: "run", id: RUN_ID, capital: 50000, ddPct: 30 }]);
@@ -314,7 +322,7 @@ describe("the gate is open", () => {
   });
 
   it("refuses a risk percent outside (0, 100] or not a plain number with 400 and spawns nothing", async () => {
-    setBridgeCaller(() => features({ backtest: true }));
+    setBridgeCaller(() => features({ backtest_results: true }));
     stubBacktest(() => ({ ok: true, json: OVERVIEW, error: null }));
     for (const bad of ["0", "0.00", "-2", "100.01", "101", "1e1", "2%", "abc", "", "--id", "2.555"]) {
       const r = await app.inject({ method: "GET", url: `/api/backtest/runs/${RUN_ID}?risk=${encodeURIComponent(bad)}` });
@@ -324,7 +332,7 @@ describe("the gate is open", () => {
   });
 
   it("refuses a malformed run id with 400 and spawns nothing", async () => {
-    setBridgeCaller(() => features({ backtest: true }));
+    setBridgeCaller(() => features({ backtest_results: true }));
     stubBacktest(() => ({ ok: true, json: OVERVIEW, error: null }));
     for (const bad of ["..%2F..%2Fetc", "20261017-093000-A1B2C3", "20261017-093000-a1b2c3x", "x20261017-093000-a1b2c3", "latest"]) {
       const r = await app.inject({ method: "GET", url: `/api/backtest/runs/${bad}` });
@@ -334,7 +342,7 @@ describe("the gate is open", () => {
   });
 
   it("serves runs in brief for the tiles, one sorted read, keeping only finite path points", async () => {
-    setBridgeCaller(() => features({ backtest: true }));
+    setBridgeCaller(() => features({ backtest_results: true }));
     const other = "20261016-093000-ffffff";
     stubBacktest(() => ({
       ok: true,
@@ -355,20 +363,20 @@ describe("the gate is open", () => {
   });
 
   it("refuses summaries with a malformed id or too many ids, and the gate closed, spawning nothing", async () => {
-    setBridgeCaller(() => features({ backtest: true }));
+    setBridgeCaller(() => features({ backtest_results: true }));
     stubBacktest(() => ({ ok: true, json: { ok: true, runs: {}, missing: [] }, error: null }));
     const bad = await app.inject({ method: "GET", url: `/api/backtest/summaries?ids=${RUN_ID},..%2Fx` });
     expect(bad.statusCode).toBe(400);
     const many = Array.from({ length: 81 }, () => RUN_ID).join(",");
     expect((await app.inject({ method: "GET", url: `/api/backtest/summaries?ids=${many}` })).statusCode).toBe(400);
     invalidateFeatures();
-    setBridgeCaller(() => features({ backtest: false }));
+    setBridgeCaller(() => features({ backtest_results: false }));
     expect((await app.inject({ method: "GET", url: `/api/backtest/summaries?ids=${RUN_ID}` })).statusCode).toBe(404);
     expect(spawned).toEqual([]);
   });
 
   it("serves one arm's trade log, and passes the module's refusal of an unknown arm on as an error", async () => {
-    setBridgeCaller(() => features({ backtest: true }));
+    setBridgeCaller(() => features({ backtest_results: true }));
     const trade = { session: "2024-01-02", outcome: "per_side_stop", net_pnl: -50 };
     stubBacktest((req) =>
       req.kind === "trades" && req.arm === "pm-200"
@@ -386,7 +394,7 @@ describe("the gate is open", () => {
   });
 
   it("refuses a missing or malformed arm with 400 and spawns nothing", async () => {
-    setBridgeCaller(() => features({ backtest: true }));
+    setBridgeCaller(() => features({ backtest_results: true }));
     stubBacktest(() => ({ ok: true, json: OVERVIEW, error: null }));
     for (const bad of ["", "--id", "../x", "a b", "x".repeat(81)]) {
       const r = await app.inject({ method: "GET", url: `/api/backtest/runs/${RUN_ID}/trades?arm=${encodeURIComponent(bad)}` });
@@ -398,7 +406,7 @@ describe("the gate is open", () => {
   });
 
   it("serves one trade's path with every argument handed to the module, and its refusal as an error", async () => {
-    setBridgeCaller(() => features({ backtest: true }));
+    setBridgeCaller(() => features({ backtest_results: true }));
     const path = { run_id: RUN_ID, arm: "d16", session: "2024-01-02", position_id: "PAPER-d16-SPX-1", store: "SPX-60s.db", points: [], gaps: 0 };
     stubBacktest((req) =>
       req.kind === "path" && req.position === "PAPER-d16-SPX-1"
@@ -412,7 +420,7 @@ describe("the gate is open", () => {
   });
 
   it("refuses a path whose arm, session or position is missing or malformed, spawning nothing", async () => {
-    setBridgeCaller(() => features({ backtest: true }));
+    setBridgeCaller(() => features({ backtest_results: true }));
     stubBacktest(() => ({ ok: true, json: OVERVIEW, error: null }));
     const ok = { arm: "d16", session: "2024-01-02", position: "PAPER-d16-SPX-1" };
     const bad: Array<Partial<Record<keyof typeof ok, string>>> = [
@@ -436,7 +444,7 @@ describe("the gate is open", () => {
   });
 
   it("serves the research queue renamed, dropping a row it cannot read", async () => {
-    setBridgeCaller(() => features({ backtest: true }));
+    setBridgeCaller(() => features({ backtest_results: true }));
     stubQueue({ ok: true, json: QUEUE, error: null });
     const r = await app.inject({ method: "GET", url: "/api/backtest/queue" });
     expect(r.statusCode).toBe(200);
@@ -475,7 +483,7 @@ describe("the gate is open", () => {
   });
 
   it("serves the studies board renamed: a result keeps its file name only, a bad row is dropped", async () => {
-    setBridgeCaller(() => features({ backtest: true }));
+    setBridgeCaller(() => features({ backtest_results: true }));
     stubStudies({ ok: true, json: STUDIES, error: null });
     const r = await app.inject({ method: "GET", url: "/api/backtest/studies" });
     expect(r.statusCode).toBe(200);
@@ -535,7 +543,7 @@ describe("the gate is open", () => {
   });
 
   it("a failed subprocess is an error, never an empty overview", async () => {
-    setBridgeCaller(() => features({ backtest: true }));
+    setBridgeCaller(() => features({ backtest_results: true }));
     stubBacktest(() => ({ ok: false, json: null, error: "backtest read unavailable — exit 2" }));
     const r = await app.inject({ method: "GET", url: "/api/backtest/overview" });
     expect(r.statusCode).toBe(200);

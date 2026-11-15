@@ -17,6 +17,7 @@ import type {
 } from "@console/shared";
 import { isBacktestRunId } from "@console/shared";
 import { useBridged } from "../../lib/bridged";
+import { useBacktestResultsOn, Withheld } from "../../lib/backtestResults";
 import { fmtCash, fmtCount } from "../../lib/format";
 import { useRun } from "./BacktestPage";
 import { CardLightbox, LightboxFrame, useOpenParam, type LightboxTab } from "./CardLightbox";
@@ -255,9 +256,11 @@ export function figuresRunIds(rows: StudyRow[]): string[] {
 /** Every tile's run in brief, one read for the board. A run's figures never change once written. */
 export function useRunSummaries(ids: string[]) {
   const q = ids.join(",");
+  // Runs are replays over the vendor's store: asked for only while their results may be shown.
+  const open = useBacktestResultsOn();
   return useQuery<BridgedResult<StudyRunSummaries>>({
     queryKey: ["bridged", "backtest", "summaries", q],
-    enabled: ids.length > 0,
+    enabled: ids.length > 0 && open,
     staleTime: 5 * 60_000,
     queryFn: async () => {
       const res = await fetch(`/api/backtest/summaries?ids=${encodeURIComponent(q)}`);
@@ -621,12 +624,14 @@ export function fmtTrades(v: number): string {
 
 function RunFigures({ row }: { row: StudyRow }) {
   const result = figuresRun(row);
+  const open = useBacktestResultsOn();
   const { data, isLoading, isError, error } = useRun(result?.runId ?? null, { capital: null });
   if (result === null) {
     return <p className="muted">{row.group === "declared" ? "Declared, not run yet." : "No result file here names a run the backtest runner wrote, so there are no figures to show."}</p>;
   }
   let body: ReactNode;
-  if (isLoading) body = <span className="skeleton skeleton-text" style={{ width: "50%" }} />;
+  if (!open) body = <Withheld />;
+  else if (isLoading) body = <span className="skeleton skeleton-text" style={{ width: "50%" }} />;
   else if (isError) body = <p className="muted">{(error as Error).message}</p>;
   else if (data === undefined || !data.ok || data.data === null) body = <p className="muted">{data?.error ?? "run report unavailable"}</p>;
   else {

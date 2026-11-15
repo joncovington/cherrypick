@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { LiveAttentionItem, LiveTodayLoop, LiveTodayPayload, SuiteFeatures, SuiteFeaturesOk } from "@console/shared";
-import { isFeatureOn, isHiddenAsUnknown, isModuleVisible, isSlideVisible, liveLoopsInUse, offReason, screenerOffReason } from "../src/lib/visibility";
+import { isBacktestResultsOn, isFeatureOn, isHiddenAsUnknown, isModuleVisible, isSlideVisible, liveLoopsInUse, offReason, screenerOffReason } from "../src/lib/visibility";
 import { visibleNavLinks } from "../src/components/shell/navLinks";
 
 /**
@@ -203,36 +203,42 @@ describe("the nav lists", () => {
  * the fail-open form every other page uses (`!known(f) || f.features.backtest !== false`), the
  * undefined, failed and missing-key cases below all came back visible.
  */
-describe("backtest fails closed", () => {
+describe("backtest's licensed tabs fail closed; the page does not", () => {
   const failed: SuiteFeatures = { ok: false, error: "config bridge unavailable" };
   const missing = withOff({ features: { ...ALL_ON.features } });
-  const off = withOff({ features: { ...ALL_ON.features, backtest: false } });
-  const on = withOff({ features: { ...ALL_ON.features, backtest: true } });
-  const hidden: Array<[string, SuiteFeatures | undefined]> = [
+  const off = withOff({ features: { ...ALL_ON.features, backtest_results: false } });
+  // The licence ended: no new vendor work, but its results may still be shown until the purge date.
+  const keeping = withOff({ features: { ...ALL_ON.features, backtest: false, backtest_results: true } });
+  // Vendor work allowed says nothing about showing results.
+  const vendorOnly = withOff({ features: { ...ALL_ON.features, backtest: true } });
+  const closed: Array<[string, SuiteFeatures | undefined]> = [
     ["still loading", undefined],
     ["the bridge failed", failed],
     ["the reply does not name it", missing],
     ["the suite says false", off],
+    ["only the vendor-work feature is true", vendorOnly],
   ];
 
-  for (const [why, f] of hidden) {
-    it(`is hidden when ${why}`, () => {
-      expect(isModuleVisible("backtest", f)).toBe(false);
-      expect(isHiddenAsUnknown("backtest", f)).toBe(true);
-      // No off card and no reason: nothing on screen may say the page exists.
-      expect(offReason("backtest", f)).toBeNull();
-      // Its tabs go with it, so neither the rail nor j/k can name one.
-      for (const slide of ["data", "validation", "runs"]) expect(isSlideVisible("backtest", slide, f)).toBe(false);
-      expect(visibleNavLinks(f).suite.map((l) => l.to)).not.toContain("/backtest");
+  for (const [why, f] of closed) {
+    it(`keeps the page and its open tabs, and hides the licensed ones, when ${why}`, () => {
+      expect(isModuleVisible("backtest", f)).toBe(true);
+      expect(isHiddenAsUnknown("backtest", f)).toBe(false);
+      expect(visibleNavLinks(f).suite.map((l) => l.to)).toContain("/backtest");
+      for (const slide of ["studies", "queue"]) expect(isSlideVisible("backtest", slide, f)).toBe(true);
+      // The licensed tabs leave the rail, so neither it nor j/k can name one.
+      for (const slide of ["runs", "data"]) expect(isSlideVisible("backtest", slide, f)).toBe(false);
+      expect(isSlideVisible("compare", "slices", f)).toBe(false);
+      expect(isBacktestResultsOn(f)).toBe(false);
     });
   }
 
-  it("is shown only for an explicit true", () => {
-    expect(isModuleVisible("backtest", on)).toBe(true);
-    expect(isHiddenAsUnknown("backtest", on)).toBe(false);
-    expect(offReason("backtest", on)).toBeNull();
-    expect(isSlideVisible("backtest", "runs", on)).toBe(true);
-    expect(visibleNavLinks(on).suite.map((l) => l.to)).toContain("/backtest");
+  it("shows the licensed tabs only for an explicit backtest_results: true, licence ended or not", () => {
+    for (const f of [keeping, withOff({ features: { ...ALL_ON.features, backtest: true, backtest_results: true } })]) {
+      expect(isBacktestResultsOn(f)).toBe(true);
+      for (const slide of ["runs", "data"]) expect(isSlideVisible("backtest", slide, f)).toBe(true);
+      expect(isSlideVisible("compare", "slices", f)).toBe(true);
+    }
+    expect(offReason("backtest", off)).toBeNull();
   });
 
   it("leaves every other page's fail-open rule alone", () => {

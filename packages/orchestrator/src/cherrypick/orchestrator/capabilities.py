@@ -139,8 +139,10 @@ def gated_features(cfg: dict[str, Any]) -> dict[str, Any]:
             "morning_narrative": bool(morning["enabled"] and morning["narrative"]),
             "technicals": bool(cfgmod.technicals_settings(cfg)["enabled"])
             and "earnings" in cfgmod.enabled_modules(cfg),
-            # FAIL-CLOSED, unlike the rest: licensed vendor data (backtestgate's docstring).
+            # FAIL-CLOSED, unlike the rest: licensed vendor data (backtestgate's docstring). The
+            # first says new work may use the vendor, the second that its results may be shown.
             "backtest": backtestgate.backtest_feature()["available"],
+            "backtest_results": backtestgate.results_feature()["available"],
         },
         "live": live_switches(cfg),
     }

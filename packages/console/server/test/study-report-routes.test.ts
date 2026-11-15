@@ -7,12 +7,12 @@ import { resetStudyReportCache, setStudyReportCaller, type StudyReportRequest } 
 import type { SpawnedJson } from "../src/services/moduleCli.js";
 
 /**
- * A study's report and the week's digest come from licensed result files, so both routes FAIL CLOSED
- * like the rest of the Backtest page, and each checks its argument's shape before anything spawns.
- * Every figure here is invented.
+ * A study's report and the week's digest are open routes: the digest carries words and counts only,
+ * and the orchestrator itself refuses a licensed study's report while the results gate is closed
+ * (`cli.cmd_study_report`, tested in packages/orchestrator). Each checks its argument's shape before
+ * anything spawns. Every figure here is invented.
  *
- * Shown to fail: with the `backtestOn` check removed from the report route, the closed-gate case
- * served 200 and spawned; with `isStudySlug` dropped, `..%2Fx` reached the bridge.
+ * Shown to fail: with `isStudySlug` dropped, `..%2Fx` reached the bridge.
  */
 
 function features(extra: Record<string, boolean> | null): BridgeResult {
@@ -103,22 +103,22 @@ describe("study report routes", () => {
   for (const [name, f] of [
     ["features failed", features(null)],
     ["the key is absent", features({})],
-    ["the feature is false", features({ backtest: false })],
+    ["the feature is false", features({ backtest_results: false })],
   ] as const) {
-    it(`404 and spawn nothing when ${name}`, async () => {
+    it(`asks the orchestrator, which decides, when ${name}, and passes its withheld refusal on`, async () => {
       setBridgeCaller(() => f);
-      stub(() => ({ ok: true, json: REPORT, error: null }));
+      stub(() => ({ ok: true, json: { ok: false, error: "withheld: this study's figures come from the vendor's licensed data" }, error: null }));
       const a = await app.inject({ method: "GET", url: "/api/backtest/studies/item7/report" });
-      const b = await app.inject({ method: "GET", url: "/api/backtest/studies/digest?since=2026-11-02" });
-      expect(a.statusCode).toBe(404);
-      expect(b.statusCode).toBe(404);
+      expect(a.statusCode).toBe(200);
+      expect(a.json()).toMatchObject({ ok: false, data: null });
+      expect(a.json().error).toContain("withheld");
       expect(a.body).not.toContain("wide");
-      expect(spawned).toEqual([]);
+      expect(spawned).toHaveLength(1);
     });
   }
 
   it("refuses a bad slug or date with a 400 and spawns nothing", async () => {
-    setBridgeCaller(() => features({ backtest: true }));
+    setBridgeCaller(() => features({ backtest_results: true }));
     stub(() => ({ ok: true, json: REPORT, error: null }));
     for (const url of [
       "/api/backtest/studies/Item7/report",
@@ -135,7 +135,7 @@ describe("study report routes", () => {
   });
 
   it("serves the report renamed, dropping a bad arm, an unknown measure and unknown advice", async () => {
-    setBridgeCaller(() => features({ backtest: true }));
+    setBridgeCaller(() => features({ backtest_results: true }));
     stub(() => ({ ok: true, json: REPORT, error: null }));
     const r = await app.inject({ method: "GET", url: "/api/backtest/studies/item7/report" });
     expect(r.statusCode).toBe(200);
@@ -153,7 +153,7 @@ describe("study report routes", () => {
   });
 
   it("serves the digest renamed and passes an orchestrator refusal through", async () => {
-    setBridgeCaller(() => features({ backtest: true }));
+    setBridgeCaller(() => features({ backtest_results: true }));
     stub((req) => ("since" in req ? { ok: true, json: DIGEST, error: null } : { ok: true, json: { ok: false, error: "no register row for study item9" }, error: null }));
     const d = (await app.inject({ method: "GET", url: "/api/backtest/studies/digest?since=2026-11-02" })).json().data;
     expect(d.studies).toHaveLength(1);

@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
 import { isSignalStudyName, type BridgedResult, type SignalStudyList, type SignalStudyResult } from "@console/shared";
-import { backtestOn, getFeatures } from "../services/featuresBridge.js";
+import { backtestResultsOn, getFeatures } from "../services/featuresBridge.js";
 import { readSignalStudies, readSignalStudy } from "../services/signalStudyBridge.js";
 
 /**
@@ -26,7 +26,7 @@ export function registerSignalStudyRoutes(app: FastifyInstance): void {
   app.get("/api/signals", async (): Promise<BridgedResult<SignalStudyList>> => {
     const read = await readSignalStudies();
     if (!read.ok || read.data === null) return { ok: false, data: null, error: read.error };
-    const open = backtestOn(await getFeatures());
+    const open = backtestResultsOn(await getFeatures());
     const shown = read.data.studies.filter((s) => open || s.licensed === false);
     return {
       ok: true,
@@ -41,7 +41,7 @@ export function registerSignalStudyRoutes(app: FastifyInstance): void {
       if (!isSignalStudyName(req.params.name)) return reply.code(400).send({ error: "not a signal study name" });
       const read = await readSignalStudy(req.params.name);
       // Fail closed: a licensed result, or one whose licence cannot be read, needs the gate open.
-      if (read.ok && read.data !== null && read.data.licensed !== false && !backtestOn(await getFeatures())) return refuse(reply);
+      if (read.ok && read.data !== null && read.data.licensed !== false && !backtestResultsOn(await getFeatures())) return refuse(reply);
       return read;
     },
   );

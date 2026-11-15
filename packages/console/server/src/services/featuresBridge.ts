@@ -98,13 +98,22 @@ export function moduleOn(features: SuiteFeatures | undefined, id: string): boole
 }
 
 /**
- * The backtest page's gate, and the one rule here that FAILS CLOSED: true only when the reply was
- * read and names `features.backtest` as exactly `true`. Loading, a failed bridge, an absent key and
- * `false` all refuse. The page shows results computed from licensed vendor history the licence
- * forbids redistributing, so a broken bridge must cost the page, never expose it. The orchestrator
- * folds the config switch, an active licence, a keyring key and a vendor session into that one
- * value (`capabilities.gated_features`); nothing here re-derives it.
+ * The two licence gates, the rules here that FAIL CLOSED: true only when the reply was read and names
+ * the feature as exactly `true`. Loading, a failed bridge and `false` all refuse, so a broken bridge
+ * costs the licensed pieces and never exposes them. The orchestrator works both out
+ * (`backtestgate.py`, `capabilities.gated_features`); nothing here re-derives either.
+ *
+ * `backtestOn`: new work may use the vendor (the licence runs, the key is in the keyring).
  */
 export function backtestOn(features: SuiteFeatures | undefined): boolean {
   return features !== undefined && features.ok && features.features["backtest"] === true;
+}
+
+/**
+ * `backtestResultsOn`: results derived from the vendor's data may be shown. They may while they are on
+ * this machine and before the licence's purge date, which runs past the licence's end through the
+ * keeping and final-review weeks. Every route that serves such a result asks this, never `backtestOn`.
+ */
+export function backtestResultsOn(features: SuiteFeatures | undefined): boolean {
+  return features !== undefined && features.ok && features.features["backtest_results"] === true;
 }

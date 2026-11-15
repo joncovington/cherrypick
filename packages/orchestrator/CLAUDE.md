@@ -331,7 +331,8 @@ filename; override with `paper.sla_state_prefix`.
   deliberately NOT wired in, and a refusal is data (`ok: false` plus a `code`) on exit 0 so a caller
   can tell "the config said no" from "the bridge is broken". Keep new ops thin. Its `features` op
   (`capabilities.py`) is the console's only answer to "what is on": `capabilities`, `modules`
-  (switch plus capabilities), `services`, `features` (`backtest` fails closed) and `live`, each module's live master
+  (switch plus capabilities), `services`, `features` (`backtest` and `backtest_results` fail closed:
+  new vendor work, and showing the vendor's results until the purge date) and `live`, each module's live master
   switch read as `liveops` reads it. An unreadable switch is omitted, never `false`, so the console
   fails open.
 - **Onboarding (`connect`/`account`) is the one live-config action.** `orchestrator/connect.py` and

@@ -100,8 +100,8 @@ export const ALL_NAV_LINKS: readonly NavLinkDef[] = [...SUITE_LINKS, ...MODULE_L
  * The links a reader can actually use right now: an off module (or the advisor, or GEX with its
  * recorder off) is left out of every nav. The digits are fixed (2026-10-30): an off module leaves
  * its key unbound rather than renumbering the rest. Unknown features
- * keep every link (`visibility.ts`: unknown is visible) -- except Backtest, which fails closed and is
- * listed only once the suite says `backtest: true`.
+ * keep every link (`visibility.ts`: unknown is visible). Backtest is always listed; only its licensed
+ * tabs fail closed.
  */
 export function visibleNavLinks(features: SuiteFeatures | undefined): {
   suite: NavLinkDef[];

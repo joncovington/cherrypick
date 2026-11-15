@@ -5,6 +5,7 @@ import { HelpSection, HelpWarn } from "../../components/CardHelp";
 import { Card } from "../../components/DataTable";
 import { ListViewContext, ViewSwitch, useViewChoice } from "../../components/ViewSwitch";
 import { useBridged } from "../../lib/bridged";
+import { useBacktestResultsOn } from "../../lib/backtestResults";
 import { MiniMarkdown } from "../../lib/miniMarkdown";
 import { StudyCards, notesHref, notesName, planUrl } from "./StudyCards";
 import { resultLabel, statusWord, studyHref, useStudies } from "./studyIndex";
@@ -93,7 +94,8 @@ export function StudyNotes({ board, study, resultName }: { board: StudiesBoard; 
 export function BacktestStudiesTab() {
   const { data, isLoading, isError, error, dataUpdatedAt } = useStudies();
   const [params] = useSearchParams();
-  const overview = useBridged<BacktestOverview>(["backtest", "overview"], "/api/backtest/overview", 60_000);
+  const resultsOn = useBacktestResultsOn();
+  const overview = useBridged<BacktestOverview>(["backtest", "overview"], "/api/backtest/overview", 60_000, resultsOn);
   const ov = overview.data?.ok ? overview.data.data : null;
   const context = windowsLine(ov);
   const provisional = historyLocked(ov);

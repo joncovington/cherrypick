@@ -125,3 +125,16 @@ def test_the_board_marks_a_purged_result_not_reproducible():
     [res] = out["rows"][0]["results"]
     assert res["not_reproducible"] is True and out["licence_ended"] is True
     assert "not_reproducible" not in hy.board(reg, [], read=lambda p: (None, None))["rows"][0]["results"][0]
+
+
+def test_a_closed_results_gate_takes_a_licensed_results_figures_out_and_leaves_its_words():
+    results = ["{home}/lic.json", "{home}/own.json"]
+    reg = {"hypotheses": [{"id": 91, "study": "item91", "status": "failed", "results": results}]}
+    data = {"verdict": "fail", "grid": {"rows": [{"setting": 1, "mean": 2.5}]}}
+    out = hy.board(reg, [], read=lambda p: (data, "2026-11-15T10:00:00"), notes=lambda p: "mean 2.5")
+    out = hy.withhold_licensed(out, lambda p: p.endswith("lic.json"))
+    lic, own = out["rows"][0]["results"]
+    assert lic["notes"] is None and lic["grid"] is None and lic["withheld"] is True
+    assert lic["verdicts"] == [{"arm": None, "verdict": "fail"}] and lic["present"] is True
+    assert own["notes"] == "mean 2.5" and own["grid"] is not None and "withheld" not in own
+    assert out["withheld"] is True

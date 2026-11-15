@@ -166,14 +166,22 @@ an `experimental` chip, listed once in `moduleOrder.ts`'s `EXPERIMENTAL_MODULES`
   (`capabilities.dolt`) gets the install steps and the INSTALL link, the switch off points to Config.
   A tab that vanished, or showed an empty table, read as "no data today"; a fresh install was told it
   needed a vendor. Fail open like the rest: unknown renders the tab.
-- **The one exception fails closed: Backtest** (`FAIL_CLOSED_PAGES` in `visibility.ts`). Its results
-  come from licensed vendor history whose licence forbids redistribution, so it is shown only when
-  the reply was read and says `features.backtest === true` — hidden while loading, on `{ok: false}`,
-  when the key is absent and when false. Hidden, it has no off reason, its tabs and rail link go, and
-  a direct URL is the 404 page (`ModuleRoute`), not the off card. The server refuses its routes on its
-  own (`featuresBridge.backtestOn`), so the browser hiding it is never what keeps the data in. Each
-  guard was shown to fail flipped to the fail-open form (`visibility.test.ts`, `routes.test.tsx`,
-  `backtest-routes.test.ts`).
+- **The one exception fails closed: what shows the vendor's licensed data** (`FAIL_CLOSED_SLIDES`,
+  `isBacktestResultsOn` in `visibility.ts`). The Backtest page itself is always shown: its register
+  rows, its queue and studies over our own data are not the vendor's. Its `runs` and `data` tabs and
+  Compare's `slices` show only results derived from licensed vendor history, whose licence forbids
+  redistribution. They are shown only when the reply was read and says
+  `features.backtest_results === true`. That is true from setup until the licence's purge date, so
+  through the keeping and final-review weeks after its end. They are hidden while loading, on
+  `{ok: false}` and when false. Hidden, such a tab leaves the rail and `j`/`k`, and its URL falls to
+  the page's first tab. A panel that would show such figures elsewhere (a study tile's run, its run
+  figures, a queue task's log) asks nothing and says "Withheld" (`lib/backtestResults.tsx`).
+  - The server refuses those routes on its own (`featuresBridge.backtestResultsOn`), so the browser
+    hiding them is never what keeps the data in.
+  - `features.backtest` is a different question: may new work use the vendor (the licence running,
+    the key in the keyring). Nothing on the page reads it yet; the builder will.
+  - Each guard was shown to fail when flipped (`visibility.test.ts`, `routes.test.tsx`,
+    `backtest-routes.test.ts`).
 
 **Module frame.** Every page renders a left rail and a content pane inside the shell. The rail
 starts collapsed to its toggle; open or shut is the `navExpanded` console preference.
@@ -615,17 +623,20 @@ the intervals, paired differences, t bounds, sign tests and projections are `cor
   carry one.
 
 **Backtest** (`/backtest`, `lightbox/manifests/BacktestLightbox.tsx`,
-`pages/Backtest/BacktestPage.tsx`) — `packages/backtest`'s replays over licensed vendor history, the
-ONLY place those results appear, and fail closed (above). `GET /api/backtest/overview` and
+`pages/Backtest/BacktestPage.tsx`) — the research register, the queue and `packages/backtest`'s
+replays over licensed vendor history, the ONLY place those replays appear. The page is always shown;
+its licensed pieces fail closed (above). `GET /api/backtest/overview` and
 `/api/backtest/runs/:id` (`routes/backtest.ts` → `services/backtestBridge.ts` → `python -m
 cherrypick.backtest read overview|run --id`, async, memoised 30 s) each 404 with the unknown-API body
-unless the features answer says `backtest: true`; a run id is checked against the runner's shape
+unless the features answer says `backtest_results: true`; a run id is checked against the runner's shape
 (`BACKTEST_RUN_ID` in `@console/shared`) and anything else is a 400 that spawns nothing. A bridge,
 not a mirror: the unlock verdict, every check, the paired interval and `no_exposure` are the module's.
 Tabs (`studies` first, and the landing tab, then `queue`, `runs`, `data`;
 `validation` is part of `data`, and `slices` is on Compare; the old URLs redirect): `studies` (`pages/Backtest/StudiesTab.tsx`, `GET /api/backtest/studies` →
-`services/studiesBridge.ts` → `python -m cherrypick.cli hypotheses-board`, behind the same gate
-because the verdicts are read from licensed result files): what we
+`services/studiesBridge.ts` → `python -m cherrypick.cli hypotheses-board`, open to every reader:
+the register's words are public, and while the results gate is closed the orchestrator takes a
+licensed result's notes and grid out itself and marks it `withheld`; a study's report, likewise open,
+is refused by the orchestrator as withheld for a study with a licensed result): what we
 tested and what we found. A mosaic (`pages/Backtest/StudyCards.tsx`): one tile per
 hypothesis-register item, in progress / declared / finished / observations order, the study with a
 task running now as a large tile first. A finished tile's big word is the register's status, with
@@ -1305,7 +1316,7 @@ several chances to disagree about which base a book shadows.
 against the mid at submit, overrides, and the gap to its paper mirror. A closed trade with no recorded
 net is out of its week's net and said beside the count (`unpriced`, "1 + 1 no net"), never counted as zero. Compare → `slices` (B5;
 `/backtest/slices` redirects) reads the `technicals slices` JSON
-under `data/technicals/slices/` (`readers/slices.ts`), behind the backtest gate because a report may
+under `data/technicals/slices/` (`readers/slices.ts`), behind the results gate because a report may
 come from a licensed replay: the tab fails closed (`FAIL_CLOSED_SLIDES`, `visibility.ts`; off, unknown
 or unread, it leaves the rail and its URL falls to Compare's first tab) and the server refuses
 `/api/backtest/slices` on its own. Greyed cells stay greyed and the page
@@ -1320,6 +1331,6 @@ The study in view is `?study=`. Every figure is the module's.
 
 **The tab is open to every reader**, so a study over public daily bars or the recorder's minutes
 outlives a vendor subscription. A study over the vendor's store is licensed, and the routes keep it in
-on their own (`routes/signals.ts`, the Backtest page's `backtestOn` gate):
-- Unless the feature says `backtest: true`, the list leaves it out and counts it in `withheld`.
+on their own (`routes/signals.ts`, `backtestResultsOn`):
+- Unless the feature says `backtest_results: true`, the list leaves it out and counts it in `withheld`.
 - One read of it gets the unknown-route 404.

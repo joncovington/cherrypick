@@ -18,7 +18,7 @@ let app: FastifyInstance;
 let home: string;
 
 function features(on: boolean): BridgeResult {
-  return { ok: true, capabilities: {}, modules: {}, services: {}, features: { backtest: on } } as unknown as BridgeResult;
+  return { ok: true, capabilities: {}, modules: {}, services: {}, features: { backtest: true, backtest_results: on } } as unknown as BridgeResult;
 }
 
 beforeAll(async () => {

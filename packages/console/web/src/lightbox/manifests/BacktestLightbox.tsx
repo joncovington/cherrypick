@@ -6,9 +6,9 @@ import { ModuleFrame } from "../ModuleFrame";
 import type { SlideDef } from "../types";
 
 /**
- * Backtest (2026-10-17): `packages/backtest`'s replays over licensed vendor history, read through
- * `/api/backtest/*`. Reached only while the suite says `backtest: true` (`visibility.ts`, fail
- * closed); the server refuses the reads on its own otherwise. This manifest holds the page list and
+ * Backtest (2026-10-17): the research register, the queue and `packages/backtest`'s replays, read through
+ * `/api/backtest/*`. Always shown; `runs` and `data` show only the vendor's data, so they fail closed on
+ * `backtest_results` (`visibility.ts`), and the server refuses those reads on its own. This manifest holds the page list and
  * nothing else.
  */
 export const slides: SlideDef[] = [

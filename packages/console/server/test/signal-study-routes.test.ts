@@ -8,7 +8,7 @@ import type { SpawnedJson } from "../src/services/moduleCli.js";
 
 /**
  * Compare → signals is open to every reader, but a study over the vendor's store is licensed: the
- * list leaves it out and the one-result route 404s unless the features answer says `backtest: true`.
+ * list leaves it out and the one-result route 404s unless the features answer says `backtest_results: true`.
  *
  * Shown to fail: with the list's filter removed (`open || true`) the "gate off" list served the
  * licensed study, and with the one-result check removed its 404 became a 200.
@@ -16,7 +16,7 @@ import type { SpawnedJson } from "../src/services/moduleCli.js";
 
 function features(backtest: boolean | null): BridgeResult {
   if (backtest === null) return { ok: false, code: "unavailable", error: "config bridge unavailable" } as BridgeResult;
-  return { ok: true, capabilities: {}, modules: {}, services: {}, features: { advisor: true, backtest } } as unknown as BridgeResult;
+  return { ok: true, capabilities: {}, modules: {}, services: {}, features: { advisor: true, backtest: true, backtest_results: backtest } } as unknown as BridgeResult;
 }
 
 const BRIEF = (name: string, licensed: boolean) => ({

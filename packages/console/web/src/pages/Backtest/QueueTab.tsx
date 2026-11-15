@@ -6,6 +6,7 @@ import { HelpSection } from "../../components/CardHelp";
 import { Card } from "../../components/DataTable";
 import { ListViewContext, ViewSwitch, useListView, useViewChoice } from "../../components/ViewSwitch";
 import { useBridged } from "../../lib/bridged";
+import { useBacktestResultsOn, Withheld } from "../../lib/backtestResults";
 import { BtRows, type BtRow } from "./BtRows";
 import { CardLightbox, LightboxFrame, useOpenParam, type LightboxTab } from "./CardLightbox";
 import { GuideLink } from "../../components/GuideLink";
@@ -235,8 +236,11 @@ function Field({ k, children }: { k: string; children: ReactNode }) {
 }
 
 function LogTail({ id }: { id: number }) {
-  const { data, isLoading } = useBridged<{ lines: string[] }>(["backtest", "queue-log", String(id)], `/api/backtest/queue/${id}/log`, 30_000);
+  // A task's log may print figures from the vendor's data, so it is read only while they may be shown.
+  const open = useBacktestResultsOn();
+  const { data, isLoading } = useBridged<{ lines: string[] }>(["backtest", "queue-log", String(id)], `/api/backtest/queue/${id}/log`, 30_000, open);
   const lines = data?.data?.lines ?? [];
+  if (!open) return <Withheld />;
   if (isLoading) return <span className="skeleton skeleton-text" style={{ width: "60%" }} />;
   if (lines.length === 0) return <p className="muted">No log yet.</p>;
   return <pre className="queue-log">{lines.join("\n")}</pre>;

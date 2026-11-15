@@ -2498,18 +2498,43 @@ def cmd_forward_checks(cfg) -> None:
     _emit({"ok": True, "checks": out})
 
 
+def _licensed_while_closed():
+    """`is_licensed(path)` when the results gate is closed (`backtestgate.results_feature`), else None.
+    A file under the backtest package's `results/` or `vendor/` folder counts as licensed; everything
+    else (our own data) does not."""
+    from cherrypick.core import home as core_home
+
+    from cherrypick.orchestrator import backtestgate
+
+    if backtestgate.results_feature()["available"]:
+        return None
+    home = core_home.home()
+    base = core_home.data_dir("backtest")
+    roots = [os.path.normcase(str((base / d).resolve())) for d in ("results", "vendor")]
+
+    def is_licensed(path: str) -> bool:
+        p = os.path.normcase(str(Path(path.replace("{home}", home.as_posix())).expanduser().resolve()))
+        return any(p == r or p.startswith(r + os.sep) for r in roots)
+
+    return is_licensed
+
+
 def cmd_hypotheses_board() -> None:
     """The studies board: each register row with its result files' verdicts and its queue rows.
-    Reads result files under the home, licensed ones included, so the console shows it only behind
-    the backtest gate."""
+    The console shows it to every reader, so while the results gate is closed a licensed result's
+    figures are taken out (`hypotheses.withhold_licensed`, `_licensed_while_closed`)."""
     out, _read = _board()
+    is_licensed = _licensed_while_closed()
+    if is_licensed is not None:
+        out = hypotheses.withhold_licensed(out, is_licensed)
     _emit({"ok": True, **out})
 
 
 def cmd_study_report(args) -> None:
     """One study's result files read as a report (`--study itemN`), or every study active since a
-    date with its verdict counts (`--since YYYY-MM-DD`). Licensed figures: the console shows it only
-    behind the backtest gate, as it does the board."""
+    date with its verdict counts (`--since YYYY-MM-DD`, words and counts only). While the results
+    gate is closed, a study with any licensed result file (`_licensed_while_closed`) is refused as
+    withheld; a study wholly on our own data is read as always."""
     from cherrypick.core import home as core_home
 
     from cherrypick.orchestrator import studyreport
@@ -2527,6 +2552,13 @@ def cmd_study_report(args) -> None:
     row = next((r for r in board["rows"] if r["study"] == args.study), None)
     if row is None:
         _emit({"ok": False, "error": f"no register row for study {args.study}"})
+        sys.exit(1)
+    is_licensed = _licensed_while_closed()
+    licensed_folder = core_home.home() / "data" / "backtest" / "results" / "research" / args.study
+    if is_licensed is not None and (
+        any(is_licensed(r["path"]) for r in row["results"]) or licensed_folder.is_dir()
+    ):
+        _emit({"ok": False, "error": "withheld: this study's figures come from the vendor's licensed data"})
         sys.exit(1)
     files, seen = [], set()
     for res in row["results"]:

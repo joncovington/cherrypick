@@ -5,15 +5,18 @@ import type { BridgedResult } from "@console/shared";
  * One bridged read: a module's own JSON through a server bridge (`BridgedResult`). A failed read
  * comes back as `{ok: false, error}` and is shown as that error, never as an empty table -- the
  * subprocess not running and the module answering "nothing yet" are different facts. `refetchMs`
- * may read the last answer, so a page can poll fast only while something is moving.
+ * may read the last answer, so a page can poll fast only while something is moving. `enabled: false`
+ * asks nothing (a read behind a closed gate).
  */
 export function useBridged<T>(
   key: readonly unknown[],
   url: string,
   refetchMs: number | ((data: BridgedResult<T> | undefined) => number) = 60_000,
+  enabled = true,
 ) {
   return useQuery<BridgedResult<T>>({
     queryKey: ["bridged", ...key],
+    enabled,
     queryFn: async () => {
       const res = await fetch(url);
       if (!res.ok) throw new Error(`${url}: HTTP ${String(res.status)}`);
