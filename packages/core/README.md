@@ -71,6 +71,7 @@ cherrypick/core/
   schemas/         JSON Schema files shared with the console (data, not code)
   american.py      an American option's value (Bjerksund-Stensland), a model never a price
   chaindelta.py    a chain's deltas computed from its own mids
+  chainmeasures.py what an entry gate reads off a chain: IV rank, realised vol, skew, term, net greeks
   environment.py   the suite's one market-environment label
   external_report.py  the external-reports contract (one JSON file per report)
   incomerules.py   the income screens' strike rule

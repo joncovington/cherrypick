@@ -281,6 +281,20 @@ def _signals_confirm_once():
     return patched
 
 
+def _iv_falls_back_to_mid():
+    """The real `_row_iv`, except a row with no IV of its own is implied from its mid: the quiet mixing
+    of two sources in one chain that the chain measures refuse."""
+    original = importlib.import_module("cherrypick.core.chainmeasures")._row_iv
+
+    def patched(row, *, iv_from, forward, years):
+        got = original(row, iv_from=iv_from, forward=forward, years=years)
+        if got is None and iv_from == "row":
+            return original(row, iv_from="mid", forward=forward, years=years)
+        return got
+
+    return patched
+
+
 REPLACEMENTS = {
     "always_true": lambda: _always_true,
     "whole_day": lambda: _whole_day,
@@ -313,6 +327,7 @@ REPLACEMENTS = {
     "one_row_value_area": lambda: _one_row_value_area,
     "signals_read_ahead": _signals_read_ahead,
     "signals_confirm_once": _signals_confirm_once,
+    "iv_falls_back_to_mid": _iv_falls_back_to_mid,
 }
 
 
@@ -685,6 +700,17 @@ MUTANTS: tuple[Mutant, ...] = (
         module="cherrypick.core.signals",
         attr="_candidates",
         replacement="signals_confirm_once",
+    ),
+    Mutant(
+        id="chainmeasures-mixed-iv",
+        breaks="a chain row with no IV of its own is filled from its mid, mixing two sources",
+        package="core",
+        tests=(
+            "tests/test_chainmeasures.py::test_a_row_missing_the_chosen_source_is_skipped_never_filled_from_the_other",
+        ),
+        module="cherrypick.core.chainmeasures",
+        attr="_row_iv",
+        replacement="iv_falls_back_to_mid",
     ),
 )
 
