@@ -13,6 +13,12 @@ beyond the latest release.
 
 ### What's new
 
+- **Automation backtests through the engine paper runs.** `packages/backtest/scripts/automation_backtest.py`
+  replays ensemble arms over a stored history with `cherrypick.ensemble.driver`: the same decisions,
+  exits, gates and fills as the paper loop (a test holds one day to the same trade, to the cent), so
+  every signal, exit and gate added this week can be backtested. It reads our own SPX 0DTE recordings,
+  or the vendor's stores while the licence allows, chosen by the source registry. Same-day expiries for
+  now.
 - **Ensemble arms state their safeguards.** `limits.max_open` and `limits.per_day` are required in every
   arm, with no default in the engine: an arm in `~/.cherrypick/config/ensemble.json` that replaces
   `limits` must name both. The shipped arms already ran one entry a day; they now say so.

@@ -70,6 +70,16 @@ first failing check, with every check it read. `manage` says whether an open pos
 only in how they **build** the `Snapshot` (`snapshot.build`, store rows against stream-cache rows of the same
 shape), so `tests/test_paths_agree.py` holds that a recorded snapshot replays to the same decision.
 
+**The automation driver** (`driver.py`, over `history.StoreHistory`) is the backtest path for any arm:
+every stored minute it manages open positions and then decides the arms in their entry window through
+`paper.decide_all`, each on a snapshot `snapshot.build` makes from the stored day as `feed.snapshot_for`
+makes one from the stream cache, and settles what is open at its expiry's close. `StoreHistory` reads
+any file in the gex recorder's schema (our recorder, the vendor's 0DTE stores) through
+`core.quotehistory` and `core.regime`, never a reader of its own. `tests/test_driver.py` holds a day run
+through the paper loop and through the driver to the same trade, to the cent. Choosing the store and
+writing the result is the backtest package's `scripts/automation_backtest.py`. Version 1 replays
+same-session expiries; item 75's own driver stays as its study left it.
+
 ## The rules and their resolutions
 
 The arms are item 75's in our own words; the declaration is the authority. Where the source's text left a
