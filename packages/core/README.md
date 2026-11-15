@@ -72,6 +72,7 @@ cherrypick/core/
   american.py      an American option's value (Bjerksund-Stensland), a model never a price
   chaindelta.py    a chain's deltas computed from its own mids
   chainmeasures.py what an entry gate reads off a chain: IV rank, realised vol, skew, term, net greeks
+  entrychecks.py   when an entry is due, and the staged checks every module's entry runs
   environment.py   the suite's one market-environment label
   external_report.py  the external-reports contract (one JSON file per report)
   incomerules.py   the income screens' strike rule
