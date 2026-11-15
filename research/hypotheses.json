@@ -3875,6 +3875,58 @@
       "retest": null,
       "retest_note": "Read once before the vendor licence ends (2026-11-16); a pass is followed by a paper arm with its forward block, not a retest.",
       "retests": []
+    },
+    {
+      "id": 83,
+      "study": "item83",
+      "title": "A 3-minute EMA 9 crossing the session VWAP, bought as a 0DTE SPX option",
+      "status": "declared",
+      "legacy": false,
+      "setup": "indicator-rule",
+      "side": "directional",
+      "structure": "long-option",
+      "window": "0dte",
+      "measure": "per SPX session, 3-minute bars from one-minute stamps; EMA 9 of closes and the session VWAP of OHLC4 (equal weights, the index has no volume); a cross buys the 0DTE call (up) or put (down) nearest 50 delta at the next stamp, at mid plus core slippage and fees; exit at the first of a bar closing back across the EMA, the mid at 70% of entry, or 15:55; arms allday (signals by 15:30) and first60 (by 10:30); one row per traded session",
+      "expected": "the session net clears the bill on its largest debit at t 2.3 and beats the same trades entered at random",
+      "sample": "full SPX sessions in the licensed one-minute store, 2022-05-16..2026-11-13, one run cut at 2025-01-01 (design before, holdout from); < 200 design sessions = no verdict, < 60 holdout sessions likewise",
+      "rule": "RULE: the kit's three bars per arm on per-session rows (capital t >= 2.3 over the 3-month bill on the largest debit, tail at 10,000 draws seed 83 with the sample's own sessions a year, delta not applicable: the signal picks the direction); CONTROL_RULE: each session's net less the mean of 20 random-entry placebos (same side, minutes held, strike rule, stop and costs; seed 83), design mean > 0 at one-sided t >= 2.3 and > 0 in each design half (2023-09-01), then the holdout mean > 0 after a design pass; a pass needs both; t 2.3 keeps Holm across the two arms from binding",
+      "mechanism": "intraday momentum: the short average leaving the day's mean price marks a move that persists long enough to pay for an at-the-money option's spread, fees and decay",
+      "rivals": [
+        {
+          "explanation": "the direction of a trending sample",
+          "check": "calls and puts reported apart, every year reported; the control holds side and holding time"
+        },
+        {
+          "explanation": "any entry with a stop",
+          "check": "the control keeps the stop and minutes; only the entry is random"
+        },
+        {
+          "explanation": "the option's convexity, not the signal",
+          "check": "the points version (index move in the signal's direction) reported beside"
+        },
+        {
+          "explanation": "tuning",
+          "check": "nothing tuned: the stated rule, one window cut and the 30% stop; 25% and no stop reported"
+        },
+        {
+          "explanation": "bars from stamps, not trades",
+          "check": "declared limit; only OHLC4 reads a bar's high and low"
+        }
+      ],
+      "pointer": "research/edge-hypotheses-plan.md#83-a-3-minute-ema-9-crossing-the-session-vwap-bought-as-a-0dte-spx-option",
+      "scripts": [
+        "packages/backtest/scripts/ema_vwap_cross_item83.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_ema_vwap_cross_item83_script.py"
+      ],
+      "results": [
+        "{home}/data/backtest/results/research/item83/results.json"
+      ],
+      "outcome": null,
+      "retest": null,
+      "retest_note": "Read once before the vendor licence ends (2026-11-16); a pass is followed by a paper arm on the recorder's bars with its forward block, not a retest.",
+      "retests": []
     }
   ],
   "rule_changes": []

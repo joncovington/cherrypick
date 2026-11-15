@@ -8277,6 +8277,92 @@ nearest look-alike: same arm and shape, a different day rule.
   on wide-first-hour days, so it keeps entering on them; no paper arm is proposed. The tail-bar fail of the
   live arm itself is recorded here as a reported line, provisional with the rest of MEIC's history.
 
+### 83. A 3-minute EMA 9 crossing the session VWAP, bought as a 0DTE SPX option
+
+Declared 2026-11-14, before any of it is computed. The rule comes from a published video in which a day
+trader's rule is rebuilt and backtested on futures; their own longer run of the tuned version lost. It
+is tested here as the trader trades it, buying 0DTE options, on the licensed store's SPX minutes and
+quotes. This item opens the register's **`indicator-rule`** setup: a study where chart indicators decide
+both the entry and the exit, so later ones are found with `hypotheses --similar '{"setup":
+"indicator-rule"}'`. Earlier indicator studies sit under their own setups (item 5's EMA trend, item 20's
+moving-average trend). `--similar` on a directional 0DTE rule names items 4, 8 and 62, all failed: other
+intraday direction signals, none of them this rule.
+
+- **Question:** does buying the 0DTE SPX option on the side an EMA 9 crosses the session VWAP, and
+  selling it when a bar closes back across the EMA, earn after costs on the three bars, and does it beat
+  the same trades entered at random?
+- **The rule as stated:** 3-minute bars, regular hours only. EMA 9 on the close; VWAP anchored to the
+  session, OHLC4 as its source. EMA crossing below the VWAP buys puts, above buys calls. Exit when a
+  candle closes back across the EMA, or at a 25-30% loss if the cross was false.
+- **The replay (`SPEC` in the script):**
+  - **Data:** `SPX-60s.db`, every full session (at least 380 of 389 stamps) from 2022-05-16 through
+    2026-11-13: the index each minute (`gex_spot_history`) and the 0DTE chain's bid, ask and delta each
+    minute (`gex_quotes`). Nothing is fetched.
+  - **Bars:** each 3-minute bar from 09:30 is built from the stamps inside it (a stamp at minute m closes
+    the minute before it); its close is known at its last stamp.
+  - **Indicators:** EMA 9 of the bar closes, carried across consecutive full sessions and restarted after
+    a short session or a gap of more than four days. The VWAP is the running mean of each bar's OHLC4 from
+    the open. **Deviation, declared:** the index has no volume, so every bar weighs the same (a TWAP of
+    OHLC4); the two differ most in the first half hour.
+  - **Entry:** a bar whose EMA closes across the VWAP after a bar on the other side or touching it, both
+    bars in the same session. The fill is the **next quoted stamp** after the bar's close, never the
+    bar's own: the 0DTE call (up) or put (down) whose |delta| is nearest 0.50, bought at mid plus the
+    suite's slippage, with the open fee schedule for one SPX leg. One position at a time; a cross while
+    one is held is skipped and counted.
+  - **Exit, the first of:** a bar closing back across the EMA (a call's under it, a put's over it),
+    filled at the next quoted stamp; the option's mid at or under 70% of its entry mid (the 30% stop),
+    filled at that stamp; 15:55. Sold at mid less slippage, with the close fee schedule. A strike unquoted
+    through the close settles at the last stamp's index, the settlement fee when in the money (counted).
+- **Arms, by the window a signal bar may close in:** `allday` (by 15:30; the rule names no window, so
+  the half hour before the last exit is the one choice made for it) and `first60` (by 10:30, where the
+  rebuild found the rule's best trades). The rebuild's ADX filter and ATR stop and target were tuned on
+  its own sample and are not tested.
+- **Windows:** one run, cut at **2025-01-01** (design before, holdout from). The holdout part is read
+  only after a design pass.
+- **The rule, two literals in the script:**
+  - **`RULE`, the three bars** (`cherrypick.backtest.study.rule`) on **one row per session that traded**:
+    the session's nets summed, its buying power the largest debit held (one position at a time), one
+    day, the 3-month bill. Capital: one-sided t ≥ 2.3. Tail: the 99th-percentile year's drawdown under a
+    year of mean net (10,000 draws, seed 83, a year being the sample's own sessions a year). Delta **not
+    applicable**: the signal picks each trade's direction, so the financed-delta rival is the same signal
+    in the index, reported as the points version below, and the rival that matters is the control.
+    Fewer than 200 design sessions is no verdict, fewer than 60 in the holdout likewise.
+  - **`CONTROL_RULE`, against chance:** each traded session's net less the mean of 20 placebo days
+    (seed 83). A placebo replays every trade of that session with the same side and minutes held,
+    entered at a random stamp of the arm's window early enough to hold them by 15:55, with the same strike
+    rule, stop and costs. Design: the mean difference above zero at one-sided t ≥ 2.3 and above zero in
+    each design half (split 2023-09-01); then, after a design pass, the holdout mean above zero.
+  - **A pass needs both.** t 2.3 keeps Holm across the two arms from binding (one-sided 0.05 needs 2.24
+    at most).
+- **Minimum detectable effect:** the signal fires on most sessions in `allday` (several hundred design
+  sessions) and on fewer in `first60`. With a session net's spread a few times a typical debit, the
+  capital bar detects a mean near a tenth of that spread; the run reports the measured figures.
+- **Reported, never judged:** per arm and part, the trade count, win rate, mean net, costs and debit,
+  minutes held, exits by reason, calls against puts; the stop at 25% and with no stop; every year; the
+  **points version** (the index's move from entry to exit in the signal's direction, gross and less a
+  declared half point a round trip, a futures trader's cost); signals skipped by reason.
+- **Rival explanations, each with its check:**
+  - *It is the direction of a trending sample:* calls and puts reported apart; every year reported; the
+    control holds side and holding time.
+  - *It is any entry with a stop:* the control keeps the stop and the minutes, only the entry is random.
+  - *It is the option's convexity, not the signal:* the points version reported beside the option net.
+  - *It is tuning:* nothing is tuned; the stated rule, its one window cut, and the 30% stop.
+  - *It is the stamp, not the bar:* bars are built from one-minute stamps, not traded prices; the high and
+    low of a bar are those of its stamps, which only OHLC4 reads.
+- **Declared limits:** one symbol, so no name split; the VWAP is a TWAP (above); fills at mid plus the
+  suite's slippage (the core model, as every 0DTE SPX study), not a measured fill; the stop fills at the
+  stamp that breaches it.
+- **Data and results:** `packages/backtest/scripts/ema_vwap_cross_item83.py study`, run as
+  `item83/study`. Results stay under `~/.cherrypick/data/backtest/results/research/item83/`, and this
+  plan records the verdict without figures. It runs before the vendor licence ends on 2026-11-16.
+- **Decides:**
+  - **An arm passes:** propose a paper-only arm on the forward bars the Market Profile recorder already
+    keeps (SPY and /ES, with volume, so a true VWAP), with a `forward` block declared before it trades.
+    Nothing live.
+  - **Either rule fails or no verdict:** the cross does not earn as an option trade after costs, or does
+    no better than entering at random; the rule is closed, and the record stays under `indicator-rule`
+    for the next indicator rule to be checked against.
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:
