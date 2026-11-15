@@ -17,15 +17,21 @@ need that reader widened first.
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
+from cherrypick.core import calendar as cal
 from cherrypick.core import clock, regime
 from cherrypick.core import quotehistory as qh
+
+OPEN_MINUTE = 570
 
 
 class StoreHistory:
     """One symbol's sessions in a recorder-schema file. A day is read once and kept until the next."""
+
+    #: Sampled through the session, so an arm's entry window is read minute by minute.
+    close_only = False
 
     def __init__(self, path: str | Path, symbol: str, *, daily: list[dict] | None = None):
         self.path, self.symbol = Path(path), symbol.upper()
@@ -76,6 +82,11 @@ class StoreHistory:
 
     def trail(self, session: str, upto: int) -> list[tuple[int, float]]:
         return [(m, s) for m, s in sorted(self.day(session)["trail"].items()) if m <= upto]
+
+    def day_open(self, session: str, minute: int) -> float | None:
+        """The first spot at or after 09:30, as paper takes the session's open from its trail."""
+        opening = [s for m, s in self.trail(session, minute) if m >= OPEN_MINUTE]
+        return opening[0] if opening else None
 
     def spot_at(self, session: str, minute: int) -> float | None:
         """The sample's spot (`core.quotehistory` refuses a stale one), as paper reads a fresh spot."""
@@ -144,3 +155,75 @@ class StoreHistory:
 
     def daily_before(self, session: str) -> list[dict]:
         return [r for r in self.daily if r["session"] < session]
+
+
+class DailyChainHistory:
+    """End-of-day chains: one tick a session, at 15:59 (the last minute paper acts in; on an early close
+    the minute before it). The spot and the open are the session's daily bar, the chains come from
+    `chains(session) -> {expiry: rows}` (Dolt's or the vendor's end-of-day store, loaded by the caller),
+    and a position settles at its expiry's close. Nothing intraday: no trail, no earlier sessions'
+    trails, no VIX through the day (the vol index's close, when given, stands for the session).
+
+    The cadence is the limit: an arm whose entry window does not hold the tick cannot be priced from
+    this source, and the driver counts it so (`needs_intraday`), never moving its entry."""
+
+    close_only = True
+
+    def __init__(self, symbol: str, bars: list[dict], chains, *, vix_daily: dict[str, float] | None = None):
+        self.symbol = symbol.upper()
+        self.bars = {r["session"]: r for r in sorted(bars, key=lambda r: r["session"])}
+        self.daily = list(self.bars.values())
+        self.closes = {d: float(r["close"]) for d, r in self.bars.items() if r.get("close") is not None}
+        self._chains = chains
+        self._cache: dict[str, dict] = {}
+        self.vix_daily = vix_daily or {}
+        self.sessions = sorted(self.bars)
+
+    @staticmethod
+    def tick(session: str) -> int:
+        h, m = cal.session_close_hhmm(date.fromisoformat(session)).split(":")
+        return int(h) * 60 + int(m) - 1
+
+    def chains(self, session: str) -> dict:
+        if session not in self._cache:
+            self._cache = {session: self._chains(session) or {}}
+        return self._cache[session]
+
+    def minutes(self, session: str) -> list[int]:
+        return [self.tick(session)] if self.chains(session) else []
+
+    def trail(self, session: str, upto: int) -> list[tuple[int, float]]:
+        return []
+
+    def day_open(self, session: str, minute: int) -> float | None:
+        bar = self.bars.get(session) or {}
+        return None if bar.get("open") is None else float(bar["open"])
+
+    def spot_at(self, session: str, minute: int) -> float | None:
+        bar = self.bars.get(session) or {}
+        return None if bar.get("close") is None else float(bar["close"])
+
+    def listed(self, session: str, minute: int) -> list[str]:
+        return sorted(self.chains(session))
+
+    def rows(self, session: str, expiry: str, minute: int) -> list[dict]:
+        return list(self.chains(session).get(expiry) or [])
+
+    def vix_at(self, session: str, minute: int) -> float | None:
+        return self.vix_daily.get(session)
+
+    def closes_before(self, session: str) -> list[float]:
+        return [c for d, c in self.closes.items() if d < session]
+
+    def prev_close(self, session: str) -> float | None:
+        earlier = [d for d in self.closes if d < session]
+        return self.closes[max(earlier)] if earlier else None
+
+    def settle(self, session: str) -> float | None:
+        return self.closes.get(session)
+
+    def prior_trails(self, session: str, n: int) -> dict[str, list[tuple[int, float]]]:
+        return {}
+
+    def daily_before(self, session: str) -> list[dict]:
+        return [r for d, r in self.bars.items() if d < session]
