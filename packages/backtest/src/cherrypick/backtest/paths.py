@@ -38,6 +38,13 @@ def results_dir() -> Path:
     return data_dir() / "results"
 
 
+def signals_dir(licensed: bool) -> Path:
+    """Where a signal study's result lives (`signalstudy.py`). Over the vendor's bars it is derived
+    from licensed data, so it sits under `results/` and `purge --derived` removes it; over public bars
+    or our own recording it is ours, kept beside `results/` so it outlives a subscription."""
+    return (results_dir() if licensed else data_dir()) / "signals"
+
+
 def results_db() -> Path:
     return results_dir() / "backtest.db"
 

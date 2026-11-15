@@ -295,6 +295,28 @@ def _iv_falls_back_to_mid():
     return patched
 
 
+def _control_reads_ahead():
+    """The real `control_entries`, except a session that fires at any minute of its day is out of the
+    control at every minute: the control chosen by what the session did later."""
+    original = importlib.import_module("cherrypick.backtest.signalstudy").control_entries
+
+    def patched(request, index, states, minutes, first_fired):
+        return original(request, index, states, minutes, dict.fromkeys(first_fired, 0))
+
+    return patched
+
+
+def _em_reads_entry_close():
+    """The real `_vol_at`, except every entry reads its own session's vol close, which an intraday
+    entry cannot know yet."""
+    original = importlib.import_module("cherrypick.backtest.signalstudy")._vol_at
+
+    def patched(vol, dates, session, _minute):
+        return original(vol, dates, session, 10**6)
+
+    return patched
+
+
 REPLACEMENTS = {
     "always_true": lambda: _always_true,
     "whole_day": lambda: _whole_day,
@@ -331,6 +353,8 @@ REPLACEMENTS = {
     "nothing_missing": lambda: lambda *_a, **_k: set(),
     "due_forever": lambda: lambda *_a, **_k: 10**6,
     "gate_always_passes": lambda: lambda _gate, _ctx: (True, None),
+    "control_reads_ahead": _control_reads_ahead,
+    "em_reads_entry_close": _em_reads_entry_close,
 }
 
 
@@ -744,6 +768,28 @@ MUTANTS: tuple[Mutant, ...] = (
         module="cherrypick.ensemble.gates",
         attr="run",
         replacement="gate_always_passes",
+    ),
+    Mutant(
+        id="signalstudy-control-reads-ahead",
+        breaks="a signal study's control drops every session that fires later that day",
+        package="backtest",
+        tests=(
+            "tests/test_signalstudy.py::test_the_control_matches_each_firing_minute_from_sessions_that_had_not_fired_by_then",
+        ),
+        module="cherrypick.backtest.signalstudy",
+        attr="control_entries",
+        replacement="control_reads_ahead",
+    ),
+    Mutant(
+        id="signalstudy-em-reads-entry-close",
+        breaks="a signal study's intraday expected move reads the vol index's close of its own session",
+        package="backtest",
+        tests=(
+            "tests/test_signalstudy.py::test_an_intraday_entry_reads_the_vol_close_before_its_session_a_close_entry_its_own",
+        ),
+        module="cherrypick.backtest.signalstudy",
+        attr="_vol_at",
+        replacement="em_reads_entry_close",
     ),
 )
 
