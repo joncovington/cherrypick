@@ -13,6 +13,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import type { ReactNode } from "react";
 import { CardHelpButton, HelpWarn, type CardHelpContent } from "../../components/CardHelp";
 import { signTone, useBridged } from "../../lib/bridged";
+import { useBacktestResultsOn } from "../../lib/backtestResults";
 import { fmtCash, fmtCount, fmtNum } from "../../lib/format";
 import { RunCards } from "./RunCards";
 import { studyHref } from "./studyIndex";
@@ -55,7 +56,7 @@ export function LicenceFlag({ inline = false }: { inline?: boolean }) {
 }
 
 function useOverview() {
-  return useBridged<BacktestOverview>(["backtest", "overview"], "/api/backtest/overview", 60_000);
+  return useBridged<BacktestOverview>(["backtest", "overview"], "/api/backtest/overview", 60_000, useBacktestResultsOn());
 }
 
 /** The shared head of every tab: the note, then the overview's loading/failure state. */
@@ -139,9 +140,11 @@ export function useRun(id: string | null, { capital, risk = null, unit = null, d
   if (risk !== null) key.push("risk", risk);
   if (unit !== null) key.push("unit", unit);
   if (dd !== null) key.push("dd", dd);
+  // A run is a replay over the vendor's store: asked for only while its results may be shown.
+  const open = useBacktestResultsOn();
   return useQuery<BridgedResult<BacktestRunReport>>({
     queryKey: key,
-    enabled: id !== null,
+    enabled: id !== null && open,
     // Keep the last account's cards on screen while another loads.
     placeholderData: (prev) => prev,
     queryFn: async () => {

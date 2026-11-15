@@ -497,6 +497,24 @@ def board(
     }
 
 
+#: The parts of a board result that carry a study's figures; its verdict words do not.
+FIGURE_FIELDS = ("notes", "grid")
+
+
+def withhold_licensed(out: dict, is_licensed) -> dict:
+    """The board with every licensed result's figures taken out (`FIGURE_FIELDS` set to None) and the
+    result marked `withheld`, for when the results gate is closed. `is_licensed(path)` says whether a
+    result file is derived from the vendor's data. Verdict words, presence and dates stay: the words
+    are the register's, already public. A result on our own data is left whole."""
+    for row in out["rows"]:
+        for x in row["results"]:
+            if is_licensed(x["path"]):
+                x.update(dict.fromkeys(FIGURE_FIELDS))
+                x["withheld"] = True
+    out["withheld"] = True
+    return out
+
+
 #: The usual per-item bar: a one-sided t above 2 on the sample sizes the register's items use is a p
 #: near 0.025, so that is the chance a null item passes. Reported, never a bar.
 FALSE_PASS_ALPHA = 0.025

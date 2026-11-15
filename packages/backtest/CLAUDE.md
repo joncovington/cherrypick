@@ -269,10 +269,15 @@ holdout once (a marker is written before the read).
   hole. A request refused again with the same fixed reason as before (`chainfetch.SETTLED`) is
   counted `settled`, so the research queue passes a repeat pass with nothing left to serve. Paths are recorded in `eod_chain_paths`, resumable the same way, and `--stop-by` bounds a
   run as it does `fetch-chains`, so the research queue can run one.
-The console's Backtest page reads `python -m cherrypick.backtest read overview|run` (`readout.py`)
-and is **fail-closed**: shown only when the orchestrator's `features.backtest` is true
-(`orchestrator/backtestgate.py`: the operator's config enabled, the licence active, the key in the
-keyring, a complete session in the store), with its server routes refusing on their own.
+The console's Backtest page reads `python -m cherrypick.backtest read overview|run` (`readout.py`).
+The page is always shown; **what shows this package's licensed results fails closed**: the runs and
+data tabs, run figures, study reports and notes, queue logs and licensed signal studies are shown
+only while the orchestrator's `features.backtest_results` is true (`orchestrator/backtestgate.py`:
+the operator's config enabled, today before the licence's purge date, licensed data on this machine),
+with the server routes refusing on their own. That runs past the licence's end through the keeping and
+final-review weeks, so the results can be read once more before `purge --derived`. A file under
+`results/` or `vendor/` counts as licensed. `features.backtest` (the licence active, the key in the
+keyring) is the separate question of whether new work may use the vendor.
 `overview` carries `provisional_looks` beside `trials`: the distinct specs run as
 provisional looks, per module. A look records no trial, so it never enters a DSR; the count is for
 the reader, who would otherwise see "trials: none" after dozens of looks at the same history.

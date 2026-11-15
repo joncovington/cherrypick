@@ -1,26 +1,39 @@
-"""Whether the console's backtest page may show: `features.backtest`, FAIL-CLOSED.
+"""The two licence gates the console reads, both FAIL-CLOSED: every other feature fails open (unknown
+is visible), these never do, and anything unreadable counts as not holding.
 
-Every other feature the console reads fails open (unknown is visible). This one is the declared
-exception (2026-10-17): the page shows licensed vendor data and results derived from it, so it is
-shown only when every one of these holds, and anything unreadable counts as not holding:
+The Backtest page itself is always shown: its register rows, the research queue and studies over our
+own data are not the vendor's. Only the pieces that show the vendor's data or results derived from it
+are gated, and the two gates answer different questions:
+
+`features.backtest_results` (`results_feature`): may results derived from the vendor's data be shown?
+They may while they are on this machine and the licence allows them, which runs past the licence's
+end through the keeping and final-review weeks the user chose (#1127) up to the purge date:
 
 1. the operator's own `~/.cherrypick/config/backtest.json` exists and says `enabled: true` (the
    shipped example does not count);
+2. today is before the purge date: `vendor.license.terminated_on` absent, or today before it plus
+   `purge_within_days` (30 by default, as `licensing.status` counts it);
+3. licensed data is here: the vendor store holds a complete session, or the results folder holds a
+   file.
+
+`features.backtest` (`backtest_feature`): may new work use the vendor? Only while the licence runs:
+
+1. as above;
 2. the vendor licence has not ended (`vendor.license.terminated_on` absent or in the future);
 3. the vendor key is in the keyring (read for presence only; the value never leaves this function);
 4. the vendor store holds at least one complete session.
 
 The orchestrator drives modules by subprocess and never imports them, so this reads packages/backtest's
 files directly: its config, its keyring entry (`<prefix>:<key>` under the configured service, the
-core `CredentialStore` layout) and its store's `vendor_sessions` table. `reasons` names every
-condition that failed, for the console's own diagnostics; it never carries a secret.
+core `CredentialStore` layout), its store's `vendor_sessions` table and its results folder. `reasons`
+names every condition that failed, for the console's own diagnostics; it never carries a secret.
 """
 
 from __future__ import annotations
 
 import json
 import sqlite3
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -57,9 +70,13 @@ def _store_has_a_session(vendor_dir: Path) -> bool:
     return False
 
 
-def backtest_feature(today: date | None = None, key_present=_key_present) -> dict[str, Any]:
-    """{"available": bool, "reasons": [...]}: available only when nothing below failed."""
-    reasons: list[str] = []
+#: The licence's default window to expunge after its end, as `licensing.status` reads it
+#: (`purge_within_days`); a test holds the two equal by reading the backtest package's source.
+PURGE_WITHIN_DAYS = 30
+
+
+def _config(reasons: list[str]) -> dict:
+    """The operator's backtest config, appending to `reasons` whatever keeps it from counting."""
     path = _home.config_path("backtest")
     cfg: dict = {}
     if not path.exists():
@@ -70,15 +87,61 @@ def backtest_feature(today: date | None = None, key_present=_key_present) -> dic
         except (OSError, ValueError):
             reasons.append("backtest config unreadable")
     if not isinstance(cfg, dict):
-        cfg, reasons = {}, [*reasons, "backtest config is not an object"]
+        cfg = {}
+        reasons.append("backtest config is not an object")
     if path.exists() and cfg.get("enabled") is not True:
         reasons.append("backtest disabled")
+    return cfg
+
+
+def _license(cfg: dict) -> dict:
     vendor = cfg.get("vendor") if isinstance(cfg.get("vendor"), dict) else {}
-    ended = (
-        (vendor.get("license") or {}).get("terminated_on")
-        if isinstance(vendor.get("license"), dict)
-        else None
-    )
+    return vendor.get("license") if isinstance(vendor.get("license"), dict) else {}
+
+
+def _vendor_dir(cfg: dict) -> Path:
+    vendor = cfg.get("vendor") if isinstance(cfg.get("vendor"), dict) else {}
+    store = cfg.get("store") if isinstance(cfg.get("store"), dict) else {}
+    if store.get("dir"):
+        return Path(store["dir"]).expanduser()
+    return _home.data_dir("backtest") / "vendor" / str(vendor.get("name") or "thetadata")
+
+
+def _has_results(results_dir: Path) -> bool:
+    try:
+        return results_dir.is_dir() and any(p.is_file() for p in results_dir.rglob("*"))
+    except OSError:
+        return False
+
+
+def results_feature(today: date | None = None) -> dict[str, Any]:
+    """{"available": bool, "reasons": [...]}: whether results derived from the vendor's data may be
+    shown. Available only when nothing below failed; the keyring is never read."""
+    reasons: list[str] = []
+    cfg = _config(reasons)
+    lic = _license(cfg)
+    ended = lic.get("terminated_on")
+    if ended:
+        try:
+            days = int(lic.get("purge_within_days", PURGE_WITHIN_DAYS))
+            purge_by = date.fromisoformat(str(ended)) + timedelta(days=days)
+            if (today or date.today()) >= purge_by:
+                reasons.append("past the purge date")
+        except (TypeError, ValueError):
+            reasons.append("vendor licence date unreadable")
+    results_dir = _home.data_dir("backtest") / "results"
+    if not _store_has_a_session(_vendor_dir(cfg)) and not _has_results(results_dir):
+        reasons.append("no licensed data on this machine")
+    return {"available": not reasons, "reasons": reasons}
+
+
+def backtest_feature(today: date | None = None, key_present=_key_present) -> dict[str, Any]:
+    """{"available": bool, "reasons": [...]}: whether new work may use the vendor. Available only when
+    nothing below failed."""
+    reasons: list[str] = []
+    cfg = _config(reasons)
+    vendor = cfg.get("vendor") if isinstance(cfg.get("vendor"), dict) else {}
+    ended = _license(cfg).get("terminated_on")
     if ended:
         try:
             if date.fromisoformat(str(ended)) <= (today or date.today()):
@@ -92,12 +155,6 @@ def backtest_feature(today: date | None = None, key_present=_key_present) -> dic
         reasons.append("vendor key not checked")
     elif not key_present(cred.get("keyring_service") or DEFAULT_SERVICE, cred.get("key") or DEFAULT_KEY):
         reasons.append("no vendor key in the keyring")
-    store = cfg.get("store") if isinstance(cfg.get("store"), dict) else {}
-    vendor_dir = (
-        Path(store["dir"]).expanduser()
-        if store.get("dir")
-        else _home.data_dir("backtest") / "vendor" / str(vendor.get("name") or "thetadata")
-    )
-    if not _store_has_a_session(vendor_dir):
+    if not _store_has_a_session(_vendor_dir(cfg)):
         reasons.append("no vendor data")
     return {"available": not reasons, "reasons": reasons}

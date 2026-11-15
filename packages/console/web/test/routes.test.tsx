@@ -83,7 +83,7 @@ walk(path.join(__dirname, "..", "src"));
 /** A link into a page or tab that fails closed on the backtest feature. */
 const gated = (to: string): boolean => {
   const [, module, id] = to.split("/") as [string, string, string];
-  return module === "backtest" || FAIL_CLOSED_SLIDES.get(module)?.has(id) === true;
+  return FAIL_CLOSED_SLIDES.get(module)?.has(id) === true;
 };
 
 describe("no path renders a blank page", () => {
@@ -399,30 +399,32 @@ describe("a page the suite has turned off", () => {
     expect(html).not.toContain("turned off");
   });
 
-  // The one exception (licensed vendor data): Backtest fails closed. Hidden, its URL is the 404
-  // page, never the off card -- the card would say the page exists and why it is off.
-  it("backtest is the 404 page while hidden: loading, failed, absent or false", () => {
-    const hidden: Array<string> = [
-      render("/backtest"),
+  // Backtest is always there; only its licensed tabs fail closed. Closed (loading, failed, absent or
+  // false), `runs` and `data` leave the rail and their URLs fall to the page's first tab.
+  // Shown to fail: with the FAIL_CLOSED_SLIDES backtest entry removed, the closed cases rendered
+  // "Backtest / runs".
+  it("backtest is always on the rail; its runs and data tabs only while its results may be shown", () => {
+    const closed: Array<string> = [
       render("/backtest/runs"),
-      renderWith("/backtest", { ok: false, error: "bridge down" }),
-      renderWith("/backtest", base),
-      renderWith("/backtest/validation", { ...base, features: { ...base.features, backtest: false } }),
+      renderWith("/backtest/runs", { ok: false, error: "bridge down" }),
+      renderWith("/backtest/runs", base),
+      renderWith("/backtest/data", { ...base, features: { ...base.features, backtest: true, backtest_results: false } }),
     ];
-    for (const html of hidden) {
-      expect(html).toContain("Page not found");
-      expect(text(html)).not.toContain("turned off");
-      expect(text(html)).not.toContain("Backtest /");
-      expect(html).not.toContain('href="/backtest');
+    for (const html of closed) {
+      expect(html).not.toContain("Page not found");
+      expect(text(html)).toContain("Backtest / studies");
+      expect(html).toContain('href="/backtest"');
+      expect(html).not.toContain('href="/backtest/runs"');
+      expect(html).not.toContain('href="/backtest/data"');
     }
   });
 
-  // Compare's slices tab (moved from Backtest 2026-10-30) fails closed on the same feature: off,
+  // Compare's slices tab (moved from Backtest 2026-10-30) fails closed on the results gate: off,
   // unknown or unread, the tab is gone from the rail and its URL falls to Compare's first tab.
   // Shown to fail: with the FAIL_CLOSED_SLIDES line removed from isSlideVisible, the hidden cases
   // rendered "Compare / slices".
-  it("compare's slices tab is there only when the suite says backtest: true", () => {
-    const on = { ...base, features: { ...base.features, backtest: true } };
+  it("compare's slices tab is there only when the suite says backtest_results: true", () => {
+    const on = { ...base, features: { ...base.features, backtest_results: true } };
     expect(text(renderWith("/compare/slices", on))).toContain("Compare / slices");
     expect(renderWith("/compare/arms", on)).toContain('href="/compare/slices"');
     for (const html of [render("/compare/slices"), renderWith("/compare/slices", base), renderWith("/compare/slices", { ok: false, error: "x" })]) {
@@ -439,11 +441,12 @@ describe("a page the suite has turned off", () => {
     }
   });
 
-  it("backtest renders on its own frame, and is on the rail, only when the suite says true", () => {
-    const on = { ...base, features: { ...base.features, backtest: true } };
+  it("backtest's licensed tabs open their own frame once its results may be shown, licence ended or not", () => {
+    // The licence ended (no new vendor work) but its results are kept until the purge date.
+    const on = { ...base, features: { ...base.features, backtest: false, backtest_results: true } };
     expect(text(renderWith("/backtest", on))).toContain("Backtest / studies");
     expect(text(renderWith("/backtest/runs", on))).toContain("Backtest / runs");
-    // Every card link into a gated page or tab opens its own tab once the gate is open.
+    // Every card link into a gated tab opens its own tab once the gate is open.
     const into = [...links].filter(gated);
     expect(into.length).toBeGreaterThan(0);
     for (const to of into) {
@@ -453,9 +456,8 @@ describe("a page the suite has turned off", () => {
     }
     // The old validation tab lands on data, where it now lives.
     expect(text(renderWith("/backtest/validation", on))).toContain("Backtest / data");
-    expect(renderWith("/backtest", on)).not.toContain("Page not found");
     expect(renderWith("/flies/session", on)).toContain('href="/backtest"');
-    expect(renderWith("/flies/session", base)).not.toContain('href="/backtest"');
+    expect(renderWith("/flies/session", base)).toContain('href="/backtest"');
   });
 });
 

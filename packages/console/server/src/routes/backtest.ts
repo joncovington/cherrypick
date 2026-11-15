@@ -22,7 +22,7 @@ import {
   type StudyRunSummaries,
 } from "@console/shared";
 import { readStudyDigest, readStudyReport } from "../services/studyReportBridge.js";
-import { backtestOn, getFeatures } from "../services/featuresBridge.js";
+import { backtestResultsOn, getFeatures } from "../services/featuresBridge.js";
 import { readBacktestOverview, readBacktestPath, readBacktestRun, readBacktestTrades, readRunSummaries } from "../services/backtestBridge.js";
 import { readResearchQueue } from "../services/researchQueueBridge.js";
 import { readStudies } from "../services/studiesBridge.js";
@@ -36,10 +36,14 @@ import { readQueueLog } from "../readers/logs.js";
  * `GET /api/backtest/studies`, `GET /api/backtest/studies/digest` and
  * `GET /api/backtest/studies/:study/report` — the Backtest page.
  *
- * **Each route refuses on its own, fail closed.** Unless the orchestrator's features answer was read
- * and says `backtest: true` (`featuresBridge.backtestOn`), the answer is the same 404 an unknown API
- * path gets, before any subprocess runs; the browser hiding the page is never what keeps the data
- * in. The results come from licensed vendor history that must not leave this machine's console.
+ * **The page is open; what shows the vendor's data refuses on its own, fail closed.** The queue's rows,
+ * the studies board, its weekly digest and a study's report answer every reader: while the results
+ * gate is closed the orchestrator itself withholds a licensed result's figures from the board and
+ * refuses a licensed study's report. Every other route serves results derived from licensed vendor history:
+ * unless the orchestrator's features answer was read and says `backtest_results: true`
+ * (`featuresBridge.backtestResultsOn`; true until the licence's purge date), the answer is the same 404
+ * an unknown API path gets, before any subprocess runs. The browser hiding a tab is never what keeps
+ * the data in.
  *
  * A run id is checked against the runner's own shape before it is spawned; anything else is a 400
  * and runs nothing. The queue is read-only: rows are added on the command line (`run.py queue-add`).
@@ -53,14 +57,14 @@ function refuse(reply: FastifyReply): FastifyReply {
 
 export function registerBacktestRoutes(app: FastifyInstance, config?: ConsoleConfig): void {
   app.get("/api/backtest/overview", async (_req, reply): Promise<BridgedResult<BacktestOverview> | FastifyReply> => {
-    if (!backtestOn(await getFeatures())) return refuse(reply);
+    if (!backtestResultsOn(await getFeatures())) return refuse(reply);
     return readBacktestOverview();
   });
 
   app.get<{ Params: { id: string }; Querystring: { capital?: string; risk?: string; unit?: string; dd?: string } }>(
     "/api/backtest/runs/:id",
     async (req, reply): Promise<BridgedResult<BacktestRunReport> | FastifyReply> => {
-      if (!backtestOn(await getFeatures())) return refuse(reply);
+      if (!backtestResultsOn(await getFeatures())) return refuse(reply);
       if (!isBacktestRunId(req.params.id)) return reply.code(400).send({ error: "not a run id" });
       // The cards' account: whole dollars or nothing (the run's own peak risk). Anything else is a
       // 400 and runs nothing.
@@ -98,7 +102,7 @@ export function registerBacktestRoutes(app: FastifyInstance, config?: ConsoleCon
   app.get<{ Params: { id: string }; Querystring: { arm?: string } }>(
     "/api/backtest/runs/:id/trades",
     async (req, reply): Promise<BridgedResult<BacktestTradeLog> | FastifyReply> => {
-      if (!backtestOn(await getFeatures())) return refuse(reply);
+      if (!backtestResultsOn(await getFeatures())) return refuse(reply);
       if (!isBacktestRunId(req.params.id)) return reply.code(400).send({ error: "not a run id" });
       const arm = req.query.arm;
       if (arm === undefined || !isBacktestArm(arm)) return reply.code(400).send({ error: "not an arm name" });
@@ -111,7 +115,7 @@ export function registerBacktestRoutes(app: FastifyInstance, config?: ConsoleCon
   app.get<{ Params: { id: string }; Querystring: { arm?: string; session?: string; position?: string } }>(
     "/api/backtest/runs/:id/path",
     async (req, reply): Promise<BridgedResult<BacktestTradePath> | FastifyReply> => {
-      if (!backtestOn(await getFeatures())) return refuse(reply);
+      if (!backtestResultsOn(await getFeatures())) return refuse(reply);
       if (!isBacktestRunId(req.params.id)) return reply.code(400).send({ error: "not a run id" });
       const { arm, session, position } = req.query;
       if (arm === undefined || !isBacktestArm(arm)) return reply.code(400).send({ error: "not an arm name" });
@@ -126,7 +130,7 @@ export function registerBacktestRoutes(app: FastifyInstance, config?: ConsoleCon
   app.get<{ Querystring: { ids?: string } }>(
     "/api/backtest/summaries",
     async (req, reply): Promise<BridgedResult<StudyRunSummaries> | FastifyReply> => {
-      if (!backtestOn(await getFeatures())) return refuse(reply);
+      if (!backtestResultsOn(await getFeatures())) return refuse(reply);
       const ids = (req.query.ids ?? "").split(",").filter((x) => x !== "");
       if (ids.length > STUDY_SUMMARY_RUNS) return reply.code(400).send({ error: `at most ${String(STUDY_SUMMARY_RUNS)} run ids` });
       if (!ids.every(isBacktestRunId)) return reply.code(400).send({ error: "not a run id" });
@@ -134,26 +138,21 @@ export function registerBacktestRoutes(app: FastifyInstance, config?: ConsoleCon
     },
   );
 
-  // The research queue's rows (orchestrator `queue-list`). Behind the same gate: its tasks are the
-  // fetches and studies over the licensed history.
-  app.get("/api/backtest/queue", async (_req, reply): Promise<BridgedResult<ResearchQueue> | FastifyReply> => {
-    if (!backtestOn(await getFeatures())) return refuse(reply);
-    return readResearchQueue();
-  });
+  // The research queue's rows (orchestrator `queue-list`). Open: a row is a task's name, step, status
+  // and times, not its figures. A task's log may print figures, so `/queue/:id/log` stays gated.
+  app.get("/api/backtest/queue", async (): Promise<BridgedResult<ResearchQueue>> => readResearchQueue());
 
-  // The studies board (orchestrator `hypotheses-board`). Behind the same gate: its verdicts are read
-  // from licensed result files.
-  app.get("/api/backtest/studies", async (_req, reply): Promise<BridgedResult<StudiesBoard> | FastifyReply> => {
-    if (!backtestOn(await getFeatures())) return refuse(reply);
-    return readStudies();
-  });
+  // The studies board (orchestrator `hypotheses-board`). Open: the register's rows and verdict words
+  // are already public, and while the results gate is closed the board itself takes a licensed
+  // result's figures out (`hypotheses.withhold_licensed`). A study's report stays gated.
+  app.get("/api/backtest/studies", async (): Promise<BridgedResult<StudiesBoard>> => readStudies());
 
   // The studies active since a date, with their verdict counts (orchestrator `study-report --since`):
-  // the studies tab's This week. Behind the same gate; the date is checked before anything spawns.
+  // the studies tab's This week. Open, as the board is: register words and verdict counts, no figures.
+  // The date is checked before anything spawns.
   app.get<{ Querystring: { since?: string } }>(
     "/api/backtest/studies/digest",
     async (req, reply): Promise<BridgedResult<StudyDigest> | FastifyReply> => {
-      if (!backtestOn(await getFeatures())) return refuse(reply);
       const since = req.query.since ?? "";
       if (!isIsoDate(since)) return reply.code(400).send({ error: "since must be a date, YYYY-MM-DD" });
       return readStudyDigest(since);
@@ -161,11 +160,12 @@ export function registerBacktestRoutes(app: FastifyInstance, config?: ConsoleCon
   );
 
   // One study read as a report (orchestrator `study-report --study`): its arms, measures, gates,
-  // reading and advice. Behind the same gate; the slug is checked before anything spawns.
+  // reading and advice. Open: the orchestrator itself refuses a study with a licensed result file while
+  // the results gate is closed ("withheld: ..."), and reads one wholly on our own data as always. The
+  // slug is checked before anything spawns.
   app.get<{ Params: { study: string } }>(
     "/api/backtest/studies/:study/report",
     async (req, reply): Promise<BridgedResult<StudyReport> | FastifyReply> => {
-      if (!backtestOn(await getFeatures())) return refuse(reply);
       if (!isStudySlug(req.params.study)) return reply.code(400).send({ error: "not a study name" });
       return readStudyReport(req.params.study);
     },
@@ -174,7 +174,7 @@ export function registerBacktestRoutes(app: FastifyInstance, config?: ConsoleCon
   // One task's log tail, for its expanded row. The id is a positive integer and the path is built
   // from it alone, so nothing outside `logs/research-queue/` can be named.
   app.get<{ Params: { id: string } }>("/api/backtest/queue/:id/log", async (req, reply) => {
-    if (!backtestOn(await getFeatures()) || config === undefined) return refuse(reply);
+    if (!backtestResultsOn(await getFeatures()) || config === undefined) return refuse(reply);
     if (!/^[1-9]\d{0,8}$/.test(req.params.id)) return reply.code(400).send({ error: "task id must be a positive integer" });
     const result: BridgedResult<{ lines: string[] }> = {
       ok: true,
@@ -187,7 +187,7 @@ export function registerBacktestRoutes(app: FastifyInstance, config?: ConsoleCon
   // B5's slice reports (`technicals slices` files). Behind the same gate: one may be built from a
   // licensed replay.
   app.get("/api/backtest/slices", async (_req, reply) => {
-    if (!backtestOn(await getFeatures()) || config === undefined) return refuse(reply);
+    if (!backtestResultsOn(await getFeatures()) || config === undefined) return refuse(reply);
     return readSlices(config);
   });
 }

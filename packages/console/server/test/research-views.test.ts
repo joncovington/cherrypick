@@ -132,7 +132,7 @@ describe("the slice reports", () => {
 });
 
 function features(on: boolean): BridgeResult {
-  return { ok: true, capabilities: {}, modules: {}, services: {}, features: { backtest: on } } as unknown as BridgeResult;
+  return { ok: true, capabilities: {}, modules: {}, services: {}, features: { backtest: true, backtest_results: on } } as unknown as BridgeResult;
 }
 
 describe("the slices route sits behind the backtest gate", () => {

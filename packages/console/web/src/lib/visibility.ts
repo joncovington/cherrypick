@@ -10,13 +10,14 @@ import { isTradingModuleId } from "../lightbox/moduleOrder";
  * reply does not name all show the thing — a console that hides everything because the orchestrator
  * could not be asked is worse than one that shows a module that happens to be off.
  *
- * **One exception, which fails closed: the Backtest page** (`FAIL_CLOSED_PAGES`). Its results come
- * from licensed vendor history whose licence forbids redistribution, so showing it by mistake is a
- * breach, not an inconvenience. It is shown only when the reply was read AND names
- * `features.backtest` as exactly `true` — hidden while loading, on a failed bridge, when the key is
- * absent and when it is false. A hidden fail-closed page gives no off reason, and a direct URL to
- * it is the 404 page (`ModuleRoute`), so nothing on the screen says it exists. The server refuses
- * its routes on its own (`routes/backtest.ts`); this rule is presentation, not the guard.
+ * **One exception, which fails closed: what shows the vendor's licensed data** (`FAIL_CLOSED_SLIDES`,
+ * `isBacktestResultsOn`). Results derived from licensed vendor history may not be redistributed, so
+ * showing one by mistake is a breach, not an inconvenience. Such a tab or panel is shown only when the
+ * reply was read AND names `features.backtest_results` as exactly `true` (until the licence's purge
+ * date): hidden while loading, on a failed bridge and when it is false. The Backtest page itself is
+ * always shown: its register rows, its queue and studies over our own data are not the vendor's. The
+ * server refuses the licensed routes on its own (`routes/backtest.ts`, `routes/signals.ts`); this rule
+ * is presentation, not the guard.
  *
  * Config is never hidden: its module toggles are how an off module comes back.
  */
@@ -27,20 +28,31 @@ function known(f: Features): f is Extract<SuiteFeatures, { ok: true }> {
   return f !== undefined && f.ok;
 }
 
-/** The pages that fail closed, each gated on the suite feature of the same name. */
-export const FAIL_CLOSED_PAGES: ReadonlySet<string> = new Set(["backtest"]);
+/** The pages that fail closed, each gated on the suite feature of the same name. None today: the
+ *  Backtest page is open and only its licensed tabs fail closed (`FAIL_CLOSED_SLIDES`). */
+export const FAIL_CLOSED_PAGES: ReadonlySet<string> = new Set<string>();
 
 export function isFailClosed(id: string): boolean {
   return FAIL_CLOSED_PAGES.has(id);
 }
 
+/** Whether results derived from the vendor's licensed data may be shown: ONLY an explicit
+ *  `features.backtest_results === true`. */
+export function isBacktestResultsOn(f: Features): boolean {
+  return known(f) && f.features["backtest_results"] === true;
+}
+
 /**
- * Tabs that fail closed on another page (2026-10-30), each gated on the backtest feature: Compare's
- * slices reports may come from a licensed replay. Hidden, the tab leaves the rail and `j`/`k`, and its
- * URL falls to the page's first tab, so nothing on the screen names it. The server refuses its read
- * on its own (`/api/backtest/slices`).
+ * Tabs that show only the vendor's licensed data, each failing closed on `isBacktestResultsOn`:
+ * Backtest's `runs` (every replay is over the vendor's store) and `data` (its stores and their
+ * validation), and Compare's `slices` (a report may come from a licensed replay). Hidden, the tab
+ * leaves the rail and `j`/`k`, and its URL falls to the page's first tab, so nothing on the screen
+ * names it. The server refuses their reads on its own.
  */
-export const FAIL_CLOSED_SLIDES: ReadonlyMap<string, ReadonlySet<string>> = new Map([["compare", new Set(["slices"])]]);
+export const FAIL_CLOSED_SLIDES: ReadonlyMap<string, ReadonlySet<string>> = new Map([
+  ["backtest", new Set(["runs", "data"])],
+  ["compare", new Set(["slices"])],
+]);
 
 /** A fail-closed page that is not shown: its route must behave as if it did not exist. */
 export function isHiddenAsUnknown(id: string, f: Features): boolean {
@@ -63,7 +75,6 @@ export function isAdvisorPaused(f: Features): boolean {
  * - a trading module: `modules.<id>.enabled`
  * - gex and the GEX panel: the `gex-recorder` service
  * - advisor: the `advisor` feature
- * - backtest: ONLY an explicit `features.backtest === true` (fail closed, above)
  * - anything else (Live, Reports, System, Config, the streamer): always.
  */
 export function isModuleVisible(id: string, f: Features): boolean {
@@ -112,7 +123,7 @@ export const LIVE_ACCOUNT_WIDE: ReadonlySet<string> = new Set(["today", "positio
 export function isSlideVisible(module: string, slide: string, f: Features, inUse: LiveInUse = NO_LIVE_IN_USE): boolean {
   // A hidden fail-closed page has no tabs either, so neither the rail nor `j`/`k` can name one.
   if (isFailClosed(module)) return isModuleVisible(module, f);
-  if (FAIL_CLOSED_SLIDES.get(module)?.has(slide)) return known(f) && f.features["backtest"] === true;
+  if (FAIL_CLOSED_SLIDES.get(module)?.has(slide)) return isBacktestResultsOn(f);
   // A module's advisor tab also goes while the advisor is paused (2026-10-30): nothing new runs, and
   // the Advisor page says why. Only an explicit `advisor_paused: true` hides it.
   if (slide === "advisor" && isTradingModuleId(module)) {

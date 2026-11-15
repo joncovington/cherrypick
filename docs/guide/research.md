@@ -4,7 +4,7 @@ Three pages look across the suite rather than at one module: Compare at `/compar
 
 ## Compare (`/compare`)
 
-Compare puts every arm of every module beside its own control, from one reader, so the numbers are measured the same way everywhere. Its tabs are `arms`, `risk`, `calendar`, `portfolio` and `signals`. Another, `slices`, is hidden unless the licensed-data feature is on (see Backtest below).
+Compare puts every arm of every module beside its own control, from one reader, so the numbers are measured the same way everywhere. Its tabs are `arms`, `risk`, `calendar`, `portfolio` and `signals`. Another, `slices`, appears only while licensed results may be shown (see Backtest below).
 
 ### What you see
 
@@ -39,7 +39,7 @@ Use Compare to decide whether an arm is worth keeping, and be patient. Prefer th
 
 Backtest shows replays of the strategies over licensed historical data. It has four tabs: `studies`, `queue`, `runs` and `data`. `studies` is what was tested and what was found, `queue` is the research tasks the supervisor runs one at a time, `runs` is the replays, and `data` is whether the history can be trusted, the licence and the data stores.
 
-**This page is hidden unless the licensed-data feature is on.** It is off by default because its results come from licensed vendor history, which may not be redistributed. When it is off the page is absent from the rail, and opening its address gives the not-found page, as if it did not exist. The same switch hides Compare's `slices` tab. Nothing about it is shown in this guide, and the data and anything derived from it stay on your machine. The data and anything derived from it never go in a public issue, a pull request or a shared page. How the research register, the queue and the backtest package work is in [research-and-backtests.md](research-and-backtests.md).
+**The page is always there; what shows licensed data is not.** Results derived from licensed vendor history may not be redistributed. So the `runs` and `data` tabs, a study's figures, report and notes, a queue task's log and Compare's `slices` tab appear only while those results may be shown. That is from setup until the licence's purge date, which includes the weeks after the licence ends. Otherwise those tabs are gone and those panels say "Withheld". The studies' names, statuses and verdict words, the queue and studies on our own data are always shown. Nothing licensed is shown in this guide, and the data and anything derived from it stay on your machine. The data and anything derived from it never go in a public issue, a pull request or a shared page. How the research register, the queue and the backtest package work is in [research-and-backtests.md](research-and-backtests.md).
 
 ## Advisor (`/advisor`)
 

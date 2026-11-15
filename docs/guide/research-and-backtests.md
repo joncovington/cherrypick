@@ -201,10 +201,20 @@ computed from the data.
 
 ## Reading a study's report
 
-The console's Backtest page (`/backtest`) draws all of this. It is hidden unless the licensed-data feature is
-on, which needs the config enabled, the licence still running, the key in the keyring and at least one
-complete session in the store. It is read-only: rows are added from the command line, never from the page.
-Its tabs are `studies`, `queue`, `runs` and `data`.
+The console's Backtest page (`/backtest`) draws all of this. It is read-only: rows are added from the
+command line, never from the page. Its tabs are `studies`, `queue`, `runs` and `data`.
+
+The page is always there, but **anything that shows the vendor's licensed data is shown only while
+those results may be**:
+- the `runs` and `data` tabs;
+- a study's figures, report and notes;
+- a queue task's log.
+
+That needs the config enabled, licensed data on the machine and today before the licence's purge date.
+So the results stay readable after the licence ends, through the keeping and final-review weeks, until
+`purge --derived` removes them. Otherwise those tabs are gone and those panels say "Withheld". The
+studies' names, statuses and verdict words, the queue's rows and studies on our own data are always
+shown.
 
 ### `studies`
 

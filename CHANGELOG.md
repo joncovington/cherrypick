@@ -29,6 +29,14 @@ beyond the latest release.
   distance was breached. Each is shown by year and against the same minute on sessions that had not
   fired by then. It runs on the daily history from 2011 or the recorder's minutes, with no subscription.
   Read the results under Compare → signals. Descriptive only.
+- **The Backtest page is always there.** Only what shows the data vendor's licensed data is hidden:
+  - hidden: the runs and data tabs, a study's figures, report and notes, a queue task's log, and
+    Compare's slices;
+  - always shown: the studies' names, statuses and verdicts, the research queue, and studies on our own
+    data.
+
+  The licensed pieces stay readable after a licence ends, until its purge date, so the results can be
+  reviewed one last time.
 - **Ladder, a share dip ladder in paper.** A new package, `ladder`, buys a leveraged index fund (TQQQ to
   start) in lots when it falls 7% and sells each lot on its own at +4%, with three arms: `chain` (each
   further lot 7% under the last), `once` (one lot a session) and `decay` (the target falls to breakeven
