@@ -382,3 +382,61 @@ def test_a_bad_exit_value_is_refused(exit_rules, message):
     arm = copy.deepcopy(A["iron-fly-1000"])
     arm["exit"] = exit_rules
     assert any(message in x for x in arms.validate(arm)), arms.validate(arm)
+
+
+# --- IV gates on the underlying's vol index ------------------------------------------------------------
+
+
+def iv_ctx(vol_closes, closes=None):
+    snap = dataclasses.replace(spx_snapshot(minute=600), vol_closes=list(vol_closes))
+    if closes is not None:
+        snap = dataclasses.replace(snap, closes=list(closes))
+    return gates_mod.Ctx(snap, A["iron-fly-1000"], snap.chains[snap.session], snap.session)
+
+
+def test_vol_index_rank_and_percentile_rank_the_last_close_against_the_ones_before_it():
+    history = [10.0 + i for i in range(10)]  # 10..19, then the last close
+    ok, v = gates_mod.vol_index_rank(iv_ctx([*history, 14.5]), min=40, max=50, lookback=10)
+    assert ok and v == 50.0  # (14.5 - 10) / (19 - 10)
+    ok, v = gates_mod.vol_index_percentile(iv_ctx([*history, 14.5]), min=50, lookback=10)
+    assert ok and v == 50.0  # 10..14 below it
+    # Fewer closes than the lookback asks for: no reading, so the gate fails.
+    assert gates_mod.vol_index_rank(iv_ctx(history), lookback=10) == (False, None)
+    assert gates_mod.vol_index_rank(iv_ctx([]), lookback=10) == (False, None)
+
+
+def test_vol_index_minus_rv_compares_the_index_with_realized_vol_in_vol_points():
+    closes = [6000.0 * (1.0 + 0.001 * ((-1) ** i)) for i in range(21)]
+    ok, v = gates_mod.vol_index_minus_rv(iv_ctx([20.0], closes), min=0, n=20)
+    assert ok and v is not None and v < 20.0
+    assert gates_mod.vol_index_minus_rv(iv_ctx([20.0], closes[:5]), n=20) == (False, None)
+
+
+def test_an_iv_gate_validates_and_the_feed_asks_for_its_history():
+    arm = copy.deepcopy(A["iron-fly-1000"])
+    arm["gates"] = [
+        {"gate": "vol_index_rank", "max": 30, "lookback": 120},
+        {"gate": "vol_index_minus_rv", "min": 2, "n": 10},
+    ]
+    assert not arms.validate(arm), arms.validate(arm)
+    need = feed.reads(arm)
+    assert need["vol_closes"] == 121 and need["closes"] >= 11
+    assert feed.reads(A["iron-fly-1000"])["vol_closes"] == 0
+    bad = copy.deepcopy(arm)
+    bad["gates"] = [{"gate": "vol_index_rank", "lookbak": 120}]
+    assert any("unknown key 'lookbak'" in x for x in arms.validate(bad))
+
+
+def test_the_feed_reads_the_index_closes_before_today_and_none_without_an_index(monkeypatch):
+    from datetime import date
+
+    from cherrypick.core import volindex
+
+    monkeypatch.setattr(
+        volindex,
+        "closes",
+        lambda index, folder=None: {"2026-11-12": 1.0, "2026-11-13": 2.0, "2026-11-16": 3.0},
+    )
+    assert feed.vol_history("SPX", date(2026, 11, 16), 5) == [1.0, 2.0]
+    assert feed.vol_history("TSLA", date(2026, 11, 16), 5) == []
+    assert feed.vol_history("SPX", date(2026, 11, 16), 0) == []

@@ -18,6 +18,7 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta
 
 from cherrypick.core import calendar as _cal
+from cherrypick.core import volindex
 
 from . import arms as arms_mod
 from . import db, provider
@@ -28,6 +29,16 @@ from .snapshot import build
 OPEN_MINUTE = ind.OPEN_MINUTE
 VIX_GATES = ("sd_change", "vix_level", "vix_change_pct")
 TRAIL_GATES = ("rsi", "stoch")
+#: Gates that read the underlying's vol index closes, and how many closes each needs.
+IV_GATES = ("vol_index_rank", "vol_index_percentile", "vol_index_minus_rv")
+
+
+def _vol_closes_needed(gate: dict) -> int:
+    """Closes of the vol index a gate reads: a rank or percentile its lookback and the last close; the
+    IV-less-RV gate only the last close."""
+    if gate["gate"] == "vol_index_minus_rv":
+        return 1
+    return int(gate.get("lookback", 252)) + 1
 
 
 def reads(arm: dict) -> dict:
@@ -41,7 +52,16 @@ def reads(arm: dict) -> dict:
         "gex": gex,
         "greeks": gex or "delta" in rules or (arm.get("exit") or {}).get("delta_limit") is not None,
         "vix": any(g in VIX_GATES for g in gates),
-        "closes": max([*mas, arms_mod.DAILY_HISTORY if arms_mod.reads_daily(arm) else 1]),
+        "closes": max(
+            [
+                *mas,
+                arms_mod.DAILY_HISTORY if arms_mod.reads_daily(arm) else 1,
+                *(int(g.get("n", 20)) + 1 for g in arm.get("gates", []) if g["gate"] == "vol_index_minus_rv"),
+            ]
+        ),
+        "vol_closes": max(
+            [0, *(_vol_closes_needed(g) for g in arm.get("gates", []) if g["gate"] in IV_GATES)]
+        ),
         "daily": arms_mod.reads_daily(arm),
         "prior": arms_mod.reads_prior_trail(arm),
         "events": bool((arm.get("skip_events") or {}).get("labels")),
@@ -196,8 +216,18 @@ def snapshot_for(
         with_gex=any(n["gex"] for n in needs),
         daily=m["bars"] if any(n["daily"] for n in needs) else None,
         prior=prior_trails(conn, symbol, today) if any(n["prior"] for n in needs) else None,
+        vol_closes=vol_history(symbol, today, max(n["vol_closes"] for n in needs) if needs else 0),
     )
     return snap, info
+
+
+def vol_history(symbol: str, today: date, n: int) -> list[float]:
+    """The last `n` closes of the symbol's vol index before `today` (`core.volindex`); empty when no gate
+    reads them or the symbol has no index, so an IV gate fails rather than guesses."""
+    index = volindex.index_for(symbol)
+    if n <= 0 or index is None:
+        return []
+    return volindex.before(volindex.closes(index), today.isoformat(), n)
 
 
 def prior_trails(conn, symbol: str, today: date) -> dict[str, list[tuple[int, float]]]:

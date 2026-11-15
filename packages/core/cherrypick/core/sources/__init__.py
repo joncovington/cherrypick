@@ -165,7 +165,7 @@ SOURCES: tuple[Source, ...] = (
     ),
     Source(
         name="cboe-vol",
-        holds="Cboe's daily index closes: VIX, VIX9D, VIX3M, VVIX, VXN, SKEW and SPX",
+        holds="Cboe's daily index closes: the VIX family, VVIX, SKEW, SPX and core.volindex's vol indexes",
         kind="index",
         fields=("closes",),
         cadence="1d",
