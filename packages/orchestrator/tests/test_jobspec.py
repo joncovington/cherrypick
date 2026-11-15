@@ -378,6 +378,7 @@ def test_derive_full_suite_job_table():
         "fundamentals-valuation",
         "technicals-board",
         "technicals-adjust-check",
+        "sources-inventory",
         "earnings-moves",
         "fetch-headlines",
         "review-provisional",
@@ -1778,3 +1779,18 @@ def test_the_backtest_inventory_follows_the_fetch_unless_set():
     cfg["backtest"] = {"inventory": True, "inventory_interval_minutes": 5}
     alone = {j.id: j for j in derive(cfg)[0]}["backtest-inventory"]
     assert alone.enabled and alone.interval_seconds == 300
+
+
+def test_the_source_inventory_runs_daily_on_its_own_and_reads_dolt_only_where_it_is_set_up():
+    """The registry's spans (`cherrypick.core.sources`): a job of its own, so a machine with every data
+    job off still keeps the cache, after the morning landings and before the open; Dolt read only where
+    the suite reads it."""
+    jobs = {j.id: j for j in derive(suite_cfg())[0]}
+    inv = jobs["sources-inventory"]
+    assert inv.enabled and inv.at_et == "09:00" and not inv.trading_days_only
+    assert inv.argv[1:] == ("-m", "cherrypick.core.sources", "inventory")
+    assert not any("sources-inventory" in str(j.argv) for j in jobs.values() if j.id != "sources-inventory")
+    cfg = suite_cfg()
+    cfg["capabilities"]["dolt"] = False
+    no_dolt = {j.id: j for j in derive(cfg)[0]}["sources-inventory"]
+    assert no_dolt.enabled and no_dolt.argv[-1] == "--no-dolt"

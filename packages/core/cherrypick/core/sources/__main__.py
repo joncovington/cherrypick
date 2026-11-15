@@ -1,6 +1,6 @@
 """The source registry's command line.
 
-    python -m cherrypick.core.sources list                       # every declared source
+    python -m cherrypick.core.sources list                       # every source, its state and span
     python -m cherrypick.core.sources inventory [--only NAME,...] [--no-dolt]
     python -m cherrypick.core.sources coverage --field closes --symbol SPY --from 2019-01-02 --to 2026-11-13
         [--cadence 1d] [--expiry monthly] [--licensed]
@@ -15,9 +15,8 @@ import argparse
 import json
 import os
 import sys
-from dataclasses import asdict
 
-from . import DENSE, SOURCES, coverage, inventory
+from . import DENSE, coverage, inventory, summary
 
 
 def _dolt_connect(database: str):
@@ -51,7 +50,7 @@ def _dolt_or_none(skip: bool):
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="python -m cherrypick.core.sources")
     sub = ap.add_subparsers(dest="cmd", required=True)
-    sub.add_parser("list", help="every declared source")
+    sub.add_parser("list", help="every declared source, with its state and span from the last inventory")
     inv = sub.add_parser("inventory", help="read every store's spans into the cache")
     inv.add_argument("--only", default=None, help="comma-separated source names; the rest keep their entry")
     inv.add_argument("--no-dolt", action="store_true", help="leave the Dolt sources as last read")
@@ -67,12 +66,7 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
 
     if args.cmd == "list":
-        doc = inventory.load()
-        rows = []
-        for s in SOURCES:
-            e = (doc.get("sources") or {}).get(s.name) or {}
-            rows.append({**asdict(s), "inventoried": bool(e) and not e.get("error"), "error": e.get("error")})
-        print(json.dumps({"sources": rows, "undeclared": doc.get("undeclared", [])}, indent=1))
+        print(json.dumps(summary(inventory.load()), indent=1))
         return 0
     if args.cmd == "inventory":
         only = {x.strip() for x in args.only.split(",") if x.strip()} if args.only else None

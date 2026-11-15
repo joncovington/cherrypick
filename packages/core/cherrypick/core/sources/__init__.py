@@ -490,6 +490,52 @@ def window_sessions(span: Mapping, lo: str, hi: str, days=trading_days) -> float
     return total
 
 
+def summary(inventory: Mapping) -> dict:
+    """One row per declared source, as the console lists them: the declaration, and from the inventory
+    its state (`read`, `absent`, `skipped`, `error` or `not read`), why when it is not read, how many
+    symbols it holds and the earliest and latest date across them. Pure over the inventory doc."""
+    rows = []
+    for s in SOURCES:
+        e = (inventory.get("sources") or {}).get(s.name) or {}
+        spans = list((e.get("symbols") or {}).values()) or ([e["store"]] if e.get("store") else [])
+        if e.get("error"):
+            state, reason = "error", e["error"]
+        elif e.get("absent"):
+            state, reason = "absent", e["absent"]
+        elif e.get("skipped") and not spans:
+            state, reason = "skipped", e["skipped"]
+        elif e:
+            state, reason = "read", None
+        else:
+            state, reason = "not read", "not inventoried yet"
+        rows.append(
+            {
+                "name": s.name,
+                "holds": s.holds,
+                "kind": s.kind,
+                "fields": list(s.fields),
+                "cadence": s.cadence,
+                "expiries": list(s.expiries),
+                "licensed": s.licensed,
+                "writer": s.writer,
+                "ongoing": s.ongoing,
+                "rolling": s.rolling,
+                "note": s.note or None,
+                "state": state,
+                "reason": reason,
+                "symbols": len(e.get("symbols") or {}) if e.get("symbols") else (len(s.symbols) or None),
+                "first": min((x["first"] for x in spans if x.get("first")), default=None),
+                "last": max((x["last"] for x in spans if x.get("last")), default=None),
+                "read_at": e.get("read_at"),
+            }
+        )
+    return {
+        "generated_at": inventory.get("generated_at"),
+        "sources": rows,
+        "undeclared": list(inventory.get("undeclared") or []),
+    }
+
+
 def coverage(
     inventory: Mapping,
     field: str,
@@ -521,6 +567,9 @@ def coverage(
             continue
         if entry.get("error"):
             found.append({**base, "covers": False, "why": f"inventory failed: {entry['error']}"})
+            continue
+        if entry.get("absent") or entry.get("skipped"):
+            found.append({**base, "covers": False, "why": entry.get("absent") or entry["skipped"]})
             continue
         spans = entry.get("symbols") or {}
         span = spans.get(symbol)

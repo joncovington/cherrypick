@@ -11,7 +11,9 @@ how many sessions it holds. `coverage` answers from the cache, so asking never s
 - **store_cache**: the backtest's own inventory of the vendor's stores (`store_inventory.json`, its
   counts only), never the store itself.
 
-A source that fails is recorded with its error and the rest still run. `undeclared` names a data file
+A source that fails is recorded with its `error` and the rest still run. A store not on this machine
+(no Dolt, no gex recorder, the vendor's stores after their purge) is `absent`, and a Dolt source not
+read on a run is `skipped`: neither is a failure. `undeclared` names a data file
 no source declares and `IGNORED` does not explain, so a new store is declared as it lands.
 """
 
@@ -81,7 +83,7 @@ def probe_sqlite(root: Path, s: Source) -> dict:
     p = s.probe
     db = root / p.where
     if not db.exists():
-        return {"error": f"missing: {p.where}"}
+        return {"absent": f"no {p.where} on this machine"}
     where = f"WHERE {p.filter}" if p.filter else ""
     # Grouped by the upper-cased symbol, so one symbol spelt two ways is one span, not two; and by
     # year, so a span sparse in some years is read year by year (`sources.window_sessions`).
@@ -114,7 +116,7 @@ def _csv_date(raw: str, fmt: str) -> str | None:
 def probe_csv(root: Path, s: Source) -> dict:
     folder = root / s.probe.where
     if not folder.is_dir():
-        return {"error": f"missing: {s.probe.where}"}
+        return {"absent": f"no {s.probe.where} on this machine"}
     by_series: dict[str, set[str]] = {}
     for f in sorted(folder.glob("*.csv")):
         with f.open(encoding="utf-8", newline="") as fh:
@@ -134,10 +136,12 @@ def probe_store_cache(root: Path, s: Source) -> dict:
     try:
         doc = json.loads(cache.read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return {"error": "the backtest's store inventory is not on this machine"}
+        return {"absent": "the backtest's store inventory is not on this machine"}
     hit = doc.get(s.probe.where)
     if not hit:
-        return {"error": f"{s.probe.where} is not in the backtest's store inventory"}
+        return {
+            "absent": f"{s.probe.where} is not in the backtest's store inventory (purged or never fetched)"
+        }
     tables = (hit.get("shape") or {}).get("tables") or {}
     names = [s.probe.table] if s.probe.table else sorted(tables)
     for t in names:
@@ -154,7 +158,7 @@ def probe_dolt(s: Source, connect: Callable[[str], Any], previous: dict | None) 
     """Read one date at a time from a date-keyed Dolt table, carrying on from `previous` (this source's
     last inventory entry) so only new dates are read."""
     database, table = s.probe.where.split(".", 1)
-    prev = previous if previous and not previous.get("error") else {}
+    prev = previous if previous and previous.get("symbols") else {}
     if any("years" not in v for v in (prev.get("symbols") or {}).values()):
         prev = {}  # an entry written before per-year counts were kept: read it all again
     spans: dict[str, dict] = {k: dict(v) for k, v in (prev.get("symbols") or {}).items()}
@@ -218,7 +222,8 @@ def run(
                 entry = probe_store_cache(root, s)
             elif s.probe.backend == "dolt":
                 if connect_dolt is None:
-                    entry = prev_sources.get(s.name) or {"error": "no Dolt connection given"}
+                    kept = prev_sources.get(s.name) or {}
+                    entry = kept if kept.get("symbols") else {"skipped": "Dolt is not read on this run"}
                 else:
                     entry = probe_dolt(s, connect_dolt, prev_sources.get(s.name))
             else:

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from pathlib import Path
 
 import pytest
 
@@ -178,7 +179,7 @@ def test_the_store_cache_probe_reads_the_backtests_counts_never_the_store(tmp_pa
     }
     assert (
         "not in the backtest's store inventory"
-        in inv.probe_store_cache(tmp_path, src.by_name("vendor-oi"))["error"]
+        in inv.probe_store_cache(tmp_path, src.by_name("vendor-oi"))["absent"]
     )
 
 
@@ -253,7 +254,7 @@ def test_one_failing_source_is_recorded_and_the_rest_still_run(tmp_path):
     }
     doc = inv.run(sources, root=tmp_path, previous=prev)
     got = doc["sources"]
-    assert got["missing"]["error"] == "missing: nope.db"
+    assert got["missing"] == {"absent": "no nope.db on this machine", "read_at": got["missing"]["read_at"]}
     assert "no such table" in got["broken"]["error"]
     assert got["good"]["symbols"]["A"]["sessions"] == 1
     assert got["dolt"]["symbols"]["Z"], "with no connection a Dolt source keeps its last entry"
@@ -316,3 +317,50 @@ def test_the_inventory_keeps_years_only_for_a_sparse_span(tmp_path):
     got = inv.run([s], root=tmp_path)["sources"]["b"]["symbols"]
     assert "years" not in got["DENSE"]
     assert set(got["THIN"]["years"]) == {"2025", "2026"}
+
+
+def test_absent_and_skipped_are_not_failures_and_say_why():
+    """A store not on this machine, or a Dolt source not read on a run, is no failure: the nightly
+    job fails only on an error. Coverage passes the reason on."""
+    doc = {
+        "sources": {
+            "stock-history": {"absent": "no technicals/history.db on this machine"},
+            "dolt-chains": {"skipped": "Dolt is not read on this run"},
+            "technicals-eod": {"error": "boom"},
+        }
+    }
+    closes = src.coverage(doc, "closes", "SPY", "2025-01-02", "2025-12-31")["sources"]
+    why = {x["source"]: x["why"] for x in closes}
+    assert why["stock-history"] == "no technicals/history.db on this machine"
+    assert why["technicals-eod"] == "inventory failed: boom"
+    chain = src.coverage(doc, "chain", "SPY", "2025-01-02", "2025-12-31", expiry="monthly")["sources"]
+    assert {x["source"]: x["why"] for x in chain}["dolt-chains"] == "Dolt is not read on this run"
+    # With no connection and nothing kept, a Dolt source is skipped, never an error.
+    one = [src.by_name("dolt-iv")]
+    assert inv.run(one, root=Path("."))["sources"]["dolt-iv"]["skipped"]
+
+
+def test_summary_lists_every_source_with_its_state_and_span():
+    doc = {
+        "generated_at": "2026-11-15T07:30:00",
+        "undeclared": ["market-files/new.db"],
+        "sources": {
+            "stock-history": {
+                "symbols": {
+                    "SPY": {"first": "2011-01-03", "last": "2026-11-13", "sessions": 3995},
+                    "AA": {"first": "2014-09-08", "last": "2026-11-13", "sessions": 2533},
+                }
+            },
+            "vendor-0dte-spx-60s": {"store": {"first": "2022-05-16", "last": "2026-11-13", "sessions": 1131}},
+            "gex-profile": {"absent": "no gex/gex_history.db on this machine"},
+            "technicals-eod": {"error": "boom"},
+        },
+    }
+    out = src.summary(doc)
+    by = {r["name"]: r for r in out["sources"]}
+    assert len(out["sources"]) == len(src.SOURCES) and out["undeclared"] == ["market-files/new.db"]
+    assert (by["stock-history"]["state"], by["stock-history"]["symbols"]) == ("read", 2)
+    assert (by["stock-history"]["first"], by["stock-history"]["last"]) == ("2011-01-03", "2026-11-13")
+    assert by["vendor-0dte-spx-60s"]["first"] == "2022-05-16" and by["vendor-0dte-spx-60s"]["licensed"]
+    assert by["gex-profile"]["state"] == "absent" and by["technicals-eod"]["state"] == "error"
+    assert by["cboe-vol"]["state"] == "not read"

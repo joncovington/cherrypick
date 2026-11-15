@@ -631,7 +631,7 @@ cherrypick.backtest read overview|run --id`, async, memoised 30 s) each 404 with
 unless the features answer says `backtest_results: true`; a run id is checked against the runner's shape
 (`BACKTEST_RUN_ID` in `@console/shared`) and anything else is a 400 that spawns nothing. A bridge,
 not a mirror: every check, the paired interval and `no_exposure` are the module's.
-Tabs (`studies` first, and the landing tab, then `queue`, `runs`, `data`;
+Tabs (`studies` first, and the landing tab, then `queue`, `sources`, `runs`, `data`;
 an old `validation` link opens `data`, and `slices` is on Compare): `studies` (`pages/Backtest/StudiesTab.tsx`, `GET /api/backtest/studies` →
 `services/studiesBridge.ts` → `python -m cherrypick.cli hypotheses-board`, open to every reader:
 the register's words are public, and while the results gate is closed the orchestrator takes a
@@ -715,7 +715,17 @@ once the board has loaded) and opens a lightbox (`?task=`, by hand `?task=hand:<
 file by its name only), result (exit, counts, input, store, output marked missing, log, each by
 name) and the log's tail. A study's finished rows are on its card in the studies tab. The lightbox is
 `pages/Backtest/CardLightbox.tsx`, shared by every Backtest tab. Rows are added on the command
-line (`run.py queue-add`), never from here. Every tab opens with the licensed-data note. Run money is net of fees,
+line (`run.py queue-add`), never from here. `sources` (`pages/Backtest/SourcesTab.tsx`, `GET /api/sources` and
+`/api/sources/coverage` → `services/sourcesBridge.ts` → `python -m cherrypick.core.sources list|coverage`,
+async, memoised 30 s, #1194): every data store the suite holds, ours and public, from the source
+registry, grouped by kind: what it holds, its cadence, fields and expiries, how many symbols, its
+span and its state from the last inventory (`read`, `absent`, `skipped`, `error`, `not read`, with
+core's reason), and any data file no source declares. Always shown: our own data needs no licence.
+The vendor's sources are listed only while `backtest_results` is true (the server leaves them out
+and counts them in `withheld`). A form asks coverage (field, symbol, dates, optional cadence and
+expiry) and shows core's answer: the source that covers, or each one's reason. Every value is
+checked against core's lists before anything spawns (a 400 otherwise), and asking for the
+vendor's sources (`licensed=1`) is a 403 unless `backtest` is true. Every tab opens with the licensed-data note. Run money is net of fees,
 signed, whole-position dollars; fees are shown as a cost, already out of net, never subtracted again.
 Detail view only (`SIMPLE_HIDDEN_PAGES`); shortcut `g b`.
 

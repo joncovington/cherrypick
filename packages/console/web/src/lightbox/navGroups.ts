@@ -413,15 +413,17 @@ export const ADVISOR_SLIDES = [{ id: "advisor", label: "advisor" }] as const sat
 export const EXPERIMENTS_SLIDES = [{ id: "experiments", label: "experiments" }] as const satisfies readonly NavSlide[];
 
 /**
- * Backtest (2026-10-17): `packages/backtest`'s replays over licensed vendor history. Shown only
- * while the suite says `backtest: true` (it fails closed, `visibility.ts`). `studies` is what we
- * tested and found (2026-10-29; as cards, first, and the landing tab, from 2026-11-03), `queue` the
- * research tasks the supervisor runs now (2026-10-24; a study's finished rows moved to its card
- * 2026-11-03), `runs` the replays, `data` the licence and the stores. `slices` moved to Compare.
+ * Backtest (2026-10-17): the research register, the queue, the source registry and
+ * `packages/backtest`'s replays. Always shown; `runs` and `data` show the vendor's data, so they fail
+ * closed on `backtest_results` (`visibility.ts`). `studies` is what we tested and found (as cards,
+ * first, and the landing tab), `queue` the research tasks the supervisor runs now, `sources` every
+ * data store we hold and what it covers (#1194), `runs` the replays, `data` the licence and the
+ * vendor's stores. `slices` moved to Compare.
  */
 export const BACKTEST_SLIDES = [
   { id: "studies", label: "studies" },
   { id: "queue", label: "queue" },
+  { id: "sources", label: "sources" },
   { id: "runs", label: "runs" },
   { id: "data", label: "data" },
 ] as const satisfies readonly NavSlide[];
