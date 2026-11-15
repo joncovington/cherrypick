@@ -3046,6 +3046,16 @@ Its sessions have never been split by Fed day.*
     the user's word.
   - **A fail or no verdict:** no gate. A hand-set Fed-day skip remains the user's risk choice, labelled
     untested.
+- **Result (2026-11-14, provisional): fail.** MEIC history never unlocked (the last validation on the
+  vendor data, on 2026-11-14, still missed on extra entry episodes and the upper tail of the max-cost
+  gap), so the read is provisional as declared. The first run paired the newest design run, a later
+  live-1400 spec, with the holdout's run of item 23's spec; corrected to read one spec in both windows
+  (the study's correction log) and run again. In the design window the Fed-day sessions netted more
+  than the other sessions, not less, so the permutation test is nowhere near its bar; in the holdout
+  the Fed-day mean sat a little below the rest, well inside chance. Every figure is in the local
+  result (`~/.cherrypick/data/backtest/results/research/item33/`).
+- **What this decides:** no Fed-day gate. Entering at the 14:00 statement costs the live rule nothing
+  measurable on this evidence; a hand-set skip stays the user's risk choice, labelled untested.
 
 ### 34. The option-to-stock premium ratio: does heavy option trading foretell weaker returns?
 
@@ -7930,6 +7940,15 @@ vendor data ends on 2026-11-16, so this is read once, before then.
     later evidence once the vendor data is gone.
   - **A fail on every arm:** short index puts at 7 days are closed for the suite in both forms; the
     weeklyput arm stays a paper record of a tail-risk trade.
+- **Result (2026-11-14, provisional): fail on both arms.** `long5` and `long3` each fail all three bars:
+  after the bill on the spread's buying power the return is not distinguishable from zero or below
+  it, a bad year is not earned back within a year, and it earns nothing beyond its delta. The naked
+  put re-read by the same code fails the tail and delta bars, as item 77 found. A few cycles were
+  skipped for want of an entry forward, counted in the result. The forward cycles after 2026-10-30
+  are reported. Every figure is in the local result
+  (`~/.cherrypick/data/backtest/results/research/item78/`).
+- **What this decides:** the fail branch. Short index puts at 7 days are closed for the suite in both
+  forms, naked and defined-risk; the weeklyput arm stays a paper record of a tail-risk trade.
 
 ### 79. Item 64's bullish structures on the three bars, against the delta financed on the same capital
 
@@ -7984,6 +8003,14 @@ licence on the vendor data ends on 2026-11-16, so this is read once, before then
     fresh cycles its evidence and the paper record its only later one.
   - **A fail on every structure:** none of the four is an IRA idea; item 64's no-verdict structures
     stay unjudged for want of exit marks if the data rule binds.
+- **Result (2026-11-14, provisional): fail.** The call backspread (A) fails all three bars: its return
+  does not beat the bill on its capital, a bad year is not earned back within a year, and it earns
+  nothing beyond its entry delta financed on the same capital. B, C and D also fail all three bars as
+  computed, but each has more than 5% of its entries without an exit mark, so by item 64's data rule
+  they are no verdict. The cycles from 2022 on, item 64's never-read holdout, are reported apart.
+  Every figure is in the local result (`~/.cherrypick/data/backtest/results/research/item79/`).
+- **What this decides:** none of the four goes to manage's IRA ideas; B, C and D stay unjudged for
+  want of exit marks, and the vendor data that could have filled them ends with the licence.
 
 ### 80. Market Profile: an open outside the prior day's value area, held through the first hour, and the rest of the day's range
 

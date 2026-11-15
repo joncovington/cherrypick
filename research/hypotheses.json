@@ -1216,7 +1216,7 @@
       "id": 33,
       "study": "item33",
       "title": "MEIC on Fed decision days: does entering at the 14:00 statement cost more than other days?",
-      "status": "declared",
+      "status": "failed",
       "legacy": false,
       "setup": "event-gate",
       "side": "neutral",
@@ -1252,7 +1252,8 @@
         "{home}/data/backtest/results/research/item33/results.json"
       ],
       "retest": null,
-      "retests": []
+      "retests": [],
+      "outcome": "provisional (MEIC history never unlocked): fails; Fed-day sessions netted more than the rest in the design window and inside chance in the holdout, read on one live-1400 spec after a correction; no Fed-day gate"
     },
     {
       "id": 34,
@@ -2539,7 +2540,15 @@
       ],
       "retest": null,
       "retest_note": "No yearly re-test: the forward read of cycles after 2026-10-30 is this study's own re-test, reported beside the verdict.",
-      "retests": [],
+      "retests": [
+        {
+          "forward": "2026-11",
+          "on": "2026-11-14",
+          "cycles": "the weekly expiries 2026-11-06 and 2026-11-13",
+          "reading": "reported, never judged: two forward cycles, too few to read; the last forward read on vendor data, which ends with the licence on 2026-11-16",
+          "result": "{home}/data/backtest/results/research/item57/forward-2026-11.json"
+        }
+      ],
       "outcome": "the unhedged arm passes every check over the weekly expiries item 46 never read; the hedged arm fails before the cost stress; a paper arm needs a module to sell it, the user's choice, and the forward cycles are read as they finish",
       "forward": {
         "module": "weeklyput",
@@ -3619,7 +3628,7 @@
       "id": 78,
       "study": "item78",
       "title": "Item 57's weekly index put as a put credit spread, under the three bars",
-      "status": "declared",
+      "status": "failed",
       "legacy": false,
       "setup": "variance-premium",
       "side": "neutral",
@@ -3660,13 +3669,14 @@
       ],
       "retest": null,
       "retest_note": "Read once before the vendor licence ends (2026-11-16); no later retest is possible on vendor data.",
-      "retests": []
+      "retests": [],
+      "outcome": "provisional: both spreads (long leg nearest 5 and 3 delta) fail all three bars on the spread's buying power; the naked put re-read beside them fails the tail and delta bars; short index puts at 7 days are closed in both forms"
     },
     {
       "id": 79,
       "study": "item79",
       "title": "Item 64's bullish structures on the three bars, against the delta financed on the same capital",
-      "status": "declared",
+      "status": "failed",
       "legacy": false,
       "setup": "directional",
       "side": "bullish",
@@ -3707,7 +3717,8 @@
       ],
       "retest": null,
       "retest_note": "A retest of item 64 itself, read once before the vendor licence ends (2026-11-16).",
-      "retests": []
+      "retests": [],
+      "outcome": "provisional: the backspread A fails all three bars against the financed delta; B, C and D fail all three as computed but are no verdict under item 64's 5% exit-mark rule; none goes to the IRA ideas"
     },
     {
       "id": 80,
