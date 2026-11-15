@@ -8068,6 +8068,77 @@ closed, found nothing) are its baselines, not its question.
     has; the profile stays a chart, and the next Market Profile item (the first-hour width, or the 80%
     rule) is declared on its own.
 
+### 81. Market Profile: the first hour's width against its recent median, and the rest of the day
+
+Declared 2026-11-14, before any of it is computed, and before item 80 has run. The second Market Profile
+study, on the same store and history as item 80, and independent of it: item 80 asks about where the
+day opens against yesterday's value; this asks about the first hour's own width. Item 80 holds the
+first hour's range as a control in absolute terms; here the feature is that range against its own
+recent median, and the profile's claim is about extension, not size.
+
+- **Question, two declared tests of one feature:**
+  - `persistence`: is a first hour wider than its recent median followed by a wider rest of the day,
+    beyond the HAR terms and the gap? Intraday volatility persists, so the expected sign is positive;
+    the test is whether it is large enough to matter.
+  - `extension`: is a **narrow** first hour followed more often by trade beyond it? The Market Profile
+    reading (Dalton): a wide initial balance tends to contain the day, a narrow one invites a breakout.
+    The expected sign is negative.
+- **This is a forecast, not a trade** (as item 80): the three bars do not apply, and the rule is
+  `FORECAST_RULE` in the script. Any use is a later item, on the three bars.
+- **Data:** SPX one-minute prices in the licensed store (`SPX-60s.db`, `gex_spot_history`), every full
+  regular session (at least 380 of the 389 stamps) from 2022-05-16 through 2026-11-13, read once and
+  pinned by its fingerprint. Nothing is fetched. The item 33 FOMC calendar is read for a reported cut.
+- **The feature:** `w`, the log of the first hour's range (every stamp before 10:30) ÷ the prior close,
+  over the median of the same ratio across the prior 20 sessions.
+- **Outcomes:**
+  - `persistence`: the log of the range from 10:30 through the close ÷ the prior close (item 80's).
+  - `extension`: 1 when a stamp from 10:30 on trades at least 2.5 points (one profile row) above the
+    first hour's high or below its low, else 0.
+- **The model:** least squares of each outcome on the controls and `w`. Controls, all known at 10:30:
+  the log of the prior session's range ÷ its close and the logs of its 5- and 22-session means (HAR),
+  and the gap, |open − prior close| ÷ the prior close. The extension model is a linear probability
+  model; its coefficient reads as the change in the chance of an extension per unit of `w`.
+- **Days:** session t with a prior full session no more than four calendar days earlier, 22 full
+  sessions before it and 20 first hours. A short session or a gap restarts both histories.
+- **Windows:** one run, cut at **2025-07-01**; the holdout is read only after a design pass.
+- **The rule (`FORECAST_RULE`), each test on its own:**
+  - **Design:** the coefficient on `w` with the declared sign, at least 0.10 for `persistence` (a first
+    hour twice its median, `w` near 0.69, then means about 7% more range) and at least 0.05 in size for
+    `extension`; a one-sided t of 2.3 or more in the declared direction, its standard error from a
+    stationary block bootstrap of the design days (mean block 10 sessions, 10,000 draws, seed 81); the
+    declared sign when refitted in each design half (split 2023-12-01). A t of 2.3 keeps Holm across the
+    two tests from binding. Fewer than 200 design days is no verdict.
+  - **Holdout:** the coefficient refitted on the holdout alone has the declared sign. Fewer than 60
+    holdout days makes a pass provisional.
+- **Minimum detectable effect:** both tests read every day (about 750 in the design), so the floor is
+  set by the spread of `w`, near 0.4 log points. At a residual spread near 0.38 the persistence test
+  detects about 0.07 at the t bar, under its 0.10 floor; the extension test, with a binary outcome's
+  spread near 0.5, detects about 0.09. The run reports the measured ones.
+- **Reported, never judged:** both coefficients with the first half-hour as the first period (to
+  10:00); with the outcome from 12:30 (MEIC's entry time); without FOMC decision days; the extension
+  coefficient at thresholds of 0 and 5 points; the design days by quartile of `w`, each with its mean
+  outcome and extension rate.
+- **Rival explanations, each with its check:**
+  - *It is volatility clustering across days:* the three HAR terms.
+  - *It is the gap:* the gap is a control.
+  - *It is event days:* reported without FOMC days.
+  - *It is one regime:* both design halves must agree.
+  - *The extension threshold:* fixed at one row here; 0 and 5 points reported.
+  - *Mechanical extension:* the first hour is outside both outcomes' windows; a wide first hour can only
+    make extension harder, which is the claim's own direction, so the test is the size, not the sign.
+- **Declared limits:** no name split (one symbol), no costs (no trade). Sessions the store holds short
+  are dropped and counted.
+- **Data and results:** `packages/backtest/scripts/first_hour_width_item81.py study`, run as
+  `item81/study`. Results stay under `~/.cherrypick/data/backtest/results/research/item81/`, and this
+  plan records the verdict without figures. It runs before the vendor licence ends on 2026-11-16.
+- **Decides:**
+  - **`persistence` passes:** the first hour's width relative to its median is a range forecast at
+    10:30; a MEIC paper-arm item may size or skip entries on it, declared on the three bars.
+  - **`extension` passes:** the profile's reading holds on SPX; a narrow first hour flags a breakout
+    day for the short-premium modules, again only through a later paper-arm item.
+  - **Both fail or no verdict:** the first hour's width adds nothing beyond what the suite already
+    reads, and the profile's initial balance stays a chart line.
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:
