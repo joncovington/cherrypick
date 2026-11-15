@@ -3960,7 +3960,7 @@
       "id": 84,
       "study": "item84",
       "title": "Item 73's MEIC 14:00 stacks on the three bars: the bill on their buying power and their tail",
-      "status": "declared",
+      "status": "failed",
       "legacy": false,
       "setup": "entry-pacing",
       "side": "neutral",
@@ -3993,13 +3993,14 @@
       ],
       "retest": null,
       "retest_note": "A retest of item 73 itself, read once before the vendor licence ends (2026-11-16).",
-      "retests": []
+      "retests": [],
+      "outcome": "provisional (item 73 read it; MEIC history unvalidated): n1, n2 and n3 each fail the capital bar (positive but under t 2.3 over the bill) and the tail bar; nothing changes live, the n3 paper arm is the user's call"
     },
     {
       "id": 85,
       "study": "item85",
       "title": "Item 75's two passing arms on the three bars: the bill on their capital, their tail and their delta",
-      "status": "declared",
+      "status": "passed",
       "legacy": false,
       "setup": "portfolio-whole-rule",
       "side": "two-sided",
@@ -4036,7 +4037,8 @@
       ],
       "retest": null,
       "retest_note": "A retest of item 75 itself, read once before the vendor licence ends (2026-11-16).",
-      "retests": []
+      "retests": [],
+      "outcome": "provisional (item 75 read it): long-put-1030 passes all three bars, each only just; iron-condor-1345 passes capital and delta but fails the tail; the long put's paper arm runs on, read by item 75's forward check, the condor's is the user's call"
     }
   ],
   "rule_changes": []

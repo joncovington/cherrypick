@@ -8427,6 +8427,15 @@ once, before then.
     `n3` paper arm is the user's call to stop.
   - **`n1` fails:** live's own rule does not earn the bill on its buying power or fails its tail, on
     unvalidated history; a finding for the user, and nothing changes live by itself.
+- **Result (2026-11-14, provisional): fail on every arm.** `n1`, `n2` and `n3` each fail the capital
+  and tail bars. Each earns a positive mean return on its buying power, but not by a t of 2.3 over
+  the bill (`n1` furthest short of it, `n3` closest), and in each a bad year is not earned back
+  within a year. Every figure is in the local result
+  (`~/.cherrypick/data/backtest/results/research/item84/`).
+- **What this decides:** the `n1 fails` branch, on unvalidated history: live's rule and its stacks do
+  not clear the bill on their buying power with room, and their tail is larger than a year of their
+  mean. Nothing changes live by itself; whether the `n3` paper arm keeps running is the user's call,
+  and item 73's forward check reads it on paper.
 
 ### 85. Item 75's two passing arms on the three bars: the bill on their capital, their tail and their delta
 
@@ -8475,6 +8484,15 @@ before then.
   - **An arm passes:** its paper arm runs on, judged by item 75's forward check on paper alone.
   - **An arm fails:** it earns its mean net without earning its capital, its tail or beyond its delta;
     its paper arm is the user's call to stop, and it is not proposed for live.
+- **Result (2026-11-14, provisional): the long put passes; the iron condor fails on its tail.**
+  `long-put-1030` passes all three bars, each only just over its t of 2: a small debit with rare large
+  wins, so its mean rests on a few sessions. `iron-condor-1345` passes the capital and delta bars but
+  fails the tail: a bad year is not earned back within a year of its mean. Every trade had its entry
+  delta and spots. Every figure is in the local result
+  (`~/.cherrypick/data/backtest/results/research/item85/`).
+- **What this decides:** the long put's paper arm runs on, item 75's forward check reading it on
+  paper alone; on a pass this thin, the paper record decides before anything goes live. The
+  condor's paper arm is the user's call to stop, and it is not proposed for live.
 
 ## Not worth revisiting
 
