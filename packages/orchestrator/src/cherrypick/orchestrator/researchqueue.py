@@ -594,6 +594,11 @@ def postcheck(row: dict, report: dict, doc: dict | None = None) -> tuple[str | N
         return None, None
     if todo <= 0:
         return None, None
+    settled = int(report.get("settled", 0))
+    if fetched == 0 and missed and settled == missed:
+        # A repeat pass whose every request the vendor refused again with the fixed answer it gave
+        # before (chainfetch.SETTLED): nothing is left it will serve, so the pass is done, said so.
+        return None, f"nothing left the vendor will serve: {settled} of {todo} {unit} refused again as before"
     if fetched == 0:
         return f"nothing fetched: {missed} of {todo} {unit} empty or refused", None
     if missed / todo >= THIN_SHARE:

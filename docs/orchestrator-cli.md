@@ -144,7 +144,7 @@ it is done. There is no need to cancel and re-queue the held row itself.
 
 **A row that did nothing is not done.** Exit 0 is not enough. A session fetch that reports a symbol
 other than its row's `dataset` has failed, and so has a fetch that had requests to work through and
-fetched none of them. A fetch with nothing left to do (a resume over a complete store) is done. A
+fetched none of them. A fetch with nothing left to do (a resume over a complete store) is done, and so is a repeat pass whose every request the vendor refused again with the fixed answer it gave before (`settled` in the report: `stream_removed` or `permission_denied`, the same reason as last time), with a warning, since nothing is left it will serve. A
 fetch done with half or more of its requests empty or refused is done too, with that share in its
 note and a WARNING notification in place of the INFO one. A script that prints a report with a
 `refused` key has failed, whatever its exit code, and so has one whose declared output is a study kit
