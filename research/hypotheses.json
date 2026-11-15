@@ -3519,7 +3519,35 @@
       ],
       "outcome": "two of eight arms pass over the whole history read once: the 13:45 iron condor and the 10:30 long put; four fail and the 13:00 put spread and 1DTE GLD call spread are no verdict; the eight stacked as sized pass. The two passing arms are read forward in paper before any live consideration",
       "retest": null,
-      "retests": []
+      "retests": [],
+      "forward": [
+        {
+          "module": "ensemble",
+          "schema": "ensemble_trade",
+          "measure": "cycle_mean",
+          "field": "net_pnl",
+          "per": "capital",
+          "since": "2026-11-16",
+          "min_obs": 30,
+          "reference": null,
+          "kill_z": -2.0,
+          "drift_z": -1.0,
+          "arm": "iron-condor-1345"
+        },
+        {
+          "module": "ensemble",
+          "schema": "ensemble_trade",
+          "measure": "cycle_mean",
+          "field": "net_pnl",
+          "per": "capital",
+          "since": "2026-11-16",
+          "min_obs": 30,
+          "reference": null,
+          "kill_z": -2.0,
+          "drift_z": -1.0,
+          "arm": "long-put-1030"
+        }
+      ]
     },
     {
       "id": 76,

@@ -71,7 +71,7 @@ written are not re-judged. The arithmetic is `cherrypick.core.robustness`
   queue steps, queued with `run.py queue-chain`. Both land with the declaration, before any run;
   `cherrypick hypotheses` lists a row from item 78 whose script has no `RULE`.
 - **A coverage floor** when the study reads a chain store: the two-sided share and strikes a chain it needs per symbol and year, checked against the store's quality report (`storequality.meets`) before any verdict; a year below the floor is no verdict, said so.
-- **A pass declares its forward check** before its paper arm trades: a `forward` block in the register row (module, arm, measure, start, minimum observations, the reference in the local result, kill and drift bars), read by `run.py forward-checks`.
+- **A pass declares its forward check** before its paper arm trades: a `forward` block in the register row (module, arm, measure, start, minimum observations, the reference in the local result, kill and drift bars; one block per judged arm), read by `run.py forward-checks`. A study with no reference in paper's units, or whose licensed reference is purged before paper reaches its minimum, declares `reference: null` and is judged on paper alone.
 - **A result file the board can read:** a top-level `verdict` (one word, or one per arm, or per arm
   as `{"verdict": ...}`), its `window`, and the `run_id` when the study ran through the runner.
 - **Declared limits** (B11): how a position open at a name's last bar is settled (the last close; no
