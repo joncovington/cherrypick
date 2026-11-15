@@ -97,6 +97,42 @@ def test_a_malformed_forward_check_is_a_register_problem(change, why):
     assert any(why in p for p in fc.problems({**SPEC, **change}))
 
 
+def test_a_declared_paper_alone_check_judges_paper_from_the_first_session_it_can():
+    # Item 75: no reference in paper's units, and its licensed result is purged before paper reaches
+    # min_obs, so the block declares reference null and paper is judged on its own record.
+    alone = {**SPEC, "reference": None}
+    assert fc.problems(alone) == []
+    assert fc.judge(alone, {str(i): 4.0 for i in range(9)}, None)["state"] == "collecting"
+    good = {str(i): 3.0 + (i % 3) for i in range(12)}
+    out = fc.judge(alone, good, fc.reference(alone, _read))
+    assert out["state"] == "confirm" and out["basis"].startswith("paper alone: declared")
+    bad = {str(i): -3.0 - (i % 3) for i in range(12)}
+    assert fc.judge(alone, bad, None)["state"] == "kill"
+
+
+def test_per_divides_each_trade_before_the_measure_and_skips_a_trade_without_a_divisor():
+    spec = {**SPEC, "field": "net_pnl", "per": "capital", "measure": "cycle_mean"}
+    trades = [
+        {"arm": "unhedged", "session": "2026-11-20", "net_pnl": 50.0, "capital": 500.0},
+        {"arm": "unhedged", "session": "2026-11-20", "net_pnl": -20.0, "capital": 1000.0},
+        {"arm": "unhedged", "session": "2026-11-23", "net_pnl": 5.0, "capital": None},
+    ]
+    assert fc.observations(trades, spec) == {"2026-11-20": pytest.approx((0.10 - 0.02) / 2)}
+    assert any("per" in p for p in fc.problems({**spec, "per": ""}))
+
+
+def test_a_row_may_judge_several_arms_one_block_each():
+    a = {**SPEC, "reference": None, "arm": "a", "min_obs": 3}
+    b = {**a, "arm": "b"}
+    reg = {"hypotheses": [{"id": 75, "study": "item75", "forward": [a, b]}]}
+    trades = _trades([2.0, 3.0, 4.0], arm="a") + _trades([-1.0], arm="b")
+    out = fc.run(reg, lambda module, schema: trades, _read)
+    assert [(o["arm"], o["state"]) for o in out] == [("a", "confirm"), ("b", "collecting")]
+    assert fc.problems([a, b]) == []
+    assert any("different arm" in p for p in fc.problems([a, a]))
+    assert any(p.startswith("forward[1]") for p in fc.problems([a, {**b, "min_obs": 0}]))
+
+
 def test_the_repo_registers_forward_checks_are_sound():
     for row in hy.load()["hypotheses"]:
         if "forward" in row:

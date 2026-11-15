@@ -15,6 +15,15 @@ predicted. A register row that passed declares, before any paper is read, its `f
         "beside": ["pm1400-n1"]           # optional arms reported with it, never judged
     }
 
+A row with more than one arm to judge declares a list of such blocks, one per arm. Two optional keys:
+
+- `per`: a per-trade field the measured one is divided by before the measure is taken
+  (`"per": "capital"` reads each trade's net over its capital, a return that does not depend on
+  the size paper trades at);
+- `reference: null` declares that the paper arm is judged on its own record (`paper_alone`) from
+  the start: for a study whose result holds no reference in paper's units, or whose reference is
+  purged with the licensed data before paper could reach `min_obs`.
+
 The measure turns the arm's closed paper trades (`core.ledgers`) into one value per observation:
 `cycle_mean` averages `field` over the trades settling in a session (item 57's equal-weight cycle);
 `session_sum` sums it per session (item 73's session net). The reference is the backtest's own
@@ -45,8 +54,26 @@ NEEDED = ("module", "schema", "arm", "measure", "field", "since", "min_obs", "re
 COLLECTING, KILL, DRIFT, CONFIRM = "collecting", "kill", "drift", "confirm"
 
 
-def problems(spec: Any) -> list[str]:
-    """What is wrong with a row's `forward` declaration; empty when it is sound."""
+def specs(forward: Any) -> list:
+    """A row's forward blocks: one object, or a list of them (one per judged arm)."""
+    return list(forward) if isinstance(forward, list) else [forward]
+
+
+def problems(forward: Any) -> list[str]:
+    """What is wrong with a row's `forward` declaration (one block or a list); empty when sound."""
+    blocks = specs(forward)
+    if not blocks:
+        return ["forward must declare at least one block"]
+    if len(blocks) == 1:
+        return _block_problems(blocks[0])
+    out = [f"forward[{i}]: {p}" for i, b in enumerate(blocks) for p in _block_problems(b)]
+    arms = [b.get("arm") for b in blocks if isinstance(b, dict)]
+    if len(set(arms)) != len(arms):
+        out.append("forward: each block judges a different arm")
+    return out
+
+
+def _block_problems(spec: Any) -> list[str]:
     if not isinstance(spec, dict):
         return ["forward must be an object"]
     out = [f"forward needs {k}" for k in NEEDED if k not in spec]
@@ -58,8 +85,10 @@ def problems(spec: Any) -> list[str]:
     if not (isinstance(k, (int, float)) and isinstance(d, (int, float)) and k < d <= 0):
         out.append("forward.kill_z < drift_z <= 0")
     ref = spec.get("reference")
-    if not isinstance(ref, dict) or not {"file", "mean", "t", "n"} <= set(ref):
-        out.append("forward.reference needs file, mean, t and n")
+    if ref is not None and (not isinstance(ref, dict) or not {"file", "mean", "t", "n"} <= set(ref)):
+        out.append("forward.reference needs file, mean, t and n, or is null (judged on paper alone)")
+    if "per" in spec and not (isinstance(spec["per"], str) and spec["per"]):
+        out.append("forward.per names a per-trade field")
     return out
 
 
@@ -73,6 +102,8 @@ def reference(spec: dict, read) -> dict | None:
     """The backtest's mean and spread per observation, or None when the result cannot be read.
     `read(path)` returns the parsed result file (a `{home}/...` path) or None."""
     ref = spec["reference"]
+    if ref is None:
+        return None
     doc = read(ref["file"])
     if doc is None:
         return None
@@ -88,11 +119,17 @@ def reference(spec: dict, read) -> dict | None:
 def observations(trades: list[dict], spec: dict, arm: str | None = None) -> dict[str, float]:
     """One value per session for `arm` (default the spec's) from its closed trades since `since`."""
     arm = arm or spec["arm"]
+    per = spec.get("per")
     by: dict[str, list[float]] = defaultdict(list)
     for t in trades:
         v = t.get(spec["field"])
         if t.get("arm") != arm or v is None or (t.get("session") or "") < spec["since"]:
             continue
+        if per:
+            d = t.get(per)
+            if not d:
+                continue  # no divisor (a missing or zero capital): the trade cannot be measured
+            v = float(v) / float(d)
         by[t["session"]].append(float(v))
     agg = statistics.fmean if spec["measure"] == "cycle_mean" else sum
     return {s: agg(vs) for s, vs in sorted(by.items())}
@@ -101,12 +138,16 @@ def observations(trades: list[dict], spec: dict, arm: str | None = None) -> dict
 def judge(spec: dict, obs: dict[str, float], ref: dict | None, *, licence_ended: bool = False) -> dict:
     n = len(obs)
     out: dict[str, Any] = {"n": n, "min_obs": spec["min_obs"]}
-    if ref is None and not licence_ended:
+    declared_alone = spec.get("reference", ...) is None
+    if ref is None and not licence_ended and not declared_alone:
         return {**out, "state": COLLECTING, "why": "the backtest reference cannot be read here"}
     if n < spec["min_obs"]:
         return {**out, "state": COLLECTING}
     if ref is None:
-        return {**out, **paper_alone(spec, obs)}
+        alone = paper_alone(spec, obs)
+        if declared_alone:
+            alone["basis"] = "paper alone: declared, no backtest reference in paper's units"
+        return {**out, **alone}
     mean = statistics.fmean(obs.values())
     z = (mean - ref["mean"]) / (ref["sd"] / math.sqrt(n)) if ref["sd"] else 0.0
     if z <= spec["kill_z"]:
@@ -140,9 +181,12 @@ def paper_alone(spec: dict, obs: dict[str, float]) -> dict:
     }
 
 
-def check(row: dict, trades: list[dict], read, *, licence_ended: bool = False) -> dict:
-    """One row's forward check: its state, and any arms reported beside it."""
-    spec = row["forward"]
+def check(
+    row: dict, trades: list[dict], read, *, licence_ended: bool = False, spec: dict | None = None
+) -> dict:
+    """One forward block's check (the row's only block by default): its state, and any arms
+    reported beside it."""
+    spec = spec if spec is not None else specs(row["forward"])[0]
     out = judge(spec, observations(trades, spec), reference(spec, read), licence_ended=licence_ended)
     beside = {a: len(observations(trades, spec, a)) for a in spec.get("beside", [])}
     return {"id": row["id"], "study": row["study"], "module": spec["module"], "arm": spec["arm"],
@@ -157,8 +201,9 @@ def run(reg: dict, trades_for, read, *, licence_ended: bool = False) -> list[dic
     for row in reg.get("hypotheses", []):
         if not row.get("forward") or problems(row["forward"]):
             continue
-        spec = row["forward"]
-        out.append(check(row, trades_for(spec["module"], spec["schema"]), read, licence_ended=licence_ended))
+        for spec in specs(row["forward"]):
+            trades = trades_for(spec["module"], spec["schema"])
+            out.append(check(row, trades, read, licence_ended=licence_ended, spec=spec))
     return out
 
 
