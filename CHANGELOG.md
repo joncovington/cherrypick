@@ -13,6 +13,9 @@ beyond the latest release.
 
 ### What's new
 
+- **Ensemble arms state their safeguards.** `limits.max_open` and `limits.per_day` are required in every
+  arm, with no default in the engine: an arm in `~/.cherrypick/config/ensemble.json` that replaces
+  `limits` must name both. The shipped arms already ran one entry a day; they now say so.
 - **IV gates on the vol index.** The ensemble's `vol_index_rank`, `vol_index_percentile` and
   `vol_index_minus_rv` gates read the underlying's Cboe vol index (VIX for SPX, GVZ for GLD, RVX for
   IWM): its previous close against its own history, or against realized vol. The `market-files` job

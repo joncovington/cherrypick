@@ -172,12 +172,12 @@ def decide(arm: dict, snap: Snapshot, *, costs: dict | None = None) -> Decision:
         return fail("entry_not_due", v)
     ok("entry_due", v)
 
-    lim = arm.get("limits", {})
+    lim = arm["limits"]  # validated: max_open and per_day stated, no default here
     mine = snap.entries.get(arm["name"], [])
-    if snap.session in mine:
+    if mine.count(snap.session) >= lim["per_day"]:
         return fail("entered_today")
     opened = [p for p in snap.open_positions if p.arm == arm["name"]]
-    if len(opened) >= lim.get("max_open", 1):
+    if len(opened) >= lim["max_open"]:
         return fail("max_open", len(opened))
     if lim.get("every_days") and mine:
         gap = (snap.session_date - date.fromisoformat(max(mine))).days
