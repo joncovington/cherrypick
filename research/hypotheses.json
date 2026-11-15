@@ -3908,7 +3908,7 @@
       "id": 83,
       "study": "item83",
       "title": "A 3-minute EMA 9 crossing the session VWAP, bought as a 0DTE SPX option",
-      "status": "declared",
+      "status": "failed",
       "legacy": false,
       "setup": "indicator-rule",
       "side": "directional",
@@ -3951,7 +3951,7 @@
       "results": [
         "{home}/data/backtest/results/research/item83/results.json"
       ],
-      "outcome": null,
+      "outcome": "fail: both arms lose per session in the design part and fail the tail bar, and both trail a random-entry placebo (a control tilted against the rule, since it copies each trade's side and minutes held); the cross carries no direction in the index even before option costs, so the rule is closed and no paper arm is proposed",
       "retest": null,
       "retest_note": "Read once before the vendor licence ends (2026-11-16); a pass is followed by a paper arm on the recorder's bars with its forward block, not a retest.",
       "retests": []

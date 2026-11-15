@@ -8362,6 +8362,25 @@ intraday direction signals, none of them this rule.
   - **Either rule fails or no verdict:** the cross does not earn as an option trade after costs, or does
     no better than entering at random; the rule is closed, and the record stays under `indicator-rule`
     for the next indicator rule to be checked against.
+- **Result (2026-11-14): both arms fail both rules in the design part; neither holdout was read.**
+  - **The three bars:** `allday` and `first60` each lose money per session in the design part (capital
+    mean below zero, t negative) and fail the tail bar. Win rates are low, and most exits are the trend
+    exit, not the stop.
+  - **The control:** both arms fail. The traded sessions earn less than their placebos in the design
+    and in each design half, `first60` by far the most. **Read with care:** the placebo copies each trade's
+    side and minutes held. Both are known only once the trade has run (a long hold means the move ran),
+    so the placebo carries some of the day's direction, and a random entry on that side often catches the
+    move before the cross fires. The control is therefore tilted against the rule, and its gap overstates
+    how much worse than chance the rule is. The verdict does not rest on it: the three bars fail alone.
+  - **Reported:** the points version (the index's move in the signal's direction from entry to exit) is
+    near zero gross in the design for both arms and below zero after the half-point cost, so the cross
+    carries no direction worth trading even before the option's spread and decay. Neither the 25% stop nor
+    no stop changes the sign. Calls and puts both lose in the design. By year, `allday` is positive in two
+    calendar years and negative in the others; no year is judged. Signals inside an open trade were rare.
+  - Every figure is in the local result (`~/.cherrypick/data/backtest/results/research/item83/`).
+- **What this decides:** the fail branch. The EMA 9 / VWAP cross does not earn as a 0DTE option trade
+  after costs, and its entries come after the move. The rule is closed; no paper arm is proposed. It is the
+  first `indicator-rule` row, the one later indicator rules are checked against.
 
 ## Not worth revisiting
 
