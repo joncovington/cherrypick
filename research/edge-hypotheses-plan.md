@@ -5083,6 +5083,14 @@ inputs are fetched.*
     declaration), sessions after 2026-10-30 read first.
   - **Fail:** published rules of this kind are closed for the suite; the walls-as-support thread
     stays closed with items 12 and 30.
+- **Result (2026-11-06): no verdict, for want of data.** The pilot accepted neither sampling: bars
+  built from the chain fetch's sampled underlying, at 1 minute and at 5, both understated the
+  broker's true 15-minute range and missed its highs and lows far more often than the declared bar
+  allows, on all three pilot names. So, as declared, the study ends with no verdict: cell N's fetch
+  was never queued and no rule output was read. The pilot's figures are in the local result
+  (`~/.cherrypick/data/backtest/results/research/item45/pilot.json`).
+- **What this decides:** nothing changes. The published rule stays untested by the suite; a test
+  would need a full underlying tape, which the vendor's options tier does not serve.
 
 ### 46. Where implied runs above realised: the variance premium by underlying, tenor and strike
 
