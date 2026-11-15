@@ -13,6 +13,10 @@ beyond the latest release.
 
 ### What's new
 
+- **IV gates on the vol index.** The ensemble's `vol_index_rank`, `vol_index_percentile` and
+  `vol_index_minus_rv` gates read the underlying's Cboe vol index (VIX for SPX, GVZ for GLD, RVX for
+  IWM): its previous close against its own history, or against realized vol. The `market-files` job
+  now also keeps RVX, GVZ, VXSLV and OVX.
 - **Ensemble: three more exits, and signal exits in paper.** `stop_credit_multiple` closes a credit
   position when its loss reaches m times the credit, `delta_limit` when the structure's delta reaches a
   limit, `close_at_dte` a set number of days before expiry. Paper's position snapshot now carries the

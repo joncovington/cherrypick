@@ -77,6 +77,12 @@ reading open, the engine fixes one and says so here, because each is a measureme
 - **Intraday RSI(14) and Stoch(14,3,3)** read completed five-minute bars of the spot trail. The slow
   stochastic's smoothed %K is the line compared with a level.
 - **Gap** is the open against the previous close; **change** is spot against the previous close.
+- **IV gates** read the underlying's Cboe vol index (`core.volindex`: VIX for SPX, GVZ for GLD), its close
+  before the session, as the signal study's expected move does: `vol_index_rank` and
+  `vol_index_percentile` against its `lookback` closes before that (252 by default), `vol_index_minus_rv`
+  against the underlying's realized vol over `n` returns. An underlying with no index, or a history
+  shorter than the lookback, fails the gate. Core's `iv_rank` conditions rank a chain's live ATM IV
+  against a history of the same reading, which no module keeps yet.
 - **Reward/risk** is maximum profit over maximum loss at the structure's mid; **bid/ask** is the whole
   structure's width (the sum of the legs' spreads).
 - **"Up to $X"** sizes to the largest whole count whose maximum loss at the mid fits, never fewer than one

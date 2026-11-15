@@ -24,7 +24,6 @@ Queued as a script row: `run.py queue-add --study signals --step <name> --task s
 from __future__ import annotations
 
 import argparse
-import csv
 import json
 import sqlite3
 import sys
@@ -33,7 +32,7 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from cherrypick.core import home, jsonio
+from cherrypick.core import home, jsonio, volindex
 from cherrypick.core import signals as sg
 
 from cherrypick.backtest import paths, signalstudy
@@ -82,18 +81,7 @@ def vol_closes(index: str | None) -> dict[str, float] | None:
     """The Cboe index's closes by ISO session, or None when there is no index or no file."""
     if index is None:
         return None
-    path = home.data_dir("market-files") / "cboe" / f"{index}.csv"
-    if not path.exists():
-        return None
-    out = {}
-    with path.open(newline="", encoding="utf-8") as f:
-        for row in csv.DictReader(f):
-            try:
-                day = datetime.strptime(row["DATE"], "%m/%d/%Y").date().isoformat()
-                out[day] = float(row["CLOSE"])
-            except (KeyError, ValueError):
-                continue
-    return out
+    return volindex.closes(index) or None
 
 
 def load(request: dict) -> tuple[list[sg.Bar], dict]:

@@ -30,7 +30,9 @@ ET = ZoneInfo("America/New_York")
 # Cboe index histories, one CSV each. SKEW and VVIX carry one value column; VIX, VIX3M and VXN carry
 # OHLC. VIX3M is not read by the pack: it is here so the routine fetch keeps the copy
 # `scripts/contango_replay.py` reads (2026-10-05), rather than that script fetching its own.
-CBOE_INDEXES = ("SKEW", "VIX", "VIX1D", "VIX3M", "VVIX", "VXN")
+#: The vol indexes `core.volindex` reads for SPX/SPY (VIX), NDX/QQQ (VXN), IWM (RVX), GLD (GVZ), SLV
+#: (VXSLV) and USO (OVX), beside the term-structure and skew indexes.
+CBOE_INDEXES = ("SKEW", "VIX", "VIX1D", "VIX3M", "VVIX", "VXN", "RVX", "GVZ", "VXSLV", "OVX")
 CBOE_URL = "https://cdn.cboe.com/api/global/us_indices/daily_prices/{symbol}_History.csv"
 
 # Treasury's daily par yield curve, one CSV per calendar year. Posted by about 18:00 ET.

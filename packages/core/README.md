@@ -60,6 +60,7 @@ cherrypick/core/
   settlement/      American physical-settlement arithmetic
   signals/         entry signals over bars: event and state forms, firing rules
   sources/         every data source declared (fields, cadence, licence) and which covers a request
+  volindex/        each underlying's Cboe vol index (VIX, VXN, RVX, GVZ, ...) and its daily closes
   spreadbook/      ledger writes calendars, pmcc and curve share
   stats/           arm-vs-control statistics, sessions as the unit
   streamcache/     the shared stream-cache schema + SQLite helpers

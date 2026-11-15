@@ -94,6 +94,9 @@ class Snapshot:
     #: The minute trail of up to `arms.PRIOR_SESSIONS` earlier sessions, {session: [(minute, spot)]},
     #: carried only when an arm reads an intraday signal (`arms.reads_prior_trail`).
     prior: dict[str, list[tuple[int, float]]] = field(default_factory=dict)
+    #: The underlying's vol index closes before `session` (`core.volindex`), oldest first, carried only
+    #: when an arm reads an IV gate (`feed.IV_GATES`).
+    vol_closes: list[float] = field(default_factory=list)
 
     @property
     def session_date(self) -> date:

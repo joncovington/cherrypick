@@ -22,6 +22,7 @@ from __future__ import annotations
 import inspect
 from dataclasses import dataclass, field
 
+from cherrypick.core import chainmeasures as cm
 from cherrypick.core import entrychecks as ec
 from cherrypick.core.structures import expected_move
 
@@ -161,6 +162,39 @@ def expected_move_pct(ctx, min=None, max=None):
     return _between(v, min, max), v
 
 
+def _vol_history(ctx, lookback: int) -> tuple[float | None, list[float]]:
+    """(the vol index's last close before the session, the `lookback` closes before that), or (None, [])
+    when the snapshot carries fewer: an IV gate never ranks against a short history."""
+    closes = ctx.snap.vol_closes
+    if len(closes) < lookback + 1:
+        return None, []
+    return closes[-1], closes[-lookback - 1 : -1]
+
+
+def vol_index_rank(ctx, min=None, max=None, lookback=252):
+    """The underlying's vol index (`core.volindex`): its last close's rank between the low and high of the
+    `lookback` closes before it, 0 to 100. The close known at entry, as the signal study's expected move."""
+    value, history = _vol_history(ctx, lookback)
+    v = None if value is None else cm.iv_rank(value, history)
+    return _between(v, min, max), v
+
+
+def vol_index_percentile(ctx, min=None, max=None, lookback=252):
+    """The share of the `lookback` closes before the vol index's last close that sat below it, 0 to 100."""
+    value, history = _vol_history(ctx, lookback)
+    v = None if value is None else cm.iv_percentile(value, history)
+    return _between(v, min, max), v
+
+
+def vol_index_minus_rv(ctx, min=None, max=None, n=20):
+    """The vol index's last close less the underlying's realized vol over its last `n` returns, both in vol
+    points: positive when options price more movement than the underlying has shown."""
+    closes = ctx.snap.closes[-(n + 1) :]
+    iv = ctx.snap.vol_closes[-1] if ctx.snap.vol_closes else None
+    v = None if len(closes) < n + 1 else cm.iv_minus_rv(iv, closes)
+    return _between(v, min, max), v
+
+
 def no_position_today(ctx, arm):
     """The named arm has not entered today (any status) and holds nothing open."""
     s = ctx.snap
@@ -204,6 +238,9 @@ REGISTRY = {
     "gex_put_total": ("market", gex_put_total),
     "gex_max_otm": ("market", gex_max_otm),
     "expected_move_pct": ("market", expected_move_pct),
+    "vol_index_rank": ("market", vol_index_rank),
+    "vol_index_percentile": ("market", vol_index_percentile),
+    "vol_index_minus_rv": ("market", vol_index_minus_rv),
     "no_position_today": ("market", no_position_today),
     "mid_price": ("structure", mid_price),
     "bid_ask": ("structure", bid_ask),
@@ -228,6 +265,9 @@ CORE_STAGE = {
     "gex_put_total": "chain",
     "gex_max_otm": "chain",
     "expected_move_pct": "chain",
+    "vol_index_rank": "signal",
+    "vol_index_percentile": "signal",
+    "vol_index_minus_rv": "signal",
     "mid_price": "structure",
     "bid_ask": "structure",
     "reward_risk": "structure",

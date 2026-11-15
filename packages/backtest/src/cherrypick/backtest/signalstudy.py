@@ -55,6 +55,7 @@ from datetime import date
 
 from cherrypick.core import calendar as cal
 from cherrypick.core import signals as sg
+from cherrypick.core import volindex
 
 #: Where bars come from, and whether a result over them is derived from licensed data.
 SOURCES = {
@@ -64,7 +65,8 @@ SOURCES = {
 }
 
 #: The vol index whose close prices a symbol's expected move.
-EM_INDEX = {"SPX": "VIX", "SPY": "VIX", "XSP": "VIX", "NDX": "VXN", "QQQ": "VXN"}
+#: Each symbol's vol index, core's (`core.volindex.VOL_INDEX`): one map for the study and the gates.
+EM_INDEX = volindex.VOL_INDEX
 
 UNITS = ("points", "pct", "em")
 MAX_HORIZON = 63
