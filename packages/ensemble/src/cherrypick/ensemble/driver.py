@@ -11,8 +11,10 @@ backtest from paper, and a backtest of an exit, a signal or a gate is the rule p
 
 What is not here: choosing the store (the source registry), the licence, and where results go (the
 backtest package's script); the fill model is the engine's, so a result's money is paper's arithmetic.
-Version 1 replays same-session expiries (the stores in the recorder's schema hold those); a position
-whose expiry the store does not sample is settled at its expiry's close when that session is stored.
+Two kinds of history: `StoreHistory` (the recorder's schema, sampled through the session, same-day
+expiries) and `DailyChainHistory` (end-of-day chains, one tick a session at 15:59, positions held across
+sessions and settled at their expiry's close). On the end-of-day one an arm whose entry window does not
+hold that tick counts `needs_intraday` for the session: the source cannot price another time.
 """
 
 from __future__ import annotations
@@ -74,7 +76,7 @@ def snapshot_at(
         wanted |= set(feed.expiries_for(a, day, listed))
     quotes = {e: rows for e in sorted(wanted) if (rows := history.rows(session, e, minute))}
     trail = history.trail(session, minute)
-    opening = [s for m, s in trail if m >= feed.OPEN_MINUTE]
+    day_open = history.day_open(session, minute)
     vix_prior = volindex.before(vix_daily or {}, session, 1)
     return build(
         session=session,
@@ -82,7 +84,7 @@ def snapshot_at(
         symbol=history.symbol,
         spot=spot,
         prev_close=prev,
-        day_open=opening[0] if opening else spot,
+        day_open=day_open if day_open is not None else spot,
         quotes=quotes,
         trail=trail,
         closes=history.closes_before(session),
@@ -130,12 +132,14 @@ def _manage(history, session, minute, book, arms, *, events, vix_daily, costs) -
 
 
 def _settle(history, session, book) -> None:
+    """Settle what expires today, and anything whose expiry passed on a session the history skipped
+    (an end-of-day source sparse in its early years), at that expiry's own close."""
     for pos in list(book.open):
-        if pos.entry.expiry == session:
-            price = history.settle(session)
+        if pos.entry.expiry <= session:
+            price = history.settle(pos.entry.expiry)
             if price is not None:
                 book.open.remove(pos)
-                book.trades.append(engine.settle_position(pos, price, session))
+                book.trades.append(engine.settle_position(pos, price, pos.entry.expiry))
 
 
 def run(
@@ -153,12 +157,29 @@ def run(
     book = book or Book()
     if vix_daily is None:
         vix_daily = volindex.closes("VIX")
-    mine = {n: a for n, a in arms.items() if a.get("enabled", True) and a["symbol"].upper() == history.symbol}
+    # Keyed by the arm's own name, which the engine records on every entry and position.
+    mine = {
+        a["name"]: a
+        for a in arms.values()
+        if a.get("enabled", True) and a["symbol"].upper() == history.symbol
+    }
     for session in sessions:
         day = date.fromisoformat(session)
         todays = {n: a for n, a in mine.items() if day.weekday() in a["weekdays"]}
         pending = set(todays)
         last: dict[str, str] = {}
+        if not history.minutes(session):
+            # The source holds nothing that session (Dolt before 2025 is about three days a week).
+            for n in todays:
+                last[n] = "no_data"
+        elif getattr(history, "close_only", False):
+            # An end-of-day source prices one instant a session: an arm whose window does not hold it
+            # cannot be backtested here, and is counted so rather than entered at another time.
+            for n in sorted(pending):
+                lo, hi = feed.entry_window(todays[n])
+                if not any(lo <= m <= hi for m in history.minutes(session)):
+                    pending.discard(n)
+                    last[n] = "needs_intraday"
         for minute in history.minutes(session):
             _manage(history, session, minute, book, mine, events=events, vix_daily=vix_daily, costs=costs)
             due = {

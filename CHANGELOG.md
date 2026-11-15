@@ -17,8 +17,9 @@ beyond the latest release.
   replays ensemble arms over a stored history with `cherrypick.ensemble.driver`: the same decisions,
   exits, gates and fills as the paper loop (a test holds one day to the same trade, to the cent), so
   every signal, exit and gate added this week can be backtested. It reads our own SPX 0DTE recordings,
-  or the vendor's stores while the licence allows, chosen by the source registry. Same-day expiries for
-  now.
+  or the vendor's stores while the licence allows, chosen by the source registry. An automation held
+  across sessions reads end-of-day chains (Dolt, or the vendor's while licensed) at one tick a session,
+  15:59; an entry at another time is counted as needing intraday data, never moved to the close.
 - **Ensemble arms state their safeguards.** `limits.max_open` and `limits.per_day` are required in every
   arm, with no default in the engine: an arm in `~/.cherrypick/config/ensemble.json` that replaces
   `limits` must name both. The shipped arms already ran one entry a day; they now say so.

@@ -359,8 +359,12 @@ Descriptive only: no trial, no verdict, nothing to the advisor. A vendor result 
 --name [--source]`): ensemble arms replayed by `cherrypick.ensemble.driver`, the engine paper runs. The
 store is the source registry's best cover for the symbol's same-day chains over the dates (or the one
 named); a vendor store only while `licensing.status` is active, so new work never reads the vendor's
-data after its subscription ends. The result is an explore run (no trial, no verdict) under
-`paths.automations_dir`: `results/automations/` when it read the vendor's store, beside it otherwise.
+data after its subscription ends. An arm that does not expire the session it enters reads end-of-day
+chains instead (`dolt-chains`, or `vendor-eod-chains` while licensed, its delta computed from mids by
+`core.chaindelta`) at one tick a session, 15:59, with daily bars from the stock history (raw);
+`--min-density` accepts Dolt's thinner years knowingly. The result is an explore run (no trial, no
+verdict) under `paths.automations_dir`: `results/automations/` when it read the vendor's store, beside
+it otherwise.
 
 **The advisor's specs** (`run-advised`, `advised.py`): the advisor queues `backtest_spec` replies it
 admitted against flies' own advice bounds (off until `advisor.backtest_proposals`); this reads the

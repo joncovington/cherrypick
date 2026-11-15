@@ -77,8 +77,16 @@ makes one from the stream cache, and settles what is open at its expiry's close.
 any file in the gex recorder's schema (our recorder, the vendor's 0DTE stores) through
 `core.quotehistory` and `core.regime`, never a reader of its own. `tests/test_driver.py` holds a day run
 through the paper loop and through the driver to the same trade, to the cent. Choosing the store and
-writing the result is the backtest package's `scripts/automation_backtest.py`. Version 1 replays
-same-session expiries; item 75's own driver stays as its study left it.
+writing the result is the backtest package's `scripts/automation_backtest.py`. Item 75's own driver
+stays as its study left it.
+
+**Two kinds of history.** `StoreHistory` is sampled through the session (same-day expiries).
+`DailyChainHistory` is end-of-day chains (Dolt, the vendor's store): one tick a session at 15:59, the
+last minute paper acts in, positions held across sessions and settled at their expiry's close (on the
+next session read, if the run skips the expiry day). An arm whose entry window does not hold that tick
+counts `needs_intraday` for the session, never moved to the close; a session the source holds nothing
+for counts `no_data`. A close that does not price on the tick waits for the next session's, and at
+expiry the position settles instead: an end-of-day source has no later minute.
 
 ## The rules and their resolutions
 

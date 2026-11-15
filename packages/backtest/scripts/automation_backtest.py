@@ -16,7 +16,10 @@ writes the result:
   under `results/automations/` when it read the vendor's store (licensed, purged with it), beside it
   otherwise (`paths.automations_dir`). Never into the repo.
 
-Version 1 covers same-session expiries, the stores in the recorder's schema.
+Same-session arms read the recorder-schema stores through the day. Others read end-of-day chains (Dolt,
+or the vendor's store while licensed) at one tick a session, 15:59: an arm whose entry is not at the
+close counts `needs_intraday`, the source cannot price it. Daily bars come from the stock history (raw),
+or the recorder's index sessions for an index.
 """
 
 from __future__ import annotations
@@ -25,10 +28,10 @@ import argparse
 import json
 import sqlite3
 import sys
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
-from cherrypick.core import home, jsonio
+from cherrypick.core import chaindelta, home, jsonio, volindex
 from cherrypick.core import sources as src
 from cherrypick.core.clock import ET
 from cherrypick.core.sources import inventory as src_inventory
@@ -86,6 +89,112 @@ def index_daily(symbol: str) -> list[dict]:
     return [{"session": d, "open": o, "high": h, "low": lo, "close": c} for d, o, h, lo, c in rows]
 
 
+#: The end-of-day chain sources a multi-day automation reads (one tick a session, at 15:59).
+EOD_SOURCES = ("dolt-chains", "vendor-eod-chains")
+
+
+def same_day(arms: dict[str, dict]) -> bool:
+    """Every arm expires the session it enters: the recorder-schema stores price it through the day."""
+    return all(a["expiry"]["kind"] == "dte" and a["expiry"]["days"] == 0 for a in arms.values())
+
+
+def choose_eod_source(
+    symbol, start, end, named, *, licensed_ok: bool, inv: dict, min_density: float
+) -> src.Source:
+    """The end-of-day chain source for a multi-day run: `named`, or the first that covers the dates at
+    `min_density` (Dolt's chains are about three days a week before 2025), the vendor's only while the
+    licence allows new work."""
+    if named:
+        if named not in EOD_SOURCES:
+            raise Refused(f"{named} is not an end-of-day chain source ({', '.join(EOD_SOURCES)})")
+        s = src.by_name(named)
+        if s.licensed and not licensed_ok:
+            raise Refused(f"{named} is the vendor's and the licence does not allow new work")
+        return s
+    cov = src.coverage(
+        inv, "chain", symbol, start, end, cadence="1d", licensed=licensed_ok, min_density=min_density
+    )
+    for x in cov["sources"]:
+        if x["source"] in EOD_SOURCES and x["covers"]:
+            return src.by_name(x["source"])
+    why = "; ".join(f"{x['source']}: {x['why']}" for x in cov["sources"] if x["source"] in EOD_SOURCES)
+    raise Refused(f"no end-of-day chains cover {symbol} {start}..{end} ({why or 'no source holds it'})")
+
+
+def stock_daily(symbol: str) -> list[dict]:
+    """Raw daily OHLC from the stock history (`stock-history`): the prices option strikes are quoted
+    against, never adjusted."""
+    db = home.data_dir("technicals") / "history.db"
+    if not db.exists():
+        return []
+    conn = sqlite3.connect(f"file:{db.as_posix()}?mode=ro", uri=True)
+    try:
+        rows = conn.execute(
+            "SELECT date, open, high, low, close FROM bars WHERE symbol = ? ORDER BY date", (symbol,)
+        ).fetchall()
+    finally:
+        conn.close()
+    return [{"session": d, "open": o, "high": h, "low": lo, "close": c} for d, o, h, lo, c in rows]
+
+
+def _years(session: str, expiry: str) -> float:
+    return max((date.fromisoformat(expiry) - date.fromisoformat(session)).days, 0) / 365.0
+
+
+def vendor_eod_loader(db: Path, symbol: str):
+    """The vendor's end-of-day store (`eod_chains.db`): each expiry's quotes on a session, with delta
+    computed from the chain's own mids (`core.chaindelta`), the store keeping no greeks."""
+    conn = sqlite3.connect(f"file:{db.as_posix()}?mode=ro", uri=True)
+
+    def load(session: str) -> dict[str, list[dict]]:
+        by_exp: dict[str, list[dict]] = {}
+        for exp, k, right, bid, ask in conn.execute(
+            "SELECT expiration, strike, right, bid, ask FROM eod_chain_quotes "
+            "WHERE symbol = ? AND session = ?",
+            (symbol, session),
+        ):
+            r = "C" if str(right).upper().startswith("C") else "P"
+            by_exp.setdefault(exp, []).append({"strike": float(k), "right": r, "bid": bid, "ask": ask})
+        return {
+            e: chaindelta.with_computed_delta(rows, years=_years(session, e)) for e, rows in by_exp.items()
+        }
+
+    return load
+
+
+def dolt_loader(symbol: str):
+    """Dolt's `options.option_chain` (`dolt-chains`): each expiry's quotes on a session with the
+    dataset's own delta and IV. Read a date at a time, the table's key leading with the date."""
+    import mysql.connector
+
+    conn = mysql.connector.connect(
+        host="127.0.0.1", port=3306, user="root", database="options", connection_timeout=10
+    )
+
+    def load(session: str) -> dict[str, list[dict]]:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT expiration, strike, call_put, bid, ask, delta, vol FROM option_chain "
+            "WHERE date = %s AND act_symbol = %s",
+            (session, symbol),
+        )
+        out: dict[str, list[dict]] = {}
+        for exp, k, cp, bid, ask, delta, vol in cur.fetchall():
+            out.setdefault(str(exp), []).append(
+                {
+                    "strike": float(k),
+                    "right": "C" if str(cp).upper().startswith("C") else "P",
+                    "bid": None if bid is None else float(bid),
+                    "ask": None if ask is None else float(ask),
+                    "delta": None if delta is None else float(delta),
+                    "iv": None if vol is None else float(vol),
+                }
+            )
+        return out
+
+    return load
+
+
 def summarise(book) -> dict:
     out = {}
     for name, why in sorted(book.why.items()):
@@ -113,23 +222,39 @@ def cmd_run(args) -> int:
     chosen = {n: {**every[n], "enabled": True} for n in names}
     symbol = args.symbol.upper()
     start, end = args.start, args.end
+    licensed_ok, inv = licensing.status(s)["active"], src_inventory.load()
     try:
-        source = choose_source(
-            symbol,
-            start,
-            end,
-            args.source,
-            licensed_ok=licensing.status(s)["active"],
-            inv=src_inventory.load(),
-        )
+        if same_day(chosen):
+            source = choose_source(symbol, start, end, args.source, licensed_ok=licensed_ok, inv=inv)
+        else:
+            source = choose_eod_source(
+                symbol,
+                start,
+                end,
+                args.source,
+                licensed_ok=licensed_ok,
+                inv=inv,
+                min_density=args.min_density,
+            )
     except Refused as exc:
         print(json.dumps({"ok": False, "error": str(exc)}))
         return 2
-    store = store_path(source, s)
-    h = history.StoreHistory(store, symbol, daily=index_daily(symbol))
+    vix_daily = volindex.closes("VIX")
+    if same_day(chosen):
+        store = store_path(source, s)
+        h = history.StoreHistory(store, symbol, daily=index_daily(symbol))
+    else:
+        store = (
+            store_path(source, s) if source.name == "vendor-eod-chains" else Path("dolt/options.option_chain")
+        )
+        loader = (
+            vendor_eod_loader(store, symbol) if source.name == "vendor-eod-chains" else dolt_loader(symbol)
+        )
+        bars = stock_daily(symbol) or index_daily(symbol)
+        h = history.DailyChainHistory(symbol, bars, loader, vix_daily=vix_daily)
     sessions = [d for d in h.sessions if start <= d <= end]
     calendar = events.load_calendar((cfg.get("events") or {}).get("path"))
-    book = driver.run(chosen, h, sessions, events=calendar, costs=cfg)
+    book = driver.run(chosen, h, sessions, events=calendar, costs=cfg, vix_daily=vix_daily)
     result = {
         "name": args.name,
         "kind": "explore",
@@ -138,7 +263,8 @@ def cmd_run(args) -> int:
         "source": source.name,
         "store": store.relative_to(home.data_dir()).as_posix()
         if store.is_relative_to(home.data_dir())
-        else store.name,
+        else store.as_posix(),
+        "cadence": "1d at 15:59" if getattr(h, "close_only", False) else "stored minutes",
         "licensed": source.licensed,
         "sessions": [sessions[0], sessions[-1]] if sessions else None,
         "session_count": len(sessions),
@@ -163,6 +289,12 @@ def main(argv: list[str] | None = None) -> int:
     rn.add_argument("--source", default=None, help="a source registry name; default: the best that covers")
     rn.add_argument("--from", dest="start", required=True)
     rn.add_argument("--to", dest="end", required=True)
+    rn.add_argument(
+        "--min-density",
+        type=float,
+        default=0.95,
+        help="end-of-day: accept a thinner source (Dolt before 2025)",
+    )
     rn.set_defaults(fn=cmd_run)
     args = ap.parse_args(argv)
     return args.fn(args)
