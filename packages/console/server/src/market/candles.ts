@@ -27,11 +27,13 @@ import type { MarketDataService } from "./marketData.js";
 export type CandleFeed = Pick<MarketDataService, "on" | "addCandleSubscription" | "removeCandleSubscription">;
 
 const LINGER_MS = 30_000;
-/** How much history a series loads on subscribe: enough to fill a screen at each width. */
+/** How much history a series loads on subscribe. 1m reaches back over a weekend, so the last session
+ *  is always there (`MAX_BARS` keeps about three futures days of it); 5m and 15m reach the ten
+ *  sessions the chart's histograms can ask for, across two weekends and a holiday. */
 const LOOKBACK_MS: Record<CandlePeriod, number> = {
-  "1m": 86_400_000,
-  "5m": 3 * 86_400_000,
-  "15m": 7 * 86_400_000,
+  "1m": 4 * 86_400_000,
+  "5m": 16 * 86_400_000,
+  "15m": 16 * 86_400_000,
   // Two sessions are all a card reads; two weeks spans any holiday run.
   "1d": 14 * 86_400_000,
 };

@@ -82,7 +82,7 @@ describe("a series' history", () => {
     svc.acquire(SYM, "1m");
     expect(feed.added).toHaveLength(1);
     expect(feed.added[0]!.symbol).toBe(`${SYM}{=1m}`);
-    expect(feed.added[0]!.fromTime).toBeLessThanOrEqual(before - 86_400_000 + 1000);
+    expect(feed.added[0]!.fromTime).toBeLessThanOrEqual(before - 4 * 86_400_000 + 1000);
   });
 
   it("is buffered until the snapshot ends, then sent whole, oldest first, without the sentinel", () => {

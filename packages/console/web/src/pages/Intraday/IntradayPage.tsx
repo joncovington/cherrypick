@@ -169,7 +169,7 @@ export function histogramNote(h: { asked: number; drawn: number; sessions: reado
   const span = h.sessions.length > 1 ? ` (${sessionLabel(h.sessions[0]!)}–${sessionLabel(h.sessions.at(-1)!)})` : "";
   const head = `histograms: ${h.drawn} of ${h.asked} sessions${span}`;
   if (h.drawn >= h.asked) return head;
-  if (h.drawn < h.sessions.length) return `${head}; the rest are older than this candle width loads (15m loads the most)`;
+  if (h.drawn < h.sessions.length) return `${head}; the rest are older than this candle width loads (5m and 15m load ten)`;
   return `${head}; that is all the history held`;
 }
 
@@ -549,8 +549,8 @@ const INTRADAY_HELP: CardHelpContent = {
           each price: the brighter rows are its value area (70% of the time), the amber row its point of control. The
           newest session's grows leftward from the chart's right edge; each older one's is drawn from that session's
           09:30 bar. The sessions button picks how many (1, 5 or 10, newest included); the older ones share one
-          scale, so a wider row spent longer at its price. A narrow candle loads fewer days (1m one day,
-          5m three, 15m seven), so the readout says when fewer sessions are drawn than asked. The lines are the
+          scale, so a wider row spent longer at its price. 5m and 15m load enough history for ten
+          sessions; 1m holds about three days, so the readout says when fewer sessions are drawn than asked. The lines are the
           newest session's. SPX and NDX carry no volume, so theirs is time only. Chart only: no module reads it.
         </p>
       </HelpSection>

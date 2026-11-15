@@ -395,7 +395,8 @@ symbol, and the setups watchlist:
     compare, a full session's longest row spanning 60% of that session's width at the current zoom. The newest is the profile the lines read; older ones come
     from the recorded bars by the sessions panel's `buildView` where the store keeps the symbol, else
     from the live 15-minute series, and one on another row grid is left out. A session older than the
-    drawn candles reach is not drawn (a series loads one day at 1m, three at 5m, seven at 15m), and
+    drawn candles reach is not drawn (5m and 15m load 16 days, enough for ten sessions; 1m loads four days, capped near three
+    days of futures bars), and
     the readout says how many of those asked are drawn and why fewer.
   What the feed does, as
   `scripts/probe_candles.py` measured it, and the rule each finding set (`server/test/candles.test.ts`,
