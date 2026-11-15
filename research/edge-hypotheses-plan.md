@@ -8494,6 +8494,94 @@ before then.
   paper alone; on a pass this thin, the paper record decides before anything goes live. The
   condor's paper arm is the user's call to stop, and it is not proposed for live.
 
+### 86. An at-the-money calendar across an earnings report, held until the stock returns to its strike
+
+Declared 2026-11-14, before any of its paths are fetched. The rule comes from a trader interviewed on
+a published video: on names whose past reports moved little and came back quickly, buy a calendar at
+the money in the session before the report, front two to four weeks out and back three to four months
+out, and close it when the stock trades back through the strike, within about ten sessions, with a 25%
+stop on the spread. The front leg takes the fall in implied volatility after the report; the back
+month holds its value. Item 87 tests the same calendar with a directional lean.
+`hypotheses --similar` names items 1, 31, 47, 52, 66 and 67, all failed: single-name report premium
+has been close to fair at mid. This differs in its back month (three to four months, not the next
+monthly), its exit (a return to the strike over up to ten sessions, not the reaction close) and its
+name filter. The retired `atm_calendar` and `double_calendar` paper books lost, but held a back month
+21 days past a weekly front and exited on time.
+
+- **Question:** does the calendar earn after costs, more than the same calendar on the same name four
+  weeks from any report, and does the trader's quiet-name filter improve it?
+- **Names:** 35, frozen in the script. Per sector, the five with the most options dollar volume in
+  technicals' liquidity verdict of 2026-11-13, among item 31's names with at least 20 events and an
+  options reading. Technology: NVDA, AAPL, AMD, MSFT, AVGO. Communication: GOOGL, TTWO, NFLX, APP,
+  DIS (GOOG left out for GOOGL, one report; META has 16 events, its FB years not carried). Consumer
+  discretionary: AMZN, TSLA, BABA, MCD, HD. Financials: COIN, JPM, V, BAC, C. Healthcare: UNH, JNJ,
+  MRNA, MRK, PFE. Energy: CVX, VLO, XOM, CCJ, OXY. Consumer staples: WMT, KO, PEP, PG, TGT. **Declared
+  limit:** chosen by today's liquidity (hindsight, B11, as item 31).
+- **Events:** item 31's list on those names (stated-timing Dolt `earnings_calendar` rows,
+  2020-01-22..2026-07-14), with its entry and reaction sessions: 878 reports.
+- **The trade (`SPEC`):**
+  - **Expiries:** the front is the weekly expiry nearest 21 days after entry, 14 to 28 days out, with
+    at least 7 sessions after the reaction. The back is the standard monthly nearest 105 days out, 84 to
+    126 days (monthlies can sit 35 days apart).
+  - **Strike:** the listed strike nearest the entry session's close, quoted two-sided in both
+    expiries. A call calendar; the put calendar is reported.
+  - **Entry:** the entry session's end-of-day mids, plus the suite's slippage on both legs and the open
+    fee schedule. **Declared departure:** the trader enters about two hours before the close; the store
+    holds end-of-day quotes.
+  - **Exit, the first of:** a session from the reaction session on whose daily range (Dolt `ohlcv`)
+    holds the strike, at that session's end-of-day mids, the nearest the data comes to his
+    good-till-cancelled order; the spread's mid at or under 75% of its entry mid; the last session,
+    10 sessions after the reaction or 2 before the front expires, whichever is first. Sold at mids less
+    slippage, with the close fee schedule. An exit due on a session with a leg unquoted waits for the
+    next quoted session; with none by the last session the trade is dropped and counted.
+  - **Not modelled:** his leg-out (closing the front and keeping the back for months). Both legs close
+    together.
+- **The paths:** each trade reads its front and back from entry through its last session (3,508
+  paths for the events and their controls, newest first), fetched as `fetch-chain-paths`.
+- **Arms (Holm across them, which t 2.3 keeps from binding):**
+  - `all`: every report.
+  - `quiet`: the trader's filter. Of the name's last 8 earlier stated-timing reports, at least 6
+    `returned`: the close 10 sessions after the reaction sat inside the range of the 10 sessions ending
+    at the entry session. A report with fewer than 8 earlier ones is in neither `quiet` nor
+    `unselected`, so `quiet` starts about two years into the calendar.
+- **The control:** item 31's `control_for` (the same weekday four weeks earlier, else later, else five
+  weeks earlier, with no report from three sessions before it through its week), the same calendar
+  rule on its dates, kept only when no report falls between its entry and its last session.
+- **Windows:** one run, cut at **2024-07-01**; the holdout is read only after a design pass.
+- **The rule, two literals in the script; a pass needs both:**
+  - **`RULE`, the three bars** (`cherrypick.backtest.study.rule`), one row per trade: the net less the
+    3-month bill on what was paid, one-sided t ≥ 2.3; the tail at 10,000 draws, seed 86, a year being the
+    sample's own trades a year; delta not applicable (an at-the-money calendar is near neutral). Fewer
+    than 100 design trades is no verdict, fewer than 40 in the holdout likewise.
+  - **`EVENT_RULE`,** on return per dollar paid: the trade less its control, clustered by entry
+    session, t ≥ 2.3; the mean positive in each design half (split 2022-07-01), at the stress (fees 1.5×,
+    slippage a quarter of the spread) and without the best five trades; for `quiet`, its design mean
+    above the unselected reports'. Holdout, after a design pass: the mean and the paired difference both
+    positive.
+- **Minimum detectable effect:** with some 600 `all` design trades and a return spread near the debit
+  itself, the paired test detects a mean of a few percent of the debit; `quiet` has far fewer trades.
+  The run reports the measured ones.
+- **Reported, never judged:** the put calendar; no stop; the exit at the reaction close (item 52's);
+  holding to the last session with no strike exit; each sector; each year; the design by tercile of
+  the entry front/back IV ratio (item 54's ordering); skips by reason.
+- **Rival explanations, each with its check:**
+  - *Ordinary calendar decay, not the report:* the paired control.
+  - *The filter picks names that would earn anyway:* `quiet` must beat the unselected reports.
+  - *One regime:* both design halves.
+  - *Costs read too kindly:* the stress.
+  - *A few big wins:* the best five removed.
+- **Declared limits:** the hindsight universe; end-of-day fills, not the trader's afternoon; the strike
+  touch read from daily highs and lows with the fill at the close; no leg-out.
+- **Data and results:** `packages/backtest/scripts/earnings_calendar_item86.py plan|study`, queued
+  as `item86/plan`, `fetch-sample`, `smoke`, `fetch` (twice), `study`. Results stay under
+  `~/.cherrypick/data/backtest/results/research/item86/`, and this plan records the verdict without
+  figures. It runs before the vendor licence ends on 2026-11-16.
+- **Decides:**
+  - **An arm passes:** propose an earnings paper strategy on the 35 names with this rule, its
+    `forward` block declared before it trades.
+  - **Both fail or no verdict:** the at-the-money earnings calendar is closed as tested on licensed
+    data; item 87 says whether a lean changes that.
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:
