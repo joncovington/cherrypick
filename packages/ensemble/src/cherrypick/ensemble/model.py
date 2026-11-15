@@ -91,6 +91,9 @@ class Snapshot:
     #: Completed daily bars before `session` ({session, open, high, low, close}, oldest first), carried only
     #: when an arm reads a daily signal (`arms.reads_daily`); empty otherwise.
     daily: list[dict] = field(default_factory=list)
+    #: The minute trail of up to `arms.PRIOR_SESSIONS` earlier sessions, {session: [(minute, spot)]},
+    #: carried only when an arm reads an intraday signal (`arms.reads_prior_trail`).
+    prior: dict[str, list[tuple[int, float]]] = field(default_factory=dict)
 
     @property
     def session_date(self) -> date:
@@ -102,6 +105,7 @@ class Snapshot:
         d["chains"] = {k: {"expiry": c.expiry, "rows": c.rows} for k, c in self.chains.items()}
         d["events"] = None
         d["trail"] = [list(p) for p in self.trail]
+        d["prior"] = {k: [list(p) for p in v] for k, v in self.prior.items()}
         return d
 
     @classmethod
@@ -109,6 +113,7 @@ class Snapshot:
         d = dict(d)
         d["chains"] = {k: Chain(v["expiry"], v["rows"]) for k, v in d["chains"].items()}
         d["trail"] = [(int(m), float(s)) for m, s in d["trail"]]
+        d["prior"] = {k: [(int(m), float(s)) for m, s in v] for k, v in (d.get("prior") or {}).items()}
         d["open_positions"] = [OpenPosition(**p) for p in d.get("open_positions", [])]
         d["events"] = events
         return cls(**d)

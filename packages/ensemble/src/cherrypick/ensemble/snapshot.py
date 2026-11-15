@@ -43,6 +43,7 @@ def build(
     with_gex: bool = True,
     gex_strike_cap: int | None = None,
     daily: list[dict] | None = None,
+    prior: dict[str, list[tuple[int, float]]] | None = None,
 ) -> Snapshot:
     """`quotes` maps an expiry (ISO) to its quote rows. GEX is built per expiry unless `with_gex` is off
     (a driver whose arms read none skips the cost)."""
@@ -66,6 +67,7 @@ def build(
         open_positions=list(open_positions or []),
         listed_expiries=sorted(quotes),
         daily=[r for r in (daily or []) if r["session"] < session],
+        prior={k: list(v) for k, v in sorted((prior or {}).items()) if k < session},
         close_minute=close_minute,
         gex_strike_cap=gex_strike_cap,
     )
