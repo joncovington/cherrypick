@@ -1,0 +1,146 @@
+"""Stored history for the automation driver: the twin of the paper feed, read from a SQLite file in the
+gex recorder's schema instead of the stream cache.
+
+`StoreHistory` reads one symbol from any file in that schema, read-only: the recorder's own
+`gex_history.db` (SPX from 2026-10-13) or a vendor store (`SPX-60s.db` and the rest, while licensed),
+whose fetch writes the recorder's tables. It reads through core's own readers, never a second copy:
+`core.quotehistory` for the samples, the spot trail, the GEX profiles and the prior close (the reader
+flies' and MEIC's replays use), and `core.regime` for the VIX at a sample (at or before, never after,
+and unmeasured past its staleness bound). The only queries of its own list the stored sessions and
+the daily closes. Daily OHLC bars and vol index closes come from other stores and are passed in.
+
+`core.quotehistory` merges a sample's quotes by timestamp, so one sample holds one expiry: true of
+every store this reads today (same-day expiries). A store holding several expiries per instant would
+need that reader widened first.
+"""
+
+from __future__ import annotations
+
+import sqlite3
+from datetime import datetime
+from pathlib import Path
+
+from cherrypick.core import clock, regime
+from cherrypick.core import quotehistory as qh
+
+
+class StoreHistory:
+    """One symbol's sessions in a recorder-schema file. A day is read once and kept until the next."""
+
+    def __init__(self, path: str | Path, symbol: str, *, daily: list[dict] | None = None):
+        self.path, self.symbol = Path(path), symbol.upper()
+        conn = sqlite3.connect(f"file:{self.path.as_posix()}?mode=ro", uri=True)
+        try:
+            self.closes = {
+                d: float(c)
+                for d, c in conn.execute(
+                    "SELECT trade_date, close FROM daily_closes WHERE symbol = ? AND close IS NOT NULL",
+                    (self.symbol,),
+                )
+            }
+            self.sessions = [
+                d
+                for (d,) in conn.execute(
+                    "SELECT DISTINCT trade_date FROM gex_quote_samples WHERE symbol = ? ORDER BY trade_date",
+                    (self.symbol,),
+                )
+            ]
+        finally:
+            conn.close()
+        #: Daily OHLC rows ({session, open, high, low, close}) from another store (index sessions, the
+        #: stock history), for a daily signal; none means a daily signal reads stale bars.
+        self.daily = sorted(daily or [], key=lambda r: r["session"])
+        self._day: dict[str, dict] = {}
+
+    def day(self, session: str) -> dict:
+        if session in self._day:
+            return self._day[session]
+        rec = qh.RecordedDay(self.symbol, session, history_db=self.path)
+        samples = {int(s["now_min"]): s for s in rec.samples}
+        markets = regime.markets_at([s["ts"] for s in rec.samples], history_db=self.path)
+        vix = {}
+        for s, m in zip(rec.samples, markets, strict=True):
+            r = (m.get("readings") or {}).get("vix") or {}
+            if m.get("status") == "measured" and r.get("usable") and r.get("value") is not None:
+                vix[int(s["now_min"])] = float(r["value"])
+        trail = {}
+        for ts, spot in rec.trail:
+            trail[int(clock.minute_of_day(datetime.fromtimestamp(ts, clock.ET)))] = spot
+        out = {"rec": rec, "samples": samples, "vix": vix, "trail": trail}
+        self._day = {session: out}
+        return out
+
+    def minutes(self, session: str) -> list[int]:
+        """The minutes the store sampled the chain that session: the ticks a backtest decides on."""
+        return sorted(self.day(session)["samples"])
+
+    def trail(self, session: str, upto: int) -> list[tuple[int, float]]:
+        return [(m, s) for m, s in sorted(self.day(session)["trail"].items()) if m <= upto]
+
+    def spot_at(self, session: str, minute: int) -> float | None:
+        """The sample's spot (`core.quotehistory` refuses a stale one), as paper reads a fresh spot."""
+        s = self.day(session)["samples"].get(minute)
+        return None if s is None else s.get("underlying_price")
+
+    def listed(self, session: str, minute: int) -> list[str]:
+        s = self.day(session)["samples"].get(minute)
+        return [s["expiration"]] if s and s.get("expiration") else []
+
+    def rows(self, session: str, expiry: str, minute: int) -> list[dict]:
+        """The expiry's quotes sampled at `minute`, with the GEX profile at or before it merged on."""
+        d = self.day(session)
+        s = d["samples"].get(minute)
+        if s is None or s.get("expiration") != expiry:
+            return []
+        prof = {}
+        before = [p for t, p in d["rec"].profiles if t <= s["ts"]]
+        for r in before[-1] if before else []:
+            prof[float(r["strike"])] = r
+        out = []
+        for right, side in (("P", "puts"), ("C", "calls")):
+            for k, q in s[side].items():
+                p = prof.get(float(k)) or {}
+                out.append(
+                    {
+                        "strike": float(k),
+                        "right": right,
+                        "bid": q.get("bid"),
+                        "ask": q.get("ask"),
+                        "delta": q.get("delta"),
+                        "gamma": p.get("call_gamma" if right == "C" else "put_gamma"),
+                        "oi": p.get("call_oi" if right == "C" else "put_oi"),
+                    }
+                )
+        return out
+
+    def vix_at(self, session: str, minute: int) -> float | None:
+        return self.day(session)["vix"].get(minute)
+
+    def closes_before(self, session: str) -> list[float]:
+        return [self.closes[d] for d in sorted(self.closes) if d < session]
+
+    def prev_close(self, session: str) -> float | None:
+        earlier = [d for d in self.closes if d < session]
+        return self.closes[max(earlier)] if earlier else None
+
+    def settle(self, session: str) -> float | None:
+        """The session's official close; the last stored spot when the store has none."""
+        if session in self.closes:
+            return self.closes[session]
+        trail = self.day(session)["trail"]
+        return trail[max(trail)] if trail else None
+
+    def prior_trails(self, session: str, n: int) -> dict[str, list[tuple[int, float]]]:
+        """The spot trails of the `n` stored sessions before `session`, as paper's recorded trail."""
+        out = {}
+        for d in [x for x in self.sessions if x < session][-n:]:
+            rec = qh.RecordedDay(self.symbol, d, history_db=self.path)
+            if rec.trail:
+                out[d] = [
+                    (clock.minute_of_day(datetime.fromtimestamp(ts, clock.ET)), spot)
+                    for ts, spot in rec.trail
+                ]
+        return out
+
+    def daily_before(self, session: str) -> list[dict]:
+        return [r for r in self.daily if r["session"] < session]

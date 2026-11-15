@@ -45,6 +45,12 @@ def signals_dir(licensed: bool) -> Path:
     return (results_dir() if licensed else data_dir()) / "signals"
 
 
+def automations_dir(licensed: bool) -> Path:
+    """Where an automation backtest's result lives (`scripts/automation_backtest.py`): under `results/`
+    when it read the vendor's store, so `purge --derived` removes it; beside it over our own recording."""
+    return (results_dir() if licensed else data_dir()) / "automations"
+
+
 def results_db() -> Path:
     return results_dir() / "backtest.db"
 

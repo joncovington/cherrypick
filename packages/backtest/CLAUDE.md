@@ -355,6 +355,13 @@ the underlying did after each, per horizon and by year, against a control. The r
 Descriptive only: no trial, no verdict, nothing to the advisor. A vendor result records
 `reads_holdout` when its sessions reach the configured holdout window.
 
+**Automation backtests** (`packages/backtest/scripts/automation_backtest.py run --arms --symbol --from --to
+--name [--source]`): ensemble arms replayed by `cherrypick.ensemble.driver`, the engine paper runs. The
+store is the source registry's best cover for the symbol's same-day chains over the dates (or the one
+named); a vendor store only while `licensing.status` is active, so new work never reads the vendor's
+data after its subscription ends. The result is an explore run (no trial, no verdict) under
+`paths.automations_dir`: `results/automations/` when it read the vendor's store, beside it otherwise.
+
 **The advisor's specs** (`run-advised`, `advised.py`): the advisor queues `backtest_spec` replies it
 admitted against flies' own advice bounds (off until `advisor.backtest_proposals`); this reads the
 queue by subprocess, turns each into a config-defined arm `advised:<name>-<id>` (the base arm's params
