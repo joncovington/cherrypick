@@ -41,20 +41,23 @@ def test_the_hold_ends_two_sessions_before_the_front_when_that_is_sooner():
     assert m.horizon(reaction, front) == m.sessions_before(front, 2)
 
 
-def test_a_report_returned_when_the_close_ten_sessions_on_is_inside_the_pre_report_range():
+def test_a_report_returned_when_any_close_in_the_ten_sessions_after_is_inside_the_pre_report_range():
     entry = date(2024, 4, 23)
     reaction = cal.next_trading_day(entry)
     bars, d = {}, entry
     for _ in range(10):
         bars[d] = (100.0, 105.0, 95.0, 100.0)
         d = cal.previous_trading_day(d)
-    later = m.sessions_after(reaction, 10)
-    bars[later] = (0, 0, 0, 104.0)
-    assert m.returned(bars, entry, reaction) is True
-    bars[later] = (0, 0, 0, 106.0)
+    after = [m.sessions_after(reaction, i) for i in range(1, 11)]
+    for x in after:
+        bars[x] = (0, 0, 0, 110.0)  # every close above the range
     assert m.returned(bars, entry, reaction) is False
-    del bars[later]
-    assert m.returned(bars, entry, reaction) is None
+    bars[after[3]] = (0, 0, 0, 104.0)  # back inside on the fourth session only
+    assert m.returned(bars, entry, reaction) is True
+    assert m.returned(bars, entry, reaction, at_last_only=True) is False  # the first declaration's reading
+    bars[after[-1]] = (0, 0, 0, 96.0)
+    assert m.returned(bars, entry, reaction, at_last_only=True) is True
+    assert m.returned(bars, entry, cal.next_trading_day(reaction)) is None  # a session after has no bar
 
 
 def test_quiet_needs_eight_prior_reports_and_six_returns():

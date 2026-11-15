@@ -44,7 +44,17 @@ sys.modules.setdefault("earnings_item31", e31)
 _spec.loader.exec_module(e31)
 
 #: The correction log: one entry per fix to this replay, oldest first (orchestrator/studyversion.py).
-REPLAY_CORRECTIONS = ()
+REPLAY_CORRECTIONS = (
+    {
+        "on": "2026-11-14",
+        "what": "`returned` reads any close in the 10 sessions after the reaction, not the 10th close alone",
+        "why": "the trader's words are 'within five to 10 trading days'; the 10th-close reading selected 14 "
+        "design reports, under the 100-trade floor, so quiet could only be no verdict. Selector counts only "
+        "were read, no trade outcome; the threshold (6 of 8) is unchanged and the old reading is reported",
+        "decided": "user, 2026-11-14",
+        "before_read": True,
+    },
+)
 
 #: The 35 names: per sector, the five with the most options dollar volume in technicals' liquidity
 #: verdict of 2026-11-13 (`chain_volume_usd`), among item 31's names with at least 20 of its events
@@ -74,7 +84,7 @@ SPEC = {
     "right": "C",
     "quiet_prior": 8,
     "quiet_needed": 6,
-    "return_sessions": 10,  # back in the pre-report range 10 sessions after the reaction
+    "return_sessions": 10,  # back in the pre-report range at any close within 10 sessions of the reaction
     "range_sessions": 10,  # the pre-report range: the 10 sessions ending at the entry session
 }
 
@@ -217,18 +227,28 @@ def path_requests(symbol: str, d: dict) -> list[dict]:
 # --------------------------------------------------------------------------- pure: selection
 
 
-def returned(bars: dict[date, tuple], entry: date, reaction: date, spec: dict = SPEC) -> bool | None:
-    """Whether the close `return_sessions` after the reaction is inside the range (low to high) of
-    the `range_sessions` sessions ending at the entry session. None without the bars."""
+def returned(
+    bars: dict[date, tuple], entry: date, reaction: date, spec: dict = SPEC, *, at_last_only: bool = False
+) -> bool | None:
+    """Whether any close in the `return_sessions` sessions after the reaction is inside the range (low
+    to high) of the `range_sessions` sessions ending at the entry session (the trader's "back where you
+    would expect it within five to 10 trading days"). `at_last_only` reads the last of those closes
+    alone, the first declaration's reading, reported beside. None without the bars."""
     days, d = [], entry
     for _ in range(spec["range_sessions"]):
         days.append(d)
         d = cal.previous_trading_day(d)
     pre = [bars.get(x) for x in days]
-    later = bars.get(sessions_after(reaction, spec["return_sessions"]))
-    if any(b is None for b in pre) or later is None:
+    later, d = [], reaction
+    for _ in range(spec["return_sessions"]):
+        d = cal.next_trading_day(d)
+        later.append(bars.get(d))
+    if at_last_only:
+        later = later[-1:]
+    if any(b is None for b in pre) or any(b is None for b in later):
         return None
-    return min(b[2] for b in pre) <= later[3] <= max(b[1] for b in pre)
+    lo, hi = min(b[2] for b in pre), max(b[1] for b in pre)
+    return any(lo <= b[3] <= hi for b in later)
 
 
 def quiet_status(history: list[bool], spec: dict = SPEC) -> bool | None:
@@ -240,7 +260,12 @@ def quiet_status(history: list[bool], spec: dict = SPEC) -> bool | None:
 
 
 def prior_returns(
-    report_rows: list[tuple[date, str | None]], report: date, bars: dict, spec: dict = SPEC
+    report_rows: list[tuple[date, str | None]],
+    report: date,
+    bars: dict,
+    spec: dict = SPEC,
+    *,
+    at_last_only: bool = False,
 ) -> list[bool]:
     """Each earlier stated-timing report's `returned`, oldest first; reports without bars left out."""
     out = []
@@ -248,7 +273,13 @@ def prior_returns(
         timing = e31.TIMINGS.get(when or "")
         if timing is None or d >= report:
             continue
-        r = returned(bars, e31.entry_session(d, timing), e31.reaction_session(d, timing), spec)
+        r = returned(
+            bars,
+            e31.entry_session(d, timing),
+            e31.reaction_session(d, timing),
+            spec,
+            at_last_only=at_last_only,
+        )
         if r is not None:
             out.append(r)
     return out
@@ -658,8 +689,10 @@ def run(inputs, conn, plan: list[dict], bars: dict, doc: dict) -> dict:
                 skips["control_" + c["skip"]] += 1
             else:
                 t["control_ret"] = c["ret"]
-        q = quiet_status(prior_returns(rows_by.get(sym, []), date.fromisoformat(e["report_date"]), b))
+        report = date.fromisoformat(e["report_date"])
+        q = quiet_status(prior_returns(rows_by.get(sym, []), report, b))
         t["quiet"] = q
+        t["quiet_tenth"] = quiet_status(prior_returns(rows_by.get(sym, []), report, b, at_last_only=True))
         trades["all"].append(t)
         if q:
             trades["quiet"].append(t)
@@ -709,6 +742,11 @@ def reported(res: dict, split: str) -> dict:
         n = len(rs)
         out["iv_ratio_terciles"] = [_mean(r for _, r in rs[i * n // 3 : (i + 1) * n // 3]) for i in range(3)]
     out["unselected"] = summary([t for t in res["unselected"] if t["entry"] < split])
+    # The first declaration's reading of `returned` (the 10th close alone), reported, never judged.
+    out["quiet_tenth_close"] = {
+        "selected": summary([t for t in alls if t.get("quiet_tenth") and t["entry"] < split]),
+        "unselected": summary([t for t in alls if t.get("quiet_tenth") is False and t["entry"] < split]),
+    }
     out["skips"] = res["skips"]
     return out
 
