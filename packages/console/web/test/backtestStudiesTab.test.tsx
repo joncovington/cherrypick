@@ -6,7 +6,7 @@ import type { BacktestOverview, BacktestRunReport, StudiesBoard, StudyGrid, Stud
 import { RunPlainEnglish } from "../src/pages/Backtest/BacktestPage";
 import { neighbourhoodLine } from "../src/pages/Backtest/GridBars";
 import { StudyChip, etMs } from "../src/pages/Backtest/QueueTab";
-import { BacktestStudiesTab, StudyNotes, contextLine, headline, historyLocked, windowsLine, notesHref, planUrl, resultLabel, resultsLine } from "../src/pages/Backtest/StudiesTab";
+import { BacktestStudiesTab, StudyNotes, headline, windowsLine, notesHref, planUrl, resultLabel, resultsLine } from "../src/pages/Backtest/StudiesTab";
 import {
   type DialogTab,
   ArmFigures,
@@ -66,6 +66,7 @@ function row(over: Partial<StudyRow>): StudyRow {
     legacy: false,
     pointer: "research/edge-hypotheses-plan.md#23-the-short-delta",
     outcome: "live stays at 16 delta",
+    provisional: false,
     measure: "net per session",
     expected: "a positive paired difference",
     sample: "design 2022-05-16..2025-06-30",
@@ -84,7 +85,6 @@ function row(over: Partial<StudyRow>): StudyRow {
         window: "design",
         span: null,
         runId: "20261028-065012-0174bd",
-        provisional: true,
         verdicts: [
           { arm: "d12", verdict: "fail" },
           { arm: "d20", verdict: "fail" },
@@ -101,7 +101,6 @@ function row(over: Partial<StudyRow>): StudyRow {
         window: "holdout",
         span: null,
         runId: null,
-        provisional: true,
         verdicts: [{ arm: null, verdict: "fail" }],
         summary: "fail",
         grid: null,
@@ -167,7 +166,6 @@ function result(over: Partial<StudyResult>): StudyResult {
     window: null,
     span: null,
     runId: null,
-    provisional: null,
     verdicts: [{ arm: null, verdict: "fail" }],
     summary: "fail",
     grid: null,
@@ -236,10 +234,9 @@ describe("studies tab", () => {
     expect(out).not.toContain("study-tile-word");
   });
 
-  it("marks a stale or provisional result on the tile, and says how the arms split when they disagree", () => {
+  it("marks a stale result and a provisional row on the tile, and says how the arms split when they disagree", () => {
     const stale = result({
       window: "holdout",
-      provisional: true,
       verdicts: [
         { arm: "w15", verdict: "fail" },
         { arm: "w20", verdict: "pass" },
@@ -248,9 +245,11 @@ describe("studies tab", () => {
       summary: "mixed",
       version: { version: 2, current: 3, commit: null, stale: true, since: [{ on: "2026-10-30", what: "fees per leg", beforeRead: true }], changedFiles: [], error: null },
     });
-    const m = tileModel(row({ results: [stale] }));
+    const m = tileModel(row({ results: [stale], provisional: true }));
     expect(m.stale).toBe(true);
     expect(m.meta).toBe("holdout · provisional");
+    // The mark is the register row's: a result file never sets it.
+    expect(tileModel(row({ results: [stale] })).meta).toBe("holdout");
     expect(m.arms).toBe("2 pass · 1 fail");
     expect(armsLine(result({ verdicts: [{ arm: "a", verdict: "fail" }, { arm: "b", verdict: "fail" }] }))).toBeNull();
     expect(armsLine(null)).toBeNull();
@@ -309,7 +308,6 @@ describe("studies tab", () => {
     const run = (controlTrades: number): StudyRunFigures => ({
       module: "meic",
       window: "design",
-      provisional: true,
       arms: {
         control: { mean: 80, sessions: 10, trades: controlTrades, path: [0, 900, -800] },
         d16: { mean: -12, sessions: 10, trades: 10, path: [0, -5, -9] },
@@ -450,47 +448,24 @@ describe("studies tab", () => {
     expect(html(<StudyNotes board={board} study="item23" resultName="gone.json" />).replace(/<!-- -->/g, "")).toContain("No gone.md for item23");
   });
 
-  it("the studies card keeps the provisional line behind an amber flag and its footer behind the ?", () => {
+  it("the studies card shows the windows and keeps its footer behind the ?", () => {
     const o = {
       windows: { design: ["2022-05-16", "2025-06-30"], holdout: ["2025-07-01", "2026-10-12"] },
-      validation: [{ unlocks_history: false }],
     } as unknown as BacktestOverview;
-    const page = (ov: BacktestOverview) =>
-      renderToString(
-        (() => {
-          const c = new QueryClient();
-          c.setQueryData(["bridged", "backtest", "studies"], { ok: true, data: BOARD, error: null });
-          c.setQueryData(["bridged", "backtest", "overview"], { ok: true, data: ov, error: null });
-          return (
-            <QueryClientProvider client={c}>
-              <MemoryRouter>
-                <BacktestStudiesTab />
-              </MemoryRouter>
-            </QueryClientProvider>
-          );
-        })(),
-      ).replace(/<!-- -->/g, "");
-    const locked = page(o);
-    expect(locked).toContain('class="help-flag"');
-    expect(locked).toContain("provisional history");
-    expect(locked).toContain("Design window 2022-05-16 to 2025-06-30");
-    // Neither the provisional sentence nor the register footer is on the page itself.
-    expect(locked).not.toContain("replays are provisional");
-    expect(locked).not.toContain("One card per item in the hypothesis register");
-    expect(page({ ...o, validation: [{ unlocks_history: true }] } as unknown as BacktestOverview)).not.toContain("provisional history");
-    expect(historyLocked(o)).toBe(true);
+    const c = new QueryClient();
+    c.setQueryData(["bridged", "backtest", "studies"], { ok: true, data: BOARD, error: null });
+    c.setQueryData(["bridged", "backtest", "overview"], { ok: true, data: o, error: null });
+    const out = renderToString(
+      <QueryClientProvider client={c}>
+        <MemoryRouter>
+          <BacktestStudiesTab />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    ).replace(/<!-- -->/g, "");
+    expect(out).toContain("Design window 2022-05-16 to 2025-06-30");
+    expect(out).not.toContain("provisional history");
+    expect(out).not.toContain("One card per item in the hypothesis register");
     expect(windowsLine(null)).toBeNull();
-  });
-
-  it("says why replays are provisional only while validation has not unlocked", () => {
-    const o = {
-      windows: { design: ["2022-05-16", "2025-06-30"], holdout: ["2025-07-01", "2026-10-12"] },
-      validation: [{ unlocks_history: false }],
-    } as unknown as BacktestOverview;
-    expect(contextLine(o)).toContain("provisional");
-    expect(contextLine(o)).toContain("Design window 2022-05-16 to 2025-06-30");
-    expect(contextLine({ ...o, validation: [{ unlocks_history: true }] } as unknown as BacktestOverview)).not.toContain("provisional");
-    expect(contextLine(null)).toBeNull();
   });
 });
 

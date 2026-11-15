@@ -5,8 +5,8 @@ a day, 14:00-14:30, at 15, 20, 25 and 30 points wide, each paired with the same 
     PATH] python packages/backtest/scripts/meic_wing_width_item43.py --annotate FILE [FILE ...]
 
 Runs the backtest's own MEIC replay (`cherrypick.backtest.runner`, MEIC's own engine over the 60 s
-vendor store), provisionally because MEIC history has not unlocked. The holdout is spent by this run,
-once (`unvalidated_holdout`). Writes under the backtest data dir (results/research/item43/), never into
+vendor store). The holdout is spent by this run,
+once. Writes under the backtest data dir (results/research/item43/), never into
 the repo: the inputs are licensed.
 
 **The arms, as declared.** `live-1400` is the registry's `pm-200` with entries 14:00-14:30, which the
@@ -299,9 +299,7 @@ def main(argv: list[str] | None = None) -> int:
         args.window,
         module="meic",
         cadence=CADENCE,
-        provisional=True,
         spend_holdout=holdout,
-        unvalidated_holdout=holdout,
         workers=args.workers,
         log=lambda m: print(m, file=sys.stderr),
     )
@@ -334,7 +332,6 @@ def main(argv: list[str] | None = None) -> int:
         "span": [start, end],
         "run_id": report["run_id"],
         "live_1400_run_id": live_run,
-        "provisional": True,
         "refused_sessions": len(report.get("refused") or {}),
         "vix_fallback_sessions": report.get("vix_fallback_sessions"),
         "coverage": coverage(rows, per_arm, arms),

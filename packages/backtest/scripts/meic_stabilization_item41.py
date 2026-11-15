@@ -6,7 +6,7 @@ condor at 10-point wings with and without the gate, and the 14:00 rule with and 
     [--workers N]
 
 Runs the backtest's own MEIC replay (`cherrypick.backtest.runner`, MEIC's own engine over the 60 s
-vendor store), provisionally because MEIC history has not unlocked. Writes under the backtest data dir
+vendor store). Writes under the backtest data dir
 (results/research/item41/), never into the repo: the inputs are licensed.
 
 **The plan step** reads spot bars only, no P&L: over the design window, the share of 09:45-15:30 ticks
@@ -337,9 +337,7 @@ def study(settings: dict, window: str, workers: int) -> dict:
         window,
         module="meic",
         cadence=CADENCE,
-        provisional=True,
         spend_holdout=holdout,
-        unvalidated_holdout=holdout,
         workers=workers,
         log=lambda m: print(m, file=sys.stderr),
     )
@@ -363,7 +361,6 @@ def study(settings: dict, window: str, workers: int) -> dict:
         "span": [start, end],
         "run_id": report["run_id"],
         "live_1400_run_id": live_run,
-        "provisional": True,
         "placebo_rate": rate,
         "refused_sessions": len(report.get("refused") or {}),
         "reference": {

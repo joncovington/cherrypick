@@ -24,6 +24,8 @@ from __future__ import annotations
 
 import re
 
+from . import hypotheses
+
 #: Where a study writes an arm's or a test's figure: a mean, or a test's `estimate` (item 54's tests).
 MEAN_KEYS = ("mean_net", "mean_bp", "mean", "net_per_trade", "mean_pct", "mean_return", "estimate")
 STAT_PATHS = ("own", "net", "paired", "diff", "boot", "")
@@ -552,8 +554,8 @@ def reading(study: dict, rows: list[dict], verdicts: list[dict], failed_steps: l
     if study.get("provisional"):
         say(
             "provisional",
-            "**Provisional:** the replay this study runs on isn't validated yet, so read it as a strong"
-            " hint rather than a decision.",
+            "**Provisional:** the register's outcome says why (an earlier study read this data, or the"
+            " holdout was small), so read it as a strong hint rather than a decision.",
         )
     return out
 
@@ -595,8 +597,7 @@ def report(row: dict, files: list[dict]) -> dict:
         rows += arms(f["data"], f["name"])
         if isinstance(f["data"], dict) and not any(k in f["name"].lower() for k in CHECK_FILES):
             verdicts += verdict_rows(f["data"], f["name"])
-    provisional = any(isinstance(f["data"], dict) and f["data"].get("provisional") is True for f in files)
-    provisional = provisional or "provisional" in (row.get("outcome") or "").lower()
+    provisional = hypotheses.is_provisional(row)
     steps = failed_steps((row.get("queue") or {}).get("tasks") or [])
     text = " ".join(str(row.get(k) or "") for k in ("title", "measure", "rule", "mechanism"))
     text += " " + " ".join(str(x["arm"] or "") for x in rows + verdicts)
@@ -690,7 +691,7 @@ def advice(study: dict, own: list[dict], verdicts: list[dict], steps: list[str])
             f"one pass among {len(judged)} judged rules can be a lucky corner",
         )
     elif passes:
-        when = " after the replay is validated" if study.get("provisional") else ""
+        when = " once a fresh read agrees" if study.get("provisional") else ""
         for a in passes:
             add(
                 "ruleset",
@@ -794,7 +795,7 @@ def digest(board_rows: list[dict], since: str) -> dict:
             "outcome": r.get("outcome"),
             "finished": max(recent),
             "tally": tally(present),
-            "provisional": any(x.get("provisional") for x in present),
+            "provisional": hypotheses.is_provisional(r),
             "failed_steps": failed_steps(tasks),
         })  # fmt: skip
     out.sort(key=lambda x: x["finished"], reverse=True)

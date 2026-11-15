@@ -6,7 +6,7 @@ from __future__ import annotations
 import json
 
 import pytest
-from test_runner import REPLAYED_CONFIGS, _replay, _unlock, world  # noqa: F401 -- the fixture
+from test_runner import REPLAYED_CONFIGS, _replay, world  # noqa: F401 -- the fixture
 
 from cherrypick.backtest import advised, results, runner
 
@@ -45,7 +45,6 @@ def _read(path):
 
 def test_a_spec_runs_as_an_overlay_arm_over_the_design_window_and_is_written_back(world):  # noqa: F811
     s, _ = world
-    _unlock(s)
     fake = FakeAdvisor([REQ])
     REPLAYED_CONFIGS.clear()
     out = advised.run(s, advisor=fake, replay=_replay, read_rows=_read, workers=1, log=lambda _m: None)
@@ -63,7 +62,6 @@ def test_a_spec_runs_as_an_overlay_arm_over_the_design_window_and_is_written_bac
 
 def test_advised_arms_never_run_outside_the_design_window(world):  # noqa: F811
     s, _ = world
-    _unlock(s)
     with pytest.raises(runner.RunRefused, match="design window only"):
         runner.run(s, [], "holdout", spend_holdout=True, extra_arms={"advised:x": {}}, replay=_replay,
                    read_rows=_read, log=lambda _m: None)  # fmt: skip

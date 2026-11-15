@@ -6,7 +6,7 @@ import { Card } from "../../components/DataTable";
 import { ListViewContext, ViewSwitch, useListView, useViewChoice } from "../../components/ViewSwitch";
 import { BtRows, type BtRow } from "./BtRows";
 import { fmtCash, fmtCount } from "../../lib/format";
-import { ArmsTable, LicenceFlag, PairingTable, ProvisionalChip, RefusedSessions, RunCardsSection, RunPlainEnglish, WithOverview, etStamp, measure, span, trialsLine, useRun, useRunChoices } from "./BacktestPage";
+import { ArmsTable, LicenceFlag, PairingTable, RefusedSessions, RunCardsSection, RunPlainEnglish, WithOverview, etStamp, measure, span, trialsLine, useRun, useRunChoices } from "./BacktestPage";
 import { CardLightbox, LightboxFrame, useOpenParam, type LightboxTab } from "./CardLightbox";
 import { ago, etMs, etNowMs } from "./QueueTab";
 import { HealthChecks, MonthGrid, settingsLine } from "./RunCards";
@@ -62,7 +62,6 @@ export function RunTile({ r, hit, hero, nowMs, onOpen }: { r: BacktestRunListing
       <span className="r-chips">
         <span className="chip muted">{r.module}</span>
         <span className="chip">{r.window}</span>
-        {r.provisional === true ? <span className="chip chip-warn">provisional</span> : null}
         <span className="study-tile-sub r-age">{runAge(r.created_at, nowMs)}</span>
       </span>
       <span className="study-tile-mid">
@@ -104,7 +103,7 @@ export function runRow(r: BacktestRunListing, hit: StudyHit | undefined, nowMs: 
     title: hit ? splitTitle(hit.row.title)[0] : r.run_id,
     meta: (
       <>
-        {r.provisional === true ? <span className="chip chip-warn">provisional</span> : null} {hit ? <span className={verdictChip(hit.result.summary)}>{hit.result.summary ?? "no verdict word"}</span> : "no study"} {span(r.span)}
+        {hit ? <span className={verdictChip(hit.result.summary)}>{hit.result.summary ?? "no verdict word"}</span> : "no study"} {span(r.span)}
       </>
     ),
     end: `${fmtCount(r.sessions)} sessions · ${String(arms.length)} arm${arms.length === 1 ? "" : "s"} · ${runAge(r.created_at, nowMs)}`,
@@ -285,7 +284,6 @@ export function RunDialogBody({
           <span className="chip muted">
             {listing.module} · {listing.window}
           </span>
-          {listing.provisional === true ? <ProvisionalChip /> : null}
           {hit ? (
             <Link to={studyHref(hit.row.study)} className="study-dialog-link">
               {hit.row.study}
@@ -451,7 +449,7 @@ export function BacktestRunsTab() {
                     </p>
                     <p>The switch in the card head lists the runs as rows, one line a run; a row opens the same run.</p>
                   </HelpSection>
-                  <GuideLink to="/help/research-and-backtests#fetching-validating-and-running" />
+                  <GuideLink to="/help/research-and-backtests#fetching-and-running" />
                 </>
               ),
             }}

@@ -163,6 +163,14 @@ has to justify that build on its own.
 
 ### Provisional now, re-tested after the unlock (decided 2026-10-18)
 
+**Where this stands:** there is no validation step and no unlock. Data recorded by our own recorders
+or fetched from a subscribed vendor is taken as recorded. A result marked provisional only because
+history had not unlocked is a full verdict on the windows it read; the register's outcome says
+"provisional" only where the data was read before the declaration (as the exception below) or a
+holdout was too small. Runs made while the lock stood recorded no trial, so the trial count a later
+run is deflated by covers only the runs since. The rest of this section is the declaration as it
+was made.
+
 9–12 needn't wait for validation to unlock vendor history (`validate.UNLOCK_SESSIONS`, ~2026-10-26).
 Each gets a provisional look now, and a re-test once validation unlocks.
 

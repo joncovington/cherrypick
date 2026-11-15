@@ -294,11 +294,10 @@ def out_dir() -> Path:
 
 
 def cmd_study(args) -> int:
-    from cherrypick.backtest import paths, results, runner, settings
+    from cherrypick.backtest import paths, results, settings
 
     s = settings.load(None)
     gate = GATE_RULE
-    unlocked = runner.unlocked(s, gate["symbol"], 60, module="meic")
     rconn = results.connect()
     try:
         for w, run_id in RUNS.items():
@@ -350,7 +349,7 @@ def cmd_study(args) -> int:
     doc = {
         "licence": "derived from licensed vendor data: never commit or publish",
         "item": 82,
-        "provisional": not unlocked,
+        "provisional": bool(block.get("provisional")),
         "rule": RULE,
         "gate_rule": gate,
         "runs": RUNS,

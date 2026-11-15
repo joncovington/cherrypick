@@ -6,9 +6,8 @@ without the stabilization gate, over the wide SPX store (`SPX-60s-wide.db`, 40 s
     python packages/backtest/scripts/meic_be_condor_item42.py --step study --window design|holdout [--workers
     N]
 
-Runs the backtest's own MEIC replay (`cherrypick.backtest.runner`) over the wide store, provisionally:
-that store is never validated. Writes under the backtest data dir (results/research/item42/), never
-into the repo: the inputs are licensed.
+Runs the backtest's own MEIC replay (`cherrypick.backtest.runner`) over the wide store.
+Writes under the backtest data dir (results/research/item42/), never into the repo: the inputs are licensed.
 
 **The coverage step** reads quotes only, no P&L, and must come first: the wide store's complete
 sessions in each window against the plain store's, and, at each hour 10:00-15:00, the share of 12-delta
@@ -280,9 +279,7 @@ def study(settings: dict, window: str, workers: int) -> dict:
         window,
         module="meic",
         cadence=CADENCE,
-        provisional=True,
         spend_holdout=holdout,
-        unvalidated_holdout=holdout,
         workers=workers,
         log=lambda m: print(m, file=sys.stderr),
     )
@@ -314,7 +311,6 @@ def study(settings: dict, window: str, workers: int) -> dict:
         "span": [start, end],
         "store": str(store.db_path(wide(settings), SYMBOL, CADENCE)),
         "run_id": report["run_id"],
-        "provisional": True,
         "placebo_rate": rate,
         "gated_variants": {a: {"oracle": o, "bars": b} for a, (o, b) in variants.items()},
         "refused_sessions": len(report.get("refused") or {}),

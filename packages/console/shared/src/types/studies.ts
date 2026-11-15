@@ -56,7 +56,6 @@ export interface StudyResult {
   window: string | null;
   span: [string, string] | null;
   runId: string | null;
-  provisional: boolean | null;
   /** Null: the file has no verdict word to read. */
   verdicts: StudyVerdict[] | null;
   /** The one word when every arm agrees, "mixed" when not, null when there is none. */
@@ -122,6 +121,9 @@ export interface StudyRow {
   pointer: string | null;
   /** The decision, in words. */
   outcome: string | null;
+  /** The outcome says provisional: by declaration (an earlier study read this data) or a holdout
+   *  too small to confirm a pass. */
+  provisional: boolean;
   measure: string | null;
   expected: string | null;
   sample: string | null;
@@ -159,7 +161,6 @@ export interface StudyArmFigures {
 export interface StudyRunFigures {
   module: string | null;
   window: string | null;
-  provisional: boolean;
   arms: Record<string, StudyArmFigures>;
 }
 

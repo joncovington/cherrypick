@@ -34,8 +34,8 @@ import { VERDICT_STATUSES, resultLabel, statusWord, studyHref, verdictChip } fro
  * now as a large tile, each opening to a lightbox with four tabs (overview, declaration, grid, queue).
  *
  * Every word is the orchestrator's or the study's: the register's status is the big word on a
- * finished tile, a result file's per-arm verdicts give the "2 pass · 5 fail" line, and a stale or
- * provisional mark is read from the result, never worked out from figures.
+ * finished tile, a result file's per-arm verdicts give the "2 pass · 5 fail" line, a stale mark is
+ * read from the result and a provisional one from the register's row, never worked out from figures.
  *
  * A tile's figures (2026-11-03) come from the same run its lightbox opens (`figuresRun`), read for
  * every tile at once in brief (`/api/backtest/summaries`): each arm's running net as a small line and
@@ -99,7 +99,7 @@ export function Verdicts({ row }: { row: StudyRow }) {
           not yet recorded
         </span>
       ) : null}
-      {row.results.some((r) => r.provisional) ? <span className="chip chip-warn">provisional</span> : null}
+      {row.provisional ? <span className="chip chip-warn">provisional</span> : null}
       {row.results.some((r) => r.version?.stale) ? <span className="chip chip-warn">stale</span> : null}
     </span>
   );
@@ -214,7 +214,7 @@ export function tileModel(row: StudyRow): TileModel {
   const queued = row.tasks.find((t) => t.status === "queued");
   const kind: TileKind =
     row.group === "in_progress" ? "running" : row.group === "declared" ? "declared" : row.group === "observation" ? "observation" : "verdict";
-  const provisional = row.results.some((r) => r.present && r.provisional === true);
+  const provisional = row.provisional;
   const meta = [
     newest?.window && /^(design|holdout)$/.test(newest.window) ? newest.window : null,
     provisional ? "provisional" : null,
@@ -646,7 +646,7 @@ function RunFigures({ row }: { row: StudyRow }) {
     <>
       <p className="muted study-section-note">
         From the {resultLabel(result)} run <Link to={`/backtest/runs?run=${result.runId ?? ""}`}>{result.runId}</Link>
-        {result.provisional ? ", provisional" : ""}. Net of fees, whole-position dollars.
+        . Net of fees, whole-position dollars.
       </p>
       {body}
     </>

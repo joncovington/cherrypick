@@ -272,7 +272,7 @@ export function SizingCheck({
     <>
       <p className="muted" style={{ fontSize: 12 }}>
         <span className="chip chip-warn">check</span>
-        {` The most units whose 99th-percentile drawdown over ${String(s.horizon_sessions ?? 100)} sessions stays within ${String(s.dd_pct)}% of ${dollars(s.account)}, from this run's own sessions. Provisional where the run is, never a verdict, and never a change to live config.`}
+        {` The most units whose 99th-percentile drawdown over ${String(s.horizon_sessions ?? 100)} sessions stays within ${String(s.dd_pct)}% of ${dollars(s.account)}, from this run's own sessions. Never a verdict, and never a change to live config.`}
       </p>
       <TileGrid count={6}>
         <Tile

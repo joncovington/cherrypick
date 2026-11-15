@@ -6621,92 +6621,16 @@ select.text-input {
   }
 }
 
-/* Backtest data as cards (2026-11-03, pages/Backtest/DataCards.tsx): "is history trusted?" large with
-   a row per validation and a dot per check, the licence and stores' totals beside it, then a tile per
-   store with the years its largest table covers. */
-.d-trust {
-  cursor: default;
-  justify-content: flex-start;
-  gap: 14px;
-}
-
-.d-line {
-  font-size: 15px;
-  line-height: 1.5;
-  max-width: 64ch;
-}
-
-.d-vals {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.d-val {
+/* Backtest data as cards (pages/Backtest/DataCards.tsx): the licence and the stores' totals side by
+   side, then a tile per store with the years its largest table covers. */
+.d-top {
   display: grid;
-  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.4fr) auto;
-  gap: 14px;
-  align-items: center;
-  padding: 12px 14px;
-  text-align: left;
-  font: inherit;
-  color: var(--text);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  cursor: pointer;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
 }
 
-.d-val:hover {
-  border-color: var(--chart-grid-strong);
-}
-
-.d-val-name {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-}
-
-.d-val-why {
-  line-height: 1.4;
-}
-
-.d-dots {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  justify-content: flex-end;
-}
-
-.d-dot {
-  display: inline-block;
-  width: 10px;
-  height: 10px;
-  border-radius: 5px;
-  box-sizing: border-box;
-}
-
-.d-dot.is-in {
-  background: var(--verdict-pass);
-}
-
-.d-dot.is-out {
-  border: 1.5px solid var(--verdict-fail);
-}
-
-.d-legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 18px;
-  font-size: 12px;
-  color: var(--text-muted);
-}
-
-.d-legend > span {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
+.d-top .study-tile {
+  min-height: 150px;
 }
 
 .d-side {
@@ -6811,17 +6735,6 @@ select.text-input {
   line-height: 1.6;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-}
-
-@media (max-width: 560px) {
-  .d-val {
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-
-  .d-val-why {
-    grid-column: 1 / -1;
-    grid-row: 2;
-  }
 }
 
 /* Live -> positions as cards (2026-11-04): a card per trade, its broker order chain down the card

@@ -2,8 +2,8 @@
 scheduled FOMC decision day than on other sessions, enough that skipping those days raises its net?
 
     python packages/backtest/scripts/meic_fomc_item33.py calendar [--cpi-file FILE]
-    python packages/backtest/scripts/meic_fomc_item33.py plan [--provisional]
-    python packages/backtest/scripts/meic_fomc_item33.py study [--provisional] [--arm ARM] [--json PATH]
+    python packages/backtest/scripts/meic_fomc_item33.py plan
+    python packages/backtest/scripts/meic_fomc_item33.py study [--arm ARM] [--json PATH]
 
 `calendar` fetches the Fed's published meeting calendar (and the BLS CPI schedule) by script into
 `~/.cherrypick/data/public/item33/calendar.json`, with the source URLs. The dates are public and
@@ -34,9 +34,6 @@ each half of the window. Then the holdout: the Fed-day mean below the other sess
 is read whatever the design result, and a design fail stays a fail. Reported, not judged: the gated
 rule's whole-window net against the ungated, the five sessions either side of each Fed day, the result
 without the worst Fed day, CPI days, unscheduled-action days.
-
-**Provisional.** MEIC's replay is provisional until the latest MEIC validation report unlocks history.
-Until then `plan` and `study` refuse unless run with `--provisional`, and the result is marked so.
 """
 
 from __future__ import annotations
@@ -271,22 +268,6 @@ def verdict(design: dict, holdout: dict | None) -> str:
     return "PASS" if holdout["gap"] < 0 else "FAIL"
 
 
-def check_unlock(unlocked: bool, provisional: bool) -> bool:
-    """Whether the result is provisional. History locked and no `--provisional`: refuse."""
-    if unlocked:
-        return False
-    if not provisional:
-        raise SystemExit(
-            "MEIC history has not unlocked (the latest MEIC validation report). Run with --provisional "
-            "to read it as provisional, as the declaration allows, or wait for the unlock."
-        )
-    return True
-
-
-# ------------------------------------------------------------------------------------------------
-# The stores.
-
-
 def _public_dir() -> Path:
     from cherrypick.core import home
 
@@ -393,19 +374,18 @@ def run_nets(conn: sqlite3.Connection, run_id: str, arm: str) -> dict[str, float
     }
 
 
-def _context(provisional: bool):
-    from cherrypick.backtest import results, runner
+def _context():
+    from cherrypick.backtest import results
     from cherrypick.backtest import settings as _settings
 
     s = _settings.load(None)
-    prov = check_unlock(runner.unlocked(s, SYMBOL, CADENCE, module=MODULE), provisional)
-    return s, results.connect(), prov
+    return s, results.connect()
 
 
 def cmd_plan(args) -> int:
-    s, conn, prov = _context(args.provisional)
+    s, conn = _context()
     try:
-        out = {"arm": args.arm, "provisional": prov, "windows": {}}
+        out = {"arm": args.arm, "windows": {}}
         runs = find_runs(conn, args.arm, s["windows"])
         for w in ("design", "holdout"):
             start, end = s["windows"][w]
@@ -420,7 +400,7 @@ def cmd_plan(args) -> int:
             else:
                 how = (
                     f"python -m cherrypick.backtest run meic --arms {args.arm} --window {w}"
-                    f" --cadence {CADENCE} --provisional"
+                    f" --cadence {CADENCE}"
                 )
             out["windows"][w] = {"span": [start, end], "run_id": run_id, "produce_with": how}
     finally:
@@ -431,11 +411,11 @@ def cmd_plan(args) -> int:
 
 def cmd_study(args) -> int:
     cal = load_calendar()
-    s, conn, prov = _context(args.provisional)
+    s, conn = _context()
     fed = set(cal["fomc"]["scheduled"])
     unsched = set(cal["fomc"]["unscheduled"])
     cpi = set(cal["cpi"]["dates"])
-    result: dict = {"item": 33, "arm": args.arm, "provisional": prov, "windows": {}}
+    result: dict = {"item": 33, "arm": args.arm, "windows": {}}
     try:
         runs = find_runs(conn, args.arm, s["windows"])
         for w in ("design", "holdout"):
@@ -537,8 +517,6 @@ def findings(result: dict) -> list[str]:
         "**What the sample could see:** only a Fed-day loss about the size of a typical losing session."
         " A fail reads as no Fed-day cost that large, not that Fed days are safe."
     )
-    if result["provisional"]:
-        out.append("**Provisional:** MEIC's replay had not unlocked history when this ran.")
     if result["calendar"]["cpi_status"] != "fetched":
         out.append(f"**CPI days not read:** {result['calendar']['cpi_status']}.")
     return out
@@ -550,7 +528,7 @@ def report(result: dict) -> str:
     lines = [
         "# Item 33: MEIC on Fed decision days",
         "",
-        f"**Verdict: {word}.**{' Provisional.' if result['provisional'] else ''} Does the live rule"
+        f"**Verdict: {word}.** Does the live rule"
         f" (`{result['arm']}`) net less on a scheduled FOMC decision day, the day the statement lands at"
         " 14:00, than on other sessions? Figures are dollars per session, net of fees.",
         "",
@@ -621,7 +599,7 @@ def main(argv: list[str] | None = None) -> int:
     for name, fn, hlp in (("plan", cmd_plan, "which stored runs supply the nets"),
                           ("study", cmd_study, "read the stored nets and state the verdict")):  # fmt: skip
         sp = sub.add_parser(name, help=hlp)
-        sp.add_argument("--provisional", action="store_true", help="read while MEIC history is locked")
+        sp.add_argument("--provisional", action="store_true", help="accepted; does nothing")
         sp.add_argument("--arm", default=ARM)
         if name == "study":
             sp.add_argument("--json")

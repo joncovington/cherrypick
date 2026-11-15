@@ -397,7 +397,6 @@ def _result(path: str, read, notes, version=lambda path: None, source: str = "re
         "window": window if isinstance(window, str) else None,
         "span": span if isinstance(span, list) and len(span) == 2 else None,
         "run_id": meta.get("run_id"),
-        "provisional": meta.get("provisional"),
         "verdicts": words,
         "grid": grid(data),
         "summary": None if not distinct else distinct[0] if len(distinct) == 1 else "mixed",
@@ -420,6 +419,13 @@ def queue_outputs(tasks: list[dict], listed: set[str], key=lambda p: p) -> list[
         seen.add(key(p))
         out.append(p)
     return out
+
+
+def is_provisional(row: dict) -> bool:
+    """Whether the register's outcome reads the verdict as provisional (an earlier study read the
+    same data, or the holdout was too small). The outcome is the decision of record; a result file's
+    own flag is not read, since its scripts used the word for different things."""
+    return "provisional" in str(row.get("outcome") or "").lower()
 
 
 def board(
@@ -470,6 +476,7 @@ def board(
         rows.append({
             **{k: r.get(k) for k in BOARD_FIELDS},
             "group": group,
+            "provisional": is_provisional(r),
             "results": results,
             "queue": {
                 "active": active,

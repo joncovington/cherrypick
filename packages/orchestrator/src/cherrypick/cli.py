@@ -3255,7 +3255,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help=(
             "For queue-add: fetch-chains, fetch-chain-paths, fetch-intraday-chains, "
-            "fetch-addon-weeklies, fetch-flow, fetch-oi, fetch-sessions, script or validate"
+            "fetch-addon-weeklies, fetch-flow, fetch-oi, fetch-sessions or script"
         ),
     )
     parser.add_argument(

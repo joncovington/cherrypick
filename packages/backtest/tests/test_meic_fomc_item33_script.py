@@ -287,21 +287,6 @@ def test_fewer_than_twenty_fed_days_is_no_verdict_even_for_a_striking_loss():
 
 
 # ------------------------------------------------------------------------------------------------
-# Provisional.
-
-
-def test_locked_history_refuses_unless_asked_for_provisionally():
-    with pytest.raises(SystemExit):
-        st.check_unlock(False, False)
-    assert st.check_unlock(False, True) is True
-
-
-def test_unlocked_history_is_not_provisional_whatever_the_flag():
-    assert st.check_unlock(True, False) is False
-    assert st.check_unlock(True, True) is False
-
-
-# ------------------------------------------------------------------------------------------------
 # The stored runs (invented rows in the results database's own shape).
 
 
@@ -381,7 +366,7 @@ def test_run_nets_reads_one_arm_of_one_run_and_skips_empty_nets():
 # The report.
 
 
-def result_doc(shift=-400.0, provisional=True, cpi_status="unavailable: HTTP Error 403"):
+def result_doc(shift=-400.0, cpi_status="unavailable: HTTP Error 403"):
     nets, fed = book(fed_shift=shift)
     d = st.judge(nets, fed, START, END)
     d.update(
@@ -405,7 +390,6 @@ def result_doc(shift=-400.0, provisional=True, cpi_status="unavailable: HTTP Err
     return {
         "item": 33,
         "arm": "live-1400",
-        "provisional": provisional,
         "windows": {"design": d, "holdout": h},
         "verdict": st.verdict(d, h),
         "calendar": {
@@ -421,7 +405,7 @@ def result_doc(shift=-400.0, provisional=True, cpi_status="unavailable: HTTP Err
 
 def test_the_report_states_the_verdict_the_checks_and_what_was_not_read():
     text = st.report(result_doc())
-    assert "**Verdict: pass.** Provisional." in text
+    assert "**Verdict: pass.** Does the live rule" in text
     assert "| One-sided permutation p | under 0.05 |" in text
     assert "CPI days not read" in text and "2026-12-09" in text
     assert "Verdict: fail" in st.report(result_doc(shift=0.0))

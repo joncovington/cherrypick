@@ -293,7 +293,10 @@ export function ReportBody({ report }: { report: StudyReport }) {
         </section>
       ) : null}
       <StudyScorecards arms={report.arms} />
-      {report.provisional ? <p className="muted">Provisional: the replay this study runs on isn't validated yet.</p> : null}
+      {report.provisional ? <p className="muted">
+          Provisional: the register&apos;s outcome says why (an earlier study read this data, or the holdout was small), so read it as a strong hint
+          rather than a decision.
+        </p> : null}
     </div>
   );
 }

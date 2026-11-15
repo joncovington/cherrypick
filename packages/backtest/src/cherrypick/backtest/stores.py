@@ -27,7 +27,7 @@ STORES: list[dict[str, str]] = [
         "file": "SPX-60s.db",
         "holds": "SPX intraday: 0DTE quote samples, spot, GEX profiles, daily closes, at 60 s",
         "built_by": "python -m cherrypick.backtest fetch --cadence 60 (nightly backtest-fetch)",
-        "used_by": "validation; MEIC and flies replays; box_touch_history.py; gex_levels_history.py",
+        "used_by": "MEIC and flies replays; box_touch_history.py; gex_levels_history.py",
     },
     {
         "file": "SPX-60s-wide.db",
@@ -64,7 +64,7 @@ STORES: list[dict[str, str]] = [
         "file": "SPX-15s.db",
         "holds": "SPX intraday at 15 s, a short span: the cadence comparison beside the 60 s store",
         "built_by": "python -m cherrypick.backtest fetch --cadence 15",
-        "used_by": "validation's cadence read",
+        "used_by": "nothing reads it",
     },
     {
         "file": "eod_chains.db",

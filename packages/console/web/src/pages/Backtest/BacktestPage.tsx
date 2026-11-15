@@ -24,8 +24,8 @@ import { GuideLink } from "../../components/GuideLink";
  * through `/api/backtest/overview` and `/api/backtest/runs/:id` (`services/backtestBridge.ts`).
  *
  * The page is reached only while the suite says `backtest: true` (`visibility.ts`, fail closed), and
- * the server refuses both reads on its own otherwise. Every verdict here is the module's: the
- * unlock, each check, the paired interval, `no_exposure`. Nothing is recomputed; a null is an em
+ * the server refuses both reads on its own otherwise. Every verdict here is the module's: each
+ * check, the paired interval, `no_exposure`. Nothing is recomputed; a null is an em
  * dash, and tone comes only from a net figure's sign (interval ends are never toned).
  *
  * Money is the suite's one layout: "net" is net of fees, signed, whole-position dollars. A run's
@@ -429,36 +429,10 @@ export function RunPlainEnglish({ r, study }: { r: BacktestRunReport; study?: { 
   );
 }
 
-/**
- * The trials the DSR deflates by, and the provisional looks that are not trials. With looks and no
- * trials, a provisional run's DSR is deflated by nothing, so it reads no stricter than its PSR; the
- * line says so rather than let "trials 1" pass for one look.
- */
+/** The trials the DSR deflates by, per module. */
 export function trialsLine(d: BacktestOverview): string {
-  const list = (r: Record<string, number> | undefined) =>
-    Object.entries(r ?? {})
-      .map(([m, n]) => `${m} ${String(n)}`)
-      .join(", ");
-  const trials = list(d.trials);
-  const looks = list(d.provisional_looks);
-  const head = `Trials recorded: ${trials || "none"}.`;
-  if (!looks) return head;
-  return (
-    `${head} Provisional looks, distinct specs run before validation unlocked: ${looks}. ` +
-    `A look is not a trial, so ${trials ? "a provisional run's DSR is deflated by the trials alone" : "a provisional run's DSR is deflated by nothing and reads no stricter than its PSR"}.`
-  );
-}
-
-/** A run made before validation unlocked history: shown as such wherever it appears. */
-export function ProvisionalChip() {
-  return (
-    <Link
-      to="/backtest/data"
-      className="chip chip-warn"
-      style={{ marginLeft: 6 }}
-      title="made before validation unlocked history: not a trial, not evidence, never shown to the advisor. Open data for why"
-    >
-      provisional
-    </Link>
-  );
+  const trials = Object.entries(d.trials)
+    .map(([m, n]) => `${m} ${String(n)}`)
+    .join(", ");
+  return `Trials recorded: ${trials || "none"}.`;
 }

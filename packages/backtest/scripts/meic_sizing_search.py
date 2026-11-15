@@ -6,7 +6,7 @@ unit of drawdown from a given account, chosen on the design window and confirmed
 
 A SIZING LENS, not a study verdict: it reads a study's existing runs (no replay) through the run cards'
 own functions (`cards.arm_inputs`, `cards.compounded` with the `stop` unit, `cards.sizing`), and it never
-changes live config or moves the study's verdict. MEIC history is provisional until it unlocks.
+changes live config or moves the study's verdict.
 
 **The objective, declared 2026-10-31:** the compounded lens's whole-contract CAGR over its max drawdown
 (CAGR / max drawdown), starting from `--capital`. Excluded: a combination whose implied 99th-percentile

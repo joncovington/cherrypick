@@ -98,7 +98,16 @@ def test_report_offers_only_the_measures_it_has_and_the_gates_it_uses():
         "entry_rate",
     ]
     assert [g["key"] for g in rep["gates"]] == ["stabilization"]
-    assert rep["provisional"] is True and rep["windows"] == ["design"]
+    # The file still says provisional, as a run written while history waited on validation does; only
+    # the register's outcome decides, and this row's says nothing of the kind.
+    assert _meic_file("design").get("provisional") is True
+    assert rep["provisional"] is False and rep["windows"] == ["design"]
+    declared = sr.report(
+        {"title": "t", "outcome": "provisional by declaration: item 73 read it", "queue": {"tasks": []}},
+        [{"name": "study-design.json", "data": _meic_file("design")}],
+    )
+    assert declared["provisional"] is True
+    assert any(p["kind"] == "provisional" and "outcome says why" in p["text"] for p in declared["reading"])
     bare = sr.report({"title": "x"}, [{"name": "results.json", "data": {"arms": {"a": {"mean": 1.0}}}}])
     assert [m["key"] for m in bare["measures"]] == ["mean"] and bare["gates"] == []
 

@@ -59,15 +59,6 @@ def test_a_study_whose_fetch_is_done_runs_before_a_higher_priority_fetch(db):
     assert _next(db) == late
 
 
-def test_a_validate_row_after_its_prerequisite_counts_as_a_study(db):
-    first = _add(db, "first")
-    assert _next(db) == first
-    _add(db, "raised", priority=10)
-    v = rq.add("validation", "validate", {"module": "meic", "cadence": 60}, step="v", path=db,
-               after="item31/first")["id"]  # fmt: skip
-    assert _next(db) == v
-
-
 def test_a_script_with_no_prerequisite_takes_its_place_by_priority(db):
     loose = _study(db, "item48", "design")
     raised = _add(db, "raised", priority=10)
