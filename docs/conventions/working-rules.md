@@ -49,9 +49,11 @@ with no migration, so `books`/`profiles`/`base_book`/`base_profile` resolve for 
 that one warns. Every config read defaults silently, so a moved key does not fail — every arm falls
 through to its `enabled` default on `defaults`, and the A/B measures nothing while the P&L looks fine.
 
-**Spelling: Python identifiers are American, TypeScript identifiers are British, prose is British, and
-`cancelled` is British everywhere including stored values.** That is the existing convention
-(`realized_net` in `.py`, `unrealisedNet` in `.ts`); the boundary re-spells, which is not a bug to fix.
+**Spelling: Python identifiers are American, TypeScript identifiers are British, prose is American,
+and `cancelled` is British everywhere including stored values.** The identifiers are the existing
+convention (`realized_net` in `.py`, `unrealisedNet` in `.ts`); the boundary re-spells, which is not a
+bug to fix. Prose written before the switch to American is converted when its file is next edited,
+not in one sweep.
 
 ## Three working rules, all learned the hard way
 
