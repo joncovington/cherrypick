@@ -264,8 +264,8 @@ def _signals_read_ahead():
     signals' truncation guard exists to catch."""
     original = importlib.import_module("cherrypick.core.signals")._kind_series
 
-    def patched(spec, bars):
-        st, value = original(spec, bars)
+    def patched(spec, bars, *args, **kwargs):
+        st, value = original(spec, bars, *args, **kwargs)
         return st[1:] + st[-1:], value
 
     return patched
