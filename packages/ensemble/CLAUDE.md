@@ -57,11 +57,20 @@ before the entry does not exit that day. The backtest driver and the paper loop 
 that carries what its exit reads (`feed.position_snapshot`): today's recorded trail, the earlier
 sessions or the daily bars, the event calendar, and each leg's delta for a delta limit.
 
-**The other exits**, checked in this order with the touch first: `stop_credit_multiple` (a credit entry's
-loss at m times its credit; a debit entry has no credit and it never fires there), the profit target,
+**The other exits**, checked in this order with the touch first: `avoid_events` (a forced close
+`before_close_min`, default 60, before the close on the session before a listed event; a position
+carried into the event day closes at once, one entered on it is not closed for it, and a day the
+calendar cannot answer holds), the stops (`stop_credit_multiple`, a credit entry's loss at m times its
+credit, never on a debit; `stop_debit_pct`, a debit entry's loss at p% of its debit, never on a credit;
+`stop_dollars`), `trailing_stop` (`{"dollars": d, "activate_dollars": a}`: once the open P&L has reached
+a, a fall of d from its best), the profit targets (`profit_target_pct` of max profit, `profit_dollars`),
 `delta_limit` (the structure's delta per unit either way; a leg without a delta is no reading, never
 zero), the signal, `close_at_dte` (calendar days to expiry, from the first tick of that session, never
-on the entry day), then minutes before expiry.
+on the entry day), then minutes before expiry. Dollar rules read the open P&L at the mid, whole-position
+dollars. `max_spread: x` holds every exit while the structure's bid/ask is wider than $x a share, and a
+mark read through it does not move the trailing stop's best; a close held to expiry settles. The best
+open P&L is the position's (`Position.peak_pnl`): the driver keeps the object, paper keeps
+`ensemble_positions.peak_pnl`. On end-of-day chains every exit is read once a session, at 15:59.
 
 `engine.decide(arm, snapshot)` is the one decision: pure and deterministic, it returns the entry (legs,
 quantity, prices at mid, natural and working, the slippage for each fill kind, the opening fee) or the
@@ -168,9 +177,8 @@ an arm, only for what an arm reads (`feed.reads`).
 - **Fills.** Entries and closes at the mid with the suite's slippage model (`core.fees`) as its own cost,
   fees from `core.fees`, per `docs/conventions/money-layout.md`. `net_pnl` is the verdict fill; `net_stress`
   and `net_mid` are kept beside it.
-- **Exits** are the arm's, read from the rules the position was entered under (`exit_json`): a spot touch, a
-  credit-multiple stop, a profit target, a delta limit, a signal, a DTE and minutes before expiry are
-  checked every tick and close at the legs' quotes (a close whose
+- **Exits** are the arm's, read from the rules the position was entered under (`exit_json`): every exit
+  above is checked every tick and closes at the legs' quotes (a close whose
   legs do not price is retried); otherwise the position is held to the expiry's **posted close**
   (`stream_summary`, usually the next morning), never a last trade, and settled at intrinsic. A GLD position
   held to settlement is settled at intrinsic with the engine's cash-settlement charge, as the backtest does;
@@ -184,7 +192,7 @@ an arm, only for what an arm reads (`feed.reads`).
 
 `ensemble_positions` holds the whole money layout on the row: `entry_value` + `exit_value` = `gross_pnl`;
 `gross_pnl` - `fees` (open plus close) - `settlement` - `slippage` = `net_pnl`. `exit_reason` is `touch`,
-`stop`, `profit_target`, `delta`, `signal`, `dte`, `time` or `settlement`.
+`event`, `stop`, `trailing_stop`, `profit_target`, `delta`, `signal`, `dte`, `time` or `settlement`.
 
 Entries are measured against item 75's replay, as weeklyput's are against item 57's. Measurement-affecting
 changes (a window, a gate, an arm's rule, the fill) go to a declared boundary with a `measurement_breaks`

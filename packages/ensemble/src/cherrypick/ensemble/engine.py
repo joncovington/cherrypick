@@ -279,11 +279,14 @@ def size(rule: dict, loss_per_share: float) -> int:
 class Position:
     """An open position: the entry, plus what the exit rules read."""
 
-    def __init__(self, entry: Entry, arm: dict):
+    def __init__(self, entry: Entry, arm: dict, *, peak_pnl: float | None = None):
         self.entry = entry
         self.arm = arm["name"]
         self.symbol = arm["symbol"]
         self.exit_rules = arm.get("exit", {})
+        #: The best open P&L at the mid `manage` has read (whole-position dollars), for a trailing stop.
+        #: The paper ledger keeps it between ticks; the driver keeps the object.
+        self.peak_pnl = peak_pnl
 
     @property
     def expiry(self) -> str:
@@ -296,6 +299,32 @@ def _credit_now(pos: Position, chain: Chain) -> float | None:
     if q is None or not all(x["ask"] for x, _ in q):
         return None
     return sum(n * (x["bid"] + x["ask"]) / 2 for x, n in q)
+
+
+def structure_width(pos: Position, chain: Chain) -> float | None:
+    """The structure's bid/ask width per share (each leg's width times its size), None when a leg has
+    no two-sided quote."""
+    q = pricing.quotes_for(pos.entry.legs, chain)
+    if q is None or not all(x["ask"] for x, _ in q):
+        return None
+    return sum(abs(n) * (x["ask"] - x["bid"]) for x, n in q)
+
+
+def _event_ahead(rule: dict, pos: Position, snap: Snapshot) -> tuple[str, bool] | None:
+    """The first listed event the position must be out before, as (label, now): the next session's,
+    closed at the rule's time, or today's when the position was carried into it from an earlier one (a
+    close the session before was missed: a gap in the data, a late enrolment), closed at once. Unknown
+    calendar days hold, as an entry's event check passes them."""
+    if not snap.events:
+        return None
+    today = snap.session_date
+    nxt = cal.next_trading_day(today)
+    for label in rule.get("labels", []):
+        if snap.session > pos.entry.session and snap.events.occurs(label, today, today):
+            return label, True
+        if snap.events.occurs(label, nxt, nxt):
+            return label, False
+    return None
 
 
 def position_delta(pos: Position, chain: Chain) -> float | None:
@@ -311,12 +340,23 @@ def position_delta(pos: Position, chain: Chain) -> float | None:
 
 
 def manage(pos: Position, snap: Snapshot) -> tuple[str, object] | None:
-    """The exit due now, as (kind, detail), or None, checked in this order: a touch, a credit-multiple
-    stop, the profit target, a delta limit, a signal, a DTE, then minutes before expiry; held to
-    settlement when the arm has none.
+    """The exit due now, as (kind, detail), or None, checked in this order: a touch, avoid events, the
+    stops (credit multiple, % of debit, dollars), a trailing stop, the profit targets (% of max profit,
+    dollars), a delta limit, a signal, a DTE, then minutes before expiry; held to settlement when the
+    arm has none. Dollar rules read the open P&L at the mid, whole-position dollars.
 
+    - `max_spread: x`: while the structure's bid/ask is wider than $x a share, no exit is due and the
+      trailing stop's peak is not moved: the close waits for a quote it can fill at, and settles at
+      expiry if none comes.
+    - `avoid_events: {"labels": [...], "before_close_min": n}`: closes n minutes (default 60) before
+      the close on the session before a listed event (`_event_ahead`).
     - `stop_credit_multiple: m`: a credit entry closes when its loss reaches m times the credit
       received (a debit entry has no credit to measure, and this rule never fires on one).
+    - `stop_debit_pct: p`: a debit entry closes when its loss reaches p% of the debit paid (never fires
+      on a credit).
+    - `stop_dollars: x` / `profit_dollars: x`: the open P&L reaches -x / +x.
+    - `trailing_stop: {"dollars": d, "activate_dollars": a}`: once the open P&L has reached a (default
+      0), closes when it falls d below its best.
     - `delta_limit: x`: closes when the structure's delta per unit reaches x either way.
     - `close_at_dte: n`: closes at the first tick of a session n or fewer calendar days before expiry.
 
@@ -332,16 +372,40 @@ def manage(pos: Position, snap: Snapshot) -> tuple[str, object] | None:
         if crossed:
             return "touch", limit
     chain = snap.chains.get(e.expiry)
+    if r.get("max_spread") is not None and chain is not None:
+        width = structure_width(pos, chain)
+        if width is not None and width > r["max_spread"] + 1e-9:
+            return None
     now = _credit_now(pos, chain) if chain is not None else None
     credit = e.prices["mid"]
+    pnl = None if now is None else round((credit + now) * pricing.MULTIPLIER * e.quantity, 2)
+    if pnl is not None and (pos.peak_pnl is None or pnl > pos.peak_pnl):
+        pos.peak_pnl = pnl
+    avoid = r.get("avoid_events")
+    if avoid:
+        ahead = _event_ahead(avoid, pos, snap)
+        if ahead and (ahead[1] or snap.minute >= snap.close_minute - avoid.get("before_close_min", 60)):
+            return "event", ahead[0]
     if r.get("stop_credit_multiple") and now is not None and credit > 0:
         loss = -(credit + now)
         if loss >= r["stop_credit_multiple"] * credit - 1e-9:
             return "stop", loss
+    if r.get("stop_debit_pct") and now is not None and credit < 0:
+        loss = -(credit + now)
+        if loss >= r["stop_debit_pct"] / 100.0 * -credit - 1e-9:
+            return "stop", loss
+    if r.get("stop_dollars") and pnl is not None and pnl <= -r["stop_dollars"] + 1e-9:
+        return "stop", pnl
+    trail = r.get("trailing_stop")
+    if trail and pnl is not None and pos.peak_pnl >= trail.get("activate_dollars", 0) - 1e-9:
+        if pnl <= pos.peak_pnl - trail["dollars"] + 1e-9:
+            return "trailing_stop", pnl
     if r.get("profit_target_pct") and now is not None and e.max_profit:
         gained = credit + now
         if gained >= r["profit_target_pct"] / 100.0 * e.max_profit - 1e-9:
             return "profit_target", gained
+    if r.get("profit_dollars") and pnl is not None and pnl >= r["profit_dollars"] - 1e-9:
+        return "profit_target", pnl
     if r.get("delta_limit") is not None and chain is not None:
         delta = position_delta(pos, chain)
         if delta is not None and abs(delta) >= r["delta_limit"] - 1e-12:

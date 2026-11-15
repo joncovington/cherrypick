@@ -26,6 +26,12 @@ that defaulted silently would change what is measured):
                   "signal": {"trigger": <core.entrychecks trigger>, "bar_minutes": N} (the entry
                   trigger's shape, read on the position's underlying; `engine.manage`),
                   "stop_credit_multiple": m (a credit entry's loss at m times its credit),
+                  "stop_debit_pct": p (a debit entry's loss at p% of its debit),
+                  "stop_dollars": x, "profit_dollars": x (open P&L, whole-position dollars),
+                  "trailing_stop": {"dollars": d, "activate_dollars": a},
+                  "avoid_events": {"labels": [...], "before_close_min": n} (a forced close the
+                  session before a listed event),
+                  "max_spread": x (no exit while the structure's bid/ask is wider than $x a share),
                   "delta_limit": x (the structure's delta per unit, either way),
                   "close_at_dte": n (calendar days to expiry)
 """
@@ -87,6 +93,12 @@ EXIT_KEYS = {
     "touch",
     "signal",
     "stop_credit_multiple",
+    "stop_debit_pct",
+    "stop_dollars",
+    "profit_dollars",
+    "trailing_stop",
+    "avoid_events",
+    "max_spread",
     "delta_limit",
     "close_at_dte",
 }
@@ -350,6 +362,12 @@ def validate(arm: dict) -> list[str]:
     ex = arm.get("exit", {})
     for key, ok in (
         ("stop_credit_multiple", lambda v: _num(v) and v > 0),
+        ("stop_debit_pct", lambda v: _num(v) and 0 < v <= 100),
+        ("stop_dollars", lambda v: _num(v) and v > 0),
+        ("profit_dollars", lambda v: _num(v) and v > 0),
+        ("max_spread", lambda v: _num(v) and v > 0),
+        ("trailing_stop", _trailing_ok),
+        ("avoid_events", _avoid_ok),
         ("delta_limit", lambda v: _num(v) and 0 < v <= 4),
         ("close_at_dte", lambda v: isinstance(v, int) and not isinstance(v, bool) and v >= 0),
     ):
@@ -364,6 +382,30 @@ def validate(arm: dict) -> list[str]:
 
 def _num(v) -> bool:
     return isinstance(v, int | float) and not isinstance(v, bool)
+
+
+def _trailing_ok(v) -> bool:
+    return (
+        isinstance(v, dict)
+        and set(v) <= {"dollars", "activate_dollars"}
+        and _num(v.get("dollars"))
+        and v["dollars"] > 0
+        and (_num(v.get("activate_dollars", 0)) and v.get("activate_dollars", 0) >= 0)
+    )
+
+
+def _avoid_ok(v) -> bool:
+    if not isinstance(v, dict) or not set(v) <= {"labels", "before_close_min"}:
+        return False
+    labels, n = v.get("labels"), v.get("before_close_min", 60)
+    return (
+        isinstance(labels, list)
+        and bool(labels)
+        and all(isinstance(x, str) and x for x in labels)
+        and isinstance(n, int)
+        and not isinstance(n, bool)
+        and 0 <= n <= 390
+    )
 
 
 #: Completed sessions a daily signal is given: room for a 200-day average and its warm-up.

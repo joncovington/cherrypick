@@ -20,6 +20,9 @@ beyond the latest release.
   or the vendor's stores while the licence allows, chosen by the source registry. An automation held
   across sessions reads end-of-day chains (Dolt, or the vendor's while licensed) at one tick a session,
   15:59; an entry at another time is counted as needing intraday data, never moved to the close.
+- Automation exits: profit and stop in dollars, a stop as a share of a debit, a trailing stop, a
+  forced close the session before a listed event, and a guard that holds any exit while the
+  structure's bid/ask is wider than a limit. Paper and the backtest driver read them alike.
 - **Ensemble arms state their safeguards.** `limits.max_open` and `limits.per_day` are required in every
   arm, with no default in the engine: an arm in `~/.cherrypick/config/ensemble.json` that replaces
   `limits` must name both. The shipped arms already ran one entry a day; they now say so.

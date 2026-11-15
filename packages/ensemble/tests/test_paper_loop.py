@@ -7,6 +7,7 @@ import json
 from datetime import datetime
 from types import SimpleNamespace
 
+import pytest
 from cachebuilder import CacheBuilder
 from cherrypick.core.clock import ET
 from market import CALENDAR
@@ -154,6 +155,23 @@ def test_a_touch_stop_closes_at_the_quotes(tmp_path):
         done["gross_pnl"] - done["fees"] - done["settlement"] - done["slippage"], 2
     )
     assert done["settlement"] == 0 and done["slippage"] > db.position(w.conn, pid)["entry_slippage"]
+
+
+def test_a_trailing_stop_keeps_its_peak_in_the_ledger_between_ticks(tmp_path):
+    w = world(tmp_path, overrides={"iron-fly-1000": {"exit": {"trailing_stop": {"dollars": 40}}}})
+    tick(w, at(10, 0))
+    pid = f"iron-fly-1000:{DAY}"
+    qty = db.position(w.conn, pid)["quantity"]
+    w.cache.chain("SPX", DAY, "SPXW", 6000.0, 1.0 / (24 * 365))  # an hour out: about +171 a contract
+    tick(w, at(10, 20))
+    peak = db.position(w.conn, pid)["peak_pnl"]
+    assert db.position(w.conn, pid)["status"] == "open" and peak == pytest.approx(171.0 * qty, abs=2 * qty)
+    # Still an hour out, at 5990: about +100 a contract, more than 40 under the kept peak. A loop that
+    # forgot the peak would start again from this mark and hold.
+    w.cache.last("SPX", 5990.0)
+    w.cache.chain("SPX", DAY, "SPXW", 5990.0, 1.0 / (24 * 365))
+    assert tick(w, at(10, 40))["managed"]["closed"] == 1
+    assert db.position(w.conn, pid)["exit_reason"] == "trailing_stop"
 
 
 def test_a_time_exit_closes_before_the_bell(tmp_path):
