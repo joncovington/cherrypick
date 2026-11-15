@@ -4139,6 +4139,59 @@
       "retest": null,
       "retest_note": "Read once before the vendor licence ends (2026-11-16); a pass is followed by a paper strategy with its forward block, not a retest.",
       "retests": []
+    },
+    {
+      "id": 88,
+      "study": "item88",
+      "title": "The sweep-and-engulf candle: a bar that runs the previous bar's low and closes above its high",
+      "status": "declared",
+      "legacy": false,
+      "setup": "indicator-rule",
+      "side": "directional",
+      "structure": "shares",
+      "window": "multi-day",
+      "measure": "daily bars of 16 weekly-optioned funds (SPY QQQ IWM DIA EFA EEM TLT GLD SLV USO XLE XLF XLK XLU XLV XLI) from the broker, 1999 (2006 for SLV, USO) to 2026-11-13; a bar below the previous low closing above its high (short mirrored), previous bar the same colour, the close on the signal's side of the 200-bar EMA; entry at the next open, stop at the signal bar's extreme, target 2R, stop first on a tie, gaps at the open; one position per fund; $10,000 a trade, core's stock fees plus one cent a share each side; one row per entry session, trades pooled",
+      "expected": "the session net clears the 3-month bill on its buying power at t 2.0 and beats the same stop distances and R entered at random",
+      "sample": "the funds' daily bars, one run cut at 2016-01-01 (design before, holdout from); < 150 design entry sessions = no verdict, < 60 holdout likewise (about 400 and 280)",
+      "rule": "RULE: the kit's three bars on per-entry-session rows (capital t >= 2.0 over the 3-month bill on the buying power, Treasury files else FRED DGS3MO; tail 10,000 draws seed 88, the sample's own sessions a year; delta not applicable: a trade in the fund itself nets zero against its own financed delta); CONTROL_RULE: each session's net less the mean of 20 placebo draws (seed 88: same fund and part, a random entry, the trade's stop distance in ATR(14) units and 2R, the side drawn from the arm's own long share in that part), design mean > 0 at one-sided t >= 2.0 and > 0 in each design half (2008-01-01), then the holdout mean > 0 after a design pass; a pass needs both; one arm, no Holm",
+      "mechanism": "a bar that runs the stops beyond the previous extreme and then closes past the other extreme marks a failed break: the trapped side's exits push price on in the close's direction for long enough to reach twice the risk",
+      "rivals": [
+        {
+          "explanation": "the trend of the sample, which the EMA side picks",
+          "check": "the control draws its side from the arm's own mix; longs, shorts and every year reported"
+        },
+        {
+          "explanation": "any entry with a 2R bracket",
+          "check": "the control keeps the stop distance and R; only the entry is random"
+        },
+        {
+          "explanation": "a few funds or one market",
+          "check": "every fund reported, GLD alone reported"
+        },
+        {
+          "explanation": "tuning",
+          "check": "only the stated rule is judged; the source's tuned setting reported"
+        },
+        {
+          "explanation": "where the bars start",
+          "check": "the 4-hour gold replication reported at UTC-hour and 18:00 ET session alignments"
+        }
+      ],
+      "pointer": "research/edge-hypotheses-plan.md#88-the-sweep-and-engulf-candle-a-bar-that-runs-the-previous-bars-low-and-closes-above-its-high",
+      "scripts": [
+        "packages/backtest/scripts/engulf_item88.py",
+        "scripts/fetch_item88_bars.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_engulf_item88_script.py"
+      ],
+      "results": [
+        "{home}/data/backtest/results/research/item88/results.json"
+      ],
+      "outcome": null,
+      "retest": null,
+      "retest_note": "A pass is followed by the engulf paper module with its forward block (#1168), not a retest; the funds' bars are the broker's, so a retest can re-fetch them at any time.",
+      "retests": []
     }
   ],
   "rule_changes": []
