@@ -28,6 +28,13 @@ signal at a bar's close a minute later, so moving them would be a measurement ch
 a label whose stretch around the session is not wholly known is left out, so core refuses the signal
 and the entry reads `event_dates_unknown`, never quiet.
 
+**A daily signal** (a trigger with `"daily": true`, entry or exit, no `bar_minutes`) reads completed
+daily bars only: the snapshot carries the symbol's daily bars before the session (`Snapshot.daily`, only
+when an arm reads them, `arms.reads_daily`; the stream request then asks for `DAILY_HISTORY` sessions),
+and core acts today, from the window's open, on a firing on the previous trading day's close. Bars
+that stop before that day read `stale_bars`. The item 75 backtest driver carries no daily bars, so a
+daily signal is backtested only once the automation driver exists (#1201).
+
 **A `signal` exit** (`exit.signal`: `{"trigger": ..., "bar_minutes": N}`, the entry trigger's shape)
 closes a position when its signal fires on the underlying, inside its window. `manage` checks it after
 the touch and the profit target and before the time exit. On the entry day only a firing after the

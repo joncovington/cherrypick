@@ -3,7 +3,7 @@ module, the check record, and the trigger's window, time to enter and cadence.""
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -237,6 +237,53 @@ def test_cadence_holds_an_entry_back():
 def test_validate_trigger_refuses_with_the_path(trigger, message):
     with pytest.raises(ValueError, match=message):
         ec.validate_trigger(trigger)
+
+
+def daily_bars(closes, last="2026-01-02"):
+    """Completed daily bars, one per trading day, ending on `last`."""
+    from cherrypick.core import calendar as cal
+
+    days, d = [], date.fromisoformat(last)
+    while len(days) < len(closes):
+        if cal.is_trading_day(d):
+            days.append(d.isoformat())
+        d -= timedelta(days=1)
+    return [Bar(s, 570, 960, c, c, c, c) for s, c in zip(reversed(days), closes, strict=True)]
+
+
+def daily_trigger(within=30):
+    spec = {"kind": "cross", "a": {"name": "close"}, "b": 101, "direction": "above", "seed": True}
+    return {"signal": spec, "window": {"open": "10:00", "close": "11:00"}, "within": within, "daily": True}
+
+
+def test_a_daily_trigger_acts_today_on_yesterdays_completed_bar():
+    # 2026-01-05 is a Monday; its previous trading day is Friday 2026-01-02, where the close crosses 101.
+    crossed = daily_bars([100, 100.5, 102])
+    assert ec.entry_due(daily_trigger(), now=at("09:59"), bars=crossed).reason == "not_yet"
+    due = ec.entry_due(daily_trigger(), now=at("10:00"), bars=crossed)
+    assert due.due and due.fired == 600
+    assert ec.entry_due(daily_trigger(), now=at("10:30"), bars=crossed).reason == "missed"
+    # Crossed the day before yesterday and stayed above: yesterday did not fire, so nothing today.
+    earlier = daily_bars([100, 102, 103])
+    assert ec.entry_due(daily_trigger(), now=at("10:59"), bars=earlier).reason == "not_yet"
+    assert ec.entry_due(daily_trigger(), now=at("11:01"), bars=earlier).reason == "no_firing"
+
+
+def test_a_daily_trigger_never_reads_todays_forming_bar_or_an_old_day():
+    crossed = daily_bars([100, 100.5, 102])
+    # A bar of today's session, crossing back down, is dropped: it has not completed.
+    forming = [*crossed, Bar(DAY, 570, 600, 102, 102, 99, 99)]
+    assert ec.entry_due(daily_trigger(), now=at("10:00"), bars=forming).due
+    # Bars that stop before the previous trading day are stale, never an older firing acted on today.
+    stale = daily_bars([100, 100.5, 102], last="2025-12-31")
+    d = ec.entry_due(daily_trigger(), now=at("10:00"), bars=stale)
+    assert not d.due and d.reason == "stale_bars"
+    with pytest.raises(ValueError, match="daily: true or false"):
+        ec.validate_trigger({**daily_trigger(), "daily": "yes"})
+    unseeded = daily_trigger()
+    unseeded["signal"] = {**unseeded["signal"], "seed": False}
+    with pytest.raises(ValueError, match="carries its state across sessions"):
+        ec.validate_trigger(unseeded)
 
 
 def test_the_trigger_answers_the_same_live_and_in_a_replay():

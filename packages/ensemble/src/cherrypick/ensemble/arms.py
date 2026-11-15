@@ -11,7 +11,8 @@ that defaulted silently would change what is measured):
                   {"kind": "orb", "minutes": 60, "direction": "above", "latest": "HH:MM", "single_shot": bool}
                   {"kind": "trigger", "trigger": <core.entrychecks trigger>, "bar_minutes": N}
                   (a `core.signals` firing on the trail cut into N-minute bars, or a fixed time; an
-                  event signal reads the event calendar's dates, `engine.events_for`)
+                  event signal reads the event calendar's dates, `engine.events_for`; a trigger with
+                  `"daily": true` reads completed daily bars and takes no `bar_minutes`)
     weekdays      [0..4], Monday = 0
     skip_events   {"labels": [...], "through_expiry": bool}
     legs          [{"name", "right": "C"|"P", "side": 1|-1, "strike": <strikes rule>}] in placement order
@@ -50,6 +51,8 @@ def _trigger_problems(
     trigger = entry["trigger"]
     if "signal" not in trigger:
         return [] if "bar_minutes" not in entry else [f"{where}.bar_minutes: a fixed time reads no bars"]
+    if trigger.get("daily"):
+        return [] if "bar_minutes" not in entry else [f"{where}.bar_minutes: a daily signal reads daily bars"]
     bars = entry.get("bar_minutes")
     if not (isinstance(bars, int) and not isinstance(bars, bool) and bars > 0):
         return [f"{where}.bar_minutes: a signal trigger needs a positive number of minutes"]
@@ -320,6 +323,23 @@ def validate(arm: dict) -> list[str]:
             f"{name}.exit.signal", arm["exit"]["signal"], frozenset({"trigger", "bar_minutes"})
         )
     return p
+
+
+#: Completed sessions a daily signal is given: room for a 200-day average and its warm-up.
+DAILY_HISTORY = 300
+
+
+def reads_daily(arm: dict) -> bool:
+    """Whether the arm's entry trigger or its signal exit reads daily bars (`"daily": true`)."""
+    entry = arm.get("entry") or {}
+    exit_signal = (arm.get("exit") or {}).get("signal") or {}
+    return any(
+        isinstance(t, dict) and bool(t.get("daily"))
+        for t in (
+            (entry.get("trigger") if entry.get("kind") == "trigger" else None),
+            exit_signal.get("trigger"),
+        )
+    )
 
 
 def load_arms(overrides: dict | None = None) -> dict[str, dict]:

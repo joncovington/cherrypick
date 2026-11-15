@@ -11,6 +11,10 @@ alike (the reason `core.entry` holds cadence and the leg-sign rule). Leg selecti
   still enters inside N; after it, the day's entry is missed).
 - `{"signal": <core.signals spec>, "window": {"open": "HH:MM", "close": "HH:MM"}, "within": N | None}`:
   from the first firing inside the window, for N minutes or (None) until the window closes.
+- The same with `"daily": true`: the signal reads **completed daily bars only**. Any bar of today's
+  session is dropped, so a still-forming day is never read; the entry is due today from the window's
+  open (for `within`, or until it closes) when the signal fired on the last completed session, which
+  must be the previous trading day (`stale_bars` otherwise, never an older day's firing).
 
 Either way the module's cadence applies through `core.entry.entry_allowed` (`last_fill`,
 `spacing_seconds`), and the answer is a `Due` with the reason when it is not due. A fixed time is a
@@ -48,6 +52,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from typing import Any
 
+from cherrypick.core import calendar as cal
 from cherrypick.core import chainmeasures as cm
 from cherrypick.core import entry as cadence
 from cherrypick.core import signals as sg
@@ -466,9 +471,14 @@ def validate_trigger(trigger: object, path: str = "trigger") -> None:
         return
     if "signal" not in trigger:
         raise ValueError(f"{path}: needs 'at' or 'signal'")
-    extra = set(trigger) - {"signal", "window", "within"}
+    extra = set(trigger) - {"signal", "window", "within", "daily"}
     if extra:
         raise ValueError(f"{path}: unknown key {sorted(extra)[0]!r} for a signal trigger")
+    if "daily" in trigger and not isinstance(trigger["daily"], bool):
+        raise ValueError(f"{path}.daily: true or false")
+    if trigger.get("daily") and trigger["signal"].get("seed") is False:
+        # Each daily bar is its own session: a signal that starts every session unarmed never fires.
+        raise ValueError(f"{path}.signal.seed: a daily signal carries its state across sessions; drop seed")
     sg.validate(trigger["signal"], f"{path}.signal")
     window = trigger.get("window")
     if not isinstance(window, Mapping) or set(window) != {"open", "close"}:
@@ -479,6 +489,21 @@ def validate_trigger(trigger: object, path: str = "trigger") -> None:
         raise ValueError(f"{path}.window: bad times {dict(window)!r}")
     if "within" not in trigger or not (trigger["within"] is None or _pos_int(trigger["within"])):
         raise ValueError(f"{path}.within: a positive number of minutes, or null for until the window closes")
+
+
+def _daily_fired(
+    trigger: Mapping[str, Any], bars: Sequence[sg.Bar], events, today
+) -> tuple[int | None, str | None]:
+    """A daily trigger: (the window's open, None) when the signal fired on the last completed session
+    and that session is the previous trading day; (None, None) when it did not fire; (None,
+    "stale_bars") when the bars stop before the previous trading day."""
+    done = [b for b in bars if b.session < today.isoformat()]
+    if not done or done[-1].session != cal.previous_trading_day(today).isoformat():
+        return None, "stale_bars"
+    last = done[-1].session
+    if any(f.session == last for f in sg.firings(trigger["signal"], done, events)):
+        return _hhmm(trigger["window"]["open"]), None
+    return None, None
 
 
 def _fired(trigger: Mapping[str, Any], bars: Sequence[sg.Bar], events) -> int | None:
@@ -511,10 +536,16 @@ def entry_due(
 ) -> Due:
     """Whether an entry is due at `now` (Eastern): the trigger has fired today, `now` is inside its time
     to enter, and the module's cadence allows it. `bars` are today's (and, for a seeded signal,
-    earlier sessions') bars completed by `now`; a fixed time reads none."""
+    earlier sessions') bars completed by `now`; a fixed time reads none; a daily trigger, daily bars
+    (any of today's is dropped)."""
     validate_trigger(trigger)
     minute = now.hour * 60 + now.minute
-    fired = _fired(trigger, bars, events)
+    if trigger.get("daily"):
+        fired, stale = _daily_fired(trigger, bars, events, now.date())
+        if stale:
+            return Due(False, None, stale)
+    else:
+        fired = _fired(trigger, bars, events)
     if fired is None:
         closed = "window" in trigger and minute > _hhmm(trigger["window"]["close"])
         return Due(False, None, "no_firing" if closed else "not_yet")

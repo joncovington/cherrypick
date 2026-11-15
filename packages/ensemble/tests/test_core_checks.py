@@ -259,3 +259,75 @@ def test_a_bad_signal_exit_is_refused(exit_rules, message):
     arm["exit"] = exit_rules
     problems = arms.validate(arm)
     assert any(message in x for x in problems), problems
+
+
+# --- daily signals ----------------------------------------------------------------------------------------
+
+from cherrypick.core import calendar as _cal  # noqa: E402
+
+from cherrypick.ensemble import feed, model  # noqa: E402
+from cherrypick.ensemble import snapshot as snapshot_mod  # noqa: E402
+
+
+def daily_rows(closes, before="2026-11-16"):
+    """Completed daily bars, one per trading day, ending the trading day before `before`."""
+    from datetime import date
+
+    days, d = [], _cal.previous_trading_day(date.fromisoformat(before))
+    while len(days) < len(closes):
+        days.append(d.isoformat())
+        d = _cal.previous_trading_day(d)
+    return [
+        {"session": s, "open": c, "high": c, "low": c, "close": c}
+        for s, c in zip(reversed(days), closes, strict=True)
+    ]
+
+
+DAILY_UP = {
+    "signal": {"kind": "cross", "a": {"name": "close"}, "b": 6001.0, "direction": "above", "seed": True},
+    "window": {"open": "10:00", "close": "11:00"},
+    "within": 30,
+    "daily": True,
+}
+
+
+def test_a_daily_trigger_enters_today_on_yesterdays_completed_close():
+    arm = trigger_arm(DAILY_UP)
+    assert not arms.validate(arm) and arms.reads_daily(arm)
+    crossed = dataclasses.replace(spx_snapshot(minute=600), daily=daily_rows([5990.0, 5995.0, 6010.0]))
+    assert ("entry_due", True, 600) in engine.decide(arm, crossed).checks
+    flat = dataclasses.replace(spx_snapshot(minute=600), daily=daily_rows([5990.0, 6010.0, 6012.0]))
+    assert engine.decide(arm, flat).checks[-1][2] == "not_yet"
+    # No daily bars carried: stale, never a guess.
+    assert engine.decide(arm, spx_snapshot(minute=600)).checks[-1][2] == "stale_bars"
+
+
+def test_a_daily_signal_exit_closes_the_session_after_it_fires():
+    down = {**DAILY_UP, "signal": {**DAILY_UP["signal"], "b": 5995.0, "direction": "below"}}
+    _, pos = held({"signal": {"trigger": down}})
+    nxt = dataclasses.replace(
+        spx_snapshot(session="2026-11-17", minute=605),
+        daily=daily_rows([6000.0, 6002.0, 5990.0], before="2026-11-17"),
+    )
+    assert engine.manage(pos, nxt) == ("signal", 600)
+
+
+def test_a_daily_trigger_takes_no_bar_minutes_and_the_feed_asks_for_its_history():
+    arm = trigger_arm(DAILY_UP, bar_minutes=5)
+    assert any("a daily signal reads daily bars" in x for x in arms.validate(arm))
+    arm = trigger_arm(DAILY_UP)
+    need = feed.reads(arm)
+    assert need["daily"] and need["closes"] == arms.DAILY_HISTORY
+    assert not feed.reads(A["iron-fly-1000"])["daily"]
+
+
+def test_the_snapshot_keeps_only_completed_days_and_round_trips():
+    rows = daily_rows([5990.0, 6010.0]) + [
+        {"session": "2026-11-16", "open": 1, "high": 1, "low": 1, "close": 1}
+    ]
+    snap = snapshot_mod.build(
+        session="2026-11-16", minute=600, symbol="SPX", spot=6000.0, prev_close=6010.0, day_open=6000.0,
+        quotes={}, trail=[], closes=[], daily=rows,
+    )  # fmt: skip
+    assert [r["session"] for r in snap.daily] == [r["session"] for r in rows[:2]]
+    assert model.Snapshot.from_dict(snap.to_dict()).daily == snap.daily

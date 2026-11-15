@@ -13,6 +13,10 @@ beyond the latest release.
 
 ### What's new
 
+- **Daily signals.** A trigger with `"daily": true` reads completed daily bars only and acts today on
+  a firing at the previous session's close (a daily RSI or MACD cross, a close above a moving average).
+  Today's still-forming bar is never read, and bars that stop before yesterday are refused as stale.
+  The ensemble's entries and signal exits can use it.
 - **Ensemble: exits on a signal, entries on event dates.** An arm's `exit.signal` closes a position
   when a `core.signals` signal fires on its underlying (the entry trigger's shape), checked after the
   touch and the profit target; the backtest and paper both run it. An entry trigger may now be an event

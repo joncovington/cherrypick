@@ -88,6 +88,9 @@ class Snapshot:
     #: How many strikes the source holds per expiry, when fewer than an arm asks for (the 60 s store keeps
     #: 20 each side): a window is capped at it and the check value says so. None: no cap.
     gex_strike_cap: int | None = None
+    #: Completed daily bars before `session` ({session, open, high, low, close}, oldest first), carried only
+    #: when an arm reads a daily signal (`arms.reads_daily`); empty otherwise.
+    daily: list[dict] = field(default_factory=list)
 
     @property
     def session_date(self) -> date:
