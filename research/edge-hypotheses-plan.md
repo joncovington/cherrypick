@@ -8589,6 +8589,25 @@ name filter. The retired `atm_calendar` and `double_calendar` paper books lost, 
     `forward` block declared before it trades.
   - **Both fail or no verdict:** the at-the-money earnings calendar is closed as tested on licensed
     data; item 87 says whether a lean changes that.
+- **Result (2026-11-14): both arms fail both rules in the design part; neither holdout was read.**
+  - **The three bars:** `all` and `quiet` each lose per trade in the design part (capital mean below
+    zero, t negative) and fail the tail bar. About half the trades win, far from the trader's four in
+    five, and the strike touch is the most common exit.
+  - **The event checks:** `all` earns no more than the same calendar on a no-report control session
+    (the paired difference is near zero), and `quiet` earns less than its control. Both are negative in
+    each design half, at the stress and without the best five. `quiet` does beat the unselected reports,
+    the only check either arm passes, but both lose.
+  - **Reported:** costs are about the size of the loss, so the calendar is near zero before them. The put
+    calendar, no stop, the reaction-close exit and holding with no strike exit are all negative. Every
+    sector is negative; so is every calendar year but one near zero. No front/back IV-ratio tercile is
+    positive. `quiet` under the first declaration's reading selects few trades and is worse than its
+    unselected reports. About a third of the reports had no entry chain in the fetched paths and were
+    skipped.
+  - Every figure is in the local result (`~/.cherrypick/data/backtest/results/research/item86/`).
+- **What this decides:** the fail branch. The at-the-money earnings calendar, bought the session before
+  the report and held to the strike, does not earn after costs on these 35 names, and its return is no
+  different from a calendar with no report inside it. The trader's name filter does not rescue it. It is
+  closed as tested on licensed data; no paper strategy is proposed.
 
 ### 87. Item 86's earnings calendar with a lean: out of the money on the side a bias picks
 
@@ -8646,6 +8665,20 @@ and paths.
     (or alone if item 86 fails), with a `forward` block declared before it trades.
   - **All fail or no verdict:** none of these leans makes the calendar earn; the trader's lean is his
     own judgement and not tested here, and the record says so.
+- **Result (2026-11-14): all three arms fail both rules in the design part; no holdout was judged.**
+  - **The three bars:** `trend`, `skew` and `prior` each lose per trade in the design part and fail the
+    capital, tail and delta bars: none beats its own entry delta held in the stock.
+  - **The event checks:** each arm's design mean is above item 86's neutral calendar on the same reports
+    (the one check each passes), but each is still negative, earns no more than its no-report control,
+    and is negative in both design halves, at the stress and without the best five.
+  - **Reported:** the oracle lean (the side the stock actually went) is positive, and its opposite loses
+    heavily; every arm sits near the middle of those bounds, so none of the three leans carries useful
+    direction. Bullish and bearish trades both lose in each arm. Each arm's holdout, reported as
+    declared, is negative too. `prior` and `skew` skip many reports for want of a lean.
+  - Every figure is in the local result (`~/.cherrypick/data/backtest/results/research/item87/`).
+- **What this decides:** the fail branch. None of the three mechanical leans makes the earnings calendar
+  earn; a lean narrows the loss against the neutral calendar but does not turn it. The trader's own
+  judgement is not tested here. With item 86, the earnings calendar is closed on licensed data.
 
 ## Not worth revisiting
 
