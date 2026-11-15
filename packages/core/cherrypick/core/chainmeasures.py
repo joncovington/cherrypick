@@ -1,11 +1,11 @@
 """cherrypick.core.chainmeasures -- the measures an entry gate reads off an option chain, one definition each.
 
-Several modules and studies carry their own realised vol, IV rank or skew; this is the copy a new gate
+Several modules and studies carry their own realized vol, IV rank or skew; this is the copy a new gate
 reads, so two modules gating on "IV rank 20 to 60" mean the same 20. Existing copies move here one at a
 time, each as a measurement change at a declared boundary (#1177, #1178): until then, where one differs
 it is named below.
 
-**Units.** Every volatility this returns is in vol points (an annualised 18% is 18.0). Ranks and
+**Units.** Every volatility this returns is in vol points (an annualized 18% is 18.0). Ranks and
 percentiles run 0 to 100. A chain row's own `iv`, as feeds state it, is a fraction (0.18).
 
 **Where an IV or a delta comes from is the caller's explicit choice, never a fallback.** `iv_from`
@@ -72,7 +72,7 @@ _SOURCES = ("row", "mid")
 
 
 def realized_vol(closes: Sequence[float]) -> float | None:
-    """Annualised close-to-close volatility of `closes`, in vol points (11 closes: 10 returns). None
+    """Annualized close-to-close volatility of `closes`, in vol points (11 closes: 10 returns). None
     under three closes or on a non-positive close."""
     if len(closes) < 3 or any(c is None or c <= 0 for c in closes):
         return None
@@ -201,7 +201,7 @@ def skew_25d(
 
 
 def iv_minus_rv(iv: float | None, closes: Sequence[float]) -> float | None:
-    """An IV in vol points less the realised vol of `closes`."""
+    """An IV in vol points less the realized vol of `closes`."""
     rv = realized_vol(closes)
     return None if iv is None or rv is None else iv - rv
 

@@ -53,7 +53,7 @@ package docs too.
 - **`arm`** is the word for one configured variant. Never call one a `book`, `profile` or
   `strategy`: those words are taken. Old config spellings (`books`, `profiles`, ...) resolve for
   good. See [working-rules.md](docs/conventions/working-rules.md).
-- **Spelling:** Python identifiers American, TypeScript identifiers British, prose British;
+- **Spelling:** Python identifiers American, TypeScript identifiers British, prose American;
   `cancelled` British everywhere, stored values included.
 - **Money:** "P&L" means net; signed cash flow; whole-position dollars; rows add up; fees,
   settlement and slippage each in their own column. Read

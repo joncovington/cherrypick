@@ -37,7 +37,7 @@ def chain(vol=smile, half_spread=0.0, strikes=range(4500, 5501, 25)):
     return rows
 
 
-# --- realised vol, rank, percentile ------------------------------------------------------------------
+# --- realized vol, rank, percentile ------------------------------------------------------------------
 
 
 def test_realized_vol_is_the_sample_stdev_of_log_returns_annualized():
