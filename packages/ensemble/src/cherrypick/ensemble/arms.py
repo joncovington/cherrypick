@@ -10,8 +10,8 @@ that defaulted silently would change what is measured):
     entry         {"kind": "time", "at": "HH:MM", "window": minutes}
                   {"kind": "orb", "minutes": 60, "direction": "above", "latest": "HH:MM", "single_shot": bool}
                   {"kind": "trigger", "trigger": <core.entrychecks trigger>, "bar_minutes": N}
-                  (a `core.signals` firing on the trail cut into N-minute bars, or a fixed time; event
-                  signals are refused, since the engine hands core no event dates)
+                  (a `core.signals` firing on the trail cut into N-minute bars, or a fixed time; an
+                  event signal reads the event calendar's dates, `engine.events_for`)
     weekdays      [0..4], Monday = 0
     skip_events   {"labels": [...], "through_expiry": bool}
     legs          [{"name", "right": "C"|"P", "side": 1|-1, "strike": <strikes rule>}] in placement order
@@ -19,7 +19,9 @@ that defaulted silently would change what is measured):
     size          {"contracts": N} or {"max_risk": dollars}
     limits        {"max_open": N, "every_days": N, "one_per_expiry": bool}
     exit          {} (hold to settlement) with any of "close_before_expiry_min", "profit_target_pct",
-                  "touch": {"pct": -0.5} or {"points": -10}
+                  "touch": {"pct": -0.5} or {"points": -10},
+                  "signal": {"trigger": <core.entrychecks trigger>, "bar_minutes": N} (the entry
+                  trigger's shape, read on the position's underlying; `engine.manage`)
 """
 
 from __future__ import annotations
@@ -31,10 +33,14 @@ from cherrypick.core import entrychecks as ec
 from . import gates as gates_mod
 
 
-def _trigger_problems(name: str, entry: dict) -> list[str]:
-    """A `trigger` entry's problems: core's validation of the trigger, its bar width, and no event signal."""
-    where = f"{name}.entry"
-    extra = set(entry) - {"kind", "trigger", "bar_minutes"}
+def _trigger_problems(
+    where: str, entry: dict, keys: frozenset = frozenset({"kind", "trigger", "bar_minutes"})
+) -> list[str]:
+    """A trigger's problems (an entry's, or a `signal` exit's): core's validation of the trigger and its
+    bar width."""
+    if not isinstance(entry, dict):
+        return [f"{where}: a trigger is an object"]
+    extra = set(entry) - keys
     if extra:
         return [f"{where}: unknown key {sorted(extra)[0]!r}"]
     try:
@@ -47,8 +53,6 @@ def _trigger_problems(name: str, entry: dict) -> list[str]:
     bars = entry.get("bar_minutes")
     if not (isinstance(bars, int) and not isinstance(bars, bool) and bars > 0):
         return [f"{where}.bar_minutes: a signal trigger needs a positive number of minutes"]
-    if "events" in ec.CORE.get("signal").needs({"spec": trigger["signal"]}):
-        return [f"{where}.trigger.signal: an event signal needs event dates the engine does not pass"]
     return []
 
 
@@ -67,7 +71,7 @@ TOP_KEYS = {
     "exit",
     "note",
 }
-EXIT_KEYS = {"close_before_expiry_min", "profit_target_pct", "touch"}
+EXIT_KEYS = {"close_before_expiry_min", "profit_target_pct", "touch", "signal"}
 STRIKE_RULES = {"delta", "spot", "prev_close", "from_leg", "same_as", "match_width", "max_abs_gex"}
 
 
@@ -282,7 +286,7 @@ def validate(arm: dict) -> list[str]:
     if arm["entry"].get("kind") not in ("time", "orb", "trigger"):
         p.append(f"{name}.entry.kind: {arm['entry'].get('kind')!r}")
     if arm["entry"].get("kind") == "trigger":
-        p.extend(_trigger_problems(name, arm["entry"]))
+        p.extend(_trigger_problems(f"{name}.entry", arm["entry"]))
     if not all(isinstance(d, int) and 0 <= d <= 4 for d in arm["weekdays"]):
         p.append(f"{name}.weekdays: {arm['weekdays']!r}")
     seen: set[str] = set()
@@ -311,6 +315,10 @@ def validate(arm: dict) -> list[str]:
     for k in arm.get("exit", {}):
         if k not in EXIT_KEYS:
             p.append(f"{name}.exit: unknown key {k!r}")
+    if "signal" in arm.get("exit", {}):
+        p += _trigger_problems(
+            f"{name}.exit.signal", arm["exit"]["signal"], frozenset({"trigger", "bar_minutes"})
+        )
     return p
 
 

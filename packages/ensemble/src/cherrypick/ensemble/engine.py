@@ -53,9 +53,62 @@ def breakout_minute(trail, minutes: int, latest: int) -> int | None:
     return None
 
 
+def event_labels(spec) -> set[str]:
+    """Every event label a `core.signals` spec names, nested filters included."""
+    out: set[str] = set()
+    if isinstance(spec, dict):
+        if spec.get("kind") == "event" and isinstance(spec.get("event"), str):
+            out.add(spec["event"])
+        for v in spec.values():
+            out |= event_labels(v)
+    elif isinstance(spec, list | tuple):
+        for v in spec:
+            out |= event_labels(v)
+    return out
+
+
+def _event_reach(spec) -> int:
+    """Calendar days either side of the session an event signal's dates must cover: its largest offset
+    in sessions, as calendar days with room for weekends and holidays."""
+    days = [0]
+
+    def walk(x):
+        if isinstance(x, dict):
+            if x.get("kind") == "event":
+                days.append(int(x.get("days") or 0))
+            for v in x.values():
+                walk(v)
+        elif isinstance(x, list | tuple):
+            for v in x:
+                walk(v)
+
+    walk(spec)
+    return 2 * max(days) + 10
+
+
+def events_for(trigger: dict, snap: Snapshot) -> dict[str, list[str]] | None:
+    """The event dates a trigger's signal reads, from the snapshot's calendar over the stretch it can
+    reach: `{label: [ISO dates]}`, or None when it names no event. A label whose stretch is not wholly
+    known is left out, so core refuses the signal rather than read the unknown days as quiet."""
+    labels = event_labels(trigger.get("signal"))
+    if not labels:
+        return None
+    if snap.events is None:
+        return {}
+    day, reach = date.fromisoformat(snap.session), timedelta(days=_event_reach(trigger.get("signal")))
+    out = {}
+    for label in sorted(labels):
+        found = snap.events.dates(label, day - reach, day + reach)
+        if found is not None:
+            out[label] = found
+    return out
+
+
 def trigger_due(entry: dict, snap: Snapshot) -> tuple[bool, object]:
-    """A `trigger` entry: `core.entrychecks.entry_due` on the trail cut into `bar_minutes` bars completed
-    by the snapshot's minute. The value is the minute it fired when due, else the reason it is not."""
+    """A `trigger` entry (or a `signal` exit, the same shape): `core.entrychecks.entry_due` on the trail
+    cut into `bar_minutes` bars completed by the snapshot's minute, with the calendar's dates for any
+    event the signal names. The value is the minute it fired when due, else the reason it is not:
+    `event_dates_unknown` when the calendar cannot say whether an event falls in reach."""
     minute = snap.minute
     bars = signals.from_trail(
         snap.session,
@@ -64,7 +117,14 @@ def trigger_due(entry: dict, snap: Snapshot) -> tuple[bool, object]:
         until=minute,
     )
     now = datetime.fromisoformat(snap.session).replace(hour=minute // 60, minute=minute % 60, tzinfo=ET)
-    due = entrychecks.entry_due(entry["trigger"], now=now, bars=bars)
+    try:
+        due = entrychecks.entry_due(
+            entry["trigger"], now=now, bars=bars, events=events_for(entry["trigger"], snap)
+        )
+    except ValueError as exc:
+        if "no dates given for event" in str(exc):
+            return False, "event_dates_unknown"
+        raise
     return due.due, due.fired if due.due else due.reason
 
 
@@ -230,8 +290,13 @@ def _credit_now(pos: Position, chain: Chain) -> float | None:
 
 
 def manage(pos: Position, snap: Snapshot) -> tuple[str, object] | None:
-    """The exit due now, as (kind, detail), or None. Touch first, then profit target, then the time exit;
-    held to settlement when the arm has none."""
+    """The exit due now, as (kind, detail), or None. Touch first, then profit target, then a signal, then
+    the time exit; held to settlement when the arm has none.
+
+    A `signal` exit is a trigger of the entry's shape (`{"trigger": ..., "bar_minutes": N}`) read on the
+    position's underlying: due when it fires inside its window. On the entry day only a firing after the
+    entry minute counts, and core's trigger takes the day's first firing in the window, so a signal that
+    first fired before the entry does not exit that day."""
     r, e = pos.exit_rules, pos.entry
     touch = r.get("touch")
     if touch:
@@ -246,6 +311,10 @@ def manage(pos: Position, snap: Snapshot) -> tuple[str, object] | None:
             gained = e.prices["mid"] + now
             if gained >= r["profit_target_pct"] / 100.0 * e.max_profit - 1e-9:
                 return "profit_target", gained
+    if r.get("signal"):
+        due, fired = trigger_due(r["signal"], snap)
+        if due and (snap.session > e.session or fired > e.minute):
+            return "signal", fired
     if r.get("close_before_expiry_min") is not None and snap.session == e.expiry:
         if snap.minute >= snap.close_minute - r["close_before_expiry_min"]:
             return "time", snap.minute
