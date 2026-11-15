@@ -328,6 +328,8 @@ REPLACEMENTS = {
     "signals_read_ahead": _signals_read_ahead,
     "signals_confirm_once": _signals_confirm_once,
     "iv_falls_back_to_mid": _iv_falls_back_to_mid,
+    "nothing_missing": lambda: lambda *_a, **_k: set(),
+    "due_forever": lambda: lambda *_a, **_k: 10**6,
 }
 
 
@@ -711,6 +713,27 @@ MUTANTS: tuple[Mutant, ...] = (
         module="cherrypick.core.chainmeasures",
         attr="_row_iv",
         replacement="iv_falls_back_to_mid",
+    ),
+    Mutant(
+        id="entrychecks-missing-passes",
+        breaks="an entry check whose data is absent is run as if it were there",
+        package="core",
+        tests=("tests/test_entrychecks.py::test_missing_data_fails_by_name_and_never_passes",),
+        module="cherrypick.core.entrychecks",
+        attr="_missing",
+        replacement="nothing_missing",
+    ),
+    Mutant(
+        id="entrychecks-due-after-window",
+        breaks="an entry stays due after its time to enter has passed",
+        package="core",
+        tests=(
+            "tests/test_entrychecks.py::test_a_fixed_time_is_due_for_its_minutes_then_missed",
+            "tests/test_entrychecks.py::test_a_signal_is_due_from_its_firing_inside_the_window",
+        ),
+        module="cherrypick.core.entrychecks",
+        attr="_until",
+        replacement="due_forever",
     ),
 )
 
