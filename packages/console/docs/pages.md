@@ -17,7 +17,7 @@ A page the suite has switched off is not shown (see *What is off is not shown* b
 | GEX | `/gex` | gex, iv skew | Dealer gamma by strike for the recorded day, and the IV skew. Reads the market; trades nothing. |
 | GEX panel | `/gexpanel` | panel | Experimental, SPX only: a walls panel on the recorded data. |
 | Screeners | `/screeners` | two groups, eight tabs. Screens: earnings, earnings record, signal board, skate. Income lists: puts & calls, credit spreads, time spreads, fair value | The suite's own screens and income lists. The Dolt-backed tabs show a set-up card, not a blank, without Dolt. |
-| Compare | `/compare` | arms, risk, calendar, portfolio, slices | Every arm side by side. Left off the rail in the simple view. |
+| Compare | `/compare` | arms, risk, calendar, portfolio, slices, signals | Every arm side by side, and signals studied on the underlying. Left off the rail in the simple view. |
 | Backtest | `/backtest` | studies, queue, runs, data | Research studies and the queue. Fails closed: hidden unless the suite says the backtest feature is on (licensed data). Left off the rail in the simple view. |
 | Advisor | `/advisor` | advisor | The advisor's experiments roll-up. Paused. Left off the rail in the simple view. |
 | System | `/system` | health, supervisor, data, environment, logs | The suite's own health, read-only. Left off the rail in the simple view. |
@@ -1310,3 +1310,16 @@ come from a licensed replay: the tab fails closed (`FAIL_CLOSED_SLIDES`, `visibi
 or unread, it leaves the rail and its URL falls to Compare's first tab) and the server refuses
 `/api/backtest/slices` on its own. Greyed cells stay greyed and the page
 says a cell is never a gate. Both rename and render; every rule is the Python side's. An "In plain English" card heads each report: what the report is and what R means, the overall result against zero, one sentence a dimension (one group, too few groups with 30 trades, separated -- two groups' 95% intervals do not overlap -- or overlapping), the upshot, and how to use it. The reading is the reader's (`analysis`, `readDimension`); the card only words it. The weekday and event-day cuts show a Days column and "Random days as good" (`placebo.beaten_by`, the share of random sets of as many days that did at least as well), and the card adds that reading to a whole-day dimension's sentence, because a trade interval overstates days whose trades move together. Both columns appear only where the report carries them.
+
+**Compare → `signals`** (`pages/Compare/SignalsTab.tsx` over `GET /api/signals` and
+`GET /api/signals/:name` → `services/signalStudyBridge.ts` → `python -m cherrypick.backtest read
+signals | signal --name`) shows a signal studied on the underlying alone (`packages/backtest`'s
+`signalstudy.py`). It has one card with a sentence per horizon, then tables of the firings against
+the control per horizon, breach shares per distance, the figures by year, and every firing (collapsed).
+The study in view is `?study=`. Every figure is the module's.
+
+**The tab is open to every reader**, so a study over public daily bars or the recorder's minutes
+outlives a vendor subscription. A study over the vendor's store is licensed, and the routes keep it in
+on their own (`routes/signals.ts`, the Backtest page's `backtestOn` gate):
+- Unless the feature says `backtest: true`, the list leaves it out and counts it in `withheld`.
+- One read of it gets the unknown-route 404.

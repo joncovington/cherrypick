@@ -28,7 +28,7 @@ beyond the latest release.
   the move to the close and to N sessions, the range against the expected move, and how often a
   distance was breached. Each is shown by year and against the same minute on sessions that had not
   fired by then. It runs on the daily history from 2011 or the recorder's minutes, with no subscription.
-  Descriptive only.
+  Read the results under Compare → signals. Descriptive only.
 - **Ladder, a share dip ladder in paper.** A new package, `ladder`, buys a leveraged index fund (TQQQ to
   start) in lots when it falls 7% and sells each lot on its own at +4%, with three arms: `chain` (each
   further lot 7% under the last), `once` (one lot a session) and `decay` (the target falls to breakeven

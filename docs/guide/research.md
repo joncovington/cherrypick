@@ -4,7 +4,7 @@ Three pages look across the suite rather than at one module: Compare at `/compar
 
 ## Compare (`/compare`)
 
-Compare puts every arm of every module beside its own control, from one reader, so the numbers are measured the same way everywhere. Its tabs are `arms`, `risk`, `calendar` and `portfolio`. A fifth, `slices`, is hidden unless the licensed-data feature is on (see Backtest below).
+Compare puts every arm of every module beside its own control, from one reader, so the numbers are measured the same way everywhere. Its tabs are `arms`, `risk`, `calendar`, `portfolio` and `signals`. Another, `slices`, is hidden unless the licensed-data feature is on (see Backtest below).
 
 ### What you see
 
@@ -15,6 +15,13 @@ Compare puts every arm of every module beside its own control, from one reader, 
 The scope selector at the top has two settings. "each module's era" is the default and reads each module from its own latest measurement break. "all rows (pooled across breaks)" mixes eras and is a stated widening, never the default.
 
 `risk` is a table of every arm's risk over its own window: peak risk, a drawdown estimate from resampling, and the slippage at which the net would reach zero. `calendar` is a month grid of each arm's settled net per session, with weekly totals. `portfolio` takes one arm from each module and holds them together: how correlated they are, how many independent bets you really have, and whether combining them cuts the drawdown.
+
+`signals` shows a signal studied on the underlying alone, before any option is priced. For each time it fired, it shows what the price did:
+- the move to the close and to a number of sessions later;
+- how far it ran against the expected move;
+- how often it reached a distance you chose.
+
+Each figure sits beside a control: the same minute on sessions where the signal had not fired by then. It is shown by year and for every firing. Studies are run with `packages/backtest/scripts/signal_study.py`. One run on public daily bars or the recorder's minutes is always shown. One run on the vendor's data appears only while the licensed-data feature is on. A signal that does nothing for the underlying is unlikely to be rescued by an option structure built on it. A signal that does something is a lead to declare and test, never a result.
 
 ### How to read it
 
