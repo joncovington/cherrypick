@@ -354,6 +354,7 @@ def test_derive_full_suite_job_table():
         "technicals-index-bars",
         "vol-curve-bars",
         "profile-bars",
+        "gold-bars",
         "technicals-iv-rank",
         "technicals-dollar-volume",
         "technicals-earnings-times",
@@ -1673,6 +1674,21 @@ def test_the_profile_bar_fetch_runs_after_the_futures_close_without_dolt():
     cfg = suite_cfg()
     cfg["technicals"] = {"profile_bars": False}
     assert not {j.id: j for j in derive(cfg)[0]}["profile-bars"].enabled
+
+
+def test_the_gold_bar_fetch_runs_after_glds_extended_hours_without_dolt():
+    by_id = {j.id: j for j in derive(suite_cfg())[0]}
+    job = by_id["gold-bars"]
+    assert job.enabled and job.argv[-1].endswith("fetch_gold_bars.py")
+    # GLD's extended hours run to 20:00 ET: earlier, the day's last hourly bars would still be forming
+    assert job.at_et >= "20:00" and job.trading_days_only
+    assert job.at_et > by_id["futures-contracts"].at_et, "the contract map must be today's"
+    no_dolt = suite_cfg()
+    no_dolt["capabilities"]["dolt"] = False
+    assert {j.id: j for j in derive(no_dolt)[0]}["gold-bars"].enabled
+    cfg = suite_cfg()
+    cfg["technicals"] = {"gold_bars": False}
+    assert not {j.id: j for j in derive(cfg)[0]}["gold-bars"].enabled
 
 
 def test_earnings_moves_are_priced_after_the_close_and_before_the_pack():

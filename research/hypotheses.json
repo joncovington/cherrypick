@@ -4044,7 +4044,7 @@
       "id": 86,
       "study": "item86",
       "title": "An at-the-money calendar across an earnings report, held until the stock returns to its strike",
-      "status": "declared",
+      "status": "failed",
       "legacy": false,
       "setup": "earnings-premium",
       "side": "neutral",
@@ -4087,7 +4087,7 @@
       "results": [
         "{home}/data/backtest/results/research/item86/results.json"
       ],
-      "outcome": null,
+      "outcome": "fail: both arms lose per trade in the design part and fail the tail bar; neither beats the same calendar on a no-report control, and both are negative in each half, at the stress and without the best five; quiet beats its unselected reports but still loses; closed as tested, no paper strategy",
       "retest": null,
       "retest_note": "Read once before the vendor licence ends (2026-11-16); a pass is followed by a paper strategy with its forward block, not a retest.",
       "retests": []
@@ -4096,7 +4096,7 @@
       "id": 87,
       "study": "item87",
       "title": "Item 86's earnings calendar with a lean: out of the money on the side a bias picks",
-      "status": "declared",
+      "status": "failed",
       "legacy": false,
       "setup": "earnings-premium",
       "side": "directional",
@@ -4135,7 +4135,7 @@
       "results": [
         "{home}/data/backtest/results/research/item87/results.json"
       ],
-      "outcome": null,
+      "outcome": "fail: all three leans lose per trade in the design part and fail the capital, tail and delta bars; each beats item 86's neutral calendar but none beats its control, and each sits between the oracle and wrong-side bounds near the middle, so the leans carry no useful direction; with item 86 the earnings calendar is closed",
       "retest": null,
       "retest_note": "Read once before the vendor licence ends (2026-11-16); a pass is followed by a paper strategy with its forward block, not a retest.",
       "retests": []
