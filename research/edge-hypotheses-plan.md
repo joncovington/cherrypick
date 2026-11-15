@@ -8234,6 +8234,21 @@ nearest look-alike: same arm and shape, a different day rule.
     is proposed, and the bar fail is the finding.
   - **A gate fail or no verdict:** the range forecast is real (item 81) but does not move what MEIC's
     live arm earns; MEIC keeps entering on wide days.
+- **Result (2026-11-14, provisional: MEIC's history has not unlocked): fail on both.**
+  - **The gate fails every design check:** the skipped days' trades earn money on average, so skipping
+    them gives up profit rather than a loss; the gap to the kept days is far from the permutation bar;
+    and it changes sign between the design halves. The holdout was not read. The design held well over
+    the floor of skipped days.
+  - **The gated arm fails the tail bar** in the design part (it passes the capital bar), so it would not
+    pass even with a gate that helped.
+  - **Reported:** the ungated arm fails the tail bar in the design part too; the gap at the wider
+    neighbouring threshold (ln 2) is larger than at the declared one, a reported cut only and not a
+    finding. Trade days with no first-hour reading (the 20-session history restarts after a short
+    session or a gap) are left out and counted.
+  - Every figure is in the local result (`~/.cherrypick/data/backtest/results/research/item82/`).
+- **What this decides:** the gate-fail branch. Item 81's range forecast is real, but MEIC's live arm earns
+  on wide-first-hour days, so it keeps entering on them; no paper arm is proposed. The tail-bar fail of the
+  live arm itself is recorded here as a reported line, provisional with the rest of MEIC's history.
 
 ## Not worth revisiting
 
