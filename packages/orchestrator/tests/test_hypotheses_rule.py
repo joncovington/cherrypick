@@ -30,6 +30,13 @@ def test_a_rule_literal_clears_it_and_a_computed_one_does_not(tmp_path):
     assert hy.rule_missing(_reg(78, rel), root=tmp_path) != []
 
 
+def test_a_forecast_study_declares_its_rule_as_forecast_rule(tmp_path):
+    rel = _repo(tmp_path, "FORECAST_RULE = {'kind': 'forecast', 't_bar': 2.0}\n")
+    assert hy.rule_missing(_reg(78, rel), root=tmp_path) == []
+    (tmp_path / rel).write_text("OTHER_RULE = {'kind': 'forecast'}\n", encoding="utf-8")
+    assert hy.rule_missing(_reg(78, rel), root=tmp_path) != []
+
+
 def test_earlier_items_legacy_and_retired_rows_are_not_asked(tmp_path):
     rel = _repo(tmp_path, "X = 1\n")
     assert hy.rule_missing(_reg(77, rel), root=tmp_path) == []

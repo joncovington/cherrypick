@@ -3708,6 +3708,61 @@
       "retest": null,
       "retest_note": "A retest of item 64 itself, read once before the vendor licence ends (2026-11-16).",
       "retests": []
+    },
+    {
+      "id": 80,
+      "study": "item80",
+      "title": "Market Profile: an open outside the prior day's value area, held through the first hour, and the rest of the day's range",
+      "status": "declared",
+      "legacy": false,
+      "setup": "market-profile",
+      "side": "signal",
+      "structure": "none",
+      "window": "intraday",
+      "measure": "per SPX session, the log of the range from 10:30 to the close over the prior close; the day's class against the prior session's value area (2.5-point rows, CBOT 70%): inside, held_outside (open outside and every price before 10:30 on that side) or returned",
+      "expected": "a positive held_outside coefficient: an open away from accepted value that is not pulled back in the first hour travels further the rest of the day",
+      "sample": "full SPX sessions in the licensed one-minute store, 2022-05-16..2026-11-13, one run cut at 2025-07-01 (design before, holdout from); < 40 held_outside design days = no verdict, < 15 in the holdout = provisional",
+      "rule": "FORECAST_RULE: least squares of the outcome on the HAR controls (prior range, 5- and 22-session means), the first hour's log range, the gap and the two class indicators; design: held_outside coefficient >= 0.05 with one-sided t >= 2 from a stationary block bootstrap (mean block 10, 10,000 draws, seed 80), positive in each design half (2023-12-01); holdout, read after a design pass: with the design's control fit frozen, held_outside days' mean residual above inside days'",
+      "mechanism": "an auction that opens away from yesterday's accepted price and is not pulled back to it in the first hour has found buyers or sellers who keep moving price",
+      "rivals": [
+        {
+          "explanation": "it is the gap",
+          "check": "the gap is a control"
+        },
+        {
+          "explanation": "it is a busy first hour",
+          "check": "the first hour's range is a control"
+        },
+        {
+          "explanation": "volatility clustering",
+          "check": "the three HAR terms"
+        },
+        {
+          "explanation": "event days",
+          "check": "reported without FOMC decision days"
+        },
+        {
+          "explanation": "one regime",
+          "check": "positive in both design halves"
+        },
+        {
+          "explanation": "the row size",
+          "check": "1.25- and 5-point rows reported; 2.5 fixed"
+        }
+      ],
+      "pointer": "research/edge-hypotheses-plan.md#80-market-profile-an-open-outside-the-prior-days-value-area-held-through-the-first-hour-and-the-rest-of-the-days-range",
+      "scripts": [
+        "packages/backtest/scripts/open_vs_prior_value_item80.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_open_vs_prior_value_item80_script.py"
+      ],
+      "results": [
+        "{home}/data/backtest/results/research/item80/results.json"
+      ],
+      "retest": null,
+      "retest_note": "Read once before the vendor licence ends (2026-11-16); a forecast, so a later MEIC paper-arm item carries any use of it.",
+      "retests": []
     }
   ],
   "rule_changes": []

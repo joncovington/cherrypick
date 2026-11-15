@@ -7985,6 +7985,89 @@ licence on the vendor data ends on 2026-11-16, so this is read once, before then
   - **A fail on every structure:** none of the four is an IRA idea; item 64's no-verdict structures
     stay unjudged for want of exit marks if the data rule binds.
 
+### 80. Market Profile: an open outside the prior day's value area, held through the first hour, and the rest of the day's range
+
+Declared 2026-11-14, before any of it is computed. The first of the Market Profile studies (the
+research note of 2026-11-14 and `cherrypick.core.marketprofile`, which until now draws charts only).
+`cherrypick hypotheses --similar` names no look-alike: the opening-range study
+([openingrange.md](openingrange.md)) and the range-features study ([range-features.md](range-features.md),
+closed, found nothing) are its baselines, not its question.
+
+- **Question:** when SPX opens outside the prior session's value area and stays outside it through
+  the initial balance (the first hour), is the rest of the day's range larger than recent ranges, the
+  first hour's own range and the size of the gap already say?
+- **This is a forecast, not a trade.** A pass says the profile carries information about the range a
+  short-premium book is exposed to; it trades nothing. So the three bars do not apply, and the rule is
+  a forecast rule (`FORECAST_RULE` in the script, below). Any use of it (a MEIC paper arm that skips or
+  narrows its entries on such days) is a later item, declared on the three bars before it runs.
+- **Mechanism:** an auction that opens away from the price yesterday accepted, and is not pulled back
+  to it in the first hour, has found new buyers or sellers who keep moving price; one pulled back is
+  rotating. The practitioner reading (Dalton) has no published test behind it.
+- **Data:** SPX one-minute prices in the licensed store (`SPX-60s.db`, `gex_spot_history`), every full
+  regular session (at least 380 of the 389 stamps, 09:31 to 15:59 ET) from 2022-05-16 through
+  2026-11-13, read once and pinned by its fingerprint (sessions, stamps, a hash of the counts, never a
+  price). Nothing is fetched. The item 33 FOMC calendar (public, `~/.cherrypick/data/public/item33/`)
+  is read for a reported cut only.
+- **The profile:** `core.marketprofile.build_profile`, each stamp a one-minute bar from the previous
+  stamp's price to its own; 2.5-point rows, 30-minute periods from 09:30, the CBOT 70% value area,
+  as the console draws it. The prior value area is the band from VAL to the top of VAH's row.
+- **The days:** session t with a prior full session no more than four calendar days earlier and
+  22 full sessions before it. The open is t's first stamp; the initial balance is every stamp before
+  10:30. Each day is one of three:
+  - `inside`: the open inside the prior value area;
+  - `held_outside`: the open above it and every initial-balance stamp above it, or the open below it
+    and every one below;
+  - `returned`: the open outside it and the initial balance back inside it.
+- **Outcome:** the log of the rest of the day's range, (high − low of the stamps from 10:30 through the
+  close) ÷ the prior close. The first hour is outside it, so it cannot inflate its own outcome.
+- **The model:** least squares of the outcome on the controls and the two day indicators, `inside` the
+  base. Controls, all known at 10:30: the log of the prior session's range ÷ its close, the logs of the
+  mean of that ratio over the prior 5 and 22 sessions (the HAR baseline, range-features' form), the log
+  of the initial balance's range ÷ the prior close, and the gap, |open − prior close| ÷ the prior close.
+  The statistic is the `held_outside` coefficient: the excess log range of a held-outside day over an
+  inside day with the same history, first hour and gap.
+- **Windows:** one run, cut at **2025-07-01** (the backtest's design and holdout boundary). The design
+  part fits the model; the holdout part is read only after a design pass.
+- **The rule (`FORECAST_RULE`):**
+  - **Design:** the coefficient at least 0.05 (5% of the range: smaller is real but useless for strike
+    placement), with a t of 2 or more one-sided, its standard error from a stationary block bootstrap of
+    the design days (mean block 10 sessions, 10,000 draws, seed 80); positive when refitted in each
+    design half (split 2023-12-01). Fewer than 40 `held_outside` days in the design is no verdict.
+  - **Holdout:** with the design's control coefficients frozen, the mean residual of the holdout's
+    `held_outside` days above its `inside` days. Fewer than 15 holdout `held_outside` days makes a pass
+    provisional.
+- **Minimum detectable effect:** at a residual spread near 0.38 log points (assumed, typical of daily
+  range models; the run reports the measured one through `robustness.planned_mde`), and some 100
+  held-outside days against 450 inside, the design detects about 0.08 log points at the t bar. A fail
+  or no verdict reads "no effect larger than about that", not "no effect".
+- **Reported, never judged:** the coefficient with 1.25- and 5-point rows; with the first half-hour
+  (to 10:00) as the initial balance; with the outcome from 12:30 (MEIC's entry time) instead of 10:30;
+  without FOMC decision days; above and below value separately; the `returned` coefficient (the 80% rule's
+  setting, a later item); each class's day count by year.
+- **Rival explanations, each with its check:**
+  - *It is the gap:* the gap is a control.
+  - *It is a busy first hour:* the initial balance's range is a control.
+  - *It is volatility clustering:* the three HAR terms.
+  - *It is event days:* reported without FOMC days.
+  - *It is one regime:* both design halves must agree.
+  - *It is the row size:* 1.25 and 5 points reported; the 2.5 rows are fixed here.
+  - *The history was already read for the open:* the opening-range study read only the recorder's 2026
+    sessions; the 2022-2025 store has never been read for a value-area or opening question.
+- **Declared limits:** no name split (one symbol) and no costs (no trade). A session the store holds
+  short is dropped and counted. The store's first stamp is 09:31, so the open is that minute's price.
+- **Data and results:** the script is `packages/backtest/scripts/open_vs_prior_value_item80.py study`,
+  run as `item80/study`. Results are derived from licensed data, so they stay under
+  `~/.cherrypick/data/backtest/results/research/item80/`, and this plan records the verdict without
+  figures. The licence ends 2026-11-16, so it runs before then and its result is kept and purged under
+  the licence-end rule.
+- **Decides:**
+  - **A pass:** the profile's value area is information about the range the short-premium modules sell
+    against. Next is a MEIC paper-arm item, declared on the three bars, that changes its entries on
+    held-outside days; the profile still gates nothing until that passes.
+  - **A fail or no verdict:** the prior value area adds nothing to the range forecasts the suite already
+    has; the profile stays a chart, and the next Market Profile item (the first-hour width, or the 80%
+    rule) is declared on its own.
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:
