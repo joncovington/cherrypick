@@ -184,25 +184,73 @@ def test_first_run_goes_deep_except_for_a_futures_month_and_later_runs_only_rest
         )
 
 
-def test_run_stores_gc_under_its_name_from_the_month_fetched_and_never_asks_it_deep():
+def test_run_stores_gc_under_its_name_from_the_month_fetched_and_never_keeps_it_deep():
     fgb.QUIET_GAP_S = 0.05
     conn = fgb.connect(":memory:")
     fgb.store_bars(conn, "GLD", "1h", "GLD", {_ms(T0): BAR}, NOW)
+    old = NOW - timedelta(days=60)  # the active month's own history, from before it was the front
     FakeStreamer.calls = []
-    FakeStreamer.script = [_ev("GLD{=h}", T0), _ev("/GCG27:XCEC{=h}", T0), _ev("/GC:XCEC{=h}", T0)]
+    FakeStreamer.script = [
+        _ev("GLD{=h}", T0),
+        _ev("/GCG27:XCEC{=h}", old),
+        _ev("/GCG27:XCEC{=h}", T0),
+        _ev("/GCJ27:XCEC{=h}", T0),
+        _ev("/GC:XCEC{=h}", T0),
+    ]
     summary = asyncio.run(fgb.run_interval(None, conn, "1h", NOW, FMAP, sdk=FAKE_SDK))
     starts = {sym: c["start_time"] for c in FakeStreamer.calls for sym in c["symbols"]}
     assert starts["GLD"] == T0 - timedelta(days=fgb.RESTATE_DAYS)
     assert starts["/GC:XCEC"] == NOW - timedelta(days=fgb.DEPTH_DAYS["1h"])
-    assert starts["/GCG27:XCEC"] == NOW - timedelta(days=fgb.RESTATE_DAYS)
-    held = dict(conn.execute("SELECT symbol, contract FROM gold_bars"))
-    assert held == {"GLD": "GLD", "/GC": "/GCG27:XCEC", "/GC:XCEC": "/GC:XCEC"}
+    # /GC and its dated contract share the feed symbol: asked once, from the dated contract's depth
+    assert starts["/GCG27:XCEC"] == NOW - timedelta(days=fgb.DEPTH_DAYS["1h"])
+    assert sum(sym == "/GCG27:XCEC" for c in FakeStreamer.calls for sym in c["symbols"]) == 1
+    rows = conn.execute("SELECT symbol, ts_ms, contract FROM gold_bars").fetchall()
+    held = {}
+    for sym, ts, contract in rows:
+        held.setdefault(sym, set()).add((ts, contract))
+    assert held["/GC"] == {(_ms(T0), "/GCG27:XCEC")}, "/GC keeps only its own window"
+    assert held["/GCG27:XCEC"] == {(_ms(old), "/GCG27:XCEC"), (_ms(T0), "/GCG27:XCEC")}
+    assert held["/GCJ27:XCEC"] == {(_ms(T0), "/GCJ27:XCEC")}  # the next month is recorded too
     by = {r["symbol"]: r for r in summary}
     assert by["GLD"]["deep"] is False and by["/GC"]["deep"] is True
+    assert all(r["required"] for r in summary)
 
 
-def test_any_series_with_no_bars_fails_the_run():
+def test_contract_symbols_and_the_cycle():
+    assert fgb.parse_contract("/GCZ26:XCEC") == ("Z", 2026)
+    with pytest.raises(ValueError):
+        fgb.parse_contract("/GC:XCEC")
+    assert fgb.contract_symbol("J", 2026) == "/GCJ26:XCEC"
+    assert fgb.next_in_cycle("/GCZ26:XCEC") == "/GCG27:XCEC"  # December rolls into next February
+    assert fgb.next_in_cycle("/GCJ26:XCEC") == "/GCM26:XCEC"
+    assert fgb.next_in_cycle("/GCH26:XCEC") == "/GCJ26:XCEC"  # an off-cycle month finds the next cycle one
+    got = fgb.cycle_contracts("/GCZ26:XCEC", 2025)
+    assert got[0] == "/GCG25:XCEC" and got[-1] == "/GCG27:XCEC" and len(got) == 6 + 6 + 1
+    assert fgb.dated_contracts(FMAP) == ["/GCG27:XCEC", "/GCJ27:XCEC"]
+    back = fgb.dated_contracts(FMAP, backfill=True)
+    assert back[0] == fgb.contract_symbol("G", fgb.BACKFILL_FROM_YEAR) and back[-1] == "/GCJ27:XCEC"
+
+
+def test_a_backfill_records_only_dated_contracts_at_full_depth_and_needs_none():
+    fgb.QUIET_GAP_S = 0.05
+    conn = fgb.connect(":memory:")
+    fgb.store_bars(conn, "/GCJ26:XCEC", "1d", "/GCJ26:XCEC", {_ms(DAY): BAR}, NOW)  # held: still deep
+    FakeStreamer.calls = []
+    FakeStreamer.script = [_ev("/GCJ26:XCEC{=d}", DAY - timedelta(days=300)), _ev("GLD{=d}", DAY)]
+    summary = asyncio.run(fgb.run_interval(None, conn, "1d", NOW, FMAP, backfill=True, sdk=FAKE_SDK))
+    asked = [sym for c in FakeStreamer.calls for sym in c["symbols"]]
+    assert set(asked) == set(fgb.dated_contracts(FMAP, backfill=True))
+    assert all(c["start_time"] == NOW - timedelta(days=fgb.DEPTH_DAYS["1d"]) for c in FakeStreamer.calls)
+    assert {s for (s,) in conn.execute("SELECT DISTINCT symbol FROM gold_bars")} == {"/GCJ26:XCEC"}
+    assert conn.execute("SELECT COUNT(*) FROM gold_bars").fetchone()[0] == 2
+    assert not any(r["required"] for r in summary)
+    assert fgb.outcome(summary)["ok"] is True  # contracts with nothing are listed, never a failure
+
+
+def test_any_series_the_run_needs_with_no_bars_fails_it():
     full = [{"symbol": s, "interval": i, "received": 10} for s in fgb.SYMBOLS for i in fgb.WIDTH_MS]
     assert fgb.outcome(full) == {"ok": True, "empty": []}
     one_gone = [r if (r["symbol"], r["interval"]) != ("GLD", "1d") else {**r, "received": 0} for r in full]
     assert fgb.outcome(one_gone) == {"ok": False, "empty": ["GLD 1d"]}
+    spare = [*full, {"symbol": "/GCG16:XCEC", "interval": "1d", "received": 0, "required": False}]
+    assert fgb.outcome(spare) == {"ok": True, "empty": ["/GCG16:XCEC 1d"]}
