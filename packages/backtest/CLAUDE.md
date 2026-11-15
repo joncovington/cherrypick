@@ -353,6 +353,24 @@ the earlier; a spacing or capacity refusal is `path`). MEIC's reasons and keys a
 the package may not import it; a test holds them to `paper.py`'s source. A read, never a verdict: the
 holdout is refused, nothing is a trial, and no live gate moves.
 
+**Signal studies** (`signalstudy.py`, pure; `packages/backtest/scripts/signal_study.py run --request
+FILE` reads the bars; `read signals` / `read signal --name`): a `core.signals` spec's firings and what
+the underlying did after each, per horizon and by year, against a control. The rules a change must keep:
+
+- **The control knows only the past.** At each firing minute it takes the sessions that had not fired
+  by then. A session that fires later that day is in it, because "never fired that day" would pick
+  sessions by their own outcome. Its weights match the firings' minutes.
+- **Intraday expected moves read only the vol index's closes from before the entry**
+  (`EM_INDEX`, the Cboe files). An entry at 16:00 reads its own session's close.
+- **Only exchange trading days are read**, and intraday only sessions whose bars reach the close. The
+  recorder writes weekends at a flat price.
+- **Event signals are refused**, because the events calendar does not reach the history.
+- **Where a result lives depends on whether it is licensed** (`paths.signals_dir`): over the vendor's
+  store under `results/`, else beside it.
+
+Descriptive only: no trial, no verdict, nothing to the advisor. A vendor result records
+`reads_holdout` when its sessions reach the configured holdout window.
+
 **The advisor's specs** (`run-advised`, `advised.py`): the advisor queues `backtest_spec` replies it
 admitted against flies' own advice bounds (off until `advisor.backtest_proposals`); this reads the
 queue by subprocess, turns each into a config-defined arm `advised:<name>-<id>` (the base arm's params

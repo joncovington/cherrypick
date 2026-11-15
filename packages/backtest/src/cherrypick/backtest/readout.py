@@ -314,3 +314,58 @@ def _arm_specs(report: dict, module: str) -> dict[str, dict | None]:
         finally:
             conn.close()
     return specs
+
+
+# --- signal studies (signalstudy.py) ----------------------------------------------------------------
+
+SIGNAL_NAME = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
+
+
+def _signal_files() -> list[tuple[Path, bool]]:
+    out = []
+    for licensed in (False, True):
+        d = paths.signals_dir(licensed)
+        if d.is_dir():
+            out.extend((p, licensed) for p in sorted(d.glob("*.json")))
+    return out
+
+
+def signal_studies() -> dict:
+    """Every signal study's result in brief, newest first: name, symbol, source, signal kind, span,
+    firings and whether it is licensed. A file that does not parse is listed in `unreadable`."""
+    rows, unreadable = [], []
+    for p, licensed in _signal_files():
+        try:
+            doc = json.loads(p.read_text(encoding="utf-8"))
+            req = doc["request"]
+            rows.append(
+                {
+                    "name": doc["name"],
+                    "symbol": req["symbol"],
+                    "source": req["source"],
+                    "kind": req["signal"]["kind"],
+                    "bar_minutes": req.get("bar_minutes"),
+                    "first": doc["bars"]["first"],
+                    "last": doc["bars"]["last"],
+                    "firings": doc["firings_n"],
+                    "licensed": licensed,
+                    "generated_at": doc.get("generated_at"),
+                }
+            )
+        except (OSError, ValueError, KeyError, TypeError):
+            unreadable.append(p.name)
+    rows.sort(key=lambda r: r.get("generated_at") or "", reverse=True)
+    return {"ok": True, "studies": rows, "unreadable": unreadable}
+
+
+def signal_study(name: str) -> dict:
+    """One signal study's whole result, or a refusal naming why."""
+    if not SIGNAL_NAME.match(name or ""):
+        return {"ok": False, "error": f"not a study name: {name!r}"}
+    for p, _ in _signal_files():
+        if p.stem == name:
+            try:
+                return json.loads(p.read_text(encoding="utf-8"))
+            except (OSError, ValueError) as exc:
+                return {"ok": False, "error": f"unreadable: {exc}"}
+    return {"ok": False, "error": f"no signal study named {name}"}

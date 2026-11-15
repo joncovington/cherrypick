@@ -67,6 +67,23 @@ the holdout only when asked for by name, `--window holdout --provisional --spend
 --unvalidated-holdout`, because flies validation cannot reach its ten sessions while
 flies paper is retired. That run spends the holdout for each spec as an unlocked one does.
 
+## Signal studies
+
+A signal studied on the underlying alone, before any option is priced: what the price did after each
+firing of a `cherrypick.core.signals` spec, against the same window on sessions that had not fired by
+then. Write a request (the keys are in `signalstudy.py`'s docstring) and run it:
+
+```
+python packages/backtest/scripts/signal_study.py run --request my-signal.json
+python -m cherrypick.backtest read signals                 # every result in brief
+python -m cherrypick.backtest read signal --name my-signal # one result
+```
+
+The bars come from technicals' daily history (2011 on), the gex recorder's minutes, or the vendor's
+minute store. Results over the first two are ours and live in `~/.cherrypick/data/backtest/signals/`,
+so they outlive a subscription. Results over the vendor's are licensed and live under `results/signals/`,
+which `purge --derived` removes. A result is descriptive. A verdict still needs a declaration.
+
 ## The nightly fetch
 
 The orchestrator's `backtest-fetch` job (off by default) runs `fetch --cadence 60 --recent 5` on
