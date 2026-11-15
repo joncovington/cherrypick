@@ -3955,6 +3955,88 @@
       "retest": null,
       "retest_note": "Read once before the vendor licence ends (2026-11-16); a pass is followed by a paper arm on the recorder's bars with its forward block, not a retest.",
       "retests": []
+    },
+    {
+      "id": 84,
+      "study": "item84",
+      "title": "Item 73's MEIC 14:00 stacks on the three bars: the bill on their buying power and their tail",
+      "status": "declared",
+      "legacy": false,
+      "setup": "entry-pacing",
+      "side": "neutral",
+      "structure": "iron-condor",
+      "window": "0dte",
+      "measure": "item 73's n1, n2 and n3, each session's net over the buying power its condors held (width less credit x 100 x quantity, summed), one entered session one observation",
+      "expected": "no prior: the condors' premium is small against their buying power, and stacked condors lose together",
+      "sample": "item 73's stored design run 2022-05-16..2025-06-30, judged whole; provisional by declaration (item 73 read it) and by MEIC's unvalidated history; < 100 sessions = no verdict",
+      "rule": "per arm, both of: capital (return less the 3-month bill on the buying power for a day, mean > 0, one-sided t >= 2.3); tail (99th-percentile one-year drawdown of a stationary bootstrap of the sessions, 10,000 draws, seed 84, under one year of mean return); delta not applicable (entered near delta-neutral); t 2.3 keeps Holm across three from binding",
+      "mechanism": "the 0DTE condor's afternoon premium, charged for its buying power and its tail",
+      "rivals": [
+        {
+          "explanation": "the premium does not pay for the buying power",
+          "check": "the capital bar"
+        },
+        {
+          "explanation": "stacked condors share one bad afternoon",
+          "check": "the tail bar on whole sessions"
+        }
+      ],
+      "pointer": "research/edge-hypotheses-plan.md#84-item-73s-meic-1400-stacks-on-the-three-bars-the-bill-on-their-buying-power-and-their-tail",
+      "scripts": [
+        "packages/backtest/scripts/meic_stack_bars_item84.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_meic_stack_bars_item84_script.py"
+      ],
+      "results": [
+        "{home}/data/backtest/results/research/item84/results.json"
+      ],
+      "retest": null,
+      "retest_note": "A retest of item 73 itself, read once before the vendor licence ends (2026-11-16).",
+      "retests": []
+    },
+    {
+      "id": 85,
+      "study": "item85",
+      "title": "Item 75's two passing arms on the three bars: the bill on their capital, their tail and their delta",
+      "status": "declared",
+      "legacy": false,
+      "setup": "portfolio-whole-rule",
+      "side": "two-sided",
+      "structure": "options",
+      "window": "intraday",
+      "measure": "item 75's iron-condor-1345 and long-put-1030 trades, each trade's net over its maximum loss at entry, one session one observation",
+      "expected": "no prior: the condor's mean net may not cover the bill on its capital; the long put may be its short delta",
+      "sample": "every session item 75 read (from 2022-05-16), judged whole; provisional by declaration (item 75 read it); < 100 sessions = no verdict",
+      "rule": "per arm, all of: capital (return less the 3-month bill on the capital over the days held, mean > 0, one-sided t >= 2); tail (99th-percentile one-year drawdown of a stationary bootstrap of the sessions, 10,000 draws, seed 85, under one year of mean return); delta (return less the entry delta from SPX-60s.db financed on the same capital, mean > 0, one-sided t >= 2); no Holm step, which could not bind at t >= 2 on 100 sessions",
+      "mechanism": "two intraday SPX rules from a third-party set, charged for their capital and their tail and judged against their own delta",
+      "rivals": [
+        {
+          "explanation": "the capital earns more in bills",
+          "check": "the capital bar"
+        },
+        {
+          "explanation": "the long put is a short-delta bet",
+          "check": "the delta bar"
+        },
+        {
+          "explanation": "a crash or a run of losing afternoons the sample lacks",
+          "check": "the tail bar"
+        }
+      ],
+      "pointer": "research/edge-hypotheses-plan.md#85-item-75s-two-passing-arms-on-the-three-bars-the-bill-on-their-capital-their-tail-and-their-delta",
+      "scripts": [
+        "packages/backtest/scripts/ensemble_bars_item85.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_ensemble_bars_item85_script.py"
+      ],
+      "results": [
+        "{home}/data/backtest/results/research/item85/results.json"
+      ],
+      "retest": null,
+      "retest_note": "A retest of item 75 itself, read once before the vendor licence ends (2026-11-16).",
+      "retests": []
     }
   ],
   "rule_changes": []
