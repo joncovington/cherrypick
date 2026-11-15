@@ -19,6 +19,15 @@ contract each bar came from and its volume:
   `/GC` lacks (the EMA's warm-up, the study's history). It is not adjusted at a roll, so a roll is a
   real jump inside it, and nothing in it says which bar a roll fell on.
 - `GLD`: the fund.
+- **Each dated GC contract under its own name** (`/GCZ26:XCEC`), the raw material for a front-month
+  series with known roll dates. Each run records the map's active month and the next one in the
+  cycle (`CYCLE`, the months gold trades actively), so both sides of the next roll are held. A dated
+  contract is its own series, so its whole history is kept, thin early bars included: which contract
+  is the front on a given session is a rule of the reader's (the engulf package's), never decided
+  here. `--backfill-contracts` records every cycle contract from `BACKFILL_FROM_YEAR` to the next one
+  at the feed's full depth (probed 2026-11-14: expired contracts are served to their last session,
+  daily back to /GCZ20, which reaches 2014, and hourly within the same ~9.5 months; /GCZ15 and older
+  return nothing). A contract the feed has nothing for is listed, never a failure.
 
 **Hours.** Every request includes extended hours: the 1-hour bars carry a future's night and the
 fund's pre- and post-market. The feed's daily candle is the official session either way: GLD's matched
@@ -37,13 +46,14 @@ deeper than the restatement window, for the reason above. After that only the la
 refetched. The summary says the earliest bar received and whether the feed flagged
 the burst SNAP_SNIP (clipped).
 
-**Exit.** Non-zero on a failed fetch, missing credentials, an unreadable futures map, or any series
-coming back with no bars at all (all three trade every session), so the job retries.
+**Exit.** Non-zero on a failed fetch, missing credentials, an unreadable futures map, or any series a
+daily run needs coming back with no bars at all (the three above, the active month and the next all
+trade every session), so the job retries.
 
 Read-only against the broker. A script, not package code, because it reaches the network. Run after
 GLD's extended hours end at 20:00 ET, so the day's last hourly bars are finished.
 
-    python scripts/fetch_gold_bars.py [--full]
+    python scripts/fetch_gold_bars.py [--full] [--backfill-contracts] [--interval 1h|1d]
 """
 
 from __future__ import annotations
@@ -67,6 +77,10 @@ _ET = ZoneInfo("America/New_York")
 #: streamer symbol.
 SERIES = {"/GC": "map:GC", "/GC:XCEC": "/GC:XCEC", "GLD": "GLD"}
 SYMBOLS = tuple(SERIES)
+#: The months gold futures trade actively (Feb, Apr, Jun, Aug, Oct, Dec), the dated contracts kept.
+CYCLE = "GJMQVZ"
+#: The first year `--backfill-contracts` asks for; the feed serves nothing for /GCZ15 or older.
+BACKFILL_FROM_YEAR = 2016
 WIDTH_MS = {"1h": 3_600_000, "1d": 86_400_000}
 #: Further back than the feed gives, so the feed's own clip decides the depth.
 DEPTH_DAYS = {"1h": 400, "1d": 365 * 27}
@@ -117,6 +131,48 @@ def contracts(fmap: dict) -> dict[str, str]:
             raise KeyError(f"no contract for {product} in the futures map")
         out[name] = active[0]["streamer_symbol"]
     return out
+
+
+def parse_contract(symbol: str) -> tuple[str, int]:
+    """`/GCZ26:XCEC` -> ("Z", 2026). Raises ValueError on anything else."""
+    body = symbol.split(":", 1)[0]
+    if not (body.startswith("/GC") and len(body) == 6 and body[3].isalpha() and body[4:].isdigit()):
+        raise ValueError(f"not a dated GC contract: {symbol!r}")
+    return body[3], 2000 + int(body[4:])
+
+
+def contract_symbol(code: str, year: int) -> str:
+    return f"/GC{code}{year % 100:02d}:XCEC"
+
+
+def next_in_cycle(symbol: str) -> str:
+    """The cycle month after a contract's own (which need not be in the cycle itself)."""
+    code, year = parse_contract(symbol)
+    months = "FGHJKMNQUVXZ"
+    for later in months[months.index(code) + 1 :]:
+        if later in CYCLE:
+            return contract_symbol(later, year)
+    return contract_symbol(CYCLE[0], year + 1)
+
+
+def cycle_contracts(active: str, from_year: int) -> list[str]:
+    """Every cycle contract from `from_year`'s first through the one after `active`, oldest first."""
+    last = next_in_cycle(active)
+    out, sym = [], contract_symbol(CYCLE[0], from_year)
+    while True:
+        out.append(sym)
+        if sym == last:
+            return out
+        sym = next_in_cycle(sym)
+
+
+def dated_contracts(fmap: dict, backfill: bool = False) -> list[str]:
+    """The dated contracts a run records: the active month and the next, or with `backfill` every cycle
+    contract from `BACKFILL_FROM_YEAR` through the next."""
+    active = contracts(fmap)["/GC"]
+    if backfill:
+        return cycle_contracts(active, BACKFILL_FROM_YEAR)
+    return [active, next_in_cycle(active)]
 
 
 def read_futures_map() -> dict:
@@ -257,33 +313,51 @@ def _et_stamp(ts: int | None) -> str | None:
 
 
 async def run_interval(
-    session, conn: sqlite3.Connection, interval: str, now: datetime, fmap: dict, full: bool = False, sdk=None
+    session,
+    conn: sqlite3.Connection,
+    interval: str,
+    now: datetime,
+    fmap: dict,
+    full: bool = False,
+    backfill: bool = False,
+    sdk=None,
 ) -> list[dict]:
-    """One interval's fetch (one DXLink session) for every series, stored as it arrives."""
+    """One interval's fetch (one DXLink session), stored as it arrives. A daily run records the three
+    series and the active and next contracts; `backfill` records every cycle contract at full depth and
+    nothing else. /GC and its own dated contract share one streamer symbol, asked once from the deeper
+    start; /GC keeps only the bars from its own start."""
     feed = contracts(fmap)
     held = latest(conn)
-    starts = {
-        feed[s]: start_for(
-            held.get((s, interval)), interval, now, full, deep=not SERIES[s].startswith("map:")
-        )
-        for s in SYMBOLS
-    }
+    dated = dated_contracts(fmap, backfill)
+    # stored name -> (streamer symbol, its own start, whether the run needs bars from it)
+    plan: dict[str, tuple[str, datetime, bool]] = {}
+    if not backfill:
+        for s in SYMBOLS:
+            deep = not SERIES[s].startswith("map:")
+            plan[s] = (feed[s], start_for(held.get((s, interval)), interval, now, full, deep=deep), True)
+    for c in dated:
+        plan[c] = (c, start_for(held.get((c, interval)), interval, now, full or backfill), not backfill)
+    starts: dict[str, datetime] = {}
+    for streamer_sym, start, _need in plan.values():
+        starts[streamer_sym] = min(start, starts.get(streamer_sym, start))
     bars, clipped = await fetch(session, starts, interval, sdk)
     out = []
-    for sym in SYMBOLS:
-        got = bars.get(feed[sym], {})
-        offered = store_bars(conn, sym, interval, feed[sym], got, now)
+    for name, (streamer_sym, start, need) in plan.items():
+        start_ms = start.timestamp() * 1000.0
+        got = {ts: b for ts, b in bars.get(streamer_sym, {}).items() if ts >= start_ms}
+        offered = store_bars(conn, name, interval, streamer_sym, got, now)
         out.append(
             {
-                "symbol": sym,
+                "symbol": name,
                 "interval": interval,
-                "contract": feed[sym],
+                "contract": streamer_sym,
                 "received": len(got),
                 "stored": len(offered),
                 "first": _et_stamp(offered[0] if offered else None),
                 "last": _et_stamp(offered[-1] if offered else None),
-                "deep": full or (sym, interval) not in held,
-                "clipped": feed[sym] in clipped,
+                "deep": full or backfill or (name, interval) not in held,
+                "clipped": streamer_sym in clipped,
+                "required": need,
             }
         )
     conn.commit()
@@ -291,15 +365,25 @@ async def run_interval(
 
 
 def outcome(summary: list[dict]) -> dict:
-    """`ok` false when any series came back with no bars: all three trade every session."""
+    """`ok` false when a series the run needs came back with no bars (the three series and the active
+    and next contracts all trade every session). Every empty series is listed either way; a backfilled
+    contract the feed has nothing for is one of them, not a failure."""
     empty = [f"{r['symbol']} {r['interval']}" for r in summary if r["received"] == 0]
-    return {"ok": not empty, "empty": empty}
+    failed = [
+        f"{r['symbol']} {r['interval']}" for r in summary if r["received"] == 0 and r.get("required", True)
+    ]
+    return {"ok": not failed, "empty": empty}
 
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--full", action="store_true", help="refetch the feed's full depth for every series")
     ap.add_argument("--interval", choices=sorted(WIDTH_MS), help="one interval only (default: both)")
+    ap.add_argument(
+        "--backfill-contracts",
+        action="store_true",
+        help=f"record every {CYCLE} GC contract from {BACKFILL_FROM_YEAR} at full depth, and nothing else",
+    )
     args = ap.parse_args(argv)
 
     store = CredentialStore(SHARED_SERVICE)
@@ -325,7 +409,15 @@ def main(argv=None) -> int:
                 # first ran on, so a second asyncio.run in this process fails.
                 for interval in intervals:
                     summary.extend(
-                        await run_interval(session, conn, interval, datetime.now(UTC), fmap, args.full)
+                        await run_interval(
+                            session,
+                            conn,
+                            interval,
+                            datetime.now(UTC),
+                            fmap,
+                            args.full,
+                            backfill=args.backfill_contracts,
+                        )
                     )
 
             asyncio.run(_all())

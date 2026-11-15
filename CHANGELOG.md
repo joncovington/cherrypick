@@ -55,7 +55,11 @@ beyond the latest release.
   engulf study and paper module. The broker keeps hourly bars for about 9.5 months. `/GC` is the front
   month from the futures map, recorded from its first run and never overwritten across a roll;
   `/GC:XCEC`, the broker's continuous series, carries the history (daily from 1999, unadjusted at
-  rolls). It reads the broker and changes nothing; turn it off with `technicals.gold_bars: false`.
+  rolls). Each dated contract is kept under its own name too (the active month and the next, every
+  day), so a front-month series with known roll dates can be built from them; `python
+  scripts/fetch_gold_bars.py --backfill-contracts` fills in every contract since 2016 once (daily bars
+  from 2014, hourly bars from February 2026). It reads the broker and changes nothing; turn it off with
+  `technicals.gold_bars: false`.
   After upgrading, run `python run.py supervise --restart` so the supervisor picks up the new job.
 - **Charts → profile.** A new tab shows the recorded sessions' Market Profiles side by side (5, 10 or
   20 days) for SPX, SPY, NDX, QQQ, /ES and /NQ, with a composite of the newest 5, 10 or 20 sessions and
