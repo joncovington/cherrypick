@@ -8067,6 +8067,19 @@ closed, found nothing) are its baselines, not its question.
   - **A fail or no verdict:** the prior value area adds nothing to the range forecasts the suite already
     has; the profile stays a chart, and the next Market Profile item (the first-hour width, or the 80%
     rule) is declared on its own.
+- **Result (2026-11-14): fail on every design check; the holdout was not read.** With the HAR terms,
+  the first hour's range and the gap held, a day that opens outside the prior value area and stays
+  outside it through the first hour has no larger rest-of-day range than a day that opens inside it: the
+  coefficient is indistinguishable from zero, below the declared size, and changes sign between the
+  design halves. The design held well over the floor of held-outside days, and its measured minimum
+  detectable effect is close to the one declared, so this reads "no effect of the declared size". Every
+  reported cut agrees (the other row sizes, a 30-minute first period, the outcome from 12:30, without FOMC
+  days). Split by side, opens held above value and opens held below point in opposite directions; that
+  cut was declared as reported only, so it is recorded here and not tested on this data. Every figure is
+  in the local result (`~/.cherrypick/data/backtest/results/research/item80/`).
+- **What this decides:** the fail branch. The prior value area adds nothing to the range forecasts the
+  suite already has; the profile stays a chart. Item 81 (the first hour's width) was declared before
+  this ran and is judged on its own.
 
 ### 81. Market Profile: the first hour's width against its recent median, and the rest of the day
 

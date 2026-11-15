@@ -3713,7 +3713,7 @@
       "id": 80,
       "study": "item80",
       "title": "Market Profile: an open outside the prior day's value area, held through the first hour, and the rest of the day's range",
-      "status": "declared",
+      "status": "failed",
       "legacy": false,
       "setup": "market-profile",
       "side": "signal",
@@ -3760,6 +3760,7 @@
       "results": [
         "{home}/data/backtest/results/research/item80/results.json"
       ],
+      "outcome": "fails every design check: an open outside the prior value area held through the first hour adds nothing to the rest-of-day range beyond the HAR terms, the first hour and the gap, and the halves disagree; holdout not read, so the profile stays a chart",
       "retest": null,
       "retest_note": "Read once before the vendor licence ends (2026-11-16); a forecast, so a later MEIC paper-arm item carries any use of it.",
       "retests": []
