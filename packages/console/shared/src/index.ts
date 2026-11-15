@@ -55,4 +55,5 @@ export * from "./types/backtest.js";
 export * from "./types/externalReports.js";
 export * from "./types/researchQueue.js";
 export * from "./types/studies.js";
+export * from "./types/signalStudies.js";
 export * from "./types/research.js";

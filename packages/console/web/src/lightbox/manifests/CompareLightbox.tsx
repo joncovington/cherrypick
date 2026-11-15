@@ -3,6 +3,7 @@ import { RiskTab } from "../../pages/Compare/RiskTab";
 import { CalendarTab } from "../../pages/Compare/CalendarTab";
 import { PortfolioTab } from "../../pages/Compare/PortfolioTab";
 import { SlicesTab } from "../../pages/Compare/SlicesTab";
+import { SignalsTab } from "../../pages/Compare/SignalsTab";
 import { ModuleFrame } from "../ModuleFrame";
 import { ModeToggle } from "../../components/ModeToggle";
 import { useMode } from "../../lib/useMode";
@@ -20,6 +21,9 @@ export const slides: SlideDef[] = [
   { id: "portfolio", label: "portfolio", render: () => <PortfolioTab /> },
   // B5: an arm's in-sample slice report (`technicals slices`); never a gate. Fails closed on backtest.
   { id: "slices", label: "slices", render: () => <SlicesTab /> },
+  // #1179: a signal studied on the underlying alone (packages/backtest signalstudy.py). Open to every
+  // reader; a licensed result is withheld on the server unless the backtest feature is on.
+  { id: "signals", label: "signals", render: () => <SignalsTab /> },
 ];
 
 export function CompareLightbox({ slide }: { slide: string }) {
@@ -39,7 +43,7 @@ export function CompareLightbox({ slide }: { slide: string }) {
             className="chip"
             title="arms: python -m cherrypick.core.compare (core.ledgers rows, core.stats figures); risk: python -m cherrypick.core.analysis"
           >
-            {slide === "risk" ? "source: core.analysis" : slide === "calendar" ? "source: core.metrics" : slide === "portfolio" ? "source: core.portfolio" : "source: core.compare"}
+            {slide === "risk" ? "source: core.analysis" : slide === "calendar" ? "source: core.metrics" : slide === "portfolio" ? "source: core.portfolio" : slide === "signals" ? "source: backtest signalstudy" : "source: core.compare"}
           </span>
           {moded && <ModeToggle mode={mode} onChange={setMode} />}
         </>

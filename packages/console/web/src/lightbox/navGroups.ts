@@ -376,6 +376,9 @@ export const COMPARE_SLIDES = [
   // 2026-10-30, from Backtest: an arm's in-sample slice report (B5). Fails closed on the backtest
   // feature (`FAIL_CLOSED_SLIDES`): a report may come from a licensed replay.
   { id: "slices", label: "slices" },
+  // A signal studied on the underlying alone (packages/backtest signalstudy.py, #1179). Open to every
+  // reader, so a study over public bars outlives a subscription; the server withholds a licensed one.
+  { id: "signals", label: "signals" },
 ] as const satisfies readonly NavSlide[];
 
 /**

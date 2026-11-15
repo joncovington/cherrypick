@@ -431,6 +431,14 @@ describe("a page the suite has turned off", () => {
     }
   });
 
+  // Compare's signals tab (#1179) is open to every reader, so a study over public bars outlives a
+  // subscription: the server withholds a licensed result, never the tab.
+  it("compare's signals tab is there whatever the backtest feature says", () => {
+    for (const html of [render("/compare/signals"), renderWith("/compare/signals", base), renderWith("/compare/signals", { ok: false, error: "x" })]) {
+      expect(text(html)).toContain("Compare / signals");
+    }
+  });
+
   it("backtest renders on its own frame, and is on the rail, only when the suite says true", () => {
     const on = { ...base, features: { ...base.features, backtest: true } };
     expect(text(renderWith("/backtest", on))).toContain("Backtest / studies");
