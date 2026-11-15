@@ -13,6 +13,10 @@ beyond the latest release.
 
 ### What's new
 
+- **One firing rule for intraday signals.** In the ensemble's engine an intraday signal now reads the
+  previous five sessions as well as today's, as a signal study does, so a seeded indicator is warm at
+  the open and a gap or prior-session signal has the prior session. A test holds that the study,
+  core's trigger and the engine (ticking as paper does) fire on the same minute.
 - **Daily signals.** A trigger with `"daily": true` reads completed daily bars only and acts today on
   a firing at the previous session's close (a daily RSI or MACD cross, a close above a moving average).
   Today's still-forming bar is never read, and bars that stop before yesterday are refused as stale.

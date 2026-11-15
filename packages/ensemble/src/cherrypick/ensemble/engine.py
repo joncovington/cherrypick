@@ -114,11 +114,12 @@ def trigger_due(entry: dict, snap: Snapshot) -> tuple[bool, object]:
         # Completed sessions only: core drops any of today's, and the snapshot carries none.
         bars = signals.daily([r for r in snap.daily if r["session"] < snap.session])
     else:
-        bars = signals.from_trail(
-            snap.session,
-            [(m, s) for m, s in snap.trail if m <= minute],
-            entry.get("bar_minutes", 1),
-            until=minute,
+        # Earlier sessions first (the snapshot carries them for an arm that reads an intraday signal),
+        # then today's bars completed by now: what a signal study over the whole history sees.
+        width = entry.get("bar_minutes", 1)
+        bars = [b for day, tr in sorted(snap.prior.items()) for b in signals.from_trail(day, tr, width)]
+        bars += signals.from_trail(
+            snap.session, [(m, s) for m, s in snap.trail if m <= minute], width, until=minute
         )
     now = datetime.fromisoformat(snap.session).replace(hour=minute // 60, minute=minute % 60, tzinfo=ET)
     try:

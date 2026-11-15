@@ -35,6 +35,14 @@ and core acts today, from the window's open, on a firing on the previous trading
 that stop before that day read `stale_bars`. The item 75 backtest driver carries no daily bars, so a
 daily signal is backtested only once the automation driver exists (#1201).
 
+**One firing rule.** An intraday signal reads the earlier sessions too, as a signal study over the whole
+history does: a seeded indicator is warm at the open, arming carries across the close, and a gap or a
+prior-session break has the prior session. So for an arm that reads one (`arms.reads_prior_trail`) the
+snapshot carries up to `PRIOR_SESSIONS` (5) earlier sessions' minute trail (`Snapshot.prior`; paper
+reads its recorded trail, `feed.prior_trails`, and a day the loop did not run is absent), and the engine
+builds bars over them and today. `tests/test_one_firing_rule.py` holds that a study, core's trigger and
+the engine ticking minute by minute fire on the same minute.
+
 **A `signal` exit** (`exit.signal`: `{"trigger": ..., "bar_minutes": N}`, the entry trigger's shape)
 closes a position when its signal fires on the underlying, inside its window. `manage` checks it after
 the touch and the profit target and before the time exit. On the entry day only a firing after the

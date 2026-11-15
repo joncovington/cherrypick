@@ -342,6 +342,24 @@ def reads_daily(arm: dict) -> bool:
     )
 
 
+#: Earlier sessions an intraday signal is given beside today's, so it reads them as a signal study over
+#: the whole history does: a seeded indicator is warm at the open, arming carries across the close, and
+#: a gap or prior-session signal has the prior session. Paper keeps about seven sessions of trail.
+PRIOR_SESSIONS = 5
+
+
+def _triggers(arm: dict) -> list[dict]:
+    entry = arm.get("entry") or {}
+    out = [entry.get("trigger")] if entry.get("kind") == "trigger" else []
+    out.append(((arm.get("exit") or {}).get("signal") or {}).get("trigger"))
+    return [t for t in out if isinstance(t, dict)]
+
+
+def reads_prior_trail(arm: dict) -> bool:
+    """Whether an intraday signal trigger (entry or signal exit, not daily) reads earlier sessions."""
+    return any("signal" in t and not t.get("daily") for t in _triggers(arm))
+
+
 def load_arms(overrides: dict | None = None) -> dict[str, dict]:
     """The shipped arms with the machine's changes laid over them: `overrides` maps an arm name to a dict
     merged over the shipped arm (top-level keys replaced), or a whole new arm. Every arm is validated;

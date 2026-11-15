@@ -43,6 +43,7 @@ def reads(arm: dict) -> dict:
         "vix": any(g in VIX_GATES for g in gates),
         "closes": max([*mas, arms_mod.DAILY_HISTORY if arms_mod.reads_daily(arm) else 1]),
         "daily": arms_mod.reads_daily(arm),
+        "prior": arms_mod.reads_prior_trail(arm),
         "events": bool((arm.get("skip_events") or {}).get("labels")),
     }
 
@@ -194,8 +195,21 @@ def snapshot_for(
         close_minute=_cal_close_minute(today),
         with_gex=any(n["gex"] for n in needs),
         daily=m["bars"] if any(n["daily"] for n in needs) else None,
+        prior=prior_trails(conn, symbol, today) if any(n["prior"] for n in needs) else None,
     )
     return snap, info
+
+
+def prior_trails(conn, symbol: str, today: date) -> dict[str, list[tuple[int, float]]]:
+    """The recorded trail of up to `arms.PRIOR_SESSIONS` trading days before `today`, the ones the loop
+    recorded (a session it did not run is absent, and the signal reads around the gap)."""
+    out, d = {}, today
+    for _ in range(arms_mod.PRIOR_SESSIONS):
+        d = _cal.previous_trading_day(d)
+        tr = db.trail(conn, symbol, d.isoformat())
+        if tr:
+            out[d.isoformat()] = tr
+    return out
 
 
 def open_positions(conn, today: date) -> list[OpenPosition]:
