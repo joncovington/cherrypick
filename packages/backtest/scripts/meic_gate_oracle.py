@@ -5,7 +5,7 @@
 
 Replays the arm, the arm with every listed gate off (`<arm>-open`) and the arm without each gate in
 turn (`<arm>-no-<gate>`) through the backtest's own MEIC replay over the 60 s vendor store,
-provisionally (MEIC history has not unlocked, so no run records a trial). The holdout is refused: a
+each run a trial, as every design run is. The holdout is refused: a
 read must not spend what a declared study will need. Writes `<arm>-<window>.json` and `.md` under the
 backtest data dir (results/research/gate-oracle/), never into the repo: the inputs are licensed.
 
@@ -84,7 +84,7 @@ def _t(x) -> str:
 def report(doc: dict) -> str:
     s = doc["summary"]
     lines = [
-        f"# Gates-off oracle: {s['base']} ({doc['window']}, provisional)",
+        f"# Gates-off oracle: {s['base']} ({doc['window']})",
         "",
         "A read, not a verdict. **Leave-one-out** is the arm without that gate minus the arm, paired per",
         "session: negative means the gate helps. **Kept out** is the net of the bare trigger's trades the",
@@ -135,7 +135,6 @@ def main(argv: list[str] | None = None) -> int:
         args.window,
         module="meic",
         cadence=CADENCE,
-        provisional=True,
         workers=args.workers,
         log=lambda m: print(m, file=sys.stderr),
     )

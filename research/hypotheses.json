@@ -1253,7 +1253,7 @@
       ],
       "retest": null,
       "retests": [],
-      "outcome": "provisional (MEIC history never unlocked): fails; Fed-day sessions netted more than the rest in the design window and inside chance in the holdout, read on one live-1400 spec after a correction; no Fed-day gate"
+      "outcome": "fails; Fed-day sessions netted more than the rest in the design window and inside chance in the holdout, read on one live-1400 spec after a correction; no Fed-day gate"
     },
     {
       "id": 34,
@@ -1723,7 +1723,7 @@
       ],
       "retest": null,
       "retests": [],
-      "outcome": "provisional: be passes the design window but its holdout mean, though positive, misses the t bar, so it fails; both gated arms fail against be in the design window; nothing changes, and be is the zero-day rule most worth a reread once more sessions are stored"
+      "outcome": "be passes the design window but its holdout mean, though positive, misses the t bar, so it fails; both gated arms fail against be in the design window; nothing changes, and be is the zero-day rule most worth a reread once more sessions are stored"
     },
     {
       "id": 43,
@@ -1779,7 +1779,7 @@
       ],
       "retest": null,
       "retests": [],
-      "outcome": "provisional: w15 and w20 pass both windows, w15 the cleaner; w25 and w30 fail on net over buying power; the pass is against an ungated 10, so live's width waits on item 50 (the gates on) and MEIC validation"
+      "outcome": "w15 and w20 pass both windows, w15 the cleaner; w25 and w30 fail on net over buying power; the pass is against an ungated 10, and item 50 failed with live's gates on, so live stays at 10"
     },
     {
       "id": 44,
@@ -1835,7 +1835,7 @@
       ],
       "retest": null,
       "retests": [],
-      "outcome": "provisional: the gate fails at every width in the design window, beating neither its own width ungated nor the placebo, and w35 and w40 beat w10 on dollars but fail on net over buying power; the holdout agrees; the gate stays off live's rule at every width and wings of 35 to 40 are closed for it"
+      "outcome": "the gate fails at every width in the design window, beating neither its own width ungated nor the placebo, and w35 and w40 beat w10 on dollars but fail on net over buying power; the holdout agrees; the gate stays off live's rule at every width and wings of 35 to 40 are closed for it"
     },
     {
       "id": 45,
@@ -2047,7 +2047,7 @@
       ],
       "retest": null,
       "retests": [],
-      "outcome": "provisional: every arm fails the design window against live-1400, the loop ratios, the resting stops and the stop off alike, so live keeps its 2.0x stop; the resting stop can still be switched on as outage insurance, argued as insurance and not as edge"
+      "outcome": "every arm fails the design window against live-1400, the loop ratios, the resting stops and the stop off alike, so live keeps its 2.0x stop; the resting stop can still be switched on as outage insurance, argued as insurance and not as edge"
     },
     {
       "id": 49,
@@ -2163,7 +2163,7 @@
       ],
       "retest": null,
       "retests": [],
-      "outcome": "provisional: g15 and g20 both miss the paired t bar in the design window, so the holdout does not count; live stays at 10 wide with its gates, and item 43's pass reads as a result about the ungated rule only"
+      "outcome": "g15 and g20 both miss the paired t bar in the design window, so the holdout does not count; live stays at 10 wide with its gates, and item 43's pass reads as a result about the ungated rule only"
     },
     {
       "id": 51,
@@ -2226,7 +2226,7 @@
       ],
       "retest": null,
       "retests": [],
-      "outcome": "provisional: every cell fails in both parts, be, live-1400 and w15 on inverted and hump days alike, and the holdouts agree; part 2's hourly bars passed their validation against the broker's; the call side stays and the curve stays a reported column on the trades"
+      "outcome": "every cell fails in both parts, be, live-1400 and w15 on inverted and hump days alike, and the holdouts agree; part 2's hourly bars passed their validation against the broker's; the call side stays and the curve stays a reported column on the trades"
     },
     {
       "id": 52,
@@ -2481,7 +2481,7 @@
       ],
       "retest": null,
       "retests": [],
-      "outcome": "provisional: f15 and f20 both pass the design window, beating live-1400 on the same sessions and per dollar of buying power, but neither clears the holdout's t bar though both stay ahead there, so both fail; nothing changes live, and the fallback is the 0DTE rule most worth a reread on the sessions after 2026-10-12 once MEIC validation unlocks"
+      "outcome": "f15 and f20 both pass the design window, beating live-1400 on the same sessions and per dollar of buying power, but neither clears the holdout's t bar though both stay ahead there, so both fail; nothing changes live, and the fallback is the 0DTE rule most worth a reread on the sessions after 2026-10-12, once 100 are stored"
     },
     {
       "id": 57,
@@ -3131,7 +3131,7 @@
       ],
       "retest": null,
       "retests": [],
-      "outcome": "provisional: both QQQ arms fail the design window (q5 positive but its t is under 2), so QQQ is not added and MEIC live stays on SPX alone"
+      "outcome": "both QQQ arms fail the design window (q5 positive but its t is under 2), so QQQ is not added and MEIC live stays on SPX alone"
     },
     {
       "id": 69,
@@ -3393,7 +3393,7 @@
       ],
       "retest": null,
       "retests": [],
-      "outcome": "provisional pass at k = 3: the second and third condor each pass in the design window; the proposal is an n3 paper arm beside live's rule, read on sessions after 2026-10-12, before any change to live",
+      "outcome": "provisional pass at k = 3 (design window only; its holdout dates were read before): the second and third condor each pass in the design window; the proposal is an n3 paper arm beside live's rule, read on sessions after 2026-10-12, before any change to live",
       "forward": {
         "module": "meic",
         "schema": "meic_ic",
@@ -3647,7 +3647,7 @@
       "results": [
         "{home}/data/backtest/results/research/item77/results.json"
       ],
-      "outcome": "provisional: fails under both buying-power models; cash-secured fails all three bars, Reg T margin passes the capital bar but fails the tail bar (a bad year is not earned back within a year) and the delta bar. The weeklyput arm is a tail-risk trade on this evidence, not proposed for live; whether it keeps running in paper is the user's call; a same-buying-power put credit spread is the next item",
+      "outcome": "provisional (item 57 read it): fails under both buying-power models; cash-secured fails all three bars, Reg T margin passes the capital bar but fails the tail bar (a bad year is not earned back within a year) and the delta bar. The weeklyput arm is a tail-risk trade on this evidence, not proposed for live; whether it keeps running in paper is the user's call; a same-buying-power put credit spread is the next item",
       "retest": null,
       "retest_note": "A retest of item 57 itself; the forward cycles after 2026-10-30 are reported beside it.",
       "retests": []
@@ -3698,7 +3698,7 @@
       "retest": null,
       "retest_note": "Read once before the vendor licence ends (2026-11-16); no later retest is possible on vendor data.",
       "retests": [],
-      "outcome": "provisional: both spreads (long leg nearest 5 and 3 delta) fail all three bars on the spread's buying power; the naked put re-read beside them fails the tail and delta bars; short index puts at 7 days are closed in both forms"
+      "outcome": "provisional (items 57 and 77 read the short leg): both spreads (long leg nearest 5 and 3 delta) fail all three bars on the spread's buying power; the naked put re-read beside them fails the tail and delta bars; short index puts at 7 days are closed in both forms"
     },
     {
       "id": 79,
@@ -3746,7 +3746,7 @@
       "retest": null,
       "retest_note": "A retest of item 64 itself, read once before the vendor licence ends (2026-11-16).",
       "retests": [],
-      "outcome": "provisional: the backspread A fails all three bars against the financed delta; B, C and D fail all three as computed but are no verdict under item 64's 5% exit-mark rule; none goes to the IRA ideas"
+      "outcome": "provisional (item 64 read the cycles before 2022): the backspread A fails all three bars against the financed delta; B, C and D fail all three as computed but are no verdict under item 64's 5% exit-mark rule; none goes to the IRA ideas"
     },
     {
       "id": 80,
@@ -3899,7 +3899,7 @@
       "results": [
         "{home}/data/backtest/results/research/item82/results.json"
       ],
-      "outcome": "provisional fail on both: the skipped wide-first-hour days still earn on average, so the gate fails every design check, and the gated arm fails the tail bar; MEIC keeps entering on wide days and no paper arm is proposed",
+      "outcome": "fail on both: the skipped wide-first-hour days still earn on average, so the gate fails every design check, and the gated arm fails the tail bar; MEIC keeps entering on wide days and no paper arm is proposed",
       "retest": null,
       "retest_note": "Read once before the vendor licence ends (2026-11-16); a pass is followed by a paper arm with its forward block, not a retest.",
       "retests": []
@@ -3994,7 +3994,7 @@
       "retest": null,
       "retest_note": "A retest of item 73 itself, read once before the vendor licence ends (2026-11-16).",
       "retests": [],
-      "outcome": "provisional (item 73 read it; MEIC history unvalidated): n1, n2 and n3 each fail the capital bar (positive but under t 2.3 over the bill) and the tail bar; nothing changes live, the n3 paper arm is the user's call"
+      "outcome": "provisional (item 73 read it): n1, n2 and n3 each fail the capital bar (positive but under t 2.3 over the bill) and the tail bar; nothing changes live, the n3 paper arm is the user's call"
     },
     {
       "id": 85,

@@ -831,7 +831,7 @@ export function BacktestQueueTab() {
             </HelpSection>
             <HelpSection title="Kinds of task">
               <p>
-                Kinds are allow-listed: a fetch (fetch-chains, fetch-flow, fetch-oi), a validation, or a script checked into{" "}
+                Kinds are allow-listed: a fetch (fetch-chains, fetch-flow, fetch-oi) or a script checked into{" "}
                 <code>scripts/</code>.
               </p>
             </HelpSection>

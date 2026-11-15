@@ -5,9 +5,8 @@ entering once a day, 14:00-14:30, at QQQ's SPX-equivalent wing and at the width 
     python packages/backtest/scripts/meic_symbols_item68.py --step study --window design|holdout [--workers N]
 
 Runs the backtest's own MEIC replay (`cherrypick.backtest.runner`, MEIC's own engine) over QQQ's wide
-60 s vendor store (`QQQ-60s-wide.db`), provisionally: MEIC history has not unlocked, and QQQ never can
-(there is no paper record of it to validate against). The holdout is spent by this run, once
-(`unvalidated_holdout`). Writes under the backtest data dir (results/research/item68/), never into the
+60 s vendor store (`QQQ-60s-wide.db`). The holdout is spent by this run, once.
+Writes under the backtest data dir (results/research/item68/), never into the
 repo: the inputs are licensed.
 
 **The arms.** Each is the registry's `pm-200` with entries 14:00-14:30 (item 23's `live-1400`, the rule
@@ -365,9 +364,7 @@ def run_symbol(settings: dict, symbol: str, window: str, workers: int) -> dict:
         module="meic",
         symbol=symbol,
         cadence=CADENCE,
-        provisional=True,
         spend_holdout=holdout,
-        unvalidated_holdout=holdout,
         workers=workers,
         log=lambda m: print(f"[{symbol}] {m}", file=sys.stderr),
     )
@@ -430,7 +427,6 @@ def study(settings: dict, window: str, workers: int) -> dict:
         "item": ITEM,
         "window": window,
         "span": [start, end],
-        "provisional": True,
         "runs": runs,
         "spx_live_1400_run_id": spx_run,
         "spx_live_1400": own(spx, start, end) if spx else None,

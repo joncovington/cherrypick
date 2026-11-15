@@ -6,7 +6,7 @@ bounds -- against the same rule held to settlement.
     python packages/backtest/scripts/meic_stop_grid_item48.py --window design [--workers N] [--json PATH]
 
 Runs the backtest's own MEIC replay (`cherrypick.backtest.runner`, MEIC's own engine over the 60 s
-vendor store), provisionally because MEIC history has not unlocked. Design window only: `pm-200-1400`'s
+vendor store). Design window only: `pm-200-1400`'s
 holdout dates were seen on 2026-10-19 (the plan's exception), so its evidence has to come from sessions
 after 2026-10-12. Writes under the backtest data dir (results/research/item48/), never into the repo:
 the inputs are licensed.
@@ -118,7 +118,6 @@ def main(argv: list[str] | None = None) -> int:
         args.window,
         module="meic",
         cadence=CADENCE,
-        provisional=True,
         workers=args.workers,
         log=lambda m: print(m, file=sys.stderr),
     )
@@ -147,7 +146,6 @@ def main(argv: list[str] | None = None) -> int:
         "window": args.window,
         "span": [start, end],
         "run_id": report["run_id"],
-        "provisional": True,
         "refused_sessions": len(report.get("refused") or {}),
         "vix_fallback_sessions": report.get("vix_fallback_sessions"),
         "reference": {LIVE: own(live, start, end)},

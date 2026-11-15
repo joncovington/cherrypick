@@ -23,8 +23,8 @@ Only switchable gates are listed. The 0DTE check, the entry window, spacing, the
 the concurrency cap are the trigger itself, and the quarterly, triple-witching and FOMC rules have no
 off switch; all of them stay on in every arm.
 
-It is a read, never a verdict: no pass test, no trial (the script runs it provisionally over the
-design window and refuses the holdout), and nothing in it changes a live gate. Everything here is
+It is a read, never a verdict: no pass test (the script runs it over the design window, each run a
+trial, and refuses the holdout), and nothing in it changes a live gate. Everything here is
 pure; `packages/backtest/scripts/meic_gate_oracle.py` runs the replay and reads the ledgers.
 """
 

@@ -112,7 +112,7 @@ that reaches its stop time or the nightly window stops and is queued again to re
 | `python packages/orchestrator/run.py queue-run` | What the job runs: ready rows one after another until none is ready. You rarely run it by hand. |
 | `python packages/orchestrator/run.py queue-add --study item69 --task script ...` | Adds a row. `--task-args` is a JSON object whose keys depend on the kind. |
 
-A row can only be one of a short allow-list of kinds: the ThetaData fetches, a `validate` run, or a
+A row can only be one of a short allow-list of kinds: the ThetaData fetches, or a
 `script` that is a file already committed to the repo. It is never a command you type, because the
 supervisor runs with your credentials in reach. That is why `queue-add` is mostly used by a developer, or
 with Claude Code, alongside a study script. The full list of kinds and their arguments is in
@@ -146,12 +146,11 @@ greeks from 2016).
 4. **Check it:** `python -m cherrypick.backtest status` shows the config, whether the key is present, the
    store and the licence clock.
 
-### Fetching, validating and running
+### Fetching and running
 
 ```
 python -m cherrypick.backtest fetch --cadence 60 --from 2022-05-16 --to 2026-10-16
 python -m cherrypick.backtest coverage --cadence 60
-python -m cherrypick.backtest validate --cadence 60
 python -m cherrypick.backtest run meic --arms control --window design --cadence 60
 ```
 
@@ -159,16 +158,14 @@ python -m cherrypick.backtest run meic --arms control --window design --cadence 
   refusal with its reason, and is resumable. History is fetched at 1 minute (`--cadence 60`).
 - **Run one vendor client at a time.** Your account has one session. A second login, such as the vendor's
   own terminal, ends the fetch's.
-- `validate` compares the vendor's sessions with the suite's own recording. **History stays locked until it
-  passes**, and each module (MEIC, flies) unlocks its own.
+- **A store is taken as recorded.** Data from our own recorders or a subscribed vendor is not checked
+  against another source before a run.
 - `run` replays a module's arms. `control` always runs beside the arms you name, and each arm is paired
-  with it. The windows are `validation`, `design`, `holdout` and `all`: `all` is one run over the whole
+  with it. The windows are `design`, `holdout` and `all`: `all` is one run over the whole
   history that a study cuts at its declared split dates afterwards. The holdout needs `--spend-holdout`
   and is spent once per spec, and so does an `all` run that reaches the holdout's dates (a forward run
   wholly after them spends nothing). A design or `all` run is recorded as a trial, so a result is
   judged against how many things were tried.
-- While history is locked, `--provisional` runs the design window anyway. It is marked provisional
-  everywhere, records no trial and is a look, not evidence.
 
 To fetch each new session automatically, set `"backtest": {"fetch": true}` in `~/.cherrypick/config.json`
 and run `python packages/orchestrator/run.py install` again. The `backtest-fetch` job then runs at 18:45 ET
@@ -221,7 +218,8 @@ shown.
 One tile per register item, in order: in progress, declared, finished, observations. A finished tile's big
 word is the register's status. It reads "2 pass, 5 fail" where the newest result's arms disagree. Chips on
 a tile mark a result as **stale** (the study's replay was corrected after the result was written),
-**provisional**, and its window. **This week** lists studies with a result or a finished step since Monday.
+**provisional** (the register's outcome says so: an earlier study read the same data, or the holdout was
+small), and its window. **This week** lists studies with a result or a finished step since Monday.
 
 Open a tile for five tabs:
 
@@ -244,7 +242,7 @@ Open a tile for five tabs:
 - **Read the paired difference against the baseline,** not an arm's own net. A rising market lifts every
   arm.
 - **"Stale" means re-read.** The result predates a correction to how the replay worked.
-- **Provisional is not evidence.** It records no trial and may rest on data that is not validated.
+- **Provisional is a hint, not a decision.** The outcome says why; a fresh read has to agree.
 - **A holdout is spent once.** Do not read a second look at it as a second test.
 - **Money is net,** whole-position dollars, with fees shown as a cost already taken out, as everywhere. See
   [money-layout.md](../conventions/money-layout.md).
@@ -254,8 +252,8 @@ Open a tile for five tabs:
 `queue` is what the supervisor is doing now: the running task with its progress, what is up next and why
 each row waits, and anything that failed in the last 7 days. `runs` is one tile per replay, with a summary
 of each arm against `control`, its equity line, health checks and settings. The health checks list the
-warnings first, such as a result resting on its best five sessions. `data` answers "is history trusted?"
-first, then the licence clock and a tile per store with what it holds and which sessions were refused.
+warnings first, such as a result resting on its best five sessions. `data` shows the licence clock
+and a tile per store with what it holds and which sessions were refused.
 
 ## What to do
 

@@ -44,28 +44,19 @@ check something by hand while a fetch runs, use the vendor's staging environment
 on port 25504. A staging login leaves the fetch's session alone. Its quotes match production, but
 its greeks differ slightly, so it is never used to build a store.
 
-## Validating and running
+## Running
 
 ```
-python -m cherrypick.backtest validate [--cadence 60]          # against the recorder; unlocks history
-python -m cherrypick.backtest run flies --arms range-high --window validation
 python -m cherrypick.backtest run flies --arms range-high --window design --cadence 60
 python -m cherrypick.backtest fetch-vix --from 2026-10-13 --to 2026-10-16      # VIX minute series for MEIC's replay
-python -m cherrypick.backtest validate --module meic --cadence 60             # MEIC unlocks its own history
 python -m cherrypick.backtest run meic --arms <arm> --window design --cadence 60
+python -m cherrypick.backtest run meic --arms <arm> --window all --from 2026-10-13 --cadence 60   # forward only
 ```
 
-MEIC is the second module. Each module validates and unlocks its own history: a flies report unlocks
-nothing for MEIC. History (`design`, `holdout`) stays locked until validation unlocks it for that cadence. Every design
-evaluation is recorded as a trial, and the holdout is spent once per spec (`--spend-holdout`).
-Reports go to `~/.cherrypick/data/backtest/results/` and nowhere else.
-
-To look before the unlock, `run flies --arms ... --window design --cadence 60 --provisional` runs the
-design window anyway. A provisional run is marked provisional in its report, the runs table and the
-console, records no trial, and can never be the advisor's specs: it is a look, not evidence. It is
-the holdout only when asked for by name, `--window holdout --provisional --spend-holdout
---unvalidated-holdout`, because flies validation cannot reach its ten sessions while
-flies paper is retired. That run spends the holdout for each spec as an unlocked one does.
+MEIC is the second module. A store is taken as recorded: nothing is checked against the recorder
+before a run. Every design evaluation is recorded as a trial, and the holdout is spent once per spec
+(`--spend-holdout`). Reports go to `~/.cherrypick/data/backtest/results/` and nowhere else.
+`--provisional` and `--unvalidated-holdout` are still accepted so older commands run; they do nothing.
 
 ## Signal studies
 
@@ -87,8 +78,7 @@ which `purge --derived` removes. A result is descriptive. A verdict still needs 
 ## The nightly fetch
 
 The orchestrator's `backtest-fetch` job (off by default) runs `fetch --cadence 60 --recent 5` on
-trading days at 18:45 ET, so each new session reaches the store, and so the validation count grows by
-itself. Turn it on in the suite config:
+trading days at 18:45 ET, so each new session reaches the store. Turn it on in the suite config:
 
 ```
 "backtest": {"fetch": true}

@@ -23,7 +23,6 @@ function listing(over: Partial<BacktestRunListing>): BacktestRunListing {
     created_at: 1_793_000_000,
     module: "meic",
     window: "design",
-    provisional: true,
     arms: ["control", "d12", "d20"],
     span: ["2022-05-16", "2025-06-30"],
     cadence: 60,
@@ -93,8 +92,8 @@ describe("runs as cards", () => {
     expect(out).not.toContain("12, 20 against 16");
     expect(out).toContain('class="chip chip-missing verdict-fail">fail<');
     expect(out).toContain(">d12<");
-    expect(out).toContain("provisional");
-    expect(wrap(<RunTile r={listing({ provisional: false })} hero={false} nowMs={0} onOpen={() => undefined} />)).toContain("No study in the register names this run.");
+    expect(out).not.toContain("provisional");
+    expect(wrap(<RunTile r={listing({})} hero={false} nowMs={0} onOpen={() => undefined} />)).toContain("No study in the register names this run.");
   });
 
   it("draws each arm's interval against control untoned, its own net toned by sign", () => {

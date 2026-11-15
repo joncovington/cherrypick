@@ -417,8 +417,7 @@ export const EXPERIMENTS_SLIDES = [{ id: "experiments", label: "experiments" }] 
  * while the suite says `backtest: true` (it fails closed, `visibility.ts`). `studies` is what we
  * tested and found (2026-10-29; as cards, first, and the landing tab, from 2026-11-03), `queue` the
  * research tasks the supervisor runs now (2026-10-24; a study's finished rows moved to its card
- * 2026-11-03), `runs` the replays, `data` whether history is trusted (validation, folded in
- * 2026-10-30), the licence and the stores. `slices` moved to Compare.
+ * 2026-11-03), `runs` the replays, `data` the licence and the stores. `slices` moved to Compare.
  */
 export const BACKTEST_SLIDES = [
   { id: "studies", label: "studies" },
@@ -619,7 +618,7 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
   },
   reports: { slides: REPORTS_SLIDES },
   compare: { slides: COMPARE_SLIDES },
-  // `validation` folded into `data` (2026-10-30); `/backtest/slices` is a route to Compare (App.tsx).
+  // An old `validation` link opens `data`; `/backtest/slices` is a route to Compare (App.tsx).
   backtest: { slides: BACKTEST_SLIDES, legacy: { validation: "data" } },
   advisor: { slides: ADVISOR_SLIDES },
   experiments: { slides: EXPERIMENTS_SLIDES },

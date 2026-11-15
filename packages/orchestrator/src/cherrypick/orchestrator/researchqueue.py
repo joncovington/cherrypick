@@ -13,7 +13,7 @@ that is running, and it never releases a row from its `after`, `not_before`, the
 blackout: a raised row whose prerequisite waits still waits, so raise the chain, not just its end.
 
 **A study whose inputs are in runs first** (2026-11-03, the user's rule, `run_order`): a ready row of
-a kind that needs no vendor session (`script`, `validate`) and waits `after` a prerequisite -- so that
+a kind that needs no vendor session (`script`) and waits `after` a prerequisite -- so that
 prerequisite is done -- runs before any other ready row, whatever its priority. Priority, then age,
 orders within each group. A script with no `after` is not one: nothing says its inputs were fetched.
 
@@ -34,7 +34,7 @@ unreviewed code run by it. A kind builds its own argv from the row's arguments:
 **When a task may start** (`ready`):
 - one task at a time; a `running` row whose process is gone (a reboot, a killed supervisor) is put
   back to `queued`, and a fetch resumes where it stopped, as does a script's backtest run (backtest
-  `runner.run` keeps each finished session, 2026-10-28; `validate` starts over);
+  `runner.run` keeps each finished session, 2026-10-28);
 - a ThetaData task waits while anything holds the session lock (`state/thetadata-session.lock`, the
   backtest package's), and never starts inside `BLACKOUT` ET on a trading day, the nightly
   `backtest-fetch`'s window; its `--stop-by` is the next blackout start, or the row's own stop-by if
@@ -253,9 +253,6 @@ KINDS: dict[str, tuple[tuple[str, ...], bool]] = {
     # 0DTE sessions over a span into a declared store variant (backtest `fetch --store-tag`, item 42).
     "fetch-sessions": ((THETADATA,), True),
     "script": ((), False),
-    # A module's replay validated against the recording (backtest `validate`): local stores only, no
-    # vendor session. Its report is what unlocks that module's history runs (2026-10-25).
-    "validate": ((), False),
 }
 
 #: Where each fetch kind writes, for a finished row's result.
@@ -272,9 +269,6 @@ FETCH_STORES = {
 #: The fetches that take a `limit` (a sample of the requests, for a smoke row), and its bound.
 LIMITED = ("fetch-chains", "fetch-chain-paths")
 MAX_LIMIT = 100_000
-
-#: The modules `validate` knows (backtest `validate.CHECKS`), checked here so a typo never queues.
-VALIDATE_MODULES = ("flies", "meic")
 
 #: The store variants `fetch-sessions` may write (backtest `store.TAGS`). Never the plain store: the
 #: nightly `backtest-fetch` is its writer.
@@ -341,26 +335,6 @@ def build_argv(
         argv = _sessions_argv(args, python)
     elif kind == "script":
         return [python, *_tracked_script(args, root or repo_root(), tracked or git_tracked)]
-    elif kind == "validate":
-        module = args.get("module")
-        if module not in VALIDATE_MODULES:
-            raise Refused(f"validate needs 'module', one of {', '.join(VALIDATE_MODULES)}")
-        argv = [python, "-m", "cherrypick.backtest", "validate", "--module", module]
-        # Which store is validated: each cadence is its own file, and only the cadence a module's
-        # history runs at unlocks them. Absent, backtest's default store (15 s), which unlocks nothing
-        # at 60 s (2026-10-26: a MEIC validation compared the 15 s store's 4 sessions for that reason).
-        cadence = args.get("cadence")
-        if cadence is not None:
-            if type(cadence) is not int or not 1 <= cadence <= 3600:
-                raise Refused("validate's 'cadence' is whole seconds, 1 to 3600")
-            argv += ["--cadence", str(cadence)]
-        # MEIC's one delta for both replays (backtest validate --delta-source, 2026-10-27).
-        delta_source = args.get("delta_source")
-        if delta_source is not None:
-            if module != "meic" or delta_source not in ("stream", "computed"):
-                raise Refused("validate's 'delta_source' is MEIC's: 'stream' or 'computed'")
-            argv += ["--delta-source", delta_source]
-        return argv
     else:
         raise Refused(f"unknown kind {kind!r}; allowed: {', '.join(KINDS)}")
     if stop_by:

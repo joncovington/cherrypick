@@ -1,13 +1,13 @@
 """Fetch vendor sessions into the store. The client does the network; everything here is pure over
 the rows it returns, so it is tested with a fake client and no vendor.
 
-How each recorder field is rebuilt from the vendor (the declared rules; validation measures each):
+How each recorder field is rebuilt from the vendor (the declared rules):
 
 - **Samples and quotes**: the vendor's first-order greeks at the store's cadence, which carry the
   NBBO bid and ask at each instant. Each sample keeps the `strikes_each_side` strikes nearest its own
   spot on each side (the recorder's rule) and only quotes `core.streamcache.usable_quote` accepts.
   `age_s` is NULL: an interval row is the quote standing at that instant, and its age is not
-  reported. The replay treats NULL as fresh; validation measures what that costs.
+  reported. The replay treats NULL as fresh.
 - **Delta**: the vendor's, at the same instant. NULL where its IV solver failed (IV reported 0).
 - **Spot** (`gex_spot_history`): the vendor's underlying price on the same rows. The index tier is
   separate (and, on this account, end-of-day only).

@@ -8,9 +8,8 @@ whole credit, each at 1, 2, 3 and 4 points wide, paired against the rule live tr
     python packages/backtest/scripts/meic_xsp_item72.py --step kill
 
 Runs the backtest's own MEIC replay (`cherrypick.backtest.runner`, MEIC's own engine) over XSP's wide
-60 s vendor store (`XSP-60s-wide.db`), provisionally: MEIC history has not unlocked, and XSP cannot
-unlock it here (nothing records XSP to validate against). The holdout is spent by this run, once
-(`unvalidated_holdout`). Writes under the backtest data dir (results/research/item72/), never into the
+60 s vendor store (`XSP-60s-wide.db`). The holdout is spent by this run, once.
+Writes under the backtest data dir (results/research/item72/), never into the
 repo: the inputs are licensed.
 
 **The arms, as declared.** Each is the registry's `pm-200` with entries 14:00-14:30 (the rule live
@@ -447,9 +446,7 @@ def study(settings: dict, window: str, workers: int, capital: float) -> dict:
         module="meic",
         symbol=SYMBOL,
         cadence=CADENCE,
-        provisional=True,
         spend_holdout=holdout,
-        unvalidated_holdout=holdout,
         workers=workers,
         log=lambda m: print(f"[{SYMBOL}] {m}", file=sys.stderr),
     )
@@ -492,7 +489,6 @@ def study(settings: dict, window: str, workers: int, capital: float) -> dict:
         "item": ITEM,
         "window": window,
         "span": [start, end],
-        "provisional": True,
         "run_id": report["run_id"],
         "refused_sessions": len(report.get("refused") or {}),
         "vix_fallback_sessions": report.get("vix_fallback_sessions"),

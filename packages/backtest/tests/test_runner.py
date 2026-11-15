@@ -12,6 +12,8 @@ from test_fetch import FakeClient, _rows
 from cherrypick.backtest import fetch, paths, results, runner, settings, store, vixfetch
 
 DAYS = ["2025-03-04", "2025-03-05", "2026-10-14", "2026-10-15"]
+#: After the holdout window: a run from here reads only the fixture's last two sessions and spends nothing.
+FORWARD = "2026-10-13"
 
 
 @pytest.fixture()
@@ -75,83 +77,34 @@ def test_an_arm_identical_to_control_is_flagged_no_exposure(world):
         row = {"session": day, "net_pnl": 3.0, "gross_pnl": 4.0, "cost": 1.0}
         return [{**row, "arm": "control"}, {**row, "arm": "range-high"}]
 
-    report = runner.run(s, ["range-high"], "validation", replay=_replay, read_rows=same, log=lambda _m: None)
+    report = runner.run(
+        s, ["range-high"], "all", start=FORWARD, replay=_replay, read_rows=same, log=lambda _m: None
+    )
     assert report["arms"]["range-high"]["no_exposure"] is True
-    assert _run(s, "validation")["arms"]["range-high"]["no_exposure"] is False
+    assert _run(s, "all", start=FORWARD)["arms"]["range-high"]["no_exposure"] is False
 
 
-def _unlock(s, ok=True):
-    out = paths.results_dir() / "validation"
-    out.mkdir(parents=True, exist_ok=True)
-    doc = {"vendor_db": str(store.db_path(s, "SPX")), "decisions": {"unlocks_history": ok}}
-    (out / "SPX-x.json").write_text(json.dumps(doc), encoding="utf-8")
-
-
-def test_the_validation_window_always_runs_and_counts_no_trial(world):
+def test_history_runs_as_recorded_and_every_run_is_a_trial(world):
+    """No check against the recorder stands before a run: with no report of any kind on disk, the
+    design window and a forward run both run, each arm a trial, and neither is marked."""
     s, _ = world
-    report = _run(s, "validation")
+    assert not (paths.results_dir() / "validation").exists()
+    report = _run(s, "all", start=FORWARD)
     assert report["arms"]["control"]["summary"]["sessions"] == 2  # 10-14, 10-15
     # The report carries what decided each arm's trades, hashed to the recorded spec_hash.
     spec = report["arms"]["control"]["spec"]
     assert spec["arm"] == "control" and runner.spec_hash(spec) == report["arms"]["control"]["spec_hash"]
     assert report["arms"]["range-high"]["vs_control"] is not None
+    assert not {"provisional", "provisional_note"} & set(report)
     conn = results.connect()
-    assert results.trial_count(conn, "flies") == 0
-
-
-def test_history_is_locked_until_validation_unlocks_it(world):
-    s, _ = world
-    with pytest.raises(runner.RunRefused, match="locked"):
-        _run(s, "design")
-    _unlock(s, ok=False)
-    with pytest.raises(runner.RunRefused, match="locked"):
-        _run(s, "design")
-
-
-def test_a_provisional_run_looks_early_and_counts_for_nothing(world):
-    """While locked, the design window may be run provisionally: no trial, marked everywhere, and
-    never the holdout or the advisor's specs."""
-    s, _ = world
-    report = _run(s, "design", provisional=True)
-    assert report["provisional"] is True and "PROVISIONAL" in report["provisional_note"]
-    conn = results.connect()
-    assert results.trial_count(conn, "flies") == 0
-    (status,) = conn.execute("SELECT status FROM runs").fetchone()
-    assert status == "provisional"
-    from cherrypick.backtest import readout
-
-    assert readout.overview(s)["runs"][0]["provisional"] is True
-    with pytest.raises(runner.RunRefused, match="provisional"):
-        _run(s, "holdout", provisional=True, spend_holdout=True)
-    with pytest.raises(runner.RunRefused, match="provisional"):
-        _run(s, "design", provisional=True, extra_arms={"advised:x": {}})
-
-
-def test_an_unvalidated_holdout_is_asked_for_by_name_and_spends_the_holdout(world):
-    """The 2026-10-27 exception: locked history's holdout runs only when named, provisional, and
-    spending; then it is spent, as an unlocked holdout is, and it records no trial."""
-    s, _ = world
-    for kw in (
-        {"provisional": True, "spend_holdout": True},
-        {"unvalidated_holdout": True, "spend_holdout": True},
-        {"unvalidated_holdout": True, "provisional": True},
-    ):
-        with pytest.raises(runner.RunRefused):
-            _run(s, "holdout", **kw)
-    with pytest.raises(runner.RunRefused, match="unvalidated"):
-        _run(s, "design", provisional=True, unvalidated_holdout=True, spend_holdout=True)
-    report = _run(s, "holdout", provisional=True, spend_holdout=True, unvalidated_holdout=True)
-    assert report["provisional"] is True
-    conn = results.connect()
-    assert results.trial_count(conn, "flies") == 0
-    assert results.holdout_spent(conn, "flies", report["arms"]["range-high"]["spec_hash"])
-    with pytest.raises(runner.RunRefused, match="already spent"):
-        _run(s, "holdout", provisional=True, spend_holdout=True, unvalidated_holdout=True)
+    assert results.trial_count(conn, "flies") == 2
+    _run(s, "design")
+    assert {r[0] for r in conn.execute("SELECT status FROM runs")} == {"done"}
+    assert "validation" not in runner.WINDOWS
 
 
 def test_design_runs_are_trials_counted_once_per_spec(world):
     s, home = world
-    _unlock(s)
     report = _run(s, "design")
     assert report["refused"] == {"2025-03-05": "no_settle_price"}
     assert report["trials_for_module"] == 2, "control and range-high"
@@ -166,7 +119,6 @@ def test_design_runs_are_trials_counted_once_per_spec(world):
 
 def test_the_holdout_needs_asking_for_and_is_spent_once(world):
     s, _ = world
-    _unlock(s)
     with pytest.raises(runner.RunRefused, match="spend-holdout"):
         _run(s, "holdout")
     # The fixture's sessions sit before the holdout window, so it spends on an empty span; the rule
@@ -180,7 +132,6 @@ def test_control_never_spends_the_holdout(world):
     """Control runs beside every arm and is never judged, so a later study's holdout is not refused
     because an earlier one ran control there (item 24, 2026-10-29). The judged arm still is."""
     s, home = world
-    _unlock(s)
     report = _run(s, "holdout", spend_holdout=True)
     conn = results.connect()
     assert not results.holdout_spent(conn, "flies", report["arms"]["control"]["spec_hash"])
@@ -196,10 +147,10 @@ def test_control_never_spends_the_holdout(world):
 def test_an_unknown_arm_or_a_missing_config_is_refused(world):
     s, home = world
     with pytest.raises(runner.RunRefused, match="no arm"):
-        runner.run(s, ["nope"], "validation", replay=_replay, read_rows=_read, log=lambda _m: None)
+        runner.run(s, ["nope"], "all", start=FORWARD, replay=_replay, read_rows=_read, log=lambda _m: None)
     (home / "config" / "flies.json").unlink()
     with pytest.raises(runner.RunRefused, match="no flies config"):
-        _run(s, "validation")
+        _run(s, "all", start=FORWARD)
 
 
 # ---------------------------------------------------------------------------------------------- MEIC
@@ -247,17 +198,10 @@ def _meic_run(s, window, **kw):
     )  # fmt: skip
 
 
-def _unlock_meic(s, ok=True):
-    out = paths.results_dir() / "validation"
-    out.mkdir(parents=True, exist_ok=True)
-    doc = {"module": "meic", "vendor_db": str(store.db_path(s, "SPX")), "decisions": {"unlocks_history": ok}}
-    (out / "meic-SPX-x.json").write_text(json.dumps(doc), encoding="utf-8")
-
-
 def test_meic_runs_from_a_snapshot_of_both_its_config_files(meic_world):
     s, _ = meic_world
     MEIC_CALLS.clear()
-    report = _meic_run(s, "validation")
+    report = _meic_run(s, "all", start=FORWARD)
     assert report["module"] == "meic" and report["fill_model"] == runner.MEIC_FILL_MODEL
     assert MEIC_CALLS and MEIC_CALLS[0]["arms"] == ["control", "bp-10k"]
     assert MEIC_CALLS[0]["base"]["stop_trigger_ratio"] == 0.95
@@ -265,22 +209,8 @@ def test_meic_runs_from_a_snapshot_of_both_its_config_files(meic_world):
     assert report["arms"]["bp-10k"]["vs_control"] is not None and "flies_config" not in report
 
 
-def test_each_module_unlocks_only_its_own_history(meic_world):
-    """A flies validation report unlocks nothing for MEIC, and the reverse."""
-    s, _ = meic_world
-    _unlock(s, ok=True)
-    with pytest.raises(runner.RunRefused, match="locked for meic"):
-        _meic_run(s, "design")
-    _unlock_meic(s, ok=True)
-    _meic_run(s, "design")
-    assert runner.unlocked(s, "SPX", 15, module="meic") and runner.unlocked(s, "SPX", 15, module="flies")
-    _unlock(s, ok=False)
-    assert runner.unlocked(s, "SPX", 15, module="meic") and not runner.unlocked(s, "SPX", 15, module="flies")
-
-
 def test_a_meic_trial_is_keyed_on_the_merged_params_not_the_comments(meic_world):
     s, home = meic_world
-    _unlock_meic(s)
     _meic_run(s, "design")
     conn = results.connect()
     assert results.trial_count(conn, "meic") == 2 and results.trial_count(conn, "flies") == 0
@@ -315,16 +245,16 @@ def test_the_meic_fingerprint_moves_when_a_session_gains_vix_rows(meic_world):
     """`run meic`, `fetch-vix`, `run meic` again: different inputs, so a different stamp. Flies reads no
     VIX, so its stamp stays the one every stored flies report carries."""
     s, _ = meic_world
-    before = _meic_run(s, "validation")["data_fingerprint"]
-    flies_before = _run(s, "validation")["data_fingerprint"]
-    assert _meic_run(s, "validation")["data_fingerprint"] == before  # same inputs, same stamp
+    before = _meic_run(s, "all", start=FORWARD)["data_fingerprint"]
+    flies_before = _run(s, "all", start=FORWARD)["data_fingerprint"]
+    assert _meic_run(s, "all", start=FORWARD)["data_fingerprint"] == before  # same inputs, same stamp
     _vix_rows(s, "2026-10-14", [16.0, 16.4])
-    after = _meic_run(s, "validation")
+    after = _meic_run(s, "all", start=FORWARD)
     assert after["data_fingerprint"] != before
     assert after["data_inputs"]["sessions_with_regime_rows"] == 1
     _vix_rows(s, "2026-10-14", [16.0, 18.5])  # a refetch that changes a value moves it again
-    assert _meic_run(s, "validation")["data_fingerprint"] != after["data_fingerprint"]
-    assert _run(s, "validation")["data_fingerprint"] == flies_before
+    assert _meic_run(s, "all", start=FORWARD)["data_fingerprint"] != after["data_fingerprint"]
+    assert _run(s, "all", start=FORWARD)["data_fingerprint"] == flies_before
     conn = store.connect(s, "SPX")
     try:
         assert flies_before == runner._fingerprint(conn, "SPX", ["2026-10-14", "2026-10-15"])
@@ -334,21 +264,21 @@ def test_the_meic_fingerprint_moves_when_a_session_gains_vix_rows(meic_world):
 
 def test_the_meic_fingerprint_moves_when_a_cboe_file_changes(meic_world):
     s, _ = meic_world
-    absent = _meic_run(s, "validation")["data_fingerprint"]
+    absent = _meic_run(s, "all", start=FORWARD)["data_fingerprint"]
     _cboe([("10/13/2026", 17.0, 17.5), ("10/14/2026", 17.2, 18.0), ("10/15/2026", 18.1, 18.3)])
-    first = _meic_run(s, "validation")
+    first = _meic_run(s, "all", start=FORWARD)
     assert first["data_fingerprint"] != absent
     vix_file = first["data_inputs"]["cboe"][0]
     assert vix_file["file"] == "VIX.csv" and vix_file["rows"] == 3
     _cboe([("10/13/2026", 17.0, 17.5), ("10/14/2026", 19.9, 18.0), ("10/15/2026", 18.1, 18.3)])
-    corrected = _meic_run(s, "validation")["data_fingerprint"]
+    corrected = _meic_run(s, "all", start=FORWARD)["data_fingerprint"]
     assert corrected != first["data_fingerprint"]
     # The nightly refresh appending a session after the window is not a change to what the run read.
     _cboe(
         [("10/13/2026", 17.0, 17.5), ("10/14/2026", 19.9, 18.0), ("10/15/2026", 18.1, 18.3),
          ("10/16/2026", 20.0, 21.0)]
     )  # fmt: skip
-    assert _meic_run(s, "validation")["data_fingerprint"] == corrected
+    assert _meic_run(s, "all", start=FORWARD)["data_fingerprint"] == corrected
 
 
 def test_sessions_on_the_cboe_fallback_are_counted_in_the_report(meic_world):
@@ -363,7 +293,7 @@ def test_sessions_on_the_cboe_fallback_are_counted_in_the_report(meic_world):
         return {"ok": True, "vix_sources": sources[day]}
 
     report = runner.run(
-        s, ["bp-10k"], "validation", module="meic", replay=replay, read_rows=_meic_read, workers=1,
+        s, ["bp-10k"], "all", start=FORWARD, module="meic", replay=replay, read_rows=_meic_read, workers=1,
         log=lambda _m: None,
     )  # fmt: skip
     assert report["vix_fallback_sessions"] == 1
@@ -372,25 +302,27 @@ def test_sessions_on_the_cboe_fallback_are_counted_in_the_report(meic_world):
     assert "1 of 2" in report["vix_note"]
     sources["2026-10-14"] = {"cboe_daily_open": 300}
     report = runner.run(
-        s, ["bp-10k"], "validation", module="meic", replay=replay, read_rows=_meic_read, workers=1,
+        s, ["bp-10k"], "all", start=FORWARD, module="meic", replay=replay, read_rows=_meic_read, workers=1,
         log=lambda _m: None,
     )  # fmt: skip
     assert report["vix_fallback_sessions"] == 2
     assert report["vix_sources"]["sessions"]["cboe_fallback"] == 1
-    assert "vix_sources" not in _run(s, "validation")  # flies reports no VIX source
+    assert "vix_sources" not in _run(s, "all", start=FORWARD)  # flies reports no VIX source
 
 
 def test_meic_refusals(meic_world):
     s, home = meic_world
     with pytest.raises(runner.RunRefused, match="MEIC has no arm"):
-        runner.run(s, ["nope"], "validation", module="meic", replay=_meic_replay, read_rows=_meic_read)
+        runner.run(
+            s, ["nope"], "all", start=FORWARD, module="meic", replay=_meic_replay, read_rows=_meic_read
+        )
     with pytest.raises(runner.RunRefused, match="advised arms are flies"):
         _meic_run(s, "design", extra_arms={"advised:x": {}})
     with pytest.raises(runner.RunRefused, match="module must be"):
-        runner.run(s, [], "validation", module="bwb")
+        runner.run(s, [], "all", start=FORWARD, module="bwb")
     (home / "config" / "meic.risk.json").unlink()
     with pytest.raises(runner.RunRefused, match="no MEIC registry config"):
-        _meic_run(s, "validation")
+        _meic_run(s, "all", start=FORWARD)
 
 
 # ------------------------------------------------------------------------------------------- resuming
@@ -401,7 +333,7 @@ class Interrupted(BaseException):
 
 
 def _interrupted_run(s, cut: str) -> list[str]:
-    """Run the validation window until the replay of `cut`, which dies after writing half a ledger."""
+    """Run forward from FORWARD until the replay of `cut`, which dies after writing half a ledger."""
     replayed = []
 
     def replay(day, out, arms, history_db, settle, config):
@@ -413,7 +345,14 @@ def _interrupted_run(s, cut: str) -> list[str]:
 
     with pytest.raises(Interrupted):
         runner.run(
-            s, ["range-high"], "validation", replay=replay, read_rows=_read, workers=1, log=lambda _m: None
+            s,
+            ["range-high"],
+            "all",
+            start=FORWARD,
+            replay=replay,
+            read_rows=_read,
+            workers=1,
+            log=lambda _m: None,
         )
     return replayed
 
@@ -432,7 +371,14 @@ def _rerun(s, read_rows=None):
         return _replay(day, out, arms, history_db, settle, config)
 
     report = runner.run(
-        s, ["range-high"], "validation", replay=replay, read_rows=read_rows, workers=1, log=lambda _m: None
+        s,
+        ["range-high"],
+        "all",
+        start=FORWARD,
+        replay=replay,
+        read_rows=read_rows,
+        workers=1,
+        log=lambda _m: None,
     )
     return report, replayed
 
@@ -458,7 +404,7 @@ def test_an_interrupted_run_resumes_from_its_finished_sessions(world, clean_comm
     assert report["resumed"] == {"sessions_reused": 1}
     assert _run_dirs() == {report["run_id"]}, "the resumed run keeps the interrupted run's id and directory"
     assert not list((paths.results_dir() / "runs" / "pending").iterdir()), "a recorded run is never resumed"
-    whole = _run(s, "validation")
+    whole = _run(s, "all", start=FORWARD)
     assert "resumed" not in whole
     assert report["arms"] == whole["arms"], "a resumed run reports what an uninterrupted one does"
 
@@ -587,7 +533,14 @@ def test_a_code_change_mid_run_that_replays_identically_is_recorded(world, clean
     s, _ = world
     _pin_switches_after_the_first_session(monkeypatch)
     report = runner.run(
-        s, ["range-high"], "validation", replay=_replay, read_rows=_read, workers=1, log=lambda _m: None
+        s,
+        ["range-high"],
+        "all",
+        start=FORWARD,
+        replay=_replay,
+        read_rows=_read,
+        workers=1,
+        log=lambda _m: None,
     )
     (change,) = report["code_changes"]
     assert change["before_session"] == "2026-10-15"
@@ -602,7 +555,7 @@ def test_a_code_change_mid_run_that_replays_differently_stops_the_run(world, cle
     _pin_switches_after_the_first_session(monkeypatch)
     with pytest.raises(runner.RunRefused, match="changed mid-run"):
         runner.run(
-            s, ["range-high"], "validation", replay=_replay, read_rows=_read_changed, workers=1,
+            s, ["range-high"], "all", start=FORWARD, replay=_replay, read_rows=_read_changed, workers=1,
             log=lambda _m: None,
         )  # fmt: skip
     (run_dir,) = [p for p in (paths.results_dir() / "runs").iterdir() if p.is_dir() and p.name != "pending"]
@@ -640,7 +593,6 @@ def test_a_dirty_checkout_or_a_live_owner_is_never_resumed(world, clean_commit, 
 def test_a_run_over_all_of_history_spends_the_holdout_its_span_reaches_and_counts_a_trial(world):
     # #1077: one run over the whole history, cut at a study's declared splits afterwards.
     s, _ = world
-    _unlock(s)
     with pytest.raises(runner.RunRefused, match="spend-holdout"):
         _run(s, "all")
     report = _run(s, "all", spend_holdout=True)
@@ -657,7 +609,6 @@ def test_a_forward_run_wholly_after_the_holdout_spends_nothing(world):
     # A forward retest reads only sessions after the holdout window: it needs no spend, and a later
     # run over all of history can still spend it.
     s, _ = world
-    _unlock(s)
     after = date.fromisoformat(s["windows"]["holdout"][1]) + timedelta(days=1)
     report = _run(s, "all", start=after.isoformat())
     conn = results.connect()

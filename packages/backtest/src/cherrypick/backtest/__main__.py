@@ -15,8 +15,7 @@ python -m cherrypick.backtest fetch-addon-weeklies --requests FILE [--workers 1]
 python -m cherrypick.backtest addon-weeklies-status   # what the add-on weeklies store holds
 python -m cherrypick.backtest coverage [--dataset SPX]
 python -m cherrypick.backtest derive-regimes [--dataset SPX]   # regime rows from stored profiles
-python -m cherrypick.backtest validate [--module flies|meic] [--dates a,b,...]   # against the recorder
-python -m cherrypick.backtest run flies --arms range-high --window validation|design|holdout [--cadence 60]
+python -m cherrypick.backtest run flies --arms range-high --window design|holdout|all [--cadence 60]
 python -m cherrypick.backtest run meic --arms bp-10k --window design [--cadence 60]   # MEIC's own engine
 python -m cherrypick.backtest inventory           # count every changed store into the Data tab's cache
 python -m cherrypick.backtest purge [--derived] [--apply]   # expunge the vendor's data (dry run by default)
@@ -471,39 +470,6 @@ def cmd_derive_regimes(args) -> int:
     return 0
 
 
-def cmd_validate(args) -> int:
-    from . import store, validate
-
-    s = settings.load(args.config)
-    recorder = args.recorder_db
-    if args.dates:
-        dates = [d.strip() for d in args.dates.split(",") if d.strip()]
-    else:
-        from cherrypick.core import quotehistory
-
-        dates = validate.recorded_days(
-            recorder or quotehistory.default_history_db(),
-            store.db_path(s, args.dataset, args.cadence),
-            args.dataset,
-        )
-    if not dates:
-        print("validate: no session is in both the recorder's history and the vendor store", file=sys.stderr)
-        return 1
-    arms = [a.strip() for a in args.arms.split(",") if a.strip()] if args.arms else None
-    report = validate.run(
-        s,
-        args.dataset,
-        dates,
-        recorder_db=recorder,
-        cadence=args.cadence,
-        module=args.module,
-        arms=arms,
-        delta_source=args.delta_source,
-    )
-    _emit(report)
-    return 0
-
-
 def cmd_run(args) -> int:
     from . import runner
 
@@ -519,8 +485,6 @@ def cmd_run(args) -> int:
             start=args.start,
             end=args.end,
             spend_holdout=args.spend_holdout,
-            provisional=args.provisional,
-            unvalidated_holdout=args.unvalidated_holdout,
             workers=args.workers,
             module=args.module,
             log=lambda m: print(m, file=sys.stderr),
@@ -729,12 +693,10 @@ def main(argv: list[str] | None = None) -> int:
     dr = sub.add_parser("derive-regimes", help="backfill regime rows from stored profiles (no vendor call)")
     dr.add_argument("--dataset", default="SPX")
     dr.set_defaults(fn=cmd_derive_regimes)
-    va = sub.add_parser("validate", help="vendor sessions against the recorder's on the days both exist")
-    va.add_argument("--dataset", default="SPX")
     rn = sub.add_parser("run", help="replay a module's arms over the store's sessions (results stay local)")
     rn.add_argument("module", choices=("flies", "meic"))
     rn.add_argument("--arms", default="control", help="comma-separated; control always runs beside them")
-    rn.add_argument("--window", required=True, choices=("validation", "design", "holdout", "all"))
+    rn.add_argument("--window", required=True, choices=("design", "holdout", "all"))
     rn.add_argument("--dataset", default="SPX")
     rn.add_argument("--from", dest="start", default=None, help="a sub-span of the window")
     rn.add_argument("--to", dest="end", default=None)
@@ -742,13 +704,13 @@ def main(argv: list[str] | None = None) -> int:
     rn.add_argument(
         "--provisional",
         action="store_true",
-        help="design window while history is still locked: no trial, marked provisional everywhere",
+        help="accepted so older commands still run; does nothing",
     )
     rn.add_argument(
         "--unvalidated-holdout",
         dest="unvalidated_holdout",
         action="store_true",
-        help="with --provisional --spend-holdout: spend the holdout while history is locked",
+        help="accepted so older commands still run; does nothing (--spend-holdout spends it)",
     )
     rn.add_argument("--workers", type=int, default=4)
     rn.set_defaults(fn=cmd_run)
@@ -789,7 +751,7 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser(
         "inventory", help="count every store changed since its last count (the Data tab's numbers)"
     ).set_defaults(fn=cmd_inventory)
-    for sp in (f, fv, cv, dr, va, rn, ra):
+    for sp in (f, fv, cv, dr, rn, ra):
         sp.add_argument(
             "--cadence",
             type=int,
@@ -805,19 +767,6 @@ def main(argv: list[str] | None = None) -> int:
             choices=tuple(TAGS),
             help="a declared store variant (store.TAGS, e.g. wide): its own file and strike count",
         )
-    va.add_argument("--dates", default=None, help="comma-separated; default: every session in both")
-    va.add_argument(
-        "--recorder-db", dest="recorder_db", default=None, help="default: the gex recorder's history"
-    )
-    va.add_argument("--module", default="flies", choices=("flies", "meic"), help="whose replay to validate")
-    va.add_argument("--arms", default=None, help="meic: comma-separated SPX arms to check (default control)")
-    va.add_argument(
-        "--delta-source",
-        default=None,
-        choices=("stream", "computed"),
-        help="meic: one delta source for both replays (default: each session's own, as paper ran it)",
-    )
-    va.set_defaults(fn=cmd_validate)
     pg = sub.add_parser("purge")
     pg.add_argument("--derived", action="store_true", help="also remove results derived from the data")
     pg.add_argument("--apply", action="store_true", help="actually delete (default is a dry run)")

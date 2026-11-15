@@ -37,6 +37,12 @@ beyond the latest release.
 
   The licensed pieces stay readable after a licence ends, until its purge date, so the results can be
   reviewed one last time.
+- **Backtests run on data as recorded.** Data from our own recorders or a subscribed vendor is no longer
+  checked against the recorder before a design or holdout run, so history is never locked and no run is
+  marked provisional for that reason. A study is marked provisional only when its register outcome says
+  so: an earlier study read the same data, or its holdout was small. The data tab's validation panel is
+  gone, and `validate` is no longer a command or a research-queue kind. `--provisional` and
+  `--unvalidated-holdout` are still accepted and do nothing.
 - **Ladder, a share dip ladder in paper.** A new package, `ladder`, buys a leveraged index fund (TQQQ to
   start) in lots when it falls 7% and sells each lot on its own at +4%, with three arms: `chain` (each
   further lot 7% under the last), `once` (one lot a session) and `decay` (the target falls to breakeven

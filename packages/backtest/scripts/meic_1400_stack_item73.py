@@ -5,7 +5,7 @@ condor worth having, and the third?
     python packages/backtest/scripts/meic_1400_stack_item73.py --window design [--workers N]
 
 Runs the backtest's own MEIC replay (`cherrypick.backtest.runner`, MEIC's own engine over the 60 s
-vendor store), provisionally because MEIC history has not unlocked. Design window only: `pm-200`'s runs
+vendor store). Design window only: `pm-200`'s runs
 have read the holdout dates for this window already (the plan's exception), so evidence past the design
 has to come from sessions after 2026-10-12. Writes under the backtest data dir (results/research/item73/),
 never into the repo: the inputs are licensed.
@@ -233,7 +233,6 @@ def main(argv: list[str] | None = None) -> int:
         args.window,
         module="meic",
         cadence=CADENCE,
-        provisional=True,
         workers=args.workers,
         log=lambda m: print(m, file=sys.stderr),
     )
@@ -266,7 +265,6 @@ def main(argv: list[str] | None = None) -> int:
         "window": args.window,
         "span": [start, end],
         "run_id": report["run_id"],
-        "provisional": True,
         "refused_sessions": len(report.get("refused") or {}),
         "vix_fallback_sessions": report.get("vix_fallback_sessions"),
         "arms": arms,

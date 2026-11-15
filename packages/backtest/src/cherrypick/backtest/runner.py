@@ -7,14 +7,17 @@ through `cherrypick.core.ledgers`, the one home of every schema's net rule, so a
 same arithmetic as paper's. What differs per module (schema, fill model, config files, the spec a
 trial is keyed on, the replay command) is one `Module` entry in `MODULES`.
 
-What may run, and when (declared 2026-10-17):
+What may run, and when:
 
-- **`validation`** (sessions from the recorder's first, 2026-10-13): always. These days are already
-  seen; they are what the vendor data is checked against, and they count as no trial.
-- **`design`**: only once validation has unlocked history for this store's cadence
-  (`validate.UNLOCK_SESSIONS`). Every (spec, arm) evaluated here is a trial (`results.trials`).
-- **`holdout`**: as design, and only with `spend_holdout`, once per spec, ever. `control` is the
-  exception: it runs beside every arm and is never judged, so it spends nothing (2026-10-29).
+- **`design`**: always. Every (spec, arm) evaluated here is a trial (`results.trials`).
+- **`holdout`**: only with `spend_holdout`, once per spec, ever. `control` is the exception: it runs
+  beside every arm and is never judged, so it spends nothing.
+- **`all`**: one run over the whole history, a trial as design is, spending the holdout when its span
+  reaches the holdout's dates.
+
+The data is not checked against the recorder first: a store recorded by our own recorders or fetched
+from a subscribed vendor is taken as recorded. Runs made while that check existed recorded no trial, so
+the trial count covers only the runs since.
 
 The fill model is the module's own (flies paper's legged fill rule, applied by its own tick); a
 result carries that name, and other fill models arrive as flies options, never as a second copy of
@@ -79,10 +82,9 @@ from . import paths, results, stats, store
 MODULE = "flies"
 SCHEMA = "fly_book"
 FILL_MODEL = "flies-paper-legged"
-VALIDATION_START = "2026-10-13"
 #: `all` is one run over the whole history, cut at a study's declared splits afterwards (#1077).
 ALL = "all"
-WINDOWS = ("validation", "design", "holdout", ALL)
+WINDOWS = ("design", "holdout", ALL)
 
 
 class RunRefused(ValueError):
@@ -310,19 +312,6 @@ def _write_marker(path: Path, out: dict) -> None:
     tmp = path.with_name(path.name + ".tmp")
     tmp.write_text(json.dumps(out, default=str), encoding="utf-8")
     os.replace(tmp, path)
-
-
-def unlocked(settings: dict, symbol: str, cadence: int, *, module: str = MODULE) -> bool:
-    """Whether the newest validation report for this module and store says history may run. Each module
-    validates its own replay (a flies report unlocks nothing for MEIC); a report from before the module
-    was recorded is flies'."""
-    vendor_db = str(store.db_path(settings, symbol, cadence))
-    reports = sorted((paths.results_dir() / "validation").glob("*.json"), key=lambda p: p.stat().st_mtime)
-    for p in reversed(reports):
-        doc = json.loads(p.read_text(encoding="utf-8"))
-        if doc.get("vendor_db") == vendor_db and doc.get("module", MODULE) == module:
-            return bool((doc.get("decisions") or {}).get("unlocks_history"))
-    return False
 
 
 def sessions_in(
@@ -574,8 +563,6 @@ MODULES = {
 
 
 def _window(settings: dict, name: str) -> tuple[str, str]:
-    if name == "validation":
-        return VALIDATION_START, "9999-12-31"
     if name == ALL:
         # One run over the whole history (#1077): from the design window's start through whatever
         # the store holds; a study cuts it at its declared splits afterwards (`study.rule.cut`).
@@ -601,8 +588,6 @@ def run(
     spend_holdout: bool = False,
     workers: int | None = None,
     extra_arms: dict[str, dict] | None = None,
-    provisional: bool = False,
-    unvalidated_holdout: bool = False,
     module: str = MODULE,
     replay=None,
     read_rows=None,
@@ -610,18 +595,7 @@ def run(
 ) -> dict:
     """`extra_arms` adds config-defined arms (`advised:<name>`: a base arm's params with an
     overlay; flies only) for this run only; every run replays from its own snapshot of the module's
-    config, kept beside its ledgers, so what ran is on disk exactly.
-
-    `provisional` (design window only) runs while history is still locked, to look early. It is
-    no evidence and is kept apart from evidence: it records no trial, cannot take advised arms or
-    the holdout, and its run and report are marked provisional, which every reader shows.
-
-    `unvalidated_holdout` is the one exception (amended 2026-10-27, the user's decision for research
-    item 21): a provisional run of the HOLDOUT, asked for by name, with `spend_holdout`. Flies
-    validation can no longer reach `UNLOCK_SESSIONS` (paper stopped 2026-10-19 after five), so its
-    history cannot unlock. The run spends the holdout for each spec exactly as an unlocked one does,
-    records no trial, and is marked provisional everywhere: a read on unvalidated data, declared before
-    it ran. Item 23 (2026-10-28) uses it for MEIC, whose history has not unlocked either."""
+    config, kept beside its ledgers, so what ran is on disk exactly."""
     if module not in MODULES:
         raise RunRefused(f"module must be one of {sorted(MODULES)}")
     mod = MODULES[module]
@@ -634,12 +608,6 @@ def run(
     read_rows = read_rows or (lambda path: _ledger_rows(path, mod.schema))
     if window not in WINDOWS:
         raise RunRefused(f"window must be one of {WINDOWS}")
-    if unvalidated_holdout and not (provisional and window == "holdout" and spend_holdout):
-        raise RunRefused("an unvalidated holdout is a provisional holdout run that spends the holdout")
-    if provisional and (
-        window not in ("design", ALL, *(("holdout",) if unvalidated_holdout else ())) or extra_arms
-    ):
-        raise RunRefused("a provisional run is the design window or all of it, never the advisor's specs")
     cadence = store.cadence_of(settings, cadence)
     arms = list(dict.fromkeys(["control", *arms]))  # control always runs: every result is paired with it
     config, config_paths = mod.load()
@@ -654,11 +622,6 @@ def run(
     hashes = {a: spec_hash(s) for a, s in specs.items()}
     w_lo, w_hi = _window(settings, window)
     lo, hi = max(w_lo, start or w_lo), min(w_hi, end or w_hi)
-    if window != "validation" and not provisional and not unlocked(settings, symbol, cadence, module=module):
-        raise RunRefused(
-            f"history is locked for {module} on {symbol} at {cadence}s: validation has not unlocked it "
-            f"(python -m cherrypick.backtest validate --module {module})"
-        )
     rconn = results.connect()
     # A run over all of history reads the holdout's dates when its span reaches them, so it spends
     # the holdout as a holdout run does; a forward run wholly after the holdout reads none of them.
@@ -684,7 +647,6 @@ def run(
         "module": mod.name, "window": window, "span": [lo, hi], "symbol": symbol.upper(),
         "cadence": cadence, "arms": arms, "hashes": hashes, "config": config,
         "fingerprint": fingerprint, "code": code,
-        "provisional": provisional, "unvalidated_holdout": unvalidated_holdout,
     }  # fmt: skip
     clean = bool(code) and not code.endswith("+dirty")
     if not clean:
@@ -825,13 +787,12 @@ def run(
                     "trades": len(mine),
                 }
             log(f"{day} ok")
-    report = _summarise(rconn, run_id, arms, specs, hashes, per_arm, window, provisional=provisional, mod=mod)
+    report = _summarise(rconn, run_id, arms, specs, hashes, per_arm, window, mod=mod)
     report.update(
         {
             "run_id": run_id,
             "module": mod.name,
             "window": window,
-            "provisional": provisional,
             "span": [lo, hi],
             "cadence": cadence,
             # The store file read (its name only): a tagged study's differs from the default, and the
@@ -882,7 +843,7 @@ def run(
         "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (
             run_id, time.time(), mod.name, json.dumps(arms), window, lo, hi, cadence,
-            report["code_commit"], fingerprint, mod.fill_model, "provisional" if provisional else "done",
+            report["code_commit"], fingerprint, mod.fill_model, "done",
             len(per_arm["control"]),
             json.dumps(refused), json.dumps(report, default=str),
         ),
@@ -907,12 +868,10 @@ def run(
     return report
 
 
-def _summarise(rconn, run_id, arms, specs, hashes, per_arm, window, *, provisional=False, mod=None) -> dict:
-    """Per arm: the statistics at the module's trial count, and the pairing with control. A
-    provisional run records no trial (it is a look, not an evaluation), but its own statistics
-    are still deflated by the trials already on record."""
+def _summarise(rconn, run_id, arms, specs, hashes, per_arm, window, *, mod=None) -> dict:
+    """Per arm: the statistics at the module's trial count, and the pairing with control."""
     mod = mod or MODULES[MODULE]
-    if window in ("design", ALL) and not provisional:
+    if window in ("design", ALL):
         for arm in arms:
             values = [v["net"] for _, v in sorted(per_arm[arm].items())]
             m = stats.moments(values)
@@ -924,21 +883,13 @@ def _summarise(rconn, run_id, arms, specs, hashes, per_arm, window, *, provision
     sharpes = results.trial_sharpes(rconn, mod.name)
     control = [{"session": d, "net_pnl": v["net"]} for d, v in per_arm["control"].items()]
     out = {"trials_for_module": trials, "arms": {}}
-    if provisional:
-        out["provisional_note"] = (
-            "PROVISIONAL: history is not yet unlocked by validation. Not a trial, not evidence, "
-            "and never shown to the advisor."
-        )
     for arm in arms:
         values = [v["net"] for _, v in sorted(per_arm[arm].items())]
         entry = {
             "spec_hash": hashes[arm],
-            # What decided the arm's trades, so a report reads its own settings (2026-11-01); a
-            # provisional run records no trial row to look them up in.
+            # What decided the arm's trades, so a report reads its own settings without its trial row.
             "spec": specs[arm],
-            "summary": stats.summary(
-                values, trials=trials if window != "validation" else 1, trial_sharpes=sharpes
-            ),
+            "summary": stats.summary(values, trials=trials, trial_sharpes=sharpes),
             "fees": round(sum(v["fees"] for v in per_arm[arm].values()), 2),
             "trades": sum(v["trades"] for v in per_arm[arm].values()),
         }

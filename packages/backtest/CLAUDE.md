@@ -119,14 +119,13 @@ cadence, too: the replay ticks once per stored sample, so a mixed file would rep
 and some at 60 s. And one file per strike count: a declared store tag (`store.TAGS`; `wide` keeps 40
 strikes each side for items 42 and 44) is its own file (`SPX-60s-wide.db`), fetched by the research
 queue's `fetch-sessions`, never by the nightly job. A study points the runner at it with
-`store.tagged(settings, tag)`; such a store is never validated, so its runs are provisional.
+`store.tagged(settings, tag)`.
 
 **History is 1-minute; the recorder era is 15 s.** The vendor drops every sub-minute
 history request at 60 s before 2026 (15 s, 30 s and tick alike, even ten minutes of two strikes, by
 the library and by the terminal's REST API). That is a vendor behaviour, not a finding from its data.
-So history is fetched at `--cadence 60`, and validation must measure what a minute costs the replay
-(a completion that touches between minutes is missed) by validating 60 s vendor sessions against the
-recorder's 15 s ones, never by assuming it.
+So history is fetched at `--cadence 60`, and a replay over it ticks once a minute: a completion that
+touches between minutes is missed, a limit every 60 s study states.
 
 **One vendor session per account.** A second login with the same key ends the first, and every later
 request fails `UNAUTHENTICATED`. A fetch stops on that (`vendor.FATAL`) rather than recording every
@@ -145,7 +144,7 @@ from PROD, so a store is never built from it, and nothing in `src/` or `scripts/
 `THETADATA_MDDS_TYPE` cannot move a fetch.
 
 How each field is rebuilt from the vendor is declared in `fetch.py`'s docstring. The two that differ
-from a recording in kind, and that validation must measure rather than assume:
+from a recording in kind:
 
 - **`age_s` is NULL.** An interval row is the quote standing at that instant; its age is not
   reported, and the replay treats NULL as fresh.
@@ -173,46 +172,26 @@ The vendor library is an **extra** (`pip install -e "packages/backtest[thetadata
 dependency: it pins its own pandas/polars/grpc, and nothing but a fetch needs it. It imports
 python-dotenv without declaring it, so the extra lists both.
 
-## Validation comes before history
+## Data is taken as recorded
 
-`validate` runs on the days both the recorder and the vendor store hold, in three layers (quotes,
-the rebuilt GEX surface, and flies' own `replay-check` run once per source, by subprocess). **History
-runs stay locked until it unlocks** (`validate.UNLOCK_SESSIONS` sessions, and the vendor-sourced
-replay at least as good as the recorder-sourced one on every declared check). The bar compares the
-vendor with our own recording, not with perfection: the recorder-sourced replay itself fails flies'
-completion-timing check. Its reports are derived results and are written only under
-`results/validation/`.
+A store recorded by our own recorders, or fetched from a subscribed vendor, is not checked against
+another source before a run: nothing locks history. What a store cannot carry (a quote's age, the
+feed's gamma, a sub-minute tick before 2026) is declared above and stated as a limit by each study.
 
-**The recording is compared at the vendor's cadence.** Comparing a 60 s store with the 15 s recording
-would measure the cadence rather than the vendor. The bar is the vendor against the recording thinned
-to the vendor's own instants (`validate.thin_to_vendor_instants`, a temporary copy that lives only for
-the check); what a minute costs is reported beside it (`cadence_cost`: each measure full and thinned,
-and the completion outcome, which is what moves P&L), never a bar and never assumed. Stores of the
-same cadence compare directly. Validation reports are kept locally under `~/.cherrypick`, per the
-licence.
-
-A profile disagreement is read against each side's strike count, which the report carries: either
-side's profile can be the thinner one, and fewer strikes move the walls and the flip.
-
-**MEIC's delta source.** MEIC paper before 2026-10-27 chose strikes by the data feed's delta, which
-lags its quotes by about a minute. The recording carries that lag and the vendor's delta (taken
-at its quotes' instant) does not, so on its default delta (each session's own) the vendor replay
-cannot choose paper's strikes whatever its data. `validate --module meic --delta-source computed`
-replays both sources on `core.chaindelta`'s delta from each one's own mids, so the decisions layer
-compares the data. That report is its own file (`...-delta-computed.json`) and records
-`delta_source`; history runs use the config's source, `computed` since 2026-10-27 (a measurement
-boundary: do not pool MEIC paper or recorded-era results across that date).
+**MEIC's delta source** is a measurement boundary: MEIC paper before 2026-10-27 chose strikes by the
+data feed's delta, which lags its quotes by about a minute; from then on, and in every history run, it
+is `core.chaindelta`'s delta from each source's own mids (`computed`). Do not pool MEIC paper or
+recorded-era results across that date.
 
 ## The runner
 
-`run flies --arms ... --window validation|design|holdout` replays each session through flies itself
+`run flies --arms ... --window design|holdout|all` replays each session through flies itself
 (`flies.cli replay --history-db`, a subprocess; this package imports no strategy module), settles at
 the store's close for the day, and reads the scratch ledgers back through `core.ledgers`, so the net
 is paper's arithmetic. Control always runs beside the named arms; every arm is paired with it
 (`core.compare.pair_with_control`) and flagged `no_exposure` when it matched control to the cent.
 
-- **`validation`** (from 2026-10-13, the recorder era) always runs and is no trial.
-- **`design`** runs only once validation has unlocked this store's cadence. **Every (spec, arm) is a
+- **`design`** always runs. **Every (spec, arm) is a
   trial** (`results.trials`), keyed by a hash of what decides its trades (flies' `defaults`, the arm's
   entry, `symbols`, cadence, fill model): re-running a spec adds nothing, changing a parameter adds
   one. DSR deflates by this count.
@@ -222,7 +201,12 @@ is paper's arithmetic. Control always runs beside the named arms; every arm is p
   them afterwards (`study.rule.cut`). A span that reaches the holdout's dates reads them, so it needs
   `--spend-holdout`, spends it per spec as a holdout run does, and is refused once spent; a forward
   run wholly after the holdout (a forward retest) spends nothing. It counts as a trial as a design
-  run does, and runs provisionally as a design run may while history is locked.
+  run does.
+
+Runs made while history waited on a check against the recorder recorded no trial and carry a
+`provisional` mark in their stored report; the readout leaves that mark out (`readout.OLD_MARKS`),
+and the trial count covers only the runs since. `--provisional` and `--unvalidated-holdout` are
+still accepted, so older commands run, and do nothing.
 
 Statistics (`stats.py`) are per session, never annualised: PSR, DSR at the trial count, minimum track
 record, and a stationary-bootstrap interval. The fill model is flies paper's own (`FILL_MODEL`).
@@ -234,9 +218,7 @@ paper's 60 s cadence) from a snapshot of BOTH its files, `meic.json` and `meic.r
 (`$MEIC_CONFIG` / `$MEIC_RISK_CONFIG` for the subprocess), and reads back through `core.ledgers`'
 `meic_ic` reader. A MEIC trial is keyed on the arm's params merged over the base with comments
 dropped, so an inherited base key that changes is a new trial for every arm, and a reworded note is
-none. Advised arms stay flies'. **Each module validates and unlocks its own history**: `validate
---module meic` runs `meic.replay check` per source under the same cadence-matched bar, the report
-names its module, and a flies report unlocks nothing for MEIC (`unlocked(..., module=)`). The fence
+none. Advised arms stay flies'. The fence
 forbids importing any strategy module (`STRATEGY` in `test_fence.py`): everything is replayed by
 subprocess, and MEIC's import would also pull the broker in where the AST scan cannot see it.
 
@@ -247,7 +229,7 @@ backfilled; and the vendor store carries no volume, so the regime rows' flow col
 ## What the package holds
 
 The config, the key verbs, the licence clock, purge, the backup skip, the fence, the store, the
-fetch (SPXW 0DTE, any cadence the profile cadence divides), regime rows, validation, the flies
+fetch (SPXW 0DTE, any cadence the profile cadence divides), regime rows, the flies
 and MEIC runners with their statistics, and the flow fetch (below). The flow test (item 32): the rules are
 `flowstudy.py` (pure), the stores are read by `packages/backtest/scripts/flow_signal_item32.py`, which reads its grid
 from the plan file (`packages/backtest/scripts/flow_fetch_plan.py`, never recounted from the calendar) and spends the
@@ -278,9 +260,6 @@ with the server routes refusing on their own. That runs past the licence's end t
 final-review weeks, so the results can be read once more before `purge --derived`. A file under
 `results/` or `vendor/` counts as licensed. `features.backtest` (the licence active, the key in the
 keyring) is the separate question of whether new work may use the vendor.
-`overview` carries `provisional_looks` beside `trials`: the distinct specs run as
-provisional looks, per module. A look records no trial, so it never enters a DSR; the count is for
-the reader, who would otherwise see "trials: none" after dozens of looks at the same history.
 **`read overview` never counts a store.** Its inventory is the cache as last counted; a
 store changed since then comes back marked `pending`. The `inventory` verb does the counting, run by
 the supervisor's `backtest-inventory` job. A cold count of the largest stores takes over a minute and
@@ -302,8 +281,8 @@ win rate under 25%, a losing run of 10+ sessions, a drawdown of 60+ sessions, a 
 fees at 25%+ of premium. A check missing its numbers is left out, never passed. Description only.
 **The settings strip** (`arm_settings`): each arm's cadence, fill model and the params
 that differ from control's, so a grid arm reads as the setting it tests. A report stores each arm's
-spec; a report written before 2026-11-01 reads it from `trials` by hash, and a provisional run (no trial
-row) reads `recorded: false`, never "no difference".
+spec; a report written before 2026-11-01 reads it from `trials` by hash, and an older run with no trial
+row reads `recorded: false`, never "no difference".
 **The compounded lens** (`compounded`, `read run --risk-pct`) is the one exception to
 "never compounded", and is labelled a lens wherever it is shown: the same sessions re-sized each
 session to put a share of the equity at that point at risk (default 2%), one unit being the lots the
@@ -350,7 +329,7 @@ the block with its script's `--annotate FILE`, which reads the file and replays 
 is spent twice.
 
 **The gates-off oracle** (`gateoracle.py`, `packages/backtest/scripts/meic_gate_oracle.py --arm A`): what
-each switchable entry gate a MEIC arm has on adds over the trigger it gates. One provisional run
+each switchable entry gate a MEIC arm has on adds over the trigger it gates. One design run
 replays the arm, `A-open` (every listed gate off) and `A-no-<gate>` (each gate off alone); the read
 pairs each `-no-` arm with `A` per session (leave-one-out), and credits every `-open` trade to the
 gate `A`'s `entry_attempts` refused on the same tick (first refusal only, so overlapping gates go to

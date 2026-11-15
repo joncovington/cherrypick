@@ -7,9 +7,8 @@ over the wide SPX store (`SPX-60s-wide.db`, 40 strikes each side).
     python packages/backtest/scripts/meic_wing_width_item44.py --step study --window design|holdout [--workers
     N]
 
-Runs the backtest's own MEIC replay (`cherrypick.backtest.runner`) over the wide store, provisionally:
-MEIC history has not unlocked and the wide store is never validated. Writes under the backtest data dir
-(results/research/item44/), never into the repo: the inputs are licensed.
+Runs the backtest's own MEIC replay (`cherrypick.backtest.runner`) over the wide store.
+Writes under the backtest data dir (results/research/item44/), never into the repo: the inputs are licensed.
 
 **The coverage step** reads quotes only, no P&L, and comes first: each store's complete sessions per
 window, and the share of 14:00 16-delta shorts (put and call) whose 40-point wing is quoted in the same
@@ -256,9 +255,7 @@ def study(settings: dict, window: str, workers: int) -> dict:
         window,
         module="meic",
         cadence=CADENCE,
-        provisional=True,
         spend_holdout=holdout,
-        unvalidated_holdout=holdout,
         workers=workers,
         log=lambda m: print(m, file=sys.stderr),
     )
@@ -306,7 +303,6 @@ def study(settings: dict, window: str, workers: int) -> dict:
         "run_id": report["run_id"],
         "borrowed_from_item43": borrowed,
         "live_1400_run_id": live_run,
-        "provisional": True,
         "placebo_rate": rate,
         "refused_sessions": len(report.get("refused") or {}),
         "vix_fallback_sessions": report.get("vix_fallback_sessions"),

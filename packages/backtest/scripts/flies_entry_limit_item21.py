@@ -5,8 +5,7 @@
     PATH]
 
 Runs the backtest's own flies replay (`cherrypick.backtest.runner`, flies' own rules over the 60 s
-vendor store), provisionally because flies history cannot unlock: its validation stopped at five
-sessions when paper did. The holdout is spent by this run, once (`unvalidated_holdout`). Writes under
+vendor store). The holdout is spent by this run, once. Writes under
 the backtest data dir (results/research/item21/), never into the repo: the inputs are licensed.
 
 **The arms, as declared.** `control` and `range-high` are the machine's own arms, run as references.
@@ -182,9 +181,7 @@ def main(argv: list[str] | None = None) -> int:
         arms,
         args.window,
         cadence=CADENCE,
-        provisional=True,
         spend_holdout=holdout,
-        unvalidated_holdout=holdout,
         workers=args.workers,
         log=lambda m: print(m, file=sys.stderr),
     )
@@ -197,7 +194,6 @@ def main(argv: list[str] | None = None) -> int:
         "window": args.window,
         "span": [start, end],
         "run_id": report["run_id"],
-        "provisional": True,
         "refused_sessions": len(report.get("refused") or {}),
         "references": {a: score(per_arm.get(a, {}), start, end) for a in ("control", "range-high")},
         "arms": tests,

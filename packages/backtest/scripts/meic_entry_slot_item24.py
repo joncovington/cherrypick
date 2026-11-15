@@ -6,7 +6,7 @@ at 14:00, the slot live trades.
     [--json PATH] python packages/backtest/scripts/meic_entry_slot_item24.py --annotate FILE [FILE ...]
 
 Runs the backtest's own MEIC replay (`cherrypick.backtest.runner`, MEIC's own engine over the 60 s
-vendor store), provisionally because MEIC history has not unlocked. Writes under the backtest data dir
+vendor store). Writes under the backtest data dir
 (results/research/item24/), never into the repo: the inputs are licensed.
 
 **The arms, as declared.** `s1400` is the registry's `pm-200` with entries 14:00-14:30 (the 30-minute
@@ -234,9 +234,7 @@ def main(argv: list[str] | None = None) -> int:
         args.window,
         module="meic",
         cadence=CADENCE,
-        provisional=True,
         spend_holdout=holdout,
-        unvalidated_holdout=holdout,
         workers=args.workers,
         log=lambda m: print(m, file=sys.stderr),
     )
@@ -258,7 +256,6 @@ def main(argv: list[str] | None = None) -> int:
         "span": [start, end],
         "delta": args.delta,
         "run_id": report["run_id"],
-        "provisional": True,
         "holdout_seen": holdout,
         "refused_sessions": len(report.get("refused") or {}),
         "vix_fallback_sessions": report.get("vix_fallback_sessions"),

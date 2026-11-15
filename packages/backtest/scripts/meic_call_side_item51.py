@@ -932,7 +932,6 @@ def study(part: int, window: str) -> dict:
         "window": window,
         "span": [start, span_end],
         "run_ids": ids,
-        "provisional": True,
         "floor": floor,
         "episode_definition": EPISODE_DEFINITION,
         "move_bins": list(BIN_NAMES),
@@ -954,7 +953,7 @@ def report(doc: dict) -> str:
     lines = [
         f"# Item {ITEM}, part {doc['part']}, {doc['window']} window {doc['span'][0]} to {doc['span'][1]}",
         "",
-        f"**Verdict: {doc['verdict']}.** Provisional: MEIC history has not unlocked. The measure is the "
+        f"**Verdict: {doc['verdict']}.** The measure is the "
         "variant's net less the base's per flagged session, in dollars as traded; one session one "
         f"observation. Floor {doc['floor']} flagged sessions. Episodes: {doc['episode_definition']}.",
         "",

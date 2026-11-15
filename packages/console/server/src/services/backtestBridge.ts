@@ -13,8 +13,7 @@ import { spawnModuleCliAsync, type SpawnedJson } from "./moduleCli.js";
 /**
  * The Backtest page's two reads of `packages/backtest` (`python -m cherrypick.backtest read`):
  *
- * - `read overview`: the licence clock, the vendor stores, the vendor-against-recorder validation
- *   per cadence, the run list and the trial counts.
+ * - `read overview`: the licence clock, the vendor stores, the run list and the trial counts.
  * - `read run --id <run_id> [--capital <dollars>] [--risk-pct <percent>]`: one run's report, with its
  *   cards (`cards.py`) attached as `cards`, on the chosen account or the run's own peak risk, the
  *   compounded lens sized at the chosen risk per session (`--risk-unit`: max loss or stop distance),
@@ -28,7 +27,7 @@ import { spawnModuleCliAsync, type SpawnedJson } from "./moduleCli.js";
  *   and a thinned running net), for the studies tiles: one read for every tile on the board.
  *
  * All are read-only on the Python side and neither contacts the vendor. Every verdict on the page
- * (the unlock, each check, the paired interval) is the module's; nothing here recomputes one.
+ * (each check, the paired interval) is the module's; nothing here recomputes one.
  *
  * Async (`spawnModuleCliAsync`, the sync spawner's parse): the overview opens every store, and a
  * synchronous spawn would hold the whole server for it. Memoised ~30 s; a second request for a read
@@ -191,7 +190,7 @@ function toRunFigures(v: unknown): StudyRunFigures {
     const path = Array.isArray(x["path"]) ? x["path"].filter((p): p is number => typeof p === "number" && Number.isFinite(p)) : [];
     arms[arm] = { mean: num(x["mean"]), sessions: num(x["sessions"]), trades: num(x["trades"]), path };
   }
-  return { module: str(r["module"]), window: str(r["window"]), provisional: r["provisional"] === true, arms };
+  return { module: str(r["module"]), window: str(r["window"]), arms };
 }
 
 /** Each run's arms in brief, for the studies tiles. The caller has already checked every id's

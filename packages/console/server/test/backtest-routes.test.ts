@@ -27,7 +27,6 @@ const OVERVIEW = {
   license: { active: true, terminated_on: null, purge_by: null, days_left: null, overdue: false },
   windows: { design: ["2023-01-03", "2025-06-30"], holdout: ["2025-07-01", "2026-06-30"] },
   stores: [{ symbol: "SPX", cadence: 60, file: "SPX-60s.db", complete: 3, span: ["2026-10-13", "2026-10-15"], refused: 0, refused_reasons: {} }],
-  validation: [],
   runs: [],
   trials: { flies: 1 },
 };
@@ -102,6 +101,7 @@ const STUDIES = {
       legacy: false,
       pointer: "research/edge-hypotheses-plan.md#23-the-short-delta",
       outcome: "live stays at 16 delta",
+      provisional: true,
       rule: "t > 2",
       rivals: [{ explanation: "a calm span", check: "both halves" }, { explanation: "no check" }],
       group: "finished",
@@ -114,6 +114,7 @@ const STUDIES = {
           window: "design",
           span: null,
           run_id: "20261028-065012-0174bd",
+          // An older orchestrator marked results; the row's mark is the one read now.
           provisional: true,
           verdicts: [{ arm: "d20", verdict: "fail" }],
           summary: "fail",
@@ -356,7 +357,7 @@ describe("the gate is open", () => {
     const r = await app.inject({ method: "GET", url: `/api/backtest/summaries?ids=${RUN_ID},${other},${RUN_ID}` });
     expect(r.statusCode).toBe(200);
     expect(r.json().data).toEqual({
-      runs: { [RUN_ID]: { module: "meic", window: "design", provisional: true, arms: { d10: { mean: -1.25, sessions: 3, trades: 3, path: [-2, -3.75] } } } },
+      runs: { [RUN_ID]: { module: "meic", window: "design", arms: { d10: { mean: -1.25, sessions: 3, trades: 3, path: [-2, -3.75] } } } },
       missing: [other],
     });
     expect(spawned).toEqual([{ kind: "summaries", ids: [other, RUN_ID].sort() }]);
@@ -497,6 +498,7 @@ describe("the gate is open", () => {
       status: "failed",
       group: "finished",
       outcome: "live stays at 16 delta",
+      provisional: true,
       queueActive: false,
       lastActivity: "2026-10-28T23:38:59",
       rivals: [{ explanation: "a calm span", check: "both halves" }],
@@ -511,7 +513,6 @@ describe("the gate is open", () => {
       window: "design",
       span: null,
       runId: "20261028-065012-0174bd",
-      provisional: true,
       verdicts: [{ arm: "d20", verdict: "fail" }],
       summary: "fail",
       // A row without a setting and a label that is not a word are dropped, not guessed.

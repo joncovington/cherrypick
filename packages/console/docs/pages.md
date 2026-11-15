@@ -630,9 +630,9 @@ its licensed pieces fail closed (above). `GET /api/backtest/overview` and
 cherrypick.backtest read overview|run --id`, async, memoised 30 s) each 404 with the unknown-API body
 unless the features answer says `backtest_results: true`; a run id is checked against the runner's shape
 (`BACKTEST_RUN_ID` in `@console/shared`) and anything else is a 400 that spawns nothing. A bridge,
-not a mirror: the unlock verdict, every check, the paired interval and `no_exposure` are the module's.
+not a mirror: every check, the paired interval and `no_exposure` are the module's.
 Tabs (`studies` first, and the landing tab, then `queue`, `runs`, `data`;
-`validation` is part of `data`, and `slices` is on Compare; the old URLs redirect): `studies` (`pages/Backtest/StudiesTab.tsx`, `GET /api/backtest/studies` →
+an old `validation` link opens `data`, and `slices` is on Compare): `studies` (`pages/Backtest/StudiesTab.tsx`, `GET /api/backtest/studies` →
 `services/studiesBridge.ts` → `python -m cherrypick.cli hypotheses-board`, open to every reader:
 the register's words are public, and while the results gate is closed the orchestrator takes a
 licensed result's notes and grid out itself and marks it `withheld`; a study's report, likewise open,
@@ -642,7 +642,8 @@ hypothesis-register item, in progress / declared / finished / observations order
 task running now as a large tile first. A finished tile's big word is the register's status, with
 "2 pass · 5 fail" when the newest result's arms disagree; an in-progress tile shows its step and one
 segment per queue step; a declared one what it expects; each carries stale (a replay correction since
-the result), its window and provisional, all read from the board. A tile whose newest result names a
+the result) and its window, read from the result, and provisional, read from the register's row (its
+outcome says so: an earlier study read the data, or the holdout was small). A tile whose newest result names a
 runner run (a study script's own label is passed over) also draws that run in brief,
 from one `GET /api/backtest/summaries?ids=` read for the board (`read summaries`): each arm's
 running net as a thin line, the arm with the highest mean drawn over the rest, and that arm's
@@ -676,18 +677,12 @@ lightbox. The other tabs point back (`pages/Backtest/studyIndex.ts`, one shared 
 queue row carries its study's verdict as a chip linking to the board, the runs list has a `study`
 column, a run report opens with an "in plain English" card (what ran, the study it answers and
 that study's verdict and decision, control's net, each arm against control and where its interval
-sits against zero, all the report's figures worded), and the `provisional` chip links to
-data), `data` (as cards, `pages/Backtest/DataCards.tsx`: "is history trusted?" first and
-large, the answer the module's unlock verdicts give, then one row per validation with its cadence,
-sessions compared, dates, what stands in the way (the checks outside tolerance, or the session
-count) and a dot per check from `vendor_within_tolerance`; the licence (a line while it is active
-with no end date, its clock once it ends) and the stores' totals beside it; then one tile per
-store, from the inventory (else the replay stores' fetch record), with what it holds, a bar of the
+sits against zero, all the report's figures worded)), `data` (as cards, `pages/Backtest/DataCards.tsx`:
+the licence (a line while it is active with no end date, its clock once it ends) and the stores'
+totals side by side; then one tile per store, from the inventory (else the replay stores' fetch record), with what it holds, a bar of the
 years its largest dated table covers, size, the largest table's rows and the sessions its fetch
 refused, missing and "count pending" marked (the read never counts), filters on `?stores=`. A
-validation opens a lightbox (`?item=validation:<file>`) with the module's tables as tabs: checks,
-replay measures, quotes and GEX profile per session; a store (`?item=store:<file>`) opens what it
-holds, its tables, the code that rebuilds it and the sessions refused, with why), `runs` (as cards, `pages/Backtest/RunsCards.tsx`: one tile per replay, newest first and
+store (`?item=store:<file>`) opens a lightbox with what it holds, its tables, the code that rebuilds it and the sessions refused, with why), `runs` (as cards, `pages/Backtest/RunsCards.tsx`: one tile per replay, newest first and
 the newest large, module chips on `?module=`; a tile names the study whose result file names the run
 and that study's verdict, else says none does. A tile opens a lightbox on `?run=` with five tabs:
 summary (the "in plain English" card, then each arm's net a session toned by sign, trades a session,
@@ -698,7 +693,7 @@ calendar (one arm at a time, the run cards' own checks and month grid), and sett
 reads one report: each arm's summary, the pairing with control, trials, fill model, code commit, data
 fingerprint, refused sessions, and the run cards, `pages/Backtest/RunCards.tsx`: per arm
 a one-line settings strip (cadence, fill model, and the params that differ from
-control, or "settings not recorded" for an older provisional run), the health checks (
+control, or "settings not recorded" for a run written before runs kept their spec), the health checks (
 flagged ones on top, each a sentence against its bar), the
 account, equity and drawdown, edge trend, deepest drawdowns, month-by-year grid, trades, premium
 (fee drag, capture rate) and how trades ended, all the module's `cards.py`. `?capital=` (whole

@@ -3,8 +3,7 @@
 The vendor's Standard tier carries first-order greeks and IV but not gamma (a Professional field), and
 the GEX surface the replay rebuilds needs gamma per strike. So gamma is computed here, from the
 vendor's own IV and underlying price at the same instant, with no rate or dividend: over hours to a
-0DTE expiry both move gamma by far less than the IV's own error. Validation (`validate`) measures the
-result against the gamma the recorder took from the live feed; nothing assumes they agree.
+0DTE expiry both move gamma by far less than the IV's own error.
 
 Time to expiry is wall-clock time to the session's close (16:00 ET, 13:00 on an early close) over a
 365-day year, floored at one minute so the last ticks of a session do not divide by zero.

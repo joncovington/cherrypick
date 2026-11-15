@@ -33,62 +33,13 @@ export interface BacktestGapStats {
   [k: string]: unknown;
 }
 
-export interface BacktestQuoteAgreement {
-  ok: boolean;
-  /** Why the layer could not be compared (`no recorder samples`, `no vendor samples`). */
-  reason?: string;
-  recorded_quotes?: number | null;
-  /** Fractions 0-1: recorded quotes the vendor matched, and of those, identical bid and ask. */
-  matched?: number | null;
-  identical?: number | null;
-  mid_gap?: BacktestGapStats | null;
-  spot_gap?: BacktestGapStats | null;
-  [k: string]: unknown;
-}
-
-export interface BacktestProfileAgreement {
-  ok: boolean;
-  reason?: string;
-  /** `*_same` are fractions 0-1 of the paired profiles. */
-  pairs?: number | null;
-  call_wall_same?: number | null;
-  put_wall_same?: number | null;
-  net_gex_sign_same?: number | null;
-  gamma_flip_gap?: BacktestGapStats | null;
-  strikes_per_profile?: { recorder_median?: number | null; vendor_median?: number | null } | null;
-  [k: string]: unknown;
-}
-
-export interface BacktestSideReading {
-  measures: Record<string, unknown> | null;
-  checks: Record<string, boolean> | null;
-}
-
-/** One cadence's vendor-against-recorder validation. */
-export interface BacktestValidation {
-  cadence: number | null;
-  file: string;
-  dates: string[];
-  unlocks_history: boolean;
-  sessions_compared: number | null;
-  vendor_at_least_recorder: Record<string, boolean>;
-  /** The unlock bar since 2026-10-25: each check's measure within tolerance of the recording's.
-   *  Empty on a report written before it. */
-  vendor_within_tolerance?: Record<string, boolean>;
-  recorder: BacktestSideReading;
-  vendor: BacktestSideReading;
-  sessions: Record<string, { quotes?: BacktestQuoteAgreement; profile?: BacktestProfileAgreement }>;
-}
-
-export type BacktestWindow = "validation" | "design" | "holdout";
+export type BacktestWindow = "design" | "holdout" | "all";
 
 export interface BacktestRunListing {
   run_id: string;
   created_at: number;
   module: string;
   window: BacktestWindow | string;
-  /** A design-window run made before validation unlocked history: no trial, no evidence. */
-  provisional?: boolean;
   arms: string[];
   span: [string, string];
   cadence: number;
@@ -131,15 +82,8 @@ export interface BacktestOverview {
   stores: BacktestStore[];
   /** Every vendor store against the declared registry (backtest stores.py). */
   inventory?: BacktestInventory;
-  validation: BacktestValidation[];
   runs: BacktestRunListing[];
   trials: Record<string, number>;
-  /**
-   * Distinct specs run as provisional looks, per module (2026-10-30). A provisional run records no
-   * trial, so this is how much the history has been looked at while `trials` still reads zero. For
-   * the reader only: no statistic is deflated by it. Absent from an older module.
-   */
-  provisional_looks?: Record<string, number>;
 }
 
 /** An arm's whole-run summary: per-session net figures, in whole-position dollars. */
@@ -330,7 +274,7 @@ export interface BacktestScorecard {
 /**
  * `cards.arm_settings`: what decided the arm's trades. `differs` holds every param that differs from
  * `base`'s (control), so a grid arm reads as the one setting it tests. `recorded: false` when the run
- * kept no spec (a provisional run written before 2026-11-01): unknown, never "no difference".
+ * kept no spec (a run written before 2026-11-01): unknown, never "no difference".
  */
 export type BacktestArmSettings =
   | { recorded: false }
@@ -439,8 +383,6 @@ export interface BacktestRunCards {
 export interface BacktestRunReport {
   run_id: string;
   window: BacktestWindow | string;
-  provisional?: boolean;
-  provisional_note?: string;
   span: [string, string];
   cadence: number;
   fill_model: unknown;

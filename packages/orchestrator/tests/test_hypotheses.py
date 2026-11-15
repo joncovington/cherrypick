@@ -164,6 +164,19 @@ def test_board_joins_results_and_queue_and_groups_rows():
     assert "retired" not in hy.RETESTABLE
 
 
+def test_a_row_is_provisional_only_when_its_outcome_says_so():
+    """The register's outcome is the decision of record. A result file's own `provisional` flag is
+    not read: runs written while history waited on validation carry one that no longer means anything."""
+    marked = ({"window": "design", "provisional": True, "verdict": {"x": "pass"}}, "2026-11-04T00:00:00")
+    full = {**NEW, "id": 43, "study": "item43", "status": "passed", "outcome": "w15 passes",
+            "results": ["{home}/r/x.json"]}  # fmt: skip
+    declared = {**full, "id": 84, "study": "item84", "outcome": "provisional by declaration: fails"}
+    out = hy.board({"hypotheses": [full, declared]}, [], lambda p: marked)
+    by = {r["study"]: r for r in out["rows"]}
+    assert by["item43"]["provisional"] is False and by["item84"]["provisional"] is True
+    assert "provisional" not in by["item43"]["results"][0]
+
+
 def test_board_shows_a_verdict_the_queue_wrote_before_the_register_lists_it():
     declared = {**NEW, "id": 41, "study": "item41"}
     listed = {

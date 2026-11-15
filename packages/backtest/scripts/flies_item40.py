@@ -5,8 +5,7 @@ uncompleted vertical, and the whole fly bought at once, each against flies' `con
     python packages/backtest/scripts/flies_item40.py report [--json PATH]
 
 Runs the backtest's own flies replay (`cherrypick.backtest.runner`, flies' own rules over the 60 s
-vendor store), provisionally because flies history cannot unlock: its validation stopped at five
-sessions when paper did. The holdout is spent by this run, once per arm (`unvalidated_holdout`), and
+vendor store). The holdout is spent by this run, once per arm, and
 only for the arms that passed the design window. Everything is written under the backtest data dir
 (results/research/item40/), never into the repo: the inputs are licensed.
 
@@ -374,9 +373,7 @@ def cmd_study(args) -> int:
         arms,
         args.window,
         cadence=CADENCE,
-        provisional=True,
         spend_holdout=holdout,
-        unvalidated_holdout=holdout,
         workers=args.workers,
         log=lambda m: print(m, file=sys.stderr),
     )
@@ -398,7 +395,6 @@ def cmd_study(args) -> int:
     spans = {w: b["span"] for w, b in doc["windows"].items()}
     doc.update(
         {
-            "provisional": True,
             "verdict": final_verdicts(doc["windows"]),
             "window": "; ".join(f"{w} {a}..{b}" for w, (a, b) in spans.items()),
             "run_id": report_["run_id"],
@@ -483,8 +479,7 @@ def report(doc: dict) -> str:
         "Two levers on flies' control, each beside it on the same sessions. **strand-stop** buys back a"
         f" vertical still uncompleted once its loss reaches {STOP_FRACTION:g} of its maximum loss."
         " **whole-fly** buys the butterfly control would complete to, in one order, and holds it. The runs"
-        " are provisional: flies' replay cannot be validated, so they carry the vendor data's own"
-        " unchecked error.",
+        " read the vendor's data as recorded.",
         "",
         "Every figure is dollars at one contract, per session; a session with no entry nets zero. The"
         " paired difference is the arm's net less control's on the same session; its lower bound is a"
@@ -540,8 +535,8 @@ def report(doc: dict) -> str:
         " one-sided bound. **half 1 / half 2**: the mean difference in each time-half. **at 1.5x**: the"
         " mean difference with fees and slippage scaled by one and a half.",
         "- **without worst 5**: the mean difference excluding control's five worst sessions.",
-        "- **Declared limits:** 60-second ticks; fills under the runner's fill model; a provisional"
-        " replay; the whole fly fills at its modelled price, not a resting order's path.",
+        "- **Declared limits:** 60-second ticks; fills under the runner's fill model; the vendor's"
+        " data as recorded; the whole fly fills at its modelled price, not a resting order's path.",
     ]
     return "\n".join(lines) + "\n"
 

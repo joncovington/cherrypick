@@ -176,7 +176,6 @@ def main(argv: list[str] | None = None) -> int:
         "span": [start, end],
         "run_id": wide_run,
         "live_1400_run_id": base_run,
-        "provisional": True,
         "split": split,
         "reference": {BASE: i43.own(base_rows, start, end)},
         "arms": tests,

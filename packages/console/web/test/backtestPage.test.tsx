@@ -4,14 +4,14 @@ import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { BacktestArmCards, BacktestOverview, BacktestRunCards, BacktestRunReport, BridgedResult } from "@console/shared";
 import { trialsLine } from "../src/pages/Backtest/BacktestPage";
-import { BacktestDataTab, DataDialogBody, blocker, keepStore, storeModels, trustAnswer, yearDomain, type DataItem, type DataTab } from "../src/pages/Backtest/DataCards";
+import { BacktestDataTab, DataDialogBody, keepStore, storeModels, yearDomain, type DataItem, type DataTab } from "../src/pages/Backtest/DataCards";
 import { BacktestRunsTab, RunDialogBody, initialRunTab, type RunTab } from "../src/pages/Backtest/RunsCards";
 import { writePref } from "../src/lib/prefs";
 
 /**
- * The Backtest page's data and runs tabs (validation folded into data 2026-10-30), rendered with the bridge's documents already in the query cache
+ * The Backtest page's data and runs tabs, rendered with the bridge's documents already in the query cache
  * (a render that only ever sees the loading state is not a test). Pinned: the licence note heads
- * every tab; the unlock verdict and each check are the module's, shown as written; a run's money
+ * every tab; each check is the module's, shown as written; a run's money
  * is net, signed, whole-position dollars, with fees shown as a cost and never toned; a
  * `no_exposure` arm says so; the interval ends carry no tone; a failed read says why.
  */
@@ -33,30 +33,12 @@ const OVERVIEW: BacktestOverview = {
       refused_reasons: { half_day: 2 },
     },
   ],
-  validation: [
-    {
-      cadence: 60,
-      file: "SPX-60s.json",
-      dates: ["2026-10-13", "2026-10-14"],
-      unlocks_history: false,
-      sessions_compared: 2,
-      vendor_at_least_recorder: { entries_match: true, settles_match: false },
-      recorder: { measures: { sessions: 2 }, checks: { entries_match: true, settles_match: true } },
-      vendor: { measures: { sessions: 2 }, checks: { entries_match: true, settles_match: false } },
-      sessions: {
-        "2026-10-13": {
-          quotes: { ok: true, matched: 0.987, identical: 0.5, mid_gap: { median: 0, p90: 0.05, p99: 0.1, mean_signed: -0.001 }, spot_gap: null },
-          profile: { ok: false, reason: "no vendor profile" },
-        },
-      },
-    },
-  ],
   runs: [
     {
       run_id: RUN_ID,
       created_at: 1_792_245_000,
       module: "flies",
-      window: "validation",
+      window: "design",
       arms: ["control", "range-high"],
       span: ["2026-10-13", "2026-10-15"],
       cadence: 60,
@@ -69,7 +51,7 @@ const OVERVIEW: BacktestOverview = {
 
 const REPORT: BacktestRunReport = {
   run_id: RUN_ID,
-  window: "validation",
+  window: "design",
   span: ["2026-10-13", "2026-10-15"],
   cadence: 60,
   fill_model: "flies-paper-legged",
@@ -142,7 +124,7 @@ const runDialog = (tab: RunTab, report: BacktestRunReport | null = REPORT, url =
     <QueryClientProvider client={new QueryClient()}>
       <MemoryRouter initialEntries={[url]}>
         <RunDialogBody
-          listing={{ run_id: RUN_ID, created_at: 1_793_000_000, module: "flies", window: "validation", provisional: false, arms: ["control", "range-high"], span: ["2024-01-02", "2024-02-01"], cadence: 60, sessions: 2 }}
+          listing={{ run_id: RUN_ID, created_at: 1_793_000_000, module: "flies", window: "design", arms: ["control", "range-high"], span: ["2024-01-02", "2024-02-01"], cadence: 60, sessions: 2 }}
           report={report}
           tab={tab}
           onTab={() => undefined}
@@ -188,7 +170,7 @@ describe("data", () => {
     expect(html).toContain("2 refused");
     // Why, in the store's lightbox.
     const store = storeModels(OVERVIEW)[0]!;
-    const refused = dialog({ kind: "store", key: "store:SPX-60s.db", s: store }, "refused");
+    const refused = dialog({ key: "store:SPX-60s.db", s: store }, "refused");
     expect(refused).toContain("half_day");
   });
 
@@ -211,8 +193,8 @@ describe("data", () => {
     expect(html).toContain("2 refused");
     const store = storeModels(withInv)[0]!;
     expect(store.refused).toBe(2);
-    expect(dialog({ kind: "store", key: "store:SPX-60s.db", s: store }, "rebuild")).toContain("fetch --cadence 60");
-    expect(dialog({ kind: "store", key: "store:SPX-60s.db", s: store }, "refused")).toContain("half_day");
+    expect(dialog({ key: "store:SPX-60s.db", s: store }, "rebuild")).toContain("fetch --cadence 60");
+    expect(dialog({ key: "store:SPX-60s.db", s: store }, "refused")).toContain("half_day");
   });
 
   it("keeps a missing store and one changed since its count apart, and filters on them", () => {
@@ -237,30 +219,14 @@ describe("data", () => {
   });
 });
 
-describe("is history trusted?", () => {
-  it("answers first, names what stands in the way, and keeps the module's tables behind an expand", () => {
-    const tol = { ...OVERVIEW.validation[0]!, vendor_within_tolerance: { entries_match: true, settles_match: false } };
-    const html = render(<BacktestDataTab />, "/backtest/data", (c) =>
-      seedOverview(c, { ok: true, data: { ...OVERVIEW, validation: [tol] }, error: null }),
-    );
-    expect(html).toContain("No: the one validation does not unlock history");
-    expect(html).toContain("Outside tolerance: settles_match.");
-    expect(html).toContain('class="d-dot is-in"');
-    expect(html).toContain('class="d-dot is-out"');
-    expect(trustAnswer([tol]).head).toBe("Not yet");
-    expect(trustAnswer([]).head).toBe("Not yet asked");
-    expect(trustAnswer([{ ...tol, unlocks_history: true }]).line).toBe("1 of 1 validation unlocks history.");
-    expect(blocker({ ...tol, unlocks_history: true })).toBeNull();
-    // The module's tables, as written, in the validation's lightbox.
-    const item: DataItem = { kind: "validation", key: "validation:SPX-60s.json", v: tol };
-    expect(dialog(item, "checks")).toContain("does not unlock history");
-    expect(dialog(item, "quotes")).toContain("98.7%");
-    expect(dialog(item, "profile")).toContain("no vendor profile");
-  });
-
-  it("with every check within tolerance, it is the session count that stands in the way", () => {
+describe("the data tab's top", () => {
+  it("leads with the licence and the stores' totals, and asks nothing about validation", () => {
     const html = render(<BacktestDataTab />, "/backtest/data", (c) => seedOverview(c));
-    expect(html).toContain("Every check is within tolerance; it needs more sessions compared.");
+    expect(html).toContain('class="d-top"');
+    expect(html).toContain(">Licence<");
+    expect(html).toContain(">Stores<");
+    expect(html).not.toContain("Is history trusted?");
+    expect(html).not.toContain("validation");
   });
 });
 
@@ -278,8 +244,8 @@ describe("cards or rows on the runs and data cards", () => {
       expect(runs).toContain("3 sessions · 1 arm");
       expect(runs).toContain("2026-10-13 → 2026-10-15");
       const data = render(<BacktestDataTab />, "/backtest/data", (c) => seedOverview(c));
-      // The trust panel stays; the store list is rows.
-      expect(data).toContain("Is history trusted?");
+      // The licence and totals panels stay; the store list is rows.
+      expect(data).toContain(">Licence<");
       expect(data).not.toContain("study-tile d-store");
       expect(data).toContain('aria-label="Open store SPX-60s.db" data-store="SPX-60s.db"');
       expect(data).toContain("2 refused");
@@ -401,15 +367,9 @@ describe("runs", () => {
   });
 });
 
-describe("trials and provisional looks", () => {
-  it("says a provisional run's DSR is deflated by nothing while looks are not trials", () => {
-    const d = { ...OVERVIEW, trials: {}, provisional_looks: { flies: 41, meic: 26 } };
-    expect(trialsLine(d)).toBe(
-      "Trials recorded: none. Provisional looks, distinct specs run before validation unlocked: flies 41, meic 26. " +
-        "A look is not a trial, so a provisional run's DSR is deflated by nothing and reads no stricter than its PSR.",
-    );
-    expect(trialsLine({ ...d, trials: { flies: 4 } })).toContain("deflated by the trials alone");
-    // An older module sends no looks: the line is the trials alone.
+describe("trials", () => {
+  it("names the trials recorded per module, or none", () => {
     expect(trialsLine(OVERVIEW)).toBe("Trials recorded: flies 4.");
+    expect(trialsLine({ ...OVERVIEW, trials: {} })).toBe("Trials recorded: none.");
   });
 });
