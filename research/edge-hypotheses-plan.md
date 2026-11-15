@@ -8680,6 +8680,98 @@ and paths.
   earn; a lean narrows the loss against the neutral calendar but does not turn it. The trader's own
   judgement is not tested here. With item 86, the earnings calendar is closed on licensed data.
 
+### 88. The sweep-and-engulf candle: a bar that runs the previous bar's low and closes above its high
+
+Declared 2026-11-14, before any outcome of it is computed. The rule comes from a published video in
+which a short clip's setup is rebuilt and backtested on 4-hour gold, without costs and with its
+settings tuned on the same sample; the clip says it works "on any pair". It is the second
+**`indicator-rule`** item after 83. `--similar` names items 26, 32, 34 and 39 (directional and share
+studies, none this rule) and item 83 (failed). The engulf paper module and its console chart (#1171)
+take their arms from this verdict.
+
+- **Question:** does entering at the next open after a bar that sweeps the previous bar's extreme and
+  closes beyond its other extreme, stopped at the sweep and targeting twice the risk, earn after costs
+  on daily bars of liquid funds, and does it beat the same stops and targets entered at random?
+- **The rule as stated:** a long when a bar trades below the previous bar's low and closes above its
+  high (a short is the mirror); the previous bar the same colour as the signal; longs only above the
+  200-bar EMA of closes, shorts only below; entry at the next bar's open; stop at the signal bar's low
+  (high for a short); target at 2 × the stop distance; no new signal until the trade ends.
+- **The replay (`SPEC`, `run_fund` in the script):**
+  - **Data:** the broker's daily bars of 16 funds with weekly options, `ETFS`: SPY, QQQ, IWM, DIA, EFA,
+    EEM, TLT, GLD, SLV, USO, XLE, XLF, XLK, XLU, XLV, XLI, from each fund's first bar the broker serves
+    (1999 for most, SLV and USO 2006) through 2026-11-13. Fetched by `scripts/fetch_item88_bars.py`
+    into `~/.cherrypick/data/public/item88/bars.db`, asked with extended hours: the broker's daily candle
+    is the official session (GLD's matched Yahoo on all 53 sessions checked).
+  - **Why funds, not gold alone:** GLD's daily bars fire the stated rule 67 times in 22 years, about 33
+    before any split, too few for a verdict. Pooling the funds also tests the clip's "any market" claim.
+  - **Fills:** entry at the next open; a next open already past the stop is no trade (counted). Inside a
+    bar a stop and a target both touched is the stop; a later bar opening past either fills at that open.
+    One position per fund; a signal while one is held is counted, never taken. A trade still open on the
+    last bar closes at its close.
+  - **Money:** $10,000 of the fund a trade, whole shares. Fees from core (`stock_trade_fee`: the SEC fee
+    and FINRA TAF on each sell fill, a short's opening fill included). **Declared:** slippage of one cent
+    a share each side, since core has no stock slippage model; no borrow cost on shorts.
+- **One judged arm, `etf-daily`:** the stated rule on all 16 funds. Variants are reported only (below).
+- **Windows:** one run, cut at **2016-01-01** (design before, holdout from). The holdout part is read only
+  after a design pass.
+- **The rule, two literals in the script; a pass needs both:**
+  - **`RULE`, the three bars** (`cherrypick.backtest.study.rule`) on **one row per entry session**: the
+    trades entered that session across funds pooled (nets summed, buying power summed, days weighted by
+    buying power, so the bill charged is each trade's own). Pooling by session keeps same-day trades in
+    correlated funds from counting as independent. Capital: the net less the 3-month bill on the buying
+    power over the days held (core's Treasury reader, else FRED's DGS3MO before 2011), one-sided
+    t ≥ 2.0. Tail: 10,000 draws, seed 88, a year being the sample's own sessions a year. Delta **not
+    applicable**: for a trade in the fund itself, the net less the same delta financed is zero by
+    construction, so the rival that matters is the control. Fewer than 150 design sessions is no
+    verdict, fewer than 60 in the holdout likewise (the counts are about 400 and 280).
+  - **`CONTROL_RULE`, against chance:** each entry session's net less the mean of 20 placebo draws (seed
+    88). A placebo replays each of the session's trades on the same fund, entered at the open after a
+    random bar of the same part, with the trade's own stop distance in ATR(14) units and 2R. **Its side is
+    drawn from the arm's own long share in that part, never the trade's own side** (item 83's control
+    copied the side and so carried the outcome). Design: the mean difference above zero at one-sided
+    t ≥ 2.0, and above zero in each design half (split 2008-01-01); then, after a design pass, the
+    holdout mean above zero.
+  - One judged arm, so no Holm step.
+- **Reported, never judged:**
+  - Per part: trades, win rate, mean net and return, costs, days held, exits by reason, the long share,
+    longs and shorts apart; every year; every fund; GLD alone.
+  - **Variants** on the same funds: any colour; no EMA; an ATR(14) × 2 stop at 2R; the source's tuned
+    setting (ATR × 5 stop, 1.5R).
+  - **The 4-hour gold replication**, the source's own market, stated rule and tuned setting, one micro
+    contract (10 oz), a declared cost of a tick of slippage and $1.50 of fees a contract a side (core has
+    no futures fee). Hourly bars are Yahoo's GC=F (front month, rolled silently) for sessions before
+    2026-02-02, then each session's front dated contract from the gold bar recorder: the cycle contract
+    with the most daily volume becomes the front from the next session, never moving back, from
+    2025-06-01. 4-hour bars never cross a contract change; a signal whose previous bar is another
+    contract is skipped; a trade open at a change closes there (`roll`). **Two alignments:** bars
+    starting on the UTC hours 00/04/08/12/16/20 (the broker's own 4-hour candles, which equal their
+    four hourly bars exactly) and bars from the 18:00 ET session open, to show whether the result
+    depends on where the bars start.
+- **Rival explanations, each with its check:**
+  - *It is the trend of the sample (the EMA filter picks the trend's side):* the control draws its side
+    from the arm's own mix; longs and shorts and every year reported.
+  - *It is any entry with a 2R bracket:* the control keeps the stop distance and R, only the entry is
+    random.
+  - *It is a few funds or one market:* every fund reported, GLD alone reported.
+  - *It is tuning:* the stated rule only is judged; the tuned setting reported.
+  - *It is where the bars start:* two 4-hour alignments reported.
+- **Declared limits:** the fund list is today's (hindsight, B11); daily bars cannot order a stop and a
+  target touched in one bar, so the stop is taken; no short borrow cost; slippage declared, not
+  measured; the 4-hour replication spans about 2.4 years, almost all a gold rally, and Yahoo's span
+  carries unknown roll gaps, so it is never judged.
+- **Data and results:** `scripts/fetch_item88_bars.py` queued as `item88/fetch`, then
+  `packages/backtest/scripts/engulf_item88.py study` as `item88/study` after it (`queue-chain --after
+  item88/fetch`). Results stay under `~/.cherrypick/data/backtest/results/research/item88/`, and this
+  plan records the verdict without figures. No licensed data: nothing here is on the vendor's clock.
+- **Decides:**
+  - **The arm passes:** propose the engulf paper module (#1168) with the stated rule on the funds that
+    carried the result, beside a control sampling arm, with a `forward` block declared before it trades;
+    the 4-hour gold arm runs only as a watched replication.
+  - **It fails or no verdict:** the rule does not earn on liquid funds after costs, or does no better than
+    the same brackets entered at random. The module is built only if the operator chooses to watch it
+    anyway, as ladder was, with its README saying no edge is claimed. The record stays under
+    `indicator-rule`.
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:
