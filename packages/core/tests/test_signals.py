@@ -209,7 +209,7 @@ def test_seed_false_starts_every_session_cold():
     ("spec", "message"),
     [
         ({"kind": "nope"}, "signal.kind"),
-        ({**cross(105), "colour": 1}, "unknown key 'colour'"),
+        ({**cross(105), "color": 1}, "unknown key 'color'"),
         ({"kind": "gap", "direction": "up"}, "needs 'pct'"),
         ({"kind": "gap", "direction": "sideways", "pct": 1}, "signal.direction"),
         ({"kind": "consecutive", "n": 3, "direction": "up", "seed": True, "reset": 1}, "signal.reset"),
