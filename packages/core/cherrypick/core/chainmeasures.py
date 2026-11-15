@@ -19,7 +19,7 @@ carries both: the paper loops' treatment (#786), so a gate in a backtest reads w
 
 The measures (and what each reads, `NEEDS`):
 
-- `realised_vol(closes)`: the sample standard deviation of the closes' log returns times the square
+- `realized_vol(closes)`: the sample standard deviation of the closes' log returns times the square
   root of 252 -- overview's `realized_vol` and contango's `realised_vol` (pmcc's item 36 is the same
   quantity as a fraction).
 - `iv_rank(value, history)`: where `value` sits between the lowest and highest of `history` and itself,
@@ -32,7 +32,7 @@ The measures (and what each reads, `NEEDS`):
   (ties to the lower strike). Nearest, not interpolated: the strike a trade would use.
 - `skew_25d(rows, ...)`: the 25-delta put's IV minus the 25-delta call's -- super_bull's item 74
   definition.
-- `iv_minus_rv(iv, closes)`: an IV in vol points less `realised_vol(closes)`.
+- `iv_minus_rv(iv, closes)`: an IV in vol points less `realized_vol(closes)`.
 - `term_spread(near, far)`: the far expiry's ATM IV minus the near one's (positive: upward sloping).
   `term_ratio(near, far)`: near over far (under 1: contango, the VIX/VIX3M reading).
 - `net_greeks(legs, multiplier)`: delta, gamma, theta and vega of a set of legs, each leg's per-share
@@ -56,7 +56,7 @@ TRADING_DAYS = 252
 #: `closes`: daily closes; `iv_history`: a series of the same IV reading over the lookback;
 #: `chain`: one expiry's quotes at the decision instant; `legs`: the chosen legs' greeks.
 NEEDS: dict[str, tuple[str, ...]] = {
-    "realised_vol": ("closes",),
+    "realized_vol": ("closes",),
     "iv_rank": ("iv_history",),
     "iv_percentile": ("iv_history",),
     "atm_iv": ("chain",),
@@ -71,7 +71,7 @@ NEEDS: dict[str, tuple[str, ...]] = {
 _SOURCES = ("row", "mid")
 
 
-def realised_vol(closes: Sequence[float]) -> float | None:
+def realized_vol(closes: Sequence[float]) -> float | None:
     """Annualised close-to-close volatility of `closes`, in vol points (11 closes: 10 returns). None
     under three closes or on a non-positive close."""
     if len(closes) < 3 or any(c is None or c <= 0 for c in closes):
@@ -202,7 +202,7 @@ def skew_25d(
 
 def iv_minus_rv(iv: float | None, closes: Sequence[float]) -> float | None:
     """An IV in vol points less the realised vol of `closes`."""
-    rv = realised_vol(closes)
+    rv = realized_vol(closes)
     return None if iv is None or rv is None else iv - rv
 
 

@@ -40,14 +40,14 @@ def chain(vol=smile, half_spread=0.0, strikes=range(4500, 5501, 25)):
 # --- realised vol, rank, percentile ------------------------------------------------------------------
 
 
-def test_realised_vol_is_the_sample_stdev_of_log_returns_annualised():
+def test_realized_vol_is_the_sample_stdev_of_log_returns_annualized():
     closes = [100, 101, 99.5, 100.5, 102, 101]
     rets = [math.log(b / a) for a, b in zip(closes, closes[1:], strict=False)]
     mean = sum(rets) / len(rets)
     want = math.sqrt(sum((r - mean) ** 2 for r in rets) / (len(rets) - 1) * 252) * 100
-    assert cm.realised_vol(closes) == pytest.approx(want)
-    assert cm.realised_vol([100, 101]) is None
-    assert cm.realised_vol([100, 0, 101]) is None
+    assert cm.realized_vol(closes) == pytest.approx(want)
+    assert cm.realized_vol([100, 101]) is None
+    assert cm.realized_vol([100, 0, 101]) is None
 
 
 def test_iv_rank_and_percentile():
@@ -114,7 +114,7 @@ def test_a_chain_without_a_parity_pair_has_no_atm_iv():
 
 def test_iv_minus_rv_and_the_term_readings():
     closes = [100, 101, 99.5, 100.5, 102, 101]
-    assert cm.iv_minus_rv(20.0, closes) == pytest.approx(20.0 - cm.realised_vol(closes))
+    assert cm.iv_minus_rv(20.0, closes) == pytest.approx(20.0 - cm.realized_vol(closes))
     assert cm.iv_minus_rv(None, closes) is None
     assert cm.term_spread(16.0, 19.0) == 3.0
     assert cm.term_ratio(16.0, 20.0) == 0.8
