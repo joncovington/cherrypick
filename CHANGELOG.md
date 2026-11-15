@@ -13,6 +13,11 @@ beyond the latest release.
 
 ### What's new
 
+- **Ensemble: exits on a signal, entries on event dates.** An arm's `exit.signal` closes a position
+  when a `core.signals` signal fires on its underlying (the entry trigger's shape), checked after the
+  touch and the profit target; the backtest and paper both run it. An entry trigger may now be an event
+  signal, such as FOMC day at 13:45 or the session before CPI: the dates come from the event calendar,
+  and a stretch the calendar cannot answer is refused by name, never read as quiet.
 - **Every data source in one list.** `python -m cherrypick.core.sources` declares each store the suite
   holds, ours and the vendor's: what it holds, its cadence, the expiries a chain carries and whether it
   is licensed. `inventory` reads each one's span per symbol, read-only, into

@@ -4,12 +4,13 @@ gates validate through core, and a `trigger` entry fires through core's entry_du
 from __future__ import annotations
 
 import copy
+import dataclasses
 
 import pytest
 from cherrypick.core import entrychecks as ec
 from market import spx_snapshot
 
-from cherrypick.ensemble import arms, engine
+from cherrypick.ensemble import arms, engine, events
 from cherrypick.ensemble import gates as gates_mod
 
 A = arms.load_arms()
@@ -125,24 +126,6 @@ def test_a_fixed_time_trigger_matches_the_time_entry():
         ({"kind": "trigger", "trigger": {"at": "10:00", "within": 5}, "bar_minutes": 5}, "reads no bars"),
         ({"kind": "trigger", "trigger": {"at": "10:00"}}, "within"),
         ({"kind": "trigger", "trigger": SIGNAL, "bar_minutes": 5, "extra": 1}, "unknown key 'extra'"),
-        (
-            {
-                "kind": "trigger",
-                "bar_minutes": 5,
-                "trigger": {
-                    **SIGNAL,
-                    "signal": {
-                        "kind": "event",
-                        "event": "fomc",
-                        "timing": "on",
-                        "days": 0,
-                        "unit": "sessions",
-                        "at": "10:00",
-                    },
-                },
-            },
-            "event dates",
-        ),
     ],
 )
 def test_a_bad_trigger_entry_is_refused(entry, message):
@@ -150,3 +133,129 @@ def test_a_bad_trigger_entry_is_refused(entry, message):
     arm["entry"] = entry
     problems = arms.validate(arm)
     assert any(message in p for p in problems), problems
+
+
+# --- event-date entries ---------------------------------------------------------------------------------
+
+FOMC_DAY = "2026-10-28"  # a decision day `core.calendar` holds, so the rule label answers
+
+
+def event_trigger(label="FOMC", at="13:45", timing="on", days=0):
+    return {
+        "signal": {
+            "kind": "event",
+            "event": label,
+            "timing": timing,
+            "days": days,
+            "unit": "sessions",
+            "at": at,
+        },
+        "window": {"open": "13:45", "close": "14:00"},
+        "within": 5,
+    }
+
+
+def with_calendar(snap, calendar):
+    return dataclasses.replace(snap, events=calendar)
+
+
+def every_day(arm):
+    arm["weekdays"] = [0, 1, 2, 3, 4]
+    return arm
+
+
+def test_an_event_trigger_enters_on_the_event_day_at_its_time_and_not_on_other_days():
+    arm = every_day(trigger_arm(event_trigger(), bar_minutes=1))
+    assert not arms.validate(arm), arms.validate(arm)
+    cal = events.EventCalendar()
+    on = with_calendar(spx_snapshot(session=FOMC_DAY, minute=826, tr=rising(826, cross_at=9999)), cal)
+    d = engine.decide(arm, on)
+    assert ("entry_due", True, 825) in d.checks, d.checks
+    before = with_calendar(spx_snapshot(session=FOMC_DAY, minute=820, tr=rising(820, cross_at=9999)), cal)
+    assert engine.decide(arm, before).reason == "entry_not_due"
+    other = with_calendar(spx_snapshot(session="2026-10-27", minute=826, tr=rising(826, cross_at=9999)), cal)
+    assert engine.decide(arm, other).checks[-1][2] == "not_yet"
+    closed = with_calendar(spx_snapshot(session="2026-10-27", minute=841, tr=rising(841, cross_at=9999)), cal)
+    assert engine.decide(arm, closed).checks[-1][2] == "no_firing"
+    # The day before, counted in sessions, fires on 10-27.
+    eve = every_day(trigger_arm(event_trigger(timing="before", days=1), bar_minutes=1))
+    assert ("entry_due", True, 825) in engine.decide(eve, other).checks
+
+
+def test_an_event_the_calendar_cannot_answer_is_never_read_as_quiet():
+    # CPI is a data label: with no data file every day is unknown, so the trigger is refused by name.
+    arm = every_day(trigger_arm(event_trigger(label="CPI"), bar_minutes=1))
+    snap = with_calendar(
+        spx_snapshot(session=FOMC_DAY, minute=826, tr=rising(826, cross_at=9999)), events.EventCalendar()
+    )
+    d = engine.decide(arm, snap)
+    assert d.reason == "entry_not_due" and d.checks[-1][2] == "event_dates_unknown"
+    assert engine.decide(arm, dataclasses.replace(snap, events=None)).checks[-1][2] == "event_dates_unknown"
+
+
+# --- signal exits ---------------------------------------------------------------------------------------
+
+FALL = {
+    "signal": {"kind": "cross", "a": {"name": "close"}, "b": 5995.0, "direction": "below", "seed": False},
+    "window": {"open": "09:30", "close": "15:45"},
+    "within": 30,
+}
+
+
+def falling(until, *, fall_at, start=570, base=6000.0, step=0.5):
+    return [(m, base - (m - fall_at) * step if m >= fall_at else base) for m in range(start, until + 1)]
+
+
+def held(exit_rules):
+    arm = copy.deepcopy(A["iron-fly-1000"])
+    arm["exit"] = exit_rules
+    assert not arms.validate(arm), arms.validate(arm)
+    d = engine.decide(arm, spx_snapshot(minute=600))
+    assert d.enter, d.checks
+    return arm, engine.Position(d.entry, arm)
+
+
+def test_a_signal_exit_closes_after_its_bar_fires_and_not_before():
+    _, pos = held({"signal": {"trigger": FALL, "bar_minutes": 5}})
+    quiet = spx_snapshot(minute=640, tr=falling(640, fall_at=9999))
+    assert engine.manage(pos, quiet) is None
+    # Falls from 10:30; under 5995 from 10:41, inside the bar 10:40-10:44, complete at 10:45.
+    early = spx_snapshot(minute=644, tr=falling(644, fall_at=630), spot=5993.0)
+    assert engine.manage(pos, early) is None
+    due = spx_snapshot(minute=645, tr=falling(645, fall_at=630), spot=5992.5)
+    assert engine.manage(pos, due) == ("signal", 645)
+
+
+def test_on_the_entry_day_a_signal_that_fired_before_the_entry_is_no_exit():
+    _, pos = held(
+        {"signal": {"trigger": {**FALL, "window": {"open": "09:30", "close": "15:45"}}, "bar_minutes": 5}}
+    )
+    # Under 5995 from 09:42; the bar completes and fires at 09:45, before the 10:00 entry, and is still
+    # due at 10:05 (within 30): the day's first firing is before the entry, so it is no exit.
+    snap = spx_snapshot(minute=605, tr=falling(605, fall_at=571), spot=5983.0)
+    assert engine.manage(pos, snap) is None
+    # The next session the same fall counts: it fires at 09:45, due until 10:14.
+    nxt = spx_snapshot(session="2026-11-17", minute=600, tr=falling(600, fall_at=571), spot=5985.0)
+    assert engine.manage(pos, nxt)[0] == "signal"
+
+
+def test_a_profit_target_or_touch_still_comes_before_a_signal():
+    _, pos = held({"touch": {"points": -20}, "signal": {"trigger": FALL, "bar_minutes": 5}})
+    snap = spx_snapshot(minute=700, tr=falling(700, fall_at=630), spot=5960.0)
+    assert engine.manage(pos, snap)[0] == "touch"
+
+
+@pytest.mark.parametrize(
+    ("exit_rules", "message"),
+    [
+        ({"signal": {"trigger": FALL}}, "bar_minutes"),
+        ({"signal": {"trigger": FALL, "bar_minutes": 5, "kind": "trigger"}}, "unknown key 'kind'"),
+        ({"signal": "fall"}, "a trigger is an object"),
+        ({"signal": {"trigger": {"window": FALL["window"]}, "bar_minutes": 5}}, "exit.signal.trigger"),
+    ],
+)
+def test_a_bad_signal_exit_is_refused(exit_rules, message):
+    arm = copy.deepcopy(A["iron-fly-1000"])
+    arm["exit"] = exit_rules
+    problems = arms.validate(arm)
+    assert any(message in x for x in problems), problems

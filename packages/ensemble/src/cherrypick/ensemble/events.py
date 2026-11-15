@@ -93,6 +93,20 @@ class EventCalendar:
             d += timedelta(days=1)
         return None if unknown else False
 
+    def dates(self, label: str, first: date, last: date) -> list[str] | None:
+        """The ISO days first..last that carry the label, for a signal that fires on or around an event
+        date (`core.signals`' event kind). None when any day in the range is unknown: a signal never
+        reads an unknown stretch as quiet."""
+        out, d = [], first
+        while d <= last:
+            v = self._on(label, d)
+            if v is None:
+                return None
+            if v:
+                out.append(d.isoformat())
+            d += timedelta(days=1)
+        return out
+
 
 def load_calendar(path=None) -> EventCalendar:
     """The event data `packages/backtest/scripts/event_history_item75.py` wrote, if any
