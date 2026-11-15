@@ -3832,7 +3832,7 @@
       "id": 82,
       "study": "item82",
       "title": "MEIC's live rule skipping days whose first hour is wide against its recent median",
-      "status": "declared",
+      "status": "failed",
       "legacy": false,
       "setup": "event-gate",
       "side": "neutral",
@@ -3871,6 +3871,7 @@
       "results": [
         "{home}/data/backtest/results/research/item82/results.json"
       ],
+      "outcome": "provisional fail on both: the skipped wide-first-hour days still earn on average, so the gate fails every design check, and the gated arm fails the tail bar; MEIC keeps entering on wide days and no paper arm is proposed",
       "retest": null,
       "retest_note": "Read once before the vendor licence ends (2026-11-16); a pass is followed by a paper arm with its forward block, not a retest.",
       "retests": []
