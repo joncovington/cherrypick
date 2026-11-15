@@ -4091,6 +4091,54 @@
       "retest": null,
       "retest_note": "Read once before the vendor licence ends (2026-11-16); a pass is followed by a paper strategy with its forward block, not a retest.",
       "retests": []
+    },
+    {
+      "id": 87,
+      "study": "item87",
+      "title": "Item 86's earnings calendar with a lean: out of the money on the side a bias picks",
+      "status": "declared",
+      "legacy": false,
+      "setup": "earnings-premium",
+      "side": "directional",
+      "structure": "calendar",
+      "window": "earnings",
+      "measure": "item 86's reports, expiries, exits, costs and paths; a lean read at the entry close (trend: close vs its 50-session mean; skew: front 25-delta risk reversal vs the name's median at its last 8 earlier reports, contrarian; prior: majority of the last four reaction moves) buys the call calendar at the strike nearest spot + half the expected move (0.85 x the front ATM straddle) when bullish, the put calendar below when bearish; return per dollar paid",
+      "expected": "positive after costs, above the same lean on a no-report control, above item 86's neutral calendar on the same reports, and above the entry delta held in the stock",
+      "sample": "item 86's 878 reports 2020-01-22..2026-07-14, one run cut at 2024-07-01; < 100 design trades = no verdict, < 40 holdout likewise",
+      "rule": "RULE: the kit's three bars per arm on per-trade rows (capital t >= 2.4 over the bill on what was paid, tail 10,000 draws seed 87, delta bar: net less the entry delta financed on the same capital t >= 2.4); EVENT_RULE: item 86's at t 2.4 (paired control clustered by entry session, both design halves 2022-07-01, the stress, the best five removed) plus the design mean above item 86's neutral calendar on the same reports; holdout after a design pass: mean and paired difference positive; a pass needs both; t 2.4 keeps Holm across the three arms from binding",
+      "mechanism": "a calendar placed where the stock is expected to drift collects the front's post-report crush and peaks as the stock reaches its strike; a right lean adds the drift to the crush",
+      "rivals": [
+        {
+          "explanation": "the lean, not the calendar",
+          "check": "the delta bar"
+        },
+        {
+          "explanation": "the calendar, not the lean",
+          "check": "beating item 86's neutral calendar on the same reports"
+        },
+        {
+          "explanation": "ordinary time decay",
+          "check": "paired against the no-report control with its own lean"
+        },
+        {
+          "explanation": "one regime, costs, a few big wins",
+          "check": "both design halves, the stress, the best five removed"
+        }
+      ],
+      "pointer": "research/edge-hypotheses-plan.md#87-item-86s-earnings-calendar-with-a-lean-out-of-the-money-on-the-side-a-bias-picks",
+      "scripts": [
+        "packages/backtest/scripts/earnings_calendar_bias_item87.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_earnings_calendar_bias_item87_script.py"
+      ],
+      "results": [
+        "{home}/data/backtest/results/research/item87/results.json"
+      ],
+      "outcome": null,
+      "retest": null,
+      "retest_note": "Read once before the vendor licence ends (2026-11-16); a pass is followed by a paper strategy with its forward block, not a retest.",
+      "retests": []
     }
   ],
   "rule_changes": []

@@ -8582,6 +8582,63 @@ name filter. The retired `atm_calendar` and `double_calendar` paper books lost, 
   - **Both fail or no verdict:** the at-the-money earnings calendar is closed as tested on licensed
     data; item 87 says whether a lean changes that.
 
+### 87. Item 86's earnings calendar with a lean: out of the money on the side a bias picks
+
+Declared 2026-11-14, before item 86's paths are fetched and before any of this is computed. The same
+trader nudges the calendar's strike toward his lean and picks the call or the put calendar so that,
+if he has to close the front, the back month he keeps is on the right side. A lean is his judgement;
+three mechanical leans stand in for it, each its own arm, on item 86's names, reports, expiries, exits
+and paths.
+
+- **Question:** does a calendar placed out of the money on the side a lean picks earn after costs,
+  more than the same lean on a no-report control session, more than item 86's neutral calendar on the
+  same reports, and more than the same delta held in the stock?
+- **The leans, each read at the entry session's close:**
+  - `trend`: the close above its 50-session mean is bullish, below it bearish.
+  - `skew` (contrarian, as the 2026-10-13 expected-move study found the 25-delta risk reversal): the
+    front's 25-delta call IV less its 25-delta put IV, against the name's median at its last 8 earlier
+    reports in this sample (at least 4). More put-rich than usual is bullish, less is bearish, equal is
+    no trade.
+  - `prior`: the direction most of the name's last four reaction moves took (the reaction close over
+    the entry close); a tie is no trade.
+- **The calendar:** bullish buys the call calendar at the listed strike nearest spot + half the expected
+  move, bearish the put calendar nearest spot − half of it, both quoted two-sided in both expiries. The
+  expected move is 0.85 × the front's at-the-money straddle. **Declared departure:** the front is about
+  three weeks out, so its straddle holds ordinary volatility beside the report's; the weekly that holds
+  the report alone is not fetched. Everything else is item 86's: expiries, entry at end-of-day mids,
+  the strike-touch, 25% stop and last-session exits, costs and the stress.
+- **The control:** item 86's control session, with the lean read at its own entry and the same rule.
+- **Windows:** one run, cut at **2024-07-01**; the holdout is read only after a design pass.
+- **The rule, two literals in the script; a pass needs both:**
+  - **`RULE`, the three bars**, one row per trade: capital (net less the 3-month bill on what was paid,
+    one-sided t ≥ 2.4), tail (10,000 draws, seed 87), and **delta** (the net less the calendar's entry
+    delta financed on the same capital, the stock's close-to-close move over the hold, t ≥ 2.4): a lean is
+    a directional bet, so it must beat simply holding that lean in the stock. Fewer than 100 design trades
+    is no verdict, fewer than 40 in the holdout likewise.
+  - **`EVENT_RULE`:** item 86's (paired against the control clustered by entry session, both design
+    halves, the stress, the best five removed) at t 2.4, and the arm's design mean return above item
+    86's neutral calendar's on the same reports. t 2.4 keeps Holm across the three arms from binding.
+- **Reported, never judged:** the oracle lean (the side the stock actually went by the last session)
+  and its opposite, the bounds any lean sits between; each arm's bullish and bearish trades apart; each
+  arm's holdout; skips by reason.
+- **Rival explanations, each with its check:**
+  - *The lean, not the calendar:* the delta bar.
+  - *The calendar, not the lean:* beating item 86's neutral calendar.
+  - *Ordinary time decay:* the paired control.
+  - *One regime, costs, a few big wins:* item 86's halves, stress and best five.
+- **Declared limits:** item 86's (the hindsight universe, end-of-day fills, the touch read from daily
+  bars, no leg-out); the expected move from the front, not the report weekly; the skew median only
+  from reports in this sample, so `skew` trades from about each name's fifth report.
+- **Data and results:** `packages/backtest/scripts/earnings_calendar_bias_item87.py plan|study`, run
+  as `item87/plan` and `item87/study` after `item86/fetch-2`, reading item 86's requests file as its own.
+  Results stay under `~/.cherrypick/data/backtest/results/research/item87/`, and this plan records the
+  verdict without figures. It runs before the vendor licence ends on 2026-11-16.
+- **Decides:**
+  - **An arm passes:** that lean earns with this calendar; propose it beside any item 86 paper strategy
+    (or alone if item 86 fails), with a `forward` block declared before it trades.
+  - **All fail or no verdict:** none of these leans makes the calendar earn; the trader's lean is his
+    own judgement and not tested here, and the record says so.
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:
