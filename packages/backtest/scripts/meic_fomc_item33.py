@@ -63,6 +63,16 @@ SEED = 33
 ALPHA = 0.05
 NEIGHBOURS = 5
 USER_AGENT = "cherrypick personal research"
+
+#: Corrections to this study (docs/conventions/working-rules.md), oldest first.
+REPLAY_CORRECTIONS = (
+    {"on": "2026-11-14", "what": "the design and holdout windows read runs of one live-1400 spec: the "
+     "holdout's run, and the newest design run whose live-1400 carries the same spec hash",
+     "why": "the first run read the newest design run (a later live-1400 spec, from another study's "
+     "grid) against the only holdout run (item 23's spec), so the two windows judged different rules; "
+     "the declaration names item 23's runs, which share one spec",
+     "decided": "suite rule: a number recorded wrong is fixed at once", "before_read": False},
+)  # fmt: skip
 FED_URL = "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm"
 CPI_URL = "https://www.bls.gov/schedule/news_release/cpi.htm"
 MONTHS = {
@@ -335,18 +345,42 @@ def load_calendar() -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def find_run(conn: sqlite3.Connection, arm: str, window: str, start: str, end: str) -> str | None:
+def arm_spec(report: str | None, arm: str) -> str | None:
+    """The arm's spec hash as a run's report records it, or None."""
+    try:
+        return json.loads(report)["arms"][arm]["spec_hash"]
+    except (TypeError, ValueError, KeyError):
+        return None
+
+
+def find_run(
+    conn: sqlite3.Connection, arm: str, window: str, start: str, end: str, spec: str | None = None
+) -> str | None:
     """The newest stored MEIC run of `window` over exactly [start, end] at the store's cadence whose
-    arms include `arm`. Metadata only; no net is read."""
+    arms include `arm`, and, given `spec`, whose `arm` carries that spec hash. Metadata only; no net
+    is read."""
     rows = conn.execute(
-        "SELECT run_id, arms FROM runs WHERE module = ? AND window_name = ? AND start = ? AND end = ? "
-        "AND cadence = ? ORDER BY created_at DESC",
+        "SELECT run_id, arms, report FROM runs WHERE module = ? AND window_name = ? AND start = ? "
+        "AND end = ? AND cadence = ? ORDER BY created_at DESC",
         (MODULE, window, start, end, CADENCE),
     ).fetchall()
-    for run_id, arms in rows:
-        if arm in json.loads(arms):
+    for run_id, arms, report in rows:
+        if arm in json.loads(arms) and (spec is None or arm_spec(report, arm) == spec):
             return run_id
     return None
+
+
+def find_runs(conn: sqlite3.Connection, arm: str, windows: dict) -> dict[str, str | None]:
+    """Both windows' runs of ONE spec of `arm`: the newest holdout run, then the newest design run
+    whose `arm` carries the same spec hash (correction 2026-11-14). With no holdout run, the newest
+    design run. A design run of the holdout's spec missing is None: no verdict, never a mixed pair."""
+    holdout = find_run(conn, arm, "holdout", *windows["holdout"])
+    if holdout is None:
+        return {"design": find_run(conn, arm, "design", *windows["design"]), "holdout": None}
+    (report,) = conn.execute("SELECT report FROM runs WHERE run_id = ?", (holdout,)).fetchone()
+    spec = arm_spec(report, arm)
+    design = find_run(conn, arm, "design", *windows["design"], spec=spec) if spec else None
+    return {"design": design, "holdout": holdout}
 
 
 def run_nets(conn: sqlite3.Connection, run_id: str, arm: str) -> dict[str, float]:
@@ -372,9 +406,10 @@ def cmd_plan(args) -> int:
     s, conn, prov = _context(args.provisional)
     try:
         out = {"arm": args.arm, "provisional": prov, "windows": {}}
+        runs = find_runs(conn, args.arm, s["windows"])
         for w in ("design", "holdout"):
             start, end = s["windows"][w]
-            run_id = find_run(conn, args.arm, w, start, end)
+            run_id = runs[w]
             if run_id:
                 how = None
             elif args.arm == ARM:
@@ -402,9 +437,10 @@ def cmd_study(args) -> int:
     cpi = set(cal["cpi"]["dates"])
     result: dict = {"item": 33, "arm": args.arm, "provisional": prov, "windows": {}}
     try:
+        runs = find_runs(conn, args.arm, s["windows"])
         for w in ("design", "holdout"):
             start, end = s["windows"][w]
-            run_id = find_run(conn, args.arm, w, start, end)
+            run_id = runs[w]
             if run_id is None:
                 result["windows"][w] = {"span": [start, end], "run_id": None}
                 continue

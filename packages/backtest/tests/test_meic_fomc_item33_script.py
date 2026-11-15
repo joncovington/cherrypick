@@ -8,6 +8,7 @@ Each guard is shown firing and failing, because a check that cannot fire reads a
 from __future__ import annotations
 
 import importlib.util
+import json
 import random
 import sqlite3
 from datetime import date, timedelta
@@ -308,7 +309,7 @@ def memory_db():
     c = sqlite3.connect(":memory:")
     c.execute(
         "CREATE TABLE runs (run_id TEXT, created_at REAL, module TEXT, arms TEXT, window_name TEXT, "
-        "start TEXT, end TEXT, cadence INTEGER)"
+        "start TEXT, end TEXT, cadence INTEGER, report TEXT)"
     )
     c.execute("CREATE TABLE session_results (run_id TEXT, arm TEXT, session TEXT, net REAL)")
     return c
@@ -325,10 +326,45 @@ def test_the_run_is_the_newest_with_the_arm_over_exactly_the_window():
         ("cadence", 6, "meic", '["control", "live-1400"]', "design", START, END, 15),
         ("hold", 7, "meic", '["control", "live-1400"]', "holdout", H_START, H_END, 60),
     ]
-    c.executemany("INSERT INTO runs VALUES (?,?,?,?,?,?,?,?)", rows)
+    c.executemany("INSERT INTO runs VALUES (?,?,?,?,?,?,?,?,NULL)", rows)
     assert st.find_run(c, "live-1400", "design", START, END) == "new"
     assert st.find_run(c, "live-1400", "holdout", H_START, H_END) == "hold"
     assert st.find_run(c, "pm-200", "design", START, END) is None
+
+
+def _report(spec):
+    return json.dumps({"arms": {"live-1400": {"spec_hash": spec}}})
+
+
+def test_both_windows_read_runs_of_one_spec_never_a_mixed_pair():
+    # The first run read the newest design run (a later live-1400 spec) against the holdout's
+    # (item 23's spec): two different rules judged as one (correction 2026-11-14).
+    c = memory_db()
+    rows = [
+        ("item23-design", 1, "meic", '["control", "live-1400"]', "design", START, END, 60, _report("A")),
+        (
+            "item23-holdout",
+            2,
+            "meic",
+            '["control", "live-1400"]',
+            "holdout",
+            H_START,
+            H_END,
+            60,
+            _report("A"),
+        ),
+        ("later-grid", 3, "meic", '["control", "live-1400"]', "design", START, END, 60, _report("B")),
+    ]
+    c.executemany("INSERT INTO runs VALUES (?,?,?,?,?,?,?,?,?)", rows)
+    windows = {"design": (START, END), "holdout": (H_START, H_END)}
+    assert st.find_run(c, "live-1400", "design", START, END) == "later-grid"
+    assert st.find_runs(c, "live-1400", windows) == {"design": "item23-design", "holdout": "item23-holdout"}
+    # No design run of the holdout's spec: no design run at all, never the other spec's.
+    c.execute("DELETE FROM runs WHERE run_id = 'item23-design'")
+    assert st.find_runs(c, "live-1400", windows) == {"design": None, "holdout": "item23-holdout"}
+    # No holdout run: the newest design run, as before.
+    c.execute("DELETE FROM runs WHERE run_id = 'item23-holdout'")
+    assert st.find_runs(c, "live-1400", windows) == {"design": "later-grid", "holdout": None}
 
 
 def test_run_nets_reads_one_arm_of_one_run_and_skips_empty_nets():
