@@ -3763,6 +3763,57 @@
       "retest": null,
       "retest_note": "Read once before the vendor licence ends (2026-11-16); a forecast, so a later MEIC paper-arm item carries any use of it.",
       "retests": []
+    },
+    {
+      "id": 81,
+      "study": "item81",
+      "title": "Market Profile: the first hour's width against its recent median, and the rest of the day",
+      "status": "declared",
+      "legacy": false,
+      "setup": "market-profile",
+      "side": "signal",
+      "structure": "none",
+      "window": "intraday",
+      "measure": "per SPX session, w = log of the first hour's range (stamps before 10:30) over the prior close, over its median across the prior 20 sessions; outcomes: the log range from 10:30 to the close over the prior close (persistence), and whether the day trades a 2.5-point row beyond the first hour after 10:30 (extension)",
+      "expected": "persistence: positive (intraday volatility persists); extension: negative (a narrow initial balance invites a breakout, a wide one contains the day)",
+      "sample": "full SPX sessions in the licensed one-minute store, 2022-05-16..2026-11-13, one run cut at 2025-07-01 (design before, holdout from); < 200 design days = no verdict, < 60 holdout days = provisional",
+      "rule": "FORECAST_RULE, per test: least squares of the outcome on the HAR controls, the gap and w (a linear probability model for extension); design: the w coefficient with the declared sign, size >= 0.10 (persistence) or >= 0.05 (extension), one-sided t >= 2.3 in that direction from a stationary block bootstrap (mean block 10, 10,000 draws, seed 81), declared sign in each design half (2023-12-01); holdout, read after a design pass: refitted alone, declared sign; t 2.3 keeps Holm across the two from binding",
+      "mechanism": "persistence: the first hour's realised volatility carries into the session; extension: a narrow initial balance is a market not yet agreed on value, so it breaks out",
+      "rivals": [
+        {
+          "explanation": "volatility clustering across days",
+          "check": "the three HAR terms"
+        },
+        {
+          "explanation": "it is the gap",
+          "check": "the gap is a control"
+        },
+        {
+          "explanation": "event days",
+          "check": "reported without FOMC decision days"
+        },
+        {
+          "explanation": "one regime",
+          "check": "the declared sign in both design halves"
+        },
+        {
+          "explanation": "the extension threshold",
+          "check": "fixed at one row; 0 and 5 points reported"
+        }
+      ],
+      "pointer": "research/edge-hypotheses-plan.md#81-market-profile-the-first-hours-width-against-its-recent-median-and-the-rest-of-the-day",
+      "scripts": [
+        "packages/backtest/scripts/first_hour_width_item81.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_first_hour_width_item81_script.py"
+      ],
+      "results": [
+        "{home}/data/backtest/results/research/item81/results.json"
+      ],
+      "retest": null,
+      "retest_note": "Read once before the vendor licence ends (2026-11-16); a forecast, so a later MEIC paper-arm item carries any use of it.",
+      "retests": []
     }
   ],
   "rule_changes": []
