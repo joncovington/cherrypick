@@ -8541,9 +8541,10 @@ name filter. The retired `atm_calendar` and `double_calendar` paper books lost, 
 - **Arms (Holm across them, which t 2.3 keeps from binding):**
   - `all`: every report.
   - `quiet`: the trader's filter. Of the name's last 8 earlier stated-timing reports, at least 6
-    `returned`: the close 10 sessions after the reaction sat inside the range of the 10 sessions ending
-    at the entry session. A report with fewer than 8 earlier ones is in neither `quiet` nor
-    `unselected`, so `quiet` starts about two years into the calendar.
+    `returned`: a close in the 10 sessions after the reaction sat inside the range of the 10 sessions
+    ending at the entry session (the trader's "back where you would expect it within five to 10 trading
+    days"). A report with fewer than 8 earlier ones is in neither `quiet` nor `unselected`, so `quiet`
+    starts about two years into the calendar.
 - **The control:** item 31's `control_for` (the same weekday four weeks earlier, else later, else five
   weeks earlier, with no report from three sessions before it through its week), the same calendar
   rule on its dates, kept only when no report falls between its entry and its last session.
@@ -8563,7 +8564,14 @@ name filter. The retired `atm_calendar` and `double_calendar` paper books lost, 
   The run reports the measured ones.
 - **Reported, never judged:** the put calendar; no stop; the exit at the reaction close (item 52's);
   holding to the last session with no strike exit; each sector; each year; the design by tercile of
-  the entry front/back IV ratio (item 54's ordering); skips by reason.
+  the entry front/back IV ratio (item 54's ordering); `quiet` under the first declaration's reading
+  (below), selected and unselected; skips by reason.
+- **Clarified 2026-11-14, before any trade outcome was read:** `returned` was first declared as the
+  10th close alone inside the range. Counting which reports that selects (selector counts only, no
+  trade read) found 14 `quiet` design reports, under the 100-trade floor, so `quiet` could only be no
+  verdict; the trader's words are any time within five to 10 sessions. The user chose the reading above;
+  the 6-of-8 threshold, `all`, the control, the exits and both rules are unchanged, and the first reading
+  is reported beside. Logged in the script's `REPLAY_CORRECTIONS`.
 - **Rival explanations, each with its check:**
   - *Ordinary calendar decay, not the report:* the paired control.
   - *The filter picks names that would earn anyway:* `quiet` must beat the unselected reports.
