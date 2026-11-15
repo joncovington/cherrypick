@@ -70,11 +70,18 @@ def reads(arm: dict) -> dict:
 
 def entry_window(arm: dict) -> tuple[int, int]:
     """(first, last) minute at which `arm` may enter: a time entry's window, an opening-range entry's
-    range end to its latest minute."""
+    range end to its latest minute, a trigger's: a fixed time through its `within` minutes, a signal's
+    window open through close (core's `entry_due` decides inside it)."""
     e = arm["entry"]
     if e["kind"] == "time":
         at = hhmm(e["at"])
         return at, at + e.get("window", 5) - 1
+    if e["kind"] == "trigger":
+        t = e["trigger"]
+        if "at" in t:
+            at = hhmm(t["at"])
+            return at, at + int(t["within"]) - 1
+        return hhmm(t["window"]["open"]), hhmm(t["window"]["close"])
     return OPEN_MINUTE + e["minutes"], hhmm(e["latest"])
 
 

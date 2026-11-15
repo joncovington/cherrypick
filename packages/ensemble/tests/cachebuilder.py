@@ -87,7 +87,7 @@ class CacheBuilder:
             d = cal.previous_trading_day(d)
             days.append(d)
         for day, close in zip(reversed(days), closes, strict=True):
-            self.summary(symbol, day.isoformat(), close=close)
+            self.summary(symbol, day.isoformat(), close=close, day_open=close)
         return self
 
 

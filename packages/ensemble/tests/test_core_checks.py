@@ -300,6 +300,11 @@ def test_a_daily_trigger_enters_today_on_yesterdays_completed_close():
     assert engine.decide(arm, flat).checks[-1][2] == "not_yet"
     # No daily bars carried: stale, never a guess.
     assert engine.decide(arm, spx_snapshot(minute=600)).checks[-1][2] == "stale_bars"
+    # Yesterday's bar without its open is absent, never filled in: stale, not a cross.
+    partial = daily_rows([5990.0, 5995.0, 6010.0])
+    partial[-1] = {**partial[-1], "open": None}
+    no_open = dataclasses.replace(spx_snapshot(minute=600), daily=partial)
+    assert engine.decide(arm, no_open).checks[-1][2] == "stale_bars"
 
 
 def test_a_daily_signal_exit_closes_the_session_after_it_fires():
