@@ -34,8 +34,8 @@ condition never guesses which expiry it meant.
 
 **The registry.** `CORE` holds the conditions over `core.signals` and `core.chainmeasures`. A module adds
 its own with `CORE.extended(...)`, a new registry; nothing mutates the shared one. A condition's own
-parameters have no defaults; `min` and `max` are bounds, and an absent one is no bound (at least one
-is required).
+parameters have no defaults; `min` and `max` are bounds, and an absent one is no bound. A `bounded`
+condition (every one in `CORE`) needs at least one; a module's own may not take bounds at all.
 
 Pure functions over the context: no clock, no cache, no network.
 """
@@ -131,6 +131,7 @@ class Condition:
     needs: Callable[[Mapping[str, Any]], set[str]]
     params: Mapping[str, Validator]
     optional: Mapping[str, Validator] = field(default_factory=dict)
+    bounded: bool = False  # True: at least one of `min` and `max` is required
 
 
 class Registry:
@@ -236,6 +237,7 @@ CORE = Registry(
             _chain_needs("chain"),
             {"chain": _role, **_IV},
             _BOUNDS,
+            bounded=True,
         ),
         Condition(
             "iv_rank",
@@ -250,6 +252,7 @@ CORE = Registry(
             _chain_needs("chain", also=("iv_history",)),
             {"chain": _role, **_IV},
             _BOUNDS,
+            bounded=True,
         ),
         Condition(
             "iv_percentile",
@@ -264,6 +267,7 @@ CORE = Registry(
             _chain_needs("chain", also=("iv_history",)),
             {"chain": _role, **_IV},
             _BOUNDS,
+            bounded=True,
         ),
         Condition(
             "iv_minus_rv",
@@ -276,6 +280,7 @@ CORE = Registry(
             _chain_needs("chain", also=("closes",)),
             {"chain": _role, "days": _pos_int, **_IV},
             _BOUNDS,
+            bounded=True,
         ),
         Condition(
             "skew_25d",
@@ -291,6 +296,7 @@ CORE = Registry(
             _chain_needs("chain"),
             {"chain": _role, **_IV, **_DELTA},
             _BOUNDS,
+            bounded=True,
         ),
         Condition(
             "term_spread",
@@ -301,6 +307,7 @@ CORE = Registry(
             _chain_needs("near", "far"),
             {"near": _role, "far": _role, **_IV},
             _BOUNDS,
+            bounded=True,
         ),
         Condition(
             "term_ratio",
@@ -311,6 +318,7 @@ CORE = Registry(
             _chain_needs("near", "far"),
             {"near": _role, "far": _role, **_IV},
             _BOUNDS,
+            bounded=True,
         ),
         Condition(
             "net_greek",
@@ -319,6 +327,7 @@ CORE = Registry(
             lambda p: {"legs"},
             {"greek": _one_of(*cm.GREEKS), "multiplier": _pos},
             _BOUNDS,
+            bounded=True,
         ),
     ]
 )
@@ -353,7 +362,7 @@ def validate(
         for key in keys & set(cond.optional):
             if not cond.optional[key](spec[key]):
                 raise ValueError(f"{where}.{key}: bad value {spec[key]!r}")
-        if set(_BOUNDS) <= set(cond.optional) and not keys & set(_BOUNDS):
+        if cond.bounded and not keys & set(_BOUNDS):
             raise ValueError(f"{where}: {cond.name} needs a 'min' or a 'max'")
         if cond.name == "signal":
             sg.validate(spec["spec"], f"{where}.spec")

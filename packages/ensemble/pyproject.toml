@@ -10,7 +10,7 @@ requires-python = ">=3.11"
 license = "MIT"
 # cherrypick-core is a sibling in-repo package (packages/core), installed editable alongside this one.
 # Deliberately NO broker dependency: paper-only, credential-free, a pure stream-cache consumer.
-dependencies = ["cherrypick-core", "cherrypick-technicals"]
+dependencies = ["cherrypick-core"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "ruff==0.16.10"]

@@ -1,6 +1,6 @@
 """Readings from the day's spot trail and the daily closes. Pure functions.
 
-Daily SMA, EMA and RSI are `cherrypick.technicals.indicators`' (the textbook definitions); this module adds
+Daily SMA, EMA and RSI are `cherrypick.core.indicators`' (the textbook definitions); this module adds
 what that one lacks: the trail's N-minute bars, the stochastic, the opening range and the
 standard-deviation move.
 """
@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import math
 
-from cherrypick.technicals import indicators as ti
+from cherrypick.core import indicators as ti
 
 OPEN_MINUTE = 570  # 09:30
 
