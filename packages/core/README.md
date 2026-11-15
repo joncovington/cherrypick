@@ -59,6 +59,7 @@ cherrypick/core/
   risk/            account-level risk primitives (fail-closed deploy cap)
   settlement/      American physical-settlement arithmetic
   signals/         entry signals over bars: event and state forms, firing rules
+  sources/         every data source declared (fields, cadence, licence) and which covers a request
   spreadbook/      ledger writes calendars, pmcc and curve share
   stats/           arm-vs-control statistics, sessions as the unit
   streamcache/     the shared stream-cache schema + SQLite helpers

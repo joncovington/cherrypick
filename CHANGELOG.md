@@ -13,6 +13,12 @@ beyond the latest release.
 
 ### What's new
 
+- **Every data source in one list.** `python -m cherrypick.core.sources` declares each store the suite
+  holds, ours and the vendor's: what it holds, its cadence, the expiries a chain carries and whether it
+  is licensed. `inventory` reads each one's span per symbol, read-only, into
+  `~/.cherrypick/state/sources_inventory.json`, and `coverage --field chain --symbol QCOM --from ... --to
+  ... --expiry monthly` says which source covers a request, or why none does (it starts too late, ends
+  too early, or is thin inside the window). A data file nobody declared is named.
 - **Ensemble, in paper.** Eight short-dated SPX and GLD option arms (0DTE and 1DTE flies, a condor and
   put spreads, an opening-range put spread, a long put and two GLD call spreads) now trade in paper
   through one decision function, the same one their backtest uses. Experimental and off by default: turn
