@@ -369,10 +369,15 @@ const SESSION_SECONDS = (SESSION_CLOSE_MIN - SESSION_OPEN_MIN) * 60;
 
 type DrawTarget = Parameters<IPrimitivePaneRenderer["draw"]>[0];
 
+/** Share of the pane's width the newest session's longest row takes. */
+const NEWEST_FILL = 0.22;
+
 /**
- * The histograms: each session's rows growing rightward from its own first regular-session bar, behind
- * the candles. One count scale serves every session drawn, so their widths compare; a full session's
- * longest row spans `SESSION_FILL` of that session's width at the current zoom.
+ * The histograms, behind the candles. The newest session's rows grow leftward from the pane's right
+ * edge, its longest row spanning `NEWEST_FILL` of the pane, so it stays in view whatever the scroll.
+ * Each older session's rows grow rightward from its own first regular-session bar, on one count scale
+ * so their widths compare, a full session's longest row spanning `SESSION_FILL` of that session's
+ * width at the current zoom.
  */
 export class ProfileHistogram implements ISeriesPrimitive<Time> {
   private profiles: MarketProfile[] = [];
@@ -430,20 +435,17 @@ export class ProfileHistogram implements ISeriesPrimitive<Time> {
   private draw(target: DrawTarget): void {
     const series = this.series;
     const chart = this.chart;
-    if (this.profiles.length === 0 || series === null || chart === null) return;
-    const maxTpo = Math.max(0, ...this.profiles.flatMap((p) => p.rows.map((r) => r.letters.length)));
-    if (maxTpo === 0) return;
+    const newest = this.profiles.at(-1);
+    if (newest === undefined || series === null || chart === null) return;
+    const older = this.profiles.slice(0, -1);
     const anchors = this.anchorsFor();
     const ts = chart.timeScale();
     const spacing = ts.options().barSpacing;
-    const fullWidth = (SESSION_SECONDS / this.barSeconds) * spacing * SESSION_FILL;
-    target.useBitmapCoordinateSpace(({ context: ctx, horizontalPixelRatio: hr, verticalPixelRatio: vr }) => {
-      for (const p of this.profiles) {
-        const t = anchors.get(p.session);
-        if (t === undefined) continue;
-        const x = ts.timeToCoordinate(t as Time);
-        if (x === null) continue;
-        const left = Math.round((x - spacing / 2) * hr);
+    const olderMax = Math.max(0, ...older.flatMap((p) => p.rows.map((r) => r.letters.length)));
+    const newestMax = Math.max(0, ...newest.rows.map((r) => r.letters.length));
+    target.useBitmapCoordinateSpace(({ context: ctx, bitmapSize, horizontalPixelRatio: hr, verticalPixelRatio: vr }) => {
+      // One session's rows from `edge` (bitmap px), rightward or mirrored leftward, the longest `span` wide.
+      const drawRows = (p: MarketProfile, edge: number, span: number, maxTpo: number, mirrored: boolean): void => {
         for (const r of p.rows) {
           const n = r.letters.length;
           if (n === 0) continue;
@@ -453,12 +455,23 @@ export class ProfileHistogram implements ISeriesPrimitive<Time> {
           const top = Math.round(Math.min(yTop, yBot) * vr);
           // Leave a hairline between rows once they are tall enough to show one.
           const h = Math.max(1, Math.round(Math.abs(yBot - yTop) * vr) - (Math.abs(yBot - yTop) >= 4 ? Math.round(vr) : 0));
-          const w = Math.max(Math.round(hr), Math.round((n / maxTpo) * fullWidth * hr));
+          const w = Math.max(Math.round(hr), Math.round((n / maxTpo) * span));
           ctx.fillStyle =
             r.price === p.poc ? this.colours.pocFill : r.price >= p.val && r.price <= p.vah ? this.colours.vaFill : this.colours.rowFill;
-          ctx.fillRect(left, top, w, h);
+          ctx.fillRect(mirrored ? edge - w : edge, top, w, h);
+        }
+      };
+      if (olderMax > 0) {
+        const fullWidth = (SESSION_SECONDS / this.barSeconds) * spacing * SESSION_FILL * hr;
+        for (const p of older) {
+          const t = anchors.get(p.session);
+          if (t === undefined) continue;
+          const x = ts.timeToCoordinate(t as Time);
+          if (x === null) continue;
+          drawRows(p, Math.round((x - spacing / 2) * hr), fullWidth, olderMax, false);
         }
       }
+      if (newestMax > 0) drawRows(newest, bitmapSize.width, bitmapSize.width * NEWEST_FILL, newestMax, true);
     });
   }
 }

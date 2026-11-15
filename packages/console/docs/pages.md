@@ -388,10 +388,11 @@ symbol, and the setups watchlist:
     symbol's fixed `rowSizeFor` (the sessions panel's and the morning pack's), or for another contract
     `defaultRowSize` of the oldest bar held, so they stay put while the series is open. SPX and NDX
     carry no volume, so theirs is time only. Chart only; no module reads it.
-  - **Histograms** (`?sessions=1|5|10`, default 5, the newest included; `recentProfiles`): each
-    session's rows grow rightward from its first regular-session bar on the chart (`sessionAnchors`),
-    all on one count scale so their widths compare, a full session's longest row spanning 60% of that
-    session's width at the current zoom. The newest is the profile the lines read; older ones come
+  - **Histograms** (`?sessions=1|5|10`, default 5, the newest included; `recentProfiles`): the
+    newest session's rows grow leftward from the pane's right edge, its longest row 22% of the pane,
+    so it stays in view at any scroll. Each older session's rows grow rightward from its first
+    regular-session bar on the chart (`sessionAnchors`), all on one count scale so their widths
+    compare, a full session's longest row spanning 60% of that session's width at the current zoom. The newest is the profile the lines read; older ones come
     from the recorded bars by the sessions panel's `buildView` where the store keeps the symbol, else
     from the live 15-minute series, and one on another row grid is left out. A session older than the
     drawn candles reach is not drawn (a series loads one day at 1m, three at 5m, seven at 15m), and
