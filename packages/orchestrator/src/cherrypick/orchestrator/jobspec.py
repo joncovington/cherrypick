@@ -143,6 +143,8 @@ CATCHUP_MINUTES = {
     # Same shape as vol-curve-bars, but the feed keeps only 8,000 one-minute bars (about six days of a
     # future), so a missed day is still there the next morning, not a week later.
     "profile-bars": 12 * 60,
+    # Same shape again: hourly and daily bars restated over five days, which the feed keeps for months.
+    "gold-bars": 12 * 60,
     # The vendor's sessions for the last few trading days; idempotent (complete sessions are
     # skipped), so a late run is the same fetch and the next night's covers a missed one anyway.
     "backtest-fetch": 12 * 60,
@@ -295,6 +297,7 @@ RETRY_ON_FAILURE = {
     "technicals-index-bars": 2,
     "vol-curve-bars": 2,
     "profile-bars": 2,
+    "gold-bars": 2,
     "technicals-iv-rank": 2,
     "technicals-dollar-volume": 2,
     "technicals-dividends": 2,
@@ -1844,6 +1847,24 @@ def derive_jobs(
             trading_days_only=True,
             enabled=pfb_on,
             enabled_reason="" if pfb_on else "disabled in config (technicals.profile_bars)",
+        ),
+    )
+    gdb_on = tc_free and tc["gold_bars"]
+    add(
+        "gold-bars",
+        lambda: JobSpec(
+            id="gold-bars",
+            # A script, not package code: it reads the broker (DXLink 1-hour and daily candles of the
+            # futures map's /GC, the continuous /GC:XCEC and GLD) with the shared credential,
+            # read-only. After GLD's extended hours end at 20:00, so the day's last hourly bar is
+            # finished. No Dolt, so it follows the block's switch, not the Dolt capability.
+            argv=(pythonw, _suite_script(launcher, "fetch_gold_bars.py")),
+            kind=KIND_DAILY,
+            at_et=tc["gold_bars_at"],
+            catchup_minutes=CATCHUP_MINUTES["gold-bars"],
+            trading_days_only=True,
+            enabled=gdb_on,
+            enabled_reason="" if gdb_on else "disabled in config (technicals.gold_bars)",
         ),
     )
     ivr_on = tc_free and tc["iv_rank"]
