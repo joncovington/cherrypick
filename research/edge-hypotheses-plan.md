@@ -8151,6 +8151,23 @@ recent median, and the profile's claim is about extension, not size.
     day for the short-premium modules, again only through a later paper-arm item.
   - **Both fail or no verdict:** the first hour's width adds nothing beyond what the suite already
     reads, and the profile's initial balance stays a chart line.
+- **Result (2026-11-14): both tests pass, design and holdout, neither provisional.**
+  - **`persistence`:** a first hour wide against its recent median is followed by a wider rest of the
+    day, beyond the HAR terms and the gap: the coefficient is well above the declared size, its t well
+    above the bar, positive in both design halves, and positive again when refitted on the holdout
+    alone. The reported cuts agree (a 30-minute first period, the outcome from 12:30, without FOMC
+    days), and the design's quartiles of the feature rise in order.
+  - **`extension`:** a narrow first hour is followed more often by trade a row beyond it, with the
+    declared sign in both halves and the holdout, but only just past the declared size. Read it for
+    what it is: almost every session trades a row beyond its first hour, whatever the first hour's
+    width, so this is a small shift in a near-certain event, and much of it is the mechanics of a
+    narrower range being easier to leave (the limit named in the declaration). It fades with a
+    30-minute first period. It is not a useful flag on its own.
+  - Every figure is in the local result (`~/.cherrypick/data/backtest/results/research/item81/`).
+- **What this decides:** the `persistence` pass branch. At 10:30 the first hour's width against its own
+  recent median is a range forecast beyond what the suite already reads; it gates nothing yet. The next
+  step is a MEIC paper-arm item that sizes or skips entries on it, declared on the three bars with its
+  forward check, before any arm trades. The `extension` pass adds nothing a module should act on.
 
 ## Not worth revisiting
 
