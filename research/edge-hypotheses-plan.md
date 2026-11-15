@@ -8382,6 +8382,100 @@ intraday direction signals, none of them this rule.
   after costs, and its entries come after the move. The rule is closed; no paper arm is proposed. It is the
   first `indicator-rule` row, the one later indicator rules are checked against.
 
+### 84. Item 73's MEIC 14:00 stacks on the three bars: the bill on their buying power and their tail
+
+Declared 2026-11-14, before any of it is computed. **A retest of item 73, said out loud:** item 73
+judged each extra condor's session net and the larger arm's net over its own drawdown; it never
+charged the arms for the buying power they hold or judged their tail against a year of their mean.
+Its `n3` arm starts in paper on 2026-11-16. The vendor licence ends that evening, so this is read
+once, before then.
+
+- **Question:** does live's rule at one condor a session (`n1`), and at two and three (`n2`, `n3`),
+  earn more than the bill on the buying power its condors hold, and earn back a bad year within a
+  year?
+- **The trades:** item 73's exactly, read from its stored design run (2022-05-16 to 2025-06-30, the
+  run its result file names), never replayed again.
+- **Measured:** each session's net over the buying power its condors held that session (each condor's
+  width less its credit, times 100 and its quantity, summed: item 73's `session_bp`); one session in
+  which the arm entered is one observation, and a session with no condor holds no capital and is not
+  one.
+- **The bars** (`cherrypick.backtest.study.rule`, `RULE` in the script), per arm, both must hold:
+  - **capital:** the session's return less the 3-month bill on its buying power for one day, mean
+    above zero with a one-sided t of 2.3 or more;
+  - **tail:** the 99th-percentile one-year drawdown of a stationary bootstrap of the sessions (10,000
+    draws, seed 84, a year being the sample's own sessions a year) under one year of mean return.
+  - **delta:** not applicable. A condor is entered near delta-neutral, so financing its entry delta is
+    the bill alone, which the capital bar already charges.
+  - The t of 2.3 keeps a Holm step across the three arms from binding (at 100 sessions a passing p is
+    under 0.0167). Fewer than 100 sessions is no verdict.
+- **Windows:** item 73's design run, judged whole. Item 73 read it, so the verdict is **provisional
+  by declaration**, and MEIC's history never unlocked, so it is provisional on that count too.
+- **Reported, never judged:** each arm's sessions entered and its median and largest session buying
+  power.
+- **Rival explanations, each with its check:**
+  - *The premium does not pay for the buying power:* the capital bar.
+  - *Stacked condors share one bad afternoon:* the tail bar, on whole sessions, so condors that win
+    and lose together are resampled together.
+- **Data:** item 73's stored run and its per-session ledgers; nothing is fetched or replayed.
+  `packages/backtest/scripts/meic_stack_bars_item84.py study`, queued as `item84/study`. Results stay
+  under `~/.cherrypick/data/backtest/results/research/item84/`, and this plan records the verdict
+  without figures.
+- **Decides:**
+  - **`n3` passes:** the `n3` paper arm runs on as declared, its forward check (item 73's) the only
+    later evidence.
+  - **`n3` fails and `n1` passes:** the extra condors do not earn their capital or their tail; the
+    `n3` paper arm is the user's call to stop.
+  - **`n1` fails:** live's own rule does not earn the bill on its buying power or fails its tail, on
+    unvalidated history; a finding for the user, and nothing changes live by itself.
+
+### 85. Item 75's two passing arms on the three bars: the bill on their capital, their tail and their delta
+
+Declared 2026-11-14, before any of it is computed. **A retest of item 75, said out loud:** item 75
+judged each arm's mean net per session; it never charged an arm for the capital it holds, judged its
+tail against a year of its mean, or asked whether it earns more than its own delta. Its two passing
+arms start in paper on 2026-11-16. The vendor licence ends that evening, so this is read once,
+before then.
+
+- **Question:** do the 13:45 iron condor and the 10:30 long put each earn more than the bill on the
+  capital they hold, earn back a bad year within a year, and earn more than their own entry delta
+  financed on that capital?
+- **The trades:** item 75's exactly, read from its stored result (every trade with its legs, quantity,
+  entry price and net at item 75's verdict fill), never replayed again. Every one is 0DTE SPX, held to
+  the settlement, one a session.
+- **Measured:** each trade's net over its capital, the structure's maximum loss at its entry price
+  (the condor's width less its credit, the long put's debit, times 100 and the quantity); one session
+  one observation.
+- **The three bars** (`cherrypick.backtest.study.rule`, `RULE` in the script), per arm, all must hold:
+  - **capital:** the return less the 3-month bill on the capital over the days held, mean above zero
+    with a one-sided t of 2 or more;
+  - **tail:** the 99th-percentile one-year drawdown of a stationary bootstrap of the sessions (10,000
+    draws, seed 85, a year being the sample's own sessions a year) under one year of mean return;
+  - **delta:** the return less the structure's entry delta financed on the same capital: each leg's
+    delta at the entry minute from `SPX-60s.db` (the store item 75 replayed), times SPX's move from
+    the entry minute to the session's last stored spot, plus the bill on the capital; mean above zero
+    with a one-sided t of 2 or more. For the long put this asks whether it earns more than being
+    short its delta; for the condor, whose entry delta is small, it is close to the capital bar.
+  - No Holm step: at a t of 2 on 100 sessions or more a passing p is under 0.024, below Holm's
+    strictest bar for two arms. Fewer than 100 sessions is no verdict.
+- **Windows:** every session item 75 read, judged whole. Item 75 read it, so the verdict is
+  **provisional by declaration**.
+- **Coverage:** a trade whose entry delta or spots the store lacks is skipped and counted. Checked
+  before this declaration, reading presence only: every trade of both arms has them.
+- **Reported, never judged:** each arm's trades, trades judged, skips, mean capital and mean entry
+  delta.
+- **Rival explanations, each with its check:**
+  - *The capital earns more in bills:* the capital bar.
+  - *The long put is a short-delta bet that won because the index fell:* the delta bar.
+  - *A crash the sample lacks, or a run of losing afternoons:* the tail bar on the sample's sessions.
+- **Data:** item 75's stored result and `SPX-60s.db`; nothing is fetched or replayed.
+  `packages/backtest/scripts/ensemble_bars_item85.py study`, queued as `item85/study`. Results stay
+  under `~/.cherrypick/data/backtest/results/research/item85/`, and this plan records the verdict
+  without figures.
+- **Decides:**
+  - **An arm passes:** its paper arm runs on, judged by item 75's forward check on paper alone.
+  - **An arm fails:** it earns its mean net without earning its capital, its tail or beyond its delta;
+    its paper arm is the user's call to stop, and it is not proposed for live.
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:
