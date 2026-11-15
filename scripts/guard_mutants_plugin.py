@@ -259,6 +259,28 @@ def _one_row_value_area(counts, poc, share=0.70):
     return lo, hi
 
 
+def _signals_read_ahead():
+    """The real `_kind_series`, except each bar's state is the next bar's: the one-bar look-ahead the
+    signals' truncation guard exists to catch."""
+    original = importlib.import_module("cherrypick.core.signals")._kind_series
+
+    def patched(spec, bars):
+        st, value = original(spec, bars)
+        return st[1:] + st[-1:], value
+
+    return patched
+
+
+def _signals_confirm_once():
+    """The real `_candidates`, with every confirmation treated as one bar."""
+    original = importlib.import_module("cherrypick.core.signals")._candidates
+
+    def patched(states, values, bars, **kw):
+        return original(states, values, bars, **{**kw, "confirm": 1})
+
+    return patched
+
+
 REPLACEMENTS = {
     "always_true": lambda: _always_true,
     "whole_day": lambda: _whole_day,
@@ -289,6 +311,8 @@ REPLACEMENTS = {
     "replay_overwrites": lambda: _replay_overwrites,
     "always_filled": lambda: _always_filled,
     "one_row_value_area": lambda: _one_row_value_area,
+    "signals_read_ahead": _signals_read_ahead,
+    "signals_confirm_once": _signals_confirm_once,
 }
 
 
@@ -643,6 +667,24 @@ MUTANTS: tuple[Mutant, ...] = (
         module="cherrypick.orchestrator.watchdog",
         attr="_PROFILE_BARS_SLACK_MIN",
         replacement="never_a_leftover",
+    ),
+    Mutant(
+        id="signals-lookahead",
+        breaks="a signal's state at a bar reads the next bar",
+        package="core",
+        tests=("tests/test_signals.py::test_no_firing_reads_a_later_bar",),
+        module="cherrypick.core.signals",
+        attr="_kind_series",
+        replacement="signals_read_ahead",
+    ),
+    Mutant(
+        id="signals-confirm-ignored",
+        breaks="a signal fires on the first bar of a run whatever its confirmation",
+        package="core",
+        tests=("tests/test_signals.py::test_confirmation_needs_the_state_to_hold_for_that_many_bars",),
+        module="cherrypick.core.signals",
+        attr="_candidates",
+        replacement="signals_confirm_once",
     ),
 )
 

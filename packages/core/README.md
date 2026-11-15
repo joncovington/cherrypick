@@ -58,6 +58,7 @@ cherrypick/core/
   regimecuts/      the regime-cuts artifact contract
   risk/            account-level risk primitives (fail-closed deploy cap)
   settlement/      American physical-settlement arithmetic
+  signals/         entry signals over bars: event and state forms, firing rules
   spreadbook/      ledger writes calendars, pmcc and curve share
   stats/           arm-vs-control statistics, sessions as the unit
   streamcache/     the shared stream-cache schema + SQLite helpers
@@ -73,6 +74,7 @@ cherrypick/core/
   environment.py   the suite's one market-environment label
   external_report.py  the external-reports contract (one JSON file per report)
   incomerules.py   the income screens' strike rule
+  indicators.py    the textbook indicators (SMA, EMA, RSI, ATR, ADX, stochastic, MACD, ...)
   killcriteria.py  a live arm's written, frozen condition for being wrong
   legbars.py       liquidity bars for a leg or a spread
   legmarks.py      one position leg priced at a mark
