@@ -17,6 +17,12 @@ skips complete and empty requests and retries refused ones, so it is resumable a
 cheap; `refetch` replaces everything asked for. A fatal refusal (`vendor.FATAL`: the session was
 taken by another login) stops the run instead of marking every remaining request refused.
 
+**Settled refusals.** Some refusals are the vendor's fixed answer, the same on every retry
+(`SETTLED`: `stream_removed`, which it gives every time for history it does not serve, and
+`permission_denied`, the account's tier). A request refused again with the same settled reason it
+was refused with before is counted `settled` in the report, so the research queue can tell a pass
+with nothing left the vendor will serve from one that fetched nothing it could have.
+
 **Workers** share the one client (the account allows one session); every database write happens on
 this thread, so a request is either wholly written or not written at all.
 """
@@ -39,6 +45,8 @@ DB_NAME = "eod_chains.db"
 #: The vendor's way of saying it holds nothing for a request: an empty chain, not a refusal to retry.
 NO_DATA = "no_data"
 COMPLETE, EMPTY, REFUSED = "complete", "empty", "refused"
+#: Refusals the vendor repeats on every retry (see the module docstring): retrying cannot change them.
+SETTLED = frozenset({"stream_removed", "permission_denied"})
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS eod_chain_quotes (
@@ -99,6 +107,33 @@ def _done(conn: sqlite3.Connection) -> set[tuple[str, str, str]]:
     }
 
 
+def _reason(detail: str | None) -> str | None:
+    """A recorded refusal's reason: the text before its first colon."""
+    return detail.split(":", 1)[0].strip() if detail else None
+
+
+def prior_refusals(conn: sqlite3.Connection, table: str, keys: list[tuple]) -> dict[tuple, str]:
+    """The reason each of `keys` was last refused with, for the keys refused before this run.
+    `table` is `eod_chain_requests` (keys symbol, session, expiration) or `eod_chain_paths` (symbol,
+    expiration, start, through)."""
+    cols = {
+        "eod_chain_requests": "symbol, session, expiration",
+        "eod_chain_paths": "symbol, expiration, start, through",
+    }[table]
+    want = set(keys)
+    return {
+        tuple(r[:-1]): _reason(r[-1])
+        for r in conn.execute(f"SELECT {cols}, detail FROM {table} WHERE status = ?", (REFUSED,))
+        if tuple(r[:-1]) in want
+    }
+
+
+def settled(refusal: VendorRefusal, key: tuple, prior: dict[tuple, str]) -> bool:
+    """Whether this refusal is the vendor's fixed answer again: a settled reason, the same one the
+    request was refused with before."""
+    return refusal.reason in SETTLED and prior.get(key) == refusal.reason
+
+
 def write_chain(conn: sqlite3.Connection, key: tuple[str, str, str], rows: list[dict]) -> int:
     """Replace one request's rows and record it, in one transaction."""
     sym, day, exp = key
@@ -150,6 +185,7 @@ def fetch_chains(
         todo = [k for k in requests if k not in done]
         if limit is not None:
             todo = todo[:limit]
+        prior = prior_refusals(conn, "eod_chain_requests", todo)
         report: dict[str, Any] = {
             "asked": len(requests),
             "already": len(requests) - len([k for k in requests if k not in done]),
@@ -157,6 +193,7 @@ def fetch_chains(
             "complete": 0,
             "empty": 0,
             "refused": 0,
+            "settled": 0,
             "rows": 0,
             "stopped": False,
         }
@@ -197,6 +234,7 @@ def fetch_chains(
                             with conn:
                                 _record(conn, key, REFUSED, 0, f"{refusal.reason}: {refusal.detail}"[:300])
                             report["refused"] += 1
+                            report["settled"] += settled(refusal, key, prior)
                         if refusal.reason in FATAL:
                             report["aborted"] = f"{refusal.reason}: {refusal.detail}"[:300]
                             for other in running:
@@ -310,6 +348,7 @@ def fetch_paths(
                 )
             )
         todo = [k for k in requests if k not in done]
+        prior = prior_refusals(conn, "eod_chain_paths", todo)
         report: dict[str, Any] = {
             "asked": len(requests),
             "already": len(requests) - len(todo),
@@ -317,6 +356,7 @@ def fetch_paths(
             "complete": 0,
             "empty": 0,
             "refused": 0,
+            "settled": 0,
             "sessions": 0,
             "rows": 0,
             "stopped": False,
@@ -363,6 +403,7 @@ def fetch_paths(
                                     conn, key, REFUSED, 0, 0, f"{refusal.reason}: {refusal.detail}"[:300]
                                 )
                             report["refused"] += 1
+                            report["settled"] += settled(refusal, key, prior)
                         if refusal.reason in FATAL:
                             report["aborted"] = f"{refusal.reason}: {refusal.detail}"[:300]
                             for other in running:

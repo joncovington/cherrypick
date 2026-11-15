@@ -266,7 +266,8 @@ holdout once (a marker is written before the read).
   a held contract each day. The vendor drops a two-month whole-chain range at 60 s, so the client
   asks a week at a time. An empty week before the expiry was listed is skipped; an empty week
   after one that answered refuses the path (`path_gap`), so it is retried rather than stored with a
-  hole. Paths are recorded in `eod_chain_paths`, resumable the same way, and `--stop-by` bounds a
+  hole. A request refused again with the same fixed reason as before (`chainfetch.SETTLED`) is
+  counted `settled`, so the research queue passes a repeat pass with nothing left to serve. Paths are recorded in `eod_chain_paths`, resumable the same way, and `--stop-by` bounds a
   run as it does `fetch-chains`, so the research queue can run one.
 The console's Backtest page reads `python -m cherrypick.backtest read overview|run` (`readout.py`)
 and is **fail-closed**: shown only when the orchestrator's `features.backtest` is true

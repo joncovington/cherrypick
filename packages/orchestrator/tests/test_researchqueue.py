@@ -615,6 +615,29 @@ def test_a_fetch_with_nothing_left_to_do_or_mostly_fetched_is_done(queue, files)
     assert row["status"] == "done" and row["note"] is None and sent[0][0] == "INFO"
 
 
+def test_a_repeat_pass_refused_only_as_before_is_done_and_said_so(queue, files):
+    # Item 57's forward fetch-2 (row 346): two paths the vendor drops every time, refused again the
+    # same way; nothing was left it would serve, so the pass is done, with a warning.
+    rq.add("item57", "fetch-chain-paths", {"requests": str(files["req"])}, path=queue)
+    report = (
+        '{"asked": 1688, "already": 1686, "todo": 2, "complete": 0, "empty": 0, "refused": 2, "settled": 2}'
+    )
+    row, sent = _ran(queue, report)
+    assert row["status"] == "done" and "nothing left the vendor will serve" in row["note"]
+    assert sent[0][0] == "WARNING"
+
+
+@pytest.mark.parametrize(
+    "counts",
+    ['"empty": 0, "refused": 2, "settled": 1', '"empty": 1, "refused": 1, "settled": 1'],
+    ids=["a-refusal-that-could-pass", "an-empty"],
+)
+def test_a_repeat_pass_with_anything_but_settled_refusals_still_fails(queue, files, counts):
+    rq.add("item57", "fetch-chain-paths", {"requests": str(files["req"])}, path=queue)
+    row, _ = _ran(queue, '{"asked": 4, "already": 2, "todo": 2, "complete": 0, ' + counts + "}")
+    assert row["status"] == "failed" and "nothing fetched" in row["note"]
+
+
 def test_a_fetch_mostly_refused_is_done_but_said_out_loud(queue):
     # Item 68's NDX store: most sessions refused no_data, some fetched. Partial data is data; the share
     # goes on the row and the notification is a warning.

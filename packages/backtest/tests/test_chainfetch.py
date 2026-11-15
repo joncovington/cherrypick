@@ -288,3 +288,44 @@ def test_a_path_fetch_stopped_by_a_fatal_refusal_reports_failed(tmp_path, monkey
     chainfetch.fetch_paths(_settings(tmp_path), FakePaths(fatal_at=2), many, workers=1, log=lambda m: None)
     doc = json.loads(target.read_text(encoding="utf-8"))
     assert doc["state"] == "failed" and doc["phases"][0]["done"] == 2
+
+
+class Refusing:
+    """Paths refused with a chosen reason per root: `stream_removed` (fixed) or `vendor_error`."""
+
+    def __init__(self, reasons):
+        self.reasons = dict(reasons)
+
+    def eod_chain_range(self, root, start, through, expiration):
+        if root in self.reasons:
+            raise VendorRefusal(self.reasons[root], "refused")
+        return [dict(r, session=day) for day in ("2024-02-02", "2024-02-05") for r in _rows(2)]
+
+    def eod_chain(self, root, day, expiration):
+        if root in self.reasons:
+            raise VendorRefusal(self.reasons[root], "refused")
+        return _rows()
+
+
+def test_a_fixed_refusal_repeated_is_settled_and_a_first_or_passing_one_is_not(tmp_path):
+    # Item 57's forward retest: two SPXW paths the vendor drops (stream_removed) every time. The
+    # repeat pass found them refused again; that is the vendor's fixed answer, not a failed fetch.
+    s = _settings(tmp_path)
+    first = chainfetch.fetch_paths(
+        s, Refusing({"AAPL": "stream_removed", "MSFT": "vendor_error"}), PATHS, log=lambda m: None
+    )
+    assert (first["refused"], first["settled"]) == (2, 0)  # a first refusal is never settled
+    again = chainfetch.fetch_paths(
+        s, Refusing({"AAPL": "stream_removed", "MSFT": "vendor_error"}), PATHS, log=lambda m: None
+    )
+    assert (again["refused"], again["settled"]) == (2, 1)  # vendor_error may pass: not settled
+    # A fixed reason that differs from the one recorded before is not the same answer.
+    changed = chainfetch.fetch_paths(
+        s, Refusing({"AAPL": "permission_denied", "MSFT": "vendor_error"}), PATHS, log=lambda m: None
+    )
+    assert changed["settled"] == 0
+    # The single-chain fetch counts the same way.
+    reqs = REQS[:1]
+    chainfetch.fetch_chains(s, Refusing({"AAPL": "stream_removed"}), reqs, log=lambda m: None)
+    out = chainfetch.fetch_chains(s, Refusing({"AAPL": "stream_removed"}), reqs, log=lambda m: None)
+    assert (out["refused"], out["settled"]) == (1, 1)
