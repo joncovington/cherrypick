@@ -41,6 +41,7 @@ from __future__ import annotations
 import copy
 
 from cherrypick.core import entrychecks as ec
+from cherrypick.core import signals
 
 from . import gates as gates_mod
 
@@ -62,6 +63,8 @@ def _trigger_problems(
     trigger = entry["trigger"]
     if "signal" not in trigger:
         return [] if "bar_minutes" not in entry else [f"{where}.bar_minutes: a fixed time reads no bars"]
+    if signals.needs_volume(trigger["signal"]):
+        return [f"{where}.trigger.signal: reads bar volume, and this module's bars carry none"]
     if trigger.get("daily"):
         return [] if "bar_minutes" not in entry else [f"{where}.bar_minutes: a daily signal reads daily bars"]
     bars = entry.get("bar_minutes")

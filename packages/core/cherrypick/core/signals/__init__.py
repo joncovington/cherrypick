@@ -77,6 +77,27 @@ only the swing points confirmed by then are read.
 
 All three are continuous: armed on a false state, carried across the close.
 
+**Volume and VWAP sources** (an `a` or `b` of a cross or range):
+
+- `{"name": "vwap", "anchor": A, "price": P, "weight": W}`: the running weighted mean of each bar's
+  price `P` (`close`, `hlc3` or `ohlc4`) from the anchor. `A` is `"session"` (each session's first
+  bar), a time `"HH:MM"` (each session's first bar starting at or after it; undefined before), or
+  `{"event": label}` (the first bar of each session the label falls on, carried across sessions
+  until the next; undefined before the first). `W` is `volume` (a true VWAP) or `equal` (every bar
+  weighs the same: the declared stand-in for an index with no volume of its own).
+- `{"name": "vwap_band", ...the vwap keys..., "k": x, "side": "upper" | "lower"}`: the VWAP plus or
+  minus x weighted standard deviations of the price about it, over the same bars.
+- `{"name": "relative_volume", "n": N}`: the bar's volume over the mean volume of the bar starting
+  at the same minute in each of the N sessions before (undefined until there are N).
+- `{"name": "volume_ratio", "n": N}`: the bar's volume over the mean of the N bars before it, across
+  the close (a volume surge is a cross of it above a number).
+
+These span sessions by their own definition (an anchor, the sessions before), so a signal's `seed`
+does not split them. A source that reads volume (`needs_volume`) refuses bars without it
+(`MissingVolume`): a missing volume is never a zero. `from_trail` takes `(minute, price, volume)`
+ticks (a bar's volume is the sum of its ticks', missing if any tick's is) and `daily` a `volume`
+column.
+
 The defaults above are the identity of each rule (confirm once, no reset, no limit), not choices a
 study inherits: a kind's own parameters have no defaults at all.
 """
@@ -106,6 +127,11 @@ class Bar:
     high: float
     low: float
     close: float
+    volume: float | None = None
+
+
+class MissingVolume(ValueError):
+    """A volume or volume-weighted source was given bars without volume."""
 
 
 @dataclass(frozen=True)
@@ -125,30 +151,39 @@ class Firing:
 def from_trail(
     session: str, trail: Iterable[tuple[int, float]], size: int, *, until: int | None = None
 ) -> list[Bar]:
-    """A session's spot trail, `(minute, price)` pairs, as `size`-minute bars from 09:30, oldest
-    first. Ticks before the open or at or after the close are ignored, and a bucket with no tick is
-    absent, never filled in. With `until`, only bars that have completed by then are returned (a bar
+    """A session's spot trail, `(minute, price)` or `(minute, price, volume)` ticks, as `size`-minute
+    bars from 09:30, oldest first. Ticks before the open or at or after the close are ignored, and a
+    bucket with no tick is absent, never filled in. A bar's volume is the sum of its ticks' volumes,
+    None if any tick has none. With `until`, only bars that have completed by then are returned (a bar
     from `start` completes at `start + size`), so a live reading never uses a half-formed bar."""
     if size <= 0:
         raise ValueError("size must be a positive number of minutes")
     buckets: dict[int, list[float]] = {}
-    for minute, price in sorted(trail, key=lambda p: p[0]):
+    volumes: dict[int, float | None] = {}
+    for tick in sorted(trail, key=lambda p: p[0]):
+        minute, price = tick[0], tick[1]
         if not OPEN_MINUTE <= minute < CLOSE_MINUTE:
             continue
         start = OPEN_MINUTE + ((minute - OPEN_MINUTE) // size) * size
         buckets.setdefault(start, []).append(float(price))
+        v = tick[2] if len(tick) > 2 else None
+        if start not in volumes:
+            volumes[start] = None if v is None else float(v)
+        elif volumes[start] is not None:
+            volumes[start] = None if v is None else volumes[start] + float(v)
     out = []
     for start in sorted(buckets):
         end = min(start + size, CLOSE_MINUTE)
         if until is not None and end > until:
             continue
         p = buckets[start]
-        out.append(Bar(session, start, end, p[0], max(p), min(p), p[-1]))
+        out.append(Bar(session, start, end, p[0], max(p), min(p), p[-1], volumes[start]))
     return out
 
 
 def daily(rows: Iterable[Mapping]) -> list[Bar]:
-    """One bar per session from rows with `session`, `open`, `high`, `low`, `close`, oldest first."""
+    """One bar per session from rows with `session`, `open`, `high`, `low`, `close` (and `volume`,
+    when the rows carry it), oldest first."""
     out = [
         Bar(
             str(r["session"]),
@@ -158,6 +193,7 @@ def daily(rows: Iterable[Mapping]) -> list[Bar]:
             float(r["high"]),
             float(r["low"]),
             float(r["close"]),
+            None if r.get("volume") is None else float(r["volume"]),
         )
         for r in rows
     ]
@@ -186,8 +222,131 @@ _SOURCES: dict[str, tuple[str, ...]] = {
     "atr": ("n",),
     "stochastic": ("k_period", "k_smooth", "d_smooth", "output"),
     "macd": ("fast", "slow", "signal", "output"),
+    "vwap": ("anchor", "price", "weight"),
+    "vwap_band": ("anchor", "price", "weight", "k", "side"),
+    "relative_volume": ("n",),
+    "volume_ratio": ("n",),
 }
 _OUTPUTS = {"stochastic": ("k", "d"), "macd": ("line", "signal", "histogram")}
+#: Sources computed over all the bars whatever the signal's `seed`: they span sessions by definition.
+_SPANNING = frozenset({"vwap", "vwap_band", "relative_volume", "volume_ratio"})
+_PRICES = ("close", "hlc3", "ohlc4")
+
+
+def _reads_volume(src: Mapping) -> bool:
+    return src["name"] in ("relative_volume", "volume_ratio") or (
+        src["name"] in ("vwap", "vwap_band") and src["weight"] == "volume"
+    )
+
+
+def needs_volume(spec: Mapping) -> bool:
+    """Whether a (valid) signal reads bar volume: one of its sources, or an `only_when` signal's."""
+    srcs = [spec.get(k) for k in ("a", "b")]
+    if any(isinstance(s, Mapping) and _reads_volume(s) for s in srcs):
+        return True
+    return any(needs_volume(o) for o in spec.get("only_when", ()))
+
+
+def _volumes(bars: Sequence[Bar], name: str) -> list[float]:
+    vols = [b.volume for b in bars]
+    if any(v is None for v in vols):
+        raise MissingVolume(f"{name} reads bar volume, and these bars carry none")
+    return [float(v) for v in vols]  # type: ignore[arg-type]
+
+
+def _price(b: Bar, how: str) -> float:
+    if how == "close":
+        return b.close
+    if how == "hlc3":
+        return (b.high + b.low + b.close) / 3.0
+    return (b.open + b.high + b.low + b.close) / 4.0
+
+
+def _anchor_starts(anchor: object, bars: Sequence[Bar], events: Events) -> list[bool | None]:
+    """Per bar: True where a new anchor begins, False where the running sum carries on, None where
+    no anchor has begun yet (the value is undefined)."""
+    out: list[bool | None] = [None] * len(bars)
+    if anchor == "session":
+        for a, b in _sessions(bars):
+            out[a] = True
+            for i in range(a + 1, b):
+                out[i] = False
+        return out
+    if isinstance(anchor, str):
+        at = _minute(anchor)
+        for a, b in _sessions(bars):
+            began = False
+            for i in range(a, b):
+                if bars[i].start >= at:
+                    out[i] = not began
+                    began = True
+        return out
+    label = anchor["event"]  # type: ignore[index]
+    if events is None or label not in events:
+        raise ValueError(f"vwap anchor: no dates supplied for event {label!r}")
+    days = {str(d) for d in events[label]}
+    began = False
+    for a, b in _sessions(bars):
+        if bars[a].session in days:
+            out[a], began = True, True
+        elif began:
+            out[a] = False
+        for i in range(a + 1, b):
+            out[i] = out[a] if out[a] is None else False
+    return out
+
+
+def _vwap(src: Mapping, bars: Sequence[Bar], events: Events) -> list[float | None]:
+    weights = _volumes(bars, src["name"]) if src["weight"] == "volume" else [1.0] * len(bars)
+    starts = _anchor_starts(src["anchor"], bars, events)
+    out: list[float | None] = [None] * len(bars)
+    w = wp = wpp = 0.0
+    for i, b in enumerate(bars):
+        if starts[i] is None:
+            continue
+        if starts[i]:
+            w = wp = wpp = 0.0
+        p = _price(b, src["price"])
+        w += weights[i]
+        wp += weights[i] * p
+        wpp += weights[i] * p * p
+        if w <= 0:
+            continue
+        mean = wp / w
+        if src["name"] == "vwap":
+            out[i] = mean
+        else:
+            sd = max(wpp / w - mean * mean, 0.0) ** 0.5
+            out[i] = mean + (1.0 if src["side"] == "upper" else -1.0) * float(src["k"]) * sd
+    return out
+
+
+def _relative_volume(src: Mapping, bars: Sequence[Bar]) -> list[float | None]:
+    vols = _volumes(bars, src["name"])
+    n = src["n"]
+    out: list[float | None] = [None] * len(bars)
+    seen: dict[int, list[float]] = {}  # bar start -> volumes of the sessions before, oldest first
+    for a, b in _sessions(bars):
+        today = {}
+        for i in range(a, b):
+            before = seen.get(bars[i].start, [])
+            if len(before) >= n:
+                mean = sum(before[-n:]) / n
+                out[i] = None if mean <= 0 else vols[i] / mean
+            today[bars[i].start] = vols[i]
+        for start, v in today.items():
+            seen.setdefault(start, []).append(v)
+    return out
+
+
+def _volume_ratio(src: Mapping, bars: Sequence[Bar]) -> list[float | None]:
+    vols = _volumes(bars, src["name"])
+    n = src["n"]
+    out: list[float | None] = [None] * len(bars)
+    for i in range(n, len(bars)):
+        mean = sum(vols[i - n : i]) / n
+        out[i] = None if mean <= 0 else vols[i] / mean
+    return out
 
 
 def _source_series(src: Mapping, bars: Sequence[Bar]) -> list[float | None]:
@@ -216,9 +375,17 @@ def _source_series(src: Mapping, bars: Sequence[Bar]) -> list[float | None]:
     return {"line": line, "signal": sig, "histogram": hist}[src["output"]]
 
 
-def source(src: Mapping, bars: Sequence[Bar], *, seed: bool) -> list[float | None]:
+def source(src: Mapping, bars: Sequence[Bar], *, seed: bool, events: Events = None) -> list[float | None]:
     """An indicator over the bars. With `seed`, computed over all of them, so earlier sessions warm it;
-    without, computed within each session, so every session starts cold."""
+    without, computed within each session, so every session starts cold. A VWAP or volume source spans
+    sessions by its own definition and ignores `seed`; an event anchor reads `events`."""
+    name = src["name"]
+    if name in ("vwap", "vwap_band"):
+        return _vwap(src, bars, events)
+    if name == "relative_volume":
+        return _relative_volume(src, bars)
+    if name == "volume_ratio":
+        return _volume_ratio(src, bars)
     if seed:
         return _source_series(src, bars)
     out: list[float | None] = []
@@ -240,22 +407,22 @@ def _sign(direction: str) -> float:
     return 1.0 if direction in ("above", "up", "high", "enters") else -1.0
 
 
-def _cross(spec: Mapping, bars: Sequence[Bar]) -> Series:
-    a = source(spec["a"], bars, seed=spec["seed"])
+def _cross(spec: Mapping, bars: Sequence[Bar], events: Events = None) -> Series:
+    a = source(spec["a"], bars, seed=spec["seed"], events=events)
     b_spec = spec["b"]
     b = (
         [float(b_spec)] * len(bars)
         if isinstance(b_spec, (int, float))
-        else source(b_spec, bars, seed=spec["seed"])
+        else source(b_spec, bars, seed=spec["seed"], events=events)
     )
     sense = _sign(spec["direction"])
     value = [None if x is None or y is None else sense * (x - y) for x, y in zip(a, b, strict=True)]
     return [None if v is None else v > 0 for v in value], value
 
 
-def _range(spec: Mapping, bars: Sequence[Bar]) -> Series:
+def _range(spec: Mapping, bars: Sequence[Bar], events: Events = None) -> Series:
     lo, hi = float(spec["low"]), float(spec["high"])
-    a = source(spec["a"], bars, seed=spec["seed"])
+    a = source(spec["a"], bars, seed=spec["seed"], events=events)
     sense = _sign(spec["direction"])
     value = [None if x is None else sense * min(x - lo, hi - x) for x in a]
     if spec["direction"] == "enters":
@@ -692,6 +859,25 @@ def _validate_source(src: object, path: str) -> None:
         raise ValueError(f"{path}: unknown key {sorted(have - need)[0]!r} for {name}")
     if need - have:
         raise ValueError(f"{path}: {name} needs {sorted(need - have)[0]!r}")
+    if name in ("vwap", "vwap_band"):
+        a = src["anchor"]
+        ok = (
+            a == "session"
+            or (isinstance(a, str) and _hhmm_ok(a))
+            or (isinstance(a, Mapping) and set(a) == {"event"} and isinstance(a["event"], str) and a["event"])
+        )
+        if not ok:
+            raise ValueError(f'{path}.anchor: "session", a time "HH:MM" or {{"event": label}}')
+        if src["price"] not in _PRICES:
+            raise ValueError(f"{path}.price: one of {list(_PRICES)}")
+        if src["weight"] not in ("volume", "equal"):
+            raise ValueError(f"{path}.weight: one of ['volume', 'equal']")
+        if name == "vwap_band":
+            if not (_num(src["k"]) and src["k"] > 0):
+                raise ValueError(f"{path}.k: a positive number of standard deviations")
+            if src["side"] not in ("upper", "lower"):
+                raise ValueError(f"{path}.side: one of ['upper', 'lower']")
+        return
     for key in need - {"output"}:
         if not _pos_int(src[key]):
             raise ValueError(f"{path}.{key}: must be a positive whole number")
@@ -749,6 +935,8 @@ def _kind_series(spec: Mapping, bars: Sequence[Bar], events: Events = None) -> S
     """The kind's (state, value) per bar: the one place a definition is evaluated."""
     if spec["kind"] == "event":
         return _event(spec, bars, events)
+    if spec["kind"] in ("cross", "range"):
+        return KINDS[spec["kind"]].fn(spec, bars, events)
     return KINDS[spec["kind"]].fn(spec, bars)
 
 
