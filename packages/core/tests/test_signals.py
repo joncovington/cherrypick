@@ -275,6 +275,11 @@ SPECS = [
             {"kind": "event", "event": "fomc", "timing": "on", "days": 0, "unit": "sessions", "at": "09:30"}
         ],
     ),
+    {"kind": "level_break", "side": "resistance", "k": 2},
+    {"kind": "level_break", "side": "support", "k": 1, "confirm": 2},
+    {"kind": "trendline_break", "side": "resistance", "k": 2},
+    {"kind": "trendline_break", "side": "support", "k": 1, "reset": 0.2},
+    {"kind": "consolidation_break", "n": 4, "max_pct": 0.8, "side": "above"},
 ]
 
 EVENTS = {"fomc": [DAY2]}
@@ -421,3 +426,48 @@ def test_a_candle_takes_no_confirmation_or_reset():
         sg.validate(pattern("hammer", body_pct=30))
     with pytest.raises(ValueError, match="unknown key 'body_pct'"):
         sg.validate(pattern("inside_bar", body_pct=30))
+
+
+# --- swing breaks -------------------------------------------------------------------------------------
+
+
+def peaks(highs):
+    """Bars with the given highs, each closing 0.5 under its high with a one-point range."""
+    return [bar(h - 0.5, h, h - 1, h - 0.5, i) for i, h in enumerate(highs)]
+
+
+def test_a_level_break_crosses_the_latest_confirmed_swing_high():
+    bs = bars([100, 102, 101, 101.5, 103])  # a swing high of 102 at bar 1, confirmed at bar 2
+    spec = {"kind": "level_break", "side": "resistance", "k": 1}
+    assert fired(spec, bs) == [4]
+    assert fired(spec, mirror(bs)) == []
+    assert fired({**spec, "side": "support"}, mirror(bs)) == [4]
+
+
+def test_a_swing_point_is_not_read_before_it_is_confirmed():
+    # Bar 2's 103 is a swing high with k=2 only once bars 3 and 4 have stayed under it: until bar 4 there
+    # is no level at all, then the close is under it, then bar 5 clears it.
+    bs = peaks([99, 100, 103, 101, 100.5, 104.5])
+    spec = {"kind": "level_break", "side": "resistance", "k": 2}
+    assert sg.state(spec, bs) == [None, None, None, None, False, True]
+    assert fired(spec, bs) == [5]
+
+
+def test_a_trendline_break_crosses_the_line_through_two_swing_highs():
+    # Swing highs 105 at bar 1 and 103 at bar 3 make a line falling a point a bar; confirmed at bar 4.
+    bs = peaks([100, 105, 101, 103, 100, 100.5, 101, 102.5])
+    trend = {"kind": "trendline_break", "side": "resistance", "k": 1}
+    assert fired(trend, bs) == [6]  # the line is at 100 there and the bar closes at 100.5
+    # The flat level at the latest swing high (103) is never cleared.
+    assert fired({"kind": "level_break", "side": "resistance", "k": 1}, bs) == []
+    assert fired(trend, mirror(bs)) == []
+    assert fired({**trend, "side": "support"}, mirror(bs)) == [6]
+
+
+def test_a_consolidation_break_needs_a_tight_range_first():
+    tight = bars([100, 100.2, 99.9, 100.1, 100.0, 101.2], opens=100)
+    spec = {"kind": "consolidation_break", "n": 4, "max_pct": 0.5, "side": "above"}
+    assert fired(spec, tight) == [5]
+    assert fired({**spec, "max_pct": 0.1}, tight) == []
+    assert fired(spec, mirror(tight)) == []
+    assert fired({**spec, "side": "below"}, mirror(tight)) == [5]

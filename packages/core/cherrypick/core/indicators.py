@@ -222,6 +222,12 @@ def _pivots(values: list[float | None], k: int, high: bool) -> list[int]:
     return out
 
 
+def swing_points(values: list[float | None], k: int, high: bool) -> list[int]:
+    """The swing highs (or lows) of a series, oldest first: `_pivots`' rule, which the divergence
+    reads, under a public name for `core.signals`. A point is known only `k` values after it."""
+    return _pivots(values, k, high)
+
+
 def divergence(
     highs: list[float],
     lows: list[float],

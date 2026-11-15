@@ -62,6 +62,21 @@ calendar days before or after it. A calendar-day target that is not a trading da
 A pattern says nothing about the trend it appears in; that is what `only_when` is for. The bar
 before is the previous bar in the series, across the close for intraday bars.
 
+**Swing breaks** read swing points: a swing high is a bar whose high is above each of the `k` bars
+before it and not passed by any of the `k` after (`core.indicators.swing_points`, the rule the
+divergence already uses; lows mirrored). A swing point is known only `k` bars after it, so at each bar
+only the swing points confirmed by then are read.
+
+- `level_break`: the close beyond the latest confirmed swing high (`side: resistance`, above it) or
+  swing low (`side: support`, below it).
+- `trendline_break`: the close beyond the straight line through the latest two confirmed swing highs
+  (resistance) or lows (support), extended to this bar. Distance along the line is counted in bars,
+  so an overnight gap is one step; the line's slope is not restricted.
+- `consolidation_break`: the `n` bars before this one span no more than `max_pct` percent of their
+  low, and this bar closes above their high (`side: above`) or below their low (`side: below`).
+
+All three are continuous: armed on a false state, carried across the close.
+
 The defaults above are the identity of each rule (confirm once, no reset, no limit), not choices a
 study inherits: a kind's own parameters have no defaults at all.
 """
@@ -466,6 +481,64 @@ def _candle(spec: Mapping, bars: Sequence[Bar]) -> Series:
     return [_is_pattern(spec, bars[i - 1] if i else None, bars[i]) for i in range(len(bars))], None
 
 
+def _confirmed_swings(bars: Sequence[Bar], k: int, high: bool) -> list[list[int]]:
+    """At each bar, the swing points (indices, oldest first) confirmed by then: point p is known at
+    bar p + k."""
+    points = ind.swing_points([b.high if high else b.low for b in bars], k, high)
+    out, j = [], 0
+    for i in range(len(bars)):
+        while j < len(points) and points[j] + k <= i:
+            j += 1
+        out.append(points[:j])
+    return out
+
+
+def _level_break(spec: Mapping, bars: Sequence[Bar]) -> Series:
+    high = spec["side"] == "resistance"
+    swings = _confirmed_swings(bars, int(spec["k"]), high)
+    state: list[bool | None] = [None] * len(bars)
+    value: list[float | None] = [None] * len(bars)
+    for i, pts in enumerate(swings):
+        if not pts:
+            continue
+        p = pts[-1]
+        v = bars[i].close - bars[p].high if high else bars[p].low - bars[i].close
+        state[i], value[i] = v > 0, v
+    return state, value
+
+
+def _trendline_break(spec: Mapping, bars: Sequence[Bar]) -> Series:
+    high = spec["side"] == "resistance"
+    swings = _confirmed_swings(bars, int(spec["k"]), high)
+    state: list[bool | None] = [None] * len(bars)
+    value: list[float | None] = [None] * len(bars)
+    for i, pts in enumerate(swings):
+        if len(pts) < 2:
+            continue
+        p1, p2 = pts[-2], pts[-1]
+        y1, y2 = (bars[p1].high, bars[p2].high) if high else (bars[p1].low, bars[p2].low)
+        line = y2 + (y2 - y1) / (p2 - p1) * (i - p2)
+        v = bars[i].close - line if high else line - bars[i].close
+        state[i], value[i] = v > 0, v
+    return state, value
+
+
+def _consolidation_break(spec: Mapping, bars: Sequence[Bar]) -> Series:
+    n, width = int(spec["n"]), float(spec["max_pct"])
+    above = spec["side"] == "above"
+    state: list[bool | None] = [None] * len(bars)
+    value: list[float | None] = [None] * len(bars)
+    for i in range(n, len(bars)):
+        window = bars[i - n : i]
+        hi, lo = max(b.high for b in window), min(b.low for b in window)
+        if (hi - lo) / lo * 100.0 > width:
+            state[i] = False
+            continue
+        v = bars[i].close - hi if above else lo - bars[i].close
+        state[i], value[i] = v > 0, v
+    return state, value
+
+
 #: Each candle pattern's own parameters, beyond `pattern`.
 CANDLES: dict[str, tuple[str, ...]] = {
     "doji": ("body_pct",),
@@ -572,6 +645,17 @@ KINDS: dict[str, _Kind] = {
         "session",
     ),
     "candle": _Kind(_candle, {"pattern": lambda v: v in CANDLES}, "each"),
+    "level_break": _Kind(
+        _level_break, {"side": _is_dir("resistance", "support"), "k": _pos_int}, "continuous"
+    ),
+    "trendline_break": _Kind(
+        _trendline_break, {"side": _is_dir("resistance", "support"), "k": _pos_int}, "continuous"
+    ),
+    "consolidation_break": _Kind(
+        _consolidation_break,
+        {"n": _pos_int, "max_pct": lambda v: _num(v) and v >= 0, "side": _is_dir("above", "below")},
+        "continuous",
+    ),
 }
 
 #: Kinds whose state has no distance to measure, so `reset` means nothing for them.
