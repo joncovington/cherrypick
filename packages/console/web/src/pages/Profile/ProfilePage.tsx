@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { PROFILE_SYMBOLS, type ProfileSymbol } from "@console/shared";
 import { useFuturesTicker, useProfileBars } from "../../lib/api";
 import { useCandles } from "../../lib/useCandles";
+import { useMeasure } from "../../lib/useMeasure";
 import { CardHelpButton, HelpSection, type CardHelpContent } from "../../components/CardHelp";
 import type { MarketComposite, MarketProfile } from "../../lib/marketProfile";
 import { buildView, partialPeriods, valueRelation, type ProfileView } from "./profileView";
@@ -134,20 +135,32 @@ function ProfilePlot({
   const nRows = Math.round((view.high - view.low) / rowSize) + 1;
   const rowH = Math.max(3, Math.min(13, PLOT_HEIGHT / nRows));
   const letters = rowH >= 10 && measure === "time";
-  const cellW = letters ? 8 : 4;
+  const [boxRef, boxW] = useMeasure(0);
   const plotH = nRows * rowH;
   const y = (price: number): number => TOP_PAD + ((view.high - price) / rowSize) * rowH; // top of the row at `price`
 
+  // Each column's natural width (its longest row at 8 px a letter, 4 a bar), then all of them and the
+  // composite stretched by one factor to fill the card; the axis, gaps and margins stay as they are.
+  const baseCell = letters ? 8 : 4;
+  const natural = profiles.map((p) =>
+    Math.max(partialPeriods(p) === null ? 44 : 60, Math.max(...p.rows.map((r) => r.letters.length)) * baseCell),
+  );
+  const compW0 = composite !== null ? COMPOSITE_W : 0;
+  const fixed = AXIS_W + 8 + profiles.length * GAP + 6 + (composite !== null ? 10 : 0);
+  const stretchable = natural.reduce((a, b) => a + b, 0) + compW0;
+  const k = boxW > fixed && stretchable > 0 ? Math.max(1, (boxW - fixed) / stretchable) : 1;
+  const cellW = baseCell * k;
+  const compositeW = compW0 * k;
+
   let x = AXIS_W + 8;
-  const columns = profiles.map((p) => {
-    const maxTpo = Math.max(...p.rows.map((r) => r.letters.length));
-    const w = Math.max(partialPeriods(p) === null ? 44 : 60, maxTpo * cellW);
+  const columns = profiles.map((p, i) => {
+    const w = natural[i]! * k;
     const col = { p, x, w };
     x += w + GAP;
     return col;
   });
   const compX = x + 6;
-  const width = compX + (composite !== null ? COMPOSITE_W + 10 : 0);
+  const width = Math.floor(compX + (composite !== null ? compositeW + 10 : 0));
   const height = TOP_PAD + plotH + LABEL_H;
   const labelEvery = Math.max(1, Math.ceil(16 / rowH));
   const lineAcross = (price: number, key: string, stroke: string, dash: string) => (
@@ -155,7 +168,7 @@ function ProfilePlot({
   );
 
   return (
-    <div style={{ overflowX: "auto", marginTop: 10 }}>
+    <div ref={boxRef} style={{ overflowX: "auto", marginTop: 10 }}>
       <svg width={width} height={height} role="img" aria-label="Market Profile by session" style={{ display: "block" }}>
         {/* price axis */}
         {Array.from({ length: nRows }, (_, i) => i)
@@ -193,7 +206,7 @@ function ProfilePlot({
             onSelect={onSelect}
           />
         ))}
-        {composite !== null && <CompositeColumn c={composite} x={compX} y={y} rowH={rowH} plotH={TOP_PAD + plotH} measure={measure} />}
+        {composite !== null && <CompositeColumn c={composite} x={compX} w={compositeW} y={y} rowH={rowH} plotH={TOP_PAD + plotH} measure={measure} />}
       </svg>
     </div>
   );
@@ -298,6 +311,7 @@ function SessionColumn({
 function CompositeColumn({
   c,
   x,
+  w,
   y,
   rowH,
   plotH,
@@ -305,6 +319,7 @@ function CompositeColumn({
 }: {
   c: MarketComposite;
   x: number;
+  w: number;
   y: (price: number) => number;
   rowH: number;
   plotH: number;
@@ -316,14 +331,14 @@ function CompositeColumn({
   const peak = byVolume ? c.volumePoc : c.poc;
   return (
     <g>
-      <rect x={x - 3} y={y(c.vah)} width={COMPOSITE_W + 6} height={y(c.val) - y(c.vah) + rowH} fill="var(--accent)" opacity={0.16} />
+      <rect x={x - 3} y={y(c.vah)} width={w + 6} height={y(c.val) - y(c.vah) + rowH} fill="var(--accent)" opacity={0.16} />
       {c.rows.map((r) =>
         value(r) <= 0 ? null : (
           <rect
             key={r.price}
             x={x}
             y={y(r.price) + 0.5}
-            width={Math.max(1, share(value(r), max) * COMPOSITE_W)}
+            width={Math.max(1, share(value(r), max) * w)}
             height={Math.max(1, rowH - 1)}
             fill={r.price === peak ? "var(--amber-line)" : "var(--accent)"}
             opacity={r.price === peak ? 0.95 : 0.55}

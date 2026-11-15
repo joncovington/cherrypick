@@ -330,8 +330,12 @@ function LiveCandles({
     [profile, profiles, profileBars, recordedSymbol, recorded, sessions],
   );
   const drawnCount = info.count;
+  // The newest always draws (against the right edge); an older one only where the candles reach it.
   const onChart = useMemo(
-    () => (drawnCount === 0 ? 0 : sessionAnchors(wsClient.getCandles(symbol, period), recent.map((p) => p.session)).size),
+    () =>
+      drawnCount === 0 || recent.length === 0
+        ? 0
+        : 1 + sessionAnchors(wsClient.getCandles(symbol, period), recent.slice(0, -1).map((p) => p.session)).size,
     [recent, symbol, period, drawnCount],
   );
 
@@ -542,9 +546,10 @@ const INTRADAY_HELP: CardHelpContent = {
         <p>
           Built from 15-minute candles over the regular session, 09:30–16:00 ET, for every symbol (a future's
           overnight is left out), in 30-minute periods lettered A–M. Each shaded histogram is one session's time at
-          each price, drawn from that session's 09:30 bar: the brighter rows are its value area (70% of the time),
-          the amber row its point of control. The sessions button picks how many (1, 5 or 10, newest included); all
-          share one scale, so a wider row spent longer at its price. A narrow candle loads fewer days (1m one day,
+          each price: the brighter rows are its value area (70% of the time), the amber row its point of control. The
+          newest session's grows leftward from the chart's right edge; each older one's is drawn from that session's
+          09:30 bar. The sessions button picks how many (1, 5 or 10, newest included); the older ones share one
+          scale, so a wider row spent longer at its price. A narrow candle loads fewer days (1m one day,
           5m three, 15m seven), so the readout says when fewer sessions are drawn than asked. The lines are the
           newest session's. SPX and NDX carry no volume, so theirs is time only. Chart only: no module reads it.
         </p>
