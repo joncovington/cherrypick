@@ -39,7 +39,7 @@ def reads(arm: dict) -> dict:
     return {
         "trail": arm["entry"]["kind"] == "orb" or any(g in TRAIL_GATES for g in gates),
         "gex": gex,
-        "greeks": gex or "delta" in rules,
+        "greeks": gex or "delta" in rules or (arm.get("exit") or {}).get("delta_limit") is not None,
         "vix": any(g in VIX_GATES for g in gates),
         "closes": max([*mas, arms_mod.DAILY_HISTORY if arms_mod.reads_daily(arm) else 1]),
         "daily": arms_mod.reads_daily(arm),
@@ -227,20 +227,44 @@ def _cal_close_minute(today: date) -> int:
     return int(h) * 60 + int(m)
 
 
-def position_snapshot(pos: dict, leg_rows: list[dict], spot: float, when: datetime) -> Snapshot:
+def position_snapshot(
+    pos: dict,
+    leg_rows: list[dict],
+    spot: float,
+    when: datetime,
+    *,
+    exit_rules: dict | None = None,
+    conn=None,
+    cache_path: str | None = None,
+    events=None,
+) -> Snapshot:
     """The snapshot `engine.manage` and `close_position` read for an open position: its own legs' quotes,
-    the spot, and the clock. No gates run on it, so nothing else is read."""
+    the spot, the clock, and what its exit reads. A signal exit gets today's recorded trail, the earlier
+    sessions' (an intraday signal) or the daily bars (a daily one) and the event calendar, exactly as an
+    entry trigger does; without them a signal exit could never fire in paper while it fires in the
+    backtest. No gates run on it, so nothing else is read."""
     today = when.date()
+    minute = when.hour * 60 + when.minute
+    as_arm = {"entry": {}, "exit": exit_rules or {}}
+    signal = bool((exit_rules or {}).get("signal")) and conn is not None
+    daily = None
+    if signal and arms_mod.reads_daily(as_arm) and cache_path:
+        daily = provider.daily_bars(cache_path, pos["symbol"], today)
     return build(
         session=today.isoformat(),
-        minute=when.hour * 60 + when.minute,
+        minute=minute,
         symbol=pos["symbol"],
         spot=spot,
         prev_close=spot,
         day_open=spot,
         quotes={pos["expiration"]: leg_rows},
-        trail=[],
+        trail=db.trail(conn, pos["symbol"], today.isoformat(), through=minute) if signal else [],
         closes=[],
+        events=events,
         close_minute=_cal_close_minute(today),
         with_gex=False,
+        daily=daily,
+        prior=prior_trails(conn, pos["symbol"], today)
+        if signal and arms_mod.reads_prior_trail(as_arm)
+        else None,
     )

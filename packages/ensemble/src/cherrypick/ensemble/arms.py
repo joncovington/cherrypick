@@ -22,7 +22,10 @@ that defaulted silently would change what is measured):
     exit          {} (hold to settlement) with any of "close_before_expiry_min", "profit_target_pct",
                   "touch": {"pct": -0.5} or {"points": -10},
                   "signal": {"trigger": <core.entrychecks trigger>, "bar_minutes": N} (the entry
-                  trigger's shape, read on the position's underlying; `engine.manage`)
+                  trigger's shape, read on the position's underlying; `engine.manage`),
+                  "stop_credit_multiple": m (a credit entry's loss at m times its credit),
+                  "delta_limit": x (the structure's delta per unit, either way),
+                  "close_at_dte": n (calendar days to expiry)
 """
 
 from __future__ import annotations
@@ -74,7 +77,15 @@ TOP_KEYS = {
     "exit",
     "note",
 }
-EXIT_KEYS = {"close_before_expiry_min", "profit_target_pct", "touch", "signal"}
+EXIT_KEYS = {
+    "close_before_expiry_min",
+    "profit_target_pct",
+    "touch",
+    "signal",
+    "stop_credit_multiple",
+    "delta_limit",
+    "close_at_dte",
+}
 STRIKE_RULES = {"delta", "spot", "prev_close", "from_leg", "same_as", "match_width", "max_abs_gex"}
 
 
@@ -318,11 +329,23 @@ def validate(arm: dict) -> list[str]:
     for k in arm.get("exit", {}):
         if k not in EXIT_KEYS:
             p.append(f"{name}.exit: unknown key {k!r}")
+    ex = arm.get("exit", {})
+    for key, ok in (
+        ("stop_credit_multiple", lambda v: _num(v) and v > 0),
+        ("delta_limit", lambda v: _num(v) and 0 < v <= 4),
+        ("close_at_dte", lambda v: isinstance(v, int) and not isinstance(v, bool) and v >= 0),
+    ):
+        if key in ex and not ok(ex[key]):
+            p.append(f"{name}.exit.{key}: {ex[key]!r}")
     if "signal" in arm.get("exit", {}):
         p += _trigger_problems(
             f"{name}.exit.signal", arm["exit"]["signal"], frozenset({"trigger", "bar_minutes"})
         )
     return p
+
+
+def _num(v) -> bool:
+    return isinstance(v, int | float) and not isinstance(v, bool)
 
 
 #: Completed sessions a daily signal is given: room for a 200-day average and its warm-up.
