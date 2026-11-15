@@ -809,6 +809,12 @@ def technicals_settings(cfg: dict[str, Any]) -> dict[str, Any]:
         # so the day's last bars are finished. No Dolt; the shared broker credential, read-only.
         "profile_bars": bool(tc.get("profile_bars", True)),
         "profile_bars_at": tc.get("profile_bars_at", "17:15"),
+        # `gold_bars_at`: scripts/fetch_gold_bars.py, 1-hour and daily bars of gold futures (/GC, the
+        # map's active month, and the continuous /GC:XCEC) and GLD for the engulf work (#1171); the
+        # feed keeps hourly bars for about 9.5 months. After GLD's extended hours end at 20:00, so the
+        # day's last hourly bars are finished. No Dolt; the shared broker credential, read-only.
+        "gold_bars": bool(tc.get("gold_bars", True)),
+        "gold_bars_at": tc.get("gold_bars_at", "20:15"),
     }
 
 
