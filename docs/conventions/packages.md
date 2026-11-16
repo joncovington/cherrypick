@@ -65,12 +65,12 @@ what it may write. The package's own CLAUDE.md holds the detail.
   reads paper against item 57's replay. Settles only on a posted close (`stream_summary`), never a
   last trade. Early assignment of the ETF puts is measured, never modelled (an upper bound). Off by
   default in the example. No live path.
-- **packages/ensemble** — ⚠️ EXPERIMENTAL. A rules engine for short-dated option arms, declared as
+- **packages/automations** — ⚠️ EXPERIMENTAL. A rules engine for short-dated option arms, declared as
   research item 75 (eight SPX and GLD arms from a third-party portfolio). An arm is configuration;
   `engine.decide` is one pure decision over a `Snapshot`, called by the backtest driver
   (`packages/backtest/scripts/ensemble_item75.py`) and by its paper loop, which takes any arm
   `arms.load_arms` returns. **Paper-only, credential-free, no live path**: a position is a row in
-  `~/.cherrypick/data/ensemble/paper_trades.db` (trade schema `ensemble_trade`), never an order; it reads
+  `~/.cherrypick/data/automations/paper_trades.db` (trade schema `ensemble_trade`), never an order; it reads
   the stream cache and never writes it, and writes a local replay record of every decision tick. Off by
   default in the example. Reads the
   technicals package's pure indicator functions (`sma`, `ema`, `rsi`) and nothing else of it:
@@ -103,7 +103,7 @@ what it may write. The package's own CLAUDE.md holds the detail.
   on 2026-10-29): each company's SEC filings (point in time by filing date), Dolt's annual statements
   and revenue consensus, and Damodaran's public ERP and coverage-to-rating table, into its own store;
   the daily fair-value file the Screeners tab and the technicals income lists read. Credential-free
-  and network-free (two scripts fetch); **reads technicals for prices** (ensemble also declares
+  and network-free (two scripts fetch); **reads technicals for prices** (automations also declares
   technicals, for its indicator functions), and technicals reads it back by file only. A description, never a selector:
   tested 2018-26 with no edge.
 - **packages/console** — the reactive web UI (Node + TypeScript, React SPA on 127.0.0.1:5070), the

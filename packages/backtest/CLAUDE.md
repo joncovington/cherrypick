@@ -356,7 +356,7 @@ Descriptive only: no trial, no verdict, nothing to the advisor. A vendor result 
 `reads_holdout` when its sessions reach the configured holdout window.
 
 **Automation backtests** (`packages/backtest/scripts/automation_backtest.py run --arms --symbol --from --to
---name [--source]`): ensemble arms replayed by `cherrypick.ensemble.driver`, the engine paper runs. The
+--name [--source]`): the automations group's automations replayed by `cherrypick.automations.driver`, the engine paper runs. The
 store is the source registry's best cover for the symbol's same-day chains over the dates (or the one
 named); a vendor store only while `licensing.status` is active, so new work never reads the vendor's
 data after its subscription ends. An arm that does not expire the session it enters reads end-of-day

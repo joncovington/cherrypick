@@ -17,6 +17,13 @@ const CHERRYPICK = cherrypickHome();
 // ~/.cherrypick; these are the exceptions, and they stay read-only.
 export const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..");
 
+/** A module's data folder under its new name, or its old one while only that exists (`core.home.RENAMED`). */
+export function renamedDir(data: string, name: string, old: string): string {
+  const fresh = path.join(data, name);
+  const prior = path.join(data, old);
+  return !fs.existsSync(fresh) && fs.existsSync(prior) ? prior : fresh;
+}
+
 export interface ConsoleConfig {
   port: number;
   paths: {
@@ -108,7 +115,7 @@ export function loadConfig(): ConsoleConfig {
       curveDir: path.join(data, "curve"),
       contangoDir: path.join(data, "contango"),
       weeklyputDir: path.join(data, "weeklyput"),
-      ensembleDir: path.join(data, "ensemble"),
+      ensembleDir: renamedDir(data, "automations", "ensemble"),
       ladderDir: path.join(data, "ladder"),
       bwbDir: path.join(data, "bwb"),
       gexDir: path.join(data, "gex"),

@@ -62,7 +62,7 @@ _INDEPENDENT = {
         "COALESCE(SUM(COALESCE(fees, 0) + COALESCE(settlement, 0) + COALESCE(slippage, 0)), 0) cost "
         "FROM weeklyput_positions WHERE status = 'closed' AND settle_session = ?"
     ),
-    "ensemble": (
+    "automations": (
         "SELECT COUNT(*) n, COALESCE(SUM(gross_pnl), 0) gross, "
         "COALESCE(SUM(COALESCE(fees, 0) + COALESCE(settlement, 0) + COALESCE(slippage, 0)), 0) cost "
         "FROM ensemble_positions WHERE status = 'closed' AND exit_session = ?"

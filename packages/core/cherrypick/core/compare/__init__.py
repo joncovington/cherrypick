@@ -83,7 +83,7 @@ MODULE_SCHEMAS: dict[str, str] = {
     "earnings": "earnings",
     "contango": "contango_etf",
     "weeklyput": "weeklyput_put",
-    "ensemble": "ensemble_trade",
+    "automations": "ensemble_trade",
     "ladder": "ladder_lot",
 }
 

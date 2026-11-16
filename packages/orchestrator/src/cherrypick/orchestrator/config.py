@@ -77,6 +77,47 @@ def effective_config_path() -> Path:
     return LEGACY_CONFIG_PATH if LEGACY_CONFIG_PATH.exists() else CONFIG_PATH
 
 
+#: A module renamed: old key -> new key. A suite config written before the rename keeps working:
+#: `resolve_renamed` reads the old block under the new key, with the old defaults spelt anew.
+RENAMED_MODULES = {"ensemble": "automations"}
+
+
+def _respelt(value: Any, old: str, new: str) -> Any:
+    """A module block's default spellings under the old name, written anew: its `path` (`../ensemble`),
+    an argv's `cherrypick.ensemble.*` module, and its `log` (`ensemble_paper.log`). Anything else,
+    `paper_db` included (the data folder resolves under either name, `core.home.RENAMED`), is kept."""
+    if isinstance(value, dict):
+        out = {}
+        for k, v in value.items():
+            if k == "path" and isinstance(v, str) and Path(v).name == old:
+                v = str(Path(v).with_name(new).as_posix())
+            elif k == "log" and v == f"{old}_paper.log":
+                v = f"{new}_paper.log"
+            out[k] = _respelt(v, old, new)
+        return out
+    if isinstance(value, list):
+        return [_respelt(v, old, new) for v in value]
+    if isinstance(value, str) and value.startswith(f"cherrypick.{old}."):
+        return f"cherrypick.{new}." + value[len(f"cherrypick.{old}.") :]
+    return value
+
+
+def resolve_renamed(cfg: dict[str, Any]) -> dict[str, Any]:
+    """`cfg` with each renamed module's old block under its new key, in its place. A config naming both
+    keeps the new one and drops the old, so one module never runs twice."""
+    modules = cfg.get("modules")
+    if not isinstance(modules, dict) or not any(old in modules for old in RENAMED_MODULES):
+        return cfg
+    out = {}
+    for key, block in modules.items():
+        new = RENAMED_MODULES.get(key)
+        if new is None:
+            out[key] = block
+        elif new not in modules:
+            out[new] = _respelt(block, key, new)
+    return {**cfg, "modules": out}
+
+
 def load_config(path: Path | None = None) -> dict[str, Any]:
     """Load and lightly validate the cherrypick config (home config, or a legacy in-repo one until
     migrated — see :func:`effective_config_path`)."""
@@ -95,10 +136,10 @@ def load_config(path: Path | None = None) -> dict[str, Any]:
         fallback = None if path is not None else _last_good_fallback(cfg_path, exc)
         if fallback is None:
             raise
-        return fallback
+        return resolve_renamed(fallback)
     if path is None:
         _remember_good(raw)
-    return cfg
+    return resolve_renamed(cfg)
 
 
 # A config that cannot be parsed used to take the whole suite down with it (2026-10-08 audit): the

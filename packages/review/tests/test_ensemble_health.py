@@ -62,12 +62,12 @@ def test_the_independent_route_counts_closed_trades_on_the_day_they_ended():
     conn.execute("INSERT INTO ensemble_positions VALUES ('closed', ?, 85.0, 1.0, 0.0, 2.0)", (SESSION,))
     conn.execute("INSERT INTO ensemble_positions VALUES ('closed', ?, -500.0, 1.0, 6.0, 2.0)", (SESSION,))
     conn.execute("INSERT INTO ensemble_positions VALUES ('open', NULL, NULL, NULL, NULL, NULL)")
-    row = conn.execute(reconcile._INDEPENDENT["ensemble"], (SESSION,)).fetchone()
+    row = conn.execute(reconcile._INDEPENDENT["automations"], (SESSION,)).fetchone()
     assert (row["n"], row["gross"], row["cost"]) == (2, -415.0, 12.0)
     assert facts._ensemble_health(conn, SESSION)["settled"] == 2
 
 
 def test_the_module_is_registered_for_the_review():
-    assert facts.MODULES["ensemble"]["schema"] == "ensemble_trade"
-    assert facts.HEALTH_READERS["ensemble"] is facts._ensemble_health
-    assert facts.EXPECTED_READERS["ensemble"] is facts._ensemble_expected
+    assert facts.MODULES["automations"]["schema"] == "ensemble_trade"
+    assert facts.HEALTH_READERS["automations"] is facts._ensemble_health
+    assert facts.EXPECTED_READERS["automations"] is facts._ensemble_expected

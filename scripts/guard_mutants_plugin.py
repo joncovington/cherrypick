@@ -110,9 +110,9 @@ def _ensemble_fill_after_window():
     """ensemble's entry window read as open until the bell, both where the loop asks (`feed.entry_window`)
     and where the engine does (`entry_due`): an arm entering after its window closed, the late fill the
     after-window rule exists to forbid. The rule is held twice, so the mutant breaks both."""
-    engine = importlib.import_module("cherrypick.ensemble.engine")
-    feed = importlib.import_module("cherrypick.ensemble.feed")
-    model = importlib.import_module("cherrypick.ensemble.model")
+    engine = importlib.import_module("cherrypick.automations.engine")
+    feed = importlib.import_module("cherrypick.automations.feed")
+    model = importlib.import_module("cherrypick.automations.model")
     real_due, real_window = engine.entry_due, feed.entry_window
 
     def due(arm, snap):
@@ -132,7 +132,7 @@ def _ensemble_fill_after_window():
 def _decide_all_unstacked():
     """ensemble's `paper.decide_all` deciding every arm on the snapshot as it was, so an arm that enters
     is not seen by the arms after it (the cross-arm gate and the limits would read a book that is behind)."""
-    engine = importlib.import_module("cherrypick.ensemble.engine")
+    engine = importlib.import_module("cherrypick.automations.engine")
 
     def patched(arms, snap, *, costs=None):
         return [
@@ -524,27 +524,27 @@ MUTANTS: tuple[Mutant, ...] = (
     Mutant(
         id="ensemble-no-fill-after-window",
         breaks="ensemble enters an arm after its entry window closed",
-        package="ensemble",
+        package="automations",
         tests=("tests/test_paper_loop.py::test_nothing_fills_after_the_window",),
-        module="cherrypick.ensemble.feed",
+        module="cherrypick.automations.feed",
         attr="entry_window",
         replacement="ensemble_fill_after_window",
     ),
     Mutant(
         id="ensemble-trail-complete",
         breaks="ensemble feeds an arm a spot record that began late, a partial morning",
-        package="ensemble",
+        package="automations",
         tests=("tests/test_paper_loop.py::test_a_trail_that_began_late_refuses_the_arms_that_read_it",),
-        module="cherrypick.ensemble.feed",
+        module="cherrypick.automations.feed",
         attr="trail_complete",
         replacement="always_true",
     ),
     Mutant(
         id="ensemble-arms-stack",
         breaks="ensemble decides each arm blind to the arms that entered before it",
-        package="ensemble",
+        package="automations",
         tests=("tests/test_paper_sequence.py::test_a_later_arm_sees_the_arm_that_entered_before_it",),
-        module="cherrypick.ensemble.paper",
+        module="cherrypick.automations.paper",
         attr="decide_all",
         replacement="decide_all_unstacked",
     ),
@@ -763,9 +763,9 @@ MUTANTS: tuple[Mutant, ...] = (
     Mutant(
         id="ensemble-gate-through-core-passes",
         breaks="an ensemble gate run through core passes whatever its own function says",
-        package="ensemble",
+        package="automations",
         tests=("tests/test_core_checks.py::test_every_market_gate_through_core_equals_its_own_function",),
-        module="cherrypick.ensemble.gates",
+        module="cherrypick.automations.gates",
         attr="run",
         replacement="gate_always_passes",
     ),

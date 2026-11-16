@@ -11,7 +11,20 @@ beyond the latest release.
 
 ## [Unreleased]
 
+### Upgrading
+
+- **`packages/ensemble` is now `packages/automations`** (`cherrypick-automations`). A checkout updated
+  by hand needs its packages reinstalled (`scripts/dev-install.ps1` or `.sh`; `upgrade` does it), or
+  the paper loop cannot import. Nothing else is required: the old names keep resolving. A suite
+  config's `modules.ensemble` reads as `modules.automations`, `config/ensemble.json` and
+  `data/ensemble/` are read while only they exist, and `cherrypick.ensemble` still imports. Rename
+  them when you like; the ledger's tables keep their names.
+
 ### What's new
+
+- **Ensemble is now automations.** The package, its import, its config file, data folder, log,
+  heartbeat and stream request, and its suite-config key are named `automations`; trade
+  notifications say "Automation paper".
 
 - **Automation backtests through the engine paper runs.** `packages/backtest/scripts/automation_backtest.py`
   replays ensemble arms over a stored history with `cherrypick.ensemble.driver`: the same decisions,

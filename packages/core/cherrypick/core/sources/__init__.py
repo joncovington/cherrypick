@@ -382,6 +382,7 @@ IGNORED: dict[str, str] = {
             "console",
             "contango",
             "curve",
+            "automations",
             "ensemble",
             "external",
             "flies",
