@@ -12,6 +12,13 @@ block is `backtested` while its hash still matches, `changed` once it does not (
 speaks for it), and `not_backtested` with no hash at all. So a paper result is labelled for what it is,
 block by block: "entry backtested, exit not".
 
+**Backtest suggestion.** An automation with a block not backtested gets `suggestion`: what its blocks
+read (`needs`: the chain at its expiry class and the entry's cadence, the greeks when a leg is placed by
+delta, the spot trail for an intraday trigger) and, from the source registry's inventory
+(`core.sources.coverage`, our own stores only, never a licensed one), whether each is covered over the
+`SUGGEST_DAYS` up to the last finished session. Where every need is covered the suite says the backtest
+can run; it never runs one.
+
 **Forward rule.** `forward` declares, at enrolment and before any paper is read, how the paper record
 is judged, in the shape the orchestrator's `forward-checks` reads (`forwardcheck` there):
 `measure`, `field`, `min_obs`, `kill_z`, `drift_z`, optionally `per`, `reference` (default null: paper
@@ -24,6 +31,8 @@ from __future__ import annotations
 import hashlib
 import json
 from datetime import date
+
+from cherrypick.core import calendar as cal
 
 BLOCKS: dict[str, tuple[str, ...]] = {
     "structure": ("symbol", "expiry", "legs"),
@@ -142,6 +151,68 @@ def problems(arm: dict) -> list[str]:
     ):
         p.append(f"{where}.beside: a list of automation names")
     return p
+
+
+SUGGEST_DAYS = 365
+
+
+def _expiry_class(arm: dict) -> str:
+    e = arm["expiry"]
+    if e.get("kind") in ("dte", "market_days") and e.get("days") in (0, 1) and not e.get("tolerance"):
+        return "0dte" if e["days"] == 0 else "1dte"
+    return "all"  # a nearer or farther listed expiry: a weekly or a monthly, which only `all` holds both of
+
+
+def _cadence(arm: dict) -> str:
+    e = arm["entry"]
+    daily = e.get("kind") == "trigger" and (e.get("trigger") or {}).get("daily")
+    at_close = e.get("kind") == "time" and e.get("at") == "16:00"
+    return "1d" if daily or at_close else "1m"
+
+
+def needs(arm: dict) -> list[dict]:
+    """What a backtest of `arm` reads: [{"field", "expiry"?, "cadence"}]."""
+    expiry, cadence = _expiry_class(arm), _cadence(arm)
+    out = [{"field": "chain", "expiry": expiry, "cadence": cadence}]
+    if any((leg.get("strike") or {}).get("rule") == "delta" for leg in arm["legs"]):
+        out.append({"field": "greeks", "expiry": expiry, "cadence": cadence})
+    e = arm["entry"]
+    intraday_trigger = e.get("kind") == "orb" or (
+        e.get("kind") == "trigger" and not (e.get("trigger") or {}).get("daily")
+    )
+    if intraday_trigger:
+        out.append({"field": "spot", "cadence": "1m"})
+    return out
+
+
+def suggestion(arm: dict, inventory: dict, today: date, coverage) -> dict | None:
+    """None when every block is backtested; else {"blocks", "window", "needs": [{..., "covered",
+    "source"}], "possible"}. `coverage` is `core.sources.coverage` (passed in, so this stays pure)."""
+    lab = labels(arm)
+    open_blocks = [b for b, r in lab.items() if r["state"] != BACKTESTED]
+    if not open_blocks:
+        return None
+    last = cal.previous_trading_day(today)  # the last finished session; today's is not in a store yet
+    end = last.isoformat()
+    start = date.fromordinal(last.toordinal() - SUGGEST_DAYS).isoformat()
+    rows = []
+    for need in needs(arm):
+        got = coverage(inventory, need["field"], arm["symbol"], start, end, cadence=need["cadence"],
+                       expiry=need.get("expiry"), licensed=False)  # fmt: skip
+        row = {**need, "covered": bool(got.get("covered")), "source": got.get("best")}
+        if not row["covered"]:
+            # The nearest our stores come: the first source holding anything, with its span and why it
+            # falls short (own recordings that began recently, a source without the expiry).
+            near = next((s for s in got.get("sources") or [] if s.get("first")), None)
+            if near is not None:
+                row["nearest"] = {k: near.get(k) for k in ("source", "first", "last", "why")}
+        rows.append(row)
+    return {
+        "blocks": open_blocks,
+        "window": [start, end],
+        "needs": rows,
+        "possible": all(r["covered"] for r in rows),
+    }
 
 
 def joins(arm: dict, today: date) -> bool:
