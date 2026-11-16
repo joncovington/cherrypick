@@ -23,6 +23,12 @@ beyond the latest release.
 - Automation exits: profit and stop in dollars, a stop as a share of a debit, a trailing stop, a
   forced close the session before a listed event, and a guard that holds any exit while the
   structure's bid/ask is wider than a limit. Paper and the backtest driver read them alike.
+- Automation strikes and expiries: a strike by premium (bid, ask or mid), by standard deviations or
+  the expected move (both from the at-the-money straddle, so quotes alone are enough), off the opening
+  range, the open, or the spot when the entry fired, and at the largest net positive or negative GEX,
+  call or put GEX, or call or put open interest. Every rule takes a match mode: exactly, nearest, next
+  above or next below. An expiry can be at least N days out or between N and M. A misspelt key inside
+  a strike rule is now refused, as one elsewhere in an arm already was.
 - Signals: VWAP (anchored to the session, a time or an event; volume or equal weights) and its bands,
   relative volume against the same minute of earlier sessions, and a volume ratio for surges. A signal
   that reads volume refuses bars without it. An automation's volume signal names whose volume weighs

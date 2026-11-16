@@ -7,6 +7,9 @@ that defaulted silently would change what is measured):
 
     name, symbol, enabled
     expiry        {"kind": "dte"|"market_days"|"calendar", "days": N, "tolerance": D}
+                  {"kind": "at_least", "days": N}: the nearest listed expiry N or more calendar days out
+                  {"kind": "between", "min": N, "max": M, "prefer": "first"|"last"}: a listed expiry N
+                  to M calendar days out, the nearest (`first`, the default) or the farthest
     entry         {"kind": "time", "at": "HH:MM", "window": minutes}
                   {"kind": "orb", "minutes": 60, "direction": "above", "latest": "HH:MM", "single_shot": bool}
                   {"kind": "trigger", "trigger": <core.entrychecks trigger>, "bar_minutes": N}
@@ -16,6 +19,7 @@ that defaulted silently would change what is measured):
     weekdays      [0..4], Monday = 0
     skip_events   {"labels": [...], "through_expiry": bool}
     legs          [{"name", "right": "C"|"P", "side": 1|-1, "strike": <strikes rule>}] in placement order
+                  (each rule's keys and its `match` mode: `strikes` docstring)
     gates         [{"gate": <gates.REGISTRY name>, ...}]
     size          {"contracts": N} or {"max_risk": dollars}
     limits        {"max_open": N, "per_day": 1, "every_days": N, "one_per_expiry": bool}: `max_open` and
@@ -44,6 +48,7 @@ from cherrypick.core import entrychecks as ec
 from cherrypick.core import signals
 
 from . import gates as gates_mod
+from . import strikes as st
 
 
 def _trigger_problems(
@@ -116,7 +121,106 @@ EXIT_KEYS = {
     "delta_limit",
     "close_at_dte",
 }
-STRIKE_RULES = {"delta", "spot", "prev_close", "from_leg", "same_as", "match_width", "max_abs_gex"}
+#: Each strike rule's keys beyond `rule`, `match` and `round` ({key: required}).
+_SHIFT = {"points": False, "pct": False}
+STRIKE_KEYS = {
+    "delta": {"target": True, "at_most": False},
+    "premium": {"target": True, "price": True},
+    "spot": _SHIFT,
+    "prev_close": _SHIFT,
+    "open": _SHIFT,
+    "from_leg": {"leg": True, **_SHIFT},
+    "same_as": {"leg": True},
+    "match_width": {"from": True, "width_of": True},
+    "expected_move": {"times": True, **_SHIFT},
+    "std_dev": {"sd": True, **_SHIFT},
+    "opening_range": {"minutes": True, "level": True, **_SHIFT},
+    "entry_level": _SHIFT,
+    "max_abs_gex": {"strikes": True},
+    "gex_max": {"measure": True, "strikes": True},
+}
+STRIKE_RULES = set(STRIKE_KEYS)
+EXPIRY_KEYS = {
+    "dte": {"days": True, "tolerance": False},
+    "market_days": {"days": True, "tolerance": False},
+    "calendar": {"days": True, "tolerance": False},
+    "at_least": {"days": True},
+    "between": {"min": True, "max": True, "prefer": False},
+}
+
+
+def _whole(v, least: int = 0) -> bool:
+    return isinstance(v, int) and not isinstance(v, bool) and v >= least
+
+
+def _number(v) -> bool:
+    return isinstance(v, int | float) and not isinstance(v, bool)
+
+
+def _expiry_problems(where: str, rule) -> list[str]:
+    """An expiry rule's problems: its kind, its keys, whole day counts and a window that is not empty."""
+    if not isinstance(rule, dict) or rule.get("kind") not in EXPIRY_KEYS:
+        return [f"{where}.kind: {(rule or {}).get('kind') if isinstance(rule, dict) else rule!r}"]
+    keys = EXPIRY_KEYS[rule["kind"]]
+    p = [f"{where}: unknown key {k!r}" for k in sorted(set(rule) - set(keys) - {"kind"})]
+    p += [f"{where}: missing {k!r}" for k, req in keys.items() if req and k not in rule]
+    for k in ("days", "tolerance", "min", "max"):
+        if k in rule and not _whole(rule[k]):
+            p.append(f"{where}.{k}: a whole number of days, 0 or more")
+    if rule["kind"] == "between" and _whole(rule.get("min")) and _whole(rule.get("max")):
+        if rule["min"] > rule["max"]:
+            p.append(f"{where}: min is after max")
+    if rule.get("prefer") not in (None, "first", "last"):
+        p.append(f"{where}.prefer: first or last")
+    return p
+
+
+def _strike_problems(where: str, rule, daily_entry: bool) -> list[str]:
+    """A strike rule's problems: its kind, its keys, the match mode it takes, and its values' types."""
+
+    if not isinstance(rule, dict) or rule.get("rule") not in STRIKE_KEYS:
+        return [f"{where}.rule: {(rule or {}).get('rule') if isinstance(rule, dict) else rule!r}"]
+    kind, keys = rule["rule"], STRIKE_KEYS[rule["rule"]]
+    p = [f"{where}: unknown key {k!r}" for k in sorted(set(rule) - set(keys) - {"rule", "match", "round"})]
+    p += [f"{where}: missing {k!r}" for k, req in keys.items() if req and k not in rule]
+    if "points" in rule and "pct" in rule:
+        p.append(f"{where}: points or pct, not both")
+    for k in ("points", "pct", "target", "times", "sd"):
+        if k in rule and not _number(rule[k]):
+            p.append(f"{where}.{k}: a number")
+    if "match" in rule and "round" in rule:
+        p.append(f"{where}: match or round, not both")
+    if "round" in rule and rule["round"] not in st.ROUND_ALIAS:
+        p.append(f"{where}.round: {rule['round']!r}")
+    if kind in st.GEX_RULES or kind == "same_as":
+        if "match" in rule or "round" in rule:
+            p.append(f"{where}: {kind} places the listed strike itself and takes no match mode")
+    else:
+        allowed = st.VALUE_MATCHES if kind in st.VALUE_RULES else st.MATCHES
+        default = st.VALUE_RULES.get(kind) if kind in st.VALUE_RULES else st.PRICE_RULES.get(kind)
+        m = st.match_of(rule)
+        if default is None and "match" not in rule:
+            p.append(f"{where}.match: required for {kind} ({', '.join(allowed)})")
+        elif m not in allowed:
+            p.append(f"{where}.match: {m!r} ({', '.join(allowed)})")
+        if kind in st.VALUE_RULES and "round" in rule:
+            p.append(f"{where}: {kind} takes match, not round")
+    if kind in ("delta", "premium") and "target" in rule and _number(rule["target"]) and rule["target"] <= 0:
+        p.append(f"{where}.target: above zero")
+    if kind == "premium" and "price" in rule and rule["price"] not in st.PRICES:
+        p.append(f"{where}.price: {', '.join(st.PRICES)}")
+    if kind == "opening_range":
+        if "minutes" in rule and not _whole(rule["minutes"], 1):
+            p.append(f"{where}.minutes: a whole number of at least 1")
+        if "level" in rule and rule["level"] not in st.OR_LEVELS:
+            p.append(f"{where}.level: {', '.join(st.OR_LEVELS)}")
+    if kind in st.GEX_RULES and "strikes" in rule and not _whole(rule["strikes"], 1):
+        p.append(f"{where}.strikes: a whole number of at least 1")
+    if kind == "gex_max" and "measure" in rule and rule["measure"] not in st.GEX_MEASURES:
+        p.append(f"{where}.measure: {', '.join(st.GEX_MEASURES)}")
+    if kind == "entry_level" and daily_entry:
+        p.append(f"{where}: entry_level reads the minute the entry fired, which a daily trigger has not")
+    return p
 
 
 def _leg(name, right, side, **strike):
@@ -325,8 +429,7 @@ def validate(arm: dict) -> list[str]:
     missing = [k for k in ("name", "symbol", "expiry", "entry", "weekdays", "legs", "size") if k not in arm]
     if missing:
         return p + [f"{name}: missing {k!r}" for k in missing]
-    if arm["expiry"].get("kind") not in ("dte", "market_days", "calendar"):
-        p.append(f"{name}.expiry.kind: {arm['expiry'].get('kind')!r}")
+    p.extend(_expiry_problems(f"{name}.expiry", arm["expiry"]))
     if arm["entry"].get("kind") not in ("time", "orb", "trigger"):
         p.append(f"{name}.entry.kind: {arm['entry'].get('kind')!r}")
     if arm["entry"].get("kind") == "trigger":
@@ -338,10 +441,17 @@ def validate(arm: dict) -> list[str]:
         where = f"{name}.legs[{i}]"
         if leg.get("right") not in ("C", "P") or leg.get("side") not in (1, -1):
             p.append(f"{where}: right/side")
-        rule = leg.get("strike", {}).get("rule")
-        if rule not in STRIKE_RULES:
-            p.append(f"{where}.strike.rule: {rule!r}")
-        for ref in (leg["strike"].get(x) for x in ("leg", "from")):
+        daily = arm["entry"].get("kind") == "trigger" and bool(
+            (arm["entry"].get("trigger") or {}).get("daily")
+        )
+        p.extend(_strike_problems(f"{where}.strike", leg.get("strike"), daily))
+        spec = leg.get("strike") if isinstance(leg.get("strike"), dict) else {}
+        refs = [spec.get("leg"), spec.get("from")]
+        if spec.get("rule") == "match_width" and isinstance(spec.get("width_of"), list):
+            if len(spec["width_of"]) != 2:
+                p.append(f"{where}.strike.width_of: two leg names")
+            refs += spec["width_of"]
+        for ref in refs:
             if ref is not None and ref not in seen:
                 p.append(f"{where}: refers to {ref!r} before it is placed")
         seen.add(leg.get("name", ""))

@@ -132,8 +132,17 @@ reading open, the engine fixes one and says so here, because each is a measureme
   (`size.minimum`); a fixed count is taken as stated.
 - **A strike "$0.01 above the previous close"** is the listed strike nearest that price. "Or lower" is the
   highest strike at or below. A target that is not listed is no trade, except where the rule says nearest.
+- **Match modes.** Every strike rule that aims at a price or an option value says how it meets the listed
+  strikes (`match`: exact, nearest, above, below; `strikes` docstring). The rules that predate it keep
+  their defaults; a newer rule must state one. The GEX picks and `same_as` place the strike itself.
+- **Expected move and standard deviation** come from the at-the-money straddle's mid on the arm's expiry,
+  one standard deviation being that straddle over sqrt(2/pi). They need quotes only, no model greeks,
+  so they read alike on every source.
+- **The entry's level** is the spot at the minute the entry fired (the breakout minute, the trigger's
+  firing, a time entry's tick), from the trail; a daily trigger has no such minute and is refused.
 - **"Exactly N market days"** is the next N trading days; **~20 days** is the listed expiry within three
-  calendar days of the target, the nearest first.
+  calendar days of the target, the nearest first. **At least N** is the nearest listed expiry N or more
+  calendar days out; **between N and M** the nearest in that window (or the farthest, `prefer: last`).
 - **Opening-range entry** evaluates once, at the first minute after the range whose spot is above its high
   (`single_shot`), as the bot's tree tags the breakout and does not look again.
 - **Touch exits** read the spot against the entry spot: a negative `pct` or `points` is a fall.

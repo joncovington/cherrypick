@@ -24,10 +24,24 @@ OHLC = ("open", "high", "low", "close")
 
 # --------------------------------------------------------------------------- expiry and trigger
 def resolve_expiry(arm: dict, snap: Snapshot) -> str | None:
-    """The listed expiry the arm's rule names today, or None when none is listed."""
+    """The listed expiry the arm's rule names today, or None when none is listed. `at_least` and
+    `between` count calendar days from the session; the others aim at a date and take the listed expiry
+    nearest it within `tolerance`."""
     rule = arm["expiry"]
     listed = sorted(e for e in snap.chains if e >= snap.session)
     today = snap.session_date
+    if rule["kind"] in ("at_least", "between"):
+        lo = rule["days"] if rule["kind"] == "at_least" else rule["min"]
+        hi = None if rule["kind"] == "at_least" else rule["max"]
+        inside = [
+            e
+            for e in listed
+            if lo <= (date.fromisoformat(e) - today).days
+            and (hi is None or (date.fromisoformat(e) - today).days <= hi)
+        ]
+        if not inside:
+            return None
+        return inside[-1] if rule.get("prefer") == "last" else inside[0]
     if rule["kind"] == "dte":
         target = today + timedelta(days=rule["days"])
     elif rule["kind"] == "market_days":
@@ -221,7 +235,7 @@ def decide(arm: dict, snap: Snapshot, *, costs: dict | None = None) -> Decision:
     chosen: dict[str, float] = {}
     legs: list[Leg] = []
     for spec in arm["legs"]:
-        k = strikes.pick(spec["strike"], spec["right"], snap, chain, chosen)
+        k = strikes.pick(spec["strike"], spec["right"], snap, chain, chosen, fired=v)
         if k is None or chain.get(k, spec["right"]) is None:
             return fail(f"strike:{spec['name']}")
         chosen[spec["name"]] = k
