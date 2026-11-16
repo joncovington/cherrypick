@@ -81,6 +81,11 @@ export function shapeBuilder(json: Record<string, unknown> | null): BuilderAutom
   });
 }
 
+/** Forget the memoised read, so the page shows a save at once. */
+export function invalidateAutomationsBuilder(): void {
+  memo.clear();
+}
+
 export async function readAutomationsBuilder(now: number = Date.now()): Promise<BuilderResult> {
   const res = await memo.get("builder", TTL_MS, now, () => caller());
   if (!res.ok) return { date: null, automations: [], error: res.error };

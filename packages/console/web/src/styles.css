@@ -11122,3 +11122,31 @@ svg.vol-curve text {
     display: none;
   }
 }
+
+/* The Builder editor: one automation as JSON, checked by the module, saved off. */
+.builder-editor {
+  margin-top: 0.75rem;
+  display: grid;
+  gap: 0.5rem;
+}
+.builder-editor-text {
+  width: 100%;
+  font-family: var(--num-face);
+  font-size: 0.85rem;
+  background: var(--surface-sunken);
+  color: inherit;
+  border: 1px solid var(--surface-hover);
+  border-radius: 4px;
+  padding: 0.5rem;
+  box-sizing: border-box;
+}
+.builder-editor-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+.builder-editor-name input {
+  font-family: var(--num-face);
+  max-width: 100%;
+}

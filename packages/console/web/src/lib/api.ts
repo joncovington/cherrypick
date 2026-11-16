@@ -16,7 +16,9 @@ import type {
   AutomationsHistory,
   AutomationsPayload,
   AutomationGroupsResult,
+  BuilderDraftResult,
   BuilderResult,
+  BuilderSaveResult,
   AutomationsPerformance,
   CurveEquity,
   OverviewPayload,
@@ -1331,6 +1333,34 @@ export function useAutomationsBuilder() {
     staleTime: 60_000,
     refetchInterval: 300_000,
   });
+}
+
+/** A Builder POST whose refusal body (an error, the module's problems) is the answer, not a throw. */
+async function builderPost<T extends { ok: boolean; error?: string }>(url: string, body: unknown): Promise<T> {
+  const token = await getCsrf();
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "x-csrf-token": token, "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  let json: Record<string, unknown> = {};
+  try {
+    json = (await res.json()) as Record<string, unknown>;
+  } catch {
+    json = {};
+  }
+  if (res.ok) return json as T;
+  return { ...json, ok: false, error: typeof json["error"] === "string" ? json["error"] : `HTTP ${res.status}` } as T;
+}
+
+/** The module's check of one automation; by name alone, the automation as the editor starts from it. */
+export function builderDraft(name: string, automation?: Record<string, unknown>): Promise<BuilderDraftResult> {
+  return builderPost<BuilderDraftResult>("/api/automations/builder/draft", automation === undefined ? { name } : { name, automation });
+}
+
+/** Save one automation through the orchestrator's config editor. It is always saved off. */
+export function builderSave(name: string, automation: Record<string, unknown>): Promise<BuilderSaveResult> {
+  return builderPost<BuilderSaveResult>("/api/automations/builder/save", { name, automation });
 }
 
 /** Each arm's closed trades, net and drawdown, and the arms stacked. */

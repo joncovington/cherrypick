@@ -264,6 +264,16 @@ confirmation. Clearing it arms nothing on its own — every per-module gate stil
 flies and bwb still need their per-day arm records. Setting it blocks new entries on every live loop;
 fills already sent are still confirmed, and open positions are still managed and settled.
 
+### The Builder's save
+
+The console's Builder page edits one automation at a time through the same engine (configcli
+`automation_save`). The orchestrator first asks the automations module to check the edit (`cli
+draft`, by subprocess), so a save is refused for exactly the problems that would stop the paper loop.
+It then writes only the entry that check returned at `/automations/<name>`, replaced in place or added
+as the block's last entry, with one backup and one atomic write. The entry is always saved **off**:
+turning an automation on stays a hand edit or its group's switch. Its register label stays as a study
+recorded it.
+
 ## Report & log files
 
 Deterministic per-session outputs (see [reporting-and-dashboard.md](reporting-and-dashboard.md)):

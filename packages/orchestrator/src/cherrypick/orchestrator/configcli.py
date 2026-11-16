@@ -23,8 +23,8 @@ import json
 import sys
 from typing import Any
 
+from . import automationedit, configedit, liveops
 from . import config as cfgmod
-from . import configedit, liveops
 
 
 def _err(message: str, code: str = "bad_request", **extra: Any) -> dict[str, Any]:
@@ -106,6 +106,13 @@ def handle(req: dict[str, Any]) -> dict[str, Any]:
         return _op_load(cfg, req)
     if op == "save":
         return _op_save(cfg, req)
+    if op == "automation_draft":
+        # The Builder's check of one automation, by the module itself; writes nothing.
+        return automationedit.draft(cfg, req)
+    if op == "automation_save":
+        # The Builder's save: that check, then the one entry it returned (always off) written
+        # through the same raw-save path as every config save.
+        return automationedit.save(cfg, req)
     return _err(f"unknown op: {op!r}")
 
 

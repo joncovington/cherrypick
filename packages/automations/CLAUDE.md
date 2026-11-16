@@ -35,6 +35,8 @@ arms and verdicts.
 
 **The nightly replay** (`record.compare_day`, `cli replay-day`, job `automations-replay`). Each session's recorded decision ticks are run again through `paper.decide_all`, the call the backtest driver makes, on the snapshots paper kept. Any decision (entered, first failing check) or fill (expiry, count, legs, prices, slippage, fees) that differs is listed, and an arm decided on one side only counts as a difference. The command exits 1 on any difference.
 
+**The Builder's check** (`drafts.py`, `cli draft`, JSON on stdin). By name alone it returns the automation as an editor starts from it (the shipped entry with this machine's changes laid over it, before groups stamp anything). With an `automation`, it lays the edit over the config and resolves every automation again (`config.load_arms`), so a save is refused for exactly what would stop the loop, and returns the entry to write: off (`enabled: false`), named by its key, and with its `register` label kept as stored, never taken from the editor (a copy under a new name carries none, so its blocks read `not_backtested`). It writes nothing; the orchestrator's config editor writes the entry (`automationedit`).
+
 **Sizing** (`sizing.py`). A size is a count, a risk budget (`max_risk`), or a percent of an allocation
 (`allocation_pct`, capped by `max_dollars` and `max_contracts`), and any of them can carry a
 `progression`: the count steps by a set number of contracts, or doubles, after each loss (or each win)
