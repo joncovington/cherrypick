@@ -32,6 +32,8 @@ beyond the latest release.
 - **The console's Ensemble page is Automations** (`/automations`; `/ensemble` and its tabs redirect).
   Its summary ends with the automation groups: each group's switch, and each automation with its
   research verdict.
+- **`automations.json` names its block `automations`.** The block each automation is configured in
+  was `arms`; that spelling still resolves, and a file holding both is read by `automations`.
 
 - **Automation backtests through the engine paper runs.** `packages/backtest/scripts/automation_backtest.py`
   replays ensemble arms over a stored history with `cherrypick.ensemble.driver`: the same decisions,

@@ -191,8 +191,8 @@ broker, no network, no streamer: the loop reads the stream cache and never write
 `modules.automations.enabled`). It takes any arm `arms.load_arms` returns: nothing in the loop is written for
 an arm, only for what an arm reads (`feed.reads`).
 
-- **Config** (`config.example.json`, copied to `~/.cherrypick/config/automations.json`): `arms` laid over the
-  shipped arms (a new name is a new arm), `symbols` (the OCC root and the stream window per underlying),
+- **Config** (`config.example.json`, copied to `~/.cherrypick/config/automations.json`): `automations` (its old
+  name `arms` resolves) laid over the shipped arms (a new name is a new arm), `groups` (each group's switch), `symbols` (the OCC root and the stream window per underlying),
   `defaults` (quote and spot age, mark interval, stream lead, trail grace), `events.path`. A misspelt arm
   key stops the loop with its path. A resident loop reads the file at start; the orchestrator's `--once`
   reads it each tick.

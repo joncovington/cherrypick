@@ -31,9 +31,9 @@
   "groups": {
     "ensemble": {"enabled": true}
   },
-  "arms_header": "===== the arms =====",
-  "_arms_note": "The shipped arms are in cherrypick.automations.arms; an entry here is laid over the arm of the same name (top-level keys replaced), and an entry under a new name is a new arm. A misspelt key is refused with its path and the loop does not start. Set enabled to false to switch one off. Names are the suite's own.",
-  "arms": {
+  "automations_header": "===== the automations =====",
+  "_automations_note": "The shipped automations are in cherrypick.automations.arms; an entry here is laid over the one of the same name (top-level keys replaced), and an entry under a new name is a new automation. A misspelt key is refused with its path and the loop does not start. Set enabled to false to switch one off. Names are the suite's own. The block's old name, arms, still resolves.",
+  "automations": {
     "iron-fly-1000": {"enabled": true},
     "iron-condor-1345": {"enabled": true},
     "put-spread-1300": {"enabled": true},
