@@ -6,6 +6,8 @@
     summary    each arm's closed trades, net and drawdown, and the arms together
     arms       the arms the config resolves to (shipped, with this machine's changes laid over)
     replay     run a replay record file again and say where the decisions differ
+    builder    every automation block by block, each block's backtest label, its start, forward rule
+               and backtest suggestion (the console's Builder page). Config and the registry's cache only
     replay-day the nightly check: a session's recorded ticks through the backtest's decision path, each
                decision or fill that differs listed; exit 1 when any does (a record-less day is 0)
 
@@ -82,6 +84,21 @@ def cmd_replay(args) -> int:
     return _print({"ok": True, "ticks": len(results), "differ": differs})
 
 
+def cmd_builder(args) -> int:
+    from cherrypick.core.clock import now_et
+
+    from . import enrolment, paper_loop
+
+    config = config_mod.load_config(args.config)
+    arms = config_mod.load_arms(config)
+    today = now_et().date()
+    suggestions = paper_loop.backtest_suggestions(arms, today)
+    rows = [enrolment.builder_view(a, suggestions.get(n)) for n, a in sorted(arms.items())]
+    return _print(
+        {"ok": True, "date": today.isoformat(), "blocks": list(enrolment.BLOCKS), "automations": rows}
+    )
+
+
 def cmd_replay_day(args) -> int:
     from datetime import date
 
@@ -124,6 +141,7 @@ def main(argv=None) -> int:
     p = sub.add_parser("replay")
     p.add_argument("file")
     p.set_defaults(fn=cmd_replay)
+    sub.add_parser("builder").set_defaults(fn=cmd_builder)
     p = sub.add_parser("replay-day")
     p.add_argument("--date", help="YYYY-MM-DD; default today, or the last trading day")
     p.set_defaults(fn=cmd_replay_day)

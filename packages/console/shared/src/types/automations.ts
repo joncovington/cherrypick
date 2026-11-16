@@ -169,3 +169,51 @@ export interface AutomationGroupsResult {
   groups: AutomationGroup[];
   error: string | null;
 }
+
+/** A block's backtest label: judged as it stands, changed since, or never judged (`enrolment.labels`). */
+export type BuilderBlockState = "backtested" | "changed" | "not_backtested";
+
+export interface BuilderBlock {
+  block: string;
+  state: BuilderBlockState;
+  /** The automation's own keys in this block, as its config resolves them. */
+  keys: Record<string, unknown>;
+}
+
+/** One data need of a backtest and whether our own stores cover it (`enrolment.suggestion`). */
+export interface BuilderNeed {
+  field: string;
+  expiry?: string;
+  cadence: string;
+  covered: boolean;
+  source: string | null;
+  nearest?: { source: string; first: string | null; last: string | null; why: string | null };
+}
+
+export interface BuilderSuggestion {
+  blocks: string[];
+  window: [string, string];
+  needs: BuilderNeed[];
+  possible: boolean;
+}
+
+export interface BuilderAutomation {
+  name: string;
+  group: string | null;
+  symbol: string;
+  enabled: boolean;
+  note: string | null;
+  start: string | null;
+  register: { item: number; verdict: string } | null;
+  summary: string;
+  blocks: BuilderBlock[];
+  forward: Record<string, unknown> | null;
+  suggestion: BuilderSuggestion | null;
+}
+
+/** `GET /api/automations/builder`: every automation block by block, or why the package could not answer. */
+export interface BuilderResult {
+  date: string | null;
+  automations: BuilderAutomation[];
+  error: string | null;
+}

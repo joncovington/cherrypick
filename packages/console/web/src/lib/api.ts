@@ -16,6 +16,7 @@ import type {
   AutomationsHistory,
   AutomationsPayload,
   AutomationGroupsResult,
+  BuilderResult,
   AutomationsPerformance,
   CurveEquity,
   OverviewPayload,
@@ -1319,6 +1320,16 @@ export function useAutomationGroups() {
     queryFn: () => getJson<AutomationGroupsResult>("/api/automations/groups"),
     staleTime: 60_000,
     refetchInterval: 120_000,
+  });
+}
+
+/** The Builder page: every automation block by block, with its labels and backtest suggestion. */
+export function useAutomationsBuilder() {
+  return useQuery<BuilderResult>({
+    queryKey: ["automations-builder"],
+    queryFn: () => getJson<BuilderResult>("/api/automations/builder"),
+    staleTime: 60_000,
+    refetchInterval: 300_000,
   });
 }
 

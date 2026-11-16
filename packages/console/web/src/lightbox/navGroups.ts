@@ -361,6 +361,9 @@ export const REPORTS_SLIDES = [
   { id: "external", label: "external" },
 ] as const satisfies readonly NavSlide[];
 
+/** The Builder (#1180): each automation block by block, labelled for what a backtest judged of it. */
+export const BUILDER_SLIDES = [{ id: "automations", label: "automations" }] as const satisfies readonly NavSlide[];
+
 /**
  * Compare (2026-10-12): every arm beside its control, from `core.compare`. One tab; scope, sort and
  * the open arm are query parameters.
@@ -619,6 +622,7 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
     legacy: { "short-puts": "income", "covered-calls": "income" },
   },
   reports: { slides: REPORTS_SLIDES },
+  builder: { slides: BUILDER_SLIDES },
   compare: { slides: COMPARE_SLIDES },
   // An old `validation` link opens `data`; `/backtest/slices` is a route to Compare (App.tsx).
   backtest: { slides: BACKTEST_SLIDES, legacy: { validation: "data" } },

@@ -22,6 +22,10 @@ beyond the latest release.
 
 ### What's new
 
+- **The Builder page.** A new page (`/builder`, shortcut `u`) shows every automation block by block.
+  Each block is marked backtested, changed since its backtest, or not backtested. Each card also shows
+  the start date, the forward check, and whether our own data could back a backtest. This first
+  version is read-only.
 - **An automation not yet backtested is told whether it could be.** Its status lists what its blocks
   read, and whether our own data covers each over the last year. Where the data falls short, it gives
   the nearest store's span and the reason.
