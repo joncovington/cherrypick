@@ -25,7 +25,9 @@ beyond the latest release.
   structure's bid/ask is wider than a limit. Paper and the backtest driver read them alike.
 - Signals: VWAP (anchored to the session, a time or an event; volume or equal weights) and its bands,
   relative volume against the same minute of earlier sessions, and a volume ratio for surges. A signal
-  that reads volume refuses bars without it.
+  that reads volume refuses bars without it. An automation's volume signal names whose volume weighs
+  its bars (SPY for SPX): paper records it each minute, and the backtest reads the recorded one-minute
+  bars, refusing dates they do not cover.
 - **Ensemble arms state their safeguards.** `limits.max_open` and `limits.per_day` are required in every
   arm, with no default in the engine: an arm in `~/.cherrypick/config/ensemble.json` that replaces
   `limits` must name both. The shipped arms already ran one entry a day; they now say so.

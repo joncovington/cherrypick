@@ -350,3 +350,26 @@ def test_a_daily_trigger_arm_enters_through_the_paper_loop(tmp_path):
     assert arms_mod.validate(w.arms["iron-fly-1000"]) == []
     assert tick(w, at(9, 59))["entries"].get("iron-fly-1000") != "entered"
     assert tick(w, at(10, 0))["entries"] == {"iron-fly-1000": "entered"}
+
+
+def test_a_declared_volume_symbol_is_recorded_and_asked_for_and_read_as_minute_differences(tmp_path):
+    from cherrypick.ensemble import stream_request
+
+    vwap = {"name": "vwap", "anchor": "session", "price": "hlc3", "weight": "volume"}
+    trigger = {
+        "signal": {"kind": "cross", "a": {"name": "close"}, "b": vwap, "direction": "above", "seed": False},
+        "window": {"open": "10:00", "close": "15:00"},
+        "within": 5,
+    }
+    entry = {"kind": "trigger", "trigger": trigger, "bar_minutes": 5, "volume": "SPY"}
+    w = world(tmp_path, overrides={"iron-fly-1000": {"entry": entry}})
+    for minute, cum in ((600, 1000.0), (601, 1600.0), (602, 1700.0), (604, 2000.0), (605, 1900.0)):
+        w.cache.last("SPY", 600.0).trade_volume("SPY", cum)
+        paper_loop.record_spots(
+            w.config, w.arms, w.conn, cache_path=w.cache_path, when=at(minute // 60, minute % 60)
+        )
+    # 600 -> 601 and 601 -> 602 are whole minutes; 603 was not sampled; 604 -> 605 fell (a reset).
+    assert db.minute_volumes(w.conn, "SPY", DAY) == {600: 600.0, 601: 100.0}
+    assert db.trail(w.conn, "SPY", DAY)[0] == (600, 600.0)
+    need = stream_request.wanted(w.config, w.arms, w.conn, w.cache_path, at(10, 5))
+    assert "SPY" in need["symbols"] and "SPY" not in need["expirations"]

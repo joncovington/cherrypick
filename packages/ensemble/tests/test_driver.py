@@ -81,3 +81,33 @@ def test_a_session_with_no_stored_minute_in_the_window_is_counted_not_traded(tmp
         events=CALENDAR, vix_daily=VIX_DAILY, costs=w.config,
     )  # fmt: skip
     assert book.trades == [] and book.why["iron-fly-1000"] == {"no_tick_in_window": 1}
+
+
+def test_the_driver_reads_declared_volume_and_without_it_never_enters(tmp_path):
+    import copy
+
+    from test_core_checks import VWAP_TRIG
+
+    from cherrypick.ensemble import snapshot
+
+    arm = copy.deepcopy(world(tmp_path).arms["iron-fly-1000"])
+    arm["entry"] = {"kind": "trigger", "trigger": VWAP_TRIG, "bar_minutes": 5, "volume": "SPY"}
+    arm["weekdays"] = [0, 1, 2, 3, 4]
+    arm["gates"] = []
+    # Falling into 10:00, then rising through the session VWAP: due from the 10:05 bar.
+    trail = {m: 6000.0 - (m - 570) * 0.5 if m < 600 else 5985.0 + (m - 600) * 2.0 for m in range(570, 611)}
+    h = store(tmp_path, minutes=range(570, 611), trail=trail)
+    vols = {"SPY": {DAY: dict.fromkeys(range(570, 611), 1000.0)}}
+    run = dict(events=CALENDAR, vix_daily=VIX_DAILY)
+    book = driver.run({"x": arm}, h, [DAY], volumes=vols, **run)
+    assert book.why[arm["name"]] == {"entered": 1}
+    assert book.trades[0]["entry_minute"] == 605
+    blind = driver.run({"x": arm}, h, [DAY], **run)
+    assert "entered" not in blind.why[arm["name"]]
+    # Today's volume stops at the bars complete by now: the bar starting at the snapshot's minute is not.
+    snap = snapshot.build(
+        session=DAY, minute=600, symbol="SPX", spot=6000.0, prev_close=6000.0, day_open=6000.0,
+        quotes={}, trail=[], closes=[], with_gex=False,
+        volumes={"SPY": {DAY: {599: 1.0, 600: 2.0}, "2026-11-13": {700: 3.0}}},
+    )  # fmt: skip
+    assert snap.volumes == {"SPY": {DAY: {599: 1.0}, "2026-11-13": {700: 3.0}}}

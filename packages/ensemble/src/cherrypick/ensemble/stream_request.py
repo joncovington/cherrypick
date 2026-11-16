@@ -58,7 +58,7 @@ def wanted(
     todays = active_arms(arms, today)
     lead = int(params["stream_lead_minutes"])
     out: dict = {
-        "symbols": sorted(specs),
+        "symbols": sorted(set(specs) | config_mod.volume_symbols(arms)),
         "expirations": {},
         "window_hints": {},
         "window_events": {},

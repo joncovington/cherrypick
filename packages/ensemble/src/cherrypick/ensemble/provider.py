@@ -41,6 +41,25 @@ def read_spot(db_path, symbol: str, *, max_age_seconds: float | None = None) -> 
     return _sc.read_spot(db_path, symbol, max_age_seconds=max_age_seconds)
 
 
+def read_day_volume(db_path, symbol: str, *, max_age_seconds: float) -> float | None:
+    """The feed's session-cumulative volume for `symbol` (`stream_trades.volume`), None when absent or
+    older than `max_age_seconds`."""
+    conn = _open(db_path)
+    if conn is None:
+        return None
+    try:
+        r = conn.execute(
+            "SELECT volume, updated_at FROM stream_trades WHERE symbol = ?", (symbol.upper(),)
+        ).fetchone()
+    except sqlite3.Error:
+        return None
+    finally:
+        conn.close()
+    if r is None or r[0] is None or r[1] is None or time.time() - float(r[1]) > max_age_seconds:
+        return None
+    return float(r[0])
+
+
 def daily_bars(db_path, symbol: str, today: date) -> list[dict]:
     """Completed daily bars before `today`, oldest first (`core.streamcache.daily_bars`)."""
     conn = _open(db_path)

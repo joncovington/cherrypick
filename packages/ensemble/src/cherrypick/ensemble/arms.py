@@ -47,7 +47,7 @@ from . import gates as gates_mod
 
 
 def _trigger_problems(
-    where: str, entry: dict, keys: frozenset = frozenset({"kind", "trigger", "bar_minutes"})
+    where: str, entry: dict, keys: frozenset = frozenset({"kind", "trigger", "bar_minutes", "volume"})
 ) -> list[str]:
     """A trigger's problems (an entry's, or a `signal` exit's): core's validation of the trigger and its
     bar width."""
@@ -63,8 +63,19 @@ def _trigger_problems(
     trigger = entry["trigger"]
     if "signal" not in trigger:
         return [] if "bar_minutes" not in entry else [f"{where}.bar_minutes: a fixed time reads no bars"]
-    if signals.needs_volume(trigger["signal"]):
-        return [f"{where}.trigger.signal: reads bar volume, and this module's bars carry none"]
+    reads = signals.needs_volume(trigger["signal"])
+    if "volume" in entry:
+        v = entry["volume"]
+        if not reads:
+            return [f"{where}.volume: the signal reads no volume"]
+        if not (isinstance(v, str) and v.strip()):
+            return [f"{where}.volume: the symbol whose volume weighs the bars"]
+        if trigger.get("daily"):
+            return [f"{where}.volume: a daily signal's bars carry no volume yet"]
+        if _relative_volume_n(trigger["signal"]) > PRIOR_SESSIONS:
+            return [f"{where}.trigger.signal: relative volume over more than {PRIOR_SESSIONS} sessions"]
+    elif reads:
+        return [f"{where}.trigger.signal: reads bar volume; declare `volume`, whose volume weighs the bars"]
     if trigger.get("daily"):
         return [] if "bar_minutes" not in entry else [f"{where}.bar_minutes: a daily signal reads daily bars"]
     bars = entry.get("bar_minutes")
@@ -378,7 +389,7 @@ def validate(arm: dict) -> list[str]:
             p.append(f"{name}.exit.{key}: {ex[key]!r}")
     if "signal" in arm.get("exit", {}):
         p += _trigger_problems(
-            f"{name}.exit.signal", arm["exit"]["signal"], frozenset({"trigger", "bar_minutes"})
+            f"{name}.exit.signal", arm["exit"]["signal"], frozenset({"trigger", "bar_minutes", "volume"})
         )
     return p
 
@@ -439,6 +450,25 @@ def _triggers(arm: dict) -> list[dict]:
     out = [entry.get("trigger")] if entry.get("kind") == "trigger" else []
     out.append(((arm.get("exit") or {}).get("signal") or {}).get("trigger"))
     return [t for t in out if isinstance(t, dict)]
+
+
+def _relative_volume_n(spec: dict) -> int:
+    srcs = [spec.get(k) for k in ("a", "b")]
+    n = max([0, *(s["n"] for s in srcs if isinstance(s, dict) and s.get("name") == "relative_volume")])
+    return max([n, *(_relative_volume_n(o) for o in spec.get("only_when", ()))])
+
+
+def volume_symbols(arm: dict) -> set[str]:
+    """The symbols whose one-minute volume the arm's signals read (`volume` on its trigger entry or its
+    signal exit), upper-cased."""
+    out = set()
+    e = arm.get("entry") or {}
+    if e.get("kind") == "trigger" and e.get("volume"):
+        out.add(str(e["volume"]).upper())
+    sig = (arm.get("exit") or {}).get("signal") or {}
+    if sig.get("volume"):
+        out.add(str(sig["volume"]).upper())
+    return out
 
 
 def reads_prior_trail(arm: dict) -> bool:

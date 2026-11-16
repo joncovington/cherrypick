@@ -224,6 +224,7 @@ def snapshot_for(
         daily=m["bars"] if any(n["daily"] for n in needs) else None,
         prior=prior_trails(conn, symbol, today) if any(n["prior"] for n in needs) else None,
         vol_closes=vol_history(symbol, today, max(n["vol_closes"] for n in needs) if needs else 0),
+        volumes=volumes_for(conn, arms, today),
     )
     return snap, info
 
@@ -235,6 +236,20 @@ def vol_history(symbol: str, today: date, n: int) -> list[float]:
     if n <= 0 or index is None:
         return []
     return volindex.before(volindex.closes(index), today.isoformat(), n)
+
+
+def volumes_for(conn, arms: list[dict], today: date) -> dict[str, dict[str, dict[int, float]]]:
+    """The recorded one-minute volume of every symbol `arms` declare, today's and the prior trail's
+    sessions (`db.minute_volumes`)."""
+    syms = sorted({s for a in arms for s in arms_mod.volume_symbols(a)})
+    if not syms or conn is None:
+        return {}
+    days = [today]
+    d = today
+    for _ in range(arms_mod.PRIOR_SESSIONS):
+        d = _cal.previous_trading_day(d)
+        days.append(d)
+    return {s: {x.isoformat(): db.minute_volumes(conn, s, x.isoformat()) for x in days} for s in syms}
 
 
 def prior_trails(conn, symbol: str, today: date) -> dict[str, list[tuple[int, float]]]:
@@ -304,4 +319,5 @@ def position_snapshot(
         prior=prior_trails(conn, pos["symbol"], today)
         if signal and arms_mod.reads_prior_trail(as_arm)
         else None,
+        volumes=volumes_for(conn, [as_arm], today) if signal else None,
     )
