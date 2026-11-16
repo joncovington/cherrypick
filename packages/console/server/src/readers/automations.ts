@@ -1,15 +1,15 @@
 import path from "node:path";
 import type {
-  EnsembleEntryRow,
-  EnsembleGate,
-  EnsembleHistory,
-  EnsembleHistoryRow,
-  EnsembleLeg,
-  EnsembleLine,
-  EnsembleMark,
-  EnsemblePayload,
-  EnsemblePerformance,
-  EnsemblePosition,
+  AutomationsEntryRow,
+  AutomationsGate,
+  AutomationsHistory,
+  AutomationsHistoryRow,
+  AutomationsLeg,
+  AutomationsLine,
+  AutomationsMark,
+  AutomationsPayload,
+  AutomationsPerformance,
+  AutomationsPosition,
 } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
 import { rangeClauses, type DateRange } from "./dateRange.js";
@@ -17,7 +17,7 @@ import { hasTable, num, str, type DatabaseHandle, withReadOnlyDb } from "./db.js
 import { EMPTY_TRADE_TOTALS, tradeTotals } from "./positionCash.js";
 
 /**
- * ensemble's read layer (packages/ensemble): research item 75's arms in paper, one store and no
+ * automations' read layer (packages/automations): research item 75's arms in paper, one store and no
  * `mode`. An arm is whatever name the ledger carries, so every list of arms below is taken from rows
  * (`SELECT DISTINCT arm`); nothing here names one. The money is the module's own -- each closed
  * structure already adds up (entry_value + exit_value = gross_pnl; gross_pnl - fees - settlement -
@@ -32,7 +32,7 @@ import { EMPTY_TRADE_TOTALS, tradeTotals } from "./positionCash.js";
 const DB_FILE = "paper_trades.db";
 
 function dbPath(config: ConsoleConfig): string {
-  return path.join(config.paths.ensembleDir, DB_FILE);
+  return path.join(config.paths.automationsDir, DB_FILE);
 }
 
 function round2(v: number): number {
@@ -45,7 +45,7 @@ function rows(db: DatabaseHandle, sql: string, ...params: string[]): Record<stri
 
 // ---------------------------------------------------------------------------------------- legs
 
-function legFromJson(raw: unknown): EnsembleLeg | null {
+function legFromJson(raw: unknown): AutomationsLeg | null {
   if (typeof raw !== "object" || raw === null) return null;
   const r = raw as Record<string, unknown>;
   const strike = num(r["strike"]);
@@ -56,18 +56,18 @@ function legFromJson(raw: unknown): EnsembleLeg | null {
 }
 
 /** The legs recorded in the entry the engine produced: the fallback for a position with no leg rows. */
-function entryLegs(entryJson: string | null): EnsembleLeg[] {
+function entryLegs(entryJson: string | null): AutomationsLeg[] {
   if (entryJson === null) return [];
   try {
     const parsed = JSON.parse(entryJson) as { legs?: unknown };
-    return Array.isArray(parsed.legs) ? parsed.legs.map(legFromJson).filter((l): l is EnsembleLeg => l !== null) : [];
+    return Array.isArray(parsed.legs) ? parsed.legs.map(legFromJson).filter((l): l is AutomationsLeg => l !== null) : [];
   } catch {
     return [];
   }
 }
 
-function legsByPosition(db: DatabaseHandle): Map<string, EnsembleLeg[]> {
-  const out = new Map<string, EnsembleLeg[]>();
+function legsByPosition(db: DatabaseHandle): Map<string, AutomationsLeg[]> {
+  const out = new Map<string, AutomationsLeg[]>();
   if (!hasTable(db, "ensemble_legs")) return out;
   for (const r of rows(db, "SELECT * FROM ensemble_legs ORDER BY id")) {
     const id = str(r["position_id"]) ?? "";
@@ -81,8 +81,8 @@ function legsByPosition(db: DatabaseHandle): Map<string, EnsembleLeg[]> {
 // --------------------------------------------------------------------------------------- marks
 
 /** The latest usable mark of each open position. */
-function latestMarks(db: DatabaseHandle): Map<string, EnsembleMark> {
-  const out = new Map<string, EnsembleMark>();
+function latestMarks(db: DatabaseHandle): Map<string, AutomationsMark> {
+  const out = new Map<string, AutomationsMark>();
   if (!hasTable(db, "ensemble_marks")) return out;
   for (const r of rows(
     db,
@@ -116,10 +116,10 @@ function latestSpots(db: DatabaseHandle): Map<string, number> {
 
 function position(
   r: Record<string, unknown>,
-  legs: Map<string, EnsembleLeg[]>,
-  marks: Map<string, EnsembleMark>,
+  legs: Map<string, AutomationsLeg[]>,
+  marks: Map<string, AutomationsMark>,
   spots: Map<string, number>,
-): EnsemblePosition {
+): AutomationsPosition {
   const id = str(r["position_id"]) ?? "";
   const status = str(r["status"]) ?? "";
   const open = status === "open";
@@ -196,14 +196,14 @@ function refusalCounts(db: DatabaseHandle, session: string): Map<string, { occur
   return out;
 }
 
-function entryRow(r: Record<string, unknown>, counts: Map<string, { occurrences: number; detail: string | null }>): EnsembleEntryRow {
+function entryRow(r: Record<string, unknown>, counts: Map<string, { occurrences: number; detail: string | null }>): AutomationsEntryRow {
   const arm = str(r["arm"]) ?? "";
   const refusal = str(r["refusal"]);
   const outcome = str(r["outcome"]) ?? "";
   const journal = refusal === null ? undefined : counts.get(`${arm}\u0000${refusal}`);
   // The register keeps the last reason's detail; the journal's row for that reason is the fallback.
   const detail = parseDetail(str(r["detail"]) ?? journal?.detail ?? null);
-  const gate: EnsembleGate | null =
+  const gate: AutomationsGate | null =
     refusal === null || outcome === "entered"
       ? null
       : { reason: refusal, check: detail.check, value: detail.value, occurrences: journal?.occurrences ?? null };
@@ -243,12 +243,12 @@ function armsOf(db: DatabaseHandle): string[] {
   return [...names].sort();
 }
 
-function emptyPayload(): EnsemblePayload {
+function emptyPayload(): AutomationsPayload {
   return { session: null, dbPresent: false, arms: [], positions: [], today: [], measurementBreaks: [], lastIteration: null };
 }
 
-export function readEnsemble(config: ConsoleConfig): EnsemblePayload {
-  return withReadOnlyDb<EnsemblePayload>(dbPath(config), emptyPayload(), (db) => {
+export function readAutomations(config: ConsoleConfig): AutomationsPayload {
+  return withReadOnlyDb<AutomationsPayload>(dbPath(config), emptyPayload(), (db) => {
     const session = sessionOf(db);
     const legs = legsByPosition(db);
     const marks = latestMarks(db);
@@ -292,14 +292,14 @@ export function readEnsemble(config: ConsoleConfig): EnsemblePayload {
 }
 
 /** The session the decision journal's default read names: the loop's last run. */
-export function resolveEnsembleSession(config: ConsoleConfig): string | null {
+export function resolveAutomationsSession(config: ConsoleConfig): string | null {
   return withReadOnlyDb<string | null>(dbPath(config), null, sessionOf);
 }
 
 // ------------------------------------------------------------------------------- history
 
 /** How a structure ended: held to the posted close (`settled`) or closed by the arm's own exit. */
-function exitKind(reason: string | null, status: string): EnsembleHistoryRow["exitKind"] {
+function exitKind(reason: string | null, status: string): AutomationsHistoryRow["exitKind"] {
   if (status !== "closed") return null;
   return reason === "settlement" ? "settled" : "closed";
 }
@@ -310,7 +310,7 @@ function exitKind(reason: string | null, status: string): EnsembleHistoryRow["ex
  * gross; net is `net_pnl` (gross - fees - settlement - slippage). The three costs are three columns
  * in the ledger already, so nothing is split here. A missing cost reads null, which renders `n/r`.
  */
-export function ensembleTradeCash(r: Record<string, unknown>, legs: EnsembleLeg[]): EnsembleHistoryRow {
+export function automationsTradeCash(r: Record<string, unknown>, legs: AutomationsLeg[]): AutomationsHistoryRow {
   const entryCash = num(r["entry_value"]);
   return {
     positionId: str(r["position_id"]) ?? "",
@@ -337,14 +337,14 @@ export function ensembleTradeCash(r: Record<string, unknown>, legs: EnsembleLeg[
   };
 }
 
-export interface EnsembleHistoryFilter {
+export interface AutomationsHistoryFilter {
   arm: string | null;
   range?: DateRange;
 }
 
 /** Closed structures, newest exit first. A trade belongs to the session it ended, so the range
  *  bounds that, and the totals are over every structure the filter matches. */
-export function readEnsembleHistory(config: ConsoleConfig, filter: EnsembleHistoryFilter): EnsembleHistory {
+export function readAutomationsHistory(config: ConsoleConfig, filter: AutomationsHistoryFilter): AutomationsHistory {
   const clauses = ["status = 'closed'"];
   const params: string[] = [];
   if (filter.arm !== null) {
@@ -354,14 +354,14 @@ export function readEnsembleHistory(config: ConsoleConfig, filter: EnsembleHisto
   const range = rangeClauses("COALESCE(exit_session, expiration)", filter.range);
   clauses.push(...range.clauses);
   params.push(...range.params);
-  return withReadOnlyDb<EnsembleHistory>(dbPath(config), { rows: [], totals: EMPTY_TRADE_TOTALS }, (db) => {
+  return withReadOnlyDb<AutomationsHistory>(dbPath(config), { rows: [], totals: EMPTY_TRADE_TOTALS }, (db) => {
     if (!hasTable(db, "ensemble_positions")) return { rows: [], totals: EMPTY_TRADE_TOTALS };
     const legs = legsByPosition(db);
     const out = rows(
       db,
       `SELECT * FROM ensemble_positions WHERE ${clauses.join(" AND ")} ORDER BY COALESCE(exit_session, expiration) DESC, entry_session DESC, arm`,
       ...params,
-    ).map((r) => ensembleTradeCash(r, legs.get(str(r["position_id"]) ?? "") ?? entryLegs(str(r["entry_json"]))));
+    ).map((r) => automationsTradeCash(r, legs.get(str(r["position_id"]) ?? "") ?? entryLegs(str(r["entry_json"]))));
     return { rows: out, totals: tradeTotals(out) };
   });
 }
@@ -398,7 +398,7 @@ const byExit = (a: ClosedRow, b: ClosedRow): number =>
   a.exitSession.localeCompare(b.exitSession) || a.entrySession.localeCompare(b.entrySession) || a.arm.localeCompare(b.arm);
 
 /** `analytics._line`: one line over closed trades, in the order they ended. */
-export function lineOf(closed: readonly ClosedRow[]): EnsembleLine {
+export function lineOf(closed: readonly ClosedRow[]): AutomationsLine {
   const ordered = [...closed].sort(byExit);
   const nets = ordered.map((r) => r.net);
   const sum = (pick: (r: ClosedRow) => number): number => round2(ordered.reduce((t, r) => t + pick(r), 0));
@@ -423,9 +423,9 @@ export function lineOf(closed: readonly ClosedRow[]): EnsembleLine {
   };
 }
 
-export function readEnsemblePerformance(config: ConsoleConfig): EnsemblePerformance {
-  const empty: EnsemblePerformance = { dbPresent: false, arms: {}, combined: lineOf([]) };
-  return withReadOnlyDb<EnsemblePerformance>(dbPath(config), empty, (db) => {
+export function readAutomationsPerformance(config: ConsoleConfig): AutomationsPerformance {
+  const empty: AutomationsPerformance = { dbPresent: false, arms: {}, combined: lineOf([]) };
+  return withReadOnlyDb<AutomationsPerformance>(dbPath(config), empty, (db) => {
     if (!hasTable(db, "ensemble_positions")) return { ...empty, dbPresent: true };
     const closed: ClosedRow[] = rows(db, "SELECT * FROM ensemble_positions WHERE status = 'closed' AND net_pnl IS NOT NULL").map((r) => ({
       arm: str(r["arm"]) ?? "",

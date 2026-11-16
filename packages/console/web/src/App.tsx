@@ -10,6 +10,18 @@ function MovedTo({ to }: { to: string }) {
   return <Navigate to={`${to}${search}`} replace />;
 }
 
+/** Where a renamed module's old address goes: the new page, with the same tab and query. */
+export function renamedTarget(to: string, slide: string | undefined, search: string): string {
+  return `${to}${slide ? `/${slide}` : ""}${search}`;
+}
+
+/** A renamed module's page (`/ensemble/positions` before automations), its tab and query kept. */
+function RenamedModule({ to }: { to: string }) {
+  const { slide } = useParams();
+  const { search } = useLocation();
+  return <Navigate to={renamedTarget(to, slide, search)} replace />;
+}
+
 /** An old chart URL onto the one chart, its query translated (`movedChartUrl`). */
 function MovedChart({ from }: { from: MovedChartTab }) {
   const { search } = useLocation();
@@ -44,6 +56,9 @@ export default function App() {
         {/* The slice reports moved from Backtest to Compare (2026-10-30). Compare's tab fails closed on
             the same feature, so with it off the redirect lands on Compare's first tab. */}
         <Route path="backtest/slices" element={<MovedTo to="/compare/slices" />} />
+        {/* The ensemble page is the automations page (#1200); old links and bookmarks follow it. */}
+        <Route path="ensemble" element={<RenamedModule to="/automations" />} />
+        <Route path="ensemble/:slide" element={<RenamedModule to="/automations" />} />
         {/* Champions & challengers was REMOVED 2026-08-20 — judging whether an arm earned
             anything belongs to the advisor's experiments now. Redirected rather than left to the
             generic 404, which tells the reader their build is stale and to reload: true for a

@@ -5,14 +5,14 @@ import path from "node:path";
 import Database from "better-sqlite3";
 import type { ConsoleConfig } from "../src/config.js";
 import { closePooledDbs } from "../src/readers/db.js";
-import { drawdown, readEnsemble, readEnsembleHistory, readEnsemblePerformance } from "../src/readers/ensemble.js";
+import { drawdown, readAutomations, readAutomationsHistory, readAutomationsPerformance } from "../src/readers/automations.js";
 import { readDecisions } from "../src/readers/decisions.js";
-import { readEnsembleSummary } from "../src/readers/summary/ensemble.js";
+import { readAutomationsSummary } from "../src/readers/summary/automations.js";
 import { SUMMARY_READERS } from "../src/readers/summary/index.js";
 
 /**
- * ensemble's read layer against a ledger built from the module's own schema
- * (`fixtures/ensemble-ledger-schema.sql`, generated from `db.py`). Invented numbers throughout.
+ * automations' read layer against a ledger built from the module's own schema
+ * (`fixtures/automations-ledger-schema.sql`, generated from `db.py`). Invented numbers throughout.
  *
  * The arms are not a fixed list: `alpha` and `zz_custom_arm` trade, and `beta` appears only in the
  * session register and the journal. None is one of the shipped arms, and every list of arms the
@@ -28,7 +28,7 @@ import { SUMMARY_READERS } from "../src/readers/summary/index.js";
  * same day and the fall is 259.50.
  */
 
-const SCHEMA = fs.readFileSync(path.join(__dirname, "fixtures", "ensemble-ledger-schema.sql"), "utf-8");
+const SCHEMA = fs.readFileSync(path.join(__dirname, "fixtures", "automations-ledger-schema.sql"), "utf-8");
 const TODAY = "2026-11-13";
 const ZZ = "zz_custom_arm";
 let tmp: string;
@@ -73,8 +73,8 @@ const CLOSED: Pos[] = [
 ];
 
 beforeAll(() => {
-  tmp = fs.mkdtempSync(path.join(os.tmpdir(), "console-ensemble-"));
-  const dir = path.join(tmp, "ensemble");
+  tmp = fs.mkdtempSync(path.join(os.tmpdir(), "console-automations-"));
+  const dir = path.join(tmp, "automations");
   fs.mkdirSync(dir);
   const db = new Database(path.join(dir, "paper_trades.db"));
   db.exec(SCHEMA);
@@ -126,15 +126,15 @@ beforeAll(() => {
   dec.run(TODAY, "beta", "SPX", "entry", "gate:gex_ratio", 0, 7, "2026-11-13T09:40:00", "2026-11-13T09:46:00", JSON.stringify({ check: "gex_ratio", value: 1.8 }));
   db.prepare("INSERT INTO ensemble_loop_iterations (ran_at, session_date, phase, status) VALUES (?,?,?,?)").run(1_794_000_000, TODAY, "entry", "ok");
   db.close();
-  config = { paths: { ensembleDir: dir } } as unknown as ConsoleConfig;
+  config = { paths: { automationsDir: dir } } as unknown as ConsoleConfig;
 });
 
 afterAll(() => closePooledDbs());
 
 const history = (arm: string | null = null, from: string | null = null, to: string | null = null) =>
-  readEnsembleHistory(config, { arm, range: { from, to } });
+  readAutomationsHistory(config, { arm, range: { from, to } });
 
-describe("ensemble's closed structures", () => {
+describe("automations' closed structures", () => {
   it("list only closed ones, newest exit first", () => {
     expect(history().rows.map((r) => r.positionId)).toEqual([
       "alpha:2026-11-04",
@@ -186,7 +186,7 @@ describe("ensemble's closed structures", () => {
   });
 });
 
-describe("ensemble's net and drawdown", () => {
+describe("automations' net and drawdown", () => {
   it("measures drawdown as the largest peak-to-trough fall of the running sum", () => {
     expect(drawdown([])).toBe(0);
     expect(drawdown([5, 10])).toBe(0);
@@ -195,35 +195,35 @@ describe("ensemble's net and drawdown", () => {
   });
 
   it("gives each arm its own net and drawdown", () => {
-    const p = readEnsemblePerformance(config);
+    const p = readAutomationsPerformance(config);
     expect(p.arms["alpha"]).toMatchObject({ trades: 3, net: 76, wins: 2, drawdown: 127.6, worst: -127.6 });
     expect(p.arms[ZZ]).toMatchObject({ trades: 2, net: -25.3, wins: 1, drawdown: 131.9 });
   });
 
   it("stacks the arms for the combined line, in exit order", () => {
-    const c = readEnsemblePerformance(config).combined;
+    const c = readAutomationsPerformance(config).combined;
     expect(c).toMatchObject({ trades: 5, net: 50.7, gross: 100, fees: 15.6, settlement: 2.7, slippage: 31, drawdown: 259.5 });
     expect(c.curve.map((p) => p.y)).toEqual([102.4, -25.2, -157.1, -55.9, 50.7]);
     // Neither arm's own fall is the combined one: the two losses land on the same day.
-    expect(c.drawdown).toBeGreaterThan(Math.max(readEnsemblePerformance(config).arms["alpha"]!.drawdown, readEnsemblePerformance(config).arms[ZZ]!.drawdown));
+    expect(c.drawdown).toBeGreaterThan(Math.max(readAutomationsPerformance(config).arms["alpha"]!.drawdown, readAutomationsPerformance(config).arms[ZZ]!.drawdown));
   });
 
   it("shows the stress and mid nets beside the verdict net", () => {
-    const a = readEnsemblePerformance(config).arms["alpha"]!;
+    const a = readAutomationsPerformance(config).arms["alpha"]!;
     expect([a.net, a.netStress, a.netMid]).toEqual([76, 86.5, 106.6]);
     expect(a.gross - a.fees - a.settlement - a.slippage).toBeCloseTo(a.net, 2);
   });
 
   it("derives its arms from the ledger, including one the module does not ship, and an arm with no trade yet", () => {
-    const p = readEnsemblePerformance(config);
+    const p = readAutomationsPerformance(config);
     expect(Object.keys(p.arms)).toEqual(["alpha", "beta", ZZ]);
     expect(p.arms["beta"]).toMatchObject({ trades: 0, net: 0, drawdown: 0, mean: null, worst: null });
-    expect(readEnsemble(config).arms).toEqual(["alpha", "beta", ZZ]);
+    expect(readAutomations(config).arms).toEqual(["alpha", "beta", ZZ]);
   });
 });
 
-describe("ensemble's open structures", () => {
-  const open = () => readEnsemble(config).positions.filter((p) => p.status === "open");
+describe("automations' open structures", () => {
+  const open = () => readAutomations(config).positions.filter((p) => p.status === "open");
 
   it("mark from the latest usable quote, spot and value from the same tick", () => {
     const a = open().find((p) => p.arm === "alpha")!;
@@ -242,15 +242,15 @@ describe("ensemble's open structures", () => {
   });
 });
 
-describe("ensemble's day", () => {
+describe("automations' day", () => {
   it("names the loop's last session and iteration", () => {
-    const d = readEnsemble(config);
+    const d = readAutomations(config);
     expect(d.session).toBe(TODAY);
     expect(d.lastIteration).toMatchObject({ phase: "entry", status: "ok" });
   });
 
   it("lists each arm that was due today, and no earlier session's row", () => {
-    const t = readEnsemble(config).today;
+    const t = readAutomations(config).today;
     expect(t.map((r) => [r.arm, r.outcome])).toEqual([
       ["alpha", "entered"],
       ["beta", "pending"],
@@ -259,38 +259,38 @@ describe("ensemble's day", () => {
   });
 
   it("names the gate that blocked a refused arm, with the value it read", () => {
-    const t = readEnsemble(config).today;
+    const t = readAutomations(config).today;
     expect(t.find((r) => r.arm === ZZ)!.gate).toEqual({ reason: "gate:sd_change", check: "sd_change", value: "0.31", occurrences: 4 });
     // The register kept no detail for beta; the journal's row for the same reason does.
     expect(t.find((r) => r.arm === "beta")!.gate).toEqual({ reason: "gate:gex_ratio", check: "gex_ratio", value: "1.8", occurrences: 7 });
   });
 
   it("shows no gate on an arm that entered", () => {
-    expect(readEnsemble(config).today.find((r) => r.arm === "alpha")!.gate).toBeNull();
+    expect(readAutomations(config).today.find((r) => r.arm === "alpha")!.gate).toBeNull();
   });
 
   it("reads the decision journal for the loop's last session", () => {
-    const out = readDecisions(config, "ensemble", null);
+    const out = readDecisions(config, "automations", null);
     expect(out.tradeDate).toBe(TODAY);
     expect(out.rows[0]).toMatchObject({ arm: "beta", reason: "gate:gex_ratio", occurrences: 7 });
     expect(out.rows.at(-1)).toMatchObject({ arm: "alpha", reason: "enter", accepted: true });
   });
 
   it("is an empty, absent read where the module never ran", () => {
-    const nowhere = { paths: { ensembleDir: path.join(os.tmpdir(), "ensemble-nowhere") } } as unknown as ConsoleConfig;
-    expect(readEnsemble(nowhere).dbPresent).toBe(false);
-    expect(readEnsemble(nowhere).arms).toEqual([]);
-    expect(readEnsembleHistory(nowhere, { arm: null }).rows).toEqual([]);
-    expect(readEnsemblePerformance(nowhere).combined.trades).toBe(0);
+    const nowhere = { paths: { automationsDir: path.join(os.tmpdir(), "automations-nowhere") } } as unknown as ConsoleConfig;
+    expect(readAutomations(nowhere).dbPresent).toBe(false);
+    expect(readAutomations(nowhere).arms).toEqual([]);
+    expect(readAutomationsHistory(nowhere, { arm: null }).rows).toEqual([]);
+    expect(readAutomationsPerformance(nowhere).combined.trades).toBe(0);
   });
 });
 
-describe("ensemble's simplified summary", () => {
+describe("automations' simplified summary", () => {
   const q = { mode: "paper" as const, range: "all", day: null };
 
   it("is registered, and its hero equals the history totals", () => {
-    expect(SUMMARY_READERS["ensemble"]).toBe(readEnsembleSummary);
-    const s = readEnsembleSummary(config, q);
+    expect(SUMMARY_READERS["automations"]).toBe(readAutomationsSummary);
+    const s = readAutomationsSummary(config, q);
     const t = history().totals;
     expect(s.hero.trades).toBe(5);
     expect(s.hero.net).toBeCloseTo(t.net, 2);
@@ -299,11 +299,11 @@ describe("ensemble's simplified summary", () => {
   });
 
   it("lists the arms the ledger names", () => {
-    expect(readEnsembleSummary(config, q).arms.map((a) => a.arm).sort()).toEqual(["alpha", ZZ]);
+    expect(readAutomationsSummary(config, q).arms.map((a) => a.arm).sort()).toEqual(["alpha", ZZ]);
   });
 
   it("says there is nothing yet where there is no ledger", () => {
-    const nowhere = { paths: { ensembleDir: path.join(os.tmpdir(), "ensemble-nowhere") } } as unknown as ConsoleConfig;
-    expect(readEnsembleSummary(nowhere, q).notes[0]).toContain("No ensemble ledger");
+    const nowhere = { paths: { automationsDir: path.join(os.tmpdir(), "automations-nowhere") } } as unknown as ConsoleConfig;
+    expect(readAutomationsSummary(nowhere, q).notes[0]).toContain("No automations ledger");
   });
 });

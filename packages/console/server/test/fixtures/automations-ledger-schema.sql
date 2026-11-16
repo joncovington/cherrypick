@@ -1,5 +1,5 @@
--- ensemble's ledger schema, as its own db.connect builds it. GENERATED -- do not edit by hand.
--- Same recipe as weeklyput-ledger-schema.sql: the _SCHEMA of packages/ensemble db.py, as sqlite stores it.
+-- automations' ledger schema, as its own db.connect builds it. GENERATED -- do not edit by hand.
+-- Same recipe as weeklyput-ledger-schema.sql: the _SCHEMA of packages/automations db.py, as sqlite stores it.
 CREATE TABLE ensemble_decisions (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     trade_date  TEXT NOT NULL,

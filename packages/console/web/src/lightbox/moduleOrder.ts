@@ -1,8 +1,8 @@
 /** The nine trading modules, in the order the suite lists them (2026-10-18): the four with a live
  *  loop first, flies leading as the one trading daily, then the four paper-only experiments.
  *  contango sits beside curve: the same VIX/VIX3M signal, held in shares rather than traded in VXX
- *  options. weeklyput follows them: item 57's weekly index put, paper-only; ensemble last: item 75's arms, paper-only. */
-export const TRADING_MODULE_ORDER = ["flies", "meic", "bwb", "earnings", "pmcc", "calendars", "curve", "contango", "weeklyput", "ensemble"] as const;
+ *  options. weeklyput follows them: item 57's weekly index put, paper-only; automations last: item 75's arms, paper-only. */
+export const TRADING_MODULE_ORDER = ["flies", "meic", "bwb", "earnings", "pmcc", "calendars", "curve", "contango", "weeklyput", "automations"] as const;
 
 export type TradingModuleId = (typeof TRADING_MODULE_ORDER)[number];
 
@@ -34,7 +34,7 @@ export const MODULE_LABEL: Record<ModuleId, string> = {
   curve: "curve",
   contango: "contango",
   weeklyput: "weeklyput",
-  ensemble: "ensemble",
+  automations: "automations",
   bwb: "bwb",
   calendars: "Calendars",
   earnings: "Earnings",
@@ -59,7 +59,7 @@ export const MODULE_LABEL: Record<ModuleId, string> = {
  * One list, read by the rail, the header menu and each page's title, so the chip cannot appear in
  * one place and not another.
  */
-export const EXPERIMENTAL_MODULES: ReadonlySet<string> = new Set<ModuleId>(["calendars", "pmcc", "curve", "contango", "weeklyput", "ensemble", "gexpanel"]);
+export const EXPERIMENTAL_MODULES: ReadonlySet<string> = new Set<ModuleId>(["calendars", "pmcc", "curve", "contango", "weeklyput", "automations", "gexpanel"]);
 
 export function isExperimental(id: string): boolean {
   return EXPERIMENTAL_MODULES.has(id);

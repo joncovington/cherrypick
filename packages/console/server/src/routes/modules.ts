@@ -58,7 +58,8 @@ import { readCurve, readCurveHistory, readCurveMeta, resolveCurveSession } from 
 import { readContangoMetrics, readCurveEquity, readPmccEquity } from "../services/navBridge.js";
 import { readContango, readContangoHistory } from "../readers/contango.js";
 import { readWeeklyput, readWeeklyputHistory, weeklyputDbPath } from "../readers/weeklyput.js";
-import { readEnsemble, readEnsembleHistory, readEnsemblePerformance } from "../readers/ensemble.js";
+import { readAutomations, readAutomationsHistory, readAutomationsPerformance } from "../readers/automations.js";
+import { readAutomationGroups } from "../services/automationsGroupsBridge.js";
 import { readWeeklyputCycles, readWeeklyputStatus, readWeeklyputSummary } from "../services/weeklyputBridge.js";
 import path from "node:path";
 import { readBwb, readBwbHistory, readBwbMeta } from "../readers/bwb.js";
@@ -485,16 +486,17 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
   app.get("/api/weeklyput/status", async () => readWeeklyputStatus(weeklyputDbPath(config)));
   app.get("/api/weeklyput/cycles", async () => readWeeklyputCycles(weeklyputDbPath(config)));
   app.get("/api/weeklyput/summary", async () => readWeeklyputSummary(weeklyputDbPath(config)));
-  // ensemble (item 75, paper). One ledger read per question: the arms and what they hold, the closed
+  // automations (item 75, paper). One ledger read per question: the arms and what they hold, the closed
   // structures, each arm's net and drawdown, and the decision journal. Read-only; no order path.
-  app.get("/api/ensemble", async () => readEnsemble(config));
-  app.get("/api/ensemble/history", async (req) => {
+  app.get("/api/automations", async () => readAutomations(config));
+  app.get("/api/automations/history", async (req) => {
     const q = (req.query ?? {}) as Record<string, unknown>;
     const arm = typeof q["arm"] === "string" && q["arm"] !== "" && q["arm"].length <= 60 ? q["arm"] : null;
-    return readEnsembleHistory(config, { arm, range: parseDateRange(q) });
+    return readAutomationsHistory(config, { arm, range: parseDateRange(q) });
   });
-  app.get("/api/ensemble/performance", async () => readEnsemblePerformance(config));
-  app.get("/api/ensemble/decisions", async () => readDecisions(config, "ensemble", null));
+  app.get("/api/automations/performance", async () => readAutomationsPerformance(config));
+  app.get("/api/automations/decisions", async () => readDecisions(config, "automations", null));
+  app.get("/api/automations/groups", async () => readAutomationGroups());
   app.get("/api/curve/history", async (req) => {
     const q = (req.query ?? {}) as Record<string, unknown>;
     const pick = (k: string, max: number): string | null => {

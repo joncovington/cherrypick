@@ -29,6 +29,9 @@ beyond the latest release.
   labelled with research item 75's verdict (two passed, four failed, two no verdict). Switch the whole
   group off with `"groups": {"ensemble": {"enabled": false}}` in `automations.json`: no new entries,
   while anything open is still managed and settled.
+- **The console's Ensemble page is Automations** (`/automations`; `/ensemble` and its tabs redirect).
+  Its summary ends with the automation groups: each group's switch, and each automation with its
+  research verdict.
 
 - **Automation backtests through the engine paper runs.** `packages/backtest/scripts/automation_backtest.py`
   replays ensemble arms over a stored history with `cherrypick.ensemble.driver`: the same decisions,

@@ -6,7 +6,7 @@ import { resolvePmccSession } from "./pmcc.js";
 import { resolveBwbSession } from "./bwb.js";
 import { resolveContangoSession } from "./contango.js";
 import { resolveWeeklyputSession } from "./weeklyput.js";
-import { resolveEnsembleSession } from "./ensemble.js";
+import { resolveAutomationsSession } from "./automations.js";
 import { resolveLadderSession } from "./ladder.js";
 
 /**
@@ -66,10 +66,10 @@ const SPECS: Record<DecisionsModule, Spec> = {
     table: "contango_decisions",
     resolveSession: resolveContangoSession,
   },
-  ensemble: {
-    dir: (c) => c.paths.ensembleDir,
+  automations: {
+    dir: (c) => c.paths.automationsDir,
     table: "ensemble_decisions",
-    resolveSession: resolveEnsembleSession,
+    resolveSession: resolveAutomationsSession,
   },
   weeklyput: {
     dir: (c) => c.paths.weeklyputDir,

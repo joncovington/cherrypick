@@ -13,9 +13,10 @@ import type {
   WeeklyputPayload,
   WeeklyputStatus,
   WeeklyputSummary,
-  EnsembleHistory,
-  EnsemblePayload,
-  EnsemblePerformance,
+  AutomationsHistory,
+  AutomationsPayload,
+  AutomationGroupsResult,
+  AutomationsPerformance,
   CurveEquity,
   OverviewPayload,
   StatusPayload,
@@ -1302,33 +1303,43 @@ export function useWeeklyputHistory(filter: { arm: string | null; from: string |
   });
 }
 
-/** ensemble's ledger: every arm the ledger names, what each holds, and today's register. */
-export function useEnsemble() {
-  return useQuery<EnsemblePayload>({
-    queryKey: ["ensemble"],
-    queryFn: () => getJson<EnsemblePayload>("/api/ensemble"),
+/** automations' ledger: every arm the ledger names, what each holds, and today's register. */
+export function useAutomations() {
+  return useQuery<AutomationsPayload>({
+    queryKey: ["automations"],
+    queryFn: () => getJson<AutomationsPayload>("/api/automations"),
     refetchInterval: 30_000,
   });
 }
 
+/** The automation groups: each group's switch and its automations' verdicts, from the package. */
+export function useAutomationGroups() {
+  return useQuery<AutomationGroupsResult>({
+    queryKey: ["automations-groups"],
+    queryFn: () => getJson<AutomationGroupsResult>("/api/automations/groups"),
+    staleTime: 60_000,
+    refetchInterval: 120_000,
+  });
+}
+
 /** Each arm's closed trades, net and drawdown, and the arms stacked. */
-export function useEnsemblePerformance() {
-  return useQuery<EnsemblePerformance>({
-    queryKey: ["ensemble-performance"],
-    queryFn: () => getJson<EnsemblePerformance>("/api/ensemble/performance"),
+export function useAutomationsPerformance() {
+  return useQuery<AutomationsPerformance>({
+    queryKey: ["automations-performance"],
+    queryFn: () => getJson<AutomationsPerformance>("/api/automations/performance"),
     staleTime: 30_000,
     refetchInterval: 60_000,
   });
 }
 
 /** Closed structures over the date range (by the session they ended), with totals over all of them. */
-export function useEnsembleHistory(filter: { arm: string | null; from: string | null; to: string | null }) {
+export function useAutomationsHistory(filter: { arm: string | null; from: string | null; to: string | null }) {
   const params = new URLSearchParams();
   if (filter.arm !== null) params.set("arm", filter.arm);
   rangeParams(params, filter);
-  return useQuery<EnsembleHistory>({
-    queryKey: ["ensemble-history", filter],
-    queryFn: () => getJson<EnsembleHistory>(`/api/ensemble/history?${params.toString()}`),
+  return useQuery<AutomationsHistory>({
+    queryKey: ["automations-history", filter],
+    queryFn: () => getJson<AutomationsHistory>(`/api/automations/history?${params.toString()}`),
     refetchInterval: 60_000,
     placeholderData: (prev) => prev,
   });

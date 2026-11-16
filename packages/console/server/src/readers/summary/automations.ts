@@ -1,9 +1,9 @@
 import path from "node:path";
-import type { EnsembleHistoryRow, ModuleSummarySlice } from "@console/shared";
+import type { AutomationsHistoryRow, ModuleSummarySlice } from "@console/shared";
 import type { ConsoleConfig } from "../../config.js";
 import { NO_RANGE } from "../dateRange.js";
 import { hasTable, withReadOnlyDb } from "../db.js";
-import { readEnsembleHistory } from "../ensemble.js";
+import { readAutomationsHistory } from "../automations.js";
 import {
   armsOf,
   breakdownOf,
@@ -19,8 +19,8 @@ import {
 } from "./common.js";
 
 /**
- * ensemble's simplified-view summary. A trade is one structure an arm entered once in a session and
- * closed by the arm's own exit or held to the posted close. The money is `readEnsembleHistory`'s own
+ * automations' simplified-view summary. A trade is one structure an arm entered once in a session and
+ * closed by the arm's own exit or held to the posted close. The money is `readAutomationsHistory`'s own
  * rows (entry + exit = gross; gross - fees - settlement - slippage = net), booked to the session the
  * structure ended. Paper only, so `q.mode` is not read. Arms are whatever the ledger names.
  */
@@ -32,7 +32,7 @@ interface StructureTrade extends SummaryTrade {
   exitReason: string | null;
 }
 
-function toTrade(r: EnsembleHistoryRow): StructureTrade {
+function toTrade(r: AutomationsHistoryRow): StructureTrade {
   return {
     session: (r.exitSession ?? r.expiration).slice(0, 10),
     arm: r.arm,
@@ -55,8 +55,8 @@ const END_LABEL: Record<string, string> = {
 };
 const END_ORDER = ["spot touch", "profit target", "time exit", "held to the posted close"] as const;
 
-export function readEnsembleSummary(config: ConsoleConfig, q: SummaryQuery): ModuleSummarySlice {
-  const dbFile = path.join(config.paths.ensembleDir, "paper_trades.db");
+export function readAutomationsSummary(config: ConsoleConfig, q: SummaryQuery): ModuleSummarySlice {
+  const dbFile = path.join(config.paths.automationsDir, "paper_trades.db");
   const openEntries = withReadOnlyDb<string[] | null>(dbFile, null, (db) => {
     if (!hasTable(db, "ensemble_positions")) return null;
     const scope = scopeClauses(q, { arm: "arm", symbol: "symbol" });
@@ -67,12 +67,12 @@ export function readEnsembleSummary(config: ConsoleConfig, q: SummaryQuery): Mod
   });
 
   if (openEntries === null) {
-    const slice = emptySlice("ensemble", "paper", UNIT, summaryWindow(q.range, q.day));
-    slice.notes.push("No ensemble ledger was found, so there is nothing to summarise yet.");
+    const slice = emptySlice("automations", "paper", UNIT, summaryWindow(q.range, q.day));
+    slice.notes.push("No automations ledger was found, so there is nothing to summarise yet.");
     return slice;
   }
 
-  const all = scopeTrades(readEnsembleHistory(config, { arm: null, range: NO_RANGE }).rows.map(toTrade), q);
+  const all = scopeTrades(readAutomationsHistory(config, { arm: null, range: NO_RANGE }).rows.map(toTrade), q);
   const session = sessionNeighbours(
     all.map((t) => t.session),
     q.day,
@@ -82,7 +82,7 @@ export function readEnsembleSummary(config: ConsoleConfig, q: SummaryQuery): Mod
   const open = openEntries.filter((s) => window.to === null || s <= window.to).length;
 
   return {
-    module: "ensemble",
+    module: "automations",
     mode: "paper",
     window,
     session,

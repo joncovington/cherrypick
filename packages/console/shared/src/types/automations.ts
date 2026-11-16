@@ -1,7 +1,7 @@
 import type { MeasurementBreak, TradeMoney, TradeTotals } from "./modules.js";
 
 /**
- * ensemble's read surface (packages/ensemble): research item 75's arms in paper. An arm is one
+ * automations' read surface (packages/automations): research item 75's arms in paper. An arm is one
  * configured variant; the set of arms is NOT fixed, so every arm name on this surface comes from the
  * ledger's rows, never from a list here. A position is one structure (any number of legs) entered once
  * a session by one arm and closed by that arm's exit or held to the expiry's posted close.
@@ -13,7 +13,7 @@ import type { MeasurementBreak, TradeMoney, TradeTotals } from "./modules.js";
  */
 
 /** One leg of a structure: +1 bought, -1 sold. */
-export interface EnsembleLeg {
+export interface AutomationsLeg {
   role: string;
   right: string;
   side: number;
@@ -21,14 +21,14 @@ export interface EnsembleLeg {
 }
 
 /** The latest usable mark of an open structure. */
-export interface EnsembleMark {
+export interface AutomationsMark {
   ts: string;
   /** What closing would bring at the mid, whole position, signed. */
   value: number | null;
   spot: number | null;
 }
 
-export interface EnsemblePosition {
+export interface AutomationsPosition {
   positionId: string;
   arm: string;
   symbol: string;
@@ -58,15 +58,15 @@ export interface EnsemblePosition {
   netPnl: number | null;
   netStress: number | null;
   netMid: number | null;
-  legs: EnsembleLeg[];
+  legs: AutomationsLeg[];
   /** Latest usable mark of an open position, with the newest spot any mark recorded. */
-  mark: EnsembleMark | null;
+  mark: AutomationsMark | null;
   /** entryValue + mark.value: what the position is worth now before any cost. Open positions only. */
   unrealised: number | null;
 }
 
 /** The gate that stopped an arm on a tick: the engine's first failing check and the value it read. */
-export interface EnsembleGate {
+export interface AutomationsGate {
   reason: string;
   check: string | null;
   value: string | null;
@@ -75,7 +75,7 @@ export interface EnsembleGate {
 }
 
 /** One arm's session as the register records it. */
-export interface EnsembleEntryRow {
+export interface AutomationsEntryRow {
   arm: string;
   symbol: string;
   entrySession: string;
@@ -85,24 +85,24 @@ export interface EnsembleEntryRow {
   refusal: string | null;
   positionId: string | null;
   decidedAt: string | null;
-  gate: EnsembleGate | null;
+  gate: AutomationsGate | null;
 }
 
-export interface EnsemblePayload {
+export interface AutomationsPayload {
   /** The loop's last session, else the newest session the register names. */
   session: string | null;
   dbPresent: boolean;
   /** Every arm the ledger names, sorted. */
   arms: string[];
-  positions: EnsemblePosition[];
+  positions: AutomationsPosition[];
   /** The register's rows for `session`: each arm that was due, and how it stands. */
-  today: EnsembleEntryRow[];
+  today: AutomationsEntryRow[];
   measurementBreaks: MeasurementBreak[];
   lastIteration: { ranAt: number; phase: string; status: string; ageSeconds: number } | null;
 }
 
 /** A closed structure in the trade table standard: entry + exit = gross; gross - fees - settlement - slippage = net. */
-export interface EnsembleHistoryRow extends TradeMoney {
+export interface AutomationsHistoryRow extends TradeMoney {
   positionId: string;
   arm: string;
   symbol: string;
@@ -112,16 +112,16 @@ export interface EnsembleHistoryRow extends TradeMoney {
   exitReason: string | null;
   netStress: number | null;
   netMid: number | null;
-  legs: EnsembleLeg[];
+  legs: AutomationsLeg[];
 }
 
-export interface EnsembleHistory {
-  rows: EnsembleHistoryRow[];
+export interface AutomationsHistory {
+  rows: AutomationsHistoryRow[];
   totals: TradeTotals;
 }
 
 /** One arm's (or all arms') closed trades, net and drawdown. Dollars, whole position. */
-export interface EnsembleLine {
+export interface AutomationsLine {
   trades: number;
   net: number;
   gross: number;
@@ -141,9 +141,31 @@ export interface EnsembleLine {
   curve: Array<{ x: string; y: number }>;
 }
 
-export interface EnsemblePerformance {
+export interface AutomationsPerformance {
   dbPresent: boolean;
-  arms: Record<string, EnsembleLine>;
+  arms: Record<string, AutomationsLine>;
   /** Every arm stacked as sized. */
-  combined: EnsembleLine;
+  combined: AutomationsLine;
+}
+
+/** An automation's research verdict, item 75's register label (`passed`, `failed`, `no_verdict`). */
+export type AutomationVerdict = "passed" | "failed" | "no_verdict" | null;
+
+export interface AutomationGroupMember {
+  name: string;
+  enabled: boolean;
+  verdict: AutomationVerdict;
+}
+
+/** A set of like automations switched as one (`groups` in the automations config). */
+export interface AutomationGroup {
+  name: string;
+  enabled: boolean;
+  automations: AutomationGroupMember[];
+}
+
+/** `GET /api/automations/groups`: every group, or the reason the package could not be asked. */
+export interface AutomationGroupsResult {
+  groups: AutomationGroup[];
+  error: string | null;
 }

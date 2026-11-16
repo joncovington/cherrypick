@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { EnsembleHistoryRow, EnsembleLine, EnsemblePayload, EnsemblePerformance, EnsemblePosition } from "@console/shared";
+import type { AutomationGroupsResult, AutomationsHistoryRow, AutomationsLine, AutomationsPayload, AutomationsPerformance, AutomationsPosition } from "@console/shared";
 import { Card, DataCard, PnlCell } from "../../components/DataTable";
 import { TradeTotalsChip, tradeMoneyColumns } from "../../components/TradeMoney";
 import { HistoryTable } from "../../components/table/HistoryTable";
@@ -15,13 +15,13 @@ import { MeasurementBreaks } from "../../components/MeasurementBreaks";
 import { ListViewContext, ViewSwitch, useViewChoice } from "../../components/ViewSwitch";
 import { StatusLine } from "../../components/summary/ModuleSummary";
 import { GuideLink } from "../../components/GuideLink";
-import { useEnsembleHistory } from "../../lib/api";
+import { useAutomationGroups, useAutomationsHistory } from "../../lib/api";
 import { fmtCash, fmtMoney, fmtNum } from "../../lib/format";
 import { TradeCard, TradeCards } from "../Live/TradeCard";
-import { closedModel, dailyCurve, gateWords, openModel, shapeWords, todayCounts } from "./ensembleModels";
+import { closedModel, dailyCurve, gateWords, openModel, shapeWords, todayCounts } from "./automationsModels";
 
 /**
- * ensemble's pages (packages/ensemble): research item 75's arms in paper. An arm is one configured
+ * automations' pages (packages/automations): research item 75's arms in paper. An arm is one configured
  * variant and the set of them is whatever the ledger names, so every arm on these pages comes from
  * the data. Money is the ledger's own: signed cash flow in whole-position dollars, entry + exit =
  * gross, gross - fees - settlement - slippage = net. "P&L" means net at the suite's slippage model;
@@ -32,10 +32,10 @@ function absentCard() {
   return (
     <div className="pf-layout">
       <Section concept="stand" tag="not started" question="Has this module run on this machine?">
-        <Card title="ensemble" collapseKey="ensemble-absent">
+        <Card title="automations" collapseKey="automations-absent">
           <p className="muted">
             This module has not run on this machine: there is no paper store at{" "}
-            <span className="mono">~/.cherrypick/data/ensemble/paper_trades.db</span> yet. It fills in after the first arm&apos;s entry window.
+            <span className="mono">~/.cherrypick/data/automations/paper_trades.db</span> yet. It fills in after the first arm&apos;s entry window.
           </p>
         </Card>
       </Section>
@@ -56,10 +56,10 @@ function oneNote(title: string, heading: string, text: string): CardHelpContent 
 
 const OUTCOME_CHIP: Record<string, string> = { entered: "chip chip-ok", missed: "chip chip-warn", pending: "chip" };
 
-const structure = (p: { legs: EnsemblePosition["legs"] }): string => shapeWords(p.legs);
+const structure = (p: { legs: AutomationsPosition["legs"] }): string => shapeWords(p.legs);
 
 /** The open structures as a table: what each took in, where it marks, and what it is worth now. */
-function OpenTable({ positions, loading }: { positions: EnsemblePosition[]; loading: boolean }) {
+function OpenTable({ positions, loading }: { positions: AutomationsPosition[]; loading: boolean }) {
   const open = positions.filter((p) => p.status === "open").sort((a, b) => a.arm.localeCompare(b.arm) || a.symbol.localeCompare(b.symbol));
   return (
     <DataCard
@@ -96,7 +96,45 @@ function OpenTable({ positions, loading }: { positions: EnsemblePosition[]; load
   );
 }
 
-export function EnsembleToday({ data, loading }: { data: EnsemblePayload | undefined; loading: boolean }) {
+const VERDICT_WORDS: Record<string, string> = { passed: "passed", failed: "failed", no_verdict: "no verdict" };
+const VERDICT_CHIP: Record<string, string> = { passed: "chip chip-ok", failed: "chip chip-warn", no_verdict: "chip" };
+
+/** Each automation group: on or off, and its automations with their research verdicts. */
+export function GroupsCard({ result, loading }: { result: AutomationGroupsResult | undefined; loading: boolean }) {
+  const rows = (result?.groups ?? []).flatMap((g) => g.automations.map((a) => ({ group: g, a })));
+  return (
+    <DataCard
+      title="automation groups"
+      className="lv-12"
+      headers={["group", "group switch", "automation", "on", "research verdict"]}
+      loading={loading}
+      rowCount={rows.length}
+      empty={result?.error ?? "no automation belongs to a group"}
+      help={oneNote(
+        "Automation groups",
+        "Group switch",
+        "A group is a set of like automations switched as one, in the groups block of automations.json. A group that is off enters nothing; what its automations hold is still managed and settled. The verdict is the research register's on that automation (the ensemble group is item 75), a label, not a result read from a file.",
+      )}
+    >
+      {rows.map(({ group, a }) => (
+        <tr key={`${group.name}-${a.name}`}>
+          <td>{group.name}</td>
+          <td>
+            <span className={group.enabled ? "chip chip-ok" : "chip chip-warn"}>{group.enabled ? "on" : "off"}</span>
+          </td>
+          <td>{a.name}</td>
+          <td className="muted">{a.enabled ? "on" : "off"}</td>
+          <td>
+            {a.verdict === null ? "—" : <span className={VERDICT_CHIP[a.verdict] ?? "chip"}>{VERDICT_WORDS[a.verdict] ?? a.verdict}</span>}
+          </td>
+        </tr>
+      ))}
+    </DataCard>
+  );
+}
+
+export function AutomationsToday({ data, loading }: { data: AutomationsPayload | undefined; loading: boolean }) {
+  const groups = useAutomationGroups();
   if (data !== undefined && !data.dbPresent) return absentCard();
   const today = data?.today ?? [];
   const positions = data?.positions ?? [];
@@ -104,13 +142,13 @@ export function EnsembleToday({ data, loading }: { data: EnsemblePayload | undef
   const open = positions.filter((p) => p.status === "open");
   return (
     <div className="pf-layout">
-      <StatusLine module="ensemble" mode="paper" />
+      <StatusLine module="automations" mode="paper" />
       <Section concept="stand" tag="the day" question="How did each arm that was due today do?">
         <FliesTile title="arms on file" value={data === undefined ? null : String(data.arms.length)} tone="dim" foot={data?.session ? `session ${data.session}` : "no session yet"} />
         <FliesTile title="entered" value={data === undefined ? null : String(counts.entered)} tone="dim" foot="arms that took a position today" />
         <FliesTile title="pending" value={data === undefined ? null : String(counts.pending)} tone="dim" foot="window not over: a gate may still open" />
         <FliesTile title="missed" value={data === undefined ? null : String(counts.missed)} tone={counts.missed > 0 ? "neg" : "dim"} foot="the window closed unentered; nothing fills later" />
-        <FliesTile title="open structures" value={String(open.length)} tone="dim" foot="held to the posted close or to the arm's exit" to="/ensemble/positions" toLabel="positions" />
+        <FliesTile title="open structures" value={String(open.length)} tone="dim" foot="held to the posted close or to the arm's exit" to="/automations/positions" toLabel="positions" />
       </Section>
       <Section concept="add" tag="today's register" question="Which gate blocked each arm that did not enter?">
         <DataCard
@@ -145,12 +183,15 @@ export function EnsembleToday({ data, loading }: { data: EnsemblePayload | undef
       <Section concept="stand" tag="the book" question="What is held, and what is it worth now?">
         <OpenTable positions={positions} loading={loading} />
       </Section>
+      <Section concept="stand" tag="the groups" question="Which groups are switched on, and what did research find for each automation?">
+        <GroupsCard result={groups.data} loading={groups.isLoading} />
+      </Section>
     </div>
   );
 }
 
-export function EnsemblePositions({ data }: { data: EnsemblePayload | undefined }) {
-  const [view, setView] = useViewChoice("ensemble-open", "cards");
+export function AutomationsPositions({ data }: { data: AutomationsPayload | undefined }) {
+  const [view, setView] = useViewChoice("automations-open", "cards");
   if (data !== undefined && !data.dbPresent) return absentCard();
   const open = (data?.positions ?? []).filter((p) => p.status === "open");
   const arms = [...new Set(open.map((p) => p.arm))].sort();
@@ -161,7 +202,7 @@ export function EnsemblePositions({ data }: { data: EnsemblePayload | undefined 
       </Section>
       <Section concept="add" tag="the orders" question="What was opened, and where does each stand?">
         {arms.length === 0 ? (
-          <Card title="open structures as orders" className="lv-12" collapseKey="ensemble-open-empty">
+          <Card title="open structures as orders" className="lv-12" collapseKey="automations-open-empty">
             <p className="muted">no structure open</p>
           </Card>
         ) : (
@@ -188,9 +229,9 @@ export function EnsemblePositions({ data }: { data: EnsemblePayload | undefined 
   );
 }
 
-const MONEY = tradeMoneyColumns<EnsembleHistoryRow>("the whole structure at the mid per share: a credit or a debit");
+const MONEY = tradeMoneyColumns<AutomationsHistoryRow>("the whole structure at the mid per share: a credit or a debit");
 
-const HISTORY_DEFS: ColumnDef<EnsembleHistoryRow>[] = [
+const HISTORY_DEFS: ColumnDef<AutomationsHistoryRow>[] = [
   { id: "arm", header: "arm", kind: "describe", render: (r) => r.arm, sortValue: (r) => r.arm },
   { id: "symbol", header: "name", kind: "describe", render: (r) => r.symbol, sortValue: (r) => r.symbol },
   { id: "entered", header: "entered", kind: "describe", render: (r) => r.entrySession, sortValue: (r) => r.entrySession },
@@ -205,7 +246,7 @@ const HISTORY_DEFS: ColumnDef<EnsembleHistoryRow>[] = [
     render: (r) => r.exitReason ?? "—",
     sortValue: (r) => r.exitReason,
   },
-  ...MONEY.money.map((c): ColumnDef<EnsembleHistoryRow> => {
+  ...MONEY.money.map((c): ColumnDef<AutomationsHistoryRow> => {
     if (c.id === "exit") return { ...c, title: "what closing brought at the mid (+) or cost (−), or the settlement intrinsic at the posted close" };
     if (c.id === "slip") return { ...c, title: "the spread given up at the fills; charged as a cost and subtracted once" };
     if (c.id === "net") return { ...c, title: "gross − fees − settlement − slippage, at the suite's slippage model" };
@@ -213,15 +254,15 @@ const HISTORY_DEFS: ColumnDef<EnsembleHistoryRow>[] = [
   }),
 ];
 
-export function EnsembleHistory({ data }: { data: EnsemblePayload | undefined }) {
+export function AutomationsHistory({ data }: { data: AutomationsPayload | undefined }) {
   const { from, to } = useUrlDateRange();
-  const history = useEnsembleHistory({ arm: null, from, to });
+  const history = useAutomationsHistory({ arm: null, from, to });
   const [open, setOpen] = useState<string | null>(null);
   return (
     <div className="pf-layout">
       <Section concept="hist" tag="the record" question="How did each structure end?">
         <HistoryTable
-          table="ensemble-history"
+          table="automations-history"
           title="closed structures"
           className="view-fade lv-12"
           defs={HISTORY_DEFS}
@@ -260,11 +301,11 @@ export function EnsembleHistory({ data }: { data: EnsemblePayload | undefined })
   );
 }
 
-export function EnsembleDecisions() {
+export function AutomationsDecisions() {
   return (
     <div className="pf-layout">
       <Section concept="add" tag="decisions" question="What did each arm decide, and why?">
-        <DecisionsCard module="ensemble" />
+        <DecisionsCard module="automations" />
       </Section>
     </div>
   );
@@ -272,13 +313,13 @@ export function EnsembleDecisions() {
 
 const COMBINED = "all arms";
 
-function perfRows(perf: EnsemblePerformance | undefined): Array<[string, EnsembleLine]> {
+function perfRows(perf: AutomationsPerformance | undefined): Array<[string, AutomationsLine]> {
   return perf === undefined ? [] : [...Object.entries(perf.arms), [COMBINED, perf.combined]];
 }
 
 const tone = (v: number): "pos" | "neg" | "dim" => (v > 0 ? "pos" : v < 0 ? "neg" : "dim");
 
-export function EnsemblePerformancePage({ perf }: { perf: EnsemblePerformance | undefined }) {
+export function AutomationsPerformancePage({ perf }: { perf: AutomationsPerformance | undefined }) {
   const rows = perfRows(perf);
   const combined = perf?.combined;
   const series =
@@ -301,7 +342,7 @@ export function EnsemblePerformancePage({ perf }: { perf: EnsemblePerformance | 
       <Section concept="hist" tag="running net" question="How has each arm's net run, trade by trade?">
         <Card
           title="running net by arm"
-          collapseKey="ensemble-perf-curve"
+          collapseKey="automations-perf-curve"
           className="lv-12"
           help={oneNote(
             "Running net",
@@ -348,7 +389,7 @@ export function EnsemblePerformancePage({ perf }: { perf: EnsemblePerformance | 
   );
 }
 
-export function EnsembleCosts({ perf }: { perf: EnsemblePerformance | undefined }) {
+export function AutomationsCosts({ perf }: { perf: AutomationsPerformance | undefined }) {
   const rows = perfRows(perf);
   const c = perf?.combined;
   return (
@@ -392,12 +433,12 @@ export function EnsembleCosts({ perf }: { perf: EnsemblePerformance | undefined 
   );
 }
 
-export function EnsembleHelp() {
+export function AutomationsHelp() {
   return (
     <div className="pf-layout">
-      <GuideLink to="/help/strategy-pages#ensemble-ensemble" />
+      <GuideLink to="/help/strategy-pages#automations-automations" />
       <Section concept="stand" tag="the rule" question="What does this module do?">
-        <Card title="the ensemble" collapseKey="ensemble-help-rule">
+        <Card title="the automations" collapseKey="automations-help-rule">
           <div className="pmcc-prose">
             <p>
               An arm is one configured variant: an underlying, an expiry rule, the legs and where each strike is placed, an entry trigger, the weekdays,
@@ -410,7 +451,7 @@ export function EnsembleHelp() {
         </Card>
       </Section>
       <Section concept="edge" tag="reading it" question="What do the pages show, and what do they not?">
-        <Card title="what is a verdict and what is context" collapseKey="ensemble-help-reading">
+        <Card title="what is a verdict and what is context" collapseKey="automations-help-reading">
           <div className="pmcc-prose">
             <ol className="pmcc-rules">
               <li>P&amp;L is net at the suite&apos;s slippage model. Net at stress and net at mid are context, labelled as such, and are not the result.</li>
@@ -421,7 +462,7 @@ export function EnsembleHelp() {
             </ol>
           </div>
         </Card>
-        <Card title="a forward read" collapseKey="ensemble-help-forward">
+        <Card title="a forward read" collapseKey="automations-help-forward">
           <p className="muted">Paper reads these rules forward against the study that declared them. A few weeks of paper is a forward read, not a verdict, and no figure from the study appears here.</p>
         </Card>
       </Section>
