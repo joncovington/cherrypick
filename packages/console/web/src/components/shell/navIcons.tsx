@@ -252,6 +252,17 @@ function CompareIcon() {
   );
 }
 
+/* Three blocks stacked and the top one set slightly aside: an automation built block by block. */
+function BuilderIcon() {
+  return (
+    <Svg>
+      <rect x="5" y="15" width="14" height="4" rx="1" />
+      <rect x="5" y="10" width="14" height="4" rx="1" opacity="0.7" />
+      <rect x="8" y="5" width="11" height="4" rx="1" opacity="0.55" />
+    </Svg>
+  );
+}
+
 /** A flask: the paper-only experiments (2026-10-30). */
 function ExperimentsIcon() {
   return (
@@ -280,6 +291,7 @@ const ICONS: Record<string, (p: NavIconProps) => ReactNode> = {
   "/backtest": BacktestIcon,
   "/screeners": ScreenersIcon,
   "/reports": ReportsIcon,
+  "/builder": BuilderIcon,
   "/compare": CompareIcon,
   "/experiments": ExperimentsIcon,
   "/advisor": AdvisorIcon,

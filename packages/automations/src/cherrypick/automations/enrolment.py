@@ -215,6 +215,29 @@ def suggestion(arm: dict, inventory: dict, today: date, coverage) -> dict | None
     }
 
 
+def builder_view(arm: dict, suggestion_row: dict | None) -> dict:
+    """One automation as the Builder page shows it: its identity, each block with its keys and label,
+    its start and forward rule, and the backtest suggestion when it has one."""
+    lab = labels(arm)
+    reg = arm.get("register") or {}
+    return {
+        "name": arm["name"],
+        "group": arm.get("group"),
+        "symbol": arm["symbol"],
+        "enabled": bool(arm.get("enabled", True)),
+        "note": arm.get("note"),
+        "start": arm.get("start"),
+        "register": {"item": reg["item"], "verdict": reg["verdict"]} if reg else None,
+        "summary": summary(arm),
+        "blocks": [
+            {"block": b, "state": lab[b]["state"], "keys": {k: arm[k] for k in keys if k in arm}}
+            for b, keys in BLOCKS.items()
+        ],
+        "forward": arm.get("forward"),
+        "suggestion": suggestion_row,
+    }
+
+
 def joins(arm: dict, today: date) -> bool:
     """Whether the paper loop may enter `arm` on `today`: on or after its start, when it has one."""
     return "start" not in arm or today.isoformat() >= arm["start"]
