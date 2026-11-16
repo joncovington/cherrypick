@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import runpy
+from pathlib import Path
 
 from cherrypick.core import home
 from cherrypick.core import streamrequests as sr
@@ -69,3 +70,15 @@ def test_writing_the_request_removes_the_old_names_file(managed_home, tmp_path):
     stream_request.write(cfg, arms, conn, str(tmp_path / "ledger.db"), cache_path=str(tmp_path / "cache.db"))
     assert not stale.exists()
     assert sr.request_path("automations").exists()
+
+
+def test_the_block_is_named_automations_and_its_old_name_resolves():
+    off = {"iron-fly-1000": {"enabled": False}}
+    on = {"iron-fly-1000": {"enabled": True}}
+    assert not config_mod.load_arms({"automations": off})["iron-fly-1000"]["enabled"]
+    assert not config_mod.load_arms({"arms": off})["iron-fly-1000"]["enabled"]
+    # A file holding both is read by the new name.
+    assert config_mod.load_arms({"arms": off, "automations": on})["iron-fly-1000"]["enabled"]
+    example_path = Path(__file__).resolve().parents[1] / "config.example.json"
+    example = json.loads(example_path.read_text(encoding="utf-8"))
+    assert "automations" in example and "arms" not in example

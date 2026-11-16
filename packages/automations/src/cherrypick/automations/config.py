@@ -4,10 +4,11 @@ The file is `~/.cherrypick/config/automations.json` (`ensemble.json`, its old na
 exists), copied from `config.example.json`, which is what a checkout without one reads. Three blocks
 matter:
 
-- `arms`: changes laid over the shipped arms (`arms.load_arms`): `{"iron-fly-1000": {"enabled": false}}`
-  switches one off, a whole entry under a new name adds an arm. A misspelt key is refused with its path
-  and the loop does not start, so an edit never runs as a different arm. The registry is read by the
-  suite's accepted spellings (`arms`, `books`, `profiles`), so none is withdrawn.
+- `automations`: changes laid over the shipped automations (`arms.load_arms`):
+  `{"iron-fly-1000": {"enabled": false}}` switches one off, a whole entry under a new name adds one. A
+  misspelt key is refused with its path and the loop does not start, so an edit never runs as a different
+  automation. The block's older spellings (`arms`, and the suite's `books` and `profiles`) still resolve,
+  so none is withdrawn; `automations` is read first when a file holds two.
 - `symbols`: per underlying, the OCC `root` a chain must carry (SPXW keeps the AM-settled SPX monthly
   out), and the `window_strikes` the stream request asks
   for on the entry minutes. A symbol the arms use and this block does not name falls back to
@@ -67,9 +68,14 @@ def defaults(config: dict) -> dict:
     return {**DEFAULTS, **_cfg.section(config, "defaults", label="automations")}
 
 
+#: The automations block's spellings, the new one first.
+REGISTRY_KEYS = ("automations", *_cfg.ARM_REGISTRY_KEYS)
+
+
 def arm_overrides(config: dict) -> dict:
-    """The `arms` block (or its accepted spellings) as `load_arms` takes it."""
-    return dict(_cfg.registry(config, label="automations") or {})
+    """The `automations` block (or an older spelling: `arms`, `books`, `profiles`) as `load_arms` takes
+    it."""
+    return dict(_cfg.registry(config, *REGISTRY_KEYS, label="automations") or {})
 
 
 def load_arms(config: dict, *, library: dict | None = None) -> dict[str, dict]:
