@@ -424,6 +424,36 @@ def day_events(day: date, *, root: Path | None = None) -> dict:
     }
 
 
+#: The releases BEA's own file carries (with their times); every other dated release is FRED's.
+BEA_RELEASES = frozenset({"Personal Income and Outlays", "Gross Domestic Product"})
+
+
+def release_dates(label: str, *, root: Path | None = None) -> tuple[list[str], list[list[str]]]:
+    """Every date the calendar store holds for one release `label` (BEA's: PCE, GDP; FRED's: CPI, PPI,
+    NFP, ...), and the ISO ranges those dates are complete for: each year BEA's file holds, or FRED's
+    own coverage. A label no source carries gives no dates and no coverage, which a reader takes as
+    unknown, never as quiet."""
+    names = {name for name, spec in RELEASES.items() if spec[0] == label and name != "FOMC"}
+    if not names:
+        return [], []
+    if names & BEA_RELEASES:
+        rows = parse_bea(_read_text(bea_path(root)))
+        dates = set()
+        for r in rows:
+            if r["name"] not in names:
+                continue
+            try:
+                at = datetime.fromisoformat(str(r["at"]).replace("Z", "+00:00")).astimezone(ET)
+            except ValueError:
+                continue
+            dates.add(at.date().isoformat())
+        years = sorted({str(r["at"])[:4] for r in rows})
+        return sorted(dates), _merge_ranges([[f"{y}-01-01", f"{y}-12-31"] for y in years])
+    rows, coverage = _fred_view(root)
+    dates = {str(r["at"])[:10] for r in rows if str(r.get("name")) in names and r.get("at")}
+    return sorted(dates), _merge_ranges(coverage)
+
+
 def _minute(hhmm: str) -> int:
     h, m = hhmm.split(":")
     return int(h) * 60 + int(m)
