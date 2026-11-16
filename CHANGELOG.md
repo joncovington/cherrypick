@@ -22,6 +22,9 @@ beyond the latest release.
 
 ### What's new
 
+- **More signals.** A signal can fire when an indicator has risen (or fallen) for N bars in a row, when
+  the price moves a set percent from a fixed price, and when it crosses the previous week's or month's
+  high or low or the opening range's midpoint.
 - **Automations size by allocation and by streak, and a group shares its capital.** A size can be a
   percent of an allocation (capped in dollars or contracts), and any size can step by a set number of
   contracts, or double, after each loss or each win, between a floor and a ceiling. An automation group
