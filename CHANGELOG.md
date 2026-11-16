@@ -25,6 +25,10 @@ beyond the latest release.
 - **Ensemble is now automations.** The package, its import, its config file, data folder, log,
   heartbeat and stream request, and its suite-config key are named `automations`; trade
   notifications say "Automation paper".
+- **Automation groups.** The eight former ensemble arms are the `ensemble` automation group, each
+  labelled with research item 75's verdict (two passed, four failed, two no verdict). Switch the whole
+  group off with `"groups": {"ensemble": {"enabled": false}}` in `automations.json`: no new entries,
+  while anything open is still managed and settled.
 
 - **Automation backtests through the engine paper runs.** `packages/backtest/scripts/automation_backtest.py`
   replays ensemble arms over a stored history with `cherrypick.ensemble.driver`: the same decisions,

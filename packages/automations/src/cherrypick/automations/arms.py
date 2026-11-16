@@ -6,6 +6,10 @@ An arm's keys (all validated by `validate`; an unknown key is refused with its p
 that defaulted silently would change what is measured):
 
     name, symbol, enabled
+    group         the automation group it belongs to (a set of like automations, switched as one:
+                  `config.groups`); the shipped eight are the `ensemble` group
+    register      {"item": N, "verdict": "passed"|"failed"|"no_verdict"}: the research register's
+                  verdict on it, a label read from the register, never from a result file
     expiry        {"kind": "dte"|"market_days"|"calendar", "days": N, "tolerance": D}
                   {"kind": "at_least", "days": N}: the nearest listed expiry N or more calendar days out
                   {"kind": "between", "min": N, "max": M, "prefer": "first"|"last"}: a listed expiry N
@@ -93,6 +97,8 @@ TOP_KEYS = {
     "name",
     "symbol",
     "enabled",
+    "group",
+    "register",
     "expiry",
     "entry",
     "weekdays",
@@ -104,6 +110,8 @@ TOP_KEYS = {
     "exit",
     "note",
 }
+VERDICTS = ("passed", "failed", "no_verdict")
+
 LIMIT_KEYS = {"max_open", "per_day", "every_days", "one_per_expiry"}
 
 EXIT_KEYS = {
@@ -230,6 +238,8 @@ def _leg(name, right, side, **strike):
 ARMS: dict[str, dict] = {
     "iron-fly-1000": {
         "name": "iron-fly-1000",
+        "group": "ensemble",
+        "register": {"item": 75, "verdict": "failed"},
         "symbol": "SPX",
         "enabled": True,
         "note": "0DTE iron fly, short strikes at the listed strike nearest the previous close, 10 wide",
@@ -255,6 +265,8 @@ ARMS: dict[str, dict] = {
     },
     "iron-condor-1345": {
         "name": "iron-condor-1345",
+        "group": "ensemble",
+        "register": {"item": 75, "verdict": "passed"},
         "symbol": "SPX",
         "enabled": True,
         "note": "0DTE iron condor, short put 5 below spot, short call 10 above it, 5-point wings",
@@ -279,6 +291,8 @@ ARMS: dict[str, dict] = {
     },
     "put-spread-1300": {
         "name": "put-spread-1300",
+        "group": "ensemble",
+        "register": {"item": 75, "verdict": "no_verdict"},
         "symbol": "SPX",
         "enabled": True,
         "note": "0DTE put spread 10 wide, only when the opening-range arm holds nothing today",
@@ -304,6 +318,8 @@ ARMS: dict[str, dict] = {
     },
     "iron-fly-1dte-1330": {
         "name": "iron-fly-1dte-1330",
+        "group": "ensemble",
+        "register": {"item": 75, "verdict": "failed"},
         "symbol": "SPX",
         "enabled": True,
         "note": "iron fly to the next market day on the largest-gex strike, wings 0.5% out",
@@ -337,6 +353,8 @@ ARMS: dict[str, dict] = {
     },
     "gld-call-spread-20d": {
         "name": "gld-call-spread-20d",
+        "group": "ensemble",
+        "register": {"item": 75, "verdict": "failed"},
         "symbol": "GLD",
         "enabled": True,
         "note": "call debit spread about 20 days out, long 30 delta, 15 dollars wide",
@@ -355,6 +373,8 @@ ARMS: dict[str, dict] = {
     },
     "long-put-1030": {
         "name": "long-put-1030",
+        "group": "ensemble",
+        "register": {"item": 75, "verdict": "passed"},
         "symbol": "SPX",
         "enabled": True,
         "note": "0DTE long put at -0.10 delta or nearer zero, on a down-VIX up-index morning",
@@ -373,6 +393,8 @@ ARMS: dict[str, dict] = {
     },
     "gld-call-spread-1dte": {
         "name": "gld-call-spread-1dte",
+        "group": "ensemble",
+        "register": {"item": 75, "verdict": "no_verdict"},
         "symbol": "GLD",
         "enabled": True,
         "note": "call debit spread to the next market day, long 50 delta, 10 dollars wide",
@@ -394,6 +416,8 @@ ARMS: dict[str, dict] = {
     },
     "orb-put-spread": {
         "name": "orb-put-spread",
+        "group": "ensemble",
+        "register": {"item": 75, "verdict": "failed"},
         "symbol": "SPX",
         "enabled": True,
         "note": "0DTE put spread 20 wide at -0.35 delta on the first break above the 60-minute opening high",
@@ -430,6 +454,17 @@ def validate(arm: dict) -> list[str]:
     if missing:
         return p + [f"{name}: missing {k!r}" for k in missing]
     p.extend(_expiry_problems(f"{name}.expiry", arm["expiry"]))
+    if "group" in arm and not (isinstance(arm["group"], str) and arm["group"].strip() == arm["group"] != ""):
+        p.append(f"{name}.group: a name")
+    reg = arm.get("register")
+    if reg is not None and not (
+        isinstance(reg, dict)
+        and set(reg) == {"item", "verdict"}
+        and isinstance(reg["item"], int)
+        and not isinstance(reg["item"], bool)
+        and reg["verdict"] in VERDICTS
+    ):
+        p.append(f"{name}.register: {{item: N, verdict: {'|'.join(VERDICTS)}}}")
     if arm["entry"].get("kind") not in ("time", "orb", "trigger"):
         p.append(f"{name}.entry.kind: {arm['entry'].get('kind')!r}")
     if arm["entry"].get("kind") == "trigger":

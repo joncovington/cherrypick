@@ -2474,7 +2474,7 @@ def cmd_forward_checks(cfg) -> None:
     modules = cfg.get("modules") or {}
 
     def trades_for(module: str, schema: str) -> list[dict]:
-        mcfg = modules.get(module)
+        module, mcfg = cfgmod.module_block(modules, module)
         reader = ledgers.READERS.get(schema)
         if not mcfg or reader is None:
             return []

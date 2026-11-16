@@ -102,6 +102,17 @@ def _respelt(value: Any, old: str, new: str) -> Any:
     return value
 
 
+def module_block(modules: dict[str, Any], name: str) -> tuple[str, dict[str, Any] | None]:
+    """(key, block) for a module named in stored data (a register row, a record), which may use its
+    name from before a rename: the new key when only that is configured. None when neither is."""
+    if name in modules:
+        return name, modules[name]
+    new = RENAMED_MODULES.get(name)
+    if new is not None and new in modules:
+        return new, modules[new]
+    return name, None
+
+
 def resolve_renamed(cfg: dict[str, Any]) -> dict[str, Any]:
     """`cfg` with each renamed module's old block under its new key, in its place. A config naming both
     keeps the new one and drops the old, so one module never runs twice."""
