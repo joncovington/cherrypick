@@ -22,6 +22,9 @@ beyond the latest release.
 
 ### What's new
 
+- **An automation not yet backtested is told whether it could be.** Its status lists what its blocks
+  read, and whether our own data covers each over the last year. Where the data falls short, it gives
+  the nearest store's span and the reason.
 - **Automations enrol with a start date and their own forward check.** An automation can set the first
   day paper may enter it, and a group's start is the day its members join. Each block (structure,
   entry, gates, exit, size) is labelled backtested, changed since its backtest, or not backtested. A

@@ -583,6 +583,21 @@ def _window_text(arm: dict) -> str:
     return f"{first // 60:02d}:{first % 60:02d}-{last // 60:02d}:{last % 60:02d} ET"
 
 
+def _suggestions(arms: dict[str, dict], today: date) -> dict[str, dict]:
+    """Each automation not wholly backtested: whether our own stores cover a backtest of it
+    (`enrolment.suggestion`, over the source registry's cached inventory; a file read, no store opened)."""
+    from cherrypick.core import sources
+    from cherrypick.core.sources import inventory
+
+    inv = inventory.load()
+    out = {}
+    for name, arm in sorted(arms.items()):
+        s = enrolment.suggestion(arm, inv, today, sources.coverage)
+        if s is not None:
+            out[name] = s
+    return out
+
+
 def run_status(config: dict, arms: dict[str, dict], conn, *, cache_path: str) -> dict:
     """The watchdog's health object: files only, no broker, no network."""
     when = now_et()
@@ -599,6 +614,7 @@ def run_status(config: dict, arms: dict[str, dict], conn, *, cache_path: str) ->
         "starts": {n: a["start"] for n, a in sorted(arms.items()) if "start" in a},
         "backtested": {n: enrolment.summary(a) for n, a in sorted(arms.items())},
         "forward": enrolment.forward_rows(arms),
+        "backtest_suggestions": _suggestions(arms, today),
         "arms_today": {n: _window_text(a) for n, a in sorted(todays.items())},
         "symbols": list(config_mod.symbols(config, arms)),
         "open_positions": [
