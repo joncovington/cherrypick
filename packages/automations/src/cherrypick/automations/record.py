@@ -5,7 +5,12 @@ quote, so a decision cannot be re-made from the cache afterwards. The loop there
 JSON per symbol decision tick to `~/.cherrypick/data/automations/replay/<session>.jsonl`: the compact snapshot
 (`paper.compact`), the arms it was decided for (as they stood), and the decisions made. `replay_file`
 runs the same snapshots through `paper.replay` and says where the decisions differ, which is how the paper
-path is compared with the backtest's later.
+path is compared with the backtest's later. `paper.replay` is `paper.decide_all`, the call the backtest
+driver makes on each stored minute, so a replayed day is the backtest's decision on paper's own market.
+
+`compare_day` is the nightly check (`cli replay-day`): every tick of a session again, and each place
+the decision or the fill differs, one row each: whether it entered, the first failing check, and for an
+entry its expiry, count, legs, prices, slippage and fees (`FILL_FIELDS`).
 
 Local data only (a market snapshot is quote data): the directory sits under the managed home and is not
 part of the repository.
@@ -83,6 +88,48 @@ def as_they_ran(arms: dict[str, dict]) -> dict[str, dict]:
             arm = {**arm, "limits": {"max_open": 1, **lim, "per_day": 1}}
         out[name] = arm
     return out
+
+
+FILL_FIELDS = ("expiry", "quantity", "legs", "prices", "slippage", "fees_open")
+
+
+def _differences(recorded: dict, replayed: dict) -> list[tuple[str, object, object]]:
+    """(field, recorded, replayed) for each place two decision summaries differ."""
+    out = []
+    for k in ("enter", "reason"):
+        if recorded.get(k) != replayed.get(k):
+            out.append((k, recorded.get(k), replayed.get(k)))
+    a, b = recorded.get("entry") or {}, replayed.get("entry") or {}
+    if a or b:
+        for k in FILL_FIELDS:
+            if json.dumps(a.get(k), sort_keys=True) != json.dumps(b.get(k), sort_keys=True):
+                out.append((f"entry.{k}", a.get(k), b.get(k)))
+    return out
+
+
+def compare_day(path: Path, events=None, *, costs: dict | None = None) -> dict:
+    """A recorded session run again on its own snapshots: {"session", "ticks", "decisions", "differ":
+    [{"minute", "symbol", "arm", "field", "recorded", "replayed"}]}. An arm the record decided and the
+    replay did not (or the other way) is a difference too."""
+    recs = read(path)
+    differ: list[dict] = []
+    n = 0
+    for rec in recs:
+        again = {
+            d.arm: decision_summary(d)
+            for d in paper.replay(as_they_ran(rec["arms"]), rec["snapshot"], events, costs=costs)
+        }
+        was = {d["arm"]: d for d in rec["decisions"]}
+        for arm in sorted(set(was) | set(again)):
+            n += 1
+            where = {"minute": rec["minute"], "symbol": rec["symbol"], "arm": arm}
+            if arm not in again or arm not in was:
+                differ.append({**where, "field": "decided", "recorded": arm in was, "replayed": arm in again})
+                continue
+            for field, a, b in _differences(was[arm], again[arm]):
+                differ.append({**where, "field": field, "recorded": a, "replayed": b})
+    session = recs[0]["session"] if recs else path.stem
+    return {"session": session, "ticks": len(recs), "decisions": n, "differ": differ}
 
 
 def replay_file(
