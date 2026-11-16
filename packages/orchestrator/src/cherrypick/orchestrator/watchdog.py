@@ -815,41 +815,17 @@ def _read_json_file(path: Path) -> dict[str, Any] | None:
         return None
 
 
-def _streamer_own_setting(key: str) -> int | None:
-    """A numeric setting from the producer's OWN config (`config/streamer.json`'s `streamer` block) —
-    the file the daemon reads, not a copy. None when the machine has no such file or key."""
-    try:
-        raw = json.loads(core_home.config_path("streamer").read_text(encoding="utf-8"))
-        value = (raw.get("streamer") or {}).get(key)
-        if isinstance(value, (int, float)) and not isinstance(value, bool):
-            return int(value)
-    except (OSError, ValueError, AttributeError):
-        pass
-    return None
-
-
 def _streamer_window_strike_count(cfg: dict[str, Any]) -> int:
-    """The producer's base ATM window width, from ITS OWN config. Falls back to the engine's default
-    when the machine has no streamer config."""
-    own = _streamer_own_setting("window_strike_count")
-    if own is not None:
-        return own
-    return int(((cfg.get("streamer") or {}).get("window_strike_count")) or 60)
+    """The producer's base ATM window width: its own config, then the suite config's `streamer`
+    block, then the engine's default (`streamrequests.configured_strike_count`)."""
+    return _streamrequests.configured_strike_count(cfg)
 
 
 def _streamer_subscription_budget(cfg: dict[str, Any]) -> int:
-    """The ceiling the registry estimate is held to, read where the window width is read: the
-    producer's own config first, then the suite config's `streamer` block, then the default.
-
-    Until 2026-10-26 only the suite config was read, so a budget raised in `config/streamer.json`
-    (beside the width it is a ceiling for) changed nothing: the warning kept firing at the old
-    figure while the file said it had been raised."""
-    own = _streamer_own_setting("subscription_budget")
-    if own:
-        return own
-    return int(
-        (cfg.get("streamer") or {}).get("subscription_budget") or _streamrequests.DEFAULT_SUBSCRIPTION_BUDGET
-    )
+    """The ceiling the registry estimate is held to, resolved where a module's own request is judged
+    (`streamrequests.configured_budget`): the producer's own config, then the suite config's
+    `streamer` block, then the default."""
+    return _streamrequests.configured_budget(cfg)
 
 
 def _check_subscription_budget(cfg: dict[str, Any]) -> list[Finding]:

@@ -112,10 +112,13 @@ others lower the odds.
 - **A declared budget.** `streamrequests.estimate_subscriptions` / `budget_status` model the cost from
   the same registry union the producer subscribes from, and the watchdog raises a finding past
   `DEFAULT_SUBSCRIPTION_BUDGET` (12,000), or past `streamer.subscription_budget` where set, read from
-  the producer's own `config/streamer.json` first and the suite config second. The finding names the
-  largest symbol as well as the total, because one declaration usually dominates. It is an estimate
-  and will not equal the producer's own `subscribed_symbols`; it exists to catch a change of order of
-  magnitude when a module declares an expensive underlying.
+  the producer's own `config/streamer.json` first and the suite config second
+  (`streamrequests.configured_budget`). The finding names the largest symbol as well as the total,
+  because one declaration usually dominates. It is an estimate and will not equal the producer's own
+  `subscribed_symbols`; it exists to catch a change of order of magnitude when a module declares an
+  expensive underlying. A module can also price its request before writing it
+  (`streamrequests.fits`, its own file replaced by the candidate): automations does, and sheds its
+  entry chains rather than write a request over the ceiling.
 - **Reconnect churn is a finding of its own.** The watchdog reads the `reconnect_count` that
   `--status` reports and warns when it climbs faster than a healthy day (0-2 a day): a process that
   keeps coming back looks healthy at every instant and is not.

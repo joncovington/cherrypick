@@ -625,6 +625,7 @@ def run_status(config: dict, arms: dict[str, dict], conn, *, cache_path: str) ->
         "awaiting_close": overdue,
         "stream_cache": cache_path,
         "stream_cache_present": os.path.exists(cache_path),
+        "stream_budget": stream_request.budget(config, arms, conn, cache_path=cache_path, when=when),
     }
 
 
