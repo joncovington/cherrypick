@@ -57,10 +57,11 @@ def test_a_new_automation_is_added_last_and_off(cfgfile):
     d = doc(cfgfile)
     assert list(d["automations"]) == ["iron-fly-1000", "long-put-1030", "my-fly"]
     assert d["automations"]["my-fly"]["enabled"] is False
-    text = cfgfile.read_bytes().decode("utf-8")
+    # The file is written with the platform's line ending, as every config save is.
+    text = cfgfile.read_bytes().decode("utf-8").replace("\r\n", "\n")
     assert '"_header": "automations: kept as written"' in text
-    assert '\r\n    "my-fly": ' in text  # the block's own indentation and line ending
-    assert text.startswith(FILE.split('"long-put-1030"')[0])
+    assert '\n    "my-fly": ' in text  # the block's own indentation
+    assert text.startswith(FILE.replace("\r\n", "\n").split('"long-put-1030"')[0])
 
 
 def test_an_existing_automation_is_replaced_in_place(cfgfile):
@@ -116,11 +117,19 @@ def test_draft_passes_the_spec_and_the_check_through(cfgfile):
 
 
 def test_configcli_dispatches_both_ops(cfgfile, monkeypatch):
-    (cfgfile.parent.parent / "config.json").write_text(json.dumps({"modules": {}}), encoding="utf-8")
+    # The suite config path is fixed at import; never read the machine's own.
+    monkeypatch.setattr(configcli.cfgmod, "load_config", lambda: {"modules": {}})
     monkeypatch.setattr(automationedit.draft, "__defaults__", (module(),))
     monkeypatch.setattr(automationedit.save, "__defaults__", (module(),))
     assert configcli.handle({"op": "automation_draft", "name": "my-fly"})["ok"] is True
     assert configcli.handle({"op": "automation_save", "name": "my-fly", "automation": SPEC})["added"] is True
+
+
+def test_insert_key_takes_the_objects_indentation_and_line_ending():
+    out = configedit.insert_key(FILE, "/automations", "my-fly", {"enabled": False})
+    assert '"long-put-1030": {"enabled": true},\r\n    "my-fly": {"enabled": false}\r\n  }' in out
+    lf = configedit.insert_key(FILE.replace("\r\n", "\n"), "/automations", "my-fly", 1)
+    assert '"long-put-1030": {"enabled": true},\n    "my-fly": 1\n  }' in lf
 
 
 def test_insert_key_into_an_empty_and_a_one_line_object():
