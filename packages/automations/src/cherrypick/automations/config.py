@@ -28,6 +28,7 @@ from cherrypick.core import home as _home
 from cherrypick.core import signallib
 
 from . import arms as arms_mod
+from . import enrolment
 
 _PKG_ROOT = str(pathlib.Path(__file__).resolve().parents[3])
 
@@ -88,7 +89,7 @@ def load_arms(config: dict, *, library: dict | None = None) -> dict[str, dict]:
     return apply_groups(arms_mod.load_arms(overrides), config)
 
 
-GROUP_KEYS = {"enabled", "allocation", "max_risk", "shares"}
+GROUP_KEYS = {"enabled", "allocation", "max_risk", "shares", "start"}
 
 
 def _dollars(v) -> bool:
@@ -119,6 +120,10 @@ def groups(config: dict) -> dict[str, dict]:
         if not isinstance(spec.get("enabled"), bool):
             raise ValueError(f"groups.{name}.enabled: true or false")
         row = {"enabled": spec["enabled"]}
+        if "start" in spec:
+            if not enrolment._iso(spec["start"]):
+                raise ValueError(f"groups.{name}.start: an ISO date, YYYY-MM-DD")
+            row["start"] = spec["start"]
         for k in ("allocation", "max_risk"):
             if k in spec:
                 if not _dollars(spec[k]):
@@ -187,6 +192,8 @@ def apply_groups(arms: dict[str, dict], config: dict) -> dict[str, dict]:
         spec = switches.get(g, {"enabled": True}) if g is not None else {"enabled": True}
         if not spec["enabled"]:
             arm = {**arm, "enabled": False}
+        if "start" in spec and spec["start"] > arm.get("start", ""):
+            arm = {**arm, "start": spec["start"]}  # a member joins at its group's boundary
         b = budget(g, spec, name, members[g]) if g is not None else None
         if b is not None:
             arm = {**arm, "budget": b}

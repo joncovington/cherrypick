@@ -31,7 +31,7 @@ from datetime import date, datetime
 from cherrypick.core import streamrequests as _sr
 
 from . import config as config_mod
-from . import db, feed, provider
+from . import db, enrolment, feed, provider
 
 _MODULE = "automations"
 #: The request file under the module's old name, removed on each write so the streamer never unions a
@@ -41,8 +41,12 @@ _log = logging.getLogger("automations_paper_loop")
 
 
 def active_arms(arms: dict[str, dict], today: date) -> dict[str, dict]:
-    """The enabled arms whose weekday is today's."""
-    return {n: a for n, a in config_mod.enabled(arms).items() if today.weekday() in a["weekdays"]}
+    """The enabled arms whose weekday is today's, from their start date (`enrolment.joins`)."""
+    return {
+        n: a
+        for n, a in config_mod.enabled(arms).items()
+        if today.weekday() in a["weekdays"] and enrolment.joins(a, today)
+    }
 
 
 def in_lead(arm: dict, minute: int, lead: int) -> bool:

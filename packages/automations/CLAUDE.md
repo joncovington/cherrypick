@@ -29,6 +29,8 @@ eight are the `ensemble` group, and each carries its research `register` label, 
 (`tests/test_groups.py`), never read from a result file. The loop's `--status` shows each group with its
 arms and verdicts.
 
+**Enrolment** (`enrolment.py`). An automation taken to paper has a `start`, the first session the paper loop may enter it (a backtest ignores it). A group's `start` is the boundary its members join at, unless a member's own start is later. Each of its five blocks (structure, entry, gates, exit, size) is labelled for what a backtest judged: a register label's `blocks` records each block's hash as the study ran it, and a block is `backtested` while its hash matches, `changed` once it does not, and `not_backtested` without one. The shipped eight carry item 75's hashes. A `forward` rule (measure, field, min_obs, kill_z, drift_z, optionally per, reference, beside) is declared with the automation; the loop's `--status` lists it as a register-shaped row (`forward`), with the starts and a one-line label per automation (`backtested`), and the orchestrator's `forward-checks` reads those rows beside the register's, so the paper results become evidence without a separate declaration.
+
 **Sizing** (`sizing.py`). A size is a count, a risk budget (`max_risk`), or a percent of an allocation
 (`allocation_pct`, capped by `max_dollars` and `max_contracts`), and any of them can carry a
 `progression`: the count steps by a set number of contracts, or doubles, after each loss (or each win)

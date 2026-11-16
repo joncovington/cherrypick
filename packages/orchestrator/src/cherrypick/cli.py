@@ -2489,11 +2489,17 @@ def cmd_forward_checks(cfg) -> None:
         finally:
             conn.close()
 
-    from cherrypick.orchestrator import vendorlicence
+    from cherrypick.orchestrator import reminders, vendorlicence
 
     ended = vendorlicence.ended(vendorlicence.status())
+    on = cfgmod.enabled_modules(cfg)
+    statuses = {m: reminders.module_status(cfg, m) for m in forwardcheck.ENROLLING if m in on}
     out = forwardcheck.run(
-        hypotheses.load(), trades_for, forwardcheck.read_result(core_home.home()), licence_ended=ended
+        hypotheses.load(),
+        trades_for,
+        forwardcheck.read_result(core_home.home()),
+        licence_ended=ended,
+        enrolled_rows=forwardcheck.enrolled(statuses),
     )
     _emit({"ok": True, "checks": out})
 

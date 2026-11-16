@@ -22,6 +22,11 @@ beyond the latest release.
 
 ### What's new
 
+- **Automations enrol with a start date and their own forward check.** An automation can set the first
+  day paper may enter it, and a group's start is the day its members join. Each block (structure,
+  entry, gates, exit, size) is labelled backtested, changed since its backtest, or not backtested. A
+  forward-check rule written with the automation is read by `forward-checks` beside the research
+  register's.
 - **More signals.** A signal can fire when an indicator has risen (or fallen) for N bars in a row, when
   the price moves a set percent from a fixed price, and when it crosses the previous week's or month's
   high or low or the opening range's midpoint.

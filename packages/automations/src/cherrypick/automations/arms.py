@@ -8,8 +8,11 @@ that defaulted silently would change what is measured):
     name, symbol, enabled
     group         the automation group it belongs to (a set of like automations, switched as one:
                   `config.groups`); the shipped eight are the `ensemble` group
-    register      {"item": N, "verdict": "passed"|"failed"|"no_verdict"}: the research register's
-                  verdict on it, a label read from the register, never from a result file
+    register      {"item": N, "verdict": "passed"|"failed"|"no_verdict", "blocks": {block: hash}}: the
+                  research register's verdict on it, a label read from the register, never from a
+                  result file; `blocks` records each block as the study ran it (`enrolment`)
+    start         ISO date: the first session paper may enter it (`enrolment.joins`)
+    forward       the forward-check rule its paper record is read by (`enrolment` docstring)
     expiry        {"kind": "dte"|"market_days"|"calendar", "days": N, "tolerance": D}
                   {"kind": "at_least", "days": N}: the nearest listed expiry N or more calendar days out
                   {"kind": "between", "min": N, "max": M, "prefer": "first"|"last"}: a listed expiry N
@@ -53,8 +56,8 @@ import copy
 from cherrypick.core import entrychecks as ec
 from cherrypick.core import signals
 
+from . import enrolment, sizing
 from . import gates as gates_mod
-from . import sizing
 from . import strikes as st
 
 
@@ -102,6 +105,8 @@ TOP_KEYS = {
     "enabled",
     "group",
     "register",
+    "start",
+    "forward",
     "expiry",
     "entry",
     "weekdays",
@@ -242,7 +247,17 @@ ARMS: dict[str, dict] = {
     "iron-fly-1000": {
         "name": "iron-fly-1000",
         "group": "ensemble",
-        "register": {"item": 75, "verdict": "failed"},
+        "register": {
+            "item": 75,
+            "verdict": "failed",
+            "blocks": {
+                "structure": "b60faefc74ce",
+                "entry": "6f9f3168afcd",
+                "gates": "9c2d48c2fc7f",
+                "exit": "f39c6ec3b186",
+                "size": "07dddd120c3d",
+            },
+        },
         "symbol": "SPX",
         "enabled": True,
         "note": "0DTE iron fly, short strikes at the listed strike nearest the previous close, 10 wide",
@@ -269,7 +284,17 @@ ARMS: dict[str, dict] = {
     "iron-condor-1345": {
         "name": "iron-condor-1345",
         "group": "ensemble",
-        "register": {"item": 75, "verdict": "passed"},
+        "register": {
+            "item": 75,
+            "verdict": "passed",
+            "blocks": {
+                "structure": "9452f5c99f07",
+                "entry": "ce7039862191",
+                "gates": "f7c01fdee99c",
+                "exit": "f39c6ec3b186",
+                "size": "8a8bf8cf3a5e",
+            },
+        },
         "symbol": "SPX",
         "enabled": True,
         "note": "0DTE iron condor, short put 5 below spot, short call 10 above it, 5-point wings",
@@ -295,7 +320,17 @@ ARMS: dict[str, dict] = {
     "put-spread-1300": {
         "name": "put-spread-1300",
         "group": "ensemble",
-        "register": {"item": 75, "verdict": "no_verdict"},
+        "register": {
+            "item": 75,
+            "verdict": "no_verdict",
+            "blocks": {
+                "structure": "2c293415ad24",
+                "entry": "82d9f7085ca2",
+                "gates": "91348319510b",
+                "exit": "f39c6ec3b186",
+                "size": "8a8bf8cf3a5e",
+            },
+        },
         "symbol": "SPX",
         "enabled": True,
         "note": "0DTE put spread 10 wide, only when the opening-range arm holds nothing today",
@@ -322,7 +357,17 @@ ARMS: dict[str, dict] = {
     "iron-fly-1dte-1330": {
         "name": "iron-fly-1dte-1330",
         "group": "ensemble",
-        "register": {"item": 75, "verdict": "failed"},
+        "register": {
+            "item": 75,
+            "verdict": "failed",
+            "blocks": {
+                "structure": "6b38b077a81c",
+                "entry": "019d05b96ddf",
+                "gates": "0e13a9b583a9",
+                "exit": "c1511297c7b0",
+                "size": "76a8c81dc46d",
+            },
+        },
         "symbol": "SPX",
         "enabled": True,
         "note": "iron fly to the next market day on the largest-gex strike, wings 0.5% out",
@@ -357,7 +402,17 @@ ARMS: dict[str, dict] = {
     "gld-call-spread-20d": {
         "name": "gld-call-spread-20d",
         "group": "ensemble",
-        "register": {"item": 75, "verdict": "failed"},
+        "register": {
+            "item": 75,
+            "verdict": "failed",
+            "blocks": {
+                "structure": "5041cce75187",
+                "entry": "f5f4691249dc",
+                "gates": "1bd818e6386d",
+                "exit": "d4824db8e2a1",
+                "size": "2810045e08b1",
+            },
+        },
         "symbol": "GLD",
         "enabled": True,
         "note": "call debit spread about 20 days out, long 30 delta, 15 dollars wide",
@@ -377,7 +432,17 @@ ARMS: dict[str, dict] = {
     "long-put-1030": {
         "name": "long-put-1030",
         "group": "ensemble",
-        "register": {"item": 75, "verdict": "passed"},
+        "register": {
+            "item": 75,
+            "verdict": "passed",
+            "blocks": {
+                "structure": "b80e7dd96d57",
+                "entry": "85c46f17a9ad",
+                "gates": "311a7fcc18e6",
+                "exit": "f39c6ec3b186",
+                "size": "85ae4efc7b24",
+            },
+        },
         "symbol": "SPX",
         "enabled": True,
         "note": "0DTE long put at -0.10 delta or nearer zero, on a down-VIX up-index morning",
@@ -397,7 +462,17 @@ ARMS: dict[str, dict] = {
     "gld-call-spread-1dte": {
         "name": "gld-call-spread-1dte",
         "group": "ensemble",
-        "register": {"item": 75, "verdict": "no_verdict"},
+        "register": {
+            "item": 75,
+            "verdict": "no_verdict",
+            "blocks": {
+                "structure": "81e234cb2aac",
+                "entry": "38b534b7217e",
+                "gates": "589547a2165d",
+                "exit": "7a95eff72239",
+                "size": "831a8620c40a",
+            },
+        },
         "symbol": "GLD",
         "enabled": True,
         "note": "call debit spread to the next market day, long 50 delta, 10 dollars wide",
@@ -420,7 +495,17 @@ ARMS: dict[str, dict] = {
     "orb-put-spread": {
         "name": "orb-put-spread",
         "group": "ensemble",
-        "register": {"item": 75, "verdict": "failed"},
+        "register": {
+            "item": 75,
+            "verdict": "failed",
+            "blocks": {
+                "structure": "74e437b6240d",
+                "entry": "7cac6853f969",
+                "gates": "75373db258e6",
+                "exit": "49703ffd491a",
+                "size": "a0616a0be36a",
+            },
+        },
         "symbol": "SPX",
         "enabled": True,
         "note": "0DTE put spread 20 wide at -0.35 delta on the first break above the 60-minute opening high",
@@ -462,12 +547,13 @@ def validate(arm: dict) -> list[str]:
     reg = arm.get("register")
     if reg is not None and not (
         isinstance(reg, dict)
-        and set(reg) == {"item", "verdict"}
+        and {"item", "verdict"} <= set(reg) <= {"item", "verdict", "blocks"}
         and isinstance(reg["item"], int)
         and not isinstance(reg["item"], bool)
         and reg["verdict"] in VERDICTS
     ):
         p.append(f"{name}.register: {{item: N, verdict: {'|'.join(VERDICTS)}}}")
+    p.extend(enrolment.problems(arm))
     if arm["entry"].get("kind") not in ("time", "orb", "trigger"):
         p.append(f"{name}.entry.kind: {arm['entry'].get('kind')!r}")
     if arm["entry"].get("kind") == "trigger":

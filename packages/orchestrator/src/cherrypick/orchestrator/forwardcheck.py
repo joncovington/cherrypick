@@ -38,6 +38,13 @@ The state, from z = (paper mean - reference mean) / (reference sd / sqrt(paper n
 - `confirm` otherwise.
 
 A kill is a recommendation to the user, never a config change. Deterministic; reads only.
+
+**Enrolled rows.** A module that takes a strategy to paper can declare its forward check at enrolment
+instead of in the register (`ENROLLING`; the automations' `forward` key). Its paper `--status` lists
+them as `forward`: `[{"id", "study", "forward": block}]`. `enrolled` takes them, each only for the
+module that published it, and `run` reads them beside the register's, so paper results become
+evidence without a separate declaration. An enrolled row whose block is unsound is reported as
+`invalid` with its problems, never dropped silently.
 """
 
 from __future__ import annotations
@@ -52,6 +59,9 @@ from typing import Any
 MEASURES = ("cycle_mean", "session_sum")
 NEEDED = ("module", "schema", "arm", "measure", "field", "since", "min_obs", "reference", "kill_z", "drift_z")
 COLLECTING, KILL, DRIFT, CONFIRM = "collecting", "kill", "drift", "confirm"
+INVALID = "invalid"
+#: Modules whose paper status may enrol forward checks of their own.
+ENROLLING = ("automations",)
 
 
 def specs(forward: Any) -> list:
@@ -193,12 +203,36 @@ def check(
             **out, "beside_obs": beside}  # fmt: skip
 
 
-def run(reg: dict, trades_for, read, *, licence_ended: bool = False) -> list[dict]:
+def enrolled(statuses: dict[str, dict | None]) -> list[dict]:
+    """The rows each module's status enrolled, keeping only blocks that name that module (a module
+    judges its own paper record, never another's)."""
+    out = []
+    for module, st in sorted(statuses.items()):
+        for row in (st or {}).get("forward") or []:
+            if not isinstance(row, dict) or not isinstance(row.get("forward"), dict):
+                continue
+            if row["forward"].get("module") != module or not str(row.get("id", "")).strip():
+                continue
+            study = str(row.get("study") or row["id"])
+            out.append({"id": str(row["id"]), "study": study, "forward": row["forward"],
+                        "enrolled": module})  # fmt: skip
+    return out
+
+
+def run(
+    reg: dict, trades_for, read, *, licence_ended: bool = False, enrolled_rows: list[dict] = ()
+) -> list[dict]:
     """Every row that declares a forward check. `trades_for(module, schema)` returns that module's
     closed paper trades (`core.ledgers`), or [] when it cannot be read. With `licence_ended`, a check
     whose reference is gone judges the paper arm alone (`paper_alone`)."""
     out = []
-    for row in reg.get("hypotheses", []):
+    for row in enrolled_rows:
+        bad = problems(row["forward"])
+        if bad:
+            out.append({"id": row["id"], "study": row["study"], "module": row.get("enrolled"),
+                        "arm": row["forward"].get("arm"), "state": INVALID, "problems": bad})  # fmt: skip
+    rows = list(reg.get("hypotheses", [])) + [r for r in enrolled_rows if not problems(r["forward"])]
+    for row in rows:
         if not row.get("forward") or problems(row["forward"]):
             continue
         for spec in specs(row["forward"]):

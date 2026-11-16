@@ -37,7 +37,7 @@ from cherrypick.core import looplock
 from cherrypick.core.clock import ET, minute_of_day, now_et, now_iso
 
 from . import config as config_mod
-from . import db, engine, events, feed, paper, provider, record, stream_request
+from . import db, engine, enrolment, events, feed, paper, provider, record, stream_request
 from .model import Entry
 
 RTH_OPEN_MIN = 9 * 60 + 30
@@ -596,6 +596,9 @@ def run_status(config: dict, arms: dict[str, dict], conn, *, cache_path: str) ->
         "date": today.isoformat(),
         "arms": sorted(config_mod.enabled(arms)),
         "groups": config_mod.group_status(arms, config),
+        "starts": {n: a["start"] for n, a in sorted(arms.items()) if "start" in a},
+        "backtested": {n: enrolment.summary(a) for n, a in sorted(arms.items())},
+        "forward": enrolment.forward_rows(arms),
         "arms_today": {n: _window_text(a) for n, a in sorted(todays.items())},
         "symbols": list(config_mod.symbols(config, arms)),
         "open_positions": [
