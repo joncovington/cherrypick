@@ -22,6 +22,11 @@ beyond the latest release.
 
 ### What's new
 
+- **An automation's chain request never takes the feed past its budget.** Enrolling an automation
+  asks the streamer for its symbol and, around its entry window, the one expiry it trades. That request
+  is now priced against the subscription budget before it is written. If it would go over, that day's
+  entries lose their chain and refuse, open positions keep theirs, and the status says what was dropped.
+  The watchdog and the module read the budget from the same place.
 - **The Builder page.** A new page (`/builder`, shortcut `u`) shows every automation block by block.
   Each block is marked backtested, changed since its backtest, or not backtested. Each card also shows
   the start date, the forward check, and whether our own data could back a backtest. This first

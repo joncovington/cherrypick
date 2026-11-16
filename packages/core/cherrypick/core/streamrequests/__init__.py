@@ -53,6 +53,7 @@ Payload shape (see ``packages/streamer/src/registry.py``, the reader):
 
 from __future__ import annotations
 
+import contextvars
 import json
 import logging
 import os
@@ -331,6 +332,39 @@ def write_request(
     knows its own logger.
     """
     path = request_path(module, instance_name)
+    payload = build_payload(
+        symbols,
+        legs=legs,
+        leg_sources=leg_sources,
+        window_hints=window_hints,
+        expirations=expirations,
+        history_days=history_days,
+        window_events=window_events,
+        nearest_window=nearest_window,
+        entry_symbols=entry_symbols,
+        arm_rosters=arm_rosters,
+    )
+    return write_json_atomic(path, payload, indent=None, default=None)
+
+
+def write_payload(module: str, payload: dict, instance_name=None) -> Path:
+    """Write a request already built by `build_payload` (and priced by `fits`), atomically."""
+    return write_json_atomic(request_path(module, instance_name), payload, indent=None, default=None)
+
+
+def build_payload(
+    symbols,
+    legs=(),
+    leg_sources=(),
+    window_hints=None,
+    expirations=None,
+    history_days=None,
+    window_events=None,
+    nearest_window=None,
+    entry_symbols=None,
+    arm_rosters=None,
+) -> dict:
+    """The cleaned request `write_request` writes, without writing it: what `fits` prices."""
     payload = {
         "symbols": clean_symbols(symbols),
         "legs": [str(leg) for leg in legs],
@@ -345,7 +379,15 @@ def write_request(
         payload["entry_symbols"] = clean_symbols(entry_symbols)
     if arm_rosters is not None:
         payload["arm_rosters"] = {str(arm): clean_symbols(syms) for arm, syms in dict(arm_rosters).items()}
-    return write_json_atomic(path, payload, indent=None, default=None)
+    return payload
+
+
+#: `(file name, payload)` standing in for one module's request file while `fits` prices it, so a
+#: request is judged against the budget before it is written and the producer never sees one that
+#: would not fit.
+_candidate: contextvars.ContextVar[tuple[str, dict] | None] = contextvars.ContextVar(
+    "stream_request_candidate", default=None
+)
 
 
 def read_all() -> list[dict]:
@@ -353,8 +395,17 @@ def read_all() -> list[dict]:
 
     A file that is missing, half-written, or corrupt is skipped rather than raised on: one bad request
     file must never take down the producer that reads it — nor the watchdog tick that checks it.
+    Inside `fits`, the candidate stands in for its module's file.
     """
-    out: list[dict] = []
+    candidate = _candidate.get()
+    out = [data for name, data in _read_files() if candidate is None or name != candidate[0]]
+    if candidate is not None:
+        out.append(candidate[1])
+    return out
+
+
+def _read_files() -> list[tuple[str, dict]]:
+    out: list[tuple[str, dict]] = []
     directory = requests_dir()
     try:
         if not directory.is_dir():
@@ -368,7 +419,7 @@ def read_all() -> list[dict]:
         except (OSError, json.JSONDecodeError):
             continue
         if isinstance(data, dict):
-            out.append(data)
+            out.append((path.name, data))
     return out
 
 
@@ -640,6 +691,58 @@ def budget_status(
         "worst": ({"symbol": worst[0], **worst[1]} if worst else None),
         "by_symbol": est["by_symbol"],
     }
+
+
+# The producer's base window width when no config sets one (the engine's own default).
+DEFAULT_WINDOW_STRIKE_COUNT = 60
+
+
+def _streamer_setting(key: str, suite_cfg: dict | None) -> int | None:
+    """A numeric `streamer` setting: the producer's own `config/streamer.json` first (the file the
+    daemon reads), then the suite config's `streamer` block. None when neither sets it."""
+    blocks = []
+    try:
+        blocks.append(json.loads(_home.config_path("streamer").read_text(encoding="utf-8")))
+    except (OSError, ValueError):
+        pass
+    if suite_cfg is None:
+        try:
+            suite_cfg = json.loads(_home.config_path().read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            suite_cfg = {}
+    blocks.append(suite_cfg)
+    for raw in blocks:
+        value = ((raw if isinstance(raw, dict) else {}).get("streamer") or {}).get(key)
+        if isinstance(value, (int, float)) and not isinstance(value, bool) and value:
+            return int(value)
+    return None
+
+
+def configured_strike_count(suite_cfg: dict | None = None) -> int:
+    """The producer's base ATM window width, resolved where the producer resolves it."""
+    return _streamer_setting("window_strike_count", suite_cfg) or DEFAULT_WINDOW_STRIKE_COUNT
+
+
+def configured_budget(suite_cfg: dict | None = None) -> int:
+    """The ceiling the registry estimate is held to: the producer's own config, then the suite
+    config, then `DEFAULT_SUBSCRIPTION_BUDGET`. The watchdog's budget finding reads this too, so a
+    module refusing a request and the watchdog warning about one judge by the same figure."""
+    return _streamer_setting("subscription_budget", suite_cfg) or DEFAULT_SUBSCRIPTION_BUDGET
+
+
+def fits(module: str, payload: dict, *, suite_cfg: dict | None = None, today: date | None = None) -> dict:
+    """`budget_status` with `payload` (from `build_payload`) standing in for `module`'s request file,
+    priced before it is written. `over` is true when the registry with this request would cost the
+    active producer more than `configured_budget`."""
+    token = _candidate.set((request_path(module).name, payload))
+    try:
+        return budget_status(
+            default_strike_count=configured_strike_count(suite_cfg),
+            budget=configured_budget(suite_cfg),
+            today=today,
+        )
+    finally:
+        _candidate.reset(token)
 
 
 # --------------------------------------------------------------------------- window escalation

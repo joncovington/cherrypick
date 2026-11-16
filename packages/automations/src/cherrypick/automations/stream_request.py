@@ -20,6 +20,11 @@ arm needs no code here:
 - `window_events`: Quote only, unless an arm places a strike by delta or reads GEX, which add Greeks and
   Summary (open interest).
 
+An automation joins the request on its start date (`active_arms`), so enrolling one is what asks for
+its chain. The request is priced against the subscription budget before it is written (`fit`): one
+that would put the producer over its ceiling drops its entry expiries and widened windows, keeps every
+held position's, and the status (`stream_budget`) names what it dropped.
+
 Best-effort: a failed write never breaks the loop. A missing chain is the provider's refusal.
 """
 
@@ -38,6 +43,7 @@ _MODULE = "automations"
 #: stale one.
 _OLD_MODULE = "ensemble"
 _log = logging.getLogger("automations_paper_loop")
+_OPEN_LEGS = "SELECT streamer_symbol FROM ensemble_legs WHERE status = 'open'"
 
 
 def active_arms(arms: dict[str, dict], today: date) -> dict[str, dict]:
@@ -94,26 +100,74 @@ def wanted(
     return out
 
 
-def write(
-    config: dict, arms: dict[str, dict], conn, db_path: str, *, cache_path: str, when: datetime | None = None
-):
-    from cherrypick.core.clock import now_et
+def shed(need: dict, held: dict[str, list[str]]) -> tuple[dict, dict[str, list[str]]]:
+    """`need` without what only an entry asked for: each symbol keeps the expiries a position holds,
+    and no widened window. Returns the narrowed request and, per symbol, the expiries it dropped."""
+    kept: dict[str, list[str]] = {}
+    dropped: dict[str, list[str]] = {}
+    for sym, dates in need["expirations"].items():
+        hold = set(held.get(sym, []))
+        if keep := sorted(d for d in dates if d in hold):
+            kept[sym] = keep
+        if gone := sorted(d for d in dates if d not in hold):
+            dropped[sym] = gone
+    return {**need, "expirations": kept, "window_hints": {}}, dropped
 
-    need = wanted(config, arms, conn, cache_path, when or now_et())
-    _sr.request_path(_OLD_MODULE).unlink(missing_ok=True)
-    return _sr.write_request(
-        _MODULE,
+
+def _payload(need: dict, db_path: str | None) -> dict:
+    sources = [_sr.leg_source(db_path, _OPEN_LEGS)] if db_path else []
+    return _sr.build_payload(
         need["symbols"],
         legs=need["legs"],
-        leg_sources=[
-            _sr.leg_source(db_path, "SELECT streamer_symbol FROM ensemble_legs WHERE status = 'open'")
-        ],
+        leg_sources=sources,
         window_hints=need["window_hints"],
         expirations=need["expirations"],
         history_days=need["history_days"],
         window_events=need["window_events"],
         nearest_window={s: False for s in need["symbols"]},
     )
+
+
+def fit(
+    config: dict, arms: dict[str, dict], conn, *, cache_path: str, when: datetime, db_path: str | None = None
+) -> tuple[dict, dict]:
+    """The request to write and a report of how it met the subscription budget.
+
+    The whole request is priced first (`streamrequests.fits`, against the registry with this module's
+    file replaced). When it would put the producer over `configured_budget`, the request is narrowed
+    with `shed`: today's entries lose their chain, so they refuse for want of quotes, and every
+    position keeps its own. An entry never takes the feed past its ceiling."""
+    need = wanted(config, arms, conn, cache_path, when)
+    payload = _payload(need, db_path)
+    status = _sr.fits(_MODULE, payload, today=when.date())
+    report: dict = {"total": status["total"], "budget": status["budget"], "over": status["over"], "shed": {}}
+    if status["over"]:
+        narrowed, dropped = shed(need, db.open_expirations(conn))
+        if dropped or need["window_hints"]:
+            payload = _payload(narrowed, db_path)
+            after = _sr.fits(_MODULE, payload, today=when.date())
+            report.update(shed=dropped, widened=sorted(need["window_hints"]), total_after=after["total"])
+    return payload, report
+
+
+def budget(config: dict, arms: dict[str, dict], conn, *, cache_path: str, when: datetime) -> dict:
+    """The status read of `fit`: what this module's request costs and what it had to shed."""
+    try:
+        return fit(config, arms, conn, cache_path=cache_path, when=when)[1]
+    except Exception as exc:  # noqa: BLE001 — a status read never fails on the registry
+        return {"error": f"{type(exc).__name__}: {exc}"}
+
+
+def write(
+    config: dict, arms: dict[str, dict], conn, db_path: str, *, cache_path: str, when: datetime | None = None
+):
+    from cherrypick.core.clock import now_et
+
+    payload, report = fit(config, arms, conn, cache_path=cache_path, when=when or now_et(), db_path=db_path)
+    if report["shed"] or report.get("widened"):
+        _log.warning("stream request over the subscription budget; entry chains shed: %s", report)
+    _sr.request_path(_OLD_MODULE).unlink(missing_ok=True)
+    return _sr.write_payload(_MODULE, payload)
 
 
 def register(
