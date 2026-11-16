@@ -6,6 +6,8 @@
     summary    each arm's closed trades, net and drawdown, and the arms together
     arms       the arms the config resolves to (shipped, with this machine's changes laid over)
     replay     run a replay record file again and say where the decisions differ
+    replay-day the nightly check: a session's recorded ticks through the backtest's decision path, each
+               decision or fill that differs listed; exit 1 when any does (a record-less day is 0)
 
 The paper loop's own argv (`python -m cherrypick.automations.paper_loop --once|--interval|--status`) is what
 the orchestrator drives.
@@ -80,6 +82,28 @@ def cmd_replay(args) -> int:
     return _print({"ok": True, "ticks": len(results), "differ": differs})
 
 
+def cmd_replay_day(args) -> int:
+    from datetime import date
+
+    from cherrypick.core import calendar as cal
+    from cherrypick.core.clock import now_et
+
+    from . import events, record
+
+    config = config_mod.load_config(args.config)
+    day = date.fromisoformat(args.date) if args.date else now_et().date()
+    if not args.date and not cal.is_trading_day(day):
+        day = cal.previous_trading_day(day)
+    path = record.replay_dir() / f"{day.isoformat()}.jsonl"
+    if not path.exists():
+        _print({"ok": True, "session": day.isoformat(), "record": False, "differ": []})
+        return 0
+    calendar = events.load_calendar((config.get("events") or {}).get("path"))
+    out = record.compare_day(path, calendar, costs=config)
+    _print({"ok": True, "record": True, **out})
+    return 1 if out["differ"] else 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="automations", description="cherrypick-automations (paper-only)")
     ap.add_argument("--config")
@@ -100,6 +124,9 @@ def main(argv=None) -> int:
     p = sub.add_parser("replay")
     p.add_argument("file")
     p.set_defaults(fn=cmd_replay)
+    p = sub.add_parser("replay-day")
+    p.add_argument("--date", help="YYYY-MM-DD; default today, or the last trading day")
+    p.set_defaults(fn=cmd_replay_day)
     args = ap.parse_args(argv)
     return args.fn(args)
 

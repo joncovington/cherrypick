@@ -123,6 +123,8 @@ CATCHUP_MINUTES = {
     "sources-inventory": 12 * 60,
     # Each symbol's earnings and ex-dividend dates, replaced whole from local stores: a late run is the same.
     "symbol-events": 12 * 60,
+    # A replay of a recorded day reads files only; the same day replays the same way later.
+    "automations-replay": 12 * 60,
     "technicals-liquidity": 120,
     # A rerun rebuilds the same session's list from the same files; its readers run at 18:50-19:10.
     "technicals-securities": 120,
@@ -2255,6 +2257,25 @@ def derive_jobs(
                 "" if (mv["enabled"] and mv["narrative"]) else "disabled in config (morning.narrative)"
             ),
             tags=("ai",),
+        ),
+    )
+    auto = cfgmod.enabled_modules(cfg).get("automations")
+    add(
+        "automations-replay",
+        lambda: JobSpec(
+            id="automations-replay",
+            # The module's own read-only command (#1202): the session's recorded decision ticks run
+            # again through the backtest's decision path, on the snapshots paper kept. Exit 1 when a
+            # decision or a fill differs, which the watchdog reports as a failed job; the differences
+            # are its stdout. After the close and the paper loop's settlement.
+            argv=(pythonw, "-m", "cherrypick.automations.cli", "replay-day"),
+            cwd=str(cfgmod.module_root(auto, "automations")) if auto else None,
+            kind=KIND_DAILY,
+            at_et="17:30",
+            catchup_minutes=CATCHUP_MINUTES["automations-replay"],
+            trading_days_only=True,
+            enabled=auto is not None,
+            enabled_reason="" if auto is not None else "automations module disabled",
         ),
     )
     add(

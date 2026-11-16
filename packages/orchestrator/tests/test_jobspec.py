@@ -380,6 +380,7 @@ def test_derive_full_suite_job_table():
         "technicals-adjust-check",
         "sources-inventory",
         "symbol-events",
+        "automations-replay",
         "earnings-moves",
         "fetch-headlines",
         "review-provisional",
@@ -1780,6 +1781,22 @@ def test_the_backtest_inventory_follows_the_fetch_unless_set():
     cfg["backtest"] = {"inventory": True, "inventory_interval_minutes": 5}
     alone = {j.id: j for j in derive(cfg)[0]}["backtest-inventory"]
     assert alone.enabled and alone.interval_seconds == 300
+
+
+def test_the_automations_replay_runs_after_the_close_only_with_the_module_on():
+    cfg = suite_cfg()
+    cfg["modules"]["automations"] = {
+        **cfg["modules"].get("automations", {}),
+        "enabled": True,
+        "path": "../automations",
+    }
+    job = {j.id: j for j in derive(cfg)[0]}["automations-replay"]
+    assert job.enabled and job.at_et == "17:30" and job.trading_days_only
+    assert job.argv[1:] == ("-m", "cherrypick.automations.cli", "replay-day")
+    assert job.cwd and job.cwd.replace("\\", "/").endswith("automations")
+    cfg["modules"]["automations"]["enabled"] = False
+    off = {j.id: j for j in derive(cfg)[0]}["automations-replay"]
+    assert not off.enabled and off.enabled_reason == "automations module disabled"
 
 
 def test_the_source_inventory_runs_daily_on_its_own_and_reads_dolt_only_where_it_is_set_up():
