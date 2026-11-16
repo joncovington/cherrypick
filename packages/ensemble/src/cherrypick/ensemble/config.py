@@ -22,6 +22,7 @@ import pathlib
 
 from cherrypick.core import config as _cfg
 from cherrypick.core import home as _home
+from cherrypick.core import signallib
 
 from . import arms as arms_mod
 
@@ -64,9 +65,26 @@ def arm_overrides(config: dict) -> dict:
     return dict(_cfg.registry(config, label="ensemble") or {})
 
 
-def load_arms(config: dict) -> dict[str, dict]:
-    """The shipped arms with this machine's changes over them. Raises ValueError, naming every problem."""
-    return arms_mod.load_arms(arm_overrides(config))
+def load_arms(config: dict, *, library: dict | None = None) -> dict[str, dict]:
+    """The shipped arms with this machine's changes over them, each signal reference
+    (`{"library": name, "version": hash}`) replaced by its spec from the signal library
+    (`core.signallib`, read only when an arm holds one). Raises ValueError, naming every problem."""
+    overrides = arm_overrides(config)
+    if signallib.refs(overrides):
+        overrides, _ = signallib.resolve(overrides, library if library is not None else signallib.load())
+    return arms_mod.load_arms(overrides)
+
+
+def signal_versions(config: dict, names) -> dict[str, list[dict]]:
+    """The library signals each named arm reads, {arm: [{"name", "version"}]}, for a run card; an arm
+    with none is left out."""
+    overrides = arm_overrides(config)
+    out = {}
+    for n in names:
+        pairs = signallib.refs(overrides.get(n) or {})
+        if pairs:
+            out[n] = [{"name": a, "version": v} for a, v in pairs]
+    return out
 
 
 def enabled(arms: dict[str, dict]) -> dict[str, dict]:

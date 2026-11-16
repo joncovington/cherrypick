@@ -29,6 +29,11 @@ beyond the latest release.
   call or put GEX, or call or put open interest. Every rule takes a match mode: exactly, nearest, next
   above or next below. An expiry can be at least N days out or between N and M. A misspelt key inside
   a strike rule is now refused, as one elsewhere in an arm already was.
+- **A signal library with versions.** `python -m cherrypick.core.signallib add NAME SPEC.json` files a
+  signal in `~/.cherrypick/config/signals.json`; each edit is a new version named by a hash of its
+  settings, and old versions stay. An automation points at one with
+  `{"library": NAME, "version": HASH}` in place of the spec, always naming the version, and an
+  automation backtest's result lists the versions it read.
 - Signals: VWAP (anchored to the session, a time or an event; volume or equal weights) and its bands,
   relative volume against the same minute of earlier sessions, and a volume ratio for surges. A signal
   that reads volume refuses bars without it. An automation's volume signal names whose volume weighs

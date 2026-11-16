@@ -365,7 +365,7 @@ chains instead (`dolt-chains`, or `vendor-eod-chains` while licensed, its delta 
 `--min-density` accepts Dolt's thinner years knowingly. An arm that declares a volume symbol reads it
 from the recorded one-minute bars (`profile-bars`, regular hours), and the run is refused where those
 do not cover the dates. The result is an explore run (no trial, no
-verdict) under `paths.automations_dir`: `results/automations/` when it read the vendor's store, beside
+verdict; `signal_versions` names each library signal an arm read, by version) under `paths.automations_dir`: `results/automations/` when it read the vendor's store, beside
 it otherwise.
 
 **The advisor's specs** (`run-advised`, `advised.py`): the advisor queues `backtest_spec` replies it
