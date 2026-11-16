@@ -112,7 +112,7 @@ def events_for(trigger: dict, snap: Snapshot) -> dict[str, list[str]] | None:
     day, reach = date.fromisoformat(snap.session), timedelta(days=_event_reach(trigger.get("signal")))
     out = {}
     for label in sorted(labels):
-        found = snap.events.dates(label, day - reach, day + reach)
+        found = snap.events.dates(label, day - reach, day + reach, snap.symbol)
         if found is not None:
             out[label] = found
     return out
@@ -216,7 +216,7 @@ def decide(arm: dict, snap: Snapshot, *, costs: dict | None = None) -> Decision:
     skip = arm.get("skip_events") or {}
     last = date.fromisoformat(expiry) if skip.get("through_expiry") else snap.session_date
     for label in skip.get("labels", []):
-        hit = snap.events.occurs(label, snap.session_date, last) if snap.events else None
+        hit = snap.events.occurs(label, snap.session_date, last, snap.symbol) if snap.events else None
         if hit:
             return fail(f"event:{label}", True)
         checks.append((f"event:{label}", True, "unknown" if hit is None else False))
@@ -340,9 +340,9 @@ def _event_ahead(rule: dict, pos: Position, snap: Snapshot) -> tuple[str, bool] 
     today = snap.session_date
     nxt = cal.next_trading_day(today)
     for label in rule.get("labels", []):
-        if snap.session > pos.entry.session and snap.events.occurs(label, today, today):
+        if snap.session > pos.entry.session and snap.events.occurs(label, today, today, pos.symbol):
             return label, True
-        if snap.events.occurs(label, nxt, nxt):
+        if snap.events.occurs(label, nxt, nxt, pos.symbol):
             return label, False
     return None
 

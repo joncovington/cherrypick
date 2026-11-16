@@ -25,6 +25,10 @@ beyond the latest release.
 - **More signals.** A signal can fire when an indicator has risen (or fallen) for N bars in a row, when
   the price moves a set percent from a fixed price, and when it crosses the previous week's or month's
   high or low or the opening range's midpoint.
+- **More event labels for automations.** Triple witching, the VIX monthly expiration and the futures
+  roll are computed by rule. PPI, the jobs report and PCE come from the calendar store. Each symbol's
+  earnings and ex-dividend dates come from a new daily `symbol-events` job, which reads the local Dolt
+  calendar and the technicals store. A label no source covers for a day is unknown, never quiet.
 - **Automations size by allocation and by streak, and a group shares its capital.** A size can be a
   percent of an allocation (capped in dollars or contracts), and any size can step by a set number of
   contracts, or double, after each loss or each win, between a floor and a ceiling. An automation group

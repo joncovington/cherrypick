@@ -121,6 +121,8 @@ CATCHUP_MINUTES = {
     "technicals-adjust-check": 12 * 60,
     # The source registry's spans: read-only and idempotent, so a late run is the same run.
     "sources-inventory": 12 * 60,
+    # Each symbol's earnings and ex-dividend dates, replaced whole from local stores: a late run is the same.
+    "symbol-events": 12 * 60,
     "technicals-liquidity": 120,
     # A rerun rebuilds the same session's list from the same files; its readers run at 18:50-19:10.
     "technicals-securities": 120,
@@ -301,6 +303,7 @@ RETRY_ON_FAILURE = {
     "profile-bars": 2,
     "gold-bars": 2,
     "sources-inventory": 1,
+    "symbol-events": 1,
     "technicals-iv-rank": 2,
     "technicals-dollar-volume": 2,
     "technicals-dividends": 2,
@@ -1781,6 +1784,25 @@ def derive_jobs(
             kind=KIND_DAILY,
             at_et="09:00",
             catchup_minutes=CATCHUP_MINUTES["sources-inventory"],
+            trading_days_only=False,
+            enabled=True,
+            enabled_reason="",
+        ),
+    )
+    add(
+        "symbol-events",
+        lambda: JobSpec(
+            id="symbol-events",
+            # Each stored symbol's earnings (the local Dolt calendar) and ex-dividend dates (the
+            # technicals store), with the ranges each is complete for, into
+            # market-files/calendar/symbol_events.json (`cherrypick.core.symbolevents`), which the
+            # automations' event labels read. Local stores only; without Dolt, earnings stay uncovered
+            # and read as unknown. Before the inventory, after the morning landings.
+            argv=(pythonw, "-m", "cherrypick.core.symbolevents", "write", "--all")
+            + (() if cfgmod.dolt_read(cfg) else ("--no-dolt",)),
+            kind=KIND_DAILY,
+            at_et="08:50",
+            catchup_minutes=CATCHUP_MINUTES["symbol-events"],
             trading_days_only=False,
             enabled=True,
             enabled_reason="",

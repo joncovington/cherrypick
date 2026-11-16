@@ -379,6 +379,7 @@ def test_derive_full_suite_job_table():
         "technicals-board",
         "technicals-adjust-check",
         "sources-inventory",
+        "symbol-events",
         "earnings-moves",
         "fetch-headlines",
         "review-provisional",
@@ -1793,4 +1794,15 @@ def test_the_source_inventory_runs_daily_on_its_own_and_reads_dolt_only_where_it
     cfg = suite_cfg()
     cfg["capabilities"]["dolt"] = False
     no_dolt = {j.id: j for j in derive(cfg)[0]}["sources-inventory"]
+    assert no_dolt.enabled and no_dolt.argv[-1] == "--no-dolt"
+
+
+def test_symbol_events_run_daily_before_the_inventory_and_read_dolt_only_where_it_is_set_up():
+    jobs = {j.id: j for j in derive(suite_cfg())[0]}
+    ev = jobs["symbol-events"]
+    assert ev.enabled and ev.at_et == "08:50" and not ev.trading_days_only
+    assert ev.argv[1:] == ("-m", "cherrypick.core.symbolevents", "write", "--all")
+    cfg = suite_cfg()
+    cfg["capabilities"]["dolt"] = False
+    no_dolt = {j.id: j for j in derive(cfg)[0]}["symbol-events"]
     assert no_dolt.enabled and no_dolt.argv[-1] == "--no-dolt"
