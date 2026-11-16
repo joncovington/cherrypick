@@ -22,6 +22,11 @@ beyond the latest release.
 
 ### What's new
 
+- **Automations size by allocation and by streak, and a group shares its capital.** A size can be a
+  percent of an allocation (capped in dollars or contracts), and any size can step by a set number of
+  contracts, or double, after each loss or each win, between a floor and a ceiling. An automation group
+  can set an allocation, a cap on its members' open risk and each member's share; an entry the cap has
+  no room for is refused and says so. The shipped automations size as before.
 - **Ensemble is now automations.** The package, its import, its config file, data folder, log,
   heartbeat and stream request, and its suite-config key are named `automations`; trade
   notifications say "Automation paper".

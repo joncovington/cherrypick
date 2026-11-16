@@ -25,7 +25,9 @@ that defaulted silently would change what is measured):
     legs          [{"name", "right": "C"|"P", "side": 1|-1, "strike": <strikes rule>}] in placement order
                   (each rule's keys and its `match` mode: `strikes` docstring)
     gates         [{"gate": <gates.REGISTRY name>, ...}]
-    size          {"contracts": N} or {"max_risk": dollars}
+    size          {"contracts": N}, {"max_risk": dollars, "minimum": n} or
+                  {"allocation_pct": p, "allocation": dollars, "max_dollars": x, "max_contracts": n},
+                  any with "progression": {"after", "step", "floor", "ceiling"} (`sizing` docstring)
     limits        {"max_open": N, "per_day": 1, "every_days": N, "one_per_expiry": bool}: `max_open` and
                   `per_day` required, no default (`per_day` is 1: the entry register keeps one row per
                   arm and day)
@@ -52,6 +54,7 @@ from cherrypick.core import entrychecks as ec
 from cherrypick.core import signals
 
 from . import gates as gates_mod
+from . import sizing
 from . import strikes as st
 
 
@@ -512,9 +515,7 @@ def validate(arm: dict) -> list[str]:
             p.append(
                 f"{name}.limits.per_day: required, and 1 (the entry register keeps one row per arm and day)"
             )
-    size = arm["size"]
-    if not ({"contracts"} == set(size) or set(size) in ({"max_risk"}, {"max_risk", "minimum"})):
-        p.append(f"{name}.size: {size!r}")
+    p += sizing.problems(f"{name}.size", arm["size"])
     for k in arm.get("exit", {}):
         if k not in EXIT_KEYS:
             p.append(f"{name}.exit: unknown key {k!r}")

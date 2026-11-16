@@ -6,7 +6,6 @@ backtest driver and the paper loop, which differ only in how they BUILD the snap
 
 from __future__ import annotations
 
-import math
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -15,7 +14,7 @@ from cherrypick.core import entrychecks, signals
 
 from . import gates as gates_mod
 from . import indicators as ind
-from . import pricing, strikes
+from . import pricing, sizing, strikes
 from .model import Chain, Decision, Entry, Leg, Snapshot, hhmm
 
 ET = ZoneInfo("America/New_York")
@@ -259,10 +258,12 @@ def decide(arm: dict, snap: Snapshot, *, costs: dict | None = None) -> Decision:
             return fail(f"gate:{g['gate']}", v)
         ok(f"gate:{g['gate']}", v)
 
-    qty = size(arm["size"], loss_mid)
+    qty, how = sizing.count(
+        arm, loss_mid, results=snap.results.get(arm["name"], []), open_positions=snap.open_positions
+    )
     if qty < 1:
-        return fail("size", loss_mid)
-    ok("size", qty)
+        return fail(how["why"], how)
+    ok("size", qty if set(how) == {"base"} else {**how, "count": qty})
     sym = arm["symbol"]
     slip = {k: pricing.slippage(k, quotes, qty, sym, costs) for k in pricing.KINDS}
     profit, loss = pricing.payoff_extremes(legs, prices["mid"])
@@ -284,13 +285,14 @@ def decide(arm: dict, snap: Snapshot, *, costs: dict | None = None) -> Decision:
 
 
 def size(rule: dict, loss_per_share: float) -> int:
-    """Contracts: a fixed count, or the largest whole number whose maximum loss stays within the budget,
-    never fewer than the rule's `minimum` (default 0: no trade when not even one fits)."""
-    if "contracts" in rule:
-        return int(rule["contracts"])
-    per = loss_per_share * pricing.MULTIPLIER
-    n = int(math.floor(rule["max_risk"] / per + 1e-9)) if per > 0 else 0
-    return max(n, int(rule.get("minimum", 0)))
+    """The rule's own count (`sizing.base`): a fixed count, or the largest whole number whose maximum
+    loss stays within the budget, never fewer than the rule's `minimum`."""
+    return sizing.base(rule, loss_per_share)
+
+
+def risk(entry: Entry) -> float:
+    """An entry's risk, whole-position dollars: what `OpenPosition.risk` holds."""
+    return round(entry.max_loss * pricing.MULTIPLIER * entry.quantity, 2)
 
 
 # --------------------------------------------------------------------------- holding

@@ -9,7 +9,7 @@ from __future__ import annotations
 import copy
 from dataclasses import replace
 
-from .engine import decide
+from .engine import decide, risk
 from .model import Decision, OpenPosition, Snapshot
 from .snapshot import gex_series
 
@@ -31,7 +31,7 @@ def decide_all(arms: dict[str, dict], snap: Snapshot, *, costs: dict | None = No
         out.append(d)
         if d.enter and d.entry is not None:
             work.entries.setdefault(name, []).append(work.session)
-            work.open_positions.append(OpenPosition(name, work.session, d.entry.expiry))
+            work.open_positions.append(OpenPosition(name, work.session, d.entry.expiry, risk(d.entry)))
     return out
 
 

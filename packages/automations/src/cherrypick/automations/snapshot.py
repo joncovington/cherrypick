@@ -46,6 +46,7 @@ def build(
     prior: dict[str, list[tuple[int, float]]] | None = None,
     vol_closes: list[float] | None = None,
     volumes: dict | None = None,
+    results: dict[str, list[float]] | None = None,
 ) -> Snapshot:
     """`quotes` maps an expiry (ISO) to its quote rows. GEX is built per expiry unless `with_gex` is off
     (a driver whose arms read none skips the cost)."""
@@ -67,6 +68,7 @@ def build(
         events=events,
         entries=dict(entries or {}),
         open_positions=list(open_positions or []),
+        results={k: list(v) for k, v in (results or {}).items()},
         listed_expiries=sorted(quotes),
         daily=[r for r in (daily or []) if r["session"] < session],
         prior={k: list(v) for k, v in sorted((prior or {}).items()) if k < session},

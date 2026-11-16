@@ -29,6 +29,18 @@ eight are the `ensemble` group, and each carries its research `register` label, 
 (`tests/test_groups.py`), never read from a result file. The loop's `--status` shows each group with its
 arms and verdicts.
 
+**Sizing** (`sizing.py`). A size is a count, a risk budget (`max_risk`), or a percent of an allocation
+(`allocation_pct`, capped by `max_dollars` and `max_contracts`), and any of them can carry a
+`progression`: the count steps by a set number of contracts, or doubles, after each loss (or each win)
+in the arm's current run of closed trades, between a stated floor and ceiling. A trade's outcome is its
+`net_pnl` at the verdict fill. A group can set an `allocation` (what an `allocation_pct` size reads when
+it states none), a `max_risk` on its members' open risk at once, and `shares`, each member's percent of
+both. `config.apply_groups` puts each member's slice on it as `budget`; an arm never writes one. Risk is
+the maximum loss at the mid, whole-position dollars, the paper ledger's `capital`. A group cap cuts the
+count to fit and refuses the entry (`group_risk`) when not one fits; a size's `minimum` never lifts it
+over the cap. The driver's book and the paper ledger give the engine the same two readings, each open
+position's risk and each arm's closed results in close order.
+
 **Safeguards are stated, never defaulted.** Every arm's `limits` names `max_open` and `per_day`; the
 engine reads them with no fallback, so an arm cannot run under a cap it did not state. `per_day` is 1:
 the entry register keeps one row per arm and day. A replay record from before `per_day` existed runs
@@ -151,7 +163,8 @@ reading open, the engine fixes one and says so here, because each is a measureme
 - **Reward/risk** is maximum profit over maximum loss at the structure's mid; **bid/ask** is the whole
   structure's width (the sum of the legs' spreads).
 - **"Up to $X"** sizes to the largest whole count whose maximum loss at the mid fits, never fewer than one
-  (`size.minimum`); a fixed count is taken as stated.
+  (`size.minimum`); a fixed count is taken as stated. "X% of the allocation" is the same with the budget
+  at X% of it.
 - **A strike "$0.01 above the previous close"** is the listed strike nearest that price. "Or lower" is the
   highest strike at or below. A target that is not listed is no trade, except where the rule says nearest.
 - **Match modes.** Every strike rule that aims at a price or an option value says how it meets the listed
