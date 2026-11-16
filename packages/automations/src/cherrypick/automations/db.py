@@ -307,6 +307,18 @@ def legs(conn, position_id: str) -> list[dict]:
     ]
 
 
+def closed_results(conn) -> dict[str, list[float]]:
+    """{arm: [net P&L]} of every closed position, in the order they closed (a settlement, which has no
+    exit minute, last in its session): the engine's `results`."""
+    out: dict[str, list[float]] = {}
+    for r in conn.execute(
+        "SELECT arm, net_pnl FROM ensemble_positions WHERE status != 'open' AND net_pnl IS NOT NULL"
+        " ORDER BY exit_session, exit_minute IS NULL, exit_minute, id"
+    ):
+        out.setdefault(r["arm"], []).append(float(r["net_pnl"]))
+    return out
+
+
 def entry_sessions(conn) -> dict[str, list[str]]:
     """{arm: [entry sessions]} of every position, any status: the engine's `entries`."""
     out: dict[str, list[str]] = {}

@@ -48,7 +48,14 @@ class Book:
     why: dict[str, Counter] = field(default_factory=dict)
 
     def open_positions(self) -> list[OpenPosition]:
-        return [OpenPosition(p.arm, p.entry.session, p.entry.expiry) for p in self.open]
+        return [OpenPosition(p.arm, p.entry.session, p.entry.expiry, engine.risk(p.entry)) for p in self.open]
+
+    def results(self) -> dict[str, list[float]]:
+        """Each arm's closed trades' net P&L at the verdict fill, in the order they closed."""
+        out: dict[str, list[float]] = {}
+        for t in self.trades:
+            out.setdefault(t["arm"], []).append(t["net"]["verdict"])
+        return out
 
 
 def snapshot_at(
@@ -94,6 +101,7 @@ def snapshot_at(
         events=events,
         entries={k: list(v) for k, v in book.entries.items()},
         open_positions=book.open_positions(),
+        results=book.results(),
         close_minute=_close_minute(day),
         with_gex=any(n["gex"] for n in needs),
         daily=history.daily_before(session) if any(n["daily"] for n in needs) else None,

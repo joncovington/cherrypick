@@ -88,12 +88,22 @@ def load_arms(config: dict, *, library: dict | None = None) -> dict[str, dict]:
     return apply_groups(arms_mod.load_arms(overrides), config)
 
 
-GROUP_KEYS = {"enabled"}
+GROUP_KEYS = {"enabled", "allocation", "max_risk", "shares"}
+
+
+def _dollars(v) -> bool:
+    return isinstance(v, (int, float)) and not isinstance(v, bool) and v > 0
 
 
 def groups(config: dict) -> dict[str, dict]:
-    """The `groups` block: {group: {"enabled": bool}}, `_`-prefixed notes dropped. A group not named is
-    on."""
+    """The `groups` block, `_`-prefixed notes dropped. A group not named is on, with no budget.
+
+    {group: {"enabled": bool,
+             "allocation": dollars,      the group's capital; an `allocation_pct` size reads its share
+             "max_risk": dollars,        a cap on the group's open risk at once
+             "shares": {member: pct}}}   each member's slice of both (at most 100 in all); a member
+                                         not listed has no slice of its own, only the group's cap
+    """
     raw = config.get("groups") or {}
     if not isinstance(raw, dict):
         raise ValueError("groups: an object of {group: {enabled: true|false}}")
@@ -108,37 +118,96 @@ def groups(config: dict) -> dict[str, dict]:
             raise ValueError(f"groups.{name}: unknown key {sorted(keys - GROUP_KEYS)[0]!r}")
         if not isinstance(spec.get("enabled"), bool):
             raise ValueError(f"groups.{name}.enabled: true or false")
-        out[name] = {"enabled": spec["enabled"]}
+        row = {"enabled": spec["enabled"]}
+        for k in ("allocation", "max_risk"):
+            if k in spec:
+                if not _dollars(spec[k]):
+                    raise ValueError(f"groups.{name}.{k}: dollars, more than 0")
+                row[k] = float(spec[k])
+        if "shares" in spec:
+            raw_shares = spec["shares"]
+            shares = (
+                {m: v for m, v in raw_shares.items() if not str(m).startswith("_")}
+                if isinstance(raw_shares, dict)
+                else {}
+            )
+            if not shares:
+                raise ValueError(f"groups.{name}.shares: an object of {{member: percent}}")
+            for m, v in shares.items():
+                if not (_dollars(v) and v <= 100):
+                    raise ValueError(f"groups.{name}.shares.{m}: a percent, more than 0 and at most 100")
+            total = sum(shares.values())
+            if total > 100 + 1e-9:
+                raise ValueError(f"groups.{name}.shares: {total:g} percent in all, more than 100")
+            if not ("allocation" in row or "max_risk" in row):
+                raise ValueError(f"groups.{name}.shares: a share of nothing (no allocation or max_risk)")
+            row["shares"] = {m: float(v) for m, v in shares.items()}
+        out[name] = row
+    return out
+
+
+def budget(group: str, spec: dict, member: str, members: list[str]) -> dict | None:
+    """What `sizing` reads of a member's group (`sizing.BUDGET_KEYS`), None when the group sets no
+    allocation or cap."""
+    if "allocation" not in spec and "max_risk" not in spec:
+        return None
+    share = spec.get("shares", {}).get(member)
+    out = {"group": group, "members": sorted(members)}
+    if "allocation" in spec:
+        out["allocation"] = round(spec["allocation"] * (share / 100.0 if share is not None else 1.0), 2)
+    if "max_risk" in spec:
+        out["group_max_risk"] = spec["max_risk"]
+        if share is not None:
+            out["member_max_risk"] = round(spec["max_risk"] * share / 100.0, 2)
     return out
 
 
 def apply_groups(arms: dict[str, dict], config: dict) -> dict[str, dict]:
     """Each arm whose group is switched off, switched off with it: no new entries, while what it holds
     is still managed and settled. A group the config names but no arm belongs to is refused, so a
-    misspelt group never leaves its arms trading."""
+    misspelt group never leaves its arms trading; so is a share for an arm outside the group. Each member
+    of a group with an allocation or cap carries its `budget` (`budget`), which `sizing` reads; an
+    `allocation_pct` size with neither its own allocation nor a group's is refused."""
     switches = groups(config)
     known = {a.get("group") for a in arms.values()}
     unknown = sorted(set(switches) - known)
     if unknown:
         raise ValueError(f"groups.{unknown[0]}: no arm belongs to this group")
+    members: dict[str, list[str]] = {}
+    for name, arm in arms.items():
+        if arm.get("group") is not None:
+            members.setdefault(arm["group"], []).append(name)
+    for g, spec in switches.items():
+        outside = sorted(set(spec.get("shares", {})) - set(members[g]))
+        if outside:
+            raise ValueError(f"groups.{g}.shares.{outside[0]}: not a member of this group")
     out = {}
     for name, arm in arms.items():
         g = arm.get("group")
-        if g is not None and not switches.get(g, {"enabled": True})["enabled"]:
+        spec = switches.get(g, {"enabled": True}) if g is not None else {"enabled": True}
+        if not spec["enabled"]:
             arm = {**arm, "enabled": False}
+        b = budget(g, spec, name, members[g]) if g is not None else None
+        if b is not None:
+            arm = {**arm, "budget": b}
+        size = arm["size"]
+        if "allocation_pct" in size and "allocation" not in size and "allocation" not in (b or {}):
+            raise ValueError(f"{name}.size.allocation_pct: no allocation, its own or its group's")
         out[name] = arm
     return out
 
 
 def group_status(arms: dict[str, dict], config: dict) -> dict[str, dict]:
-    """{group: {"enabled", "arms": [{"name", "enabled", "verdict"}]}} for the status line."""
+    """{group: {"enabled", "arms": [{"name", "enabled", "verdict"}]}} for the status line, with the
+    group's `allocation`, `max_risk` and `shares` when it sets them."""
     switches = groups(config)
     out: dict[str, dict] = {}
     for name, arm in sorted(arms.items()):
         g = arm.get("group")
         if g is None:
             continue
-        row = out.setdefault(g, {"enabled": switches.get(g, {"enabled": True})["enabled"], "arms": []})
+        spec = switches.get(g, {"enabled": True})
+        row = out.setdefault(g, {**spec, "arms": []})
         row["arms"].append(
             {
                 "name": name,

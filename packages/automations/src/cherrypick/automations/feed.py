@@ -232,6 +232,7 @@ def snapshot_for(
         events=events,
         entries=db.entry_sessions(conn),
         open_positions=open_positions(conn, today),
+        results=db.closed_results(conn),
         close_minute=_cal_close_minute(today),
         with_gex=any(n["gex"] for n in needs),
         daily=m["bars"] if any(n["daily"] for n in needs) else None,
@@ -281,7 +282,7 @@ def open_positions(conn, today: date) -> list[OpenPosition]:
     """What the engine counts as open: a position expiring today stops counting toward an arm's limit at
     that day's open, as the backtest counts it (item 75's declared reading)."""
     return [
-        OpenPosition(p["arm"], p["entry_session"], p["expiration"])
+        OpenPosition(p["arm"], p["entry_session"], p["expiration"], float(p.get("capital") or 0.0))
         for p in db.open_positions(conn)
         if p["expiration"] > today.isoformat()
     ]

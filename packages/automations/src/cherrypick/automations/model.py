@@ -58,6 +58,9 @@ class OpenPosition:
     arm: str
     entry_session: str
     expiry: str
+    #: Its maximum loss at entry, whole-position dollars (`sizing`'s risk): what a group cap counts. 0 on
+    #: a position recorded before it was kept, which a cap then does not count.
+    risk: float = 0.0
 
 
 @dataclass
@@ -101,6 +104,9 @@ class Snapshot:
     #: {symbol: {session: {minute: volume of the bar starting then}}}, today's through the minute before
     #: `minute` and the earlier sessions' the prior trail covers; empty when no arm reads volume.
     volumes: dict[str, dict[str, dict[int, float]]] = field(default_factory=dict)
+    #: Each arm's closed trades' net P&L (verdict fill), in the order they closed: what a size
+    #: `progression` reads (`sizing.progressed`).
+    results: dict[str, list[float]] = field(default_factory=dict)
 
     @property
     def session_date(self) -> date:
