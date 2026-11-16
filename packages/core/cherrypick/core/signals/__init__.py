@@ -41,6 +41,11 @@ close. An N-bar window spans the close by definition, so its arming always carri
 pattern is a fact about one bar (and the bar before it), so it is armed on every bar: two inside
 bars in a row are two firings. A candle takes no `confirm` and no `reset`.
 
+**Trend and a fixed price.** `trend` is a source rising (or falling) on each of its last `n` bars,
+each value above (below) the one before; its value is the change over those `n` bars, in the
+source's units. `change_from` is the close against a fixed `price`, in percent past `pct` (up or
+down). Both are continuous.
+
 **Market events** come from the caller: `firings(spec, bars, events={"fomc": [...ISO dates]})`. A
 label the spec names and the caller does not supply is refused, never read as "no events". The
 event kind fires once on each target session, on the first bar that ends at or after its `at`
@@ -91,6 +96,17 @@ All three are continuous: armed on a false state, carried across the close.
   at the same minute in each of the N sessions before (undefined until there are N).
 - `{"name": "volume_ratio", "n": N}`: the bar's volume over the mean of the N bars before it, across
   the close (a volume surge is a cross of it above a number).
+
+**Reference levels** (also an `a` or `b`, most often the `b` a close crosses):
+
+- `{"name": "prior_period", "period": "session" | "week" | "month", "side": "high" | "low"}`: the
+  high (or low) of the previous session, ISO week or calendar month. A period is read only when the
+  bars hold every one of its trading days (`core.calendar`); otherwise the level is undefined, never
+  the extreme of the part that is there. An intraday signal carries a few earlier sessions, so its
+  week and month levels are mostly undefined; a daily signal's bars hold them.
+- `{"name": "opening_range", "minutes": N, "level": "high" | "low" | "mid"}`: the session's first N
+  minutes' high, low or midpoint, defined from the first bar that starts once the range is done,
+  and only when the bars cover the range without a gap.
 
 These span sessions by their own definition (an anchor, the sessions before), so a signal's `seed`
 does not split them. A source that reads volume (`needs_volume`) refuses bars without it
@@ -240,10 +256,16 @@ _SOURCES: dict[str, tuple[str, ...]] = {
     "vwap_band": ("anchor", "price", "weight", "k", "side"),
     "relative_volume": ("n",),
     "volume_ratio": ("n",),
+    "prior_period": ("period", "side"),
+    "opening_range": ("minutes", "level"),
 }
 _OUTPUTS = {"stochastic": ("k", "d"), "macd": ("line", "signal", "histogram")}
 #: Sources computed over all the bars whatever the signal's `seed`: they span sessions by definition.
-_SPANNING = frozenset({"vwap", "vwap_band", "relative_volume", "volume_ratio"})
+_SPANNING = frozenset(
+    {"vwap", "vwap_band", "relative_volume", "volume_ratio", "prior_period", "opening_range"}
+)
+_PERIODS = ("session", "week", "month")
+_LEVELS = ("high", "low", "mid")
 _PRICES = ("close", "hlc3", "ohlc4")
 
 
@@ -363,6 +385,93 @@ def _volume_ratio(src: Mapping, bars: Sequence[Bar]) -> list[float | None]:
     return out
 
 
+def _period_key(session: str, period: str) -> tuple:
+    d = date.fromisoformat(session)
+    if period == "week":
+        y, w, _ = d.isocalendar()
+        return (y, w)
+    if period == "month":
+        return (d.year, d.month)
+    return (session,)
+
+
+def _period_days(key: tuple, period: str) -> set[str]:
+    """Every trading day of the period `key` names."""
+    if period == "session":
+        return {key[0]}
+    if period == "week":
+        first = date.fromisocalendar(key[0], key[1], 1)
+        days = [first + timedelta(days=i) for i in range(5)]
+    else:
+        first = date(key[0], key[1], 1)
+        nxt = date(key[0] + (key[1] == 12), key[1] % 12 + 1, 1)
+        days = [first + timedelta(days=i) for i in range((nxt - first).days)]
+    return {d.isoformat() for d in days if cal.is_trading_day(d)}
+
+
+def _prior_period(src: Mapping, bars: Sequence[Bar]) -> list[float | None]:
+    """The previous period's high (or low) at each bar, None while that period is not wholly held."""
+    period, high = src["period"], src["side"] == "high"
+    extremes: dict[tuple, float] = {}
+    held: dict[tuple, set[str]] = {}
+    order: list[tuple] = []
+    for b in bars:
+        k = _period_key(b.session, period)
+        if k not in extremes:
+            order.append(k)
+            extremes[k] = b.high if high else b.low
+        else:
+            extremes[k] = max(extremes[k], b.high) if high else min(extremes[k], b.low)
+        held.setdefault(k, set()).add(b.session)
+    level: dict[tuple, float | None] = {}
+    for prev, k in zip(order, order[1:], strict=False):
+        whole = held[prev] >= _period_days(prev, period)
+        # The period before must be the one just before: a gap of a whole period reads nothing.
+        adjacent = _next_period(prev, period) == k
+        level[k] = extremes[prev] if whole and adjacent else None
+    return [level.get(_period_key(b.session, period)) for b in bars]
+
+
+def _next_period(key: tuple, period: str) -> tuple:
+    if period == "session":
+        return (cal.next_trading_day(date.fromisoformat(key[0])).isoformat(),)
+    if period == "week":
+        d = date.fromisocalendar(key[0], key[1], 1) + timedelta(days=7)
+        y, w, _ = d.isocalendar()
+        return (y, w)
+    return (key[0] + (key[1] == 12), key[1] % 12 + 1)
+
+
+def _opening_range_bounds(bars: Sequence[Bar], a: int, b: int, done: int) -> tuple[float, float] | None:
+    """The session's opening range (high, low) over the bars a..b, when they cover 09:30 to `done`
+    without a gap; None otherwise."""
+    inside = [bars[i] for i in range(a, b) if bars[i].end <= done]
+    covered = (
+        inside
+        and inside[0].start == OPEN_MINUTE
+        and inside[-1].end == done
+        and all(x.end == y.start for x, y in zip(inside, inside[1:], strict=False))
+    )
+    if not covered:
+        return None
+    return max(x.high for x in inside), min(x.low for x in inside)
+
+
+def _opening_range_level(src: Mapping, bars: Sequence[Bar]) -> list[float | None]:
+    done = OPEN_MINUTE + int(src["minutes"])
+    out: list[float | None] = [None] * len(bars)
+    for a, b in _sessions(bars):
+        got = _opening_range_bounds(bars, a, b, done)
+        if got is None:
+            continue
+        hi, lo = got
+        v = {"high": hi, "low": lo, "mid": (hi + lo) / 2.0}[src["level"]]
+        for i in range(a, b):
+            if bars[i].start >= done:
+                out[i] = v
+    return out
+
+
 def _source_series(src: Mapping, bars: Sequence[Bar]) -> list[float | None]:
     highs = [b.high for b in bars]
     lows = [b.low for b in bars]
@@ -400,6 +509,10 @@ def source(src: Mapping, bars: Sequence[Bar], *, seed: bool, events: Events = No
         return _relative_volume(src, bars)
     if name == "volume_ratio":
         return _volume_ratio(src, bars)
+    if name == "prior_period":
+        return _prior_period(src, bars)
+    if name == "opening_range":
+        return _opening_range_level(src, bars)
     if seed:
         return _source_series(src, bars)
     out: list[float | None] = []
@@ -418,7 +531,7 @@ Series = tuple[list[bool | None], list[float | None] | None]
 
 
 def _sign(direction: str) -> float:
-    return 1.0 if direction in ("above", "up", "high", "enters") else -1.0
+    return 1.0 if direction in ("above", "up", "high", "enters", "rising") else -1.0
 
 
 def _cross(spec: Mapping, bars: Sequence[Bar], events: Events = None) -> Series:
@@ -500,16 +613,10 @@ def _opening_range(spec: Mapping, bars: Sequence[Bar]) -> Series:
     state: list[bool | None] = [None] * len(bars)
     value: list[float | None] = [None] * len(bars)
     for a, b in _sessions(bars):
-        inside = [bars[i] for i in range(a, b) if bars[i].end <= done]
-        covered = (
-            inside
-            and inside[0].start == OPEN_MINUTE
-            and inside[-1].end == done
-            and all(x.end == y.start for x, y in zip(inside, inside[1:], strict=False))
-        )
-        if not covered:
+        got = _opening_range_bounds(bars, a, b, done)
+        if got is None:
             continue
-        hi, lo = max(x.high for x in inside), min(x.low for x in inside)
+        hi, lo = got
         for i in range(a, b):
             if bars[i].start < done:
                 continue
@@ -563,6 +670,30 @@ def _consecutive(spec: Mapping, bars: Sequence[Bar]) -> Series:
         for i in range(a + n, b):
             state[i] = all(sense * (bars[j].close - bars[j - 1].close) > 0 for j in range(i - n + 1, i + 1))
     return state, None
+
+
+def _trend(spec: Mapping, bars: Sequence[Bar], events: Events = None) -> Series:
+    """The source higher (lower) than the bar before on each of the last `n` bars; within each session
+    unless `seed`, as `consecutive`."""
+    n, sense = int(spec["n"]), _sign(spec["direction"])
+    a = source(spec["a"], bars, seed=spec["seed"], events=events)
+    state: list[bool | None] = [None] * len(bars)
+    value: list[float | None] = [None] * len(bars)
+    runs = [(0, len(bars))] if spec["seed"] else _sessions(bars)
+    for lo, hi in runs:
+        for i in range(lo + n, hi):
+            window = a[i - n : i + 1]
+            if any(x is None for x in window):
+                continue
+            state[i] = all(sense * (window[j] - window[j - 1]) > 0 for j in range(1, n + 1))
+            value[i] = sense * (window[-1] - window[0])
+    return state, value
+
+
+def _change_from(spec: Mapping, bars: Sequence[Bar]) -> Series:
+    ref, sense, pct = float(spec["price"]), _sign(spec["direction"]), float(spec["pct"])
+    value = [sense * (b.close / ref - 1.0) * 100.0 - pct for b in bars]
+    return [v >= 0 for v in value], value
 
 
 def _distance(spec: Mapping, bars: Sequence[Bar]) -> Series:
@@ -814,6 +945,25 @@ KINDS: dict[str, _Kind] = {
     "consecutive": _Kind(
         _consecutive, {"n": _pos_int, "direction": _is_dir("up", "down"), "seed": _flag}, "continuous"
     ),
+    "trend": _Kind(
+        _trend,
+        {
+            "a": lambda v: isinstance(v, Mapping),
+            "direction": _is_dir("rising", "falling"),
+            "n": _pos_int,
+            "seed": _flag,
+        },
+        "continuous",
+    ),
+    "change_from": _Kind(
+        _change_from,
+        {
+            "price": lambda v: _num(v) and v > 0,
+            "direction": _is_dir("up", "down"),
+            "pct": lambda v: _num(v) and v >= 0,
+        },
+        "continuous",
+    ),
     "event": _Kind(
         _event,
         {
@@ -892,6 +1042,18 @@ def _validate_source(src: object, path: str) -> None:
             if src["side"] not in ("upper", "lower"):
                 raise ValueError(f"{path}.side: one of ['upper', 'lower']")
         return
+    if name == "prior_period":
+        if src["period"] not in _PERIODS:
+            raise ValueError(f"{path}.period: one of {list(_PERIODS)}")
+        if src["side"] not in ("high", "low"):
+            raise ValueError(f"{path}.side: one of ['high', 'low']")
+        return
+    if name == "opening_range":
+        if not _pos_int(src["minutes"]):
+            raise ValueError(f"{path}.minutes: must be a positive whole number")
+        if src["level"] not in _LEVELS:
+            raise ValueError(f"{path}.level: one of {list(_LEVELS)}")
+        return
     for key in need - {"output"}:
         if not _pos_int(src[key]):
             raise ValueError(f"{path}.{key}: must be a positive whole number")
@@ -949,7 +1111,7 @@ def _kind_series(spec: Mapping, bars: Sequence[Bar], events: Events = None) -> S
     """The kind's (state, value) per bar: the one place a definition is evaluated."""
     if spec["kind"] == "event":
         return _event(spec, bars, events)
-    if spec["kind"] in ("cross", "range"):
+    if spec["kind"] in ("cross", "range", "trend"):
         return KINDS[spec["kind"]].fn(spec, bars, events)
     return KINDS[spec["kind"]].fn(spec, bars)
 
