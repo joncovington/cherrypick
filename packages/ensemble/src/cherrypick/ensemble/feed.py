@@ -23,6 +23,7 @@ from cherrypick.core import volindex
 from . import arms as arms_mod
 from . import db, provider
 from . import indicators as ind
+from . import strikes as strikes_mod
 from .model import Chain, OpenPosition, Snapshot, hhmm
 from .snapshot import build
 
@@ -45,10 +46,12 @@ def reads(arm: dict) -> dict:
     """What `arm`'s rules read beyond a quote and the spot."""
     gates = [g["gate"] for g in arm.get("gates", [])]
     rules = [leg["strike"]["rule"] for leg in arm["legs"]]
-    gex = any(g.startswith("gex_") for g in gates) or "max_abs_gex" in rules
+    gex = any(g.startswith("gex_") for g in gates) or any(r in strikes_mod.GEX_RULES for r in rules)
     mas = [g["n"] for g in arm.get("gates", []) if g["gate"] == "above_ma"]
     return {
-        "trail": arm["entry"]["kind"] == "orb" or any(g in TRAIL_GATES for g in gates),
+        "trail": arm["entry"]["kind"] == "orb"
+        or any(g in TRAIL_GATES for g in gates)
+        or "opening_range" in rules,
         "gex": gex,
         "greeks": gex or "delta" in rules or (arm.get("exit") or {}).get("delta_limit") is not None,
         "vix": any(g in VIX_GATES for g in gates),
@@ -85,10 +88,20 @@ def entry_window(arm: dict) -> tuple[int, int]:
     return OPEN_MINUTE + e["minutes"], hhmm(e["latest"])
 
 
+#: The calendar days past its first an `at_least` rule's stream request reaches before expirations
+#: are listed.
+AT_LEAST_REACH = 7
+
+
 def target_dates(arm: dict, today: date) -> list[date]:
     """The dates `arm`'s expiry rule can name today, for a cache that has not listed the symbol's
-    expirations yet (the stream request still has to ask for them)."""
+    expirations yet (the stream request still has to ask for them). An open-ended `at_least` asks for
+    the week from its first day."""
     rule = arm["expiry"]
+    if rule["kind"] in ("at_least", "between"):
+        lo = rule["days"] if rule["kind"] == "at_least" else rule["min"]
+        hi = lo + AT_LEAST_REACH if rule["kind"] == "at_least" else rule["max"]
+        return [today + timedelta(days=d) for d in range(lo, hi + 1)]
     if rule["kind"] == "market_days":
         centre = _cal.nth_trading_day(today, rule["days"])
     else:
