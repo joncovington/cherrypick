@@ -1708,7 +1708,7 @@ def _weeklyput_process(conn, st: dict, notifier: Notifier, name: str) -> dict:
     return _run_stages(conn, st, notifier, name, stages)
 
 
-# cherrypick-ensemble keys on a text `position_id` ("<arm>:<entry session>"), one structure per arm per
+# cherrypick-automations keys on a text `position_id` ("<arm>:<entry session>"), one structure per arm per
 # session, with two notifiable moments: it is entered and it ends (a touch, a profit target, a time
 # exit, or the expiry's posted close). Any arm the module is configured with is covered: the card
 # names the arm and prints the legs held.
@@ -1741,7 +1741,7 @@ def _ensemble_price(r) -> str:
 
 def _fmt_ensemble_entry(r) -> str:
     return (
-        f"🟢 Ensemble paper ENTRY — {_ensemble_what(r)} @ {_ensemble_price(r)} "
+        f"🟢 Automation paper ENTRY — {_ensemble_what(r)} @ {_ensemble_price(r)} "
         f"(${r['entry_value']:+,.2f}) [{_arm(r)}]"
     )
 
@@ -1753,7 +1753,7 @@ def _embed_ensemble_entry(r) -> dict:
 
 def _fmt_ensemble_exit(r) -> str:
     return (
-        f"🏁 Ensemble paper CLOSED — {_ensemble_what(r)} ({r['exit_reason']}), "
+        f"🏁 Automation paper CLOSED — {_ensemble_what(r)} ({r['exit_reason']}), "
         f"net {_signed(_net('ensemble_trade', r))} [{_arm(r)}]"
     )
 

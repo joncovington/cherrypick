@@ -52,6 +52,16 @@ def _env(name: str | None) -> Path | None:
     return _expand(raw) if raw else None
 
 
+#: A module renamed, mapped to its old name. Its config file and data folder keep resolving under the old
+#: name while only that one exists, so a machine set up before the rename runs on unchanged (a shim, not
+#: a migration: nothing is moved, and a rollback still finds its files).
+RENAMED = {"automations": "ensemble"}
+
+
+def _renamed(new: Path, old: Path) -> Path:
+    return old if not new.exists() and old.exists() else new
+
+
 def home() -> Path:
     """The per-user cherrypick home. ``$CHERRYPICK_HOME`` if set (the master override), else
     ``~/.cherrypick``. Portable across OSes via :func:`pathlib.Path.home`."""
@@ -68,6 +78,8 @@ def data_dir(package: str | None = None, *, env: str | None = None) -> Path:
     if override:
         return override
     base = home() / "data"
+    if package in RENAMED:
+        return _renamed(base / package, base / RENAMED[package])
     return base / package if package else base
 
 
@@ -154,6 +166,8 @@ def config_path(package: str | None = None) -> Path:
     module's config at ``home()/config/<package>.json`` (e.g. ``config/meic.json``)."""
     if package is None:
         return home() / "config.json"
+    if package in RENAMED:
+        return _renamed(config_dir() / f"{package}.json", config_dir() / f"{RENAMED[package]}.json")
     return config_dir() / f"{package}.json"
 
 

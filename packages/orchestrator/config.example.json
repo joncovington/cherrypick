@@ -331,10 +331,10 @@
         "freshness_minutes": 10
       }
     },
-    "ensemble": {
-      "_comment": "EXPERIMENTAL, off by default: switch on with modules.ensemble.enabled once you have read its package README and copied packages/ensemble/config.example.json to ~/.cherrypick/config/ensemble.json. ensemble: research item 75's eight SPX and GLD arms in paper (packages/ensemble), each one configured variant decided by the same engine the backtest uses; arms added in that config trade with no code change. Paper-only and credential-free: no keyring_service, no broker_tool, no live block, and a position is a ledger row, never an order. It reads the stream cache only; its stream request widens an arm's window for the entry minutes alone, so the producer picks it up on its next poll without a restart. It acts only in each arm's entry window, on open positions and when a close posts, so it has no eval-activity reader (eval_activity.NOT_APPLICABLE); an arm-day it could not trade is a row in ensemble_entries and in the review.",
+    "automations": {
+      "_comment": "EXPERIMENTAL, off by default: switch on with modules.automations.enabled once you have read its package README and copied packages/automations/config.example.json to ~/.cherrypick/config/automations.json. automations (formerly ensemble): research item 75's eight SPX and GLD arms in paper (packages/automations), each one configured variant decided by the same engine the backtest uses; arms added in that config trade with no code change. Paper-only and credential-free: no keyring_service, no broker_tool, no live block, and a position is a ledger row, never an order. It reads the stream cache only; its stream request widens an arm's window for the entry minutes alone, so the producer picks it up on its next poll without a restart. It acts only in each arm's entry window, on open positions and when a close posts, so it has no eval-activity reader (eval_activity.NOT_APPLICABLE); an arm-day it could not trade is a row in ensemble_entries and in the review.",
       "enabled": false,
-      "path": "../ensemble",
+      "path": "../automations",
       "paper": {
         "kind": "self_healing",
         "tick_interval_seconds": 60,
@@ -343,18 +343,18 @@
         "resident_end": "16:00",
         "status_argv": [
           "-m",
-          "cherrypick.ensemble.paper_loop",
+          "cherrypick.automations.paper_loop",
           "--status"
         ],
         "once_argv": [
           "-m",
-          "cherrypick.ensemble.paper_loop",
+          "cherrypick.automations.paper_loop",
           "--once"
         ],
-        "paper_db": "~/.cherrypick/data/ensemble/paper_trades.db",
+        "paper_db": "~/.cherrypick/data/automations/paper_trades.db",
         "notify_trades": true,
         "trade_schema": "ensemble_trade",
-        "log": "ensemble_paper.log",
+        "log": "automations_paper.log",
         "freshness_minutes": 10
       }
     },

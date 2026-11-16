@@ -1,9 +1,9 @@
-"""Backtest automations (ensemble arms today) through the engine paper runs, over a stored history.
+"""Backtest automations through the engine paper runs, over a stored history.
 
     python packages/backtest/scripts/automation_backtest.py run --arms iron-fly-1000,long-put-1030 \\
         --symbol SPX --name my-run --from 2026-10-13 --to 2026-11-13 [--source recorded-0dte]
 
-The replay is `cherrypick.ensemble.driver` (the engine, the snapshot builder and paper's own arm
+The replay is `cherrypick.automations.driver` (the engine, the snapshot builder and paper's own arm
 stacking), so a backtest's entries, exits, gates and fills are paper's. This script chooses the data and
 writes the result:
 
@@ -31,13 +31,13 @@ import sys
 from datetime import date, datetime
 from pathlib import Path
 
+from cherrypick.automations import arms as ens_arms
+from cherrypick.automations import config as ens_config
+from cherrypick.automations import driver, events, history
 from cherrypick.core import chaindelta, home, jsonio, volindex
 from cherrypick.core import sources as src
 from cherrypick.core.clock import ET
 from cherrypick.core.sources import inventory as src_inventory
-from cherrypick.ensemble import arms as ens_arms
-from cherrypick.ensemble import config as ens_config
-from cherrypick.ensemble import driver, events, history
 
 from cherrypick.backtest import licensing, paths, settings
 

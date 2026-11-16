@@ -111,11 +111,17 @@ def commit(root: Path) -> str | None:
 SCRIPT_NAME = re.compile(r"^[A-Za-z0-9_]{1,80}(\.py)?$")
 
 
+#: A package's old import name -> its new one.
+RENAMED_IMPORTS = {"ensemble": "automations"}
+
+
 def _module_file(module: str, root: Path) -> Path | None:
-    """The repo file a `cherrypick.*` module lives in (a package's src layout, or core's)."""
+    """The repo file a `cherrypick.*` module lives in (a package's src layout, or core's). A module's
+    old name (`cherrypick.ensemble.*`, which still imports) is the file under its new one."""
     parts = module.split(".")
     if parts[0] != "cherrypick" or len(parts) < 2:
         return None
+    parts[1] = RENAMED_IMPORTS.get(parts[1], parts[1])
     rel = Path(*parts)
     bases = [root / "packages" / "core"] + sorted((root / "packages").glob("*/src"))
     for base in bases:
@@ -172,12 +178,29 @@ def dependencies(script: Path, root: Path) -> list[str]:
     return sorted(q.relative_to(root).as_posix() for q in seen if root in q.parents)
 
 
+#: Folders a rename moved, old repo-relative prefix -> new. A stamp written before the move names the
+#: old path; the file is read where it lives now, so a move alone never marks a result stale.
+MOVED = {"packages/ensemble/src/cherrypick/ensemble/": "packages/automations/src/cherrypick/automations/"}
+
+
+def moved_path(rel: str) -> str:
+    """Where a repo-relative path stamped before a rename lives now (itself when nothing moved it)."""
+    for old, new in MOVED.items():
+        if rel.startswith(old):
+            return new + rel[len(old) :]
+    return rel
+
+
 def file_hashes(paths: list[str], root: Path) -> dict[str, str | None]:
-    """A sha256 of each repo-relative file's bytes now, None for one that is gone."""
+    """A sha256 of each repo-relative file's bytes now, None for one that is gone. A path a rename
+    moved (`MOVED`) is read at its new place when the old one is gone."""
     out: dict[str, str | None] = {}
     for rel in paths:
+        here = Path(root) / rel
+        if not here.exists():
+            here = Path(root) / moved_path(rel)
         try:
-            out[rel] = hashlib.sha256((Path(root) / rel).read_bytes()).hexdigest()
+            out[rel] = hashlib.sha256(here.read_bytes()).hexdigest()
         except OSError:
             out[rel] = None
     return out

@@ -105,7 +105,7 @@ MODULES = {
     # ensemble (2026-11-13) closes most arms the day they open (a touch, a time exit, the posted close the
     # next morning), and holds the day-before-expiry and 20-day arms overnight; the ledger books a trade to
     # the day it ended.
-    "ensemble": {"schema": "ensemble_trade", "settles_intraday": False},
+    "automations": {"schema": "ensemble_trade", "settles_intraday": False},
     # ladder (2026-11-13) holds a share lot until its target is reached, for days or weeks, and sells it
     # inside the session; the ledger books a lot to the day it was sold.
     "ladder": {"schema": "ladder_lot", "settles_intraday": False},
@@ -479,7 +479,7 @@ HEALTH_READERS = {
     "curve": _curve_health,
     "contango": _contango_health,
     "weeklyput": _weeklyput_health,
-    "ensemble": _ensemble_health,
+    "automations": _ensemble_health,
     "ladder": _ladder_health,
 }
 
@@ -759,7 +759,7 @@ EXPECTED_READERS = {
     "curve": _curve_expected,
     "contango": _contango_expected,
     "weeklyput": _weeklyput_expected,
-    "ensemble": _ensemble_expected,
+    "automations": _ensemble_expected,
     "ladder": _ladder_expected,
 }
 

@@ -3512,7 +3512,7 @@
         "packages/backtest/tests/test_ensemble_item75_script.py",
         "packages/backtest/tests/test_ensemble_item75_chains.py",
         "packages/backtest/tests/test_event_history_item75.py",
-        "packages/ensemble/tests/test_engine.py"
+        "packages/automations/tests/test_engine.py"
       ],
       "results": [
         "{home}/data/backtest/results/research/item75/study-all.json"
