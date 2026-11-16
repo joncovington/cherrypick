@@ -35,6 +35,7 @@ from cherrypick.core import chaindelta, home, jsonio, volindex
 from cherrypick.core import sources as src
 from cherrypick.core.clock import ET
 from cherrypick.core.sources import inventory as src_inventory
+from cherrypick.ensemble import arms as ens_arms
 from cherrypick.ensemble import config as ens_config
 from cherrypick.ensemble import driver, events, history
 
@@ -119,6 +120,45 @@ def choose_eod_source(
             return src.by_name(x["source"])
     why = "; ".join(f"{x['source']}: {x['why']}" for x in cov["sources"] if x["source"] in EOD_SOURCES)
     raise Refused(f"no end-of-day chains cover {symbol} {start}..{end} ({why or 'no source holds it'})")
+
+
+def volume_symbols(arms: dict) -> set[str]:
+    return {s for a in arms.values() for s in ens_arms.volume_symbols(a)}
+
+
+def check_volume(symbols, start, end, *, inv: dict, min_density: float) -> None:
+    """Refuse a run whose declared volume symbols the recorded one-minute bars (`profile-bars`) do not
+    cover: a session without them would only count `no_volume`."""
+    for sym in sorted(symbols):
+        cov = src.coverage(
+            inv, "volume", sym, start, end, cadence="1m", licensed=False, min_density=min_density
+        )
+        hit = [x for x in cov["sources"] if x["source"] == "profile-bars"]
+        if not (hit and hit[0]["covers"]):
+            why = hit[0]["why"] if hit else "not in the inventory"
+            raise Refused(f"no one-minute volume covers {sym} {start}..{end} (profile-bars: {why})")
+
+
+def profile_volumes(symbol: str, db: Path | None = None) -> dict[str, dict[int, float]]:
+    """{session: {minute: volume of the one-minute bar starting then}} for the regular session, from the
+    recorded bars (`profile-bars`)."""
+    db = db or home.data_dir("market-files") / "profile_bars.db"
+    if not db.exists():
+        return {}
+    conn = sqlite3.connect(f"file:{db.as_posix()}?mode=ro", uri=True)
+    try:
+        rows = conn.execute(
+            "SELECT et_day, et_time, volume FROM profile_bars WHERE symbol = ?", (symbol.upper(),)
+        ).fetchall()
+    finally:
+        conn.close()
+    out: dict[str, dict[int, float]] = {}
+    for day, hhmm, vol in rows:
+        h, m = (int(x) for x in hhmm.split(":"))
+        minute = h * 60 + m
+        if 570 <= minute < 960 and vol is not None:
+            out.setdefault(day, {})[minute] = float(vol)
+    return out
 
 
 def stock_daily(symbol: str) -> list[dict]:
@@ -236,10 +276,12 @@ def cmd_run(args) -> int:
                 inv=inv,
                 min_density=args.min_density,
             )
+        check_volume(volume_symbols(chosen), start, end, inv=inv, min_density=args.min_density)
     except Refused as exc:
         print(json.dumps({"ok": False, "error": str(exc)}))
         return 2
     vix_daily = volindex.closes("VIX")
+    volumes = {s: profile_volumes(s) for s in volume_symbols(chosen)}
     if same_day(chosen):
         store = store_path(source, s)
         h = history.StoreHistory(store, symbol, daily=index_daily(symbol))
@@ -254,7 +296,7 @@ def cmd_run(args) -> int:
         h = history.DailyChainHistory(symbol, bars, loader, vix_daily=vix_daily)
     sessions = [d for d in h.sessions if start <= d <= end]
     calendar = events.load_calendar((cfg.get("events") or {}).get("path"))
-    book = driver.run(chosen, h, sessions, events=calendar, costs=cfg, vix_daily=vix_daily)
+    book = driver.run(chosen, h, sessions, events=calendar, costs=cfg, vix_daily=vix_daily, volumes=volumes)
     result = {
         "name": args.name,
         "kind": "explore",

@@ -73,6 +73,11 @@ def enabled(arms: dict[str, dict]) -> dict[str, dict]:
     return {n: a for n, a in arms.items() if a.get("enabled", True)}
 
 
+def volume_symbols(arms: dict[str, dict]) -> set[str]:
+    """The symbols whose volume an enabled arm's signals read (`arms.volume_symbols`)."""
+    return {s for a in enabled(arms).values() for s in arms_mod.volume_symbols(a)}
+
+
 def symbols(config: dict, arms: dict[str, dict]) -> dict[str, dict]:
     """{symbol: {root, window_strikes}} for every symbol an enabled arm trades."""
     declared = {

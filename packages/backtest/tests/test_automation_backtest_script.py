@@ -132,3 +132,30 @@ def test_the_vendor_eod_loader_spells_rights_ours_and_computes_delta_from_mids(t
     assert {r["right"] for r in rows} == {"C", "P"}
     atm_call = next(r for r in rows if r["strike"] == 300.0 and r["right"] == "C")
     assert atm_call["delta"] is not None and 0.45 < atm_call["delta"] < 0.6
+
+
+def test_declared_volume_is_read_from_the_recorded_bars_and_refused_where_they_do_not_reach(tmp_path):
+    import sqlite3
+
+    db = tmp_path / "profile_bars.db"
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "CREATE TABLE profile_bars (symbol TEXT, ts_ms INTEGER, contract TEXT, et_day TEXT, et_time TEXT, "
+        "open REAL, high REAL, low REAL, close REAL, volume REAL, fetched_at REAL)"
+    )
+    for hhmm, vol in (("09:29", 5.0), ("09:30", 100.0), ("09:31", 120.0), ("16:00", 9.0)):
+        conn.execute(
+            "INSERT INTO profile_bars VALUES ('SPY', 0, 'SPY', '2026-11-13', ?, 1, 1, 1, 1, ?, 0)",
+            (hhmm, vol),
+        )
+    conn.commit()
+    conn.close()
+    assert ab.profile_volumes("SPY", db) == {"2026-11-13": {570: 100.0, 571: 120.0}}
+    inv = {"sources": {"profile-bars": {"symbols": {"SPY": {
+        "first": "2026-11-05", "last": "2026-11-13", "sessions": 7, "years": {"2026": 7}
+    }}}}}  # fmt: skip
+    ab.check_volume({"SPY"}, "2026-11-05", "2026-11-13", inv=inv, min_density=0.95)
+    with pytest.raises(ab.Refused, match="no one-minute volume covers SPY 2026-10-01..2026-11-13"):
+        ab.check_volume({"SPY"}, "2026-10-01", "2026-11-13", inv=inv, min_density=0.95)
+    with pytest.raises(ab.Refused, match="no one-minute volume covers QQQ"):
+        ab.check_volume({"QQQ"}, "2026-11-05", "2026-11-13", inv=inv, min_density=0.95)

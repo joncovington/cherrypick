@@ -201,10 +201,13 @@ def record_spots(config: dict, arms: dict, conn, *, cache_path: str, when: datet
     params = config_mod.defaults(config)
     minute = when.hour * 60 + when.minute
     seen = {}
-    for sym in config_mod.symbols(config, arms):
-        spot = provider.read_spot(cache_path, sym, max_age_seconds=float(params["spot_max_age_seconds"]))
+    age = float(params["spot_max_age_seconds"])
+    volume = config_mod.volume_symbols(arms)
+    for sym in sorted(set(config_mod.symbols(config, arms)) | volume):
+        spot = provider.read_spot(cache_path, sym, max_age_seconds=age)
         if spot is not None:
-            db.record_spot(conn, sym, when.date().isoformat(), minute, spot)
+            vol = provider.read_day_volume(cache_path, sym, max_age_seconds=age) if sym in volume else None
+            db.record_spot(conn, sym, when.date().isoformat(), minute, spot, day_volume=vol)
             seen[sym] = spot
     return seen
 

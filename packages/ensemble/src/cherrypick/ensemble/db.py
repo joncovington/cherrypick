@@ -172,6 +172,7 @@ CREATE TABLE IF NOT EXISTS ensemble_trail (
     trade_date  TEXT NOT NULL,
     minute      INTEGER NOT NULL,
     spot        REAL NOT NULL,
+    day_volume  REAL,
     UNIQUE(symbol, trade_date, minute)
 );
 
@@ -204,7 +205,10 @@ CREATE TABLE IF NOT EXISTS measurement_breaks (
 """
 
 # Columns added after the first release, per table. Empty at birth.
-_ADDED_COLUMNS: dict[str, dict[str, str]] = {"ensemble_positions": {"peak_pnl": "REAL"}}
+_ADDED_COLUMNS: dict[str, dict[str, str]] = {
+    "ensemble_positions": {"peak_pnl": "REAL"},
+    "ensemble_trail": {"day_volume": "REAL"},
+}
 
 _ENV = "ENSEMBLE_DB_PATH"
 
@@ -385,15 +389,35 @@ def marks(conn, position_id: str) -> list[dict]:
 
 
 # --------------------------------------------------------------------------- the spot record
-def record_spot(conn, symbol: str, trade_date: str, minute: int, spot: float) -> None:
-    """One sample per (symbol, date, minute): the last print of the minute wins. Not swallowed: the
-    intraday readings depend on it, so a failure reaches the loop's own handler."""
+def record_spot(
+    conn, symbol: str, trade_date: str, minute: int, spot: float, day_volume: float | None = None
+) -> None:
+    """One sample per (symbol, date, minute): the last print of the minute wins, with the feed's
+    session-cumulative volume beside it when the symbol's volume is read. Not swallowed: the intraday
+    readings depend on it, so a failure reaches the loop's own handler."""
     conn.execute(
-        "INSERT INTO ensemble_trail (symbol, trade_date, minute, spot) VALUES (?, ?, ?, ?) "
-        "ON CONFLICT(symbol, trade_date, minute) DO UPDATE SET spot = excluded.spot",
-        (symbol, trade_date, int(minute), float(spot)),
+        "INSERT INTO ensemble_trail (symbol, trade_date, minute, spot, day_volume) VALUES (?, ?, ?, ?, ?) "
+        "ON CONFLICT(symbol, trade_date, minute) DO UPDATE SET spot = excluded.spot, "
+        "day_volume = excluded.day_volume",
+        (symbol, trade_date, int(minute), float(spot), None if day_volume is None else float(day_volume)),
     )
     conn.commit()
+
+
+def minute_volumes(conn, symbol: str, trade_date: str) -> dict[int, float]:
+    """{minute: volume of the one-minute bar starting then}: the day-volume counter's rise from one
+    recorded minute to the next. A minute without both samples, or where the counter fell (a reset),
+    is absent, never a zero."""
+    rows = conn.execute(
+        "SELECT minute, day_volume FROM ensemble_trail WHERE symbol = ? AND trade_date = ? "
+        "AND day_volume IS NOT NULL ORDER BY minute",
+        (symbol, trade_date),
+    ).fetchall()
+    out = {}
+    for a, b in zip(rows, rows[1:], strict=False):
+        if int(b["minute"]) == int(a["minute"]) + 1 and b["day_volume"] >= a["day_volume"]:
+            out[int(a["minute"])] = float(b["day_volume"] - a["day_volume"])
+    return out
 
 
 def trail(conn, symbol: str, trade_date: str, *, through: int | None = None) -> list[tuple[int, float]]:

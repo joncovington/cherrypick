@@ -125,11 +125,15 @@ def trigger_due(entry: dict, snap: Snapshot) -> tuple[bool, object]:
         bars += signals.from_trail(
             snap.session, [(m, s) for m, s in snap.trail if m <= minute], width, until=minute
         )
+        if entry.get("volume"):
+            bars = signals.with_volume(bars, snap.volumes.get(str(entry["volume"]).upper(), {}))
     now = datetime.fromisoformat(snap.session).replace(hour=minute // 60, minute=minute % 60, tzinfo=ET)
     try:
         due = entrychecks.entry_due(
             entry["trigger"], now=now, bars=bars, events=events_for(entry["trigger"], snap)
         )
+    except signals.MissingVolume:
+        return False, "no_volume"
     except ValueError as exc:
         if "no dates given for event" in str(exc):
             return False, "event_dates_unknown"

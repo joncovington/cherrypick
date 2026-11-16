@@ -200,6 +200,20 @@ def daily(rows: Iterable[Mapping]) -> list[Bar]:
     return sorted(out, key=lambda b: b.session)
 
 
+def with_volume(bars: Sequence[Bar], volumes: Mapping[str, Mapping[int, float]]) -> list[Bar]:
+    """The bars with volume from another series: `volumes` maps a session to {minute: the volume of the
+    one-minute bar starting then}. A bar's volume is the sum over its minutes, None when any minute is
+    missing (a gap is never a zero). How a module comes by the minutes (a recorded store, differences
+    of a day-volume counter) is the module's; reading them onto bars is here, so every path agrees."""
+    out = []
+    for b in bars:
+        day = volumes.get(b.session) or {}
+        mins = [day.get(m) for m in range(b.start, b.end)]
+        v = None if any(x is None for x in mins) else float(sum(mins))  # type: ignore[arg-type]
+        out.append(Bar(b.session, b.start, b.end, b.open, b.high, b.low, b.close, v))
+    return out
+
+
 def _sessions(bars: Sequence[Bar]) -> list[tuple[int, int]]:
     """(first, last + 1) index of each session's run of bars."""
     out, start = [], 0

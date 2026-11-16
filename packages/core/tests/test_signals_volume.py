@@ -140,3 +140,10 @@ def test_a_bad_volume_source_is_refused_by_path(src, message):
     spec = {"kind": "cross", "a": {"name": "close"}, "b": src, "direction": "above", "seed": False}
     with pytest.raises(ValueError, match=message):
         sg.validate(spec)
+
+
+def test_volume_from_another_series_sums_a_bars_minutes_and_a_gap_leaves_it_without():
+    bars = sg.from_trail(DAY1, [(m, 100.0) for m in range(570, 580)], 5)
+    mins = {DAY1: {m: 10.0 for m in range(570, 580) if m != 577}}
+    assert [b.volume for b in sg.with_volume(bars, mins)] == [50.0, None]
+    assert [b.volume for b in sg.with_volume(bars, {})] == [None, None]

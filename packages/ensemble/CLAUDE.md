@@ -40,9 +40,16 @@ and core acts today, from the window's open, on a firing on the previous trading
 that stop before that day read `stale_bars`. The item 75 backtest driver carries no daily bars, so a
 daily signal is backtested only once the automation driver exists (#1201).
 
-**Volume.** The trail is spot only, so a signal that reads bar volume (a volume-weighted VWAP, relative
-volume, a volume ratio; `core.signals.needs_volume`) is refused at load. A VWAP with equal weights reads
-no volume and passes.
+**Volume.** A signal that reads bar volume (a volume-weighted VWAP, relative volume, a volume ratio;
+`core.signals.needs_volume`) names the symbol whose volume weighs the bars: `volume` on the trigger
+entry or the signal exit (`"volume": "SPY"` for SPX, which has none of its own). Without it the arm is
+refused at load, as is a `volume` on a signal that reads none, a daily one, or relative volume over
+more than `PRIOR_SESSIONS` sessions. Paper records that symbol's spot and the feed's day volume each
+minute (`ensemble_trail.day_volume`, and the stream request asks for it); a minute's volume is the
+counter's rise to the next recorded minute (`db.minute_volumes`), absent where a minute was not
+sampled or the counter fell. The driver takes the same minutes from the recorded one-minute bars.
+`core.signals.with_volume` puts them on the bars for both; a bar missing any minute has no volume, and
+the trigger reads `no_volume` rather than a zero. A VWAP with equal weights reads no volume.
 
 **One firing rule.** An intraday signal reads the earlier sessions too, as a signal study over the whole
 history does: a seeded indicator is warm at the open, arming carries across the close, and a gap or a

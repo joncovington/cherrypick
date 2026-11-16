@@ -97,6 +97,10 @@ class Snapshot:
     #: The underlying's vol index closes before `session` (`core.volindex`), oldest first, carried only
     #: when an arm reads an IV gate (`feed.IV_GATES`).
     vol_closes: list[float] = field(default_factory=list)
+    #: One-minute volume of the symbols an arm's signals declare (`arms.volume_symbols`),
+    #: {symbol: {session: {minute: volume of the bar starting then}}}, today's through the minute before
+    #: `minute` and the earlier sessions' the prior trail covers; empty when no arm reads volume.
+    volumes: dict[str, dict[str, dict[int, float]]] = field(default_factory=dict)
 
     @property
     def session_date(self) -> date:
@@ -109,6 +113,10 @@ class Snapshot:
         d["events"] = None
         d["trail"] = [list(p) for p in self.trail]
         d["prior"] = {k: [list(p) for p in v] for k, v in self.prior.items()}
+        d["volumes"] = {
+            s: {day: {str(m): v for m, v in mins.items()} for day, mins in days.items()}
+            for s, days in self.volumes.items()
+        }
         return d
 
     @classmethod
@@ -117,6 +125,10 @@ class Snapshot:
         d["chains"] = {k: Chain(v["expiry"], v["rows"]) for k, v in d["chains"].items()}
         d["trail"] = [(int(m), float(s)) for m, s in d["trail"]]
         d["prior"] = {k: [(int(m), float(s)) for m, s in v] for k, v in (d.get("prior") or {}).items()}
+        d["volumes"] = {
+            s: {day: {int(m): float(v) for m, v in mins.items()} for day, mins in days.items()}
+            for s, days in (d.get("volumes") or {}).items()
+        }
         d["open_positions"] = [OpenPosition(**p) for p in d.get("open_positions", [])]
         d["events"] = events
         return cls(**d)

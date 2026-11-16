@@ -193,17 +193,56 @@ def test_an_event_the_calendar_cannot_answer_is_never_read_as_quiet():
     assert engine.decide(arm, dataclasses.replace(snap, events=None)).checks[-1][2] == "event_dates_unknown"
 
 
-def test_a_signal_that_reads_volume_is_refused_while_the_bars_carry_none():
-    vwap = {"name": "vwap", "anchor": "session", "price": "hlc3", "weight": "volume"}
-    over = {"kind": "cross", "a": {"name": "close"}, "b": vwap, "direction": "above", "seed": False}
-    trig = {"signal": over, "window": {"open": "09:45", "close": "15:00"}, "within": 5}
-    assert any("reads bar volume" in x for x in arms.validate(trigger_arm(trig, bar_minutes=5)))
+VWAP = {"name": "vwap", "anchor": "session", "price": "hlc3", "weight": "volume"}
+OVER_VWAP = {"kind": "cross", "a": {"name": "close"}, "b": VWAP, "direction": "above", "seed": False}
+VWAP_TRIG = {"signal": OVER_VWAP, "window": {"open": "09:45", "close": "15:00"}, "within": 5}
+
+
+def vwap_arm(**entry):
+    arm = trigger_arm(VWAP_TRIG, bar_minutes=5)
+    arm["entry"].update(entry)
+    return arm
+
+
+def test_a_signal_that_reads_volume_names_whose_volume_weighs_the_bars():
+    assert any("declare `volume`" in x for x in arms.validate(vwap_arm()))
+    assert not arms.validate(vwap_arm(volume="SPY"))
+    assert arms.volume_symbols(vwap_arm(volume="spy")) == {"SPY"}
     exit_arm = copy.deepcopy(A["iron-fly-1000"])
-    exit_arm["exit"] = {"signal": {"trigger": trig, "bar_minutes": 5}}
+    exit_arm["exit"] = {"signal": {"trigger": VWAP_TRIG, "bar_minutes": 5}}
     assert any("exit.signal.trigger.signal: reads bar volume" in x for x in arms.validate(exit_arm))
-    # Equal weights read no volume: the declared index stand-in passes.
-    equal = {**trig, "signal": {**over, "b": {**vwap, "weight": "equal"}}}
+    exit_arm["exit"]["signal"]["volume"] = "SPY"
+    assert not arms.validate(exit_arm) and arms.volume_symbols(exit_arm) == {"SPY"}
+    # Equal weights read no volume: the declared index stand-in passes, and takes no `volume`.
+    equal = {**VWAP_TRIG, "signal": {**OVER_VWAP, "b": {**VWAP, "weight": "equal"}}}
     assert not arms.validate(trigger_arm(equal, bar_minutes=5))
+    noisy = trigger_arm(equal, bar_minutes=5)
+    noisy["entry"]["volume"] = "SPY"
+    assert any("the signal reads no volume" in x for x in arms.validate(noisy))
+    # Relative volume over more sessions than the snapshot carries could never fill.
+    rv = {
+        "kind": "cross",
+        "a": {"name": "relative_volume", "n": 6},
+        "b": 2,
+        "direction": "above",
+        "seed": True,
+    }
+    deep = trigger_arm({**VWAP_TRIG, "signal": rv}, bar_minutes=5)
+    deep["entry"]["volume"] = "SPY"
+    assert any("relative volume over more than" in x for x in arms.validate(deep))
+
+
+def test_the_trigger_reads_the_declared_volume_and_a_gap_is_no_volume_not_a_zero():
+    arm = every_day(vwap_arm(volume="SPY"))
+    # Falling into 10:00 then rising through the VWAP from 10:00: fires on the 5-minute bar after.
+    # Due within 5 minutes of the 10:05 firing, read at 10:06.
+    tr = [(m, 6000.0 - (m - 570) * 0.5 if m < 600 else 5985.0 + (m - 600) * 2.0) for m in range(570, 607)]
+    full = {"SPY": {"2026-11-16": dict.fromkeys(range(570, 607), 1000.0)}}
+    snap = dataclasses.replace(spx_snapshot(minute=606, tr=tr), volumes=full)
+    assert engine.trigger_due(arm["entry"], snap) == (True, 605)
+    gap = {"SPY": {"2026-11-16": {m: 1000.0 for m in range(570, 607) if m != 583}}}
+    assert engine.trigger_due(arm["entry"], dataclasses.replace(snap, volumes=gap)) == (False, "no_volume")
+    assert engine.trigger_due(arm["entry"], dataclasses.replace(snap, volumes={})) == (False, "no_volume")
 
 
 # --- signal exits ---------------------------------------------------------------------------------------

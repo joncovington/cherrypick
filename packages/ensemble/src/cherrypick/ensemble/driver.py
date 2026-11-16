@@ -61,6 +61,7 @@ def snapshot_at(
     events=None,
     vix_daily: dict[str, float] | None = None,
     expiries: list[str] | None = None,
+    volumes: dict | None = None,
 ) -> Snapshot | None:
     """The snapshot `arms` read at `minute`, from the stored day; None when the store has no spot there
     (paper would refuse the tick as `no_spot`) or no close before the session (`no_prev_close`)."""
@@ -100,10 +101,11 @@ def snapshot_at(
         if any(n["prior"] for n in needs)
         else None,
         vol_closes=feed.vol_history(history.symbol, day, max(n["vol_closes"] for n in needs) if needs else 0),
+        volumes={s: (volumes or {}).get(s, {}) for a in arms for s in arms_mod.volume_symbols(a)},
     )
 
 
-def _manage(history, session, minute, book, arms, *, events, vix_daily, costs) -> None:
+def _manage(history, session, minute, book, arms, *, events, vix_daily, costs, volumes=None) -> None:
     for pos in list(book.open):
         if pos.entry.expiry < session:
             continue
@@ -119,6 +121,7 @@ def _manage(history, session, minute, book, arms, *, events, vix_daily, costs) -
             events=events,
             vix_daily=vix_daily,
             expiries=[pos.entry.expiry],
+            volumes=volumes,
         )
         if snap is None:
             continue
@@ -151,6 +154,7 @@ def run(
     vix_daily: dict[str, float] | None = None,
     costs: dict | None = None,
     book: Book | None = None,
+    volumes: dict | None = None,
 ) -> Book:
     """Replay `arms` (enabled, on the history's symbol) over `sessions`. Returns the book: the trades,
     what is still open, and per arm the count of each session's last reason (or `entered`)."""
@@ -181,7 +185,17 @@ def run(
                     pending.discard(n)
                     last[n] = "needs_intraday"
         for minute in history.minutes(session):
-            _manage(history, session, minute, book, mine, events=events, vix_daily=vix_daily, costs=costs)
+            _manage(
+                history,
+                session,
+                minute,
+                book,
+                mine,
+                events=events,
+                vix_daily=vix_daily,
+                costs=costs,
+                volumes=volumes,
+            )
             due = {
                 n: todays[n]
                 for n in sorted(pending)
@@ -190,7 +204,14 @@ def run(
             if not due:
                 continue
             snap = snapshot_at(
-                list(due.values()), history, session, minute, book, events=events, vix_daily=vix_daily
+                list(due.values()),
+                history,
+                session,
+                minute,
+                book,
+                events=events,
+                vix_daily=vix_daily,
+                volumes=volumes,
             )
             if snap is None:
                 for n in due:

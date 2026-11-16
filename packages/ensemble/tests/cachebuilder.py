@@ -28,6 +28,12 @@ class CacheBuilder:
         self.conn.commit()
         return self
 
+    def trade_volume(self, symbol: str, day_volume: float):
+        """The feed's session-cumulative volume on the symbol's trade row (`last` must be set first)."""
+        self.conn.execute("UPDATE stream_trades SET volume = ? WHERE symbol = ?", (day_volume, symbol))
+        self.conn.commit()
+        return self
+
     def chain(
         self, symbol: str, expiration: str, root: str, spot: float, years: float, *, vol=0.2, age=0.0, **kw
     ):
