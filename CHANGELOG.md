@@ -27,6 +27,10 @@ beyond the latest release.
   is now priced against the subscription budget before it is written. If it would go over, that day's
   entries lose their chain and refuse, open positions keep theirs, and the status says what was dropped.
   The watchdog and the module read the budget from the same place.
+- **The Builder page edits automations.** Each card has Edit and Copy as new. Check asks the
+  automations module whether the paper loop would accept the edit and lists its problems, or the label
+  each block would carry. Save writes it through the suite's config editor, with a backup, and always
+  off: turning an automation on stays a separate step. A copy under a new name is not backtested.
 - **The Builder page.** A new page (`/builder`, shortcut `u`) shows every automation block by block.
   Each block is marked backtested, changed since its backtest, or not backtested. Each card also shows
   the start date, the forward check, and whether our own data could back a backtest. This first

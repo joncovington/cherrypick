@@ -217,3 +217,30 @@ export interface BuilderResult {
   automations: BuilderAutomation[];
   error: string | null;
 }
+
+/**
+ * `POST /api/automations/builder/draft`: the module's check of one automation, or (asked by name alone)
+ * the automation as the editor starts from it. `problems` empty means it can be saved. `view` is the
+ * Builder row the save would show, in the CLI's shape (block labels included). Writes nothing.
+ */
+export interface BuilderDraftResult {
+  ok: boolean;
+  name?: string;
+  automation?: Record<string, unknown> | null;
+  problems?: string[];
+  view?: Record<string, unknown> | null;
+  new?: boolean;
+  error?: string;
+}
+
+/** `POST /api/automations/builder/save`: the entry written, always off, or why nothing was. */
+export interface BuilderSaveResult {
+  ok: boolean;
+  name?: string;
+  added?: boolean;
+  enabled?: false;
+  backup?: string | null;
+  problems?: string[];
+  error?: string;
+  code?: string;
+}

@@ -329,7 +329,11 @@ filename; override with `paper.sla_state_prefix`.
 - **`configcli.py`** is the same two modules for non-Python callers (the console): one JSON request on
   stdin, one response on stdout. Dispatch only — every guarantee above is inherited, `secretsops` is
   deliberately NOT wired in, and a refusal is data (`ok: false` plus a `code`) on exit 0 so a caller
-  can tell "the config said no" from "the bridge is broken". Keep new ops thin. Its `features` op
+  can tell "the config said no" from "the bridge is broken". Keep new ops thin. `automation_draft`
+  and `automation_save` (`automationedit.py`) are the Builder's: the automations module's `cli draft`
+  by subprocess (its own check; this package never imports it), then the one entry that check
+  returned, refused unless it is off, replaced or added (`configedit.insert_key`) at
+  `/automations/<name>` and written through `apply_raw_save`. Its `features` op
   (`capabilities.py`) is the console's only answer to "what is on": `capabilities`, `modules`
   (switch plus capabilities), `services`, `features` (`backtest` and `backtest_results` fail closed:
   new vendor work, and showing the vendor's results until the purge date) and `live`, each module's live master

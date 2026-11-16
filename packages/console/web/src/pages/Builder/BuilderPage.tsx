@@ -1,5 +1,7 @@
+import { useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import type { BuilderAutomation, BuilderBlock, BuilderSuggestion } from "@console/shared";
-import { useAutomationsBuilder } from "../../lib/api";
+import { builderDraft, builderSave, useAutomationsBuilder } from "../../lib/api";
 
 /** What each block label says, in words. */
 export const STATE_TEXT: Record<BuilderBlock["state"], string> = {
@@ -71,7 +73,149 @@ export function SuggestionLine({ s }: { s: BuilderSuggestion }) {
   );
 }
 
+/** The keys the editor never shows: the name is its own field, a register label is a study's to
+ *  write and a save is always off. */
+const HIDDEN = new Set(["name", "register", "enabled"]);
+
+export function editorText(spec: Record<string, unknown>): string {
+  return JSON.stringify(Object.fromEntries(Object.entries(spec).filter(([k]) => !HIDDEN.has(k))), null, 2);
+}
+
+function viewBlocks(view: Record<string, unknown> | null | undefined): Array<{ block: string; state: BuilderBlock["state"] }> {
+  const blocks = Array.isArray(view?.["blocks"]) ? (view!["blocks"] as Array<Record<string, unknown>>) : [];
+  return blocks.map((b) => ({ block: String(b["block"] ?? ""), state: (b["state"] as BuilderBlock["state"]) ?? "not_backtested" }));
+}
+
+type Outcome =
+  | { kind: "idle" }
+  | { kind: "error"; text: string; problems?: string[] }
+  | { kind: "checked"; blocks: Array<{ block: string; state: BuilderBlock["state"] }>; isNew: boolean }
+  | { kind: "saved"; added: boolean; backup: string | null };
+
+/**
+ * One automation's editor. It starts from the automation as the module resolves it (`draft` by name),
+ * checks an edit with the module's own rule, and saves through the orchestrator's config editor. A save
+ * is always off: switching an automation on stays its own step, outside this page.
+ */
+export function BuilderEditor({ source, copy, onClose }: { source: string; copy: boolean; onClose: () => void }) {
+  const qc = useQueryClient();
+  const [name, setName] = useState(copy ? `${source}-copy` : source);
+  const [text, setText] = useState<string | null>(null);
+  const [outcome, setOutcome] = useState<Outcome>({ kind: "idle" });
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let live = true;
+    void builderDraft(source).then((r) => {
+      if (!live) return;
+      if (r.ok && r.automation) setText(editorText(r.automation));
+      else setOutcome({ kind: "error", text: r.error ?? `${source} could not be read` });
+    });
+    return () => {
+      live = false;
+    };
+  }, [source]);
+
+  const parsed = (): Record<string, unknown> | null => {
+    try {
+      const v = JSON.parse(text ?? "") as unknown;
+      if (typeof v === "object" && v !== null && !Array.isArray(v)) return v as Record<string, unknown>;
+    } catch {
+      /* reported below */
+    }
+    setOutcome({ kind: "error", text: "The automation is not a JSON object." });
+    return null;
+  };
+
+  const check = async () => {
+    const automation = parsed();
+    if (!automation) return;
+    setBusy(true);
+    const r = await builderDraft(name, automation);
+    setBusy(false);
+    if (!r.ok) setOutcome({ kind: "error", text: r.error ?? "the check failed" });
+    else if (r.problems && r.problems.length > 0) setOutcome({ kind: "error", text: "Not saved as it stands:", problems: r.problems });
+    else setOutcome({ kind: "checked", blocks: viewBlocks(r.view), isNew: r.new === true });
+  };
+
+  const save = async () => {
+    const automation = parsed();
+    if (!automation) return;
+    setBusy(true);
+    const r = await builderSave(name, automation);
+    setBusy(false);
+    if (!r.ok) {
+      setOutcome({ kind: "error", text: r.problems?.length ? "Not saved:" : (r.error ?? "the save failed"), problems: r.problems });
+      return;
+    }
+    setOutcome({ kind: "saved", added: r.added === true, backup: r.backup ?? null });
+    void qc.invalidateQueries({ queryKey: ["automations-builder"] });
+  };
+
+  return (
+    <div className="builder-editor" data-editor={source}>
+      <label className="builder-editor-name">
+        name <input value={name} disabled={!copy} onChange={(e) => setName(e.target.value)} aria-label="automation name" />
+      </label>
+      {text === null && outcome.kind === "idle" ? (
+        <div className="muted">Reading {source}…</div>
+      ) : (
+        <textarea
+          className="builder-editor-text"
+          aria-label="automation"
+          spellCheck={false}
+          rows={Math.min(40, (text ?? "").split("\n").length + 1)}
+          value={text ?? ""}
+          onChange={(e) => {
+            setText(e.target.value);
+            setOutcome({ kind: "idle" });
+          }}
+        />
+      )}
+      <p className="muted">
+        A save writes this automation <strong>off</strong>, through the suite's config editor (with a backup). Turning it
+        on is a separate step. Its register label stays as a study recorded it.
+      </p>
+      <div className="builder-editor-actions">
+        <button type="button" className="btn" disabled={busy || text === null} onClick={() => void check()}>
+          Check
+        </button>
+        <button type="button" className="btn" disabled={busy || text === null} onClick={() => void save()}>
+          Save (off)
+        </button>
+        <button type="button" className="btn btn-quiet" onClick={onClose}>
+          Close
+        </button>
+      </div>
+      {outcome.kind === "error" && (
+        <div className="error" role="alert">
+          {outcome.text}
+          {outcome.problems && (
+            <ul>
+              {outcome.problems.map((p) => (
+                <li key={p}>{p}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+      {outcome.kind === "checked" && (
+        <div className="builder-check" role="status">
+          No problems. {outcome.isNew ? "A new automation" : "This edit"} would save off, with its blocks{" "}
+          {outcome.blocks.map((b) => `${b.block} ${STATE_TEXT[b.state]}`).join(", ")}.
+        </div>
+      )}
+      {outcome.kind === "saved" && (
+        <div className="builder-check" role="status">
+          Saved {name} off ({outcome.added ? "added" : "replaced"}){outcome.backup ? "; the previous file is backed up" : ""}.
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function BuilderCard({ a }: { a: BuilderAutomation }) {
+  const [editing, setEditing] = useState<null | "edit" | "copy">(null);
   return (
     <section className="card builder-card" data-automation={a.name}>
       <header className="builder-card-head">
@@ -97,6 +241,18 @@ export function BuilderCard({ a }: { a: BuilderAutomation }) {
           <Block key={b.block} b={b} />
         ))}
       </div>
+      {editing === null ? (
+        <div className="builder-editor-actions">
+          <button type="button" className="btn" onClick={() => setEditing("edit")}>
+            Edit
+          </button>
+          <button type="button" className="btn" onClick={() => setEditing("copy")}>
+            Copy as new
+          </button>
+        </div>
+      ) : (
+        <BuilderEditor source={a.name} copy={editing === "copy"} onClose={() => setEditing(null)} />
+      )}
     </section>
   );
 }

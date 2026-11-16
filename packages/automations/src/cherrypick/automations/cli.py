@@ -8,6 +8,10 @@
     replay     run a replay record file again and say where the decisions differ
     builder    every automation block by block, each block's backtest label, its start, forward rule
                and backtest suggestion (the console's Builder page). Config and the registry's cache only
+    draft      the Builder's check of one edited automation (JSON on stdin: name, automation): its
+               problems, the entry a save would write (always off, its register label kept as stored)
+               and its Builder row. Without `automation`, the automation as an editor starts from it.
+               Writes nothing
     replay-day the nightly check: a session's recorded ticks through the backtest's decision path, each
                decision or fill that differs listed; exit 1 when any does (a record-less day is 0)
 
@@ -99,6 +103,27 @@ def cmd_builder(args) -> int:
     )
 
 
+def cmd_draft(args) -> int:
+    import sys
+
+    from cherrypick.core.clock import now_et
+
+    from . import drafts
+
+    try:
+        req = json.loads(sys.stdin.read() or "{}")
+    except json.JSONDecodeError as exc:
+        return _print({"ok": False, "error": f"request is not valid JSON: {exc}"})
+    if not isinstance(req, dict):
+        return _print({"ok": False, "error": "request: an object with name and automation"})
+    config = config_mod.load_config(args.config)
+    name = req.get("name")
+    if "automation" not in req:
+        spec = drafts.editable(config, name) if isinstance(name, str) else None
+        return _print({"ok": True, "name": name, "automation": spec})
+    return _print(drafts.draft(config, name, req["automation"], now_et().date()))
+
+
 def cmd_replay_day(args) -> int:
     from datetime import date
 
@@ -142,6 +167,7 @@ def main(argv=None) -> int:
     p.add_argument("file")
     p.set_defaults(fn=cmd_replay)
     sub.add_parser("builder").set_defaults(fn=cmd_builder)
+    sub.add_parser("draft").set_defaults(fn=cmd_draft)
     p = sub.add_parser("replay-day")
     p.add_argument("--date", help="YYYY-MM-DD; default today, or the last trading day")
     p.set_defaults(fn=cmd_replay_day)

@@ -251,6 +251,28 @@ def splice_value(text: str, pointer: str, new_value: Any) -> str:
     return text[:start] + json.dumps(new_value, ensure_ascii=False) + text[end:]
 
 
+def insert_key(text: str, pointer: str, key: str, value: Any) -> str:
+    """Add `key` to the object at `pointer` as its last entry, touching nothing else: the new entry takes
+    the indentation of the object's first entry and the file's line ending. Raises KeyError when the
+    pointer is absent, ValueError when it is not an object or already holds `key`."""
+    start, end = locate_value(text, pointer)
+    if text[start] != "{":
+        raise ValueError(f"{pointer} is not an object")
+    if key in json.loads(text[start:end]):
+        raise ValueError(f"{pointer} already holds {key!r}")
+    encoded = json.dumps(key, ensure_ascii=False) + ": " + json.dumps(value, ensure_ascii=False)
+    last = end - 2  # the character before the closing brace
+    while last > start and text[last].isspace():
+        last -= 1
+    if last == start:  # an empty object
+        return text[: start + 1] + encoded + text[last + 1 :]
+    first = _ws(text, start + 1)
+    gap = text[start + 1 : first]
+    newline = "\r\n" if "\r\n" in text else "\n"
+    sep = newline + gap.rsplit("\n", 1)[-1] if "\n" in gap else " "
+    return text[: last + 1] + "," + sep + encoded + text[last + 1 :]
+
+
 def top_level_entries(text: str) -> list[dict[str, Any]]:
     """The top-level object's entries in file order: [{key, key_text, value_text}]. Spans come from the
     original text, so a value's own formatting (multi-line objects, spacing) survives re-emission."""

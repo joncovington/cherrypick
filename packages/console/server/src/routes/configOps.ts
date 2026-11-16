@@ -3,6 +3,7 @@ import type { ConsoleConfig } from "../config.js";
 import { callConfigCli, statusForCode, type BridgeOk, type BridgeResult } from "../services/configBridge.js";
 import { readLockStatus } from "../services/liveLock.js";
 import { getFeatures, invalidateFeatures } from "../services/featuresBridge.js";
+import { invalidateAutomationsBuilder } from "../services/automationsBuilderBridge.js";
 import { getPrefs, setPref } from "../store/consoleDb.js";
 
 /**
@@ -29,6 +30,7 @@ export const RESUME_CONFIRMATION = "RESUME LIVE";
 
 const MAX_PREF_KEY_CHARS = 64;
 const MAX_PREF_VALUE_CHARS = 16_384;
+const MAX_AUTOMATION_CHARS = 32_768;
 
 const TARGETS = ["orchestrator", "meic", "flies", "gex", "earnings", "streamer", "meic-risk", "manage"] as const;
 
@@ -147,6 +149,55 @@ export function registerConfigRoutes(app: FastifyInstance, config: ConsoleConfig
       backup: result["backup"] ?? null,
       issues: result["issues"] ?? [],
     };
+  });
+
+  /**
+   * The Builder's editor (#1180), one automation at a time, through the orchestrator's editor like
+   * every config write here. `draft` is the module's own check and writes nothing: without an
+   * `automation` it returns the automation as the editor starts from it. `save` runs that check and
+   * writes the one entry it returned, always off; turning an automation on is never a save.
+   */
+  const automationBody = (body: Record<string, unknown>): { name: string; automation?: Record<string, unknown> } | string => {
+    const name = body["name"];
+    if (typeof name !== "string" || name === "" || name.length > 48) return "name (up to 48 characters) required";
+    const automation = body["automation"];
+    if (automation === undefined) return { name };
+    if (typeof automation !== "object" || automation === null || Array.isArray(automation)) return "automation must be an object";
+    if (JSON.stringify(automation).length > MAX_AUTOMATION_CHARS) return `automation larger than ${MAX_AUTOMATION_CHARS} characters`;
+    return { name, automation: automation as Record<string, unknown> };
+  };
+
+  app.post("/api/automations/builder/draft", async (req, reply) => {
+    const parsed = automationBody((req.body ?? {}) as Record<string, unknown>);
+    if (typeof parsed === "string") return reply.code(400).send({ error: parsed });
+    const result = sendBridgeFailure(reply, await callConfigCli({ op: "automation_draft", ...parsed }));
+    if (result === null) return reply;
+    return {
+      ok: true,
+      name: result["name"] ?? parsed.name,
+      ...("automation" in result ? { automation: result["automation"] ?? null } : {}),
+      ...("problems" in result ? { problems: result["problems"] ?? [] } : {}),
+      ...("view" in result ? { view: result["view"] ?? null } : {}),
+      ...("new" in result ? { new: result["new"] === true } : {}),
+    };
+  });
+
+  app.post("/api/automations/builder/save", async (req, reply) => {
+    const parsed = automationBody((req.body ?? {}) as Record<string, unknown>);
+    if (typeof parsed === "string") return reply.code(400).send({ error: parsed });
+    if (parsed.automation === undefined) return reply.code(400).send({ error: "automation required" });
+    const result = await callConfigCli({ op: "automation_save", name: parsed.name, automation: parsed.automation });
+    if (!result.ok) {
+      const problems = (result as unknown as Record<string, unknown>)["problems"];
+      return reply.code(statusForCode(result.code)).send({
+        error: result.error,
+        code: result.code,
+        ...(Array.isArray(problems) ? { problems } : {}),
+      });
+    }
+    invalidateAutomationsBuilder();
+    app.log.info(`automation saved from the builder: ${parsed.name} (${result["added"] === true ? "added" : "replaced"}, off)`);
+    return { ok: true, name: parsed.name, added: result["added"] === true, enabled: false, backup: result["backup"] ?? null };
   });
 
   // The console's own display preferences: its own store, no blast radius, so they save on change

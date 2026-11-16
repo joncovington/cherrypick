@@ -84,7 +84,9 @@ A set of short-dated option structures, each placed by its own rule. An automati
 
 ## Builder (`/builder`)
 
-A page of its own (shortcut `u`), apart from Backtest: a forward test is not a backtest. One tab, `automations`: a card for each automation, its blocks (structure, entry, gates, exit, size) laid out with the keys each holds. Each block carries its backtest label: `backtested` while it stands as the research study ran it, `changed since its backtest` once edited, `not backtested` when no study ran it. The card shows the start date and the forward check written when it was enrolled, and for an automation not wholly backtested, whether our own data covers a backtest over the last year, or the nearest store and why it falls short. The page reads only; editing and taking an automation to paper or to a backtest from it come later.
+A page of its own (shortcut `u`), apart from Backtest: a forward test is not a backtest. One tab, `automations`: a card for each automation, its blocks (structure, entry, gates, exit, size) laid out with the keys each holds. Each block carries its backtest label: `backtested` while it stands as the research study ran it, `changed since its backtest` once edited, `not backtested` when no study ran it. The card shows the start date and the forward check written when it was enrolled, and for an automation not wholly backtested, whether our own data covers a backtest over the last year, or the nearest store and why it falls short.
+
+Each card has **Edit** and **Copy as new**. The editor shows the automation as JSON (its name in its own field; its register label and on/off switch left out). **Check** asks the automations module whether the paper loop would accept it, and lists each problem or the label each block would carry. **Save (off)** writes it through the suite's config editor, with a backup, and always off: turning it on is a separate step (a hand edit or its group's switch). A copy under a new name is not backtested, whatever it was copied from. Running a backtest or a forward test from the page is not built yet.
 
 ## Experiments (`/experiments`)
 

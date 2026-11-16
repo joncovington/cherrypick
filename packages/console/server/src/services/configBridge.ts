@@ -36,7 +36,9 @@ export type BridgeRequest =
   | { op: "save"; target: string; expected_mtime?: number | null; edits: Array<{ pointer: string; value: unknown }> }
   | { op: "halt_status" }
   | { op: "set_halt"; present: boolean }
-  | { op: "features" };
+  | { op: "features" }
+  | { op: "automation_draft"; name: string; automation?: Record<string, unknown> }
+  | { op: "automation_save"; name: string; automation: Record<string, unknown> };
 
 const UNAVAILABLE =
   "config bridge unavailable — the orchestrator package must be installed (pip install -e packages/orchestrator)";

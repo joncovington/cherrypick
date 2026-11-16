@@ -112,6 +112,11 @@ alone):
   `_note`/`_header` and key order, the timestamped backup and the atomic write all stay in
   `configedit.py`. **Never port any of that here** — a second copy of a live-safety rule is free to
   drift.
+  - **The Builder's save is the same path for one automation** (`/api/automations/builder/draft` and
+    `/save`, configcli `automation_draft` / `automation_save`). The route sends a name and an
+    automation and nothing else; the orchestrator runs the module's own check and writes the entry it
+    returned, which is always off. The page never turns an automation on, and never writes its
+    register label.
   - This surface **cannot touch `enable_live_trading`, flies' `live.enabled`/`gate0_confirmed`, or the
     live loss/deploy limits** in either direction: `configedit.GUARDED` refuses them, and the page
     shows them as locked rows with that table's hint.
