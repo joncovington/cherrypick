@@ -20,6 +20,15 @@ arm is a new entry (or a machine override read by `arms.load_arms`); an unknown 
 path. A new kind of filter is one function in `gates.REGISTRY`, a new strike rule one branch in
 `strikes.pick`.
 
+**Automation groups.** An arm names its `group`, a set of like automations switched as one through the
+config's `groups` block (`{"ensemble": {"enabled": false}}`). `config.load_arms` switches off every arm
+of a group that is off, so none of them enters; what they hold is still managed and settled, because a
+position carries its own exits. A group the config names but no arm belongs to is refused. The shipped
+eight are the `ensemble` group, and each carries its research `register` label, item 75's verdict
+(`passed`, `failed`, `no_verdict`), written from the register and checked against its forward list
+(`tests/test_groups.py`), never read from a result file. The loop's `--status` shows each group with its
+arms and verdicts.
+
 **Safeguards are stated, never defaulted.** Every arm's `limits` names `max_open` and `per_day`; the
 engine reads them with no fallback, so an arm cannot run under a cap it did not state. `per_day` is 1:
 the entry register keeps one row per arm and day. A replay record from before `per_day` existed runs

@@ -30,7 +30,13 @@ surfaces, dedup) aren't either.
 clinical sense. Modules shipped four names for it (`arm` in flies; `book` in bwb/pmcc/curve/calendars;
 `risk_profile` in meic; `profile` in earnings), and `core/ledgers.py` (`profile`) and the console's
 attempts reader (`armColumn`) disagree on the canonical one. **The word is now `arm`, everywhere a new
-name is chosen.**
+name is chosen in the older modules.**
+
+**New work says `automation`.** A strategy built once and run forward in paper or replayed in a
+backtest (`packages/automations`) is an **automation**; a set of like automations switched as one is
+an **automation group** (the shipped eight are the `ensemble` group). The automations package keeps
+`arm` as its config key and in its code, where it was the word first; the older modules keep `arm`
+until the plan that replaces them.
 
 **Three words are taken, and must never be used for an arm:**
 

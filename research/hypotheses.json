@@ -3522,7 +3522,7 @@
       "retests": [],
       "forward": [
         {
-          "module": "ensemble",
+          "module": "automations",
           "schema": "ensemble_trade",
           "measure": "cycle_mean",
           "field": "net_pnl",
@@ -3535,7 +3535,7 @@
           "arm": "iron-condor-1345"
         },
         {
-          "module": "ensemble",
+          "module": "automations",
           "schema": "ensemble_trade",
           "measure": "cycle_mean",
           "field": "net_pnl",

@@ -26,6 +26,11 @@
     "SPX": {"root": "SPXW", "window_strikes": 60},
     "GLD": {"root": "GLD", "window_strikes": 40}
   },
+  "groups_header": "===== automation groups =====",
+  "_groups_note": "An automation group is a set of like automations switched as one. Set a group's enabled to false and none of its automations enters; what they hold is still managed and settled. The shipped eight are the ensemble group (research item 75; each carries its register verdict). A group no automation belongs to is refused.",
+  "groups": {
+    "ensemble": {"enabled": true}
+  },
   "arms_header": "===== the arms =====",
   "_arms_note": "The shipped arms are in cherrypick.automations.arms; an entry here is laid over the arm of the same name (top-level keys replaced), and an entry under a new name is a new arm. A misspelt key is refused with its path and the loop does not start. Set enabled to false to switch one off. Names are the suite's own.",
   "arms": {

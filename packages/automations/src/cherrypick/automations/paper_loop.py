@@ -595,6 +595,7 @@ def run_status(config: dict, arms: dict[str, dict], conn, *, cache_path: str) ->
         "ok": True,
         "date": today.isoformat(),
         "arms": sorted(config_mod.enabled(arms)),
+        "groups": config_mod.group_status(arms, config),
         "arms_today": {n: _window_text(a) for n, a in sorted(todays.items())},
         "symbols": list(config_mod.symbols(config, arms)),
         "open_positions": [

@@ -79,7 +79,68 @@ def load_arms(config: dict, *, library: dict | None = None) -> dict[str, dict]:
     overrides = arm_overrides(config)
     if signallib.refs(overrides):
         overrides, _ = signallib.resolve(overrides, library if library is not None else signallib.load())
-    return arms_mod.load_arms(overrides)
+    return apply_groups(arms_mod.load_arms(overrides), config)
+
+
+GROUP_KEYS = {"enabled"}
+
+
+def groups(config: dict) -> dict[str, dict]:
+    """The `groups` block: {group: {"enabled": bool}}, `_`-prefixed notes dropped. A group not named is
+    on."""
+    raw = config.get("groups") or {}
+    if not isinstance(raw, dict):
+        raise ValueError("groups: an object of {group: {enabled: true|false}}")
+    out = {}
+    for name, spec in raw.items():
+        if name.startswith("_"):
+            continue
+        if not isinstance(spec, dict):
+            raise ValueError(f"groups.{name}: an object with enabled")
+        keys = {k for k in spec if not k.startswith("_")}
+        if keys - GROUP_KEYS:
+            raise ValueError(f"groups.{name}: unknown key {sorted(keys - GROUP_KEYS)[0]!r}")
+        if not isinstance(spec.get("enabled"), bool):
+            raise ValueError(f"groups.{name}.enabled: true or false")
+        out[name] = {"enabled": spec["enabled"]}
+    return out
+
+
+def apply_groups(arms: dict[str, dict], config: dict) -> dict[str, dict]:
+    """Each arm whose group is switched off, switched off with it: no new entries, while what it holds
+    is still managed and settled. A group the config names but no arm belongs to is refused, so a
+    misspelt group never leaves its arms trading."""
+    switches = groups(config)
+    known = {a.get("group") for a in arms.values()}
+    unknown = sorted(set(switches) - known)
+    if unknown:
+        raise ValueError(f"groups.{unknown[0]}: no arm belongs to this group")
+    out = {}
+    for name, arm in arms.items():
+        g = arm.get("group")
+        if g is not None and not switches.get(g, {"enabled": True})["enabled"]:
+            arm = {**arm, "enabled": False}
+        out[name] = arm
+    return out
+
+
+def group_status(arms: dict[str, dict], config: dict) -> dict[str, dict]:
+    """{group: {"enabled", "arms": [{"name", "enabled", "verdict"}]}} for the status line."""
+    switches = groups(config)
+    out: dict[str, dict] = {}
+    for name, arm in sorted(arms.items()):
+        g = arm.get("group")
+        if g is None:
+            continue
+        row = out.setdefault(g, {"enabled": switches.get(g, {"enabled": True})["enabled"], "arms": []})
+        row["arms"].append(
+            {
+                "name": name,
+                "enabled": bool(arm.get("enabled", True)),
+                "verdict": (arm.get("register") or {}).get("verdict"),
+            }
+        )
+    return out
 
 
 def signal_versions(config: dict, names) -> dict[str, list[dict]]:

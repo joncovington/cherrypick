@@ -74,3 +74,11 @@ def test_a_script_importing_the_old_name_rests_on_the_new_file(tmp_path):
     script.write_text("from cherrypick.ensemble import engine\n", encoding="utf-8")
     deps = sv.dependencies(script, tmp_path)
     assert "packages/automations/src/cherrypick/automations/engine.py" in deps
+
+
+def test_a_stored_old_module_name_finds_the_renamed_block():
+    modules = {"automations": {"enabled": True}, "meic": {"enabled": True}}
+    assert cfgmod.module_block(modules, "ensemble") == ("automations", {"enabled": True})
+    assert cfgmod.module_block(modules, "meic") == ("meic", {"enabled": True})
+    assert cfgmod.module_block(modules, "flies") == ("flies", None)
+    assert cfgmod.module_block({"ensemble": {"x": 1}}, "ensemble") == ("ensemble", {"x": 1})
