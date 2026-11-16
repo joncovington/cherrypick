@@ -40,6 +40,12 @@ and core acts today, from the window's open, on a firing on the previous trading
 that stop before that day read `stale_bars`. The item 75 backtest driver carries no daily bars, so a
 daily signal is backtested only once the automation driver exists (#1201).
 
+**Library signals.** A trigger's signal (or an `only_when` entry) can be a reference to the signal
+library, `{"library": name, "version": hash}` (`core.signallib`). `config.load_arms` swaps it for
+that version's spec before validating, reading the library file only when an arm holds a reference;
+one it cannot answer stops the load. The version is always named, so moving a paper automation to a
+new version is a config edit, a measurement change made at a boundary.
+
 **Volume.** A signal that reads bar volume (a volume-weighted VWAP, relative volume, a volume ratio;
 `core.signals.needs_volume`) names the symbol whose volume weighs the bars: `volume` on the trigger
 entry or the signal exit (`"volume": "SPY"` for SPX, which has none of its own). Without it the arm is

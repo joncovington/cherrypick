@@ -302,6 +302,7 @@ def cmd_run(args) -> int:
         "kind": "explore",
         "symbol": symbol,
         "arms": chosen,
+        "signal_versions": ens_config.signal_versions(cfg, names),
         "source": source.name,
         "store": store.relative_to(home.data_dir()).as_posix()
         if store.is_relative_to(home.data_dir())
