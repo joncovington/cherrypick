@@ -101,7 +101,7 @@ function WeeklyputIcon() {
 }
 
 /* Three stacked payoff hinges, each a little offset from the last: several arms laid over one another. */
-function EnsembleIcon() {
+function AutomationsIcon() {
   return (
     <Svg>
       <path d="M3 7h5l3 4h4" />
@@ -292,7 +292,7 @@ const ICONS: Record<string, (p: NavIconProps) => ReactNode> = {
   "/curve": CurveIcon,
   "/contango": ContangoIcon,
   "/weeklyput": WeeklyputIcon,
-  "/ensemble": EnsembleIcon,
+  "/automations": AutomationsIcon,
   "/bwb": BwbIcon,
   "/calendars": CalendarsIcon,
   "/earnings": EarningsIcon,

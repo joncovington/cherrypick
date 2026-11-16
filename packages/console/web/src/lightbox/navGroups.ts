@@ -245,14 +245,14 @@ export const WEEKLYPUT_SLIDES = [
 export type WeeklyputSlideId = (typeof WEEKLYPUT_SLIDES)[number]["id"];
 
 /**
- * ensemble's tabs: item 75's arms in paper. `summary` (today) is each arm's session and the gate that
+ * automations' tabs: item 75's arms in paper. `summary` (today) is each arm's session and the gate that
  * blocked any that did not enter; `positions` the open structures as the orders that opened them;
  * `history` the closed ones in the trade table standard; `performance` each arm's net and drawdown,
  * and the arms stacked; `costs` keeps fees, settlement and slippage apart. The arms are whatever the
  * ledger names, so no tab is one per arm. No advisor, regime or analysis tab: the module declares no
  * advice bounds and keeps no daily series.
  */
-export const ENSEMBLE_SLIDES = [
+export const AUTOMATIONS_SLIDES = [
   { id: "summary", label: "today" },
   { id: "positions", label: "positions" },
   { id: "history", label: "history" },
@@ -262,7 +262,7 @@ export const ENSEMBLE_SLIDES = [
   { id: "guide", label: "help" },
 ] as const satisfies readonly NavSlide[];
 
-export type EnsembleSlideId = (typeof ENSEMBLE_SLIDES)[number]["id"];
+export type AutomationsSlideId = (typeof AUTOMATIONS_SLIDES)[number]["id"];
 
 /**
  * PMCC's tabs, on the frame since 2026-09-25. `now` → `session`; its cards became pages:
@@ -565,8 +565,8 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
     ],
     legacy: { session: "summary" },
   },
-  ensemble: {
-    slides: ENSEMBLE_SLIDES,
+  automations: {
+    slides: AUTOMATIONS_SLIDES,
     simple: ["summary", "performance", "positions", "guide"],
     groups: [
       { label: "today", ids: ["summary"] },

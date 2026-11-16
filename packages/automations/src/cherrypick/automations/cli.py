@@ -64,6 +64,13 @@ def cmd_arms(args) -> int:
     return _print({"ok": True, "arms": config_mod.load_arms(config)})
 
 
+def cmd_groups(args) -> int:
+    """Each automation group: its switch and its automations, on or off, with their register verdicts.
+    Config only, no ledger or cache read (the console's group panel)."""
+    config = config_mod.load_config(args.config)
+    return _print({"ok": True, "groups": config_mod.group_status(config_mod.load_arms(config), config)})
+
+
 def cmd_replay(args) -> int:
     from . import events, record
 
@@ -89,6 +96,7 @@ def main(argv=None) -> int:
     p.set_defaults(fn=cmd_decisions)
     sub.add_parser("summary").set_defaults(fn=cmd_summary)
     sub.add_parser("arms").set_defaults(fn=cmd_arms)
+    sub.add_parser("groups").set_defaults(fn=cmd_groups)
     p = sub.add_parser("replay")
     p.add_argument("file")
     p.set_defaults(fn=cmd_replay)

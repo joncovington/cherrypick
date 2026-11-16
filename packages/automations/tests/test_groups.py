@@ -74,3 +74,13 @@ def test_validation_refuses_a_bad_group_or_register():
     a["register"] = {"item": 75, "verdict": "pass"}
     problems = arms.validate(a)
     assert any(".group" in p for p in problems) and any(".register" in p for p in problems)
+
+
+def test_the_cli_prints_each_group_for_the_console(capsys, managed_home):
+    from cherrypick.automations import cli
+
+    assert cli.main(["groups"]) == 0
+    out = json.loads(capsys.readouterr().out)
+    ens = out["groups"]["ensemble"]
+    assert ens["enabled"] is True and len(ens["arms"]) == 8
+    assert {a["name"]: a["verdict"] for a in ens["arms"]}["iron-condor-1345"] == "passed"

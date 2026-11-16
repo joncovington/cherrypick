@@ -1,9 +1,9 @@
-import type { EnsembleEntryRow, EnsembleHistoryRow, EnsembleLeg, EnsembleLine, EnsemblePosition } from "@console/shared";
+import type { AutomationsEntryRow, AutomationsHistoryRow, AutomationsLeg, AutomationsLine, AutomationsPosition } from "@console/shared";
 import { fmtCash } from "../../lib/format";
 import type { TradeCardLeg, TradeCardModel } from "../Live/TradeCard";
 
 /**
- * ensemble's display transforms. Nothing here derives a result: the net, the costs and the drawdown are
+ * automations' display transforms. Nothing here derives a result: the net, the costs and the drawdown are
  * the ledger's columns and the reader's sums. These only place them on cards and axes. The arms are
  * whatever the ledger names, so nothing below knows one.
  */
@@ -23,7 +23,7 @@ export function howEnded(reason: string | null): string {
 }
 
 /** Every leg as one line of the order that opened the structure: sold legs STO, bought BTO. */
-export function chainLegs(legs: readonly EnsembleLeg[], quantity: number, expiration: string): TradeCardLeg[] {
+export function chainLegs(legs: readonly AutomationsLeg[], quantity: number, expiration: string): TradeCardLeg[] {
   return legs.map((l) => ({
     buy: l.side > 0,
     text: `${quantity} ${expiration} ${l.strike}${l.right}`,
@@ -32,7 +32,7 @@ export function chainLegs(legs: readonly EnsembleLeg[], quantity: number, expira
 }
 
 /** The shape in a few words, from the legs alone: how many are sold, how many bought, and on which rights. */
-export function shapeWords(legs: readonly EnsembleLeg[]): string {
+export function shapeWords(legs: readonly AutomationsLeg[]): string {
   if (legs.length === 0) return "legs not recorded";
   const sold = legs.filter((l) => l.side < 0).length;
   const rights = [...new Set(legs.map((l) => l.right))].sort().join("/");
@@ -40,7 +40,7 @@ export function shapeWords(legs: readonly EnsembleLeg[]): string {
 }
 
 /** The blocking gate in a line: the reason, then the check and the value it read. */
-export function gateWords(r: EnsembleEntryRow): string {
+export function gateWords(r: AutomationsEntryRow): string {
   const g = r.gate;
   if (g === null) return r.refusal ?? "—";
   const read = g.value === null ? "" : ` read ${g.check ?? "value"} = ${g.value}`;
@@ -53,21 +53,21 @@ export interface TodayCounts {
   missed: number;
 }
 
-export function todayCounts(rows: readonly EnsembleEntryRow[]): TodayCounts {
+export function todayCounts(rows: readonly AutomationsEntryRow[]): TodayCounts {
   const n = (o: string) => rows.filter((r) => r.outcome === o).length;
   return { entered: n("entered"), pending: n("pending"), missed: n("missed") };
 }
 
 /** A line's curve with one point a session (the running net after the last trade that ended that day):
  *  a chart's time axis takes one value a day. */
-export function dailyCurve(line: EnsembleLine): Array<{ x: string; y: number }> {
+export function dailyCurve(line: AutomationsLine): Array<{ x: string; y: number }> {
   const last = new Map<string, number>();
   for (const p of line.curve) last.set(p.x, p.y);
   return [...last.entries()].map(([x, y]) => ({ x, y }));
 }
 
 /** An open structure as a trade card: the order that opened it, then where it stands now. */
-export function openModel(p: EnsemblePosition): TradeCardModel {
+export function openModel(p: AutomationsPosition): TradeCardModel {
   const spot = p.mark?.spot ?? null;
   const mid = p.entryMid;
   const price = mid === null ? "—" : `${Math.abs(mid).toFixed(2)} ${mid >= 0 ? "cr" : "db"}`;
@@ -96,7 +96,7 @@ export function openModel(p: EnsemblePosition): TradeCardModel {
 }
 
 /** A closed structure as a trade card: the order that opened it, then how it ended and the costs apart. */
-export function closedModel(r: EnsembleHistoryRow): TradeCardModel {
+export function closedModel(r: AutomationsHistoryRow): TradeCardModel {
   const price = r.price === null ? "—" : `${Math.abs(r.price).toFixed(2)} ${r.price >= 0 ? "cr" : "db"}`;
   const q = r.quantity ?? 1;
   return {

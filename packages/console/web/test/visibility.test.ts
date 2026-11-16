@@ -187,7 +187,7 @@ describe("the nav lists", () => {
       ["/earnings", "3"],
       ["/experiments", "4"],
     ]);
-    expect(experiments.map((l) => l.to)).toEqual(["/calendars", "/curve", "/contango", "/weeklyput", "/ensemble", "/flies"]);
+    expect(experiments.map((l) => l.to)).toEqual(["/calendars", "/curve", "/contango", "/weeklyput", "/automations", "/flies"]);
   });
 
   it("drop the advisor from the suite links when it is off", () => {
