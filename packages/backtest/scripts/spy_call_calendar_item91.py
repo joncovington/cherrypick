@@ -1,6 +1,6 @@
-"""Item 90: the weekly SPY at-the-money call calendar, 60/90 days, out at +30% or the short's expiry.
+"""Item 91: the weekly SPY at-the-money call calendar, 60/90 days, out at +30% or the short's expiry.
 
-The declaration is research/edge-hypotheses-plan.md section 90; this script runs it. Results are
+The declaration is research/edge-hypotheses-plan.md section 91; this script runs it. Results are
 derived from licensed data and stay under the backtest results directory, never the repo.
 
 A published trader's rule: every Friday, sell the at-the-money SPY call about 60 days out and buy the
@@ -55,14 +55,14 @@ RULE = {
     "t_bar": 2.0,
     "min_n": 120,
     "holdout_min_n": 60,
-    "tail": {"per_year": "sample", "resamples": 10_000, "seed": 90},
+    "tail": {"per_year": "sample", "resamples": 10_000, "seed": 91},
     "delta": True,
     "splits": ["2019-01-01"],
 }
 
 #: The second rule: the kit's t treats overlapping trades as independent, so the capital and delta
 #: excesses must also clear a moving-block bootstrap whose block spans a trade's whole life.
-OVERLAP_RULE = {"block": 13, "resamples": 10_000, "seed": 90, "p_bar": 0.025}
+OVERLAP_RULE = {"block": 13, "resamples": 10_000, "seed": 91, "p_bar": 0.025}
 
 #: Reported only, never judged.
 STRESS = {"fees": 1.5, "slippage_frac_of_spread": 0.25}
@@ -403,7 +403,7 @@ def summary(trades: list[dict], split: str) -> dict:
 def out_dir() -> Path:
     from cherrypick.backtest import paths
 
-    d = paths.results_dir() / "research" / "item90"
+    d = paths.results_dir() / "research" / "item91"
     d.mkdir(parents=True, exist_ok=True)
     return d
 
@@ -535,7 +535,7 @@ def cmd_study(args) -> int:
         conn.close()
     doc = {
         "licence": "derived from licensed vendor data: never commit or publish",
-        "item": 90,
+        "item": 91,
         **judge("stated", stated["trades"]),
         "skipped": {"stated": stated["skipped"], **{k: v["skipped"] for k, v in reported.items()}},
         "summary": {

@@ -4248,6 +4248,54 @@
     {
       "id": 90,
       "study": "item90",
+      "title": "Two published signal entries on SPX 0DTE: an opening-range breakout put spread and an ADX condor",
+      "status": "declared",
+      "legacy": false,
+      "setup": "indicator-rule",
+      "side": "signal",
+      "structure": "options",
+      "window": "0dte",
+      "measure": "the vendor's SPX one-minute store, every stored trading day 2022-05-16 to 2026-11-13, replayed by the automation driver (paper's engine, fills, fees and settlement); orb-put-spread: the first one-minute close above the 60-minute opening range by 13:00 ET, a same-day put spread short nearest 0.35 delta, long $10 lower; adx-condor: ADX(14) on five-minute bars of the session alone crossing below 20 by 15:30 ET, a same-day condor shorts nearest spot -/+ $5, $5 wings, reward to risk at least 100% and bid/ask at most $1; one contract, held to settlement, one trade a session",
+      "expected": "each arm's net clears the bill on its buying power and its own financed delta at t 2.0, and beats its structure entered at a random time on a random session",
+      "sample": "one run cut at 2025-07-01 (design before, holdout from); < 150 design trades = no verdict, < 60 holdout likewise",
+      "rule": "RULE: the kit's three bars on each arm's trades (capital t >= 2.0 over the 3-month bill on the widest wing less the credit; tail 10,000 draws seed 90, the sample's own trades a year; delta: the net less the entry delta from the store's leg deltas financed to the settlement, t >= 2.0); CONTROL_RULE: the arm's trades against its placebo's per-session means (20 draws seed 90 on every session of the part, the arm's structure and gates at a minute drawn from its own entry minutes in that part), Welch design difference > 0 at one-sided t >= 2.0 and > 0 in each design half (2024-01-01), then the holdout difference > 0 after a design pass; Holm across the two arms on the control's design p at 0.05; a pass needs RULE, CONTROL_RULE and Holm",
+      "mechanism": "a morning range broken upward marks buyers in control for the rest of the session, so a put spread sold on the break expires worthless more often than its premium prices; a falling ADX marks a trend ending, so a narrow condor sold then sits in a range into the close",
+      "rivals": [
+        {
+          "explanation": "the time of day, since same-day decay differs by hour",
+          "check": "the placebo draws its minute from the arm's own entry minutes"
+        },
+        {
+          "explanation": "the structure, whatever the trigger",
+          "check": "the placebo keeps the structure, its gates and its exit"
+        },
+        {
+          "explanation": "the sample's drift lifting a bullish put spread",
+          "check": "the delta bar against the structure's own financed delta; every year reported"
+        },
+        {
+          "explanation": "the source's tuning on its own window",
+          "check": "only the stated rules are judged; the sessions before the source's window reported apart"
+        }
+      ],
+      "pointer": "research/edge-hypotheses-plan.md#90-two-published-signal-entries-on-spx-0dte-an-opening-range-breakout-put-spread-and-an-adx-condor",
+      "scripts": [
+        "packages/backtest/scripts/signal_entries_item90.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_signal_entries_item90_script.py"
+      ],
+      "results": [
+        "{home}/data/backtest/results/research/item90/results.json"
+      ],
+      "outcome": null,
+      "retest": null,
+      "retest_note": "A pass is followed by an automation with its own forward block, not a retest; the store is the vendor's, so a retest needs the licence.",
+      "retests": []
+    },
+    {
+      "id": 91,
+      "study": "item91",
       "title": "The weekly SPY at-the-money call calendar: 60 days short, 90 long, out at +30% or the short's expiry",
       "status": "declared",
       "legacy": false,
@@ -4258,7 +4306,7 @@
       "measure": "every Friday 2016-01-08 to 2026-11-13, an at-the-money SPY call calendar on the vendor's end-of-day chains: short the standard monthly nearest 60 days, long the next monthly, at the strike nearest the short's parity forward; bought at the mids plus core's slippage and fees for two legs; out at the first close where the spread's mid is at or above 1.3x its entry mid, else on the short's expiry session (long at its mid less slippage, short at intrinsic on SPY's close); net per trade on the debit",
       "expected": "the net clears the 3-month bill on the debit and the entry delta financed on it, at t 2.0 and by a block bootstrap, in the years before the source's backtests",
       "sample": "one run cut at 2019-01-01 (design 2016-2018, before the source's window; holdout from, the source's own window); < 120 design entries = no verdict, < 60 holdout likewise (about 150 and 400)",
-      "rule": "RULE: the kit's three bars on one row per entry (capital t >= 2.0 over the 3-month bill on the debit; tail 10,000 draws seed 90, the sample's own entries a year; delta t >= 2.0 over the entry delta financed on the debit); OVERLAP_RULE: the same capital and delta excesses by a circular moving-block bootstrap, blocks of 13 entries, 10,000 draws seed 90, the share of resampled means at or under zero <= 0.025 for both, design then holdout; a pass needs both; one arm, no Holm",
+      "rule": "RULE: the kit's three bars on one row per entry (capital t >= 2.0 over the 3-month bill on the debit; tail 10,000 draws seed 91, the sample's own entries a year; delta t >= 2.0 over the entry delta financed on the debit); OVERLAP_RULE: the same capital and delta excesses by a circular moving-block bootstrap, blocks of 13 entries, 10,000 draws seed 91, the share of resampled means at or under zero <= 0.025 for both, design then holdout; a pass needs both; one arm, no Holm",
       "mechanism": "index implied volatility about 60 days out is usually priced richer, relative to what is realised before it expires, than the 90-day leg loses over the same weeks, so selling the nearer month against the farther one earns the difference while SPY stays near the strike",
       "rivals": [
         {
@@ -4282,15 +4330,15 @@
           "check": "OVERLAP_RULE's moving-block bootstrap, blocks longer than any trade"
         }
       ],
-      "pointer": "research/edge-hypotheses-plan.md#90-the-weekly-spy-at-the-money-call-calendar-60-days-short-90-long-out-at-30-or-the-shorts-expiry",
+      "pointer": "research/edge-hypotheses-plan.md#91-the-weekly-spy-at-the-money-call-calendar-60-days-short-90-long-out-at-30-or-the-shorts-expiry",
       "scripts": [
-        "packages/backtest/scripts/spy_call_calendar_item90.py"
+        "packages/backtest/scripts/spy_call_calendar_item91.py"
       ],
       "tests": [
-        "packages/backtest/tests/test_spy_call_calendar_item90_script.py"
+        "packages/backtest/tests/test_spy_call_calendar_item91_script.py"
       ],
       "results": [
-        "{home}/data/backtest/results/research/item90/results.json"
+        "{home}/data/backtest/results/research/item91/results.json"
       ],
       "outcome": null,
       "retest": null,
