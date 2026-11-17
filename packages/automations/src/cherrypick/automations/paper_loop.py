@@ -583,16 +583,27 @@ def _window_text(arm: dict) -> str:
     return f"{first // 60:02d}:{first % 60:02d}-{last // 60:02d}:{last % 60:02d} ET"
 
 
-def backtest_suggestions(arms: dict[str, dict], today: date) -> dict[str, dict]:
-    """Each automation not wholly backtested: whether our own stores cover a backtest of it
-    (`enrolment.suggestion`, over the source registry's cached inventory; a file read, no store opened)."""
+def backtest_suggestions(arms: dict[str, dict], today: date, *, licence=None) -> dict[str, dict]:
+    """Each automation not wholly backtested: whether our stores cover a backtest of it
+    (`enrolment.suggestion`, over the source registry's cached inventory; a file read, no store opened).
+    Our own stores first; where they fall short, a licensed store while the licence allows new work
+    (`licence.allows_new_work`, asked at most once, and only when some suggestion needs it)."""
     from cherrypick.core import sources
     from cherrypick.core.sources import inventory
 
+    from . import licence as licence_mod
+
+    ask = licence or licence_mod.allows_new_work
     inv = inventory.load()
+    allowed: bool | None = None
     out = {}
     for name, arm in sorted(arms.items()):
         s = enrolment.suggestion(arm, inv, today, sources.coverage)
+        if s is not None and not s["possible"]:
+            if allowed is None:
+                allowed = bool(ask())
+            if allowed:
+                s = enrolment.suggestion(arm, inv, today, sources.coverage, licensed_ok=True)
         if s is not None:
             out[name] = s
     return out

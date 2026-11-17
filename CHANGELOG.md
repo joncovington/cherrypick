@@ -42,10 +42,12 @@ beyond the latest release.
   sessions' spot trails from the store again at every minute of a session, so a year of one-minute
   SPX sessions took days. It now reads each session's trail once and keeps it. The trades are
   unchanged.
-- **The Builder runs a backtest.** An automation card whose blocks our own data covers has
+- **The Builder runs a backtest.** An automation card whose blocks our data covers has
   **Backtest**: one explore run of that saved automation, queued on the research queue by the
   orchestrator over the window and store its backtest suggestion names (descriptive, no verdict, no
-  label moved, nothing turned on). **Runs** shows the card's queued runs and each result's sessions,
+  label moved, nothing turned on). Our own recordings are asked first; where they fall short and the
+  vendor licence allows new work, the vendor's store covers it and the page says the result is
+  licensed. **Runs** shows the card's queued runs and each result's sessions,
   trades and P&L per arm, a licensed result only while licensed results may be shown. Backtest
   `read automation-runs --name` is the read behind it.
 - **The backtest fetch runs on the vendor's Options Value tier.** `vendor.subscription` picks the path.

@@ -43,7 +43,7 @@ const SCHEMA: BuilderSchema = {
   progression: [],
 };
 
-const POSSIBLE = { blocks: ["exit"], window: ["2025-11-13", "2026-11-13"] as [string, string], needs: [], possible: true };
+const POSSIBLE = { blocks: ["exit"], window: ["2025-11-13", "2026-11-13"] as [string, string], needs: [], possible: true, licensed: false };
 
 describe("the workspace", () => {
   it("names a saved automation's switch, group, start and register label, and offers JSON", () => {
@@ -105,10 +105,11 @@ describe("the coverage line", () => {
           blocks: ["exit"],
           window: ["2025-11-13", "2026-11-13"],
           possible: false,
+          licensed: false,
           needs: [
-            { field: "chain", expiry: "0dte", cadence: "1m", covered: false, source: null,
+            { field: "chain", expiry: "0dte", cadence: "1m", covered: false, source: null, licensed: false,
               nearest: { source: "recorded-0dte", first: "2026-10-13", last: "2026-11-13", why: "starts 2026-10-13" } },
-            { field: "spot", cadence: "1m", covered: true, source: "spot-trail" },
+            { field: "spot", cadence: "1m", covered: true, source: "spot-trail", licensed: false },
           ],
         }}
       />,
@@ -117,5 +118,14 @@ describe("the coverage line", () => {
     expect(no).toContain("chain (0dte) at 1m");
     expect(no).not.toContain("spot at 1m");
     expect(no).toContain("nearest for chain: recorded-0dte 2026-10-13 to 2026-11-13 (starts 2026-10-13)");
+  });
+
+  it("names the licensed store when the vendor's covers what our own data does not", () => {
+    const need = (field: string) => ({ field, cadence: "1m", covered: true, source: "vendor-0dte-spx-60s", licensed: true });
+    const out = html(<SuggestionLine s={{ ...POSSIBLE, licensed: true, needs: [need("chain"), need("greeks")] }} />);
+    expect(out).toContain('data-licensed="yes"');
+    expect(out).toContain("The licensed vendor store (vendor-0dte-spx-60s) covers a backtest of exit");
+    expect(out).toContain("Its result is licensed");
+    expect(out).not.toContain("Our own data covers");
   });
 });

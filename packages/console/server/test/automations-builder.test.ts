@@ -43,6 +43,12 @@ describe("the automation builder read", () => {
     expect(mine!.blocks[0]!.keys).toEqual({ entry: { kind: "time", at: "10:30" } });
     expect(mine!.suggestion!.needs[0]!.nearest!.first).toBe("2026-10-13");
     expect(mine!.suggestion!.possible).toBe(false);
+    // Fail closed: a suggestion or need that does not say it is our own reads as licensed.
+    expect(mine!.suggestion!.licensed).toBe(true);
+    expect(mine!.suggestion!.needs[0]!.licensed).toBe(true);
+    const own = shapeBuilder({ automations: [{ ...ROW, suggestion: { ...ROW.suggestion, licensed: false, needs: [{ ...ROW.suggestion.needs[0], licensed: false }] } }] });
+    expect(own[0]!.suggestion!.licensed).toBe(false);
+    expect(own[0]!.suggestion!.needs[0]!.licensed).toBe(false);
     expect(condor!.register).toEqual({ item: 75, verdict: "passed" });
     expect(condor!.suggestion).toBeNull();
     expect(condor!.forward).toBeNull();

@@ -124,8 +124,9 @@ alone):
     unsaved edit): the module decides the automation now on a read-only snapshot and writes nothing.
   - **The Builder's backtest queues; it writes no config** (`/api/automations/builder/backtest`,
     configcli `automation_backtest`). The route sends the name alone. The orchestrator takes the
-    window and the source from the automation's own backtest suggestion (our stores only, never
-    the vendor's), refuses where that is not possible or a run is already live, and adds one
+    window and the source from the automation's own backtest suggestion (our own stores first, the
+    vendor's only while the licence allows new work, marked `licensed`), refuses where that is not
+    possible or a run is already live, and adds one
     research-queue `script` row of the automation backtest driver. The run is an explore run: no
     trial, no verdict, no label moved. The explore-runs list (`/api/automations/builder/runs`,
     configcli `automation_runs`) shows its rows and results, each with its net curve and what it

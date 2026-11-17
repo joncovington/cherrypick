@@ -1,13 +1,16 @@
 """The backtest suggestion (#1201): an automation not wholly backtested is told what its blocks read and
-whether our own stores cover it; one wholly backtested is told nothing. The registry is asked for our
-data only, never a licensed source."""
+whether our stores cover it; one wholly backtested is told nothing. Our own stores are asked first; a
+licensed store only where they fall short and the licence allows new work."""
 
 from __future__ import annotations
 
 import copy
+import json
+import subprocess
 from datetime import date
 
 from cherrypick.automations import arms, enrolment
+from cherrypick.automations.licence import allows_new_work as real_allows_new_work
 
 A = arms.load_arms()
 TODAY = date(2026, 11, 16)
@@ -100,3 +103,83 @@ def test_the_status_carries_a_suggestion_for_an_automation_not_backtested(tmp_pa
     st = paper_loop.run_status(config, loaded, db.connect(str(tmp_path / "p.db")), cache_path="none")
     assert set(st["backtest_suggestions"]) == {"mine"}  # the shipped eight are wholly backtested
     assert st["backtest_suggestions"]["mine"]["possible"] is False  # no inventory in a test home
+
+
+def vendor_only_coverage():
+    """Our own stores hold nothing; the vendor's (licensed) covers every need."""
+    calls = []
+
+    def coverage(inventory, field, symbol, start, end, *, cadence=None, expiry=None, licensed=False):
+        calls.append(licensed)
+        if licensed:
+            return {"covered": True, "best": f"vendor-{field}", "sources": []}
+        part = {
+            "source": f"own-{field}",
+            "first": "2026-10-13",
+            "last": "2026-11-13",
+            "why": "starts 2026-10-13",
+        }
+        return {"covered": False, "best": None, "sources": [part]}
+
+    coverage.calls = calls
+    return coverage
+
+
+def test_a_licensed_store_is_never_asked_unless_the_licence_allows_new_work():
+    cov = vendor_only_coverage()
+    s = enrolment.suggestion(fresh(), {}, TODAY, cov)
+    assert s["possible"] is False and s["licensed"] is False
+    assert cov.calls and not any(cov.calls)  # only our own stores were asked
+    assert all(r["licensed"] is False for r in s["needs"])
+
+
+def test_where_our_stores_fall_short_a_licensed_store_covers_and_says_so():
+    s = enrolment.suggestion(fresh(), {}, TODAY, vendor_only_coverage(), licensed_ok=True)
+    assert s["possible"] is True and s["licensed"] is True
+    assert all(r["licensed"] and r["source"] == f"vendor-{r['field']}" for r in s["needs"])
+
+
+def test_our_own_store_is_preferred_and_the_vendor_not_asked_when_it_covers():
+    cov = fake_coverage({"chain", "greeks", "spot"})
+    s = enrolment.suggestion(fresh(), {}, TODAY, cov, licensed_ok=True)
+    assert s["possible"] is True and s["licensed"] is False
+    assert all(c["licensed"] is False for c in cov.calls)
+
+
+def test_the_suggestions_ask_the_licence_once_and_only_when_a_backtest_falls_short(monkeypatch):
+    from cherrypick.core import sources
+
+    from cherrypick.automations import paper_loop
+
+    monkeypatch.setattr(sources, "coverage", vendor_only_coverage())
+    asked = []
+
+    def licence():
+        asked.append(1)
+        return True
+
+    out = paper_loop.backtest_suggestions({"a": fresh("a"), "b": fresh("b")}, TODAY, licence=licence)
+    assert len(asked) == 1 and all(s["possible"] and s["licensed"] for s in out.values())
+    asked.clear()
+    shut = paper_loop.backtest_suggestions({"a": fresh("a")}, TODAY, licence=lambda: asked.append(1) or False)
+    assert len(asked) == 1 and shut["a"]["possible"] is False and shut["a"]["licensed"] is False
+    asked.clear()
+    monkeypatch.setattr(sources, "coverage", fake_coverage({"chain", "greeks", "spot"}))
+    paper_loop.backtest_suggestions({"a": fresh("a")}, TODAY, licence=lambda: asked.append(1) or True)
+    assert asked == []  # our own stores cover it: the licence is not asked
+
+
+def test_the_licence_reads_as_allowing_new_work_only_on_a_plain_active_answer():
+    def answer(stdout, code=0):
+        return lambda *a, **k: subprocess.CompletedProcess([], code, stdout=stdout, stderr="")
+
+    def boom(*a, **k):
+        raise subprocess.TimeoutExpired("python", 60)
+
+    assert real_allows_new_work(run=answer(json.dumps({"license": {"active": True}}))) is True
+    assert real_allows_new_work(run=answer(json.dumps({"license": {"active": False}}))) is False
+    assert real_allows_new_work(run=answer(json.dumps({"license": {"active": "true"}}))) is False
+    assert real_allows_new_work(run=answer(json.dumps({"license": {"active": True}}), code=1)) is False
+    assert real_allows_new_work(run=answer("not json")) is False
+    assert real_allows_new_work(run=answer(json.dumps({"other": 1}))) is False
+    assert real_allows_new_work(run=boom) is False

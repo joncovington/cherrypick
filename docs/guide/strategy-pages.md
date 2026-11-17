@@ -96,7 +96,7 @@ The automation is built in five sections, each carrying its blocks' backtest lab
 
 Every choice the form offers comes from the engine's own tables, so it offers nothing the engine would refuse by name. Whether a value is right is the **Check**. **Edit as JSON** shows the same automation as text, for anything the form does not lay out.
 
-Above the form, for an automation not wholly backtested, a line says whether our own data covers a backtest over the last year, or names the nearest store and why it falls short.
+Above the form, for an automation not wholly backtested, a line says whether our data covers a backtest over the last year, or names the nearest store and why it falls short. Our own recordings are asked first. Where they fall short and the vendor licence allows new work, the vendor's store is offered instead, and the line names it and says the result is licensed: it stays on this machine and shows only while licensed results may.
 
 The action row:
 

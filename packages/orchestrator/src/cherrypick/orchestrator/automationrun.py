@@ -4,9 +4,11 @@
 backtest driver, `packages/backtest/scripts/automation_backtest.py run`, for the one saved automation:
 over the window its backtest suggestion names and from the source that suggestion found covering it.
 The suggestion is the automations module's own (`enrolment.suggestion`, read by subprocess through
-`cli builder`), which asks our own stores only, never the vendor's, so nothing here reads licensed
-data. An automation without a suggestion (every block backtested) or whose suggestion is not
-possible (our data does not cover it) is refused, as is a second run while one is live.
+`cli builder`), which asks our own stores first and the vendor's only while the licence allows new
+work; the driver checks the licence again before it reads a licensed store, and writes that result
+where licensed results go. An automation without a suggestion (every block backtested) or whose
+suggestion is not possible (our data does not cover it) is refused, as is a second run while one is
+live.
 
 **What it is not.** The run is descriptive: an explore run, no trial and no verdict, so no split is
 declared and nothing moves a register label, a gate or a config. It reads stores and writes one result
