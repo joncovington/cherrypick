@@ -122,6 +122,9 @@ alone):
     so the page spells no gate, strike rule or exit of its own. "Today, live" is configcli
     `automation_today` (`/api/automations/builder/today`, a POST only because it may carry an
     unsaved edit): the module decides the automation now on a read-only snapshot and writes nothing.
+    The wizard (`BuilderWizard.tsx`) is the same three calls and the same save: its shapes are the
+    schema's, each step's Next is the module's draft check filtered to that step's keys, and it
+    writes only through `/save`, always off.
   - **The Builder's backtest queues; it writes no config** (`/api/automations/builder/backtest`,
     configcli `automation_backtest`). The route sends the name alone. The orchestrator takes the
     window and the source from the automation's own backtest suggestion (our own stores first, the

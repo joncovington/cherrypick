@@ -21,6 +21,10 @@ export interface BuilderSchema {
   limits: string[];
   sizes: Record<string, string[]>;
   progression: string[];
+  /** The wizard's starting shapes, each a whole automation the engine accepts as it stands. */
+  shapes: Record<string, { label: string; about: string; risk: string; credit: boolean; spec: Record<string, unknown> }>;
+  /** The credit-trade exits, in the engine's own keys. */
+  credit_rules: Record<string, number>;
 }
 
 /** `GET /api/automations/builder/schema`. */

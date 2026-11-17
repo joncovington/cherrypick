@@ -30,6 +30,17 @@ beyond the latest release.
   Declare and Promote to paper shown disabled. Beside it, **Today, live** decides the automation
   now as paper would, on a read-only snapshot (`cli builder-today`): every check, and the legs it
   would take or the check that stops it. The explore runs and run cards sit beside it too.
+- **The Builder's wizard.** **New** and **Copy as new** build an automation in seven steps (start,
+  underlying and expiry, legs, entry, gates, exits and size, review), for someone new to
+  backtesting. It starts from a shape (short put, credit spreads, iron condor, iron fly, custom legs),
+  each a whole automation the engine accepts, with the credit-trade exits filled in. Each step
+  shows only its fields, an "About this step" panel and a **?** on each part with a short
+  plain-language note. Leaving a step asks the module's Check. **Open in the full form** carries the
+  draft across. Saving is the form's save, always off.
+- **Backtest coverage reads a near-close time entry as daily.** A time entry whose window holds
+  15:59, the end-of-day chains' one tick, now needs the chains at `1d` rather than minute data, as
+  the replay prices it; only an entry at exactly 16:00 was read as daily before, a time the
+  engine's window never meets.
 - **The Builder's run card.** **Runs** now lists an automation's explore runs with a small P&L curve
   and what each changed from the run before. Opening one shows its card:
   - tiles: P&L, trades, per trade, win rate, max drawdown, net over drawdown;
