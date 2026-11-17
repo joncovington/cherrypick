@@ -56,6 +56,8 @@ describe("the workspace", () => {
     expect(out).toContain(">Edit as JSON</button>");
     expect(out).toContain("Today, live");
     expect(out).toContain("Explore runs · this automation");
+    expect(out).toContain('aria-label="About Today, live"');
+    expect(out).toContain('aria-label="About Explore runs"');
   });
 
   it("starts a new automation from the keys the loop requires, and has no runs yet", () => {

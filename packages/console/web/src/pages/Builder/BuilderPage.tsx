@@ -5,6 +5,8 @@ import { builderBacktest, builderDraft, builderSave, builderToday, useAutomation
 import { BuilderForm, type Spec } from "./BuilderForm";
 import { ExploreRunsList, RunCardPanel } from "./BuilderRunCard";
 import { TodayView } from "./BuilderToday";
+import { CardHelpButton } from "../../components/CardHelp";
+import { SECTION_HELP } from "./BuilderHelp";
 
 /**
  * The Builder page (#1180): one automation at a time, built in five sections (structure and data,
@@ -113,6 +115,7 @@ function TodayPanel({ name, spec, dirty }: { name: string; spec: Spec | null; di
     <>
       <div className="builder-run-section-head">
         <h4>Today, live</h4>
+        <CardHelpButton cardTitle="Today, live" help={SECTION_HELP["today"]!} />
         <button type="button" className="btn" disabled={busy || !spec} onClick={() => void read()}>
           {t ? "Read again" : "Read now"}
         </button>
@@ -345,6 +348,7 @@ export function Workspace({ a, schema, mode, onSaved }: { a: BuilderAutomation |
             <div className="builder-section">
               <div className="builder-run-section-head">
                 <h4>Explore runs · this automation</h4>
+                <CardHelpButton cardTitle="Explore runs" help={SECTION_HELP["runs"]!} />
               </div>
               <RunsPanel name={mode.name} />
             </div>

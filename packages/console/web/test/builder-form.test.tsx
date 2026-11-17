@@ -3,6 +3,7 @@ import { renderToString } from "react-dom/server";
 import type { BuilderSchema, BuilderToday } from "@console/shared";
 import { BuilderForm, entryText, parseValue, showValue, withKey } from "../src/pages/Builder/BuilderForm";
 import { legText, TodayView } from "../src/pages/Builder/BuilderToday";
+import { SECTION_HELP } from "../src/pages/Builder/BuilderHelp";
 
 const html = (el: React.ReactElement) => renderToString(el).replace(/<!--\s*-->/g, "");
 
@@ -141,5 +142,23 @@ describe("a leg's match mode", () => {
     expect(out).toContain('<option value="" selected="">default (nearest)</option>');
     expect(out).toContain('<option value="" selected="">default (exact)</option>');
     expect(out).not.toContain("choose…");
+  });
+});
+
+describe("the section help", () => {
+  it("puts a ? on each of the five sections, each opening its own help", () => {
+    const out = html(<BuilderForm schema={SCHEMA} spec={SPEC} labels={{}} onChange={() => {}} />);
+    for (const t of ["1 · Underlying and data", "2 · Signal: when to enter", "3 · Gates: the market and the chain", "4 · Structure: legs, then price", "5 · Exits, size, costs"]) {
+      expect(out).toContain(`aria-label="About ${t}"`);
+    }
+  });
+
+  it("has a title and sections for every part of the page", () => {
+    for (const key of ["underlying", "signal", "gates", "structure", "exits", "today", "runs"]) {
+      const h = SECTION_HELP[key]!;
+      expect(h.title.length).toBeGreaterThan(5);
+      expect(html(<>{h.body}</>)).toContain("<h4>");
+    }
+    expect(html(<>{SECTION_HELP["structure"]!.body}</>)).toContain("A sold leg needs a bid");
   });
 });
