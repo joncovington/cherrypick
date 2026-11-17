@@ -52,6 +52,29 @@ def test_inventory_shapes_declared_stores_flags_missing_and_names_the_undeclared
     assert [u["file"] for u in out["undeclared"]] == ["mystery.db"]
 
 
+def test_a_request_ledger_gives_each_symbols_span_from_its_complete_rows_only(tmp_path):
+    con = sqlite3.connect(tmp_path / "eod_chains.db")
+    con.execute("CREATE TABLE eod_chain_requests (symbol TEXT, session TEXT, expiration TEXT, status TEXT)")
+    con.executemany(
+        "INSERT INTO eod_chain_requests VALUES (?, ?, ?, ?)",
+        [
+            ("SPY", "2024-01-02", "2024-02-16", "complete"),
+            ("SPY", "2024-01-02", "2024-03-15", "complete"),  # one session, two expiries
+            ("SPY", "2024-01-03", "2024-02-16", "complete"),
+            ("SPY", "2024-01-04", "2024-02-16", "empty"),  # not held: never counted
+            ("IWM", "2024-01-03", "2024-02-16", "refused"),  # a symbol with nothing held
+        ],
+    )
+    con.commit()
+    con.close()
+    shape = stores._shape(tmp_path / "eod_chains.db")
+    assert shape["tables"]["eod_chain_requests"]["symbols"] == {
+        "SPY": {"first": "2024-01-02", "last": "2024-01-03", "sessions": 2}
+    }
+    _db(tmp_path / "SPX-60s.db")  # no request ledger: no per-symbol spans
+    assert "symbols" not in stores._shape(tmp_path / "SPX-60s.db")["tables"]["t"]
+
+
 def test_a_shape_is_cached_until_the_file_changes(tmp_path, monkeypatch):
     _db(tmp_path / "SPX-60s.db")
     calls = []

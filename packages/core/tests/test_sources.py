@@ -183,6 +183,35 @@ def test_the_store_cache_probe_reads_the_backtests_counts_never_the_store(tmp_pa
     )
 
 
+def test_a_store_with_per_symbol_spans_confirms_the_symbol_and_refuses_one_it_lacks(tmp_path):
+    cache = tmp_path / "backtest" / "results" / "store_inventory.json"
+    cache.parent.mkdir(parents=True)
+    spy = {"first": "2016-01-04", "last": "2026-11-13", "sessions": 2734}
+    shape = {
+        "tables": {
+            "eod_chain_quotes": {"rows": 9, "span": ["2016-01-04", "2026-11-13"]},
+            "eod_chain_requests": {"rows": 9, "span": ["2016-01-04", "2026-11-13"], "symbols": {"SPY": spy}},
+        }
+    }
+    cache.write_text(json.dumps({"eod_chains.db": {"key": "k", "shape": shape}}), encoding="utf-8")
+    s = src.by_name("vendor-eod-chains")
+    entry = inv.probe_store_cache(tmp_path, s)
+    assert entry == {
+        "store": {"first": "2016-01-04", "last": "2026-11-13", "sessions": None},
+        "symbols": {"SPY": spy},
+    }
+    doc = {"sources": {s.name: entry}}
+    got = src.coverage(
+        doc, "chain", "SPY", "2025-11-13", "2026-11-13", cadence="1d", expiry="all", licensed=True
+    )
+    assert got["covered"] and got["best"] == "vendor-eod-chains"
+    other = src.coverage(
+        doc, "chain", "XLE", "2025-11-13", "2026-11-13", cadence="1d", expiry="all", licensed=True
+    )
+    assert not other["covered"]
+    assert "holds nothing for XLE" in next(x["why"] for x in other["sources"] if x["source"] == s.name)
+
+
 class _FakeDolt:
     """A date-keyed table: answers the two queries the probe asks, and counts them."""
 
