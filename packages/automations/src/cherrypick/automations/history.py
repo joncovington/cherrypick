@@ -57,6 +57,8 @@ class StoreHistory:
         #: stock history), for a daily signal; none means a daily signal reads stale bars.
         self.daily = sorted(daily or [], key=lambda r: r["session"])
         self._day: dict[str, dict] = {}
+        #: Each session's spot trail as `prior_trails` returns it, read once.
+        self._trails: dict[str, list[tuple[int, float]]] = {}
 
     def day(self, session: str) -> dict:
         if session in self._day:
@@ -142,15 +144,19 @@ class StoreHistory:
         return trail[max(trail)] if trail else None
 
     def prior_trails(self, session: str, n: int) -> dict[str, list[tuple[int, float]]]:
-        """The spot trails of the `n` stored sessions before `session`, as paper's recorded trail."""
+        """The spot trails of the `n` stored sessions before `session`, as paper's recorded trail. Each
+        session's trail is read from the store once and kept (a few hundred numbers), since the driver
+        asks for the same sessions at every minute of the next one."""
         out = {}
         for d in [x for x in self.sessions if x < session][-n:]:
-            rec = qh.RecordedDay(self.symbol, d, history_db=self.path)
-            if rec.trail:
-                out[d] = [
+            if d not in self._trails:
+                rec = qh.RecordedDay(self.symbol, d, history_db=self.path)
+                self._trails[d] = [
                     (clock.minute_of_day(datetime.fromtimestamp(ts, clock.ET)), spot)
                     for ts, spot in rec.trail
                 ]
+            if self._trails[d]:
+                out[d] = list(self._trails[d])
         return out
 
     def daily_before(self, session: str) -> list[dict]:

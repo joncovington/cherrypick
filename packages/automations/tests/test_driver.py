@@ -111,3 +111,28 @@ def test_the_driver_reads_declared_volume_and_without_it_never_enters(tmp_path):
         volumes={"SPY": {DAY: {599: 1.0, 600: 2.0}, "2026-11-13": {700: 3.0}}},
     )  # fmt: skip
     assert snap.volumes == {"SPY": {DAY: {599: 1.0}, "2026-11-13": {700: 3.0}}}
+
+
+def test_earlier_sessions_trails_are_read_once_and_match_a_fresh_read(tmp_path, monkeypatch):
+    days = sessions_before(DAY, 3) + [DAY]
+    sb = StoreBuilder(tmp_path / "store.db")
+    rows = market_rows(6000.0, ZERO_DTE_YEARS, 0.2)
+    for i, d in enumerate(days):
+        for m in range(570, 576):
+            sb.minute("SPX", d, m, d, 6000.0 + i + (m - 570) * 0.25, rows, vix=16.0)
+        sb.close("SPX", d, 6000.0 + i)
+    fresh = history.StoreHistory(tmp_path / "store.db", "SPX").prior_trails(DAY, 3)
+    assert sorted(fresh) == days[:3] and all(len(t) == 6 for t in fresh.values())
+
+    reads = []
+    real = history.qh.RecordedDay
+
+    def counted(symbol, session, **kw):
+        reads.append(session)
+        return real(symbol, session, **kw)
+
+    monkeypatch.setattr(history.qh, "RecordedDay", counted)
+    h = history.StoreHistory(tmp_path / "store.db", "SPX")
+    for _ in range(5):  # the driver asks at every minute of the session
+        assert h.prior_trails(DAY, 3) == fresh
+    assert sorted(reads) == days[:3]
