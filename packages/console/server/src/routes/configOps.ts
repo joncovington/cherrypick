@@ -167,6 +167,20 @@ export function registerConfigRoutes(app: FastifyInstance, config: ConsoleConfig
     return { name, automation: automation as Record<string, unknown> };
   };
 
+  /**
+   * "Today, live": the module decides one automation now as paper would (`cli builder-today`), on a
+   * read-only snapshot of the stream cache and the paper ledger. A POST only because it may carry an
+   * unsaved edit; it writes nothing and places nothing.
+   */
+  app.post("/api/automations/builder/today", async (req, reply) => {
+    const parsed = automationBody((req.body ?? {}) as Record<string, unknown>);
+    if (typeof parsed === "string") return reply.code(400).send({ error: parsed });
+    const result = sendBridgeFailure(reply, await callConfigCli({ op: "automation_today", ...parsed }));
+    if (result === null) return reply;
+    const { ok: _ok, ...today } = result;
+    return today;
+  });
+
   app.post("/api/automations/builder/draft", async (req, reply) => {
     const parsed = automationBody((req.body ?? {}) as Record<string, unknown>);
     if (typeof parsed === "string") return reply.code(400).send({ error: parsed });

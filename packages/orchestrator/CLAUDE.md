@@ -333,7 +333,9 @@ filename; override with `paper.sla_state_prefix`.
   and `automation_save` (`automationedit.py`) are the Builder's: the automations module's `cli draft`
   by subprocess (its own check; this package never imports it), then the one entry that check
   returned, refused unless it is off, replaced or added (`configedit.insert_key`) at
-  `/automations/<name>` and written through `apply_raw_save`. `automation_backtest` and
+  `/automations/<name>` and written through `apply_raw_save`. `automation_today`
+  (`automationedit.today`) is the Builder's "Today, live": the module's `cli builder-today` with the
+  name and an unsaved edit on stdin, nothing else; it writes nothing. `automation_backtest` and
   `automation_runs` (`automationrun.py`) are the Builder's backtest: the module's `cli builder` read
   gives the automation's suggestion (window, source; refused unless `possible`), then one
   `researchqueue.add` of a `script` row, study `builder`, step `<name>-<YYMMDDHHMM>`, running

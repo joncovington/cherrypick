@@ -4,10 +4,8 @@ import type { SlideDef } from "../types";
 
 /**
  * The Builder (#1180): a page of its own, apart from Backtest (a forward test is not a backtest, and
- * Backtest's licensed pieces are gated). This first tab reads every automation block by block from the
- * automations package: each block's backtest label, the start and forward rule written at enrolment,
- * and whether our own data covers a backtest. Each card's editor checks an automation with the module
- * and saves it, always off, through the orchestrator's config editor (`BuilderEditor`).
+ * Backtest's licensed pieces are gated). One automation at a time, built in five sections from the
+ * module's own schema, beside the engine's decision of it today and its explore runs (`BuilderPage`).
  */
 export const slides: SlideDef[] = [{ id: "automations", label: "automations", render: () => <BuilderPage /> }];
 

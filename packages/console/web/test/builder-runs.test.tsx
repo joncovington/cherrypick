@@ -1,36 +1,11 @@
 import { describe, it, expect } from "vitest";
 import { renderToString } from "react-dom/server";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { BuilderAutomation, BuilderRunCard, BuilderRuns } from "@console/shared";
-import { BuilderCard } from "../src/pages/Builder/BuilderPage";
+import type { BuilderRunCard, BuilderRuns } from "@console/shared";
 import { changeLine, chartPaths, clock, ExploreRunsList, legChain, RunCardView, runLabel } from "../src/pages/Builder/BuilderRunCard";
 
 const html = (el: React.ReactElement) =>
   renderToString(<QueryClientProvider client={new QueryClient()}>{el}</QueryClientProvider>).replace(/<!--\s*-->/g, "");
-
-const A: BuilderAutomation = {
-  name: "mine",
-  group: null,
-  symbol: "SPX",
-  enabled: false,
-  note: null,
-  start: null,
-  register: null,
-  summary: "nothing backtested",
-  blocks: [{ block: "structure", state: "not_backtested", keys: {} }],
-  forward: null,
-  suggestion: null,
-};
-
-const POSSIBLE = { blocks: ["structure"], window: ["2025-11-14", "2026-11-13"] as [string, string], needs: [], possible: true };
-
-describe("the Builder's backtest button", () => {
-  it("is offered only where our data covers the automation", () => {
-    expect(html(<BuilderCard a={A} />)).not.toContain(">Backtest<");
-    expect(html(<BuilderCard a={{ ...A, suggestion: { ...POSSIBLE, possible: false } }} />)).not.toContain(">Backtest<");
-    expect(html(<BuilderCard a={{ ...A, suggestion: POSSIBLE }} />)).toContain(">Backtest<");
-  });
-});
 
 const RUN = {
   symbol: "SPX",

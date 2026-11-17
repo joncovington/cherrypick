@@ -60,7 +60,7 @@ import { readContango, readContangoHistory } from "../readers/contango.js";
 import { readWeeklyput, readWeeklyputHistory, weeklyputDbPath } from "../readers/weeklyput.js";
 import { readAutomations, readAutomationsHistory, readAutomationsPerformance } from "../readers/automations.js";
 import { readAutomationGroups } from "../services/automationsGroupsBridge.js";
-import { readAutomationsBuilder } from "../services/automationsBuilderBridge.js";
+import { readAutomationsBuilder, readBuilderSchema } from "../services/automationsBuilderBridge.js";
 import { readWeeklyputCycles, readWeeklyputStatus, readWeeklyputSummary } from "../services/weeklyputBridge.js";
 import path from "node:path";
 import { readBwb, readBwbHistory, readBwbMeta } from "../readers/bwb.js";
@@ -499,6 +499,7 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
   app.get("/api/automations/decisions", async () => readDecisions(config, "automations", null));
   app.get("/api/automations/groups", async () => readAutomationGroups());
   app.get("/api/automations/builder", async () => readAutomationsBuilder());
+  app.get("/api/automations/builder/schema", async () => readBuilderSchema());
   app.get("/api/curve/history", async (req) => {
     const q = (req.query ?? {}) as Record<string, unknown>;
     const pick = (k: string, max: number): string | null => {

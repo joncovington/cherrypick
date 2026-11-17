@@ -86,6 +86,29 @@ export function invalidateAutomationsBuilder(): void {
   memo.clear();
 }
 
+/**
+ * The form's choices (`cli builder-schema`): the engine's own tables, so the page offers nothing
+ * the module would refuse. They change only with the code, so the read is kept ten minutes.
+ */
+const SCHEMA_TTL_MS = 600_000;
+const spawnSchema: Caller = () => spawnModuleCliAsync(["-m", "cherrypick.automations.cli", "builder-schema"], UNAVAILABLE);
+let schemaCaller: Caller = spawnSchema;
+
+/** Swap the schema subprocess out in tests. Pass nothing to restore the real one. */
+export function setBuilderSchemaCaller(fn?: Caller): void {
+  schemaCaller = fn ?? spawnSchema;
+  memo.clear();
+}
+
+export async function readBuilderSchema(now: number = Date.now()): Promise<{ schema: Record<string, unknown> | null; error: string | null }> {
+  const res = await memo.get("schema", SCHEMA_TTL_MS, now, () => schemaCaller());
+  if (!res.ok || res.json === null || res.json["ok"] !== true) {
+    return { schema: null, error: res.ok ? "the form's schema could not be read" : res.error };
+  }
+  const { ok: _ok, ...schema } = res.json;
+  return { schema, error: null };
+}
+
 export async function readAutomationsBuilder(now: number = Date.now()): Promise<BuilderResult> {
   const res = await memo.get("builder", TTL_MS, now, () => caller());
   if (!res.ok) return { date: null, automations: [], error: res.error };

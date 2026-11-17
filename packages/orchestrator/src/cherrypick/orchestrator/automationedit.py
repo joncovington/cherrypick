@@ -37,10 +37,20 @@ def _err(message: str, code: str = "bad_request", **extra: Any) -> dict[str, Any
 
 def run_module_draft(cfg: dict[str, Any], req: dict[str, Any]) -> dict[str, Any] | None:
     """The module's answer to one `cli draft` request, or None when it could not be asked."""
+    return run_module_cli(cfg, "draft", req)
+
+
+def run_module_today(cfg: dict[str, Any], req: dict[str, Any]) -> dict[str, Any] | None:
+    """The module's answer to one `cli builder-today` request, or None when it could not be asked."""
+    return run_module_cli(cfg, "builder-today", req)
+
+
+def run_module_cli(cfg: dict[str, Any], command: str, req: dict[str, Any]) -> dict[str, Any] | None:
+    """The automations module's `cli <command>` with `req` as JSON on stdin; its JSON answer, or None."""
     mcfg = (cfg.get("modules") or {}).get(TARGET) or {}
     try:
         r = subprocess.run(
-            [cfgmod.python_exe(), "-m", "cherrypick.automations.cli", "draft"],
+            [cfgmod.python_exe(), "-m", "cherrypick.automations.cli", command],
             input=json.dumps(req),
             cwd=str(cfgmod.module_root(mcfg, TARGET)),
             capture_output=True,
@@ -63,6 +73,25 @@ def draft(cfg: dict[str, Any], req: dict[str, Any], run: Runner = run_module_dra
     name = req.get("name")
     if not isinstance(name, str) or not name:
         return _err("automation_draft needs a 'name'")
+    body: dict[str, Any] = {"name": name}
+    if "automation" in req:
+        if not isinstance(req["automation"], dict):
+            return _err("'automation' must be an object")
+        body["automation"] = req["automation"]
+    answer = run(cfg, body)
+    if not answer:
+        return _err("the automations module could not be asked (is it installed?)", "unavailable")
+    if not answer.get("ok"):
+        return _err(str(answer.get("error") or "the automations module refused the request"), "bad_request")
+    return answer
+
+
+def today(cfg: dict[str, Any], req: dict[str, Any], run: Runner = run_module_today) -> dict[str, Any]:
+    """The module's decision of `{name}` (or an unsaved `{name, automation}`) now, as paper would
+    decide it, on a read-only snapshot (`cli builder-today`). Writes nothing."""
+    name = req.get("name")
+    if not isinstance(name, str) or not name:
+        return _err("automation_today needs a 'name'")
     body: dict[str, Any] = {"name": name}
     if "automation" in req:
         if not isinstance(req["automation"], dict):

@@ -117,6 +117,11 @@ alone):
     automation and nothing else; the orchestrator runs the module's own check and writes the entry it
     returned, which is always off. The page never turns an automation on, and never writes its
     register label.
+  - **The Builder's form reads the module's schema and "Today, live"; neither writes.** The form's
+    choices are `cli builder-schema` (`/api/automations/builder/schema`, the engine's own tables),
+    so the page spells no gate, strike rule or exit of its own. "Today, live" is configcli
+    `automation_today` (`/api/automations/builder/today`, a POST only because it may carry an
+    unsaved edit): the module decides the automation now on a read-only snapshot and writes nothing.
   - **The Builder's backtest queues; it writes no config** (`/api/automations/builder/backtest`,
     configcli `automation_backtest`). The route sends the name alone. The orchestrator takes the
     window and the source from the automation's own backtest suggestion (our stores only, never

@@ -84,11 +84,39 @@ A set of short-dated option structures, each placed by its own rule. An automati
 
 ## Builder (`/builder`)
 
-A page of its own (shortcut `u`), apart from Backtest: a forward test is not a backtest. One tab, `automations`: a card for each automation, its blocks (structure, entry, gates, exit, size) laid out with the keys each holds. Each block carries its backtest label: `backtested` while it stands as the research study ran it, `changed since its backtest` once edited, `not backtested` when no study ran it. The card shows the start date and the forward check written when it was enrolled, and for an automation not wholly backtested, whether our own data covers a backtest over the last year, or the nearest store and why it falls short.
+A page of its own (shortcut `u`), apart from Backtest: a forward test is not a backtest. One tab, `automations`, showing one automation at a time. **Open** picks a saved one; **New** starts one from the keys the paper loop requires; **Copy as new** starts from the open one under a new name, which is not backtested whatever it was copied from. The row under it names the automation's switch, group, start date and register label.
 
-Each card has **Edit** and **Copy as new**. The editor shows the automation as JSON (its name in its own field; its register label and on/off switch left out). **Check** asks the automations module whether the paper loop would accept it, and lists each problem or the label each block would carry. **Save (off)** writes it through the suite's config editor, with a backup, and always off: turning it on is a separate step (a hand edit or its group's switch). A copy under a new name is not backtested, whatever it was copied from.
+The automation is built in five sections, each carrying its blocks' backtest labels: `backtested` while a block stands as the research study ran it, `changed since its backtest` once edited, `not backtested` when no study ran it.
 
-Where our own data covers a backtest of an automation that is not wholly backtested, its card has **Backtest**. It queues one run on the research queue, over the window and from the store its suggestion names. The run is descriptive (an explore run, no verdict), changes no label and turns nothing on. **Runs** lists the automation's explore runs: how many versions were tried, each queued run with its state, and each finished one by its time, with what it changed from the run before, its trades, P&L and a small curve. Opening one shows its run card: P&L, trades, per trade, win rate, max drawdown and net over drawdown; the cumulative P&L with its gross line and drawdown; each year's gross, fees, settlement, slippage, P&L and drawdown; why sessions were skipped; what the run changed; and its trade log. A run over licensed data is shown only while licensed results may be. A forward test is the automation running on paper, which is turned on outside the page.
+1. **Underlying and data:** the symbol, the expiry rule, the weekdays and the events to skip.
+2. **Signal:** a fixed time, an opening-range break, or a trigger (a fixed time, or a core signal's first firing inside a window), with the entry said in plain English.
+3. **Gates:** the gates that read the market and the chain, before the legs are chosen.
+4. **Structure:** each leg's side, right and strike rule with its match mode, then the gates that read the chosen legs' price.
+5. **Exits, size, costs:** the exits, the size and the limits. Fills and fees are paper's, not set here.
+
+Every choice the form offers comes from the engine's own tables, so it offers nothing the engine would refuse by name. Whether a value is right is the **Check**. **Edit as JSON** shows the same automation as text, for anything the form does not lay out.
+
+Above the form, for an automation not wholly backtested, a line says whether our own data covers a backtest over the last year, or names the nearest store and why it falls short.
+
+The action row:
+
+- **Check** asks the automations module whether the paper loop would accept the automation, and lists each problem or updates each section's label.
+- **Save (off)** writes it through the suite's config editor, with a backup, and always off.
+- **Explore run** queues one run of the saved automation on the research queue, over the window and from the store its suggestion names. It is offered only for a saved, unedited automation our data covers. The run is descriptive (no verdict), changes no label and turns nothing on.
+- **Declare…** and **Promote to paper** are shown disabled. A study declaration is written and reviewed outside the page, and turning an automation on is a hand edit or its group's switch.
+
+Beside the form:
+
+- **Today, live** decides the automation now as the paper loop would, on today's stream cache (an unsaved edit as it stands), without writing anything. It lists every check with its value and result, and the legs it would take in the order chain or the check that would stop it.
+- **Explore runs** lists the automation's runs: how many versions were tried, each queued run with its state, and each finished one by its time, with what it changed from the run before, its trades, P&L and a small curve. Opening one shows its run card:
+  - P&L, trades, per trade, win rate, max drawdown and net over drawdown;
+  - the cumulative P&L with its gross line and drawdown;
+  - each year's gross, fees, settlement, slippage, P&L and drawdown;
+  - why sessions were skipped, what the run changed, and its trade log.
+
+  A run over licensed data is shown only while licensed results may be.
+
+A forward test is the automation running on paper, which is turned on outside the page.
 
 ## Experiments (`/experiments`)
 

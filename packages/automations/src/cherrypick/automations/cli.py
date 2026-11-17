@@ -12,6 +12,10 @@
                problems, the entry a save would write (always off, its register label kept as stored)
                and its Builder row. Without `automation`, the automation as an editor starts from it.
                Writes nothing
+    builder-schema  every choice the Builder's form offers, from the engine's own tables
+    builder-today   one automation (JSON on stdin: name, optionally an unsaved automation) decided now
+               as paper would, on a read-only snapshot: the entry and legs it would take, or the
+               first failing check, with every check. Writes nothing
     replay-day the nightly check: a session's recorded ticks through the backtest's decision path, each
                decision or fill that differs listed; exit 1 when any does (a record-less day is 0)
 
@@ -124,6 +128,44 @@ def cmd_draft(args) -> int:
     return _print(drafts.draft(config, name, req["automation"], now_et().date()))
 
 
+def cmd_builder_schema(args) -> int:
+    from . import builderform
+
+    return _print(builderform.schema())
+
+
+def cmd_builder_today(args) -> int:
+    import sqlite3
+    import sys
+
+    from cherrypick.core.clock import now_et
+
+    from . import builderform, db, events, provider
+
+    try:
+        req = json.loads(sys.stdin.read() or "{}")
+    except json.JSONDecodeError as exc:
+        return _print({"ok": False, "error": f"request is not valid JSON: {exc}"})
+    if not isinstance(req, dict):
+        return _print({"ok": False, "error": "request: an object with name and, optionally, automation"})
+    config = config_mod.load_config(args.config)
+    arm, problems = builderform.resolve(config, req.get("name"), req.get("automation"))
+    if arm is None:
+        return _print({"ok": True, "name": req.get("name"), "state": "invalid", "problems": problems})
+    try:
+        conn = db.connect_ro(args.db)
+    except (OSError, sqlite3.Error) as exc:  # no ledger yet is an answer, not a crash
+        return _print({"ok": True, "name": arm["name"], "state": "no_ledger", "reason": str(exc)})
+    try:
+        evts = events.load_calendar((config.get("events") or {}).get("path"))
+        out = builderform.today(
+            config, arm, now_et(), conn=conn, cache_path=provider.stream_cache_path(config), evts=evts
+        )
+    finally:
+        conn.close()
+    return _print(out)
+
+
 def cmd_replay_day(args) -> int:
     from datetime import date
 
@@ -168,6 +210,8 @@ def main(argv=None) -> int:
     p.set_defaults(fn=cmd_replay)
     sub.add_parser("builder").set_defaults(fn=cmd_builder)
     sub.add_parser("draft").set_defaults(fn=cmd_draft)
+    sub.add_parser("builder-schema").set_defaults(fn=cmd_builder_schema)
+    sub.add_parser("builder-today").set_defaults(fn=cmd_builder_today)
     p = sub.add_parser("replay-day")
     p.add_argument("--date", help="YYYY-MM-DD; default today, or the last trading day")
     p.set_defaults(fn=cmd_replay_day)
