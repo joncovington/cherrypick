@@ -22,6 +22,10 @@ beyond the latest release.
 
 ### What's new
 
+- **An intraday signal automation backtests in minutes, not days.** The driver read the five earlier
+  sessions' spot trails from the store again at every minute of a session, so a year of one-minute
+  SPX sessions took days. It now reads each session's trail once and keeps it. The trades are
+  unchanged.
 - **The Builder runs a backtest.** An automation card whose blocks our own data covers has
   **Backtest**: one explore run of that saved automation, queued on the research queue by the
   orchestrator over the window and store its backtest suggestion names (descriptive, no verdict, no
