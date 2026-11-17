@@ -244,3 +244,59 @@ export interface BuilderSaveResult {
   error?: string;
   code?: string;
 }
+
+/** `POST /api/automations/builder/backtest`: the explore run queued, or why it was not. */
+export interface BuilderBacktestResult {
+  ok: boolean;
+  name?: string;
+  run?: string;
+  task?: number | null;
+  window?: [string, string];
+  source?: string | null;
+  error?: string;
+  code?: string;
+}
+
+/** One queue row of a Builder backtest. */
+export interface BuilderRunTask {
+  id: number | null;
+  run: string;
+  status: string;
+  queued_at: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+  exit_code: number | null;
+  note: string | null;
+}
+
+/** One arm's figures as the run wrote them. */
+export interface BuilderRunArm {
+  sessions: number | null;
+  trades: number | null;
+  net: number | null;
+  mean_net: number | null;
+}
+
+/** One finished Builder backtest, in brief. */
+export interface BuilderRunResult {
+  run: string;
+  symbol: string;
+  source: string;
+  licensed: boolean;
+  cadence: string | null;
+  sessions: [string, string] | null;
+  session_count: number | null;
+  summary: Record<string, BuilderRunArm>;
+  still_open: number | null;
+  generated_at: string | null;
+}
+
+/** `GET /api/automations/builder/runs?name=`: the run card. */
+export interface BuilderRuns {
+  name: string;
+  tasks: BuilderRunTask[];
+  runs: BuilderRunResult[];
+  /** Licensed results left out while the licensed-results gate is shut. */
+  withheld: number;
+  results_unavailable: boolean;
+}

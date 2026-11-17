@@ -11150,3 +11150,38 @@ svg.vol-curve text {
   font-family: var(--num-face);
   max-width: 100%;
 }
+
+/* The Builder run card: queued explore backtests and each result's figures. */
+.builder-runs {
+  margin-top: 0.75rem;
+  display: grid;
+  gap: 0.5rem;
+  overflow-x: auto;
+}
+.builder-run-tasks {
+  margin: 0;
+  padding-left: 1.25rem;
+  font-family: var(--num-face);
+  font-size: 0.85rem;
+}
+.builder-run-table {
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+.builder-run-table caption {
+  text-align: left;
+  padding-bottom: 0.25rem;
+}
+.builder-run-table th,
+.builder-run-table td {
+  padding: 0.2rem 0.6rem;
+  border-bottom: 1px solid var(--surface-hover);
+  text-align: right;
+}
+.builder-run-table th:first-child,
+.builder-run-table td:first-child {
+  text-align: left;
+}
+.builder-run-table td {
+  font-family: var(--num-face);
+}

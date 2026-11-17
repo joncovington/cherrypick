@@ -333,7 +333,12 @@ filename; override with `paper.sla_state_prefix`.
   and `automation_save` (`automationedit.py`) are the Builder's: the automations module's `cli draft`
   by subprocess (its own check; this package never imports it), then the one entry that check
   returned, refused unless it is off, replaced or added (`configedit.insert_key`) at
-  `/automations/<name>` and written through `apply_raw_save`. Its `features` op
+  `/automations/<name>` and written through `apply_raw_save`. `automation_backtest` and
+  `automation_runs` (`automationrun.py`) are the Builder's backtest: the module's `cli builder` read
+  gives the automation's suggestion (window, source; refused unless `possible`), then one
+  `researchqueue.add` of a `script` row, study `builder`, step `<name>-<YYMMDDHHMM>`, running
+  `automation_backtest.py run` into the result `builder-<name>-<stamp>.json`; one live row per
+  automation. The run card reads those rows and `backtest read automation-runs`. Its `features` op
   (`capabilities.py`) is the console's only answer to "what is on": `capabilities`, `modules`
   (switch plus capabilities), `services`, `features` (`backtest` and `backtest_results` fail closed:
   new vendor work, and showing the vendor's results until the purge date) and `live`, each module's live master

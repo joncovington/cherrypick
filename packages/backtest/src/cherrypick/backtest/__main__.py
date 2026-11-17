@@ -531,6 +531,10 @@ def cmd_read(args) -> int:
         out = readout.signal_study(args.name or "")
         _emit(out)
         return 0 if out.get("ok") else 1
+    if args.what == "automation-runs":
+        out = readout.automation_runs(args.name or "")
+        _emit(out)
+        return 0 if out.get("ok") else 1
     if args.what == "summaries":
         _emit(readout.run_summaries((args.ids or "").split(",")))
         return 0
@@ -729,10 +733,17 @@ def main(argv: list[str] | None = None) -> int:
     ra.set_defaults(fn=cmd_run_advised)
     rd = sub.add_parser("read", help="the console's read surface: JSON, read-only")
     rd.add_argument(
-        "what", choices=("overview", "run", "trades", "path", "stores", "summaries", "signals", "signal")
-    )
+        "what",
+        choices=(
+            "overview", "run", "trades", "path", "stores", "summaries", "signals", "signal", "automation-runs"
+        ),
+    )  # fmt: skip
     rd.add_argument("--ids", default=None, help="with `summaries`: run ids, comma separated")
-    rd.add_argument("--name", default=None, help="with `signal`: the signal study's name")
+    rd.add_argument(
+        "--name",
+        default=None,
+        help="with `signal`: the signal study's name; with `automation-runs`: the automation",
+    )
     rd.add_argument("--id", default=None, help="with `run`, `trades` or `path`: the run id")
     rd.add_argument("--arm", default=None, help="with `trades` or `path`: the arm")
     rd.add_argument("--session", default=None, help="with `path`: the trade's session (YYYY-MM-DD)")

@@ -22,6 +22,12 @@ beyond the latest release.
 
 ### What's new
 
+- **The Builder runs a backtest.** An automation card whose blocks our own data covers has
+  **Backtest**: one explore run of that saved automation, queued on the research queue by the
+  orchestrator over the window and store its backtest suggestion names (descriptive, no verdict, no
+  label moved, nothing turned on). **Runs** shows the card's queued runs and each result's sessions,
+  trades and P&L per arm, a licensed result only while licensed results may be shown. Backtest
+  `read automation-runs --name` is the read behind it.
 - **The backtest fetch runs on the vendor's Options Value tier.** `vendor.subscription` picks the path.
   On a tier without greeks, every intraday fetch asks for quotes and computes delta and IV from each
   instant's chain (`core.chaindelta.computed_greeks`), with the underlying taken from the vendor when a
