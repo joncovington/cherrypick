@@ -8876,6 +8876,22 @@ Only the trade counts were computed before this was written, to set the floors.
     beside a control sampling arm, with a `forward` block declared before it trades.
   - **All fail or no verdict:** the indicators carry no tradable direction on index funds after costs
     and against chance, which closes the video's suggestion; the record stays under `indicator-rule`.
+- **Result (2026-11-16): all three arms fail both rules in the design part; no holdout was judged.**
+  - **The three bars:** `zlts`, `gpr` and `zltl` each lose per entry session in the design part and
+    fail the capital and tail bars; `zlts` loses the most.
+  - **The control:** none beats random entries drawing their side and holding time from the arm's
+    own sample. Each design mean against the control is negative, and negative in both design
+    halves, except `gpr`'s earlier half.
+  - **Reported:** in every arm the shorts lose and carry the loss; the longs alone are near flat to
+    positive, the equity drift that buy and hold shows. The video's plain 50-EMA price cross nets
+    above zero over the same years, so none of the three adds anything to a moving average. `zlts`
+    and `gpr` rarely flip back within five bars and `zltl`'s retests do about one time in five, so
+    the video's measure says nothing about whether a signal pays. On item 88's other 12 funds
+    `zlts` pooled is above zero and `gpr` and `zltl` are below; that is reported, not judged, and is
+    no reason to re-run `zlts` on funds chosen after the fact.
+  - **Decision:** as declared, the indicators carry no tradable direction on index funds after costs
+    and against chance, and the video's suggestion is closed. Every figure is in the local result
+    (`~/.cherrypick/data/backtest/results/research/item89/`).
 
 ### 90. Two published signal entries on SPX 0DTE: an opening-range breakout put spread and an ADX condor
 
