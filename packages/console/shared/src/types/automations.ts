@@ -191,6 +191,12 @@ export interface BuilderNeed {
   /** The covering store is the vendor's: the run's result is licensed. */
   licensed: boolean;
   nearest?: { source: string; first: string | null; last: string | null; why: string | null };
+  /** A covered need: the last session its store holds, where the run ends when that is before the window's. */
+  through?: string;
+  /** Why no store is even a candidate (none holds this expiry class at this cadence). */
+  why?: string;
+  /** A need for every expiry our stores miss, which they would cover for monthlies only. */
+  monthly?: { source: string; first: string | null; through: string | null };
 }
 
 export interface BuilderSuggestion {

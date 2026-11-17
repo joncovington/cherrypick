@@ -49,7 +49,17 @@ export function SuggestionLine({ s }: { s: BuilderSuggestion }) {
             nearest for {n.field}: {n.nearest.source} {n.nearest.first} to {n.nearest.last}
             {n.nearest.why ? ` (${n.nearest.why})` : ""}
           </div>
+        ) : n.why ? (
+          <div key={n.field} className="muted">
+            {n.field}: {n.why}
+          </div>
         ) : null,
+      )}
+      {short.some((n) => n.monthly) && (
+        <div className="muted">
+          With the expiry rule's "monthly" set, {short.find((n) => n.monthly)!.monthly!.source} would cover it
+          {short.find((n) => n.monthly)!.monthly!.first ? ` from ${short.find((n) => n.monthly)!.monthly!.first}` : ""}.
+        </div>
       )}
     </div>
   );

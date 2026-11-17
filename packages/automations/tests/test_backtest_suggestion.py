@@ -190,3 +190,38 @@ def test_the_licence_reads_as_allowing_new_work_only_on_a_plain_active_answer():
     assert real_allows_new_work(run=answer("not json")) is False
     assert real_allows_new_work(run=answer(json.dumps({"other": 1}))) is False
     assert real_allows_new_work(run=boom) is False
+
+
+def _sources(**by):
+    """A coverage stand-in answering per (field, expiry): a covering store's row, or none at all."""
+
+    def coverage(inventory, field, symbol, start, end, *, cadence=None, expiry=None, licensed=False):
+        hit = by.get(expiry)
+        if hit is None:
+            return {"covered": False, "best": None, "sources": []}
+        return {"covered": True, "best": hit["source"], "sources": [hit]}
+
+    return coverage
+
+
+def test_a_monthly_rule_asks_for_monthlies_and_the_run_ends_where_the_store_does():
+    arm = fresh(expiry={"kind": "between", "min": 45, "max": 60, "monthly": True},
+                entry={"kind": "time", "at": "15:55", "window": 5})  # fmt: skip
+    assert enrolment.needs(arm)[0] == {"field": "chain", "expiry": "monthly", "cadence": "1d"}
+    dolt = {"source": "dolt-chains", "first": "2019-02-09", "through": "2026-11-12"}  # a session behind
+    s = enrolment.suggestion(arm, {}, TODAY, _sources(monthly=dolt))
+    assert s["possible"] and s["window"][1] == "2026-11-12"
+    assert {n["through"] for n in s["needs"]} == {"2026-11-12"}
+
+
+def test_a_need_no_store_holds_says_so_and_names_monthlies_when_they_would_cover():
+    arm = fresh(
+        expiry={"kind": "between", "min": 45, "max": 60}, entry={"kind": "time", "at": "15:55", "window": 5}
+    )
+    dolt = {"source": "dolt-chains", "first": "2019-02-09", "through": "2026-11-13"}
+    s = enrolment.suggestion(arm, {}, TODAY, _sources(monthly=dolt))
+    chain = s["needs"][0]
+    assert not s["possible"] and chain["expiry"] == "all"
+    assert chain["why"] == "none of our stores holds all expiries at 1d"
+    assert chain["monthly"] == {"source": "dolt-chains", "first": "2019-02-09", "through": "2026-11-13"}
+    assert "monthly" not in enrolment.suggestion(arm, {}, TODAY, _sources())["needs"][0]

@@ -11875,3 +11875,9 @@ svg.vol-curve text {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+.wiz-inline-btn {
+  margin-left: 0.6rem;
+  min-height: 0;
+  padding: 0.2rem 0.7rem;
+  font-size: 0.8rem;
+}

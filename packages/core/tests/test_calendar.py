@@ -197,3 +197,13 @@ def test_session_close_hhmm_is_thirteen_on_a_half_day_and_sixteen_otherwise():
     assert cal.session_close_hhmm(date(2026, 9, 15)) == "16:00"
     # A weekend answers the regular close rather than raising: the caller gates trading days.
     assert cal.session_close_hhmm(date(2026, 9, 13)) == "16:00"
+
+
+def test_the_standard_monthly_is_the_third_friday_or_the_session_before_a_holiday():
+    from datetime import date
+
+    from cherrypick.core import calendar as c
+
+    assert c.monthly_expiry(2026, 11) == date(2026, 11, 20)
+    assert c.monthly_expiry(2025, 4) == date(2025, 4, 17)  # Good Friday
+    assert c.is_monthly_expiry(date(2026, 12, 18)) and not c.is_monthly_expiry(date(2026, 11, 27))

@@ -202,6 +202,10 @@ def test_at_least_and_between_name_their_expiry():
     assert resolve({"kind": "between", "min": 10, "max": 40}) == "2026-11-27"
     assert resolve({"kind": "between", "min": 10, "max": 40, "prefer": "last"}) == "2026-12-18"
     assert resolve({"kind": "between", "min": 12, "max": 31}) is None
+    # Monthlies only: the weekly 11-27 is passed over for the December monthly.
+    assert resolve({"kind": "between", "min": 10, "max": 40, "monthly": True}) == "2026-12-18"
+    assert resolve({"kind": "at_least", "days": 5, "monthly": True}) == "2026-12-18"
+    assert resolve({"kind": "between", "min": 20, "max": 31, "monthly": True}) is None
     # The old aim-at-a-date rules are unchanged.
     assert resolve({"kind": "calendar", "days": 30, "tolerance": 3}) == "2026-12-18"
 
@@ -217,6 +221,10 @@ def test_the_feed_asks_for_the_window_before_expirations_are_listed():
     assert (
         len(feed.target_dates({"expiry": {"kind": "at_least", "days": 30}}, today)) == feed.AT_LEAST_REACH + 1
     )
+    month = feed.target_dates({"expiry": {"kind": "between", "min": 30, "max": 60, "monthly": True}}, today)
+    assert [d.isoformat() for d in month] == ["2026-12-18", "2027-01-15"]
+    first = feed.target_dates({"expiry": {"kind": "at_least", "days": 5, "monthly": True}}, today)
+    assert [d.isoformat() for d in first] == ["2026-12-18"]
 
 
 # --- validation --------------------------------------------------------------------------------------
@@ -287,3 +295,11 @@ def test_the_feed_reads_what_a_rule_needs():
     assert feed.reads(base)["trail"]
     base["legs"][0]["strike"] = {"rule": "gex_max", "measure": "put_oi", "strikes": 10}
     assert feed.reads(base)["gex"]
+
+
+def test_monthly_is_a_flag():
+    from cherrypick.automations import arms as arms_mod
+
+    rule = {"kind": "between", "min": 45, "max": 60, "monthly": "yes"}
+    assert arms_mod._expiry_problems("x.expiry", rule) == ["x.expiry.monthly: true or false"]
+    assert arms_mod._expiry_problems("x.expiry", {**rule, "monthly": True}) == []

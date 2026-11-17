@@ -25,9 +25,11 @@ OHLC = ("open", "high", "low", "close")
 def resolve_expiry(arm: dict, snap: Snapshot) -> str | None:
     """The listed expiry the arm's rule names today, or None when none is listed. `at_least` and
     `between` count calendar days from the session; the others aim at a date and take the listed expiry
-    nearest it within `tolerance`."""
+    nearest it within `tolerance`. `monthly` keeps only the standard monthlies."""
     rule = arm["expiry"]
     listed = sorted(e for e in snap.chains if e >= snap.session)
+    if rule.get("monthly"):
+        listed = [e for e in listed if cal.is_monthly_expiry(date.fromisoformat(e))]
     today = snap.session_date
     if rule["kind"] in ("at_least", "between"):
         lo = rule["days"] if rule["kind"] == "at_least" else rule["min"]

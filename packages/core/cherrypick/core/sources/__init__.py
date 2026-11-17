@@ -461,6 +461,11 @@ def trading_days(first: str, last: str) -> int:
 #: A source covers a window only when it holds at least this share of the window's trading days.
 DENSE = 0.95
 
+#: A source ending at most this many trading days before the window's end still covers it, through its
+#: last session: a store written the next morning (Dolt's, the vendor's end of day) is always a session
+#: or two behind the last finished one.
+LAG = 5
+
 
 def sparse_years(span: Mapping, years: Mapping[str, int], days=trading_days) -> dict[str, int]:
     """The per-year session counts worth keeping for a span: all of them when any year inside the span
@@ -549,13 +554,16 @@ def coverage(
     licensed: bool = False,
     days: Callable[[str, str], int] = trading_days,
     min_density: float = DENSE,
+    lag: int = LAG,
 ) -> dict:
     """Which sources hold `field` for `symbol` from `start` through `end`, read from an inventory doc
     (`inventory.run`'s). Each candidate comes back with its span and density (its sessions over the
     trading days in the part of the window it reaches); `covers` is a span reaching both ends with
     density at least `min_density` (`DENSE` unless a caller accepts a thinner source, as a weekly
     entry may). A
-    source the inventory has not read, or that holds nothing for the symbol, is listed with why.
+    span ending at most `lag` trading days before `end` still reaches it, and `through` is where it
+    stops: a run over it ends there. A source the inventory has not read, or that holds nothing for
+    the symbol, is listed with why.
     `covered` is whether any candidate covers; `best` is the first that does, the finest cadence first.
     Pure over its arguments."""
     symbol = symbol.upper()
@@ -594,7 +602,8 @@ def coverage(
         gaps = []
         if first > start:
             gaps.append(f"starts {first}, after {start}")
-        if last < end:
+        behind = days(last, end) - 1 if last < end else 0  # sessions after its last, through `end`
+        if behind > lag:
             gaps.append(f"ends {last}, before {end}")
         if density is not None and density < min_density:
             gaps.append(f"holds about {density:.0%} of the trading days from {lo} to {hi}")
@@ -605,6 +614,7 @@ def coverage(
                 **base,
                 "first": first,
                 "last": last,
+                "through": min(end, last),
                 "sessions": sessions,
                 "density": density,
                 "covers": not gaps,

@@ -114,7 +114,7 @@ CREDIT_RULES = {"profit_target_pct": 50, "stop_credit_multiple": 1, "close_at_dt
 #: 15:55 (inside the end-of-day tick, so a backtest can read it), one contract, one open, one a day.
 WIZARD_DEFAULTS = {
     "symbol": "SPY",
-    "expiry": {"kind": "between", "min": 45, "max": 60},
+    "expiry": {"kind": "between", "min": 45, "max": 60, "monthly": True},
     "entry": {"kind": "time", "at": "15:55", "window": 5},
     "weekdays": [0, 1, 2, 3, 4],
     "size": {"contracts": 1},
