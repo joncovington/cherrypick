@@ -35,7 +35,13 @@ YEAR_SECONDS = 365.0 * 86400.0
 #: Below this the model's delta is a step function and means nothing; such a chain is refused.
 MIN_YEARS = 60.0 / YEAR_SECONDS
 
-__all__ = ["years_to_close", "forward_from_parity", "computed_deltas", "with_computed_delta"]
+__all__ = [
+    "years_to_close",
+    "forward_from_parity",
+    "computed_greeks",
+    "computed_deltas",
+    "with_computed_delta",
+]
 
 
 def years_to_close(now: datetime, *, close: time = time(16, 0)) -> float:
@@ -88,23 +94,34 @@ def forward_from_parity(rows: Iterable[Mapping[str, Any]]) -> float | None:
     return None if best is None else best[1]
 
 
-def computed_deltas(rows: list[Mapping[str, Any]], *, years: float, rate: float = 0.0) -> list[float | None]:
-    """Each row's delta from its own mid, in row order; all None when the chain has no parity pair or
-    no time left (`MIN_YEARS`)."""
+def computed_greeks(
+    rows: list[Mapping[str, Any]], *, years: float, rate: float = 0.0
+) -> list[tuple[float | None, float | None]]:
+    """Each row's (delta, implied vol) from its own mid, in row order; all (None, None) when the chain
+    has no parity pair or no time left (`MIN_YEARS`). A mid no vol can price leaves both None."""
     if years < MIN_YEARS:
-        return [None] * len(rows)
+        return [(None, None)] * len(rows)
     forward = forward_from_parity(rows)
     if forward is None:
-        return [None] * len(rows)
-    out: list[float | None] = []
+        return [(None, None)] * len(rows)
+    out: list[tuple[float | None, float | None]] = []
     for r in rows:
         k, right, mid = _strike(r), _right(r), _mid(r)
         if k is None or right is None or mid is None:
-            out.append(None)
+            out.append((None, None))
             continue
         iv = bs.implied_vol(forward, k, years, mid, right, rate)
-        out.append(None if iv is None or iv <= 0.0001 else bs.delta(forward, k, years, iv, right, rate))
+        if iv is None or iv <= 0.0001:
+            out.append((None, None))
+        else:
+            out.append((bs.delta(forward, k, years, iv, right, rate), iv))
     return out
+
+
+def computed_deltas(rows: list[Mapping[str, Any]], *, years: float, rate: float = 0.0) -> list[float | None]:
+    """Each row's delta from its own mid, in row order; all None when the chain has no parity pair or
+    no time left (`MIN_YEARS`)."""
+    return [d for d, _iv in computed_greeks(rows, years=years, rate=rate)]
 
 
 def with_computed_delta(rows: list[Mapping[str, Any]], *, years: float, rate: float = 0.0) -> list[dict]:

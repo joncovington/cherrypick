@@ -4,8 +4,7 @@
 > in the root [documentation index](../../docs/README.md). What the package contains is listed under
 > "What the package holds" below.
 
-This package replays the suite's **own rules** over years of vendor quotes (ThetaData, Options
-Standard), so a question about a strategy can be answered in weeks instead of waiting for paper arms
+This package replays the suite's **own rules** over years of vendor quotes (ThetaData), so a question about a strategy can be answered in weeks instead of waiting for paper arms
 to accumulate sessions. It never trades, never touches a live loop, and never asks a model.
 
 ## The licence outranks everything here
@@ -148,8 +147,19 @@ from a recording in kind:
 
 - **`age_s` is NULL.** An interval row is the quote standing at that instant; its age is not
   reported, and the replay treats NULL as fresh.
-- **Gamma is computed** (`greeks.bs_gamma`) from the vendor's IV, because gamma is a Professional
+- **Gamma is computed** (`greeks.bs_gamma`) from the row's IV, because gamma is a Professional
   field. The recorder's gamma came from the live feed.
+- **On a tier without greeks, delta, IV and spot are computed too.** `vendor.subscription` picks the
+  path (`settings.TIERS`). Options Value serves quotes only, so the client asks the quote endpoint
+  with the same arguments and fills each instant's chain from its own mids (`core.chaindelta`:
+  the forward from put-call parity, zero rate, time to the 16:00 ET close). The underlying is the
+  vendor's own price when a row carries one, the parity forward on an expiry's own day, and
+  None on any other. VIX minutes need the vendor's own price (the forward of VIX options is the
+  future, not the index) and are refused `not_on_tier` without it. So are option prints, before
+  any request. Stores fetched on Standard keep the vendor's greeks.
+- **Requests in flight never exceed the tier's** (`settings.concurrency`: the configured
+  `max_concurrent_requests`, capped at Value 2, Standard 4), whatever `--workers` asks for.
+  `licensing.status` carries the tier, so a read can say what the stores can still add.
 
 A session is written whole or not at all; a refusal is a `vendor_sessions` row with its reason, never
 an empty session. `fetch` is resumable (a complete session is skipped) and `--refetch` clears a
@@ -237,7 +247,7 @@ holdout once (a marker is written before the read).
 **The end-of-day chain fetch** (`chainfetch.py`, `fetch-chains`, `chains-status`):
 - **Event-driven:** a study writes the (name, session, expiry) requests it needs, and this fetches
   exactly those, one session-chain a request, into `vendor/<name>/eod_chains.db` beside the marker.
-- **Why event-driven:** the Standard tier serves single-stock end-of-day chains from 2016 only, has
+- **Why event-driven:** the vendor serves single-stock end-of-day chains from 2016 at most, has
   no whole-market daily file, and answers about a request a second, so a full crawl would take weeks.
 - **What each request becomes:** complete, empty or refused (with why). A re-run skips the first two
   and retries refusals; a fatal refusal stops the run. Workers share the one session, and every

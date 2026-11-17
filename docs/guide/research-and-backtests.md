@@ -126,8 +126,10 @@ live loop. It reads a local store and reproduces exactly.
 
 ### Setting it up
 
-You need a ThetaData subscription that covers what you will fetch (Options Standard: intraday quotes and
-greeks from 2016).
+You need a ThetaData subscription that covers what you will fetch, named in the config's
+`vendor.subscription`. Options Value (intraday quotes from 2020) is enough: the fetch computes delta
+and IV from the quotes. Options Standard adds the vendor's own greeks, option prints and history
+from 2016.
 
 1. **Store your API key in the keyring**, never in a file:
 
