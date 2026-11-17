@@ -9036,6 +9036,90 @@ several hundred dollars against four legs' costs. `--similar` names no rejected 
   - **It fails or no verdict:** the 60/90 call calendar does not earn after costs and beyond its delta
     before the source's window, and the calendar family stays closed.
 
+### 92. IV rank and realised-under-implied vol as entry filters for monthly short puts and put spreads on index funds
+
+Declared 2026-11-16, before any outcome of it is computed. A third-party bot builder offers two
+volatility conditions our automation engine lacks in its own form: a symbol's **IV rank** ("above 70")
+and **historical vol under implied vol times k** ("HV based on 30-day std dev less than current IV
+× 1.5"). Item 46 found 30-60 day index premium fails unconditioned; this asks whether either
+condition picks the months where it pays. Only the filters' cycle counts were computed before this
+was written, to set the floors (no trade, price path or outcome was read): over the 128 monthly
+cycles, IV rank ≥ 50 keeps 16 design cycles and ≥ 70 keeps 5, too few to judge, so the judged
+threshold is 30 (33 design cycles, 44 holdout) and the recipe's own thresholds are reported only.
+
+- **Question:** on the owner's monthly cycle, managed by the owner's credit-trade rules, does a
+  short put or a put credit spread entered only when the fund's vol index ranks high, or only when
+  realised vol sits under implied, earn after costs, beat the same delta held as shares, and beat
+  the entries the filter skips?
+- **Funds and their implied vol:** **SPY (VIX), QQQ (VXN), IWM (RVX)**, and **GLD (GVZ)** as the
+  non-equity check: the funds with both a stored daily chain history (the vendor's end-of-day store,
+  item 46's fetch, from 2016) and a Cboe vol index (`core.volindex`). The vol index stands in for the
+  fund's IV: its 30-day horizon matches the cycle, and its history is daily from 2009.
+- **The base trade (`SPEC` in the script):**
+  - **Cycle:** each monthly (third-Friday) expiry from 2016-03-18 to 2026-10-16. **Entry:** the first
+    trading session 60 calendar days before the expiry, or the next; none under 45 days. One entry
+    per fund per cycle, read at the session's close from the end-of-day chain.
+  - **Structures:** a **short put nearest 16 delta**, cash-secured (buying power strike × 100); a
+    **put credit spread, short nearest 20 delta and long nearest 10 delta**, same expiry (buying power
+    width × 100 less the credit). Delta from the chain's own mids (`core.chaindelta`: the forward from
+    put-call parity, zero rate). Listed strikes only; a leg without a two-sided quote skips the entry,
+    counted.
+  - **Management, the owner's credit-trade rules:** take profit when the cost to close at mid is 50%
+    of the credit; stop when the loss equals the credit (cost to close twice the credit), or, on a
+    spread whose credit stop cannot fire (credit more than half the width), at 50% of max loss; close
+    at 21 calendar days to expiry. No rolls. Read at each session's close; a session without a mark
+    holds to the next.
+  - **Money:** fills at mid with core's slippage model (the verdict fill), core's option fees, every
+    column apart (money layout).
+- **The filters, read on the session before entry:**
+  - **IV rank:** the vol index's last close against its 252 closes before entry, (last − low) /
+    (high − low) × 100. **Judged: rank ≥ 30.** Reported only: ≥ 50 and ≥ 70 (the recipe's), and < 30.
+  - **Realised under implied:** the fund's 30-day realised vol (30 daily log returns of its closes,
+    stock history, annualised by √252) **below the vol index's close** (k = 1, implied above realised).
+    The recipe's k = 1.5 is not run: it keeps nearly every cycle.
+- **Four judged arms:** `put-ivr30`, `put-hv_lt_iv`, `spread-ivr30`, `spread-hv_lt_iv`. The two
+  unfiltered bases are reported beside them as the controls.
+- **Windows:** one run, cut at **2021-06-01** (item 46's split): design before, holdout from. The
+  holdout is read only after a design pass.
+- **The rule, two literals in the script; a pass needs both:**
+  - **`RULE`, the three bars** (`cherrypick.backtest.study.rule`) on **one row per cycle**, the arm's
+    entries that cycle across the funds pooled (net and buying power summed). Capital: the net less
+    the 3-month bill on the buying power over the days held, one-sided t ≥ 2.4. Tail: 10,000 draws,
+    seed 92, a year the sample's own cycles a year. **Delta applies:** each entry's delta financed on
+    the same capital, so a filter that only picks rising months fails. Fewer than 30 design cycles,
+    or 30 holdout cycles, is no verdict.
+  - **`FILTER_RULE`, the filter's own information:** per entry, net over buying power, the entries
+    the filter keeps against those it skips on the same structure; the difference of means at one-sided
+    t ≥ 2.4, standard errors clustered by cycle, in the design part; after a design pass of both
+    rules, the holdout difference above zero. Fewer than 20 entries on either side, in either part, is
+    no verdict.
+  - **Four arms:** t 2.4 sits above Holm's bar for four (one-sided 0.05 / 4, about t 2.24), so Holm
+    never binds.
+- **Reported, never judged:** per arm and part, entries, win rate, mean and total net, credit, days
+  held, exits by kind (target, stop, 21 days); every fund; every year; the bases; IV rank ≥ 50, ≥ 70
+  and < 30; each filter with the market's worst months (2020-02 to 2020-04) left out.
+- **Rival explanations, each with its check:**
+  - *It is the market's drift (a filter that keeps rising months):* the delta bar; kept against
+    skipped in return on buying power.
+  - *It is one crash and its rebound:* the tail bar; reported without 2020-02 to 2020-04.
+  - *It is one fund:* every fund reported; GLD as the non-equity check.
+  - *It is the management, not the filter:* the bases run the same management; the filter rule compares
+    kept and skipped under it.
+- **Declared limits:** the vol index stands in for each fund's own IV; exits read once a session, at
+  the close; early assignment not modelled (an upper bound for the short put); the fund list is
+  today's (hindsight, B11); the design years were mostly calm, so high IV rank rests on few episodes.
+- **Data and results:** `packages/backtest/scripts/premium_filters_item92.py`, queued with
+  `queue-chain` once its replay is built (no new fetch expected: item 46's paths cover the entries).
+  Licensed: results stay under `~/.cherrypick/data/backtest/results/research/item92/`, and this plan
+  records the verdict without figures.
+- **Decides:**
+  - **An IV-rank arm passes:** the engine's `vol_index_rank` gate at 30 is supported on the funds
+    that carried it; an automation using it may be proposed, enrolled with its forward rule.
+  - **A realised-under-implied arm passes:** the ratio becomes an engine gate (one function), then the
+    same.
+  - **All fail or no verdict:** neither filter rescues monthly index short premium after costs and
+    drift; single names (Dolt chain IV, from 2019) are not pursued on this question.
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:
