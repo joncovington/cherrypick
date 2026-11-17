@@ -8780,6 +8780,103 @@ take their arms from this verdict.
     anyway, as ladder was, with its README saying no edge is claimed. The record stays under
     `indicator-rule`.
 
+### 89. Three zero-lag and Gaussian-process trend indicators, traded as their makers suggest on index funds
+
+Declared 2026-11-16, before any outcome of it is computed. The indicators come from a published
+video that compared three free charting indicators with moving-average crosses on crypto hourly
+bars. It measured only signal counts, how often a signal "flips back" within five bars, and lag
+against turns picked afterwards. It said itself that price went the signal's way about as often as
+against it, and it reported no P&L or costs. The third **`indicator-rule`** item after 83 and 88.
+Only the trade counts were computed before this was written, to set the floors.
+
+- **Question:** traded as their makers suggest, at their default settings, does any of the three earn
+  after costs on daily bars of the four US index funds, and does it beat entries at random with the
+  same side mix and holding times?
+- **The indicators, rebuilt** from each maker's published description and code excerpts (declared:
+  the full source was not read, so a detail the excerpts do not show is this plan's reading):
+  - **`zlts`**, zero-lag trend signals: a 70-bar EMA of `close + (close - close[34])`; a band of
+    1.2 × the highest ATR(70) of the last 210 bars either side of it. The trend turns up on a close
+    crossing above the upper band and down on a close crossing below the lower. **Traded
+    stop-and-reverse** on each turn.
+  - **`gpr`**, the Gaussian-process moving average: at each bar, the posterior mean at the window's
+    last bar of a Gaussian process fitted to the last 100 closes less their mean (RBF kernel, length
+    scale the window, noise sigma 0.01, forecast 0), with the mean added back. With fixed settings this
+    is a fixed linear filter. Bands at 2 × the mean absolute error of close against the line over the
+    window. The state turns up on a close above the upper band while the line rises, down on a close
+    below the lower band while it falls. **Traded stop-and-reverse** on each turn.
+  - **`zltl`**, zero-lag MA trend levels: a 15-bar EMA and a 15-bar EMA of `close + (close - EMA)`.
+    Their cross draws a level one ATR(200) deep from the zero-lag line (below it after an up cross,
+    above after a down one). A **retest** is a bar that leaves the level in the trend's direction after
+    the bar before it was in it (up: the previous low at or under the level's top, this low above it).
+    **Traded on retests**, as the video advises ("trade the retests, not the crosses"): entered in the
+    trend's direction; the trade ends on a close through the level's far side or the next cross,
+    whichever comes first. A broken level gives no more retests; a retest while a trade is held is
+    counted, never taken.
+- **The replay (`SPEC`, `arm_trades` in the script):**
+  - **Data:** the broker's daily bars of **SPY, QQQ, IWM and DIA**, from item 88's fetch
+    (`~/.cherrypick/data/public/item88/bars.db`, read-only and fingerprinted), from each fund's first bar
+    (1999; IWM 2000) through 2026-11-13. Daily, not hourly: the broker keeps about 9.5 months of hourly
+    bars, too few. The indicators are timeframe-free; the video's 1-hour setting is declared as a
+    difference.
+  - **Warm-up:** the first 250 bars of each fund (the longest indicator's lookback); a state already set
+    then is not entered until it next turns.
+  - **Fills:** every signal and exit is read at a bar's close and filled at the next bar's open. One
+    position per fund. A trade still open on the last bar closes at its close.
+  - **Money:** $10,000 of the fund a trade, whole shares; fees from core (`stock_trade_fee`).
+    **Declared:** one cent a share of slippage each side, and no borrow cost on shorts.
+- **Three judged arms**, `zlts`, `gpr` and `zltl`, each on the four funds pooled.
+- **Windows:** one run, cut at **2016-01-01** (design before, holdout from). The holdout part is read
+  only after a design pass.
+- **The rule, two literals in the script; a pass needs both:**
+  - **`RULE`, the three bars** (`cherrypick.backtest.study.rule`) on **one row per entry session**, the
+    trades entered that session across the funds pooled, as item 88 pools them. Capital: the net less
+    the 3-month bill on the buying power over the days held (core's Treasury reader, else FRED's
+    DGS3MO), one-sided t ≥ 2.4. Tail: 10,000 draws, seed 89, a year being the sample's own sessions a
+    year. Delta **not applicable**: a trade in the fund itself nets zero against its own financed
+    delta, so the control carries the drift question. Fewer than 150 design entry sessions is no
+    verdict, fewer than 60 in the holdout likewise (the counts are about 220-310 and 130-220).
+  - **`CONTROL_RULE`, against chance:** each entry session's net less the mean of 20 placebo draws
+    (seed 89). A placebo replays each of the session's trades on the same fund, entered at the open
+    after a random bar of the same part. **Its side is drawn from the arm's own long share in that part,
+    and its holding time from the arm's own holding times in that part, never the trade's own** (item
+    83's control copied both and so carried the outcome). Same money. Design: the mean difference above
+    zero at one-sided t ≥ 2.4, and above zero in each design half (split 2008-01-01); then, after a
+    design pass, the holdout mean above zero.
+  - **Three arms:** t 2.4 sits above Holm's bar for three (one-sided 0.05 / 3, about t 2.13), so Holm
+    never binds.
+- **Reported, never judged:**
+  - Per arm and part: trades, win rate, mean and total net, mean gross, costs, days held, the long
+    share, longs and shorts apart; every year; every fund.
+  - **Long-only** versions (flat instead of short).
+  - **The video's own measure:** the share of signals whose opposite comes within 5 bars, per fund
+    (`zltl`: its retests and its crosses apart).
+  - **The video's baselines**, traded stop-and-reverse the same way: price against the 50-bar EMA,
+    and the 20-bar EMA against the 50-bar EMA.
+  - **Item 88's other 12 funds** (international, bonds, metals, oil, sectors), each arm pooled and by
+    fund.
+  - **Buy and hold** of each fund over each part, for context.
+- **Rival explanations, each with its check:**
+  - *It is the equity drift (a long-biased trend rule in a rising sample):* the control draws its side
+    from the arm's own mix; long-only, longs and shorts apart, and buy and hold reported.
+  - *It is any holding period:* the control draws from the arm's own holding times.
+  - *It is one fund or one regime:* every fund and every year reported; the design halves must both be
+    positive.
+  - *It is a plain moving average:* the video's two EMA baselines reported beside.
+  - *It is tuning:* only the makers' default settings are run; nothing is chosen on this sample.
+- **Declared limits:** the indicators are rebuilt from descriptions and code excerpts, not the full
+  source; daily rather than the video's hourly bars; the fund list is today's (hindsight, B11);
+  slippage declared, not measured; no short borrow cost; the four funds move together, which the
+  per-session pooling handles for same-day entries but not for overlapping holds.
+- **Data and results:** `packages/backtest/scripts/trend_indicators_item89.py study` queued as
+  `item89/smoke` then `item89/study` (`queue-chain`; no fetch, the bars are item 88's). Results stay
+  under `~/.cherrypick/data/backtest/results/research/item89/`, and this plan records the verdict
+  without figures. No licensed data: nothing here is on the vendor's clock.
+- **Decides:**
+  - **An arm passes:** propose a paper arm of that indicator on the funds that carried the result,
+    beside a control sampling arm, with a `forward` block declared before it trades.
+  - **All fail or no verdict:** the indicators carry no tradable direction on index funds after costs
+    and against chance, which closes the video's suggestion; the record stays under `indicator-rule`.
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:

@@ -4192,6 +4192,58 @@
       "retest": null,
       "retest_note": "A pass is followed by the engulf paper module with its forward block (#1168), not a retest; the funds' bars are the broker's, so a retest can re-fetch them at any time.",
       "retests": []
+    },
+    {
+      "id": 89,
+      "study": "item89",
+      "title": "Three zero-lag and Gaussian-process trend indicators, traded as their makers suggest on index funds",
+      "status": "declared",
+      "legacy": false,
+      "setup": "indicator-rule",
+      "side": "directional",
+      "structure": "shares",
+      "window": "multi-day",
+      "measure": "daily broker bars of SPY QQQ IWM DIA (item 88's fetch), 1999 (IWM 2000) to 2026-11-13, 250-bar warm-up; three indicators at their makers' default settings, rebuilt from published descriptions and code excerpts: zlts (70-bar zero-lag EMA, band 1.2 x the highest ATR(70) of 210 bars, stop-and-reverse on each turn), gpr (Gaussian-process average of 100 closes, RBF length scale 100, noise 0.01, bands 2 x mean absolute error, turn needs the line's slope, stop-and-reverse), zltl (15-bar zero-lag MA cross draws a level one ATR(200) deep; retests entered in the trend's direction, ended by a close through the level or the next cross); signals at the close, fills at the next open, one position per fund; $10,000 a trade, core's stock fees plus one cent a share each side; one row per entry session, the funds pooled",
+      "expected": "an arm's session net clears the 3-month bill on its buying power at t 2.4 and beats random entries with the arm's own side mix and holding times",
+      "sample": "the four funds' daily bars, one run cut at 2016-01-01 (design before, holdout from); < 150 design entry sessions = no verdict, < 60 holdout likewise (about 220-310 and 130-220)",
+      "rule": "RULE: the kit's three bars per arm on per-entry-session rows (capital t >= 2.4 over the 3-month bill on the buying power, Treasury files else FRED DGS3MO; tail 10,000 draws seed 89, the sample's own sessions a year; delta not applicable: a trade in the fund itself nets zero against its own financed delta); CONTROL_RULE: each session's net less the mean of 20 placebo draws (seed 89: same fund and part, a random entry, the side drawn from the arm's long share and the bars held drawn from the arm's holding times in that part, never the trade's own), design mean > 0 at one-sided t >= 2.4 and > 0 in each design half (2008-01-01), then the holdout mean > 0 after a design pass; a pass needs both; t 2.4 is above Holm's bar for three arms",
+      "mechanism": "a lag-reduced or kernel-smoothed average that turns only when price clears a volatility band marks a trend early enough, and fakes out rarely enough, for the move that follows to pay for the round trip and beat holding for the same time",
+      "rivals": [
+        {
+          "explanation": "the equity drift of a rising sample",
+          "check": "the control draws its side from the arm's own mix; long-only, longs and shorts, and buy and hold reported"
+        },
+        {
+          "explanation": "any holding period",
+          "check": "the control draws its holding time from the arm's own holding times"
+        },
+        {
+          "explanation": "one fund or one regime",
+          "check": "every fund and every year reported; both design halves must be positive"
+        },
+        {
+          "explanation": "a plain moving average does the same",
+          "check": "the video's 50-EMA price cross and 20/50 EMA cross reported beside, traded the same way"
+        },
+        {
+          "explanation": "tuning",
+          "check": "only the makers' default settings are run; nothing is chosen on this sample"
+        }
+      ],
+      "pointer": "research/edge-hypotheses-plan.md#89-three-zero-lag-and-gaussian-process-trend-indicators-traded-as-their-makers-suggest-on-index-funds",
+      "scripts": [
+        "packages/backtest/scripts/trend_indicators_item89.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_trend_indicators_item89_script.py"
+      ],
+      "results": [
+        "{home}/data/backtest/results/research/item89/results.json"
+      ],
+      "outcome": null,
+      "retest": null,
+      "retest_note": "A pass is followed by a paper arm with its forward block, not a retest; the funds' bars are the broker's, so a retest can re-fetch them at any time.",
+      "retests": []
     }
   ],
   "rule_changes": []
