@@ -192,3 +192,39 @@ def runs(
         "runs": (read or {}).get("runs") or [],
         "results_unavailable": read is None or not read.get("ok"),
     }
+
+
+def backtest_run(name: str, run: str) -> dict[str, Any] | None:
+    """The backtest package's whole run card for one result, or None when it could not be asked."""
+    argv = [
+        sys.executable,
+        "-m",
+        "cherrypick.backtest",
+        "read",
+        "automation-run",
+        "--name",
+        name,
+        "--id",
+        run,
+    ]
+    return _run_json(argv)
+
+
+def run_card(
+    cfg: dict[str, Any],
+    req: dict[str, Any],
+    *,
+    read: Callable[[str, str], dict[str, Any] | None] = backtest_run,
+) -> dict[str, Any]:
+    """One Builder run's whole card: `req["name"]` the automation, `req["run"]` its result's name."""
+    name, run = req.get("name"), req.get("run")
+    if not isinstance(name, str) or not NAME.match(name):
+        return _err("automation_run needs an automation's 'name'")
+    if not isinstance(run, str) or not re.fullmatch(re.escape(f"{STUDY}-{name}-") + r"\d{10}", run):
+        return _err("automation_run needs one of its Builder runs as 'run'")
+    out = read(name, run)
+    if out is None:
+        return _err("the backtest package could not be asked (is it installed?)", "unavailable")
+    if not out.get("ok"):
+        return _err(str(out.get("error") or "no such run"), "not_found")
+    return out

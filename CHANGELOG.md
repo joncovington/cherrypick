@@ -22,6 +22,14 @@ beyond the latest release.
 
 ### What's new
 
+- **The Builder's run card.** **Runs** now lists an automation's explore runs with a small P&L curve
+  and what each changed from the run before. Opening one shows its card:
+  - tiles: P&L, trades, per trade, win rate, max drawdown, net over drawdown;
+  - the cumulative P&L with its gross line and drawdown;
+  - a by-year table of gross, fees, settlement, slippage and P&L;
+  - why sessions were skipped, what the run changed, and its trade log.
+
+  Every figure is read from the run's own trades. Backtest `read automation-run` is the read behind it.
 - **The Builder runs a backtest.** An automation card whose blocks our own data covers has
   **Backtest**: one explore run of that saved automation, queued on the research queue by the
   orchestrator over the window and store its backtest suggestion names (descriptive, no verdict, no
