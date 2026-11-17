@@ -4292,6 +4292,58 @@
       "retest": null,
       "retest_note": "A pass is followed by an automation with its own forward block, not a retest; the store is the vendor's, so a retest needs the licence.",
       "retests": []
+    },
+    {
+      "id": 91,
+      "study": "item91",
+      "title": "The weekly SPY at-the-money call calendar: 60 days short, 90 long, out at +30% or the short's expiry",
+      "status": "declared",
+      "legacy": false,
+      "setup": "term-structure",
+      "side": "neutral",
+      "structure": "calendar",
+      "window": "monthly",
+      "measure": "every Friday 2016-01-08 to 2026-11-13, an at-the-money SPY call calendar on the vendor's end-of-day chains: short the standard monthly nearest 60 days, long the next monthly, at the strike nearest the short's parity forward; bought at the mids plus core's slippage and fees for two legs; out at the first close where the spread's mid is at or above 1.3x its entry mid, else on the short's expiry session (long at its mid less slippage, short at intrinsic on SPY's close); net per trade on the debit",
+      "expected": "the net clears the 3-month bill on the debit and the entry delta financed on it, at t 2.0 and by a block bootstrap, in the years before the source's backtests",
+      "sample": "one run cut at 2019-01-01 (design 2016-2018, before the source's window; holdout from, the source's own window); < 120 design entries = no verdict, < 60 holdout likewise (about 150 and 400)",
+      "rule": "RULE: the kit's three bars on one row per entry (capital t >= 2.0 over the 3-month bill on the debit; tail 10,000 draws seed 91, the sample's own entries a year; delta t >= 2.0 over the entry delta financed on the debit); OVERLAP_RULE: the same capital and delta excesses by a circular moving-block bootstrap, blocks of 13 entries, 10,000 draws seed 91, the share of resampled means at or under zero <= 0.025 for both, design then holdout; a pass needs both; one arm, no Holm",
+      "mechanism": "index implied volatility about 60 days out is usually priced richer, relative to what is realised before it expires, than the 90-day leg loses over the same weeks, so selling the nearer month against the farther one earns the difference while SPY stays near the strike",
+      "rivals": [
+        {
+          "explanation": "delta in a bull market",
+          "check": "the delta bar: each net less the entry delta financed on the debit"
+        },
+        {
+          "explanation": "the source's selection of tenor, day, target and stop",
+          "check": "judged on the years before its backtests; other weekdays, stops and the 21-day corner reported"
+        },
+        {
+          "explanation": "a few weeks carry it",
+          "check": "the tail bar; the mean without the best five and every year reported"
+        },
+        {
+          "explanation": "costs",
+          "check": "fees at 1.5x and a quarter of the spread reported"
+        },
+        {
+          "explanation": "overlapping trades counted as independent",
+          "check": "OVERLAP_RULE's moving-block bootstrap, blocks longer than any trade"
+        }
+      ],
+      "pointer": "research/edge-hypotheses-plan.md#91-the-weekly-spy-at-the-money-call-calendar-60-days-short-90-long-out-at-30-or-the-shorts-expiry",
+      "scripts": [
+        "packages/backtest/scripts/spy_call_calendar_item91.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_spy_call_calendar_item91_script.py"
+      ],
+      "results": [
+        "{home}/data/backtest/results/research/item91/results.json"
+      ],
+      "outcome": null,
+      "retest": null,
+      "retest_note": "A pass is followed by an arm of the calendars paper module with its forward block, not a retest.",
+      "retests": []
     }
   ],
   "rule_changes": []
