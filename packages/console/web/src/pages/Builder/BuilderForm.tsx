@@ -1,4 +1,6 @@
 import type { BuilderBlock, BuilderSchema } from "@console/shared";
+import { CardHelpButton } from "../../components/CardHelp";
+import { SECTION_HELP } from "./BuilderHelp";
 
 /**
  * The Builder's form (#1180): the five sections of one automation, each field writing the same spec
@@ -125,12 +127,27 @@ function KeyFields({ prefix, keys, o, onChange, skip = [] }: { prefix: string; k
   );
 }
 
-function SectionHead({ n, title, blocks, labels, note }: { n: number; title: string; blocks: string[]; labels: Record<string, BuilderBlock["state"]>; note?: string }) {
+function SectionHead({
+  n,
+  title,
+  blocks,
+  labels,
+  note,
+  help,
+}: {
+  n: number;
+  title: string;
+  blocks: string[];
+  labels: Record<string, BuilderBlock["state"]>;
+  note?: string;
+  help: keyof typeof SECTION_HELP;
+}) {
   return (
     <div className="builder-section-head">
       <h4>
         {n} · {title}
       </h4>
+      <CardHelpButton cardTitle={`${n} · ${title}`} help={SECTION_HELP[help]!} />
       {blocks.map((b) => {
         const s = labels[b] ?? "not_backtested";
         return (
@@ -241,7 +258,7 @@ export function BuilderForm({
   return (
     <section className="builder-form" aria-label="The automation, block by block">
       <div className="builder-section">
-        <SectionHead n={1} title="Underlying and data" blocks={["structure"]} labels={labels} />
+        <SectionHead n={1} title="Underlying and data" blocks={["structure"]} labels={labels} help="underlying" />
         <div className="builder-grid">
           <Field key={`sym-${showValue(spec["symbol"])}`} id="f-symbol" label="symbol" value={spec["symbol"]} required onChange={(v) => set("symbol", v)} />
           <Select id="f-expiry-kind" label="expiry" value={exprKind} options={Object.keys(schema.expiry)} onChange={(k) => set("expiry", { kind: k })} />
@@ -279,7 +296,7 @@ export function BuilderForm({
       </div>
 
       <div className="builder-section">
-        <SectionHead n={2} title="Signal: when to enter" blocks={["entry"]} labels={labels} />
+        <SectionHead n={2} title="Signal: when to enter" blocks={["entry"]} labels={labels} help="signal" />
         <div className="builder-grid">
           <Select id="f-entry-kind" label="entry" value={entryKind} options={Object.keys(schema.entry)} onChange={(k) => set("entry", { kind: k })} />
           {entryKind === "orb" ? (
@@ -350,12 +367,12 @@ export function BuilderForm({
       </div>
 
       <div className="builder-section">
-        <SectionHead n={3} title="Gates: the market and the chain" blocks={["gates"]} labels={labels} note="read before the legs are chosen" />
+        <SectionHead n={3} title="Gates: the market and the chain" blocks={["gates"]} labels={labels} note="read before the legs are chosen" help="gates" />
         <GateRows schema={schema} gates={gates} stages={["signal", "chain"]} prefix="f-gate" onChange={(next) => set("gates", next.length ? next : undefined)} />
       </div>
 
       <div className="builder-section">
-        <SectionHead n={4} title="Structure: legs, then price" blocks={["structure"]} labels={labels} />
+        <SectionHead n={4} title="Structure: legs, then price" blocks={["structure"]} labels={labels} help="structure" />
         {legs.map((leg, i) => {
           const strike = obj(leg["strike"]);
           const rule = String(strike["rule"] ?? "");
@@ -394,7 +411,7 @@ export function BuilderForm({
       </div>
 
       <div className="builder-section">
-        <SectionHead n={5} title="Exits, size, costs" blocks={["exit", "size"]} labels={labels} />
+        <SectionHead n={5} title="Exits, size, costs" blocks={["exit", "size"]} labels={labels} help="exits" />
         <div className="builder-grid">
           {schema.exits.map((k) => (
             <Field key={`f-exit-${k}-${showValue(exit[k])}`} id={`f-exit-${k}`} label={k} value={exit[k]} onChange={(v) => set("exit", withKey(exit, k, v))} />
