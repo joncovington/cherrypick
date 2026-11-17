@@ -109,6 +109,9 @@ def handle(req: dict[str, Any]) -> dict[str, Any]:
     if op == "automation_draft":
         # The Builder's check of one automation, by the module itself; writes nothing.
         return automationedit.draft(cfg, req)
+    if op == "automation_today":
+        # The Builder's "Today, live": the module decides it now as paper would; writes nothing.
+        return automationedit.today(cfg, req)
     if op == "automation_save":
         # The Builder's save: that check, then the one entry it returned (always off) written
         # through the same raw-save path as every config save.
@@ -118,8 +121,11 @@ def handle(req: dict[str, Any]) -> dict[str, Any]:
         # a config write; refused unless the automation's own suggestion says our data covers it.
         return automationrun.queue(cfg, req)
     if op == "automation_runs":
-        # The Builder's run card: that automation's queue rows and results. Reads only.
+        # The Builder's explore-runs list: that automation's queue rows and results. Reads only.
         return automationrun.runs(cfg, req)
+    if op == "automation_run":
+        # The Builder's run card: one result read whole by the backtest package. Reads only.
+        return automationrun.run_card(cfg, req)
     return _err(f"unknown op: {op!r}")
 
 

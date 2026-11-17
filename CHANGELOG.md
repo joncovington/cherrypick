@@ -22,6 +22,26 @@ beyond the latest release.
 
 ### What's new
 
+- **The Builder builds an automation in a form.** One automation at a time, opened, new or copied.
+  It is built in five sections with each block's backtest label: underlying and data, the entry
+  signal in plain English, the market and chain gates, the legs and their price gates, and exits,
+  size and limits. Every choice comes from the engine's own tables (automations `cli builder-schema`),
+  and **Edit as JSON** covers the rest. The action row is Check, Save (off) and Explore run, with
+  Declare and Promote to paper shown disabled. Beside it, **Today, live** decides the automation
+  now as paper would, on a read-only snapshot (`cli builder-today`): every check, and the legs it
+  would take or the check that stops it. The explore runs and run cards sit beside it too.
+- **The Builder's run card.** **Runs** now lists an automation's explore runs with a small P&L curve
+  and what each changed from the run before. Opening one shows its card:
+  - tiles: P&L, trades, per trade, win rate, max drawdown, net over drawdown;
+  - the cumulative P&L with its gross line and drawdown;
+  - a by-year table of gross, fees, settlement, slippage and P&L;
+  - why sessions were skipped, what the run changed, and its trade log.
+
+  Every figure is read from the run's own trades. Backtest `read automation-run` is the read behind it.
+- **An intraday signal automation backtests in minutes, not days.** The driver read the five earlier
+  sessions' spot trails from the store again at every minute of a session, so a year of one-minute
+  SPX sessions took days. It now reads each session's trail once and keeps it. The trades are
+  unchanged.
 - **The Builder runs a backtest.** An automation card whose blocks our own data covers has
   **Backtest**: one explore run of that saved automation, queued on the research queue by the
   orchestrator over the window and store its backtest suggestion names (descriptive, no verdict, no

@@ -117,14 +117,21 @@ alone):
     automation and nothing else; the orchestrator runs the module's own check and writes the entry it
     returned, which is always off. The page never turns an automation on, and never writes its
     register label.
+  - **The Builder's form reads the module's schema and "Today, live"; neither writes.** The form's
+    choices are `cli builder-schema` (`/api/automations/builder/schema`, the engine's own tables),
+    so the page spells no gate, strike rule or exit of its own. "Today, live" is configcli
+    `automation_today` (`/api/automations/builder/today`, a POST only because it may carry an
+    unsaved edit): the module decides the automation now on a read-only snapshot and writes nothing.
   - **The Builder's backtest queues; it writes no config** (`/api/automations/builder/backtest`,
     configcli `automation_backtest`). The route sends the name alone. The orchestrator takes the
     window and the source from the automation's own backtest suggestion (our stores only, never
     the vendor's), refuses where that is not possible or a run is already live, and adds one
     research-queue `script` row of the automation backtest driver. The run is an explore run: no
-    trial, no verdict, no label moved. The run card (`/api/automations/builder/runs`, configcli
-    `automation_runs`) shows its rows and results, a licensed result only while
-    `backtestResultsOn` (fail closed: one not plainly unlicensed is withheld and counted).
+    trial, no verdict, no label moved. The explore-runs list (`/api/automations/builder/runs`,
+    configcli `automation_runs`) shows its rows and results, each with its net curve and what it
+    changed; one run's card (`/api/automations/builder/run`, configcli `automation_run`) is read
+    whole by the backtest package. A licensed result is shown only while `backtestResultsOn`
+    (fail closed: one not plainly unlicensed is withheld and counted, and its card refused 403).
   - This surface **cannot touch `enable_live_trading`, flies' `live.enabled`/`gate0_confirmed`, or the
     live loss/deploy limits** in either direction: `configedit.GUARDED` refuses them, and the page
     shows them as locked rows with that table's hint.

@@ -1,4 +1,4 @@
-"""Item 89's script (spy_call_calendar_item89.py): invented prices only, the store never read."""
+"""Item 90's script (spy_call_calendar_item90.py): invented prices only, the store never read."""
 
 from __future__ import annotations
 
@@ -13,8 +13,8 @@ from cherrypick.backtest.study import rule as kit_rule
 from cherrypick.backtest.study.chains import Chain
 
 _spec = importlib.util.spec_from_file_location(
-    "spy_call_calendar_item89",
-    Path(__file__).resolve().parents[1] / "scripts" / "spy_call_calendar_item89.py",
+    "spy_call_calendar_item90",
+    Path(__file__).resolve().parents[1] / "scripts" / "spy_call_calendar_item90.py",
 )
 m = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(m)

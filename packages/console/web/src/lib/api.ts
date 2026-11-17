@@ -19,8 +19,11 @@ import type {
   BuilderBacktestResult,
   BuilderDraftResult,
   BuilderResult,
+  BuilderRunCard,
   BuilderRuns,
   BuilderSaveResult,
+  BuilderSchemaResult,
+  BuilderToday,
   AutomationsPerformance,
   CurveEquity,
   OverviewPayload,
@@ -1365,6 +1368,20 @@ export function builderSave(name: string, automation: Record<string, unknown>): 
   return builderPost<BuilderSaveResult>("/api/automations/builder/save", { name, automation });
 }
 
+/** The form's choices: the engine's own tables. They change only with the code. */
+export function useBuilderSchema() {
+  return useQuery<BuilderSchemaResult>({
+    queryKey: ["automations-builder-schema"],
+    queryFn: () => getJson<BuilderSchemaResult>("/api/automations/builder/schema"),
+    staleTime: 600_000,
+  });
+}
+
+/** "Today, live": the engine's decision of this automation now, as paper would make it. */
+export function builderToday(name: string, automation?: Record<string, unknown>): Promise<BuilderToday & { ok?: boolean }> {
+  return builderPost<BuilderToday & { ok: boolean }>("/api/automations/builder/today", automation === undefined ? { name } : { name, automation });
+}
+
 /** Queue one explore backtest of a saved automation; the window and source are the module's own. */
 export function builderBacktest(name: string): Promise<BuilderBacktestResult> {
   return builderPost<BuilderBacktestResult>("/api/automations/builder/backtest", { name });
@@ -1378,6 +1395,16 @@ export function useBuilderRuns(name: string, enabled: boolean) {
     enabled,
     staleTime: 5_000,
     refetchInterval: (q) => (q.state.data?.tasks.some((t) => t.status === "queued" || t.status === "running") ? 10_000 : false),
+  });
+}
+
+/** One Builder run's whole card. A finished result never changes, so it is read once. */
+export function useBuilderRunCard(name: string, run: string) {
+  return useQuery<BuilderRunCard>({
+    queryKey: ["automations-builder-run", name, run],
+    queryFn: () =>
+      getJson<BuilderRunCard>(`/api/automations/builder/run?name=${encodeURIComponent(name)}&run=${encodeURIComponent(run)}`),
+    staleTime: Infinity,
   });
 }
 

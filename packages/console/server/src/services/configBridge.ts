@@ -39,7 +39,9 @@ export type BridgeRequest =
   | { op: "features" }
   | { op: "automation_backtest"; name: string }
   | { op: "automation_runs"; name: string }
+  | { op: "automation_run"; name: string; run: string }
   | { op: "automation_draft"; name: string; automation?: Record<string, unknown> }
+  | { op: "automation_today"; name: string; automation?: Record<string, unknown> }
   | { op: "automation_save"; name: string; automation: Record<string, unknown> };
 
 const UNAVAILABLE =

@@ -139,3 +139,18 @@ def test_insert_key_into_an_empty_and_a_one_line_object():
         configedit.insert_key('{"a": {"k": 1}}', "/a", "k", 2)
     with pytest.raises(ValueError):
         configedit.insert_key('{"a": [1]}', "/a", "k", 2)
+
+
+def test_today_passes_the_name_and_an_unsaved_edit_through_and_maps_failures():
+    seen = []
+
+    def run(_cfg, body):
+        seen.append(body)
+        return {"ok": True, "name": body["name"], "state": "would_skip"}
+
+    assert automationedit.today({}, {"name": "mine"}, run=run)["state"] == "would_skip"
+    automationedit.today({}, {"name": "mine", "automation": {"symbol": "SPX"}, "enabled": True}, run=run)
+    assert seen == [{"name": "mine"}, {"name": "mine", "automation": {"symbol": "SPX"}}]
+    assert automationedit.today({}, {}, run=run)["code"] == "bad_request"
+    assert automationedit.today({}, {"name": "mine", "automation": []}, run=run)["code"] == "bad_request"
+    assert automationedit.today({}, {"name": "mine"}, run=lambda c, b: None)["code"] == "unavailable"

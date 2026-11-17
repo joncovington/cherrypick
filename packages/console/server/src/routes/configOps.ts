@@ -167,6 +167,20 @@ export function registerConfigRoutes(app: FastifyInstance, config: ConsoleConfig
     return { name, automation: automation as Record<string, unknown> };
   };
 
+  /**
+   * "Today, live": the module decides one automation now as paper would (`cli builder-today`), on a
+   * read-only snapshot of the stream cache and the paper ledger. A POST only because it may carry an
+   * unsaved edit; it writes nothing and places nothing.
+   */
+  app.post("/api/automations/builder/today", async (req, reply) => {
+    const parsed = automationBody((req.body ?? {}) as Record<string, unknown>);
+    if (typeof parsed === "string") return reply.code(400).send({ error: parsed });
+    const result = sendBridgeFailure(reply, await callConfigCli({ op: "automation_today", ...parsed }));
+    if (result === null) return reply;
+    const { ok: _ok, ...today } = result;
+    return today;
+  });
+
   app.post("/api/automations/builder/draft", async (req, reply) => {
     const parsed = automationBody((req.body ?? {}) as Record<string, unknown>);
     if (typeof parsed === "string") return reply.code(400).send({ error: parsed });
@@ -243,6 +257,25 @@ export function registerConfigRoutes(app: FastifyInstance, config: ConsoleConfig
       withheld: all.length - runs.length,
       results_unavailable: result["results_unavailable"] === true,
     };
+  });
+
+  /**
+   * One run's whole card (tiles, curve, years, skips, what it changed, the trade log), read by the
+   * backtest package. A licensed result is refused while licensed results may not be shown; fail
+   * closed, as the list is.
+   */
+  app.get("/api/automations/builder/run", async (req, reply) => {
+    const q = (req.query ?? {}) as Record<string, unknown>;
+    const name = String(q["name"] ?? "");
+    const run = String(q["run"] ?? "");
+    if (name === "" || name.length > 48 || run === "" || run.length > 80) return reply.code(400).send({ error: "name and run required" });
+    const result = sendBridgeFailure(reply, await callConfigCli({ op: "automation_run", name, run }));
+    if (result === null) return reply;
+    if (result["licensed"] !== false && !backtestResultsOn(await getFeatures())) {
+      return reply.code(403).send({ error: "a licensed result, not shown while licensed results are withheld", code: "withheld" });
+    }
+    const { ok: _ok, ...card } = result;
+    return card;
   });
 
   // The console's own display preferences: its own store, no blast radius, so they save on change
