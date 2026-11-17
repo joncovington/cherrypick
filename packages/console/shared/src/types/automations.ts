@@ -180,13 +180,16 @@ export interface BuilderBlock {
   keys: Record<string, unknown>;
 }
 
-/** One data need of a backtest and whether our own stores cover it (`enrolment.suggestion`). */
+/** One data need of a backtest and whether our stores cover it (`enrolment.suggestion`): our own
+ *  first, a licensed (vendor) store only where they fall short and the licence allows new work. */
 export interface BuilderNeed {
   field: string;
   expiry?: string;
   cadence: string;
   covered: boolean;
   source: string | null;
+  /** The covering store is the vendor's: the run's result is licensed. */
+  licensed: boolean;
   nearest?: { source: string; first: string | null; last: string | null; why: string | null };
 }
 
@@ -195,6 +198,8 @@ export interface BuilderSuggestion {
   window: [string, string];
   needs: BuilderNeed[];
   possible: boolean;
+  /** Some need is covered by a licensed store. */
+  licensed: boolean;
 }
 
 export interface BuilderAutomation {

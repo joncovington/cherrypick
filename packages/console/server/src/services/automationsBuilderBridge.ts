@@ -5,7 +5,8 @@ import { spawnModuleCliAsync, type SpawnedJson } from "./moduleCli.js";
 /**
  * The Builder page's read (#1180): every automation block by block from the automations package itself
  * (`python -m cherrypick.automations.cli builder`), each block's backtest label, its start, its forward
- * rule and whether our own data covers a backtest of it. Read-only; the package owns every label, so
+ * rule and whether our data covers a backtest of it (our own stores, or a licensed one while the licence
+ * allows new work, which the package marks `licensed`). Read-only; the package owns every label, so
  * nothing here is derived a second time. Memoised briefly: it changes only when the config does.
  */
 
@@ -69,12 +70,15 @@ export function shapeBuilder(json: Record<string, unknown> | null): BuilderAutom
                 cadence: String(y["cadence"] ?? ""),
                 covered: y["covered"] === true,
                 source: str(y["source"]),
+                // Fail closed: a need not plainly our own is read as licensed.
+                licensed: y["licensed"] !== false,
                 ...(near
                   ? { nearest: { source: String(near["source"] ?? ""), first: str(near["first"]), last: str(near["last"]), why: str(near["why"]) } }
                   : {}),
               };
             }),
             possible: sug["possible"] === true,
+            licensed: sug["licensed"] !== false,
           }
         : null,
     };

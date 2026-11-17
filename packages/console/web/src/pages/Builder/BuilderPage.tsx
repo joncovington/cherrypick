@@ -22,19 +22,23 @@ export const STATE_TEXT: Record<BuilderBlock["state"], string> = {
   not_backtested: "not backtested",
 };
 
-/** "Our data covers a backtest" or which need falls short, and the nearest store. */
+/** "Our data covers a backtest" (naming a licensed store when it is one) or which need falls short,
+ *  and the nearest store. */
 export function SuggestionLine({ s }: { s: BuilderSuggestion }) {
   if (s.possible) {
+    const vendor = [...new Set(s.needs.filter((n) => n.licensed && n.source).map((n) => n.source as string))];
     return (
-      <div className="builder-suggestion" data-possible="yes">
-        Our own data covers a backtest of {s.blocks.join(", ")} from {s.window[0]} to {s.window[1]}.
+      <div className="builder-suggestion" data-possible="yes" data-licensed={s.licensed ? "yes" : "no"}>
+        {s.licensed
+          ? `The licensed vendor store (${vendor.join(", ")}) covers a backtest of ${s.blocks.join(", ")} from ${s.window[0]} to ${s.window[1]}, where our own data falls short. Its result is licensed: it stays on this machine and shows only while licensed results may.`
+          : `Our own data covers a backtest of ${s.blocks.join(", ")} from ${s.window[0]} to ${s.window[1]}.`}
       </div>
     );
   }
   const short = s.needs.filter((n) => !n.covered);
   return (
     <div className="builder-suggestion" data-possible="no">
-      No backtest yet: our own data does not cover {s.window[0]} to {s.window[1]} for{" "}
+      No backtest yet: our data does not cover {s.window[0]} to {s.window[1]} for{" "}
       {short.map((n) => `${n.field}${n.expiry ? ` (${n.expiry})` : ""} at ${n.cadence}`).join(", ")}.
       {short.map((n) =>
         n.nearest ? (
@@ -172,7 +176,7 @@ export function runBlocked(a: BuilderAutomation | null, dirty: boolean, mode: Mo
   if (mode.kind !== "saved" || a === null) return "save the automation first";
   if (dirty) return "save the edit first: a run reads the saved automation";
   if (!a.suggestion) return "every block is backtested already";
-  if (!a.suggestion.possible) return "our own data does not cover it (see the coverage above)";
+  if (!a.suggestion.possible) return "our data does not cover it (see the coverage above)";
   return null;
 }
 

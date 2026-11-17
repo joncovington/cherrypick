@@ -15,9 +15,12 @@ block by block: "entry backtested, exit not".
 **Backtest suggestion.** An automation with a block not backtested gets `suggestion`: what its blocks
 read (`needs`: the chain at its expiry class and the entry's cadence, the greeks when a leg is placed by
 delta, the spot trail for an intraday trigger) and, from the source registry's inventory
-(`core.sources.coverage`, our own stores only, never a licensed one), whether each is covered over the
-`SUGGEST_DAYS` up to the last finished session. Where every need is covered the suite says the backtest
-can run; it never runs one.
+(`core.sources.coverage`), whether each is covered over the `SUGGEST_DAYS` up to the last finished
+session. Our own stores are asked first; a licensed (vendor) store only where they fall short and the
+caller says the licence allows new work (`licensed_ok`, which `paper_loop.backtest_suggestions` reads
+through `licence.allows_new_work`, the driver's own test). A need a licensed store covers is marked
+`licensed`, and so is the suggestion, since its result will be. Where every need is covered the suite
+says the backtest can run; it never runs one.
 
 **Forward rule.** `forward` declares, at enrolment and before any paper is read, how the paper record
 is judged, in the shape the orchestrator's `forward-checks` reads (`forwardcheck` there):
@@ -185,9 +188,14 @@ def needs(arm: dict) -> list[dict]:
     return out
 
 
-def suggestion(arm: dict, inventory: dict, today: date, coverage) -> dict | None:
+def suggestion(
+    arm: dict, inventory: dict, today: date, coverage, *, licensed_ok: bool = False
+) -> dict | None:
     """None when every block is backtested; else {"blocks", "window", "needs": [{..., "covered",
-    "source"}], "possible"}. `coverage` is `core.sources.coverage` (passed in, so this stays pure)."""
+    "source", "licensed"}], "possible", "licensed"}. `coverage` is `core.sources.coverage` (passed in,
+    so this stays pure). Our own stores are asked first for each need; only when they fall short and
+    `licensed_ok` (the licence allows new work) is a licensed store asked, and a need it covers is
+    marked `licensed`. The suggestion is `licensed` when any need is, so its result will be too."""
     lab = labels(arm)
     open_blocks = [b for b, r in lab.items() if r["state"] != BACKTESTED]
     if not open_blocks:
@@ -197,9 +205,17 @@ def suggestion(arm: dict, inventory: dict, today: date, coverage) -> dict | None
     start = date.fromordinal(last.toordinal() - SUGGEST_DAYS).isoformat()
     rows = []
     for need in needs(arm):
-        got = coverage(inventory, need["field"], arm["symbol"], start, end, cadence=need["cadence"],
-                       expiry=need.get("expiry"), licensed=False)  # fmt: skip
-        row = {**need, "covered": bool(got.get("covered")), "source": got.get("best")}
+
+        def ask(licensed: bool, need=need) -> dict:
+            return coverage(inventory, need["field"], arm["symbol"], start, end, cadence=need["cadence"],
+                            expiry=need.get("expiry"), licensed=licensed)  # fmt: skip
+
+        got, licensed = ask(False), False
+        if not got.get("covered") and licensed_ok:
+            vendor = ask(True)
+            if vendor.get("covered"):
+                got, licensed = vendor, True
+        row = {**need, "covered": bool(got.get("covered")), "source": got.get("best"), "licensed": licensed}
         if not row["covered"]:
             # The nearest our stores come: the first source holding anything, with its span and why it
             # falls short (own recordings that began recently, a source without the expiry).
@@ -212,6 +228,7 @@ def suggestion(arm: dict, inventory: dict, today: date, coverage) -> dict | None
         "window": [start, end],
         "needs": rows,
         "possible": all(r["covered"] for r in rows),
+        "licensed": any(r["licensed"] for r in rows),
     }
 
 
