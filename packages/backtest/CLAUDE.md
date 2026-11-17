@@ -44,6 +44,12 @@ expunged within 30 days of termination** (§8(e)). Two consequences shape the wh
   verdict block) and its test file, whose rule test fails until the declaration fills `RULE`. Its
   chain fetches a sample of 20 paths and runs `study --smoke` on it (`smoke.json`, never a verdict)
   before the full fetch, so a crash or an arm judging no trades shows in minutes (#1072).
+- **A study script reports its progress.** Its `study` (smoke included) opens a
+  `cherrypick.core.progress.Reporter` and counts its main loop as it goes (a `sessions` phase with
+  its total, the day as `current`; an inner phase for anything repeated per session, such as
+  placebo draws). The queue hands each row its progress file, so `queue-list` and the console show
+  how far a run has got, its rate and ETA, and when it has stalled. The scaffold wires the Reporter
+  into `trades`; a script written without the scaffold does the same.
 - **A change to shared study code is reproduced before it merges.** From the PR's worktree (its
   packages first on `PYTHONPATH`), `python packages/backtest/scripts/reproduce_studies.py run`
   re-runs the standing sample (`SAMPLE`; `--studies` for others) by each study's last queue command

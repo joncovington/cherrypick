@@ -12,7 +12,9 @@ script carries everything the process now asks of a study, empty where the decla
 - `CHAIN`, the queue steps (plan, fetch the paths it requests, study), queued with
   `run.py queue-chain --script <path>`;
 - `plan` and `study` subcommands, the study writing the kit's verdict block (one run, cut at the
-  rule's splits) beside the licence note.
+  rule's splits) beside the licence note;
+- a progress file: `study` opens a `cherrypick.core.progress.Reporter` and hands it to `trades`,
+  which counts its sessions, so the queue shows how far a long run has got, its rate and ETA.
 
 It writes code only. The declaration (the plan section and the register row) is written by hand, as
 before; this tool never touches either, and never reads licensed data.
@@ -50,6 +52,7 @@ from pathlib import Path
 
 from cherrypick.backtest.study import rule as kit_rule
 from cherrypick.backtest.study.inputs import Inputs
+from cherrypick.core import progress as core_progress
 
 #: The correction log: one entry per fix to this replay, oldest first (orchestrator/studyversion.py).
 REPLAY_CORRECTIONS = ()
@@ -108,11 +111,16 @@ def chain_store():
     return sqlite3.connect(f"file:{{db}}?mode=ro", uri=True)
 
 
-def trades(inputs: Inputs, conn) -> dict[str, list[dict]]:
+def trades(inputs: Inputs, conn, rep: core_progress.Reporter) -> dict[str, list[dict]]:
     """Each arm's trades from one run over the whole history, each with its entry `date`, `net`,
     `bp`, `days`, `rate` and, when the delta bar applies, `financed` (see the kit's `rule`). Read
     the store only through `inputs` (`inputs.sessions`, `inputs.chain`): the paths this study asked
-    for, never another study's."""
+    for, never another study's.
+
+    Report as it goes: `rep.phase("sessions", total=len(sessions), unit="days")` before the loop
+    and `rep.advance("sessions", current=day)` after each session (open an inner phase for any
+    loop that repeats per session, such as placebo draws), so the queue can tell a slow run from
+    a stuck one."""
     raise NotImplementedError("item {n}: replay the declared rule")
 
 
@@ -126,9 +134,11 @@ def cmd_plan(args) -> int:
 def cmd_study(args) -> int:
     inputs = Inputs(out_dir() / "path_requests.json")
     conn = chain_store()
+    job = "item{n}-smoke" if args.smoke else "item{n}-study"
     try:
-        block = kit_rule.evaluate(RULE, trades(inputs, conn))
-        read = inputs.fingerprint(conn)
+        with core_progress.Reporter(job) as rep:
+            block = kit_rule.evaluate(RULE, trades(inputs, conn, rep))
+            read = inputs.fingerprint(conn)
     finally:
         conn.close()
     doc = {{"licence": "derived from licensed vendor data: never commit or publish", "item": {n}, **block}}

@@ -51,6 +51,31 @@ def test_the_script_declares_its_log_an_unfilled_rule_and_its_chain(repo):
     assert lit["CHAIN"][3]["task_args"] == {"requests": "{results}/path_requests.json"}
 
 
+def _function(tree: ast.Module, name: str) -> ast.FunctionDef:
+    return next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == name)
+
+
+def test_the_study_reports_its_progress(repo):
+    # A queued study runs for hours; without a progress file the queue cannot tell slow from stuck.
+    # Read as source: this job installs only pytest, so the script cannot be imported here.
+    script, _ = sn.write("item78", "dividend_spread", repo=repo)
+    tree = ast.parse((repo / script).read_text(encoding="utf-8"))
+    assert [a.arg for a in _function(tree, "trades").args.args] == ["inputs", "conn", "rep"]
+    study = _function(tree, "cmd_study")
+    reporters = [
+        w
+        for w in ast.walk(study)
+        if isinstance(w, ast.With)
+        for item in w.items
+        if ast.unparse(item.context_expr).startswith("core_progress.Reporter(")
+        and isinstance(item.optional_vars, ast.Name)
+        and item.optional_vars.id == "rep"
+    ]
+    assert reporters, "cmd_study opens no Reporter as rep"
+    calls = [ast.unparse(c) for c in ast.walk(reporters[0]) if isinstance(c, ast.Call)]
+    assert "trades(inputs, conn, rep)" in calls
+
+
 def test_nothing_is_overwritten(repo):
     sn.write("item78", "dividend_spread", repo=repo)
     with pytest.raises(SystemExit, match="already there"):
