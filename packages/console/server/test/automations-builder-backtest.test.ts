@@ -110,3 +110,37 @@ describe("the run card", () => {
     expect((await get("/api/automations/builder/runs")).statusCode).toBe(400);
   });
 });
+
+describe("one run's card", () => {
+  const card = (licensed: boolean | undefined): BridgeResult =>
+    ({ ok: true, run: "builder-mine-2611161730", licensed, tiles: { net: 10 }, trades: [] }) as BridgeResult;
+  const url = "/api/automations/builder/run?name=mine&run=builder-mine-2611161730";
+
+  it("asks for the named run and returns its card", async () => {
+    fakeBridge({ automation_run: card(false), features: features(false) });
+    const res = await get(url);
+    expect(res.statusCode).toBe(200);
+    expect(seen[0]).toEqual({ op: "automation_run", name: "mine", run: "builder-mine-2611161730" });
+    expect(res.json()).toMatchObject({ run: "builder-mine-2611161730", tiles: { net: 10 } });
+    expect(res.json().ok).toBeUndefined();
+  });
+
+  it("refuses a licensed card, and one not plainly unlicensed, while the gate is shut", async () => {
+    for (const licensed of [true, undefined]) {
+      fakeBridge({ automation_run: card(licensed), features: features(false) });
+      invalidateFeatures();
+      const res = await get(url);
+      expect(res.statusCode).toBe(403);
+      expect(res.json().tiles).toBeUndefined();
+    }
+  });
+
+  it("shows a licensed card while it is open", async () => {
+    fakeBridge({ automation_run: card(true), features: features(true) });
+    expect((await get(url)).statusCode).toBe(200);
+  });
+
+  it("refuses a missing run", async () => {
+    expect((await get("/api/automations/builder/run?name=mine")).statusCode).toBe(400);
+  });
+});

@@ -245,6 +245,25 @@ export function registerConfigRoutes(app: FastifyInstance, config: ConsoleConfig
     };
   });
 
+  /**
+   * One run's whole card (tiles, curve, years, skips, what it changed, the trade log), read by the
+   * backtest package. A licensed result is refused while licensed results may not be shown; fail
+   * closed, as the list is.
+   */
+  app.get("/api/automations/builder/run", async (req, reply) => {
+    const q = (req.query ?? {}) as Record<string, unknown>;
+    const name = String(q["name"] ?? "");
+    const run = String(q["run"] ?? "");
+    if (name === "" || name.length > 48 || run === "" || run.length > 80) return reply.code(400).send({ error: "name and run required" });
+    const result = sendBridgeFailure(reply, await callConfigCli({ op: "automation_run", name, run }));
+    if (result === null) return reply;
+    if (result["licensed"] !== false && !backtestResultsOn(await getFeatures())) {
+      return reply.code(403).send({ error: "a licensed result, not shown while licensed results are withheld", code: "withheld" });
+    }
+    const { ok: _ok, ...card } = result;
+    return card;
+  });
+
   // The console's own display preferences: its own store, no blast radius, so they save on change
   // rather than through a staged section.
   app.get("/api/config/prefs", async () => ({ prefs: getPrefs(config) }));

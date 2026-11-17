@@ -338,7 +338,9 @@ filename; override with `paper.sla_state_prefix`.
   gives the automation's suggestion (window, source; refused unless `possible`), then one
   `researchqueue.add` of a `script` row, study `builder`, step `<name>-<YYMMDDHHMM>`, running
   `automation_backtest.py run` into the result `builder-<name>-<stamp>.json`; one live row per
-  automation. The run card reads those rows and `backtest read automation-runs`. Its `features` op
+  automation. The explore-runs list reads those rows and `backtest read automation-runs`;
+  `automation_run` reads one run's card (`backtest read automation-run`, the run named exactly
+  `builder-<name>-<10 digits>`). Its `features` op
   (`capabilities.py`) is the console's only answer to "what is on": `capabilities`, `modules`
   (switch plus capabilities), `services`, `features` (`backtest` and `backtest_results` fail closed:
   new vendor work, and showing the vendor's results until the purge date) and `live`, each module's live master

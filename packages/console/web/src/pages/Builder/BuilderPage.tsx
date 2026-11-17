@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import type { BuilderAutomation, BuilderBlock, BuilderRuns, BuilderSuggestion } from "@console/shared";
+import type { BuilderAutomation, BuilderBlock, BuilderSuggestion } from "@console/shared";
 import { builderBacktest, builderDraft, builderSave, useAutomationsBuilder, useBuilderRuns } from "../../lib/api";
-import { fmtMoney } from "../../lib/format";
+import { ExploreRunsList, RunCardPanel } from "./BuilderRunCard";
 
 /** What each block label says, in words. */
 export const STATE_TEXT: Record<BuilderBlock["state"], string> = {
@@ -215,65 +215,14 @@ export function BuilderEditor({ source, copy, onClose }: { source: string; copy:
   );
 }
 
-/**
- * The run card: an automation's Builder backtests, the queue rows first, then each result's figures
- * as the run wrote them. Every run is an explore run: description, never a verdict.
- */
-export function BuilderRunsView({ data }: { data: BuilderRuns }) {
-  return (
-    <div className="builder-runs" data-runs={data.runs.length}>
-      <p className="muted">Explore runs: descriptive only, no trial and no verdict. They move no label.</p>
-      {data.tasks.length > 0 && (
-        <ul className="builder-run-tasks">
-          {data.tasks.map((t) => (
-            <li key={t.id ?? t.run} data-status={t.status}>
-              {t.run}: {t.status}
-              {t.status === "failed" && t.note ? ` (${t.note})` : ""}
-            </li>
-          ))}
-        </ul>
-      )}
-      {data.runs.map((r) => (
-        <table key={r.run} className="builder-run-table">
-          <caption>
-            {r.run}: {r.symbol} on {r.source}
-            {r.sessions ? `, ${r.sessions[0]} to ${r.sessions[1]}` : ""} ({r.session_count ?? 0} sessions,{" "}
-            {r.cadence ?? "stored cadence"}){r.still_open ? `; ${r.still_open} still open at the end` : ""}
-          </caption>
-          <thead>
-            <tr>
-              <th>arm</th>
-              <th>sessions</th>
-              <th>trades</th>
-              <th>P&amp;L</th>
-              <th>per trade</th>
-            </tr>
-          </thead>
-          <tbody>
-            {Object.entries(r.summary).map(([arm, s]) => (
-              <tr key={arm}>
-                <td>{arm}</td>
-                <td>{s.sessions ?? "—"}</td>
-                <td>{s.trades ?? "—"}</td>
-                <td>{fmtMoney(s.net)}</td>
-                <td>{fmtMoney(s.mean_net)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      ))}
-      {data.tasks.length === 0 && data.runs.length === 0 && <p className="muted">No backtest queued from here yet.</p>}
-      {data.withheld > 0 && <p className="muted">{data.withheld} licensed result(s) not shown.</p>}
-      {data.results_unavailable && <p className="error">The results could not be read.</p>}
-    </div>
-  );
-}
-
+/** The automation's explore runs, and one run's card when opened. */
 function BuilderRunsPanel({ name }: { name: string }) {
   const q = useBuilderRuns(name, true);
+  const [open, setOpen] = useState<string | null>(null);
+  if (open !== null) return <RunCardPanel name={name} run={open} onClose={() => setOpen(null)} />;
   if (q.isLoading) return <div className="muted">Reading the runs…</div>;
   if (q.error || !q.data) return <div className="error">Could not read the runs.</div>;
-  return <BuilderRunsView data={q.data} />;
+  return <ExploreRunsList data={q.data} onOpen={setOpen} />;
 }
 
 /** Queue one explore backtest. Rendered only where the automation's suggestion says our data covers it. */

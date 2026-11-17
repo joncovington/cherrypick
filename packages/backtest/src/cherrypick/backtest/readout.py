@@ -320,15 +320,11 @@ AUTOMATION_NAME = re.compile(r"^[a-z0-9][a-z0-9-]{1,47}$")
 BUILDER_RUN = "builder-{name}-"
 
 
-def automation_runs(name: str) -> dict:
-    """The Builder page's run card: every result of a backtest the Builder queued for automation
-    `name`, newest first, each in brief (its source and span, each arm's sessions, trades and net as
-    the run wrote them, never recomputed) with whether it is licensed. No trades are listed. A file
-    that does not parse is listed in `unreadable`."""
-    if not AUTOMATION_NAME.match(name or ""):
-        return {"ok": False, "error": "name must be an automation's name"}
+def _builder_docs(name: str) -> tuple[list[tuple[dict, bool]], list[str]]:
+    """Every Builder result for automation `name`, oldest first, each with whether it is licensed (it
+    says so, or it lives in the licensed folder), and the file names that did not parse."""
     pattern = re.compile(re.escape(BUILDER_RUN.format(name=name)) + r"\d{10}\.json$")
-    runs, unreadable = [], []
+    docs, unreadable = [], []
     for licensed in (False, True):
         d = paths.automations_dir(licensed)
         if not d.is_dir():
@@ -338,24 +334,65 @@ def automation_runs(name: str) -> dict:
                 continue
             try:
                 doc = json.loads(p.read_text(encoding="utf-8"))
-                runs.append(
-                    {
-                        "run": doc["name"],
-                        "symbol": doc["symbol"],
-                        "source": doc["source"],
-                        "licensed": bool(doc.get("licensed", licensed)) or licensed,
-                        "cadence": doc.get("cadence"),
-                        "sessions": doc.get("sessions"),
-                        "session_count": doc.get("session_count"),
-                        "summary": doc.get("summary") or {},
-                        "still_open": doc.get("still_open"),
-                        "generated_at": doc.get("generated_at"),
-                    }
-                )
-            except (OSError, ValueError, KeyError, TypeError):
+                if not isinstance(doc, dict) or not isinstance(doc.get("name"), str):
+                    raise ValueError("not a result")
+                docs.append((doc, bool(doc.get("licensed", licensed)) or licensed))
+            except (OSError, ValueError, TypeError):
                 unreadable.append(p.name)
-    runs.sort(key=lambda r: r.get("generated_at") or "", reverse=True)
+    docs.sort(key=lambda dl: str(dl[0].get("generated_at") or ""))
+    return docs, unreadable
+
+
+def automation_runs(name: str) -> dict:
+    """The Builder page's explore-runs list: every result of a backtest the Builder queued for
+    automation `name`, newest first, each in brief (its source and span, each arm's sessions, trades
+    and net as the run wrote them), its net curve thinned for a sparkline and what it changed from the
+    run before, with whether it is licensed. No trades are listed. A file that does not parse is
+    listed in `unreadable`."""
+    from . import automationcards
+
+    if not AUTOMATION_NAME.match(name or ""):
+        return {"ok": False, "error": "name must be an automation's name"}
+    docs, unreadable = _builder_docs(name)
+    runs = []
+    for i, (doc, licensed) in enumerate(docs):
+        try:
+            runs.append(
+                {
+                    "run": doc["name"],
+                    "symbol": doc["symbol"],
+                    "source": doc["source"],
+                    "licensed": licensed,
+                    "cadence": doc.get("cadence"),
+                    "sessions": doc.get("sessions"),
+                    "session_count": doc.get("session_count"),
+                    "summary": doc.get("summary") or {},
+                    "still_open": doc.get("still_open"),
+                    "generated_at": doc.get("generated_at"),
+                    **automationcards.brief(doc, name, docs[i - 1][0] if i else None),
+                }
+            )
+        except (KeyError, TypeError, ValueError, AttributeError):
+            unreadable.append(f"{doc.get('name')}.json")
+    runs.reverse()
     return {"ok": True, "name": name, "runs": runs, "unreadable": unreadable}
+
+
+def automation_run(name: str, run: str) -> dict:
+    """One Builder result's whole run card (`automationcards.card`), with whether it is licensed."""
+    from . import automationcards
+
+    if not AUTOMATION_NAME.match(name or ""):
+        return {"ok": False, "error": "name must be an automation's name"}
+    docs, _unreadable = _builder_docs(name)
+    for i, (doc, licensed) in enumerate(docs):
+        if doc.get("name") == run:
+            try:
+                out = automationcards.card(doc, name, docs[i - 1][0] if i else None)
+            except (KeyError, TypeError, ValueError, AttributeError) as exc:
+                return {"ok": False, "error": f"the result could not be read: {exc}"}
+            return {"ok": True, "licensed": licensed, **out}
+    return {"ok": False, "error": f"no Builder run {run!r} for {name}"}
 
 
 def signal_study(name: str) -> dict:
