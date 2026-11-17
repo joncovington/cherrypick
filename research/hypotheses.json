@@ -4344,6 +4344,54 @@
       "retest": null,
       "retest_note": "A pass is followed by an arm of the calendars paper module with its forward block, not a retest.",
       "retests": []
+    },
+    {
+      "id": 92,
+      "study": "item92",
+      "title": "IV rank and realised-under-implied vol as entry filters for monthly short puts and put spreads on index funds",
+      "status": "declared",
+      "legacy": false,
+      "setup": "variance-premium",
+      "side": "bullish",
+      "structure": "short-put",
+      "window": "monthly",
+      "measure": "the vendor's end-of-day chains of SPY QQQ IWM GLD (item 46's store) for the monthly expiries 2016-03-18 to 2026-10-16, entered the first session 60 days out (none under 45) at the close; a short put nearest 16 delta (cash-secured) and a put spread short 20 / long 10 delta, delta from mids (core.chaindelta); managed by the owner's credit-trade rules (50% of credit taken, stop at a loss equal to the credit or 50% of max loss where that cannot fire, closed at 21 days, no rolls), read at each close; fills at mid with core slippage, core fees; filters on the session before entry from each fund's Cboe vol index (VIX VXN RVX GVZ): IV rank over 252 closes >= 30, and 30-day realised vol below the index",
+      "expected": "a filtered arm's cycle net clears the 3-month bill on its buying power and the same delta financed, at t 2.4, and the entries it keeps beat the ones it skips in return on buying power at t 2.4",
+      "sample": "128 monthly cycles, one run cut at 2021-06-01 (design before, holdout from); rows one per cycle with the funds pooled; < 30 design or 30 holdout cycles = no verdict; the filter rule needs >= 20 entries each side in each part (counts before declaring: IV rank >= 30 keeps 33 design / 44 holdout cycles, realised under implied 60 / 58)",
+      "rule": "RULE: the kit's three bars on per-cycle rows (capital t >= 2.4 over the 3-month bill on the buying power; tail 10,000 draws seed 92, the sample's own cycles a year; delta applies, each entry's delta financed on the same capital); FILTER_RULE: per entry, net over buying power, kept minus skipped on the same structure, one-sided t >= 2.4 with standard errors clustered by cycle in the design part, then the holdout difference > 0 after a design pass of both; a pass needs both; four arms, t 2.4 above Holm's bar for four",
+      "mechanism": "short premium earns the gap between implied and realised vol; selling only when implied is high against its own year, or above what the fund has been realising, should keep the months where that gap is wide and skip the ones where it is thin or negative",
+      "rivals": [
+        {
+          "explanation": "the market's drift: a filter that keeps rising months",
+          "check": "the delta bar; kept against skipped in return on buying power"
+        },
+        {
+          "explanation": "one crash and its rebound",
+          "check": "the tail bar; every filter reported without 2020-02 to 2020-04"
+        },
+        {
+          "explanation": "one fund",
+          "check": "every fund reported; GLD as the non-equity check"
+        },
+        {
+          "explanation": "the management, not the filter",
+          "check": "the unfiltered bases run the same management; the filter rule compares kept and skipped under it"
+        }
+      ],
+      "pointer": "research/edge-hypotheses-plan.md#92-iv-rank-and-realised-under-implied-vol-as-entry-filters-for-monthly-short-puts-and-put-spreads-on-index-funds",
+      "scripts": [
+        "packages/backtest/scripts/premium_filters_item92.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_premium_filters_item92_script.py"
+      ],
+      "results": [
+        "{home}/data/backtest/results/research/item92/results.json"
+      ],
+      "outcome": null,
+      "retest": null,
+      "retest_note": "A pass is followed by an automation enrolled with its forward rule, not a retest; the chains are the vendor's, so a retest reads them only while the licence allows new work.",
+      "retests": []
     }
   ],
   "rule_changes": []
