@@ -160,3 +160,5 @@ def test_every_wizard_shape_is_an_automation_the_engine_accepts():
     credit = {"profit_target_pct": 50, "stop_credit_multiple": 1, "close_at_dte": 21}
     assert s["shapes"]["put_credit_spread"]["spec"]["exit"] == credit == s["credit_rules"]
     assert s["shapes"]["custom"]["spec"]["exit"] == {"close_at_dte": 21}
+    # monthlies, so our own end-of-day chains can backtest every shape
+    assert all(sh["spec"]["expiry"].get("monthly") is True for sh in s["shapes"].values())

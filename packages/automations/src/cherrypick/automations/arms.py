@@ -17,6 +17,7 @@ that defaulted silently would change what is measured):
                   {"kind": "at_least", "days": N}: the nearest listed expiry N or more calendar days out
                   {"kind": "between", "min": N, "max": M, "prefer": "first"|"last"}: a listed expiry N
                   to M calendar days out, the nearest (`first`, the default) or the farthest
+                  either with "monthly": true takes only standard monthlies (`calendar.monthly_expiry`)
     entry         {"kind": "time", "at": "HH:MM", "window": minutes}
                   {"kind": "orb", "minutes": 60, "direction": "above", "latest": "HH:MM", "single_shot": bool}
                   {"kind": "trigger", "trigger": <core.entrychecks trigger>, "bar_minutes": N}
@@ -160,8 +161,8 @@ EXPIRY_KEYS = {
     "dte": {"days": True, "tolerance": False},
     "market_days": {"days": True, "tolerance": False},
     "calendar": {"days": True, "tolerance": False},
-    "at_least": {"days": True},
-    "between": {"min": True, "max": True, "prefer": False},
+    "at_least": {"days": True, "monthly": False},
+    "between": {"min": True, "max": True, "prefer": False, "monthly": False},
 }
 
 
@@ -188,6 +189,8 @@ def _expiry_problems(where: str, rule) -> list[str]:
             p.append(f"{where}: min is after max")
     if rule.get("prefer") not in (None, "first", "last"):
         p.append(f"{where}.prefer: first or last")
+    if "monthly" in rule and not isinstance(rule["monthly"], bool):
+        p.append(f"{where}.monthly: true or false")
     return p
 
 

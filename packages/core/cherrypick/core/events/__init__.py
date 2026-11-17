@@ -299,10 +299,7 @@ def rule_events(day: date) -> list[dict]:
     minutes_from = day - timedelta(days=21)
     if _calendar.fomc_year_known(minutes_from.year) and _calendar.is_fomc_day(minutes_from):
         add("FOMC Minutes")
-    opex = _calendar.nth_weekday(day.year, day.month, _calendar.FRI, 3)
-    if not _calendar.is_trading_day(opex):
-        opex -= timedelta(days=1)
-    if day == opex:
+    if _calendar.is_monthly_expiry(day):
         add("Monthly Options Expiration")
     return out
 

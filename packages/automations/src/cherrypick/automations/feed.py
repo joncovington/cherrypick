@@ -100,6 +100,10 @@ def target_dates(arm: dict, today: date) -> list[date]:
     rule = arm["expiry"]
     if rule["kind"] in ("at_least", "between"):
         lo = rule["days"] if rule["kind"] == "at_least" else rule["min"]
+        if rule.get("monthly"):  # the next monthly from its first day, however far
+            hi = lo + 35 if rule["kind"] == "at_least" else rule["max"]
+            out = [today + timedelta(days=d) for d in range(lo, hi + 1)]
+            return [d for d in out if _cal.is_monthly_expiry(d)][: 1 if rule["kind"] == "at_least" else None]
         hi = lo + AT_LEAST_REACH if rule["kind"] == "at_least" else rule["max"]
         return [today + timedelta(days=d) for d in range(lo, hi + 1)]
     if rule["kind"] == "market_days":

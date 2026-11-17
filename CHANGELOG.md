@@ -30,6 +30,14 @@ beyond the latest release.
   Declare and Promote to paper shown disabled. Beside it, **Today, live** decides the automation
   now as paper would, on a read-only snapshot (`cli builder-today`): every check, and the legs it
   would take or the check that stops it. The explore runs and run cards sit beside it too.
+- **Monthly expiries, and coverage that reaches our own chains.** An expiry rule (`between`,
+  `at_least`) takes `"monthly": true` to pick only standard monthlies (`core.calendar.monthly_expiry`:
+  the third Friday, or the session before a holiday). The wizard's shapes use it, so each is covered
+  by our own Dolt end-of-day chains and can be explored without the vendor. Backtest coverage counts
+  a store up to five trading days behind the last finished session (one written the next morning)
+  as covering, and the run ends at its last session. A need no store can supply now says why, and a
+  rule allowing any expiry that monthlies would cover says so, with **Use monthlies only** in the
+  wizard.
 - **The Builder's wizard.** **New** and **Copy as new** build an automation in seven steps (start,
   underlying and expiry, legs, entry, gates, exits and size, review), for someone new to
   backtesting. It starts from a shape (short put, credit spreads, iron condor, iron fly, custom legs),

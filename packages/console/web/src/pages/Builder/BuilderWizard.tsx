@@ -75,9 +75,9 @@ export function plainBlocks(spec: Spec): Record<"structure" | "entry" | "gates" 
   const e = obj(spec["expiry"]);
   const expiry =
     e["kind"] === "between"
-      ? `the listed expiry ${String(e["min"])}-${String(e["max"])} days out, ${e["prefer"] === "last" ? "the farthest" : "the nearest"} first`
+      ? `the listed ${e["monthly"] ? "monthly " : ""}expiry ${String(e["min"])}-${String(e["max"])} days out, ${e["prefer"] === "last" ? "the farthest" : "the nearest"} first`
       : e["kind"] === "at_least"
-        ? `the nearest listed expiry at least ${String(e["days"])} days out`
+        ? `the nearest listed ${e["monthly"] ? "monthly " : ""}expiry at least ${String(e["days"])} days out`
         : e["kind"] === "market_days"
           ? `the expiry ${String(e["days"])} trading days out`
           : `the expiry ${String(e["days"] ?? "?")} days out`;
@@ -127,7 +127,7 @@ export const TIPS: Record<string, string> = {
     "A shape is the set of option legs the automation trades. A credit spread sells one option and buys a cheaper one further from the price: you collect money up front, and the option you bought caps how much you can lose. Undefined risk (the short put) means no bought option caps the loss, so it needs more cash set aside.",
   copy: "Starts from another automation's settings under a new name. The copy counts as new: none of its parts are treated as backtested, whatever the original showed.",
   sym: "The underlying: the stock, fund or index the options are written on. SPY is the S&P 500 fund; SPX is the index itself, cash-settled. The symbol decides which option chains and which data the automation reads.",
-  exp: 'Every option has an expiry date. Days to expiry is how far away it is. Selling 45-60 days out collects more premium per trade and gives the trade time; selling close to expiry collects less but decays faster. "Between" picks the listed expiry inside the window.',
+  exp: 'Every option has an expiry date. Days to expiry is how far away it is. Selling 45-60 days out collects more premium per trade and gives the trade time; selling close to expiry collects less but decays faster. "Between" picks the listed expiry inside the window. "Monthly" keeps to the standard monthly expiries (the third Friday): our own daily history holds those, not the weeklies.',
   ev: "Some days carry scheduled news: a Fed decision (FOMC), a jobs report (NFP), a producer-price print (PPI). Prices can jump on them. Skipping them means the automation does not open a trade that day. A day the calendar has no data for passes, recorded as unknown.",
   cov: "A backtest replays the automation over past market data to see how it would have done. It can only replay days we hold the right data for: the option chain for its expiries, at the time it would trade. Coverage tells you, before you build the rest, whether that data exists. A backtest is a description of the past, never a promise.",
   legs: 'Each leg is one option. Side: sell (you collect its price) or buy (you pay it). Right: a put gains as the price falls, a call as it rises. "Strike by" picks the strike on the day it enters, since the right strike moves with the market. Match says which listed strike to take when the exact target is not listed.',
@@ -200,21 +200,41 @@ function TipText({ id, open }: { id: string; open: string | null }) {
   ) : null;
 }
 
-function Coverage({ s }: { s: BuilderSuggestion | null | undefined }) {
+/** The backtest coverage: covered and over what, or each short need with why, and, where our stores
+ *  would cover monthlies only, that offer. */
+export function Coverage({ s, onMonthly }: { s: BuilderSuggestion | null | undefined; onMonthly?: () => void }) {
   if (!s) return <p className="muted">Coverage is read when you leave the first step.</p>;
   const short = s.needs.filter((n) => !n.covered);
+  const monthly = short.find((n) => n.monthly)?.monthly;
   return (
     <>
       <span className={s.possible ? "wiz-ok" : "wiz-warn"}>
-        {s.possible ? `Covered by our own data, ${s.window[0]} to ${s.window[1]}` : "Not covered by our own data yet"}
+        {s.possible
+          ? `Covered by ${s.licensed ? "the licensed vendor store" : "our own data"}, ${s.window[0]} to ${s.window[1]}`
+          : "Not covered by our own data yet"}
       </span>
       {short.map((n) => (
         <p key={n.field} className="muted">
           {n.field}
           {n.expiry ? ` (${n.expiry})` : ""} at {n.cadence}
-          {n.nearest ? `: nearest ${n.nearest.source} ${n.nearest.first ?? ""} to ${n.nearest.last ?? ""}${n.nearest.why ? `, ${n.nearest.why}` : ""}` : ""}
+          {n.nearest
+            ? `: nearest ${n.nearest.source} ${n.nearest.first ?? ""} to ${n.nearest.last ?? ""}${n.nearest.why ? `, ${n.nearest.why}` : ""}`
+            : n.why
+              ? `: ${n.why}`
+              : ""}
         </p>
       ))}
+      {monthly && (
+        <p className="wiz-row">
+          Monthlies only would be covered by {monthly.source}
+          {monthly.first ? ` from ${monthly.first}` : ""}.
+          {onMonthly && (
+            <button type="button" className="btn wiz-inline-btn" onClick={onMonthly}>
+              Use monthlies only
+            </button>
+          )}
+        </p>
+      )}
     </>
   );
 }
@@ -314,6 +334,15 @@ export function BuilderWizard({
     const sug = (r.view as { suggestion?: BuilderSuggestion | null } | undefined)?.suggestion;
     if (sug !== undefined) setSuggestion(sug);
     go(to);
+  };
+
+  /** Switch the expiry rule to monthlies only and read the coverage again for the new rule. */
+  const useMonthly = async () => {
+    const next = { ...spec, expiry: { ...obj(spec["expiry"]), monthly: true } };
+    setSpec(next);
+    const r = await builderDraft(name, next);
+    const sug = (r.view as { suggestion?: BuilderSuggestion | null } | undefined)?.suggestion;
+    if (r.ok && sug !== undefined) setSuggestion(sug);
   };
 
   const save = async () => {
@@ -463,7 +492,7 @@ export function BuilderWizard({
             <Tip id="cov" open={tip} onToggle={toggle} label="What is a backtest, and why does coverage matter?" />
           </div>
           <TipText id="cov" open={tip} />
-          <Coverage s={suggestion} />
+          <Coverage s={suggestion} onMonthly={() => void useMonthly()} />
         </div>
       </>
     ),

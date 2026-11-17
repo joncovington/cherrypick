@@ -165,6 +165,8 @@ def _expiry_class(arm: dict) -> str:
     e = arm["expiry"]
     if e.get("kind") in ("dte", "market_days") and e.get("days") in (0, 1) and not e.get("tolerance"):
         return "0dte" if e["days"] == 0 else "1dte"
+    if e.get("monthly"):
+        return "monthly"  # standard monthlies only, which a monthlies store holds
     return "all"  # a nearer or farther listed expiry: a weekly or a monthly, which only `all` holds both of
 
 
@@ -203,9 +205,12 @@ def suggestion(
 ) -> dict | None:
     """None when every block is backtested; else {"blocks", "window", "needs": [{..., "covered",
     "source", "licensed"}], "possible", "licensed"}. `coverage` is `core.sources.coverage` (passed in,
-    so this stays pure). Our own stores are asked first for each need; only when they fall short and
-    `licensed_ok` (the licence allows new work) is a licensed store asked, and a need it covers is
-    marked `licensed`. The suggestion is `licensed` when any need is, so its result will be too."""
+    so this stays pure). The window ends at the last finished session, or where the covering stores
+    stop when one is a few sessions behind (`sources.LAG`). A need for every expiry that our own stores
+    miss but would cover for monthlies only says so (`monthly`). Our own stores are asked first for
+    each need; only when they fall short and `licensed_ok` (the licence allows new work) is a licensed
+    store asked, and a need it covers is marked `licensed`. The suggestion is `licensed` when any need
+    is, so its result will be too."""
     lab = labels(arm)
     open_blocks = [b for b, r in lab.items() if r["state"] != BACKTESTED]
     if not open_blocks:
@@ -226,18 +231,39 @@ def suggestion(
             if vendor.get("covered"):
                 got, licensed = vendor, True
         row = {**need, "covered": bool(got.get("covered")), "source": got.get("best"), "licensed": licensed}
-        if not row["covered"]:
+        if row["covered"]:
+            best = next((s for s in got.get("sources") or [] if s.get("source") == got["best"]), {})
+            row["through"] = best.get("through") or end
+        else:
             # The nearest our stores come: the first source holding anything, with its span and why it
             # falls short (own recordings that began recently, a source without the expiry).
             near = next((s for s in got.get("sources") or [] if s.get("first")), None)
             if near is not None:
                 row["nearest"] = {k: near.get(k) for k in ("source", "first", "last", "why")}
+            elif not got.get("sources"):
+                row["why"] = (
+                    f"none of our stores holds {need.get('expiry') or 'its'} expiries at {need['cadence']}"
+                )
+            if need.get("expiry") == "all":
+                # Every expiry is asked for since the rule can land on a weekly; monthlies may be held.
+                alt = coverage(inventory, need["field"], arm["symbol"], start, end, cadence=need["cadence"],
+                               expiry="monthly", licensed=False)  # fmt: skip
+                if alt.get("covered"):
+                    src = next((s for s in alt.get("sources") or [] if s.get("source") == alt["best"]), {})
+                    row["monthly"] = {
+                        "source": alt["best"],
+                        "first": src.get("first"),
+                        "through": src.get("through"),
+                    }
         rows.append(row)
+    possible = all(r["covered"] for r in rows)
+    if possible and rows:
+        end = min(r["through"] for r in rows)  # a store a session or two behind: the run ends where it does
     return {
         "blocks": open_blocks,
         "window": [start, end],
         "needs": rows,
-        "possible": all(r["covered"] for r in rows),
+        "possible": possible,
         "licensed": any(r["licensed"] for r in rows),
     }
 

@@ -90,8 +90,8 @@ A page of its own (shortcut `u`), apart from Backtest: a forward test is not a b
 
 A new automation is built one decision at a time, for someone without much backtesting behind them. Seven steps are listed on the left, finished ones ticked; a step not yet reached cannot be opened.
 
-1. **Start:** a name, and a shape to start from (short put, put or call credit spread, iron condor, iron fly, custom legs), or an automation to copy. A shape is a whole automation the engine accepts as it stands: SPY, the listed expiry 45-60 days out, entry at 15:55, one contract.
-2. **Underlying and expiry,** with the backtest coverage from our own data, read before the rest is built.
+1. **Start:** a name, and a shape to start from (short put, put or call credit spread, iron condor, iron fly, custom legs), or an automation to copy. A shape is a whole automation the engine accepts as it stands: SPY, the standard monthly expiry 45-60 days out, entry at 15:55, one contract. Monthlies are what our own end-of-day chains hold, so every shape can be explored on our own data.
+2. **Underlying and expiry,** with the backtest coverage from our own data, read before the rest is built. Where a rule allowing any expiry is not covered but monthlies would be, **Use monthlies only** switches the rule and reads the coverage again.
 3. **Legs,** each placed by its rule, with the structure in plain English.
 4. **Entry,** with a warning when a time entry misses the end-of-day chains' 15:59 tick.
 5. **Gates,** optional, with **Skip gates**.
@@ -102,7 +102,7 @@ Leaving a step, by Next or a forward click in the list, asks the automations mod
 
 The automation is built in five sections, each carrying its blocks' backtest labels: `backtested` while a block stands as the research study ran it, `changed since its backtest` once edited, `not backtested` when no study ran it.
 
-1. **Underlying and data:** the symbol, the expiry rule, the weekdays and the events to skip.
+1. **Underlying and data:** the symbol, the expiry rule (with `monthly` set, only standard monthly expiries: the third Friday, or the session before a holiday), the weekdays and the events to skip.
 2. **Signal:** a fixed time, an opening-range break, or a trigger (a fixed time, or a core signal's first firing inside a window), with the entry said in plain English.
 3. **Gates:** the gates that read the market and the chain, before the legs are chosen.
 4. **Structure:** each leg's side, right and strike rule with its match mode, then the gates that read the chosen legs' price.
@@ -110,7 +110,7 @@ The automation is built in five sections, each carrying its blocks' backtest lab
 
 Every choice the form offers comes from the engine's own tables, so it offers nothing the engine would refuse by name. Whether a value is right is the **Check**. **Edit as JSON** shows the same automation as text, for anything the form does not lay out.
 
-Above the form, for an automation not wholly backtested, a line says whether our data covers a backtest over the last year (a time entry whose window holds 15:59 reads the end-of-day chains; any other reads minute data), or names the nearest store and why it falls short. Our own recordings are asked first. Where they fall short and the vendor licence allows new work, the vendor's store is offered instead, and the line names it and says the result is licensed: it stays on this machine and shows only while licensed results may.
+Above the form, for an automation not wholly backtested, a line says whether our data covers a backtest over the last year (a time entry whose window holds 15:59 reads the end-of-day chains; any other reads minute data), or names the nearest store and why it falls short, or that none of our stores holds that kind of expiry. A store written the next morning is a session or two behind; up to five trading days behind still covers, and the run ends at the store's last session. A rule allowing any expiry needs weeklies, which only the vendor holds; where monthlies would be covered, the line says so. Our own recordings are asked first. Where they fall short and the vendor licence allows new work, the vendor's store is offered instead, and the line names it and says the result is licensed: it stays on this machine and shows only while licensed results may.
 
 The action row:
 

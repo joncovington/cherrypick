@@ -393,3 +393,15 @@ def test_summary_lists_every_source_with_its_state_and_span():
     assert by["vendor-0dte-spx-60s"]["first"] == "2022-05-16" and by["vendor-0dte-spx-60s"]["licensed"]
     assert by["gex-profile"]["state"] == "absent" and by["technicals-eod"]["state"] == "error"
     assert by["cboe-vol"]["state"] == "not read"
+
+
+def test_a_store_a_few_sessions_behind_still_covers_through_its_last_session():
+    doc = _inventory(
+        **{"dolt-chains": {"SPY": {"first": "2019-02-09", "last": "2026-11-13", "sessions": None}}}
+    )
+    near = src.coverage(doc, "chain", "SPY", "2025-11-16", "2026-11-16", expiry="monthly", days=_days)
+    dolt = next(x for x in near["sources"] if x["source"] == "dolt-chains")
+    assert near["covered"] and dolt["through"] == "2026-11-13" and dolt["why"] is None
+    far = src.coverage(doc, "chain", "SPY", "2025-11-16", "2026-11-20", expiry="monthly", days=_days)
+    assert not far["covered"], "seven sessions behind is more than the lag"
+    assert "ends 2026-11-13, before 2026-11-20" in far["sources"][0]["why"]

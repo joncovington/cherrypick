@@ -2,7 +2,8 @@ import { describe, it, expect } from "vitest";
 import { renderToString } from "react-dom/server";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { BuilderSchema } from "@console/shared";
-import { BuilderWizard, STEPS, TIPS, holdsCloseSnapshot, plainBlocks, problemKey, problemsUpTo, type StepId } from "../src/pages/Builder/BuilderWizard";
+import { BuilderWizard, Coverage, STEPS, TIPS, holdsCloseSnapshot, plainBlocks, problemKey, problemsUpTo, type StepId } from "../src/pages/Builder/BuilderWizard";
+import { SuggestionLine } from "../src/pages/Builder/BuilderPage";
 
 const html = (el: React.ReactElement) => renderToString(<QueryClientProvider client={new QueryClient()}>{el}</QueryClientProvider>).replace(/<!--\s*-->/g, "");
 
@@ -144,5 +145,47 @@ describe("the wizard", () => {
   it("never promises a stop the engine does not have", () => {
     for (const [k, t] of Object.entries(TIPS)) expect(t, k).not.toMatch(/50% of (the )?max loss|guaranteed/i);
     expect(TIPS["rules"]).toContain("no fallback stop");
+  });
+});
+
+describe("the coverage", () => {
+  const SHORT = {
+    blocks: ["structure"],
+    window: ["2025-11-14", "2026-11-14"] as [string, string],
+    possible: false,
+    licensed: false,
+    needs: [
+      {
+        field: "chain",
+        expiry: "all",
+        cadence: "1d",
+        covered: false,
+        source: null,
+        licensed: false,
+        why: "none of our stores holds all expiries at 1d",
+        monthly: { source: "dolt-chains", first: "2019-02-09", through: "2026-11-13" },
+      },
+    ],
+  };
+
+  it("says why no store is a candidate and offers monthlies where they would be covered", () => {
+    const out = html(<Coverage s={SHORT} onMonthly={() => {}} />);
+    expect(out).toContain("chain (all) at 1d: none of our stores holds all expiries at 1d");
+    expect(out).toContain("Monthlies only would be covered by dolt-chains from 2019-02-09.");
+    expect(out).toContain(">Use monthlies only<");
+    expect(html(<Coverage s={SHORT} />)).not.toContain("Use monthlies only");
+    const form = html(<SuggestionLine s={SHORT} />);
+    expect(form).toContain("chain: none of our stores holds all expiries at 1d");
+    expect(form).toContain('With the expiry rule&#x27;s &quot;monthly&quot; set, dolt-chains would cover it from 2019-02-09.');
+  });
+
+  it("names the window a covered run takes, and a licensed store as licensed", () => {
+    const ok = { ...SHORT, possible: true, window: ["2025-11-14", "2026-11-13"] as [string, string], needs: [{ ...SHORT.needs[0]!, covered: true, source: "dolt-chains", through: "2026-11-13" }] };
+    expect(html(<Coverage s={ok} />)).toContain("Covered by our own data, 2025-11-14 to 2026-11-13");
+    expect(html(<Coverage s={{ ...ok, licensed: true }} />)).toContain("Covered by the licensed vendor store");
+  });
+
+  it("reads a monthly rule as monthlies", () => {
+    expect(plainBlocks({ ...PCS, expiry: { kind: "between", min: 45, max: 60, monthly: true } }).structure).toContain("The listed monthly expiry 45-60 days out");
   });
 });

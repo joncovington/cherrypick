@@ -243,6 +243,19 @@ def is_quarterly_expiry(d: date) -> bool:
     return d in quarterly_expiry_dates(d.year)
 
 
+def monthly_expiry(year: int, month: int) -> date:
+    """The standard monthly option expiry: the third Friday, or the trading day before it when that
+    Friday is a holiday."""
+    d = nth_weekday(year, month, FRI, 3)
+    while not is_trading_day(d):
+        d -= timedelta(days=1)
+    return d
+
+
+def is_monthly_expiry(d: date) -> bool:
+    return d == monthly_expiry(d.year, d.month)
+
+
 # --------------------------------------------------------------------------- FOMC (curated)
 def fomc_year_known(year: int) -> bool:
     return year in _FOMC_DATES
