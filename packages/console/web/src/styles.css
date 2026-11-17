@@ -11366,3 +11366,159 @@ svg.vol-curve text {
   white-space: pre;
   text-align: left;
 }
+
+/* The Builder page: the form beside today's checks and the runs. */
+.builder-layout {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: flex-start;
+}
+.builder-layout > .builder-form {
+  flex: 999 1 40rem;
+  min-width: 0;
+}
+.builder-side {
+  flex: 1 1 22rem;
+  min-width: 0;
+  display: grid;
+  gap: 0.75rem;
+}
+.builder-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: center;
+}
+.builder-form {
+  display: grid;
+  gap: 0.75rem;
+}
+.builder-section {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 0.85rem 0.95rem;
+  background: var(--surface);
+  display: grid;
+  gap: 0.7rem;
+  min-width: 0;
+}
+.builder-section-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+.builder-section-head h4 {
+  margin: 0;
+  font-size: 0.7rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.builder-section-note {
+  margin-left: auto;
+  font-size: 0.7rem;
+}
+.builder-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr));
+  gap: 0.6rem;
+}
+.builder-f {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+.builder-lbl {
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin: 0;
+}
+.builder-input {
+  font-family: var(--num-face);
+  font-size: 0.85rem;
+  color: var(--text);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.32rem 0.6rem;
+  min-width: 0;
+  min-height: 2rem;
+}
+.builder-days {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.9rem;
+  font-size: 0.85rem;
+}
+.builder-cond {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: flex-end;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-raised);
+}
+.builder-cond > .builder-f {
+  flex: 1 1 8rem;
+}
+.builder-remove {
+  flex: none;
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+}
+.builder-plain {
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.55rem 0.7rem;
+}
+.builder-plain p {
+  margin: 0.25rem 0 0;
+}
+.builder-today {
+  display: grid;
+  gap: 0.5rem;
+}
+.builder-today p {
+  margin: 0;
+}
+.builder-problems {
+  margin: 0;
+  padding-left: 1.25rem;
+  color: var(--neg);
+  font-size: 0.85rem;
+}
+.builder-chain {
+  font: 0.8rem/1.65 var(--num-face);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.5rem 0.7rem;
+  margin: 0;
+  white-space: pre;
+  overflow-x: auto;
+}
+.builder-actions .btn-primary {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  font-weight: 600;
+}
+.builder-actions-gap {
+  flex: 1;
+}
+.builder-suggestion {
+  font-size: 0.85rem;
+}
+.builder-picker .builder-input {
+  min-width: 14rem;
+}

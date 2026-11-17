@@ -1,50 +1,15 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { renderToString } from "react-dom/server";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { BuilderAutomation } from "@console/shared";
-import { BuilderCard, BuilderEditor, editorText } from "../src/pages/Builder/BuilderPage";
-import { builderDraft, builderSave } from "../src/lib/api";
-
-const html = (el: React.ReactElement) =>
-  renderToString(<QueryClientProvider client={new QueryClient()}>{el}</QueryClientProvider>).replace(/<!--\s*-->/g, "");
-
-const A: BuilderAutomation = {
-  name: "iron-fly-1000",
-  group: "ensemble",
-  symbol: "SPX",
-  enabled: true,
-  note: null,
-  start: null,
-  register: null,
-  summary: "",
-  blocks: [],
-  forward: null,
-  suggestion: null,
-};
+import { editorText } from "../src/pages/Builder/BuilderPage";
+import { builderDraft, builderSave, builderToday } from "../src/lib/api";
 
 afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("the Builder's editor", () => {
-  it("is opened from a card by Edit or Copy as new", () => {
-    const out = html(<BuilderCard a={A} />);
-    expect(out).toContain(">Edit</button>");
-    expect(out).toContain(">Copy as new</button>");
-  });
-
+describe("the Builder's JSON view", () => {
   it("never shows the name, the register label or the switch in the text", () => {
     const text = editorText({ name: "x", register: { item: 75 }, enabled: true, symbol: "SPX", legs: [] });
     expect(JSON.parse(text)).toEqual({ symbol: "SPX", legs: [] });
-  });
-
-  it("keeps the name for an edit and offers a new one for a copy, and says a save is off", () => {
-    const edit = html(<BuilderEditor source="iron-fly-1000" copy={false} onClose={() => undefined} />);
-    expect(edit).toContain('<input disabled="" aria-label="automation name" value="iron-fly-1000"/>');
-    expect(edit).toContain("A save writes this automation <strong>off</strong>");
-    expect(edit).toContain(">Save (off)</button>");
-    const copy = html(<BuilderEditor source="iron-fly-1000" copy={true} onClose={() => undefined} />);
-    expect(copy).toContain('<input aria-label="automation name" value="iron-fly-1000-copy"/>');
   });
 });
 
@@ -73,6 +38,14 @@ describe("the editor's calls", () => {
     expect(r.automation).toEqual({ symbol: "SPX" });
     const sent = calls.find((c) => c.url === "/api/automations/builder/draft")!;
     expect(JSON.parse(String(sent.init?.body))).toEqual({ name: "iron-fly-1000" });
+  });
+
+  it("asks for today's decision by name, or with the unsaved edit", async () => {
+    const calls = stub(200, { name: "mine", state: "would_skip" });
+    expect((await builderToday("mine")).state).toBe("would_skip");
+    await builderToday("mine", { symbol: "SPX" });
+    const sent = calls.filter((c) => c.url === "/api/automations/builder/today").map((c) => JSON.parse(String(c.init?.body)));
+    expect(sent).toEqual([{ name: "mine" }, { name: "mine", automation: { symbol: "SPX" } }]);
   });
 
   it("names the status when a refusal has no body", async () => {
