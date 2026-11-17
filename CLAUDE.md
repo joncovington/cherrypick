@@ -24,7 +24,9 @@ Packages: `packages/orchestrator`, `packages/meic`, `packages/earnings`, `packag
 - **streamer** is the only writer of the stream cache. Modules declare symbols in
   `state/stream_requests/`.
 - **console** holds no path that touches an order. Its writes are the Config page and the Builder's
-  save of one automation (always off), both through the orchestrator's config editor.
+  save of one automation (always off), both through the orchestrator's config editor, and the
+  Builder's backtest: one explore run of one saved automation, queued on the research queue by
+  the orchestrator, only where our own data covers it.
 - **backtest**: the licence outranks everything. Vendor data and anything derived from it stay under
   `~/.cherrypick`, never in this repo, a PR, an issue or a published artifact.
 

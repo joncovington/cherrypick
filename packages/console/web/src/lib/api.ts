@@ -16,8 +16,10 @@ import type {
   AutomationsHistory,
   AutomationsPayload,
   AutomationGroupsResult,
+  BuilderBacktestResult,
   BuilderDraftResult,
   BuilderResult,
+  BuilderRuns,
   BuilderSaveResult,
   AutomationsPerformance,
   CurveEquity,
@@ -1361,6 +1363,22 @@ export function builderDraft(name: string, automation?: Record<string, unknown>)
 /** Save one automation through the orchestrator's config editor. It is always saved off. */
 export function builderSave(name: string, automation: Record<string, unknown>): Promise<BuilderSaveResult> {
   return builderPost<BuilderSaveResult>("/api/automations/builder/save", { name, automation });
+}
+
+/** Queue one explore backtest of a saved automation; the window and source are the module's own. */
+export function builderBacktest(name: string): Promise<BuilderBacktestResult> {
+  return builderPost<BuilderBacktestResult>("/api/automations/builder/backtest", { name });
+}
+
+/** One automation's run card: its queued backtests and their results. Polled while one is live. */
+export function useBuilderRuns(name: string, enabled: boolean) {
+  return useQuery<BuilderRuns>({
+    queryKey: ["automations-builder-runs", name],
+    queryFn: () => getJson<BuilderRuns>(`/api/automations/builder/runs?name=${encodeURIComponent(name)}`),
+    enabled,
+    staleTime: 5_000,
+    refetchInterval: (q) => (q.state.data?.tasks.some((t) => t.status === "queued" || t.status === "running") ? 10_000 : false),
+  });
 }
 
 /** Each arm's closed trades, net and drawdown, and the arms stacked. */

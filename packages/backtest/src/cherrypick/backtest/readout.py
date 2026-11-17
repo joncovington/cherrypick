@@ -314,6 +314,50 @@ def signal_studies() -> dict:
     return {"ok": True, "studies": rows, "unreadable": unreadable}
 
 
+#: An automation's name, as the automations module allows it (`drafts.NAME`).
+AUTOMATION_NAME = re.compile(r"^[a-z0-9][a-z0-9-]{1,47}$")
+#: The result file of a backtest the Builder queued: `builder-<automation>-<YYMMDDHHMM>.json`.
+BUILDER_RUN = "builder-{name}-"
+
+
+def automation_runs(name: str) -> dict:
+    """The Builder page's run card: every result of a backtest the Builder queued for automation
+    `name`, newest first, each in brief (its source and span, each arm's sessions, trades and net as
+    the run wrote them, never recomputed) with whether it is licensed. No trades are listed. A file
+    that does not parse is listed in `unreadable`."""
+    if not AUTOMATION_NAME.match(name or ""):
+        return {"ok": False, "error": "name must be an automation's name"}
+    pattern = re.compile(re.escape(BUILDER_RUN.format(name=name)) + r"\d{10}\.json$")
+    runs, unreadable = [], []
+    for licensed in (False, True):
+        d = paths.automations_dir(licensed)
+        if not d.is_dir():
+            continue
+        for p in sorted(d.glob("builder-*.json")):
+            if not pattern.fullmatch(p.name):
+                continue
+            try:
+                doc = json.loads(p.read_text(encoding="utf-8"))
+                runs.append(
+                    {
+                        "run": doc["name"],
+                        "symbol": doc["symbol"],
+                        "source": doc["source"],
+                        "licensed": bool(doc.get("licensed", licensed)) or licensed,
+                        "cadence": doc.get("cadence"),
+                        "sessions": doc.get("sessions"),
+                        "session_count": doc.get("session_count"),
+                        "summary": doc.get("summary") or {},
+                        "still_open": doc.get("still_open"),
+                        "generated_at": doc.get("generated_at"),
+                    }
+                )
+            except (OSError, ValueError, KeyError, TypeError):
+                unreadable.append(p.name)
+    runs.sort(key=lambda r: r.get("generated_at") or "", reverse=True)
+    return {"ok": True, "name": name, "runs": runs, "unreadable": unreadable}
+
+
 def signal_study(name: str) -> dict:
     """One signal study's whole result, or a refusal naming why."""
     if not SIGNAL_NAME.match(name or ""):

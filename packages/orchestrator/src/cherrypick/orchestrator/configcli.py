@@ -23,7 +23,7 @@ import json
 import sys
 from typing import Any
 
-from . import automationedit, configedit, liveops
+from . import automationedit, automationrun, configedit, liveops
 from . import config as cfgmod
 
 
@@ -113,6 +113,13 @@ def handle(req: dict[str, Any]) -> dict[str, Any]:
         # The Builder's save: that check, then the one entry it returned (always off) written
         # through the same raw-save path as every config save.
         return automationedit.save(cfg, req)
+    if op == "automation_backtest":
+        # The Builder's backtest: one explore run queued on the research queue (a `script` row), never
+        # a config write; refused unless the automation's own suggestion says our data covers it.
+        return automationrun.queue(cfg, req)
+    if op == "automation_runs":
+        # The Builder's run card: that automation's queue rows and results. Reads only.
+        return automationrun.runs(cfg, req)
     return _err(f"unknown op: {op!r}")
 
 

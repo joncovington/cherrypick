@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import type { BuilderAutomation, BuilderBlock, BuilderSuggestion } from "@console/shared";
-import { builderDraft, builderSave, useAutomationsBuilder } from "../../lib/api";
+import type { BuilderAutomation, BuilderBlock, BuilderRuns, BuilderSuggestion } from "@console/shared";
+import { builderBacktest, builderDraft, builderSave, useAutomationsBuilder, useBuilderRuns } from "../../lib/api";
+import { fmtMoney } from "../../lib/format";
 
 /** What each block label says, in words. */
 export const STATE_TEXT: Record<BuilderBlock["state"], string> = {
@@ -214,8 +215,99 @@ export function BuilderEditor({ source, copy, onClose }: { source: string; copy:
   );
 }
 
+/**
+ * The run card: an automation's Builder backtests, the queue rows first, then each result's figures
+ * as the run wrote them. Every run is an explore run: description, never a verdict.
+ */
+export function BuilderRunsView({ data }: { data: BuilderRuns }) {
+  return (
+    <div className="builder-runs" data-runs={data.runs.length}>
+      <p className="muted">Explore runs: descriptive only, no trial and no verdict. They move no label.</p>
+      {data.tasks.length > 0 && (
+        <ul className="builder-run-tasks">
+          {data.tasks.map((t) => (
+            <li key={t.id ?? t.run} data-status={t.status}>
+              {t.run}: {t.status}
+              {t.status === "failed" && t.note ? ` (${t.note})` : ""}
+            </li>
+          ))}
+        </ul>
+      )}
+      {data.runs.map((r) => (
+        <table key={r.run} className="builder-run-table">
+          <caption>
+            {r.run}: {r.symbol} on {r.source}
+            {r.sessions ? `, ${r.sessions[0]} to ${r.sessions[1]}` : ""} ({r.session_count ?? 0} sessions,{" "}
+            {r.cadence ?? "stored cadence"}){r.still_open ? `; ${r.still_open} still open at the end` : ""}
+          </caption>
+          <thead>
+            <tr>
+              <th>arm</th>
+              <th>sessions</th>
+              <th>trades</th>
+              <th>P&amp;L</th>
+              <th>per trade</th>
+            </tr>
+          </thead>
+          <tbody>
+            {Object.entries(r.summary).map(([arm, s]) => (
+              <tr key={arm}>
+                <td>{arm}</td>
+                <td>{s.sessions ?? "—"}</td>
+                <td>{s.trades ?? "—"}</td>
+                <td>{fmtMoney(s.net)}</td>
+                <td>{fmtMoney(s.mean_net)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ))}
+      {data.tasks.length === 0 && data.runs.length === 0 && <p className="muted">No backtest queued from here yet.</p>}
+      {data.withheld > 0 && <p className="muted">{data.withheld} licensed result(s) not shown.</p>}
+      {data.results_unavailable && <p className="error">The results could not be read.</p>}
+    </div>
+  );
+}
+
+function BuilderRunsPanel({ name }: { name: string }) {
+  const q = useBuilderRuns(name, true);
+  if (q.isLoading) return <div className="muted">Reading the runs…</div>;
+  if (q.error || !q.data) return <div className="error">Could not read the runs.</div>;
+  return <BuilderRunsView data={q.data} />;
+}
+
+/** Queue one explore backtest. Rendered only where the automation's suggestion says our data covers it. */
+function BacktestButton({ a, onQueued }: { a: BuilderAutomation; onQueued: () => void }) {
+  const qc = useQueryClient();
+  const [busy, setBusy] = useState(false);
+  const [said, setSaid] = useState<string | null>(null);
+  const go = async (): Promise<void> => {
+    setBusy(true);
+    const r = await builderBacktest(a.name);
+    setBusy(false);
+    setSaid(r.ok ? `Queued ${r.run} (task ${r.task ?? "?"}), ${r.window?.[0]} to ${r.window?.[1]}.` : `Not queued: ${r.error}`);
+    if (r.ok) {
+      void qc.invalidateQueries({ queryKey: ["automations-builder-runs", a.name] });
+      onQueued();
+    }
+  };
+  return (
+    <>
+      <button type="button" className="btn" disabled={busy} onClick={() => void go()}>
+        Backtest
+      </button>
+      {said && (
+        <span className="builder-check" role="status">
+          {said}
+        </span>
+      )}
+    </>
+  );
+}
+
 export function BuilderCard({ a }: { a: BuilderAutomation }) {
   const [editing, setEditing] = useState<null | "edit" | "copy">(null);
+  const [runs, setRuns] = useState(false);
   return (
     <section className="card builder-card" data-automation={a.name}>
       <header className="builder-card-head">
@@ -249,10 +341,15 @@ export function BuilderCard({ a }: { a: BuilderAutomation }) {
           <button type="button" className="btn" onClick={() => setEditing("copy")}>
             Copy as new
           </button>
+          {a.suggestion?.possible && <BacktestButton a={a} onQueued={() => setRuns(true)} />}
+          <button type="button" className="btn" onClick={() => setRuns((v) => !v)}>
+            {runs ? "Hide runs" : "Runs"}
+          </button>
         </div>
       ) : (
         <BuilderEditor source={a.name} copy={editing === "copy"} onClose={() => setEditing(null)} />
       )}
+      {runs && <BuilderRunsPanel name={a.name} />}
     </section>
   );
 }

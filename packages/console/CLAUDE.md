@@ -117,6 +117,14 @@ alone):
     automation and nothing else; the orchestrator runs the module's own check and writes the entry it
     returned, which is always off. The page never turns an automation on, and never writes its
     register label.
+  - **The Builder's backtest queues; it writes no config** (`/api/automations/builder/backtest`,
+    configcli `automation_backtest`). The route sends the name alone. The orchestrator takes the
+    window and the source from the automation's own backtest suggestion (our stores only, never
+    the vendor's), refuses where that is not possible or a run is already live, and adds one
+    research-queue `script` row of the automation backtest driver. The run is an explore run: no
+    trial, no verdict, no label moved. The run card (`/api/automations/builder/runs`, configcli
+    `automation_runs`) shows its rows and results, a licensed result only while
+    `backtestResultsOn` (fail closed: one not plainly unlicensed is withheld and counted).
   - This surface **cannot touch `enable_live_trading`, flies' `live.enabled`/`gate0_confirmed`, or the
     live loss/deploy limits** in either direction: `configedit.GUARDED` refuses them, and the page
     shows them as locked rows with that table's hint.

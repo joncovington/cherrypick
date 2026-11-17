@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyReply } from "fastify";
 import type { ConsoleConfig } from "../config.js";
 import { callConfigCli, statusForCode, type BridgeOk, type BridgeResult } from "../services/configBridge.js";
 import { readLockStatus } from "../services/liveLock.js";
-import { getFeatures, invalidateFeatures } from "../services/featuresBridge.js";
+import { backtestResultsOn, getFeatures, invalidateFeatures } from "../services/featuresBridge.js";
 import { invalidateAutomationsBuilder } from "../services/automationsBuilderBridge.js";
 import { getPrefs, setPref } from "../store/consoleDb.js";
 
@@ -198,6 +198,51 @@ export function registerConfigRoutes(app: FastifyInstance, config: ConsoleConfig
     invalidateAutomationsBuilder();
     app.log.info(`automation saved from the builder: ${parsed.name} (${result["added"] === true ? "added" : "replaced"}, off)`);
     return { ok: true, name: parsed.name, added: result["added"] === true, enabled: false, backup: result["backup"] ?? null };
+  });
+
+  /**
+   * The Builder's backtest (#1180): one explore run of one saved automation, queued on the research
+   * queue by the orchestrator (`automationrun.queue`, a `script` row of the automation backtest driver).
+   * Descriptive, no trial and no verdict; it writes no config and turns nothing on. The orchestrator
+   * refuses unless the automation's own suggestion says our data covers it. Only the name is sent:
+   * the window and the source are the module's, never the page's.
+   */
+  app.post("/api/automations/builder/backtest", async (req, reply) => {
+    const parsed = automationBody((req.body ?? {}) as Record<string, unknown>);
+    if (typeof parsed === "string") return reply.code(400).send({ error: parsed });
+    const result = sendBridgeFailure(reply, await callConfigCli({ op: "automation_backtest", name: parsed.name }));
+    if (result === null) return reply;
+    app.log.info(`automation backtest queued from the builder: ${parsed.name} (task ${String(result["task"] ?? "?")})`);
+    return {
+      ok: true,
+      name: parsed.name,
+      run: result["run"] ?? null,
+      task: result["task"] ?? null,
+      window: result["window"] ?? null,
+      source: result["source"] ?? null,
+    };
+  });
+
+  /**
+   * The run card: that automation's queue rows and results. A licensed result (one that read the
+   * vendor's store) is shown only while licensed results may be (`backtestResultsOn`); otherwise it is
+   * left out and counted in `withheld`. Fail closed: a result not plainly unlicensed is licensed.
+   */
+  app.get("/api/automations/builder/runs", async (req, reply) => {
+    const name = String(((req.query ?? {}) as Record<string, unknown>)["name"] ?? "");
+    if (name === "" || name.length > 48) return reply.code(400).send({ error: "name (up to 48 characters) required" });
+    const result = sendBridgeFailure(reply, await callConfigCli({ op: "automation_runs", name }));
+    if (result === null) return reply;
+    const open = backtestResultsOn(await getFeatures());
+    const all = Array.isArray(result["runs"]) ? (result["runs"] as Array<Record<string, unknown>>) : [];
+    const runs = all.filter((r) => open || r["licensed"] === false);
+    return {
+      name,
+      tasks: Array.isArray(result["tasks"]) ? result["tasks"] : [],
+      runs,
+      withheld: all.length - runs.length,
+      results_unavailable: result["results_unavailable"] === true,
+    };
   });
 
   // The console's own display preferences: its own store, no blast radius, so they save on change
