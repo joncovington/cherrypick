@@ -40,6 +40,7 @@ from cherrypick.core.clock import ET
 from cherrypick.core.streamcache import usable_quote
 
 from . import greeks, regimes, store, vixfetch
+from . import settings as _settings
 from .vendor import FATAL, VendorRefusal
 
 #: The progress file's job name, which the research queue's meter reads.
@@ -295,7 +296,7 @@ def fetch(
         rep = progress or core_progress.Reporter(JOB)
         rep.phase("sessions", total=len(days), unit="sessions")
         rep.advance("sessions", report["skipped"])
-        cap = max(1, int(settings["vendor"]["max_concurrent_requests"]))  # one request in flight a session
+        cap = _settings.concurrency(settings)  # one request in flight a session, within the tier
         pool = ThreadPoolExecutor(max_workers=max(1, min(int(workers), cap)))
         # Shut down cancelling what is queued, whatever ends the loop. A plain `with` waits for every
         # queued pull on the way out: an error writing one session once left a fetch pulling the

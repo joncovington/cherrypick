@@ -6,8 +6,10 @@ the vendor's licence decides where data and results may go.
 ## Setting it up
 
 1. **Get the API key.** Sign in at <https://www.thetadata.net>, open the account dashboard, and copy
-   the API key. The account needs a subscription that covers what you will fetch (Options Standard:
-   intraday quotes, open interest, IV and first-order greeks from 2016).
+   the API key. The account needs a subscription that covers what you will fetch, and `vendor.subscription`
+   in the config names it. Options Value serves intraday quotes and open interest from 2020, two
+   requests at a time; the fetch computes delta and IV from the quotes. Options Standard adds the
+   vendor's own greeks and IV, option prints and history from 2016, four at a time.
 2. **Store it in the keyring** (never in a file):
 
    ```
@@ -32,7 +34,8 @@ python -m cherrypick.backtest coverage [--cadence 60]                           
 
 The fetch is the package's only network path. It skips sessions already complete (`--refetch` to
 redo one), records every refusal with its reason, and asks for two requests per session, one session
-at a time by default (`--workers 2` uses the Standard tier's four in flight). Each cadence is its
+at a time by default. However many workers run, the client never has more requests in flight
+than the tier allows (`settings.concurrency`: Value 2, Standard 4). Each cadence is its
 own store file. The vendor does not serve sub-minute history before 2026, so history is fetched at
 1 minute. Every vendor call carries a deadline; a call that stalls is retried on a fresh channel of
 the same session, and the retry is logged.

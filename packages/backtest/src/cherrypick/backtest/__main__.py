@@ -6,8 +6,8 @@ python -m cherrypick.backtest key set             # store it (hidden prompt; bla
 python -m cherrypick.backtest key import-env      # copy the vendor's env var into the keyring once
 python -m cherrypick.backtest fetch --from 2026-10-13 --to 2026-10-16 [--dataset SPX] [--refetch]
 python -m cherrypick.backtest fetch-vix --from 2022-05-16 --to 2025-06-30   # VIX minutes, from VIX options
-python -m cherrypick.backtest fetch-chains --requests FILE [--workers 3] [--limit N]   # end-of-day chains
-python -m cherrypick.backtest fetch-chain-paths --requests FILE [--workers 3]   # each expiry's daily path
+python -m cherrypick.backtest fetch-chains --requests FILE [--workers 2] [--limit N]   # end-of-day chains
+python -m cherrypick.backtest fetch-chain-paths --requests FILE [--workers 2]   # each expiry's daily path
 python -m cherrypick.backtest chains-status        # what the end-of-day chain store holds
 python -m cherrypick.backtest fetch-intraday-chains --requests FILE [--workers 1] [--limit N]   # item 31
 python -m cherrypick.backtest intraday-status      # what the intraday chain store holds
@@ -617,7 +617,12 @@ def main(argv: list[str] | None = None) -> int:
     fc.add_argument(
         "--requests", required=True, help='JSON: {"requests": [{"symbol","session","expiration"}]}'
     )
-    fc.add_argument("--workers", type=int, default=3, help="concurrent requests on the one session")
+    fc.add_argument(
+        "--workers",
+        type=int,
+        default=2,
+        help="concurrent requests on the one session (the tier caps it: settings.concurrency)",
+    )
     fc.add_argument("--limit", type=int, help="fetch at most this many requests this run")
     fc.add_argument("--refetch", action="store_true", help="replace requests already complete or empty")
     fc.add_argument("--stop-by", help="ET wall clock, YYYY-MM-DDTHH:MM: start no request after it")
@@ -661,7 +666,12 @@ def main(argv: list[str] | None = None) -> int:
     fp.add_argument(
         "--requests", required=True, help='JSON: {"requests": [{"symbol","expiration","start","through"}]}'
     )
-    fp.add_argument("--workers", type=int, default=3, help="concurrent requests on the one session")
+    fp.add_argument(
+        "--workers",
+        type=int,
+        default=2,
+        help="concurrent requests on the one session (the tier caps it: settings.concurrency)",
+    )
     fp.add_argument("--limit", type=int, help="fetch at most this many paths this run")
     fp.add_argument("--refetch", action="store_true", help="replace paths already complete or empty")
     fp.add_argument("--stop-by", help="ET wall clock, YYYY-MM-DDTHH:MM: start no path after it")

@@ -20,11 +20,19 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
+from . import settings as _settings
+
 #: The last days before the purge deadline given to the final review.
 REVIEW_DAYS = 7
 
 
 def status(settings: dict, today: date | None = None) -> dict:
+    """The licence's phase, and `tier`: what the subscription can still add to the stores (greeks,
+    trades, how far back, how many requests at once; `settings.TIERS`)."""
+    return {**_phase(settings, today), "tier": _settings.tier(settings)}
+
+
+def _phase(settings: dict, today: date | None) -> dict:
     today = today or date.today()
     lic = settings["vendor"]["license"]
     ended = lic.get("terminated_on")

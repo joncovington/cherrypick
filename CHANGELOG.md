@@ -22,6 +22,12 @@ beyond the latest release.
 
 ### What's new
 
+- **The backtest fetch runs on the vendor's Options Value tier.** `vendor.subscription` picks the path.
+  On a tier without greeks, every intraday fetch asks for quotes and computes delta and IV from each
+  instant's chain (`core.chaindelta.computed_greeks`), with the underlying taken from the vendor when a
+  row carries it and from put-call parity on a 0DTE expiry. VIX minutes without the vendor's own price,
+  and option prints, are refused `not_on_tier`. The client never has more requests in flight than the
+  tier allows (Value 2, Standard 4), and `backtest status` shows what the tier can still add.
 - **An automation's chain request never takes the feed past its budget.** Enrolling an automation
   asks the streamer for its symbol and, around its entry window, the one expiry it trades. That request
   is now priced against the subscription budget before it is written. If it would go over, that day's

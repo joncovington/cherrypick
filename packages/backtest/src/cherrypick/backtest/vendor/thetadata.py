@@ -12,18 +12,22 @@ availability) is retried with backoff before it becomes a refusal.
 from __future__ import annotations
 
 import atexit
+import contextlib
 import math
 import os
 import sys
+import threading
 import time
-from datetime import date, timedelta
+import types
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from cherrypick.core import chaindelta, looplock
 from cherrypick.core import home as _home
-from cherrypick.core import looplock
 
 from .. import credential
+from .. import settings as _settings
 from . import VendorRefusal
 
 #: The account allows ONE session: a second login with the key ends the first, and every later call
@@ -172,15 +176,102 @@ def _transient(exc: Exception) -> bool:
 #: suits a check by hand while a fetch holds PROD, and never builds a store. It takes no lock.
 ENVS = ("PROD", "STAGE")
 
+#: The greeks endpoint every intraday fetch asks on a tier that serves it, and the quote endpoint it
+#: asks instead on one that does not (`settings.TIERS`). The two take the same arguments.
+GREEKS_METHOD = "option_history_greeks_first_order"
+QUOTE_METHOD = "option_history_quote"
+#: When an expiry stops trading, ET: the PM-settled options every intraday fetch reads.
+EXPIRY_CLOSE = (16, 0)
+
+
+def _et(stamp) -> datetime:
+    """A row's stamp as an aware ET datetime: the vendor's naive stamps are ET wall clock."""
+    if getattr(stamp, "tzinfo", None) is None:
+        return stamp.replace(tzinfo=_ET)
+    return stamp.astimezone(_ET)
+
+
+def _expiry_of(row, asked) -> date | None:
+    value = getattr(row, "expiration", None) or asked
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    try:
+        return date.fromisoformat(str(value)[:10])
+    except ValueError:
+        return None
+
+
+class _Rows:
+    """Rows made here, shaped like the slice of a DataFrame the methods read."""
+
+    def __init__(self, rows):
+        self.rows = rows
+
+    def itertuples(self, index=False):
+        return iter(self.rows)
+
+
+def quotes_with_greeks(rows, *, expiration, spot_required: bool = False) -> _Rows:
+    """Quote rows (no greeks) as greeks rows: each instant's chain of one expiry gets delta and IV
+    from its own mids (`core.chaindelta`, the forward from put-call parity, zero rate), time to the
+    expiry's close at 16:00 ET. The underlying's price is the row's own when the vendor sends one.
+    Otherwise it is the parity forward on an expiry's own day (a 0DTE forward is its spot, which
+    is how `core.chaindelta` already treats a live chain) and None on any other, never a guess
+    at carry. `spot_required`: a row without the vendor's own price is refused (`not_on_tier`),
+    for a read whose spot is not the options' forward (the VIX index under VIX options)."""
+    groups: dict[tuple, list] = {}
+    for r in rows:
+        stamp = _et(r.timestamp)
+        groups.setdefault((stamp, _expiry_of(r, expiration)), []).append(r)
+    out = []
+    for (stamp, expiry), group in groups.items():
+        own = [_num(getattr(r, "underlying_price", None)) for r in group]
+        if spot_required and any(v is None for v in own):
+            raise VendorRefusal(
+                "not_on_tier",
+                "this tier's quotes carry no underlying price, and this read needs the vendor's own",
+            )
+        chain = [
+            {"strike": r.strike, "right": r.right, "bid": _num(r.bid), "ask": _num(r.ask)} for r in group
+        ]
+        years = 0.0
+        if expiry is not None:
+            close = datetime(expiry.year, expiry.month, expiry.day, *EXPIRY_CLOSE, tzinfo=_ET)
+            years = max(0.0, (close - stamp).total_seconds()) / chaindelta.YEAR_SECONDS
+        greeks = chaindelta.computed_greeks(chain, years=years)
+        forward = chaindelta.forward_from_parity(chain) if expiry == stamp.date() else None
+        for r, (delta, iv), spot in zip(group, greeks, own, strict=True):
+            fields = {k: getattr(r, k) for k in getattr(r, "_fields", ()) or vars(r)}
+            out.append(
+                types.SimpleNamespace(
+                    **{
+                        **fields,
+                        "delta": delta,
+                        "implied_vol": iv,
+                        "underlying_price": spot if spot is not None else forward,
+                    }
+                )
+            )
+    return _Rows(out)
+
 
 class ThetaDataClient:
     name = "thetadata"
+    #: The configured tier and its request gate; set by `__init__` from the settings.
+    subscription = "standard"
+    _gate = None
 
     def __init__(self, settings: dict, *, env: str = "PROD"):
         if env not in ENVS:
             raise VendorRefusal("unknown_env", f"{env!r}; one of {', '.join(ENVS)}")
         self.env = env
         vendor = settings["vendor"]
+        tiered = {"vendor": {**_settings.DEFAULTS["vendor"], **vendor}}  # a partial block takes the defaults
+        self.subscription = tiered["vendor"]["subscription"]
+        # However many workers a caller runs, no more requests than the tier allows are in flight.
+        self._gate = threading.BoundedSemaphore(_settings.concurrency(tiered))
         if vendor["transport"] != "python":
             raise VendorRefusal("transport_not_built", "only transport 'python' is implemented")
         key = credential.read_key(settings)
@@ -233,7 +324,8 @@ class ThetaDataClient:
         goes out on the fresh channel), retried on transient pushback."""
         for delay in (*RETRY_DELAYS, None):
             try:
-                return getattr(self._client, method)(**kw)
+                with self._gate if self._gate is not None else contextlib.nullcontext():
+                    return getattr(self._client, method)(**kw)
             except Exception as exc:  # noqa: BLE001 -- the vendor library raises grpc and its own types
                 if delay is not None and _transient(exc):
                     stalled = "DEADLINE_EXCEEDED" in str(exc)
@@ -247,6 +339,14 @@ class ThetaDataClient:
                 raise VendorRefusal(reason, detail) from None
         raise AssertionError("unreachable")  # pragma: no cover
 
+    def _greeks_rows(self, *, spot_required: bool = False, **kw):
+        """The greeks endpoint's rows on a tier that serves it; on one that does not, the same
+        request's quotes with delta, IV and the underlying filled in here (`quotes_with_greeks`)."""
+        if _settings.TIERS[self.subscription]["greeks"]:
+            return self._call(GREEKS_METHOD, **kw)
+        rows = self._call(QUOTE_METHOD, **kw).itertuples(index=False)
+        return quotes_with_greeks(rows, expiration=kw.get("expiration"), spot_required=spot_required)
+
     def expirations(self, root: str) -> list[str]:
         df = self._call("option_list_expirations", symbol=root)
         return sorted(str(x)[:10] for x in df["expiration"])
@@ -255,8 +355,7 @@ class ThetaDataClient:
         self, root: str, day: str, *, interval: str, strike_range: int, start_time: str, end_time: str
     ):
         d = date.fromisoformat(day)
-        df = self._call(
-            "option_history_greeks_first_order",
+        df = self._greeks_rows(
             symbol=root,
             expiration=d,
             date=d,
@@ -318,7 +417,7 @@ class ThetaDataClient:
         }
         if strike_range is not None:
             kw["strike_range"] = strike_range
-        df = self._call("option_history_greeks_first_order", **kw)
+        df = self._greeks_rows(**kw)
         out = []
         for r in df.itertuples(index=False):
             stamp = r.timestamp
@@ -355,8 +454,7 @@ class ThetaDataClient:
         of the money (the add-on weeklies fetch, `addonfetch.py`). Rows leave with ``day`` (the ET
         session), ``ts`` (epoch seconds), ``strike``, ``right`` ("P"/"C"), ``bid``, ``ask``,
         ``delta``, ``iv`` and ``underlying``, missing values as None, never NaN."""
-        df = self._call(
-            "option_history_greeks_first_order",
+        df = self._greeks_rows(
             symbol=root,
             expiration=date.fromisoformat(expiration),
             interval="1m",
@@ -501,7 +599,10 @@ class ThetaDataClient:
     def trades(self, root: str, day: str) -> list[dict]:
         """Every option print of `root` on `day`, every expiry, regular hours, each with the quote
         standing when it printed: {expiration, strike, right, ts_ms, size, price, bid, ask,
-        condition}. A whole liquid name's day is one request of seconds (2026-10-17)."""
+        condition}. A whole liquid name's day is one request of seconds (2026-10-17). A tier that
+        serves no prints refuses it here (`not_on_tier`), before any request."""
+        if not _settings.TIERS[self.subscription]["trades"]:
+            raise VendorRefusal("not_on_tier", f"the {self.subscription} tier serves no option prints")
         df = self._call(
             "option_history_trade_quote",
             symbol=root,
@@ -528,10 +629,12 @@ class ThetaDataClient:
     def vix_minutes(self, day: str, expiration: str) -> list[tuple[float, float]]:
         """The VIX index through `day`, one value a minute, from VIX options' underlying price: the
         account's tier refuses the index endpoints, and every VIX option expiry reports the same spot
-        index (checked across expiries, and against Cboe's daily figures, 2026-10-18). (epoch, value)."""
+        index (checked across expiries, and against Cboe's daily figures, 2026-10-18). (epoch, value).
+        On a tier without greeks the quotes must carry the vendor's own underlying price, or this is
+        refused (`not_on_tier`): VIX options' parity forward is the VIX future, not the index."""
         d = date.fromisoformat(day)
-        df = self._call(
-            "option_history_greeks_first_order",
+        df = self._greeks_rows(
+            spot_required=True,
             symbol="VIX",
             expiration=date.fromisoformat(expiration),
             date=d,

@@ -21,6 +21,33 @@ VENDORS = ("thetadata",)
 TRANSPORTS = ("python", "terminal")
 SUBSCRIPTIONS = ("free", "value", "standard", "professional")
 
+#: What each tier serves, as far as it changes a fetch. `greeks`: the vendor's greeks endpoints (and
+#: with them IV and the underlying's price on every quote row); without them a fetch asks for quotes
+#: and computes delta and IV from the chain's own mids (`core.chaindelta`). `trades`: option prints.
+#: `concurrent`: requests in flight at once, which caps `max_concurrent_requests`; None leaves the
+#: configured figure as the cap. `history_from`: the first date the tier serves; None, no limit known.
+TIERS: dict[str, dict[str, Any]] = {
+    "free": {"greeks": False, "trades": False, "concurrent": 1, "history_from": None},
+    "value": {"greeks": False, "trades": False, "concurrent": 2, "history_from": "2020-01-01"},
+    "standard": {"greeks": True, "trades": True, "concurrent": 4, "history_from": None},
+    "professional": {"greeks": True, "trades": True, "concurrent": None, "history_from": None},
+}
+
+
+def tier(s: dict) -> dict[str, Any]:
+    """The configured subscription's entry in `TIERS`, with its name."""
+    name = s["vendor"]["subscription"]
+    return {"name": name, **TIERS[name]}
+
+
+def concurrency(s: dict) -> int:
+    """Requests the client may have in flight at once: the configured `max_concurrent_requests`,
+    never more than the tier allows."""
+    cap = TIERS[s["vendor"]["subscription"]]["concurrent"]
+    configured = int(s["vendor"]["max_concurrent_requests"])
+    return max(1, configured if cap is None else min(configured, cap))
+
+
 DEFAULTS: dict[str, Any] = {
     "enabled": False,
     "vendor": {
