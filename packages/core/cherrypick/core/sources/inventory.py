@@ -9,7 +9,8 @@ how many sessions it holds. `coverage` answers from the cache, so asking never s
   in: core does not depend on the MySQL connector.
 - **csv**: one file per symbol, named by it, dates in the first column.
 - **store_cache**: the backtest's own inventory of the vendor's stores (`store_inventory.json`, its
-  counts only), never the store itself.
+  counts only), never the store itself. A store with a request ledger (the chain stores) carries each
+  symbol's span from its complete requests, so a symbol in it is confirmed, not assumed.
 
 A source that fails is recorded with its `error` and the rest still run. A store not on this machine
 (no Dolt, no gex recorder, the vendor's stores after their purge) is `absent`, and a Dolt source not
@@ -143,6 +144,12 @@ def probe_store_cache(root: Path, s: Source) -> dict:
             "absent": f"{s.probe.where} is not in the backtest's store inventory (purged or never fetched)"
         }
     tables = (hit.get("shape") or {}).get("tables") or {}
+    # A store with a request ledger keeps each symbol's span there (`stores._shape`): the registry
+    # can then confirm a symbol in a store that holds many, not only the store's overall span.
+    symbols = next(
+        (info["symbols"] for _t, info in sorted(tables.items()) if isinstance(info.get("symbols"), dict)),
+        None,
+    )
     names = [s.probe.table] if s.probe.table else sorted(tables)
     for t in names:
         info = tables.get(t) or {}
@@ -150,7 +157,14 @@ def probe_store_cache(root: Path, s: Source) -> dict:
             lo, hi = info["span"]
             # Rows are a count of the table's rows, not sessions: kept only for the session table.
             sessions = info.get("rows") if t == "vendor_sessions" else None
-            return {"store": {"first": lo[:10], "last": hi[:10], "sessions": sessions}}
+            out: dict = {"store": {"first": lo[:10], "last": hi[:10], "sessions": sessions}}
+            if symbols:
+                out["symbols"] = {
+                    str(k): {"first": v["first"], "last": v["last"], "sessions": v.get("sessions")}
+                    for k, v in sorted(symbols.items())
+                    if isinstance(v, dict) and v.get("first") and v.get("last")
+                }
+            return out
     return {"error": f"{s.probe.where} has no dated table in the backtest's store inventory"}
 
 

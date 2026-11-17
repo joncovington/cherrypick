@@ -144,8 +144,30 @@ def script_of(entry: dict[str, str]) -> str | None:
     return first if first.startswith(SCRIPT_DIRS) and first.endswith(".py") else None
 
 
+#: A request ledger (a table with these columns) says which symbol-sessions a store holds: the ones
+#: whose request finished `complete`. Read for per-symbol spans, so the source registry can confirm a
+#: symbol in a store that holds many (the chain stores), not only the store's overall span.
+REQUEST_COLUMNS = ("symbol", "session", "status")
+COMPLETE = "complete"
+
+
+def _symbol_spans(conn: sqlite3.Connection, table: str) -> dict[str, dict[str, Any]]:
+    """{symbol: {"first", "last", "sessions"}} over a request ledger's complete rows. Counts only."""
+    rows = conn.execute(
+        f'SELECT symbol, MIN(session), MAX(session), COUNT(DISTINCT session) FROM "{table}" '
+        "WHERE status = ? GROUP BY symbol",
+        (COMPLETE,),
+    ).fetchall()
+    return {
+        str(sym): {"first": str(lo)[:10], "last": str(hi)[:10], "sessions": int(n)}
+        for sym, lo, hi, n in rows
+        if sym is not None and lo is not None
+    }
+
+
 def _shape(path: Path) -> dict[str, Any]:
-    """Tables with rows and the span of their first date-like column. Counts only."""
+    """Tables with rows and the span of their first date-like column, and for a request ledger each
+    symbol's span (`symbols`). Counts only."""
     out: dict[str, Any] = {"tables": {}}
     conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
     try:
@@ -159,6 +181,8 @@ def _shape(path: Path) -> dict[str, Any]:
                 else None
             )
             out["tables"][t] = {"rows": n, "span": list(span) if span and span[0] is not None else None}
+            if n and all(c in cols for c in REQUEST_COLUMNS):
+                out["tables"][t]["symbols"] = _symbol_spans(conn, t)
     except sqlite3.Error as exc:
         out["error"] = str(exc)
     finally:
