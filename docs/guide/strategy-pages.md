@@ -84,7 +84,21 @@ A set of short-dated option structures, each placed by its own rule. An automati
 
 ## Builder (`/builder`)
 
-A page of its own (shortcut `u`), apart from Backtest: a forward test is not a backtest. One tab, `automations`, showing one automation at a time. **Open** picks a saved one; **New** starts one from the keys the paper loop requires; **Copy as new** starts from the open one under a new name, which is not backtested whatever it was copied from. The row under it names the automation's switch, group, start date and register label.
+A page of its own (shortcut `u`), apart from Backtest: a forward test is not a backtest. One tab, `automations`, showing one automation at a time. **Open** picks a saved one; **New** and **Copy as new** open the wizard (below); **new in the form** starts a blank one in the form from the keys the paper loop requires. A copy is not backtested whatever it was copied from. The row under it names the automation's switch, group, start date and register label.
+
+### The wizard
+
+A new automation is built one decision at a time, for someone without much backtesting behind them. Seven steps are listed on the left, finished ones ticked; a step not yet reached cannot be opened.
+
+1. **Start:** a name, and a shape to start from (short put, put or call credit spread, iron condor, iron fly, custom legs), or an automation to copy. A shape is a whole automation the engine accepts as it stands: SPY, the listed expiry 45-60 days out, entry at 15:55, one contract.
+2. **Underlying and expiry,** with the backtest coverage from our own data, read before the rest is built.
+3. **Legs,** each placed by its rule, with the structure in plain English.
+4. **Entry,** with a warning when a time entry misses the end-of-day chains' 15:59 tick.
+5. **Gates,** optional, with **Skip gates**.
+6. **Exits and size.** A credit shape starts from the credit-trade rules: take 50% of the most it can make, stop at a loss of the credit, close at 21 days to expiry. **customise** sets each exit.
+7. **Review:** each block in plain English with an **Edit** back to its step, the Check, **Today, live** and the backtest coverage. **Save (off)** saves it as the form does.
+
+Leaving a step, by Next or a forward click in the list, asks the automations module's Check and stops on that step's or an earlier step's problems. Beside each step, "About this step" and a running summary. A **?** beside each part opens a short note on what it means. **Open in the full form** carries everything so far into the form. After the save: **Explore run** (where our data covers it), **Open in the form**, or **Build another**.
 
 The automation is built in five sections, each carrying its blocks' backtest labels: `backtested` while a block stands as the research study ran it, `changed since its backtest` once edited, `not backtested` when no study ran it.
 
@@ -96,7 +110,7 @@ The automation is built in five sections, each carrying its blocks' backtest lab
 
 Every choice the form offers comes from the engine's own tables, so it offers nothing the engine would refuse by name. Whether a value is right is the **Check**. **Edit as JSON** shows the same automation as text, for anything the form does not lay out.
 
-Above the form, for an automation not wholly backtested, a line says whether our data covers a backtest over the last year, or names the nearest store and why it falls short. Our own recordings are asked first. Where they fall short and the vendor licence allows new work, the vendor's store is offered instead, and the line names it and says the result is licensed: it stays on this machine and shows only while licensed results may.
+Above the form, for an automation not wholly backtested, a line says whether our data covers a backtest over the last year (a time entry whose window holds 15:59 reads the end-of-day chains; any other reads minute data), or names the nearest store and why it falls short. Our own recordings are asked first. Where they fall short and the vendor licence allows new work, the vendor's store is offered instead, and the line names it and says the result is licensed: it stays on this machine and shows only while licensed results may.
 
 The action row:
 

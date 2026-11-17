@@ -74,8 +74,15 @@ def test_the_needs_follow_the_blocks():
     assert enrolment.needs(fresh(expiry={"kind": "dte", "days": 1}))[0]["expiry"] == "1dte"
     month = fresh(expiry={"kind": "between", "min": 30, "max": 60})
     assert enrolment.needs(month)[0]["expiry"] == "all"
-    close = fresh(entry={"kind": "time", "at": "16:00", "window": 5})
-    assert enrolment.needs(close)[0]["cadence"] == "1d"
+    # daily when the window holds the end-of-day chains' 15:59 tick, by the engine's own window test
+    for at, window, cadence in (
+        ("15:55", 5, "1d"),
+        ("15:59", 1, "1d"),
+        ("15:54", 5, "1m"),
+        ("16:00", 5, "1m"),
+    ):
+        close = fresh(entry={"kind": "time", "at": at, "window": window})
+        assert enrolment.needs(close)[0]["cadence"] == cadence, at
     by_delta = fresh(
         legs=[{"name": "p", "right": "P", "side": -1, "strike": {"rule": "delta", "delta": -0.3}}]
     )

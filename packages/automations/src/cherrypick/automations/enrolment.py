@@ -37,6 +37,8 @@ from datetime import date
 
 from cherrypick.core import calendar as cal
 
+from .model import hhmm
+
 BLOCKS: dict[str, tuple[str, ...]] = {
     "structure": ("symbol", "expiry", "legs"),
     "entry": ("entry", "weekdays", "skip_events"),
@@ -166,10 +168,18 @@ def _expiry_class(arm: dict) -> str:
     return "all"  # a nearer or farther listed expiry: a weekly or a monthly, which only `all` holds both of
 
 
+CLOSE_TICK = 15 * 60 + 59  # the end-of-day chains' one tick on a full session (`DailyChainHistory.tick`)
+
+
 def _cadence(arm: dict) -> str:
+    """1d when the end-of-day chains can price the entry: a daily trigger, or a time entry whose window
+    holds the 15:59 tick by the engine's own test (`entry_due`); else 1m."""
     e = arm["entry"]
     daily = e.get("kind") == "trigger" and (e.get("trigger") or {}).get("daily")
-    at_close = e.get("kind") == "time" and e.get("at") == "16:00"
+    at_close = False
+    if e.get("kind") == "time":
+        at = hhmm(e["at"])
+        at_close = at <= CLOSE_TICK < at + e.get("window", 5)
     return "1d" if daily or at_close else "1m"
 
 

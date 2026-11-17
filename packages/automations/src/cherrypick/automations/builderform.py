@@ -44,6 +44,96 @@ TRIGGER_FORMS: dict[str, dict[str, bool]] = {
 }
 
 
+def _delta_leg(name: str, right: str, side: int, target: float) -> dict:
+    return {"name": name, "right": right, "side": side, "strike": {"rule": "delta", "target": target}}
+
+
+#: The wizard's starting shapes: legs placed by delta, each one the engine accepts as it stands
+#: (`tests/test_builderform.py` resolves every one). A starting point, never a recommendation.
+SHAPES: dict[str, dict] = {
+    "short_put": {
+        "label": "Short put",
+        "about": "Sell one put below the market.",
+        "risk": "undefined risk: cash-secured",
+        "credit": True,
+        "legs": [_delta_leg("short_put", "P", -1, 0.16)],
+    },
+    "put_credit_spread": {
+        "label": "Put credit spread",
+        "about": "Sell a put, buy a lower one.",
+        "risk": "defined risk: the width less the credit",
+        "credit": True,
+        "legs": [_delta_leg("short_put", "P", -1, 0.20), _delta_leg("long_put", "P", 1, 0.10)],
+    },
+    "call_credit_spread": {
+        "label": "Call credit spread",
+        "about": "Sell a call, buy a higher one.",
+        "risk": "defined risk: the width less the credit",
+        "credit": True,
+        "legs": [_delta_leg("short_call", "C", -1, 0.20), _delta_leg("long_call", "C", 1, 0.10)],
+    },
+    "iron_condor": {
+        "label": "Iron condor",
+        "about": "A put spread and a call spread around the market.",
+        "risk": "defined risk: the wider side's width less the credit",
+        "credit": True,
+        "legs": [
+            _delta_leg("short_put", "P", -1, 0.16),
+            _delta_leg("long_put", "P", 1, 0.05),
+            _delta_leg("short_call", "C", -1, 0.16),
+            _delta_leg("long_call", "C", 1, 0.05),
+        ],
+    },
+    "iron_fly": {
+        "label": "Iron fly",
+        "about": "Sell the at-the-money put and call, buy both wings.",
+        "risk": "defined risk: the width less the credit",
+        "credit": True,
+        "legs": [
+            _delta_leg("short_put", "P", -1, 0.50),
+            _delta_leg("long_put", "P", 1, 0.10),
+            _delta_leg("short_call", "C", -1, 0.50),
+            _delta_leg("long_call", "C", 1, 0.10),
+        ],
+    },
+    "custom": {
+        "label": "Custom legs",
+        "about": "Start with one leg and add your own.",
+        "risk": "risk depends on the legs",
+        "credit": False,
+        "legs": [_delta_leg("leg_1", "P", -1, 0.20)],
+    },
+}
+
+#: The credit-trade preset, in the engine's own exit keys: half the credit taken (`profit_target_pct`
+#: of max profit, which for a credit trade is the credit), a stop at a loss equal to the credit, and a
+#: close at 21 days to expiry.
+CREDIT_RULES = {"profit_target_pct": 50, "stop_credit_multiple": 1, "close_at_dte": 21}
+
+#: What a new automation starts from beside its shape: the monthly cycle 45-60 days out, an entry at
+#: 15:55 (inside the end-of-day tick, so a backtest can read it), one contract, one open, one a day.
+WIZARD_DEFAULTS = {
+    "symbol": "SPY",
+    "expiry": {"kind": "between", "min": 45, "max": 60},
+    "entry": {"kind": "time", "at": "15:55", "window": 5},
+    "weekdays": [0, 1, 2, 3, 4],
+    "size": {"contracts": 1},
+    "limits": {"max_open": 1, "per_day": 1},
+}
+
+
+def wizard_spec(shape: str) -> dict:
+    """A whole automation from one starting shape: the defaults, the shape's legs and, for a credit
+    shape, the credit-trade exits."""
+    import copy
+
+    s = SHAPES[shape]
+    spec = copy.deepcopy(WIZARD_DEFAULTS)
+    spec["legs"] = copy.deepcopy(s["legs"])
+    spec["exit"] = dict(CREDIT_RULES) if s["credit"] else {"close_at_dte": 21}
+    return spec
+
+
 def _gate(name: str, fn) -> dict:
     params = list(inspect.signature(fn).parameters.values())[1:]
     return {
@@ -89,6 +179,17 @@ def schema() -> dict:
         "limits": sorted(arms_mod.LIMIT_KEYS),
         "sizes": {k: sorted(v) for k, v in sizing.SIZE_KEYS.items()},
         "progression": sorted(sizing.PROGRESSION_KEYS),
+        "shapes": {
+            k: {
+                "label": s["label"],
+                "about": s["about"],
+                "risk": s["risk"],
+                "credit": s["credit"],
+                "spec": wizard_spec(k),
+            }
+            for k, s in SHAPES.items()
+        },
+        "credit_rules": dict(CREDIT_RULES),
     }
 
 

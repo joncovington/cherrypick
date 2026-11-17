@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { BuilderWizard } from "./BuilderWizard";
 import { useQueryClient } from "@tanstack/react-query";
 import type { BuilderAutomation, BuilderBlock, BuilderSchema, BuilderSuggestion, BuilderToday } from "@console/shared";
 import { builderBacktest, builderDraft, builderSave, builderToday, useAutomationsBuilder, useBuilderRuns, useBuilderSchema } from "../../lib/api";
@@ -89,7 +90,8 @@ type Outcome =
   | { kind: "saved"; added: boolean; backup: string | null }
   | { kind: "queued"; text: string };
 
-export type Mode = { kind: "saved"; name: string } | { kind: "copy"; from: string } | { kind: "new" };
+/** A draft is an unsaved automation handed over from the wizard's "Open in the full form". */
+export type Mode = { kind: "saved"; name: string } | { kind: "copy"; from: string } | { kind: "new" } | { kind: "draft"; name: string; spec: Spec };
 
 /** The automation's explore runs, and one run's card when opened. */
 function RunsPanel({ name }: { name: string }) {
@@ -186,8 +188,8 @@ export function runBlocked(a: BuilderAutomation | null, dirty: boolean, mode: Mo
 export function Workspace({ a, schema, mode, onSaved }: { a: BuilderAutomation | null; schema: BuilderSchema; mode: Mode; onSaved: (name: string) => void }) {
   const qc = useQueryClient();
   const source = mode.kind === "saved" ? mode.name : mode.kind === "copy" ? mode.from : null;
-  const [name, setName] = useState(mode.kind === "saved" ? mode.name : mode.kind === "copy" ? `${mode.from}-copy` : "my-automation");
-  const [spec, setSpec] = useState<Spec | null>(mode.kind === "new" ? { ...NEW_SPEC } : null);
+  const [name, setName] = useState(mode.kind === "saved" || mode.kind === "draft" ? mode.name : mode.kind === "copy" ? `${mode.from}-copy` : "my-automation");
+  const [spec, setSpec] = useState<Spec | null>(mode.kind === "new" ? { ...NEW_SPEC } : mode.kind === "draft" ? mode.spec : null);
   const [dirty, setDirty] = useState(mode.kind !== "saved");
   const [json, setJson] = useState<string | null>(null);
   const [labels, setLabels] = useState<Record<string, BuilderBlock["state"]>>(
@@ -363,6 +365,7 @@ export function BuilderPage() {
   const q = useAutomationsBuilder();
   const s = useBuilderSchema();
   const [mode, setMode] = useState<Mode | null>(null);
+  const [wizard, setWizard] = useState<{ from: string | null; n: number } | null>(null);
   if (q.isLoading || s.isLoading) return <div className="muted">Loading the automations…</div>;
   if (q.error) return <div className="error">Could not read the automations: {String(q.error)}</div>;
   const data = q.data;
@@ -372,7 +375,29 @@ export function BuilderPage() {
   if (!schema) return <div className="error">The form's choices could not be read{s.data?.error ? `: ${s.data.error}` : "."}</div>;
   const current: Mode = mode ?? (data.automations[0] ? { kind: "saved", name: data.automations[0].name } : { kind: "new" });
   const a = current.kind === "saved" ? (data.automations.find((x) => x.name === current.name) ?? null) : null;
-  const key = current.kind === "saved" ? `saved:${current.name}` : current.kind === "copy" ? `copy:${current.from}` : "new";
+  const key = current.kind === "saved" ? `saved:${current.name}` : current.kind === "copy" ? `copy:${current.from}` : current.kind === "draft" ? `draft:${current.name}` : "new";
+  if (wizard) {
+    return (
+      <div className="builder-page">
+        <BuilderWizard
+          key={wizard.n}
+          schema={schema}
+          automations={data.automations}
+          copyFrom={wizard.from}
+          onCancel={() => setWizard(null)}
+          onAnother={() => setWizard({ from: null, n: wizard.n + 1 })}
+          onOpenForm={(name, spec) => {
+            setWizard(null);
+            setMode({ kind: "draft", name, spec });
+          }}
+          onSaved={(name) => {
+            setWizard(null);
+            setMode({ kind: "saved", name });
+          }}
+        />
+      </div>
+    );
+  }
   return (
     <div className="builder-page">
       <div className="builder-picker">
@@ -380,18 +405,21 @@ export function BuilderPage() {
           open
         </label>
         <select id="builder-pick" className="builder-input" value={current.kind === "saved" ? current.name : ""} onChange={(e) => setMode({ kind: "saved", name: e.currentTarget.value })}>
-          {current.kind !== "saved" && <option value="">{current.kind === "new" ? "a new automation" : `a copy of ${current.from}`}</option>}
+          {current.kind !== "saved" && <option value="">{current.kind === "copy" ? `a copy of ${current.from}` : "a new automation"}</option>}
           {data.automations.map((x) => (
             <option key={x.name} value={x.name}>
               {x.name}
             </option>
           ))}
         </select>
-        <button type="button" className="btn" onClick={() => setMode({ kind: "new" })}>
+        <button type="button" className="btn" onClick={() => setWizard({ from: null, n: 0 })}>
           New
         </button>
-        <button type="button" className="btn" disabled={current.kind !== "saved"} onClick={() => current.kind === "saved" && setMode({ kind: "copy", from: current.name })}>
+        <button type="button" className="btn" disabled={current.kind !== "saved"} onClick={() => current.kind === "saved" && setWizard({ from: current.name, n: 0 })}>
           Copy as new
+        </button>
+        <button type="button" className="link-button" title="a blank automation straight in the form, without the steps" onClick={() => setMode({ kind: "new" })}>
+          new in the form
         </button>
       </div>
       <p className="muted">
