@@ -19,6 +19,7 @@ import type {
   BuilderBacktestResult,
   BuilderDraftResult,
   BuilderResult,
+  BuilderRunCard,
   BuilderRuns,
   BuilderSaveResult,
   AutomationsPerformance,
@@ -1378,6 +1379,16 @@ export function useBuilderRuns(name: string, enabled: boolean) {
     enabled,
     staleTime: 5_000,
     refetchInterval: (q) => (q.state.data?.tasks.some((t) => t.status === "queued" || t.status === "running") ? 10_000 : false),
+  });
+}
+
+/** One Builder run's whole card. A finished result never changes, so it is read once. */
+export function useBuilderRunCard(name: string, run: string) {
+  return useQuery<BuilderRunCard>({
+    queryKey: ["automations-builder-run", name, run],
+    queryFn: () =>
+      getJson<BuilderRunCard>(`/api/automations/builder/run?name=${encodeURIComponent(name)}&run=${encodeURIComponent(run)}`),
+    staleTime: Infinity,
   });
 }
 

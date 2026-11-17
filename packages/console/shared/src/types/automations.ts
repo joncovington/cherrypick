@@ -289,9 +289,83 @@ export interface BuilderRunResult {
   summary: Record<string, BuilderRunArm>;
   still_open: number | null;
   generated_at: string | null;
+  /** The cumulative net by closed trade, thinned for a sparkline. */
+  spark: number[];
+  net: number;
+  /** What this run's stored automation changed from the run before. */
+  changes: BuilderRunChange[];
 }
 
-/** `GET /api/automations/builder/runs?name=`: the run card. */
+/** One key that differs between two runs' stored automations. */
+export interface BuilderRunChange {
+  key: string;
+  before: unknown;
+  after: unknown;
+}
+
+/** One year (or All) of a run, by exit session: gross - fees - settlement - slippage = net. */
+export interface BuilderRunYear {
+  period: string;
+  trades: number;
+  gross: number;
+  fees: number;
+  settlement: number;
+  slippage: number;
+  net: number;
+  max_dd: number;
+}
+
+/** One closed trade as the run recorded it. */
+export interface BuilderRunTrade {
+  session: string | null;
+  entry_minute: string | number | null;
+  exit_session: string | null;
+  exit_minute: string | number | null;
+  exit_kind: string | null;
+  expiry: string | null;
+  legs: Array<{ name?: string; right?: string; side?: number; strike?: number }>;
+  quantity: number | null;
+  entry_mid: number | null;
+  exit_mid: number | null;
+  gross: number;
+  fees: number;
+  settlement: number;
+  slippage: number;
+  net: number;
+}
+
+/** `GET /api/automations/builder/run?name=&run=`: one run's whole card. */
+export interface BuilderRunCard {
+  run: string;
+  automation: string;
+  symbol: string;
+  source: string;
+  store: string | null;
+  cadence: string | null;
+  sessions: [string, string] | null;
+  session_count: number | null;
+  still_open: number | null;
+  generated_at: string | null;
+  licensed: boolean;
+  tiles: {
+    net: number;
+    gross: number;
+    trades: number;
+    sessions: number | null;
+    per_trade: number | null;
+    win_rate: number | null;
+    max_dd: number;
+    net_over_dd: number | null;
+  };
+  curve: Array<{ i: number; session: string | null; net: number; gross: number; dd: number }>;
+  years: BuilderRunYear[];
+  skips: Array<{ reason: string; sessions: number }>;
+  previous: string | null;
+  changes: BuilderRunChange[];
+  trades: BuilderRunTrade[];
+}
+
+/** `GET /api/automations/builder/runs?name=`: the explore-runs list. */
 export interface BuilderRuns {
   name: string;
   tasks: BuilderRunTask[];

@@ -123,3 +123,25 @@ def test_the_run_card_lists_this_automations_rows_only_and_its_results():
     assert seen == ["mine"]
     unread = ar.runs({}, {"name": "mine"}, rows=lambda study=None: [], results=lambda _n: None)
     assert unread["results_unavailable"] is True and unread["runs"] == []
+
+
+def test_one_runs_card_is_asked_for_by_its_exact_name_only():
+    seen = []
+
+    def read(name, run):
+        seen.append((name, run))
+        return {"ok": True, "run": run, "licensed": False}
+
+    out = ar.run_card({}, {"name": "mine", "run": "builder-mine-2611161730"}, read=read)
+    assert out["ok"] is True and seen == [("mine", "builder-mine-2611161730")]
+    for bad in ("builder-mine-two-2611161730", "../builder-mine-2611161730", "builder-mine-26111617", 7):
+        assert ar.run_card({}, {"name": "mine", "run": bad}, read=read)["code"] == "bad_request"
+    assert seen == [("mine", "builder-mine-2611161730")]
+    assert (
+        ar.run_card({}, {"name": "mine", "run": "builder-mine-2611161730"}, read=lambda n, r: None)["code"]
+        == "unavailable"
+    )
+    missing = ar.run_card(
+        {}, {"name": "mine", "run": "builder-mine-2611161730"}, read=lambda n, r: {"ok": False, "error": "no"}
+    )
+    assert missing["code"] == "not_found"

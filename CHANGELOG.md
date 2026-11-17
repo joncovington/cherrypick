@@ -22,6 +22,14 @@ beyond the latest release.
 
 ### What's new
 
+- **The Builder's run card.** **Runs** now lists an automation's explore runs with a small P&L curve
+  and what each changed from the run before. Opening one shows its card:
+  - tiles: P&L, trades, per trade, win rate, max drawdown, net over drawdown;
+  - the cumulative P&L with its gross line and drawdown;
+  - a by-year table of gross, fees, settlement, slippage and P&L;
+  - why sessions were skipped, what the run changed, and its trade log.
+
+  Every figure is read from the run's own trades. Backtest `read automation-run` is the read behind it.
 - **An intraday signal automation backtests in minutes, not days.** The driver read the five earlier
   sessions' spot trails from the store again at every minute of a session, so a year of one-minute
   SPX sessions took days. It now reads each session's trail once and keeps it. The trades are

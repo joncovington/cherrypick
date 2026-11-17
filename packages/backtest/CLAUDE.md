@@ -376,7 +376,11 @@ chains instead (`dolt-chains`, or `vendor-eod-chains` while licensed, its delta 
 from the recorded one-minute bars (`profile-bars`, regular hours), and the run is refused where those
 do not cover the dates. The result is an explore run (no trial, no
 verdict; `signal_versions` names each library signal an arm read, by version) under `paths.automations_dir`: `results/automations/` when it read the vendor's store, beside
-it otherwise.
+it otherwise. The Builder's runs (`builder-<name>-<stamp>.json`) are read back by `read automation-runs`
+and `read automation-run` (`automationcards.py`, pure): the net is the verdict kind's, every year row is
+gross - fees - settlement - slippage = P&L, trades fall in their exit year, the drawdown is the closed
+trades', skips are the driver's own reasons without `entered`, and a change is a key of the automation
+each run stored (its switch and notes ignored).
 
 **The advisor's specs** (`run-advised`, `advised.py`): the advisor queues `backtest_spec` replies it
 admitted against flies' own advice bounds (off until `advisor.backtest_proposals`); this reads the
