@@ -8780,6 +8780,82 @@ take their arms from this verdict.
     anyway, as ladder was, with its README saying no edge is claimed. The record stays under
     `indicator-rule`.
 
+### 89. The weekly SPY at-the-money call calendar: 60 days short, 90 long, out at +30% or the short's expiry
+
+Declared 2026-11-16, before any outcome of it is computed. The rule comes from a published interview
+with a professional trader, shown with a third-party backtest from mid-2019 and the trader's own
+end-of-day backtests over 2020-2025, every setting (the tenors, the entry day, the target, no stop)
+chosen on that window. The calendar studies so far all failed: item 38 (the weekly SPY double
+calendar, costs larger than the gross), item 54 (the front/back IV ratio, its one design pass not
+confirmed) and items 86 and 87 (calendars across earnings). This one differs in tenor: a debit of
+several hundred dollars against four legs' costs. `--similar` names no rejected look-alike.
+
+- **Question:** does a weekly at-the-money SPY call calendar, short the monthly nearest 60 days and
+  long the next monthly, taken off at 30% of the debit and otherwise held to the short's expiry, earn
+  after costs over the bill on its debit and beyond its delta, in the years before the source's
+  backtests begin?
+- **The rule as stated:** every Friday, in the first hour, sell the at-the-money SPY call about 60
+  days out and buy the same strike about 90 days out; take profit at 30% of the debit; no stop and no
+  adjustment; close at the short's expiry. **As read here (`SPEC`):** the short is the standard monthly
+  nearest 60 calendar days after the Friday (the earlier on a tie) and the long the next monthly, as
+  the trader's live example was (the December and January monthlies at 60 and 88 days). Fridays that
+  are holidays take no entry. Means come to about 61 and 91 days.
+- **The replay (`replay`, `price_trade` in the script):**
+  - **Data:** the vendor's end-of-day SPY chains (`eod_chains.db`), read only through the study's own
+    paths: one per monthly, from the first entry holding it through the short's expiry, 2016-01-08 to
+    2026-11-13 (`plan`). An entry whose short expires after 2026-11-13 is not taken. SPY's raw daily
+    closes from the stock history settle the short at its expiry.
+  - **Strike:** the call strike nearest the short expiry's parity forward, two-sided in both expiries.
+  - **Fills:** at the end-of-day mids, the suite's slippage and fees for two legs each way
+    (`core.fees`). Each later close, the spread's mid at or above 1.3 × its entry mid exits at the
+    target. On the short's expiry session the long is sold at its mid less slippage and the short
+    settles at its intrinsic value on SPY's close (bought back with its fee when in the money). An
+    unquoted session triggers nothing; an entry or a time exit without a quote is skipped and counted.
+  - **Delta:** the entry delta from the kit's Black-76 on each leg (r = 0, each chain's parity
+    forward), financed on the debit over the long expiry's forward from entry to exit.
+- **One judged arm, `stated`:** the rule above. Variants are reported only (below).
+- **Windows:** one run, cut at **2019-01-01**. The design part (2016-2018) is before any of the
+  source's backtests; the holdout from 2019 is the source's own window, read only after a design pass.
+- **The rule, two literals in the script; a pass needs both:**
+  - **`RULE`, the three bars** (`cherrypick.backtest.study.rule`) on one row per entry: capital, the
+    net less the 3-month bill (core's Treasury reader) on the debit over the days held, one-sided
+    t ≥ 2.0; tail, 10,000 draws, seed 89, the sample's own entries a year; delta, the net less the entry
+    delta financed on the same debit, t ≥ 2.0. Fewer than 120 design entries is no verdict, fewer than
+    60 in the holdout likewise (about 150 and 400 Fridays).
+  - **`OVERLAP_RULE`, for the overlap:** a week's calendar is open beside the next five or so, so the
+    kit's t counts overlapping trades as independent. The same capital and delta excesses, in entry
+    order, by a circular moving-block bootstrap (blocks of 13 entries, a quarter, longer than any
+    trade; 10,000 draws, seed 89): the share of resampled means at or under zero must be ≤ 0.025 for
+    both, in the design part and then in the holdout.
+  - One judged arm, so no Holm step.
+- **Reported, never judged:** per part and every year, trades, win share, mean net, return on the
+  debit, costs, days held, exits by reason, the mean without the best five and without the worst five.
+  **Variants:** the trader's live exit (the session before the short's expiry); no target; stops at
+  50% and 75% of the entry mid; entries on each other weekday; the 21-day corner the source's heatmap
+  scores near zero (the monthly nearest 21 days short, the next long); fees at 1.5 × and a quarter of
+  the spread as slippage.
+- **Rival explanations, each with its check:**
+  - *It is delta in a bull market (an out-of-the-money call calendar is long delta):* the delta bar.
+  - *It is the source's selection of tenor, day, target and stop:* the verdict is the years before its
+    backtests; the corner, the other weekdays and the stops reported.
+  - *A few weeks carry it:* the tail bar, the mean without the best five, every year.
+  - *Costs:* the stress reported; costs are in every net.
+  - *Overlapping trades counted as many:* `OVERLAP_RULE`.
+- **Declared limits:** end-of-day marks only, so the target is read at closes, as the source's own
+  backtest did; early assignment of the short around SPY's ex-dividend dates is not modelled; the
+  first-hour entry is read at the close; the forward of the long expiry carries the delta's financing
+  and dividends without a rate.
+- **Data and results:** the paths were fetched before the declaration, on 2026-11-16, while the vendor
+  tier still served 2016-2019 (queue row 373, the `plan` step's own request file, no outcome read).
+  The chain (`queue-chain`) re-runs `plan`, whose file is the same, fetches what is missing and runs
+  the study. Results stay under `~/.cherrypick/data/backtest/results/research/item89/`, and this plan
+  records the verdict without figures.
+- **Decides:**
+  - **The arm passes:** propose it as an arm of the calendars paper module, beside its control, with a
+    `forward` block declared before it trades.
+  - **It fails or no verdict:** the 60/90 call calendar does not earn after costs and beyond its delta
+    before the source's window, and the calendar family stays closed.
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:
