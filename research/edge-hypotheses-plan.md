@@ -8877,6 +8877,89 @@ Only the trade counts were computed before this was written, to set the floors.
   - **All fail or no verdict:** the indicators carry no tradable direction on index funds after costs
     and against chance, which closes the video's suggestion; the record stays under `indicator-rule`.
 
+### 90. Two published signal entries on SPX 0DTE: an opening-range breakout put spread and an ADX condor
+
+Declared 2026-11-16, before any outcome of it is computed. Both rules come from a published product
+video that builds them as worked examples of signal-triggered entries and shows their backtests over
+2023-01-01 to 2026-11-06 at the mid, before fees, with no split and no control. The source is not
+named here, and nothing of its data is. It is an **`indicator-rule`** item, as 83, 88 and 89 are.
+`--similar` names item 24 (MEIC's entry slot); item 75 tested an opening-range arm of another
+source's set on the same store. The automations Builder can express both arms as they stand, so the
+verdict also says whether these two examples are worth an automation.
+
+- **Question:** does entering the stated structure when the stated signal fires earn after costs on
+  SPX same-day options, and does it beat the same structure entered at a random time on a random
+  session?
+- **The rules as stated:**
+  - `orb-put-spread`: the 60-minute opening range; a completed one-minute bar closing above its high,
+    one confirmation bar, the first occurrence of the day, no entry after 13:00 ET. Sell a same-day put
+    spread, the short near 0.35 delta, the long $10 lower, one contract.
+  - `adx-condor`: ADX(14) on five-minute bars, computed on the current session only, crossing below
+    20, the first cross of the day, no entry after 15:30 ET. Sell a same-day iron condor, the shorts
+    about $5 either side of spot and $5 wings, one contract, entered only at a reward to risk of at
+    least 100% at the mid and a whole-structure bid/ask of $1 or less. Held to expiry.
+- **The replay (`ARMS`, `cmd_study` in the script):** both arms are automations replayed by
+  `cherrypick.automations.driver`, the engine paper runs, so entries, gates, fills, fees and settlement
+  are paper's arithmetic (verdict fill: the suite's slippage model; fees from core).
+  - **Data:** the vendor's SPX one-minute store, `SPX-60s.db`, every stored exchange trading day from
+    2022-05-16 to 2026-11-13. The store must stay licensed through the run (the script refuses
+    otherwise).
+  - **Strikes:** the 0.35-delta short is the listed strike nearest that delta at the entry minute (the
+    store's delta); every other strike is the listed one nearest its target, a long leg exactly its
+    distance from its short or no trade.
+  - **Signals:** the condor's trigger is core's signal (`cross` of `adx`, `seed: false`,
+    `first_of_day`, `latest`) on the trail cut into five-minute bars, entered on the firing bar's
+    close only (`within: 1`). The breakout is the engine's opening-range entry (`orb`, single-shot):
+    the store's first sample each session is 09:31, and core's opening range refuses a range whose
+    bars do not start at 09:30. On a 60 s store a sample is the close of the one-minute bar ending
+    then, so the first sample above the range is the stated rule.
+- **What the source leaves unsaid, fixed here:** the put spread's touch exit (no level given) is left
+  out, so both arms hold to settlement; its three unnamed entry filters, its event exclusions and its
+  trading days are not applied (every weekday, no event skips).
+- **Windows:** one run, cut at **2025-07-01** (design before, holdout from). The holdout part is read
+  only after a design pass.
+- **The rule, two literals in the script; an arm passes only on both, and on Holm:**
+  - **`RULE`, the three bars** (`cherrypick.backtest.study.rule`) on each arm's trades, one a session:
+    capital, the net less the 3-month bill on its buying power (the widest wing less the credit) over
+    one day, one-sided t ≥ 2.0; tail, 10,000 draws, seed 90, the sample's own trades a year; delta,
+    the net less the structure's entry delta (from the store's leg deltas) financed on the same
+    capital to the settlement price, t ≥ 2.0. Fewer than 150 design trades is no verdict, fewer than
+    60 in the holdout likewise.
+  - **`CONTROL_RULE`, against chance:** each arm's trades against its placebo's per-session means
+    (Welch, normal tail). The placebo enters the arm's own structure (legs, gates, size, exit) at a
+    fixed minute drawn from that arm's own entry minutes in the same part, 20 draws on **every
+    session of the part**, seed 90, never only the sessions the signal fired on: a same-session
+    control would know the day the signal saw (item 83's lesson). Design: the mean difference above
+    zero at one-sided t ≥ 2.0 and above zero in each design half (split 2024-01-01); then, after a
+    design pass, the holdout difference above zero. Floors as `RULE`'s.
+  - **Holm** across the two arms on the control's design p, at 0.05.
+- **Reported, never judged:** per arm, every year; the source's own window, at the verdict fill and at
+  the mid (the source's basis); the sessions before it (2022-05-16 to 2022-12-31, outside the
+  source's sample); exits by kind; fees and slippage; each session's last reason (no firing, a gate,
+  no quote); entry minutes by part; the placebo's own summary.
+- **Rival explanations, each with its check:**
+  - *It is the time of day (0DTE decay differs by hour):* the placebo draws its minute from the arm's
+    own entry minutes.
+  - *It is the structure, whatever the trigger:* the placebo keeps the structure and its gates.
+  - *It is the sample's drift (a bullish put spread in a rising market):* the delta bar against the
+    structure's own financed delta, and every year reported.
+  - *It is the source's tuning:* only the stated rules are judged, and the source's window is all but
+    the first seven months of ours, so the pre-2023 sessions are reported apart.
+- **Declared limits:** one-minute samples (a breakout inside a minute is seen at its close); the
+  store has no 09:30 print, so the range starts at the 09:31 sample and ends at the 10:29 one; a
+  0.35-delta strike reads the store's delta (the vendor's, computed on Standard); the placebo's
+  Welch t treats sessions as independent; no touch exit, filters or event skips, so a verdict is on
+  the two signals with the stated structures, not on the source's complete strategies.
+- **Data and results:** `packages/backtest/scripts/signal_entries_item90.py`, queued with
+  `run.py queue-chain` (`item90/smoke`, then `item90/study`). Results stay under
+  `~/.cherrypick/data/backtest/results/research/item90/`, and this plan records the verdict without
+  figures.
+- **Decides:**
+  - **An arm passes:** propose it as an automation in its own group, off, with a `forward` block
+    declared before it trades.
+  - **It fails or no verdict:** the example does not earn on SPX 0DTE after costs, or does no better
+    than its structure at a random time. Nothing is built; the record stays under `indicator-rule`.
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:
