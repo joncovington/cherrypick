@@ -34,6 +34,12 @@ describe("the full set card", () => {
     expect(pct(part(1, 4))).toBe("25%");
   });
 
+  it("names its classes with its own prefix: fs- is FilterSort's", () => {
+    const out = html(<FullSetBody d={D} />);
+    expect(out).toContain('class="fullset-wrap"');
+    expect(out).not.toMatch(/class="[^"]*\bfs-/);
+  });
+
   it("says how to plan it when nothing is planned", () => {
     expect(html(<FullSetBody d={{ ...D, planned: false }} />)).toContain("fetch_full_set.py plan");
   });
