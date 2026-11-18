@@ -89,7 +89,13 @@ def cadence_of(settings: dict, cadence: float | None = None) -> int:
 #: Declared variants of a store, each its own file (`SPX-60s-wide.db`) with its own strike count. A tag
 #: is the only way to change how many strikes a session keeps: two strike counts in one file would
 #: give some sessions wings the others cannot quote. `wide` is items 42 and 44's, wings to 40 points.
-TAGS: dict[str, dict[str, int]] = {"wide": {"strikes_each_side": 40}}
+#: `full` is the full set's (`fullset`): the same strikes, and a first session (`from`) that
+#: overrides the dataset's own, so its stores reach back to the set's start while the study stores
+#: keep theirs.
+TAGS: dict[str, dict[str, int | str]] = {
+    "wide": {"strikes_each_side": 40},
+    "full": {"strikes_each_side": 40, "from": "2020-01-01"},
+}
 
 
 def tagged(settings: dict, tag: str | None) -> dict:

@@ -272,11 +272,11 @@ MAX_LIMIT = 100_000
 
 #: The store variants `fetch-sessions` may write (backtest `store.TAGS`). Never the plain store: the
 #: nightly `backtest-fetch` is its writer.
-STORE_TAGS = ("wide",)
+STORE_TAGS = ("wide", "full")
 
 #: The 0DTE datasets `fetch-sessions` may name (backtest `settings.DEFAULTS["datasets"]`); absent, SPX,
 #: the fetch verb's own default. Spelt here, as `STORE_TAGS` is, so a typo never queues.
-DATASETS = ("SPX", "QQQ", "NDX", "XSP")
+DATASETS = ("SPX", "QQQ", "NDX", "XSP", "SPY", "IWM", "GLD", "TLT")
 
 
 def _day_arg(args: dict, key: str) -> str:

@@ -105,6 +105,9 @@ class Source:
 
 
 _VENDOR = "the data vendor, licensed: kept until the licence's purge date (backtest `purge --derived`)"
+#: The full set's underlyings, spelt as the backtest's `fullset.SYMBOLS` (core never imports it; a
+#: backtest test pins the two equal).
+FULL_SET = ("SPX", "QQQ", "XSP", "SPY", "IWM", "GLD", "TLT")
 
 SOURCES: tuple[Source, ...] = (
     Source(
@@ -316,7 +319,40 @@ SOURCES: tuple[Source, ...] = (
             symbols=(store.split("-", 1)[0],),
             ongoing=False,
         )
-        for store in ("SPX-60s.db", "SPX-60s-wide.db", "QQQ-60s-wide.db", "XSP-60s-wide.db", "SPX-15s.db")
+        for store in (
+            "SPX-60s.db",
+            "SPX-60s-wide.db",
+            "QQQ-60s-wide.db",
+            "XSP-60s-wide.db",
+            "SPX-15s.db",
+            *(f"{sym}-60s-full.db" for sym in FULL_SET),
+        )  # fmt: skip
+    ),
+    # The full set's intraday stores (backtest `fullset`), one pair per underlying.
+    *(
+        Source(
+            name=f"vendor-{part}-{sym.lower()}",
+            holds=f"{sym} {what} ({sym}-{part}-{cadence}.db)",
+            kind="chain",
+            fields=("chain", "greeks"),
+            cadence=cadence,
+            expiries=expiries,
+            probe=Probe("store_cache", f"{sym}-{part}-{cadence}.db"),
+            writer=_VENDOR,
+            licensed=True,
+            symbols=(sym,),
+            ongoing=False,
+        )
+        for sym in FULL_SET
+        for part, cadence, expiries, what in (
+            ("near", "1m", ("1dte", "weekly"), "expiries 1-7 days out, each session at one minute"),
+            (
+                "mid",
+                "5m",
+                ("weekly", "monthly"),
+                "monthlies 8-90 days out and weeklies to 45, at five minutes",
+            ),
+        )
     ),
     Source(
         name="vendor-eod-chains",

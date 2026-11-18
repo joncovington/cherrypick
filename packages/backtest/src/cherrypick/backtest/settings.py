@@ -62,11 +62,17 @@ DEFAULTS: dict[str, Any] = {
     "store": {"dir": None, "cadence_seconds": 15, "strikes_each_side": 20, "request_strike_range": 50},
     # QQQ and NDX (item 68) and XSP (MEIC's margin live account) are fetched by the research queue's
     # `fetch-sessions` only, into the wide store; the nightly fetch names no dataset and stays SPX's.
+    # SPY, IWM, GLD and TLT are the full set's (`fullset`, the `full` store tag, whose own first
+    # session overrides each `from` here).
     "datasets": [
         {"symbol": "SPX", "root": "SPXW", "dte": 0, "from": "2022-05-16"},
         {"symbol": "QQQ", "root": "QQQ", "dte": 0, "from": "2022-05-16"},
         {"symbol": "NDX", "root": "NDXP", "dte": 0, "from": "2022-05-16"},
         {"symbol": "XSP", "root": "XSP", "dte": 0, "from": "2022-05-16"},
+        {"symbol": "SPY", "root": "SPY", "dte": 0, "from": "2020-01-01"},
+        {"symbol": "IWM", "root": "IWM", "dte": 0, "from": "2020-01-01"},
+        {"symbol": "GLD", "root": "GLD", "dte": 0, "from": "2020-01-01"},
+        {"symbol": "TLT", "root": "TLT", "dte": 0, "from": "2020-01-01"},
     ],
     "windows": {"design": ["2022-05-16", "2025-06-30"], "holdout": ["2025-07-01", "2026-10-12"]},
 }

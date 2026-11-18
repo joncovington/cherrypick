@@ -43,9 +43,11 @@ def test_providing_filters_by_cadence_expiry_and_licence():
     assert "vol-curve-5m" in {s.name for s in src.providing("closes", cadence="1h")}, "finer serves coarser"
     # Weeklies: Dolt holds monthlies only, the vendor holds every expiry but is licensed.
     assert src.providing("chain", expiry="weekly") == []
+    # The full set's near and middle stores hold weeklies too, one pair per underlying.
     assert {s.name for s in src.providing("chain", expiry="weekly", licensed=True)} == {
         "vendor-eod-chains",
         "vendor-intraday-chains",
+        *(f"vendor-{part}-{sym.lower()}" for sym in src.FULL_SET for part in ("near", "mid")),
     }
     assert "dolt-chains" in {s.name for s in src.providing("chain", expiry="monthly")}
     assert "recorded-0dte" in {s.name for s in src.providing("chain", expiry="0dte")}
