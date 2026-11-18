@@ -30,6 +30,10 @@ beyond the latest release.
   Declare and Promote to paper shown disabled. Beside it, **Today, live** decides the automation
   now as paper would, on a read-only snapshot (`cli builder-today`): every check, and the legs it
   would take or the check that stops it. The explore runs and run cards sit beside it too.
+- **A daily signal on the developing bar.** A daily trigger takes `"developing": true` (with `within`
+  null) to read today's bar as it stands each minute: the session's open, its high and low so far
+  and the price now. It is due at any minute in the window when the signal fires on that bar. A
+  daily trigger without it still acts on yesterday's completed bar.
 - **A trailing stop in percent, and net at mid on the run card.** An automation's trailing stop can
   be `{"pct": p, "activate_pct": a}`, each a percent of the trade's max profit (it never fires on a
   structure without one). The Builder's run card shows each run's net at mid beside its P&L: the

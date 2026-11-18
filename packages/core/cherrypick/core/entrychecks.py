@@ -15,6 +15,11 @@ alike (the reason `core.entry` holds cadence and the leg-sign rule). Leg selecti
   session is dropped, so a still-forming day is never read; the entry is due today from the window's
   open (for `within`, or until it closes) when the signal fired on the last completed session, which
   must be the previous trading day (`stale_bars` otherwise, never an older day's firing).
+- With `"developing": true` as well, the daily signal reads today's bar as it stands: the caller
+  passes the completed days and then today's bar so far (its open, its high and low so far, and the
+  price now as its close; `developing_bar`). The entry is due at each minute inside the window when
+  the signal fires on that bar; a minute it does not, it is not. `within` must be null, since the bar
+  moves every minute. No bar for today reads `no_developing_bar`.
 
 Either way the module's cadence applies through `core.entry.entry_allowed` (`last_fill`,
 `spacing_seconds`), and the answer is a `Due` with the reason when it is not due. A fixed time is a
@@ -471,11 +476,18 @@ def validate_trigger(trigger: object, path: str = "trigger") -> None:
         return
     if "signal" not in trigger:
         raise ValueError(f"{path}: needs 'at' or 'signal'")
-    extra = set(trigger) - {"signal", "window", "within", "daily"}
+    extra = set(trigger) - {"signal", "window", "within", "daily", "developing"}
     if extra:
         raise ValueError(f"{path}: unknown key {sorted(extra)[0]!r} for a signal trigger")
     if "daily" in trigger and not isinstance(trigger["daily"], bool):
         raise ValueError(f"{path}.daily: true or false")
+    if "developing" in trigger:
+        if not isinstance(trigger["developing"], bool):
+            raise ValueError(f"{path}.developing: true or false")
+        if trigger["developing"] and not trigger.get("daily"):
+            raise ValueError(f"{path}.developing: reads today's daily bar, so needs daily: true")
+        if trigger["developing"] and trigger.get("within") is not None:
+            raise ValueError(f"{path}.within: a developing bar is read each minute; within must be null")
     if trigger.get("daily") and trigger["signal"].get("seed") is False:
         # Each daily bar is its own session: a signal that starts every session unarmed never fires.
         raise ValueError(f"{path}.signal.seed: a daily signal carries its state across sessions; drop seed")
@@ -503,6 +515,31 @@ def _daily_fired(
     last = done[-1].session
     if any(f.session == last for f in sg.firings(trigger["signal"], done, events)):
         return _hhmm(trigger["window"]["open"]), None
+    return None, None
+
+
+def developing_bar(session: str, day_open: float, trail: Sequence[tuple[int, float]], now: float) -> sg.Bar:
+    """Today's daily bar so far: the session's open, its high and low over `trail` (the prices so far)
+    and `now`, and `now` as its close."""
+    prices = [float(p) for _m, p, *_ in trail] + [float(now), float(day_open)]
+    return sg.Bar(session, 570, 960, float(day_open), max(prices), min(prices), float(now))
+
+
+def _developing_fired(
+    trigger: Mapping[str, Any], bars: Sequence[sg.Bar], events, today, minute: int
+) -> tuple[int | None, str | None]:
+    """A developing daily trigger: (this minute, None) when the signal fires on today's bar as it stands
+    and the minute is inside the window; the completed days must reach the previous trading day."""
+    if not bars or bars[-1].session != today.isoformat():
+        return None, "no_developing_bar"
+    done = bars[:-1]
+    if not done or done[-1].session != cal.previous_trading_day(today).isoformat():
+        return None, "stale_bars"
+    lo, hi = _hhmm(trigger["window"]["open"]), _hhmm(trigger["window"]["close"])
+    if not lo <= minute <= hi:
+        return None, None
+    if any(f.session == bars[-1].session for f in sg.firings(trigger["signal"], bars, events)):
+        return minute, None
     return None, None
 
 
@@ -540,7 +577,11 @@ def entry_due(
     (any of today's is dropped)."""
     validate_trigger(trigger)
     minute = now.hour * 60 + now.minute
-    if trigger.get("daily"):
+    if trigger.get("developing"):
+        fired, stale = _developing_fired(trigger, bars, events, now.date(), minute)
+        if stale:
+            return Due(False, None, stale)
+    elif trigger.get("daily"):
         fired, stale = _daily_fired(trigger, bars, events, now.date())
         if stale:
             return Due(False, None, stale)
