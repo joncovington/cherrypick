@@ -11,6 +11,7 @@ import {
   isStudySlug,
   STUDY_SUMMARY_RUNS,
   type BacktestOverview,
+  type FullSetProgress,
   type BacktestRunReport,
   type BacktestTradeLog,
   type BacktestTradePath,
@@ -23,7 +24,7 @@ import {
 } from "@console/shared";
 import { readStudyDigest, readStudyReport } from "../services/studyReportBridge.js";
 import { backtestResultsOn, getFeatures } from "../services/featuresBridge.js";
-import { readBacktestOverview, readBacktestPath, readBacktestRun, readBacktestTrades, readRunSummaries } from "../services/backtestBridge.js";
+import { readBacktestOverview, readBacktestPath, readBacktestRun, readBacktestTrades, readFullSetProgress, readRunSummaries } from "../services/backtestBridge.js";
 import { readResearchQueue } from "../services/researchQueueBridge.js";
 import { readStudies } from "../services/studiesBridge.js";
 import type { ConsoleConfig } from "../config.js";
@@ -59,6 +60,12 @@ export function registerBacktestRoutes(app: FastifyInstance, config?: ConsoleCon
   app.get("/api/backtest/overview", async (_req, reply): Promise<BridgedResult<BacktestOverview> | FastifyReply> => {
     if (!backtestResultsOn(await getFeatures())) return refuse(reply);
     return readBacktestOverview();
+  });
+
+  // The full set's fetch progress: counts of the licensed stores, so behind the same gate as the Data tab.
+  app.get("/api/backtest/fullset", async (_req, reply): Promise<BridgedResult<FullSetProgress> | FastifyReply> => {
+    if (!backtestResultsOn(await getFeatures())) return refuse(reply);
+    return readFullSetProgress();
   });
 
   app.get<{ Params: { id: string }; Querystring: { capital?: string; risk?: string; unit?: string; dd?: string } }>(

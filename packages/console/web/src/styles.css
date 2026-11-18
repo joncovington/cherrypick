@@ -5334,6 +5334,26 @@ select.text-input {
   background: var(--accent);
 }
 
+/* The full set's progress (Backtest -> data): one meter per underlying and part. */
+.fs-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.5rem 1rem;
+  margin-bottom: 0.75rem;
+}
+.fs-head .fs-meter {
+  min-width: 220px;
+}
+.fs-table .fs-meter {
+  min-width: 90px;
+}
+.fs-table tr.fs-total th,
+.fs-table tr.fs-total td {
+  border-top: 1px solid var(--border);
+  font-weight: 600;
+}
+
 /* The queue's expanded row: the fields that do not fit a five-column row, then the log's tail. */
 .queue-detail-row > td {
   background: var(--surface-sunken);

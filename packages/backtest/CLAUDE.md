@@ -442,7 +442,8 @@ IWM, GLD and TLT from 2020-01-01 in three stores per underlying (same-day at 60 
 expiry's end-of-day path and open interest. The plan asks for candidate expiries by the exchanges' rules,
 never the vendor's listing, so planning holds no vendor session; an expiry never listed comes back
 `empty` once. `plan` writes the request files, the script's CHAIN queues the fetches (probe first), and
-`status` reads overall, per-part and per-underlying progress from the stores' own ledgers.
+`status` reads overall, per-part and per-underlying progress from the stores' own ledgers
+(`fullsetprogress.py`, also `read fullset` for the console's Data tab).
 
 **The add-on weeklies fetch** (`fetch-addon-weeklies`, `addonfetch.py`; item 35): SPXW weekly put minute
 greeks over a bwb position's life, plus a 10:00 strip of ATM calls, from a `{requests: [{expiration, first,
