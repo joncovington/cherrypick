@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { BACKTEST_ARM_PREFIX, portfolioArmLabel, type PnlDay, type PortfolioReading, type PortfolioSource } from "@console/shared";
+import { BACKTEST_ARM_PREFIX, portfolioArmLabel, type PnlDay, type PortfolioOpenRisk, type PortfolioReading, type PortfolioSource } from "@console/shared";
 import { Card, PnlCell } from "../../components/DataTable";
 import { HelpSection, type CardHelpContent } from "../../components/CardHelp";
 import { FilterGroup } from "../../components/FilterSort";
@@ -81,6 +81,79 @@ function corrTone(r: number | null): string | undefined {
 function fmtR(r: number | null): string {
   return r === null ? "—" : r.toFixed(2);
 }
+
+/** Max loss held at once: each session's peak of the summed open max loss, and the sessions it peaked. */
+export function OpenRiskCard({ r }: { r: PortfolioOpenRisk }) {
+  const unmeasured = Object.entries(r.unmeasured);
+  const whole = Object.entries(r.whole_session);
+  const share = (v: number | undefined) => (v === undefined ? "max loss open at once; give an account to read it as a share" : `${fmtPct(v * 100)} of the account`);
+  return (
+    <Card title="risk held at once" help={OPEN_RISK_HELP}>
+      {r.floor && (
+        <p style={{ fontSize: 12 }}>
+          <span className="chip chip-warn" style={{ marginRight: 6 }}>a floor</span>
+          trades with no recorded max loss are left out:{" "}
+          {unmeasured.map(([k, n]) => `${portfolioArmLabel(k)} (${String(n)})`).join(", ")}
+        </p>
+      )}
+      {whole.length > 0 && (
+        <p className="muted" style={{ fontSize: 12 }}>
+          no entry or exit time recorded, so held for their whole sessions: {whole.map(([k, n]) => `${portfolioArmLabel(k)} (${String(n)})`).join(", ")}
+        </p>
+      )}
+      {r.sessions === 0 ? (
+        <p className="muted">no trade with a recorded max loss in the window</p>
+      ) : (
+        <>
+          <TileGrid count={3}>
+            <Tile label="peak, median session" value={fmtMoney(r.peaks.median)} tone="dim" n={r.sessions} nUnit="sessions" title={share(r.of_account?.median)} />
+            <Tile label="peak, 95th percentile" value={fmtMoney(r.peaks.p95)} tone="neg" title={share(r.of_account?.p95)} />
+            <Tile label="peak, worst session" value={fmtMoney(r.peaks.max)} tone="neg" title={share(r.of_account?.max)} />
+          </TileGrid>
+          <div className="table-scroll">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>session</th>
+                  <th title="the most max loss open at one moment that session">held at once</th>
+                  <th>by arm, at that moment</th>
+                </tr>
+              </thead>
+              <tbody>
+                {r.worst_sessions.map((w) => (
+                  <tr key={w.session}>
+                    <td>{w.session}</td>
+                    <td>{fmtMoney(w.peak)}</td>
+                    <td className="muted">
+                      {Object.entries(w.by_arm)
+                        .sort((a, b) => b[1] - a[1])
+                        .map(([k, v]) => `${portfolioArmLabel(k)} ${fmtMoney(v)}`)
+                        .join(" · ")}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+    </Card>
+  );
+}
+
+const OPEN_RISK_HELP: CardHelpContent = {
+  title: "Risk held at once",
+  body: (
+    <HelpSection title="The most the arms could lose together">
+      <p>
+        Each trade's defined maximum loss, held from its entry to its exit, summed across the chosen arms. Each session reads its peak, and
+        the tiles are those peaks over the sessions anything was open. A position held overnight counts from every session it spans. A trade
+        with no recorded maximum loss is named and left out, so the reading is then a floor; a trade whose source records no time is held for
+        its whole sessions.
+      </p>
+    </HelpSection>
+  ),
+};
 
 export function PortfolioView({ p }: { p: PortfolioReading }) {
   const n = p.shared.arms?.length ?? p.arms.filter((a) => a.periods_traded > 0).length;
@@ -188,6 +261,7 @@ export function PortfolioView({ p }: { p: PortfolioReading }) {
         </table>
       </div>
       </Card>
+      {p.open_risk !== undefined && <OpenRiskCard r={p.open_risk} />}
       </Section>
 
       <Section concept="stand" tag="contribution" question="What does each arm add?">

@@ -353,6 +353,7 @@ def test_orb_touch_exit_and_money_identities():
     trade = engine.close_position(pos, "touch", hit)
     assert trade is not None
     mult = 100 * trade["quantity"]
+    assert trade["risk"] == engine.risk(entry) > 0  # its max loss, for the open-risk reading
     assert trade["gross"] == pytest.approx((entry.prices["mid"] + trade["exit_mid"]) * mult, abs=0.01)
     for kind in pricing.KINDS:
         assert trade["net"][kind] == pytest.approx(

@@ -580,6 +580,11 @@ chosen arm per module held together, plus any backtest arms, a bridge.
   licensed source is listed and read only while the results gate (`backtest_results`) is open, and
   the reading then says it holds one. A backtest arm counts from its run's first session, and with
   one chosen the window starts at the earliest chosen run. Arms are labelled `<arm> (backtest)`.
+- **Risk held at once:** core's `open_risk`: each session's peak of the max loss open across the
+  chosen arms (a ledger record's `capital`, a backtest trade's `risk`), the median, 95th percentile
+  and worst of those peaks, and the five worst sessions with each arm's part. Trades with no
+  recorded max loss (flies' books; Builder runs from before `risk` was recorded) are named and the
+  card says it is a floor. No account is passed, so the tiles are dollars only.
 - **The picker:** its default (`control`, else a module's first non-advised arm) is a starting point,
   not a judgement. pmcc's `control` is retired, for one.
 - **Labelling:** every figure shows its periods. Thin rows are dimmed and carry no tone, and

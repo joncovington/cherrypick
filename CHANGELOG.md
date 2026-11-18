@@ -32,6 +32,11 @@ beyond the latest release.
   result is offered only while the results gate is open, and the reading says it holds one.
   `core.portfolio`'s manifest takes a `backtest` entry (a result file and an arm), and
   `backtest read portfolio-sources` lists what can be chosen.
+- **Risk held at once, on the portfolio tab.** For the chosen arms, each session's peak of the max
+  loss open at the same time, the median, 95th percentile and worst of those peaks, and the worst
+  sessions with each arm's part. A trade with no recorded max loss is named and the card says it is
+  a floor. An automation's closed trades now record `risk`, their max loss, so Builder runs and
+  studies from here on are measured; older runs read as unmeasured.
 - **Add an underlying to the full set from the Builder.** Where our data does not cover an
   automation on an underlying outside the full set's seven, the Builder offers to add it: the plan
   first (requests and sessions, a year back by default), then one click queues its fetches on the

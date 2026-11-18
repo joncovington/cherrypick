@@ -83,6 +83,21 @@ describe("PortfolioView", () => {
     expect(out).not.toContain('class="pnl-neg">0.90');
   });
 
+  it("shows the risk held at once and names the arms it could not measure", () => {
+    const open_risk = {
+      sessions: 3, peaks: { median: 900, p95: 1500, max: 1500 }, account: null, of_account: null,
+      worst_sessions: [{ session: "2026-10-14", peak: 1500, by_arm: { "meic:control": 1000, "flies:control": 500 } }],
+      measured: { "meic:control": 12 }, unmeasured: { "flies:control": 4 }, whole_session: {}, floor: true,
+    };  // fmt: skip
+    const out = html({ ...reading, open_risk });
+    expect(out).toContain("risk held at once");
+    expect(out).toContain("a floor");
+    expect(out).toContain("flies:control (4)");
+    expect(out).toContain("2026-10-14");
+    const none = html({ ...reading, open_risk: { ...open_risk, unmeasured: {}, floor: false } });
+    expect(none).not.toContain("a floor");
+  });
+
   it("says when it holds a licensed backtest, and labels a backtest arm", () => {
     const key = "bt:results/research/item75/study-all#iron-condor-1345";
     const arm = { ...reading.arms[0]!, key, span_from: "2022-05-16" };
