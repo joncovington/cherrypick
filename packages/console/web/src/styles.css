@@ -11548,6 +11548,35 @@ svg.vol-curve text {
   gap: 0.4rem 0.9rem;
   font-size: 0.85rem;
 }
+/* A section's fields, disabled together for a saved automation; it lays out as if it were not there. */
+.builder-lock {
+  display: contents;
+}
+.builder-lock:disabled .builder-input,
+.builder-lock:disabled input,
+.builder-lock:disabled select {
+  opacity: 1;
+  color: var(--text);
+  cursor: default;
+}
+.builder-lock:disabled .builder-remove,
+.builder-lock:disabled .builder-cond ~ div > .btn,
+.builder-lock:disabled > div > .btn {
+  display: none;
+}
+.builder-readonly {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0;
+  padding: 0.55rem 0.8rem;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
 .builder-req {
   color: var(--neg);
   font-weight: 700;

@@ -109,6 +109,26 @@ describe("the form", () => {
   });
 });
 
+describe("a read-only form", () => {
+  const out = html(<BuilderForm schema={SCHEMA} spec={SPEC} labels={{}} onChange={() => {}} readOnly />);
+  const editable = html(<BuilderForm schema={SCHEMA} spec={SPEC} labels={{}} onChange={() => {}} />);
+
+  it("puts every section's fields in a disabled fieldset, the help still open", () => {
+    expect(out.match(/<fieldset class="builder-lock" disabled="">/g)?.length).toBe(6);
+    expect(out).toContain('<input type="checkbox" disabled="" checked=""/> FOMC');
+    // Each section's head, with its help, closes before its lock opens, so the help still opens.
+    const heads = out.match(/<div class="builder-section-head">.*?<\/div><fieldset class="builder-lock" disabled="">/g) ?? [];
+    expect(heads.length).toBe(5);
+    expect(heads.every((h) => h.includes('class="help-q"'))).toBe(true);
+    expect(out).not.toContain("required. A greyed value");
+  });
+
+  it("is not locked when editable", () => {
+    expect(editable).not.toContain('disabled=""');
+    expect(editable).toContain("required. A greyed value");
+  });
+});
+
 describe("typed fields", () => {
   const INT1 = { type: "int" as const, min: 1 };
   const TYPES: BuilderTypes = {

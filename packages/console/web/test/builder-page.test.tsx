@@ -66,7 +66,7 @@ describe("the workspace", () => {
     expect(out).toContain("group ensemble");
     expect(out).toContain("start not set");
     expect(out).toContain("item 75: no verdict");
-    expect(out).toContain(">Edit as JSON</button>");
+    expect(out).toContain(">View as JSON</button>");
     expect(out).toContain("Today, live");
     expect(out).toContain("Explore runs · this automation");
     expect(out).toContain('aria-label="About Today, live"');
@@ -79,6 +79,24 @@ describe("the workspace", () => {
     expect(out).toContain('class="chip">not saved</span>');
     expect(out).not.toContain("Explore runs · this automation");
     expect(Object.keys(NEW_SPEC).sort()).toEqual(["entry", "expiry", "legs", "limits", "size", "symbol", "weekdays"]);
+  });
+
+  it("shows a saved automation read-only: no Check or Save, and a copy is the way to change it", () => {
+    const out = html(<Workspace a={BASE} schema={SCHEMA} mode={{ kind: "saved", name: "mine" }} onSaved={() => {}} onCopy={() => {}} />);
+    expect(out).toContain("A saved automation is read-only here. For a similar one, copy it as new");
+    expect(out).toContain(">Copy as new</button>");
+    expect(out).not.toContain(">Check</button>");
+    expect(out).not.toContain(">Save (off)</button>");
+    expect(out).toContain(">Explore run");
+  });
+
+  it("keeps a new automation and a copy editable", () => {
+    for (const mode of [{ kind: "new" as const }, { kind: "copy" as const, from: "mine" }]) {
+      const out = html(<Workspace a={BASE} schema={SCHEMA} mode={mode} onSaved={() => {}} />);
+      expect(out).toContain(">Check</button>");
+      expect(out).toContain(">Save (off)</button>");
+      expect(out).not.toContain("read-only");
+    }
   });
 
   it("offers a copy under a new name", () => {
