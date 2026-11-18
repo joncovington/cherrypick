@@ -42,8 +42,12 @@ export interface ConfigModelPayload {
 
 export interface ModuleGateView {
   id: string;
-  /** null = no readable config. Unknown must never be rendered as "off". */
+  /** null = a module with a live path whose switch cannot be read. Unknown must never render as "off". */
   liveEnabled: boolean | null;
+  /** Whether the module has a live loop at all. False = paper by construction. */
+  livePath: boolean;
+  /** `modules.<id>.enabled` in the orchestrator config; null when the module is not listed there. */
+  moduleEnabled: boolean | null;
   /** flies only: whether the human attestation string is set (never its text). */
   gate0Confirmed?: boolean;
 }

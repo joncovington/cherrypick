@@ -67,22 +67,36 @@ describe("module live gates", () => {
     expect(readModuleGate(config, "flies")).toMatchObject({ liveEnabled: false, gate0Confirmed: false });
   });
 
-  it("an unreadable config is unknown, never a reassuring off", () => {
-    expect(readModuleGate(config, "meic").liveEnabled).toBeNull();
-    writeModuleConfig("pmcc", "not an object");
-    expect(readModuleGate(config, "pmcc").liveEnabled).toBeNull();
+  it("a module with a live path and an unreadable switch is unknown, never a reassuring off", () => {
+    expect(readModuleGate(config, "meic")).toMatchObject({ liveEnabled: null, livePath: true });
+    writeModuleConfig("bwb", "not an object");
+    expect(readModuleGate(config, "bwb").liveEnabled).toBeNull();
+    writeModuleConfig("flies", { live: {} });
+    expect(readModuleGate(config, "flies").liveEnabled).toBeNull();
+  });
+
+  it("a module with no live path is paper by construction, not unknown, with or without a switch", () => {
+    writeModuleConfig("contango", { arms: {} });
+    expect(readModuleGate(config, "contango")).toMatchObject({ liveEnabled: false, livePath: false });
+    expect(readModuleGate(config, "ladder")).toMatchObject({ liveEnabled: false, livePath: false });
+    writeModuleConfig("calendars", { live: { enabled: false } });
+    expect(readModuleGate(config, "calendars")).toMatchObject({ liveEnabled: false, livePath: false });
+  });
+
+  it("a switch found on outside the live-path set is still reported on", () => {
+    writeModuleConfig("pmcc", { live: { enabled: true } });
+    expect(readModuleGate(config, "pmcc")).toMatchObject({ liveEnabled: true, livePath: false });
   });
 
   it("earnings is never live, whatever a leftover switch in its file says", () => {
     writeModuleConfig("earnings", { enable_live_trading: true, live: { enabled: true } });
-    expect(readModuleGate(config, "earnings")).toEqual({ id: "earnings", liveEnabled: false });
+    expect(readModuleGate(config, "earnings")).toMatchObject({ liveEnabled: false, livePath: false });
   });
 
-  it("calendars and pmcc carry the same nested live.enabled placeholder as flies", () => {
-    writeModuleConfig("calendars", { live: { enabled: false } });
-    expect(readModuleGate(config, "calendars")).toMatchObject({ liveEnabled: false });
-    writeModuleConfig("pmcc", { live: { enabled: false } });
-    expect(readModuleGate(config, "pmcc")).toMatchObject({ liveEnabled: false });
+  it("carries the module's own switch from the suite config", () => {
+    expect(readModuleGate(config, "meic").moduleEnabled).toBe(true);
+    expect(readModuleGate(config, "earnings").moduleEnabled).toBe(false);
+    expect(readModuleGate(config, "bwb").moduleEnabled).toBeNull();
   });
 });
 
