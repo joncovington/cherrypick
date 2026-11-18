@@ -16,9 +16,10 @@ describe("an experiment switched off", () => {
     }) as unknown as Parameters<typeof shownExperiments>[0];
 
   it("loses its card with its pages, and an unread answer shows every card", () => {
-    expect(shownExperiments(on(false)).map((e) => e.id)).toEqual(["calendars", "curve", "contango", "weeklyput", "automations"]);
-    expect(shownExperiments(on(true)).map((e) => e.id)).toEqual(["pmcc", "calendars", "curve", "contango", "weeklyput", "automations"]);
-    expect(shownExperiments(undefined)).toHaveLength(6);
+    // Automations left the page for the rail (2026-11-18).
+    expect(shownExperiments(on(false)).map((e) => e.id)).toEqual(["calendars", "curve", "contango", "weeklyput"]);
+    expect(shownExperiments(on(true)).map((e) => e.id)).toEqual(["pmcc", "calendars", "curve", "contango", "weeklyput"]);
+    expect(shownExperiments(undefined)).toHaveLength(5);
   });
 });
 

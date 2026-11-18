@@ -4,6 +4,7 @@ import { callConfigCli, statusForCode, type BridgeOk, type BridgeRequest, type B
 import { readLockStatus } from "../services/liveLock.js";
 import { backtestResultsOn, getFeatures, invalidateFeatures } from "../services/featuresBridge.js";
 import { invalidateAutomationsBuilder } from "../services/automationsBuilderBridge.js";
+import { invalidateAutomationGroups } from "../services/automationsGroupsBridge.js";
 import { getPrefs, setPref } from "../store/consoleDb.js";
 
 /**
@@ -217,6 +218,59 @@ export function registerConfigRoutes(app: FastifyInstance, config: ConsoleConfig
     invalidateAutomationsBuilder();
     app.log.info(`automation saved from the builder: ${parsed.name} (${result["added"] === true ? "added" : "replaced"}, off)`);
     return { ok: true, name: parsed.name, added: result["added"] === true, enabled: false, backup: result["backup"] ?? null };
+  });
+
+  /**
+   * The Automations › Groups page, through the orchestrator's editor like every config write here
+   * (configcli `automation_groups*`, `orchestrator.groupedit`). The view and the check write nothing;
+   * the save runs the module's check and writes only what it returned: the `groups` block and each
+   * moved automation's `group`. A group's switch, start, allocation, cap and shares are the page's to
+   * set; an automation's own switch is not (a member that is off stays off in a group that is on).
+   */
+  app.get("/api/automations/groups/edit", async (_req, reply) => {
+    const result = sendBridgeFailure(reply, await callConfigCli({ op: "automation_groups" }));
+    if (result === null) return reply;
+    return { groups: result["groups"] ?? [], ungrouped: result["ungrouped"] ?? [] };
+  });
+
+  const groupsBody = (body: Record<string, unknown>): { groups: Record<string, unknown>; members: Record<string, string | null> } | string => {
+    const groups = body["groups"];
+    const members = body["members"] ?? {};
+    if (typeof groups !== "object" || groups === null || Array.isArray(groups)) return "groups must be an object";
+    if (typeof members !== "object" || members === null || Array.isArray(members)) return "members must be an object";
+    for (const [name, g] of Object.entries(members as Record<string, unknown>)) {
+      if (name.length === 0 || name.length > 48) return "a member's name is up to 48 characters";
+      if (g !== null && (typeof g !== "string" || g.length === 0 || g.length > 48)) return `members.${name}: a group name (up to 48 characters) or null`;
+    }
+    if (JSON.stringify(body).length > MAX_AUTOMATION_CHARS) return `the change is larger than ${MAX_AUTOMATION_CHARS} characters`;
+    return { groups: groups as Record<string, unknown>, members: members as Record<string, string | null> };
+  };
+
+  app.post("/api/automations/groups/check", async (req, reply) => {
+    const parsed = groupsBody((req.body ?? {}) as Record<string, unknown>);
+    if (typeof parsed === "string") return reply.code(400).send({ error: parsed });
+    const result = sendBridgeFailure(reply, await callConfigCli({ op: "automation_groups_check", ...parsed }));
+    if (result === null) return reply;
+    return { ok: true, problems: result["problems"] ?? [], moves: result["moves"] ?? {} };
+  });
+
+  app.post("/api/automations/groups/save", async (req, reply) => {
+    const parsed = groupsBody((req.body ?? {}) as Record<string, unknown>);
+    if (typeof parsed === "string") return reply.code(400).send({ error: parsed });
+    const result = await callConfigCli({ op: "automation_groups_save", ...parsed });
+    if (!result.ok) {
+      const problems = (result as unknown as Record<string, unknown>)["problems"];
+      return reply.code(statusForCode(result.code)).send({
+        error: result.error,
+        code: result.code,
+        ...(Array.isArray(problems) ? { problems } : {}),
+      });
+    }
+    invalidateAutomationGroups();
+    invalidateAutomationsBuilder();
+    const moved = Array.isArray(result["moved"]) ? (result["moved"] as string[]) : [];
+    app.log.info(`automation groups saved from the console: ${moved.length} moved`);
+    return { ok: true, moved, groups: result["groups"] ?? [], backup: result["backup"] ?? null };
   });
 
   /**

@@ -5,6 +5,11 @@
     decisions  the narrative journal (--date), the gate that blocked each refused arm
     summary    each arm's closed trades, net and drawdown, and the arms together
     arms       the arms the config resolves to (shipped, with this machine's changes laid over)
+    groups-view   every group (switch, start, budget, shares) and every automation by group, each with
+               its own switch (the console's Groups page)
+    groups-check  a change to the groups (JSON on stdin: groups, members) checked as the loop loads
+               it: its problems, the groups block a save would write and the automations it moves.
+               Writes nothing
     replay     run a replay record file again and say where the decisions differ
     builder    every automation block by block, each block's backtest label, its start, forward rule
                and backtest suggestion (the console's Builder page). Config and the registry's cache only
@@ -81,6 +86,28 @@ def cmd_groups(args) -> int:
     Config only, no ledger or cache read (the console's group panel)."""
     config = config_mod.load_config(args.config)
     return _print({"ok": True, "groups": config_mod.group_status(config_mod.load_arms(config), config)})
+
+
+def cmd_groups_view(args) -> int:
+    """Every group with its switch, start, budget and shares, and every automation by group (its own
+    switch beside the group's), for the console's Groups page. Config only."""
+    from . import groupedit
+
+    return _print({"ok": True, **groupedit.view(config_mod.load_config(args.config))})
+
+
+def cmd_groups_check(args) -> int:
+    """A change to the groups (JSON on stdin: {groups, members}) checked as the loop would load it: its
+    problems, the `groups` block a save would write and the automations it moves. Writes nothing."""
+    import sys
+
+    from . import groupedit
+
+    try:
+        req = json.loads(sys.stdin.read() or "{}")
+    except json.JSONDecodeError as exc:
+        return _print({"ok": False, "error": f"request is not valid JSON: {exc}"})
+    return _print(groupedit.check(config_mod.load_config(args.config), req))
 
 
 def cmd_replay(args) -> int:
@@ -205,6 +232,8 @@ def main(argv=None) -> int:
     sub.add_parser("summary").set_defaults(fn=cmd_summary)
     sub.add_parser("arms").set_defaults(fn=cmd_arms)
     sub.add_parser("groups").set_defaults(fn=cmd_groups)
+    sub.add_parser("groups-view").set_defaults(fn=cmd_groups_view)
+    sub.add_parser("groups-check").set_defaults(fn=cmd_groups_check)
     p = sub.add_parser("replay")
     p.add_argument("file")
     p.set_defaults(fn=cmd_replay)

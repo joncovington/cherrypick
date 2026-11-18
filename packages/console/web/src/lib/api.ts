@@ -16,6 +16,8 @@ import type {
   AutomationsHistory,
   AutomationsPayload,
   AutomationGroupsResult,
+  GroupsChange,
+  GroupsEditView,
   BuilderBacktestResult,
   BuilderDraftResult,
   BuilderResult,
@@ -1356,6 +1358,25 @@ async function builderPost<T extends { ok: boolean; error?: string }>(url: strin
   }
   if (res.ok) return json as T;
   return { ...json, ok: false, error: typeof json["error"] === "string" ? json["error"] : `HTTP ${res.status}` } as T;
+}
+
+/** The Groups page: every group with its spec and members, and the automations in none. */
+export function useGroupsEdit() {
+  return useQuery<GroupsEditView>({
+    queryKey: ["automations-groups-edit"],
+    queryFn: () => getJson<GroupsEditView>("/api/automations/groups/edit"),
+    staleTime: 30_000,
+  });
+}
+
+/** The module's check of a change to the groups; writes nothing. */
+export function groupsCheck(change: GroupsChange): Promise<{ ok: boolean; error?: string; problems?: string[]; moves?: Record<string, string | null> }> {
+  return builderPost("/api/automations/groups/check", change);
+}
+
+/** That check, then the groups block and the moves it returned written through the config editor. */
+export function groupsSave(change: GroupsChange): Promise<{ ok: boolean; error?: string; problems?: string[]; moved?: string[]; backup?: string | null }> {
+  return builderPost("/api/automations/groups/save", change);
 }
 
 /** The module's check of one automation; by name alone, the automation as the editor starts from it. */

@@ -116,7 +116,13 @@ alone):
     `/save`, configcli `automation_draft` / `automation_save`). The route sends a name and an
     automation and nothing else; the orchestrator runs the module's own check and writes the entry it
     returned, which is always off. The page never turns an automation on, and never writes its
-    register label.
+    register label. A saved automation opens read-only; a change to one is a copy.
+  - **Automations › Groups writes the groups by the same path** (`/api/automations/groups/edit`,
+    `/check`, `/save`; configcli `automation_groups*`, `orchestrator.groupedit`). The route sends the
+    groups that will have members (each spec whole) and the automations that move, nothing else; the
+    module (`cli groups-check`) loads the change as the paper loop would and returns the `groups` block
+    and the moves, which are all the orchestrator writes. A group's switch only ever switches members
+    off, so the page shows each member's own switch and never writes it.
   - **The Builder's form reads the module's schema and "Today, live"; neither writes.** The form's
     choices are `cli builder-schema` (`/api/automations/builder/schema`, the engine's own tables),
     so the page spells no gate, strike rule or exit of its own. "Today, live" is configcli

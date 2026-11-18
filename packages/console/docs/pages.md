@@ -30,17 +30,17 @@ A page the suite has switched off is not shown (see *What is off is not shown* b
 | MEIC | `/meic` | today, arms, forest, attempts, positions, history, sessions, exits, regime cuts, performance, analysis, costs, advisor, help | Active; live behind its own gate. |
 | BWB | `/bwb` | today, positions, history, decisions, arms, entry vol, live vs paper, performance, analysis, advisor, help | Retired; ships off. |
 | Earnings | `/earnings` | today, positions, history, decisions, screening, strategies, advisor | Active; paper only. |
+| Automations | `/automations` | today, groups, positions, history, decisions, performance, costs, help (8 tabs) | Paper only. The automations are whatever the ledger names; the Builder writes them, and `groups` switches and budgets their groups (each member's own switch shown, never written). |
 | Experiments | `/experiments` | experiments | The comparison page for the paper-only experiments and the retired modules below. |
 | PMCC | `/pmcc` | today, by arm, positions, tracker, history, decisions, arms, performance, analysis, costs, advisor, help | Retired; ships off. |
 | Calendars | `/calendars` | today, plan, positions, history, decisions, arms, policies, performance, analysis, advisor, help | Experimental; paper only. |
 | Curve | `/curve` | today, regime, positions, history, decisions, arms, performance, analysis, costs, advisor, help | Retired; ships off. |
 | Contango | `/contango` | today, regime, positions, history, decisions, arms, performance, analysis, costs, help | Experimental; paper only. |
 | Weekly put | `/weeklyput` | today, cycles, positions, history, decisions, performance, costs, help (8 tabs) | Experimental; paper only. |
-| Automations | `/automations` | today, positions, history, decisions, performance, costs, help (7 tabs) | Experimental; paper only. The arms are whatever the ledger names. |
 | Flies | `/flies` | session, summary, forest, timeline, positions, history, books, opening range, attempts, decisions, gates vs control, live vs paper, selector, regime cuts, intraday agent, completion, performance, analysis, costs, advisor, help | Retired; ships off. |
 
 The simple view shows a shorter tab list per page (`ModuleNavDecl.simple`); the detail view shows all.
-Keyboard: `g` plus the page's key for suite pages, a bare digit for the four modules on the rail,
+Keyboard: `g` plus the page's key for suite pages, a bare digit for the five modules on the rail,
 `j`/`k` for tabs.
 
 The sections below are the working notes for each page. Read the section for a page before changing it.
@@ -93,7 +93,7 @@ user's path. The rules that follow from them:
 - **The same evidence is shown once.** A module's `arms` tab keeps what Compare does not show (each
   arm's guide, Contango's NAV comparison, Curve's flip divergence, BWB's fire counts); the module
   `advisor` tabs stay off the module pages while the advisor is paused.
-- **Rail keys are fixed:** MEIC 1, BWB 2, Earnings 3, Experiments 4 (an off module's digit does
+- **Rail keys are fixed:** MEIC 1, BWB 2, Earnings 3, Experiments 4, Automations 5 (an off module's digit does
   nothing); Config is `g o`; the Suite header is dropped when Config is all it would hold.
 - **Income candidates stay on Live portfolio**, where they are sized to the user's delta and theta
   room, and are not ranked ("top three") because nothing about them has a tested edge.
@@ -103,7 +103,7 @@ user's path. The rules that follow from them:
   to predict something first.
 
 **Experiments page** (`/experiments`, `pages/Experiments/ExperimentsPage.tsx`): a card per paper-only
-experiment (PMCC, Calendars, Curve, Contango) built from that module's own summary read:
+experiment (PMCC, Calendars, Curve, Contango, Weekly put) built from that module's own summary read:
 the status line with the tested verdict and last traded day, all-time net, open now, and links to its
 today, open, closed and performance tabs. The module pages stay whole and reachable; the rail opens
 the chosen one out under Experiments while you are on it. Flies is a record card on the same page

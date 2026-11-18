@@ -132,7 +132,10 @@ _EXAMPLE_REL: dict[str, str] = {
 
 
 def _pointer_tokens(pointer: str) -> list[str]:
-    """RFC 6901 pointer → reference tokens. '/live/enabled' → ['live', 'enabled']."""
+    """RFC 6901 pointer → reference tokens. '/live/enabled' → ['live', 'enabled']; '' is the whole
+    document (a top-level key is inserted at it)."""
+    if pointer == "":
+        return []
     if not pointer.startswith("/"):
         raise ValueError(f"JSON pointer must start with '/': {pointer!r}")
     return [tok.replace("~1", "/").replace("~0", "~") for tok in pointer[1:].split("/")]

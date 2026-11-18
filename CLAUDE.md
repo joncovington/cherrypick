@@ -29,7 +29,10 @@ Packages: `packages/orchestrator`, `packages/meic`, `packages/earnings`, `packag
   the orchestrator, only where our data covers it (our own stores first, the vendor's only while
   the licence allows new work, its result then licensed), and the Builder's addition of an
   underlying to the full set: its vendor fetches queued by the orchestrator, up to 300 sessions a
-  click and only while the licence allows new work, with that automation's run after them.
+  click and only while the licence allows new work, with that automation's run after them. The
+  Automations › Groups tab writes the automation groups (each group's switch, start, allocation, cap
+  and shares, and which group each automation is in), through the same editor after the automations
+  module's own check; never an automation's own switch.
 - **backtest**: the licence outranks everything. Vendor data and anything derived from it stay under
   `~/.cherrypick`, never in this repo, a PR, an issue or a published artifact.
 
