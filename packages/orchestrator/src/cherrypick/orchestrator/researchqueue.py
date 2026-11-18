@@ -562,6 +562,15 @@ def output_doc(row: dict) -> dict | None:
     return doc if isinstance(doc, dict) else None
 
 
+def verdict_words(doc: dict | None) -> str | None:
+    """A study's verdict as its finish notice names it: each arm and its word, words only (a verdict
+    block's `{arm: word}`), or None for a result without one."""
+    v = (doc or {}).get("verdict")
+    if not isinstance(v, dict) or not v or not all(isinstance(w, str) for w in v.values()):
+        return None
+    return ", ".join(f"{a} {w}" for a, w in v.items())
+
+
 def zero_trade_arms(doc: dict | None) -> list[str]:
     """The arms a study kit verdict block (top-level `rule` and `arms`, each arm with its `n`) judged
     on no trades: a study that read nothing it was asked to (items 47 and 54 ran on zero trades)."""
@@ -1098,6 +1107,10 @@ def run_next(
         elif status in ("done", "stopped"):
             where = result.get("output") or result.get("input") or str(log)
             said = f"{_summary(report) or 'finished'}; {where}"
+            words = verdict_words(output_doc(pick)) if status == "done" and pick["kind"] == "script" else None
+            if words:
+                # A study that wrote a verdict: name it, and the one command that records it.
+                said += f"; verdict: {words}; record it with python tools/record_verdict.py {pick['study']}"
             if warning:
                 notify("WARNING", f"Research task {status} with gaps: {title}", f"{warning}; {said}")
             else:

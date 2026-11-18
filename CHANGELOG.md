@@ -30,6 +30,10 @@ beyond the latest release.
   Declare and Promote to paper shown disabled. Beside it, **Today, live** decides the automation
   now as paper would, on a read-only snapshot (`cli builder-today`): every check, and the legs it
   would take or the check that stops it. The explore runs and run cards sit beside it too.
+- **A finished study's verdict, recorded in one command.** The queue's finish notice names each arm's
+  verdict and the command that records it. `python tools/record_verdict.py itemNN` sets the register
+  row's status and a words-only outcome from the study kit's verdict block, checks the register and
+  opens the docs PR from a fresh worktree; a result without the kit's block is refused.
 - **The research queue runs in two lanes.** Fetches run one at a time on the vendor's session (the
   `research-queue-vendor` job, which replaces `research-queue`), and scripts run one at a time beside
   them (the `research-queue-local` job), so a day-long study no longer holds up a fetch. A chain's order holds across the lanes. The
