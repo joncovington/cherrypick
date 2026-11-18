@@ -37,7 +37,7 @@ Use Compare to decide whether an arm is worth keeping, and be patient. Prefer th
 
 ## Backtest (`/backtest`)
 
-Backtest shows replays of the strategies over licensed historical data. It has four tabs: `studies`, `queue`, `runs` and `data`. `studies` is what was tested and what was found, `queue` is the research tasks the supervisor runs one at a time, `runs` is the replays, and `data` is whether the history can be trusted, the licence and the data stores.
+Backtest shows replays of the strategies over licensed historical data. It has four tabs: `studies`, `queue`, `runs` and `data`. `studies` is what was tested and what was found, `queue` is the research tasks the supervisor runs in two lanes (fetches, and scripts beside them), `runs` is the replays, and `data` is whether the history can be trusted, the licence and the data stores.
 
 **The page is always there; what shows licensed data is not.** Results derived from licensed vendor history may not be redistributed. So the `runs` and `data` tabs, a study's figures, report and notes, a queue task's log and Compare's `slices` tab appear only while those results may be shown. That is from setup until the licence's purge date, which includes the weeks after the licence ends. Otherwise those tabs are gone and those panels say "Withheld". The studies' names, statuses and verdict words, the queue and studies on our own data are always shown. Nothing licensed is shown in this guide, and the data and anything derived from it stay on your machine. The data and anything derived from it never go in a public issue, a pull request or a shared page. How the research register, the queue and the backtest package work is in [research-and-backtests.md](research-and-backtests.md).
 

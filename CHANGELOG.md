@@ -30,6 +30,12 @@ beyond the latest release.
   Declare and Promote to paper shown disabled. Beside it, **Today, live** decides the automation
   now as paper would, on a read-only snapshot (`cli builder-today`): every check, and the legs it
   would take or the check that stops it. The explore runs and run cards sit beside it too.
+- **The research queue runs in two lanes.** Fetches run one at a time on the vendor's session (the
+  `research-queue` job), and scripts run one at a time beside them (the new `research-queue-local`
+  job), so a day-long study no longer holds up a fetch. A chain's order holds across the lanes. The
+  queue tab shows each lane's running task and its own up-next list, and lists rows in the runner's
+  order, priority included. Needs a supervisor restart (`supervise --restart`) to start the second
+  job.
 - **A daily signal on the developing bar.** A daily trigger takes `"developing": true` (with `within`
   null) to read today's bar as it stands each minute: the session's open, its high and low so far
   and the price now. It is due at any minute in the window when the signal fires on that bar. A

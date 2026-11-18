@@ -52,8 +52,11 @@ export interface ResearchTask {
   note: string | null;
   /** A queued row only: "ready", or why it waits now. */
   waits: string | null;
-  /** A queued row only: its place in the order the runner would take them now (1 first), the
-   *  orchestrator's `queue_order` (priority included). Null from an older orchestrator. */
+  /** The lane that runs it (`researchqueue.lane_of`): "vendor" for a fetch on the vendor's one
+   *  session, "local" for a script. Null from an older orchestrator. */
+  lane: "vendor" | "local" | null;
+  /** A queued row only: its place in its lane's order (1 first), the orchestrator's `queue_order`
+   *  (priority included). Null from an older orchestrator. */
   position: number | null;
   /** What the task's own progress file says (`core.progress`), written by the job and its children;
    *  null for a task that has not written one. */

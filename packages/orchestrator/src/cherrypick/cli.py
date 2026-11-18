@@ -103,7 +103,8 @@ Subcommands:
   queue-cancel         Cancel a queued task (--task-id).
   queue-priority       Reorder a queued task (--task-id, --priority N): the ready row with the
                        highest priority runs next, the oldest among equals.
-  queue-run            Run ready tasks one after another, each to its end (the research-queue job).
+  queue-run            Run ready tasks one after another, each to its end; --lane vendor|local
+                       runs one lane (the research-queue and research-queue-local jobs).
   remind-add           Add a dated reminder (orchestrator/reminders.py): --title, --file (the
                        message), --due (ET, YYYY-MM-DDTHH:MM), --done-when / --checks (JSON lists of
                        allow-listed conditions), --renotify-hours. Pushed until --done-when holds.
@@ -1966,8 +1967,13 @@ def cmd_queue_list(cfg, args) -> None:
         r["args"] = json.loads(r["args"])
         r["result"] = json.loads(r["result"]) if r.get("result") else None
         out.append(r)
-    for i, r in enumerate(rq.queue_order([r for r in out if r["status"] == "queued"]), start=1):
-        r["position"] = i  # the runner's order: ready by run_order (priority included), then waiting
+    # Each row's lane, and each queued row's place in its lane's order (ready by run_order, priority
+    # included, then waiting).
+    places = rq.positions([r for r in out if r["status"] == "queued"])
+    for r in out:
+        r["lane"] = rq.lane_of(r)
+        if r["status"] == "queued":
+            r["position"] = places[r["id"]]
     by_hand = [v for stem, v in views.items() if not (stem.startswith("q") and stem[1:].isdigit())]
     _emit({"ok": True, "session_held": held, "blackout": list(window), "tasks": out, "by_hand": by_hand})
 
@@ -1996,13 +2002,14 @@ def cmd_queue_priority(args) -> None:
         sys.exit(1)
 
 
-def cmd_queue_run(cfg) -> None:
-    """The supervisor's research-queue job: run ready tasks one after another, each to its end, until
-    none is ready. The config is read again before each later task."""
+def cmd_queue_run(cfg, lane: str | None = None) -> None:
+    """The supervisor's research-queue jobs: run ready tasks one after another, each to its end, until
+    none is ready, in one lane (`--lane vendor|local`) or, without one, across both. The config is
+    read again before each later task."""
     from cherrypick.orchestrator import researchqueue as rq
 
     loads = iter([cfg])
-    out = rq.run_ready(lambda: next(loads, None) or cfgmod.load_config())
+    out = rq.run_ready(lambda: next(loads, None) or cfgmod.load_config(), lane=lane)
     _emit(out)
     if not out.get("ok", True):
         sys.exit(1)
@@ -3291,6 +3298,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--stop-by", default=None, help="For queue-add: stop a fetch by then (ET, YYYY-MM-DDTHH:MM)"
     )
     parser.add_argument(
+        "--lane",
+        default=None,
+        choices=("vendor", "local"),
+        help="For queue-run: only the rows of this lane (vendor fetches, or local scripts)",
+    )
+    parser.add_argument(
         "--after",
         default=None,
         help="For queue-add: wait for this row (study/step) to finish done; held if it fails",
@@ -3447,7 +3460,7 @@ def main() -> None:
         "queue-list": lambda: cmd_queue_list(cfg, args),
         "queue-cancel": lambda: cmd_queue_cancel(args),
         "queue-priority": lambda: cmd_queue_priority(args),
-        "queue-run": lambda: cmd_queue_run(cfg),
+        "queue-run": lambda: cmd_queue_run(cfg, args.lane),
         "remind-add": lambda: cmd_remind_add(args),
         "remind-list": lambda: cmd_remind_list(cfg),
         "remind-done": lambda: cmd_remind_close(args, done=True),
