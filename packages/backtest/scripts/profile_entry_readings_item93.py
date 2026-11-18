@@ -57,7 +57,7 @@ FORECAST_RULE = {
     "ib_median_sessions": 20,
     "ib_end": "10:30",
     "tests": {
-        "balance": {"sign": -1, "min_effect": 0.10, "narrow_w": math.log(0.75)},
+        "balance": {"sign": -1, "min_effect": 0.10, "narrow_ratio": 0.75},
         "acceptance": {"sign": 1, "min_effect": 0.0010, "first_period": 2, "last_period": 6},
         "rejection": {"sign": 1, "min_effect": 0.10, "first_period": 0, "last_period": 5},
         "unfinished": {"sign": 1, "min_effect": 0.05, "sessions": 5, "max_distance": 0.03},
@@ -297,7 +297,7 @@ def balance_rows(days: list[dict], rule: dict) -> list[dict]:
             {
                 "date": d["date"],
                 **d["har"],
-                "signal": 1.0 if inside and d["har"]["w"] <= spec["narrow_w"] else 0.0,
+                "signal": 1.0 if inside and d["har"]["w"] <= math.log(spec["narrow_ratio"]) else 0.0,
                 "y": math.log(d["rest_range"] / d["prior_close"]),
                 "contained": 1.0 if math.floor(lo / 5) * 5 < d["close"] < math.ceil(hi / 5) * 5 else 0.0,
             }
