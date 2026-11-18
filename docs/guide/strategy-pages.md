@@ -130,6 +130,7 @@ Beside the form:
   - P&L, net at mid (the same trades filled at mid, so P&L before slippage, shown as context), trades, per trade, win rate, max drawdown and net over drawdown;
   - the cumulative P&L with its gross line and drawdown;
   - each year's gross, fees, settlement, slippage, P&L, net at mid and drawdown;
+  - how it holds up, read from the same trades and never a verdict: how much of the P&L the 5 best days carry and what the other days average; P&L per trade with fees and slippage at 1.5× and 2×; the drawdown range when the trades are reshuffled, beside the actual one; and how many quarters were profitable, counting only quarters with 10 or more sessions traded;
   - why sessions were skipped, what the run changed, and its trade log.
 
   A run over licensed data is shown only while licensed results may be.
