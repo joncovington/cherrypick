@@ -5334,16 +5334,21 @@ select.text-input {
   background: var(--accent);
 }
 
-/* The Builder's window picker, beside Explore run: the label above-left is inline here. */
+/* The Builder's window picker, beside Explore run: it takes the row's spare width and shrinks with it,
+   so the button stays beside it and a phone never runs it past the card. */
 .builder-window {
-  display: inline-flex;
+  display: flex;
+  flex: 1 1 18rem;
   align-items: center;
   gap: 0.4rem;
-  max-width: 100%;
+  min-width: 0;
 }
 .builder-window select {
+  flex: 1 1 auto;
+  width: 100%;
   min-width: 0;
-  max-width: min(32rem, 100%);
+  font-family: inherit;
+  font-size: 13px;
 }
 
 /* The full set's progress (Backtest -> data): one meter per underlying and part. Its own prefix:
