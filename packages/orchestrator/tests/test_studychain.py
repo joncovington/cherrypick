@@ -218,3 +218,19 @@ def test_last_session_fills_the_trading_day_before_today(monkeypatch):
     monday = datetime(2026, 11, 16, 9, 0, tzinfo=ZoneInfo("America/New_York"))
     monkeypatch.setattr(clock, "now_et", lambda: monday)
     assert sc.plan_rows(chain, "fullset", "s.py", Path("r"))[0]["args"]["to"] == "2026-11-13"
+
+
+def test_a_step_name_the_queue_would_refuse_is_refused_when_the_chain_is_read():
+    with pytest.raises(sc.BadChain, match="lowercase slug"):
+        sc.check(({"step": "zero-SPX", "kind": "fetch-sessions"},))
+
+
+def test_every_committed_chain_reads():
+    """Each script's CHAIN in the queue's script folders passes the check, so a bad name fails here and
+    not when someone queues it."""
+    root = Path(__file__).resolve().parents[3]
+    scripts = [p for d in rq.SCRIPT_DIRS for p in sorted((root / d).glob("*.py"))]
+    assert scripts
+    for p in scripts:
+        if "CHAIN" in p.read_text(encoding="utf-8"):
+            sc.read_chain(p)

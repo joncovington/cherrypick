@@ -88,6 +88,8 @@ def check(chain, name: str = "CHAIN") -> list[dict]:
             raise BadChain(
                 f"{name}: step {i + 1} needs step and kind, and only {', '.join(sorted(STEP_KEYS))}"
             )
+        if not isinstance(s["step"], str) or not rq.SLUG.match(s["step"]):
+            raise BadChain(f"{name}: step {s['step']!r} must be a lowercase slug, as the queue's names are")
         repeat = s.get("repeat", 1)
         if "repeat" in s:
             if s["kind"] == "script":

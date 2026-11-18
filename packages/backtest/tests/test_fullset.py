@@ -82,7 +82,9 @@ def _chain() -> list[dict]:
 def test_chain_covers_every_underlying_in_order():
     steps = [s["step"] for s in _chain()]
     for part in ("zero", "near", "mid"):
-        assert [s.split("-", 1)[1] for s in steps if s.startswith(part + "-")] == list(fullset.SYMBOLS)
+        assert [s.split("-", 1)[1] for s in steps if s.startswith(part + "-")] == [
+            sym.lower() for sym in fullset.SYMBOLS
+        ]
     assert steps[0] == "probe"
     zero = [s for s in _chain() if s["kind"] == "fetch-sessions"]
     assert {s["task_args"]["from"] for s in zero} == {fullset.START}
