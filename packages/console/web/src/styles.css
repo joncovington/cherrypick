@@ -11431,6 +11431,13 @@ svg.vol-curve text {
   gap: 0.25rem;
   min-width: 0;
 }
+/* A true-or-false key sits at the left, level with the text fields beside it. */
+.builder-flag {
+  align-self: flex-start;
+  width: 1.1rem;
+  height: 1.1rem;
+  margin: 0.55rem 0;
+}
 .builder-lbl {
   font-size: 0.68rem;
   letter-spacing: 0.08em;

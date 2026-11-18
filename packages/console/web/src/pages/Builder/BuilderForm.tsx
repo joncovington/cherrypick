@@ -121,7 +121,7 @@ function Flag({ id, label, value, onChange }: { id: string; label: string; value
       <label className="builder-lbl" htmlFor={id}>
         {label.replaceAll("_", " ")}
       </label>
-      <input id={id} type="checkbox" checked={value === true} onChange={(e) => onChange(e.currentTarget.checked ? true : undefined)} />
+      <input id={id} className="builder-flag" type="checkbox" checked={value === true} onChange={(e) => onChange(e.currentTarget.checked ? true : undefined)} />
     </div>
   );
 }
