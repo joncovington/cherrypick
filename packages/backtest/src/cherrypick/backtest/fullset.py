@@ -2,7 +2,8 @@
 request files the existing fetch verbs read. Pure: no vendor call, no file write (the script
 `packages/backtest/scripts/fetch_full_set.py` writes what this returns and queues the fetches).
 
-**The underlyings** are SPX, QQQ, XSP, SPY, IWM, GLD and TLT, in the order they are fetched. **The
+**The underlyings** are SPX, QQQ, XSP, SPY, IWM, GLD and TLT, in the order they are fetched, and any
+added on this machine (`plan_added`, into the shared `ADDED_*` stores; `fullsetadd` records them). **The
 span** starts at `START` (2020-01-01, the furthest the Value tier reaches) and runs through the day
 the plan is made, so planning again later extends it and a re-run fetches only what is new.
 
@@ -31,6 +32,7 @@ whole.
 
 from __future__ import annotations
 
+import re
 from datetime import date, timedelta
 from typing import Any
 
@@ -67,20 +69,36 @@ LISTED_AHEAD_DAYS = 1100
 OPEN = "09:30"
 
 
+#: An underlying added to the set on this machine (`fullsetadd`, never in the repo). Every addition
+#: shares three stores, each row keyed by its symbol, so adding one declares no new file: the same-day
+#: store (the `added` store tag, the recorder's schema), the near and the middle stores.
+ADDED_ZERO, ADDED_NEAR, ADDED_MID = "added-60s.db", "added-near-1m.db", "added-mid-5m.db"
+#: Strikes either side of the money for an addition's near and middle parts.
+ADDED_STRIKES = {"near_strikes": 20, "mid_strikes": 30}
+#: How an addition is spelt: a listed root, upper case.
+SYMBOL = re.compile(r"^[A-Z][A-Z.]{0,5}$")
+
+
+def spec_for(symbol: str) -> dict[str, Any]:
+    """The set's spec for an underlying: its own for the seven, else an addition's (its symbol is its
+    vendor root and its only end-of-day root)."""
+    return SPEC.get(symbol) or {"root": symbol, "eod": (symbol,), **ADDED_STRIKES}
+
+
 def zero_store(symbol: str) -> str:
-    return f"{symbol}-60s-full.db"
+    return f"{symbol}-60s-full.db" if symbol in SPEC else ADDED_ZERO
 
 
 def near_store(symbol: str) -> str:
-    return f"{symbol}-near-1m.db"
+    return f"{symbol}-near-1m.db" if symbol in SPEC else ADDED_NEAR
 
 
 def mid_store(symbol: str) -> str:
-    return f"{symbol}-mid-5m.db"
+    return f"{symbol}-mid-5m.db" if symbol in SPEC else ADDED_MID
 
 
 #: Every intraday store this set writes: `intradayfetch` accepts a request file naming one of these.
-INTRADAY_STORES = tuple(f(s) for s in SYMBOLS for f in (near_store, mid_store))
+INTRADAY_STORES = (*(f(s) for s in SYMBOLS for f in (near_store, mid_store)), ADDED_NEAR, ADDED_MID)
 
 
 def sessions(start: str, through: str) -> list[date]:
@@ -135,7 +153,7 @@ def _window(day: date) -> tuple[str, str]:
 def near_requests(symbol: str, start: str, through: str) -> dict:
     """Every session's candidate expiries 1 to `NEAR_DAYS` calendar days out, open to close at one
     minute, for `near_store(symbol)`."""
-    spec, out = SPEC[symbol], []
+    spec, out = spec_for(symbol), []
     for d in sessions(start, through):
         lo, hi = _window(d)
         for k in range(1, NEAR_DAYS + 1):
@@ -156,7 +174,7 @@ def mid_expiries(day: date) -> list[date]:
 
 def mid_requests(symbol: str, start: str, through: str) -> dict:
     """Every session's middle expiries, open to close at five minutes, for `mid_store(symbol)`."""
-    spec, out = SPEC[symbol], []
+    spec, out = spec_for(symbol), []
     for d in sessions(start, through):
         lo, hi = _window(d)
         for e in mid_expiries(d):
@@ -166,7 +184,7 @@ def mid_requests(symbol: str, start: str, through: str) -> dict:
     return {"store": mid_store(symbol), "requests": out}
 
 
-def path_requests(start: str, through: str) -> dict:
+def path_requests(start: str, through: str, symbols: tuple[str, ...] = SYMBOLS) -> dict:
     """Each candidate expiry's end-of-day path inside the span, for every end-of-day root: weeklies
     from `WEEKLY_PATH_DAYS` before, quarter-ends from `QUARTERLY_PATH_DAYS`, monthlies (and so the
     LEAPS, which are monthlies) from `MONTHLY_PATH_DAYS`. An expiry still to come runs through the
@@ -183,8 +201,8 @@ def path_requests(start: str, through: str) -> dict:
     for e in monthlies(first, horizon):
         lead[e] = max(lead.get(e, 0), MONTHLY_PATH_DAYS)
     out = []
-    for sym in SYMBOLS:
-        for root in SPEC[sym]["eod"]:
+    for sym in symbols:
+        for root in spec_for(sym)["eod"]:
             for e, days in sorted(lead.items()):
                 begin = max(first, e - timedelta(days=days))
                 end = min(e, last)
@@ -195,9 +213,9 @@ def path_requests(start: str, through: str) -> dict:
     return {"requests": out}
 
 
-def oi_plan(start: str, through: str) -> dict:
+def oi_plan(start: str, through: str, symbols: tuple[str, ...] = SYMBOLS) -> dict:
     """Open interest for every underlying's root on every session (`fetch-oi`'s plan)."""
-    roots = [SPEC[s]["root"] for s in SYMBOLS]
+    roots = [spec_for(s)["root"] for s in symbols]
     return {"sessions": {d.isoformat(): roots for d in sessions(start, through)}}
 
 
@@ -211,8 +229,9 @@ def sample(doc: dict, n: int) -> dict:
 SAMPLE_REQUESTS = 10
 
 
-def plan(start: str, through: str) -> dict[str, dict]:
-    """Every file the chain reads, by name."""
+def plan(start: str, through: str, added: dict[str, dict] | None = None) -> dict[str, dict]:
+    """Every file the chains read, by name: the seven's, and each addition's (`plan_added`) from its
+    own first session."""
     files: dict[str, dict] = {}
     for sym in SYMBOLS:
         files[f"near_{sym}.json"] = near_requests(sym, start, through)
@@ -220,4 +239,35 @@ def plan(start: str, through: str) -> dict[str, dict]:
     files["sample.json"] = sample(files["near_SPX.json"], SAMPLE_REQUESTS)
     files["paths.json"] = path_requests(start, through)
     files["oi_plan.json"] = oi_plan(start, through)
+    for sym, entry in sorted((added or {}).items()):
+        files.update(plan_added(sym, entry["from"], through))
     return files
+
+
+def added_files(symbol: str) -> tuple[str, ...]:
+    """The request files an addition's chain reads (`ADD_CHAIN` in the script)."""
+    return tuple(f"{p}_{symbol}.json" for p in ("near", "mid", "paths", "oi"))
+
+
+def plan_added(symbol: str, start: str, through: str) -> dict[str, dict]:
+    """An added underlying's request files over `start`..`through`: its near and middle expiries into
+    the shared stores, its end-of-day paths and its open interest. Refused for one of the seven (they
+    are planned by `plan`) or a symbol that cannot be a root."""
+    if symbol in SPEC:
+        raise ValueError(f"{symbol} is one of the set's own underlyings, not an addition")
+    if not SYMBOL.match(symbol):
+        raise ValueError(f"{symbol!r} is not an underlying's symbol")
+    near, mid, paths, oi = added_files(symbol)
+    return {
+        near: near_requests(symbol, start, through),
+        mid: mid_requests(symbol, start, through),
+        paths: path_requests(start, through, (symbol,)),
+        oi: oi_plan(start, through, (symbol,)),
+    }
+
+
+def plan_size(files: dict[str, dict]) -> dict[str, int]:
+    """Requests per file and the sessions the plan spans (its open-interest plan's). Counts only."""
+    out = {name: len(doc.get("requests", doc.get("sessions", {}))) for name, doc in files.items()}
+    oi = next((d for n, d in files.items() if n.startswith("oi")), {"sessions": {}})
+    return {**out, "sessions": len(oi.get("sessions", {}))}

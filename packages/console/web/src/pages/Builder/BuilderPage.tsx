@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { BuilderWizard } from "./BuilderWizard";
 import { useQueryClient } from "@tanstack/react-query";
 import type { BuilderAutomation, BuilderBlock, BuilderSchema, BuilderSuggestion, BuilderToday, BuilderWindow } from "@console/shared";
-import { builderBacktest, builderDraft, builderSave, builderToday, useAutomationsBuilder, useBuilderRuns, useBuilderSchema } from "../../lib/api";
+import { builderBacktest, builderDraft, builderSave, builderToday, fullSetAdd, fullSetPlan, useAutomationsBuilder, useBuilderRuns, useBuilderSchema, type FullSetAdded, type FullSetPlan } from "../../lib/api";
 import { BuilderForm, type Spec } from "./BuilderForm";
 import { ExploreRunsList, RunCardPanel } from "./BuilderRunCard";
 import { TodayView } from "./BuilderToday";
@@ -62,6 +62,77 @@ export function SuggestionLine({ s }: { s: BuilderSuggestion }) {
         </div>
       )}
       {(s.windows ?? []).length > 0 && <div>Our stores hold other windows for it: pick one beside Explore run.</div>}
+    </div>
+  );
+}
+
+/** For an automation on an underlying outside the full set that our data does not cover: add the
+ *  underlying to the set. The plan (the backtest planner's counts) is shown first; the addition queues
+ *  its fetches on the vendor's queue and this automation's backtest after them. The span, the cap and
+ *  the rows are the orchestrator's; the page sends the symbol and the name. */
+export function AddToFullSet({ name, symbol, s }: { name: string; symbol: string; s: BuilderSuggestion }) {
+  const qc = useQueryClient();
+  const [plan, setPlan] = useState<FullSetPlan | null>(null);
+  const [done, setDone] = useState<FullSetAdded | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  if (s.possible || s.full_set !== false) return null;
+  const sym = symbol.toUpperCase();
+  const run = async <T,>(f: () => Promise<T>, then: (v: T) => void) => {
+    setBusy(true);
+    setError(null);
+    try {
+      then(await f());
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  if (done) {
+    return (
+      <div className="builder-suggestion" data-fullset="added">
+        {sym} is added to the full set from {done.from} to {done.through}: {done.tasks.length} fetches queued on the
+        vendor's queue.{" "}
+        {done.run ? `This automation's backtest runs when they finish (task ${String(done.run.task)}).` : `Its backtest was not queued: ${done.run_error ?? "unknown"}.`}
+      </div>
+    );
+  }
+  const total = plan ? Object.entries(plan.requests).filter(([k]) => k !== "sessions").reduce((a, [, v]) => a + v, 0) : 0;
+  return (
+    <div className="builder-suggestion" data-fullset={plan ? "planned" : "offer"}>
+      {plan === null ? (
+        <>
+          {sym} is not one of the full set's underlyings.{" "}
+          <button type="button" className="btn btn-quiet" disabled={busy} onClick={() => run(() => fullSetPlan(sym), setPlan)}>
+            {busy ? "Planning…" : `Add ${sym} to the full set…`}
+          </button>
+        </>
+      ) : (
+        <>
+          Adding {sym} fetches {plan.from} to {plan.through}: {total.toLocaleString()} requests over {plan.requests["sessions"] ?? 0}{" "}
+          sessions, {plan.concurrent ?? 1} at a time on the vendor's queue, then this automation's backtest. The data and the result
+          are licensed.
+          {plan.within_cap ? (
+            <div>
+              <button type="button" className="btn" disabled={busy} onClick={() => run(() => fullSetAdd(name, sym), (v) => {
+                setDone(v);
+                void qc.invalidateQueries({ queryKey: ["automations-builder-runs", name] });
+              })}>
+                {busy ? "Adding…" : "Add and backtest"}
+              </button>{" "}
+              <button type="button" className="btn btn-quiet" disabled={busy} onClick={() => setPlan(null)}>
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <div className="muted">
+              That is more than one click adds ({plan.cap_sessions} sessions). A longer span is added by hand with the full set's script.
+            </div>
+          )}
+        </>
+      )}
+      {error && <div className="muted" role="alert">{error}</div>}
     </div>
   );
 }
@@ -343,6 +414,7 @@ export function Workspace({ a, schema, mode, onSaved }: { a: BuilderAutomation |
         </button>
       </div>
       {mode.kind === "saved" && a?.suggestion && <SuggestionLine s={a.suggestion} />}
+      {mode.kind === "saved" && a?.suggestion && <AddToFullSet name={a.name} symbol={a.symbol} s={a.suggestion} />}
       <div className="builder-layout">
         <div className="builder-form">
           {spec === null ? (

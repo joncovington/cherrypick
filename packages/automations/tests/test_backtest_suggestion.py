@@ -343,3 +343,17 @@ def test_a_store_that_stopped_early_offers_its_span_and_a_sample_store_is_not_of
     ws = enrolment.windows(fresh(**MONTHLY), inv, TODAY, src.coverage, licensed_ok=True)
     assert {w["end"] for w in ws} == {"2026-10-09"}
     assert all(w["source"] == "dolt-chains" for w in ws)
+
+
+def test_an_underlying_added_to_the_full_set_is_covered_from_the_shared_store_by_its_own_span():
+    """The shared `added` store holds every addition, keyed by symbol: its per-symbol span confirms the
+    one asked for and refuses one never added. The suggestion says which underlyings are the set's own."""
+    days = src.trading_days("2025-11-03", "2026-11-13")
+    span = {"first": "2025-11-03", "last": "2026-11-13", "sessions": days}
+    inv = {"sources": {"vendor-0dte-added-60s": {"symbols": {"ABC": span}, "store": span}}}
+    added = enrolment.suggestion(fresh(symbol="ABC"), inv, TODAY, src.coverage, licensed_ok=True)
+    chain = next(n for n in added["needs"] if n["field"] == "chain")
+    assert added["possible"] and chain["source"] == "vendor-0dte-added-60s" and added["full_set"] is False
+    other = enrolment.suggestion(fresh(symbol="XYZ"), inv, TODAY, src.coverage, licensed_ok=True)
+    assert not other["possible"] and other["full_set"] is False
+    assert enrolment.suggestion(fresh(symbol="SPY"), inv, TODAY, src.coverage)["full_set"] is True

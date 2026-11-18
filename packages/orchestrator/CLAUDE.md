@@ -344,7 +344,15 @@ filename; override with `paper.sla_state_prefix`.
   `automation_backtest.py run` into the result `builder-<name>-<stamp>.json`; one live row per
   automation. The explore-runs list reads those rows and `backtest read automation-runs`;
   `automation_run` reads one run's card (`backtest read automation-run`, the run named exactly
-  `builder-<name>-<10 digits>`). Its `features` op
+  `builder-<name>-<10 digits>`). A run may also wait `after` an addition to the full set
+  (`fullset/add-...` only); it then queues without `possible` and without a source, the driver
+  choosing by coverage once the data is in. `fullset_plan` and `fullset_add` (`fullsetadd.py`) add an
+  underlying to the full set: the backtest script's `add SYM --dry-run` sizes it, `add` refuses
+  unless `backtestgate.backtest_feature` is available and over `CAP_SESSIONS` (300) sessions, then
+  the script records it and writes its request files, and its `ADD_CHAIN` (read with its
+  placeholders filled, `studychain.read_chain(script, name, subs)`) is queued whole in study
+  `fullset` at `PRIORITY` 11, with the named automation's run after its last row. The queue's
+  `fetch-sessions` takes the `added` store tag with an added underlying's symbol only. Its `features` op
   (`capabilities.py`) is the console's only answer to "what is on": `capabilities`, `modules`
   (switch plus capabilities), `services`, `features` (`backtest` and `backtest_results` fail closed:
   new vendor work, and showing the vendor's results until the purge date) and `live`, each module's live master

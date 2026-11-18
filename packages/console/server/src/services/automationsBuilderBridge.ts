@@ -79,6 +79,8 @@ export function shapeBuilder(json: Record<string, unknown> | null): BuilderAutom
             }),
             possible: sug["possible"] === true,
             licensed: sug["licensed"] !== false,
+            // Fail closed: an addition is offered only for an underlying plainly outside the set.
+            full_set: sug["full_set"] !== false,
           }
         : null,
     };

@@ -450,6 +450,16 @@ never the vendor's listing, so planning holds no vendor session; an expiry never
 `status` reads overall, per-part and per-underlying progress from the stores' own ledgers
 (`fullsetprogress.py`, also `read fullset` for the console's Data tab).
 
+**Additions to the full set** (`fullsetadd.py`, the script's `add SYM [--from] [--dry-run]` and
+`ADD_CHAIN`): another underlying, added on this machine and recorded in the set's folder
+(`additions.json`, never in the repo), planned like the seven (`fullset.plan_added`, its symbol its
+root) from its own first session. Every addition shares three declared stores, its rows keyed by
+symbol, so adding one declares no file: `added-60s.db` (the `added` store tag, `shared`; the fetch
+takes an added symbol as its dataset, `fetch._dataset`), `added-near-1m.db` and `added-mid-5m.db`.
+The registry reads which symbols each holds from its ledger's per-symbol spans (`stores._shape`, the
+same-day `vendor_sessions` by `trade_date`). `plan` writes the additions' files too. The orchestrator's
+`fullset_add` queues an addition from the Builder (up to 300 sessions a click).
+
 **The add-on weeklies fetch** (`fetch-addon-weeklies`, `addonfetch.py`; item 35): SPXW weekly put minute
 greeks over a bwb position's life, plus a 10:00 strip of ATM calls, from a `{requests: [{expiration, first,
 last}]}` file (an expiry and a span of sessions, so a Thursday entry into a Friday is a one-session

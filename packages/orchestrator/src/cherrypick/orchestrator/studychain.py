@@ -64,18 +64,19 @@ class BadChain(ValueError):
     """A CHAIN that is not a literal tuple of well-formed steps."""
 
 
-def read_chain(script: Path) -> list[dict]:
-    """The script's CHAIN, checked; empty when it declares none."""
+def read_chain(script: Path, name: str = "CHAIN", subs: dict[str, str] | None = None) -> list[dict]:
+    """The script's CHAIN (or the literal `name`, a template such as the full set's `ADD_CHAIN`, with
+    `subs` filled in before it is checked), checked; empty when it declares none."""
     tree = ast.parse(Path(script).read_text(encoding="utf-8"))
     for node in tree.body:
         if isinstance(node, ast.Assign) and any(
-            isinstance(t, ast.Name) and t.id == "CHAIN" for t in node.targets
+            isinstance(t, ast.Name) and t.id == name for t in node.targets
         ):
             try:
                 chain = ast.literal_eval(node.value)
             except ValueError as exc:
-                raise BadChain(f"{Path(script).name}: CHAIN must be a literal") from exc
-            return check(chain, Path(script).name)
+                raise BadChain(f"{Path(script).name}: {name} must be a literal") from exc
+            return check(_fill(chain, subs) if subs else chain, Path(script).name)
     return []
 
 
@@ -128,7 +129,7 @@ def _fill(value: Any, subs: dict[str, str]) -> Any:
         for k, v in subs.items():
             value = value.replace("{" + k + "}", v)
         return value
-    if isinstance(value, list):
+    if isinstance(value, (list, tuple)):
         return [_fill(v, subs) for v in value]
     if isinstance(value, dict):
         return {k: _fill(v, subs) for k, v in value.items()}

@@ -46,6 +46,8 @@ DRIVER = "packages/backtest/scripts/automation_backtest.py"
 #: slug (no double dash), which `researchqueue.add` checks.
 NAME = re.compile(r"^[a-z0-9][a-z0-9-]{1,47}$")
 LIVE = ("queued", "running")
+#: The only rows a Builder run may wait on: an addition to the full set (`fullsetadd`).
+AFTER_PREFIX = "fullset/add-"
 TIMEOUT_S = 60
 
 
@@ -126,12 +128,15 @@ def queue(
     if not sug:
         return _err("every block of this automation is backtested already; nothing to suggest", "invalid")
     key = req.get("window")
+    after = req.get("after")
+    if after is not None and (not isinstance(after, str) or not after.startswith(AFTER_PREFIX)):
+        return _err(f"a run waits only on an addition to the full set ({AFTER_PREFIX}...)", "invalid")
     chosen = None
     if key is not None:
         chosen = next((w for w in sug.get("windows") or [] if w.get("key") == key), None)
         if chosen is None:
             return _err(f"{key!r} is not a window our data offers for {name}", "invalid")
-    elif not sug.get("possible"):
+    elif not sug.get("possible") and after is None:
         short = [n.get("field") for n in sug.get("needs") or [] if not n.get("covered")]
         return _err(
             f"our data does not cover a backtest of it ({', '.join(map(str, short)) or 'a need'})", "invalid"
@@ -155,11 +160,14 @@ def queue(
         "--to",
         end,
     ]
-    source = chosen["source"] if chosen else _chain_source(sug.get("needs") or [])
+    # A run waiting on an addition takes no source: the data is not in yet, so the driver chooses by
+    # coverage when it starts.
+    source = None if after else chosen["source"] if chosen else _chain_source(sug.get("needs") or [])
     if source:
         args += ["--source", source]
     try:
-        row = add(STUDY, "script", {"path": DRIVER, "args": args}, step=run.removeprefix(f"{STUDY}-"))
+        row = add(STUDY, "script", {"path": DRIVER, "args": args}, step=run.removeprefix(f"{STUDY}-"),
+                  **({"after": after} if after else {}))  # fmt: skip
     except researchqueue.Refused as exc:
         return _err(str(exc), "invalid")
     return {
@@ -170,6 +178,7 @@ def queue(
         "window": [start, end],
         "source": source,
         "key": key,
+        **({"after": after} if after else {}),
     }
 
 

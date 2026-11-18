@@ -1388,6 +1388,36 @@ export function builderBacktest(name: string, window?: string): Promise<BuilderB
   return builderPost<BuilderBacktestResult>("/api/automations/builder/backtest", window === undefined ? { name } : { name, window });
 }
 
+/** What adding an underlying to the full set would fetch: the backtest planner's counts. */
+export interface FullSetPlan {
+  symbol: string;
+  from: string | null;
+  through: string | null;
+  requests: Record<string, number>;
+  concurrent: number | null;
+  cap_sessions: number | null;
+  within_cap: boolean;
+}
+
+export interface FullSetAdded {
+  ok: true;
+  symbol: string;
+  from: string | null;
+  through: string | null;
+  tasks: number[];
+  run: { task: number | null; run: string | null } | null;
+  run_error: string | null;
+}
+
+export function fullSetPlan(symbol: string): Promise<FullSetPlan> {
+  return getJson<FullSetPlan>(`/api/automations/builder/fullset-plan?symbol=${encodeURIComponent(symbol)}`);
+}
+
+/** Add the underlying to the full set and queue its fetches, then `name`'s backtest after them. */
+export function fullSetAdd(name: string, symbol: string): Promise<FullSetAdded> {
+  return builderPost<FullSetAdded>("/api/automations/builder/fullset-add", { name, symbol });
+}
+
 /** One automation's run card: its queued backtests and their results. Polled while one is live. */
 export function useBuilderRuns(name: string, enabled: boolean) {
   return useQuery<BuilderRuns>({

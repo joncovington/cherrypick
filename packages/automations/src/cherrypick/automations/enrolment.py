@@ -311,6 +311,8 @@ def suggestion(
         "needs": rows,
         "possible": possible,
         "licensed": any(r["licensed"] for r in rows),
+        # One of the full set's own seven; any other underlying can be added to it (the Builder offers to).
+        "full_set": arm["symbol"].upper() in src.FULL_SET,
         "windows": windows(arm, inventory, today, coverage, licensed_ok=licensed_ok),
     }
 

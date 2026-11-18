@@ -23,7 +23,7 @@ import json
 import sys
 from typing import Any
 
-from . import automationedit, automationrun, configedit, liveops
+from . import automationedit, automationrun, configedit, fullsetadd, liveops
 from . import config as cfgmod
 
 
@@ -116,6 +116,13 @@ def handle(req: dict[str, Any]) -> dict[str, Any]:
         # The Builder's save: that check, then the one entry it returned (always off) written
         # through the same raw-save path as every config save.
         return automationedit.save(cfg, req)
+    if op == "fullset_plan":
+        # What adding an underlying to the full set would fetch, from the backtest's planner; writes nothing.
+        return fullsetadd.plan(cfg, req)
+    if op == "fullset_add":
+        # The Builder's addition to the full set: its fetches queued (capped, only while new work may
+        # use the vendor), and with `run` that automation's backtest after them. No config write.
+        return fullsetadd.add(cfg, req)
     if op == "automation_backtest":
         # The Builder's backtest: one explore run queued on the research queue (a `script` row), never
         # a config write; refused unless the automation's own suggestion says our data covers it.
