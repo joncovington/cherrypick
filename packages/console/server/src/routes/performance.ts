@@ -3,7 +3,7 @@ import type { ConsoleConfig } from "../config.js";
 import { MODULE_SCHEMA, readModulePerformance, type PerformanceModuleId } from "../readers/performance.js";
 import { readArmsRisk, readModuleAnalysis } from "../readers/analysis.js";
 import { readPnlCalendar, readPnlExcursion, readPnlTrace, readPnlTrades } from "../readers/pnlCalendar.js";
-import { readPortfolio } from "../readers/portfolio.js";
+import { readPortfolio, readPortfolioSources } from "../readers/portfolio.js";
 
 function isPerformanceModule(v: string): v is PerformanceModuleId {
   return Object.prototype.hasOwnProperty.call(MODULE_SCHEMA, v);
@@ -96,6 +96,10 @@ export function registerPerformanceRoutes(app: FastifyInstance, config: ConsoleC
       });
     },
   );
+
+  // The backtest results the portfolio tab can hold beside paper arms; a licensed one only while the
+  // results gate is open (readers/portfolio.ts).
+  app.get("/api/portfolio/backtests", async () => readPortfolioSources());
 
   // Every arm of every module, for the Compare page's risk tab: picked from each module's analysis.
   app.get<{ Querystring: { mode?: string } }>("/api/analysis", async (req) => {

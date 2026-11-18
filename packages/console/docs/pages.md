@@ -569,10 +569,17 @@ than as a second page that would repeat Compare's arm list.
 
 **Compare's portfolio tab** (`/compare/portfolio`, `pages/Compare/PortfolioTab.tsx` over
 `GET /api/portfolio` → `readers/portfolio.ts` → `python -m cherrypick.core.portfolio read`) — one
-chosen arm per module held together, a bridge.
-- **Resolving arms:** each arm resolves to its module's ledger, schema and era as the calendar's
-  do, so its nets are the calendar's cells. An arm the console cannot resolve is named beside
-  core's own failures.
+chosen arm per module held together, plus any backtest arms, a bridge.
+- **Resolving arms:** each paper or live arm resolves to its module's ledger, schema and era as the
+  calendar's do, so its nets are the calendar's cells. An arm the console cannot resolve is named
+  beside core's own failures.
+- **Backtest arms:** `GET /api/portfolio/backtests` lists what `backtest read portfolio-sources`
+  finds: each Builder automation's runs (the picker offers the newest per automation) and each
+  study result whose arms carry engine trades. A backtest arm's key is `bt:<source id>#<arm>`; the
+  server resolves the id against that listing, so no path the listing did not name is read. A
+  licensed source is listed and read only while the results gate (`backtest_results`) is open, and
+  the reading then says it holds one. A backtest arm counts from its run's first session, and with
+  one chosen the window starts at the earliest chosen run. Arms are labelled `<arm> (backtest)`.
 - **The picker:** its default (`control`, else a module's first non-advised arm) is a starting point,
   not a judgement. pmcc's `control` is retired, for one.
 - **Labelling:** every figure shows its periods. Thin rows are dimmed and carry no tone, and

@@ -5,12 +5,45 @@
 
 import type { TradingMode } from "./status.js";
 
+/** A backtest arm's key: `bt:<source id>#<arm>`, the source id being its path under the backtest data folder. */
+export const BACKTEST_ARM_PREFIX = "bt:";
+
+/** `<arm> (backtest)` for a backtest arm's key, the key itself for a paper or live arm. */
+export function portfolioArmLabel(key: string): string {
+  if (!key.startsWith(BACKTEST_ARM_PREFIX)) return key;
+  const cut = key.lastIndexOf("#");
+  return cut > 0 ? `${key.slice(cut + 1)} (backtest)` : key;
+}
+
+/** One backtest result Compare's portfolio tab can hold (`read portfolio-sources`), its file path withheld. */
+export interface PortfolioSource {
+  /** Its path under the backtest data folder, without `.json`. */
+  id: string;
+  kind: "builder" | "study";
+  label: string;
+  arms: string[];
+  /** The sessions the run covered, [first, last]. */
+  window: [string, string] | null;
+  /** Derived from licensed vendor data. */
+  licensed: boolean;
+  generated_at: string | null;
+}
+
+export interface PortfolioSources {
+  ok: boolean;
+  error?: string | null;
+  sources: PortfolioSource[];
+  unreadable: string[];
+}
+
 export interface PortfolioArm {
-  /** `<module>:<group tag>`. */
+  /** `<module>:<group tag>`, or `bt:<source id>#<arm>` for a backtest arm. */
   key: string;
   periods_traded: number;
-  /** Its first close: the arm did not exist before it and contributes nothing. */
+  /** Its first close. */
   first: string | null;
+  /** Where its span starts: its first close, or a backtest's first session. Before it the arm contributes nothing. */
+  span_from?: string | null;
   periods_in_span: number;
   net: number;
   max_drawdown: number;
@@ -56,5 +89,9 @@ export interface PortfolioReading {
   worst_periods: Array<{ period: string; net: number; arms_lost: number; arms_traded: number; by_arm: Record<string, number> }>;
   contribution: Array<{ key: string; net: number; share: number | null; in_worst_drawdown: number | null }>;
   combined_net: number;
+  /** Where each arm was read from: a paper/live ledger or a backtest result. */
+  sources?: Record<string, { kind: "ledger" | "backtest"; licensed: boolean; window: [string, string] | null }>;
+  /** Any arm read was derived from licensed vendor data. */
+  licensed?: boolean;
   failures: Array<{ key: string | null; error: string }>;
 }

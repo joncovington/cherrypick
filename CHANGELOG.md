@@ -25,6 +25,13 @@ beyond the latest release.
 - **How a Builder run holds up.** The run card gains the reads a study gets, from the same trades
   and never a verdict: what the 5 best days carry, P&L per trade with costs at 1.5x and 2x, the
   drawdown range with the trades reshuffled, and how many quarters were profitable.
+- **Backtests on Compare's portfolio tab.** Beside one paper arm per module, add any number of
+  backtest arms: each Builder automation's newest run and the arms of a study result (item 75's eight,
+  for one). Correlation, effective arms, the drawdown saving and contributions read them as they read
+  paper, each backtest arm counted from its run's first session and labelled backtest. A licensed
+  result is offered only while the results gate is open, and the reading says it holds one.
+  `core.portfolio`'s manifest takes a `backtest` entry (a result file and an arm), and
+  `backtest read portfolio-sources` lists what can be chosen.
 - **Add an underlying to the full set from the Builder.** Where our data does not cover an
   automation on an underlying outside the full set's seven, the Builder offers to add it: the plan
   first (requests and sessions, a year back by default), then one click queues its fetches on the
