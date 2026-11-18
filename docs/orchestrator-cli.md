@@ -117,7 +117,7 @@ without a running supervisor.
 
 ## The research queue (`orchestrator/researchqueue.py`, 2026-10-24)
 
-Long research tasks are rows that the supervisor runs one at a time in each of two lanes (`research-queue` for fetches, `research-queue-local` for scripts), so a
+Long research tasks are rows that the supervisor runs one at a time in each of two lanes (`research-queue-vendor` for fetches, `research-queue-local` for scripts), so a
 many-hour fetch survives the session that queued it. A row is named `study/step` (lowercase slugs;
 the study is its category, one live row per name) and runs only an allow-listed kind. A ThetaData
 task waits for a free vendor session and keeps clear of the nightly `backtest-fetch` window, stopping
@@ -130,7 +130,7 @@ before it and resuming after. A finished row points to what it produced.
 | `queue-chain` | Queue a study script's `CHAIN` whole: every step in order, each `--after` the one before, read from the script without importing it (`orchestrator/studychain.py`). A `script` step runs the script with its `args`; any other kind takes its `task_args`. `{results}` is the study's result folder under the backtest data directory `{home}` the suite's home, and `{last_session}` the last trading day before the day it is queued (ET). A fetch whose input file is an earlier step's `output` gets an empty placeholder that step overwrites. Every step is checked first, and a step refused while adding cancels the rows before it, so a chain is queued whole or not at all. A fetch step with `"repeat": N` becomes N passes (`step`, `step-2`, ...), each after the last, so a later pass retries what an earlier one could not get. The study is the script's `itemNN` unless `--study` names it. | `--script` (repo-relative, required), `--study`, `--after <study/step>` (for the first step), `--dry-run` (list the rows and placeholders, queue nothing) |
 | `queue-cancel` | Cancel a queued row; a running one is left to its process. | `--task-id` |
 | `queue-priority` | Reorder a queued row. A ready study row whose inputs are in (a `script` or `validate` row whose `--after` prerequisite is done) runs before any other ready row, whatever its priority; within each group the highest priority runs next, the oldest among equals. It never stops the running row and never releases a row from its `--after`, `--not-before`, the vendor session or the blackout, so raise a whole chain, not just its last row. | `--task-id`, `--priority N` |
-| `queue-run` | Recover rows left running by a dead process, then run ready rows one after another, each to its end, until none is ready: with `--lane vendor` the `research-queue` job, with `--lane local` the `research-queue-local` job, every 60 s (`research_queue.*`); without a lane, both lanes as one. | `--lane` |
+| `queue-run` | Recover rows left running by a dead process, then run ready rows one after another, each to its end, until none is ready: with `--lane vendor` the `research-queue-vendor` job, with `--lane local` the `research-queue-local` job, every 60 s (`research_queue.*`); without a lane, both lanes as one. | `--lane` |
 
 **`--after`** makes a row wait for the newest row of another name to finish `done`. A row whose
 prerequisite failed, stopped or was cancelled is **held**, never run on what that row left behind, and
@@ -155,7 +155,7 @@ line the task wrote (a traceback's error line, or the refusal).
 
 **`queue-run` runs only the code it started on.** Before each row it compares the source of the
 modules it loaded with what is on disk; once a merge has changed one, it stops and the next interval's
-fresh process runs the rest of the chain. No restart of `research-queue` is needed after a queue change.
+fresh process runs the rest of the chain. No restart of a queue job is needed after a queue change.
 
 ## Reminders (`orchestrator/reminders.py`, 2026-11-01)
 

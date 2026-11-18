@@ -971,7 +971,8 @@ def fundamentals_settings(cfg: dict[str, Any]) -> dict[str, Any]:
 
 
 def research_queue_settings(cfg: dict[str, Any]) -> dict[str, Any]:
-    """The research queue (`research-queue`, orchestrator/researchqueue.py). On by default: with no
+    """The research queue (its two jobs, `research-queue-vendor` and `research-queue-local`;
+    orchestrator/researchqueue.py). On by default: with no
     rows it does nothing, and every row is an allow-listed kind. `interval_seconds` is how often the
     supervisor looks for a ready row. The ThetaData blackout follows `backtest.fetch_at`: from
     `blackout_before_minutes` before it to `blackout_after_minutes` after, on trading days."""
