@@ -9148,6 +9148,131 @@ threshold is 30 (33 design cycles, 44 holdout) and the recipe's own thresholds a
   - **All fail or no verdict:** neither filter rescues monthly index short premium after costs and
     drift; single names (Dolt chain IV, from 2019) are not pursued on this question.
 
+### 93. Market Profile entry readings, stage A: four forecasts on SPX prices
+
+Declared 2026-11-18, before any of it is computed. This is stage A of
+[market-profile-entry-plan.md](market-profile-entry-plan.md): the plan's candidates E1 to E4 asked as
+forecasts on SPX's own prices. It is not a trade. A test that passes here gets its trade priced and
+judged on the three bars in a later item (stage B); a test that fails ends that candidate. Same store,
+history and profile as items 80 and 81.
+
+- **Question, four declared tests:**
+  - `balance` (E1): on a day that opened inside the prior value area, with a narrow first hour and price
+    still inside it at 10:30, is the rest of the day narrower than the first hour's width (item 81) and
+    the HAR terms already say? Declared sign negative.
+  - `acceptance` (E2): after two consecutive 30-minute periods trade wholly beyond the prior value
+    area, does price keep going that way to the close, more than on days without that reading from the
+    same time? Declared sign positive.
+  - `rejection` (E3, the "80% rule"): after an open outside the prior value area and two consecutive
+    periods wholly back inside it, does price reach the far edge before the close more often than days
+    without that reading move as far the same way from the same time? Declared sign positive.
+  - `unfinished` (E4): are the prior session's poor highs and lows and its single prints touched within
+    five sessions more often than levels at the same distance on other days? Declared sign positive.
+- **This is a forecast, not a trade:** the three bars do not apply, and the rule is `FORECAST_RULE` in
+  the script. Option prices are not read; that is stage B's job.
+- **Data:** SPX one-minute prices in the licensed store (`SPX-60s.db`, `gex_spot_history`), every full
+  regular session (at least 380 of the 389 stamps) from 2022-05-16 through 2026-11-13, read once and
+  pinned by its fingerprint. Nothing is fetched. No volume (an index has none, and no volume history is
+  held: see the plan). The item 33 FOMC calendar is read for a reported cut.
+- **The profile:** `cherrypick.core.marketprofile.build_profile` over each session's stamps made into
+  one-minute bars (item 80's construction): 2.5-point rows, 30-minute periods from 09:30 (A = 09:30),
+  the CBOT two-row 70% value area. The prior value area is the band from VAL to the top of VAH's row.
+  "Prior" is the previous full session, at most four calendar days earlier; otherwise the day is not
+  read.
+- **A period trades wholly beyond the band** when every stamp in it is at or above the band's top
+  (above), or below VAL (below). **Wholly inside** means every stamp is at or above VAL and below the top.
+- **`balance`:**
+  - **Days:** those with item 81's HAR terms and `w` (22 sessions of history, 20 first hours), and the
+    first stamp from 10:30 inside the first hour's low and high.
+  - **The signal:** 1 when the open was inside the prior band and `w` is at most ln 0.75 (a first hour
+    at most three quarters of its 20-session median), else 0.
+  - **The model:** least squares of item 81's outcome (the log of the range from 10:30 to the close ÷
+    the prior close) on a constant, the three HAR terms, the gap, `w` and the signal. The test reads the
+    signal's coefficient.
+- **`acceptance`:**
+  - **The event:** the day's first pair of consecutive periods, both wholly above the prior band or
+    both wholly below it, the earlier no sooner than C (10:30) and the later ending by 13:00 (G).
+  - **The outcome:** the log return from the later period's last stamp to the close, signed by the side
+    (up for above).
+  - **The baseline:** the mean of the same signed return from the same period end over the days of the
+    same part (design or holdout) with no event.
+- **`rejection`:**
+  - **The event:** the open outside the prior band, then the day's first pair of consecutive periods
+    both wholly inside it, from A, the later ending by 12:30 (F).
+  - **The outcome:** 1 when a stamp after the later period's last one reaches the far edge (VAL after an
+    open above, the top after an open below) by the close, else 0.
+  - **The baseline:** the share of the same part's days with no event that moved at least the same log
+    distance the same way from the same period end by the close.
+- **`unfinished`:**
+  - **The levels:** the prior session's high when it is poor and its low when it is poor (two or more
+    TPOs at the extreme row), and the middle of each run of single-print rows. Only levels within 3% of
+    the prior close, and not at it, are read.
+  - **The outcome:** 1 when the five sessions from the day (the day and the next four, all linked) trade
+    at or through the level, else 0.
+  - **The baseline:** the share of the same part's other five-session windows whose high (for a level
+    above the prior close) or low (below) reached the same log distance from their own prior close.
+  - **One row per day:** the mean over that day's levels of outcome less baseline.
+- **Windows:** one run, cut at **2025-07-01**. Each event belongs to the part holding its day. Every
+  baseline is drawn from its own part, so the design reads nothing dated in the holdout, except that
+  an unfinished window opening in the last four design sessions runs into it. The holdout is read
+  only after a design pass.
+- **The rule (`FORECAST_RULE`), each test on its own:**
+  - **Design:**
+    - **The effect, in the declared direction, at least:**
+      - `balance`: a coefficient of 0.10, so signal days run about 10% narrower than the model says.
+      - `acceptance`: a mean of 0.0010, ten basis points of the index.
+      - `rejection`: a mean of 0.10, ten points of probability.
+      - `unfinished`: a mean of 0.05.
+    - **A one-sided t of 2.5 or more** in the declared direction. The standard error comes from a
+      stationary block bootstrap: of the design days for `balance`, of the design events in date order
+      for the others (mean block 10, 10,000 draws, seed 93). A t of 2.5 keeps Holm across the four
+      tests (one-sided 0.05) from binding.
+    - **The declared sign in each design half** (split 2023-12-01).
+    - **No verdict below these counts:** fewer than 40 design events (signal days for `balance`, or
+      days with levels for `unfinished`), or fewer than 200 design days for `balance`.
+  - **Holdout:** the effect measured on the holdout alone has the declared sign. A pass on fewer than
+    20 holdout events is provisional.
+- **Minimum detectable effect:** set by how many events each reading has, which is unknown until the run
+  counts them. The run reports each measured standard error, so a fail reads as "smaller than about
+  2.5 standard errors" rather than "none". As a guide, assume 100 design events:
+  - `acceptance`: a return spread near 0.6% over the afternoon detects about 0.0015.
+  - `rejection`: a binary spread of 0.5 detects about 0.125.
+
+  Both are near their floors, so a thin reading can fail for want of events.
+- **Reported, never judged:**
+  - for `balance`, the share of signal days and of other days whose close falls between the first
+    5-point strikes outside the first hour (the condor stage B would sell);
+  - for `acceptance`, the share of events closing on their side;
+  - for `rejection`, the raw touch rate;
+  - for `unfinished`, the effect for each kind of level separately;
+  - for the first three, the design effect without FOMC decision days.
+- **Rival explanations, each with its check:**
+  - *It is item 81 again (`balance`):* `w` is in the model, so the signal must add beyond it.
+  - *It is volatility clustering or the gap (`balance`):* the HAR terms and the gap are controls.
+  - *It is the day's drift or the clock (`acceptance`):* the baseline is the same side's return from the
+    same period end on non-event days.
+  - *Any price that has moved goes further (`rejection`, `unfinished`):* the baseline is the same
+    distance, the same way, from the same time or over the same span.
+  - *It is event days:* reported without FOMC days.
+  - *It is one regime:* both design halves must agree.
+  - *Many tries:* four tests at t 2.5, one parameter set each, no grid.
+- **Declared limits:**
+  - one symbol, so no name split;
+  - no costs, because no trade is priced;
+  - no volume or order flow;
+  - the profile is built from one-minute stamps, so a move between stamps is a straight line;
+  - sessions the store holds short are dropped and counted.
+- **Data and results:** `packages/backtest/scripts/profile_entry_readings_item93.py study`, run as
+  `item93/study`. Results stay under `~/.cherrypick/data/backtest/results/research/item93/`, and this
+  plan records the verdict without figures.
+- **Decides:**
+  - **A test passes:** its candidate goes to stage B as a new item. That item prices the plan's
+    structure on SPXW 0DTE quotes through the automation driver, with the suite's slippage model, and
+    judges it on the three bars against the same trade at the same time on every day.
+  - **`balance` fails:** the profile's balance reading adds nothing beyond item 81's width. A condor on
+    narrow first hours alone stays a possible separate item, declared on its own.
+  - **A test fails or has no verdict:** that candidate is closed. The profile stays a chart.
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:
