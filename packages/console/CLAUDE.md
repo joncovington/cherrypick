@@ -149,6 +149,14 @@ alone):
     changed; one run's card (`/api/automations/builder/run`, configcli `automation_run`) is read
     whole by the backtest package. A licensed result is shown only while `backtestResultsOn`
     (fail closed: one not plainly unlicensed is withheld and counted, and its card refused 403).
+  - **The Builder's idea search queues, declares and tests; it writes no config**
+    (`/api/automations/builder/ideas`, configcli `automation_ideas` and `automation_idea_searches`;
+    `/idea-search`, `/idea-declare`, `/idea-holdout`). Find ideas sends the name alone; the run and the
+    split are the backtest package's. Declare and the held-out test send the name, the search's id
+    (`IDEA_SEARCH`) and one idea's id (`IDEA_ID`), checked by shape. Both read the search first, so a
+    licensed search withheld by `backtestResultsOn` is never declared from or spent (403, fail
+    closed). Declare drafts a register row into the search's result; the row is added to the
+    register by hand.
   - **Adding an underlying to the full set queues fetches; it writes no config**
     (`/api/automations/builder/fullset-plan`, configcli `fullset_plan`, a dry run, counts only; and
     `/api/automations/builder/fullset-add`, configcli `fullset_add`, behind the CSRF token). Offered

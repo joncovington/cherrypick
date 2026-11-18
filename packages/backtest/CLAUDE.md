@@ -401,6 +401,28 @@ quarters, a quarter counting only with 10 or more sessions traded. `read portfol
 every Builder run and every `research/<item>/study*.json` whose arms carry engine trades, for
 Compare's portfolio tab (any file under `results/` is listed as licensed).
 
+**The idea search** (`ideasearch.py`, pure; `ideafiles.py`; `scripts/idea_search.py`) reads one Builder
+run and hands back entry filters as hypotheses, never a change. `ideas plan` names the newest run with
+120 or more entry sessions and fixes the split two thirds of the way through its span; the
+orchestrator puts both in the queued command. The search reads the P&L of trades entered before the
+split only (the later sessions are counted by name, for each idea's planned test size). The menu is
+fixed in code (`DIMS`, `EVENT_LABELS`): each bin or tail of the prior close's VIX, RSI(14), 200-day
+trend and move, VIX over 20-day realised volatility, the opening gap, the weekday and each event
+label, read from our own daily bars, VIX closes and the event calendar; pairs are two single bins
+of two dimensions. A candidate skips 10 or more design sessions and at most half. It survives only
+if the skipped sessions' bootstrap interval is below zero, it beats the best random filter of the
+whole menu (`core.stats.menu_placebo`, `p_menu` at most 0.05), no ordered condition is a lone peak,
+it loses in both design halves and 3 of 4 folds, each part adds on its own (a pair's second
+condition; a tail's widest bin), and the kept trades pay at 1.5x fees and slippage. Holm and BH
+over every try are reported beside it. `held_out.testable` is `planned_mde` over the held-out
+count against the uplift left after the menu's luck (`uplift_shrunk`). The result,
+`ideas-<automation>-<stamp>.json`, sits beside its run (licensed when the run was) with every
+session's features. `ideas declare` drafts a surviving testable idea's register row into it (no
+figures; the id, study and mechanism are the declarer's); `ideas holdout` reads a declared idea's
+later sessions once, by the rule in its row, and logs each use in `held_out_uses`. A licensed run is
+searched or tested only while the licence allows new work. `read idea-searches` and `read
+idea-search` serve the Builder.
+
 **The advisor's specs** (`run-advised`, `advised.py`): the advisor queues `backtest_spec` replies it
 admitted against flies' own advice bounds (off until `advisor.backtest_proposals`); this reads the
 queue by subprocess, turns each into a config-defined arm `advised:<name>-<id>` (the base arm's params

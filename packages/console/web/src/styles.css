@@ -11479,6 +11479,74 @@ svg.vol-curve text {
 .builder-quarter.thin {
   opacity: 0.4;
 }
+
+/* The idea search: its table of hypotheses, a survivor's row marked, a held-out verdict. */
+.builder-ideas-lead {
+  font-size: 0.85rem;
+  margin: 0.4rem 0;
+}
+.builder-ideas-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.builder-idea {
+  padding: 0.4rem 0 0.4rem 0.5rem;
+  border-bottom: 1px solid var(--surface-hover);
+  border-left: 3px solid transparent;
+  font-size: 0.8rem;
+}
+.builder-idea.survives {
+  border-left-color: var(--accent);
+}
+.builder-idea-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.25rem 0.75rem;
+}
+.builder-idea-name {
+  font-weight: 600;
+}
+.builder-idea-head > .muted {
+  font-size: 0.75rem;
+}
+.builder-idea-figs {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  margin-top: 0.2rem;
+}
+.builder-idea-figs .num {
+  font-family: var(--num-face);
+}
+.builder-idea-verdict {
+  font-size: 0.75rem;
+  padding: 1px 6px;
+  border-radius: 4px;
+  color: var(--text);
+  background: var(--surface-hover);
+}
+.builder-idea-verdict.passed {
+  color: var(--surface);
+  background: var(--verdict-pass);
+}
+.builder-idea-verdict.failed {
+  color: var(--surface);
+  background: var(--verdict-fail);
+}
+.builder-idea-declaration pre {
+  font-size: 0.75rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 20rem;
+  overflow: auto;
+}
+.builder-idea-brief {
+  font-size: 0.85rem;
+  margin: 0.2rem 0;
+}
 .builder-run-changes {
   margin: 0;
   padding-left: 1.25rem;

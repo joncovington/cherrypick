@@ -151,6 +151,49 @@ def test_day_placebo_has_nothing_to_say_when_a_split_keeps_no_day_or_every_day()
     assert stats.day_placebo(values, ["a", "b"]) is None
 
 
+def _noise(n=200, seed=7):
+    rng = random.Random(seed)
+    return {f"s{i:03d}": rng.gauss(0.0, 1.0) for i in range(n)}
+
+
+def test_menu_placebo_finds_a_filter_that_skips_the_losing_days():
+    values = _noise()
+    bad = sorted(values)[:20]
+    for s in bad:
+        values[s] -= 3.0
+    rng = random.Random(3)
+    menu = {f"r{j}": rng.sample(sorted(values), 20) for j in range(30)}
+    menu["bad"] = bad
+    out = stats.menu_placebo(values, menu, draws=500)
+    assert out["tried"] == 31
+    assert out["candidates"]["bad"]["p"] < 0.01
+    assert out["candidates"]["bad"]["p_menu"] < 0.01
+
+
+def test_menu_placebo_reads_the_best_of_many_noise_filters_as_chance():
+    # The guard the idea search rests on: over pure noise, the best of 100 filters looks like an edge
+    # on its own (`p`), and reading it against the best random filter of the menu says it is not.
+    values = _noise()
+    rng = random.Random(11)
+    menu = {f"r{j}": rng.sample(sorted(values), 20) for j in range(100)}
+    out = stats.menu_placebo(values, menu, draws=500)
+    best = min(out["candidates"].values(), key=lambda c: c["z"])
+    assert best["p"] < 0.05
+    assert best["p_menu"] > 0.2
+    assert out["null_min_median"] < -2.0
+
+
+def test_menu_placebo_is_seeded_and_lists_a_filter_with_nothing_to_say():
+    values = _noise(40)
+    menu = {"a": sorted(values)[:5], "none": [], "all": list(values), "outside": ["zz"]}
+    one = stats.menu_placebo(values, menu, draws=200)
+    assert one == stats.menu_placebo(values, menu, draws=200)
+    assert one != stats.menu_placebo(values, menu, draws=200, seed=1)
+    assert one["tried"] == 1
+    for name in ("none", "all", "outside"):
+        assert one["candidates"][name]["z"] is None
+
+
 def test_stationary_indices_wrap_and_are_seeded():
     a = stats.stationary_indices(50, 10, random.Random(1))
     assert a == stats.stationary_indices(50, 10, random.Random(1))

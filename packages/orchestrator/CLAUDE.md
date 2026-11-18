@@ -351,7 +351,12 @@ filename; override with `paper.sla_state_prefix`.
   `automation_backtest.py run` into the result `builder-<name>-<stamp>.json`; one live row per
   automation. The explore-runs list reads those rows and `backtest read automation-runs`;
   `automation_run` reads one run's card (`backtest read automation-run`, the run named exactly
-  `builder-<name>-<10 digits>`). A run may also wait `after` an addition to the full set
+  `builder-<name>-<10 digits>`). `automation_ideas`, `automation_idea_searches`, `automation_idea_search`,
+  `automation_idea_declare` and `automation_idea_holdout` (`ideaqueue.py`) are the Builder's idea
+  search: `backtest ideas plan` names the run and the split, then one `script` row, study `ideas`, step
+  `<name>-<YYMMDDHHMM>`, runs `idea_search.py run` with both in its command; one live row per
+  automation. Declare and the held-out test are `backtest ideas declare|holdout`, by name, search and
+  idea; neither writes a config or the register. A run may also wait `after` an addition to the full set
   (`fullset/add-...` only); it then queues without `possible` and without a source, the driver
   choosing by coverage once the data is in. `fullset_plan` and `fullset_add` (`fullsetadd.py`) add an
   underlying to the full set: the backtest script's `add SYM --dry-run` sizes it, `add` refuses

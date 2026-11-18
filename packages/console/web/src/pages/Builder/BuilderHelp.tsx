@@ -217,5 +217,32 @@ export const SECTION_HELP: Record<string, CardHelpContent> = {
         </HelpSection>
       </>
     ),
+  },  ideas: {
+    title: "Ideas",
+    body: (
+      <>
+        <HelpSection title="What a search is">
+          <p>
+            Find ideas reads the newest Builder run with at least 120 sessions traded, up to a split two thirds of the way through
+            it. It tries entry filters from a short fixed menu: the prior close's VIX, RSI, trend and move, VIX over realised
+            volatility, the opening gap, the weekday and event days, alone or two at once. It never changes the automation.
+          </p>
+        </HelpSection>
+        <HelpSection title="How a filter is scored">
+          <p>
+            By what it skips. Skipping days raises P&amp;L only if those days lost, so the skipped days' net must sit below zero.
+            It must beat the best of the random filters the menu could have found by luck, its neighbouring bins must agree, it must
+            lose in most folds and both halves, each part must add on its own, and the days it keeps must still pay at 1.5x costs.
+          </p>
+        </HelpSection>
+        <HelpWarn title="The held-out part is spent once per idea">
+          <p>
+            The later sessions are never read by the search. Declare drafts a surviving idea's register row with the split fixed;
+            Test once reads the later sessions for that idea, and every use is logged on the search. An idea the later part cannot
+            detect reads not testable on our history.
+          </p>
+        </HelpWarn>
+      </>
+    ),
   },
 };

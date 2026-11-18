@@ -23,7 +23,7 @@ import json
 import sys
 from typing import Any
 
-from . import automationedit, automationrun, configedit, fullsetadd, groupedit, liveops
+from . import automationedit, automationrun, configedit, fullsetadd, groupedit, ideaqueue, liveops
 from . import config as cfgmod
 
 
@@ -143,6 +143,22 @@ def handle(req: dict[str, Any]) -> dict[str, Any]:
     if op == "automation_run":
         # The Builder's run card: one result read whole by the backtest package. Reads only.
         return automationrun.run_card(cfg, req)
+    if op == "automation_ideas":
+        # The Builder's idea search: one search of the newest long enough run queued on the research
+        # queue (a `script` row), its split fixed in the command; never a config write.
+        return ideaqueue.queue(cfg, req)
+    if op == "automation_idea_searches":
+        # That automation's idea searches: queue rows and results in brief. Reads only.
+        return ideaqueue.searches(cfg, req)
+    if op == "automation_idea_search":
+        # One idea search's whole result. Reads only.
+        return ideaqueue.search(cfg, req)
+    if op == "automation_idea_declare":
+        # Declare: one surviving idea's register row drafted into its result. No config or register write.
+        return ideaqueue.declare(cfg, req)
+    if op == "automation_idea_holdout":
+        # A declared idea's one held-out test, logged on its result. No config write.
+        return ideaqueue.holdout(cfg, req)
     return _err(f"unknown op: {op!r}")
 
 

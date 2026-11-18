@@ -24,6 +24,9 @@ import type {
   BuilderResult,
   BuilderRunCard,
   BuilderRuns,
+  IdeaActionResult,
+  IdeaSearch,
+  IdeaSearches,
   BuilderSaveResult,
   BuilderSchemaResult,
   BuilderToday,
@@ -1461,6 +1464,40 @@ export function useBuilderRuns(name: string, enabled: boolean) {
     enabled,
     staleTime: 5_000,
     refetchInterval: (q) => (q.state.data?.tasks.some((t) => t.status === "queued" || t.status === "running") ? 10_000 : false),
+  });
+}
+
+/** Queue one idea search of a saved automation; its run and split are the backtest package's. */
+export function builderFindIdeas(name: string): Promise<IdeaActionResult> {
+  return builderPost<IdeaActionResult>("/api/automations/builder/ideas", { name });
+}
+
+/** Draft one surviving idea's register row into its search, the split already fixed. */
+export function ideaDeclare(name: string, id: string, idea: string): Promise<IdeaActionResult> {
+  return builderPost<IdeaActionResult>("/api/automations/builder/idea-declare", { name, id, idea });
+}
+
+/** A declared idea's one held-out test. It cannot be repeated. */
+export function ideaHoldout(name: string, id: string, idea: string): Promise<IdeaActionResult> {
+  return builderPost<IdeaActionResult>("/api/automations/builder/idea-holdout", { name, id, idea });
+}
+
+/** One automation's idea searches: queued and finished. Polled while one is live. */
+export function useIdeaSearches(name: string) {
+  return useQuery<IdeaSearches>({
+    queryKey: ["automations-builder-ideas", name],
+    queryFn: () => getJson<IdeaSearches>(`/api/automations/builder/ideas?name=${encodeURIComponent(name)}`),
+    staleTime: 5_000,
+    refetchInterval: (q) => (q.state.data?.tasks.some((t) => t.status === "queued" || t.status === "running") ? 10_000 : false),
+  });
+}
+
+/** One idea search whole. Declare and the held-out test change it, so it is refetched after either. */
+export function useIdeaSearch(name: string, id: string) {
+  return useQuery<IdeaSearch>({
+    queryKey: ["automations-builder-idea-search", name, id],
+    queryFn: () => getJson<IdeaSearch>(`/api/automations/builder/idea-search?name=${encodeURIComponent(name)}&id=${encodeURIComponent(id)}`),
+    staleTime: 60_000,
   });
 }
 
