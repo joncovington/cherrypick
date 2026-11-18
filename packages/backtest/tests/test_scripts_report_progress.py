@@ -43,6 +43,8 @@ EXEMPT: dict[str, str] = {
     "bullish_structures_bars_item79.py": "reports through item 64's trades()",
     "earnings_paper_screen_item67.py": "reports through item 31's run_study()",
     "fetch_addon_weeklies.py": "its fetch is addonfetch.fetch_spans, which reports per symbol",
+    "fetch_full_set.py": "its fetches are queued fetch verbs, which report per symbol; `status` reads "
+    "the set's progress per underlying",
     # repo-root scripts
     "_common.py": "a helper module, no job",
     "fetch_damodaran.py": "two downloads, no loop",
