@@ -348,6 +348,7 @@ def test_derive_full_suite_job_table():
         "backtest-fetch",
         "backtest-inventory",
         "research-queue",
+        "research-queue-local",
         "reminders",
         "technicals-land",
         "technicals-dividends",

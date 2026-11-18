@@ -96,9 +96,9 @@ it has passed.
 
 ## The research queue
 
-A long study can mean hours of data fetching. The research queue runs such tasks one at a time, from rows
+A long study can mean hours of data fetching. The research queue runs such tasks in two lanes, one at a time in each (fetches on the vendor's one session, and scripts beside them), from rows
 in a table, so a task does not die with your terminal and never collides with the nightly fetch. The
-supervisor's `research-queue` job takes the next ready row every minute.
+supervisor's two queue jobs each take their lane's next ready row every minute.
 
 A row is named `study/step`, such as `item69/study`. Rows run in priority order, oldest first among equals.
 A row can wait on another (`--after`), for a time (`--not-before`), or for a free vendor session. A fetch
@@ -109,7 +109,7 @@ that reaches its stop time or the nightly window stops and is queued again to re
 | `python packages/orchestrator/run.py queue-list` | The rows, newest first, with why each queued row is waiting and where a finished row's result is. `--study item69` narrows it. |
 | `python packages/orchestrator/run.py queue-priority --task-id 12 --priority 5` | Reorders a queued row. A higher number runs first. |
 | `python packages/orchestrator/run.py queue-cancel --task-id 12` | Cancels a queued row. |
-| `python packages/orchestrator/run.py queue-run` | What the job runs: ready rows one after another until none is ready. You rarely run it by hand. |
+| `python packages/orchestrator/run.py queue-run --lane vendor\|local` | What the two jobs run: one lane's ready rows one after another until none is ready. You rarely run it by hand. |
 | `python packages/orchestrator/run.py queue-add --study item69 --task script ...` | Adds a row. `--task-args` is a JSON object whose keys depend on the kind. |
 
 A row can only be one of a short allow-list of kinds: the ThetaData fetches, or a

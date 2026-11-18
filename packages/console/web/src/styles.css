@@ -6368,8 +6368,39 @@ select.text-input {
 
 .q-top {
   display: grid;
-  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 0.8fr);
   gap: 12px;
+}
+
+/* One lane of the research queue: its name above its running task (or an idle tile). */
+.q-lane {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.q-lane > .study-tile {
+  flex: 1 1 auto;
+}
+.q-lane-title {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.q-lane-title .muted {
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+@media (max-width: 900px) {
+  .q-top {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+  .q-top .q-side {
+    grid-column: 1 / -1;
+  }
 }
 
 .q-top .study-hero {

@@ -165,13 +165,29 @@ function endedMs(t: ResearchTask): number | null {
   return etMs(t.finishedAt) ?? etMs(t.startedAt) ?? etMs(t.createdAt);
 }
 
+/** The two lanes the queue runs (orchestrator `researchqueue.LANES`), each one task at a time. */
+export const LANES: Array<{ lane: "vendor" | "local"; title: string; note: string }> = [
+  { lane: "vendor", title: "Vendor lane", note: "fetches, one at a time on the vendor's one session" },
+  { lane: "local", title: "Local lane", note: "scripts: plans, smoke runs, studies and Builder runs" },
+];
+
+/** A row's lane as the orchestrator reports it; an older orchestrator's row, by what it needs. */
+export function laneOf(t: ResearchTask): "vendor" | "local" {
+  return t.lane ?? (t.needs.split(",").includes("thetadata") ? "vendor" : "local");
+}
+
+const LANE_ORDER = { vendor: 0, local: 1 } as const;
+
 export function plan(q: ResearchQueue, nowEpochS = Date.now() / 1000, nowMs = etNowMs(nowEpochS * 1000)): QueuePlan {
   const running = q.tasks.filter((t) => t.status === "running").sort((a, b) => a.id - b.id);
   const queued = q.tasks
     .filter((t) => t.status === "queued")
     .sort(
       (a, b) =>
-        (a.position ?? Infinity) - (b.position ?? Infinity) || Number(b.waits === "ready") - Number(a.waits === "ready") || a.id - b.id,
+        LANE_ORDER[laneOf(a)] - LANE_ORDER[laneOf(b)] ||
+        (a.position ?? Infinity) - (b.position ?? Infinity) ||
+        Number(b.waits === "ready") - Number(a.waits === "ready") ||
+        a.id - b.id,
     );
   const attention = q.tasks
     .filter((t) => (t.status === "failed" || t.status === "stopped") && (endedMs(t) ?? 0) >= nowMs - ATTENTION_DAYS * 86_400_000)
@@ -188,8 +204,10 @@ export function plan(q: ResearchQueue, nowEpochS = Date.now() / 1000, nowMs = et
 export function headline(p: QueuePlan): string {
   const parts = [`${p.running.length} running`, `${p.queued.length} queued`];
   if (p.byHandLive.length > 0) parts.push(`${p.byHandLive.length} by hand`);
-  const next = p.queued[0];
-  if (next) parts.push(`next: ${next.name}${next.waits && next.waits !== "ready" ? ` (${next.waits})` : ""}`);
+  for (const { lane } of LANES) {
+    const next = p.queued.find((t) => laneOf(t) === lane);
+    if (next) parts.push(`next ${lane}: ${next.name}${next.waits && next.waits !== "ready" ? ` (${next.waits})` : ""}`);
+  }
   return parts.join(" · ");
 }
 
@@ -330,12 +348,14 @@ export type QueueSection = "running" | "hand-live" | "next" | "attention" | "han
 /** Every card in the order the tab lays them out, which is the order the lightbox steps through. */
 export function queueItems(q: ResearchQueue, nowMs = etNowMs(), nowEpochS = Date.now() / 1000): QueueItem[] {
   const p = plan(q, nowEpochS, nowMs);
-  const task = (section: QueueSection) => (t: ResearchTask, i: number): QueueItem => ({
+  // Up next is numbered within each lane: each lane takes its own rows in turn.
+  const inLane = (t: ResearchTask) => p.queued.filter((x) => laneOf(x) === laneOf(t)).indexOf(t) + 1;
+  const task = (section: QueueSection) => (t: ResearchTask): QueueItem => ({
     kind: "task",
     key: String(t.id),
     section,
     t,
-    ...(section === "next" ? { pos: i + 1 } : {}),
+    ...(section === "next" ? { pos: inLane(t) } : {}),
   });
   const hand = (section: QueueSection) => (x: ResearchProgress): QueueItem => ({ kind: "hand", key: `hand:${x.file}`, section, p: x });
   return [
@@ -751,28 +771,45 @@ export function QueueCards({ q, nowMs = etNowMs(), studies }: { q: ResearchQueue
   return (
     <>
       <div className="q-top">
-        {running.length > 0 ? (
-          running.map((i) => (i.kind === "task" ? <RunningTile key={i.key} t={i.t} studies={studies} nowMs={nowMs} onOpen={open(i)} /> : null))
-        ) : (
-          <div className="study-tile study-hero q-hero q-idle">
-            <span className="study-tile-status muted">Nothing running</span>
-            <span className="study-tile-sub">{next.length > 0 ? "The top ready row starts at the next tick." : "Nothing is queued either."}</span>
-          </div>
-        )}
+        {LANES.map(({ lane, title, note }) => {
+          const here = tasksOf(running).filter((i) => laneOf(i.t) === lane);
+          const waiting = tasksOf(next).some((i) => laneOf(i.t) === lane);
+          return (
+            <section key={lane} className="q-lane" data-lane={lane} aria-label={title}>
+              <span className="q-lane-title">
+                {title} <span className="muted">· {note}</span>
+              </span>
+              {here.length > 0 ? (
+                here.map((i) => <RunningTile key={i.key} t={i.t} studies={studies} nowMs={nowMs} onOpen={open(i)} />)
+              ) : (
+                <div className="study-tile study-hero q-hero q-idle">
+                  <span className="study-tile-status muted">Nothing running</span>
+                  <span className="study-tile-sub">{waiting ? "Its top ready row starts at the next tick." : "Nothing is queued in this lane."}</span>
+                </div>
+              )}
+            </section>
+          );
+        })}
         <div className="q-side">
           {handLive.map((i) => (i.kind === "hand" ? <HandTile key={i.key} p={i.p} nowMs={nowMs} live onOpen={open(i)} /> : null))}
-          <div className="q-note">One task at a time. When it ends, the top ready row starts at the next tick.</div>
+          <div className="q-note">
+            Two lanes, one task each: fetches on the vendor&apos;s one session, and scripts beside them. A chain&apos;s order holds across the lanes, so a study still waits for its fetch.
+          </div>
         </div>
       </div>
-      {next.length > 0 ? (
-        <CardSection title="Up next" note="in the order the runner takes them">
-          {rows ? (
-            <BtRows rows={tasksOf(next).map((i) => taskRow(i, studies, nowMs, open(i)))} />
-          ) : (
-            <div className="study-tiles q-tiles">{tasksOf(next).map((i) => <TaskTile key={i.key} item={i} studies={studies} nowMs={nowMs} onOpen={open(i)} />)}</div>
-          )}
-        </CardSection>
-      ) : null}
+      {LANES.map(({ lane, title }) => {
+        const mine = tasksOf(next).filter((i) => laneOf(i.t) === lane);
+        if (mine.length === 0) return null;
+        return (
+          <CardSection key={lane} title={`Up next · ${title.toLowerCase()}`} note="in the order this lane takes them">
+            {rows ? (
+              <BtRows rows={mine.map((i) => taskRow(i, studies, nowMs, open(i)))} />
+            ) : (
+              <div className="study-tiles q-tiles">{mine.map((i) => <TaskTile key={i.key} item={i} studies={studies} nowMs={nowMs} onOpen={open(i)} />)}</div>
+            )}
+          </CardSection>
+        );
+      })}
       {attention.length > 0 ? (
         <CardSection title="Failed or stopped" note={`last ${String(ATTENTION_DAYS)} days; each is also on its study's card`}>
           {rows ? (
