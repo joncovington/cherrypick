@@ -11577,6 +11577,35 @@ svg.vol-curve text {
   font-size: 0.85rem;
   color: var(--text-muted);
 }
+/* Automations › Groups: a card per group, its switch and budget above its members. */
+.grp-page {
+  display: grid;
+  gap: 1rem;
+}
+.grp-controls {
+  margin-bottom: 0.8rem;
+}
+.grp-table td,
+.grp-table th {
+  vertical-align: middle;
+}
+.grp-num {
+  width: 6rem;
+}
+.grp-moved {
+  margin-left: 0.5rem;
+}
+.grp-new {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 0.8rem;
+}
+.grp-changes {
+  margin: 0 0 0.6rem;
+  padding-left: 1.2rem;
+}
 .builder-req {
   color: var(--neg);
   font-weight: 700;

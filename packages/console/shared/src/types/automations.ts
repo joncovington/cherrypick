@@ -164,6 +164,44 @@ export interface AutomationGroup {
   automations: AutomationGroupMember[];
 }
 
+/** One automation on the Groups page: its OWN switch (a group that is on leaves a member that is off,
+ *  off), its research verdict, its underlying and whether it ships with the module. */
+export interface GroupsEditMember {
+  name: string;
+  enabled: boolean;
+  verdict: AutomationVerdict;
+  symbol: string | null;
+  shipped: boolean;
+}
+
+/** A group's spec as the module's `groups` block holds it (`config.groups`). */
+export interface GroupSpec {
+  enabled: boolean;
+  start?: string;
+  allocation?: number;
+  max_risk?: number;
+  /** Each member's percent of the allocation and the cap, at most 100 in all. */
+  shares?: Record<string, number>;
+}
+
+export interface GroupsEditGroup extends GroupSpec {
+  name: string;
+  members: GroupsEditMember[];
+}
+
+/** `GET /api/automations/groups/edit`: every group and every automation in none (`cli groups-view`). */
+export interface GroupsEditView {
+  groups: GroupsEditGroup[];
+  ungrouped: GroupsEditMember[];
+}
+
+/** A change to the groups: every group that will have members, each spec whole, and the automations
+ *  that move (`null`: into no group). */
+export interface GroupsChange {
+  groups: Record<string, GroupSpec>;
+  members: Record<string, string | null>;
+}
+
 /** `GET /api/automations/groups`: every group, or the reason the package could not be asked. */
 export interface AutomationGroupsResult {
   groups: AutomationGroup[];

@@ -19,6 +19,11 @@ const spawnCli: Caller = () => spawnModuleCliAsync(["-m", "cherrypick.automation
 let caller: Caller = spawnCli;
 const memo = new AsyncMemo<SpawnedJson>();
 
+/** Forget the memoised groups, after the Groups page saves a change. */
+export function invalidateAutomationGroups(): void {
+  memo.clear();
+}
+
 /** Swap the subprocess out in tests. Pass nothing to restore the real one. */
 export function setAutomationsGroupsCaller(fn?: Caller): void {
   caller = fn ?? spawnCli;

@@ -23,7 +23,7 @@ import json
 import sys
 from typing import Any
 
-from . import automationedit, automationrun, configedit, fullsetadd, liveops
+from . import automationedit, automationrun, configedit, fullsetadd, groupedit, liveops
 from . import config as cfgmod
 
 
@@ -116,6 +116,16 @@ def handle(req: dict[str, Any]) -> dict[str, Any]:
         # The Builder's save: that check, then the one entry it returned (always off) written
         # through the same raw-save path as every config save.
         return automationedit.save(cfg, req)
+    if op == "automation_groups":
+        # The Groups page: every group and every automation by group, from the module. Reads only.
+        return groupedit.view(cfg, req, groupedit.run_module_view)
+    if op == "automation_groups_check":
+        # The Groups page's check of a change, by the module; writes nothing.
+        return groupedit.check(cfg, req, groupedit.run_module_check)
+    if op == "automation_groups_save":
+        # The Groups page's save: that check, then the groups block and the moved automations' `group`
+        # it returned, written through the same raw-save path as every config save.
+        return groupedit.save(cfg, req, groupedit.run_module_check)
     if op == "fullset_plan":
         # What adding an underlying to the full set would fetch, from the backtest's planner; writes nothing.
         return fullsetadd.plan(cfg, req)

@@ -23,7 +23,6 @@ export const EXPERIMENTS = [
   { id: "curve", label: "Curve", what: "VXX call credit spreads on a contango day" },
   { id: "contango", label: "Contango", what: "SVXY or SHV, switched on the VIX/VIX3M ratio" },
   { id: "weeklyput", label: "Weekly put", what: "an index put near 10 delta, sold before each weekly expiry and held to it" },
-  { id: "automations", label: "Automations", what: "a set of short-dated option structures, each arm placing its own legs by its own rule" },
 ] as const;
 
 const PAGES = [

@@ -254,6 +254,8 @@ export type WeeklyputSlideId = (typeof WEEKLYPUT_SLIDES)[number]["id"];
  */
 export const AUTOMATIONS_SLIDES = [
   { id: "summary", label: "today" },
+  // Which automations switch together, and each group's switch and budget (2026-11-18).
+  { id: "groups", label: "groups" },
   { id: "positions", label: "positions" },
   { id: "history", label: "history" },
   { id: "decisions", label: "decisions" },
@@ -570,9 +572,10 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
   },
   automations: {
     slides: AUTOMATIONS_SLIDES,
-    simple: ["summary", "performance", "positions", "guide"],
+    simple: ["summary", "groups", "performance", "positions", "guide"],
     groups: [
       { label: "today", ids: ["summary"] },
+      { label: "set up", ids: ["groups"] },
       { label: "tables", ids: ["positions", "history"] },
       { label: "evidence", ids: ["decisions"] },
       { label: "study", ids: ["performance", "costs"] },

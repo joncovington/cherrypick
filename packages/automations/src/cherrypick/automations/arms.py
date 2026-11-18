@@ -7,7 +7,7 @@ that defaulted silently would change what is measured):
 
     name, symbol, enabled
     group         the automation group it belongs to (a set of like automations, switched as one:
-                  `config.groups`); the shipped eight are the `ensemble` group
+                  `config.groups`), or null for none; the shipped eight are the `ensemble` group
     register      {"item": N, "verdict": "passed"|"failed"|"no_verdict", "blocks": {block: hash}}: the
                   research register's verdict on it, a label read from the register, never from a
                   result file; `blocks` records each block as the study ran it (`enrolment`)
@@ -549,8 +549,10 @@ def validate(arm: dict) -> list[str]:
     if missing:
         return p + [f"{name}: missing {k!r}" for k in missing]
     p.extend(_expiry_problems(f"{name}.expiry", arm["expiry"]))
-    if "group" in arm and not (isinstance(arm["group"], str) and arm["group"].strip() == arm["group"] != ""):
-        p.append(f"{name}.group: a name")
+    # A name, or null for no group: a change laid over a shipped automation takes it out of its group.
+    g = arm.get("group")
+    if g is not None and not (isinstance(g, str) and g.strip() == g != ""):
+        p.append(f"{name}.group: a name, or null for none")
     reg = arm.get("register")
     if reg is not None and not (
         isinstance(reg, dict)
