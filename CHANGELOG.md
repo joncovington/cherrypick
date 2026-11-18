@@ -30,6 +30,9 @@ beyond the latest release.
   Declare and Promote to paper shown disabled. Beside it, **Today, live** decides the automation
   now as paper would, on a read-only snapshot (`cli builder-today`): every check, and the legs it
   would take or the check that stops it. The explore runs and run cards sit beside it too.
+- **A gap measured at the first bar's close.** The gap signal takes `at: "first_bar_close"` to read
+  the session's first bar's close (9:35 on five-minute bars) instead of its open. Without it a gap
+  reads, and versions, as before.
 - **A trailing stop in percent, and net at mid on the run card.** An automation's trailing stop can
   be `{"pct": p, "activate_pct": a}`, each a percent of the trade's max profit (it never fires on a
   structure without one). The Builder's run card shows each run's net at mid beside its P&L: the
