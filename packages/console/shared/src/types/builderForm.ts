@@ -10,6 +10,8 @@ export interface BuilderSchema {
   weekdays: number[];
   event_labels: string[];
   expiry: Record<string, Record<string, boolean>>;
+  /** The expiry keys that are true or false, drawn as checkboxes. */
+  expiry_flags?: string[];
   strike_rules: Record<string, { keys: Record<string, boolean>; matches: string[]; default_match: string | null }>;
   gates: Array<{
     gate: string;

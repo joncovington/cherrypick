@@ -137,6 +137,18 @@ describe("today, live", () => {
 });
 
 describe("a leg's match mode", () => {
+  it("draws the schema's expiry flags as checkboxes, checked only when set", () => {
+    const schema = { ...SCHEMA, expiry: { between: { min: true, max: true, monthly: false } }, expiry_flags: ["monthly"] };
+    const on = html(<BuilderForm schema={schema} spec={{ ...SPEC, expiry: { kind: "between", min: 45, max: 60, monthly: true } }} labels={{}} onChange={() => {}} />);
+    expect(on).toMatch(/<input id="f-expiry-monthly" type="checkbox" checked=""/);
+    expect(on).toContain('<input id="f-expiry-min" class="builder-input" value="45"');
+    const off = html(<BuilderForm schema={schema} spec={{ ...SPEC, expiry: { kind: "between", min: 45, max: 60 } }} labels={{}} onChange={() => {}} />);
+    expect(off).toMatch(/<input id="f-expiry-monthly" type="checkbox"\/>/);
+    // Without the schema naming it, a key stays a text field.
+    const old = html(<BuilderForm schema={{ ...schema, expiry_flags: undefined }} spec={{ ...SPEC, expiry: { kind: "between", min: 45, max: 60, monthly: true } }} labels={{}} onChange={() => {}} />);
+    expect(old).toContain('<input id="f-expiry-monthly" class="builder-input" value="true"');
+  });
+
   it("offers the engine's default when none is set, and says when one is required", () => {
     const out = html(<BuilderForm schema={SCHEMA} spec={SPEC} labels={{}} onChange={() => {}} />);
     expect(out).toContain('<option value="" selected="">default (nearest)</option>');

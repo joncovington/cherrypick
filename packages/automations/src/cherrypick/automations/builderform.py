@@ -164,6 +164,7 @@ def schema() -> dict:
         "weekdays": [0, 1, 2, 3, 4],
         "event_labels": sorted({*events.RULE_LABELS, *events.STORE_LABELS, *events.SYMBOL_LABELS}),
         "expiry": {k: dict(v) for k, v in arms_mod.EXPIRY_KEYS.items()},
+        "expiry_flags": list(arms_mod.EXPIRY_FLAGS),
         "strike_rules": {
             k: {
                 "keys": dict(v),

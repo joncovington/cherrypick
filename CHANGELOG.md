@@ -37,7 +37,8 @@ beyond the latest release.
   a store up to five trading days behind the last finished session (one written the next morning)
   as covering, and the run ends at its last session. A need no store can supply now says why, and a
   rule allowing any expiry that monthlies would cover says so, with **Use monthlies only** in the
-  wizard.
+  wizard. The Builder's form shows `monthly` as a checkbox (the schema names the expiry keys that
+  are true or false).
 - **The Builder's wizard.** **New** and **Copy as new** build an automation in seven steps (start,
   underlying and expiry, legs, entry, gates, exits and size, review), for someone new to
   backtesting. It starts from a shape (short put, credit spreads, iron condor, iron fly, custom legs),
