@@ -30,6 +30,10 @@ beyond the latest release.
   Declare and Promote to paper shown disabled. Beside it, **Today, live** decides the automation
   now as paper would, on a read-only snapshot (`cli builder-today`): every check, and the legs it
   would take or the check that stops it. The explore runs and run cards sit beside it too.
+- **Backtest coverage counts only stores the backtest can replay.** A same-day chain comes from a
+  store in the recorder's schema and a later expiry from end-of-day chains; an entry inside the
+  session on a later expiry has no replay yet, and the coverage line says so. Before this, the full
+  set's one- and five-minute stores could be named for a run that reads neither.
 - **Monthly expiries, and coverage that reaches our own chains.** An expiry rule (`between`,
   `at_least`) takes `"monthly": true` to pick only standard monthlies (`core.calendar.monthly_expiry`:
   the third Friday, or the session before a holiday). The wizard's shapes use it, so each is covered

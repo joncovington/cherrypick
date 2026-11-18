@@ -591,6 +591,7 @@ def coverage(
     days: Callable[[str, str], int] = trading_days,
     min_density: float = DENSE,
     lag: int = LAG,
+    only: Callable[[Source], bool] | None = None,
 ) -> dict:
     """Which sources hold `field` for `symbol` from `start` through `end`, read from an inventory doc
     (`inventory.run`'s). Each candidate comes back with its span and density (its sessions over the
@@ -599,12 +600,15 @@ def coverage(
     entry may). A
     span ending at most `lag` trading days before `end` still reaches it, and `through` is where it
     stops: a run over it ends there. A source the inventory has not read, or that holds nothing for
-    the symbol, is listed with why.
+    the symbol, is listed with why. `only`, when given, keeps the sources a caller can read (a replay
+    that reads some stores and not others), so a source it cannot read is never `best`.
     `covered` is whether any candidate covers; `best` is the first that does, the finest cadence first.
     Pure over its arguments."""
     symbol = symbol.upper()
     found = []
     for s in providing(field, cadence=cadence, expiry=expiry, licensed=licensed):
+        if only is not None and not only(s):
+            continue
         entry = (inventory.get("sources") or {}).get(s.name) or {}
         base = {"source": s.name, "cadence": s.cadence, "licensed": s.licensed, "rolling": s.rolling}
         if not entry:

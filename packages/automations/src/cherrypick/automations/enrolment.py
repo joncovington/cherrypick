@@ -36,6 +36,7 @@ import json
 from datetime import date
 
 from cherrypick.core import calendar as cal
+from cherrypick.core import sources as src
 
 from .model import hhmm
 
@@ -185,6 +186,31 @@ def _cadence(arm: dict) -> str:
     return "1d" if daily or at_close else "1m"
 
 
+#: Why no store can serve a chain the driver cannot replay: an entry inside the session on an expiry
+#: after it (the end-of-day chains price only the close).
+NO_REPLAY = (
+    "the backtest replays a later expiry only at the close (15:59); an entry inside the session needs an "
+    "intraday replay, which it does not have"
+)
+
+
+def replays(need: dict, source: src.Source) -> bool:
+    """Whether the automation driver can replay `need` from `source`. A chain (and its greeks) on a
+    same-day expiry comes from a store in the recorder's schema (`history.StoreHistory`), any other
+    expiry from end-of-day chains at the 15:59 tick (`history.DailyChainHistory`); an entry inside the
+    session on a later expiry has no replay. Other fields are read as they are."""
+    if need["field"] not in ("chain", "greeks"):
+        return True
+    if need.get("expiry") == "0dte":
+        return "0dte" in source.expiries and source.probe.backend in ("sqlite", "store_cache")
+    return need["cadence"] == "1d" and source.cadence == "1d"
+
+
+def _reader(need: dict):
+    """`replays` for one need, as `coverage`'s `only`."""
+    return lambda source: replays(need, source)
+
+
 def needs(arm: dict) -> list[dict]:
     """What a backtest of `arm` reads: [{"field", "expiry"?, "cadence"}]."""
     expiry, cadence = _expiry_class(arm), _cadence(arm)
@@ -223,7 +249,8 @@ def suggestion(
 
         def ask(licensed: bool, need=need) -> dict:
             return coverage(inventory, need["field"], arm["symbol"], start, end, cadence=need["cadence"],
-                            expiry=need.get("expiry"), licensed=licensed)  # fmt: skip
+                            expiry=need.get("expiry"), licensed=licensed,
+                            only=_reader(need))  # fmt: skip
 
         got, licensed = ask(False), False
         if not got.get("covered") and licensed_ok:
@@ -240,6 +267,12 @@ def suggestion(
             near = next((s for s in got.get("sources") or [] if s.get("first")), None)
             if near is not None:
                 row["nearest"] = {k: near.get(k) for k in ("source", "first", "last", "why")}
+            elif (
+                need["field"] in ("chain", "greeks")
+                and need.get("expiry") != "0dte"
+                and need["cadence"] != "1d"
+            ):
+                row["why"] = NO_REPLAY
             elif not got.get("sources"):
                 row["why"] = (
                     f"none of our stores holds {need.get('expiry') or 'its'} expiries at {need['cadence']}"
@@ -247,13 +280,14 @@ def suggestion(
             if need.get("expiry") == "all":
                 # Every expiry is asked for since the rule can land on a weekly; monthlies may be held.
                 alt = coverage(inventory, need["field"], arm["symbol"], start, end, cadence=need["cadence"],
-                               expiry="monthly", licensed=False)  # fmt: skip
+                               expiry="monthly", licensed=False,
+                               only=_reader({**need, "expiry": "monthly"}))  # fmt: skip
                 if alt.get("covered"):
-                    src = next((s for s in alt.get("sources") or [] if s.get("source") == alt["best"]), {})
+                    held = next((s for s in alt.get("sources") or [] if s.get("source") == alt["best"]), {})
                     row["monthly"] = {
                         "source": alt["best"],
-                        "first": src.get("first"),
-                        "through": src.get("through"),
+                        "first": held.get("first"),
+                        "through": held.get("through"),
                     }
         rows.append(row)
     possible = all(r["covered"] for r in rows)
