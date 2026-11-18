@@ -30,6 +30,9 @@ beyond the latest release.
   Declare and Promote to paper shown disabled. Beside it, **Today, live** decides the automation
   now as paper would, on a read-only snapshot (`cli builder-today`): every check, and the legs it
   would take or the check that stops it. The explore runs and run cards sit beside it too.
+- **A gap measured at the first bar's close.** The gap signal takes `at: "first_bar_close"` to read
+  the session's first bar's close (9:35 on five-minute bars) instead of its open. Without it a gap
+  reads, and versions, as before.
 - **Long automation backtests run in linear time.** The driver's snapshot at each minute copied every
   arm's entry history and rebuilt every arm's closed results from the whole book, so a run slowed
   as its book grew (item 90's placebo pass: 63 s a session near its end, 11 s now). It now carries

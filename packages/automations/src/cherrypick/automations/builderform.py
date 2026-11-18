@@ -159,7 +159,10 @@ def schema() -> dict:
         "entry": {k: dict(v) for k, v in ENTRY_KINDS.items()},
         "orb_directions": list(ORB_DIRECTIONS),
         "trigger_forms": {k: dict(v) for k, v in TRIGGER_FORMS.items()},
-        "signals": {k: sorted(kind.params) for k, kind in sorted(signals.KINDS.items())},
+        "signals": {
+            k: sorted({*kind.params, *signals.OPTIONAL.get(k, {})})
+            for k, kind in sorted(signals.KINDS.items())
+        },
         "signal_rules": sorted(signals._RULES),
         "weekdays": [0, 1, 2, 3, 4],
         "event_labels": sorted({*events.RULE_LABELS, *events.STORE_LABELS, *events.SYMBOL_LABELS}),
