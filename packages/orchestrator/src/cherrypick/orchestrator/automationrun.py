@@ -10,6 +10,11 @@ where licensed results go. An automation without a suggestion (every block backt
 suggestion is not possible (our data does not cover it) is refused, as is a second run while one is
 live.
 
+**Which window.** The suggestion also lists `windows`: each span a store the backtest can replay holds
+for every need (the last year, everything held, a licensed store only where it reaches further back
+than our own). A request may name one by its `key`; the run then takes that window and that store. A
+key the suggestion does not offer is refused. Without one, the run takes the last year, as before.
+
 **What it is not.** The run is descriptive: an explore run, no trial and no verdict, so no split is
 declared and nothing moves a register label, a gate or a config. It reads stores and writes one result
 file (`builder-<automation>-<YYMMDDHHMM>.json`, where the driver puts results). It never turns an
@@ -120,7 +125,13 @@ def queue(
     sug = view.get("suggestion")
     if not sug:
         return _err("every block of this automation is backtested already; nothing to suggest", "invalid")
-    if not sug.get("possible"):
+    key = req.get("window")
+    chosen = None
+    if key is not None:
+        chosen = next((w for w in sug.get("windows") or [] if w.get("key") == key), None)
+        if chosen is None:
+            return _err(f"{key!r} is not a window our data offers for {name}", "invalid")
+    elif not sug.get("possible"):
         short = [n.get("field") for n in sug.get("needs") or [] if not n.get("covered")]
         return _err(
             f"our data does not cover a backtest of it ({', '.join(map(str, short)) or 'a need'})", "invalid"
@@ -128,7 +139,7 @@ def queue(
     live = [r for r in rows(study=STUDY) if _step(r, name) and r.get("status") in LIVE]
     if live:
         return _err(f"a backtest of {name} is already {live[0]['status']} (task {live[0]['id']})", "conflict")
-    start, end = sug["window"]
+    start, end = (chosen["start"], chosen["end"]) if chosen else sug["window"]
     stamp = now or datetime.now(ET)
     run = run_name(name, stamp)
     args = [
@@ -144,7 +155,7 @@ def queue(
         "--to",
         end,
     ]
-    source = _chain_source(sug.get("needs") or [])
+    source = chosen["source"] if chosen else _chain_source(sug.get("needs") or [])
     if source:
         args += ["--source", source]
     try:
@@ -158,6 +169,7 @@ def queue(
         "task": row.get("id"),
         "window": [start, end],
         "source": source,
+        "key": key,
     }
 
 

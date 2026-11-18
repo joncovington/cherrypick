@@ -57,12 +57,25 @@ afterEach(() => {
 });
 
 describe("the Builder's backtest button", () => {
-  it("sends the name alone, whatever else the page sends", async () => {
+  it("sends the name alone, whatever else the page sends: a store of its own is dropped", async () => {
     fakeBridge({ automation_backtest: { ok: true, run: "builder-mine-2611161730", task: 401, window: ["2025-11-14", "2026-11-13"], source: "recorded-0dte" } });
-    const res = await post("/api/automations/builder/backtest", { name: "mine", window: ["2011-01-01", "2026-11-13"], source: "vendor-eod-chains" });
+    const res = await post("/api/automations/builder/backtest", { name: "mine", source: "vendor-eod-chains", from: "2011-01-01" });
     expect(res.statusCode).toBe(200);
     expect(seen).toEqual([{ op: "automation_backtest", name: "mine" }]);
     expect(res.json()).toMatchObject({ ok: true, name: "mine", task: 401, source: "recorded-0dte" });
+  });
+
+  it("sends one of the suggestion's window keys, and refuses anything shaped otherwise", async () => {
+    fakeBridge({ automation_backtest: { ok: true, run: "builder-mine-2611161730", task: 402, window: ["2019-02-11", "2026-11-13"], source: "dolt-chains", key: "dolt-chains:2019-02-11:2026-11-13" } });
+    const res = await post("/api/automations/builder/backtest", { name: "mine", window: "dolt-chains:2019-02-11:2026-11-13" });
+    expect(res.statusCode).toBe(200);
+    expect(seen).toEqual([{ op: "automation_backtest", name: "mine", window: "dolt-chains:2019-02-11:2026-11-13" }]);
+    expect(res.json()).toMatchObject({ key: "dolt-chains:2019-02-11:2026-11-13", source: "dolt-chains" });
+    seen = [];
+    for (const bad of [["2011-01-01", "2026-11-13"], "2011-01-01", "../x:2011-01-01:2026-11-13", 7]) {
+      expect((await post("/api/automations/builder/backtest", { name: "mine", window: bad })).statusCode).toBe(400);
+    }
+    expect(seen).toEqual([]);
   });
 
   it("passes the orchestrator's refusal through", async () => {

@@ -199,6 +199,22 @@ export interface BuilderNeed {
   monthly?: { source: string; first: string | null; through: string | null };
 }
 
+/** A window a Builder run may take: a span one store holds for every need (`enrolment.windows`). */
+export interface BuilderWindow {
+  /** What a run names; the orchestrator refuses one the module does not offer. */
+  key: string;
+  start: string;
+  end: string;
+  source: string;
+  licensed: boolean;
+  /** The chain store's share of the trading days in the window, when it is counted. */
+  density: number | null;
+  /** Under the registry's dense mark: Dolt's early years, about three days a week. */
+  thin: boolean;
+  /** What the store holds, in the registry's words. */
+  holds: string;
+}
+
 export interface BuilderSuggestion {
   blocks: string[];
   window: [string, string];
@@ -206,6 +222,8 @@ export interface BuilderSuggestion {
   possible: boolean;
   /** Some need is covered by a licensed store. */
   licensed: boolean;
+  /** Every window our stores can replay, our own first. Absent from an older module. */
+  windows?: BuilderWindow[];
 }
 
 export interface BuilderAutomation {
@@ -264,6 +282,8 @@ export interface BuilderBacktestResult {
   task?: number | null;
   window?: [string, string];
   source?: string | null;
+  /** The window key the run took, or null for the last year. */
+  key?: string | null;
   error?: string;
   code?: string;
 }

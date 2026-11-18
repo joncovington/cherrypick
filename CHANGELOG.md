@@ -30,6 +30,11 @@ beyond the latest release.
   Declare and Promote to paper shown disabled. Beside it, **Today, live** decides the automation
   now as paper would, on a read-only snapshot (`cli builder-today`): every check, and the legs it
   would take or the check that stops it. The explore runs and run cards sit beside it too.
+- **The Builder's Explore run picks its window.** Beside the button, every span a store holds for the
+  whole automation: the last year and everything that store holds, ours first, a thin span's share of
+  sessions shown, and the vendor's only where it reaches further back than ours, marked licensed. A
+  store that stopped early still offers its span. The page sends only the module's window key; the
+  orchestrator refuses one the module does not offer.
 - **Backtest coverage counts only stores the backtest can replay.** A same-day chain comes from a
   store in the recorder's schema and a later expiry from end-of-day chains; an entry inside the
   session on a later expiry has no replay yet, and the coverage line says so. Before this, the full

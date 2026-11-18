@@ -126,10 +126,12 @@ alone):
     schema's, each step's Next is the module's draft check filtered to that step's keys, and it
     writes only through `/save`, always off.
   - **The Builder's backtest queues; it writes no config** (`/api/automations/builder/backtest`,
-    configcli `automation_backtest`). The route sends the name alone. The orchestrator takes the
-    window and the source from the automation's own backtest suggestion (our own stores first, the
-    vendor's only while the licence allows new work, marked `licensed`), refuses where that is not
-    possible or a run is already live, and adds one
+    configcli `automation_backtest`). The route sends the name and at most one window key, the
+    module's own token for one of the suggestion's `windows` (checked by shape here, `WINDOW_KEY`);
+    dates and a store from the page are never sent. The orchestrator takes the window and the source
+    from the automation's own backtest suggestion (our own stores first, the vendor's only while the
+    licence allows new work, marked `licensed`), refuses a key the suggestion does not offer, where
+    a run is not possible or one is already live, and adds one
     research-queue `script` row of the automation backtest driver. The run is an explore run: no
     trial, no verdict, no label moved. The explore-runs list (`/api/automations/builder/runs`,
     configcli `automation_runs`) shows its rows and results, each with its net curve and what it
