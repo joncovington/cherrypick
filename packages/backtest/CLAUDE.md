@@ -380,7 +380,11 @@ named); a vendor store only while `licensing.status` is active, so new work neve
 data after its subscription ends. An arm that does not expire the session it enters reads end-of-day
 chains instead (`dolt-chains`, or `vendor-eod-chains` while licensed, its delta computed from mids by
 `core.chaindelta`) at one tick a session, 15:59, with daily bars from the stock history (raw);
-`--min-density` accepts Dolt's thinner years knowingly. An arm that declares a volume symbol reads it
+`--min-density` accepts Dolt's thinner years knowingly. An arm that enters inside the session on a
+later expiry (`intraday`) reads the symbol's full-set intraday chain stores instead
+(`history.IntradayChainHistory`: near at one minute, middle at five, the same-day store for spot where
+it holds the session, else the nearest expiry's parity forward), only while the licence allows new
+work. An arm that declares a volume symbol reads it
 from the recorded one-minute bars (`profile-bars`, regular hours), and the run is refused where those
 do not cover the dates. The result is an explore run (no trial, no
 verdict; `signal_versions` names each library signal an arm read, by version) under `paths.automations_dir`: `results/automations/` when it read the vendor's store, beside

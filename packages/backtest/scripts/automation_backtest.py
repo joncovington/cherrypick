@@ -33,13 +33,13 @@ from pathlib import Path
 
 from cherrypick.automations import arms as ens_arms
 from cherrypick.automations import config as ens_config
-from cherrypick.automations import driver, events, history
+from cherrypick.automations import driver, enrolment, events, history
 from cherrypick.core import chaindelta, home, jsonio, progress, volindex
 from cherrypick.core import sources as src
 from cherrypick.core.clock import ET
 from cherrypick.core.sources import inventory as src_inventory
 
-from cherrypick.backtest import licensing, paths, settings
+from cherrypick.backtest import fullset, licensing, paths, settings
 
 
 class Refused(Exception):
@@ -120,6 +120,51 @@ def choose_eod_source(
             return src.by_name(x["source"])
     why = "; ".join(f"{x['source']}: {x['why']}" for x in cov["sources"] if x["source"] in EOD_SOURCES)
     raise Refused(f"no end-of-day chains cover {symbol} {start}..{end} ({why or 'no source holds it'})")
+
+
+def intraday(arms: dict[str, dict]) -> bool:
+    """An arm enters inside the session on a later expiry: its chain is read through the session from
+    the full set's intraday chain stores (`enrolment.needs` asks for it at their cadence)."""
+    return any(enrolment.needs(a)[0]["cadence"] == enrolment.INTRADAY_CADENCE for a in arms.values())
+
+
+def choose_intraday_source(
+    symbol, start, end, named, *, licensed_ok: bool, inv: dict, min_density: float
+) -> src.Source:
+    """One of the full set's intraday chain stores for the symbol: `named`, or the first that covers
+    the dates (each is the vendor's, so only while the licence allows new work). The run reads every
+    intraday store the set holds for the symbol; this names the one coverage found."""
+    if named:
+        s = src.by_name(named)
+        if not s.probe.where.endswith(enrolment.INTRADAY_STORES):
+            raise Refused(f"{named} is not one of the full set's intraday chain stores")
+        if s.licensed and not licensed_ok:
+            raise Refused(f"{named} is the vendor's and the licence does not allow new work")
+        return s
+    cov = src.coverage(inv, "chain", symbol, start, end, cadence=enrolment.INTRADAY_CADENCE,
+                       licensed=licensed_ok, min_density=min_density,
+                       only=lambda s: s.probe.where.endswith(enrolment.INTRADAY_STORES))  # fmt: skip
+    if cov["best"]:
+        return src.by_name(cov["best"])
+    why = "; ".join(f"{x['source']}: {x['why']}" for x in cov["sources"]) or "the full set holds none for it"
+    raise Refused(f"no intraday chain store covers {symbol} {start}..{end} ({why})")
+
+
+def intraday_history(symbol: str, settings_doc: dict, daily: list[dict], vix_daily: dict):
+    """The symbol's intraday chain history: its near (1-minute) and middle (5-minute) stores, and its
+    same-day store for the day's own expiry and spot where it holds the session."""
+    vendor = paths.vendor_dir(settings_doc)
+    sym = symbol.upper()
+    spec = fullset.SPEC.get(sym, {})
+    same = vendor / fullset.zero_store(sym)
+    return history.IntradayChainHistory(
+        sym,
+        [(vendor / fullset.near_store(sym), 1), (vendor / fullset.mid_store(sym), 5)],
+        same_day=same if same.exists() else None,
+        root=spec.get("root", sym),
+        daily=daily,
+        vix_daily=vix_daily,
+    )
 
 
 def volume_symbols(arms: dict) -> set[str]:
@@ -266,6 +311,16 @@ def cmd_run(args) -> int:
     try:
         if same_day(chosen):
             source = choose_source(symbol, start, end, args.source, licensed_ok=licensed_ok, inv=inv)
+        elif intraday(chosen):
+            source = choose_intraday_source(
+                symbol,
+                start,
+                end,
+                args.source,
+                licensed_ok=licensed_ok,
+                inv=inv,
+                min_density=args.min_density,
+            )
         else:
             source = choose_eod_source(
                 symbol,
@@ -285,6 +340,9 @@ def cmd_run(args) -> int:
     if same_day(chosen):
         store = store_path(source, s)
         h = history.StoreHistory(store, symbol, daily=index_daily(symbol))
+    elif intraday(chosen):
+        store = store_path(source, s)
+        h = intraday_history(symbol, s, stock_daily(symbol) or index_daily(symbol), vix_daily)
     else:
         store = (
             store_path(source, s) if source.name == "vendor-eod-chains" else Path("dolt/options.option_chain")
@@ -318,7 +376,13 @@ def cmd_run(args) -> int:
         "store": store.relative_to(home.data_dir()).as_posix()
         if store.is_relative_to(home.data_dir())
         else store.as_posix(),
-        "cadence": "1d at 15:59" if getattr(h, "close_only", False) else "stored minutes",
+        "cadence": "1d at 15:59"
+        if getattr(h, "close_only", False)
+        else (
+            "stored minutes; later expiries from the intraday chain stores (1 and 5 min bars)"
+            if isinstance(h, history.IntradayChainHistory)
+            else "stored minutes"
+        ),
         "licensed": source.licensed,
         "sessions": [sessions[0], sessions[-1]] if sessions else None,
         "session_count": len(sessions),
