@@ -22,8 +22,7 @@ import { unrealisedByPosition, NO_UNREALISED, type Unrealised } from "./unrealis
  * The weekly double-calendar module's read layer.
  *
  * Paper only, and structurally so: there is no live loop, no live store, and no `mode` anywhere in
- * this file. The config's `live.enabled` is a documented inert placeholder
- * (packages/calendars/CLAUDE.md).
+ * this file, and the module is not in `LIVE_PATH_MODULES` (services/liveLock.ts).
  *
  * The queries here mirror `packages/calendars/src/cherrypick/calendars/analytics.py`, that module's
  * stated one query layer, and each function below names the analytics function it answers for. Two

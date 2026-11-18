@@ -285,10 +285,5 @@
         "max": 0.25
       }
     }
-  },
-  "live_header": "===== live gate (placeholder \u2014 see the module CLAUDE.md's Live-trading prerequisites) =====",
-  "_live_note": "This module has NO live loop, no order-placement code, and no live account designation. `enabled` exists only so the suite's config/console surfaces can read a real gate for this module instead of reporting an absent one as 'unknown' \u2014 flipping it to true does nothing until a live loop is built, and post-assignment management plus a calculated ex-div decision (the module CLAUDE.md's prerequisites) land first. Guarded the same as every other live gate: hand-edit only, never through the settings surface.",
-  "live": {
-    "enabled": false
   }
 }

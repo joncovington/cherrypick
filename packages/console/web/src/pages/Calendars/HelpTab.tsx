@@ -49,10 +49,9 @@ export function HelpTab({ data }: { data: CalendarsPayload | undefined }) {
           </p>
           <p>
             <strong>Paper only, and structurally so.</strong> There is no live loop and no order-placement
-            code. The config&rsquo;s <span className="mono">live.enabled</span> is an inert placeholder that
-            exists so the suite&rsquo;s surfaces can report &ldquo;paper only&rdquo; instead of
-            &ldquo;unknown&rdquo;; flipping it does nothing. A live path would first need post-assignment
-            management and a calculated ex-dividend decision, and neither exists.
+            code, so the config has no live switch and the live lock shows it as &ldquo;no live path&rdquo;.
+            A live path would first need post-assignment management and a calculated ex-dividend decision,
+            and neither exists.
           </p>
         </div>
       </Card>
