@@ -34,6 +34,7 @@ import urllib.parse
 import urllib.request
 from datetime import UTC, date, datetime
 
+from cherrypick.core import progress
 from cherrypick.technicals import earnings_calendar, fundamentals, paths, symbols
 
 PAUSE_S = 0.5
@@ -110,9 +111,12 @@ def main(argv=None) -> int:
     todo = due(names, have, today)[: args.limit]
     failed: list[str] = []
     started = time.monotonic()
+    rep = progress.Reporter("fetch_sectors")
+    rep.split("names", todo, unit="names")
     for k, sym in enumerate(todo):
         if k:
             time.sleep(PAUSE_S)
+        rep.advance("names", key=sym, current=sym)
         try:
             have[sym] = {**parse(fetch(sym), sym), "fetched_on": today.isoformat()}
         except urllib.error.HTTPError as exc:
@@ -121,6 +125,7 @@ def main(argv=None) -> int:
                 break
         except Exception as exc:  # noqa: BLE001 -- one name failing is a gap, not the run
             failed.append(f"{sym}: {type(exc).__name__}: {str(exc)[:100]}")
+    rep.finish("done")
     out = {"fetched_at": datetime.now(UTC).isoformat(), "names": dict(sorted(have.items())), "failed": failed}
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f"{path.name}.tmp")

@@ -50,6 +50,7 @@ from cherrypick.contango import db as _db  # noqa: E402
 from cherrypick.contango import paper_loop as _loop  # noqa: E402
 from cherrypick.contango import regime as _regime  # noqa: E402
 from cherrypick.contango import replay as _replay  # noqa: E402
+from cherrypick.core import progress  # noqa: E402
 from cherrypick.overview import files as _files  # noqa: E402
 from cherrypick.technicals import paths as _paths  # noqa: E402
 
@@ -77,17 +78,23 @@ def history_conn() -> sqlite3.Connection:
 
 
 def run_arms(
-    config: dict, conn, ratio: dict[str, float], *, start: str, end: str, cost_bps: float
+    config: dict, conn, ratio: dict[str, float], *, start: str, end: str, cost_bps: float, rep=None
 ) -> list[dict]:
     """Each enabled arm, then buy-and-hold of each risk fund, over `start..end`: one dict per row
     with `label`, `arm`, `stats`, `switches`, `days_in_risk` and the replay's `navs`. Importable:
-    `scripts/contango_vx_replay.py` sets the futures arms beside these on the same dates."""
+    `scripts/contango_vx_replay.py` sets the futures arms beside these on the same dates. `rep` is a
+    progress Reporter: the arms, each counted under its risk fund."""
     series: dict[str, dict[str, float]] = {}
     rows: list[dict] = []
     held: set[str] = set()
-    for arm in _loop.enabled_arms(config):
+    arms = _loop.enabled_arms(config)
+    if rep is not None:
+        rep.split("arms", [_loop._symbols(_loop.merged_params(config, a))[0] for a in arms], unit="arms")
+    for arm in arms:
         params = _loop.merged_params(config, arm)
         risk_sym, cash_sym = _loop._symbols(params)
+        if rep is not None:
+            rep.advance("arms", key=risk_sym, current=arm)
         for sym in (risk_sym, cash_sym):
             if sym not in series:
                 series[sym] = _shield.closes(conn, sym, total_return=True)[0]
@@ -294,9 +301,16 @@ def main(argv=None) -> int:
         counts = validate(config, ledger)
         return 1 if counts["rule_bad"] or counts["price_bad"] else 0
 
-    rows = run_arms(
-        config, history_conn(), ratio_series(), start=args.start, end=args.end, cost_bps=args.cost_bps
-    )
+    with progress.Reporter("contango_replay") as rep:
+        rows = run_arms(
+            config,
+            history_conn(),
+            ratio_series(),
+            start=args.start,
+            end=args.end,
+            cost_bps=args.cost_bps,
+            rep=rep,
+        )
     for r in rows:
         s = r["stats"]
         print(

@@ -28,6 +28,7 @@ from pathlib import Path
 
 from cherrypick.core import calendar as cal
 from cherrypick.core import fees, treasury
+from cherrypick.core import progress as core_progress
 
 from cherrypick.backtest.study import calendars
 from cherrypick.backtest.study import checks as kit_checks
@@ -524,12 +525,23 @@ def cmd_study(args) -> int:
         chains = Chains(inputs, conn, SPEC["symbol"])
         closes, rate = spy_closes(SPEC["symbol"]), rate_reader()
         fridays = trade_dates()
-        stated = replay(chains, closes, rate, fridays)
-        reported = {name: replay(chains, closes, rate, fridays, **kw) for name, kw in VARIANTS.items()}
-        reported["stress"] = replay(chains, closes, rate, fridays, stress=STRESS)
-        for wd, name in WEEKDAYS.items():
-            reported[name] = replay(chains, closes, rate, trade_dates(weekday=wd))
-        reported["corner-21"] = replay(chains, closes, rate, trade_dates(target=SPEC["corner_target_days"]))
+        sym = SPEC["symbol"]
+        with core_progress.Reporter("spy_call_calendar_item91-study") as rep:
+            rep.split("replays", [sym] * (3 + len(VARIANTS) + len(WEEKDAYS)), unit="replays")
+            stated = replay(chains, closes, rate, fridays)
+            rep.advance("replays", key=sym, current="stated")
+            reported = {}
+            for name, kw in VARIANTS.items():
+                reported[name] = replay(chains, closes, rate, fridays, **kw)
+                rep.advance("replays", key=sym, current=name)
+            reported["stress"] = replay(chains, closes, rate, fridays, stress=STRESS)
+            rep.advance("replays", key=sym, current="stress")
+            for wd, name in WEEKDAYS.items():
+                reported[name] = replay(chains, closes, rate, trade_dates(weekday=wd))
+                rep.advance("replays", key=sym, current=name)
+            corner = trade_dates(target=SPEC["corner_target_days"])
+            reported["corner-21"] = replay(chains, closes, rate, corner)
+            rep.advance("replays", key=sym, current="corner-21")
         read = inputs.fingerprint(conn)
     finally:
         conn.close()

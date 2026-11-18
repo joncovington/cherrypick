@@ -81,7 +81,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from cherrypick.core import calendar as cal
-from cherrypick.core import legbars
+from cherrypick.core import legbars, progress
 from cherrypick.core import stats as core_stats
 
 _spec = importlib.util.spec_from_file_location(
@@ -626,15 +626,22 @@ def cmd_study(args) -> int:
     screens = json.loads(path.read_text(encoding="utf-8"))
     history, vend = _history(), _store()
     result: dict = {"windows": {}}
-    for wname, (w0, w1, end) in WINDOWS.items():
-        sw = screens[wname]
+
+    def window_names(wname: str) -> tuple[dict[str, set], list[str]]:
         listed: dict[str, set] = defaultdict(set)
-        for d, s in sw["days"].items():
+        for d, s in screens[wname]["days"].items():
             for sym in s["list"]:
                 listed[sym].add((int(d[:4]), int(d[5:7])))
         names = sorted(listed)
         if args.names:
             names = [n for n in names if n in set(args.names.split(","))]
+        return listed, names
+
+    rep = progress.Reporter("dividend_put_item70-study")
+    rep.split("names", [sym for wname in WINDOWS for sym in window_names(wname)[1]], unit="names")
+    for wname, (w0, w1, end) in WINDOWS.items():
+        sw = screens[wname]
+        listed, names = window_names(wname)
         w = {"edge": {a: {} for a in ARMS}, "stress": {a: {} for a in ARMS}, "trades": dict.fromkeys(ARMS, 0),
              "traded": dict.fromkeys(ARMS, 0), "names": {}}  # fmt: skip
         for sym in names:
@@ -660,7 +667,9 @@ def cmd_study(args) -> int:
                             "how": dict(statistics_count(t["how"] for t in trades))}  # fmt: skip
             w["names"][sym] = row
             print(wname, sym, {a: (row[a]["trades"], round(row[a]["edge"], 2)) for a in ARMS}, flush=True)
+            rep.advance("names", key=sym, current=f"{wname} {sym}")
         result["windows"][wname] = w
+    rep.finish("done")
     result["verdict"] = judge(result["windows"]["design"], result["windows"]["holdout"])
     out = Path(args.json) if args.json else _out_dir() / "results.json"
     out.write_text(json.dumps(result, default=str), encoding="utf-8")

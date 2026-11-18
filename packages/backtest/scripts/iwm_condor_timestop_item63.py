@@ -39,6 +39,7 @@ from datetime import date, datetime
 from pathlib import Path
 
 from cherrypick.core import fees, home, robustness
+from cherrypick.core import progress as core_progress
 
 from cherrypick.backtest import paths
 from cherrypick.backtest import settings as _settings
@@ -109,7 +110,15 @@ def run_stop(
 
 
 # --------------------------------------------------------------------------- the store
-def paired_trades(db: sqlite3.Connection, start: str, end: str, *, fill: str, stop_days: int = STOP_DAYS):
+def paired_trades(
+    db: sqlite3.Connection,
+    start: str,
+    end: str,
+    *,
+    fill: str,
+    stop_days: int = STOP_DAYS,
+    reporter: core_progress.Reporter | None = None,
+):
     """Both arms on every cycle item 59 would enter: (pairs, skips by arm). A pair needs both arms
     closed; an entry one arm could not close is counted under that arm and left out of the pairs."""
     exps = ic.monthlies(
@@ -124,6 +133,11 @@ def paired_trades(db: sqlite3.Connection, start: str, end: str, *, fill: str, st
         "SELECT max(session) FROM eod_chain_quotes WHERE symbol = ?", (ic.SYMBOL,)
     ).fetchone()
     pairs, skips = [], {a: Counter() for a in ARMS}
+    if reporter is not None:
+        exps = core_progress.track(
+            exps, job="iwm_condor_timestop_item63-study", phase=f"{fill}-cycles", unit="cycles",
+            key=lambda _: ic.SYMBOL, current=lambda e: e, reporter=reporter,
+        )  # fmt: skip
     for e in exps:
         planned = date.fromordinal(date.fromisoformat(e).toordinal() - ic.ENTRY_DTE).isoformat()
         if not (start <= planned <= end):
@@ -245,7 +259,11 @@ def main(argv: list[str] | None = None) -> int:
     vendor = paths.ensure_vendor_dir(cfg)
     db = sqlite3.connect(f"file:{vendor / 'eod_chains.db'}?mode=ro", uri=True)
 
-    pairs, skips = paired_trades(db, args.start, args.end, fill="working")
+    with core_progress.Reporter("iwm_condor_timestop_item63-study") as rep:
+        pairs, skips = paired_trades(db, args.start, args.end, fill="working", reporter=rep)
+        by_fill = {
+            f: paired_trades(db, args.start, args.end, fill=f, reporter=rep) for f in ("mid", "natural")
+        }
     test = score(pairs, skips, args.start, args.end)
     judge(test)
     out = {
@@ -256,10 +274,7 @@ def main(argv: list[str] | None = None) -> int:
         "verdict": test.get("verdict"),
         "test": test,
         "skips": {a: dict(s) for a, s in skips.items()},
-        "other_fills": {
-            f: score(*paired_trades(db, args.start, args.end, fill=f), args.start, args.end)
-            for f in ("mid", "natural")
-        },
+        "other_fills": {f: score(*got, args.start, args.end) for f, got in by_fill.items()},
         "planned_mde_B12": robustness.planned_mde(
             [p["stop7"]["net"] - p["base"]["net"] for p in pairs], len(pairs)
         )

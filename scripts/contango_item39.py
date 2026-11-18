@@ -62,6 +62,7 @@ from datetime import date, timedelta
 from pathlib import Path
 
 from cherrypick.contango import regime, replay
+from cherrypick.core import progress
 from cherrypick.core import stats as core_stats
 
 _HERE = str(Path(__file__).resolve().parent)
@@ -787,10 +788,26 @@ def run_study(
     crash: tuple[str, str] = CRASH,
     resamples: int = RESAMPLES,
     reference=None,
+    rep=None,
 ) -> dict:
     """The whole study over `data`: `inputs` (vix, vix3m, vix9d, spx), `risk` and `cash` total-return
     closes, `calendar` (the index sessions) and `candidates` (the fund's stored sessions). The
-    holdout is read only for arms that pass the design."""
+    holdout is read only for arms that pass the design. `rep` is a progress Reporter: the arms of each
+    window, all on the one fund (SVXY)."""
+
+    def counted(phase: str):
+        if rep is None:
+            return ARMS
+        return progress.track(
+            ARMS,
+            job="contango_item39",
+            phase=phase,
+            unit="arms",
+            key=lambda _: "SVXY",
+            current=lambda a: a,
+            reporter=rep,
+        )
+
     w = windows or WINDOWS
     cand = data["candidates"]
     non = non_session_days(cand, data["inputs"])
@@ -830,7 +847,7 @@ def run_study(
         "baselines": baseline_rows(data, ddays),
         "arms": {},
     }
-    for arm in ARMS:
+    for arm in counted("design"):
         design["arms"][arm] = evaluate_arm(
             arm, data, ddays, split=split, crash=crash, resamples=resamples, with_clauses=True
         )
@@ -871,7 +888,7 @@ def run_study(
         "arms": {},
     }
     held: dict[str, dict] = {}
-    for arm in ARMS:
+    for arm in counted("holdout"):
         ok_cov = design["arms"][arm]["coverage"]["missing_share"] <= MISSING_MAX
         if checks[arm] is not None and ok_cov and all(checks[arm].values()):
             r = evaluate_arm(
@@ -1096,7 +1113,8 @@ def cmd_plan(args) -> int:
 
 def cmd_study(args) -> int:
     data = load_data()
-    result = run_study(data, reference=reference_navs(data))
+    with progress.Reporter("contango_item39-study") as rep:
+        result = run_study(data, reference=reference_navs(data), rep=rep)
     result["paper_agreement"] = paper_agreement()
     result["coverage_files"] = plan_facts(data)["files"]
     out = Path(args.json) if args.json else _out_dir() / "results.json"

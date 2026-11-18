@@ -171,11 +171,11 @@ def reach(settings: dict, hours=HOURS, short_delta: float = SHORT_DELTA, widest:
                     days = [d for d, _ in runner.sessions_in(conn, SYMBOL, start, end)]
                     row[f"{label}_sessions"] = len(days)
                     # Both stores: what the wide fetch adds over the plain one's 20 strikes.
-                    rep.phase("sessions", total=len(days), unit="sessions")
+                    rep.split("sessions", [SYMBOL] * len(days), unit="sessions")
                     marks = []
                     for d in days:
                         marks += _session_coverage(conn, d, hours, short_delta, widest)
-                        rep.advance("sessions", current=d)
+                        rep.advance("sessions", current=d, key=SYMBOL)
                     rep.close_phase("sessions")
                     row[f"{label}_hourly_marks"] = len(marks)
                     row[f"{label}_put_wing_inside"] = _share([m["put"] for m in marks])

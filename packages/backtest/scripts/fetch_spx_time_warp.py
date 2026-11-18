@@ -24,6 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
 
 from cherrypick.core import calendar as _calendar
+from cherrypick.core import progress
 
 from cherrypick.backtest import paths
 from cherrypick.backtest import settings as _settings
@@ -75,6 +76,8 @@ def main(start, end):
     todo = plan(start, end, done)
     print(f"to fetch: {len(todo)} (day, expiry, leg) requests", flush=True)
     client = client_for(cfg)
+    rep = progress.Reporter("fetch_spx_time_warp")
+    rep.split("requests", ["SPX"] * len(todo), unit="requests")
 
     def one(req):
         d, e, leg = req
@@ -122,12 +125,14 @@ def main(start, end):
                 db.execute("INSERT OR REPLACE INTO fetched VALUES (?,?,?,?,?)", (*key, status, len(rows)))
                 db.commit()
                 n_req += 1
+                rep.advance("requests", key="SPX", current=key[0])
                 n_rows += len(rows)
                 if n_req % 100 == 0:
                     rate = n_req / (time.monotonic() - t0)
                     print(f"{key[0]} requests={n_req}/{len(todo)} rows={n_rows} {rate:.2f}/s", flush=True)
     finally:
         client.close()
+        rep.finish("done" if sys.exc_info()[0] is None else "failed")
         db.close()
     print(f"done through {end}: requests={n_req} rows={n_rows}", flush=True)
 

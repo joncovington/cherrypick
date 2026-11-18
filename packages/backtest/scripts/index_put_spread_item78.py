@@ -34,6 +34,7 @@ from pathlib import Path
 
 from cherrypick.core import bs, fees, treasury
 from cherrypick.core import calendar as cal
+from cherrypick.core import progress as core_progress
 
 from cherrypick.backtest.study import checks as ck
 from cherrypick.backtest.study import rule as kit_rule
@@ -258,9 +259,16 @@ def mean_excess(rows: list[dict]) -> dict:
 # The run.
 
 
-def collect(inputs: Inputs, conn) -> tuple[dict[str, list[dict]], dict[str, dict[str, int]]]:
+def collect(
+    inputs: Inputs, conn, reporter: core_progress.Reporter | None = None
+) -> tuple[dict[str, list[dict]], dict[str, dict[str, int]]]:
     """Every arm's trades (and the naked put's) over every declared path, and the skips per arm."""
     keys = sorted({(s, e) for s, e, _, _ in inputs.keys}, key=lambda k: (k[1], k[0]))
+    if reporter is not None:
+        keys = core_progress.track(
+            keys, job="index_put_spread_item78-study", phase="paths", unit="paths",
+            key=lambda k: k[0], current=lambda k: k[1], reporter=reporter,
+        )  # fmt: skip
     arms = {**ARMS, "naked": None}
     trades: dict[str, list[dict]] = {a: [] for a in arms}
     skips: dict[str, dict[str, int]] = {a: {} for a in arms}
@@ -295,8 +303,8 @@ def rate_reader():
     return rate
 
 
-def study(inputs: Inputs, conn, rate) -> dict:
-    trades, skips = collect(inputs, conn)
+def study(inputs: Inputs, conn, rate, reporter: core_progress.Reporter | None = None) -> dict:
+    trades, skips = collect(inputs, conn, reporter)
     rows = {a: cycle_rows(ts, rate) for a, ts in trades.items()}
     judged = {a: [r for r in rs if r["expiry"] <= LAST_JUDGED] for a, rs in rows.items()}
     block = kit_rule.evaluate(RULE, {a: judged[a] for a in ARMS})
@@ -341,7 +349,8 @@ def cmd_study(args) -> int:
     inputs = Inputs(out_dir() / "path_requests.json")
     conn = chain_store()
     try:
-        block = study(inputs, conn, rate_reader())
+        with core_progress.Reporter("index_put_spread_item78-study") as rep:
+            block = study(inputs, conn, rate_reader(), rep)
         read = inputs.fingerprint(conn)
     finally:
         conn.close()

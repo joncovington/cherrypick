@@ -65,6 +65,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from cherrypick.core import home
+from cherrypick.core import progress as core_progress
 from cherrypick.core import stats as core_stats
 
 from cherrypick.backtest import paths
@@ -337,7 +338,10 @@ def cmd_fetch_yahoo(args) -> int:
     conn = sqlite3.connect(yahoo_db_path())
     summary: dict[str, dict] = {}
     try:
-        for sym, ticker in YAHOO.items():
+        for sym, ticker in core_progress.track(
+            YAHOO.items(), job="meic_call_side_item51-fetch-yahoo", phase="series", unit="series",
+            key=lambda kv: kv[0],
+        ):  # fmt: skip
             tk = yf.Ticker(ticker)
             rows: list[dict] = []
             failed = 0
@@ -861,7 +865,7 @@ def load_spx(path_open: Path) -> dict[str, float]:
         conn.close()
 
 
-def study(part: int, window: str) -> dict:
+def study(part: int, window: str, reporter: core_progress.Reporter | None = None) -> dict:
     for name in ("VIX", "VIX3M", "VIX9D"):
         if not cboe_path(name).exists():
             raise SystemExit(f"missing {cboe_path(name)}: the exchange's daily file is an input")
@@ -892,7 +896,11 @@ def study(part: int, window: str) -> dict:
     start, end = (d_start, d_end) if window == "design" else (HOLDOUT_START, "9999-12-31")
 
     ids, checks, per_base = {}, {}, {}
-    for base in BASES:
+    job = f"meic_call_side_item51-study-part{part}"
+    for base in core_progress.track(
+        BASES, job=job, phase="ledgers", unit="arms", key=lambda _: "SPX", current=lambda b: b,
+        reporter=reporter,
+    ) if reporter is not None else BASES:  # fmt: skip
         rid = run_for(base, window)
         ledger = paths.results_dir() / "runs" / rid if rid else None
         if not rid or not ledger.is_dir():
@@ -911,16 +919,20 @@ def study(part: int, window: str) -> dict:
     cells: dict[str, dict] = {}
     explored: dict[str, dict] = {}
     labels = ("design",) if window == "design" else ("judged", "explored")
-    for base, (entries, sessions) in per_base.items():
-        for label in labels:
-            es = [e for e in entries if label == "design" or period_of(e["session"]) == label]
-            ss = [d for d in sessions if label == "design" or period_of(d) == label]
-            flagged, unread = flag_entries(part, es, states, series)
-            totals = session_flags(ss, states) if part == 1 else {s: len(flagged[s]) for s in STATES}
-            for st in STATES:
-                cell = build_cell(flagged[st], ss, start, span_end, spx_open, spx_close, totals[st])
-                cell["entries_unread"] = unread
-                (explored if label == "explored" else cells)[f"{base}:{st}"] = cell
+    jobs = [(base, label) for base in per_base for label in labels]
+    for base, label in core_progress.track(
+        jobs, job=job, phase="cells", unit="arm-periods", key=lambda _: "SPX",
+        current=lambda j: f"{j[0]} {j[1]}", reporter=reporter,
+    ) if reporter is not None else jobs:  # fmt: skip
+        entries, sessions = per_base[base]
+        es = [e for e in entries if label == "design" or period_of(e["session"]) == label]
+        ss = [d for d in sessions if label == "design" or period_of(d) == label]
+        flagged, unread = flag_entries(part, es, states, series)
+        totals = session_flags(ss, states) if part == 1 else {s: len(flagged[s]) for s in STATES}
+        for st in STATES:
+            cell = build_cell(flagged[st], ss, start, span_end, spx_open, spx_close, totals[st])
+            cell["entries_unread"] = unread
+            (explored if label == "explored" else cells)[f"{base}:{st}"] = cell
     floor = MIN_FLAGGED[part]
     if window == "design":
         judge(cells, floor)
@@ -1018,7 +1030,8 @@ def study_path(doc: dict) -> Path:
 
 
 def cmd_study(args) -> int:
-    doc = study(args.part, args.window)
+    with core_progress.Reporter(f"meic_call_side_item51-study-part{args.part}") as rep:
+        doc = study(args.part, args.window, rep)
     path = Path(args.json) if args.json else study_path(doc)
     path.write_text(json.dumps(doc, indent=1, default=str), encoding="utf-8")
     path.with_suffix(".md").write_text(report(doc), encoding="utf-8")

@@ -37,7 +37,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from cherrypick.core import calendar as _cal
-from cherrypick.core import streamcache
+from cherrypick.core import progress, streamcache
 from cherrypick.core.auth import SHARED_SERVICE, CredentialStore, SessionManager
 from cherrypick.technicals import paths, symbols
 
@@ -236,6 +236,8 @@ def main(argv=None) -> int:
     wanted = list(symbols.INDEXES)
     today = datetime.now(_ET).date()
     conn = connect()
+    rep = progress.Reporter("fetch_index_bars")
+    rep.split("symbols", wanted, unit="symbols")
     try:
         start = start_for(latest(conn), wanted, today, args.full)
         held_dates = {
@@ -247,10 +249,12 @@ def main(argv=None) -> int:
             # One event loop for both requests: the session binds to the loop it was first used on.
             bars, hourly_raw, gaps = asyncio.run(collect(session, wanted, start, today, held_dates))
         except Exception as exc:  # noqa: BLE001 -- a failed fetch keeps every bar already held
+            rep.finish("failed")
             print(json.dumps({"ok": False, "reason": f"{type(exc).__name__}: {exc}"}))
             return 1
         result = {}
         for sym in wanted:
+            rep.advance("symbols", key=sym, current=sym)
             daily = bars.get(sym, [])
             rec: dict = {"candles": len(daily), "stored": store_bars(conn, sym, daily, today.isoformat())}
             if gaps.get(sym):
@@ -261,8 +265,12 @@ def main(argv=None) -> int:
             result[sym] = rec
         conn.commit()
         held = latest(conn)
+    except BaseException:
+        rep.finish("failed")
+        raise
     finally:
         conn.close()
+    rep.finish("done")
     ok = all(r["stored"] > 0 for r in result.values())
     print(json.dumps({"ok": ok, "from": start.isoformat(), "symbols": result, "latest": held}, indent=2))
     return 0 if ok else 1

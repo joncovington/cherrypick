@@ -39,6 +39,7 @@ from datetime import date
 from pathlib import Path
 
 from cherrypick.core import bs, treasury
+from cherrypick.core import progress as core_progress
 
 from cherrypick.backtest.study import checks as ck
 
@@ -197,20 +198,23 @@ def reported(rows: list[dict], arm: str) -> dict:
     }
 
 
-def study(rate=None, log=None) -> dict:
+def study(rate=None, log=None, reporter: core_progress.Reporter | None = None) -> dict:
     rate = rate or _rate_reader()
     conn = i46._chain_store()
     rows = []
     try:
         expiries = i57.weekly_expiries() + i57.forward_expiries(date.today())
+        if reporter is not None:
+            reporter.split("paths", [sym for sym in i57.MEMBERS for _ in expiries], unit="paths")
         for sym in i57.MEMBERS:
             for e in expiries:
                 got = i57._sessions_for(conn, sym, e)
-                if got is None:
-                    continue
-                row = trade_row(sym, e, *got, rate)
-                if row:
-                    rows.append(row)
+                if got is not None:
+                    row = trade_row(sym, e, *got, rate)
+                    if row:
+                        rows.append(row)
+                if reporter is not None:
+                    reporter.advance("paths", key=sym, current=e)
             if log:
                 log(f"{sym}: done")
     finally:
@@ -255,7 +259,8 @@ def cmd_study(args) -> int:
     if not i46._chain_store_path().exists():
         print("no chain store: item 57's chain paths are needed", file=sys.stderr)
         return 2
-    doc = study(log=lambda m: print(m, file=sys.stderr))
+    with core_progress.Reporter("index_put_tail_item77-study") as rep:
+        doc = study(log=lambda m: print(m, file=sys.stderr), reporter=rep)
     path = Path(args.out) if args.out else _out_dir() / "results.json"
     path.write_text(json.dumps(doc, indent=1, default=str), encoding="utf-8")
     print(json.dumps({"written": str(path), "verdict": doc["verdict"]}))

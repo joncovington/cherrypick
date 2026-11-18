@@ -1523,7 +1523,9 @@ def cmd_plan(args) -> int:
     ledger_path.write_text(json.dumps({"requests": ledger_net}, indent=1), encoding="utf-8")
     order = ["XSP(SPY)", "QQQ", "IWM", "GLD", "SLV", "SMH", *STOCKS]
     per_symbol, files = {}, {}
-    for name in order:
+    for name in core_progress.track(
+        order, job="pmcc_item36-plan", phase="symbols", unit="symbols", key=lambda n: n, current=str
+    ):
         reqs = path_requests(name, listed=listing_from(conn, name))
         net = stored_filter(reqs, *stored_for(conn, SYMBOLS[name][0]))
         per_symbol[name] = {
@@ -1951,12 +1953,12 @@ def cmd_study(args, guards_only: bool = False) -> int:
         print(f"earnings calendar unreadable ({exc}); stocks left out", file=sys.stderr)
     if _refuse_unlisted(vend, names):
         return 2
-    rep = core_progress.Reporter("item36-study")
-    rep.phase("markets", total=len(names), unit="symbols")
+    rep = core_progress.Reporter("pmcc_item36-study")
+    rep.split("markets", names, unit="symbols")
     markets = {}
     for n in names:
         markets[n] = load_market(n, vend, hist, reports.get(n))
-        rep.advance("markets", current=n)
+        rep.advance("markets", key=n, current=n)
     rep.close_phase("markets")
     costs = costs_config()
     ledger = read_ledger(Path(args.ledger) if getattr(args, "ledger", None) else _ledger_path())
@@ -1966,13 +1968,13 @@ def cmd_study(args, guards_only: bool = False) -> int:
         print(json.dumps(guards, indent=1, default=str))
         return 0 if guards["ok"] else 1
     specs = (*ARM_NAMES, *BASELINES, *REPORTED_ONLY)
-    rep.phase("replays", total=len(markets) * len(specs) * len(COST_SCALES), unit="runs")
+    rep.split("replays", [n for n in markets for _ in specs for _ in COST_SCALES], unit="runs")
     runs = {}
     for n, m in markets.items():
         for spec in specs:
             for sc in COST_SCALES:
                 runs[(n, spec, sc)] = simulate(m, SPECS[spec], scale=sc, costs=costs)
-                rep.advance("replays", current=f"{n} {spec}")
+                rep.advance("replays", key=n, current=f"{n} {spec}")
     rep.finish("done")
     problems = run_checks(runs, markets)
     if problems:

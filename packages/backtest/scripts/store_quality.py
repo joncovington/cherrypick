@@ -14,6 +14,8 @@ import json
 import sys
 from datetime import datetime
 
+from cherrypick.core import progress
+
 from cherrypick.backtest import paths, settings, storequality
 
 
@@ -27,10 +29,11 @@ def main(argv: list[str] | None = None) -> int:
     out_dir = paths.results_dir() / "quality"
     out_dir.mkdir(parents=True, exist_ok=True)
     written = []
-    for store in args.store or list(storequality.STORES):
+    present = [s for s in args.store or list(storequality.STORES) if (vendor / s).exists()]
+    for store in progress.track(
+        present, job="store_quality-run", phase="stores", unit="stores", key=lambda s: s.removesuffix(".db")
+    ):
         src = vendor / store
-        if not src.exists():
-            continue
         print(f"{store}: reading", file=sys.stderr)
         doc = storequality.report(src, store)
         doc["read_at"] = datetime.now().isoformat(timespec="seconds")

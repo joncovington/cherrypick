@@ -29,6 +29,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from cherrypick.core import home as _home
+from cherrypick.core import progress
 from cherrypick.core.auth import SHARED_SERVICE, CredentialStore, SessionManager
 from cherrypick.core.jsonio import write_json_atomic
 
@@ -56,11 +57,16 @@ def _out_path() -> Path:
     return _home.state_dir() / OUT_PATH_NAME
 
 
-async def resolve(session) -> dict:
+async def resolve(session, rep=None) -> dict:
+    """`rep` is a progress Reporter: the product codes, each counted under its own code."""
     from tastytrade.instruments import Future
 
     out: dict[str, list[dict]] = {}
+    if rep is not None:
+        rep.split("products", PRODUCTS, unit="products")
     for code, want in PRODUCTS.items():
+        if rep is not None:
+            rep.advance("products", key=code, current=code)
         contracts = await Future.get(session, product_codes=[code])
         rows = []
         for f in sorted(contracts, key=lambda c: c.expiration_date):
@@ -97,7 +103,8 @@ def main(argv=None) -> int:
         return 1
     try:
         session = SessionManager(store).get_session()
-        contracts = asyncio.run(resolve(session))
+        with progress.Reporter("refresh_futures_contracts") as rep:
+            contracts = asyncio.run(resolve(session, rep))
     except Exception as exc:  # noqa: BLE001 — a refresh failure must leave the old map alone
         print(json.dumps({"ok": False, "reason": f"{type(exc).__name__}: {exc}"}))
         return 1

@@ -38,7 +38,7 @@ from collections import defaultdict
 from datetime import date
 from pathlib import Path
 
-from cherrypick.core import treasury
+from cherrypick.core import progress, treasury
 
 from cherrypick.backtest.study import checks as ck
 from cherrypick.backtest.study import rule as kit_rule
@@ -176,7 +176,8 @@ def cmd_study(args) -> int:
     vendor = paths.ensure_vendor_dir(_settings.load())
     db = sqlite3.connect(f"file:{vendor / 'eod_chains.db'}?mode=ro", uri=True)
     try:
-        trades, skips = i64.trades(db, START, END)
+        with progress.Reporter("bullish_structures_bars_item79-study") as rep:
+            trades, skips = i64.trades(db, START, END, reporter=rep)
     finally:
         db.close()
     skips = {k: dict(v) for k, v in skips.items()}

@@ -42,7 +42,7 @@ from datetime import date, datetime, time
 from functools import lru_cache
 from pathlib import Path
 
-from cherrypick.core import bs, streamcache
+from cherrypick.core import bs, progress, streamcache
 from cherrypick.core import calendar as cal
 from cherrypick.core import stats as core_stats
 from cherrypick.core.spreadbook import exit_spread_blocks
@@ -816,13 +816,19 @@ def share_reference(sessions: list[Session], a: date, b: date) -> dict:
 # The whole run, over whatever sessions and chains it is handed.
 
 
-def run_all(sessions: list[Session], chain_at, snapshot_at) -> dict:
+def run_all(
+    sessions: list[Session], chain_at, snapshot_at, reporter: progress.Reporter | None = None
+) -> dict:
     d0, d1 = WINDOWS["design"]
     h0, h1 = WINDOWS["holdout"]
     arms: dict[str, dict] = {a: {} for a in ARMS}
     sims: dict[str, dict] = {}
+    if reporter is not None:
+        reporter.split("arms", [SYMBOL] * (2 * len(ARMS)), unit="arms")
     for a in ARMS:
         sims[a] = simulate(a, sessions, chain_at, snapshot_at, entry_from=d0, entry_to=d1)
+        if reporter is not None:
+            reporter.advance("arms", key=SYMBOL, current=f"{a} design")
     design = judge({a: sims[a]["trades"] for a in ARMS})
     holdouts: dict[str, dict | None] = {}
     hsims: dict[str, dict] = {}
@@ -833,6 +839,8 @@ def run_all(sessions: list[Session], chain_at, snapshot_at) -> dict:
             holdouts[a] = holdout_reading(hsims[a]["trades"])
         else:
             holdouts[a] = None
+        if reporter is not None:
+            reporter.advance("arms", key=SYMBOL, current=f"{a} holdout")
     verdict: dict[str, dict] = {}
     for a in ARMS:
         verdict[a] = arm_verdict(design[a], holdouts[a])
@@ -1156,7 +1164,8 @@ def cmd_study(args) -> int:
     chain_at = _make_chain_at(conn)
     snapshot_at = make_snapshot_at(chain_at)
     try:
-        result = run_all(sessions, chain_at, snapshot_at)
+        with progress.Reporter("curve_item37-study") as rep:
+            result = run_all(sessions, chain_at, snapshot_at, reporter=rep)
         result["data"] = {
             "sessions": len(sessions),
             "missing_bars": missing,

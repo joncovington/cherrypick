@@ -81,6 +81,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from cherrypick.core import fees as _fees
+from cherrypick.core import progress
 
 SYMBOL = "SPY"
 MULT = 100
@@ -119,11 +120,12 @@ def _connect(host: str, port: int, database: str):
     )
 
 
-def load_data(host: str, port: int, start: date, end: date, cache: Path | None) -> dict:
+def load_data(host: str, port: int, start: date, end: date, cache: Path | None, rep=None) -> dict:
     """Monthly-expiry chain rows, closes and dividends for SPY, keyed by ISO date strings.
 
     One SELECT per weekday on the `(date, act_symbol)` key prefix. A cache file, when given, is
-    reused if it covers the requested dates (it is only a copy of what the clone returned)."""
+    reused if it covers the requested dates (it is only a copy of what the clone returned). `rep` is
+    a progress Reporter: the dates read, all on SPY."""
     if cache and cache.exists():
         data = json.loads(cache.read_text())
         if data["start"] <= start.isoformat() and data["end"] >= end.isoformat():
@@ -135,7 +137,11 @@ def load_data(host: str, port: int, start: date, end: date, cache: Path | None) 
     try:
         oc, sc = opt.cursor(), stk.cursor()
         d = start
+        if rep is not None:
+            rep.split("dates", [SYMBOL] * max(0, (end - start).days + 1), unit="days")
         while d <= end:
+            if rep is not None:
+                rep.advance("dates", key=SYMBOL, current=d.isoformat())
             if d.weekday() < 5:
                 sc.execute("SELECT close FROM ohlcv WHERE date=%s AND act_symbol=%s", (d, SYMBOL))
                 row = sc.fetchone()
@@ -920,21 +926,27 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--json", type=Path, help="write summaries and trades here")
     args = ap.parse_args(argv)
 
-    data = load_data(args.host, args.port, args.start, args.end, args.cache)
+    rep = progress.Reporter("premium_cycle_replay")
+    data = load_data(args.host, args.port, args.start, args.end, args.cache, rep)
     if not data["chains"]:
+        rep.finish("failed")
         print("no chain rows in range", file=sys.stderr)
         return 1
     raw: dict[tuple[str, str], dict] = {}
     results: dict[tuple[str, str], dict] = {}
+    n_runs = sum(1 for s in SPECS for w in WINDOWS if not (w == "recipe" and s.recipe_window is None))
+    rep.split("replays", [SYMBOL] * (n_runs + len(CHECKS)), unit="runs")
     for spec in SPECS:
         for window in WINDOWS:
             if window == "recipe" and spec.recipe_window is None:
                 continue
+            rep.advance("replays", key=SYMBOL, current=f"{spec.name} {window}")
             r = run(spec, window, data, args.start, args.end, args.slippage_frac)
             raw[(spec.name, window)] = r
             results[(spec.name, window)] = summarise(r)
     checks: dict[tuple[str, str], dict] = {}
     for spec in CHECKS:
+        rep.advance("replays", key=SYMBOL, current=f"{spec.name} roll")
         r = run(spec, "roll", data, args.start, args.end, args.slippage_frac)
         raw[(spec.name, "roll")] = r
         results[(spec.name, "roll")] = summarise(r)
@@ -950,6 +962,7 @@ def main(argv: list[str] | None = None) -> int:
             p = args.cboe_dir / f"{idx}_History.csv"
             if p.exists():
                 checks[("context", idx)] = index_context(read_cboe(p), first, last)
+    rep.finish("done")
     print_report(data, results, checks, args.slippage_frac, args.start, args.end)
     if args.json:
         out = {

@@ -85,6 +85,7 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from cherrypick.core import progress
 from cherrypick.core.broker import standard_chains
 
 # scripts/_common.py, beside this file (a test loading this script by path has no scripts/ on sys.path).
@@ -755,9 +756,10 @@ def _follow_get(path: str, params: list[tuple[str, str]] | None = None):
         return json.loads(resp.read().decode("utf-8"))
 
 
-def harvest_follow(kept: dict[str, dict]) -> tuple[dict[str, str], int, list[str]]:
+def harvest_follow(kept: dict[str, dict], rep=None) -> tuple[dict[str, str], int, list[str]]:
     """Ask the feed once per trader; returns (trader names, new orders, problems). One pass, paced;
-    a refusal or error ends the pass with what was gathered."""
+    a refusal or error ends the pass with what was gathered. `rep` is a progress Reporter; a trader
+    is not a symbol, so the count is overall only."""
     problems: list[str] = []
     try:
         roster = _follow_get("/api/traders").get("traders") or []
@@ -765,8 +767,12 @@ def harvest_follow(kept: dict[str, dict]) -> tuple[dict[str, str], int, list[str
         return {}, 0, [f"follow roster: {exc}"]
     names = {str(t["id"]): str(t.get("name") or t["id"]) for t in roster if isinstance(t, dict) and "id" in t}
     new = 0
+    if rep is not None:
+        rep.phase("traders", total=len(names), unit="traders")
     for name in names.values():
         time.sleep(random.uniform(*FOLLOW_PAUSE_RANGE_S))
+        if rep is not None:
+            rep.advance("traders", current=name)
         try:
             body = _follow_get("/api/public_orders", [("traders[]", name)])
         except urllib.error.HTTPError as exc:
@@ -817,7 +823,8 @@ def cmd_harvest(args) -> int:
     problems: list[str] = []
     new = 0
     if not args.no_follow:
-        names, new, problems = harvest_follow(feed["orders"])
+        with progress.Reporter("build_stock_universe-harvest") as rep:
+            names, new, problems = harvest_follow(feed["orders"], rep)
         feed["traders"].update(names)
         feed["harvested_at"] = datetime.now(UTC).isoformat()
         _write_json(feed_path, feed)
@@ -871,11 +878,14 @@ def _iso(value) -> str | None:
     return value.isoformat() if isinstance(value, datetime) else None
 
 
-async def _measure(session, symbols: list[str], chain_cache: dict, limit_chains: int | None) -> dict:
+async def _measure(
+    session, symbols: list[str], chain_cache: dict, limit_chains: int | None, rep=None
+) -> dict:
     """Instruments, metrics, stock quotes, chains and option quotes for every listed candidate. The
     chains are one call a name a day, a second apart (about ten minutes for the first measurement of
     a day, cached for the second). They are spent on names the universe's volume bar already rules
-    out as well, because their monthly spread is still wanted (see the module note)."""
+    out as well, because their monthly spread is still wanted (see the module note). `rep` is a
+    progress Reporter: the chain listings (the long pass) counted by name."""
     from tastytrade.instruments import Equity, NestedOptionChain
     from tastytrade.market_data import get_market_data_by_type
     from tastytrade.metrics import get_market_metrics
@@ -916,11 +926,15 @@ async def _measure(session, symbols: list[str], chain_cache: dict, limit_chains:
 
     fetched = 0
     lo, hi = RULE["option_dte_range"]
+    if rep is not None:
+        rep.split("chains", optionable, unit="names", done=[s for s in optionable if s in chain_cache])
     for sym in optionable:
         if sym in chain_cache:
             continue
         if limit_chains is not None and fetched >= limit_chains:
             break
+        if rep is not None:
+            rep.advance("chains", key=sym, current=sym)
         try:
             chains = await NestedOptionChain.get(session, to_tastytrade(sym))
         except Exception as exc:  # noqa: BLE001 — a name without a chain is recorded as such
@@ -1011,15 +1025,18 @@ def cmd_measure(args) -> int:
     chain_cache = _read_json(chain_path, {})
     started = datetime.now(UTC)
     problem = None
+    rep = progress.Reporter("build_stock_universe-measure")
     try:
         session = SessionManager(store).get_session()
         # Names held illiquid are not measured between sweeps (technicals `liquidity.skip`).
         from cherrypick.technicals import liquidity
 
         todo = sorted(set(cands) - liquidity.skip(today))
-        names = asyncio.run(_measure(session, todo, chain_cache, args.limit))
+        names = asyncio.run(_measure(session, todo, chain_cache, args.limit, rep))
+        rep.finish("done")
     except Exception as exc:  # noqa: BLE001 — keep the chains gathered so far; warn and stop
         names, problem = None, f"{type(exc).__name__}: {exc}"
+        rep.finish("failed")
     _write_json(chain_path, chain_cache)
     if names is None:
         _warn("Universe measurement failed", problem or "")

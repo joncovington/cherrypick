@@ -29,6 +29,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import flow_signal_item32 as s32  # noqa: E402
+from cherrypick.core import progress as core_progress  # noqa: E402
 
 from cherrypick.backtest import flowfetch as _ff  # noqa: E402
 from cherrypick.backtest import paths, ratiostudy, settings  # noqa: E402
@@ -87,39 +88,44 @@ def build_scan(window: str, plan: dict, flow_db: Path) -> tuple[ratiostudy.Scan,
         "no_outcome": 0,
         "rows": 0,
     }
-    for sym, days in by_sym.items():
-        raw = {b.date: b for b in store.raw_bars(hist, sym)}
-        adj = {b.date: b.close for b in store.adjusted_bars(hist, sym)}
-        closes = [adj.get(d) for d in cal]
-        for s, h in days:
-            counts["grid_name_days"] += 1
-            bar = raw.get(s)
-            if ratiostudy.premium_of(h) <= 0:  # no single-leg orders: dropped from the ranking
-                counts["no_premium"] += 1
-                continue
-            ratio = ratiostudy.ratio_of(h, bar.close if bar else None, bar.volume if bar else None)
-            if ratio is None:
-                counts["no_ratio"] += 1
-                continue
-            i = index.get(s)
-            ex = None if i is None else s32.excess_return(closes, bench, i)
-            if ex is None:
-                counts["no_outcome"] += 1
-                continue
-            prior = None
-            if i >= PRIOR_SESSIONS and closes[i] and closes[i - PRIOR_SESSIONS]:
-                prior = closes[i] / closes[i - PRIOR_SESSIONS] - 1.0
-            rows[s].append(
-                {
-                    "sym": sym,
-                    "ratio": ratio,
-                    "ex": ex,
-                    "dvol": bar.close * bar.volume,
-                    "prior": prior,
-                    "reported": any(i + 2 <= j <= i + HORIZON + ENTRY_LAG for j in react_idx.get(sym, ())),
-                }
-            )
-            counts["rows"] += 1
+    with core_progress.Reporter("option_stock_ratio_item34-study") as rep:
+        rep.split("name-days", [sym for sym, days in by_sym.items() for _ in days], unit="name-days")
+        for sym, days in by_sym.items():
+            raw = {b.date: b for b in store.raw_bars(hist, sym)}
+            adj = {b.date: b.close for b in store.adjusted_bars(hist, sym)}
+            closes = [adj.get(d) for d in cal]
+            for s, h in days:
+                rep.advance("name-days", key=sym, current=s)
+                counts["grid_name_days"] += 1
+                bar = raw.get(s)
+                if ratiostudy.premium_of(h) <= 0:  # no single-leg orders: dropped from the ranking
+                    counts["no_premium"] += 1
+                    continue
+                ratio = ratiostudy.ratio_of(h, bar.close if bar else None, bar.volume if bar else None)
+                if ratio is None:
+                    counts["no_ratio"] += 1
+                    continue
+                i = index.get(s)
+                ex = None if i is None else s32.excess_return(closes, bench, i)
+                if ex is None:
+                    counts["no_outcome"] += 1
+                    continue
+                prior = None
+                if i >= PRIOR_SESSIONS and closes[i] and closes[i - PRIOR_SESSIONS]:
+                    prior = closes[i] / closes[i - PRIOR_SESSIONS] - 1.0
+                rows[s].append(
+                    {
+                        "sym": sym,
+                        "ratio": ratio,
+                        "ex": ex,
+                        "dvol": bar.close * bar.volume,
+                        "prior": prior,
+                        "reported": any(
+                            i + 2 <= j <= i + HORIZON + ENTRY_LAG for j in react_idx.get(sym, ())
+                        ),
+                    }
+                )
+                counts["rows"] += 1
     return ratiostudy.Scan(grid=grid, rows=rows), counts
 
 

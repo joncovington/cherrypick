@@ -36,6 +36,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import bwb_history_backtest as _bt  # noqa: E402  (the Cboe file reader)
 from cherrypick.core import impliedvar as iv  # noqa: E402
+from cherrypick.core import progress  # noqa: E402
 
 TOLERANCE = {"corr_min": 0.99, "mae_max": 0.75, "within_2pt_min": 0.90, "computed_min": 0.90}
 DOLT = {"host": "127.0.0.1", "port": 3306, "user": "root", "database": "options"}
@@ -96,9 +97,23 @@ def trading_days(start: str, end: str) -> list[date]:
     return [date.fromisoformat(d) for d in sorted(bars) if start <= d <= end]
 
 
-def run(cur, vix: dict[str, float], days: list[date], rate: float) -> list[dict]:
+def run(cur, vix: dict[str, float], days: list[date], rate: float, rep=None) -> list[dict]:
+    """`rep` is a progress Reporter: the sessions asked about, all on SPY."""
     results = []
-    for d in days:
+    counted = (
+        days
+        if rep is None
+        else progress.track(
+            days,
+            job="impliedvar_validate",
+            phase="sessions",
+            unit="days",
+            key=lambda _: "SPY",
+            current=lambda d: d.isoformat(),
+            reporter=rep,
+        )
+    )
+    for d in counted:
         if d.isoformat() not in vix:
             continue
         by_exp = chain(cur, d)
@@ -191,7 +206,8 @@ def main(argv=None) -> int:
     days = [d for d in trading_days(args.start, args.end) if d.weekday() == args.weekday]
     conn = connect(args.host, args.port)
     try:
-        results = run(conn.cursor(), vix, days, args.rate)
+        with progress.Reporter("impliedvar_validate") as rep:
+            results = run(conn.cursor(), vix, days, args.rate, rep)
     finally:
         conn.close()
     summary = summarize(results)

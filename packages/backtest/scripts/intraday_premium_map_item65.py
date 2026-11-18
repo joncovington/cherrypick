@@ -34,6 +34,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from cherrypick.core import home
+from cherrypick.core import progress as core_progress
 
 from cherrypick.backtest import paths
 from cherrypick.backtest import settings as _settings
@@ -164,7 +165,18 @@ def main(argv: list[str] | None = None) -> int:
             (args.start, args.end),
         )
     ]
-    rows = [r for d in days if d in closes for r in session(db, d, closes[d])]
+    rows = [
+        r
+        for d in core_progress.track(
+            [d for d in days if d in closes],
+            job="intraday_premium_map_item65",
+            phase="sessions",
+            unit="days",
+            key=lambda _: "SPX",
+            current=lambda d: d,
+        )  # fmt: skip
+        for r in session(db, d, closes[d])
+    ]
     out = {
         "item": 65,
         "verdict": "measurement",

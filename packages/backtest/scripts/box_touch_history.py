@@ -80,6 +80,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from cherrypick.core import home as _home
+from cherrypick.core import progress
 from cherrypick.core.structures import expected_move
 
 ET = ZoneInfo("America/New_York")
@@ -282,7 +283,12 @@ def holdout_days(days: list[str], holdout: tuple[str, str]) -> list[str]:
 
 
 def load_sessions(
-    path: Path, symbol: str, em_factor: float, start: str | None = None, end: str | None = None
+    path: Path,
+    symbol: str,
+    em_factor: float,
+    start: str | None = None,
+    end: str | None = None,
+    reporter: progress.Reporter | None = None,
 ) -> tuple[list[dict], dict]:
     """The sessions dated in [start, end] (either open), and the drops among them. Sessions after `end`
     are never read; the one before `start` is read for its close only, so it is never counted."""
@@ -292,6 +298,16 @@ def load_sessions(
         conn.execute("SELECT trade_date, close FROM daily_closes WHERE symbol = ? AND close > 0", (symbol,))
     )
     out, drops, prev_close = [], defaultdict(int), None
+    if reporter is not None:
+        days = progress.track(
+            days,
+            job="box_touch_history",
+            phase="sessions",
+            unit="days",
+            key=lambda _: symbol,
+            current=lambda d: d,
+            reporter=reporter,
+        )
     for d in days:
         rows = conn.execute(
             "SELECT ts, spot FROM gex_spot_history "
@@ -492,7 +508,10 @@ def main(argv=None) -> int:
                 file=sys.stderr,
             )
             return 2
-    sessions, drops = load_sessions(args.history_db, args.symbol, args.em_factor, args.start, args.end)
+    with progress.Reporter("box_touch_history") as reporter:
+        sessions, drops = load_sessions(
+            args.history_db, args.symbol, args.em_factor, args.start, args.end, reporter=reporter
+        )
     sessions = in_window(sessions, args.start, args.end)
     print(f"loaded {len(sessions)} sessions; dropped {drops}", file=sys.stderr)
     rep = analyse(sessions, hhmm(args.cutoff))

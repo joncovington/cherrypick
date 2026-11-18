@@ -30,6 +30,7 @@ import sys
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
+from cherrypick.core import progress
 from cherrypick.core.broker import standard_chains
 
 DAYS = 7
@@ -115,7 +116,7 @@ def upcoming(days: int, today: date) -> list[tuple[str, date, str | None]]:
         cn.close()
 
 
-async def price(session, events) -> list[dict]:
+async def price(session, events, rep=None) -> list[dict]:
     from tastytrade.instruments import NestedOptionChain
     from tastytrade.market_data import get_market_data_by_type
 
@@ -132,9 +133,13 @@ async def price(session, events) -> list[dict]:
             close = q.close or q.prev_close
             if close:
                 spots[q.symbol.replace("/", ".")] = float(close)
+    if rep is not None:
+        rep.split("events", [s for s, _, _ in events], unit="events")
     for n, (sym, d, when) in enumerate(events):
         if n:
             await asyncio.sleep(PAUSE_S)
+        if rep is not None:
+            rep.advance("events", key=sym, current=d)
         spot = spots.get(sym)
         try:
             chains = await NestedOptionChain.get(session, sym.replace(".", "/"))
@@ -179,7 +184,8 @@ def main(argv=None) -> int:
     today = datetime.now(UTC).astimezone().date()
     try:
         events = upcoming(args.days, today)
-        rows = asyncio.run(price(SessionManager(store_).get_session(), events)) if events else []
+        with progress.Reporter("fetch_earnings_moves") as rep:
+            rows = asyncio.run(price(SessionManager(store_).get_session(), events, rep=rep)) if events else []
     except Exception as exc:  # noqa: BLE001 -- the previous file stays; say why
         print(json.dumps({"ok": False, "reason": f"{type(exc).__name__}: {exc}"}))
         return 1

@@ -44,7 +44,7 @@ import sys
 from datetime import date
 from pathlib import Path
 
-from cherrypick.core import robustness
+from cherrypick.core import progress, robustness
 from cherrypick.core import stats as core_stats
 
 _spec = importlib.util.spec_from_file_location(
@@ -264,7 +264,10 @@ def cmd_study(args) -> int:
     store = chainfetch.db_path(settings.load(None))
     conn = sqlite3.connect(f"file:{store.as_posix()}?mode=ro", uri=True)
     try:
-        records = e31.run_study(events, reports, span, PaperScreenStudy(data, e31.Chains(conn), cfg, moves))
+        with progress.Reporter("earnings_paper_screen_item67-study") as rep:
+            records = e31.run_study(
+                events, reports, span, PaperScreenStudy(data, e31.Chains(conn), cfg, moves), reporter=rep
+            )
     finally:
         conn.close()
     fomc, cpi = e31.macro_calendar(src / "macro_calendar.json")

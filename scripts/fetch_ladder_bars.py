@@ -44,7 +44,7 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from cherrypick.core import streamcache
+from cherrypick.core import progress, streamcache
 from cherrypick.core.home import data_dir
 
 NY = ZoneInfo("America/New_York")
@@ -252,12 +252,14 @@ async def broker_batch(
     return bars
 
 
-def fetch_broker(conn, daily: list[str], intraday: list[str], today: str, force: bool) -> dict:
+def fetch_broker(conn, daily: list[str], intraday: list[str], today: str, force: bool, rep=None) -> dict:
     # One event loop for the whole run: the session's HTTP client is bound to the loop it first ran on.
-    return asyncio.run(_fetch_broker(conn, daily, intraday, today, force))
+    return asyncio.run(_fetch_broker(conn, daily, intraday, today, force, rep))
 
 
-async def _fetch_broker(conn, daily: list[str], intraday: list[str], today: str, force: bool) -> dict:
+async def _fetch_broker(
+    conn, daily: list[str], intraday: list[str], today: str, force: bool, rep=None
+) -> dict:
     from cherrypick.core.auth import SHARED_SERVICE, CredentialStore, SessionManager
 
     session = SessionManager(CredentialStore(SHARED_SERVICE)).get_session()
@@ -275,9 +277,14 @@ async def _fetch_broker(conn, daily: list[str], intraday: list[str], today: str,
         }
         todo = [n for n in names if force or n not in done]
         counts["skipped"] += len(names) - len(todo)
+        phase = f"broker {interval}"
+        if rep is not None:
+            rep.split(phase, names, unit="symbols", done=[n for n in names if n not in todo])
         for k in range(0, len(todo), BATCH):
             got = await broker_batch(session, todo[k : k + BATCH], interval, ext, start)
             for name, rows in got.items():
+                if rep is not None:
+                    rep.advance(phase, key=name, current=name)
                 if save(conn, name, "broker", interval, rows, today):
                     counts["ok"] += 1
                 else:
@@ -336,7 +343,7 @@ def yahoo_get(url: str) -> dict | None:
     return None
 
 
-def fetch_yahoo(conn, daily: list[str], intraday: list[str], today: str, force: bool) -> dict:
+def fetch_yahoo(conn, daily: list[str], intraday: list[str], today: str, force: bool, rep=None) -> dict:
     counts = {"ok": 0, "missing": [], "skipped": 0}
     done = {
         (s, i)
@@ -345,11 +352,20 @@ def fetch_yahoo(conn, daily: list[str], intraday: list[str], today: str, force: 
         )
     }
     jobs = [(s, "1d") for s in daily] + [(s, "1h") for s in intraday]
+    if rep is not None:
+        rep.split(
+            "yahoo",
+            [s for s, _ in jobs],
+            unit="series",
+            done=[s for s, i in jobs if (s, i) in done and not force],
+        )
     try:
         for symbol, interval in jobs:
             if (symbol, interval) in done and not force:
                 counts["skipped"] += 1
                 continue
+            if rep is not None:
+                rep.advance("yahoo", key=symbol, current=f"{symbol}/{interval}")
             url = (
                 YAHOO_DAILY.format(symbol, int(time.time()))
                 if interval == "1d"
@@ -387,10 +403,11 @@ def main(argv: list[str] | None = None) -> int:
     today = date.today().isoformat()
     conn = connect(args.db)
     out: dict = {"db": str(args.db), "daily": len(daily), "intraday": intraday}
-    if args.source in ("broker", "both"):
-        out["broker"] = fetch_broker(conn, daily, intraday, today, args.force)
-    if args.source in ("yahoo", "both"):
-        out["yahoo"] = fetch_yahoo(conn, daily, intraday, today, args.force)
+    with progress.Reporter("fetch_ladder_bars") as rep:
+        if args.source in ("broker", "both"):
+            out["broker"] = fetch_broker(conn, daily, intraday, today, args.force, rep)
+        if args.source in ("yahoo", "both"):
+            out["yahoo"] = fetch_yahoo(conn, daily, intraday, today, args.force, rep)
     print(json.dumps(out))
     return 1 if "stopped" in out.get("yahoo", {}) else 0
 

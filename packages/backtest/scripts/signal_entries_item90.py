@@ -33,6 +33,8 @@ import sys
 from datetime import date
 from pathlib import Path
 
+from cherrypick.core import progress as core_progress
+
 from cherrypick.backtest.study import rule as kit_rule
 
 #: The correction log: one entry per fix to this replay, oldest first (orchestrator/studyversion.py).
@@ -449,7 +451,14 @@ def cmd_study(args) -> int:
             pool.setdefault(part_of(t["session"], split), []).append(t["entry_minute"])
         plan[n] = draw_minutes(sessions, {k: sorted(v) for k, v in pool.items()}, split, draws, rng)
     pbook = driver.Book()
-    for session in sessions:
+    for session in core_progress.track(
+        sessions,
+        job="signal_entries_item90-study",
+        phase="placebo-sessions",
+        unit="days",
+        key=lambda _: WINDOW["symbol"],
+        current=str,
+    ):
         todays = {}
         for n, arm in ARMS.items():
             for i, minute in enumerate(plan[n][session]):

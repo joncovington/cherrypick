@@ -72,6 +72,7 @@ from datetime import date, timedelta
 from pathlib import Path
 
 from cherrypick.core import fees as _fees
+from cherrypick.core import progress
 from cherrypick.core.structures import STRADDLE_TO_EM_FACTOR
 from cherrypick.technicals import compass, history, levels, paths, round5, store, study, trend
 
@@ -682,8 +683,11 @@ def main(argv=None) -> int:
             e["drop"] = f"error:{type(exc).__name__}"
             return None
 
+    rep = progress.Reporter("earnings_navigator_history")
+    rep.split("events", [e["symbol"] for e in todo], unit="events")
     with ThreadPoolExecutor(args.workers) as pool:
         for n, (e, r) in enumerate(zip(todo, pool.map(work, todo), strict=True), 1):
+            rep.advance("events", key=e["symbol"], current=e["date"])
             if r is None:
                 drops[e.get("drop", "unknown")] += 1
             else:
@@ -695,6 +699,7 @@ def main(argv=None) -> int:
                     file=sys.stderr,
                 )
     chains.flush()
+    rep.finish("done")
     head = {"args": {k: str(v) for k, v in vars(args).items()}, "drops": dict(drops)}
     report = analyse(results, head)
     print_report(report)

@@ -31,6 +31,8 @@ from datetime import UTC, datetime, timedelta
 from email.utils import parsedate_to_datetime
 from pathlib import Path
 
+from cherrypick.core import progress
+
 FEEDS = (
     ("fed", "Federal Reserve", "https://www.federalreserve.gov/feeds/press_all.xml"),
     ("cnbc_markets", "CNBC Markets", "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=20910258"),
@@ -123,9 +125,12 @@ def main(argv=None) -> int:
     args = ap.parse_args(argv)
     now = datetime.now(UTC)
     feeds, items = [], []
+    rep = progress.Reporter("fetch_headlines")
+    rep.phase("feeds", total=len(FEEDS), unit="feeds")  # feeds carry no symbol: no key
     for n, (fid, source, url) in enumerate(FEEDS):
         if n:
             time.sleep(PAUSE_S)
+        rep.advance("feeds", current=fid)
         try:
             got = parse(fetch(url), source)
             feeds.append({"id": fid, "source": source, "ok": True, "items": len(got), "error": None})
@@ -140,6 +145,7 @@ def main(argv=None) -> int:
                     "error": f"{type(exc).__name__}: {exc}"[:200],
                 }
             )
+    rep.finish("done")
     kept = select(items, now, args.hours)
     day = now.astimezone().date().isoformat()
     doc = {"generated_at": now.isoformat(), "window_hours": args.hours, "feeds": feeds, "items": kept}

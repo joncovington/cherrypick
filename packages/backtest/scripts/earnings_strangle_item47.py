@@ -54,7 +54,7 @@ from datetime import date, timedelta
 from pathlib import Path
 
 from cherrypick.core import calendar as cal
-from cherrypick.core import fees, robustness
+from cherrypick.core import fees, progress, robustness
 
 _spec = importlib.util.spec_from_file_location(
     "earnings_item31", Path(__file__).with_name("earnings_item31.py")
@@ -413,7 +413,14 @@ def cmd_study(args) -> int:
     conn = sqlite3.connect(f"file:{store.as_posix()}?mode=ro", uri=True)
     drops: dict[str, int] = defaultdict(int)
     trades: list[dict] = []
-    for e in events:
+    for e in progress.track(
+        events,
+        job="earnings_strangle_item47-study",
+        phase="events",
+        unit="events",
+        key=lambda e: e["symbol"],
+        current=lambda e: e["report_date"],
+    ):
         sym = e["symbol"]
         report = date.fromisoformat(e["report_date"])
         window = window_of(report)

@@ -42,7 +42,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from cherrypick.core import home as _home
-from cherrypick.core import streamcache
+from cherrypick.core import progress, streamcache
 from cherrypick.core.auth import SHARED_SERVICE, CredentialStore, SessionManager
 
 _ET = ZoneInfo("America/New_York")
@@ -196,15 +196,24 @@ def _et_stamp(ts: int | None) -> str | None:
     return None if ts is None else datetime.fromtimestamp(ts / 1000.0, tz=_ET).strftime("%Y-%m-%d %H:%M")
 
 
-async def run(session, conn: sqlite3.Connection, now: datetime, full: bool = False, sdk=None) -> list[dict]:
-    """One fetch per interval (one DXLink session, one event loop), stored as it arrives."""
+async def run(
+    session, conn: sqlite3.Connection, now: datetime, full: bool = False, sdk=None, rep=None
+) -> list[dict]:
+    """One fetch per interval (one DXLink session, one event loop), stored as it arrives. `rep` is a
+    progress Reporter: one phase per interval, each symbol counted as it is stored."""
     held = latest(conn)
     out = []
     for interval in WIDTH_MS:
         starts = {s: start_for(held.get((s, interval)), interval, now, full) for s in SYMBOLS}
         deep = {s for s in SYMBOLS if full or (s, interval) not in held}
+        phase = f"{interval} series"
+        if rep is not None:
+            rep.split(phase, SYMBOLS, unit="symbols")
+            rep.at(phase, "fetching")
         bars, clipped = await fetch(session, starts, interval, sdk)
         for sym in SYMBOLS:
+            if rep is not None:
+                rep.advance(phase, key=sym, current=sym)
             got = bars.get(sym, {})
             written = store_bars(conn, sym, interval, got, now)
             out.append(
@@ -245,15 +254,18 @@ def main(argv=None) -> int:
         print(json.dumps({"ok": False, "reason": "credentials_missing", "missing": list(missing)}))
         return 1
     conn = connect()
+    rep = progress.Reporter("fetch_vol_curve_bars")
     try:
         try:
             session = SessionManager(store).get_session()
-            summary = asyncio.run(run(session, conn, datetime.now(UTC), args.full))
+            summary = asyncio.run(run(session, conn, datetime.now(UTC), args.full, rep=rep))
         except Exception as exc:  # noqa: BLE001 -- a failed fetch keeps every bar already held
+            rep.finish("failed")
             print(json.dumps({"ok": False, "reason": f"{type(exc).__name__}: {exc}"}))
             return 1
     finally:
         conn.close()
+    rep.finish("done")
     verdict = outcome(summary)
     print(json.dumps({**verdict, "db": str(db_path()), "series": summary}, indent=2))
     return 0 if verdict["ok"] else 1

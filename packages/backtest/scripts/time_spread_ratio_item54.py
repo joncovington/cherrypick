@@ -59,6 +59,7 @@ from pathlib import Path
 
 from cherrypick.core import calendar as cal
 from cherrypick.core import fees
+from cherrypick.core import progress as core_progress
 from cherrypick.core import stats as core_stats
 
 NAMES = 40
@@ -395,7 +396,14 @@ def run_all(out: Path) -> tuple[list[dict], dict]:
     drops: Counter = Counter()
     trades: list[dict] = []
     try:
-        for sym in plan["names"]:
+        for sym in core_progress.track(
+            plan["names"],
+            job="time_spread_ratio_item54-design",
+            phase="names",
+            unit="names",
+            key=lambda s: s,
+            current=str,
+        ):
             bars = hist.execute(
                 "SELECT date, close FROM bars WHERE symbol = ? ORDER BY date", (sym,)
             ).fetchall()

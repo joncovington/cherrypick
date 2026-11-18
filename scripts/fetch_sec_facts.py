@@ -38,6 +38,7 @@ import urllib.request
 from datetime import UTC, date, datetime
 from pathlib import Path
 
+from cherrypick.core import progress
 from cherrypick.fundamentals import paths
 
 PAUSE_S = 0.25  # four requests a second, under SEC's ten
@@ -117,7 +118,8 @@ def tickers(ua: str, root: Path) -> dict[str, int]:
     return {str(v["ticker"]).replace("-", "."): int(v["cik_str"]) for v in raw.values()}
 
 
-def run(names: list[str], force: bool = False, log=print) -> dict:
+def run(names: list[str], force: bool = False, log=print, rep=None) -> dict:
+    """`rep` is a progress Reporter: the names visited, overall and each by its own symbol."""
     ua = user_agent()
     root = paths.sec_dir()
     (root / "submissions").mkdir(parents=True, exist_ok=True)
@@ -128,7 +130,11 @@ def run(names: list[str], force: bool = False, log=print) -> dict:
     stopped = None
     try:
         ciks = tickers(ua, root)
+        if rep is not None:
+            rep.split("names", names, unit="names")
         for sym in names:
+            if rep is not None:
+                rep.advance("names", key=sym, current=sym)
             cik = ciks.get(sym)
             if cik is None:
                 counts["no_cik"] += 1
@@ -175,7 +181,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--force", action="store_true", help="fetch the facts even when no new report was filed")
     args = ap.parse_args(argv)
     names = args.names.split(",") if args.names else default_names()
-    out = run(names, force=args.force, log=lambda m: print(m, file=sys.stderr))
+    with progress.Reporter("fetch_sec_facts") as rep:
+        out = run(names, force=args.force, log=lambda m: print(m, file=sys.stderr), rep=rep)
     print(json.dumps(out))
     return 0 if out["ok"] else 1
 

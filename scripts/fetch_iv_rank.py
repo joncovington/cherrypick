@@ -34,6 +34,7 @@ import time
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
+from cherrypick.core import progress
 from cherrypick.core.auth import SHARED_SERVICE, CredentialStore, SessionManager
 from cherrypick.technicals import paths, symbols
 
@@ -199,12 +200,18 @@ async def get_metrics_raw(session, symbols: list[str]) -> list[tuple]:
     return [(MarketMetricInfo(**i), i) for i in data["items"]]
 
 
-async def fetch(session, todo: list[str], doc: dict) -> dict:
+async def fetch(session, todo: list[str], doc: dict, rep=None) -> dict:
+    """`rep` is a progress Reporter: the symbols asked for, overall and each by its own symbol."""
     report = {"fetched": 0, "failed": []}
+    if rep is not None:
+        rep.split("symbols", todo, unit="symbols")
     for k in range(0, len(todo), BATCH):
         if k:
             await asyncio.sleep(PAUSE_S)
         batch = todo[k : k + BATCH]
+        if rep is not None:
+            for s in batch:
+                rep.advance("symbols", key=s, current=s)
         try:
             rows = await get_metrics_raw(session, [s.replace(".", "/") for s in batch])
         except Exception as exc:  # noqa: BLE001 -- keep what the file holds; report and go on
@@ -263,7 +270,8 @@ def main(argv=None) -> int:
         todo = todo[: args.limit]
     started = time.monotonic()
     try:
-        report = asyncio.run(fetch(SessionManager(store).get_session(), todo, doc))
+        with progress.Reporter("fetch_iv_rank") as rep:
+            report = asyncio.run(fetch(SessionManager(store).get_session(), todo, doc, rep=rep))
     finally:
         doc["updated_at"] = datetime.now(UTC).isoformat()
         save(doc)

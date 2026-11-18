@@ -46,6 +46,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import bwb_history_backtest as _bt  # noqa: E402
 import impliedvar_validate as _ivv  # noqa: E402
+from cherrypick.core import progress  # noqa: E402
 
 VIX9D_DAYS = 9
 STRESS_VIX = 30.0
@@ -151,7 +152,10 @@ def spy_closes() -> tuple[dict[str, float], dict[str, float]]:
     return closes, divs
 
 
-def dolt_study(cboe_dir: str | None, start: str, weekday: int, rate: float, host: str, port: int) -> dict:
+def dolt_study(
+    cboe_dir: str | None, start: str, weekday: int, rate: float, host: str, port: int, rep=None
+) -> dict:
+    """`rep` is a progress Reporter: the sessions read, all on SPY."""
     vix = _bt.cboe("VIX", cboe_dir)
     v9 = _bt.cboe("VIX9D", cboe_dir)
     closes, divs = spy_closes()
@@ -161,7 +165,20 @@ def dolt_study(cboe_dir: str | None, start: str, weekday: int, rate: float, host
     rows, validation, refused = [], [], defaultdict(int)
     try:
         cur = conn.cursor()
-        for d in days:
+        counted = (
+            days
+            if rep is None
+            else progress.track(
+                days,
+                job="spy_variance_premium",
+                phase="sessions",
+                unit="days",
+                key=lambda _: "SPY",
+                current=lambda d: d.isoformat(),
+                reporter=rep,
+            )
+        )
+        for d in counted:
             by_exp = _ivv.chain(cur, d)
             if not by_exp:
                 continue
@@ -266,7 +283,8 @@ def main(argv=None) -> int:
 
     out = {"vix9d": vix9d_study(args.cboe_dir)}
     if not args.skip_dolt:
-        dolt = dolt_study(args.cboe_dir, args.start, args.weekday, args.rate, args.host, args.port)
+        with progress.Reporter("spy_variance_premium") as rep:
+            dolt = dolt_study(args.cboe_dir, args.start, args.weekday, args.rate, args.host, args.port, rep)
         _ivv.require(dolt["validation"])
         out["dolt_spy"] = dolt
     v = out["vix9d"]

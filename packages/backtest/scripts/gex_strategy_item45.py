@@ -59,6 +59,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from cherrypick.core import calendar as cal
+from cherrypick.core import progress as core_progress
 
 PILOT_NAMES = ("AAPL", "JPM", "KO")
 CELL_P_NAMES = ("AAPL", "GOOG", "MSFT", "JPM", "WMT", "HD", "DIS", "KO", "CAT", "MS", "MCD", "COST")
@@ -318,22 +319,29 @@ def _oi_store() -> sqlite3.Connection:
     return sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True)
 
 
-def listed_expiries(conn, days: dict[str, list[str]]) -> dict[tuple[str, str], list[str]]:
+def listed_expiries(
+    conn, days: dict[str, list[str]], reporter: core_progress.Reporter | None = None
+) -> dict[tuple[str, str], list[str]]:
     out: dict[tuple[str, str], list[str]] = {}
-    for session, names in days.items():
-        for sym in names:
-            done = conn.execute(
-                "SELECT status FROM oi_days WHERE symbol = ? AND session = ?", (sym, session)
-            ).fetchone()
-            if not done or done[0] != "complete":
-                continue
-            out[(sym, session)] = [
-                r[0]
-                for r in conn.execute(
-                    "SELECT DISTINCT expiration FROM oi_contracts WHERE symbol = ? AND session = ?",
-                    (sym, session),
-                )
-            ]
+    pairs = [(session, sym) for session, names in days.items() for sym in names]
+    if reporter is not None:
+        pairs = core_progress.track(
+            pairs, job="gex_strategy_item45-requests", phase="name-days", unit="name-days",
+            key=lambda p: p[1], current=lambda p: p[0], reporter=reporter,
+        )  # fmt: skip
+    for session, sym in pairs:
+        done = conn.execute(
+            "SELECT status FROM oi_days WHERE symbol = ? AND session = ?", (sym, session)
+        ).fetchone()
+        if not done or done[0] != "complete":
+            continue
+        out[(sym, session)] = [
+            r[0]
+            for r in conn.execute(
+                "SELECT DISTINCT expiration FROM oi_contracts WHERE symbol = ? AND session = ?",
+                (sym, session),
+            )
+        ]
     return out
 
 
@@ -356,7 +364,9 @@ def cmd_plan(args) -> int:
 
 def cmd_requests(args) -> int:
     days = cell_days(args.cell)
-    built = build_requests(days, listed_expiries(_oi_store(), days))
+    with core_progress.Reporter("gex_strategy_item45-requests") as rep:
+        listed = listed_expiries(_oi_store(), days, rep)
+    built = build_requests(days, listed)
     path = Path(args.out) if args.out else _out_dir() / f"chain_requests_{args.cell}.json"
     path.write_text(json.dumps({"requests": built["requests"]}, indent=0), encoding="utf-8")
     print(
@@ -467,8 +477,11 @@ def cmd_bars(args) -> int:
     todo = [n for n in PILOT_NAMES if args.force or n not in done]
     got = asyncio.run(_fetch_candles(todo)) if todo else {}
     out = {"db": str(_bars_db()), "skipped": len(PILOT_NAMES) - len(todo), "series": {}}
-    for name, rows in got.items():
-        save_bars(conn, name, rows, today)
+    with core_progress.Reporter("gex_strategy_item45-bars") as rep:
+        rep.split("series", todo, unit="series", done=[n for n in PILOT_NAMES if n not in todo])
+        for name, rows in got.items():
+            save_bars(conn, name, rows, today)
+            rep.advance("series", key=name, current=name)
     for name, rows, first, last in conn.execute(
         "SELECT symbol, rows, first, last FROM fetched WHERE interval = ? ORDER BY symbol", (BARS_INTERVAL,)
     ):
@@ -551,7 +564,9 @@ def cmd_pilot(args) -> int:
     broker = sqlite3.connect(f"file:{_bars_db().as_posix()}?mode=ro", uri=True)
     per: dict[str, dict[str, dict]] = {s: {} for s in SAMPLINGS}
     spans, refused = {}, {}
-    for name in PILOT_NAMES:
+    for name in core_progress.track(
+        PILOT_NAMES, job="gex_strategy_item45-pilot", phase="names", unit="names", key=lambda n: n
+    ):
         true = broker_bars(broker, name)
         days = sorted({k[0] for k in true})
         spans[name] = {

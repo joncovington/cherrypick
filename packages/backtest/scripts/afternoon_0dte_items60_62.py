@@ -40,7 +40,7 @@ from datetime import date, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from cherrypick.core import fees, home, robustness
+from cherrypick.core import fees, home, progress, robustness
 
 from cherrypick.backtest import paths
 from cherrypick.backtest import settings as _settings
@@ -312,7 +312,14 @@ def cmd_fomc(db, args) -> dict:
     fed = set(fomc_days())
     rows, control, skips = [], [], defaultdict(int)
     by_fill: dict = {"mid": [], "natural": []}
-    for day in days:
+    for day in progress.track(
+        days,
+        job="afternoon_0dte_items60_62-fomc",
+        phase="sessions",
+        unit="days",
+        key=lambda _: "SPX",
+        current=lambda d: d,
+    ):
         if day not in closes:
             continue
         r = fomc_session(db, day, closes[day][0])
@@ -390,9 +397,14 @@ def sandwich_session(db, day: str, close: float, vix: float | None, *, fill: str
 def cmd_sandwich(db, args) -> dict:
     closes, vix = spx_closes(db), vix_closes(home.data_dir("market-files") / "cboe" / "VIX.csv")
     out = {"item": 61, "window": [args.start, args.end], "verdict": "exploratory", "fills": {}}
-    for fill in ("working", "q25", "mid"):
+    fills = ("working", "q25", "mid")
+    n_days = len(trading_days(db, args.start, args.end))
+    rep = progress.Reporter("afternoon_0dte_items60_62-sandwich")
+    rep.split("sessions", ["SPX"] * (n_days * len(fills)), unit="days")
+    for fill in fills:
         rows = []
         for day in trading_days(db, args.start, args.end):
+            rep.advance("sessions", key="SPX", current=f"{fill} {day}")
             if day not in closes:
                 continue
             r = sandwich_session(db, day, closes[day][0], prior_close(vix, day), fill=fill)
@@ -404,6 +416,7 @@ def cmd_sandwich(db, args) -> dict:
             "filtered": {**summary(filt), "by_year": by(filt, lambda r: r["day"][:4])},
             "mean_cost": round(statistics.fmean(r["cost"] for r in rows), 2) if rows else None,
         }
+    rep.finish("done")
     return out
 
 
@@ -426,7 +439,14 @@ def fade_signal(
 def cmd_fade(db, args) -> dict:
     closes = spx_closes(db)
     rows = []
-    for day in trading_days(db, args.start, args.end):
+    for day in progress.track(
+        trading_days(db, args.start, args.end),
+        job="afternoon_0dte_items60_62-fade",
+        phase="sessions",
+        unit="days",
+        key=lambda _: "SPX",
+        current=lambda d: d,
+    ):
         if day not in closes:
             continue
         sig = fade_signal(spot_trail(db, day))

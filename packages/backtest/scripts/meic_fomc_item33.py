@@ -50,6 +50,8 @@ import urllib.request
 from datetime import date, datetime
 from pathlib import Path
 
+from cherrypick.core import progress as core_progress
+
 ARM = "live-1400"
 MODULE = "meic"
 SYMBOL = "SPX"
@@ -418,7 +420,10 @@ def cmd_study(args) -> int:
     result: dict = {"item": 33, "arm": args.arm, "windows": {}}
     try:
         runs = find_runs(conn, args.arm, s["windows"])
-        for w in ("design", "holdout"):
+        for w in core_progress.track(
+            ("design", "holdout"), job="meic_fomc_item33-study", phase="windows", unit="windows",
+            key=lambda _: SYMBOL, current=lambda w: w,
+        ):  # fmt: skip
             start, end = s["windows"][w]
             run_id = runs[w]
             if run_id is None:

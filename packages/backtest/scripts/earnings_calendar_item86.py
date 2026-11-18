@@ -31,7 +31,7 @@ from datetime import date, timedelta
 from pathlib import Path
 
 from cherrypick.core import calendar as cal
-from cherrypick.core import fees, treasury
+from cherrypick.core import fees, progress, treasury
 
 from cherrypick.backtest.study import rule as kit_rule
 from cherrypick.backtest.study.inputs import Inputs
@@ -659,12 +659,25 @@ VARIANTS = {
 }
 
 
-def run(inputs, conn, plan: list[dict], bars: dict, doc: dict) -> dict:
+def run(
+    inputs, conn, plan: list[dict], bars: dict, doc: dict, reporter: progress.Reporter | None = None
+) -> dict:
     """Every event's trade, its control, its stress and the reported variants."""
     rows_by = {s: [(date.fromisoformat(d), w) for d, w in v] for s, v in doc["reports"].items()}
     trades, unselected, variants = {a: [] for a in ARMS}, [], defaultdict(list)
     skips: dict[str, int] = defaultdict(int)
-    for e in plan:
+    events = plan
+    if reporter is not None:
+        events = progress.track(
+            plan,
+            job="earnings_calendar_item86-study",
+            phase="events",
+            unit="events",
+            key=lambda e: e["symbol"],
+            current=lambda e: e["entry_session"],
+            reporter=reporter,
+        )
+    for e in events:
         sym = e["symbol"]
         b = bars.get(sym, {})
         d = _dates(e["dates"])
@@ -767,7 +780,8 @@ def cmd_study(args) -> int:
                 for e in plan
                 if (e["symbol"], e["dates"]["front"]) in have and (e["symbol"], e["dates"]["back"]) in have
             ]
-        res = run(inputs, conn, plan, bars, doc)
+        with progress.Reporter("earnings_calendar_item86-study") as rep:
+            res = run(inputs, conn, plan, bars, doc, reporter=rep)
         read = inputs.fingerprint(conn)
     finally:
         conn.close()

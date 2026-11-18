@@ -57,6 +57,7 @@ from types import SimpleNamespace
 
 from cherrypick.core import calendar as cal
 from cherrypick.core import legbars
+from cherrypick.core import progress as core_progress
 from cherrypick.core import stats as core_stats
 
 _spec = importlib.util.spec_from_file_location(
@@ -605,7 +606,9 @@ def cmd_reports(args) -> int:
         conn.close()
     holes = dolt_holes(counts, REPORT_SPAN[0], min(REPORT_SPAN[1], date.today() - timedelta(days=1)))
     filled: dict[date, set[str]] = {}
-    for d in holes:
+    for d in core_progress.track(
+        holes, job="skate_expiry_item25-reports", phase="nasdaq-days", unit="days", current=str
+    ):
         try:
             filled[d] = set(fet.parse(fet.fetch_day(d)))
         except urllib.error.HTTPError as exc:
@@ -641,32 +644,35 @@ def cmd_study(args) -> int:
     reports = load_reports(names, _out_dir() / "earnings_dates.json")
     hist = store.connect(tpaths.history_db())
     result: dict = {"windows": {}, "references": {}}
-    for wname, (w0, w1, end) in WINDOWS.items():
-        years = ((w1 - w0).days + 1) / 365.25
-        w = {"edge": {a: {} for a in ARMS}, "stress": {a: {} for a in ARMS}, "trades": dict.fromkeys(ARMS, 0),
-             "dropped": {}, "names": {}}  # fmt: skip
-        for sym in names:
-            cover = weekly_coverage(status, sym, w0, w1)
-            if cover < WEEKLY_COVERAGE:
-                w["dropped"][sym] = round(cover, 3)
-                continue
-            pcr.SYMBOL = sym
-            nd = load_name(vend, hist, sym, reports[sym], w0, end)
-            row = {}
-            for arm in ARMS:
-                trades, stats = run_arm(nd, arm, w0, w1, end, FRAC)
-                stressed, _ = run_arm(nd, arm, w0, w1, end, STRESS_FRAC)
-                e, s = name_edge(trades, years), name_edge(stressed, years)
-                row[arm] = {"edge": e, "stress": s, "trades": len(trades), "stats": stats,
-                            "how": dict(statistics_count(t["how"] for t in trades))}  # fmt: skip
-                if sym not in FUNDS:
-                    w["edge"][arm][sym], w["stress"][arm][sym] = e, s
-                    w["trades"][arm] += len(trades)
-            if sym in FUNDS:
-                result["references"].setdefault(wname, {})[sym] = {a: row[a]["edge"] for a in ARMS}
-            w["names"][sym] = row
-            print(wname, sym, {a: (row[a]["trades"], round(row[a]["edge"], 2)) for a in ARMS}, flush=True)
-        result["windows"][wname] = w
+    with core_progress.Reporter("skate_expiry_item25-study") as rep:
+        rep.split("names", [sym for _ in WINDOWS for sym in names], unit="name-windows")
+        for wname, (w0, w1, end) in WINDOWS.items():
+            years = ((w1 - w0).days + 1) / 365.25
+            w = {"edge": {a: {} for a in ARMS}, "stress": {a: {} for a in ARMS},
+                 "trades": dict.fromkeys(ARMS, 0), "dropped": {}, "names": {}}  # fmt: skip
+            for sym in names:
+                rep.advance("names", key=sym, current=f"{wname} {sym}")
+                cover = weekly_coverage(status, sym, w0, w1)
+                if cover < WEEKLY_COVERAGE:
+                    w["dropped"][sym] = round(cover, 3)
+                    continue
+                pcr.SYMBOL = sym
+                nd = load_name(vend, hist, sym, reports[sym], w0, end)
+                row = {}
+                for arm in ARMS:
+                    trades, stats = run_arm(nd, arm, w0, w1, end, FRAC)
+                    stressed, _ = run_arm(nd, arm, w0, w1, end, STRESS_FRAC)
+                    e, s = name_edge(trades, years), name_edge(stressed, years)
+                    row[arm] = {"edge": e, "stress": s, "trades": len(trades), "stats": stats,
+                                "how": dict(statistics_count(t["how"] for t in trades))}  # fmt: skip
+                    if sym not in FUNDS:
+                        w["edge"][arm][sym], w["stress"][arm][sym] = e, s
+                        w["trades"][arm] += len(trades)
+                if sym in FUNDS:
+                    result["references"].setdefault(wname, {})[sym] = {a: row[a]["edge"] for a in ARMS}
+                w["names"][sym] = row
+                print(wname, sym, {a: (row[a]["trades"], round(row[a]["edge"], 2)) for a in ARMS}, flush=True)
+            result["windows"][wname] = w
     result["verdict"] = judge(result["windows"]["design"], result["windows"]["holdout"])
     out = Path(args.json) if args.json else _out_dir() / "results.json"
     out.write_text(json.dumps(result, default=str), encoding="utf-8")

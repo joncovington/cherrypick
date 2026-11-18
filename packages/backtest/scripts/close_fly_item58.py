@@ -39,7 +39,7 @@ from datetime import date, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from cherrypick.core import fees, home, robustness
+from cherrypick.core import fees, home, progress, robustness
 from cherrypick.core import stats as core_stats
 
 from cherrypick.backtest import paths
@@ -239,13 +239,23 @@ def labels(day: str, sessions_in_month: set[str]) -> dict:
 
 # --------------------------------------------------------------------------- sessions
 def sessions(
-    db: sqlite3.Connection, days: list[str], vix: dict, closes: dict, *, at: str, wing: int, fill: str
+    db: sqlite3.Connection,
+    days: list[str],
+    vix: dict,
+    closes: dict,
+    *,
+    at: str,
+    wing: int,
+    fill: str,
+    reporter: progress.Reporter | None = None,
 ) -> dict[str, tuple[list[dict], Counter]]:
     by_month: dict = defaultdict(set)
     for d in days:
         by_month[d[:7]].add(d)
     out = {a: ([], Counter()) for a in ARMS}
     for day in days:
+        if reporter is not None:
+            reporter.advance("sessions", key="SPX", current=day)
         v = prior_close(vix, day)
         close = closes.get(day)
         if v is None or close is None:
@@ -407,7 +417,9 @@ def main(argv: list[str] | None = None) -> int:
     days = trading_days(db, args.start, args.end)
     declared = {"at": ENTRY_TIME, "wing": WING}
 
-    by_fill = {f: sessions(db, days, vix, closes, fill=f, **declared) for f in FILLS}
+    with progress.Reporter("close_fly_item58-study") as rep:
+        rep.split("sessions", ["SPX"] * (len(days) * len(FILLS)), unit="days")
+        by_fill = {f: sessions(db, days, vix, closes, fill=f, reporter=rep, **declared) for f in FILLS}
     working = by_fill["working"]
     tests = {a: score(working[a][0], args.start, args.end) for a in ARMS}
     judge(tests)

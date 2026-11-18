@@ -53,6 +53,7 @@ from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from cherrypick.core import progress as core_progress
 from cherrypick.core.procs import default_workers
 from cherrypick.technicals import (
     board,
@@ -289,7 +290,7 @@ def _init_names(path: str, mk: Market, lo: str, hi: str) -> None:
     _w["lo"], _w["hi"] = lo, hi
 
 
-def build_market(path: Path, lo: str, hi: str, workers: int, progress=print) -> Market:
+def build_market(path: Path, lo: str, hi: str, workers: int, progress=print, rep=None) -> Market:
     conn = history.connect(path)
     spy = store.adjusted_bars(conn, stage.DEFAULT_RULE.benchmark)
     funds = sorted(
@@ -313,10 +314,16 @@ def build_market(path: Path, lo: str, hi: str, workers: int, progress=print) -> 
 
     want = {mk.calendar.index(d) for d in sessions}
     by_day: dict[int, list[float]] = defaultdict(list)
+    chunks = [everyone[k :: workers * 4] for k in range(workers * 4)]
+    if rep is not None:
+        rep.split("market scores", everyone, unit="names")
     with ProcessPoolExecutor(
         workers, initializer=_init, initargs=(str(path), Market(mk.calendar, [], {}))
     ) as ex:
-        for part in ex.map(_market_part, [everyone[k :: workers * 4] for k in range(workers * 4)]):
+        for chunk, part in zip(chunks, ex.map(_market_part, chunks), strict=True):
+            if rep is not None:
+                for name in chunk:
+                    rep.advance("market scores", key=name)
             for k, s in part:
                 if k in want:
                     by_day[k].append(s)
@@ -350,10 +357,11 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
 
     path = paths.history_db()
+    rep = core_progress.Reporter("board_history")
     if args.market_cache and args.market_cache.exists():
         mk = pickle.loads(args.market_cache.read_bytes())
     else:
-        mk = build_market(path, args.start, args.end, args.workers)
+        mk = build_market(path, args.start, args.end, args.workers, rep=rep)
         if args.market_cache:
             args.market_cache.write_bytes(pickle.dumps(mk))
     conn = history.connect(path)
@@ -395,11 +403,16 @@ def main(argv: list[str] | None = None) -> int:
     print(f"look-ahead guard: {guard}; as-of adjustment agrees on {asof_agree}/{len(samples)}", flush=True)
 
     rows: list[tuple] = []
+    name_chunks = [names[k :: args.workers * 4] for k in range(args.workers * 4)]
+    rep.split("board names", names, unit="names")
     with ProcessPoolExecutor(
         args.workers, initializer=_init_names, initargs=(str(path), mk, args.start, args.end)
     ) as ex:
-        for part in ex.map(_names_part, [names[k :: args.workers * 4] for k in range(args.workers * 4)]):
+        for chunk, part in zip(name_chunks, ex.map(_names_part, name_chunks), strict=True):
             rows += part
+            for name in chunk:
+                rep.advance("board names", key=name)
+    rep.finish("done")
     args.out.parent.mkdir(parents=True, exist_ok=True)
     tmp = args.out.with_suffix(".tmp")
     tmp.unlink(missing_ok=True)

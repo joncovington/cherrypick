@@ -35,7 +35,7 @@ from datetime import date, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from cherrypick.core import bs, treasury
+from cherrypick.core import bs, progress, treasury
 
 from cherrypick.backtest import paths
 from cherrypick.backtest import settings as _settings
@@ -194,13 +194,19 @@ def rate_reader():
     return rate
 
 
-def study(trades_by_arm: dict[str, list[dict]], store: Store, rate) -> dict:
+def study(
+    trades_by_arm: dict[str, list[dict]], store: Store, rate, reporter: progress.Reporter | None = None
+) -> dict:
     rows: dict[str, list[dict]] = {}
     skipped: dict[str, int] = {}
+    if reporter is not None:
+        reporter.split("trades", ["SPX" for a in ARMS for _ in trades_by_arm.get(a, [])], unit="trades")
     for arm in ARMS:
         out = []
         for t in trades_by_arm.get(arm, []):
             r = row(t, store.entry(t), rate(t["session"]))
+            if reporter is not None:
+                reporter.advance("trades", key="SPX", current=t["session"])
             if r is None:
                 skipped[arm] = skipped.get(arm, 0) + 1
             else:
@@ -229,7 +235,8 @@ def cmd_study(args) -> int:
     db = paths.vendor_dir(_settings.load()) / "SPX-60s.db"
     conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
     try:
-        block = study(trades, Store(conn), rate_reader())
+        with progress.Reporter("ensemble_bars_item85-study") as rep:
+            block = study(trades, Store(conn), rate_reader(), reporter=rep)
     finally:
         conn.close()
     doc = {
