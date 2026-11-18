@@ -31,6 +31,18 @@ the retired modules. `research/hypotheses.json` holds the same items in a form a
 per item with its status, its rule and a pointer to its section. The register holds no licensed figures: a
 row names a verdict and the local path of a result file, never a number from the data.
 
+When a queued study finishes, its notice names each arm's verdict and the command that records it:
+
+```
+python tools/record_verdict.py item90 --dry-run   # the edit, printed
+python tools/record_verdict.py item90             # the edit, a branch, a commit and a docs PR
+```
+
+It sets the row's status and an outcome line of words (each arm and its verdict, by the declared rule),
+checks the register, and opens the PR from a fresh worktree. It records only a result that carries the
+study kit's verdict block, which is computed from the declared rule; an older study's row stays a hand
+edit. The plan section's Result paragraph is written by hand.
+
 Check the register with:
 
 ```

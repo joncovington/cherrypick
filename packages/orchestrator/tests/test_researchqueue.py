@@ -806,3 +806,29 @@ def test_positions_count_within_each_lane():
         {"id": 391, "kind": "fetch-sessions", "after": "fullset/probe", "priority": 10, "waits": "waits"},
     ]
     assert rq.positions(rows) == {390: 1, 391: 2, 378: 1, 384: 2}
+
+
+def test_a_finished_study_names_its_verdict_and_how_to_record_it():
+    assert rq.verdict_words({"verdict": {"orb-put-spread": "fail", "adx-condor": "fail"}}) == (
+        "orb-put-spread fail, adx-condor fail"
+    )
+    assert rq.verdict_words({"verdict": "fail"}) is None
+    assert rq.verdict_words({"verdict": {"a": 1.5}}) is None  # a figure is never named
+    assert rq.verdict_words(None) is None
+
+
+def test_the_finish_notice_carries_the_verdict(files, tmp_path, monkeypatch):
+    monkeypatch.setattr(rq, "session_held", lambda state_dir=None: False)
+    monkeypatch.setattr(rq, "log_dir", lambda: tmp_path / "logs")
+    monkeypatch.setattr(rq, "repo_root", lambda: files["root"])
+    monkeypatch.setattr(rq, "git_tracked", _tracked)
+    out = tmp_path / "results.json"
+    out.write_text(json.dumps({"verdict": {"arm-a": "fail"}}), encoding="utf-8")
+    db = tmp_path / "q.db"
+    rq.add("item90", "script", {"path": "scripts/study.py"}, step="study", output=str(out), path=db,
+           root=files["root"], tracked=_tracked)  # fmt: skip
+    sent = []
+    rq.run_next(path=db, now=lambda: _at("2026-10-24T20:00"), is_trading_day=_weekday,
+                spawn=lambda argv, **kw: _Proc(0, "{}"), licence=lambda: None,
+                notify=lambda level, title, msg: sent.append(msg))  # fmt: skip
+    assert "verdict: arm-a fail; record it with python tools/record_verdict.py item90" in sent[-1]
