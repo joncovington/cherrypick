@@ -5343,10 +5343,24 @@ select.text-input {
   margin-bottom: 0.75rem;
 }
 .fs-head .fs-meter {
-  min-width: 220px;
+  min-width: min(100%, 360px);
+}
+/* A cell's meter has no name: the bar takes the room, the share sits after it. The columns share the
+   card's width; below its least width it scrolls inside its wrap, never the page. */
+.fs-wrap {
+  overflow-x: auto;
+}
+.fs-table {
+  table-layout: fixed;
+  width: 100%;
+  min-width: 44rem;
+}
+.fs-table th:first-child {
+  width: 9em;
 }
 .fs-table .fs-meter {
-  min-width: 90px;
+  grid-template-columns: minmax(24px, 1fr) max-content;
+  gap: 8px;
 }
 .fs-table tr.fs-total th,
 .fs-table tr.fs-total td {
