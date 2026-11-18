@@ -231,8 +231,11 @@ export function ActionRow({
   onCheck,
   onSave,
   onRun,
+  editable = true,
 }: {
   busy: boolean;
+  /** False for a saved automation: no Check or Save, only its runs. */
+  editable?: boolean;
   canCheck: boolean;
   canRun: boolean;
   runWhy: string | null;
@@ -247,12 +250,16 @@ export function ActionRow({
   return (
     <div className="builder-section builder-actions">
       <div className="builder-editor-actions">
-        <button type="button" className="btn" disabled={busy || !canCheck} onClick={onCheck}>
-          Check
-        </button>
-        <button type="button" className="btn" disabled={busy || !canCheck} onClick={onSave}>
-          Save (off)
-        </button>
+        {editable && (
+          <>
+            <button type="button" className="btn" disabled={busy || !canCheck} onClick={onCheck}>
+              Check
+            </button>
+            <button type="button" className="btn" disabled={busy || !canCheck} onClick={onSave}>
+              Save (off)
+            </button>
+          </>
+        )}
         {windows.length > 0 && (
           <span className="builder-window">
             <label className="builder-lbl" htmlFor="builder-window">
@@ -303,8 +310,23 @@ export function runBlocked(a: BuilderAutomation | null, dirty: boolean, mode: Mo
   return null;
 }
 
-export function Workspace({ a, schema, mode, onSaved }: { a: BuilderAutomation | null; schema: BuilderSchema; mode: Mode; onSaved: (name: string) => void }) {
+export function Workspace({
+  a,
+  schema,
+  mode,
+  onSaved,
+  onCopy,
+}: {
+  a: BuilderAutomation | null;
+  schema: BuilderSchema;
+  mode: Mode;
+  onSaved: (name: string) => void;
+  /** Start a copy of this saved automation under a new name: the one way to change it. */
+  onCopy?: () => void;
+}) {
   const qc = useQueryClient();
+  // A saved automation is shown, never edited here: a change is a new automation, copied from it.
+  const readOnly = mode.kind === "saved";
   const source = mode.kind === "saved" ? mode.name : mode.kind === "copy" ? mode.from : null;
   const [name, setName] = useState(mode.kind === "saved" || mode.kind === "draft" ? mode.name : mode.kind === "copy" ? `${mode.from}-copy` : "my-automation");
   const [spec, setSpec] = useState<Spec | null>(mode.kind === "new" ? { ...NEW_SPEC } : mode.kind === "draft" ? mode.spec : null);
@@ -401,7 +423,6 @@ export function Workspace({ a, schema, mode, onSaved }: { a: BuilderAutomation |
         </label>
         <input id="builder-name" className="builder-input" value={name} disabled={mode.kind === "saved"} onChange={(e) => setName(e.target.value)} />
         <span className="chip">{mode.kind === "saved" ? (a?.enabled ? "on" : "off") : "not saved"}</span>
-        {dirty && mode.kind === "saved" && <span className="chip chip-warn">edited, not saved</span>}
         {a?.group && mode.kind === "saved" && <span className="chip">group {a.group}</span>}
         <span className="chip">start {(mode.kind === "saved" && a?.start) || "not set"}</span>
         {a?.register && mode.kind === "saved" && (
@@ -410,9 +431,20 @@ export function Workspace({ a, schema, mode, onSaved }: { a: BuilderAutomation |
           </span>
         )}
         <button type="button" className="btn btn-quiet" onClick={() => setJson(json === null ? editorText(spec ?? {}) : null)}>
-          {json === null ? "Edit as JSON" : "Back to the form"}
+          {json === null ? (readOnly ? "View as JSON" : "Edit as JSON") : "Back to the form"}
         </button>
       </div>
+      {readOnly && (
+        <p className="builder-readonly" role="note">
+          A saved automation is read-only here. For a similar one, copy it as new: the copy opens under its own name, and this one stays as it was
+          backtested.
+          {onCopy && (
+            <button type="button" className="btn" onClick={onCopy}>
+              Copy as new
+            </button>
+          )}
+        </p>
+      )}
       {mode.kind === "saved" && a?.suggestion && <SuggestionLine s={a.suggestion} />}
       {mode.kind === "saved" && a?.suggestion && <AddToFullSet name={a.name} symbol={a.symbol} s={a.suggestion} />}
       <div className="builder-layout">
@@ -426,6 +458,7 @@ export function Workspace({ a, schema, mode, onSaved }: { a: BuilderAutomation |
               spellCheck={false}
               rows={Math.min(40, json.split("\n").length + 1)}
               value={json}
+              readOnly={readOnly}
               onChange={(e) => {
                 setJson(e.target.value);
                 setDirty(true);
@@ -433,10 +466,11 @@ export function Workspace({ a, schema, mode, onSaved }: { a: BuilderAutomation |
               }}
             />
           ) : (
-            <BuilderForm schema={schema} spec={spec} labels={labels} onChange={edit} />
+            <BuilderForm schema={schema} spec={spec} labels={labels} onChange={edit} readOnly={readOnly} />
           )}
           <ActionRow
             busy={busy}
+            editable={!readOnly}
             canCheck={spec !== null}
             canRun={why === null}
             runWhy={why}
@@ -574,7 +608,16 @@ export function BuilderPage() {
           new in the form
         </button>
       </div>
-      {current && <Workspace key={key} a={a} schema={schema} mode={current} onSaved={(n) => setMode({ kind: "saved", name: n })} />}
+      {current && (
+        <Workspace
+          key={key}
+          a={a}
+          schema={schema}
+          mode={current}
+          onSaved={(n) => setMode({ kind: "saved", name: n })}
+          onCopy={current.kind === "saved" ? () => setWizard({ from: current.name, n: 0 }) : undefined}
+        />
+      )}
     </div>
   );
 }

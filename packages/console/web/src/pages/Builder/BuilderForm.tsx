@@ -245,8 +245,9 @@ export interface SectionProps {
   onChange: (next: Spec) => void;
 }
 
-/** Section 1's fields: symbol, expiry rule, weekdays, event skips. */
-export function UnderlyingFields({ schema, spec, onChange }: SectionProps) {
+/** Section 1's fields: symbol, expiry rule, weekdays, event skips. Read-only, every field is shown and
+ *  none changes; the event key still opens. */
+export function UnderlyingFields({ schema, spec, onChange, readOnly = false }: SectionProps & { readOnly?: boolean }) {
   const set = (key: string, value: unknown) => onChange(withKey(spec, key, value));
   const expiry = obj(spec["expiry"]);
   const skip = obj(spec["skip_events"]);
@@ -255,6 +256,7 @@ export function UnderlyingFields({ schema, spec, onChange }: SectionProps) {
   const exprKind = String(expiry["kind"] ?? "dte");
   return (
     <>
+      <fieldset className="builder-lock" disabled={readOnly}>
       <div className="builder-grid">
         <Field id="f-symbol" label="symbol" value={spec["symbol"]} required t={TEXT} onChange={(v) => set("symbol", typeof v === "string" ? v.toUpperCase() : v)} />
         <Select id="f-expiry-kind" label="expiry" value={exprKind} options={Object.keys(schema.expiry)} onChange={(k) => set("expiry", { kind: k })} />
@@ -280,9 +282,11 @@ export function UnderlyingFields({ schema, spec, onChange }: SectionProps) {
           </label>
         ))}
       </fieldset>
+      </fieldset>
       <EventSkips
         schema={schema}
         on={labelsOn}
+        readOnly={readOnly}
         onChange={(next) => set("skip_events", next.length ? { ...skip, labels: next } : undefined)}
       />
     </>
@@ -301,7 +305,20 @@ function dayText(iso: string): string {
 
 /** The event skips by name, sorted by name, with a key of what each is, when it falls and its next day
  *  (closed until its ? is pressed; `keyOpen` opens it at first). */
-export function EventSkips({ schema, on, onChange, keyOpen = false }: { schema: BuilderSchema; on: string[]; onChange: (next: string[]) => void; keyOpen?: boolean }) {
+export function EventSkips({
+  schema,
+  on,
+  onChange,
+  keyOpen = false,
+  readOnly = false,
+}: {
+  schema: BuilderSchema;
+  on: string[];
+  onChange: (next: string[]) => void;
+  keyOpen?: boolean;
+  /** Checkboxes shown, not changeable; the key still opens. */
+  readOnly?: boolean;
+}) {
   const [key, setKey] = useState(keyOpen);
   const labels = [...schema.event_labels].sort((a, b) => eventName(schema, a).localeCompare(eventName(schema, b)));
   const about = schema.event_about;
@@ -317,7 +334,7 @@ export function EventSkips({ schema, on, onChange, keyOpen = false }: { schema: 
       </legend>
       {labels.map((l) => (
         <label key={l} title={about?.[l]?.when}>
-          <input type="checkbox" checked={on.includes(l)} onChange={(e) => onChange(e.currentTarget.checked ? [...on, l] : on.filter((x) => x !== l))} />{" "}
+          <input type="checkbox" checked={on.includes(l)} disabled={readOnly || undefined} onChange={(e) => onChange(e.currentTarget.checked ? [...on, l] : on.filter((x) => x !== l))} />{" "}
           {eventName(schema, l)}
         </label>
       ))}
@@ -553,44 +570,59 @@ export function BuilderForm({
   spec,
   labels,
   onChange,
+  readOnly = false,
 }: {
   schema: BuilderSchema;
   spec: Spec;
   labels: Record<string, BuilderBlock["state"]>;
   onChange: (next: Spec) => void;
+  /** A saved automation: every field shown and none changeable (each section's fields sit in a
+   *  disabled fieldset); the section help and the event key still open. */
+  readOnly?: boolean;
 }) {
   const p = { schema, spec, onChange };
+  const lock = (body: React.ReactNode) => (
+    <fieldset className="builder-lock" disabled={readOnly}>
+      {body}
+    </fieldset>
+  );
   return (
     <section className="builder-form" aria-label="The automation, block by block">
-      <p className="muted builder-form-key">
-        <span className="builder-req">*</span> required. A greyed value in an empty field is the engine's default: left blank, the engine uses it.
-      </p>
+      {!readOnly && (
+        <p className="muted builder-form-key">
+          <span className="builder-req">*</span> required. A greyed value in an empty field is the engine's default: left blank, the engine uses it.
+        </p>
+      )}
       <div className="builder-section">
         <SectionHead n={1} title="Underlying and data" blocks={["structure"]} labels={labels} help="underlying" />
-        <UnderlyingFields {...p} />
+        <UnderlyingFields {...p} readOnly={readOnly} />
       </div>
 
       <div className="builder-section">
         <SectionHead n={2} title="Signal: when to enter" blocks={["entry"]} labels={labels} help="signal" />
-        <EntryFields {...p} />
+        {lock(<EntryFields {...p} />)}
       </div>
 
       <div className="builder-section">
         <SectionHead n={3} title="Gates: the market and the chain" blocks={["gates"]} labels={labels} note="read before the legs are chosen" help="gates" />
-        <GateFields {...p} stages={["signal", "chain"]} prefix="f-gate" />
+        {lock(<GateFields {...p} stages={["signal", "chain"]} prefix="f-gate" />)}
       </div>
 
       <div className="builder-section">
         <SectionHead n={4} title="Structure: legs, then price" blocks={["structure"]} labels={labels} help="structure" />
-        <LegFields {...p} />
+        {lock(<LegFields {...p} />)}
         <h5 className="builder-lbl">price and structure gates · read once the legs are chosen</h5>
-        <GateFields {...p} stages={["structure"]} prefix="f-sgate" />
+        {lock(<GateFields {...p} stages={["structure"]} prefix="f-sgate" />)}
       </div>
 
       <div className="builder-section">
         <SectionHead n={5} title="Exits, size, costs" blocks={["exit", "size"]} labels={labels} help="exits" />
-        <ExitFields {...p} />
-        <SizeFields {...p} />
+        {lock(
+          <>
+            <ExitFields {...p} />
+            <SizeFields {...p} />
+          </>,
+        )}
         <p className="muted">Fills are paper's (mid with the suite's slippage model) and fees are core's: neither is set here. P&amp;L is net; fees, settlement and slippage each get their own column on the run card.</p>
       </div>
     </section>
