@@ -137,7 +137,7 @@ shape), so `tests/test_paths_agree.py` holds that a recorded snapshot replays to
 **The automation driver** (`driver.py`, over `history.StoreHistory`) is the backtest path for any arm:
 every stored minute it manages open positions and then decides the arms in their entry window through
 `paper.decide_all`, each on a snapshot `snapshot.build` makes from the stored day as `feed.snapshot_for`
-makes one from the stream cache, and settles what is open at its expiry's close. `StoreHistory` reads
+makes one from the stream cache, and settles what is open at its expiry's close. A snapshot carries what a decision reads of the book, not its history: each arm's entries today and its latest before (`recent_entries`), and closed results only for an arm whose size has a progression (`results_for`); copying the whole book every minute made a long run quadratic. `StoreHistory` reads
 any file in the gex recorder's schema (our recorder, the vendor's 0DTE stores) through
 `core.quotehistory` and `core.regime`, never a reader of its own. `tests/test_driver.py` holds a day run
 through the paper loop and through the driver to the same trade, to the cent. Choosing the store and

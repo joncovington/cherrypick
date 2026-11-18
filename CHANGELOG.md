@@ -30,6 +30,10 @@ beyond the latest release.
   Declare and Promote to paper shown disabled. Beside it, **Today, live** decides the automation
   now as paper would, on a read-only snapshot (`cli builder-today`): every check, and the legs it
   would take or the check that stops it. The explore runs and run cards sit beside it too.
+- **Long automation backtests run in linear time.** The driver's snapshot at each minute copied every
+  arm's entry history and rebuilt every arm's closed results from the whole book, so a run slowed
+  as its book grew (item 90's placebo pass: 63 s a session near its end, 11 s now). It now carries
+  what a decision reads; trades and reasons are identical.
 - **The Builder's Explore run picks its window.** Beside the button, every span a store holds for the
   whole automation: the last year and everything that store holds, ours first, a thin span's share of
   sessions shown, and the vendor's only where it reaches further back than ours, marked licensed. A
