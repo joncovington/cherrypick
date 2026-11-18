@@ -1093,6 +1093,7 @@ import type {
   PnlExcursion,
   PnlTrace,
   PortfolioReading,
+  PortfolioSources,
   PnlTradesResult,
 } from "@console/shared";
 
@@ -1149,6 +1150,15 @@ export function usePortfolio(arms: string[], period: "day" | "week", weights: "e
     enabled: arms.length > 0,
     refetchInterval: 300_000,
     placeholderData: (prev) => prev,
+  });
+}
+
+/** The backtest results the portfolio tab can hold beside paper arms (`GET /api/portfolio/backtests`). */
+export function usePortfolioSources() {
+  return useQuery<PortfolioSources>({
+    queryKey: ["portfolio-sources"],
+    queryFn: () => getJson<PortfolioSources>("/api/portfolio/backtests"),
+    staleTime: 600_000,
   });
 }
 

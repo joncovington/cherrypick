@@ -533,6 +533,10 @@ def cmd_read(args) -> int:
         out = readout.signal_study(args.name or "")
         _emit(out)
         return 0 if out.get("ok") else 1
+    if args.what == "portfolio-sources":
+        out = readout.portfolio_sources()
+        _emit(out)
+        return 0
     if args.what == "automation-runs":
         out = readout.automation_runs(args.name or "")
         _emit(out)
@@ -747,7 +751,7 @@ def main(argv: list[str] | None = None) -> int:
         "what",
         choices=(
             "overview", "run", "trades", "path", "stores", "summaries", "signals", "signal",
-            "automation-runs", "automation-run", "fullset",
+            "automation-runs", "automation-run", "fullset", "portfolio-sources",
         ),
     )  # fmt: skip
     rd.add_argument("--ids", default=None, help="with `summaries`: run ids, comma separated")

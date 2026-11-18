@@ -4,13 +4,22 @@ Command:
     read --manifest JSON --start YYYY-MM-DD [--end YYYY-MM-DD]
          [--period day|week] [--weights equal_risk|booked]
 
-`--manifest` is a JSON list of {"key", "db", "schema", "tag", "era"}: one entry per arm, `tag` the
-metrics group tag (`<arm>` or `<arm>@<experiment>`), `era` the module's stamped era or null. Each arm
-is read exactly as `python -m cherrypick.core.metrics read` reads it (`ledgers.READERS`, the era
-filter, `session_nets_dated`), so a session net here is the P&L calendar's cell.
+`--manifest` is a JSON list, one entry per arm, of two kinds:
 
-Output: {"ok": true, **portfolio(...), "failures": [{key, error}]}. An arm whose ledger cannot be
-read is named under `failures` and left out, never read as zeros.
+- **A ledger arm** {"key", "db", "schema", "tag", "era"} (`kind` absent or "ledger"): `tag` the
+  metrics group tag (`<arm>` or `<arm>@<experiment>`), `era` the module's stamped era or null. Read
+  exactly as `python -m cherrypick.core.metrics read` reads it (`ledgers.READERS`, the era filter,
+  `session_nets_dated`), so a session net here is the P&L calendar's cell.
+- **A backtest arm** {"key", "kind": "backtest", "path", "arm"}: one arm of a backtest result file
+  (a Builder run or a study result, `portfolio.results`), its net per exit session at the verdict
+  pricing kind. Its span starts at the run's first session, not its first close. Optional
+  "licensed": true marks it licensed where the file itself does not say so (the caller knows the
+  folder it came from).
+
+Output: {"ok": true, **portfolio(...), "sources": {key: {kind, licensed, window}}, "licensed": bool,
+"failures": [{key, error}]}. An arm whose source cannot be read is named under `failures` and left
+out, never read as zeros. `licensed` is true when any arm read was derived from licensed vendor
+data: the reading then stays under ~/.cherrypick like the result it came from.
 """
 
 from __future__ import annotations
@@ -19,11 +28,13 @@ import argparse
 import json
 import sqlite3
 import sys
+from pathlib import Path
 
 from cherrypick.core import ledgers
 from cherrypick.core import metrics as _metrics
 
 from . import portfolio
+from . import results as _results
 
 
 def _arm_series(entry: dict, start: str, end: str) -> dict[str, float]:
@@ -47,20 +58,50 @@ def _arm_series(entry: dict, start: str, end: str) -> dict[str, float]:
     return dict(_metrics.session_nets_dated(mine))
 
 
+def _backtest_series(entry: dict, start: str, end: str | None) -> tuple[dict[str, float], dict]:
+    doc = json.loads(Path(entry["path"]).read_text(encoding="utf-8"))
+    if not isinstance(doc, dict):
+        raise _results.ResultError("not a backtest result")
+    nets = _results.session_nets(_results.trades_of(doc, entry["arm"]))
+    nets = {s: v for s, v in nets.items() if s >= start and (end is None or s <= end)}
+    window = _results.window_of(doc)
+    source = {
+        "kind": "backtest",
+        "licensed": _results.licensed(doc) or bool(entry.get("licensed")),
+        "window": list(window) if window else None,
+    }
+    return nets, source
+
+
 def cmd_read(args) -> dict:
     try:
         manifest = json.loads(args.manifest)
     except ValueError as exc:
         return {"ok": False, "error": f"manifest is not JSON: {exc}"}
-    series, failures = {}, []
+    series, sources, span_from, failures = {}, {}, {}, []
     for entry in manifest:
         try:
-            series[entry["key"]] = _arm_series(entry, args.start, args.end)
-        except (sqlite3.Error, ValueError, KeyError) as exc:
+            kind = entry.get("kind", "ledger")
+            if kind == "backtest":
+                series[entry["key"]], sources[entry["key"]] = _backtest_series(entry, args.start, args.end)
+                window = sources[entry["key"]]["window"]
+                if window:
+                    span_from[entry["key"]] = max(window[0], args.start)
+            elif kind == "ledger":
+                series[entry["key"]] = _arm_series(entry, args.start, args.end)
+                sources[entry["key"]] = {"kind": "ledger", "licensed": False, "window": None}
+            else:
+                raise ValueError(f"unknown manifest kind {kind!r}")
+        except (sqlite3.Error, OSError, ValueError, KeyError) as exc:
             failures.append({"key": entry.get("key"), "error": str(exc)})
+    reading = portfolio(
+        series, start=args.start, end=args.end, period=args.period, weights=args.weights, span_from=span_from
+    )
     return {
         "ok": True,
-        **portfolio(series, start=args.start, end=args.end, period=args.period, weights=args.weights),
+        **reading,
+        "sources": sources,
+        "licensed": any(s["licensed"] for s in sources.values()),
         "failures": failures,
     }
 

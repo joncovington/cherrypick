@@ -11,6 +11,8 @@ cards.py, each arm on its own peak session risk unless one capital is chosen for
 `stores` -> {ok, dir, files} (where the declared vendor stores live; the research queue's check)
 `summaries --ids A,B` -> {ok, runs, missing} (each run's arms in brief, for the studies tiles: the
 report's own mean, sessions and trades per arm, and the running net thinned to SUMMARY_POINTS)
+`portfolio-sources` -> {ok, sources, unreadable} (the Builder runs and study results Compare's portfolio
+tab can hold beside paper arms: id, kind, label, path, arms, window, licensed)
 """
 
 from __future__ import annotations
@@ -406,3 +408,86 @@ def signal_study(name: str) -> dict:
             except (OSError, ValueError) as exc:
                 return {"ok": False, "error": f"unreadable: {exc}"}
     return {"ok": False, "error": f"no signal study named {name}"}
+
+
+#: A portfolio source's id: its path under the backtest data folder, without `.json`.
+SOURCE_ID = re.compile(r"^[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*){1,3}$")
+
+
+def _engine_arms(doc: dict) -> list[str]:
+    """The arms of a result whose trades are engine trade records (a net, a session), by name."""
+    arms = doc.get("arms")
+    if isinstance(doc.get("trades"), list):
+        names = {t.get("arm") for t in doc["trades"] if isinstance(t, dict) and "net" in t}
+        if isinstance(arms, dict):
+            names |= set(arms)
+        return sorted(n for n in names if isinstance(n, str))
+    if isinstance(arms, dict):
+        return sorted(
+            n
+            for n, v in arms.items()
+            if isinstance(v, dict)
+            and isinstance(v.get("trades"), list)
+            and v["trades"]
+            and isinstance(v["trades"][0], dict)
+            and "net" in v["trades"][0]
+            and ("session" in v["trades"][0] or "exit_session" in v["trades"][0])
+        )
+    return []
+
+
+def _source_files() -> list[tuple[str, Path, bool]]:
+    """(kind, path, licensed) for every file a portfolio reading may name: each Builder run, and each
+    item's study result (`research/<item>/study*.json`; reproduction copies are left out). A file under
+    `results/` is derived from licensed data, so it is licensed whatever it says."""
+    out: list[tuple[str, Path, bool]] = []
+    for licensed in (False, True):
+        d = paths.automations_dir(licensed)
+        if d.is_dir():
+            out += [("builder", p, licensed) for p in sorted(d.glob("builder-*.json"))]
+    research = paths.results_dir() / "research"
+    if research.is_dir():
+        out += [("study", p, True) for p in sorted(research.glob("*/study*.json"))]
+    return out
+
+
+def portfolio_sources() -> dict:
+    """The backtest results Compare's portfolio tab can hold beside paper arms: each Builder run and
+    each study result whose arms carry engine trade records, with its id (its path under the backtest
+    data folder), arms, window and whether it is licensed. `path` is for the caller to hand
+    `cherrypick.core.portfolio` and only ever names a listed file. A file that does not parse is
+    named in `unreadable`; a study whose trades are another shape is left out."""
+    root = paths.data_dir()
+    sources, unreadable = [], []
+    for kind, p, licensed in _source_files():
+        try:
+            doc = json.loads(p.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            unreadable.append(p.name)
+            continue
+        if not isinstance(doc, dict):
+            continue
+        arms = _engine_arms(doc)
+        if not arms:
+            continue
+        try:
+            sid = p.relative_to(root).with_suffix("").as_posix()
+        except ValueError:
+            continue
+        if not SOURCE_ID.match(sid):
+            continue
+        window = doc.get("sessions") if kind == "builder" else doc.get("window")
+        item = doc.get("item")
+        sources.append(
+            {
+                "id": sid,
+                "kind": kind,
+                "label": doc.get("name") if kind == "builder" else (f"item {item} {p.stem}" if item else sid),
+                "path": str(p),
+                "arms": arms,
+                "window": window if isinstance(window, list) and len(window) == 2 else None,
+                "licensed": licensed or bool(doc.get("licensed")) or bool(doc.get("licence")),
+                "generated_at": doc.get("generated_at") or None,
+            }
+        )
+    return {"ok": True, "sources": sources, "unreadable": unreadable}

@@ -103,13 +103,15 @@ def portfolio(
     period: str = "day",
     weights: str = "equal_risk",
     min_periods: int = MIN_PERIODS,
+    span_from: Mapping[str, str] | None = None,
 ) -> dict:
     """The portfolio reading of `series` ({arm key: {session: net}}) over [start, end].
 
     An arm's span runs from its first close to the end of the window: an arm that holds for weeks
     (contango) or closes rarely (curve) is running between its closes, and a span ending at its last
     close would empty the window every other arm shares. Before its span an arm did not exist and
-    contributes nothing.
+    contributes nothing. `span_from` ({key: session}) starts an arm's span earlier, where the source
+    records when it was running: a backtest's run window, whose first sessions may close nothing.
 
     `weights`: `equal_risk` (the default) scales each arm to the median arm's per-period standard
     deviation over its own span, so the combined figures are not one large book's (MEIC's paper
@@ -132,7 +134,13 @@ def portfolio(
                 agg[p] = agg.get(p, 0.0) + float(net)
         by[key] = agg
     keys = [k for k in series if by[k]]
-    first = {k: min(by[k]) for k in keys}
+    first_close = {k: min(by[k]) for k in keys}
+    first = dict(first_close)
+    for k, s in (span_from or {}).items():
+        if k in first and s:
+            p = next((q for q in periods if q >= _period_of(s, period)), None)
+            if p is not None and p < first[k]:
+                first[k] = p
 
     def span(ks) -> list[str]:
         if not ks:
@@ -152,7 +160,8 @@ def portfolio(
             {
                 "key": k,
                 "periods_traded": len(by[k]),
-                "first": first.get(k),
+                "first": first_close.get(k),
+                "span_from": first.get(k),
                 "periods_in_span": len(own.get(k, [])),
                 "net": round(sum(by[k].values()), 2),
                 "max_drawdown": _metrics.max_drawdown(own.get(k, [])),
