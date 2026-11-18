@@ -377,10 +377,17 @@ Descriptive only: no trial, no verdict, nothing to the advisor. A vendor result 
 --name [--source]`): the automations group's automations replayed by `cherrypick.automations.driver`, the engine paper runs. The
 store is the source registry's best cover for the symbol's same-day chains over the dates (or the one
 named); a vendor store only while `licensing.status` is active, so new work never reads the vendor's
-data after its subscription ends. An arm that does not expire the session it enters reads end-of-day
-chains instead (`dolt-chains`, or `vendor-eod-chains` while licensed, its delta computed from mids by
-`core.chaindelta`) at one tick a session, 15:59, with daily bars from the stock history (raw);
-`--min-density` accepts Dolt's thinner years knowingly. An arm that declares a volume symbol reads it
+data after its subscription ends. An arm that does not expire the session it enters reads, in the
+suggestion's order (`choose_multi_day`): our own end-of-day chains (`dolt-chains`) where they cover;
+else, while licensed and for a full-set underlying entering up to 90 days out, the full set's stores
+through the session (`history.IntradayChainHistory` over `intraday_loader`: the near and middle
+stores, an expiry two hold read from the finer, and the same-day store for an expiry's own day and
+the spot; a session without a same-day expiry takes the rows' own underlying, or else each bar's
+parity forward on the nearest expiry, and the result's `spot_sources` counts each); else
+`vendor-eod-chains`, its delta computed from mids by `core.chaindelta`, at one tick a session, 15:59.
+`--source` names one: an end-of-day source, or a full-set store standing for its whole replay. Daily
+bars come from the stock history (raw), with an index's closes from Cboe's file (SPX) and the
+same-day store where it lacks one; `--min-density` accepts Dolt's thinner years knowingly. An arm that declares a volume symbol reads it
 from the recorded one-minute bars (`profile-bars`, regular hours), and the run is refused where those
 do not cover the dates. The result is an explore run (no trial, no
 verdict; `signal_versions` names each library signal an arm read, by version) under `paths.automations_dir`: `results/automations/` when it read the vendor's store, beside

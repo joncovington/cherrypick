@@ -10,12 +10,13 @@ and unmeasured past its staleness bound). The only queries of its own list the s
 the daily closes. Daily OHLC bars and vol index closes come from other stores and are passed in.
 
 `core.quotehistory` merges a sample's quotes by timestamp, so one sample holds one expiry: true of
-every store this reads today (same-day expiries). A store holding several expiries per instant would
-need that reader widened first.
+every store `StoreHistory` reads (same-day expiries). Several expiries per instant are
+`IntradayChainHistory`'s, over rows its caller loads; `DailyChainHistory` is the close only.
 """
 
 from __future__ import annotations
 
+import bisect
 import sqlite3
 from datetime import date, datetime
 from pathlib import Path
@@ -230,6 +231,133 @@ class DailyChainHistory:
 
     def prior_trails(self, session: str, n: int) -> dict[str, list[tuple[int, float]]]:
         return {}
+
+    def daily_before(self, session: str) -> list[dict]:
+        return [r for d, r in self.bars.items() if d < session]
+
+
+class IntradayChainHistory:
+    """Several expiries through the session, held across sessions: a multi-day automation replayed at
+    the bars an intraday chain store holds (the full set's one-minute near and five-minute middle
+    expiries), not only at the close. The caller loads the data, so this stays free of any store's
+    schema:
+
+    - `expiries(session) -> [expiry]`, every expiry stored that session;
+    - `quotes(session, expiry) -> {minute: rows}`, an expiry's rows at each of its bars;
+    - `spot(session) -> ({minute: spot}, source)`, the session's spot trail and where it came from.
+
+    Each stored minute is a tick. An expiry stored at a coarser bar than the tick reads its latest bar
+    at or before it, up to one bar old (`stale`): a five-minute expiry at 15:59 reads its 15:55 bar.
+    Daily bars give the closes, the open of a session without a trail and the settlement; the VIX is
+    the vol index's close for the session, as on end-of-day chains."""
+
+    close_only = False
+
+    def __init__(
+        self,
+        symbol: str,
+        bars: list[dict],
+        *,
+        expiries,
+        quotes,
+        spot,
+        vix_daily: dict[str, float] | None = None,
+        sessions: list[str] | None = None,
+    ):
+        self.symbol = symbol.upper()
+        self.bars = {r["session"]: r for r in sorted(bars, key=lambda r: r["session"])}
+        self.daily = list(self.bars.values())
+        self.closes = {d: float(r["close"]) for d, r in self.bars.items() if r.get("close") is not None}
+        self._expiries, self._quotes, self._spot = expiries, quotes, spot
+        self.vix_daily = vix_daily or {}
+        self.sessions = sorted(sessions if sessions is not None else self.bars)
+        self._day: dict[str, dict] = {}
+        self._trails: dict[str, list[tuple[int, float]]] = {}
+        #: Each session's spot source as the loader named it, for the result to state.
+        self.spot_sources: dict[str, str] = {}
+
+    def day(self, session: str) -> dict:
+        if session not in self._day:
+            trail, source = self._spot(session) or ({}, None)
+            if source:
+                self.spot_sources[session] = source
+            self._day = {
+                session: {"trail": dict(trail), "expiries": list(self._expiries(session) or []), "q": {}}
+            }
+        return self._day[session]
+
+    def _bars(self, session: str, expiry: str) -> tuple[list[int], dict[int, list[dict]], int]:
+        """An expiry's bar minutes, its rows by minute and how stale a read of it may be."""
+        d = self.day(session)
+        if expiry not in d["q"]:
+            by_minute = self._quotes(session, expiry) or {}
+            ms = sorted(by_minute)
+            d["q"][expiry] = (ms, by_minute, self.stale(ms))
+        return d["q"][expiry]
+
+    @staticmethod
+    def stale(minutes: list[int]) -> int:
+        """How far back a tick may read an expiry's bar: its own spacing (one minute when it has one bar)."""
+        gaps = [b - a for a, b in zip(minutes, minutes[1:], strict=False) if b > a]
+        return min(gaps) if gaps else 1
+
+    def _bar_at(self, session: str, expiry: str, minute: int) -> int | None:
+        ms, _, stale = self._bars(session, expiry)
+        i = bisect.bisect_right(ms, minute)
+        if not i:
+            return None
+        m = ms[i - 1]
+        return m if minute - m < stale else None
+
+    def minutes(self, session: str) -> list[int]:
+        d = self.day(session)
+        return sorted(d["trail"]) if d["expiries"] else []
+
+    def trail(self, session: str, upto: int) -> list[tuple[int, float]]:
+        return [(m, s) for m, s in sorted(self.day(session)["trail"].items()) if m <= upto]
+
+    def day_open(self, session: str, minute: int) -> float | None:
+        opening = [s for m, s in self.trail(session, minute) if m >= OPEN_MINUTE]
+        if opening:
+            return opening[0]
+        bar = self.bars.get(session) or {}
+        return None if bar.get("open") is None else float(bar["open"])
+
+    def spot_at(self, session: str, minute: int) -> float | None:
+        return self.day(session)["trail"].get(minute)
+
+    def listed(self, session: str, minute: int) -> list[str]:
+        return [e for e in self.day(session)["expiries"] if self._bar_at(session, e, minute) is not None]
+
+    def rows(self, session: str, expiry: str, minute: int) -> list[dict]:
+        m = self._bar_at(session, expiry, minute)
+        if m is None:
+            return []
+        return [dict(r) for r in self._bars(session, expiry)[1][m]]
+
+    def vix_at(self, session: str, minute: int) -> float | None:
+        return self.vix_daily.get(session)
+
+    def closes_before(self, session: str) -> list[float]:
+        return [c for d, c in self.closes.items() if d < session]
+
+    def prev_close(self, session: str) -> float | None:
+        earlier = [d for d in self.closes if d < session]
+        return self.closes[max(earlier)] if earlier else None
+
+    def settle(self, session: str) -> float | None:
+        """The session's daily close: what a position expiring that day settles at."""
+        return self.closes.get(session)
+
+    def prior_trails(self, session: str, n: int) -> dict[str, list[tuple[int, float]]]:
+        out = {}
+        for d in [x for x in self.sessions if x < session][-n:]:
+            if d not in self._trails:
+                trail, _ = self._spot(d) or ({}, None)
+                self._trails[d] = sorted(trail.items())
+            if self._trails[d]:
+                out[d] = list(self._trails[d])
+        return out
 
     def daily_before(self, session: str) -> list[dict]:
         return [r for d, r in self.bars.items() if d < session]

@@ -187,18 +187,20 @@ def _cadence(arm: dict) -> str:
 
 
 #: Why no store can serve a chain the driver cannot replay: an entry inside the session on an expiry
-#: after it (the end-of-day chains price only the close).
+#: after it, outside the full set's intraday stores (the end-of-day chains price only the close).
 NO_REPLAY = (
-    "the backtest replays a later expiry only at the close (15:59); an entry inside the session needs an "
-    "intraday replay, which it does not have"
+    "the backtest replays a later expiry through the session only from the full set's stores (its seven "
+    "underlyings, out to 90 days), elsewhere only at the close (15:59); an entry inside the session needs "
+    "the intraday replay"
 )
 
 
 def replays(need: dict, source: src.Source) -> bool:
-    """Whether the automation driver can replay `need` from `source`. A chain (and its greeks) on a
-    same-day expiry comes from a store in the recorder's schema (`history.StoreHistory`), any other
-    expiry from end-of-day chains at the 15:59 tick (`history.DailyChainHistory`); an entry inside the
-    session on a later expiry has no replay. Other fields are read as they are."""
+    """Whether the automation driver can replay `need` from `source` as one store. A chain (and its
+    greeks) on a same-day expiry comes from a store in the recorder's schema (`history.StoreHistory`),
+    any other expiry from end-of-day chains at the 15:59 tick (`history.DailyChainHistory`). Other
+    fields are read as they are. The full set's intraday replay reads several stores together, so it
+    is asked separately (`intraday_cover`)."""
     if need["field"] not in ("chain", "greeks"):
         return True
     if need.get("expiry") == "0dte":
@@ -209,6 +211,91 @@ def replays(need: dict, source: src.Source) -> bool:
 def _reader(need: dict):
     """`replays` for one need, as `coverage`'s `only`."""
     return lambda source: replays(need, source)
+
+
+#: The full set's stores a multi-day automation is replayed from through the session
+#: (`history.IntradayChainHistory`): the near store (1 to `NEAR_DAYS` calendar days out, one minute),
+#: the middle store (to `MID_DAYS`, five minutes) and the same-day store for an expiry's own day.
+NEAR_DAYS, MID_DAYS = 7, 90
+#: The replay a need gets from them, as a suggestion row and a window name it.
+INTRADAY = "intraday"
+
+
+def entry_days(arm: dict) -> int | None:
+    """The most calendar days out the expiry rule can enter, or None when the rule has no bound. A
+    market-day count is read at seven calendar days a five, plus a holiday; `at_least` reaches the next
+    weekly past its floor, or the next monthly when it takes monthlies only."""
+    e = arm["expiry"]
+    kind = e.get("kind")
+    if kind == "between":
+        return int(e["max"])
+    if kind == "at_least":
+        return int(e["days"]) + (35 if e.get("monthly") else 7)
+    if kind == "market_days":
+        return -(-int(e["days"]) * 7 // 5) + 1
+    if kind in ("dte", "calendar"):
+        return int(e["days"]) + int(e.get("tolerance") or 0)
+    return None
+
+
+def intraday_parts(arm: dict) -> list[str] | None:
+    """The registry names of the full-set stores an intraday replay of `arm` reads, the farthest
+    first: the middle store when it can enter past `NEAR_DAYS`, the near store, and the same-day store.
+    None for a same-day automation, one that can enter past `MID_DAYS`, or an underlying outside the
+    set."""
+    days = entry_days(arm)
+    if _expiry_class(arm) == "0dte" or days is None or days > MID_DAYS:
+        return None
+    sym = arm["symbol"].lower()
+    parts = [f"vendor-near-{sym}", f"vendor-0dte-{sym}-60s-full"]
+    if days > NEAR_DAYS:
+        parts.insert(0, f"vendor-mid-{sym}")
+    known = {s.name for s in src.SOURCES}
+    return parts if all(p in known for p in parts) else None
+
+
+def intraday_cover(arm: dict, inventory: dict, start: str, end: str, coverage) -> dict | None:
+    """Whether the full set's stores cover an intraday replay of `arm` over `start`..`end`: each part
+    asked on its own (`coverage`, licensed). {"covered", "source" (the farthest part), "parts",
+    "through", "density", "nearest"?: the first part short of it, with why}. None when no part applies
+    (`intraday_parts`)."""
+    parts = intraday_parts(arm)
+    if not parts:
+        return None
+    out = {"covered": True, "source": parts[0], "parts": parts, "through": end, "density": None}
+    for name in parts:
+        s = src.by_name(name)
+        got = coverage(inventory, "chain", arm["symbol"], start, end, cadence=s.cadence, expiry=s.expiries[0],
+                       licensed=True, only=lambda x, n=name: x.name == n, min_density=0.0)  # fmt: skip
+        row = next((r for r in got.get("sources") or [] if r.get("source") == name), {})
+        if not got.get("covered"):
+            out["covered"] = False
+            out.setdefault("nearest", {k: row.get(k) for k in ("source", "first", "last", "why")})
+            continue
+        out["through"] = min(out["through"], row.get("through") or end)
+        if row.get("density") is not None:
+            out["density"] = row["density"] if out["density"] is None else min(out["density"], row["density"])
+    return out
+
+
+def intraday_span(arm: dict, inventory: dict, last: str, coverage) -> tuple[str, str] | None:
+    """The span every part of an intraday replay holds (the latest first, the earliest last), or None."""
+    parts = intraday_parts(arm)
+    if not parts:
+        return None
+    firsts, lasts = [], []
+    for name in parts:
+        s = src.by_name(name)
+        got = coverage(inventory, "chain", arm["symbol"], EARLIEST, last, cadence=s.cadence,
+                       expiry=s.expiries[0], licensed=True, only=lambda x, n=name: x.name == n,
+                       min_density=0.0)  # fmt: skip
+        row = next((r for r in got.get("sources") or [] if r.get("source") == name), {})
+        if not row.get("first"):
+            return None
+        firsts.append(row["first"])
+        lasts.append(min(row.get("last") or last, last))
+    lo, hi = max(firsts), min(lasts)
+    return (lo, hi) if lo <= hi else None
 
 
 def needs(arm: dict) -> list[dict]:
@@ -245,6 +332,10 @@ def suggestion(
     end = last.isoformat()
     start = date.fromordinal(last.toordinal() - SUGGEST_DAYS).isoformat()
     rows = []
+    # A multi-day automation our own chains fall short for is replayed through the session from the
+    # full set's stores where they cover (every bar, not only the close), the vendor's end-of-day
+    # chains otherwise.
+    intra = intraday_cover(arm, inventory, start, end, coverage) if licensed_ok else None
     for need in needs(arm):
 
         def ask(licensed: bool, need=need) -> dict:
@@ -253,6 +344,11 @@ def suggestion(
                             only=_reader(need))  # fmt: skip
 
         got, licensed = ask(False), False
+        multi_day = need["field"] in CHAIN_FIELDS and need.get("expiry") != "0dte"
+        if not got.get("covered") and multi_day and intra and intra["covered"]:
+            rows.append({**need, "covered": True, "source": intra["source"], "licensed": True,
+                         "replay": INTRADAY, "through": intra["through"]})  # fmt: skip
+            continue
         if not got.get("covered") and licensed_ok:
             vendor = ask(True)
             if vendor.get("covered"):
@@ -265,7 +361,10 @@ def suggestion(
             # The nearest our stores come: the first source holding anything, with its span and why it
             # falls short (own recordings that began recently, a source without the expiry).
             near = next((s for s in got.get("sources") or [] if s.get("first")), None)
-            if near is not None:
+            if multi_day and intra and intra.get("nearest") and (near is None or need["cadence"] != "1d"):
+                # The full set holds the underlying: its store that falls short, rather than no replay.
+                row["nearest"] = intra["nearest"]
+            elif near is not None:
                 row["nearest"] = {k: near.get(k) for k in ("source", "first", "last", "why")}
             elif (
                 need["field"] in ("chain", "greeks")
@@ -338,6 +437,33 @@ def _window(arm: dict, inventory: dict, start: str, end: str, coverage, source: 
     return out
 
 
+def _intraday_window(arm: dict, inventory: dict, start: str, end: str, coverage) -> dict | None:
+    """`_window` for an intraday replay from the full set's stores (`intraday_cover`): the chain from
+    them, every other need as `_window` asks it. None unless every need is covered."""
+    cov = intraday_cover(arm, inventory, start, end, coverage)
+    if not cov or not cov["covered"]:
+        return None
+    out = {"start": start, "end": min(end, cov["through"]), "source": cov["source"], "licensed": True,
+           "density": cov["density"], "replay": INTRADAY}  # fmt: skip
+    for need in needs(arm):
+        if need["field"] in CHAIN_FIELDS:
+            continue
+        for licensed in (False, True):
+            got = coverage(inventory, need["field"], arm["symbol"], start, end, cadence=need["cadence"],
+                           expiry=need.get("expiry"), licensed=licensed, only=_reader(need),
+                           min_density=src.DENSE)  # fmt: skip
+            if got.get("covered"):
+                break
+        if not got.get("covered"):
+            return None
+        row = next((s for s in got.get("sources") or [] if s.get("source") == got.get("best")), {})
+        out["end"] = min(out["end"], row.get("through") or end)
+    out["thin"] = out["density"] is not None and out["density"] < src.DENSE
+    out["holds"] = f"{src.by_name(cov['source']).holds}, replayed through the session with its nearer stores"
+    out["key"] = f"{INTRADAY}:{cov['source']}:{out['start']}:{out['end']}"
+    return out
+
+
 def windows(arm: dict, inventory: dict, today: date, coverage, *, licensed_ok: bool = False) -> list[dict]:
     """The windows a Builder run may take, from what the stores hold, our own first: for each store the
     driver can replay the chain from, the last year it holds and everything it holds, each ending where
@@ -378,6 +504,19 @@ def windows(arm: dict, inventory: dict, today: date, coverage, *, licensed_ok: b
                 )
                 if not inside:
                     out.append(w)
+    span = intraday_span(arm, inventory, last, coverage) if licensed_ok else None
+    if span:
+        # The full set's intraday replay is offered beside the end-of-day one: a finer read of the same
+        # automation, so a window inside an end-of-day one is still offered.
+        first, stop = max(span[0], EARLIEST), span[1]
+        for lo in dict.fromkeys((max(first, year), first)):
+            w = _intraday_window(arm, inventory, lo, stop, coverage)
+            if w is None or (w["density"] is not None and w["density"] < OFFER_DENSITY):
+                continue
+            if not any(
+                x.get("replay") == INTRADAY and x["start"] <= w["start"] and w["end"] <= x["end"] for x in out
+            ):
+                out.append(w)
     return out
 
 

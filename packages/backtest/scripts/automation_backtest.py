@@ -16,10 +16,12 @@ writes the result:
   under `results/automations/` when it read the vendor's store (licensed, purged with it), beside it
   otherwise (`paths.automations_dir`). Never into the repo.
 
-Same-session arms read the recorder-schema stores through the day. Others read end-of-day chains (Dolt,
-or the vendor's store while licensed) at one tick a session, 15:59: an arm whose entry is not at the
-close counts `needs_intraday`, the source cannot price it. Daily bars come from the stock history (raw),
-or the recorder's index sessions for an index.
+Same-session arms read the recorder-schema stores through the day. Others read our own end-of-day
+chains (Dolt) where they cover; else, while licensed, the full set's stores through the session
+(`intraday_loader`, for its seven underlyings out to 90 days); else the vendor's end-of-day chains at
+one tick a session, 15:59, where an arm whose entry is not at the close counts `needs_intraday`. Daily
+bars come from the stock history (raw), or the recorder's index sessions for an index, with Cboe's
+closes (SPX) and the same-day store's filling the sessions they lack on the intraday replay.
 """
 
 from __future__ import annotations
@@ -28,22 +30,32 @@ import argparse
 import json
 import sqlite3
 import sys
+from collections import Counter
 from datetime import date, datetime
 from pathlib import Path
 
 from cherrypick.automations import arms as ens_arms
 from cherrypick.automations import config as ens_config
-from cherrypick.automations import driver, events, history
+from cherrypick.automations import driver, enrolment, events, history
 from cherrypick.core import chaindelta, home, jsonio, progress, volindex
 from cherrypick.core import sources as src
 from cherrypick.core.clock import ET
 from cherrypick.core.sources import inventory as src_inventory
 
-from cherrypick.backtest import licensing, paths, settings
+from cherrypick.backtest import fullset, licensing, paths, settings
 
 
 class Refused(Exception):
     pass
+
+
+def with_closes(bars: list[dict], closes: dict[str, float]) -> list[dict]:
+    """Daily bars with a close-only bar for each session they lack that `closes` holds (an index the
+    stock history does not carry, its closes kept by the same-day store)."""
+    have = {b["session"] for b in bars}
+    extra = [{"session": d, "open": None, "high": None, "low": None, "close": c}
+             for d, c in closes.items() if d not in have]  # fmt: skip
+    return sorted([*bars, *extra], key=lambda b: b["session"])
 
 
 def store_path(source: src.Source, settings_doc: dict) -> Path:
@@ -120,6 +132,127 @@ def choose_eod_source(
             return src.by_name(x["source"])
     why = "; ".join(f"{x['source']}: {x['why']}" for x in cov["sources"] if x["source"] in EOD_SOURCES)
     raise Refused(f"no end-of-day chains cover {symbol} {start}..{end} ({why or 'no source holds it'})")
+
+
+def intraday_parts(arms: dict[str, dict]) -> list[str] | None:
+    """The full-set stores an intraday replay of every arm reads (`enrolment.intraday_parts`): the
+    widest any arm needs, or None when one of them has no intraday replay."""
+    every = [enrolment.intraday_parts(a) for a in arms.values()]
+    if not every or any(p is None for p in every):
+        return None
+    return max(every, key=len)
+
+
+def choose_multi_day(
+    symbol, start, end, named, arms, *, licensed_ok: bool, inv: dict, min_density: float
+) -> tuple[str, list[src.Source]]:
+    """The replay for a multi-day run, as the backtest suggestion orders it: our own end-of-day chains
+    where they cover, else the full set's stores through the session (`intraday`, licensed), else the
+    vendor's end-of-day chains. `named` pins it: an end-of-day source, or a full-set store, which
+    stands for its whole replay. Returns ("intraday" | "eod", [sources])."""
+    parts = intraday_parts(arms)
+    if named and named.startswith(("vendor-near-", "vendor-mid-")):
+        if not licensed_ok:
+            raise Refused(f"{named} is the vendor's and the licence does not allow new work")
+        if not parts or named != parts[0]:
+            raise Refused(f"{named} is not the intraday replay these automations read ({parts and parts[0]})")
+        return "intraday", [src.by_name(p) for p in parts]
+    if named:
+        return "eod", [choose_eod_source(symbol, start, end, named, licensed_ok=licensed_ok, inv=inv,
+                                         min_density=min_density)]  # fmt: skip
+    try:
+        return "eod", [choose_eod_source(symbol, start, end, None, licensed_ok=False, inv=inv,
+                                         min_density=min_density)]  # fmt: skip
+    except Refused:
+        if not licensed_ok:
+            raise
+    if parts:
+        widest = max(arms.values(), key=lambda a: len(enrolment.intraday_parts(a)))
+        cover = enrolment.intraday_cover(widest, inv, start, end, src.coverage)
+        if cover and cover["covered"]:
+            return "intraday", [src.by_name(p) for p in parts]
+    return "eod", [choose_eod_source(symbol, start, end, None, licensed_ok=True, inv=inv,
+                                     min_density=min_density)]  # fmt: skip
+
+
+def _minute(bar: str) -> int:
+    h, m = bar.split(":")
+    return int(h) * 60 + int(m)
+
+
+def intraday_loader(chain_dbs: list[Path], zero_db: Path | None, symbol: str, root: str):
+    """The loaders `history.IntradayChainHistory` reads, over the full set's intraday stores
+    (`intraday_chain_quotes`, rights spelt `CALL`/`PUT`, bars "HH:MM") and its same-day store (the
+    recorder's schema, for an expiry on its own day and the session's spot). An expiry two stores hold
+    is read from the finer (they are passed finest first). The spot, in order: the same-day store's
+    trail; the rows' own underlying price, where the store kept one (a Standard-tier fetch); else each
+    bar's parity forward on the nearest expiry (`core.chaindelta`; Value-tier rows carry no underlying).
+    Returns (expiries, quotes, spot, sessions, closes): `closes` are the same-day store's daily closes."""
+    conns = [sqlite3.connect(f"file:{p.as_posix()}?mode=ro", uri=True) for p in chain_dbs if p.exists()]
+    zero = history.StoreHistory(zero_db, symbol) if zero_db is not None and zero_db.exists() else None
+    zero_days = set(zero.sessions) if zero else set()
+
+    def expiries(session: str) -> list[str]:
+        out = {e for c in conns for (e,) in c.execute(
+            "SELECT DISTINCT expiration FROM intraday_chain_quotes WHERE symbol = ? AND session = ?",
+            (root, session))}  # fmt: skip
+        if session in zero_days:
+            out.add(session)
+        return sorted(out)
+
+    def quotes(session: str, expiry: str) -> dict[int, list[dict]]:
+        if expiry == session:
+            return (
+                {m: rows for m in zero.minutes(session) if (rows := zero.rows(session, expiry, m))}
+                if zero
+                else {}
+            )
+        for c in conns:
+            by: dict[int, list[dict]] = {}
+            for bar, k, right, bid, ask, delta, iv in c.execute(
+                "SELECT bar, strike, right, bid, ask, delta, iv FROM intraday_chain_quotes "
+                "WHERE symbol = ? AND session = ? AND expiration = ?",
+                (root, session, expiry),
+            ):
+                r = "C" if str(right).upper().startswith("C") else "P"
+                by.setdefault(_minute(bar), []).append(
+                    {"strike": float(k), "right": r, "bid": bid, "ask": ask, "delta": delta, "iv": iv}
+                )
+            if by:
+                return by
+        return {}
+
+    def spot(session: str) -> tuple[dict[int, float], str | None]:
+        if session in zero_days:
+            trail = dict(zero.trail(session, 24 * 60))
+            if trail:
+                return trail, "same-day store"
+        nearest = next((e for e in expiries(session) if e > session), None)
+        if nearest is None:
+            return {}, None
+        for c in conns:
+            own = dict(
+                c.execute(
+                    "SELECT bar, MIN(underlying) FROM intraday_chain_quotes WHERE symbol = ? AND session = ? "
+                    "AND expiration = ? AND underlying IS NOT NULL GROUP BY bar",
+                    (root, session, nearest),
+                )
+            )
+            if own:
+                return {_minute(b): float(u) for b, u in own.items()}, "row underlying"
+        fwd = {
+            m: f
+            for m, rows in quotes(session, nearest).items()
+            if (f := chaindelta.forward_from_parity(rows))
+        }
+        return fwd, ("parity forward" if fwd else None)
+
+    held = set(zero_days)
+    for c in conns:
+        held |= {d for (d,) in c.execute(
+            "SELECT DISTINCT session FROM intraday_chain_requests WHERE symbol = ? AND status = 'complete'",
+            (root,))}  # fmt: skip
+    return expiries, quotes, spot, sorted(held), (dict(zero.closes) if zero else {})
 
 
 def volume_symbols(arms: dict) -> set[str]:
@@ -263,19 +396,14 @@ def cmd_run(args) -> int:
     symbol = args.symbol.upper()
     start, end = args.start, args.end
     licensed_ok, inv = licensing.status(s)["active"], src_inventory.load()
+    replay, parts = "same_day", []
     try:
         if same_day(chosen):
             source = choose_source(symbol, start, end, args.source, licensed_ok=licensed_ok, inv=inv)
         else:
-            source = choose_eod_source(
-                symbol,
-                start,
-                end,
-                args.source,
-                licensed_ok=licensed_ok,
-                inv=inv,
-                min_density=args.min_density,
-            )
+            replay, parts = choose_multi_day(symbol, start, end, args.source, chosen, licensed_ok=licensed_ok,
+                                             inv=inv, min_density=args.min_density)  # fmt: skip
+            source = parts[0]
         check_volume(volume_symbols(chosen), start, end, inv=inv, min_density=args.min_density)
     except Refused as exc:
         print(json.dumps({"ok": False, "error": str(exc)}))
@@ -285,6 +413,21 @@ def cmd_run(args) -> int:
     if same_day(chosen):
         store = store_path(source, s)
         h = history.StoreHistory(store, symbol, daily=index_daily(symbol))
+    elif replay == "intraday":
+        # Finest first, so an expiry both intraday stores hold is read at one minute.
+        chain_dbs = [
+            store_path(p, s) for p in sorted(parts[:-1], key=lambda p: src.CADENCE_SECONDS[p.cadence])
+        ]
+        zero_db = store_path(parts[-1], s)
+        store = store_path(source, s)
+        exps, quotes, spot, held, closes = intraday_loader(
+            chain_dbs, zero_db, symbol, fullset.SPEC[symbol]["root"]
+        )
+        # An index's official closes from Cboe's file where there is one (SPX), over the same-day store's
+        # (each 0DTE session's last underlying, and only on sessions with a same-day expiry).
+        bars = with_closes(stock_daily(symbol) or index_daily(symbol), {**closes, **volindex.closes(symbol)})
+        h = history.IntradayChainHistory(symbol, bars, expiries=exps, quotes=quotes, spot=spot,
+                                         vix_daily=vix_daily, sessions=held)  # fmt: skip
     else:
         store = (
             store_path(source, s) if source.name == "vendor-eod-chains" else Path("dolt/options.option_chain")
@@ -319,6 +462,7 @@ def cmd_run(args) -> int:
         if store.is_relative_to(home.data_dir())
         else store.as_posix(),
         "cadence": "1d at 15:59" if getattr(h, "close_only", False) else "stored minutes",
+        "replay": replay,
         "licensed": source.licensed,
         "sessions": [sessions[0], sessions[-1]] if sessions else None,
         "session_count": len(sessions),
@@ -327,6 +471,10 @@ def cmd_run(args) -> int:
         "still_open": len(book.open),
         "generated_at": datetime.now(ET).isoformat(timespec="seconds"),
     }
+    if replay == "intraday":
+        result["stores"] = [p.probe.where for p in parts]
+        # Where each session's spot came from (`intraday_loader`): a parity forward is not a print.
+        result["spot_sources"] = dict(Counter(h.spot_sources.get(d, "none") for d in sessions))
     out = paths.automations_dir(source.licensed) / f"{args.name}.json"
     jsonio.write_json_atomic(out, result)
     print(json.dumps({"ok": True, "path": str(out), "source": source.name, "trades": len(book.trades)}))

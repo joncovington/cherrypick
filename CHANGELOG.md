@@ -60,10 +60,20 @@ beyond the latest release.
   sessions shown, and the vendor's only where it reaches further back than ours, marked licensed. A
   store that stopped early still offers its span. The page sends only the module's window key; the
   orchestrator refuses one the module does not offer.
+- **Multi-day automations replayed through the session.** An automation held across sessions on one
+  of the full set's underlyings, entering 1 to 90 days out, is replayed from the full set's stores
+  (`history.IntradayChainHistory`): the near expiries at one minute, the middle ones at five minutes
+  (a tick reads an expiry's latest bar, up to one bar old) and the expiry's own day from the same-day
+  store, so every exit is read at every stored bar of every session it is held, and an entry inside
+  the session can be backtested. The coverage line and the window picker offer it where our own
+  end-of-day chains fall short, ahead of the vendor's end-of-day chains, while the licence allows new
+  work; the result is licensed and records its stores and where each session's spot came from (the
+  same-day store, the rows' own underlying, or the parity forward of the nearest expiry, Value-tier
+  rows carrying no underlying). SPX reads its official closes from Cboe's file.
 - **Backtest coverage counts only stores the backtest can replay.** A same-day chain comes from a
-  store in the recorder's schema and a later expiry from end-of-day chains; an entry inside the
-  session on a later expiry has no replay yet, and the coverage line says so. Before this, the full
-  set's one- and five-minute stores could be named for a run that reads neither.
+  store in the recorder's schema, a later expiry from end-of-day chains or the full set's intraday
+  stores together; an entry inside the session on a later expiry outside the full set has no replay,
+  and the coverage line says so.
 - **Monthly expiries, and coverage that reaches our own chains.** An expiry rule (`between`,
   `at_least`) takes `"monthly": true` to pick only standard monthlies (`core.calendar.monthly_expiry`:
   the third Friday, or the session before a holiday). The wizard's shapes use it, so each is covered

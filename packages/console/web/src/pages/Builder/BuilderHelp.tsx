@@ -76,7 +76,9 @@ export const SECTION_HELP: Record<string, CardHelpContent> = {
         <HelpWarn title="Cadence">
           <p>
             Paper reads every minute. A backtest reads every stored minute, or one tick at 15:59 on end-of-day chains, where an entry
-            window that does not hold that tick counts "needs intraday" and is never moved to the close.
+            window that does not hold that tick counts "needs intraday" and is never moved to the close. A multi-day automation on one
+            of the full set's underlyings, up to 90 days out, can be replayed through the session instead while the licence allows:
+            one-minute bars up to a week out, five-minute bars beyond.
           </p>
         </HelpWarn>
         {LABELS}

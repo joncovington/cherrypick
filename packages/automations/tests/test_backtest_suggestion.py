@@ -274,15 +274,78 @@ def test_a_store_the_driver_cannot_read_never_covers_a_need():
     assert next(n for n in s["needs"] if n["field"] == "chain")["source"] == "vendor-eod-chains"
 
 
-def test_an_intraday_entry_on_a_later_expiry_says_the_backtest_cannot_replay_it():
-    arm = fresh(
-        symbol="SPY", expiry={"kind": "dte", "days": 1}, entry={"kind": "time", "at": "10:30", "window": 5}
-    )
+def test_an_intraday_entry_on_a_later_expiry_outside_the_full_set_says_the_backtest_cannot_replay_it():
     days = src.trading_days("2020-01-02", "2026-11-13")
     inv = {"sources": {"vendor-near-spy": _span("2020-01-02", "2026-11-13", days)}}
-    s = enrolment.suggestion(arm, inv, TODAY, src.coverage, licensed_ok=True)
+    for changes in ({"symbol": "AAPL", "expiry": {"kind": "dte", "days": 1}},
+                    {"symbol": "SPY", "expiry": {"kind": "at_least", "days": 120}}):  # fmt: skip
+        arm = fresh(entry={"kind": "time", "at": "10:30", "window": 5}, **changes)
+        s = enrolment.suggestion(arm, inv, TODAY, src.coverage, licensed_ok=True)
+        chain = next(n for n in s["needs"] if n["field"] == "chain")
+        assert s["possible"] is False and chain["why"] == enrolment.NO_REPLAY
+
+
+def test_the_full_set_parts_follow_how_far_out_the_rule_can_enter():
+    def parts(**expiry):
+        return enrolment.intraday_parts(fresh(symbol="SPY", expiry=expiry))
+
+    assert parts(kind="dte", days=0) is None, "a same-day automation reads one store"
+    assert parts(kind="market_days", days=1) == ["vendor-near-spy", "vendor-0dte-spy-60s-full"]
+    assert parts(kind="calendar", days=20, tolerance=3)[0] == "vendor-mid-spy"
+    assert parts(kind="between", min=40, max=50) == [
+        "vendor-mid-spy",
+        "vendor-near-spy",
+        "vendor-0dte-spy-60s-full",
+    ]
+    assert (
+        parts(kind="between", min=80, max=95) is None
+        and parts(kind="at_least", days=60, monthly=True) is None
+    )
+    assert enrolment.intraday_parts(fresh(symbol="AAPL", expiry={"kind": "dte", "days": 1})) is None
+
+
+INTRADAY_ARM = {"symbol": "SPY", "expiry": {"kind": "between", "min": 40, "max": 50},
+                "entry": {"kind": "time", "at": "10:30", "window": 5}}  # fmt: skip
+
+
+def _intraday_inv(mid=("2020-01-02", "2026-11-13"), near=("2020-01-02", "2026-11-13")):
+    def span(first, last):
+        return _span(first, last, src.trading_days(first, last))
+
+    return {"sources": {"vendor-mid-spy": span(*mid), "vendor-near-spy": span(*near),
+                        "vendor-0dte-spy-60s-full": span("2020-01-02", "2026-11-13")}}  # fmt: skip
+
+
+def test_an_intraday_entry_on_a_later_expiry_is_replayed_from_the_full_set_while_licensed():
+    arm = fresh(**INTRADAY_ARM)
+    s = enrolment.suggestion(arm, _intraday_inv(), TODAY, src.coverage, licensed_ok=True)
     chain = next(n for n in s["needs"] if n["field"] == "chain")
-    assert s["possible"] is False and chain["why"] == enrolment.NO_REPLAY
+    assert s["possible"] and s["licensed"]
+    assert (chain["source"], chain["replay"], chain["licensed"]) == ("vendor-mid-spy", "intraday", True)
+    assert not enrolment.suggestion(arm, _intraday_inv(), TODAY, src.coverage)["possible"], "never unlicensed"
+    # Every part must cover: a near store that stops early names itself and why.
+    short = enrolment.suggestion(arm, _intraday_inv(near=("2020-01-02", "2026-06-30")), TODAY, src.coverage,
+                                 licensed_ok=True)  # fmt: skip
+    chain = next(n for n in short["needs"] if n["field"] == "chain")
+    assert not short["possible"] and chain["nearest"]["source"] == "vendor-near-spy"
+    assert "ends 2026-06-30" in chain["nearest"]["why"]
+
+
+def test_a_close_entry_prefers_the_intraday_replay_to_the_vendors_end_of_day_chains():
+    arm = fresh(**{**INTRADAY_ARM, "entry": {"kind": "time", "at": "15:59", "window": 5}})
+    inv = _intraday_inv()
+    days = src.trading_days("2016-01-04", "2026-11-13")
+    inv["sources"]["vendor-eod-chains"] = {"symbols": {"SPY": {"first": "2016-01-04", "last": "2026-11-13",
+                                                                "sessions": days}}}  # fmt: skip
+    chain = next(n for n in enrolment.suggestion(arm, inv, TODAY, src.coverage, licensed_ok=True)["needs"]
+                 if n["field"] == "chain")  # fmt: skip
+    assert (chain["source"], chain.get("replay")) == ("vendor-mid-spy", "intraday")
+    ws = enrolment.windows(arm, inv, TODAY, src.coverage, licensed_ok=True)
+    intra = [w for w in ws if w.get("replay") == "intraday"]
+    assert [(w["source"], w["start"]) for w in intra] == [("vendor-mid-spy", "2025-11-13"),
+                                                          ("vendor-mid-spy", "2020-01-02")]  # fmt: skip
+    assert all(w["key"].startswith("intraday:vendor-mid-spy:") for w in intra)
+    assert any(w["source"] == "vendor-eod-chains" for w in ws), "the end-of-day window is still offered"
 
 
 def _held(**spans):

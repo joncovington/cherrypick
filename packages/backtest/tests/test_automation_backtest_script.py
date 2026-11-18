@@ -159,3 +159,106 @@ def test_declared_volume_is_read_from_the_recorded_bars_and_refused_where_they_d
         ab.check_volume({"SPY"}, "2026-10-01", "2026-11-13", inv=inv, min_density=0.95)
     with pytest.raises(ab.Refused, match="no one-minute volume covers QQQ"):
         ab.check_volume({"QQQ"}, "2026-11-05", "2026-11-13", inv=inv, min_density=0.95)
+
+
+FORTY_FIVE = {"symbol": "SPY", "expiry": {"kind": "between", "min": 40, "max": 50},
+              "entry": {"kind": "time", "at": "15:59", "window": 5}}  # fmt: skip
+
+
+def _full_set_inv(**extra):
+    span = {
+        "first": "2020-01-02",
+        "last": "2026-11-13",
+        "sessions": src.trading_days("2020-01-02", "2026-11-13"),
+    }
+    names = ("vendor-mid-spy", "vendor-near-spy", "vendor-0dte-spy-60s-full")
+    return {"sources": {**{n: {"store": span} for n in names}, **extra}}
+
+
+def test_a_multi_day_run_takes_our_chains_then_the_full_set_intraday_then_the_vendors_close():
+    arms = {"a": FORTY_FIVE}
+
+    def choose(start, end, inv, named=None, licensed_ok=True):
+        return ab.choose_multi_day("SPY", start, end, named, arms, licensed_ok=licensed_ok, inv=inv,
+                                   min_density=0.95)  # fmt: skip
+
+    both = {"sources": {**EOD_INV["sources"], **_full_set_inv()["sources"]}}
+    kind, parts = choose("2025-01-02", "2025-12-31", both)
+    assert (kind, [p.name for p in parts]) == ("eod", ["dolt-chains"]), "our own chains first"
+    kind, parts = choose("2023-01-03", "2023-12-29", both)
+    assert kind == "intraday"
+    assert [p.name for p in parts] == ["vendor-mid-spy", "vendor-near-spy", "vendor-0dte-spy-60s-full"]
+    held = src.trading_days("2016-01-04", "2026-11-13")
+    spy = {"first": "2016-01-04", "last": "2026-11-13", "sessions": held}
+    vendor_eod = {"sources": {"vendor-eod-chains": {"symbols": {"SPY": spy}}}}
+    kind, parts = choose("2023-01-03", "2023-12-29", vendor_eod)
+    assert (kind, parts[0].name) == ("eod", "vendor-eod-chains"), "no full set: the vendor's close"
+    assert choose("2023-01-03", "2023-12-29", {}, "vendor-mid-spy")[0] == "intraday"
+    with pytest.raises(ab.Refused, match="licence does not allow new work"):
+        choose("2023-01-03", "2023-12-29", {}, "vendor-mid-spy", licensed_ok=False)
+    with pytest.raises(ab.Refused, match="not the intraday replay"):
+        choose("2023-01-03", "2023-12-29", {}, "vendor-near-spy")
+
+
+def _intraday_store(path, rows, sessions):
+    import sqlite3
+
+    from cherrypick.backtest import intradayfetch
+
+    conn = sqlite3.connect(path)
+    conn.executescript(intradayfetch.SCHEMA)
+    conn.executemany(
+        "INSERT INTO intraday_chain_quotes (symbol, session, expiration, bar, strike, right, bid, ask, "
+        "delta, iv, underlying) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        rows,
+    )
+    for s in sessions:
+        conn.execute(
+            "INSERT INTO intraday_chain_requests VALUES ('SPY', ?, '2026-04-17', '09:30', '16:00', '5m', "
+            "'complete', 1, 1, NULL, 0)",
+            (s,),
+        )
+    conn.commit()
+    conn.close()
+
+
+def test_the_intraday_loader_reads_the_finer_store_first_and_states_where_the_spot_came_from(tmp_path):
+    from cherrypick.core import bs
+
+    def chain(session, expiry, bar, spot, *, underlying=False):
+        years = 30 / 365
+        out = []
+        for k in (595.0, 600.0, 605.0):
+            for right in ("CALL", "PUT"):
+                px = bs.price(spot, k, years, 0.2, right[0], 0.0)
+                bid, ask = round(px - 0.02, 2), round(px + 0.02, 2)
+                out.append(("SPY", session, expiry, bar, k, right, bid, ask, None, None,
+                            spot if underlying else None))  # fmt: skip
+        return out
+
+    day, exp, week = "2026-03-02", "2026-04-17", "2026-03-05"
+    near, mid = tmp_path / "SPY-near-1m.db", tmp_path / "SPY-mid-5m.db"
+    _intraday_store(near, chain(day, week, "09:30", 600.0), [day])
+    mid_rows = (
+        chain(day, exp, "09:30", 600.0) + chain(day, exp, "09:35", 601.0) + chain(day, week, "09:30", 999.0)
+    )
+    _intraday_store(mid, mid_rows, ["2026-03-03"])
+    expiries, quotes, spot, held, closes = ab.intraday_loader([near, mid], None, "SPY", "SPY")
+    assert expiries(day) == ["2026-03-05", exp] and held == [day, "2026-03-03"] and closes == {}
+    assert sorted(quotes(day, exp)) == [570, 575]
+    assert {r["right"] for r in quotes(day, exp)[570]} == {"C", "P"}
+    one_min = quotes(day, week)
+    assert one_min[570][0]["bid"] < 100, "an expiry both stores hold is read from the finer"
+    trail, source = spot(day)
+    assert source == "parity forward" and abs(trail[570] - 600.0) < 0.1
+    # A store that kept the underlying (a Standard-tier fetch) gives that price instead.
+    std = tmp_path / "standard.db"
+    _intraday_store(std, chain(day, "2026-03-05", "09:30", 600.0, underlying=True), [day])
+    trail, source = ab.intraday_loader([std], None, "SPY", "SPY")[2](day)
+    assert (source, trail) == ("row underlying", {570: 600.0})
+
+
+def test_close_only_bars_fill_the_sessions_the_stock_history_lacks():
+    bars = [{"session": "2026-03-03", "open": 1, "high": 1, "low": 1, "close": 1}]
+    got = ab.with_closes(bars, {"2026-03-02": 5.0, "2026-03-03": 9.0})
+    assert [(b["session"], b["close"]) for b in got] == [("2026-03-02", 5.0), ("2026-03-03", 1)]
