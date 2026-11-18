@@ -361,6 +361,19 @@ def position_delta(pos: Position, chain: Chain) -> float | None:
     return total
 
 
+def _trail_dollars(trail: dict | None, e) -> tuple[float, float] | None:
+    """A trailing stop as (trail, activate) in whole-position dollars: as stated, or its percent of the
+    entry's max profit. None when there is none, or a percent with no max profit to measure."""
+    if not trail:
+        return None
+    if "dollars" in trail:
+        return trail["dollars"], trail.get("activate_dollars", 0)
+    if not e.max_profit:
+        return None
+    full = e.max_profit * pricing.MULTIPLIER * e.quantity
+    return trail["pct"] / 100.0 * full, trail.get("activate_pct", 0) / 100.0 * full
+
+
 def manage(pos: Position, snap: Snapshot) -> tuple[str, object] | None:
     """The exit due now, as (kind, detail), or None, checked in this order: a touch, avoid events, the
     stops (credit multiple, % of debit, dollars), a trailing stop, the profit targets (% of max profit,
@@ -378,7 +391,9 @@ def manage(pos: Position, snap: Snapshot) -> tuple[str, object] | None:
       on a credit).
     - `stop_dollars: x` / `profit_dollars: x`: the open P&L reaches -x / +x.
     - `trailing_stop: {"dollars": d, "activate_dollars": a}`: once the open P&L has reached a (default
-      0), closes when it falls d below its best.
+      0), closes when it falls d below its best. In percent, `{"pct": p, "activate_pct": a}`: the same
+      rule with d and a as p% and a% of the trade's max profit (whole-position dollars); a structure
+      with no max profit has nothing to measure, and the rule never fires on one.
     - `delta_limit: x`: closes when the structure's delta per unit reaches x either way.
     - `close_at_dte: n`: closes at the first tick of a session n or fewer calendar days before expiry.
 
@@ -418,9 +433,9 @@ def manage(pos: Position, snap: Snapshot) -> tuple[str, object] | None:
             return "stop", loss
     if r.get("stop_dollars") and pnl is not None and pnl <= -r["stop_dollars"] + 1e-9:
         return "stop", pnl
-    trail = r.get("trailing_stop")
-    if trail and pnl is not None and pos.peak_pnl >= trail.get("activate_dollars", 0) - 1e-9:
-        if pnl <= pos.peak_pnl - trail["dollars"] + 1e-9:
+    trail = _trail_dollars(r.get("trailing_stop"), e)
+    if trail and pnl is not None and pos.peak_pnl >= trail[1] - 1e-9:
+        if pnl <= pos.peak_pnl - trail[0] + 1e-9:
             return "trailing_stop", pnl
     if r.get("profit_target_pct") and now is not None and e.max_profit:
         gained = credit + now

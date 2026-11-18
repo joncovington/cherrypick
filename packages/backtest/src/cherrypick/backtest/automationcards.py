@@ -7,6 +7,9 @@ each session did or did not enter. This reads those back and computes nothing th
 - **The net is the verdict kind's** (`net["verdict"]`, the suite's slippage model), as paper's P&L is.
   Gross, fees, settlement and the verdict slippage each keep their own column, and on every row
   gross - fees - settlement - slippage = P&L, the years adding to All.
+- **Net at mid beside it** (`net["mid"]`, as the run recorded it): the same trades filled at mid, so
+  gross - fees - settlement before any slippage. It is P&L plus the slippage column, and is shown as
+  context, never as the P&L.
 - **Trades are ordered by their exit** (session, then minute), and each falls in its exit session's
   year. The drawdown is the closed trades' cumulative net below its running peak.
 - **Why sessions were skipped** is the driver's own count of each session's last reason, `entered`
@@ -38,6 +41,11 @@ def _num(v: Any) -> float:
 def _net(t: dict) -> float:
     net = t.get("net")
     return _num(net.get(KIND) if isinstance(net, dict) else net)
+
+
+def _net_mid(t: dict) -> float:
+    net = t.get("net")
+    return _num(net.get("mid")) if isinstance(net, dict) else _net(t)
 
 
 def _slip(t: dict) -> float:
@@ -98,6 +106,7 @@ def _row(label: str, trades: list[dict]) -> dict:
         "settlement": round(sum(_num(t.get("settlement")) for t in trades), 2),
         "slippage": round(sum(_slip(t) for t in trades), 2),
         "net": round(sum(_net(t) for t in trades), 2),
+        "net_mid": round(sum(_net_mid(t) for t in trades), 2),
         "max_dd": max_drawdown(trades),
     }
 
@@ -116,6 +125,7 @@ def tiles(trades: list[dict], sessions: int | None) -> dict:
     dd = max_drawdown(trades)
     return {
         "net": net,
+        "net_mid": round(sum(_net_mid(t) for t in trades), 2),
         "gross": round(sum(_num(t.get("gross")) for t in trades), 2),
         "trades": n,
         "sessions": sessions,
