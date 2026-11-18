@@ -159,3 +159,53 @@ def test_declared_volume_is_read_from_the_recorded_bars_and_refused_where_they_d
         ab.check_volume({"SPY"}, "2026-10-01", "2026-11-13", inv=inv, min_density=0.95)
     with pytest.raises(ab.Refused, match="no one-minute volume covers QQQ"):
         ab.check_volume({"QQQ"}, "2026-11-05", "2026-11-13", inv=inv, min_density=0.95)
+
+
+def _arm(expiry, entry):
+    import copy
+
+    from cherrypick.automations import arms
+
+    a = copy.deepcopy(arms.load_arms()["gld-call-spread-20d"])
+    a.update(expiry=expiry, entry=entry)
+    return a
+
+
+def test_an_entry_inside_the_session_on_a_later_expiry_reads_the_full_sets_intraday_stores():
+    later = {"kind": "calendar", "days": 20}
+    assert ab.intraday({"a": _arm(later, {"kind": "time", "at": "12:30", "window": 5})})
+    assert not ab.intraday({"a": _arm(later, {"kind": "time", "at": "15:55", "window": 5})}), (
+        "at the close: EOD"
+    )
+    assert not ab.intraday(
+        {"a": _arm({"kind": "dte", "days": 0}, {"kind": "time", "at": "12:30", "window": 5})}
+    )
+    span = {
+        "first": "2020-01-02",
+        "last": "2026-11-13",
+        "sessions": src.trading_days("2020-01-02", "2026-11-13"),
+    }
+    inv = {"sources": {"vendor-mid-gld": {"store": span}, "vendor-eod-chains": {"symbols": {"GLD": span}}}}
+    got = ab.choose_intraday_source(
+        "GLD", "2024-01-02", "2024-12-31", None, licensed_ok=True, inv=inv, min_density=0.95
+    )
+    assert got.name == "vendor-mid-gld"
+    with pytest.raises(ab.Refused, match="no intraday chain store covers GLD"):
+        ab.choose_intraday_source(
+            "GLD", "2024-01-02", "2024-12-31", None, licensed_ok=False, inv=inv, min_density=0.95
+        )
+    with pytest.raises(ab.Refused, match="not one of the full set's intraday chain stores"):
+        ab.choose_intraday_source("GLD", "2024-01-02", "2024-12-31", "vendor-eod-chains", licensed_ok=True,
+                                  inv=inv,
+                                  min_density=0.95)  # fmt: skip
+    with pytest.raises(ab.Refused, match="licence does not allow new work"):
+        ab.choose_intraday_source("GLD", "2024-01-02", "2024-12-31", "vendor-near-gld", licensed_ok=False,
+                                  inv=inv,
+                                  min_density=0.95)  # fmt: skip
+
+
+def test_the_intraday_history_reads_the_symbols_three_stores(tmp_path, monkeypatch):
+    monkeypatch.setattr(paths, "vendor_dir", lambda s: tmp_path)
+    h = ab.intraday_history("spx", {}, [], {})
+    assert [p.name for p, _ in h.stores] == ["SPX-near-1m.db", "SPX-mid-5m.db"]
+    assert [step for _, step in h.stores] == [1, 5] and h.root == "SPXW" and h.zero is None

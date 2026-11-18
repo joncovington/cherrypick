@@ -186,24 +186,34 @@ def _cadence(arm: dict) -> str:
     return "1d" if daily or at_close else "1m"
 
 
-#: Why no store can serve a chain the driver cannot replay: an entry inside the session on an expiry
-#: after it (the end-of-day chains price only the close).
+#: Why an entry inside the session on a later expiry is not covered: only the full set's intraday chain
+#: stores replay it (the end-of-day chains price only the close), and none holds it yet.
 NO_REPLAY = (
-    "the backtest replays a later expiry only at the close (15:59); an entry inside the session needs an "
-    "intraday replay, which it does not have"
+    "an entry inside the session on a later expiry is replayed from the full set's intraday chain stores, "
+    "and none holds it yet"
 )
+
+
+#: The full set's intraday chain stores (backtest `fullset`): expiries 1-7 days out at one minute, 8-90
+#: at five. An entry inside the session on a later expiry asks for its chain at five minutes, the
+#: coarser of the two, so either store can cover it.
+INTRADAY_STORES = ("-near-1m.db", "-mid-5m.db")
+INTRADAY_CADENCE = "5m"
 
 
 def replays(need: dict, source: src.Source) -> bool:
     """Whether the automation driver can replay `need` from `source`. A chain (and its greeks) on a
-    same-day expiry comes from a store in the recorder's schema (`history.StoreHistory`), any other
-    expiry from end-of-day chains at the 15:59 tick (`history.DailyChainHistory`); an entry inside the
-    session on a later expiry has no replay. Other fields are read as they are."""
+    same-day expiry comes from a store in the recorder's schema (`history.StoreHistory`); a later
+    expiry at the close from end-of-day chains at the 15:59 tick (`history.DailyChainHistory`), and
+    inside the session from the full set's intraday chain stores (`history.IntradayChainHistory`).
+    Other fields are read as they are."""
     if need["field"] not in ("chain", "greeks"):
         return True
     if need.get("expiry") == "0dte":
         return "0dte" in source.expiries and source.probe.backend in ("sqlite", "store_cache")
-    return need["cadence"] == "1d" and source.cadence == "1d"
+    if need["cadence"] == "1d":
+        return source.cadence == "1d"
+    return source.probe.where.endswith(INTRADAY_STORES)
 
 
 def _reader(need: dict):
@@ -214,9 +224,11 @@ def _reader(need: dict):
 def needs(arm: dict) -> list[dict]:
     """What a backtest of `arm` reads: [{"field", "expiry"?, "cadence"}]."""
     expiry, cadence = _expiry_class(arm), _cadence(arm)
-    out = [{"field": "chain", "expiry": expiry, "cadence": cadence}]
+    # A later expiry inside the session: the intraday chain stores, the coarser at five minutes.
+    chain_cadence = INTRADAY_CADENCE if cadence == "1m" and expiry != "0dte" else cadence
+    out = [{"field": "chain", "expiry": expiry, "cadence": chain_cadence}]
     if any((leg.get("strike") or {}).get("rule") == "delta" for leg in arm["legs"]):
-        out.append({"field": "greeks", "expiry": expiry, "cadence": cadence})
+        out.append({"field": "greeks", "expiry": expiry, "cadence": chain_cadence})
     e = arm["entry"]
     intraday_trigger = e.get("kind") == "orb" or (
         e.get("kind") == "trigger" and not (e.get("trigger") or {}).get("daily")

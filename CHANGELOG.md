@@ -30,6 +30,12 @@ beyond the latest release.
   Declare and Promote to paper shown disabled. Beside it, **Today, live** decides the automation
   now as paper would, on a read-only snapshot (`cli builder-today`): every check, and the legs it
   would take or the check that stops it. The explore runs and run cards sit beside it too.
+- **Multi-day automations replayed through the session.** An automation that enters inside the
+  session on an expiry after it (a 10:30 entry on a monthly) is backtested from the full set's
+  intraday chain stores: expiries 1-7 days out at one minute and 8-90 at five, each read no older
+  than its interval. Where the same-day store has no spot that session, the nearest expiry's parity
+  forward stands for it, a declared limit. Before, such a run counted `needs_intraday` every session.
+  The Builder's coverage counts those stores as they fill.
 - **A finished study's verdict, recorded in one command.** The queue's finish notice names each arm's
   verdict and the command that records it. `python tools/record_verdict.py itemNN` sets the register
   row's status and a words-only outcome from the study kit's verdict block, checks the register and

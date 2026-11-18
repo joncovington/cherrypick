@@ -238,18 +238,21 @@ def test_a_need_no_store_holds_says_so_and_names_monthlies_when_they_would_cover
 
 
 def test_the_driver_replays_a_chain_only_from_a_store_it_can_read():
-    """A same-day chain from a recorder-schema store, a later expiry from end-of-day chains, and an entry
-    inside the session on a later expiry from nothing: the full set's 1- and 5-minute stores are not
-    read by the driver."""
+    """A same-day chain from a recorder-schema store, a later expiry at the close from end-of-day chains,
+    and one inside the session from the full set's 1- and 5-minute stores; never a study's own intraday
+    store, and never an intraday store for a close entry."""
     by = src.by_name
     zero = {"field": "chain", "expiry": "0dte", "cadence": "1m"}
     assert enrolment.replays(zero, by("recorded-0dte")) and enrolment.replays(zero, by("vendor-0dte-spx-60s"))
     daily = {"field": "chain", "expiry": "monthly", "cadence": "1d"}
     assert enrolment.replays(daily, by("dolt-chains")) and enrolment.replays(daily, by("vendor-eod-chains"))
     assert not enrolment.replays(daily, by("vendor-mid-spy"))
-    intraday = {"field": "chain", "expiry": "1dte", "cadence": "1m"}
-    assert not enrolment.replays(intraday, by("vendor-near-spy"))
+    intraday = {"field": "chain", "expiry": "1dte", "cadence": enrolment.INTRADAY_CADENCE}
+    assert enrolment.replays(intraday, by("vendor-near-spy")) and enrolment.replays(
+        intraday, by("vendor-mid-spy")
+    )
     assert not enrolment.replays(intraday, by("vendor-intraday-chains"))
+    assert not enrolment.replays(intraday, by("dolt-chains"))
     assert enrolment.replays({"field": "spot", "cadence": "1m"}, by("spot-trail"))
 
 
@@ -274,13 +277,17 @@ def test_a_store_the_driver_cannot_read_never_covers_a_need():
     assert next(n for n in s["needs"] if n["field"] == "chain")["source"] == "vendor-eod-chains"
 
 
-def test_an_intraday_entry_on_a_later_expiry_says_the_backtest_cannot_replay_it():
+def test_an_intraday_entry_on_a_later_expiry_reads_the_intraday_stores_or_says_none_holds_it():
     arm = fresh(
         symbol="SPY", expiry={"kind": "dte", "days": 1}, entry={"kind": "time", "at": "10:30", "window": 5}
     )
     days = src.trading_days("2020-01-02", "2026-11-13")
+    assert enrolment.needs(arm)[0] == {"field": "chain", "expiry": "1dte", "cadence": "5m"}
     inv = {"sources": {"vendor-near-spy": _span("2020-01-02", "2026-11-13", days)}}
     s = enrolment.suggestion(arm, inv, TODAY, src.coverage, licensed_ok=True)
+    chain = next(n for n in s["needs"] if n["field"] == "chain")
+    assert s["possible"] is True and chain["source"] == "vendor-near-spy"
+    s = enrolment.suggestion(arm, {"sources": {}}, TODAY, src.coverage, licensed_ok=True)
     chain = next(n for n in s["needs"] if n["field"] == "chain")
     assert s["possible"] is False and chain["why"] == enrolment.NO_REPLAY
 
