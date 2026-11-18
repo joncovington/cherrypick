@@ -28,7 +28,9 @@ prices (they differ by the calendar spread).
 
 **Five-minute backfill.** `--backfill-5m` is a one-off, not a job. The feed keeps 5-minute bars further
 back than 1-minute ones (probed 2026-11-17: SPY and QQQ from 2026-08-20; /ES capped at 8,000 bars,
-about six weeks), so one run saves the weeks before the minute recorder began. They go to their own
+about six weeks), so one run saves the weeks before the minute recorder began. It asks the regular
+session only: with extended hours the overnight bars use up the 8,000-bar cap by 2026-10-08, and the
+profile reads the regular session anyway. They go to their own
 table, `profile_bars_5m`, which nothing reads by default, so no 1-minute reader ever sees a 5-minute
 bar. From the recorder's first day on, the 1-minute bars hold the same sessions at finer grain.
 
@@ -151,7 +153,9 @@ def is_interval(label: str, interval: str) -> bool:
     return period == interval or (interval == "1m" and period == "m")
 
 
-async def fetch(session, starts: dict[str, datetime], sdk=None, interval: str = INTERVAL):
+async def fetch(
+    session, starts: dict[str, datetime], sdk=None, interval: str = INTERVAL, extended: bool = True
+):
     """Candles per streamer symbol: ({streamer symbol: {ts_ms: bar}}, {symbols the feed clipped}).
     REMOVE events and priceless candles are dropped; a missing volume is 0. Clipped is the feed's
     SNAP_SNIP flag or a symbol that came back with `FEED_CAP` bars, since the flag is not always sent."""
@@ -168,7 +172,7 @@ async def fetch(session, starts: dict[str, datetime], sdk=None, interval: str = 
             by_start.setdefault(start, []).append(sym)
         for start, syms in by_start.items():
             await streamer.subscribe_candle(
-                syms, interval=interval, start_time=start, extended_trading_hours=True
+                syms, interval=interval, start_time=start, extended_trading_hours=extended
             )
         started = time.monotonic()
         while time.monotonic() - started < MAX_WAIT_S:
@@ -278,7 +282,7 @@ async def run(
     if rep is not None:
         rep.split("symbols", SYMBOLS, unit="symbols")
         rep.at("symbols", "fetching")
-    bars, clipped = await fetch(session, starts, sdk, interval)
+    bars, clipped = await fetch(session, starts, sdk, interval, extended=not backfill)
     out = []
     for sym in SYMBOLS:
         if rep is not None:

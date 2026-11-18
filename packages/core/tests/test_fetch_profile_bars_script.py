@@ -195,6 +195,8 @@ def test_the_five_minute_backfill_asks_5m_from_deep_and_keeps_its_own_table():
     FakeStreamer.script = [_ev("SPY{=5m}", T0), _ev("SPY{=m}", later), _ev("SPY{=5m}", later, close=16.0)]
     summary = asyncio.run(fpb.run(None, conn, NOW, FMAP, sdk=FAKE_SDK, backfill=True))
     assert {c["interval"] for c in FakeStreamer.calls} == {"5m"}
+    # regular hours only: overnight bars would spend the feed's cap weeks short of its depth
+    assert {c["extended_trading_hours"] for c in FakeStreamer.calls} == {False}
     starts = {sym: c["start_time"] for c in FakeStreamer.calls for sym in c["symbols"]}
     assert starts["SPY"] == NOW - timedelta(days=fpb.BACKFILL_DEPTH_DAYS)  # deep, never the restate window
     five = conn.execute("SELECT ts_ms, close FROM profile_bars_5m ORDER BY ts_ms").fetchall()
