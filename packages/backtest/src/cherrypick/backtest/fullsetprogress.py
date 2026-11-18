@@ -67,6 +67,11 @@ def _load(where: Path, name: str) -> dict | None:
     return json.loads(p.read_text(encoding="utf-8")) if p.exists() else None
 
 
+def _added(where: Path) -> dict:
+    """The additions recorded in the set's folder (`fullsetadd`'s file), read without importing it."""
+    return _load(where, "additions.json") or {}
+
+
 def progress(vendor: Path, where: Path | None = None) -> dict:
     """Overall, per underlying, and per part within each, against the planned files in `where` (the
     set's folder by default). `planned` is false until `plan` has written them. Counts only.
@@ -80,16 +85,27 @@ def progress(vendor: Path, where: Path | None = None) -> dict:
     eod_ledger = _rows(vendor / "eod_chains.db",
                        "SELECT symbol, expiration, start, through, status FROM eod_chain_paths")  # fmt: skip
     oi_ledger = _rows(vendor / "open_interest.db", "SELECT symbol, session, status FROM oi_days")
+    added = sorted(
+        s
+        for s in _added(where)
+        if fullset.SYMBOL.match(s) and s not in fullset.SPEC and (where / f"oi_{s}.json").exists()
+    )
     per: dict[str, dict] = {}
-    for sym in fullset.SYMBOLS:
-        spec = fullset.SPEC[sym]
+    for sym in (*fullset.SYMBOLS, *added):
+        spec = fullset.spec_for(sym)
+        own_days, own_paths = days, paths_doc
+        if sym not in fullset.SPEC:  # an addition plans its own span and paths (`fullset.plan_added`)
+            own_days = sorted((_load(where, f"oi_{sym}.json") or {"sessions": {}})["sessions"])
+            own_paths = _load(where, f"paths_{sym}.json") or {"requests": []}
         parts: dict[str, dict] = {}
-        zero = _rows(vendor / fullset.zero_store(sym), "SELECT trade_date, status FROM vendor_sessions")
-        parts["zero"] = tally([(d,) for d in days], zero)
+        # One file per underlying of the seven; the shared added store keys each row by its symbol.
+        only = "" if sym in fullset.SPEC else f" WHERE symbol = '{sym}'"
+        zero = _rows(vendor / fullset.zero_store(sym), f"SELECT trade_date, status FROM vendor_sessions{only}")
+        parts["zero"] = tally([(d,) for d in own_days], zero)
         planned_eod = [(r["symbol"], r["expiration"], r["start"], r["through"])
-                       for r in paths_doc["requests"] if r["symbol"] in spec["eod"]]  # fmt: skip
+                       for r in own_paths["requests"] if r["symbol"] in spec["eod"]]  # fmt: skip
         parts["eod"] = tally(planned_eod, eod_ledger)
-        parts["oi"] = tally([(spec["root"], d) for d in days], oi_ledger)
+        parts["oi"] = tally([(spec["root"], d) for d in own_days], oi_ledger)
         for name, store in (("near", fullset.near_store(sym)), ("mid", fullset.mid_store(sym))):
             doc = _load(where, f"{name}_{sym}.json") or {"requests": []}
             keys = [(r["symbol"], r["session"], r["expiration"], r["start"], r["end"], r["interval"])

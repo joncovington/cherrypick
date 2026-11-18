@@ -51,6 +51,8 @@ function sendBridgeFailure(reply: FastifyReply, result: BridgeResult): BridgeOk 
 }
 
 /** A window key as the automations module writes one (`enrolment.windows`): `<source>:<start>:<end>`. */
+/** An underlying's root as the full set spells one (backtest `fullset.SYMBOL`). */
+export const FULLSET_SYMBOL = /^[A-Z][A-Z.]{0,5}$/;
 export const WINDOW_KEY = /^[a-z0-9-]{1,48}:\d{4}-\d{2}-\d{2}:\d{4}-\d{2}-\d{2}$/;
 
 export function registerConfigRoutes(app: FastifyInstance, config: ConsoleConfig): void {
@@ -246,6 +248,50 @@ export function registerConfigRoutes(app: FastifyInstance, config: ConsoleConfig
       window: result["window"] ?? null,
       source: result["source"] ?? null,
       key: result["key"] ?? null,
+    };
+  });
+
+  /**
+   * Adding an underlying to the full set (#1253): what it would fetch (`fullset_plan`, the backtest
+   * planner's dry run, counts only), and the addition itself (`fullset_add`): its fetches queued by the
+   * orchestrator, capped per click and only while new work may use the vendor, with this automation's
+   * explore backtest queued after them. The page sends the symbol and the automation's name; the span,
+   * the cap and the rows are the orchestrator's.
+   */
+  app.get("/api/automations/builder/fullset-plan", async (req, reply) => {
+    const symbol = String(((req.query ?? {}) as Record<string, unknown>)["symbol"] ?? "").toUpperCase();
+    if (!FULLSET_SYMBOL.test(symbol)) return reply.code(400).send({ error: "symbol is an underlying's root" });
+    const result = sendBridgeFailure(reply, await callConfigCli({ op: "fullset_plan", symbol }));
+    if (result === null) return reply;
+    return {
+      symbol,
+      from: result["from"] ?? null,
+      through: result["through"] ?? null,
+      requests: result["requests"] ?? {},
+      concurrent: result["concurrent"] ?? null,
+      cap_sessions: result["cap_sessions"] ?? null,
+      within_cap: result["within_cap"] === true,
+    };
+  });
+
+  app.post("/api/automations/builder/fullset-add", async (req, reply) => {
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const parsed = automationBody(body);
+    if (typeof parsed === "string") return reply.code(400).send({ error: parsed });
+    const symbol = String(body["symbol"] ?? "").toUpperCase();
+    if (!FULLSET_SYMBOL.test(symbol)) return reply.code(400).send({ error: "symbol is an underlying's root" });
+    const result = sendBridgeFailure(reply, await callConfigCli({ op: "fullset_add", symbol, run: parsed.name }));
+    if (result === null) return reply;
+    const run = (result["run"] ?? null) as Record<string, unknown> | null;
+    app.log.info(`full set: ${symbol} added from the builder for ${parsed.name} (${String((result["tasks"] as unknown[] | undefined)?.length ?? 0)} rows)`);
+    return {
+      ok: true,
+      symbol,
+      from: result["from"] ?? null,
+      through: result["through"] ?? null,
+      tasks: Array.isArray(result["tasks"]) ? result["tasks"] : [],
+      run: run && run["ok"] === true ? { task: run["task"] ?? null, run: run["run"] ?? null } : null,
+      run_error: run && run["ok"] !== true ? String(run["error"] ?? "the backtest was not queued") : null,
     };
   });
 

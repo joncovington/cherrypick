@@ -155,6 +155,29 @@ STORES: list[dict[str, str]] = [
             },
         )
     ),
+    # The full set's additions (`fullsetadd`): every underlying added on this machine shares these,
+    # each row keyed by its symbol, so adding one declares no new file.
+    {
+        "file": fullset.ADDED_ZERO,
+        "holds": "same-day expiries of each underlying added to the full set, from the session it was "
+        "added from: quotes, spot, GEX profiles, closes, 40 strikes each side, at 60 s",
+        "built_by": "packages/backtest/scripts/fetch_full_set.py (its ADD_CHAIN, research queue)",
+        "used_by": "the Builder's backtests of an added underlying (core.sources)",
+    },
+    {
+        "file": fullset.ADDED_NEAR,
+        "holds": f"expiries 1-{fullset.NEAR_DAYS} days out of each added underlying, open to close "
+        "at one minute",
+        "built_by": "packages/backtest/scripts/fetch_full_set.py (its ADD_CHAIN, research queue)",
+        "used_by": "the Builder's multi-day backtests of an added underlying",
+    },
+    {
+        "file": fullset.ADDED_MID,
+        "holds": f"monthlies {fullset.MID_DAYS[0]}-{fullset.MID_DAYS[1]} days out and weeklies to "
+        f"{fullset.MID_WEEKLY_DAYS} of each added underlying, at five minutes",
+        "built_by": "packages/backtest/scripts/fetch_full_set.py (its ADD_CHAIN, research queue)",
+        "used_by": "the Builder's multi-day backtests of an added underlying",
+    },
 ]
 
 DATE_COLUMNS = ("trade_date", "session", "day", "date", "expiration")
@@ -174,15 +197,17 @@ def script_of(entry: dict[str, str]) -> str | None:
 
 #: A request ledger (a table with these columns) says which symbol-sessions a store holds: the ones
 #: whose request finished `complete`. Read for per-symbol spans, so the source registry can confirm a
-#: symbol in a store that holds many (the chain stores), not only the store's overall span.
+#: symbol in a store that holds many (the chain stores, the full set's shared `added` stores), not only
+#: the store's overall span. A same-day store's `vendor_sessions` names its session `trade_date`.
 REQUEST_COLUMNS = ("symbol", "session", "status")
+LEDGER_DATES = ("session", "trade_date")
 COMPLETE = "complete"
 
 
-def _symbol_spans(conn: sqlite3.Connection, table: str) -> dict[str, dict[str, Any]]:
+def _symbol_spans(conn: sqlite3.Connection, table: str, day: str = "session") -> dict[str, dict[str, Any]]:
     """{symbol: {"first", "last", "sessions"}} over a request ledger's complete rows. Counts only."""
     rows = conn.execute(
-        f'SELECT symbol, MIN(session), MAX(session), COUNT(DISTINCT session) FROM "{table}" '
+        f'SELECT symbol, MIN("{day}"), MAX("{day}"), COUNT(DISTINCT "{day}") FROM "{table}" '
         "WHERE status = ? GROUP BY symbol",
         (COMPLETE,),
     ).fetchall()
@@ -209,8 +234,9 @@ def _shape(path: Path) -> dict[str, Any]:
                 else None
             )
             out["tables"][t] = {"rows": n, "span": list(span) if span and span[0] is not None else None}
-            if n and all(c in cols for c in REQUEST_COLUMNS):
-                out["tables"][t]["symbols"] = _symbol_spans(conn, t)
+            day = next((c for c in LEDGER_DATES if c in cols), None)
+            if n and day and "symbol" in cols and "status" in cols:
+                out["tables"][t]["symbols"] = _symbol_spans(conn, t, day)
     except sqlite3.Error as exc:
         out["error"] = str(exc)
     finally:

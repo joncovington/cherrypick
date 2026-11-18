@@ -222,6 +222,8 @@ export interface BuilderSuggestion {
   possible: boolean;
   /** Some need is covered by a licensed store. */
   licensed: boolean;
+  /** One of the full set's own seven underlyings; another can be added to it. */
+  full_set?: boolean;
   /** Every window our stores can replay, our own first. Absent from an older module. */
   windows?: BuilderWindow[];
 }

@@ -199,9 +199,18 @@ def _write_closes(conn, symbol: str, closes: dict, source: str) -> None:
 
 
 def _dataset(settings: dict, symbol: str) -> dict:
+    """The configured dataset; on the `added` store tag, an underlying added to the full set
+    (`fullsetadd`), its symbol its root, from the day it was added from."""
     for d in settings["datasets"]:
         if d["symbol"].upper() == symbol.upper():
             return d
+    if settings["store"].get("tag") == "added":
+        from . import fullsetadd
+
+        entry = fullsetadd.load().get(symbol.upper())
+        if entry is not None:
+            return {"symbol": symbol.upper(), "root": symbol.upper(), "dte": 0, "from": entry["from"]}
+        raise ValueError(f"{symbol!r} has not been added to the full set (fetch_full_set.py add)")
     raise ValueError(f"no dataset {symbol!r} in the backtest config")
 
 

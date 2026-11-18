@@ -280,11 +280,14 @@ MAX_LIMIT = 100_000
 
 #: The store variants `fetch-sessions` may write (backtest `store.TAGS`). Never the plain store: the
 #: nightly `backtest-fetch` is its writer.
-STORE_TAGS = ("wide", "full")
+STORE_TAGS = ("wide", "full", "added")
 
 #: The 0DTE datasets `fetch-sessions` may name (backtest `settings.DEFAULTS["datasets"]`); absent, SPX,
 #: the fetch verb's own default. Spelt here, as `STORE_TAGS` is, so a typo never queues.
 DATASETS = ("SPX", "QQQ", "NDX", "XSP", "SPY", "IWM", "GLD", "TLT")
+#: On the `added` tag the dataset is an underlying added to the full set (backtest `fullsetadd`), any
+#: root spelt as the set spells one (`fullset.SYMBOL`); the fetch refuses one never added.
+ADDED_SYMBOL = re.compile(r"^[A-Z][A-Z.]{0,5}$")
 
 
 def _day_arg(args: dict, key: str) -> str:
@@ -307,7 +310,10 @@ def _sessions_argv(args: dict, python: str) -> list[str]:
     if lo > hi:
         raise Refused("fetch-sessions' 'from' is after its 'to'")
     dataset = args.get("dataset", "SPX")
-    if dataset not in DATASETS:
+    if tag == "added":
+        if not isinstance(dataset, str) or not ADDED_SYMBOL.match(dataset) or dataset in DATASETS:
+            raise Refused("fetch-sessions on the 'added' tag names an added underlying, not one of the set's")
+    elif dataset not in DATASETS:
         raise Refused(f"fetch-sessions' 'dataset' is one of {', '.join(DATASETS)}")
     # One request in flight a session against Standard's four concurrent (backtest fetch.fetch).
     argv = [python, "-m", "cherrypick.backtest", "fetch", "--store-tag", tag, "--cadence", str(cadence),

@@ -22,6 +22,14 @@ beyond the latest release.
 
 ### What's new
 
+- **Add an underlying to the full set from the Builder.** Where our data does not cover an
+  automation on an underlying outside the full set's seven, the Builder offers to add it: the plan
+  first (requests and sessions, a year back by default), then one click queues its fetches on the
+  vendor's queue and the automation's explore run after them. Up to 300 sessions a click, only while
+  the licence allows new work; the data and the result are licensed. Additions are recorded on this
+  machine only and share three stores (`added-60s.db`, `added-near-1m.db`, `added-mid-5m.db`), keyed
+  by symbol, which the source registry reads per symbol. `fetch_full_set.py add SYM` adds a longer
+  span by hand, and `plan` keeps every addition current.
 - **The Builder builds an automation in a form.** One automation at a time, opened, new or copied.
   It is built in five sections with each block's backtest label: underlying and data, the entry
   signal in plain English, the market and chain gates, the legs and their price gates, and exits,

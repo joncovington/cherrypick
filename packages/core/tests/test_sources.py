@@ -48,6 +48,8 @@ def test_providing_filters_by_cadence_expiry_and_licence():
         "vendor-eod-chains",
         "vendor-intraday-chains",
         *(f"vendor-{part}-{sym.lower()}" for sym in src.FULL_SET for part in ("near", "mid")),
+        "vendor-near-added",
+        "vendor-mid-added",
     }
     assert "dolt-chains" in {s.name for s in src.providing("chain", expiry="monthly")}
     assert "recorded-0dte" in {s.name for s in src.providing("chain", expiry="0dte")}

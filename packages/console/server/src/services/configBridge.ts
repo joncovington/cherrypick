@@ -42,12 +42,16 @@ export type BridgeRequest =
   | { op: "automation_run"; name: string; run: string }
   | { op: "automation_draft"; name: string; automation?: Record<string, unknown> }
   | { op: "automation_today"; name: string; automation?: Record<string, unknown> }
-  | { op: "automation_save"; name: string; automation: Record<string, unknown> };
+  | { op: "automation_save"; name: string; automation: Record<string, unknown> }
+  | { op: "fullset_plan"; symbol: string; from?: string }
+  | { op: "fullset_add"; symbol: string; from?: string; run?: string };
 
 const UNAVAILABLE =
   "config bridge unavailable — the orchestrator package must be installed (pip install -e packages/orchestrator)";
 
 const TIMEOUT_MS = 20_000;
+/** An addition to the full set asks the backtest planner twice, then the automations module (its run). */
+const SLOW_OPS: Partial<Record<BridgeRequest["op"], number>> = { fullset_add: 90_000, fullset_plan: 45_000 };
 
 /**
  * One configcli call, off the event loop: a synchronous spawn held every request and the heartbeat
@@ -68,7 +72,7 @@ function spawnCaller(req: BridgeRequest): Promise<BridgeResult> {
     let stderr = "";
     child.stdout.setEncoding("utf-8").on("data", (d: string) => (stdout += d));
     child.stderr.setEncoding("utf-8").on("data", (d: string) => (stderr += d));
-    const timer = setTimeout(() => child.kill(), TIMEOUT_MS);
+    const timer = setTimeout(() => child.kill(), SLOW_OPS[req.op] ?? TIMEOUT_MS);
     child.on("error", (err) => {
       clearTimeout(timer);
       unavailable(`(${err.message})`);

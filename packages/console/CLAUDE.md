@@ -138,6 +138,14 @@ alone):
     changed; one run's card (`/api/automations/builder/run`, configcli `automation_run`) is read
     whole by the backtest package. A licensed result is shown only while `backtestResultsOn`
     (fail closed: one not plainly unlicensed is withheld and counted, and its card refused 403).
+  - **Adding an underlying to the full set queues fetches; it writes no config**
+    (`/api/automations/builder/fullset-plan`, configcli `fullset_plan`, a dry run, counts only; and
+    `/api/automations/builder/fullset-add`, configcli `fullset_add`, behind the CSRF token). Offered
+    (`AddToFullSet`) only where the suggestion is not possible and says the underlying is outside the
+    set (`full_set: false`; an older module that does not say gets no offer). The route sends the
+    symbol (checked by shape, `FULLSET_SYMBOL`) and the automation's name; the span, the 300-session
+    cap, the licence check and the rows are the orchestrator's. The page shows the plan first and
+    adds on a second click. The bridge gives these two ops longer timeouts (`SLOW_OPS`).
   - This surface **cannot touch `enable_live_trading`, flies' `live.enabled`/`gate0_confirmed`, or the
     live loss/deploy limits** in either direction: `configedit.GUARDED` refuses them, and the page
     shows them as locked rows with that table's hint.

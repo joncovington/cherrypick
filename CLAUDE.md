@@ -27,7 +27,9 @@ Packages: `packages/orchestrator`, `packages/meic`, `packages/earnings`, `packag
   save of one automation (always off), both through the orchestrator's config editor, and the
   Builder's backtest: one explore run of one saved automation, queued on the research queue by
   the orchestrator, only where our data covers it (our own stores first, the vendor's only while
-  the licence allows new work, its result then licensed).
+  the licence allows new work, its result then licensed), and the Builder's addition of an
+  underlying to the full set: its vendor fetches queued by the orchestrator, up to 300 sessions a
+  click and only while the licence allows new work, with that automation's run after them.
 - **backtest**: the licence outranks everything. Vendor data and anything derived from it stay under
   `~/.cherrypick`, never in this repo, a PR, an issue or a published artifact.
 

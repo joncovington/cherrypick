@@ -27,12 +27,13 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from datetime import date, timedelta
 from pathlib import Path
 
 from cherrypick.core import calendar as cal
 from cherrypick.core import clock
 
-from cherrypick.backtest import fullset, fullsetprogress, paths
+from cherrypick.backtest import fullset, fullsetadd, fullsetprogress, paths
 from cherrypick.backtest import settings as _settings
 from cherrypick.backtest.fullsetprogress import progress
 
@@ -98,6 +99,24 @@ CHAIN = (
      "task_args": {"requests": "{results}/mid_TLT.json", "workers": 2}, "repeat": 2},
 )  # fmt: skip
 
+#: One added underlying's rows (`add`, then the orchestrator's `fullset_add`), `{symbol}` its symbol,
+#: `{sym}` the same in lower case and `{from}` its first session: the same-day store under the shared
+#: `added` tag, its end-of-day paths, open interest, then the near and middle expiries. No probe: the
+#: set's own probe has passed by the time anything is added.
+ADD_CHAIN = (
+    {"step": "add-{sym}-zero", "kind": "fetch-sessions",
+     "task_args": {"store_tag": "added", "dataset": "{symbol}", "cadence": 60, "from": "{from}",
+                   "to": "{last_session}", "workers": 2}},
+    {"step": "add-{sym}-eod", "kind": "fetch-chain-paths",
+     "task_args": {"requests": "{results}/paths_{symbol}.json", "workers": 2}, "repeat": 2},
+    {"step": "add-{sym}-oi", "kind": "fetch-oi",
+     "task_args": {"plan": "{results}/oi_{symbol}.json", "workers": 2}},
+    {"step": "add-{sym}-near", "kind": "fetch-intraday-chains",
+     "task_args": {"requests": "{results}/near_{symbol}.json", "workers": 2}, "repeat": 2},
+    {"step": "add-{sym}-mid", "kind": "fetch-intraday-chains",
+     "task_args": {"requests": "{results}/mid_{symbol}.json", "workers": 2}, "repeat": 2},
+)  # fmt: skip
+
 #: Bytes a stored quote row takes with its index, measured on the 60 s stores; an estimate only.
 ROW_BYTES = 66
 
@@ -125,7 +144,7 @@ def last_session() -> str:
 
 def cmd_plan(args) -> int:
     through = args.through or last_session()
-    files = fullset.plan(args.start, through)
+    files = fullset.plan(args.start, through, fullsetadd.load(out_dir()))
     out = out_dir()
     out.mkdir(parents=True, exist_ok=True)
     counts, gb = {}, 0.0
@@ -138,6 +157,33 @@ def cmd_plan(args) -> int:
     nxt = "python packages/orchestrator/run.py queue-chain --study fullset --script " + SCRIPT_REL
     print(json.dumps({"from": args.start, "through": through, "folder": str(out), "requests": counts,
                       "intraday_gb_at_most": round(gb, 1), "next": nxt}, indent=1))  # fmt: skip
+    return 0
+
+
+def cmd_add(args) -> int:
+    """Add an underlying from `--from` (default a year before the last session) through the last
+    session: record it, write its request files, and print their size. `--dry-run` writes nothing.
+    Prints counts only, and what queues it: the orchestrator's `fullset_add`."""
+    symbol = args.symbol.upper()
+    through = args.through or last_session()
+    start = args.start or (date.fromisoformat(through) - timedelta(days=365)).isoformat()
+    out = out_dir()
+    try:
+        additions = fullsetadd.merged(fullsetadd.load(out), symbol, start, clock.now_et().date())
+        files = fullset.plan_added(symbol, start, through)
+    except ValueError as exc:
+        print(json.dumps({"ok": False, "error": str(exc)}))
+        return 2
+    size = fullset.plan_size(files)
+    doc = {"ok": True, "symbol": symbol, "from": start, "through": through, "requests": size,
+           "dry_run": args.dry_run, "concurrent": _settings.concurrency(_settings.load(None))}  # fmt: skip
+    if not args.dry_run:
+        out.mkdir(parents=True, exist_ok=True)
+        fullsetadd.add(symbol, start, clock.now_et().date(), out)
+        for name, body in files.items():
+            (out / name).write_text(json.dumps(body), encoding="utf-8")
+        doc["additions"] = sorted(additions)
+    print(json.dumps(doc))
     return 0
 
 
@@ -154,6 +200,12 @@ def main(argv: list[str] | None = None) -> int:
     pl.add_argument("--from", dest="start", default=fullset.START)
     pl.add_argument("--through", default=None, help="last session (default: the last finished one, ET)")
     pl.set_defaults(fn=cmd_plan)
+    ad = sub.add_parser("add", help="add an underlying to the set: record it and write its request files")
+    ad.add_argument("symbol")
+    ad.add_argument("--from", dest="start", default=None, help="first session (default: a year back)")
+    ad.add_argument("--through", default=None, help="last session (default: the last finished one, ET)")
+    ad.add_argument("--dry-run", action="store_true", help="print the plan's size, write nothing")
+    ad.set_defaults(fn=cmd_add)
     sub.add_parser("status", help="how far each store has got").set_defaults(fn=cmd_status)
     args = p.parse_args(argv)
     return args.fn(args)

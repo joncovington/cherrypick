@@ -354,6 +354,44 @@ SOURCES: tuple[Source, ...] = (
             ),
         )
     ),
+    # The full set's additions (backtest `fullsetadd`): every underlying added on this machine shares
+    # these, each row keyed by its symbol, so the store's per-symbol spans say which it holds.
+    Source(
+        name="vendor-0dte-added-60s",
+        holds="0DTE quotes, spot, GEX profiles and closes of each underlying added to the full set "
+        "(added-60s.db)",
+        kind="chain",
+        fields=("chain", "greeks", "spot", "profile", "closes"),
+        cadence="1m",
+        expiries=("0dte",),
+        probe=Probe("store_cache", "added-60s.db", "vendor_sessions"),
+        writer=_VENDOR,
+        licensed=True,
+        ongoing=False,
+    ),
+    *(
+        Source(
+            name=f"vendor-{part}-added",
+            holds=f"each added underlying's {what} (added-{part}-{cadence}.db)",
+            kind="chain",
+            fields=("chain", "greeks"),
+            cadence=cadence,
+            expiries=expiries,
+            probe=Probe("store_cache", f"added-{part}-{cadence}.db"),
+            writer=_VENDOR,
+            licensed=True,
+            ongoing=False,
+        )
+        for part, cadence, expiries, what in (
+            ("near", "1m", ("1dte", "weekly"), "expiries 1-7 days out, each session at one minute"),
+            (
+                "mid",
+                "5m",
+                ("weekly", "monthly"),
+                "monthlies 8-90 days out and weeklies to 45, at five minutes",
+            ),
+        )
+    ),
     Source(
         name="vendor-eod-chains",
         holds="end-of-day option chains with weeklies, for the names studies requested",

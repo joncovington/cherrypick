@@ -91,10 +91,12 @@ def cadence_of(settings: dict, cadence: float | None = None) -> int:
 #: give some sessions wings the others cannot quote. `wide` is items 42 and 44's, wings to 40 points.
 #: `full` is the full set's (`fullset`): the same strikes, and a first session (`from`) that
 #: overrides the dataset's own, so its stores reach back to the set's start while the study stores
-#: keep theirs.
+#: keep theirs. `added` is the same for an underlying added to the set (`fullsetadd`), every one in a
+#: single shared file (`shared`: `added-60s.db`), its rows keyed by symbol, so adding one makes no file.
 TAGS: dict[str, dict[str, int | str]] = {
     "wide": {"strikes_each_side": 40},
     "full": {"strikes_each_side": 40, "from": "2020-01-01"},
+    "added": {"strikes_each_side": 40, "from": "2020-01-01", "shared": "added"},
 }
 
 
@@ -112,8 +114,12 @@ def tagged(settings: dict, tag: str | None) -> dict:
 
 def db_path(settings: dict, symbol: str, cadence: float | None = None) -> Path:
     """One file per (dataset, cadence, tag). Sessions at different cadences never share a file: the
-    replay ticks once per stored sample, so a mixed file would replay some days at 15 s and some at 60 s."""
+    replay ticks once per stored sample, so a mixed file would replay some days at 15 s and some at 60 s.
+    A `shared` tag is one file for every symbol (`added-60s.db`)."""
     tag = settings["store"].get("tag")
+    shared = settings["store"].get("shared")
+    if shared:
+        return paths.vendor_dir(settings) / f"{shared}-{cadence_of(settings, cadence)}s.db"
     suffix = f"-{tag}" if tag else ""
     return paths.vendor_dir(settings) / f"{symbol.upper()}-{cadence_of(settings, cadence)}s{suffix}.db"
 

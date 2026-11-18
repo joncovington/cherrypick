@@ -112,6 +112,8 @@ Every choice the form offers comes from the engine's own tables, so it offers no
 
 Above the form, for an automation not wholly backtested, a line says whether our data covers a backtest over the last year (a time entry whose window holds 15:59 reads the end-of-day chains; any other reads minute data), or names the nearest store and why it falls short, or that none of our stores holds that kind of expiry. A store written the next morning is a session or two behind; up to five trading days behind still covers, and the run ends at the store's last session. A rule allowing any expiry needs weeklies, which only the vendor holds; where monthlies would be covered, the line says so. Our own recordings are asked first. Where they fall short and the vendor licence allows new work, the vendor's store is offered instead, and the line names it and says the result is licensed: it stays on this machine and shows only while licensed results may.
 
+For an underlying outside the full set's seven that our data does not cover, the line below offers **Add it to the full set**. It shows first what the addition would fetch (requests and sessions, from a year back by default, at the vendor tier's requests at a time), then **Add and backtest** queues those fetches on the vendor's queue and this automation's explore run after them, so the click runs through to a result. One click adds at most 300 sessions, and only while the vendor licence allows new work; the data and the result are licensed. A longer span is added by hand with the full set's script.
+
 The action row:
 
 - **Check** asks the automations module whether the paper loop would accept the automation, and lists each problem or updates each section's label.
