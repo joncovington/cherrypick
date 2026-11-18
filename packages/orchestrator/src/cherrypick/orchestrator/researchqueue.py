@@ -4,12 +4,12 @@ each of two lanes.
 A study's fetch can take nine hours and wants the vendor account's one session; run by hand from a
 terminal or an assistant's session, it dies with that session and collides with the nightly
 `backtest-fetch`. Here a task is a ROW (`state/research_queue.db`), added with `run.py queue-add`, and
-the supervisor's `research-queue` job takes the oldest ready row every minute and runs it, then the
+the supervisor's queue jobs (one per lane, below) take the oldest ready row every minute and runs it, then the
 next ready row straight away (`run_ready`), so a chain of rows has no gap between them.
 
 **Two lanes** (2026-11-18, the user's ask). A row's lane is its kind's: `vendor` for a kind that needs
 the vendor's one session (every fetch), `local` for one that needs nothing (a script). Each lane runs
-one row at a time, its own job (`research-queue` with `--lane vendor`, `research-queue-local` with
+one row at a time, its own job (`research-queue-vendor` with `--lane vendor`, `research-queue-local` with
 `--lane local`), so a study replaying for a day no longer holds up a fetch, and a fetch of weeks no
 longer holds up a study. Within a lane every rule below holds as it did; a chain's `after` order
 holds across lanes. A run given no lane checks and takes every row, the one-lane queue it was.
@@ -1149,7 +1149,7 @@ def run_ready(
     code_changed: Callable[[], bool] | None = None,
     lane: str | None = None,
 ) -> dict:
-    """Run ready rows one after another until none is ready: the `research-queue` job. Config is
+    """Run ready rows one after another until none is ready: a queue job (one lane, or both as one). Config is
     read again before each row, so a blackout or interval changed mid-chain applies to the next one.
     It stops after a row put back to `queued` (a fetch stopped for the blackout), so a row is never
     retried in a loop; every other outcome is final, and a finished row is never picked again. It

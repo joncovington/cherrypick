@@ -1581,9 +1581,12 @@ def derive_jobs(
     )
     rqs = cfgmod.research_queue_settings(cfg)
     add(
-        "research-queue",
+        # The vendor lane's own id: the one-lane job it replaced (`research-queue`, retired 2026-11-18)
+        # may still hold a running row as an adopted child after a restart, and a new id never waits
+        # on it.
+        "research-queue-vendor",
         lambda: JobSpec(
-            id="research-queue",
+            id="research-queue-vendor",
             # Long research tasks from rows (orchestrator/researchqueue.py): each tick runs the oldest
             # ready row to its end, so a fetch of many hours runs inside this job, and the overlap
             # guard keeps a second tick from starting another. Allow-listed kinds only; a ThetaData
