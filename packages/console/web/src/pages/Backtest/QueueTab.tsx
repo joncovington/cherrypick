@@ -367,14 +367,18 @@ export function queueItems(q: ResearchQueue, nowMs = etNowMs(), nowEpochS = Date
   ];
 }
 
-/** "about 1 h 5 min left", "under a minute left"; null without an estimate. */
-export function etaText(seconds: number | null): string | null {
+/** "about 1 h 5 min left", "under a minute left"; null without an estimate. With `stepsAfter` (a
+ *  job counted in steps, where the estimate is the running step's alone) it says so: "about 48 min
+ *  left in this step, then 1 more step". */
+export function etaText(seconds: number | null, stepsAfter: number | null = null): string | null {
   if (seconds === null || !Number.isFinite(seconds)) return null;
   const mins = Math.round(seconds / 60);
-  if (mins < 1) return "under a minute left";
-  if (mins < 60) return `about ${String(mins)} min left`;
   const h = Math.floor(mins / 60);
-  return `about ${String(h)} h ${String(mins % 60)} min left`;
+  const left =
+    mins < 1 ? "under a minute left" : mins < 60 ? `about ${String(mins)} min left` : `about ${String(h)} h ${String(mins % 60)} min left`;
+  if (stepsAfter === null) return left;
+  const after = stepsAfter > 0 ? `, then ${String(stepsAfter)} more step${stepsAfter === 1 ? "" : "s"}` : "";
+  return `${left} in this step${after}`;
 }
 
 /** "57.2 s/session", "4.0 symbol-days/s" (the orchestrator's wording); null without a rate. */
@@ -391,7 +395,7 @@ export function rateText(rate: ResearchProgress["rate"]): string | null {
 /** The rate and the time left side by side ("57.2 s/session · about 3 h 50 min left"). */
 export function paceText(p: ResearchProgress | null | undefined): string {
   if (!p) return "";
-  return [rateText(p.rate), etaText(p.etaSeconds)].filter((x) => x !== null).join(" · ");
+  return [rateText(p.rate), etaText(p.etaSeconds, p.stepsAfter ?? null)].filter((x) => x !== null).join(" · ");
 }
 
 /** A study's register title, heading only, else its slug. */

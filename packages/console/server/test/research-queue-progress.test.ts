@@ -24,6 +24,8 @@ describe("a job's progress (core.progress)", () => {
     const p = toProgress(view);
     expect(p).toMatchObject({ file: "q3", state: "running", fraction: 0.5, etaSeconds: 1800, ageSeconds: 4 });
     expect(p?.rate).toEqual({ phase: "sessions", secondsEach: 57.25 });
+    expect(p?.stepsAfter).toBeNull();
+    expect(toProgress({ ...view, steps_after: 1 })?.stepsAfter).toBe(1);
     expect(toProgress({ ...view, rate: null })?.rate).toBeNull();
     expect(toProgress({ ...view, rate: { phase: "sessions", seconds_each: 0 } })?.rate).toBeNull();
     expect(p?.phases.map((ph) => `${ph.name} ${ph.done}/${ph.total} ${ph.current}`)).toEqual([

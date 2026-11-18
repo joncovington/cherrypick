@@ -22,6 +22,8 @@ job's own phases with its live children's, outermost first, so a validation read
 
 **Reading it** costs file reads only. The view adds what a job cannot say about itself: the overall
 fraction and ETA across nested phases, the innermost counted phase's rate (``8.2 s/path``),
+the ETA of only the step under way where a job counts unlike stages in a phase whose unit is
+``steps`` (`steps_after` says how many follow),
 ``stalled`` (alive, no update for `STALL_SECONDS`) and
 ``orphaned`` (the process is gone and never wrote a final state).
 
@@ -275,10 +277,37 @@ def _worked(p: dict) -> int:
     return max(0, int(p.get("done") or 0) - int(p.get("skipped") or 0))
 
 
+STEPS = "steps"
+
+
+def _steps_after(phases: list[dict]) -> int | None:
+    """Steps still to come after the one under way, where the job counts its stages as `steps`
+    (unlike stages: a fetch, then its VIX pass); None when it does not."""
+    for p in phases:
+        if p.get("unit") == STEPS and p.get("total"):
+            return max(0, int(p["total"]) - int(p.get("done") or 0) - 1)
+    return None
+
+
+def _step_eta(phases: list[dict], now: float) -> float | None:
+    """Seconds left in the step under way: its innermost counted phase's pace over the items it
+    worked. The steps are unlike, so the pace of one says nothing of the next."""
+    for p in reversed(phases):
+        if p.get("unit") == STEPS:
+            return None
+        total, worked, begun = p.get("total"), _worked(p), p.get("started_at")
+        if total and worked > 0 and begun is not None and now > begun:
+            return (now - begun) / worked * max(0, int(total) - int(p.get("done") or 0))
+    return None
+
+
 def _eta(phases: list[dict], share: float, started: float, now: float) -> float | None:
-    """Seconds left. Across nested phases, the job's elapsed time scaled by its share left; where a
-    phase skipped items, that phase's own pace over the items it worked, so a resume does not read
-    as nearly finished."""
+    """Seconds left. In a job counted in `steps`, only the step under way (`_step_eta`); across
+    other nested phases, the job's elapsed time scaled by its share left; where a phase skipped
+    items, that phase's own pace over the items it worked, so a resume does not read as nearly
+    finished."""
+    if _steps_after(phases) is not None:
+        return _step_eta(phases, now)
     for p in phases:
         skipped, total = int(p.get("skipped") or 0), p.get("total")
         if skipped and total:
@@ -397,6 +426,8 @@ def _view(doc: dict, children: list[dict], now: float) -> dict:
         "phases": phases,
         "fraction": None if share is None else round(share, 4),
         "eta_s": None if eta is None else round(eta),
+        # Set where `eta_s` covers only the step under way: how many steps follow it.
+        "steps_after": _steps_after(phases) if eta is not None else None,
         "rate": _rate(phases, now) if state == "running" else None,
         "by_symbol": _by_symbol(phases),
         "note": doc.get("note"),
@@ -428,7 +459,13 @@ def summary_line(view: dict) -> str:
         parts.append(f"{each:.1f} s/{_per_item(name)}" if each >= 1 else f"{1 / each:.1f} {name}/s")
     if view.get("eta_s") is not None:
         mins = round(view["eta_s"] / 60)
-        parts.append(f"~{mins // 60:02d}:{mins % 60:02d} remaining" if mins >= 1 else "<00:01 remaining")
+        left = f"~{mins // 60:02d}:{mins % 60:02d} remaining" if mins >= 1 else "<00:01 remaining"
+        after = view.get("steps_after")
+        if after is not None:
+            left += " in this step" + (
+                f", then {after} more step{'s' if after != 1 else ''}" if after else ""
+            )
+        parts.append(left)
     if view.get("state") in ("stalled", "orphaned"):
         parts.append(view["state"])
     return " · ".join(parts)
