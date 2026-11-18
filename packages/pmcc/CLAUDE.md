@@ -254,7 +254,7 @@ persistent arm, standing position authority over open positions, per-symbol and 
 - a **calculated ex-div decision**;
 - the exposure telemetry (rule 2), read as the paper-to-live gap.
 
-**`live.enabled` is an inert placeholder**: it is `configedit.GUARDED`, and flipping it does nothing.
+The config has no live gate; the suite's surfaces show pmcc as "no live path" (`config.LIVE_PATH_MODULES`).
 
 ## Layout
 

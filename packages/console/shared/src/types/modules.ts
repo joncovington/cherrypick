@@ -485,9 +485,8 @@ export interface ExperimentGuide {
 
 // ---- PMCC ----
 //
-// Paper-only: there is no live DB and no live loop, so nothing here carries a `mode`. The module's
-// `live.enabled` is a documented placeholder (see packages/pmcc/CLAUDE.md), and offering a mode
-// toggle over a arm that cannot exist would be a lie the type system can prevent.
+// Paper-only: there is no live DB and no live loop, so nothing here carries a `mode`. Offering a
+// mode toggle over an arm that cannot exist would be a lie the type system can prevent.
 //
 // Nulls are load-bearing throughout. `analytics.py` states the rule the whole module keeps: `None`
 // never means zero, because "not recorded" and "was zero" are different facts. Every nullable field
