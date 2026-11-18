@@ -77,6 +77,7 @@ function task(over: Partial<ResearchTask>): ResearchTask {
     exitCode: null,
     note: null,
     waits: "the ThetaData session is held by another process",
+    position: null,
     progress: null,
     ...over,
   };
@@ -126,6 +127,18 @@ describe("the research queue tab: the footer", () => {
 });
 
 describe("the research queue tab: sections", () => {
+  it("lists queued rows by the orchestrator's position, so a raised row queued last is next", () => {
+    const tasks = [
+      task({ id: 378, step: "plan", waits: "ready", position: 2 }),
+      task({ id: 384, step: "plan-2", waits: "ready", position: 3 }),
+      task({ id: 390, step: "probe", waits: "ready", position: 1 }),
+      task({ id: 391, step: "zero-spx", waits: "waits for fullset/probe", position: 4 }),
+    ];
+    const p = plan(queue(tasks));
+    expect(p.queued.map((x) => x.id)).toEqual([390, 378, 384, 391]);
+    expect(headline(p)).toContain("next: item17/probe");
+  });
+
   it("puts running first, then queued in the runner's order: ready first, oldest first", () => {
     const tasks = [
       task({ id: 5, step: "late-wait" }),

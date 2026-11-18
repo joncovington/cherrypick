@@ -1933,7 +1933,8 @@ def cmd_queue_chain(args) -> None:
 
 
 def cmd_queue_list(cfg, args) -> None:
-    """The queue's rows, newest first, each queued one with why it waits now."""
+    """The queue's rows, newest first, each queued one with why it waits now and its `position` in the
+    order the runner would take them (`researchqueue.queue_order`)."""
     from datetime import datetime
 
     from cherrypick.core import calendar as cal
@@ -1965,6 +1966,8 @@ def cmd_queue_list(cfg, args) -> None:
         r["args"] = json.loads(r["args"])
         r["result"] = json.loads(r["result"]) if r.get("result") else None
         out.append(r)
+    for i, r in enumerate(rq.queue_order([r for r in out if r["status"] == "queued"]), start=1):
+        r["position"] = i  # the runner's order: ready by run_order (priority included), then waiting
     by_hand = [v for stem, v in views.items() if not (stem.startswith("q") and stem[1:].isdigit())]
     _emit({"ok": True, "session_held": held, "blackout": list(window), "tasks": out, "by_hand": by_hand})
 

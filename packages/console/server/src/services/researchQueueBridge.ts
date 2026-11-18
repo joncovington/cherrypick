@@ -139,6 +139,7 @@ function toTask(v: unknown): ResearchTask | null {
     exitCode: n(r["exit_code"]),
     note: s(r["note"]),
     waits: s(r["waits"]),
+    position: n(r["position"]),
     progress: toProgress(r["progress"]),
   };
 }
