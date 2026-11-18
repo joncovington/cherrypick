@@ -8975,6 +8975,18 @@ verdict also says whether these two examples are worth an automation.
     declared before it trades.
   - **It fails or no verdict:** the example does not earn on SPX 0DTE after costs, or does no better
     than its structure at a random time. Nothing is built; the record stays under `indicator-rule`.
+- **Result (2026-11-18): both arms fail both rules in the design part; no holdout was judged.**
+  - **The three bars:** `orb-put-spread` nets above zero per trade in the design part but fails the
+    capital, tail and delta bars; `adx-condor` loses per trade and fails all three.
+  - **The control:** each arm sits above its own structure entered at a minute drawn from its entry
+    minutes, `orb-put-spread` in both design halves and `adx-condor` in the first only, but neither by
+    enough to clear t 2.0 or Holm, so both fail the control as well.
+  - **Reported:** `orb-put-spread` earns in 2022 through 2024 and loses in 2025 and 2026. Over the
+    source's own window `adx-condor` is below zero at our fills and above zero at mid, so the
+    published result rests on mid fills; it loses in most years.
+  - **Decision:** as declared, neither signal earns on SPX 0DTE after costs or beats its structure at
+    a random time. Nothing is built and the record stays under `indicator-rule`. Every figure is in
+    the local result (`~/.cherrypick/data/backtest/results/research/item90/`).
 
 ### 91. The weekly SPY at-the-money call calendar: 60 days short, 90 long, out at +30% or the short's expiry
 
