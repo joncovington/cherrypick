@@ -504,6 +504,7 @@ def _trade(pos, kind, session, minute, exit_credit, exit_slip, close_fee, settle
         "expiry": e.expiry,
         "legs": [{"name": g.name, "right": g.right, "side": g.side, "strike": g.strike} for g in e.legs],
         "quantity": e.quantity,
+        "risk": risk(e),
         "entry_mid": e.prices["mid"],
         "exit_kind": kind,
         "exit_session": session,

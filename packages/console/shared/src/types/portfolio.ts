@@ -64,6 +64,22 @@ export interface PortfolioPair {
   thin: boolean;
 }
 
+/** Each session's peak of the summed max loss open at once, over the sessions anything was open. */
+export interface PortfolioOpenRisk {
+  sessions: number;
+  peaks: { median: number; p95: number; max: number };
+  account: number | null;
+  of_account: { median: number; p95: number; max: number } | null;
+  worst_sessions: Array<{ session: string; peak: number; by_arm: Record<string, number> }>;
+  /** Trades per arm counted. */
+  measured: Record<string, number>;
+  /** Trades per arm with no recorded max loss: left out, so the sums are a floor. */
+  unmeasured: Record<string, number>;
+  /** Trades per arm whose source records no time, held for their whole sessions. */
+  whole_session: Record<string, number>;
+  floor: boolean;
+}
+
 export interface PortfolioReading {
   ok: boolean;
   error?: string | null;
@@ -89,6 +105,8 @@ export interface PortfolioReading {
   worst_periods: Array<{ period: string; net: number; arms_lost: number; arms_traded: number; by_arm: Record<string, number> }>;
   contribution: Array<{ key: string; net: number; share: number | null; in_worst_drawdown: number | null }>;
   combined_net: number;
+  /** Max loss held at once across the arms (core `portfolio.openrisk`). */
+  open_risk?: PortfolioOpenRisk;
   /** Where each arm was read from: a paper/live ledger or a backtest result. */
   sources?: Record<string, { kind: "ledger" | "backtest"; licensed: boolean; window: [string, string] | null }>;
   /** Any arm read was derived from licensed vendor data. */
