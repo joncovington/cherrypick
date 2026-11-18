@@ -100,7 +100,8 @@ def progress(vendor: Path, where: Path | None = None) -> dict:
         parts: dict[str, dict] = {}
         # One file per underlying of the seven; the shared added store keys each row by its symbol.
         only = "" if sym in fullset.SPEC else f" WHERE symbol = '{sym}'"
-        zero = _rows(vendor / fullset.zero_store(sym), f"SELECT trade_date, status FROM vendor_sessions{only}")
+        zero_sql = f"SELECT trade_date, status FROM vendor_sessions{only}"
+        zero = _rows(vendor / fullset.zero_store(sym), zero_sql)
         parts["zero"] = tally([(d,) for d in own_days], zero)
         planned_eod = [(r["symbol"], r["expiration"], r["start"], r["through"])
                        for r in own_paths["requests"] if r["symbol"] in spec["eod"]]  # fmt: skip
