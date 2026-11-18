@@ -186,6 +186,42 @@ def test_run_stores_futures_under_their_names_from_the_contract_fetched():
     assert by["SPX"]["deep"] is False and by["/NQ"]["deep"] is True and by["SPY"]["received"] == 0
 
 
+def test_the_five_minute_backfill_asks_5m_from_deep_and_keeps_its_own_table():
+    fpb.QUIET_GAP_S = 0.05
+    conn = fpb.connect(":memory:")
+    fpb.store_bars(conn, "SPY", "SPY", {_ms(T0): BAR}, NOW)  # a minute bar already held
+    FakeStreamer.calls = []
+    later = T0 + timedelta(minutes=5)
+    FakeStreamer.script = [_ev("SPY{=5m}", T0), _ev("SPY{=m}", later), _ev("SPY{=5m}", later, close=16.0)]
+    summary = asyncio.run(fpb.run(None, conn, NOW, FMAP, sdk=FAKE_SDK, backfill=True))
+    assert {c["interval"] for c in FakeStreamer.calls} == {"5m"}
+    # regular hours only: overnight bars would spend the feed's cap weeks short of its depth
+    assert {c["extended_trading_hours"] for c in FakeStreamer.calls} == {False}
+    starts = {sym: c["start_time"] for c in FakeStreamer.calls for sym in c["symbols"]}
+    assert starts["SPY"] == NOW - timedelta(days=fpb.BACKFILL_DEPTH_DAYS)  # deep, never the restate window
+    five = conn.execute("SELECT ts_ms, close FROM profile_bars_5m ORDER BY ts_ms").fetchall()
+    assert five == [(_ms(T0), 15.0), (_ms(later), 16.0)]  # the 1-minute label in the burst is dropped
+    assert conn.execute("SELECT COUNT(*) FROM profile_bars").fetchone()[0] == 1  # the minute table untouched
+    assert next(r for r in summary if r["symbol"] == "SPY")["deep"] is True
+
+
+def test_a_five_minute_bar_is_stored_only_once_its_five_minutes_are_over():
+    conn = fpb.connect(":memory:")
+    done_bar, forming = NOW - timedelta(minutes=5), NOW - timedelta(minutes=4)
+    offered = fpb.store_bars(
+        conn,
+        "SPY",
+        "SPY",
+        {_ms(done_bar): BAR, _ms(forming): BAR},
+        NOW,
+        fpb.BACKFILL_TABLE,
+        fpb.BACKFILL_WIDTH_MS,
+    )
+    assert offered == [_ms(done_bar)]
+    with pytest.raises(ValueError):
+        fpb.store_bars(conn, "SPY", "SPY", {}, NOW, "anything_else")
+
+
 def test_any_symbol_with_no_bars_fails_the_run():
     full = [{"symbol": s, "received": 10} for s in fpb.SYMBOLS]
     assert fpb.outcome(full) == {"ok": True, "empty": []}
