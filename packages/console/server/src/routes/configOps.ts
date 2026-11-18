@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
 import type { ConsoleConfig } from "../config.js";
-import { callConfigCli, statusForCode, type BridgeOk, type BridgeResult } from "../services/configBridge.js";
+import { callConfigCli, statusForCode, type BridgeOk, type BridgeRequest, type BridgeResult } from "../services/configBridge.js";
 import { readLockStatus } from "../services/liveLock.js";
 import { backtestResultsOn, getFeatures, invalidateFeatures } from "../services/featuresBridge.js";
 import { invalidateAutomationsBuilder } from "../services/automationsBuilderBridge.js";
@@ -49,6 +49,9 @@ function sendBridgeFailure(reply: FastifyReply, result: BridgeResult): BridgeOk 
   });
   return null;
 }
+
+/** A window key as the automations module writes one (`enrolment.windows`): `<source>:<start>:<end>`. */
+export const WINDOW_KEY = /^[a-z0-9-]{1,48}:\d{4}-\d{2}-\d{2}:\d{4}-\d{2}-\d{2}$/;
 
 export function registerConfigRoutes(app: FastifyInstance, config: ConsoleConfig): void {
   /**
@@ -218,13 +221,21 @@ export function registerConfigRoutes(app: FastifyInstance, config: ConsoleConfig
    * The Builder's backtest (#1180): one explore run of one saved automation, queued on the research
    * queue by the orchestrator (`automationrun.queue`, a `script` row of the automation backtest driver).
    * Descriptive, no trial and no verdict; it writes no config and turns nothing on. The orchestrator
-   * refuses unless the automation's own suggestion says our data covers it. Only the name is sent:
-   * the window and the source are the module's, never the page's.
+   * refuses unless the automation's own suggestion says our data covers it. The name is sent, and at
+   * most one of the suggestion's own window keys: the dates and the store are the module's, never the
+   * page's, and the orchestrator refuses a key the module does not offer.
    */
   app.post("/api/automations/builder/backtest", async (req, reply) => {
-    const parsed = automationBody((req.body ?? {}) as Record<string, unknown>);
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const parsed = automationBody(body);
     if (typeof parsed === "string") return reply.code(400).send({ error: parsed });
-    const result = sendBridgeFailure(reply, await callConfigCli({ op: "automation_backtest", name: parsed.name }));
+    const key = body["window"];
+    if (key !== undefined && (typeof key !== "string" || !WINDOW_KEY.test(key))) {
+      return reply.code(400).send({ error: "window is one of the suggestion's window keys" });
+    }
+    const ask: BridgeRequest =
+      typeof key === "string" ? { op: "automation_backtest", name: parsed.name, window: key } : { op: "automation_backtest", name: parsed.name };
+    const result = sendBridgeFailure(reply, await callConfigCli(ask));
     if (result === null) return reply;
     app.log.info(`automation backtest queued from the builder: ${parsed.name} (task ${String(result["task"] ?? "?")})`);
     return {
@@ -234,6 +245,7 @@ export function registerConfigRoutes(app: FastifyInstance, config: ConsoleConfig
       task: result["task"] ?? null,
       window: result["window"] ?? null,
       source: result["source"] ?? null,
+      key: result["key"] ?? null,
     };
   });
 

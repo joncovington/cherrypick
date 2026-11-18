@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { renderToString } from "react-dom/server";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { BuilderAutomation, BuilderSchema } from "@console/shared";
-import { ActionRow, NEW_SPEC, runBlocked, SuggestionLine, Workspace } from "../src/pages/Builder/BuilderPage";
+import type { BuilderAutomation, BuilderSchema, BuilderWindow } from "@console/shared";
+import { ActionRow, NEW_SPEC, runBlocked, SuggestionLine, windowLabel, Workspace } from "../src/pages/Builder/BuilderPage";
 
 const html = (el: React.ReactElement) =>
   renderToString(<QueryClientProvider client={new QueryClient()}>{el}</QueryClientProvider>).replace(/<!--\s*-->/g, "");
@@ -44,6 +44,19 @@ const SCHEMA: BuilderSchema = {
 };
 
 const POSSIBLE = { blocks: ["exit"], window: ["2025-11-13", "2026-11-13"] as [string, string], needs: [], possible: true, licensed: false };
+const win = (source: string, start: string, licensed = false, density: number | null = 1): BuilderWindow => ({
+  key: `${source}:${start}:2026-11-13`,
+  start,
+  end: "2026-11-13",
+  source,
+  licensed,
+  density,
+  thin: density !== null && density < 0.95,
+  holds: `${source} holds it`,
+});
+const DOLT_YEAR = win("dolt-chains", "2025-11-13");
+const DOLT_ALL = win("dolt-chains", "2019-02-11", false, 0.673);
+const VENDOR = win("vendor-eod-chains", "2016-01-04", true);
 
 describe("the workspace", () => {
   it("names a saved automation's switch, group, start and register label, and offers JSON", () => {
@@ -93,6 +106,37 @@ describe("the action row", () => {
     expect(runBlocked({ ...BASE, suggestion: { ...POSSIBLE, possible: false } }, false, saved)).toContain("does not cover");
     expect(runBlocked(BASE, false, saved)).toBe("every block is backtested already");
     expect(runBlocked(null, false, { kind: "new" })).toBe("save the automation first");
+  });
+
+  it("offers a window our stores hold even where the last year is not covered", () => {
+    const saved = { kind: "saved", name: "mine" } as const;
+    const short = { ...POSSIBLE, possible: false, windows: [DOLT_ALL] };
+    expect(runBlocked({ ...BASE, suggestion: short }, false, saved)).toBeNull();
+    expect(html(<SuggestionLine s={short} />)).toContain("Our stores hold other windows for it");
+  });
+});
+
+describe("the window picker", () => {
+  it("lists each window with its store, a thin span's share and a licensed one, the chosen one explained", () => {
+    const out = html(
+      <ActionRow busy={false} canCheck canRun runWhy={null} windows={[DOLT_YEAR, DOLT_ALL, VENDOR]} chosen={DOLT_ALL.key} onCheck={() => {}} onSave={() => {}} onRun={() => {}} />,
+    );
+    expect(out).toContain(">2025-11-13 → 2026-11-13 · dolt-chains</option>");
+    expect(out).toContain(`<option value="${DOLT_ALL.key}" selected="">2019-02-11 → 2026-11-13 · dolt-chains · thin: 67% of sessions</option>`);
+    expect(out).toContain(">2016-01-04 → 2026-11-13 · vendor-eod-chains · licensed</option>");
+    expect(out).toContain("A thin span: sessions it lacks are skipped, not filled.");
+    expect(windowLabel(VENDOR)).toBe("2016-01-04 → 2026-11-13 · vendor-eod-chains · licensed");
+  });
+
+  it("shows no picker without windows (an older module)", () => {
+    const out = html(<ActionRow busy={false} canCheck canRun runWhy={null} onCheck={() => {}} onSave={() => {}} onRun={() => {}} />);
+    expect(out).not.toContain("builder-window");
+  });
+
+  it("chooses the first window for a saved automation", () => {
+    const a = { ...BASE, suggestion: { ...POSSIBLE, windows: [DOLT_YEAR, DOLT_ALL] } };
+    const out = html(<Workspace a={a} schema={SCHEMA} mode={{ kind: "saved", name: "mine" }} onSaved={() => {}} />);
+    expect(out).toContain(`<option value="${DOLT_YEAR.key}" selected="">`);
   });
 });
 

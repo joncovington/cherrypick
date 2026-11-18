@@ -22,7 +22,7 @@ def fake_coverage(covered: set[str]):
     calls = []
 
     def coverage(
-        inventory, field, symbol, start, end, *, cadence=None, expiry=None, licensed=False, only=None
+        inventory, field, symbol, start, end, *, cadence=None, expiry=None, licensed=False, only=None, **_
     ):
         calls.append({"field": field, "symbol": symbol, "start": start, "end": end, "cadence": cadence,
                       "expiry": expiry, "licensed": licensed})  # fmt: skip
@@ -121,7 +121,7 @@ def vendor_only_coverage():
     calls = []
 
     def coverage(
-        inventory, field, symbol, start, end, *, cadence=None, expiry=None, licensed=False, only=None
+        inventory, field, symbol, start, end, *, cadence=None, expiry=None, licensed=False, only=None, **_
     ):
         calls.append(licensed)
         if licensed:
@@ -156,7 +156,9 @@ def test_our_own_store_is_preferred_and_the_vendor_not_asked_when_it_covers():
     cov = fake_coverage({"chain", "greeks", "spot"})
     s = enrolment.suggestion(fresh(), {}, TODAY, cov, licensed_ok=True)
     assert s["possible"] is True and s["licensed"] is False
-    assert all(c["licensed"] is False for c in cov.calls)
+    # The last year's needs ask our own stores only; the windows list asks the vendor's spans (the
+    # inventory cache, no vendor call) to offer a longer history where it reaches further back.
+    assert all(c["licensed"] is False for c in cov.calls if c["start"] == s["window"][0])
 
 
 def test_the_suggestions_ask_the_licence_once_and_only_when_a_backtest_falls_short(monkeypatch):
@@ -202,7 +204,7 @@ def _sources(**by):
     """A coverage stand-in answering per (field, expiry): a covering store's row, or none at all."""
 
     def coverage(
-        inventory, field, symbol, start, end, *, cadence=None, expiry=None, licensed=False, only=None
+        inventory, field, symbol, start, end, *, cadence=None, expiry=None, licensed=False, only=None, **_
     ):
         hit = by.get(expiry)
         if hit is None:
@@ -281,3 +283,56 @@ def test_an_intraday_entry_on_a_later_expiry_says_the_backtest_cannot_replay_it(
     s = enrolment.suggestion(arm, inv, TODAY, src.coverage, licensed_ok=True)
     chain = next(n for n in s["needs"] if n["field"] == "chain")
     assert s["possible"] is False and chain["why"] == enrolment.NO_REPLAY
+
+
+def _held(**spans):
+    """An inventory doc: each source's SPY span, as `inventory.run` writes one."""
+    out = {}
+    for name, (first, last, density) in spans.items():
+        span = {"first": first, "last": last, "sessions": round(src.trading_days(first, last) * density)}
+        out[name] = {"symbols": {"SPY": span}, "store": span}
+    return {"sources": out}
+
+
+MONTHLY = {"expiry": {"kind": "between", "min": 45, "max": 60, "monthly": True},
+           "entry": {"kind": "time", "at": "15:55", "window": 5}, "symbol": "SPY"}  # fmt: skip
+
+
+def test_the_windows_offer_the_last_year_and_everything_held_our_own_first():
+    inv = _held(
+        **{
+            "dolt-chains": ("2019-02-11", "2026-11-13", 0.67),
+            "stock-history": ("2010-01-04", "2026-11-13", 1.0),
+        }
+    )
+    arm = fresh(**MONTHLY)
+    ws = enrolment.windows(arm, inv, TODAY, src.coverage)
+    assert [(w["source"], w["start"]) for w in ws] == [
+        ("dolt-chains", "2025-11-13"),
+        ("dolt-chains", "2019-02-11"),
+    ]
+    assert ws[1]["thin"] is True and ws[1]["density"] < src.DENSE and ws[0]["licensed"] is False
+    assert ws[1]["holds"] == src.by_name("dolt-chains").holds
+    assert enrolment.suggestion(arm, inv, TODAY, src.coverage)["windows"] == ws
+
+
+def test_a_licensed_window_only_where_it_reaches_further_back_and_only_when_allowed():
+    inv = _held(**{"dolt-chains": ("2019-02-11", "2026-11-13", 0.67),
+                   "vendor-eod-chains": ("2016-01-04", "2026-11-13", 1.0)})  # fmt: skip
+    arm = fresh(**MONTHLY)
+    assert all(not w["licensed"] for w in enrolment.windows(arm, inv, TODAY, src.coverage))
+    ws = enrolment.windows(arm, inv, TODAY, src.coverage, licensed_ok=True)
+    lic = [w for w in ws if w["licensed"]]
+    assert [(w["source"], w["start"]) for w in lic] == [("vendor-eod-chains", "2016-01-04")]
+
+
+def test_a_store_that_stopped_early_offers_its_span_and_a_sample_store_is_not_offered():
+    inv = _held(
+        **{
+            "dolt-chains": ("2019-02-11", "2026-10-09", 0.9),
+            "vendor-eod-chains": ("2016-01-04", "2026-11-13", 0.01),
+        }
+    )
+    ws = enrolment.windows(fresh(**MONTHLY), inv, TODAY, src.coverage, licensed_ok=True)
+    assert {w["end"] for w in ws} == {"2026-10-09"}
+    assert all(w["source"] == "dolt-chains" for w in ws)

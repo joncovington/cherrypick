@@ -299,7 +299,86 @@ def suggestion(
         "needs": rows,
         "possible": possible,
         "licensed": any(r["licensed"] for r in rows),
+        "windows": windows(arm, inventory, today, coverage, licensed_ok=licensed_ok),
     }
+
+
+#: No window starts before this: the chain stores reach no further back.
+EARLIEST = "2010-01-04"
+#: A store holding less of its span's sessions than this is not offered (a short sample store); Dolt's
+#: thin early years (about three days a week) are above it and offered as thin.
+OFFER_DENSITY = 0.5
+CHAIN_FIELDS = ("chain", "greeks")
+
+
+def _window(arm: dict, inventory: dict, start: str, end: str, coverage, source: src.Source) -> dict | None:
+    """A run over `start`..`end` with the chain (and its greeks) from `source`, every other need from a
+    store as `suggestion` asks one (our own, the vendor's only alongside a licensed chain). None unless
+    every need is covered. The chain is taken at any density and the density is reported, so a thin
+    span (Dolt before 2025) is a choice made knowingly, never a refusal."""
+    out = {"start": start, "end": end, "source": source.name, "licensed": source.licensed, "density": None}
+    for need in needs(arm):
+        pinned = need["field"] in CHAIN_FIELDS
+        only = (lambda s, n=need: s.name == source.name and replays(n, s)) if pinned else _reader(need)
+        got = coverage(inventory, need["field"], arm["symbol"], start, end, cadence=need["cadence"],
+                       expiry=need.get("expiry"), licensed=source.licensed if pinned else False,
+                       only=only, min_density=0.0 if pinned else src.DENSE)  # fmt: skip
+        if not got.get("covered") and not pinned and source.licensed:
+            got = coverage(inventory, need["field"], arm["symbol"], start, end, cadence=need["cadence"],
+                           expiry=need.get("expiry"), licensed=True, only=only)  # fmt: skip
+        if not got.get("covered"):
+            return None
+        row = next((s for s in got.get("sources") or [] if s.get("source") == got.get("best")), {})
+        out["end"] = min(out["end"], row.get("through") or end)
+        if pinned and row.get("density") is not None:
+            out["density"] = row["density"] if out["density"] is None else min(out["density"], row["density"])
+    out["thin"] = out["density"] is not None and out["density"] < src.DENSE
+    out["holds"] = source.holds
+    out["key"] = f"{source.name}:{out['start']}:{out['end']}"
+    return out
+
+
+def windows(arm: dict, inventory: dict, today: date, coverage, *, licensed_ok: bool = False) -> list[dict]:
+    """The windows a Builder run may take, from what the stores hold, our own first: for each store the
+    driver can replay the chain from, the last year it holds and everything it holds, each ending where
+    the store stops (a store that stopped early still offers its span). A licensed store is offered
+    only while the licence allows new work, and only for a window that starts before every one of our
+    own. A store holding under `OFFER_DENSITY` of its span is left out, and of two stores with the same
+    span the first (finest cadence) is kept; a window inside one already offered (as licensed or not)
+    is left out. Each is {"key", "start", "end", "source", "licensed", "density", "thin", "holds"};
+    `key` is what a run names. Pure over `coverage` and the registry."""
+    last = cal.previous_trading_day(today).isoformat()
+    year = date.fromordinal(cal.previous_trading_day(today).toordinal() - SUGGEST_DAYS).isoformat()
+    chain = next(n for n in needs(arm) if n["field"] == "chain")
+    out: list[dict] = []
+    for licensed in (False, True) if licensed_ok else (False,):
+        spans = coverage(inventory, "chain", arm["symbol"], EARLIEST, last, cadence=chain["cadence"],
+                         expiry=chain.get("expiry"), licensed=licensed, only=_reader(chain),
+                         min_density=0.0)  # fmt: skip
+        for row in spans.get("sources") or []:
+            if not row.get("first") or row.get("licensed", False) != licensed:
+                continue
+            try:
+                source = src.by_name(row["source"])
+            except KeyError:
+                continue
+            first, stop = max(row["first"], EARLIEST), min(row.get("last") or last, last)
+            if first > stop:
+                continue
+            earliest_own = min((w["start"] for w in out if not w["licensed"]), default=None)
+            for lo in dict.fromkeys((max(first, year), first)):
+                if licensed and earliest_own is not None and lo >= earliest_own:
+                    continue  # the vendor's only where it reaches further back than our own
+                w = _window(arm, inventory, lo, stop, coverage, source)
+                if w is None or (w["density"] is not None and w["density"] < OFFER_DENSITY):
+                    continue
+                inside = any(
+                    x["licensed"] == w["licensed"] and x["start"] <= w["start"] and w["end"] <= x["end"]
+                    for x in out
+                )
+                if not inside:
+                    out.append(w)
+    return out
 
 
 def builder_view(arm: dict, suggestion_row: dict | None) -> dict:

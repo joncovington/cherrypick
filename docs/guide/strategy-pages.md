@@ -116,7 +116,7 @@ The action row:
 
 - **Check** asks the automations module whether the paper loop would accept the automation, and lists each problem or updates each section's label.
 - **Save (off)** writes it through the suite's config editor, with a backup, and always off.
-- **Explore run** queues one run of the saved automation on the research queue, over the window and from the store its suggestion names. It is offered only for a saved, unedited automation our data covers. The run is descriptive (no verdict), changes no label and turns nothing on.
+- **Explore run** queues one run of the saved automation on the research queue, over the window picked beside it. Each choice is a span one store holds for every part of the automation: the last year, and everything that store holds, ours first. A thin span (Dolt before 2025, about three days a week) says so, and the vendor's store is offered only where it reaches further back than ours, marked licensed. The line under the picker says what the chosen store holds. It is offered only for a saved, unedited automation some store covers. The run is descriptive (no verdict), changes no label and turns nothing on. It waits on the research queue behind the full option set's fetch.
 - **Declare…** and **Promote to paper** are shown disabled. A study declaration is written and reviewed outside the page, and turning an automation on is a hand edit or its group's switch.
 
 Beside the form:

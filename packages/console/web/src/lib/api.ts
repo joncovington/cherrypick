@@ -1382,9 +1382,10 @@ export function builderToday(name: string, automation?: Record<string, unknown>)
   return builderPost<BuilderToday & { ok: boolean }>("/api/automations/builder/today", automation === undefined ? { name } : { name, automation });
 }
 
-/** Queue one explore backtest of a saved automation; the window and source are the module's own. */
-export function builderBacktest(name: string): Promise<BuilderBacktestResult> {
-  return builderPost<BuilderBacktestResult>("/api/automations/builder/backtest", { name });
+/** Queue one explore backtest of a saved automation over one of its suggestion's windows (by key), or
+ *  the last year when none is named; the dates and the store are the module's own. */
+export function builderBacktest(name: string, window?: string): Promise<BuilderBacktestResult> {
+  return builderPost<BuilderBacktestResult>("/api/automations/builder/backtest", window === undefined ? { name } : { name, window });
 }
 
 /** One automation's run card: its queued backtests and their results. Polled while one is live. */

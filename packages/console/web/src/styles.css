@@ -5334,6 +5334,18 @@ select.text-input {
   background: var(--accent);
 }
 
+/* The Builder's window picker, beside Explore run: the label above-left is inline here. */
+.builder-window {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  max-width: 100%;
+}
+.builder-window select {
+  min-width: 0;
+  max-width: min(32rem, 100%);
+}
+
 /* The full set's progress (Backtest -> data): one meter per underlying and part. Its own prefix:
    `fs-` is FilterSort's. */
 .fullset-head {

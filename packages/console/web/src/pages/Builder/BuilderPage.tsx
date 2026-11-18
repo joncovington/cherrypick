@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { BuilderWizard } from "./BuilderWizard";
 import { useQueryClient } from "@tanstack/react-query";
-import type { BuilderAutomation, BuilderBlock, BuilderSchema, BuilderSuggestion, BuilderToday } from "@console/shared";
+import type { BuilderAutomation, BuilderBlock, BuilderSchema, BuilderSuggestion, BuilderToday, BuilderWindow } from "@console/shared";
 import { builderBacktest, builderDraft, builderSave, builderToday, useAutomationsBuilder, useBuilderRuns, useBuilderSchema } from "../../lib/api";
 import { BuilderForm, type Spec } from "./BuilderForm";
 import { ExploreRunsList, RunCardPanel } from "./BuilderRunCard";
@@ -61,6 +61,7 @@ export function SuggestionLine({ s }: { s: BuilderSuggestion }) {
           {short.find((n) => n.monthly)!.monthly!.first ? ` from ${short.find((n) => n.monthly)!.monthly!.first}` : ""}.
         </div>
       )}
+      {(s.windows ?? []).length > 0 && <div>Our stores hold other windows for it: pick one beside Explore run.</div>}
     </div>
   );
 }
@@ -138,12 +139,24 @@ function TodayPanel({ name, spec, dirty }: { name: string; spec: Spec | null; di
   );
 }
 
-/** The action row: check, save off, explore run; declaring and switching on are outside the page. */
+/** One window as the picker lists it: its dates, its store, and what to know before choosing it. */
+export function windowLabel(w: BuilderWindow): string {
+  const bits = [`${w.start} → ${w.end}`, w.source];
+  if (w.thin && w.density !== null) bits.push(`thin: ${String(Math.round(w.density * 100))}% of sessions`);
+  if (w.licensed) bits.push("licensed");
+  return bits.join(" · ");
+}
+
+/** The action row: check, save off, explore run over a chosen window; declaring and switching on are
+ *  outside the page. */
 export function ActionRow({
   busy,
   canCheck,
   canRun,
   runWhy,
+  windows = [],
+  chosen = null,
+  onChoose = () => {},
   onCheck,
   onSave,
   onRun,
@@ -152,10 +165,14 @@ export function ActionRow({
   canCheck: boolean;
   canRun: boolean;
   runWhy: string | null;
+  windows?: BuilderWindow[];
+  chosen?: string | null;
+  onChoose?: (key: string) => void;
   onCheck: () => void;
   onSave: () => void;
   onRun: () => void;
 }) {
+  const pick = windows.find((w) => w.key === chosen) ?? null;
   return (
     <div className="builder-section builder-actions">
       <div className="builder-editor-actions">
@@ -165,6 +182,20 @@ export function ActionRow({
         <button type="button" className="btn" disabled={busy || !canCheck} onClick={onSave}>
           Save (off)
         </button>
+        {windows.length > 0 && (
+          <span className="builder-window">
+            <label className="builder-lbl" htmlFor="builder-window">
+              over
+            </label>
+            <select id="builder-window" className="builder-input" value={chosen ?? ""} disabled={busy} onChange={(e) => onChoose(e.currentTarget.value)}>
+              {windows.map((w) => (
+                <option key={w.key} value={w.key}>
+                  {windowLabel(w)}
+                </option>
+              ))}
+            </select>
+          </span>
+        )}
         <button type="button" className="btn btn-primary" disabled={busy || !canRun} title={runWhy ?? undefined} onClick={onRun}>
           Explore run
         </button>
@@ -177,9 +208,15 @@ export function ActionRow({
         </button>
       </div>
       {runWhy && <p className="muted">Explore run: {runWhy}</p>}
+      {pick && (
+        <p className="muted builder-window-note">
+          {pick.source}: {pick.holds}.{pick.thin ? " A thin span: sessions it lacks are skipped, not filled." : ""}
+          {pick.licensed ? " Its result is licensed: it stays on this machine and shows only while licensed results may." : ""}
+        </p>
+      )}
       <p className="muted">
-        Explore run queues the saved automation over the window and store its suggestion names, only where that data covers every
-        block. It is descriptive, never a trial or a verdict, and moves no label. Declare is a study declaration made and reviewed
+        Explore run queues the saved automation over the window you pick, each a span one of our stores holds for every block
+        (the vendor&apos;s only where it reaches further back than ours). It is descriptive, never a trial or a verdict, and moves no label. Declare is a study declaration made and reviewed
         outside the page. Promote turns the automation on, which stays a hand edit or its group's switch.
       </p>
     </div>
@@ -191,7 +228,7 @@ export function runBlocked(a: BuilderAutomation | null, dirty: boolean, mode: Mo
   if (mode.kind !== "saved" || a === null) return "save the automation first";
   if (dirty) return "save the edit first: a run reads the saved automation";
   if (!a.suggestion) return "every block is backtested already";
-  if (!a.suggestion.possible) return "our data does not cover it (see the coverage above)";
+  if (!a.suggestion.possible && (a.suggestion.windows ?? []).length === 0) return "our data does not cover it (see the coverage above)";
   return null;
 }
 
@@ -207,6 +244,9 @@ export function Workspace({ a, schema, mode, onSaved }: { a: BuilderAutomation |
   );
   const [outcome, setOutcome] = useState<Outcome>({ kind: "idle" });
   const [busy, setBusy] = useState(false);
+  const windows = mode.kind === "saved" ? (a?.suggestion?.windows ?? []) : [];
+  const [windowKey, setWindowKey] = useState<string | null>(null);
+  const chosen = windows.some((w) => w.key === windowKey) ? windowKey : (windows[0]?.key ?? null);
 
   useEffect(() => {
     if (source === null) return;
@@ -272,7 +312,7 @@ export function Workspace({ a, schema, mode, onSaved }: { a: BuilderAutomation |
 
   const run = async () => {
     setBusy(true);
-    const r = await builderBacktest(name);
+    const r = await builderBacktest(name, chosen ?? undefined);
     setBusy(false);
     if (!r.ok) setOutcome({ kind: "error", text: `Not queued: ${r.error}` });
     else {
@@ -323,7 +363,18 @@ export function Workspace({ a, schema, mode, onSaved }: { a: BuilderAutomation |
           ) : (
             <BuilderForm schema={schema} spec={spec} labels={labels} onChange={edit} />
           )}
-          <ActionRow busy={busy} canCheck={spec !== null} canRun={why === null} runWhy={why} onCheck={() => void check()} onSave={() => void save()} onRun={() => void run()} />
+          <ActionRow
+            busy={busy}
+            canCheck={spec !== null}
+            canRun={why === null}
+            runWhy={why}
+            windows={windows}
+            chosen={chosen}
+            onChoose={setWindowKey}
+            onCheck={() => void check()}
+            onSave={() => void save()}
+            onRun={() => void run()}
+          />
           {outcome.kind === "error" && (
             <div className="error" role="alert">
               {outcome.text}

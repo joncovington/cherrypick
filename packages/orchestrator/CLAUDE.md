@@ -337,7 +337,9 @@ filename; override with `paper.sla_state_prefix`.
   (`automationedit.today`) is the Builder's "Today, live": the module's `cli builder-today` with the
   name and an unsaved edit on stdin, nothing else; it writes nothing. `automation_backtest` and
   `automation_runs` (`automationrun.py`) are the Builder's backtest: the module's `cli builder` read
-  gives the automation's suggestion (window, source; refused unless `possible`), then one
+  gives the automation's suggestion (window, source; refused unless `possible`, or the request names
+  one of its `windows` by key, whose dates and store the run then takes; a key it does not offer is
+  refused), then one
   `researchqueue.add` of a `script` row, study `builder`, step `<name>-<YYMMDDHHMM>`, running
   `automation_backtest.py run` into the result `builder-<name>-<stamp>.json`; one live row per
   automation. The explore-runs list reads those rows and `backtest read automation-runs`;
