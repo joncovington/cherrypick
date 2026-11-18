@@ -108,6 +108,8 @@ def test_the_module_unavailable_is_said(cfgfile):
 
 
 def test_configcli_routes_the_three_ops(cfgfile, monkeypatch):
+    # The suite's own config is not this test's: CI has none.
+    monkeypatch.setattr(configcli.cfgmod, "load_config", lambda: {"modules": {}})
     monkeypatch.setattr(
         groupedit, "run_module_view", lambda cfg, req: {"ok": True, "groups": [], "ungrouped": []}
     )
