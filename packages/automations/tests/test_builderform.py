@@ -21,6 +21,15 @@ def test_the_schema_is_the_engines_own_tables():
     assert set(s["strike_rules"]) == set(arms_mod.STRIKE_KEYS)
     assert all(s["strike_rules"][k]["keys"] == dict(v) for k, v in arms_mod.STRIKE_KEYS.items())
     assert set(s["expiry"]) == set(arms_mod.EXPIRY_KEYS)
+    # Every flag is a key some expiry kind takes, and the check refuses anything but true or false.
+    assert s["expiry_flags"] == list(arms_mod.EXPIRY_FLAGS) == ["monthly"]
+    for f in s["expiry_flags"]:
+        kinds = [k for k, keys in arms_mod.EXPIRY_KEYS.items() if f in keys]
+        assert kinds
+        for k in kinds:
+            rule = {"kind": k, **{x: 1 for x, req in arms_mod.EXPIRY_KEYS[k].items() if req}}
+            assert arms_mod._expiry_problems("x", {**rule, f: "true"}) == [f"x.{f}: true or false"]
+            assert arms_mod._expiry_problems("x", {**rule, f: True}) == []
     assert set(s["exits"]) == arms_mod.EXIT_KEYS and set(s["limits"]) == arms_mod.LIMIT_KEYS
     assert set(s["sizes"]) == set(sizing.SIZE_KEYS)
     assert set(s["signals"]) == set(signals.KINDS)

@@ -114,15 +114,45 @@ function Select({
   );
 }
 
-/** The keys a kind takes ({key: required}), each a field on `o`. */
-function KeyFields({ prefix, keys, o, onChange, skip = [] }: { prefix: string; keys: Record<string, boolean>; o: Obj; onChange: (next: Obj) => void; skip?: string[] }) {
+/** A true-or-false key: checked sets it, unchecked removes it (the engine reads absent as false). */
+function Flag({ id, label, value, onChange }: { id: string; label: string; value: unknown; onChange: (v: true | undefined) => void }) {
+  return (
+    <div className="builder-f">
+      <label className="builder-lbl" htmlFor={id}>
+        {label.replaceAll("_", " ")}
+      </label>
+      <input id={id} type="checkbox" checked={value === true} onChange={(e) => onChange(e.currentTarget.checked ? true : undefined)} />
+    </div>
+  );
+}
+
+/** The keys a kind takes ({key: required}), each a field on `o`; a key in `flags` is a checkbox. */
+function KeyFields({
+  prefix,
+  keys,
+  o,
+  onChange,
+  skip = [],
+  flags = [],
+}: {
+  prefix: string;
+  keys: Record<string, boolean>;
+  o: Obj;
+  onChange: (next: Obj) => void;
+  skip?: string[];
+  flags?: string[];
+}) {
   return (
     <>
       {Object.entries(keys)
         .filter(([k]) => !skip.includes(k))
-        .map(([k, req]) => (
-          <Field key={`${prefix}-${k}-${showValue(o[k])}`} id={`${prefix}-${k}`} label={k} value={o[k]} required={req} onChange={(v) => onChange(withKey(o, k, v))} />
-        ))}
+        .map(([k, req]) =>
+          flags.includes(k) ? (
+            <Flag key={`${prefix}-${k}`} id={`${prefix}-${k}`} label={k} value={o[k]} onChange={(v) => onChange(withKey(o, k, v))} />
+          ) : (
+            <Field key={`${prefix}-${k}-${showValue(o[k])}`} id={`${prefix}-${k}`} label={k} value={o[k]} required={req} onChange={(v) => onChange(withKey(o, k, v))} />
+          ),
+        )}
     </>
   );
 }
@@ -246,7 +276,7 @@ export function UnderlyingFields({ schema, spec, onChange }: SectionProps) {
       <div className="builder-grid">
         <Field key={`sym-${showValue(spec["symbol"])}`} id="f-symbol" label="symbol" value={spec["symbol"]} required onChange={(v) => set("symbol", v)} />
         <Select id="f-expiry-kind" label="expiry" value={exprKind} options={Object.keys(schema.expiry)} onChange={(k) => set("expiry", { kind: k })} />
-        <KeyFields prefix="f-expiry" keys={schema.expiry[exprKind] ?? {}} o={expiry} onChange={(next) => set("expiry", { ...next, kind: exprKind })} />
+        <KeyFields prefix="f-expiry" keys={schema.expiry[exprKind] ?? {}} flags={schema.expiry_flags} o={expiry} onChange={(next) => set("expiry", { ...next, kind: exprKind })} />
       </div>
       <fieldset className="builder-days">
         <legend className="builder-lbl">weekdays</legend>

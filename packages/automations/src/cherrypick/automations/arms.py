@@ -164,6 +164,8 @@ EXPIRY_KEYS = {
     "at_least": {"days": True, "monthly": False},
     "between": {"min": True, "max": True, "prefer": False, "monthly": False},
 }
+#: The expiry keys that are true or false.
+EXPIRY_FLAGS = ("monthly",)
 
 
 def _whole(v, least: int = 0) -> bool:
@@ -189,8 +191,9 @@ def _expiry_problems(where: str, rule) -> list[str]:
             p.append(f"{where}: min is after max")
     if rule.get("prefer") not in (None, "first", "last"):
         p.append(f"{where}.prefer: first or last")
-    if "monthly" in rule and not isinstance(rule["monthly"], bool):
-        p.append(f"{where}.monthly: true or false")
+    for k in EXPIRY_FLAGS:
+        if k in rule and not isinstance(rule[k], bool):
+            p.append(f"{where}.{k}: true or false")
     return p
 
 
