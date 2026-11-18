@@ -258,7 +258,8 @@ def fetch(
     if hasattr(client, "on_retry"):
         client.on_retry = log  # a stalled call and its reconnect show in the fetch's own log
     try:
-        days = session_days(client.expirations(root), max(start, ds["from"]), end)
+        # A store tag may set its own first session (`store.TAGS`, the full set's), else the dataset's.
+        days = session_days(client.expirations(root), max(start, st.get("from") or ds["from"]), end)
         todo = [d for d in days if refetch or store.session_status(conn, symbol, d) != store.COMPLETE]
         closes: dict = {}
         if days:

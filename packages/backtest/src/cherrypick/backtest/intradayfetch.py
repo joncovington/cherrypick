@@ -14,6 +14,9 @@ The range is not part of a request's identity: a store holds what became of a wi
 requests for overlapping bars of one expiry should ask for the same range (a later, narrower write
 of the same bars replaces the wider rows).
 
+A file may name its store at the top (`"store"`): one of the full set's per-underlying stores
+(`fullset`), which share this schema. Without one it is the shared store below.
+
 **The store** is `intraday_chains.db` in the licensed vendor directory (`paths.ensure_vendor_dir`,
 marker first): `intraday_chain_quotes` holds the rows, `intraday_chain_requests` what became of each
 request -- `complete` (rows written), `empty` (the vendor holds nothing for it) or `refused` (with
@@ -39,7 +42,7 @@ from typing import Any
 
 from cherrypick.core import progress as core_progress
 
-from . import paths
+from . import fullset, paths
 from .chainfetch import vendor_root
 from .vendor import FATAL, VendorRefusal
 
@@ -66,14 +69,30 @@ CREATE TABLE IF NOT EXISTS intraday_chain_requests (
 Key = tuple[str, str, str, str, str, str]  # symbol, session, expiration, start, end, interval
 
 
-def db_path(settings: dict) -> Path:
-    return paths.vendor_dir(settings) / DB_NAME
+#: The stores a request file may name (`"store"`): this one, and the full set's per-underlying stores
+#: (`fullset.INTRADAY_STORES`). Any other name is refused before a request is sent.
+STORES = (DB_NAME, *fullset.INTRADAY_STORES)
 
 
-def connect(settings: dict) -> sqlite3.Connection:
+def db_path(settings: dict, store: str = DB_NAME) -> Path:
+    if store not in STORES:
+        raise ValueError(f"not an intraday chain store: {store!r}")
+    return paths.vendor_dir(settings) / store
+
+
+def request_store(path: Path) -> str:
+    """The store a request file names (`"store"`), else `DB_NAME`; refused unless one of `STORES`."""
+    doc = json.loads(Path(path).read_text(encoding="utf-8"))
+    store = doc.get("store", DB_NAME) if isinstance(doc, dict) else DB_NAME
+    if store not in STORES:
+        raise ValueError(f"request file names {store!r}, not an intraday chain store ({', '.join(STORES)})")
+    return store
+
+
+def connect(settings: dict, store: str = DB_NAME) -> sqlite3.Connection:
     """The intraday chain store, created inside the marked vendor directory."""
     paths.ensure_vendor_dir(settings)
-    conn = sqlite3.connect(db_path(settings), timeout=300)
+    conn = sqlite3.connect(db_path(settings, store), timeout=300)
     conn.executescript(SCHEMA)
     return conn
 
@@ -187,14 +206,15 @@ def fetch_windows(
     stop=None,
     log=print,
     strike_ranges: dict[Key, int] | None = None,
+    store: str = DB_NAME,
 ) -> dict[str, Any]:
     """Fetch every request not already complete or empty (all of them with `refetch`). `stop`, if
     given, is asked before each new request: once it says so, nothing more is started, the requests
     in flight finish and are kept, and the report says `stopped` -- a re-run resumes from there.
     `strike_ranges` bounds the strikes either side of the money for the requests that name one (the
-    others ask for the whole chain)."""
+    others ask for the whole chain). `store` is the file written (`STORES`)."""
     strike_ranges = strike_ranges or {}
-    conn = connect(settings)
+    conn = connect(settings, store)
     try:
         done = set() if refetch else _done(conn)
         todo = [k for k in requests if k not in done]

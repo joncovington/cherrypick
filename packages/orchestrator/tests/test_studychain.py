@@ -204,3 +204,17 @@ def test_the_study_is_the_scripts_item_unless_named(repo):
     assert sc.study_of(Path("reproduce_studies.py"), "reproduce") == "reproduce"
     with pytest.raises(sc.BadChain):
         sc.study_of(Path("reproduce_studies.py"))
+
+
+def test_last_session_fills_the_trading_day_before_today(monkeypatch):
+    chain = [{"step": "zero", "kind": "fetch-sessions", "task_args": {"to": "{last_session}"}}]
+    rows = sc.plan_rows(chain, "fullset", "s.py", Path("r"), last_session="2026-11-13")
+    assert rows[0]["args"]["to"] == "2026-11-13"
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    from cherrypick.core import clock
+
+    monday = datetime(2026, 11, 16, 9, 0, tzinfo=ZoneInfo("America/New_York"))
+    monkeypatch.setattr(clock, "now_et", lambda: monday)
+    assert sc.plan_rows(chain, "fullset", "s.py", Path("r"))[0]["args"]["to"] == "2026-11-13"

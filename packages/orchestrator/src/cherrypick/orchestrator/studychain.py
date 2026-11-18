@@ -15,7 +15,8 @@ and `queue-chain --script <path>` queues every step in order, each `--after` the
 after `--after` when given). It is read by parsing the file, never by importing it, as the correction
 log is (`studyversion`). In any string, `{results}` is the study's own result folder under the
 backtest data directory (`$BACKTEST_DATA_DIR`, else the home's `data/backtest`, then
-`results/research/<study>`) and `{home}` the suite's home.
+`results/research/<study>`), `{home}` the suite's home, and `{last_session}` the last trading day
+before the ET date the chain is queued (a fetch that runs through the last finished session).
 
 - A `script` step's task is the script itself with the step's `args`; any other kind takes the step's
   `task_args`, checked by the queue's allow-list like any row (`researchqueue.add`).
@@ -133,10 +134,21 @@ def _fill(value: Any, subs: dict[str, str]) -> Any:
 
 
 def plan_rows(
-    chain: list[dict], study: str, script_rel: str, results: Path, after: str | None = None
+    chain: list[dict],
+    study: str,
+    script_rel: str,
+    results: Path,
+    after: str | None = None,
+    last_session: str | None = None,
 ) -> list[dict]:
-    """The rows a chain queues, in order: each one's study, step, kind, task args, output and after."""
-    subs = {"results": results.as_posix(), "home": _home.home().as_posix()}
+    """The rows a chain queues, in order: each one's study, step, kind, task args, output and after.
+    `last_session` fills `{last_session}` (the trading day before today ET, unless a caller fixes it)."""
+    if last_session is None:
+        from cherrypick.core import calendar as _cal
+        from cherrypick.core import clock as _clock
+
+        last_session = _cal.previous_trading_day(_clock.now_et().date()).isoformat()
+    subs = {"results": results.as_posix(), "home": _home.home().as_posix(), "last_session": last_session}
     rows, prev = [], after
     for s in chain:
         s = _fill(s, subs)

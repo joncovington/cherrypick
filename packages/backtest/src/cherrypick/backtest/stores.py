@@ -18,7 +18,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-from . import paths
+from . import fullset, paths
 
 #: One entry per store file in the vendor directory. `built_by`: the command or committed script that
 #: builds it (a script path is checked to exist by a test). `used_by`: who reads it.
@@ -127,6 +127,34 @@ STORES: list[dict[str, str]] = [
         "built_by": "packages/backtest/scripts/fetch_spx_convex_stack.py",
         "used_by": "item 20, the Convex Stack test (research/edge-hypotheses-plan.md)",
     },
+    # The full set (`fullset`): three stores per underlying, all built by the one script's chain.
+    *(
+        entry
+        for sym in fullset.SYMBOLS
+        for entry in (
+            {
+                "file": fullset.zero_store(sym),
+                "holds": f"{sym} same-day expiries, every session from {fullset.START}: quotes, spot, "
+                "GEX profiles, closes, 40 strikes each side, at 60 s",
+                "built_by": "packages/backtest/scripts/fetch_full_set.py (its CHAIN, research queue)",
+                "used_by": "the Builder's same-day backtests (core.sources) and any study of the set",
+            },
+            {
+                "file": fullset.near_store(sym),
+                "holds": f"{sym} expiries 1-{fullset.NEAR_DAYS} days out, each session open to close "
+                f"at one minute, from {fullset.START}",
+                "built_by": "packages/backtest/scripts/fetch_full_set.py (its CHAIN, research queue)",
+                "used_by": "any study of the set (next-day and weekly structures)",
+            },
+            {
+                "file": fullset.mid_store(sym),
+                "holds": f"{sym} monthlies {fullset.MID_DAYS[0]}-{fullset.MID_DAYS[1]} days out and "
+                f"weeklies to {fullset.MID_WEEKLY_DAYS}, each session at five minutes, from {fullset.START}",
+                "built_by": "packages/backtest/scripts/fetch_full_set.py (its CHAIN, research queue)",
+                "used_by": "any study of the set (monthly premium, calendars)",
+            },
+        )
+    ),
 ]
 
 DATE_COLUMNS = ("trade_date", "session", "day", "date", "expiration")

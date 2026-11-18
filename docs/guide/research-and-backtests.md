@@ -169,6 +169,26 @@ python -m cherrypick.backtest run meic --arms control --window design --cadence 
   wholly after them spends nothing). A design or `all` run is recorded as a trial, so a result is
   judged against how many things were tried.
 
+### Fetching the full set
+
+To have the same history the suite's own studies draw on, fetch the full set: option data for SPX, QQQ,
+XSP, SPY, IWM, GLD and TLT from 2020:
+
+```
+python packages/backtest/scripts/fetch_full_set.py plan
+python packages/orchestrator/run.py queue-chain --study fullset --script packages/backtest/scripts/fetch_full_set.py
+python packages/backtest/scripts/fetch_full_set.py status
+```
+
+`plan` writes the request files and prints how many requests each part holds and the most disk the
+intraday parts could take (a few hundred gigabytes, so point `store.dir` at a big drive first).
+`queue-chain` queues the fetches on the research queue: a ten-request probe first, so a subscription that
+cannot serve the set stops at once, then each underlying's same-day expiries, the end-of-day chains,
+open interest, the expiries 1 to 7 days out at one minute, and those 8 to 90 days out at five minutes.
+It runs for days at two requests at a time, and resumes wherever it stopped. `status` shows how far it
+has got, overall, for each part and for each underlying. To bring the set up to date later, run `plan`
+and `queue-chain` again: only what is new is fetched.
+
 To fetch each new session automatically, set `"backtest": {"fetch": true}` in `~/.cherrypick/config.json`
 and run `python packages/orchestrator/run.py install` again. The `backtest-fetch` job then runs at 18:45 ET
 on trading days. It holds the vendor account's session while it runs.

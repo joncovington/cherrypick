@@ -165,6 +165,14 @@ def test_a_session_fetch_of_another_dataset_names_it_and_spx_keeps_its_argv():
     assert rq.result_of(row, {}, Path("q.log"))["store"] == "backtest QQQ wide 0DTE store"
 
 
+def test_the_full_set_fetches_its_funds_into_the_full_store():
+    args = {"store_tag": "full", "from": "2020-01-01", "to": "2026-11-16", "dataset": "TLT", "workers": 2}
+    argv = rq.build_argv("fetch-sessions", args, PY)
+    assert argv[argv.index("--store-tag") + 1] == "full" and argv[argv.index("--dataset") + 1] == "TLT"
+    for sym in ("SPY", "IWM", "GLD"):
+        rq.build_argv("fetch-sessions", {**args, "dataset": sym}, PY)
+
+
 def test_anything_off_the_allow_list_is_refused(files):
     with pytest.raises(rq.Refused, match="unknown kind"):
         rq.build_argv("shell", {"cmd": "del /s *"}, PY)

@@ -117,7 +117,8 @@ same file, and a month boundary would leave each month's first sessions without 
 cadence, too: the replay ticks once per stored sample, so a mixed file would replay some days at 15 s
 and some at 60 s. And one file per strike count: a declared store tag (`store.TAGS`; `wide` keeps 40
 strikes each side for items 42 and 44) is its own file (`SPX-60s-wide.db`), fetched by the research
-queue's `fetch-sessions`, never by the nightly job. A study points the runner at it with
+queue's `fetch-sessions`, never by the nightly job. A tag may carry its own first session (`from`),
+which overrides the dataset's: `full`, the full set's, starts at 2020-01-01. A study points the runner at it with
 `store.tagged(settings, tag)`.
 
 **History is 1-minute; the recorder era is 15 s.** The vendor drops every sub-minute
@@ -423,6 +424,18 @@ range is no part of a request's identity, so two requests for overlapping bars o
 the same range, and a file repeating a window with two ranges is refused. Item 38 (the calendars module's
 own rule, `packages/backtest/scripts/calendars_item38.py`) finds its start with the same verb: its listing step is a file of
 one-bar probes, not a call to the vendor's expirations list, which a `script` row may not make.
+
+A file may name its store at the top (`"store"`), one of `intradayfetch.STORES`: the shared one or the
+full set's per-underlying stores (`fullset.INTRADAY_STORES`, same schema). Any other name is refused before
+a request is sent.
+
+**The full set** (`fullset.py`, pure; `packages/backtest/scripts/fetch_full_set.py`): SPX, QQQ, XSP, SPY,
+IWM, GLD and TLT from 2020-01-01 in three stores per underlying (same-day at 60 s under the `full` tag,
+1-7 days out at one minute, 8-90 days out at five minutes), plus every weekly, monthly and quarter-end
+expiry's end-of-day path and open interest. The plan asks for candidate expiries by the exchanges' rules,
+never the vendor's listing, so planning holds no vendor session; an expiry never listed comes back
+`empty` once. `plan` writes the request files, the script's CHAIN queues the fetches (probe first), and
+`status` reads overall, per-part and per-underlying progress from the stores' own ledgers.
 
 **The add-on weeklies fetch** (`fetch-addon-weeklies`, `addonfetch.py`; item 35): SPXW weekly put minute
 greeks over a bwb position's life, plus a 10:00 strip of ATM calls, from a `{requests: [{expiration, first,
