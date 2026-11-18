@@ -48,7 +48,7 @@ class FakeDolt:
         self.listed = ["AAA", "BBB", "ZZZ"]
         self.ohlcv = [
             ("AAA", date(2026, 9, 24), 10, 11, 9, 10, 100),
-            ("AAA", date(2026, 9, 25), 10, 12, 10, 11, 100),
+            ("AAA", date(2026, 9, 25), 5, 6, 5, 5.5, 100),  # the 2-for-1 gap
             ("ZZZ", date(2026, 9, 25), 1, 1, 1, 1, 1),  # not wanted
         ]
         self.splits = [("AAA", date(2026, 9, 25), 2, 1), ("ZZZ", date(2026, 1, 2), 2, 1)]
@@ -74,7 +74,7 @@ def test_a_landing_keeps_only_wanted_symbols_and_reports_what_dolt_lacks(dolt):
     assert report["ok"] and report["bars"] == 2 and report["splits"] == 1 and report["dividends"] == 1
     assert report["not_in_dolt"] == ["SPX"] and report["missing"] == ["BBB"]
     conn = store.connect()
-    assert [b.close for b in store.adjusted_bars(conn, "AAA")] == [5.0, 11.0]
+    assert [b.close for b in store.adjusted_bars(conn, "AAA")] == [5.0, 5.5]
     assert store.iv_rank(conn, "AAA")["iv_rank"] == pytest.approx(33.3, abs=0.1)
 
 
