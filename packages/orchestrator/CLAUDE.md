@@ -337,8 +337,10 @@ filename; override with `paper.sla_state_prefix`.
   `/automations/<name>` and written through `apply_raw_save`. `automation_groups`,
   `automation_groups_check` and `automation_groups_save` (`groupedit.py`) are the console's Groups
   tab: the module's `cli groups-view` and `cli groups-check` by subprocess, then the `groups` block the
-  check returned (replaced, or added at the document root, pointer `""`) and each moved automation's
-  `group` (set, added to its entry, or a one-key entry), all in one `apply_raw_save`. `automation_today`
+  check returned (replaced, or added at the document root, pointer `""`), each moved automation's
+  `group`, and each switched automation's `enabled` and the `start` the check gave it (each key set,
+  added to its entry, or a new entry), all in one `apply_raw_save`; a switch carrying any other key is
+  refused. `automation_today`
   (`automationedit.today`) is the Builder's "Today, live": the module's `cli builder-today` with the
   name and an unsaved edit on stdin, nothing else; it writes nothing. `automation_backtest` and
   `automation_runs` (`automationrun.py`) are the Builder's backtest: the module's `cli builder` read

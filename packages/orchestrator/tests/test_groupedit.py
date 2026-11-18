@@ -32,13 +32,13 @@ def cfgfile(tmp_path, monkeypatch):
     return path
 
 
-def module(problems=(), block=BLOCK, moves=None, seen=None):
+def module(problems=(), block=BLOCK, moves=None, switches=None, seen=None):
     def run(cfg, req):
         if seen is not None:
             seen.append(req)
         if problems:
-            return {"ok": True, "problems": list(problems), "block": None, "moves": {}}
-        return {"ok": True, "problems": [], "block": block, "moves": moves or {}}
+            return {"ok": True, "problems": list(problems), "block": None, "moves": {}, "switches": {}}
+        return {"ok": True, "problems": [], "block": block, "moves": moves or {}, "switches": switches or {}}
 
     return run
 
@@ -89,8 +89,32 @@ def test_the_request_is_passed_to_the_module_as_sent(cfgfile):
     groupedit.check(
         {}, {"groups": BLOCK, "members": {"iron-fly-1000": "gold"}, "extra": 1}, module(seen=seen)
     )
-    assert seen == [{"groups": BLOCK, "members": {"iron-fly-1000": "gold"}}]
+    assert seen == [{"groups": BLOCK, "members": {"iron-fly-1000": "gold"}, "switches": {}}]
     assert groupedit.check({}, {"members": {}}, module())["ok"] is False
+    assert groupedit.check({}, {"groups": {}, "switches": []}, module())["ok"] is False
+
+
+def test_each_switch_is_written_with_the_start_the_module_gave_it(cfgfile):
+    switches = {
+        "iron-fly-1000": {"enabled": False},
+        "long-put-1030": {"enabled": True, "start": "2026-11-19"},
+        "orb-put-spread": {"enabled": True, "start": "2026-11-19"},
+    }
+    out = groupedit.save({}, REQ, module(switches=switches))
+    assert out["ok"] is True and out["switched"] == sorted(switches)
+    d = doc(cfgfile)
+    # Set in an entry that had it, added to one, and a new entry for a shipped automation.
+    assert d["automations"]["iron-fly-1000"] == {"enabled": False}
+    assert d["automations"]["long-put-1030"] == {"enabled": True, "group": "ensemble", "start": "2026-11-19"}
+    assert d["automations"]["orb-put-spread"] == {"enabled": True, "start": "2026-11-19"}
+
+
+def test_a_switch_carrying_anything_but_enabled_and_start_writes_nothing(cfgfile):
+    before = cfgfile.read_bytes()
+    out = groupedit.save({}, REQ, module(switches={"iron-fly-1000": {"enabled": True, "legs": []}}))
+    assert out["ok"] is False and cfgfile.read_bytes() == before
+    out = groupedit.save({}, REQ, module(switches={"iron-fly-1000": {"enabled": "yes"}}))
+    assert out["ok"] is False and cfgfile.read_bytes() == before
 
 
 def test_a_stale_page_is_refused(cfgfile):

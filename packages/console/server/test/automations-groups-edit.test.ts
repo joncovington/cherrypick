@@ -27,7 +27,7 @@ function fakeBridge(response: BridgeResult) {
 const post = (url: string, payload: unknown, headers: Record<string, string> = {}) =>
   app.inject({ method: "POST", url, payload, headers: { host: "127.0.0.1:5070", "x-csrf-token": CSRF_TOKEN, ...headers } });
 
-const CHANGE = { groups: { ensemble: { enabled: false } }, members: { "gld-call-spread-1dte": "gold" } };
+const CHANGE = { groups: { ensemble: { enabled: false } }, members: { "gld-call-spread-1dte": "gold" }, switches: { "iron-fly-1000": true } };
 
 beforeAll(async () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "console-groups-edit-"));
@@ -58,12 +58,12 @@ describe("the groups check and save", () => {
     fakeBridge({ ok: true, problems: [], moves: { "gld-call-spread-1dte": "gold" }, block: {} });
     const res = await post("/api/automations/groups/check", CHANGE);
     expect(seen).toEqual([{ op: "automation_groups_check", ...CHANGE }]);
-    expect(res.json()).toEqual({ ok: true, problems: [], moves: { "gld-call-spread-1dte": "gold" } });
+    expect(res.json()).toEqual({ ok: true, problems: [], moves: { "gld-call-spread-1dte": "gold" }, switches: {}, notes: [], after: null });
   });
 
-  it("saves only the groups and the moves", async () => {
+  it("saves only the groups, the moves and the switches, never a start from the page", async () => {
     fakeBridge({ ok: true, moved: ["gld-call-spread-1dte"], groups: ["ensemble", "gold"], backup: "b.json" });
-    const res = await post("/api/automations/groups/save", { ...CHANGE, enabled: true, path: "/etc" });
+    const res = await post("/api/automations/groups/save", { ...CHANGE, enabled: true, start: "2020-01-01", path: "/etc" });
     expect(res.statusCode).toBe(200);
     expect(seen).toEqual([{ op: "automation_groups_save", ...CHANGE }]);
     expect(res.json()).toMatchObject({ ok: true, moved: ["gld-call-spread-1dte"] });
@@ -80,6 +80,8 @@ describe("the groups check and save", () => {
     expect((await post("/api/automations/groups/save", { groups: [] })).statusCode).toBe(400);
     expect((await post("/api/automations/groups/save", { groups: {}, members: { x: 5 } })).statusCode).toBe(400);
     expect((await post("/api/automations/groups/save", { groups: {}, members: [] })).statusCode).toBe(400);
+    expect((await post("/api/automations/groups/save", { groups: {}, switches: { x: "on" } })).statusCode).toBe(400);
+    expect((await post("/api/automations/groups/save", { groups: {}, switches: [] })).statusCode).toBe(400);
     expect(seen).toEqual([]);
   });
 

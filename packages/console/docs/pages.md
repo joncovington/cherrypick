@@ -30,7 +30,7 @@ A page the suite has switched off is not shown (see *What is off is not shown* b
 | MEIC | `/meic` | today, arms, forest, attempts, positions, history, sessions, exits, regime cuts, performance, analysis, costs, advisor, help | Active; live behind its own gate. |
 | BWB | `/bwb` | today, positions, history, decisions, arms, entry vol, live vs paper, performance, analysis, advisor, help | Retired; ships off. |
 | Earnings | `/earnings` | today, positions, history, decisions, screening, strategies, advisor | Active; paper only. |
-| Automations | `/automations` | today, groups, positions, history, decisions, performance, costs, help (8 tabs) | Paper only. The automations are whatever the ledger names; the Builder writes them, and `groups` switches and budgets their groups (each member's own switch shown, never written). |
+| Automations | `/automations` | today, groups, positions, history, decisions, performance, costs, help (8 tabs) | Paper only. The automations are whatever the ledger names; the Builder writes them, and `groups` (every group › one group › one automation, staged and reviewed) switches, budgets and groups them. |
 | Experiments | `/experiments` | experiments | The comparison page for the paper-only experiments and the retired modules below. |
 | PMCC | `/pmcc` | today, by arm, positions, tracker, history, decisions, arms, performance, analysis, costs, advisor, help | Retired; ships off. |
 | Calendars | `/calendars` | today, plan, positions, history, decisions, arms, policies, performance, analysis, advisor, help | Experimental; paper only. |

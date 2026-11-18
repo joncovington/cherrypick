@@ -115,14 +115,19 @@ alone):
   - **The Builder's save is the same path for one automation** (`/api/automations/builder/draft` and
     `/save`, configcli `automation_draft` / `automation_save`). The route sends a name and an
     automation and nothing else; the orchestrator runs the module's own check and writes the entry it
-    returned, which is always off. The page never turns an automation on, and never writes its
+    returned, which is always off. The Builder never turns an automation on, and never writes its
     register label. A saved automation opens read-only; a change to one is a copy.
-  - **Automations › Groups writes the groups by the same path** (`/api/automations/groups/edit`,
-    `/check`, `/save`; configcli `automation_groups*`, `orchestrator.groupedit`). The route sends the
-    groups that will have members (each spec whole) and the automations that move, nothing else; the
-    module (`cli groups-check`) loads the change as the paper loop would and returns the `groups` block
-    and the moves, which are all the orchestrator writes. A group's switch only ever switches members
-    off, so the page shows each member's own switch and never writes it.
+  - **Automations › Groups writes the groups and the switches by the same path**
+    (`/api/automations/groups/edit`, `/check`, `/save`; configcli `automation_groups*`,
+    `orchestrator.groupedit`). Three levels (every group, `?group=`, `?group=&automation=`), each
+    change staged and written only from Review. The route sends the groups that will have members
+    (each spec whole), the automations that move and the automations whose own switch flips (true or
+    false), nothing else; the module (`cli groups-check`) loads the change as the paper loop would and
+    returns the `groups` block, the moves and the switches with the start it gave each one switched on
+    (the next session, so a paper record never begins mid-day), which are all the orchestrator
+    writes. Each automation's state (`on`, `waiting`, `off_group`, `off_own`) is the module's
+    (`cli groups-view`), and Review's "what it does to trading" lays the module's after-view beside the
+    view now; the page derives no state. Paper only: nothing here places an order.
   - **The Builder's form reads the module's schema and "Today, live"; neither writes.** The form's
     choices are `cli builder-schema` (`/api/automations/builder/schema`, the engine's own tables),
     so the page spells no gate, strike rule or exit of its own. "Today, live" is configcli

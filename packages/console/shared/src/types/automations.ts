@@ -164,14 +164,24 @@ export interface AutomationGroup {
   automations: AutomationGroupMember[];
 }
 
-/** One automation on the Groups page: its OWN switch (a group that is on leaves a member that is off,
- *  off), its research verdict, its underlying and whether it ships with the module. */
+/** What lets an automation enter, or the one thing that stops it (`automations.groupedit`): `on` (its own
+ *  switch on, its group on or none, its start come), `waiting` (all but the start, which is `from`),
+ *  `off_group` (its own switch on, its group off), `off_own` (its own switch off). */
+export type AutomationState = "on" | "waiting" | "off_group" | "off_own";
+
+/** One automation on the Groups pages: its OWN switch beside the state it is in, its own start, its
+ *  research verdict, its underlying, whether it ships with the module and whether it has a forward rule. */
 export interface GroupsEditMember {
   name: string;
   enabled: boolean;
+  start: string | null;
+  state: AutomationState;
+  /** The date a `waiting` automation starts. */
+  from: string | null;
   verdict: AutomationVerdict;
   symbol: string | null;
   shipped: boolean;
+  forward: boolean;
 }
 
 /** A group's spec as the module's `groups` block holds it (`config.groups`). */
@@ -191,15 +201,32 @@ export interface GroupsEditGroup extends GroupSpec {
 
 /** `GET /api/automations/groups/edit`: every group and every automation in none (`cli groups-view`). */
 export interface GroupsEditView {
+  today: string;
+  /** The session a switch made today starts from. */
+  next_session: string;
+  counts: Record<AutomationState, number>;
   groups: GroupsEditGroup[];
   ungrouped: GroupsEditMember[];
 }
 
-/** A change to the groups: every group that will have members, each spec whole, and the automations
- *  that move (`null`: into no group). */
+/** A change to the groups: every group that will have members, each spec whole, the automations that
+ *  move (`null`: into no group) and the automations whose own switch flips. */
 export interface GroupsChange {
   groups: Record<string, GroupSpec>;
   members: Record<string, string | null>;
+  switches: Record<string, boolean>;
+}
+
+/** `POST /api/automations/groups/check`: the module's problems, what a save would write, and the view as
+ *  it would be after it. */
+export interface GroupsCheckResult {
+  ok: boolean;
+  error?: string;
+  problems?: string[];
+  moves?: Record<string, string | null>;
+  switches?: Record<string, { enabled: boolean; start?: string }>;
+  notes?: string[];
+  after?: GroupsEditView | null;
 }
 
 /** `GET /api/automations/groups`: every group, or the reason the package could not be asked. */

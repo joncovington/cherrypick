@@ -223,27 +223,37 @@ export function registerConfigRoutes(app: FastifyInstance, config: ConsoleConfig
   /**
    * The Automations › Groups page, through the orchestrator's editor like every config write here
    * (configcli `automation_groups*`, `orchestrator.groupedit`). The view and the check write nothing;
-   * the save runs the module's check and writes only what it returned: the `groups` block and each
-   * moved automation's `group`. A group's switch, start, allocation, cap and shares are the page's to
-   * set; an automation's own switch is not (a member that is off stays off in a group that is on).
+   * the save runs the module's check and writes only what it returned: the `groups` block, each moved
+   * automation's `group`, and each switched automation's `enabled` and the start the module gave it
+   * (the next session, switched on). The automations module is paper only, so a switch here starts or
+   * stops paper entries, never an order. The page sends switches as true or false; the start is never
+   * the page's.
    */
   app.get("/api/automations/groups/edit", async (_req, reply) => {
     const result = sendBridgeFailure(reply, await callConfigCli({ op: "automation_groups" }));
     if (result === null) return reply;
-    return { groups: result["groups"] ?? [], ungrouped: result["ungrouped"] ?? [] };
+    const { ok: _ok, ...view } = result;
+    return view;
   });
 
-  const groupsBody = (body: Record<string, unknown>): { groups: Record<string, unknown>; members: Record<string, string | null> } | string => {
+  type GroupsBody = { groups: Record<string, unknown>; members: Record<string, string | null>; switches: Record<string, boolean> };
+  const groupsBody = (body: Record<string, unknown>): GroupsBody | string => {
     const groups = body["groups"];
     const members = body["members"] ?? {};
+    const switches = body["switches"] ?? {};
     if (typeof groups !== "object" || groups === null || Array.isArray(groups)) return "groups must be an object";
     if (typeof members !== "object" || members === null || Array.isArray(members)) return "members must be an object";
+    if (typeof switches !== "object" || switches === null || Array.isArray(switches)) return "switches must be an object";
     for (const [name, g] of Object.entries(members as Record<string, unknown>)) {
       if (name.length === 0 || name.length > 48) return "a member's name is up to 48 characters";
       if (g !== null && (typeof g !== "string" || g.length === 0 || g.length > 48)) return `members.${name}: a group name (up to 48 characters) or null`;
     }
+    for (const [name, on] of Object.entries(switches as Record<string, unknown>)) {
+      if (name.length === 0 || name.length > 48) return "an automation's name is up to 48 characters";
+      if (typeof on !== "boolean") return `switches.${name}: true or false`;
+    }
     if (JSON.stringify(body).length > MAX_AUTOMATION_CHARS) return `the change is larger than ${MAX_AUTOMATION_CHARS} characters`;
-    return { groups: groups as Record<string, unknown>, members: members as Record<string, string | null> };
+    return { groups: groups as Record<string, unknown>, members: members as Record<string, string | null>, switches: switches as Record<string, boolean> };
   };
 
   app.post("/api/automations/groups/check", async (req, reply) => {
@@ -251,7 +261,14 @@ export function registerConfigRoutes(app: FastifyInstance, config: ConsoleConfig
     if (typeof parsed === "string") return reply.code(400).send({ error: parsed });
     const result = sendBridgeFailure(reply, await callConfigCli({ op: "automation_groups_check", ...parsed }));
     if (result === null) return reply;
-    return { ok: true, problems: result["problems"] ?? [], moves: result["moves"] ?? {} };
+    return {
+      ok: true,
+      problems: result["problems"] ?? [],
+      moves: result["moves"] ?? {},
+      switches: result["switches"] ?? {},
+      notes: result["notes"] ?? [],
+      after: result["after"] ?? null,
+    };
   });
 
   app.post("/api/automations/groups/save", async (req, reply) => {
@@ -269,8 +286,9 @@ export function registerConfigRoutes(app: FastifyInstance, config: ConsoleConfig
     invalidateAutomationGroups();
     invalidateAutomationsBuilder();
     const moved = Array.isArray(result["moved"]) ? (result["moved"] as string[]) : [];
-    app.log.info(`automation groups saved from the console: ${moved.length} moved`);
-    return { ok: true, moved, groups: result["groups"] ?? [], backup: result["backup"] ?? null };
+    const switched = Array.isArray(result["switched"]) ? (result["switched"] as string[]) : [];
+    app.log.info(`automation groups saved from the console: ${moved.length} moved, ${switched.length} switched`);
+    return { ok: true, moved, switched, groups: result["groups"] ?? [], backup: result["backup"] ?? null };
   });
 
   /**

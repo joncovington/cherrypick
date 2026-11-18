@@ -116,8 +116,8 @@ what it may write. The package's own CLAUDE.md holds the detail.
   saving one automation (always off), queueing its explore backtest, and adding an underlying to
   the full set (its vendor fetches queued, capped per click, only while the licence allows new work).
   The Automations › Groups tab adds one more: the automation groups (switch, start, allocation, cap,
-  shares, membership), written after the automations module's check; an automation's own switch is
-  never written there.
+  shares, membership) and each automation's own switch, written after the automations module's
+  check; a switch turned on starts at the next session (the module sets it). Paper only.
 - **packages/review** — the cross-module end-of-day review: one versioned fact set per session, read
   via `cherrypick.core.ledgers` (the single home for per-schema net/risk rules), written only to its own
   store. No credentials, no network, no AI — the narrative is written outside by a scheduled agent.

@@ -3,6 +3,8 @@ checked by the same load the loop runs, so the page can write only what the loop
 
 from __future__ import annotations
 
+from datetime import date
+
 from cherrypick.automations import arms, groupedit
 from cherrypick.automations import config as config_mod
 
@@ -120,6 +122,98 @@ def test_a_group_with_members_must_say_whether_it_is_on_and_names_are_checked():
     assert "members.iron-fly-1000: a group name, or null for none" in r["problems"]
     r = groupedit.check({}, {"groups": {"ensemble": {"enabled": True, "colour": "red"}}, "members": {}})
     assert r["problems"] == ["groups.ensemble: unknown key 'colour'"]
+
+
+WED = date(2026, 11, 18)
+
+
+def test_each_automation_is_named_with_the_one_thing_that_stops_it():
+    cfg = {
+        "groups": {"ensemble": {"enabled": False}},
+        "automations": {
+            "iron-fly-1000": {"enabled": False},
+            "gld-call-spread-1dte": {"group": None, "start": "2026-11-20"},
+            "gld-call-spread-20d": {"group": None},
+        },
+    }
+    v = groupedit.view(cfg, WED)
+    assert v["today"] == "2026-11-18" and v["next_session"] == "2026-11-19"
+    rows = {m["name"]: m for g in v["groups"] for m in g["members"]} | {m["name"]: m for m in v["ungrouped"]}
+    assert rows["iron-fly-1000"]["state"] == "off_own"  # its own switch, though its group is off too
+    assert rows["iron-condor-1345"]["state"] == "off_group"
+    # In no group, an automation answers to its own switch and its start alone.
+    assert (rows["gld-call-spread-1dte"]["state"], rows["gld-call-spread-1dte"]["from"]) == (
+        "waiting",
+        "2026-11-20",
+    )
+    assert rows["gld-call-spread-20d"]["state"] == "on"
+    assert v["counts"] == {"on": 1, "waiting": 1, "off_group": 5, "off_own": 1}
+
+
+def test_a_group_switched_on_starts_at_the_next_session():
+    r = groupedit.check(
+        {"groups": {"ensemble": {"enabled": False}}}, {"groups": {"ensemble": {"enabled": True}}}, WED
+    )
+    assert r["problems"] == [] and r["block"] == {"ensemble": {"enabled": True, "start": "2026-11-19"}}
+    assert r["notes"] == ["ensemble switches on from 2026-11-19, the next session"]
+    states = {m["state"] for m in r["after"]["groups"][0]["members"]}
+    assert states == {"waiting"}
+    # A later start the page gives is kept; a group already on is left as it is.
+    r = groupedit.check(
+        {"groups": {"ensemble": {"enabled": False}}},
+        {"groups": {"ensemble": {"enabled": True, "start": "2026-12-01"}}},
+        WED,
+    )
+    assert r["block"]["ensemble"]["start"] == "2026-12-01"
+    r = groupedit.check({}, {"groups": {"ensemble": {"enabled": True}}}, WED)
+    assert "start" not in r["block"]["ensemble"]
+
+
+def test_an_automation_switched_on_starts_at_the_next_session_and_off_is_written_as_is():
+    cfg = {"automations": {"iron-fly-1000": {"enabled": False}}}
+    r = groupedit.check(
+        cfg,
+        {"groups": {"ensemble": _ensemble_on()}, "switches": {"iron-fly-1000": True, "long-put-1030": False}},
+        WED,
+    )
+    assert r["problems"] == []
+    assert r["switches"] == {
+        "iron-fly-1000": {"enabled": True, "start": "2026-11-19"},
+        "long-put-1030": {"enabled": False},
+    }
+    rows = {m["name"]: m for m in r["after"]["groups"][0]["members"]}
+    assert (rows["iron-fly-1000"]["state"], rows["iron-fly-1000"]["from"]) == ("waiting", "2026-11-19")
+    assert rows["long-put-1030"]["state"] == "off_own"
+    # A switch to what it already is, is no switch.
+    r = groupedit.check(
+        cfg, {"groups": {"ensemble": _ensemble_on()}, "switches": {"long-put-1030": True}}, WED
+    )
+    assert r["switches"] == {}
+
+
+def test_a_switch_with_a_forward_rule_keeps_the_start_its_rule_reads_from(monkeypatch):
+    arm = {
+        **arms.ARMS["iron-fly-1000"],
+        "enabled": False,
+        "start": "2026-10-01",
+        "forward": {"measure": "net"},
+    }
+    monkeypatch.setattr(groupedit, "_own_arms", lambda config: {**arms.ARMS, "iron-fly-1000": arm})
+    monkeypatch.setattr(config_mod, "load_arms", lambda config, **kw: {**arms.ARMS, "iron-fly-1000": arm})
+    r = groupedit.check(
+        {}, {"groups": {"ensemble": _ensemble_on()}, "switches": {"iron-fly-1000": True}}, WED
+    )
+    assert r["switches"] == {"iron-fly-1000": {"enabled": True}}
+    assert r["notes"] == ["iron-fly-1000 keeps its start 2026-10-01: its forward rule reads from it"]
+
+
+def test_a_bad_switch_is_refused():
+    r = groupedit.check(
+        {}, {"groups": {"ensemble": _ensemble_on()}, "switches": {"nope": True, "iron-fly-1000": "on"}}, WED
+    )
+    assert "switches.nope: no such automation" in r["problems"]
+    assert "switches.iron-fly-1000: true or false" in r["problems"]
+    assert r["block"] is None and r["switches"] == {}
 
 
 def test_an_unchanged_member_is_not_a_move():
