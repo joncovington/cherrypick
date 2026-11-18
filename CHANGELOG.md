@@ -33,6 +33,10 @@ beyond the latest release.
 - **A gap measured at the first bar's close.** The gap signal takes `at: "first_bar_close"` to read
   the session's first bar's close (9:35 on five-minute bars) instead of its open. Without it a gap
   reads, and versions, as before.
+- **A trailing stop in percent, and net at mid on the run card.** An automation's trailing stop can
+  be `{"pct": p, "activate_pct": a}`, each a percent of the trade's max profit (it never fires on a
+  structure without one). The Builder's run card shows each run's net at mid beside its P&L: the
+  same trades filled at mid, P&L before slippage, as the run recorded it.
 - **Long automation backtests run in linear time.** The driver's snapshot at each minute copied every
   arm's entry history and rebuilt every arm's closed results from the whole book, so a run slowed
   as its book grew (item 90's placebo pass: 63 s a session near its end, 11 s now). It now carries

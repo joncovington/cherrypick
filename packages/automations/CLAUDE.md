@@ -118,7 +118,8 @@ carried into the event day closes at once, one entered on it is not closed for i
 calendar cannot answer holds), the stops (`stop_credit_multiple`, a credit entry's loss at m times its
 credit, never on a debit; `stop_debit_pct`, a debit entry's loss at p% of its debit, never on a credit;
 `stop_dollars`), `trailing_stop` (`{"dollars": d, "activate_dollars": a}`: once the open P&L has reached
-a, a fall of d from its best), the profit targets (`profit_target_pct` of max profit, `profit_dollars`),
+a, a fall of d from its best; or `{"pct": p, "activate_pct": a}`, the same with each a percent of the
+trade's max profit, which never fires on a structure without one), the profit targets (`profit_target_pct` of max profit, `profit_dollars`),
 `delta_limit` (the structure's delta per unit either way; a leg without a delta is no reading, never
 zero), the signal, `close_at_dte` (calendar days to expiry, from the first tick of that session, never
 on the entry day), then minutes before expiry. Dollar rules read the open P&L at the mid, whole-position

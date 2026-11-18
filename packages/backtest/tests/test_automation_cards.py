@@ -48,6 +48,16 @@ def test_the_net_is_the_verdict_kinds_and_the_drawdown_the_closed_trades():
     assert [p["dd"] for p in curve] == [0.0, -80.0, -130.0, -90.0]
 
 
+def test_net_at_mid_is_the_recorded_mid_net_and_reconciles_with_the_slippage():
+    tiles, rows = ac.tiles(TRADES, 40), ac.years(TRADES)
+    assert tiles["net_mid"] == pytest.approx(10.0 + 4 * 0.5)
+    for r in rows:
+        assert r["net_mid"] == pytest.approx(r["net"] + r["slippage"])  # P&L before slippage
+    # Read as recorded, never derived: a trade whose mid net says otherwise is shown as it says.
+    odd = [dict(TRADES[0], net={"verdict": -50.0, "mid": -10.0})]
+    assert ac.tiles(odd, 1)["net_mid"] == pytest.approx(-10.0)
+
+
 def test_a_long_curve_is_thinned_keeping_both_ends():
     many = [_t("2025-01-02", f"2025-01-{(i % 28) + 1:02d}", 1.0, minute=f"{i:05d}") for i in range(1000)]
     curve = ac.curve(many, 50)

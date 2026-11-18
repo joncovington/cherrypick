@@ -123,9 +123,9 @@ Beside the form:
 
 - **Today, live** decides the automation now as the paper loop would, on today's stream cache (an unsaved edit as it stands), without writing anything. It lists every check with its value and result, and the legs it would take in the order chain or the check that would stop it.
 - **Explore runs** lists the automation's runs: how many versions were tried, each queued run with its state, and each finished one by its time, with what it changed from the run before, its trades, P&L and a small curve. Opening one shows its run card:
-  - P&L, trades, per trade, win rate, max drawdown and net over drawdown;
+  - P&L, net at mid (the same trades filled at mid, so P&L before slippage, shown as context), trades, per trade, win rate, max drawdown and net over drawdown;
   - the cumulative P&L with its gross line and drawdown;
-  - each year's gross, fees, settlement, slippage, P&L and drawdown;
+  - each year's gross, fees, settlement, slippage, P&L, net at mid and drawdown;
   - why sessions were skipped, what the run changed, and its trade log.
 
   A run over licensed data is shown only while licensed results may be.

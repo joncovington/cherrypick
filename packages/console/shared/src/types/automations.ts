@@ -343,6 +343,8 @@ export interface BuilderRunYear {
   settlement: number;
   slippage: number;
   net: number;
+  /** Gross - fees - settlement at mid, before slippage. */
+  net_mid?: number;
   max_dd: number;
 }
 
@@ -380,6 +382,8 @@ export interface BuilderRunCard {
   licensed: boolean;
   tiles: {
     net: number;
+    /** The same trades at mid: gross - fees - settlement, before slippage (P&L + slippage). */
+    net_mid?: number;
     gross: number;
     trades: number;
     sessions: number | null;
