@@ -269,7 +269,8 @@ filename; override with `paper.sla_state_prefix`.
   the tick (e.g. `trade_notifier.run`) sit inside `try/except`. Nothing EOD-shaped touches the tick.
 - **Read surfaces read files, never the broker**, and this package serves **no HTTP read surface**
   (the console is the one). `liveops.py` is the live gate surface: each module's `enable_live_trading`
-  (home config first, then in-repo), its designated live account (masked, via keyring), and the suite
+  (home config first, then in-repo), whether it has a live path at all (`config.LIVE_PATH_MODULES`,
+  held to the packages with a `live_loop.py` by a test; it labels, it never decides a gate), its designated live account (masked, via keyring), and the suite
   **halt flag**, `state/halt-live.flag`, whose *presence* is the signal (path defined by
   `cherrypick.core.home.halt_flag_path()`, which the live loops poll; `liveops.halt_flag_path()`
   mirrors it). It writes **exactly one thing: the halt flag**, via `set_halt` (create to halt, delete

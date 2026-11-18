@@ -10,7 +10,7 @@ System is read-only. It has five tabs: `health` at `/system/health`, `supervisor
 
 ![System health tab: the subsystem verdict cards, then a table of every module with its live gate, jobs, heartbeat and ledger](../images/system-health.png)
 
-`health` opens with the verdict: supervisor, jobs, the anchor task that relaunches the supervisor, the watchdog, the streamer, live trading and notifications, a card each with a coloured edge. Under it, "modules and live posture" has a row per module: whether it is enabled, its live gate (`paper only`, or a dash where the module has none), its jobs, the last heartbeat, how big its ledger is and how long ago it was written, and any stream request. The watchdog cards list what it is flagging, if anything.
+`health` opens with the verdict: supervisor, jobs, the anchor task that relaunches the supervisor, the watchdog, the streamer, live trading and notifications, a card each with a coloured edge. Under it, "modules and live posture" has a row per module: whether it is enabled, its live gate (`ENABLED`, `live switch off`, `unknown` where a module that can trade live has a switch the console cannot read, or `no live path` for a module that has no live loop at all), its jobs, the last heartbeat, how big its ledger is and how long ago it was written, and any stream request. The watchdog cards list what it is flagging, if anything.
 
 The other tabs are the detail behind it.
 
@@ -36,7 +36,7 @@ Config edits the suite's settings from the browser. Its tabs follow the groups o
 
 ### What you see
 
-At the top of every Config tab, above the settings, is the halt control: a banner reading either "Live entries permitted" or "Live entries halted", with a row of chips beneath it for each module showing `paper only`, `live enabled` or `unknown`, and for flies whether it is armed today.
+At the top of every Config tab, above the settings, is the halt control: a banner reading either "Live entries permitted" or "Live entries halted", with a row of chips beneath it, one per module, that says why the module is or is not live. Only meic, flies and bwb have a live loop. Each of those shows `live enabled`, `live switch off`, or `unknown` when its switch cannot be read, plus `module off` when the module itself is switched off, and flies shows whether it is armed today. Every other module shows `paper only · no live path`: it places no order whatever its config says. If such a module's config switches live on anyway, it shows `switch on · no live path` as a warning.
 
 Below that are the settings for the tab you are on.
 

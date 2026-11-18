@@ -32,6 +32,11 @@ a mirror with a test against the module itself. These are the current ones.
   Runs unconditionally; no ledger involved. The Profile tab's reader (`readers/profileBars.ts`,
   `server/test/profile-bars.test.ts`) builds its test table from `scripts/fetch_profile_bars.py`'s own
   SCHEMA, so a renamed column fails there.
+- `server/test/live-path-mirror.test.ts` — `LIVE_PATH_MODULES` in `services/liveLock.ts` (which
+  modules have a live loop, so the lock and System pages can say "no live path") vs the
+  orchestrator's `config.LIVE_PATH_MODULES`, read from this checkout. The orchestrator's
+  `tests/test_live_path_modules.py` keeps that set equal to the packages that ship a `live_loop.py`.
+  Mirrored rather than bridged because the lock is polled.
 - **Model a trade is bridged** (`services/manageModelBridge.ts`): `/api/manage/model`
   runs `python -m cherrypick.manage model` with the name and the leg text, refused here before any
   process starts unless both read as manage reads them (`LEG`, `server/test/manage-model-bridge.test.ts`).

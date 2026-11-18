@@ -19,20 +19,49 @@ import { GuideLink } from "../../components/GuideLink";
 
 const CONFIRMATION = "RESUME LIVE";
 
+/** The gate chip, with the reason on it: which of the three cases this module is in. */
+function GateChip({ gate }: { gate: ModuleGateView }) {
+  const live = gate.liveEnabled;
+  if (!gate.livePath) {
+    return live === true ? (
+      <span className="chip chip-warn" title="its config switches live on, but this module has no live loop to read it">
+        switch on · no live path
+      </span>
+    ) : (
+      <span className="chip" title="this module has no live loop and places no order">
+        paper only · no live path
+      </span>
+    );
+  }
+  if (live === null) {
+    return (
+      <span className="chip chip-missing" title="this module can trade live, but its live switch cannot be read">
+        unknown
+      </span>
+    );
+  }
+  return live ? (
+    <span className="chip chip-live" title="its live switch is on">
+      live enabled
+    </span>
+  ) : (
+    <span className="chip" title="this module can trade live; its live switch is off">
+      live switch off
+    </span>
+  );
+}
+
 function GateRow({ gate, arm }: { gate: ModuleGateView; arm: LockStatusPayload["fliesArm"] }) {
   const live = gate.liveEnabled;
   const isFlies = gate.id === "flies";
   return (
     <div className="lock-gate">
       <span className="lock-gate-name">{gate.id}</span>
-      {live === null ? (
-        <span className="chip chip-missing" title="no readable config — unknown, not off">
-          unknown
+      <GateChip gate={gate} />
+      {gate.livePath && gate.moduleEnabled === false && (
+        <span className="chip" title="modules.<id>.enabled is off in the suite config, so nothing of it runs">
+          module off
         </span>
-      ) : live ? (
-        <span className="chip chip-live">live enabled</span>
-      ) : (
-        <span className="chip">paper only</span>
       )}
       {isFlies && gate.gate0Confirmed === false && live === true && (
         <span className="chip chip-warn" title="live.gate0_confirmed is empty">
@@ -180,8 +209,10 @@ export function LockHero() {
         ))}
         {unknownModules.length > 0 && (
           <p className="fine-label muted">
-            {unknownModules.length === 1 ? "One module has" : `${String(unknownModules.length)} modules have`} no
-            readable config — shown as unknown rather than assumed off.
+            {unknownModules.length === 1
+              ? "One module that can trade live has"
+              : `${String(unknownModules.length)} modules that can trade live have`}{" "}
+            no readable live switch — shown as unknown rather than assumed off.
           </p>
         )}
       </div>

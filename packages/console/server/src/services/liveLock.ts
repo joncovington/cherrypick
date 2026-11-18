@@ -19,10 +19,51 @@ import { readJson } from "../readers/db.js";
 
 export interface ModuleGate {
   id: string;
-  /** null = no readable config. Unknown is not the same as off, and must never render as one. */
+  /**
+   * null = a module with a live path whose switch cannot be read. Unknown is not the same as off,
+   * and must never render as one. A module with no live path is false: it cannot trade live.
+   */
   liveEnabled: boolean | null;
+  /** Whether the module has a live loop at all (`LIVE_PATH_MODULES`). False = paper by construction. */
+  livePath: boolean;
+  /** The module's switch in the orchestrator config (`modules.<id>.enabled`); null when not listed. */
+  moduleEnabled: boolean | null;
   /** flies only: the human attestation string's presence (never its text). */
   gate0Confirmed?: boolean;
+}
+
+/**
+ * The modules with a live loop. A MIRROR of the orchestrator's `config.LIVE_PATH_MODULES`, which a
+ * test there keeps equal to the packages that ship a `live_loop.py`; `test/live-path-mirror.test.ts`
+ * pins this copy to that one. Kept here rather than bridged because the lock is polled.
+ */
+export const LIVE_PATH_MODULES: readonly string[] = ["bwb", "flies", "meic"];
+
+/** Read from the module's own file and ignored there: earnings went paper-only in v0.12.0. */
+const PAPER_ONLY_MODULES: readonly string[] = ["earnings"];
+
+function readSwitch(doc: Record<string, unknown> | null): { live: boolean | null; gate0Confirmed?: boolean } {
+  if (doc === null) return { live: null };
+  const top = doc["enable_live_trading"];
+  if (typeof top === "boolean") return { live: top };
+  const live = doc["live"];
+  if (typeof live === "object" && live !== null) {
+    const nested = live as Record<string, unknown>;
+    const gate0 = nested["gate0_confirmed"];
+    return {
+      live: typeof nested["enabled"] === "boolean" ? (nested["enabled"] as boolean) : null,
+      gate0Confirmed: typeof gate0 === "string" && gate0.trim() !== "",
+    };
+  }
+  return { live: null };
+}
+
+function moduleSwitch(config: ConsoleConfig, id: string): boolean | null {
+  const modules = (readJson(config.paths.orchestratorConfig) ?? {})["modules"];
+  if (typeof modules !== "object" || modules === null || Array.isArray(modules)) return null;
+  const entry = (modules as Record<string, unknown>)[id];
+  if (typeof entry !== "object" || entry === null) return null;
+  return (entry as Record<string, unknown>)["enabled"] === true;
 }
 
 export interface LockStatus {
@@ -36,30 +77,22 @@ export interface LockStatus {
 
 /**
  * A module's live gate, covering BOTH conventions the suite uses: a top-level
- * `enable_live_trading` (meic) and the nested `live.enabled` (flies, and now calendars/
- * pmcc as inert placeholders — see their config `_live_note`: no loop reads the field yet, it exists
- * only so this surface can report "paper only" instead of blurring "no live path built" with "gate
- * file missing"). Reading only the top-level form reports a nested-gate module as paper-only even
- * while armed — the same trap `liveops._live_enabled` documents on the Python side.
+ * `enable_live_trading` (meic) and the nested `live.enabled` (flies, bwb). Reading only the
+ * top-level form reports a nested-gate module as paper-only even while armed — the same trap
+ * `liveops._live_enabled` documents on the Python side.
+ *
+ * Whether the module has a live path decides what a missing switch means. With one, a switch that
+ * cannot be read is unknown; without one, the module is paper by construction and reads false.
+ * The switch is still read for every module except earnings, so one found ON outside the live-path
+ * set is reported as on, never hidden behind "no live path".
  */
 export function readModuleGate(config: ConsoleConfig, id: string): ModuleGate {
-  // Earnings is paper-only since v0.12.0 and ignores a leftover switch in its file, so it is never live.
-  if (id === "earnings") return { id, liveEnabled: false };
-  const doc = readJson(path.join(config.paths.cherrypick, "config", `${id}.json`));
-  if (doc === null) return { id, liveEnabled: null };
-  const top = doc["enable_live_trading"];
-  if (typeof top === "boolean") return { id, liveEnabled: top };
-  const live = doc["live"];
-  if (typeof live === "object" && live !== null) {
-    const nested = live as Record<string, unknown>;
-    const gate0 = nested["gate0_confirmed"];
-    return {
-      id,
-      liveEnabled: typeof nested["enabled"] === "boolean" ? (nested["enabled"] as boolean) : null,
-      gate0Confirmed: typeof gate0 === "string" && gate0.trim() !== "",
-    };
-  }
-  return { id, liveEnabled: null };
+  const livePath = LIVE_PATH_MODULES.includes(id);
+  const moduleEnabled = moduleSwitch(config, id);
+  if (PAPER_ONLY_MODULES.includes(id)) return { id, liveEnabled: false, livePath, moduleEnabled };
+  const { live, gate0Confirmed } = readSwitch(readJson(path.join(config.paths.cherrypick, "config", `${id}.json`)));
+  const liveEnabled = live === true ? true : livePath ? live : false;
+  return { id, liveEnabled, livePath, moduleEnabled, ...(gate0Confirmed === undefined ? {} : { gate0Confirmed }) };
 }
 
 /** Today in ET — the session date every per-day gate is measured against. */
