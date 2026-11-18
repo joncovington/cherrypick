@@ -11439,6 +11439,46 @@ svg.vol-curve text {
   border-radius: 3px;
   background: var(--chart-neutral);
 }
+.builder-robustness-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
+  gap: 0.75rem;
+}
+.builder-robustness-item {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.6rem 0.75rem;
+  background: var(--surface);
+  min-width: 0;
+}
+.builder-robustness-item h5 {
+  margin: 0 0 0.35rem;
+  font-size: 0.85rem;
+}
+.builder-robustness-item p {
+  margin: 0.25rem 0;
+}
+.builder-quarters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin-top: 0.4rem;
+}
+.builder-quarter {
+  font-size: 0.7rem;
+  padding: 1px 4px;
+  border-radius: 4px;
+  color: var(--surface);
+}
+.builder-quarter.up {
+  background: var(--accent);
+}
+.builder-quarter.down {
+  background: var(--neg);
+}
+.builder-quarter.thin {
+  opacity: 0.4;
+}
 .builder-run-changes {
   margin: 0;
   padding-left: 1.25rem;

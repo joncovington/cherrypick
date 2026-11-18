@@ -393,7 +393,11 @@ and `read automation-run` (`automationcards.py`, pure): the net is the verdict k
 gross - fees - settlement - slippage = P&L, with the run's own `net["mid"]` beside it as net at mid
 (P&L before slippage, context only), trades fall in their exit year, the drawdown is the closed
 trades', skips are the driver's own reasons without `entered`, and a change is a key of the automation
-each run stored (its switch and notes ignored).
+each run stored (its switch and notes ignored). `robustness` holds the study kit's reads of the same
+trades, in-sample and never a verdict: the 5 best exit sessions (`core.robustness.best_sessions`),
+per-trade net with fees and slippage at 1.5x and 2x (settlement never scaled), the block bootstrap
+drawdown over the run's own length (resamples cut as runs grow, floor 400, the count shown), and exit
+quarters, a quarter counting only with 10 or more sessions traded.
 
 **The advisor's specs** (`run-advised`, `advised.py`): the advisor queues `backtest_spec` replies it
 admitted against flies' own advice bounds (off until `advisor.backtest_proposals`); this reads the

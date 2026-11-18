@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { renderToString } from "react-dom/server";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { BuilderRunCard, BuilderRuns } from "@console/shared";
+import type { BuilderRunCard, BuilderRunRobustness, BuilderRuns } from "@console/shared";
 import { changeLine, chartPaths, clock, ExploreRunsList, legChain, RunCardView, runLabel } from "../src/pages/Builder/BuilderRunCard";
 
 const html = (el: React.ReactElement) =>
@@ -126,5 +126,62 @@ describe("one run's card", () => {
     expect(Math.max(...ys)).toBeCloseTo(p.ddTop + 60);
     expect(Number(p.zero)).toBeGreaterThan(8);
     expect(Number(p.zero)).toBeLessThan(212);
+  });
+
+  const robust: BuilderRunRobustness = {
+    best_sessions: { k: 5, n: 40, sessions: [], best_net: 900, total_net: 1000, share: 0.9, rest_mean: -2.5, rests_on_best: true },
+    cost_stress: {
+      rows: [
+        { multiplier: 1, mean_net: 4 },
+        { multiplier: 1.5, mean_net: 1.5 },
+        { multiplier: 2, mean_net: -1 },
+      ],
+      pass_stress: 1.5,
+      survives: true,
+    },
+    drawdown: {
+      actual: 130,
+      evidence_trades: 120,
+      horizon: 120,
+      resamples: 2000,
+      drawdown_reduce: 310,
+      drawdown_block: 420,
+      streak_reduce: 6,
+      streak_block: 8,
+    },
+    quarters: {
+      rows: [
+        { quarter: "2025-Q1", trades: 30, sessions: 20, net: 300, counted: true },
+        { quarter: "2025-Q2", trades: 30, sessions: 20, net: -50, counted: true },
+        { quarter: "2025-Q3", trades: 3, sessions: 3, net: 40, counted: false },
+      ],
+      min_sessions: 10,
+      counted: 2,
+      profitable: 1,
+    },
+  };
+
+  it("shows how the run holds up, and says when the result is its best days", () => {
+    const out = html(<RunCardView card={{ ...card, robustness: robust }} />);
+    expect(out).toContain("How it holds up");
+    expect(out).toContain("the result is those days");
+    expect(out).toContain("$900.00 of $1000.00 · 90%");
+    expect(out).toContain("Still pays at 1.5×");
+    expect(out).toContain("p95 -$310.00");
+    expect(out).toContain("1 of 2 profitable");
+    expect(out).toContain("1 thinner shown, not counted");
+    expect(out).toMatch(/class="builder-quarter up thin"/);
+  });
+
+  it("says when a run is too short to read, and leaves the section out for an older run", () => {
+    const thin: BuilderRunRobustness = {
+      ...robust,
+      best_sessions: { k: 5, n: 3, insufficient: true },
+      drawdown: { actual: 130, insufficient: true, evidence_trades: 4, min_evidence: 100 },
+    };
+    const out = html(<RunCardView card={{ ...card, robustness: thin }} />);
+    expect(out).toContain("Too few sessions (3)");
+    expect(out).toContain("Too few trades to reshuffle (4 of 100)");
+    expect(html(<RunCardView card={card} />)).not.toContain("How it holds up");
   });
 });

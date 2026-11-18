@@ -415,6 +415,51 @@ export interface BuilderRunYear {
   max_dd: number;
 }
 
+/** One exit quarter of a run; `counted` once it has enough sessions to count. */
+export interface BuilderRunQuarter {
+  quarter: string;
+  trades: number;
+  sessions: number;
+  net: number;
+  counted: boolean;
+}
+
+/**
+ * The study kit's robustness reads over one run's trades (`automationcards.robustness_reads`):
+ * in-sample, one run, never a verdict.
+ */
+export interface BuilderRunRobustness {
+  best_sessions:
+    | { k: number; n: number; insufficient: true }
+    | {
+        k: number;
+        n: number;
+        sessions: string[];
+        best_net: number;
+        total_net: number;
+        /** The best sessions' part of a positive total; null when the total is zero or below. */
+        share: number | null;
+        rest_mean: number;
+        rests_on_best: boolean;
+      };
+  /** Mean net per trade with fees and slippage scaled; settlement does not scale. */
+  cost_stress: { rows: Array<{ multiplier: number; mean_net: number | null }>; pass_stress: number; survives: boolean } | null;
+  /** Losses as positive dollars. Under the evidence floor only `insufficient` and the counts. */
+  drawdown: {
+    actual: number;
+    insufficient?: true;
+    evidence_trades: number;
+    min_evidence?: number;
+    horizon?: number;
+    resamples?: number;
+    drawdown_reduce?: number;
+    drawdown_block?: number;
+    streak_reduce?: number;
+    streak_block?: number;
+  };
+  quarters: { rows: BuilderRunQuarter[]; min_sessions: number; counted: number; profitable: number };
+}
+
 /** One closed trade as the run recorded it. */
 export interface BuilderRunTrade {
   session: string | null;
@@ -461,6 +506,8 @@ export interface BuilderRunCard {
   };
   curve: Array<{ i: number; session: string | null; net: number; gross: number; dd: number }>;
   years: BuilderRunYear[];
+  /** Absent on a card read by an older backtest package. */
+  robustness?: BuilderRunRobustness;
   skips: Array<{ reason: string; sessions: number }>;
   previous: string | null;
   changes: BuilderRunChange[];

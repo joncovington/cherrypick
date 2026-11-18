@@ -22,6 +22,9 @@ beyond the latest release.
 
 ### What's new
 
+- **How a Builder run holds up.** The run card gains the reads a study gets, from the same trades
+  and never a verdict: what the 5 best days carry, P&L per trade with costs at 1.5x and 2x, the
+  drawdown range with the trades reshuffled, and how many quarters were profitable.
 - **Add an underlying to the full set from the Builder.** Where our data does not cover an
   automation on an underlying outside the full set's seven, the Builder offers to add it: the plan
   first (requests and sessions, a year back by default), then one click queues its fetches on the

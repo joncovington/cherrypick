@@ -2,7 +2,7 @@
 
 The driver (`packages/backtest/scripts/automation_backtest.py`) writes each result with every closed
 trade (its gross, fees, settlement and slippage, and its net per pricing kind) and, per automation, why
-each session did or did not enter. This reads those back and computes nothing the run did not record:
+each session did or did not enter. This reads those back; its money figures are the run's own:
 
 - **The net is the verdict kind's** (`net["verdict"]`, the suite's slippage model), as paper's P&L is.
   Gross, fees, settlement and the verdict slippage each keep their own column, and on every row
@@ -14,6 +14,8 @@ each session did or did not enter. This reads those back and computes nothing th
   year. The drawdown is the closed trades' cumulative net below its running peak.
 - **Why sessions were skipped** is the driver's own count of each session's last reason, `entered`
   left out.
+- **Robustness reads** (`robustness_reads`) are the study kit's reads of the same trades: best
+  sessions, cost stress, the bootstrap drawdown range and profitable quarters. In-sample, one run.
 - **What a run changed** is the difference between this run's stored automation and the previous
   run's (by `generated_at`), key by key.
 
@@ -23,6 +25,8 @@ Description only: no trial, no verdict, nothing to the advisor.
 from __future__ import annotations
 
 from typing import Any
+
+from cherrypick.core import robustness
 
 KIND = "verdict"
 #: The curve's most points: a long run is thinned evenly, keeping its last trade.
@@ -136,6 +140,92 @@ def tiles(trades: list[dict], sessions: int | None) -> dict:
     }
 
 
+#: A quarter counts toward "profitable quarters" only with at least this many sessions traded.
+QUARTER_MIN_SESSIONS = 10
+#: The drawdown bootstrap's resample count for a card: fewer than a kill-criteria derive's, because the
+#: card is read on demand. The work is resamples x the run's length, so a long run gets fewer
+#: resamples (never under the floor); the card shows the count used.
+CARD_RESAMPLES = 2_000
+CARD_RESAMPLES_FLOOR = 400
+CARD_BOOTSTRAP_WORK = 1_000_000
+
+
+def card_resamples(n_trades: int) -> int:
+    return max(CARD_RESAMPLES_FLOOR, min(CARD_RESAMPLES, CARD_BOOTSTRAP_WORK // max(1, n_trades)))
+
+
+def _quarter(t: dict) -> str:
+    s = str(t.get("exit_session") or t.get("session") or "")
+    return f"{s[:4]}-Q{(int(s[5:7]) - 1) // 3 + 1}" if len(s) >= 7 and s[5:7].isdigit() else "?"
+
+
+def quarters(trades: list[dict], min_sessions: int = QUARTER_MIN_SESSIONS) -> dict:
+    """Each exit quarter's trades, sessions traded and net, and how many quarters with at least
+    `min_sessions` sessions were profitable. A thinner quarter is shown, never counted."""
+    by: dict[str, list[dict]] = {}
+    for t in ordered(trades):
+        by.setdefault(_quarter(t), []).append(t)
+    rows = []
+    for q, ts in sorted(by.items()):
+        n_sessions = len({t.get("exit_session") or t.get("session") for t in ts})
+        net = round(sum(_net(t) for t in ts), 2)
+        rows.append(
+            {
+                "quarter": q,
+                "trades": len(ts),
+                "sessions": n_sessions,
+                "net": net,
+                "counted": n_sessions >= min_sessions,
+            }
+        )
+    counted = [r for r in rows if r["counted"]]
+    return {
+        "rows": rows,
+        "min_sessions": min_sessions,
+        "counted": len(counted),
+        "profitable": sum(1 for r in counted if r["net"] > 0),
+    }
+
+
+def robustness_reads(trades: list[dict]) -> dict:
+    """The study kit's robustness reads, over this one run's trades: description, never a verdict.
+
+    - `best_sessions`: what the 5 best exit sessions carry (`core.robustness.best_sessions`).
+    - `cost_stress`: mean net per trade with fees and slippage scaled by 1.5x and 2x. Settlement is
+      left out: it is the exercise or assignment charge, which does not move with the fill.
+    - `drawdown`: the stationary block bootstrap of the trades in close order, over a horizon of the
+      run's own length, beside the run's actual max drawdown (both as losses, >= 0).
+    - `quarters`: see `quarters`."""
+    ts = ordered(trades)
+    by_session: dict[str, float] = {}
+    for t in ts:
+        s = str(t.get("exit_session") or t.get("session") or "")
+        by_session[s] = by_session.get(s, 0.0) + _net(t)
+    nets = [_net(t) for t in ts]
+    costs = [_num(t.get("fees")) + _slip(t) for t in ts]
+    stress = robustness.cost_stress(nets, costs) if ts else None
+    if ts:
+        boot = robustness.drawdown_range(
+            nets, sessions=len(by_session), horizon=len(ts), resamples=card_resamples(len(ts))
+        )
+    else:
+        boot = {"insufficient": True, "evidence_trades": 0}
+    return {
+        "best_sessions": robustness.best_sessions(by_session),
+        "cost_stress": None
+        if stress is None
+        else {
+            "rows": [
+                {"multiplier": m, "mean_net": v} for m, v in sorted(stress["mean_by_multiplier"].items())
+            ],
+            "pass_stress": stress["pass_stress"],
+            "survives": stress["survives"],
+        },
+        "drawdown": {"actual": -max_drawdown(trades), **boot},
+        "quarters": quarters(trades),
+    }
+
+
 def skips(reasons: dict | None) -> list[dict]:
     """Why sessions did not enter, most first; `entered` is not a skip."""
     rows = [
@@ -223,6 +313,7 @@ def card(doc: dict, name: str, previous: dict | None = None) -> dict:
         "tiles": tiles(trades, summary.get("sessions", doc.get("session_count"))),
         "curve": curve(trades),
         "years": years(trades),
+        "robustness": robustness_reads(trades),
         "skips": skips(summary.get("reasons")),
         "previous": previous.get("name") if previous else None,
         "changes": changes(automation_of(previous, name) if previous else None, automation_of(doc, name)),
