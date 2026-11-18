@@ -42,7 +42,8 @@ that defaulted silently would change what is measured):
                   "stop_credit_multiple": m (a credit entry's loss at m times its credit),
                   "stop_debit_pct": p (a debit entry's loss at p% of its debit),
                   "stop_dollars": x, "profit_dollars": x (open P&L, whole-position dollars),
-                  "trailing_stop": {"dollars": d, "activate_dollars": a},
+                  "trailing_stop": {"dollars": d, "activate_dollars": a}
+                  or {"pct": p, "activate_pct": a} (% of the trade's max profit),
                   "avoid_events": {"labels": [...], "before_close_min": n} (a forced close the
                   session before a listed event),
                   "max_spread": x (no exit while the structure's bid/ask is wider than $x a share),
@@ -637,13 +638,23 @@ def _num(v) -> bool:
 
 
 def _trailing_ok(v) -> bool:
-    return (
-        isinstance(v, dict)
-        and set(v) <= {"dollars", "activate_dollars"}
-        and _num(v.get("dollars"))
-        and v["dollars"] > 0
-        and (_num(v.get("activate_dollars", 0)) and v.get("activate_dollars", 0) >= 0)
-    )
+    """In dollars (`dollars`, `activate_dollars`) or in percent of the trade's max profit (`pct` above 0
+    and at most 100, `activate_pct` 0 or more), never the two mixed."""
+    if not isinstance(v, dict):
+        return False
+    if set(v) <= {"dollars", "activate_dollars"}:
+        return (
+            _num(v.get("dollars"))
+            and v["dollars"] > 0
+            and (_num(v.get("activate_dollars", 0)) and v.get("activate_dollars", 0) >= 0)
+        )
+    if set(v) <= {"pct", "activate_pct"}:
+        return (
+            _num(v.get("pct"))
+            and 0 < v["pct"] <= 100
+            and (_num(v.get("activate_pct", 0)) and v.get("activate_pct", 0) >= 0)
+        )
+    return False
 
 
 def _avoid_ok(v) -> bool:

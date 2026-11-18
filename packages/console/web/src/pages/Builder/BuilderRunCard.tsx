@@ -195,6 +195,7 @@ export function RunCardView({ card }: { card: BuilderRunCard }) {
       </p>
       <div className="builder-tiles">
         <Tile label="P&L" value={fmtMoney(t.net)} foot="net of fees, settlement, slippage" />
+        {t.net_mid !== undefined && <Tile label="Net at mid" value={fmtMoney(t.net_mid)} foot="filled at mid: P&L before slippage" />}
         <Tile label="Trades" value={String(t.trades)} foot={t.sessions !== null ? `of ${t.sessions} sessions` : undefined} />
         <Tile label="Per trade" value={fmtMoney(t.per_trade)} foot="net" />
         <Tile label="Win rate" value={t.win_rate === null ? "—" : `${Math.round(t.win_rate * 100)}%`} />
@@ -248,6 +249,9 @@ export function RunCardView({ card }: { card: BuilderRunCard }) {
                   <th scope="col">Settlement</th>
                   <th scope="col">Slippage</th>
                   <th scope="col">P&amp;L</th>
+                  <th scope="col" title="gross - fees - settlement: the same trades filled at mid, before slippage">
+                    Net at mid
+                  </th>
                   <th scope="col">Max DD</th>
                 </tr>
               </thead>
@@ -261,6 +265,7 @@ export function RunCardView({ card }: { card: BuilderRunCard }) {
                     <td>{fmtMoney(y.settlement)}</td>
                     <td>{fmtMoney(y.slippage)}</td>
                     <td>{fmtMoney(y.net)}</td>
+                    <td>{y.net_mid === undefined ? "—" : fmtMoney(y.net_mid)}</td>
                     <td>{fmtMoney(y.max_dd)}</td>
                   </tr>
                 ))}

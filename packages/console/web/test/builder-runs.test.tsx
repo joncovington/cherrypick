@@ -81,15 +81,15 @@ describe("one run's card", () => {
     still_open: 0,
     generated_at: null,
     licensed: false,
-    tiles: { net: 10, gross: 40, trades: 4, sessions: 23, per_trade: 2.5, win_rate: 0.5, max_dd: -130, net_over_dd: 0.08 },
+    tiles: { net: 10, net_mid: 12, gross: 40, trades: 4, sessions: 23, per_trade: 2.5, win_rate: 0.5, max_dd: -130, net_over_dd: 0.08 },
     curve: [
       { i: 1, session: "2025-03-03", net: 100, gross: 110, dd: 0 },
       { i: 2, session: "2025-06-02", net: 20, gross: 40, dd: -80 },
       { i: 3, session: "2026-01-02", net: -30, gross: 0, dd: -130 },
     ],
     years: [
-      { period: "2025", trades: 2, gross: 40, fees: 2.6, settlement: 12, slippage: 1, net: 24.4, max_dd: -80 },
-      { period: "All", trades: 2, gross: 40, fees: 2.6, settlement: 12, slippage: 1, net: 24.4, max_dd: -80 },
+      { period: "2025", trades: 2, gross: 40, fees: 2.6, settlement: 12, slippage: 1, net: 24.4, net_mid: 25.4, max_dd: -80 },
+      { period: "All", trades: 2, gross: 40, fees: 2.6, settlement: 12, slippage: 1, net: 24.4, net_mid: 25.4, max_dd: -80 },
     ],
     skips: [{ reason: "no_signal", sessions: 19 }],
     previous: "builder-mine-2611151730",
@@ -107,6 +107,17 @@ describe("one run's card", () => {
     expect(out).toContain("exit.stop: 1.5 → 2");
     expect(out).toContain("11-15 17:30 → 11-16 17:30");
     expect(out).toMatch(/<button[^>]*disabled[^>]*>Declare this spec…<\/button>/);
+  });
+
+  it("shows the net at mid beside the P&L, labelled as before slippage, and a dash for an older run", () => {
+    const out = html(<RunCardView card={card} />);
+    expect(out).toContain("Net at mid");
+    expect(out).toContain("filled at mid: P&amp;L before slippage");
+    expect(out).toContain("$25.40");
+    const old = { ...card, tiles: { ...card.tiles, net_mid: undefined }, years: card.years.map(({ net_mid: _m, ...y }) => y) };
+    const before = html(<RunCardView card={old} />);
+    expect(before).not.toContain("filled at mid: P&amp;L");
+    expect(before).toContain("<td>—</td>");
   });
 
   it("puts the worst drawdown lowest and the zero line between the net's high and low", () => {
