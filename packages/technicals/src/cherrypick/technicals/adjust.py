@@ -15,6 +15,7 @@ That is why adjusted prices are stored and returned UNROUNDED: rounding is a dis
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 
@@ -113,8 +114,31 @@ def adjust(bars: list[Bar], splits: list[Split] = (), dividends: list[Dividend] 
 #   2026-05-21; SPCX x8.8; HUT x4.6 at the 2023 merger). A one-day move beyond BREAK_RATIO either way,
 #   on adjusted closes, starts the series over. Genuine one-day moves this large are rare enough that
 #   losing one to this rule costs less than one silently wrong 6-month return.
+# - Dolt records some splits the prices never made (SKYD's 2-for-1 on 2026-10-14: 9.27 to an open of
+#   7.60; ENVX's 5-for-4 on 2026-11-13: 1.805 to 1.82). Applying one scales all the history before
+#   it. A split of at least JUDGED_RATIO either way is dropped when the ex-date's overnight gap
+#   (prior raw close to raw open) is nearer, in log terms, to no move than to the split's ratio.
+#   Smaller splits (scrip dividends) cannot be told from a day's move and are always kept; a real
+#   reverse split of a thin name gaps well off its ratio (CHPT's 1-for-20 opened at 15.6x) but stays
+#   nearer it than to 1. Of the 69 judged splits in the store on 2026-11-18 this drops four: SKYD,
+#   ENVX, and the false halves of APH's and CNQ's doubled rows.
 DUPLICATE_DAYS = 20
 BREAK_RATIO = 3.0
+JUDGED_RATIO = 1.2
+
+
+def contradicted(bars: list[Bar], split: Split) -> bool:
+    """True when the raw overnight gap on the split's ex-date says no split happened. False when it
+    cannot be judged: a split under JUDGED_RATIO, or an ex-date with no session before and on it.
+    `bars` in date order."""
+    ratio = math.log(split.for_factor / split.to_factor)
+    if abs(ratio) < math.log(JUDGED_RATIO):
+        return False
+    i = next((k for k, b in enumerate(bars) if b.date >= split.ex_date), None)
+    if not i or bars[i - 1].close <= 0 or bars[i].open <= 0:
+        return False
+    gap = math.log(bars[i].open / bars[i - 1].close)
+    return abs(gap) < abs(gap - ratio)
 
 
 def dedupe_splits(bars: list[Bar], splits: list[Split]) -> list[Split]:
@@ -135,7 +159,8 @@ def dedupe_splits(bars: list[Bar], splits: list[Split]) -> list[Split]:
 
     kept: list[Split] = []
     # A zero factor is a bad row; `adjust` ignores it too, and it would divide by zero here.
-    valid = [s for s in splits if s.to_factor > 0 and s.for_factor > 0]
+    ordered = sorted(bars, key=lambda b: b.date)
+    valid = [s for s in splits if s.to_factor > 0 and s.for_factor > 0 and not contradicted(ordered, s)]
     for s in sorted(valid, key=lambda x: x.ex_date):
 
         def near(k: Split, s: Split = s) -> bool:

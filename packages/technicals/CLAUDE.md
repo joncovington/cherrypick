@@ -48,7 +48,9 @@ between corporate actions whatever its level.
   chart misses dividends, 57 names on the first run -- ACN's 2026-01-13 1.63 is in neither its
   events nor its adjusted closes); `small split: ours only` (scrip dividends and small
   consolidations Yahoo does not adjust for: PHG, NGG, FER, TRI, OPEN); excursions (two steps that
-  undo each other within ten sessions, no event).
+  undo each other within ten sessions, no event). A split both sides list on one day with ratios
+  within 0.25% (`SPLIT_ROUNDING`: Yahoo states SCCO's 1.0106 stock dividend as 101:100) is one
+  event, so the step is classed by its dividends.
 - Everything else fails unless declared with its reason: `KNOWN_DIVIDEND_NAMES` excuses only a
   name's differing dividend amounts (the CAD-dividend names and four ADRs; a split on them still
   fails), `KNOWN_STEPS` one dated step. A Yahoo file more than five days behind the store is `stale`
@@ -64,10 +66,13 @@ today, a name that went ex after its capture agreed on 0 bars and placed none of
 comparison misses every name that went ex after its capture). The chart file, `check-vendor`
 and the trend/level scorers all use it; a test fails if the chart file stops.
 
-**Two Dolt defects are corrected before adjustment** (`adjust.dedupe_splits`,
-`adjust.series_break`): of two same-ratio splits within 20 days only the one the raw prices jump on
-is kept; a one-day move beyond 3x either way (a ticker that changed hands) starts the series over.
-Real large moves (GME, MRNA) are kept.
+**Three Dolt defects are corrected before adjustment** (`adjust.dedupe_splits`,
+`adjust.series_break`): a split of 6:5 or more either way whose ex-date gap (prior raw close to raw
+open) is nearer no move than its ratio is dropped (`adjust.contradicted`: SKYD's 2:1, ENVX's 5:4;
+smaller splits cannot be judged from a day's move and are kept, and real reverse splits that gap off
+their ratio, CHPT and FCEL, stay nearer it); of two same-ratio splits within 20 days only the one the
+raw prices jump on is kept; a one-day move beyond 3x either way (a ticker that changed hands) starts
+the series over. Real large moves (GME, MRNA) are kept.
 
 **A split Dolt misses is fetched once, by hand.** Dolt can hold only some of a fund's splits
 (three of TQQQ's eight), and tastytrade has no split endpoint. `scripts/fetch_split_history.py SYMBOL` reads a

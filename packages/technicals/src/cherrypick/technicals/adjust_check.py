@@ -83,6 +83,9 @@ MIN_OVERLAP = 20  # sessions both hold, or the name is reported too short to rea
 SPLIT_RATIOS = (2, 3, 4, 5, 8, 10, 15, 20, 1.5)
 SPLIT_FIT = 0.03
 SMALL_SPLIT = 0.05
+# Yahoo rounds a stock dividend's ratio (SCCO's 1.0106 stated 101:100 on 2026-11-03). Splits both
+# sides list on one day that agree this closely are one event, and the step is read as a dividend.
+SPLIT_ROUNDING = 0.0025
 DIVIDEND_MAX = 0.10
 EVENT_DAYS = 3
 STALE_DAYS = 5  # calendar days Yahoo's newest session may trail the store's (a long weekend is 4)
@@ -194,6 +197,14 @@ def split_sized(size: float) -> bool:
     return any(abs(size / ratio - 1) <= SPLIT_FIT for r in SPLIT_RATIOS for ratio in (r, 1 / r))
 
 
+def same_splits(ours: list, theirs: list) -> bool:
+    """One split on each side, the same day, ratios within SPLIT_ROUNDING: the same event."""
+    if len(ours) != 1 or len(theirs) != 1 or ours[0][0] != theirs[0][0]:
+        return False
+    a, b = ours[0][1] / ours[0][2], theirs[0][1] / theirs[0][2]
+    return abs(math.log(a / b)) <= SPLIT_ROUNDING
+
+
 def cause(size: float, ours: dict, yahoo: dict) -> str:
     """The likely cause of one step, from its size and the events each side lists near it."""
     if ours["splits"] or yahoo["splits"]:
@@ -206,7 +217,9 @@ def cause(size: float, ours: dict, yahoo: dict) -> str:
                 if small and abs(math.log(size)) <= math.log(1 + SMALL_SPLIT)
                 else "split: ours only"
             )
-        return "split: both list one, ratio or date differs"
+        if not same_splits(ours["splits"], yahoo["splits"]):
+            return "split: both list one, ratio or date differs"
+        return cause(size, {**ours, "splits": []}, {**yahoo, "splits": []})
     if split_sized(size):
         return "split-sized: neither lists a split"
     if abs(math.log(size)) <= math.log(1 + DIVIDEND_MAX):

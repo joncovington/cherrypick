@@ -218,11 +218,50 @@ def test_a_scrip_sized_split_only_we_apply_does_not_fail_and_a_real_one_does(day
     """Yahoo does not adjust for a scrip dividend (NGG, PHG, FER on the first run)."""
     bars = _raw(days)
     _land("AAA", bars, splits=[adjust.Split(days[45], 1.02, 1)], yahoo_closes=_yahoo_truth(bars))
-    _land("BBB", bars, splits=[adjust.Split(days[45], 2, 1)], yahoo_closes=_yahoo_truth(bars))
+    split = _raw(days, split_on=days[45])
+    _land("BBB", split, splits=[adjust.Split(days[45], 2, 1)], yahoo_closes=_yahoo_truth(split))
     result = adjust_check.check(names=["AAA", "BBB"])
     assert result["small_splits"]["AAA"][0]["cause"] == "small split: ours only"
     assert "AAA" not in result["by_symbol"]
     assert result["by_symbol"]["BBB"]["steps"][0]["cause"] == "split: ours only"
+
+
+def test_a_split_dolt_states_but_the_prices_never_made_is_not_applied(days):
+    """SKYD's 2-for-1 and ENVX's 5-for-4 (2026-10-14, 2026-11-13): no gap on the day, so our
+    series is left whole and agrees with Yahoo's."""
+    bars = _raw(days)
+    _land("AAA", bars, splits=[adjust.Split(days[45], 2, 1)], yahoo_closes=_yahoo_truth(bars))
+    _land("BBB", bars, splits=[adjust.Split(days[45], 5, 4)], yahoo_closes=_yahoo_truth(bars))
+    result = adjust_check.check(names=["AAA", "BBB"])
+    assert result["disagree"] == 0 and result["agree"] == 2
+
+
+def test_a_stock_dividend_yahoo_rounds_plus_a_cash_dividend_it_lacks_is_its_gap(days):
+    """SCCO on 2026-11-03: ours 1.0106 and 1.30 cash, Yahoo's 101:100 and no cash yet."""
+    ex = days[45]
+    bars = _raw(days, split_on=ex, ratio=1.0106)
+    ours_split, cash = adjust.Split(ex, 1.0106, 1), adjust.Dividend(ex, 1.3)
+    truth = _yahoo_truth(bars, [adjust.Split(ex, 1.01, 1)])
+    _land(
+        "AAA",
+        bars,
+        splits=[ours_split],
+        dividends=[cash],
+        yahoo_closes=truth,
+        yahoo_splits=[(ex, 101.0, 100.0)],
+    )
+    _land(
+        "BBB",
+        bars,
+        splits=[ours_split],
+        dividends=[cash],
+        yahoo_closes=truth,
+        yahoo_splits=[(ex, 102.0, 100.0)],
+    )
+    result = adjust_check.check(names=["AAA", "BBB"])
+    assert "AAA" not in result["by_symbol"]
+    assert result["yahoo_gaps"]["AAA"][0]["cause"] == "dividend: ours only"
+    assert result["by_symbol"]["BBB"]["steps"][0]["cause"] == "split: both list one, ratio or date differs"
 
 
 def test_a_yahoo_file_that_stopped_updating_is_stale(days):
