@@ -30,6 +30,10 @@ beyond the latest release.
   Declare and Promote to paper shown disabled. Beside it, **Today, live** decides the automation
   now as paper would, on a read-only snapshot (`cli builder-today`): every check, and the legs it
   would take or the check that stops it. The explore runs and run cards sit beside it too.
+- **A daily signal on the developing bar.** A daily trigger takes `"developing": true` (with `within`
+  null) to read today's bar as it stands each minute: the session's open, its high and low so far
+  and the price now. It is due at any minute in the window when the signal fires on that bar. A
+  daily trigger without it still acts on yesterday's completed bar.
 - **A gap measured at the first bar's close.** The gap signal takes `at: "first_bar_close"` to read
   the session's first bar's close (9:35 on five-minute bars) instead of its open. Without it a gap
   reads, and versions, as before.

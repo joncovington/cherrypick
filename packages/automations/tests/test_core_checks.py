@@ -359,6 +359,20 @@ def test_a_daily_trigger_enters_today_on_yesterdays_completed_close():
     assert engine.decide(arm, no_open).checks[-1][2] == "stale_bars"
 
 
+def test_a_developing_daily_trigger_reads_todays_bar_from_the_trail():
+    # Yesterday closed under 6000; today's spot is above it, so today's bar crosses as it stands.
+    trig = {**DAILY_UP, "within": None, "developing": True}
+    arm = trigger_arm(trig)
+    assert not arms.validate(arm), arms.validate(arm)
+    rows = daily_rows([5990.0, 5992.0, 5995.0])
+    snap = dataclasses.replace(spx_snapshot(minute=610, spot=6005.0), daily=rows)
+    assert ("entry_due", True, 610) in engine.decide(arm, snap).checks
+    under = dataclasses.replace(spx_snapshot(minute=610, spot=5990.0), daily=rows)
+    assert engine.decide(arm, under).checks[-1][2] == "not_yet"
+    # The completed-bar trigger on the same snapshot reads yesterday only, which did not cross.
+    assert engine.decide(trigger_arm(DAILY_UP), snap).checks[-1][2] == "not_yet"
+
+
 def test_a_daily_signal_exit_closes_the_session_after_it_fires():
     down = {**DAILY_UP, "signal": {**DAILY_UP["signal"], "b": 5995.0, "direction": "below"}}
     _, pos = held({"signal": {"trigger": down}})

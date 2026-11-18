@@ -286,6 +286,40 @@ def test_a_daily_trigger_never_reads_todays_forming_bar_or_an_old_day():
         ec.validate_trigger(unseeded)
 
 
+def test_a_developing_daily_trigger_reads_todays_bar_as_it_stands_each_minute():
+    # Yesterday closed under 101; today's bar crosses only once the price is above it.
+    done = daily_bars([100, 100.5, 100.8])
+    t = {**daily_trigger(None), "developing": True}
+    under = ec.developing_bar(DAY, 100.9, [(570, 100.9), (590, 100.7)], 100.95)
+    assert ec.entry_due(t, now=at("10:10"), bars=[*done, under]).reason == "not_yet"
+    over = ec.developing_bar(DAY, 100.9, [(570, 100.9), (600, 101.3)], 101.2)
+    due = ec.entry_due(t, now=at("10:10"), bars=[*done, over])
+    assert due.due and due.fired == 610
+    # Outside the window, and back under it, it is not due.
+    assert not ec.entry_due(t, now=at("09:50"), bars=[*done, over]).due
+    assert ec.entry_due(t, now=at("11:01"), bars=[*done, over]).reason == "no_firing"
+    # A bar must stand for today, and the days before must reach yesterday.
+    assert ec.entry_due(t, now=at("10:10"), bars=done).reason == "no_developing_bar"
+    stale = daily_bars([100, 100.5, 100.8], last="2025-12-31")
+    assert ec.entry_due(t, now=at("10:10"), bars=[*stale, over]).reason == "stale_bars"
+    # The completed-bar trigger, given the same bars, still acts on yesterday only.
+    assert ec.entry_due(daily_trigger(None), now=at("10:10"), bars=[*done, over]).reason == "not_yet"
+
+
+def test_a_developing_bar_is_its_open_its_range_so_far_and_the_price_now():
+    b = ec.developing_bar(DAY, 100.0, [(570, 100.5), (600, 99.2), (620, 101.7)], 101.0)
+    assert (b.session, b.open, b.high, b.low, b.close) == (DAY, 100.0, 101.7, 99.2, 101.0)
+
+
+def test_developing_needs_a_daily_trigger_and_no_within():
+    with pytest.raises(ValueError, match="developing: true or false"):
+        ec.validate_trigger({**daily_trigger(None), "developing": "yes"})
+    with pytest.raises(ValueError, match="needs daily: true"):
+        ec.validate_trigger({**daily_trigger(None), "daily": False, "developing": True})
+    with pytest.raises(ValueError, match="within must be null"):
+        ec.validate_trigger({**daily_trigger(30), "developing": True})
+
+
 def test_the_trigger_answers_the_same_live_and_in_a_replay():
     """A loop ticking each minute on the bars completed so far and a replay over the whole day agree on
     when the entry was first due: no reading of a later bar."""

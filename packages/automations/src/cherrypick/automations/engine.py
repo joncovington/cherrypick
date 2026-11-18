@@ -132,6 +132,10 @@ def trigger_due(entry: dict, snap: Snapshot) -> tuple[bool, object]:
         bars = signals.daily(
             [r for r in snap.daily if r["session"] < snap.session and all(r.get(k) is not None for k in OHLC)]
         )
+        if entry["trigger"].get("developing"):
+            # Today's bar as it stands: the session's open, the trail's high and low so far, the spot now.
+            so_far = [(m, s) for m, s in snap.trail if m <= minute]
+            bars.append(entrychecks.developing_bar(snap.session, snap.day_open, so_far, snap.spot))
     else:
         # Earlier sessions first (the snapshot carries them for an arm that reads an intraday signal),
         # then today's bars completed by now: what a signal study over the whole history sees.

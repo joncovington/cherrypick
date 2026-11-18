@@ -74,7 +74,7 @@ and the entry reads `event_dates_unknown`, never quiet.
 **A daily signal** (a trigger with `"daily": true`, entry or exit, no `bar_minutes`) reads completed
 daily bars only: the snapshot carries the symbol's daily bars before the session (`Snapshot.daily`, only
 when an arm reads them, `arms.reads_daily`; the stream request then asks for `DAILY_HISTORY` sessions),
-and core acts today, from the window's open, on a firing on the previous trading day's close. Bars
+and core acts today, from the window's open, on a firing on the previous trading day's close. With `"developing": true` (and `within` null) it reads today's bar as it stands instead (`entrychecks.developing_bar`: the session's open, the trail's high and low so far, the spot now), and is due at each minute in the window when the signal fires on it. Bars
 that stop before that day read `stale_bars`. The item 75 backtest driver carries no daily bars, so a
 daily signal is backtested only once the automation driver exists (#1201).
 
