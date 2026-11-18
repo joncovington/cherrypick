@@ -66,6 +66,14 @@ export interface ResearchProgressPhase {
   current: string | null;
 }
 
+export interface ResearchProgressSymbol {
+  symbol: string;
+  done: number;
+  total: number | null;
+  /** done / total, 0-1; null without a total. */
+  share: number | null;
+}
+
 /** One job's progress, joined from its own file and its live children's (outermost phase first). */
 export interface ResearchProgress {
   /** The file stem: `q<id>` for a queued task, `<job>-<pid>` for a run started by hand. */
@@ -85,6 +93,9 @@ export interface ResearchProgress {
   ageSeconds: number | null;
   /** The orchestrator's one-line reading, e.g. "decisions 1/3 replays (vendor) · sessions 2/4 days". */
   line: string;
+  /** Each symbol's count, from the outermost phase that splits by symbol, in the job's order; empty
+   *  when none does. `total` is null for a symbol the job did not open with. */
+  bySymbol: ResearchProgressSymbol[];
   note: string | null;
   /** Epoch seconds. */
   startedAt: number | null;

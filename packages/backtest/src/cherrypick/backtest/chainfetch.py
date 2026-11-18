@@ -201,8 +201,9 @@ def fetch_chains(
         # Answered of the whole request list, as `progress` below counts it: a resumed fetch starts
         # where the last one stopped rather than at zero.
         rep = core_progress.Reporter("backtest-fetch-chains")
-        rep.phase("requests", total=len(requests), unit="chains")
-        rep.advance("requests", report["already"])
+        rep.split(
+            "requests", (k[0] for k in requests), unit="chains", done=(k[0] for k in requests if k in done)
+        )
         pending = iter(todo)
         with ThreadPoolExecutor(max(1, workers)) as ex:
             running = {}
@@ -249,7 +250,7 @@ def fetch_chains(
                         n = write_chain(conn, key, rows)
                         report["complete" if n else "empty"] += 1
                         report["rows"] += n
-                    rep.advance("requests", current=f"{key[0]} {key[1]}")
+                    rep.advance("requests", current=f"{key[0]} {key[1]}", key=key[0])
                     if not report.get("aborted"):
                         submit_next()
                 done_n = report["complete"] + report["empty"] + report["refused"]
@@ -367,8 +368,9 @@ def fetch_paths(
         # Answered of the whole request list, as `fetch_chains`: a resumed fetch starts where the last
         # one stopped rather than at zero.
         rep = core_progress.Reporter("backtest-fetch-chain-paths")
-        rep.phase("paths", total=len(requests), unit="expiries")
-        rep.advance("paths", report["already"])
+        rep.split(
+            "paths", (k[0] for k in requests), unit="expiries", done=(k[0] for k in requests if k in done)
+        )
         pending = iter(todo)
         with ThreadPoolExecutor(max(1, workers)) as ex:
             running = {}
@@ -419,7 +421,7 @@ def fetch_paths(
                         report["complete" if n else "empty"] += 1
                         report["sessions"] += days
                         report["rows"] += n
-                    rep.advance("paths", current=f"{key[0]} {key[1]}")
+                    rep.advance("paths", current=f"{key[0]} {key[1]}", key=key[0])
                     if not report.get("aborted"):
                         submit_next()
                 done_n = report["complete"] + report["empty"] + report["refused"]

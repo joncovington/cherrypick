@@ -246,6 +246,13 @@ function LogTail({ id }: { id: number }) {
   return <pre className="queue-log">{lines.join("\n")}</pre>;
 }
 
+/** "SPX 120/300 (40%) · QQQ 0/300 (0%)": each symbol's count, in the job's order. */
+export function bySymbolText(rows: ResearchProgress["bySymbol"]): string {
+  return rows
+    .map((b) => `${b.symbol} ${b.done}${b.total !== null ? `/${b.total}` : ""}${b.share !== null ? ` (${Math.round(b.share * 100)}%)` : ""}`)
+    .join(" · ");
+}
+
 export function TaskDetail({ t, withLog = true }: { t: ResearchTask; withLog?: boolean }) {
   const r = t.result;
   return (
@@ -285,6 +292,7 @@ export function TaskDetail({ t, withLog = true }: { t: ResearchTask; withLog?: b
               "—"}
           </Field>
         ) : null}
+        {t.progress && t.progress.bySymbol.length > 0 ? <Field k="by symbol">{bySymbolText(t.progress.bySymbol)}</Field> : null}
       </dl>
       {withLog ? <LogTail id={t.id} /> : null}
     </div>

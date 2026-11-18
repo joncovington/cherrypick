@@ -172,15 +172,15 @@ def fetch_plan(
     seconds: list[float] = []
     stopped = False
     try:
-        todo = []
+        todo, skipped = [], []
         for session, sym in plan:
             if not refetch and status(conn, sym, session) == "complete":
                 counts["skipped"] += 1
+                skipped.append(sym)
             else:
                 todo.append((session, sym))
         rep = core_progress.Reporter("backtest-fetch-oi")
-        rep.phase("days", total=len(plan), unit="symbol-days")
-        rep.advance("days", counts["skipped"])
+        rep.split("days", (sym for _, sym in plan), unit="symbol-days", done=skipped)
         pending = iter(todo)
         with ThreadPoolExecutor(max(1, workers)) as ex:
             running = {}
@@ -219,7 +219,7 @@ def fetch_plan(
                         counts["complete" if rows else "empty"] += 1
                         seconds.append(took)
                         log(f"{sym} {session}: {len(rows)} contracts, {took:.1f}s")
-                    rep.advance("days", current=f"{sym} {session}")
+                    rep.advance("days", current=f"{sym} {session}", key=sym)
                     if fatal is None:
                         submit_next()
             if fatal is not None:

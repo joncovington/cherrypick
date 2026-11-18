@@ -757,7 +757,7 @@ def run(
     per_arm: dict[str, dict[str, dict]] = {a: {} for a in arms}
     vix_by_session: dict[str, dict] = {}
     rep = core_progress.Reporter(f"backtest-run-{mod.name}")
-    rep.phase("sessions", total=len(todo), unit="days")
+    rep.phase("sessions", total=len(todo), unit="days", by={symbol: len(todo)})
     with ThreadPoolExecutor(max_workers=max(1, workers or core_procs.default_workers())) as pool:
 
         def outcomes():
@@ -770,7 +770,7 @@ def run(
         for day, out, rows in outcomes():
             # A refused session is done too: it is counted, not lost. A finished one read back from an
             # interrupted run is skipped: done, but no part of the rate or the time left.
-            rep.advance("sessions", current=day, skipped=day in finished)
+            rep.advance("sessions", current=day, skipped=day in finished, key=symbol)
             if not out.get("ok"):
                 refused[day] = str(out.get("error"))[:200]
                 log(f"{day} refused: {refused[day]}")

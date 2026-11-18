@@ -101,6 +101,10 @@ export function toProgress(v: unknown): ResearchProgress | null {
     rate: toRate(r["rate"]),
     ageSeconds: n(r["age_s"]),
     line: s(r["line"]) ?? "",
+    bySymbol: Object.entries(rec(r["by_symbol"])).map(([symbol, x]) => {
+      const b = rec(x);
+      return { symbol, done: n(b["done"]) ?? 0, total: n(b["total"]), share: n(b["share"]) };
+    }),
     note: s(r["note"]),
     startedAt: n(r["started_at"]),
     updatedAt: n(r["updated_at"]),

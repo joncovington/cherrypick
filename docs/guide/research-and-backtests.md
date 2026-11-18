@@ -271,7 +271,8 @@ Open a tile for five tabs:
 
 ### `queue`, `sources`, `runs` and `data`
 
-`queue` is what the supervisor is doing now: the running task with its progress, what is up next and why
+`queue` is what the supervisor is doing now: the running task with its progress (overall, and for each
+symbol when the task covers several: a task's detail lists them as `SPX 120/300 (40%)`), what is up next and why
 each row waits, and anything that failed in the last 7 days. `runs` is one tile per replay, with a summary
 of each arm against `control`, its equity line, health checks and settings. The health checks list the
 warnings first, such as a result resting on its best five sessions. `data` shows the licence clock
