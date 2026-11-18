@@ -38,7 +38,7 @@ from datetime import date, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from cherrypick.core import fees, treasury
+from cherrypick.core import fees, progress, treasury
 
 from cherrypick.backtest.study import rule as kit_rule
 
@@ -494,7 +494,15 @@ def out_dir() -> Path:
 VARIANTS = {"stop25": 0.25, "no_stop": None}
 
 
-def replay(conn, sessions: dict, spec: dict, rate, *, limit: int | None = None) -> dict:
+def replay(
+    conn,
+    sessions: dict,
+    spec: dict,
+    rate,
+    *,
+    limit: int | None = None,
+    reporter: progress.Reporter | None = None,
+) -> dict:
     """Every arm's trades, placebos and reported variants over every full session, in one pass."""
     arms = spec["arms"]
     trades = {a: [] for a in arms}
@@ -507,7 +515,19 @@ def replay(conn, sessions: dict, spec: dict, rate, *, limit: int | None = None) 
     days = sorted(sessions)
     if limit:
         days = days[-limit:]
-    for d in days:
+    for d in (
+        days
+        if reporter is None
+        else progress.track(
+            days,
+            job="ema_vwap_cross_item83-study",
+            phase="sessions",
+            unit="days",
+            key=lambda _: spec["symbol"],
+            current=lambda d: d,
+            reporter=reporter,
+        )
+    ):
         samples = sessions[d]
         if len(samples) < spec["min_samples"]:
             dropped["short"] += 1
@@ -560,8 +580,10 @@ def replay(conn, sessions: dict, spec: dict, rate, *, limit: int | None = None) 
             "dropped": dropped, "days": days}  # fmt: skip
 
 
-def study(conn, sessions: dict, rate, *, limit: int | None = None) -> dict:
-    run = replay(conn, sessions, SPEC, rate, limit=limit)
+def study(
+    conn, sessions: dict, rate, *, limit: int | None = None, reporter: progress.Reporter | None = None
+) -> dict:
+    run = replay(conn, sessions, SPEC, rate, limit=limit, reporter=reporter)
     bars_block = kit_rule.evaluate(RULE, run["rows"])
     control = {a: judge_control(run["diffs"][a], CONTROL_RULE) for a in SPEC["arms"]}
     split = RULE["splits"][0]
@@ -599,7 +621,8 @@ def cmd_study(args) -> int:
     conn = sqlite3.connect(f"file:{store_path()}?mode=ro", uri=True)
     try:
         sessions = load_sessions(conn, SPEC["symbol"], SPEC["through"])
-        block = study(conn, sessions, rate_reader(), limit=args.sessions)
+        with progress.Reporter("ema_vwap_cross_item83-study") as rep:
+            block = study(conn, sessions, rate_reader(), limit=args.sessions, reporter=rep)
     finally:
         conn.close()
     doc = {"licence": "derived from licensed vendor data: never commit or publish", "item": 83,

@@ -61,6 +61,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 
+from cherrypick.core import progress as core_progress
 from cherrypick.core import stats as core_stats
 
 _ITEM36 = Path(__file__).resolve().parent / "pmcc_item36.py"
@@ -656,7 +657,9 @@ def cmd_listing(args) -> int:
     db = i36._chain_db()
     conn = i36._ro(db) if db.exists() else None
     gaps, per_symbol = [], {}
-    for name in SYMBOLS:
+    for name in core_progress.track(
+        SYMBOLS, job="leaps_leverage_item71-listing", phase="symbols", unit="symbols", key=lambda n: n
+    ):
         g = listing_gaps(conn, name)
         per_symbol[name] = {"unanswered": len(g)}
         gaps += g
@@ -679,7 +682,10 @@ def cmd_plan(args) -> int:
         print(json.dumps({"listing_unanswered": short, "next": "run listing, fetch its file, then this"}))
         return 2
     per_symbol, every = {}, []
-    for name in ["XSP(SPY)", "QQQ", "IWM", "GLD", "SLV", "SMH", *STOCKS]:  # the judged funds first
+    for name in core_progress.track(
+        ["XSP(SPY)", "QQQ", "IWM", "GLD", "SLV", "SMH", *STOCKS],  # the judged funds first
+        job="leaps_leverage_item71-plan", phase="symbols", unit="symbols", key=lambda n: n,
+    ):  # fmt: skip
         reqs = path_requests(name, i36.listing_from(conn, name))
         net = i36.stored_filter(reqs, *i36.stored_for(conn, SYMBOLS[name][0]))
         per_symbol[name] = {"paths": len(reqs), "paths_net": len(net),
@@ -864,10 +870,20 @@ def cmd_study(args) -> int:
         return 2
     fund = fund_model(hist)
     costs = i36.costs_config()
-    markets = {n: i36.load_market(n, vend, hist) for n in SYMBOLS}
-    runs, stressed, excluded, guards = {}, {}, {}, {"fund": fund["ok"], "accounting": []}
-    for n, m in markets.items():
-        for arm in ARMS.values():
+    job = "leaps_leverage_item71-study"
+    with core_progress.Reporter(job) as rep:
+        markets = {
+            n: i36.load_market(n, vend, hist)
+            for n in core_progress.track(
+                SYMBOLS, job=job, phase="markets", unit="symbols", key=lambda n: n, reporter=rep
+            )
+        }
+        runs, stressed, excluded, guards = {}, {}, {}, {"fund": fund["ok"], "accounting": []}
+        cells = [(n, m, arm) for n, m in markets.items() for arm in ARMS.values()]
+        for n, m, arm in core_progress.track(
+            cells, job=job, phase="simulate", unit="runs", key=lambda c: c[0],
+            current=lambda c: f"{c[0]} {c[2].name}", reporter=rep,
+        ):  # fmt: skip
             r = simulate(m, arm, spread=fund["spread"], costs=costs)
             runs[(n, arm.name)] = r
             stressed[(n, arm.name)] = simulate(m, arm, spread=fund["spread"], costs=costs, scale=1.5)

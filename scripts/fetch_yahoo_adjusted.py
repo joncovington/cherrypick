@@ -38,6 +38,7 @@ import urllib.parse
 import urllib.request
 from datetime import UTC, date, datetime, timedelta
 
+from cherrypick.core import progress
 from cherrypick.technicals import adjust_check, paths
 
 PAUSE_S = 0.6
@@ -177,9 +178,12 @@ def main(argv=None) -> int:
     saved = 0
     stopped = False
     started = time.monotonic()
+    rep = progress.Reporter("fetch_yahoo_adjusted")
+    rep.split("names", todo, unit="names")
     for k, sym in enumerate(todo):
         if k:
             time.sleep(PAUSE_S)
+        rep.advance("names", key=sym, current=sym)
         try:
             parsed = parse(fetch_with_retries(sym))
         except urllib.error.HTTPError as exc:
@@ -199,6 +203,7 @@ def main(argv=None) -> int:
             continue
         save(conn, sym, parsed, now)
         saved += 1
+    rep.finish("done")
     conn.close()
     report = {
         "ok": not failed,

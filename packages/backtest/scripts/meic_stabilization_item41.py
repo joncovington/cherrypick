@@ -165,7 +165,7 @@ def refusals(settings: dict, window: tuple[str, str] = WINDOW) -> tuple[list[str
     hi = datetime.strptime(window[1], "%H:%M")
     stable = refused = 0
     with core_progress.Reporter("stabilization-refusals") as rep:  # items 41 and 44's plan steps
-        rep.phase("sessions", total=len(days), unit="sessions")
+        rep.split("sessions", [SYMBOL] * len(days), unit="sessions")
         for day in days:
             t = lo
             while t < hi:
@@ -177,7 +177,7 @@ def refusals(settings: dict, window: tuple[str, str] = WINDOW) -> tuple[list[str
                 else:
                     refused += 1
                 t += timedelta(minutes=5)
-            rep.advance("sessions", current=day)
+            rep.advance("sessions", current=day, key=SYMBOL)
     return days, stable, refused
 
 

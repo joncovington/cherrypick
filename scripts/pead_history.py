@@ -59,6 +59,8 @@ from collections import defaultdict
 from datetime import date
 from pathlib import Path
 
+from cherrypick.core import progress
+
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import emfly_history as _em  # noqa: E402 -- events and the optionable universe, shared not copied
 
@@ -275,7 +277,9 @@ def build(args) -> list[dict]:
     spy = dict(zip(spy_s["dates"], spy_s["close"], strict=True))
     rows: list[dict] = []
     drops: dict[str, int] = defaultdict(int)
-    for n, sym in enumerate(syms, 1):
+    for n, sym in enumerate(
+        progress.track(syms, job="pead_history", phase="symbols", unit="symbols", key=lambda s: s), 1
+    ):
         s = load_series(conn, sym)
         if s is None or len(s["dates"]) < 60:
             drops["no_bars"] += len(by_sym[sym])

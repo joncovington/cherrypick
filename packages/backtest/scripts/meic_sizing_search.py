@@ -30,6 +30,8 @@ import math
 from datetime import date
 from pathlib import Path
 
+from cherrypick.core import progress as core_progress
+
 from cherrypick.backtest import cards, paths
 
 SCHEMA = "meic_ic"
@@ -119,11 +121,13 @@ def main(argv: list[str] | None = None) -> int:
     runs = study_runs(args.study)
     series, trades = cards.arm_inputs(runs["design"], SCHEMA, arms)
     design = []
-    for arm in arms:
-        for r in risks:
-            row = {"arm": arm, **evaluate(series[arm], trades.get(arm, {}), args.capital, r)}
-            row["eligible"], row["why_not"] = eligible(row, args.max_cap)
-            design.append(row)
+    for arm, r in core_progress.track(
+        [(arm, r) for arm in arms for r in risks], job="meic_sizing_search", phase="arm-risks",
+        unit="combinations", key=lambda c: "SPX", current=lambda c: f"{c[0]} {c[1]:g}%",
+    ):  # fmt: skip
+        row = {"arm": arm, **evaluate(series[arm], trades.get(arm, {}), args.capital, r)}
+        row["eligible"], row["why_not"] = eligible(row, args.max_cap)
+        design.append(row)
     best = pick(design, args.max_cap)
 
     print(f"DESIGN window ({runs['design']}): choose here. cap = implied p99 drawdown, % of the account")

@@ -56,6 +56,7 @@ from zoneinfo import ZoneInfo
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "packages" / "backtest" / "scripts"))
 import box_touch_history as _box  # noqa: E402
 from cherrypick.core import home as _home  # noqa: E402
+from cherrypick.core import progress  # noqa: E402
 from cherrypick.core.quotehistory import profile_surface  # noqa: E402
 
 ET = ZoneInfo("America/New_York")
@@ -354,7 +355,14 @@ def main(argv=None) -> int:
     if args.start is None and args.end is None:
         sessions = [s for s in sessions if str(s["date"])[:10] <= H2[1]]
     days, unmeasured = [], 0
-    for s in sessions:
+    for s in progress.track(
+        sessions,
+        job="gex_levels_history",
+        phase="sessions",
+        unit="days",
+        key=lambda _: args.symbol,
+        current=lambda s: str(s["date"])[:10],
+    ):
         rec = day_record(s, load_profiles(args.history_db, args.symbol, str(s["date"])[:10]))
         if rec is None:
             unmeasured += 1

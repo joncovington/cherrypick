@@ -39,6 +39,7 @@ from datetime import datetime
 from pathlib import Path
 
 from cherrypick.core import home
+from cherrypick.core import progress as core_progress
 
 REPO = Path(__file__).resolve().parents[3]
 SCRIPT_HOMES = ("packages/backtest/scripts", "scripts")
@@ -236,7 +237,9 @@ def main(argv: list[str] | None = None) -> int:
     out_root.mkdir(parents=True, exist_ok=True)
     studies = args.studies or list(SAMPLE)
     report = {"at": stamp, "repo": str(REPO), "studies": {}}
-    for s in studies:
+    for s in core_progress.track(
+        studies, job="reproduce_studies-run", phase="studies", unit="studies", key=lambda s: s, current=str
+    ):
         print(f"{s}: running", file=sys.stderr)
         report["studies"][s] = reproduce(s, db=queue_db(), out_root=out_root)
         print(f"{s}: {report['studies'][s]['status']}", file=sys.stderr)

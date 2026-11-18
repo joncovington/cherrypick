@@ -47,6 +47,7 @@ from datetime import date, datetime
 from pathlib import Path
 
 from cherrypick.core import bs, fees, home, legbars, robustness
+from cherrypick.core import progress as core_progress
 from cherrypick.core import stats as core_stats
 
 from cherrypick.backtest import paths
@@ -301,7 +302,15 @@ def sessions_for(db: sqlite3.Connection, expiry: str) -> list[str]:
 
 
 def trades(
-    db: sqlite3.Connection, start: str, end: str, vix: dict, *, fill: str, entry_dte: int = ENTRY_DTE, **kw
+    db: sqlite3.Connection,
+    start: str,
+    end: str,
+    vix: dict,
+    *,
+    fill: str,
+    entry_dte: int = ENTRY_DTE,
+    reporter: core_progress.Reporter | None = None,
+    **kw,
 ) -> tuple[list[dict], Counter]:
     exps = monthlies(
         [
@@ -313,6 +322,11 @@ def trades(
     )
     (last,) = db.execute("SELECT max(session) FROM eod_chain_quotes WHERE symbol = ?", (SYMBOL,)).fetchone()
     rows, skips = [], Counter()
+    if reporter is not None:
+        exps = core_progress.track(
+            exps, job="iwm_condor_item59-study", phase=f"{fill}-cycles", unit="cycles",
+            key=lambda _: SYMBOL, current=lambda e: e, reporter=reporter,
+        )  # fmt: skip
     for e in exps:
         planned = date.fromordinal(date.fromisoformat(e).toordinal() - entry_dte).isoformat()
         if not (start <= planned <= end):
@@ -448,7 +462,8 @@ def main(argv: list[str] | None = None) -> int:
     db = sqlite3.connect(f"file:{vendor / 'eod_chains.db'}?mode=ro", uri=True)
     vix = vix_closes(home.data_dir("market-files") / "cboe" / "VIX.csv")
 
-    by_fill = {f: trades(db, args.start, args.end, vix, fill=f) for f in FILLS}
+    with core_progress.Reporter("iwm_condor_item59-study") as rep:
+        by_fill = {f: trades(db, args.start, args.end, vix, fill=f, reporter=rep) for f in FILLS}
     rows, skips = by_fill["working"]
     test = score(rows, skips, args.start, args.end)
     judge(test)

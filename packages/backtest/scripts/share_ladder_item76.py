@@ -57,6 +57,7 @@ from datetime import date
 from pathlib import Path
 
 from cherrypick.core import fees as core_fees
+from cherrypick.core import progress as core_progress
 from cherrypick.core import stats as core_stats
 
 HERE = Path(__file__).resolve().parent
@@ -670,7 +671,10 @@ def cmd_plan(args) -> int:
     holdout_end = min(bars[-1].date for bars, _ in loaded.values())
     windows = {"design": DESIGN, "holdout": (HOLDOUT_START, holdout_end)}
     reqs, hospital = [], {}
-    for sym, (bars, split_dates) in loaded.items():
+    for sym, (bars, split_dates) in core_progress.track(
+        loaded.items(), job="share_ladder_item76-plan", phase="symbols", unit="symbols",
+        key=lambda kv: kv[0], current=lambda kv: kv[0],
+    ):  # fmt: skip
         for wname, window in windows.items():
             lots, last = ladder_lots(bars, *window)
             for lot in lots:
@@ -719,15 +723,18 @@ def cmd_study(args) -> int:
     result: dict = {"windows": {}, "lots": {}, "plan": plan}
     per: dict = {w: {a: [] for a in ARMS + REPORTED} for w in windows}
     try:
-        for sym in names:
-            bars, split_dates = load_bars(sym)
-            chain_at = make(sym)
-            for wname, window in windows.items():
-                rows, n = run_window(sym, bars, expiries[sym], split_dates, window, chain_at, rate_at)
-                for a, rs in rows.items():
-                    per[wname][a] += rs
-                result["lots"].setdefault(wname, {})[sym] = n
-                print(wname, sym, n, flush=True)
+        with core_progress.Reporter("share_ladder_item76-study") as rep:
+            rep.split("windows", [sym for sym in names for _ in windows], unit="symbol-windows")
+            for sym in names:
+                bars, split_dates = load_bars(sym)
+                chain_at = make(sym)
+                for wname, window in windows.items():
+                    rows, n = run_window(sym, bars, expiries[sym], split_dates, window, chain_at, rate_at)
+                    for a, rs in rows.items():
+                        per[wname][a] += rs
+                    result["lots"].setdefault(wname, {})[sym] = n
+                    rep.advance("windows", key=sym, current=f"{wname} {sym}")
+                    print(wname, sym, n, flush=True)
     finally:
         conn.close()
     for wname, window in windows.items():

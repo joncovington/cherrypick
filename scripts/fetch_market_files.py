@@ -44,6 +44,7 @@ import urllib.request
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
+from cherrypick.core import progress
 from cherrypick.overview import files, occ
 
 # scripts/_common.py, beside this file (a test loading this script by path has no scripts/ on sys.path).
@@ -107,10 +108,14 @@ def _replace_history(path: Path, text: str, parse) -> str | None:
     return None
 
 
-def fetch_cboe(report: dict) -> None:
+def fetch_cboe(report: dict, rep=None) -> None:
+    if rep is not None:
+        rep.split("cboe indexes", files.CBOE_INDEXES, unit="indexes")
     for i, symbol in enumerate(files.CBOE_INDEXES):
         if i:
             _pause()
+        if rep is not None:
+            rep.advance("cboe indexes", key=symbol, current=symbol)
         try:
             text = _get(files.CBOE_URL.format(symbol=symbol)).decode("utf-8", errors="replace")
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
@@ -446,20 +451,32 @@ def _note_outcome(problems: list[str]) -> None:
 def cmd_fetch(_args) -> int:
     today = datetime.now(files.ET).date()
     report: dict = {"cboe": {}, "treasury": {}, "calendar": {}, "problems": []}
-    fetch_cboe(report)
-    _pause()
-    fetch_risk_reversal(report)
-    _pause()
-    fetch_treasury(report, today)
-    _pause()
-    fetch_bea(report)
-    fetch_census(report)
-    fetch_umich(report, today)
-    fetch_fred(report, today)
-    _pause()
-    fetch_listings(report)
-    _pause()
-    fetch_occ(report, today)
+    with progress.Reporter("fetch_market_files-fetch") as rep:
+        # Nine sources, none of them one symbol's: the step count is the overall, the Cboe indexes the split.
+        rep.phase("sources", total=9, unit="sources")
+        fetch_cboe(report, rep)
+        rep.advance("sources", current="cboe")
+        _pause()
+        fetch_risk_reversal(report)
+        rep.advance("sources", current="risk reversal")
+        _pause()
+        fetch_treasury(report, today)
+        rep.advance("sources", current="treasury")
+        _pause()
+        fetch_bea(report)
+        rep.advance("sources", current="bea")
+        fetch_census(report)
+        rep.advance("sources", current="census")
+        fetch_umich(report, today)
+        rep.advance("sources", current="umich")
+        fetch_fred(report, today)
+        rep.advance("sources", current="fred")
+        _pause()
+        fetch_listings(report)
+        rep.advance("sources", current="listings")
+        _pause()
+        fetch_occ(report, today)
+        rep.advance("sources", current="occ")
     report["ok"] = not report["problems"]
     print(json.dumps(report, indent=1))
     _note_outcome(report["problems"])
@@ -487,10 +504,15 @@ def cmd_fred_history(args) -> int:
         return 1
     start, today = date.fromisoformat(args.since), datetime.now(files.ET).date()
     windows = 0
+    rep = progress.Reporter("fetch_market_files-fred-history")
+    # FRED release dates carry no symbol: the window count is the overall.
+    rep.phase("windows", total=len(range(0, max(0, (today - start).days) + 1, 45)), unit="windows")
     while start <= today:
+        rep.advance("windows", current=start.isoformat())
         try:
             pages = fred_release_pages(key, start)
         except (urllib.error.URLError, TimeoutError, OSError, ValueError, RuntimeError) as exc:
+            rep.finish("failed")
             print(json.dumps({"ok": False, "error": str(exc).replace(key, "****"), "windows": windows}))
             return 1
         rows = fred_releases({"release_dates": [r for p in pages for r in p.get("release_dates") or []]})
@@ -498,6 +520,7 @@ def cmd_fred_history(args) -> int:
         windows += 1
         start += timedelta(days=45)
         _pause()
+    rep.finish("done")
     print(json.dumps({"ok": True, "since": args.since, "windows": windows}))
     return 0
 
@@ -509,7 +532,12 @@ def cmd_treasury_history(args) -> int:
     today = datetime.now(files.ET).date()
     report: dict = {"treasury": {}, "problems": []}
     years = [y for y in range(args.since, today.year) if not files.treasury_path(y).exists()]
-    for i, year in enumerate(years):
+    # Treasury curve years carry no symbol: no key.
+    for i, year in enumerate(
+        progress.track(
+            years, job="fetch_market_files-treasury-history", phase="years", unit="years", current=lambda y: y
+        )
+    ):
         if i:
             _pause()
         try:

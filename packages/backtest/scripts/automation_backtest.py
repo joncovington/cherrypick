@@ -34,7 +34,7 @@ from pathlib import Path
 from cherrypick.automations import arms as ens_arms
 from cherrypick.automations import config as ens_config
 from cherrypick.automations import driver, events, history
-from cherrypick.core import chaindelta, home, jsonio, volindex
+from cherrypick.core import chaindelta, home, jsonio, progress, volindex
 from cherrypick.core import sources as src
 from cherrypick.core.clock import ET
 from cherrypick.core.sources import inventory as src_inventory
@@ -296,7 +296,18 @@ def cmd_run(args) -> int:
         h = history.DailyChainHistory(symbol, bars, loader, vix_daily=vix_daily)
     sessions = [d for d in h.sessions if start <= d <= end]
     calendar = events.load_calendar((cfg.get("events") or {}).get("path"))
-    book = driver.run(chosen, h, sessions, events=calendar, costs=cfg, vix_daily=vix_daily, volumes=volumes)
+    book = driver.Book()
+    for session in progress.track(
+        sessions,
+        job="automation_backtest-run",
+        phase="sessions",
+        unit="days",
+        key=lambda _: symbol,
+        current=lambda d: d,
+    ):
+        book = driver.run(
+            chosen, h, [session], events=calendar, costs=cfg, vix_daily=vix_daily, volumes=volumes, book=book
+        )
     result = {
         "name": args.name,
         "kind": "explore",

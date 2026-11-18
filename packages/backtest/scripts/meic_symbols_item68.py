@@ -170,8 +170,8 @@ def _share(xs: list[bool | None]) -> float | None:
 def coverage(settings: dict) -> dict:
     s = wide(settings)
     doc: dict = {"item": ITEM, "step": "coverage", "symbols": {}}
-    with core_progress.Reporter("item68-coverage") as rep:
-        rep.phase("stores", total=len(ARMS) * len(settings["windows"]), unit="symbol-windows")
+    with core_progress.Reporter("meic_symbols_item68-coverage") as rep:
+        rep.split("stores", [sym for sym in ARMS for _ in settings["windows"]], unit="symbol-windows")
         for symbol in ARMS:
             path = store.db_path(s, symbol, CADENCE)
             per: dict = {"store": str(path)}
@@ -193,7 +193,7 @@ def coverage(settings: dict) -> dict:
                     finally:
                         conn.close()
                 per[window] = row
-                rep.advance("stores", current=f"{symbol} {window}")
+                rep.advance("stores", key=symbol, current=f"{symbol} {window}")
             doc["symbols"][symbol] = per
     doc["note"] = (
         f"share of hourly {SHORT_DELTA:g}-delta shorts ({HOURS[0]}:00-{HOURS[-1]}:00) whose wing is "
@@ -388,7 +388,9 @@ def study(settings: dict, window: str, workers: int) -> dict:
     start, end = settings["windows"][window]
     spx, spx_risk, spx_run = spx_reference(window)
     tests, reported, runs = {}, {}, {}
-    for symbol in ARMS:
+    for symbol in core_progress.track(
+        ARMS, job="meic_symbols_item68-study", phase="symbols", unit="symbols", key=lambda s: s, current=str
+    ):
         got = run_symbol(settings, symbol, window, workers)
         runs[symbol] = {
             "run_id": got["report"]["run_id"],

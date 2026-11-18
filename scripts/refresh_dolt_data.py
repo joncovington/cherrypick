@@ -40,6 +40,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from cherrypick.core import home as _home
+from cherrypick.core import progress
 from cherrypick.core.jsonio import write_json_atomic
 
 STATE_NAME = "dolt_data.json"
@@ -264,7 +265,15 @@ def main(argv=None) -> int:
     base = _data_dir()
     results = {}
     if not args.dry_run:
-        for name in DATABASES:
+        # The "symbol" of a pull is the clone's name: the split is per database.
+        for name in progress.track(
+            DATABASES,
+            job="refresh_dolt_data",
+            phase="databases",
+            unit="databases",
+            key=lambda n: n,
+            current=lambda n: n,
+        ):
             results[name] = _pull(base / name)
 
     max_date, error = calendar_max_date()

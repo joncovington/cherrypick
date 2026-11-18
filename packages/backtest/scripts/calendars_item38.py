@@ -62,6 +62,7 @@ from pathlib import Path
 from cherrypick.calendars import clock, engine, exit_policies
 from cherrypick.core import calendar as cal
 from cherrypick.core import fees as core_fees
+from cherrypick.core import progress
 from cherrypick.core import settlement as core_settlement
 from cherrypick.core import stats as core_stats
 from cherrypick.core.spreadbook import exit_spread_blocks
@@ -1747,13 +1748,27 @@ def load_week_inputs(d: Path):
 
 
 def replay_all(
-    chains: Chains, first: date, divs: dict, close_of, vix: dict[str, float] | None = None
+    chains: Chains,
+    first: date,
+    divs: dict,
+    close_of,
+    vix: dict[str, float] | None = None,
+    reporter: progress.Reporter | None = None,
 ) -> list[dict]:
-    """Every week from `first` to the last: the records the verdict reads."""
+    """Every week from `first` to the last: the records the verdict reads. `reporter` (optional) counts
+    the Friday readings and the replayed weeks as one phase."""
     warm = first - timedelta(weeks=WARMUP_WEEKS)
     weeks = weeks_between(warm, LAST_WEEK)
     fridays = [w["friday"] for w in weeks]
-    readings = [reading_at(chains, f) for f in fridays]
+    if reporter is not None:
+        reporter.split(
+            "weeks", [SYMBOL] * (len(weeks) + sum(1 for w in weeks if w["entry"] >= first)), unit="weeks"
+        )
+    readings = []
+    for f in fridays:
+        readings.append(reading_at(chains, f))
+        if reporter is not None:
+            reporter.advance("weeks", key=SYMBOL, current=f.isoformat())
     vix = vix or {}
     public = [vix.get(f.isoformat()) for f in fridays]
     index = {f: i for i, f in enumerate(fridays)}
@@ -1782,6 +1797,8 @@ def replay_all(
         )
         rec["window"] = window_for(w["entry"], first)
         records.append(rec)
+        if reporter is not None:
+            reporter.advance("weeks", key=SYMBOL, current=w["week_of"].isoformat())
     return records
 
 
@@ -1853,7 +1870,14 @@ def cmd_validate(args) -> int:
     result = {r: {"weeks": 0, "agree": 0, "rule": 0, "feed": 0} for r in ("monday", "friday")}
     result["detail"] = []
     closes = load_closes()[0]
-    for w in weeks_between(PAPER_FROM, LAST_WEEK):
+    for w in progress.track(
+        weeks_between(PAPER_FROM, LAST_WEEK),
+        job="calendars_item38-validate",
+        phase="weeks",
+        unit="weeks",
+        key=lambda _: SYMBOL,
+        current=lambda w: w["week_of"].isoformat(),
+    ):
         st = week_status(w, divs)
         for regime, arm, day in (
             ("monday", "control", w["entry"]),
@@ -1932,8 +1956,15 @@ def _min(hhmm: str) -> int:
     return int(h) * 60 + int(m)
 
 
-def study_result(chains: Chains, first: date, divs: dict, close_of, vix: dict[str, float]) -> dict:
-    records = replay_all(chains, first, divs, close_of, vix)
+def study_result(
+    chains: Chains,
+    first: date,
+    divs: dict,
+    close_of,
+    vix: dict[str, float],
+    reporter: progress.Reporter | None = None,
+) -> dict:
+    records = replay_all(chains, first, divs, close_of, vix, reporter=reporter)
     judged = judge_all(records, first)
     windows = WINDOWS_LATE if first > LATE_START else WINDOWS_EARLY
     design = f"{first}..{windows['design_end']}"
@@ -1964,7 +1995,8 @@ def cmd_study(args) -> int:
     closes, cross = load_closes()
     conn = _ro(store_path())
     close_of = exit_ctx(closes)["close_of"]  # the replay asks by date; the files are keyed by ISO text
-    result = study_result(Chains(conn), first, load_divs(d, first), close_of, vix_series())
+    with progress.Reporter("calendars_item38-study") as rep:
+        result = study_result(Chains(conn), first, load_divs(d, first), close_of, vix_series(), reporter=rep)
     result["settlement_close_check"] = cross
     path = Path(args.json) if args.json else d / "results.json"
     write_json(path, result)

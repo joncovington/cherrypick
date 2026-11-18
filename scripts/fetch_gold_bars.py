@@ -69,7 +69,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from cherrypick.core import home as _home
-from cherrypick.core import streamcache
+from cherrypick.core import progress, streamcache
 from cherrypick.core.auth import SHARED_SERVICE, CredentialStore, SessionManager
 
 _ET = ZoneInfo("America/New_York")
@@ -321,6 +321,7 @@ async def run_interval(
     full: bool = False,
     backfill: bool = False,
     sdk=None,
+    rep=None,
 ) -> list[dict]:
     """One interval's fetch (one DXLink session), stored as it arrives. A daily run records the three
     series and the active and next contracts; `backfill` records every cycle contract at full depth and
@@ -340,9 +341,14 @@ async def run_interval(
     starts: dict[str, datetime] = {}
     for streamer_sym, start, _need in plan.values():
         starts[streamer_sym] = min(start, starts.get(streamer_sym, start))
+    if rep is not None:
+        rep.split(f"{interval} series", list(plan), unit="series")
+        rep.at(f"{interval} series", "fetching")
     bars, clipped = await fetch(session, starts, interval, sdk)
     out = []
     for name, (streamer_sym, start, need) in plan.items():
+        if rep is not None:
+            rep.advance(f"{interval} series", key=name, current=name)
         start_ms = start.timestamp() * 1000.0
         got = {ts: b for ts, b in bars.get(streamer_sym, {}).items() if ts >= start_ms}
         offered = store_bars(conn, name, interval, streamer_sym, got, now)
@@ -400,6 +406,7 @@ def main(argv=None) -> int:
     intervals = [args.interval] if args.interval else list(WIDTH_MS)
     conn = connect()
     summary: list[dict] = []
+    rep = progress.Reporter("fetch_gold_bars")
     try:
         try:
             session = SessionManager(store).get_session()
@@ -417,15 +424,18 @@ def main(argv=None) -> int:
                             fmap,
                             args.full,
                             backfill=args.backfill_contracts,
+                            rep=rep,
                         )
                     )
 
             asyncio.run(_all())
         except Exception as exc:  # noqa: BLE001 -- a failed fetch keeps every bar already held
+            rep.finish("failed")
             print(json.dumps({"ok": False, "reason": f"{type(exc).__name__}: {exc}"}))
             return 1
     finally:
         conn.close()
+    rep.finish("done")
     verdict = outcome(summary)
     print(json.dumps({**verdict, "db": str(db_path()), "series": summary}, indent=2))
     return 0 if verdict["ok"] else 1

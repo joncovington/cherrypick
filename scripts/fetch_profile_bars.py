@@ -48,7 +48,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from cherrypick.core import home as _home
-from cherrypick.core import streamcache
+from cherrypick.core import progress, streamcache
 from cherrypick.core.auth import SHARED_SERVICE, CredentialStore, SessionManager
 
 _ET = ZoneInfo("America/New_York")
@@ -230,15 +230,21 @@ def _et_stamp(ts: int | None) -> str | None:
 
 
 async def run(
-    session, conn: sqlite3.Connection, now: datetime, fmap: dict, full: bool = False, sdk=None
+    session, conn: sqlite3.Connection, now: datetime, fmap: dict, full: bool = False, sdk=None, rep=None
 ) -> list[dict]:
-    """One fetch (one DXLink session) for every symbol, stored as it arrives."""
+    """One fetch (one DXLink session) for every symbol, stored as it arrives. `rep` is a progress
+    Reporter."""
     feed = contracts(fmap)
     held = latest(conn)
     starts = {feed[s]: start_for(held.get(s), now, full) for s in SYMBOLS}
+    if rep is not None:
+        rep.split("symbols", SYMBOLS, unit="symbols")
+        rep.at("symbols", "fetching")
     bars, clipped = await fetch(session, starts, sdk)
     out = []
     for sym in SYMBOLS:
+        if rep is not None:
+            rep.advance("symbols", key=sym, current=sym)
         got = bars.get(feed[sym], {})
         offered = store_bars(conn, sym, feed[sym], got, now)
         out.append(
@@ -280,15 +286,18 @@ def main(argv=None) -> int:
         print(json.dumps({"ok": False, "reason": f"futures map: {type(exc).__name__}: {exc}"}))
         return 1
     conn = connect()
+    rep = progress.Reporter("fetch_profile_bars")
     try:
         try:
             session = SessionManager(store).get_session()
-            summary = asyncio.run(run(session, conn, datetime.now(UTC), fmap, args.full))
+            summary = asyncio.run(run(session, conn, datetime.now(UTC), fmap, args.full, rep=rep))
         except Exception as exc:  # noqa: BLE001 -- a failed fetch keeps every bar already held
+            rep.finish("failed")
             print(json.dumps({"ok": False, "reason": f"{type(exc).__name__}: {exc}"}))
             return 1
     finally:
         conn.close()
+    rep.finish("done")
     verdict = outcome(summary)
     print(json.dumps({**verdict, "db": str(db_path()), "series": summary}, indent=2))
     return 0 if verdict["ok"] else 1

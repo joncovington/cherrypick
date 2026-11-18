@@ -63,7 +63,7 @@ from collections import Counter, defaultdict
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
 
-from cherrypick.core import bs, chaindelta, fees, robustness
+from cherrypick.core import bs, chaindelta, fees, progress, robustness
 from cherrypick.core import calendar as cal
 from cherrypick.core import stats as core_stats
 from cherrypick.core.clock import ET
@@ -1527,12 +1527,28 @@ class Study:
 
 
 def run_study(
-    events: list[dict], reports: dict[str, list[date]], span: tuple[date, date], study: Study
+    events: list[dict],
+    reports: dict[str, list[date]],
+    span: tuple[date, date],
+    study: Study,
+    reporter: progress.Reporter | None = None,
 ) -> list[dict]:
     """A record for each event, strategy and role. The control is built only for an event whose
-    structure was built, from the control session `control_for` names."""
+    structure was built, from the control session `control_for` names. `reporter` (optional) counts
+    the events, overall and per name."""
     out: list[dict] = []
-    for ev in sorted(events, key=lambda e: (e["report_date"], e["symbol"])):
+    ordered = sorted(events, key=lambda e: (e["report_date"], e["symbol"]))
+    if reporter is not None:
+        ordered = progress.track(
+            ordered,
+            job="earnings_item31-study",
+            phase="events",
+            unit="events",
+            key=lambda e: e["symbol"],
+            current=lambda e: e["report_date"],
+            reporter=reporter,
+        )
+    for ev in ordered:
         study.chains.clear()
         control = control_for(ev, reports.get(ev["symbol"], []), span)
         for strategy in STRATEGIES:
@@ -2345,7 +2361,10 @@ def cmd_study(args) -> int:
     store = chainfetch.db_path(settings.load(None))
     conn = sqlite3.connect(f"file:{store.as_posix()}?mode=ro", uri=True)
     try:
-        records = run_study(events, reports, span, Study(data, Chains(conn), study_config(), moves))
+        with progress.Reporter("earnings_item31-study") as rep:
+            records = run_study(
+                events, reports, span, Study(data, Chains(conn), study_config(), moves), reporter=rep
+            )
     finally:
         conn.close()
     fomc, cpi = macro_calendar(d / "macro_calendar.json")

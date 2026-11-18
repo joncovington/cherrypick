@@ -27,6 +27,8 @@ import sys
 from datetime import date
 from pathlib import Path
 
+from cherrypick.core import progress
+
 _spec = importlib.util.spec_from_file_location(
     "index_put_weekly_item57",
     Path(__file__).resolve().parents[1] / "packages" / "backtest" / "scripts" / "index_put_weekly_item57.py",
@@ -126,15 +128,29 @@ def _open_store():
     return i57.i46._chain_store()
 
 
-def track(ledger: str | None = None) -> dict:
+def track(ledger: str | None = None, rep=None) -> dict:
+    """`rep` is a progress Reporter: the finished paper trades, each counted under its symbol."""
     from cherrypick.weeklyput import db
 
     ledger = db.resolve_path(ledger)
     trades = _paper_trades(ledger)
     rows = []
     store = _open_store()
+    counted = (
+        trades
+        if rep is None
+        else progress.track(
+            trades,
+            job="weeklyput_item69-track",
+            phase="trades",
+            unit="trades",
+            key=lambda p: p["symbol"],
+            current=lambda p: p["expiration"],
+            reporter=rep,
+        )
+    )
     try:
-        for p in trades:
+        for p in counted:
             name = STORE_NAME.get(p["symbol"])
             expiry = date.fromisoformat(p["expiration"])
             got = i57._sessions_for(store, name, expiry) if (store is not None and name) else None
@@ -167,7 +183,8 @@ def _out_dir() -> Path:
 
 
 def cmd_track(args) -> int:
-    doc = track(args.ledger)
+    with progress.Reporter("weeklyput_item69-track") as rep:
+        doc = track(args.ledger, rep)
     path = Path(args.out) if args.out else _out_dir() / "tracking.json"
     path.write_text(json.dumps(doc, indent=1, default=str), encoding="utf-8")
     s = doc["summary"]

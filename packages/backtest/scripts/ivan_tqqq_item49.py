@@ -83,6 +83,7 @@ from pathlib import Path
 
 from cherrypick.core import bs
 from cherrypick.core import fees as core_fees
+from cherrypick.core import progress as core_progress
 from cherrypick.core import stats as core_stats
 
 NAMES = ("TQQQ", "QQQ")
@@ -935,7 +936,9 @@ def cmd_plan(args) -> int:
     conn = _store()
     reqs = []
     try:
-        for sym in NAMES:
+        for sym in core_progress.track(
+            NAMES, job="ivan_tqqq_item49-plan", phase="names", unit="names", key=lambda s: s
+        ):
             days, _ = load_days(sym)
             want = wanted_sessions(days, expiries[sym], WINDOWS.values())
 
@@ -977,7 +980,10 @@ def run_window(wname: str, arms: list[str]) -> tuple[dict, dict, dict]:
     counts: dict[str, dict] = {}
     loaded: dict[str, tuple] = {}
     try:
-        for a in arms:
+        for a in core_progress.track(
+            arms, job=f"ivan_tqqq_item49-study-{wname}", phase="arms", unit="arms",
+            key=lambda a: ARMS[a].sym, current=lambda a: a,
+        ):  # fmt: skip
             arm = ARMS[a]
             if arm.sym not in loaded:
                 loaded[arm.sym] = (*load_days(arm.sym), make(arm.sym))

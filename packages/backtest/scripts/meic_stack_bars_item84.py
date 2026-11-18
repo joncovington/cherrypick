@@ -33,6 +33,7 @@ import sys
 from datetime import date
 from pathlib import Path
 
+from cherrypick.core import progress as core_progress
 from cherrypick.core import treasury
 
 from cherrypick.backtest import paths
@@ -112,24 +113,32 @@ def rate_reader():
     return rate
 
 
-def study(run_id: str, rate) -> dict:
+def study(run_id: str, rate, reporter: core_progress.Reporter | None = None) -> dict:
     sess = session_rows(run_id)
     ledger = by_arm_day(
         [r for r in ledger_rows(paths.results_dir() / "runs" / run_id) if r.get("arm") in ARMS]
     )
-    rows = {a: arm_rows(sess.get(a, {}), ledger.get(a, {}), rate) for a in ARMS}
+    arms = ARMS
+    if reporter is not None:
+        arms = core_progress.track(
+            ARMS, job="meic_stack_bars_item84-study", phase="arms", unit="arms",
+            key=lambda _: "SPX", current=lambda a: a, reporter=reporter,
+        )  # fmt: skip
+    rows = {a: arm_rows(sess.get(a, {}), ledger.get(a, {}), rate) for a in arms}
     block = kit_rule.evaluate(RULE, rows)
     return {**block, "run_id": run_id, "reported": {a: reported(rows[a]) for a in ARMS}}
 
 
 def cmd_study(args) -> int:
     run_id = item73_run()
+    with core_progress.Reporter("meic_stack_bars_item84-study") as rep:
+        block = study(run_id, rate_reader(), rep)
     doc = {
         "licence": "derived from licensed vendor data: never commit or publish",
         "item": 84,
         "retest_of": 73,
         "provisional": True,
-        **study(run_id, rate_reader()),
+        **block,
         "corrections": list(REPLAY_CORRECTIONS),
     }
     path = Path(args.out) if args.out else out_dir() / "results.json"

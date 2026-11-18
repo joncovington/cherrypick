@@ -51,7 +51,7 @@ import sys
 import time
 from datetime import UTC, datetime
 
-from cherrypick.core import stats
+from cherrypick.core import progress, stats
 from cherrypick.core.jsonio import write_json_atomic
 from cherrypick.fundamentals import consensus, damodaran, paths, secfacts, statements, valuation
 from cherrypick.technicals import fundamentals as _score
@@ -227,7 +227,9 @@ def main(argv=None) -> int:
         sessions = sessions[-args.sessions :]
     by_session: dict[str, list[tuple[float, float, bool]]] = {s: [] for s in sessions}
     valued_names = 0
-    for k, sym in enumerate(names, 1):
+    for k, sym in enumerate(
+        progress.track(names, job="fair_value_history", phase="names", unit="names", key=lambda s: s), 1
+    ):
         rows = value_name(conn, bars_conn, sym, sessions, spy_adj, kinds.get(sym), sectors.get(sym), ratings)
         if rows:
             valued_names += 1

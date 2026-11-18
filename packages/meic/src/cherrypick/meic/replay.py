@@ -445,7 +445,7 @@ def _check(args) -> dict:
     days = [d.strip() for d in args.dates.split(",") if d.strip()]
     sessions = []
     with progress.Reporter("meic-replay-check") as rep:
-        rep.phase("sessions", total=len(days), unit="days")
+        rep.split("sessions", ["SPX"] * len(days), unit="days")  # the check replays the recorder's SPX
         for day in days:
             rep.at("sessions", day)
             try:
@@ -462,7 +462,7 @@ def _check(args) -> dict:
                 rep.note(str(exc))
                 rep.finish("failed")
                 return {"ok": False, "error": str(exc)}
-            rep.advance("sessions")
+            rep.advance("sessions", key="SPX")
     summary = replay_check.summarise(sessions)
     if not args.detail:
         for s in sessions:

@@ -27,6 +27,8 @@ import sys
 from datetime import date, timedelta
 from pathlib import Path
 
+from cherrypick.core import progress as core_progress
+
 from cherrypick.backtest import flow, flowstudy, paths, settings
 from cherrypick.backtest import flowfetch as _ff
 from cherrypick.backtest.flowstudy import (
@@ -89,7 +91,9 @@ def excess_return(closes: list, bench: list, i: int) -> float | None:
     return (closes[b] / closes[a] - 1.0) - (bench[b] / bench[a] - 1.0)
 
 
-def build_scan(window: str, plan: dict, flow_db: Path) -> tuple[flowstudy.Scan, dict]:
+def build_scan(
+    window: str, plan: dict, flow_db: Path, reporter: core_progress.Reporter | None = None
+) -> tuple[flowstudy.Scan, dict]:
     from cherrypick.technicals import earnings_calendar as ec
     from cherrypick.technicals import history, stage, store
 
@@ -127,7 +131,13 @@ def build_scan(window: str, plan: dict, flow_db: Path) -> tuple[flowstudy.Scan, 
     reported: dict[str, set] = {s: set() for s in grid}
     events: list[dict] = []
     counts = {"names": len(by_sym), "grid_name_days": 0, "no_lookback": 0, "no_outcome": 0, "rows": 0}
-    for sym, days in by_sym.items():
+    scanned = by_sym.items()
+    if reporter is not None:
+        scanned = core_progress.track(
+            scanned, job="flow_signal_item32-study", phase="names", unit="names",
+            key=lambda kv: kv[0], reporter=reporter,
+        )  # fmt: skip
+    for sym, days in scanned:
         cuts = flowstudy.lookback_cuts(days)
         want = [s for s, _ in days if start <= s <= hi]
         if not want:
@@ -199,7 +209,8 @@ def cmd_study(args) -> int:
     plan_path = Path(args.plan) if args.plan else paths.data_dir() / "flow" / PLAN_FILES[window]
     plan = json.loads(plan_path.read_text(encoding="utf-8"))
     flow_db = Path(args.flow_db) if args.flow_db else _ff.db_path(settings.load())
-    scan, counts = build_scan(window, plan, flow_db)
+    with core_progress.Reporter("flow_signal_item32-study") as rep:
+        scan, counts = build_scan(window, plan, flow_db, rep)
     res = flowstudy.evaluate(scan) if carried is None else flowstudy.evaluate_carried(scan, carried)
     lo, hi = settings.load()["windows"][window]
     result = {

@@ -80,6 +80,7 @@ from pathlib import Path
 
 from cherrypick.core import bs
 from cherrypick.core import fees as core_fees
+from cherrypick.core import progress as core_progress
 from cherrypick.core import stats as core_stats
 
 NAMES = ("SOXL", "TQQQ")
@@ -678,7 +679,9 @@ def cmd_expirations(args) -> int:
 def cmd_plan(args) -> int:
     expiries = load_expiries()
     reqs = []
-    for sym in NAMES:
+    for sym in core_progress.track(
+        NAMES, job="share_ladder_item29-plan", phase="symbols", unit="symbols", key=lambda s: s, current=str
+    ):
         days, split_dates = load_days(sym)
         reqs += path_requests(sym, days, expiries[sym], split_dates)
     out = Path(args.out) if args.out else _out_dir() / "path_requests.json"
@@ -719,20 +722,25 @@ def cmd_study(args) -> int:
     result: dict = {"windows": {}, "counts": {}}
     try:
         per: dict = {w: {a: [] for a in ARMS + REPORTED} for w in WINDOWS}
-        for sym in names:
-            days, split_dates = load_days(sym)
-            chain_at = make(sym)
-            for wname, windows in WINDOWS.items():
-                got = {}
-                for arm in ARMS + REPORTED:
-                    window = windows[arm.rsplit("-", 2)[1]]
-                    trades, counts = run_arm(
-                        sym, arm, days, expiries[sym], split_dates, window, chain_at, rate_at
-                    )
-                    per[wname][arm] += trades
-                    got[arm] = len(trades)
-                    result["counts"].setdefault(wname, {}).setdefault(arm, {})[sym] = counts
-                print(wname, sym, got, flush=True)
+        with core_progress.Reporter("share_ladder_item29-study") as rep:
+            rep.split(
+                "arms", [sym for sym in names for _ in WINDOWS for _ in ARMS + REPORTED], unit="symbol-arms"
+            )
+            for sym in names:
+                days, split_dates = load_days(sym)
+                chain_at = make(sym)
+                for wname, windows in WINDOWS.items():
+                    got = {}
+                    for arm in ARMS + REPORTED:
+                        window = windows[arm.rsplit("-", 2)[1]]
+                        trades, counts = run_arm(
+                            sym, arm, days, expiries[sym], split_dates, window, chain_at, rate_at
+                        )
+                        per[wname][arm] += trades
+                        got[arm] = len(trades)
+                        result["counts"].setdefault(wname, {}).setdefault(arm, {})[sym] = counts
+                        rep.advance("arms", key=sym, current=f"{wname} {arm}")
+                    print(wname, sym, got, flush=True)
         for wname, windows in WINDOWS.items():
             result["windows"][wname] = {
                 a: arm_report(per[wname][a], windows[a.rsplit("-", 2)[1]]) for a in ARMS + REPORTED

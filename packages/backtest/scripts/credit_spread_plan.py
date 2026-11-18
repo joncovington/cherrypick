@@ -63,7 +63,7 @@ from datetime import date, timedelta
 from pathlib import Path
 
 from cherrypick.core import calendar as cal
-from cherrypick.core import home
+from cherrypick.core import home, progress
 from cherrypick.core.procs import default_workers
 
 SEED = 20261020
@@ -431,12 +431,18 @@ def main(argv: list[str] | None = None) -> int:
     trades: list[dict] = []
     dropped: Counter = Counter()
     short = 0
-    with ProcessPoolExecutor(
-        args.workers,
-        initializer=_init,
-        initargs=(design_end, reports, quarters, spec, str(args.board) if args.board else None),
-    ) as ex:
-        for part in ex.map(_plan_many, chunks):
+    with (
+        progress.Reporter(f"credit_spread_plan-item{args.item}") as rep,
+        ProcessPoolExecutor(
+            args.workers,
+            initializer=_init,
+            initargs=(design_end, reports, quarters, spec, str(args.board) if args.board else None),
+        ) as ex,
+    ):
+        rep.split("names", names, unit="names")
+        for chunk, part in zip(chunks, ex.map(_plan_many, chunks), strict=True):
+            for name in chunk:
+                rep.advance("names", key=name, current=name)
             for p in part:
                 trades.extend(p["trades"])
                 dropped.update(p["dropped"])

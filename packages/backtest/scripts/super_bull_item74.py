@@ -62,6 +62,7 @@ from pathlib import Path
 
 from cherrypick.core import bs, fees, home, legbars, robustness, treasury
 from cherrypick.core import calendar as cal
+from cherrypick.core import progress as core_progress
 from cherrypick.core import stats as core_stats
 
 from cherrypick.backtest import paths
@@ -387,12 +388,17 @@ def rate_reader(lookup=None):
     return rate
 
 
-def trades(db, start: str, end: str, rate) -> tuple[list, dict]:
-    """Every (name, front expiry) cycle in the window, all four arms and their `hold` twins."""
+def trades(db, start: str, end: str, rate, rep=None) -> tuple[list, dict]:
+    """Every (name, front expiry) cycle in the window, all four arms and their `hold` twins. `rep` is a
+    progress Reporter, when the caller keeps one."""
     rows, skips = [], {a: Counter() for a in ARMS}
     exps = monthlies(date(2015, 12, 1), LAST_FRONT + timedelta(days=40))
+    if rep is not None:
+        rep.split("cycles", [s for s in NAMES for _ in zip(exps, exps[1:], strict=False)], unit="cycles")
     for symbol in NAMES:
         for f, b in zip(exps, exps[1:], strict=False):
+            if rep is not None:
+                rep.advance("cycles", key=symbol, current=f.isoformat())
             if f > LAST_FRONT:
                 continue
             fs, bs_ = f.isoformat(), b.isoformat()
@@ -632,7 +638,8 @@ def main(argv: list[str] | None = None) -> int:
     cfg = _settings.load()
     vendor = paths.ensure_vendor_dir(cfg)
     db = sqlite3.connect(f"file:{vendor / 'eod_chains.db'}?mode=ro", uri=True)
-    rows, skips = trades(db, args.start, args.end, rate_reader())
+    with core_progress.Reporter("super_bull_item74-study") as rep:
+        rows, skips = trades(db, args.start, args.end, rate_reader(), rep)
     tests = score(rows, skips, args.start, args.end)
     judge(tests)
     out = {

@@ -46,7 +46,7 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from cherrypick.core import fees, home, treasury
+from cherrypick.core import fees, home, progress, treasury
 
 from cherrypick.backtest.study import rule as kit_rule
 
@@ -677,13 +677,19 @@ def out_dir() -> Path:
 # --------------------------------------------------------------------------- the run
 
 
-def study(funds: dict[str, list[dict]], hours: list[dict], rate) -> dict:
+def study(
+    funds: dict[str, list[dict]], hours: list[dict], rate, reporter: progress.Reporter | None = None
+) -> dict:
     split = RULE["splits"][0]
     trades, skipped = [], {}
+    if reporter is not None:
+        reporter.split("runs", list(funds) * (1 + len(VARIANTS)), unit="fund runs")
     for sym, bars in funds.items():
         ts, sk = run_fund(sym, bars, SPEC["rule"])
         trades += ts
         skipped[sym] = sk
+        if reporter is not None:
+            reporter.advance("runs", key=sym, current=sym)
     rows = session_rows(trades, rate)
     bars_block = kit_rule.evaluate(RULE, {"etf-daily": rows})
     control = judge_control(control_diffs(trades, funds, SPEC["rule"], split), CONTROL_RULE)
@@ -696,6 +702,9 @@ def study(funds: dict[str, list[dict]], hours: list[dict], rate) -> dict:
     for name, rule in VARIANTS.items():
         vt = [t for sym, bars in funds.items() for t in run_fund(sym, bars, rule)[0]]
         variants[name] = parts(vt)
+        if reporter is not None:
+            for sym in funds:
+                reporter.advance("runs", key=sym, current=f"{name} {sym}")
     gold = {}
     for alignment in GOLD["alignments"]:
         bars4 = four_hour(hours, alignment)
@@ -737,7 +746,8 @@ def cmd_study(args) -> int:
     hours, gold_info = load_gold_hours(bars_db(), gold_db(), SPEC["through"])
     if args.smoke:
         hours = hours[-args.smoke * 6 :]
-    block = study(funds, hours, bill_reader())
+    with progress.Reporter("engulf_item88-study") as rep:
+        block = study(funds, hours, bill_reader(), reporter=rep)
     doc = {"note": "derived from personal-use broker and public data: never commit or publish", "item": 88,
            "spec": SPEC, "control_rule": CONTROL_RULE, "gold": {**GOLD, **gold_info}, **block,
            "inputs": fingerprint(funds, hours), "written_at": datetime.now(UTC).isoformat()}  # fmt: skip

@@ -33,6 +33,7 @@ from datetime import date
 from pathlib import Path
 
 from cherrypick.core import calendar as cal
+from cherrypick.core import progress
 
 from cherrypick.backtest.study import checks as ck
 from cherrypick.backtest.study import rule as kit_rule
@@ -212,14 +213,27 @@ def leans(
     }
 
 
-def run(inputs, conn, plan: list[dict], bars_all: dict, doc: dict, rate) -> dict:
+def run(
+    inputs, conn, plan: list[dict], bars_all: dict, doc: dict, rate, reporter: progress.Reporter | None = None
+) -> dict:
     rows_by = {s: [(date.fromisoformat(x), w) for x, w in v] for s, v in doc["reports"].items()}
     trades = {a: [] for a in ARMS}
     reported = defaultdict(list)
     skips: dict[str, dict[str, int]] = {a: defaultdict(int) for a in ARMS}
     rr_hist: dict[str, list[tuple[date, float]]] = defaultdict(list)
     base = {"stop_frac": m86.SPEC["stop_frac"]}
-    for e in sorted(plan, key=lambda r: r["entry_session"]):
+    events = sorted(plan, key=lambda r: r["entry_session"])
+    if reporter is not None:
+        events = progress.track(
+            events,
+            job="earnings_calendar_bias_item87-study",
+            phase="events",
+            unit="events",
+            key=lambda e: e["symbol"],
+            current=lambda e: e["entry_session"],
+            reporter=reporter,
+        )
+    for e in events:
         sym, b = e["symbol"], bars_all.get(e["symbol"], {})
         d = m86._dates(e["dates"])
         report = date.fromisoformat(e["report_date"])
@@ -317,7 +331,8 @@ def cmd_study(args) -> int:
     rate = m86.rate_reader()
     conn = m86.chain_store()
     try:
-        res = run(inputs, conn, plan, bars, doc, rate)
+        with progress.Reporter("earnings_calendar_bias_item87-study") as rep:
+            res = run(inputs, conn, plan, bars, doc, rate, reporter=rep)
         read = inputs.fingerprint(conn)
     finally:
         conn.close()

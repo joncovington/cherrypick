@@ -35,7 +35,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from cherrypick.core import home as _home
-from cherrypick.core import streamcache
+from cherrypick.core import progress, streamcache
 from cherrypick.core.auth import SHARED_SERVICE, CredentialStore, SessionManager
 
 #: The declared funds (item 88): US equity index, international, bonds, metals, oil and sectors, each
@@ -170,14 +170,18 @@ def main(argv=None) -> int:
     today = now.date().isoformat()
     conn = connect()
     summary: dict = {"funds": {}, "empty": []}
+    rep = progress.Reporter("fetch_item88_bars")
+    rep.split("series", [*ETFS, *([] if args.skip_yahoo else [YAHOO_SYMBOL])], unit="series")
     try:
         try:
             session = SessionManager(store).get_session()
             bars = asyncio.run(fetch_daily(session, ETFS))
         except Exception as exc:  # noqa: BLE001 -- a failed fetch keeps the rows already held
+            rep.finish("failed")
             print(json.dumps({"ok": False, "reason": f"{type(exc).__name__}: {exc}"}))
             return 1
         for sym in ETFS:
+            rep.advance("series", key=sym, current=sym)
             days = store_daily(conn, sym, bars.get(sym, {}), today) if bars.get(sym) else []
             if not days:
                 summary["empty"].append(sym)
@@ -185,9 +189,11 @@ def main(argv=None) -> int:
             record(conn, f"etf_daily:{sym}", len(days), days[0], days[-1])
             summary["funds"][sym] = {"sessions": len(days), "first": days[0], "last": days[-1]}
         if not args.skip_yahoo:
+            rep.advance("series", key=YAHOO_SYMBOL, current=YAHOO_SYMBOL)
             try:
                 rows = store_yahoo(conn, fetch_yahoo_hourly(), int(now.timestamp() * 1000))
             except Exception as exc:  # noqa: BLE001
+                rep.finish("failed")
                 print(json.dumps({"ok": False, "reason": f"yahoo: {type(exc).__name__}: {exc}"}))
                 return 1
             if not rows:
@@ -197,8 +203,12 @@ def main(argv=None) -> int:
                 record(conn, "yahoo_gc_1h", len(rows), first, last)
                 summary["yahoo_gc_1h"] = {"hours": len(rows), "first": first, "last": last}
         conn.commit()
+    except BaseException:
+        rep.finish("failed")
+        raise
     finally:
         conn.close()
+    rep.finish("done")
     ok = not summary["empty"]
     print(json.dumps({"ok": ok, "db": str(db_path()), **summary}, indent=1))
     return 0 if ok else 1

@@ -43,6 +43,8 @@ import sys
 from datetime import date, timedelta
 from pathlib import Path
 
+from cherrypick.core import progress as core_progress
+
 _spec = importlib.util.spec_from_file_location(
     "variance_premium_item46", Path(__file__).with_name("variance_premium_item46.py")
 )
@@ -236,18 +238,20 @@ def _sessions_for(conn, sym: str, expiry: date):
     return sessions, {d: i46.forward(ch) for d, ch in sessions.items()}
 
 
-def coverage() -> dict:
+def coverage(reporter=None) -> dict:
     """Entry quotes and forwards only, never an option's exit. The MDE reads the per-cycle realised
     variance term of the 10-delta put at 7 days, as item 46's coverage does."""
     expiries = weekly_expiries()
     conn = i46._chain_store()
     names, values = {}, {}
+    if reporter is not None:
+        reporter.split("paths", [sym for sym in MEMBERS for _ in expiries], unit="paths")
     try:
         for sym in MEMBERS:
             status_n: dict[str, int] = {}
             drops: dict[str, int] = {}
             first = None
-            for e in expiries:
+            for e in _counted(expiries, reporter, "paths", sym):
                 st = i46._path_status(conn, path_request(sym, e))
                 status_n[st] = status_n.get(st, 0) + 1
                 got = _sessions_for(conn, sym, e)
@@ -308,14 +312,25 @@ def coverage() -> dict:
     }
 
 
-def collect(expiries: list[date], legs, log=None) -> tuple[dict, dict]:
+def _counted(items, reporter, phase: str, key: str):
+    """Yield `items`, counting each done once the loop body has run (a `continue` counts), under
+    `key`'s share of the phase. Without a reporter it only yields."""
+    for item in items:
+        yield item
+        if reporter is not None:
+            reporter.advance(phase, key=key, current=item)
+
+
+def collect(expiries: list[date], legs, log=None, reporter=None, phase: str = "paths") -> tuple[dict, dict]:
     """{arm: {(name, leg): {cycle: trade}}} and drop counts per name."""
     conn = i46._chain_store()
     trades: dict[str, dict] = {arm: {} for arm in ARMS}
     drops: dict[str, dict[str, int]] = {n: {} for n in MEMBERS}
+    if reporter is not None:
+        reporter.split(phase, [sym for sym in MEMBERS for _ in expiries], unit="paths")
     try:
         for sym in MEMBERS:
-            for e in expiries:
+            for e in _counted(expiries, reporter, phase, sym):
                 got = _sessions_for(conn, sym, e)
                 if got is None:
                     continue
@@ -380,10 +395,10 @@ def beside(arm: str, cell: dict, neighbours: dict, trades: dict, account: float)
     return out
 
 
-def forward_read(today: date, log=None) -> dict:
+def forward_read(today: date, log=None, reporter=None) -> dict:
     """Monthly and weekly cycles expiring after `FORWARD_AFTER`, both arms: reported, never judged."""
     expiries = forward_expiries(today)
-    trades, _ = collect(expiries, (LEG,), log)
+    trades, _ = collect(expiries, (LEG,), log, reporter, "forward-paths")
     out = {"after": FORWARD_AFTER.isoformat(), "judged": False}
     for arm in ARMS:
         by_kind = {}
@@ -404,10 +419,10 @@ def forward_read(today: date, log=None) -> dict:
     return out
 
 
-def study(account: float = i46.ACCOUNT, today: date | None = None, log=None) -> dict:
+def study(account: float = i46.ACCOUNT, today: date | None = None, log=None, reporter=None) -> dict:
     expiries = weekly_expiries()
     legs = tuple(NEIGHBOUR_LEGS.values())
-    trades, drops = collect(expiries, legs, log)
+    trades, drops = collect(expiries, legs, log, reporter, "weekly-paths")
     cells = cells_for(trades, LEG)
     words = judge_arms(cells)
     neighbours = {leg: cells_for(trades, leg) for leg in legs if leg != LEG}
@@ -428,7 +443,7 @@ def study(account: float = i46.ACCOUNT, today: date | None = None, log=None) -> 
         "neighbour_legs": {
             leg: {arm: _slim(c) for arm, c in by_arm.items()} for leg, by_arm in neighbours.items()
         },
-        "forward": forward_read(today or date.today(), log),
+        "forward": forward_read(today or date.today(), log, reporter),
         "drops": drops,
         "costs": {
             "option": "core.fees: slippage 0.125 of spread, ic_open_fee per contract",
@@ -474,7 +489,8 @@ def cmd_coverage(args) -> int:
     if not i46._chain_store_path().exists():
         print("no chain store: run the item57/fetch-chain-paths row first", file=sys.stderr)
         return 2
-    doc = coverage()
+    with core_progress.Reporter("index_put_weekly_item57-coverage") as rep:
+        doc = coverage(rep)
     path = Path(args.out) if args.out else _out_dir() / "coverage.json"
     path.write_text(json.dumps(doc, indent=1), encoding="utf-8")
     print(json.dumps({"cycles": doc["cell"]["cycles"], "enough": doc["cell"]["enough"], "file": str(path)}))
@@ -485,7 +501,8 @@ def cmd_study(args) -> int:
     if not i46._chain_store_path().exists():
         print("no chain store: run the item57/fetch-chain-paths row first", file=sys.stderr)
         return 2
-    doc = study(args.account, log=lambda m: print(m, file=sys.stderr))
+    with core_progress.Reporter("index_put_weekly_item57-study") as rep:
+        doc = study(args.account, log=lambda m: print(m, file=sys.stderr), reporter=rep)
     path = Path(args.out) if args.out else _out_dir() / "results.json"
     path.write_text(json.dumps(doc, indent=1, default=str), encoding="utf-8")
     print(json.dumps({"written": str(path), "verdict": doc["verdict"]}))

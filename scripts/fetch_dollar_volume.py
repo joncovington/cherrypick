@@ -43,7 +43,7 @@ from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from cherrypick.core import jsonio as _jsonio
-from cherrypick.core import streamcache
+from cherrypick.core import progress, streamcache
 from cherrypick.core.auth import SHARED_SERVICE, CredentialStore, SessionManager
 from cherrypick.technicals import dollarvolume, paths, securities, symbols
 
@@ -116,20 +116,27 @@ async def fetch_batch(
 
 
 async def fetch(
-    session, names: list[str], start: datetime, sdk: tuple[type, type] | None = None
+    session, names: list[str], start: datetime, sdk: tuple[type, type] | None = None, rep=None
 ) -> tuple[dict[str, list], set[str], list[str]]:
+    """`rep` is a progress Reporter: the names fetched, overall and each by its own symbol."""
     bars: dict[str, list] = {}
     ended: set[str] = set()
     failed: list[str] = []
+    if rep is not None:
+        rep.split("names", names, unit="names")
     for k in range(0, len(names), BATCH):
         batch = names[k : k + BATCH]
         try:
             got, done = await fetch_batch(session, batch, start, sdk)
         except Exception as exc:  # noqa: BLE001 -- the batch is reported and the run goes on
             failed.append(f"{batch[0]}..{batch[-1]}: {type(exc).__name__}: {str(exc)[:120]}")
-            continue
-        bars.update(got)
-        ended |= done
+            got, done = {}, set()
+        else:
+            bars.update(got)
+            ended |= done
+        if rep is not None:
+            for name in batch:
+                rep.advance("names", key=name, current=name)
     return bars, ended, failed
 
 
@@ -184,7 +191,8 @@ def main(argv=None) -> int:
         return 1
     started = time.monotonic()
     start = datetime.now(UTC) - timedelta(days=LOOKBACK_DAYS)
-    bars, ended, failed = asyncio.run(fetch(SessionManager(store).get_session(), names, start))
+    with progress.Reporter("fetch_dollar_volume") as rep:
+        bars, ended, failed = asyncio.run(fetch(SessionManager(store).get_session(), names, start, rep=rep))
     doc = build_doc(bars, ended, today)
     coverage = len(doc["names"]) / len(names)
     report = {

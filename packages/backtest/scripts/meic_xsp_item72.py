@@ -201,8 +201,8 @@ def coverage(settings: dict) -> dict:
     s = wide(settings)
     path = store.db_path(s, SYMBOL, CADENCE)
     doc: dict = {"item": ITEM, "step": "coverage", "symbol": SYMBOL, "store": str(path), "windows": {}}
-    with core_progress.Reporter(f"item{ITEM}-coverage") as rep:
-        rep.phase("windows", total=len(settings["windows"]), unit="windows")
+    with core_progress.Reporter("meic_xsp_item72-coverage") as rep:
+        rep.split("windows", [SYMBOL] * len(settings["windows"]), unit="windows")
         for window, (start, end) in settings["windows"].items():
             row: dict = {"span": [start, end], "sessions": 0}
             if path.exists():
@@ -221,7 +221,7 @@ def coverage(settings: dict) -> dict:
                 finally:
                     conn.close()
             doc["windows"][window] = row
-            rep.advance("windows", current=window)
+            rep.advance("windows", key=SYMBOL, current=window)
     doc["note"] = (
         f"share of hourly {SHORT_DELTA:g}-delta shorts ({HOURS[0]}:00-{HOURS[-1]}:00) whose wing is "
         "quoted in the same sample, per width; strike spacing within 1% of spot; quotes only, no P&L"

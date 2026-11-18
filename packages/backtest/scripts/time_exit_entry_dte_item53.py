@@ -47,6 +47,7 @@ from pathlib import Path
 
 from cherrypick.core import calendar as cal
 from cherrypick.core import fees
+from cherrypick.core import progress as core_progress
 from cherrypick.core import stats as core_stats
 
 SYMBOL = "SPY"
@@ -442,9 +443,11 @@ def simulate(sessions: dict, expiry: date, entry_dte: int, structure: str) -> tu
     return out, None
 
 
-def run_all(conn) -> tuple[list[dict], dict]:
+def run_all(conn, job: str = "time_exit_entry_dte_item53") -> tuple[list[dict], dict]:
     trades, drops = [], {}
-    for exp in expiries(conn):
+    for exp in core_progress.track(
+        expiries(conn), job=job, phase="expiries", unit="expiries", key=lambda _: SYMBOL, current=str
+    ):
         sessions = load_expiry(conn, exp)
         for dte in ENTRY_DTES:
             for s in STRUCTURES:
@@ -471,7 +474,7 @@ def cell(trades: list[dict], window: str, structure: str, dte: int) -> list[dict
 def cmd_plan(args) -> int:
     conn = _store()
     exps = expiries(conn)
-    trades, drops = run_all(conn)
+    trades, drops = run_all(conn, "time_exit_entry_dte_item53-plan")
     conn.close()
     counts = {
         f"{s}_{d}_{w}": len(cell(trades, w, s, d))
@@ -497,7 +500,7 @@ def cmd_plan(args) -> int:
 
 def cmd_design(args) -> int:
     conn = _store()
-    trades, drops = run_all(conn)
+    trades, drops = run_all(conn, "time_exit_entry_dte_item53-design")
     conn.close()
     d = _dir(args.out_dir)
     (d / "trades.json").write_text(json.dumps(trades), encoding="utf-8")

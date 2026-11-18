@@ -54,7 +54,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from cherrypick.core import calendar as cal
-from cherrypick.core import fees, home, legbars, robustness
+from cherrypick.core import fees, home, legbars, progress, robustness
 from cherrypick.core import stats as core_stats
 
 from cherrypick.backtest import paths
@@ -316,40 +316,60 @@ def sessions_for(db: sqlite3.Connection, symbol: str, expiry: str) -> list[str]:
     ]
 
 
-def trades(db: sqlite3.Connection, start: str, end: str, *, fill: str = "working") -> tuple[list, dict]:
-    """Every (name, front expiry) cycle in the window, all four structures: (rows, skips by structure)."""
+def trades(
+    db: sqlite3.Connection,
+    start: str,
+    end: str,
+    *,
+    fill: str = "working",
+    reporter: progress.Reporter | None = None,
+) -> tuple[list, dict]:
+    """Every (name, front expiry) cycle in the window, all four structures: (rows, skips by structure).
+    `reporter` (optional) counts the cycles, overall and per name."""
     rows, skips = [], {k: Counter() for k in STRUCTURES}
     exps = monthlies(date(2015, 12, 1), LAST_EXPIRY + timedelta(days=40))
-    for symbol in NAMES:
-        for f, b in zip(exps, exps[1:], strict=False):
-            planned = (f - timedelta(days=ENTRY_DTE)).isoformat()
-            if not (start <= planned <= end):
+    cycles = [
+        (symbol, f, b)
+        for symbol in NAMES
+        for f, b in zip(exps, exps[1:], strict=False)
+        if start <= (f - timedelta(days=ENTRY_DTE)).isoformat() <= end
+    ]
+    if reporter is not None:
+        cycles = progress.track(
+            cycles,
+            job="backspread_bwb_item64-study",
+            phase="cycles",
+            unit="cycles",
+            key=lambda c: c[0],
+            current=lambda c: c[1].isoformat(),
+            reporter=reporter,
+        )
+    for symbol, f, b in cycles:
+        fs, bs_ = f.isoformat(), b.isoformat()
+        sess = sessions_for(db, symbol, fs)
+        s0 = ic.entry_session(sess, fs, ENTRY_DTE, ENTRY_BAND)
+        if s0 is None:
+            for k in STRUCTURES:
+                skips[k]["no entry chain"] += 1
+            continue
+        entry = {"F": load_chain(db, symbol, s0, fs), "B": load_chain(db, symbol, s0, bs_)}
+        strikes = pick_strikes(entry["F"], entry["B"]) if entry["F"] and entry["B"] else None
+        if strikes is None:
+            for k in STRUCTURES:
+                skips[k]["no strikes"] += 1
+            continue
+        path = [
+            (s, {"F": load_chain(db, symbol, s, fs), "B": load_chain(db, symbol, s, bs_)})
+            for s in sess
+            if s > s0
+        ]
+        path = [(s, c) for s, c in path if c["F"] is not None]
+        for k, legs in structure_legs(strikes).items():
+            r = run_trade(symbol, k, legs, strikes, entry, path, fs, fill=fill)
+            if "skip" in r:
+                skips[k][r["skip"]] += 1
                 continue
-            fs, bs_ = f.isoformat(), b.isoformat()
-            sess = sessions_for(db, symbol, fs)
-            s0 = ic.entry_session(sess, fs, ENTRY_DTE, ENTRY_BAND)
-            if s0 is None:
-                for k in STRUCTURES:
-                    skips[k]["no entry chain"] += 1
-                continue
-            entry = {"F": load_chain(db, symbol, s0, fs), "B": load_chain(db, symbol, s0, bs_)}
-            strikes = pick_strikes(entry["F"], entry["B"]) if entry["F"] and entry["B"] else None
-            if strikes is None:
-                for k in STRUCTURES:
-                    skips[k]["no strikes"] += 1
-                continue
-            path = [
-                (s, {"F": load_chain(db, symbol, s, fs), "B": load_chain(db, symbol, s, bs_)})
-                for s in sess
-                if s > s0
-            ]
-            path = [(s, c) for s, c in path if c["F"] is not None]
-            for k, legs in structure_legs(strikes).items():
-                r = run_trade(symbol, k, legs, strikes, entry, path, fs, fill=fill)
-                if "skip" in r:
-                    skips[k][r["skip"]] += 1
-                    continue
-                rows.append({"symbol": symbol, "structure": k, "front": fs, "back": bs_, "entry": s0, **r})
+            rows.append({"symbol": symbol, "structure": k, "front": fs, "back": bs_, "entry": s0, **r})
     return rows, skips
 
 
@@ -494,7 +514,8 @@ def main(argv: list[str] | None = None) -> int:
     cfg = _settings.load()
     vendor = paths.ensure_vendor_dir(cfg)
     db = sqlite3.connect(f"file:{vendor / 'eod_chains.db'}?mode=ro", uri=True)
-    rows, skips = trades(db, args.start, args.end)
+    with progress.Reporter("backspread_bwb_item64-study") as rep:
+        rows, skips = trades(db, args.start, args.end, reporter=rep)
     tests = score(rows, skips, args.start, args.end)
     judge(tests)
     nets_by = {k: [r["net"] for r in rows if r["structure"] == k] for k in STRUCTURES}

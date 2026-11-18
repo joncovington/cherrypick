@@ -64,7 +64,7 @@ import urllib.request
 from datetime import UTC, date, datetime
 from pathlib import Path
 
-from cherrypick.core import treasury
+from cherrypick.core import progress, treasury
 from cherrypick.core.home import data_dir
 
 HERE = Path(__file__).resolve().parent
@@ -180,7 +180,7 @@ def yahoo_extra(body: dict) -> tuple[list[tuple[str, float]], dict]:
     }
 
 
-def fetch_yahoo(conn, symbols: list[str], today: str, force: bool) -> dict:
+def fetch_yahoo(conn, symbols: list[str], today: str, force: bool, rep=None) -> dict:
     counts: dict = {"ok": 0, "missing": [], "skipped": 0}
     done = {
         s
@@ -188,11 +188,15 @@ def fetch_yahoo(conn, symbols: list[str], today: str, force: bool) -> dict:
             "SELECT symbol FROM fetched WHERE source = 'yahoo' AND fetched_on = ?", (today,)
         )
     }
+    if rep is not None:
+        rep.split("yahoo", symbols, unit="symbols", done=[s for s in symbols if s in done and not force])
     try:
         for symbol in symbols:
             if symbol in done and not force:
                 counts["skipped"] += 1
                 continue
+            if rep is not None:
+                rep.advance("yahoo", key=symbol, current=symbol)
             body = fbars.yahoo_get(fbars.YAHOO_DAILY.format(symbol, int(time.time()))) or {}
             parsed = fbars.yahoo_parse(body, "1d")
             adj, meta = yahoo_extra(body)
@@ -250,7 +254,7 @@ def fetch_treasury(force: bool, this_year: int) -> dict:
     return out
 
 
-def fetch(force: bool) -> dict:
+def fetch(force: bool, rep=None) -> dict:
     conn26 = sqlite3.connect(sl.DIR / "bars.db")
     judged, universe = sl.names_in(conn26)
     funds = [f for f in judged if f in fbars.COUNTERPART and f in fbars.LEVERAGE]
@@ -259,12 +263,12 @@ def fetch(force: bool) -> dict:
     today = date.today().isoformat()
     conn = connect(DIR / "bars.db")
     out: dict = {"db": str(DIR / "bars.db"), "symbols": len(symbols)}
-    out["yahoo"] = fetch_yahoo(conn, symbols, today, force)
+    out["yahoo"] = fetch_yahoo(conn, symbols, today, force, rep)
     types = dict(conn.execute("SELECT symbol, instrument_type FROM instruments"))
     not_equity = {s: types.get(s) for s in stocks if types.get(s) != "EQUITY"}
     stocks = {s: f for s, f in stocks.items() if s not in not_equity}
     keep = sorted(set(funds) | {fbars.COUNTERPART[f] for f in funds} | set(stocks) | set(stocks.values()))
-    out["broker"] = fbars.fetch_broker(conn, keep, [], today, force)
+    out["broker"] = fbars.fetch_broker(conn, keep, [], today, force, rep)
     out["treasury"] = fetch_treasury(force, date.today().year)
     names = {
         "funds": funds,
@@ -424,7 +428,22 @@ def _measures(rebuilt: list, under: list, windows: dict, seed: int) -> dict:
     return {"arms": arms, "item27": holds}
 
 
-def study(only: list[str] | None) -> dict:
+def study(only: list[str] | None, rep=None) -> dict:
+    """`rep` is a progress Reporter: the funds, then the single stocks, each under its own symbol."""
+
+    def counted(items, phase: str):
+        if rep is None:
+            return items
+        return progress.track(
+            items,
+            job="share_ladder_item28-study",
+            phase=phase,
+            unit="names",
+            key=lambda n: n,
+            current=lambda n: n,
+            reporter=rep,
+        )
+
     conn = sqlite3.connect(DIR / "bars.db")
     names = json.loads((DIR / "names.json").read_text(encoding="utf-8"))
     r26 = json.loads((sl.DIR / "results.json").read_text(encoding="utf-8"))
@@ -434,7 +453,7 @@ def study(only: list[str] | None) -> dict:
     stocks = {s: f for s, f in names["single_stock"].items() if not only or s in only or f in only}
     per_fund: dict[str, dict] = {}
     rejected: dict[str, dict] = {}
-    for k, fund in enumerate(funds):
+    for k, fund in enumerate(counted(funds, "funds")):
         one_x = fbars.COUNTERPART[fund]
         under = sl.daily_bars(conn, one_x)
         rebuilt, floored = rebuild(under, adjusted(conn, one_x), fbars.LEVERAGE[fund], rates)
@@ -474,7 +493,8 @@ def study(only: list[str] | None) -> dict:
         print(f"{fund} done ({k + 1}/{len(funds)})", file=sys.stderr, flush=True)
     per_stock: dict[str, dict] = {}
     stock_rejected: dict[str, dict] = {}
-    for k, (stock, fund) in enumerate(stocks.items()):
+    for k, stock in enumerate(counted(list(stocks), "stocks")):
+        fund = stocks[stock]
         under = sl.daily_bars(conn, stock)
         rebuilt, floored = rebuild(under, adjusted(conn, stock), SINGLE_LEVERAGE, rates)
         check = validate(rebuilt, adjusted(conn, fund))
@@ -530,10 +550,12 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
     DIR.mkdir(parents=True, exist_ok=True)
     if args.step == "fetch":
-        out = fetch(args.force)
+        with progress.Reporter("share_ladder_item28-fetch") as rep:
+            out = fetch(args.force, rep)
         print(json.dumps(out, default=str))
         return 1 if "stopped" in out["yahoo"] else 0
-    result = study(args.names.split(",") if args.names else None)
+    with progress.Reporter("share_ladder_item28-study") as rep:
+        result = study(args.names.split(",") if args.names else None, rep)
     path = args.json or DIR / "results.json"
     path.write_text(json.dumps(result, indent=1, default=str), encoding="utf-8")
     summary = {a: v["verdict"] for a, v in result["verdict"].items()}

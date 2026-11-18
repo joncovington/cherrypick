@@ -1139,12 +1139,12 @@ def simulate_all(inp: Inputs, days: list[tuple[str, str, int]], log=print) -> di
         by_exp[e].append((d, dte))
     out = {}
     with core_progress.Reporter("item35-simulate") as rep:
-        rep.phase("expiries", total=len(by_exp), unit="expiries")
+        rep.split("expiries", ["SPX"] * len(by_exp), unit="expiries")
         for n, (exp, items) in enumerate(sorted(by_exp.items())):
             data = load_expiry(inp.conn, exp, inp.oi.oi_of(exp))
             for d, dte in items:
                 out[d] = simulate_entry(data, d, exp, dte)
-            rep.advance("expiries", current=exp)
+            rep.advance("expiries", current=exp, key="SPX")
             if n % 25 == 0:
                 log(f"simulated {n}/{len(by_exp)} expiries")
     return out

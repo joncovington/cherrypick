@@ -41,7 +41,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from cherrypick.core import calendar as _calendar
-from cherrypick.core import fees, home, robustness
+from cherrypick.core import fees, home, progress, robustness
 from cherrypick.core import stats as core_stats
 
 from cherrypick.backtest import paths
@@ -304,11 +304,20 @@ def run_entry(
 
 
 def entries(
-    cs: sqlite3.Connection, days: list[str], vix: dict, closes: dict, spots: dict, **kw
+    cs: sqlite3.Connection,
+    days: list[str],
+    vix: dict,
+    closes: dict,
+    spots: dict,
+    *,
+    reporter: progress.Reporter | None = None,
+    **kw,
 ) -> tuple[list[dict], Counter]:
     rows, skips = [], Counter()
     width_shift = kw.pop("width_shift", 0)
     for day in days:
+        if reporter is not None:
+            reporter.advance("entries", key="SPX", current=day)
         loaded = load_entry(cs, day)
         if loaded is None:
             skips["not fetched"] += 1
@@ -483,8 +492,10 @@ def main(argv: list[str] | None = None) -> int:
         return entries(cs, days, vix, closes, spots, **{"at": ENTRY_TIME, "share": DEBIT_SHARE, **kw})
 
     results: dict = {}
+    rep = progress.Reporter("convex_stack_item20-study")
+    rep.split("entries", ["SPX"] * (len(days) * len(FILLS)), unit="days")
     for fill in FILLS:
-        rows, skips = run(fill=fill)
+        rows, skips = run(fill=fill, reporter=rep)
         tests = {arm: score(rows, arm, args.start, args.end) for arm in ARMS}
         if fill == "working":
             judge(tests)
@@ -495,6 +506,7 @@ def main(argv: list[str] | None = None) -> int:
             "describe": {a: describe(rows, a) for a in ARMS},
         }
 
+    rep.finish("done")
     verdict = results["working"]["tests"]
     out = {
         "licence": "derived from licensed vendor history: stays under ~/.cherrypick, never in the repo",

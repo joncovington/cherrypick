@@ -38,6 +38,7 @@ import statistics
 from datetime import date, datetime
 from pathlib import Path
 
+from cherrypick.core import progress
 from cherrypick.core.clock import ET
 from cherrypick.earnings import scanner
 from cherrypick.earnings import time_spread as ts
@@ -236,7 +237,17 @@ def main() -> None:
     instant = [r for r in rows if r["closed_at"] - r["opened_at"] < INSTANT_SECONDS]
     kept = [r for r in rows if r["closed_at"] - r["opened_at"] >= INSTANT_SECONDS]
     config: dict = {}
-    scored = [score_row(r, conn, args.lookback, config) for r in kept]
+    scored = [
+        score_row(r, conn, args.lookback, config)
+        for r in progress.track(
+            kept,
+            job="time_spread_step0",
+            phase="trades",
+            unit="trades",
+            key=lambda r: r["symbol"],
+            current=lambda r: r["order_id"],
+        )
+    ]
 
     refused: dict[str, int] = {}
     for r in scored:
