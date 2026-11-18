@@ -44,8 +44,8 @@ export type BridgeRequest =
   | { op: "automation_today"; name: string; automation?: Record<string, unknown> }
   | { op: "automation_save"; name: string; automation: Record<string, unknown> }
   | { op: "automation_groups" }
-  | { op: "automation_groups_check"; groups: Record<string, unknown>; members: Record<string, string | null> }
-  | { op: "automation_groups_save"; groups: Record<string, unknown>; members: Record<string, string | null> }
+  | { op: "automation_groups_check"; groups: Record<string, unknown>; members: Record<string, string | null>; switches: Record<string, boolean> }
+  | { op: "automation_groups_save"; groups: Record<string, unknown>; members: Record<string, string | null>; switches: Record<string, boolean> }
   | { op: "fullset_plan"; symbol: string; from?: string }
   | { op: "fullset_add"; symbol: string; from?: string; run?: string };
 

@@ -9,7 +9,8 @@ there and added as the block's last entry when it is new, so the rest of the fil
 
 **A saved automation is always off.** The check returns the entry with `enabled: false`, and this module
 refuses one that is not, so the console can neither turn an automation on through a save nor change that
-by sending something else. Turning one on stays a hand edit or the group switch.
+by sending something else. Turning one on is the Groups page's switch (`groupedit`), from the next
+session, after the module's own check.
 """
 
 from __future__ import annotations

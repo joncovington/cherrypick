@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { BuilderWizard } from "./BuilderWizard";
 import { useQueryClient } from "@tanstack/react-query";
 import type { BuilderAutomation, BuilderBlock, BuilderSchema, BuilderSuggestion, BuilderToday, BuilderWindow } from "@console/shared";
@@ -531,7 +532,10 @@ export function Workspace({
 export function BuilderPage() {
   const q = useAutomationsBuilder();
   const s = useBuilderSchema();
-  const [mode, setMode] = useState<Mode | null>(null);
+  // `?automation=<name>` opens that saved automation (read-only, as every saved one opens); else nothing.
+  const [params] = useSearchParams();
+  const asked = params.get("automation");
+  const [mode, setMode] = useState<Mode | null>(asked ? { kind: "saved", name: asked } : null);
   const [wizard, setWizard] = useState<{ from: string | null; n: number } | null>(null);
   if (q.isLoading || s.isLoading) return <div className="muted">Loading the automations…</div>;
   if (q.error) return <div className="error">Could not read the automations: {String(q.error)}</div>;

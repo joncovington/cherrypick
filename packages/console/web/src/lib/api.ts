@@ -17,6 +17,7 @@ import type {
   AutomationsPayload,
   AutomationGroupsResult,
   GroupsChange,
+  GroupsCheckResult,
   GroupsEditView,
   BuilderBacktestResult,
   BuilderDraftResult,
@@ -1370,12 +1371,15 @@ export function useGroupsEdit() {
 }
 
 /** The module's check of a change to the groups; writes nothing. */
-export function groupsCheck(change: GroupsChange): Promise<{ ok: boolean; error?: string; problems?: string[]; moves?: Record<string, string | null> }> {
+export function groupsCheck(change: GroupsChange): Promise<GroupsCheckResult> {
   return builderPost("/api/automations/groups/check", change);
 }
 
-/** That check, then the groups block and the moves it returned written through the config editor. */
-export function groupsSave(change: GroupsChange): Promise<{ ok: boolean; error?: string; problems?: string[]; moved?: string[]; backup?: string | null }> {
+/** That check, then the groups block, the moves and the switches it returned written through the config
+ *  editor. */
+export function groupsSave(
+  change: GroupsChange,
+): Promise<{ ok: boolean; error?: string; problems?: string[]; moved?: string[]; switched?: string[]; backup?: string | null }> {
   return builderPost("/api/automations/groups/save", change);
 }
 
