@@ -40,6 +40,11 @@ export type BridgeRequest =
   | { op: "automation_backtest"; name: string; window?: string }
   | { op: "automation_runs"; name: string }
   | { op: "automation_run"; name: string; run: string }
+  | { op: "automation_ideas"; name: string }
+  | { op: "automation_idea_searches"; name: string }
+  | { op: "automation_idea_search"; name: string; id: string }
+  | { op: "automation_idea_declare"; name: string; id: string; idea: string }
+  | { op: "automation_idea_holdout"; name: string; id: string; idea: string }
   | { op: "automation_draft"; name: string; automation?: Record<string, unknown> }
   | { op: "automation_today"; name: string; automation?: Record<string, unknown> }
   | { op: "automation_save"; name: string; automation: Record<string, unknown> }

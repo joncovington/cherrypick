@@ -55,6 +55,9 @@ function sendBridgeFailure(reply: FastifyReply, result: BridgeResult): BridgeOk 
 /** An underlying's root as the full set spells one (backtest `fullset.SYMBOL`). */
 export const FULLSET_SYMBOL = /^[A-Z][A-Z.]{0,5}$/;
 export const WINDOW_KEY = /^[a-z0-9-]{1,48}:\d{4}-\d{2}-\d{2}:\d{4}-\d{2}-\d{2}$/;
+/** An idea search's result name, and one idea's id in it (`dim:kind:index`, at most two joined by &). */
+export const IDEA_SEARCH = /^ideas-[a-z0-9][a-z0-9-]{1,47}-\d{10}$/;
+export const IDEA_ID = /^[A-Za-z_:-]+:(bin|below|above):\d(&[A-Za-z_:-]+:(bin|below|above):\d)?$/;
 
 export function registerConfigRoutes(app: FastifyInstance, config: ConsoleConfig): void {
   /**
@@ -407,6 +410,92 @@ export function registerConfigRoutes(app: FastifyInstance, config: ConsoleConfig
     const { ok: _ok, ...card } = result;
     return card;
   });
+
+  /**
+   * The idea search (#1294): "Find ideas" queues one search of the automation's newest long enough
+   * Builder run (`ideaqueue.queue`, a `script` row; the run and the split are the backtest package's),
+   * and the page reads the searches back. Declare drafts one surviving idea's register row into its
+   * result; the held-out test reads a declared idea's later sessions once. Neither writes a config or
+   * the register. A licensed result is shown, declared from or tested only while licensed results may
+   * be shown; fail closed, as the run card is.
+   */
+  app.post("/api/automations/builder/ideas", async (req, reply) => {
+    const parsed = automationBody((req.body ?? {}) as Record<string, unknown>);
+    if (typeof parsed === "string") return reply.code(400).send({ error: parsed });
+    const result = sendBridgeFailure(reply, await callConfigCli({ op: "automation_ideas", name: parsed.name }));
+    if (result === null) return reply;
+    app.log.info(`idea search queued from the builder: ${parsed.name} (task ${String(result["task"] ?? "?")})`);
+    return {
+      ok: true,
+      name: parsed.name,
+      search: result["search"] ?? null,
+      task: result["task"] ?? null,
+      run: result["run"] ?? null,
+      split: result["split"] ?? null,
+    };
+  });
+
+  app.get("/api/automations/builder/ideas", async (req, reply) => {
+    const name = String(((req.query ?? {}) as Record<string, unknown>)["name"] ?? "");
+    if (name === "" || name.length > 48) return reply.code(400).send({ error: "name (up to 48 characters) required" });
+    const result = sendBridgeFailure(reply, await callConfigCli({ op: "automation_idea_searches", name }));
+    if (result === null) return reply;
+    const open = backtestResultsOn(await getFeatures());
+    const all = Array.isArray(result["searches"]) ? (result["searches"] as Array<Record<string, unknown>>) : [];
+    const searches = all.filter((s) => open || s["licensed"] === false);
+    return {
+      name,
+      tasks: Array.isArray(result["tasks"]) ? result["tasks"] : [],
+      searches,
+      withheld: all.length - searches.length,
+      results_unavailable: result["results_unavailable"] === true,
+    };
+  });
+
+  /** One search read whole, or a reply already sent: refused when it is licensed and those are withheld. */
+  const ideaSearch = async (reply: FastifyReply, name: string, id: string): Promise<BridgeOk | null> => {
+    const result = sendBridgeFailure(reply, await callConfigCli({ op: "automation_idea_search", name, id }));
+    if (result === null) return null;
+    if (result["licensed"] !== false && !backtestResultsOn(await getFeatures())) {
+      reply.code(403).send({ error: "a licensed result, not shown while licensed results are withheld", code: "withheld" });
+      return null;
+    }
+    return result;
+  };
+
+  app.get("/api/automations/builder/idea-search", async (req, reply) => {
+    const q = (req.query ?? {}) as Record<string, unknown>;
+    const name = String(q["name"] ?? "");
+    const id = String(q["id"] ?? "");
+    if (!IDEA_SEARCH.test(id) || name === "" || name.length > 48) return reply.code(400).send({ error: "name and id required" });
+    const result = await ideaSearch(reply, name, id);
+    if (result === null) return reply;
+    const { ok: _ok, ...search } = result;
+    return search;
+  });
+
+  for (const [path, op] of [
+    ["/api/automations/builder/idea-declare", "automation_idea_declare"],
+    ["/api/automations/builder/idea-holdout", "automation_idea_holdout"],
+  ] as const) {
+    app.post(path, async (req, reply) => {
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const parsed = automationBody(body);
+      if (typeof parsed === "string") return reply.code(400).send({ error: parsed });
+      const id = body["id"];
+      const idea = body["idea"];
+      if (typeof id !== "string" || !IDEA_SEARCH.test(id) || typeof idea !== "string" || !IDEA_ID.test(idea)) {
+        return reply.code(400).send({ error: "id is one of its idea searches and idea one idea in it" });
+      }
+      // Read first: a licensed search withheld from view is neither declared from nor spent.
+      if ((await ideaSearch(reply, parsed.name, id)) === null) return reply;
+      const result = sendBridgeFailure(reply, await callConfigCli({ op, name: parsed.name, id, idea }));
+      if (result === null) return reply;
+      app.log.info(`${op === "automation_idea_declare" ? "idea declared" : "held-out test read"} from the builder: ${parsed.name} ${id} ${idea}`);
+      const { ok: _ok, ...out } = result;
+      return { ok: true, ...out };
+    });
+  }
 
   // The console's own display preferences: its own store, no blast radius, so they save on change
   // rather than through a staged section.

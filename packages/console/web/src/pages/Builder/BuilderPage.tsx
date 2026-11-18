@@ -6,6 +6,7 @@ import type { BuilderAutomation, BuilderBlock, BuilderSchema, BuilderSuggestion,
 import { builderBacktest, builderDraft, builderSave, builderToday, fullSetAdd, fullSetPlan, useAutomationsBuilder, useBuilderRuns, useBuilderSchema, type FullSetAdded, type FullSetPlan } from "../../lib/api";
 import { BuilderForm, type Spec } from "./BuilderForm";
 import { ExploreRunsList, RunCardPanel } from "./BuilderRunCard";
+import { IdeasPanel } from "./BuilderIdeas";
 import { TodayView } from "./BuilderToday";
 import { CardHelpButton } from "../../components/CardHelp";
 import { SECTION_HELP } from "./BuilderHelp";
@@ -15,8 +16,9 @@ import { SECTION_HELP } from "./BuilderHelp";
  * the entry signal, the gates, the legs and their price, exits and size), beside the engine's decision
  * of it today and its explore runs. Every field writes the spec the paper loop reads; Check is the
  * module's own rule, Save goes through the orchestrator's config editor and is always off, and
- * Explore run queues the saved automation where our data covers it. Declaring a study and turning an
- * automation on happen outside the page.
+ * Explore run queues the saved automation where our data covers it, and Find ideas searches its newest
+ * long run for entry filters to declare. Adding a register row and turning an automation on happen
+ * outside the page.
  */
 
 /** What each block label says, in words. */
@@ -521,6 +523,15 @@ export function Workspace({
                 <CardHelpButton cardTitle="Explore runs" help={SECTION_HELP["runs"]!} />
               </div>
               <RunsPanel name={mode.name} />
+            </div>
+          )}
+          {mode.kind === "saved" && (
+            <div className="builder-section">
+              <div className="builder-run-section-head">
+                <h4>Ideas · entry filters to declare</h4>
+                <CardHelpButton cardTitle="Ideas" help={SECTION_HELP["ideas"]!} />
+              </div>
+              <IdeasPanel name={mode.name} />
             </div>
           )}
         </aside>

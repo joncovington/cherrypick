@@ -545,6 +545,16 @@ def cmd_read(args) -> int:
         out = readout.automation_run(args.name or "", args.id or "")
         _emit(out)
         return 0 if out.get("ok") else 1
+    if args.what in ("idea-searches", "idea-search"):
+        from . import ideafiles
+
+        out = (
+            ideafiles.searches(args.name or "")
+            if args.what == "idea-searches"
+            else ideafiles.search_result(args.name or "", args.id or "")
+        )
+        _emit(out)
+        return 0 if out.get("ok") else 1
     if args.what == "fullset":
         from . import fullsetprogress, paths
 
@@ -577,6 +587,22 @@ def cmd_read(args) -> int:
     out = readout.run_report(args.id or "", capital, risk_pct, risk_unit, dd_pct)
     _emit(out)
     return 0 if out["ok"] else 1
+
+
+def cmd_ideas(args) -> int:
+    """The idea search's three verbs (`ideafiles`): `plan` (the run a search would read and its split),
+    `declare` (draft one surviving idea's register row into its result) and `holdout` (that idea's one
+    held-out test, logged on the result). JSON on stdout."""
+    from . import ideafiles
+
+    if args.verb == "plan":
+        out = ideafiles.plan(args.name)
+    elif args.verb == "declare":
+        out = ideafiles.declare(args.name, args.id or "", args.idea or "")
+    else:
+        out = ideafiles.holdout(args.name, args.id or "", args.idea or "", settings.load(args.config))
+    _emit(out)
+    return 0 if out.get("ok") else 1
 
 
 def cmd_inventory(args) -> int:
@@ -751,20 +777,22 @@ def main(argv: list[str] | None = None) -> int:
         "what",
         choices=(
             "overview", "run", "trades", "path", "stores", "summaries", "signals", "signal",
-            "automation-runs", "automation-run", "fullset", "portfolio-sources",
+            "automation-runs", "automation-run", "fullset", "portfolio-sources", "idea-searches",
+            "idea-search",
         ),
     )  # fmt: skip
     rd.add_argument("--ids", default=None, help="with `summaries`: run ids, comma separated")
     rd.add_argument(
         "--name",
         default=None,
-        help="with `signal`: the signal study's name; with `automation-runs` or `automation-run`: "
-        "the automation",
+        help="with `signal`: the signal study's name; with `automation-runs`, `automation-run`, "
+        "`idea-searches` or `idea-search`: the automation",
     )
     rd.add_argument(
         "--id",
         default=None,
-        help="with `run`, `trades` or `path`: the run id; with `automation-run`: the run's name",
+        help="with `run`, `trades` or `path`: the run id; with `automation-run` or `idea-search`: the "
+        "result's name",
     )
     rd.add_argument("--arm", default=None, help="with `trades` or `path`: the arm")
     rd.add_argument("--session", default=None, help="with `path`: the trade's session (YYYY-MM-DD)")
@@ -790,6 +818,12 @@ def main(argv: list[str] | None = None) -> int:
         help="with `run` and a capital: the sizing check's p99 drawdown cap, % of it (default 30)",
     )
     rd.set_defaults(fn=cmd_read)
+    ix = sub.add_parser("ideas", help="the idea search: plan one, declare an idea, its one held-out test")
+    ix.add_argument("verb", choices=("plan", "declare", "holdout"))
+    ix.add_argument("--name", required=True, help="the saved automation")
+    ix.add_argument("--id", default=None, help="with `declare` or `holdout`: the search result's name")
+    ix.add_argument("--idea", default=None, help="with `declare` or `holdout`: the idea's id in that result")
+    ix.set_defaults(fn=cmd_ideas)
     sub.add_parser(
         "inventory", help="count every store changed since its last count (the Data tab's numbers)"
     ).set_defaults(fn=cmd_inventory)

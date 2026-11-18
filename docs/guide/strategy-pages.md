@@ -123,6 +123,14 @@ The action row:
 - **Explore run** queues one run of the saved automation on the research queue, over the window picked beside it. Each choice is a span one store holds for every part of the automation: the last year, and everything that store holds, ours first. A thin span (Dolt before 2025, about three days a week) says so, and the vendor's store is offered only where it reaches further back than ours, marked licensed. The line under the picker says what the chosen store holds. It is offered only for a saved, unedited automation some store covers. The run is descriptive (no verdict), changes no label and turns nothing on. It waits on the research queue behind the full option set's fetch.
 - **Declare…** and **Promote to paper** are shown disabled. A study declaration is written and reviewed outside the page, and turning an automation on is a hand edit or its group's switch.
 
+### Ideas
+
+Beside the explore runs, **Find ideas** searches the automation's newest explore run with at least 120 sessions traded for entry filters worth declaring. It never changes the automation. The split is fixed when the search is queued, two thirds of the way through the run, and the search reads only the sessions before it.
+
+Each filter skips days: the prior close's VIX, RSI, trend or move in a band, VIX over realised volatility, the opening gap, a weekday or an event day, alone or two at once. Skipping days raises P&L only if they lost, so a filter is scored by what it skips. The table lists each filter tried with the share of days it skips, the skipped days' net per day and its interval, the P&L it would have gained, and that gain after the search's own luck is taken off. It also shows how it ranks against random filters across the whole menu (not just random sets of its size), whether its neighbouring bands agree, how many of four folds it lost in, and whether the days it keeps still pay at 1.5x costs. The head of the table says how many were tried and how many survive Holm and BH over that count.
+
+A filter that passes every check offers **Declare**, which drafts its register row with the split fixed (shown for copying into the register, with its mechanism added by hand). Once declared, **Test once on held-out** reads the later sessions for that idea, one time; the search logs every use of the held-out part. A filter the later part could not detect says **Not testable on our history**. Others name the checks they missed.
+
 Beside the form:
 
 - **Today, live** decides the automation now as the paper loop would, on today's stream cache (an unsaved edit as it stands), without writing anything. It lists every check with its value and result, and the legs it would take in the order chain or the check that would stop it.

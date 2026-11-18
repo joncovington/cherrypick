@@ -22,6 +22,13 @@ beyond the latest release.
 
 ### What's new
 
+- **Find ideas, on a saved automation.** The Builder searches the automation's newest long explore
+  run for entry filters (VIX, RSI, trend and gap bands, weekdays, event days, alone or two at once)
+  and lists them as hypotheses, never a change. A filter is scored by the days it would skip, and
+  must beat the best random filter of the whole menu, hold across neighbouring bands and folds, and
+  leave trades that pay at 1.5x costs, all on the part of the run before a split fixed when the
+  search is queued. A survivor can be declared (its register row drafted) and then tested once on
+  the later part. `core.stats.menu_placebo` is the max-over-menu baseline.
 - **How a Builder run holds up.** The run card gains the reads a study gets, from the same trades
   and never a verdict: what the 5 best days carry, P&L per trade with costs at 1.5x and 2x, the
   drawdown range with the trades reshuffled, and how many quarters were profitable.

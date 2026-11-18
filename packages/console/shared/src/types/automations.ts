@@ -523,3 +523,102 @@ export interface BuilderRuns {
   withheld: number;
   results_unavailable: boolean;
 }
+
+/** The idea search (#1294): entry filters for one saved automation, scored on the part of one Builder
+ *  run before its split. Hypotheses only; a surviving idea is declared, then tested once. */
+export type IdeaGate = "loses" | "beats_menu" | "plateau" | "stable" | "adds" | "pays_at_1_5x";
+
+export interface IdeaHeldOutRead {
+  idea: string;
+  at: string;
+  use: number;
+  sessions: number;
+  skipped: number;
+  skipped_mean: number | null;
+  uplift: number;
+  ci: [number, number] | null;
+  verdict: "passed" | "failed" | "no_verdict";
+}
+
+export interface IdeaRow {
+  id: string;
+  idea: string;
+  conditions: string[];
+  skipped: number;
+  skipped_share: number;
+  skipped_mean: number | null;
+  skipped_ci: [number, number] | null;
+  uplift: number;
+  uplift_shrunk: number;
+  z: number;
+  p: number;
+  p_menu: number;
+  holm: boolean;
+  bh: boolean;
+  plateau: { verdict: "plateau" | "lone_peak" | "no_neighbours"; axes: Array<{ condition: string; verdict: string }> };
+  stability: { folds_negative: number; stable: boolean };
+  adds: { adds: boolean } | null;
+  cost: { mean_by_multiplier: Record<string, number | null>; survives: boolean } | null;
+  held_out: { planned_sessions: number; mde: number | null; testable: boolean };
+  gates: Record<IdeaGate, boolean>;
+  survives: boolean;
+  /** The register row drafted when it was declared, or null. */
+  declaration: Record<string, unknown> | null;
+  /** Its one held-out test, once read. */
+  held_out_read: IdeaHeldOutRead | null;
+}
+
+export interface IdeaSearchBrief {
+  name: string;
+  automation: string;
+  run: string;
+  symbol: string;
+  source: string | null;
+  sessions: [string, string];
+  split: string;
+  base: { sessions: number; trades: number; net: number; mean_session: number; held_out_sessions: number };
+  tried: number;
+  survivors: number;
+  holm_survivors: number;
+  bh_survivors: number;
+  generated_at: string;
+  licensed: boolean;
+  declared: string[];
+  held_out_used: number;
+}
+
+export interface IdeaSearch extends IdeaSearchBrief {
+  draws: number;
+  null_min_median: number | null;
+  rules: Record<string, number>;
+  rows: IdeaRow[];
+  held_out_uses: IdeaHeldOutRead[];
+}
+
+export interface IdeaSearchTask {
+  id: number | null;
+  search: string;
+  status: string;
+  queued_at: string | null;
+  finished_at: string | null;
+  note: string | null;
+}
+
+export interface IdeaSearches {
+  name: string;
+  tasks: IdeaSearchTask[];
+  searches: IdeaSearchBrief[];
+  withheld: number;
+  results_unavailable: boolean;
+}
+
+export interface IdeaActionResult {
+  ok: boolean;
+  error?: string;
+  code?: string;
+  search?: string;
+  task?: number | null;
+  split?: string;
+  row?: Record<string, unknown>;
+  verdict?: IdeaHeldOutRead["verdict"];
+}
