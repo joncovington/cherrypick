@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import type { BuilderAutomation, BuilderSchema, BuilderSuggestion, BuilderToday } from "@console/shared";
 import { builderBacktest, builderDraft, builderSave, builderToday } from "../../lib/api";
-import { EntryFields, ExitFields, GateFields, LegFields, SizeFields, UnderlyingFields, entryText, type Spec } from "./BuilderForm";
+import { EntryFields, ExitFields, GateFields, LegFields, SizeFields, UnderlyingFields, entryText, eventName, type Spec } from "./BuilderForm";
 import { TodayView } from "./BuilderToday";
 
 /**
@@ -71,7 +71,7 @@ const list = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
 const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
 
 /** The automation block by block, in plain English, as the review step reads it. */
-export function plainBlocks(spec: Spec): Record<"structure" | "entry" | "gates" | "exit" | "size", string> {
+export function plainBlocks(spec: Spec, schema?: BuilderSchema): Record<"structure" | "entry" | "gates" | "exit" | "size", string> {
   const e = obj(spec["expiry"]);
   const expiry =
     e["kind"] === "between"
@@ -90,7 +90,7 @@ export function plainBlocks(spec: Spec): Record<"structure" | "entry" | "gates" 
     })
     .join(", ");
   const days = list(spec["weekdays"]).map(Number);
-  const skip = list(obj(spec["skip_events"])["labels"]).map(String);
+  const skip = list(obj(spec["skip_events"])["labels"]).map((l) => (schema ? eventName(schema, String(l)) : String(l)));
   const gates = list(spec["gates"]).map(obj);
   const gateText = gates.length
     ? gates
@@ -403,7 +403,7 @@ export function BuilderWizard({
     );
   }
 
-  const blocks = plainBlocks(spec);
+  const blocks = plainBlocks(spec, schema);
   const sectionProps = { schema, spec, onChange: (s: Spec) => setSpec(s) };
   const body: Record<StepId, ReactNode> = {
     start: (

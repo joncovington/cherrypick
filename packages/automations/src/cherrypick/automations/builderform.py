@@ -7,8 +7,9 @@ and their keys (`arms.EXPIRY_KEYS`), the strike rules, their keys and match mode
 `strikes`), the gates with their parameters from each gate function's signature and the stage each
 reads (`gates.REGISTRY`, `gates.CORE_STAGE`), the exits (`arms.EXIT_KEYS`), the limits, the sizes and
 their progression (`sizing`), core's signal kinds and their parameters (`core.signals.KINDS`), and the
-event labels (`events`). A signal parameter's type is core's validator, which the schema cannot
-state, so the form takes the value as typed and the module's check says what is wrong.
+event labels with each one's name, when it falls and its next day (`events`). A signal parameter's
+type is core's validator, which the schema cannot state, so the form takes the value as typed and the
+module's check says what is wrong.
 
 **Today, live** (`today`, `cli builder-today`) decides one automation once, now, as the paper loop
 would: the snapshot `feed.snapshot_for` builds from the stream cache and the paper ledger, opened
@@ -20,13 +21,14 @@ read. Nothing is written: no decision row, no register row, no replay record, no
 from __future__ import annotations
 
 import inspect
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from cherrypick.core import signals
 
 from . import arms as arms_mod
-from . import enrolment, events, gates, sizing
+from . import enrolment, events, fieldtypes, gates, sizing
 from . import strikes as st
 
 ENTRY_KINDS: dict[str, dict[str, bool]] = {
@@ -151,8 +153,24 @@ def _gate(name: str, fn) -> dict:
     }
 
 
-def schema() -> dict:
-    """Every choice the Builder's form offers, from the engine's tables."""
+def _event_about(today: date) -> dict:
+    """Each event label's name, when it falls in words, and its next day from `today` where the calendar
+    says: null for a symbol's own dates, and past the range a data label covers."""
+    try:
+        cal = events.load_calendar()
+    except Exception:  # noqa: BLE001 - the words still help without the data dates
+        cal = events.EventCalendar()
+    out = {}
+    for label in sorted({*events.RULE_LABELS, *events.STORE_LABELS, *events.SYMBOL_LABELS}):
+        name, when = events.ABOUT[label]
+        out[label] = {"name": name, "when": when, "next": events.next_day(cal, label, today)}
+    return out
+
+
+def schema(today: date | None = None) -> dict:
+    """Every choice the Builder's form offers, from the engine's tables. `today` (Eastern unless given)
+    dates each event label's next day."""
+    today = today or datetime.now(ZoneInfo("America/New_York")).date()
     return {
         "ok": True,
         "blocks": {b: list(keys) for b, keys in enrolment.BLOCKS.items()},
@@ -166,6 +184,8 @@ def schema() -> dict:
         "signal_rules": sorted(signals._RULES),
         "weekdays": [0, 1, 2, 3, 4],
         "event_labels": sorted({*events.RULE_LABELS, *events.STORE_LABELS, *events.SYMBOL_LABELS}),
+        "event_about": _event_about(today),
+        "types": fieldtypes.types(sorted({*events.RULE_LABELS, *events.STORE_LABELS, *events.SYMBOL_LABELS})),
         "expiry": {k: dict(v) for k, v in arms_mod.EXPIRY_KEYS.items()},
         "expiry_flags": list(arms_mod.EXPIRY_FLAGS),
         "strike_rules": {
