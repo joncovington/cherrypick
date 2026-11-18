@@ -1,7 +1,7 @@
 # Market Profile entry signals: plan
 
-> **Status (2026-11-17): drafted, nothing declared or run.** Each candidate below becomes a register
-> item when it is declared; numbering starts after the register's highest id at that time.
+> **Status (2026-11-18): stage A declared as research item 93** (all four candidates, one batch), not yet
+> run. Stage B is declared per candidate, only for those that pass.
 
 ## The question
 

@@ -4392,6 +4392,66 @@
       "retest": null,
       "retest_note": "A pass is followed by an automation enrolled with its forward rule, not a retest; the chains are the vendor's, so a retest reads them only while the licence allows new work.",
       "retests": []
+    },
+    {
+      "id": 93,
+      "study": "item93",
+      "title": "Market Profile entry readings, stage A: four forecasts on SPX prices",
+      "status": "declared",
+      "legacy": false,
+      "setup": "market-profile",
+      "side": "signal",
+      "structure": "none",
+      "window": "intraday",
+      "measure": "per SPX session against the prior session's value area (2.5-point rows, CBOT 70%): balance, the log range from 10:30 to the close over the prior close on days inside the first hour at 10:30; acceptance, the side-signed log return to the close after two 30-minute periods wholly beyond value (C onward, by 13:00); rejection, a touch of the far edge after an open outside value and two periods wholly inside (by 12:30); unfinished, a touch within five sessions of the prior session's poor extremes and single-print runs within 3%",
+      "expected": "balance: negative (an inside open with a narrow first hour narrows the day beyond item 81's w); acceptance, rejection, unfinished: positive against their matched baselines",
+      "sample": "full SPX sessions in the licensed one-minute store, 2022-05-16..2026-11-13, one run cut at 2025-07-01 (design before, holdout from); < 40 design events (or < 200 design days for balance) = no verdict, < 20 holdout events = provisional",
+      "rule": "FORECAST_RULE, per test: balance, the signal's least-squares coefficient beside the HAR terms, the gap and w, at least 0.10 in size; the others, the mean of event less matched baseline from the non-event days of the same part, at least 0.0010 (acceptance), 0.10 (rejection), 0.05 (unfinished); one-sided t >= 2.5 in the declared direction from a stationary block bootstrap (mean block 10, 10,000 draws, seed 93); the declared sign in each design half (2023-12-01); holdout, read after a design pass: the declared sign; t 2.5 keeps Holm across the four from binding",
+      "mechanism": "balance: a market agreeing on yesterday's value with a quiet first hour stays quiet; acceptance: time held outside value is new value; rejection: a failed auction outside value rotates through it; unfinished: an auction that ended without excess is revisited",
+      "rivals": [
+        {
+          "explanation": "it is item 81's width again",
+          "check": "w is in the balance model"
+        },
+        {
+          "explanation": "volatility clustering or the gap",
+          "check": "the HAR terms and the gap are controls"
+        },
+        {
+          "explanation": "the day's drift or the clock",
+          "check": "same side, same period end, non-event days"
+        },
+        {
+          "explanation": "any price that moved goes further",
+          "check": "same distance, same way, same time or span"
+        },
+        {
+          "explanation": "event days",
+          "check": "reported without FOMC decision days"
+        },
+        {
+          "explanation": "one regime",
+          "check": "the declared sign in both design halves"
+        },
+        {
+          "explanation": "many tries",
+          "check": "four tests at t 2.5, one parameter set each"
+        }
+      ],
+      "pointer": "research/edge-hypotheses-plan.md#93-market-profile-entry-readings-stage-a-four-forecasts-on-spx-prices",
+      "scripts": [
+        "packages/backtest/scripts/profile_entry_readings_item93.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_profile_entry_readings_item93_script.py"
+      ],
+      "results": [
+        "{home}/data/backtest/results/research/item93/results.json"
+      ],
+      "outcome": null,
+      "retest": null,
+      "retest_note": "A forecast: a passing test is carried by a stage B item that prices its trade on the three bars.",
+      "retests": []
     }
   ],
   "rule_changes": []
