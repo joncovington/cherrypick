@@ -371,6 +371,11 @@ describe("the research queue tab: helpers", () => {
     expect(etaText(600)).toBe("about 10 min left");
     expect(etaText(20)).toBe("under a minute left");
     expect(etaText(null)).toBeNull();
+    // a job counted in steps: the estimate is the running step's (2026-11-18: the full set read 6 h for 48 min)
+    expect(etaText(2880, 1)).toBe("about 48 min left in this step, then 1 more step");
+    expect(etaText(2880, 2)).toBe("about 48 min left in this step, then 2 more steps");
+    expect(etaText(20, 0)).toBe("under a minute left in this step");
+    expect(paceText(byHand({ etaSeconds: 2880, stepsAfter: 1 }))).toBe("57.2 s/session · about 48 min left in this step, then 1 more step");
     // the rate sits beside the time left (2026-11-06: the card showed only the time left)
     expect(rateText({ phase: "sessions", secondsEach: 57.24 })).toBe("57.2 s/session");
     expect(rateText({ phase: "symbol-days", secondsEach: 0.25 })).toBe("4.0 symbol-days/s");

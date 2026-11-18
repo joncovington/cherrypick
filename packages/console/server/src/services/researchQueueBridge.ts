@@ -98,6 +98,7 @@ export function toProgress(v: unknown): ResearchProgress | null {
     phases,
     fraction: n(r["fraction"]),
     etaSeconds: n(r["eta_s"]),
+    stepsAfter: n(r["steps_after"]),
     rate: toRate(r["rate"]),
     ageSeconds: n(r["age_s"]),
     line: s(r["line"]) ?? "",

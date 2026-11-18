@@ -92,6 +92,9 @@ export interface ResearchProgress {
   /** The overall share done across nested phases, 0-1; null when no phase has a total. */
   fraction: number | null;
   etaSeconds: number | null;
+  /** Set where `etaSeconds` covers only the step under way (a job counted in steps): how many steps
+   *  follow it. */
+  stepsAfter?: number | null;
   /** The innermost counted phase's average seconds per item, items a resume skipped aside; null
    *  before anything is counted or once the job has ended. */
   rate: { phase: string; secondsEach: number } | null;

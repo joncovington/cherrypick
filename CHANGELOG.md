@@ -38,6 +38,11 @@ beyond the latest release.
   Declare and Promote to paper shown disabled. Beside it, **Today, live** decides the automation
   now as paper would, on a read-only snapshot (`cli builder-today`): every check, and the legs it
   would take or the check that stops it. The explore runs and run cards sit beside it too.
+- **A fetch run in steps estimates the step under way.** A job counted in steps (the SPX session
+  fetch, then its VIX pass) shows the time left in the running step at that step's own pace, and
+  how many steps follow ("about 48 min left in this step, then 1 more step"), on the queue card and
+  in the progress line. Before, the light VIX step counted as half the job and the estimate ran
+  hours long.
 - **Multi-day automations replayed through the session.** An automation that enters inside the
   session on an expiry after it (a 10:30 entry on a monthly) is backtested from the full set's
   intraday chain stores: expiries 1-7 days out at one minute and 8-90 at five, each read no older
