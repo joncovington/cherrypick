@@ -25,7 +25,7 @@ describe("the full set card", () => {
     expect(out).toContain(">25%<");
     expect(out).toContain("3 refused");
     expect(PARTS.map(([k]) => k)).toEqual(["zero", "eod", "oi", "near", "mid"]);
-    expect(out).toContain(">Every underlying<");
+    expect(out).toContain(">Total<");
   });
 
   it("writes a small share to a tenth, and an empty plan as a dash", () => {

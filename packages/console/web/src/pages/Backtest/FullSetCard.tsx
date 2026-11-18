@@ -53,7 +53,7 @@ export function FullSetBody({ d }: { d: FullSetProgress }) {
           {fmtCount(d.overall.done)} of {fmtCount(d.overall.total)} requests · {d.from ?? "—"} → {d.through ?? "—"}
         </span>
       </div>
-      <div className="table-wrap">
+      <div className="fs-wrap">
         <table className="data-table fs-table">
           <thead>
             <tr>
@@ -84,7 +84,7 @@ export function FullSetBody({ d }: { d: FullSetProgress }) {
               );
             })}
             <tr className="fs-total">
-              <th scope="row">Every underlying</th>
+              <th scope="row">Total</th>
               {PARTS.map(([key]) => (
                 <td key={key}>
                   <Meter p={d.by_part[key]} />
