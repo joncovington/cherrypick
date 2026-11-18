@@ -11548,6 +11548,71 @@ svg.vol-curve text {
   gap: 0.4rem 0.9rem;
   font-size: 0.85rem;
 }
+.builder-req {
+  color: var(--neg);
+  font-weight: 700;
+}
+/* A field's bounds beside its label (whole, ≥ 1, ET), in the label's own case. */
+.builder-hint {
+  text-transform: none;
+  letter-spacing: 0;
+  opacity: 0.8;
+}
+.builder-input::placeholder {
+  color: var(--text-muted);
+  opacity: 0.7;
+}
+.builder-input:invalid:not(:placeholder-shown),
+.builder-input[type="time"]:invalid {
+  border-color: var(--neg);
+}
+.builder-form-key {
+  margin: 0;
+  font-size: 0.8rem;
+}
+.builder-events > legend {
+  display: inline-flex;
+  align-items: center;
+  margin-bottom: 0.35rem;
+}
+/* The event key spans the row under the checkboxes. */
+.builder-event-key {
+  flex: 1 1 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+  margin-top: 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-sunken);
+}
+.builder-event-key th {
+  text-align: left;
+  font-weight: 600;
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  padding: 0.4rem 0.7rem;
+  border-bottom: 1px solid var(--border);
+}
+.builder-event-key td {
+  padding: 0.35rem 0.7rem;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+.builder-event-key td:first-child {
+  white-space: nowrap;
+  font-weight: 600;
+}
+.builder-event-key td.num {
+  font-family: var(--num-face);
+  white-space: nowrap;
+}
+.builder-event-key tfoot td {
+  border-bottom: 0;
+  font-weight: 400;
+  white-space: normal;
+}
 .builder-cond {
   display: flex;
   flex-wrap: wrap;

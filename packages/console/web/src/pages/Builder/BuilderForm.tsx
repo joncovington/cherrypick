@@ -1,4 +1,8 @@
-import type { BuilderBlock, BuilderSchema } from "@console/shared";
+import { useState } from "react";
+import type { BuilderBlock, BuilderFieldType, BuilderSchema } from "@console/shared";
+import { TypedField, showValue, type FieldProps } from "./BuilderField";
+
+export { parseValue, showValue } from "./BuilderField";
 import { CardHelpButton } from "../../components/CardHelp";
 import { SECTION_HELP } from "./BuilderHelp";
 
@@ -15,6 +19,7 @@ export type Spec = Record<string, unknown>;
 type Obj = Record<string, unknown>;
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
+const TEXT: BuilderFieldType = { type: "text" };
 
 const STATE_TEXT: Record<BuilderBlock["state"], string> = {
   backtested: "backtested",
@@ -35,31 +40,6 @@ function list(v: unknown): unknown[] {
   return Array.isArray(v) ? v : [];
 }
 
-/** A field's text as the spec's value: blank is absent, then a number, a flag, JSON, or text. */
-export function parseValue(text: string): unknown {
-  const t = text.trim();
-  if (t === "") return undefined;
-  if (t === "true") return true;
-  if (t === "false") return false;
-  if (t === "null") return null;
-  if (/^-?\d+(\.\d+)?$/.test(t)) return Number(t);
-  if (t.startsWith("{") || t.startsWith("[") || t.startsWith('"')) {
-    try {
-      return JSON.parse(t) as unknown;
-    } catch {
-      return t;
-    }
-  }
-  return t;
-}
-
-/** A spec value as its field shows it. */
-export function showValue(v: unknown): string {
-  if (v === undefined) return "";
-  if (typeof v === "string") return v;
-  return JSON.stringify(v);
-}
-
 /** `o` with `key` set to `value`, or removed when the value is undefined. */
 export function withKey(o: Obj, key: string, value: unknown): Obj {
   const out = { ...o };
@@ -68,16 +48,9 @@ export function withKey(o: Obj, key: string, value: unknown): Obj {
   return out;
 }
 
-function Field({ id, label, value, onChange, required }: { id: string; label: string; value: unknown; onChange: (v: unknown) => void; required?: boolean }) {
-  return (
-    <div className="builder-f">
-      <label className="builder-lbl" htmlFor={id}>
-        {label.replaceAll("_", " ")}
-        {required ? " *" : ""}
-      </label>
-      <input id={id} className="builder-input" defaultValue={showValue(value)} onBlur={(e) => onChange(parseValue(e.currentTarget.value))} />
-    </div>
-  );
+/** A field, typed where the module says (`BuilderField`); keyed on its value so an outside change redraws it. */
+function Field(p: FieldProps) {
+  return <TypedField key={`${p.id}-${showValue(p.value)}`} {...p} />;
 }
 
 function Select({
@@ -126,7 +99,8 @@ function Flag({ id, label, value, onChange }: { id: string; label: string; value
   );
 }
 
-/** The keys a kind takes ({key: required}), each a field on `o`; a key in `flags` is a checkbox. */
+/** The keys a kind takes ({key: required}), each a field on `o` drawn by its type in `types`; without
+ *  types (an older module) a key in `flags` is a checkbox and the rest text. */
 function KeyFields({
   prefix,
   keys,
@@ -134,6 +108,8 @@ function KeyFields({
   onChange,
   skip = [],
   flags = [],
+  types,
+  legs,
 }: {
   prefix: string;
   keys: Record<string, boolean>;
@@ -141,16 +117,18 @@ function KeyFields({
   onChange: (next: Obj) => void;
   skip?: string[];
   flags?: string[];
+  types?: Record<string, BuilderFieldType> | undefined;
+  legs?: string[];
 }) {
   return (
     <>
       {Object.entries(keys)
         .filter(([k]) => !skip.includes(k))
         .map(([k, req]) =>
-          flags.includes(k) ? (
+          !types && flags.includes(k) ? (
             <Flag key={`${prefix}-${k}`} id={`${prefix}-${k}`} label={k} value={o[k]} onChange={(v) => onChange(withKey(o, k, v))} />
           ) : (
-            <Field key={`${prefix}-${k}-${showValue(o[k])}`} id={`${prefix}-${k}`} label={k} value={o[k]} required={req} onChange={(v) => onChange(withKey(o, k, v))} />
+            <Field key={`${prefix}-${k}`} id={`${prefix}-${k}`} label={k} value={o[k]} required={req} t={types?.[k]} legs={legs} onChange={(v) => onChange(withKey(o, k, v))} />
           ),
         )}
     </>
@@ -231,16 +209,20 @@ function GateRows({ schema, gates, stages, onChange, prefix }: { schema: Builder
               options={known.map((k) => k.gate)}
               onChange={(name) => onChange(gates.map((x, j) => (j === i ? { gate: name } : x)))}
             />
-            {(def?.params ?? []).map((p) => (
-              <Field
-                key={`${prefix}-${i}-${p.name}-${showValue(g[p.name])}`}
-                id={`${prefix}-${i}-${p.name}`}
-                label={p.default === null || p.default === undefined ? p.name : `${p.name} (${showValue(p.default)})`}
-                value={g[p.name]}
-                required={p.required}
-                onChange={(v) => onChange(gates.map((x, j) => (j === i ? withKey(x, p.name, v) : x)))}
-              />
-            ))}
+            {(def?.params ?? []).map((p) => {
+              const t = schema.types?.gates[String(g["gate"])]?.[p.name];
+              return (
+                <Field
+                  key={`${prefix}-${i}-${p.name}`}
+                  id={`${prefix}-${i}-${p.name}`}
+                  label={t || p.default === null || p.default === undefined ? p.name : `${p.name} (${showValue(p.default)})`}
+                  value={g[p.name]}
+                  required={p.required}
+                  t={t}
+                  onChange={(v) => onChange(gates.map((x, j) => (j === i ? withKey(x, p.name, v) : x)))}
+                />
+              );
+            })}
             <button type="button" className="btn builder-remove" aria-label={`Remove gate ${String(g["gate"])}`} onClick={() => onChange(gates.filter((_, j) => j !== i))}>
               ×
             </button>
@@ -274,9 +256,16 @@ export function UnderlyingFields({ schema, spec, onChange }: SectionProps) {
   return (
     <>
       <div className="builder-grid">
-        <Field key={`sym-${showValue(spec["symbol"])}`} id="f-symbol" label="symbol" value={spec["symbol"]} required onChange={(v) => set("symbol", v)} />
+        <Field id="f-symbol" label="symbol" value={spec["symbol"]} required t={TEXT} onChange={(v) => set("symbol", typeof v === "string" ? v.toUpperCase() : v)} />
         <Select id="f-expiry-kind" label="expiry" value={exprKind} options={Object.keys(schema.expiry)} onChange={(k) => set("expiry", { kind: k })} />
-        <KeyFields prefix="f-expiry" keys={schema.expiry[exprKind] ?? {}} flags={schema.expiry_flags} o={expiry} onChange={(next) => set("expiry", { ...next, kind: exprKind })} />
+        <KeyFields
+          prefix="f-expiry"
+          keys={schema.expiry[exprKind] ?? {}}
+          flags={schema.expiry_flags}
+          types={schema.types?.expiry}
+          o={expiry}
+          onChange={(next) => set("expiry", { ...next, kind: exprKind })}
+        />
       </div>
       <fieldset className="builder-days">
         <legend className="builder-lbl">weekdays</legend>
@@ -291,23 +280,76 @@ export function UnderlyingFields({ schema, spec, onChange }: SectionProps) {
           </label>
         ))}
       </fieldset>
-      <fieldset className="builder-days">
-        <legend className="builder-lbl">skip on these events</legend>
-        {schema.event_labels.map((l) => (
-          <label key={l}>
-            <input
-              type="checkbox"
-              checked={labelsOn.includes(l)}
-              onChange={(e) => {
-                const next = e.currentTarget.checked ? [...labelsOn, l] : labelsOn.filter((x) => x !== l);
-                set("skip_events", next.length ? { ...skip, labels: next } : undefined);
-              }}
-            />{" "}
-            {l}
-          </label>
-        ))}
-      </fieldset>
+      <EventSkips
+        schema={schema}
+        on={labelsOn}
+        onChange={(next) => set("skip_events", next.length ? { ...skip, labels: next } : undefined)}
+      />
     </>
+  );
+}
+
+/** An event label's name, the module's own, or the label where an older module gives none. */
+export function eventName(schema: BuilderSchema, label: string): string {
+  return schema.event_about?.[label]?.name ?? label;
+}
+
+function dayText(iso: string): string {
+  const d = new Date(`${iso}T12:00:00Z`);
+  return `${WEEKDAYS[(d.getUTCDay() + 6) % 7] ?? ""} ${iso}`;
+}
+
+/** The event skips by name, sorted by name, with a key of what each is, when it falls and its next day
+ *  (closed until its ? is pressed; `keyOpen` opens it at first). */
+export function EventSkips({ schema, on, onChange, keyOpen = false }: { schema: BuilderSchema; on: string[]; onChange: (next: string[]) => void; keyOpen?: boolean }) {
+  const [key, setKey] = useState(keyOpen);
+  const labels = [...schema.event_labels].sort((a, b) => eventName(schema, a).localeCompare(eventName(schema, b)));
+  const about = schema.event_about;
+  return (
+    <fieldset className="builder-days builder-events">
+      <legend className="builder-lbl">
+        skip on these events
+        {about && (
+          <button type="button" className={key ? "wiz-q is-open" : "wiz-q"} aria-label="What are these events?" aria-expanded={key} onClick={() => setKey(!key)}>
+            ?
+          </button>
+        )}
+      </legend>
+      {labels.map((l) => (
+        <label key={l} title={about?.[l]?.when}>
+          <input type="checkbox" checked={on.includes(l)} onChange={(e) => onChange(e.currentTarget.checked ? [...on, l] : on.filter((x) => x !== l))} />{" "}
+          {eventName(schema, l)}
+        </label>
+      ))}
+      {key && about && (
+        <table className="builder-event-key" role="note">
+          <thead>
+            <tr>
+              <th>Event</th>
+              <th>When</th>
+              <th>Next</th>
+            </tr>
+          </thead>
+          <tbody>
+            {labels.map((l) => (
+              <tr key={l}>
+                <td>{eventName(schema, l)}</td>
+                <td>{about[l]?.when}</td>
+                <td className="num">{about[l]?.next ? dayText(about[l]!.next!) : "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td colSpan={3} className="muted">
+                A skipped event means no new trade that day. A day the calendar has no data for is not skipped, and the backtest marks it
+                unknown. Earnings and ex-dividend are the symbol's own dates.
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      )}
+    </fieldset>
   );
 }
 
@@ -319,13 +361,22 @@ export function EntryFields({ schema, spec, onChange }: SectionProps) {
   const form = "at" in trigger ? "at" : "signal";
   const signal = obj(trigger["signal"]);
   const entryKind = String(entry["kind"] ?? "time");
+  const types = schema.types;
+  const sigType = (p: string) => types?.signals.kinds[String(signal["kind"])]?.[p] ?? types?.signals.rules[p];
   return (
     <>
       <div className="builder-grid">
         <Select id="f-entry-kind" label="entry" value={entryKind} options={Object.keys(schema.entry)} onChange={(k) => set("entry", { kind: k })} />
         {entryKind === "orb" ? (
           <>
-            <KeyFields prefix="f-orb" keys={schema.entry["orb"] ?? {}} o={entry} skip={["direction"]} onChange={(next) => set("entry", { ...next, kind: "orb" })} />
+            <KeyFields
+              prefix="f-orb"
+              keys={schema.entry["orb"] ?? {}}
+              types={types?.entry["orb"]}
+              o={entry}
+              skip={["direction"]}
+              onChange={(next) => set("entry", { ...next, kind: "orb" })}
+            />
             <Select id="f-orb-direction" label="direction" value={String(entry["direction"] ?? "")} options={schema.orb_directions} onChange={(v) => set("entry", { ...entry, direction: v })} />
           </>
         ) : entryKind === "trigger" ? (
@@ -338,7 +389,7 @@ export function EntryFields({ schema, spec, onChange }: SectionProps) {
               onChange={(f) => set("entry", { ...entry, trigger: f === "at" ? { at: "", within: 5 } : { signal: {}, window: {}, within: null } })}
             />
             {form === "at" ? (
-              <KeyFields prefix="f-at" keys={schema.trigger_forms["at"] ?? {}} o={trigger} onChange={(next) => set("entry", { ...entry, trigger: next })} />
+              <KeyFields prefix="f-at" keys={schema.trigger_forms["at"] ?? {}} types={types?.trigger} o={trigger} onChange={(next) => set("entry", { ...entry, trigger: next })} />
             ) : (
               <>
                 <Select
@@ -350,37 +401,48 @@ export function EntryFields({ schema, spec, onChange }: SectionProps) {
                 />
                 {[...(schema.signals[String(signal["kind"])] ?? []), ...schema.signal_rules].map((p) => (
                   <Field
-                    key={`f-sig-${p}-${showValue(signal[p])}`}
+                    key={`f-sig-${p}`}
                     id={`f-sig-${p}`}
                     label={p}
                     value={signal[p]}
+                    required={sigType(p)?.required}
+                    t={sigType(p)}
                     onChange={(v) => set("entry", { ...entry, trigger: { ...trigger, signal: withKey(signal, p, v) } })}
                   />
                 ))}
                 {(["open", "close"] as const).map((w) => (
                   <Field
-                    key={`f-win-${w}-${showValue(obj(trigger["window"])[w])}`}
+                    key={`f-win-${w}`}
                     id={`f-win-${w}`}
                     label={`window ${w}`}
                     value={obj(trigger["window"])[w]}
                     required
+                    t={types?.trigger[w]}
                     onChange={(v) => set("entry", { ...entry, trigger: { ...trigger, window: withKey(obj(trigger["window"]), w, v) } })}
                   />
                 ))}
                 <Field
-                  key={`f-within-${showValue(trigger["within"])}`}
                   id="f-within"
-                  label="within (blank: until it closes)"
+                  label={types ? "within" : "within (blank: until it closes)"}
                   value={trigger["within"] ?? undefined}
+                  t={types?.trigger["within"]}
+                  blankMeans="until it closes"
                   onChange={(v) => set("entry", { ...entry, trigger: { ...trigger, within: v === undefined ? null : v } })}
                 />
-                <Field key={`f-daily-${showValue(trigger["daily"])}`} id="f-daily" label="daily" value={trigger["daily"]} onChange={(v) => set("entry", { ...entry, trigger: withKey(trigger, "daily", v) })} />
+                <Field id="f-daily" label="daily" value={trigger["daily"]} t={types?.trigger["daily"]} onChange={(v) => set("entry", { ...entry, trigger: withKey(trigger, "daily", v) })} />
               </>
             )}
-            <KeyFields prefix="f-trig" keys={schema.entry["trigger"] ?? {}} o={entry} skip={["trigger"]} onChange={(next) => set("entry", { ...next, kind: "trigger", trigger })} />
+            <KeyFields
+              prefix="f-trig"
+              keys={schema.entry["trigger"] ?? {}}
+              types={types?.entry["trigger"]}
+              o={entry}
+              skip={["trigger"]}
+              onChange={(next) => set("entry", { ...next, kind: "trigger", trigger })}
+            />
           </>
         ) : (
-          <KeyFields prefix="f-time" keys={schema.entry["time"] ?? {}} o={entry} onChange={(next) => set("entry", { ...next, kind: "time" })} />
+          <KeyFields prefix="f-time" keys={schema.entry["time"] ?? {}} types={types?.entry["time"]} o={entry} onChange={(next) => set("entry", { ...next, kind: "time" })} />
         )}
       </div>
       <div className="builder-plain">
@@ -411,11 +473,18 @@ export function LegFields({ schema, spec, onChange }: SectionProps) {
         const setLeg = (next: Obj) => set("legs", legs.map((x, j) => (j === i ? next : x)));
         return (
           <div key={`leg-${i}`} className="builder-cond">
-            <Field key={`leg-${i}-name-${showValue(leg["name"])}`} id={`f-leg-${i}-name`} label="leg" value={leg["name"]} required onChange={(v) => setLeg(withKey(leg, "name", v))} />
+            <Field id={`f-leg-${i}-name`} label="leg" value={leg["name"]} required t={TEXT} onChange={(v) => setLeg(withKey(leg, "name", v))} />
             <Select id={`f-leg-${i}-side`} label="side" value={String(leg["side"] ?? "")} options={["-1", "1"]} onChange={(v) => setLeg({ ...leg, side: Number(v) })} />
             <Select id={`f-leg-${i}-right`} label="right" value={String(leg["right"] ?? "")} options={["P", "C"]} onChange={(v) => setLeg({ ...leg, right: v })} />
             <Select id={`f-leg-${i}-rule`} label="strike by" value={rule} options={Object.keys(schema.strike_rules)} onChange={(r) => setLeg({ ...leg, strike: { rule: r } })} />
-            <KeyFields prefix={`f-leg-${i}`} keys={def?.keys ?? {}} o={strike} onChange={(next) => setLeg({ ...leg, strike: { ...next, rule } })} />
+            <KeyFields
+              prefix={`f-leg-${i}`}
+              keys={def?.keys ?? {}}
+              types={schema.types?.strike}
+              legs={legs.slice(0, i).map((l) => String(l["name"] ?? ""))}
+              o={strike}
+              onChange={(next) => setLeg({ ...leg, strike: { ...next, rule } })}
+            />
             {def && def.matches.length > 0 && (
               <Select
                 id={`f-leg-${i}-match`}
@@ -447,7 +516,7 @@ export function ExitFields({ schema, spec, onChange }: SectionProps) {
   return (
     <div className="builder-grid">
       {schema.exits.map((k) => (
-        <Field key={`f-exit-${k}-${showValue(exit[k])}`} id={`f-exit-${k}`} label={k} value={exit[k]} onChange={(v) => onChange(withKey(spec, "exit", withKey(exit, k, v)))} />
+        <Field id={`f-exit-${k}`} label={k} value={exit[k]} t={schema.types?.exit[k]} onChange={(v) => onChange(withKey(spec, "exit", withKey(exit, k, v)))} />
       ))}
     </div>
   );
@@ -463,15 +532,15 @@ export function SizeFields({ schema, spec, onChange }: SectionProps) {
     <div className="builder-grid">
       <Select id="f-size-kind" label="size by" value={sizeKind} options={Object.keys(schema.sizes)} onChange={(k) => set("size", { [k]: 1 })} />
       {(schema.sizes[sizeKind] ?? []).map((k) => (
-        <Field key={`f-size-${k}-${showValue(size[k])}`} id={`f-size-${k}`} label={k} value={size[k]} required={k === sizeKind} onChange={(v) => set("size", withKey(size, k, v))} />
+        <Field id={`f-size-${k}`} label={k} value={size[k]} required={k === sizeKind} t={schema.types?.size[k]} onChange={(v) => set("size", withKey(size, k, v))} />
       ))}
       {schema.limits.map((k) => (
         <Field
-          key={`f-limit-${k}-${showValue(limits[k])}`}
           id={`f-limit-${k}`}
           label={k}
           value={limits[k]}
           required={k === "max_open" || k === "per_day"}
+          t={schema.types?.limits[k]}
           onChange={(v) => set("limits", withKey(limits, k, v))}
         />
       ))}
@@ -493,6 +562,9 @@ export function BuilderForm({
   const p = { schema, spec, onChange };
   return (
     <section className="builder-form" aria-label="The automation, block by block">
+      <p className="muted builder-form-key">
+        <span className="builder-req">*</span> required. A greyed value in an empty field is the engine's default: left blank, the engine uses it.
+      </p>
       <div className="builder-section">
         <SectionHead n={1} title="Underlying and data" blocks={["structure"]} labels={labels} help="underlying" />
         <UnderlyingFields {...p} />

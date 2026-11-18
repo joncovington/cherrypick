@@ -506,9 +506,18 @@ export function BuilderPage() {
   if (data.error) return <div className="error">{data.error}</div>;
   const schema = s.data?.schema;
   if (!schema) return <div className="error">The form's choices could not be read{s.data?.error ? `: ${s.data.error}` : "."}</div>;
-  const current: Mode = mode ?? (data.automations[0] ? { kind: "saved", name: data.automations[0].name } : { kind: "new" });
-  const a = current.kind === "saved" ? (data.automations.find((x) => x.name === current.name) ?? null) : null;
-  const key = current.kind === "saved" ? `saved:${current.name}` : current.kind === "copy" ? `copy:${current.from}` : current.kind === "draft" ? `draft:${current.name}` : "new";
+  // The page opens on nothing: no automation is chosen for you, and no form shows until one is.
+  const current: Mode | null = mode;
+  const a = current?.kind === "saved" ? (data.automations.find((x) => x.name === current.name) ?? null) : null;
+  const key = !current
+    ? ""
+    : current.kind === "saved"
+      ? `saved:${current.name}`
+      : current.kind === "copy"
+        ? `copy:${current.from}`
+        : current.kind === "draft"
+          ? `draft:${current.name}`
+          : "new";
   if (wizard) {
     return (
       <div className="builder-page">
@@ -537,8 +546,18 @@ export function BuilderPage() {
         <label className="builder-lbl" htmlFor="builder-pick">
           open
         </label>
-        <select id="builder-pick" className="builder-input" value={current.kind === "saved" ? current.name : ""} onChange={(e) => setMode({ kind: "saved", name: e.currentTarget.value })}>
-          {current.kind !== "saved" && <option value="">{current.kind === "copy" ? `a copy of ${current.from}` : "a new automation"}</option>}
+        <select
+          id="builder-pick"
+          className="builder-input"
+          value={current?.kind === "saved" ? current.name : ""}
+          onChange={(e) => {
+            const v = e.currentTarget.value;
+            setMode(v ? { kind: "saved", name: v } : null);
+          }}
+        >
+          {current?.kind !== "saved" && (
+            <option value="">{!current ? "choose an automation…" : current.kind === "copy" ? `a copy of ${current.from}` : "a new automation"}</option>
+          )}
           {data.automations.map((x) => (
             <option key={x.name} value={x.name}>
               {x.name}
@@ -548,18 +567,14 @@ export function BuilderPage() {
         <button type="button" className="btn" onClick={() => setWizard({ from: null, n: 0 })}>
           New
         </button>
-        <button type="button" className="btn" disabled={current.kind !== "saved"} onClick={() => current.kind === "saved" && setWizard({ from: current.name, n: 0 })}>
+        <button type="button" className="btn" disabled={current?.kind !== "saved"} onClick={() => current?.kind === "saved" && setWizard({ from: current.name, n: 0 })}>
           Copy as new
         </button>
         <button type="button" className="link-button" title="a blank automation straight in the form, without the steps" onClick={() => setMode({ kind: "new" })}>
           new in the form
         </button>
       </div>
-      <p className="muted">
-        Every field writes the automation the paper loop reads. Check asks the automations module whether paper would accept it; Save
-        writes it through the suite's config editor, always off. A block is backtested while it stands as the study ran it.
-      </p>
-      <Workspace key={key} a={a} schema={schema} mode={current} onSaved={(n) => setMode({ kind: "saved", name: n })} />
+      {current && <Workspace key={key} a={a} schema={schema} mode={current} onSaved={(n) => setMode({ kind: "saved", name: n })} />}
     </div>
   );
 }

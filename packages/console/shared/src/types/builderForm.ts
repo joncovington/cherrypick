@@ -1,5 +1,36 @@
+/** One key's type, from the module (`fieldtypes`): which input the form draws and what it refuses. A
+ *  `default` is what the engine reads when the key is absent; the form shows it and never writes it. */
+export interface BuilderFieldType {
+  type: "int" | "number" | "time" | "bool" | "enum" | "leg" | "json" | "text";
+  min?: number;
+  max?: number;
+  /** An exclusive lower bound. */
+  above?: number;
+  /** Words an int also takes ("session"). */
+  or?: string[];
+  options?: string[];
+  default?: unknown;
+  /** A signal parameter the kind needs (core's `KINDS`); its optional ones and the rules say false. */
+  required?: boolean;
+}
+
+/** Every typed key, grouped as the spec holds them. */
+export interface BuilderTypes {
+  expiry: Record<string, BuilderFieldType>;
+  entry: Record<string, Record<string, BuilderFieldType>>;
+  trigger: Record<string, BuilderFieldType>;
+  signals: { kinds: Record<string, Record<string, BuilderFieldType>>; rules: Record<string, BuilderFieldType> };
+  strike: Record<string, BuilderFieldType>;
+  gates: Record<string, Record<string, BuilderFieldType>>;
+  exit: Record<string, BuilderFieldType>;
+  size: Record<string, BuilderFieldType>;
+  limits: Record<string, BuilderFieldType>;
+}
+
 /** The Builder form's choices, from the engine's own tables (`cli builder-schema`). {key: required}. */
 export interface BuilderSchema {
+  /** Each key's type; absent from an older module, where every field is typed text. */
+  types?: BuilderTypes;
   blocks: Record<string, string[]>;
   entry: Record<string, Record<string, boolean>>;
   orb_directions: string[];
@@ -9,6 +40,9 @@ export interface BuilderSchema {
   signal_rules: string[];
   weekdays: number[];
   event_labels: string[];
+  /** Each event label's name, when it falls in words, and its next day (null where the calendar does
+   *  not say: a symbol's own dates, or past what a data label covers). Absent from an older module. */
+  event_about?: Record<string, { name: string; when: string; next: string | null }>;
   expiry: Record<string, Record<string, boolean>>;
   /** The expiry keys that are true or false, drawn as checkboxes. */
   expiry_flags?: string[];

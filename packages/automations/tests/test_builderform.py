@@ -36,6 +36,35 @@ def test_the_schema_is_the_engines_own_tables():
     assert "at" in s["signals"]["gap"] and "at" not in s["signals"]["change"]  # core's optional keys too
 
 
+def test_each_event_label_is_named_with_when_it_falls_and_its_next_rule_day():
+    from datetime import date
+
+    from cherrypick.automations import events
+
+    about = builderform.schema(today=date(2026, 11, 18))["event_about"]
+    assert set(about) == set(builderform.schema()["event_labels"]) == set(events.ABOUT)
+    assert all(a["name"] and a["when"] for a in about.values())
+    # A rule label's next day is the rule's own, counted from today inclusive.
+    assert about["VIXExpiry"]["next"] == "2026-11-18"
+    assert about["OPEX"]["next"] == "2026-11-20"
+    assert about["MonthEnd"]["next"] == "2026-11-30"
+    assert about["TripleWitching"]["next"] == "2026-12-18"
+    assert about["FirstWeekly"]["next"] == "2026-12-04"
+    # A symbol's own dates have no next day without a symbol.
+    assert about["Earnings"]["next"] is None and about["ExDividend"]["next"] is None
+
+
+def test_a_next_event_day_stops_where_the_calendar_stops_speaking():
+    from datetime import date
+
+    from cherrypick.automations import events
+
+    cal = events.EventCalendar({"PPI": ["2026-12-11"]}, {"PPI": [["2026-11-01", "2026-11-30"]]})
+    assert events.next_day(cal, "PPI", date(2026, 11, 18)) is None  # December is not covered
+    cal = events.EventCalendar({"PPI": ["2026-12-11"]}, {"PPI": [["2026-11-01", "2026-12-31"]]})
+    assert events.next_day(cal, "PPI", date(2026, 11, 18)) == "2026-12-11"
+
+
 def test_each_gate_lists_its_functions_parameters_and_the_stage_it_reads():
     by = {g["gate"]: g for g in builderform.schema()["gates"]}
     for name, (_, fn) in gates.REGISTRY.items():
