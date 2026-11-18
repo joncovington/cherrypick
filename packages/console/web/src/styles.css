@@ -5334,36 +5334,37 @@ select.text-input {
   background: var(--accent);
 }
 
-/* The full set's progress (Backtest -> data): one meter per underlying and part. */
-.fs-head {
+/* The full set's progress (Backtest -> data): one meter per underlying and part. Its own prefix:
+   `fs-` is FilterSort's. */
+.fullset-head {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
   gap: 0.5rem 1rem;
   margin-bottom: 0.75rem;
 }
-.fs-head .fs-meter {
+.fullset-head .fullset-meter {
   min-width: min(100%, 360px);
 }
 /* A cell's meter has no name: the bar takes the room, the share sits after it. The columns share the
    card's width; below its least width it scrolls inside its wrap, never the page. */
-.fs-wrap {
+.fullset-wrap {
   overflow-x: auto;
 }
-.fs-table {
+.fullset-table {
   table-layout: fixed;
   width: 100%;
   min-width: 44rem;
 }
-.fs-table th:first-child {
+.fullset-table th:first-child {
   width: 9em;
 }
-.fs-table .fs-meter {
+.fullset-table .fullset-meter {
   grid-template-columns: minmax(24px, 1fr) max-content;
   gap: 8px;
 }
-.fs-table tr.fs-total th,
-.fs-table tr.fs-total td {
+.fullset-table tr.fullset-total th,
+.fullset-table tr.fullset-total td {
   border-top: 1px solid var(--border);
   font-weight: 600;
 }

@@ -21,7 +21,7 @@ export function pct(p: FullSetPart): string {
 function Meter({ p, label }: { p: FullSetPart; label?: string }) {
   const width = p.share === null ? 0 : Math.min(100, p.share * 100);
   return (
-    <span className="q-meter fs-meter" title={`${fmtCount(p.done)} of ${fmtCount(p.total)} finished${p.refused ? `, ${fmtCount(p.refused)} refused` : ""}`}>
+    <span className="q-meter fullset-meter" title={`${fmtCount(p.done)} of ${fmtCount(p.total)} finished${p.refused ? `, ${fmtCount(p.refused)} refused` : ""}`}>
       {label !== undefined ? <span className="q-meter-name">{label}</span> : null}
       <span className="q-meter-track" aria-hidden="true">
         <span className="q-meter-fill" style={{ width: `${width.toFixed(1)}%` }} />
@@ -47,14 +47,14 @@ export function FullSetBody({ d }: { d: FullSetProgress }) {
   const symbols = Object.keys(d.by_symbol);
   return (
     <>
-      <div className="fs-head">
+      <div className="fullset-head">
         <Meter p={d.overall} label="All of it" />
         <span className="study-tile-sub">
           {fmtCount(d.overall.done)} of {fmtCount(d.overall.total)} requests · {d.from ?? "—"} → {d.through ?? "—"}
         </span>
       </div>
-      <div className="fs-wrap">
-        <table className="data-table fs-table">
+      <div className="fullset-wrap">
+        <table className="data-table fullset-table">
           <thead>
             <tr>
               <th scope="col">Underlying</th>
@@ -83,7 +83,7 @@ export function FullSetBody({ d }: { d: FullSetProgress }) {
                 </tr>
               );
             })}
-            <tr className="fs-total">
+            <tr className="fullset-total">
               <th scope="row">Total</th>
               {PARTS.map(([key]) => (
                 <td key={key}>
