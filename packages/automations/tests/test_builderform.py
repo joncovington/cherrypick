@@ -33,6 +33,7 @@ def test_the_schema_is_the_engines_own_tables():
     assert set(s["exits"]) == arms_mod.EXIT_KEYS and set(s["limits"]) == arms_mod.LIMIT_KEYS
     assert set(s["sizes"]) == set(sizing.SIZE_KEYS)
     assert set(s["signals"]) == set(signals.KINDS)
+    assert "at" in s["signals"]["gap"] and "at" not in s["signals"]["change"]  # core's optional keys too
 
 
 def test_each_gate_lists_its_functions_parameters_and_the_stage_it_reads():

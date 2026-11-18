@@ -34,6 +34,9 @@ beyond the latest release.
   null) to read today's bar as it stands each minute: the session's open, its high and low so far
   and the price now. It is due at any minute in the window when the signal fires on that bar. A
   daily trigger without it still acts on yesterday's completed bar.
+- **A gap measured at the first bar's close.** The gap signal takes `at: "first_bar_close"` to read
+  the session's first bar's close (9:35 on five-minute bars) instead of its open. Without it a gap
+  reads, and versions, as before.
 - **A trailing stop in percent, and net at mid on the run card.** An automation's trailing stop can
   be `{"pct": p, "activate_pct": a}`, each a percent of the trade's max profit (it never fires on a
   structure without one). The Builder's run card shows each run's net at mid beside its P&L: the

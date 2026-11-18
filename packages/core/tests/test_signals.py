@@ -116,6 +116,24 @@ def test_a_gap_fires_on_the_first_bar_of_the_session_and_not_on_the_mirror():
     assert fired({**spec, "direction": "down"}, mirror(bs)) == [3]
 
 
+def test_a_gap_at_the_first_bars_close_reads_that_close_not_the_open():
+    # Opens 1.5% up, but the first bar closes only 0.5% up: a gap at the open, none at its close.
+    bs = bars([100, 100, 100]) + bars([100.5, 103], session=DAY2, opens=101.5)
+    spec = {"kind": "gap", "direction": "up", "pct": 1.0}
+    assert fired(spec, bs) == [3]
+    assert fired({**spec, "at": "first_bar_close"}, bs) == []
+    late = bars([100, 100, 100]) + bars([101.2, 103], session=DAY2, opens=100.2)
+    assert fired(spec, late) == [] and fired({**spec, "at": "first_bar_close"}, late) == [3]
+    assert fired({**spec, "at": "open"}, late) == []
+
+
+def test_at_is_a_gap_parameter_only_and_names_open_or_the_first_bars_close():
+    with pytest.raises(ValueError, match="signal.at"):
+        sg.validate({"kind": "gap", "direction": "up", "pct": 1.0, "at": "09:35"})
+    with pytest.raises(ValueError, match="unknown key 'at'"):
+        sg.validate({"kind": "change", "direction": "up", "pct": 1.0, "at": "open"})
+
+
 def test_a_gap_fill_fires_when_price_trades_back_to_the_prior_close():
     bs = bars([100, 100]) + bars([101, 100.5, 99.8, 101], session=DAY2, opens=101.5)
     assert fired({"kind": "gap_fill", "min_pct": 1.0}, bs) == [4]

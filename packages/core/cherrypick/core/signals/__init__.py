@@ -41,6 +41,12 @@ close. An N-bar window spans the close by definition, so its arming always carri
 pattern is a fact about one bar (and the bar before it), so it is armed on every bar: two inside
 bars in a row are two firings. A candle takes no `confirm` and no `reset`.
 
+**The gap** is the session's first bar against the previous session's close, in percent. It reads the
+first bar's open by default; with `at: "first_bar_close"` it reads that bar's close instead (9:35 on
+five-minute bars), and is defined only from that bar on, as every bar is. `at` is the one optional
+parameter a kind takes (`OPTIONAL`, which the Builder's schema lists beside the required ones); a
+spec without it reads, and versions, as before.
+
 **Trend and a fixed price.** `trend` is a source rising (or falling) on each of its last `n` bars,
 each value above (below) the one before; its value is the change over those `n` bars, in the
 source's units. `change_from` is the close against a fixed `price`, in percent past `pct` (up or
@@ -571,7 +577,8 @@ def _gap(spec: Mapping, bars: Sequence[Bar]) -> Series:
         prior = _prior_close(bars, a)
         if prior is None:
             continue
-        v = sense * (bars[a].open / prior - 1.0) * 100.0 - pct
+        ref = bars[a].close if spec.get("at", "open") == "first_bar_close" else bars[a].open
+        v = sense * (ref / prior - 1.0) * 100.0 - pct
         for i in range(a, b):
             state[i], value[i] = v >= 0, v
     return state, value
@@ -1061,6 +1068,13 @@ def _validate_source(src: object, path: str) -> None:
         raise ValueError(f"{path}.output: one of {list(_OUTPUTS[name])}")
 
 
+#: Parameters a kind may take but does not need, each with its check. Absent, the kind reads as it
+#: always has, so a spec written before one existed keeps its meaning and its library version.
+OPTIONAL: dict[str, dict[str, Callable[[object], bool]]] = {
+    "gap": {"at": _is_dir("open", "first_bar_close")},
+}
+
+
 def validate(spec: object, path: str = "signal") -> None:
     """Refuse a spec that is not exactly a known kind with all its parameters and valid rules."""
     if not isinstance(spec, Mapping):
@@ -1072,9 +1086,13 @@ def validate(spec: object, path: str = "signal") -> None:
     params = dict(kind.params)
     if spec["kind"] == "candle" and spec.get("pattern") in CANDLES:
         params.update({p: lambda v: _num(v) and v >= 0 for p in CANDLES[spec["pattern"]]})
-    unknown = keys - set(params) - set(_RULES)
+    optional = OPTIONAL.get(spec["kind"], {})
+    unknown = keys - set(params) - set(optional) - set(_RULES)
     if unknown:
         raise ValueError(f"{path}: unknown key {sorted(unknown)[0]!r}")
+    for key, ok in optional.items():
+        if key in spec and not ok(spec[key]):
+            raise ValueError(f"{path}.{key}: bad value {spec[key]!r}")
     for key, ok in params.items():
         if key not in spec:
             raise ValueError(f"{path}: {spec['kind']} needs {key!r}")
