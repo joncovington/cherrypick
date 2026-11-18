@@ -125,7 +125,8 @@ def test_a_request_file_may_name_only_a_declared_intraday_store(tmp_path):
 
 
 def test_tally_counts_finished_and_refused_of_the_plan():
-    mod = _script()
+    from cherrypick.backtest import fullsetprogress as mod
+
     planned = [("A",), ("B",), ("C",), ("D",)]
     ledger = [("A", "complete"), ("B", "empty"), ("C", "refused"), ("Z", "complete")]
     assert mod.tally(planned, ledger) == {"done": 2, "total": 4, "refused": 1, "share": 0.5}
@@ -137,3 +138,27 @@ def test_estimate_counts_bars_strikes_and_sides():
     mod = _script()
     doc = {"requests": [{"interval": "5m", "start": "09:30", "end": "10:00", "strike_range": 2}]}
     assert mod.estimate(doc) == 7 * 2 * 5
+
+
+def test_progress_reads_the_plan_against_each_ledger(tmp_path):
+    """Before a plan, nothing is planned; after one, a finished request in a store counts."""
+    import sqlite3
+
+    from cherrypick.backtest import fullsetprogress as fp
+
+    vendor, where = tmp_path / "vendor", tmp_path / "plan"
+    vendor.mkdir()
+    where.mkdir()
+    assert fp.progress(vendor, where)["planned"] is False
+    days = {"2026-11-13": ["SPXW"], "2026-11-16": ["SPXW"]}
+    (where / "oi_plan.json").write_text(json.dumps({"sessions": days}), encoding="utf-8")
+    conn = sqlite3.connect(vendor / fullset.zero_store("SPX"))
+    conn.execute("CREATE TABLE vendor_sessions (trade_date TEXT, status TEXT)")
+    conn.execute("INSERT INTO vendor_sessions VALUES ('2026-11-13', 'complete')")
+    conn.commit()
+    conn.close()
+    out = fp.progress(vendor, where)
+    assert out["planned"] is True and (out["from"], out["through"]) == ("2026-11-13", "2026-11-16")
+    assert out["by_symbol"]["SPX"]["zero"] == {"done": 1, "total": 2, "refused": 0, "share": 0.5}
+    assert out["by_symbol"]["QQQ"]["zero"]["done"] == 0
+    assert out["by_part"]["zero"]["total"] == 2 * len(fullset.SYMBOLS)

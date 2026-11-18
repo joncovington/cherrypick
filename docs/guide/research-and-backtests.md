@@ -186,7 +186,8 @@ intraday parts could take (a few hundred gigabytes, so point `store.dir` at a bi
 cannot serve the set stops at once, then each underlying's same-day expiries, the end-of-day chains,
 open interest, the expiries 1 to 7 days out at one minute, and those 8 to 90 days out at five minutes.
 It runs for days at two requests at a time, and resumes wherever it stopped. `status` shows how far it
-has got, overall, for each part and for each underlying. To bring the set up to date later, run `plan`
+has got, overall, for each part and for each underlying, and so does the **Full set fetch** card at the
+top of Backtest → Data. To bring the set up to date later, run `plan`
 and `queue-chain` again: only what is new is fetched.
 
 To fetch each new session automatically, set `"backtest": {"fetch": true}` in `~/.cherrypick/config.json`

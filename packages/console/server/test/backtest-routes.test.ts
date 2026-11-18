@@ -196,6 +196,7 @@ describe("the gate is closed", () => {
       setBridgeCaller(() => f);
       stubBacktest(() => ({ ok: true, json: OVERVIEW, error: null }));
       const a = await app.inject({ method: "GET", url: "/api/backtest/overview" });
+      expect((await app.inject({ method: "GET", url: "/api/backtest/fullset" })).statusCode).toBe(404);
       const b = await app.inject({ method: "GET", url: `/api/backtest/runs/${RUN_ID}` });
       expect(a.statusCode).toBe(404);
       expect(b.statusCode).toBe(404);
@@ -241,6 +242,16 @@ describe("the gate is closed", () => {
 });
 
 describe("the gate is open", () => {
+  it("serves the full set's progress through the bridge", async () => {
+    setBridgeCaller(() => features({ backtest_results: true }));
+    const part = { done: 1, total: 4, refused: 0, share: 0.25 };
+    stubBacktest(() => ({ ok: true, json: { ok: true, planned: true, overall: part, by_part: {}, by_symbol: {}, from: "2020-01-02", through: "2026-11-16" }, error: null }));
+    const r = await app.inject({ method: "GET", url: "/api/backtest/fullset" });
+    expect(r.statusCode).toBe(200);
+    expect(r.json().data.overall).toEqual(part);
+    expect(spawned).toEqual([{ kind: "fullset" }]);
+  });
+
   it("serves the overview through the bridge", async () => {
     setBridgeCaller(() => features({ backtest_results: true }));
     stubBacktest(() => ({ ok: true, json: OVERVIEW, error: null }));

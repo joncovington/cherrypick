@@ -541,6 +541,11 @@ def cmd_read(args) -> int:
         out = readout.automation_run(args.name or "", args.id or "")
         _emit(out)
         return 0 if out.get("ok") else 1
+    if args.what == "fullset":
+        from . import fullsetprogress, paths
+
+        _emit({"ok": True, **fullsetprogress.progress(paths.vendor_dir(settings.load(args.config)))})
+        return 0
     if args.what == "summaries":
         _emit(readout.run_summaries((args.ids or "").split(",")))
         return 0
@@ -742,7 +747,7 @@ def main(argv: list[str] | None = None) -> int:
         "what",
         choices=(
             "overview", "run", "trades", "path", "stores", "summaries", "signals", "signal",
-            "automation-runs", "automation-run",
+            "automation-runs", "automation-run", "fullset",
         ),
     )  # fmt: skip
     rd.add_argument("--ids", default=None, help="with `summaries`: run ids, comma separated")

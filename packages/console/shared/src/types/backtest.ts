@@ -75,6 +75,28 @@ export interface BacktestInventory {
   error?: string;
 }
 
+/** One part's progress: requests (or sessions) the store records finished, of those planned. */
+export interface FullSetPart {
+  done: number;
+  total: number;
+  refused: number;
+  share: number | null;
+}
+
+export type FullSetPartName = "zero" | "near" | "mid" | "eod" | "oi";
+
+/** `backtest read fullset`: the full set's fetch against its plan, overall, per part and per underlying. */
+export interface FullSetProgress {
+  ok: true;
+  /** False until `fetch_full_set.py plan` has written the request files. */
+  planned: boolean;
+  overall: FullSetPart;
+  by_part: Record<FullSetPartName, FullSetPart>;
+  by_symbol: Record<string, Record<FullSetPartName | "all", FullSetPart>>;
+  from: string | null;
+  through: string | null;
+}
+
 export interface BacktestOverview {
   ok: true;
   license: BacktestLicense;

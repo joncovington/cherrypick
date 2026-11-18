@@ -26,21 +26,18 @@ from __future__ import annotations
 
 import argparse
 import json
-import sqlite3
 import sys
 from pathlib import Path
 
 from cherrypick.core import calendar as cal
 from cherrypick.core import clock
 
-from cherrypick.backtest import fullset, paths
+from cherrypick.backtest import fullset, fullsetprogress, paths
 from cherrypick.backtest import settings as _settings
+from cherrypick.backtest.fullsetprogress import progress
 
 STUDY = "fullset"
 SCRIPT_REL = "packages/backtest/scripts/fetch_full_set.py"
-INTRADAY_LEDGER = (
-    'SELECT symbol, session, expiration, start, "end", interval, status FROM intraday_chain_requests'
-)
 
 #: The queue's rows, in order (`queue-chain --study fullset`). The probe runs first: a tier or
 #: entitlement the set cannot use fails it, and every row after it is held.
@@ -106,7 +103,7 @@ ROW_BYTES = 66
 
 
 def out_dir() -> Path:
-    return paths.results_dir() / "research" / STUDY
+    return fullsetprogress.folder()
 
 
 def bars(interval: str, start: str, end: str) -> int:
@@ -144,86 +141,9 @@ def cmd_plan(args) -> int:
     return 0
 
 
-#: A request is finished once its store records it complete or empty (the vendor held nothing); a
-#: refused one is asked again by the chain's second pass.
-FINISHED = ("complete", "empty")
-PARTS = ("zero", "eod", "oi", "near", "mid")
-
-
-def _rows(path: Path, sql: str) -> list[tuple]:
-    """A read-only query of a store; nothing when it is absent or not yet that shape."""
-    if not path.exists():
-        return []
-    conn = sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True)
-    try:
-        return conn.execute(sql).fetchall()
-    except sqlite3.Error:
-        return []
-    finally:
-        conn.close()
-
-
-def part(done: int, total: int, refused: int = 0) -> dict:
-    return {"done": done, "total": total, "refused": refused,
-            "share": round(done / total, 4) if total else None}  # fmt: skip
-
-
-def tally(planned: list[tuple], ledger: list[tuple]) -> dict:
-    """How many planned keys the ledger records finished, and refused. `ledger` rows are the key's
-    fields then the status. Pure."""
-    status = {tuple(r[:-1]): r[-1] for r in ledger}
-    done = sum(status.get(k) in FINISHED for k in planned)
-    refused = sum(status.get(k) == "refused" for k in planned)
-    return part(done, len(planned), refused)
-
-
-def roll_up(parts: dict[str, dict]) -> dict:
-    """One total over several parts (each counted by its own requests or sessions). Pure."""
-    done = sum(p["done"] for p in parts.values())
-    total = sum(p["total"] for p in parts.values())
-    return part(done, total, sum(p["refused"] for p in parts.values()))
-
-
-def _load(name: str) -> dict | None:
-    p = out_dir() / name
-    return json.loads(p.read_text(encoding="utf-8")) if p.exists() else None
-
-
-def progress(vendor: Path) -> dict:
-    """Overall, per underlying, and per part within each, against the planned files. Counts only.
-    The same-day part has no request file (the fetch lists the sessions an expiry fell on), so its
-    total is the sessions in the span, a ceiling for underlyings without an expiry every day."""
-    span = _load("oi_plan.json") or {"sessions": {}}
-    days = sorted(span["sessions"])
-    paths_doc = _load("paths.json") or {"requests": []}
-    eod_ledger = _rows(vendor / "eod_chains.db",
-                       "SELECT symbol, expiration, start, through, status FROM eod_chain_paths")  # fmt: skip
-    oi_ledger = _rows(vendor / "open_interest.db", "SELECT symbol, session, status FROM oi_days")
-    per: dict[str, dict] = {}
-    for sym in fullset.SYMBOLS:
-        spec = fullset.SPEC[sym]
-        parts: dict[str, dict] = {}
-        zero = _rows(vendor / fullset.zero_store(sym), "SELECT trade_date, status FROM vendor_sessions")
-        parts["zero"] = tally([(d,) for d in days], zero)
-        planned_eod = [(r["symbol"], r["expiration"], r["start"], r["through"])
-                       for r in paths_doc["requests"] if r["symbol"] in spec["eod"]]  # fmt: skip
-        parts["eod"] = tally(planned_eod, eod_ledger)
-        parts["oi"] = tally([(spec["root"], d) for d in days], oi_ledger)
-        for name, store in (("near", fullset.near_store(sym)), ("mid", fullset.mid_store(sym))):
-            doc = _load(f"{name}_{sym}.json") or {"requests": []}
-            planned = [(r["symbol"], r["session"], r["expiration"], r["start"], r["end"], r["interval"])
-                       for r in doc["requests"]]  # fmt: skip
-            ledger = _rows(vendor / store, INTRADAY_LEDGER)
-            parts[name] = tally(planned, ledger)
-        per[sym] = {"all": roll_up(parts), **parts}
-    by_part = {p: roll_up({s: per[s][p] for s in per}) for p in PARTS}
-    return {"overall": roll_up(by_part), "by_part": by_part, "by_symbol": per,
-            "through": days[-1] if days else None}  # fmt: skip
-
-
 def cmd_status(args) -> int:
     """Overall, per-part and per-underlying progress against the plan. Counts only, read-only."""
-    print(json.dumps(progress(paths.vendor_dir(_settings.load(None))), indent=1))
+    print(json.dumps(progress(paths.vendor_dir(_settings.load(None)), out_dir()), indent=1))
     return 0
 
 
