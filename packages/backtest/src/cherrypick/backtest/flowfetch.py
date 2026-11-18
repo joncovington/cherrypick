@@ -222,15 +222,15 @@ def fetch_plan(
     seconds: list[float] = []
     stopped = False
     try:
-        todo = []
+        todo, skipped = [], []
         for session, sym in plan:
             if not refetch and status(conn, sym, session) == "complete":
                 counts["skipped"] += 1
+                skipped.append(sym)
             else:
                 todo.append((session, sym))
         rep = core_progress.Reporter("backtest-fetch-flow")
-        rep.phase("days", total=len(plan), unit="symbol-days")
-        rep.advance("days", counts["skipped"])
+        rep.split("days", (sym for _, sym in plan), unit="symbol-days", done=skipped)
         pending = iter(todo)
         with ThreadPoolExecutor(max(1, workers)) as ex:
             running = {}
@@ -270,7 +270,7 @@ def fetch_plan(
                         seconds.append(took)
                         n, kept = rec["orders"], len(rec["kept"])
                         log(f"{sym} {session}: {rec['status']}, {n} orders, {kept} kept, {took:.1f}s")
-                    rep.advance("days", current=f"{sym} {session}")
+                    rep.advance("days", current=f"{sym} {session}", key=sym)
                     if fatal is None:
                         submit_next()
             if fatal is not None:

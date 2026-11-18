@@ -232,8 +232,9 @@ def fetch_windows(
         }
         started = time.monotonic()
         rep = core_progress.Reporter("backtest-fetch-intraday-chains")
-        rep.phase("requests", total=len(requests), unit="windows")
-        rep.advance("requests", report["already"])
+        rep.split(
+            "requests", (k[0] for k in requests), unit="windows", done=(k[0] for k in requests if k in done)
+        )
         pending = iter(todo)
         with ThreadPoolExecutor(max(1, workers)) as ex:
             running = {}
@@ -292,7 +293,7 @@ def fetch_windows(
                         n = write_window(conn, key, rows)
                         report["complete" if n else "empty"] += 1
                         report["rows"] += n
-                    rep.advance("requests", current=f"{key[0]} {key[1]}")
+                    rep.advance("requests", current=f"{key[0]} {key[1]}", key=key[0])
                     if not report.get("aborted"):
                         submit_next()
                 done_n = report["complete"] + report["empty"] + report["refused"]

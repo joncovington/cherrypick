@@ -38,6 +38,15 @@ describe("a job's progress (core.progress)", () => {
     expect(toProgress({ ...view, state: "sleeping" })).toBeNull();
   });
 
+  it("keeps each symbol's count in the job's order, and none without a split", () => {
+    const by = { SPX: { done: 2, total: 4, share: 0.5 }, IWM: { done: 1, total: null, share: null } };
+    expect(toProgress({ ...view, by_symbol: by })?.bySymbol).toEqual([
+      { symbol: "SPX", done: 2, total: 4, share: 0.5 },
+      { symbol: "IWM", done: 1, total: null, share: null },
+    ]);
+    expect(toProgress(view)?.bySymbol).toEqual([]);
+  });
+
   it("carries runs started by hand beside the queue's tasks", () => {
     const res = shapeQueue({
       ok: true,

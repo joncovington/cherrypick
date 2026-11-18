@@ -28,6 +28,48 @@ def _doc(path):
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def test_track_counts_a_loop_overall_and_per_symbol_and_finishes_its_file(tmp_path, monkeypatch):
+    monkeypatch.setattr(progress, "_pid_alive", lambda pid: True)
+    rows = [{"fund": "SPY"}, {"fund": "QQQ"}, {"fund": "SPY"}]
+    seen = []
+    for r in progress.track(rows, job="item-study", phase="trades", key=lambda r: r["fund"]):
+        seen.append(r["fund"])
+    assert seen == ["SPY", "QQQ", "SPY"]
+    (view,) = progress.read_all()
+    assert view["state"] == "done" and view["fraction"] == 1.0
+    assert view["by_symbol"]["SPY"] == {"done": 2, "total": 2, "share": 1.0}
+    with pytest.raises(RuntimeError):
+        for _ in progress.track(rows, job="item-fail", phase="trades"):
+            raise RuntimeError("boom")
+    view = {v["job"]: v for v in progress.read_all()}["item-fail"]
+    assert view["state"] == "failed" and view["note"] == "stopped at 0/3"
+
+
+def test_a_phase_split_by_symbol_counts_each_and_the_whole(tmp_path, monkeypatch):
+    monkeypatch.setattr(progress, "_pid_alive", lambda pid: True)
+    clock, path = Clock(), tmp_path / "q7.json"
+    rep = progress.Reporter("fetch", path=path, clock=clock, throttle_s=0)
+    keys = ["SPX", "SPX", "QQQ", "SPX"]
+    assert progress.counts_by(keys) == {"SPX": 3, "QQQ": 1}
+    rep.phase("requests", total=len(keys), unit="windows", by=progress.counts_by(keys))
+    rep.advance("requests", key="SPX")
+    rep.advance("requests", key="SPX", skipped=True)
+    rep.advance("requests", key="IWM")  # not opened with it: counted, with no total
+    clock.t += 10
+    view = progress.read_job("q7", tmp_path, now=clock.t)
+    assert view["fraction"] == pytest.approx(3 / 4)
+    assert view["by_symbol"] == {
+        "SPX": {"done": 2, "total": 3, "share": pytest.approx(0.6667, abs=1e-4)},
+        "QQQ": {"done": 0, "total": 1, "share": 0.0},
+        "IWM": {"done": 1, "total": None, "share": None},
+    }
+    assert "[IWM 1]" in view["line"]
+    rep.advance("requests", key="QQQ")
+    assert "[QQQ 1/1]" in progress.read_job("q7", tmp_path, now=clock.t)["line"]
+    rep.phase("requests", total=2)  # reopened without a split: the old split goes
+    assert progress.read_job("q7", tmp_path, now=clock.t)["by_symbol"] is None
+
+
 def test_a_hand_started_job_writes_its_own_file_and_names_it_for_children(tmp_path):
     rep = progress.Reporter("backtest-validate", clock=Clock())
     assert rep.path == progress.progress_dir() / f"backtest-validate-{os.getpid()}.json"

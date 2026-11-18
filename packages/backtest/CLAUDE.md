@@ -194,6 +194,13 @@ data feed's delta, which lags its quotes by about a minute; from then on, and in
 is `core.chaindelta`'s delta from each source's own mids (`computed`). Do not pool MEIC paper or
 recorded-era results across that date.
 
+## Every long job reports its progress, overall and per symbol
+
+Every fetch verb, the runner and every study script report through `core.progress`, and a phase over
+several symbols opens with `Reporter.split` (one key per item) and counts each item with `advance(...,
+key=symbol)`, so the queue and the console show the whole and each symbol. A resumed job counts what it
+already holds as skipped, overall and per symbol. A new fetch or study is not done until it does both.
+
 ## The runner
 
 `run flies --arms ... --window design|holdout|all` replays each session through flies itself

@@ -86,6 +86,26 @@ def test_a_request_records_what_became_of_it_and_the_rows_it_wrote(tmp_path):
         assert detail.startswith("permission_denied")
 
 
+def test_progress_counts_the_whole_and_each_symbol_from_where_a_resume_starts(tmp_path, monkeypatch):
+    from cherrypick.core import progress
+
+    monkeypatch.setenv("CHERRYPICK_HOME", str(tmp_path / "home"))
+    monkeypatch.delenv(progress.ENV, raising=False)
+    s = _settings(tmp_path)
+    reqs = [_key("AAPL"), _key("AAPL", exp="2024-02-16"), _key("DAL")]
+    ix.fetch_windows(s, FakeWindows(), reqs[:1], log=lambda m: None)
+    monkeypatch.delenv(progress.ENV, raising=False)
+    ix.fetch_windows(s, FakeWindows(), reqs, log=lambda m: None)
+    view = max(progress.read_all(), key=lambda v: v["phases"][0]["total"])
+    assert view["fraction"] == 1.0
+    assert view["by_symbol"] == {
+        "AAPL": {"done": 2, "total": 2, "share": 1.0},
+        "DAL": {"done": 1, "total": 1, "share": 1.0},
+    }
+    (phase,) = view["phases"]
+    assert phase["skipped"] == 1  # the first run's request: done, but no part of the rate
+
+
 def test_only_rows_inside_the_requested_window_are_kept(tmp_path):
     s = _settings(tmp_path)
     rows = _rows(bars=("15:30", "15:35", "15:50", "15:55"))

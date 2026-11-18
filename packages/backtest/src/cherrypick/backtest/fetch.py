@@ -295,8 +295,8 @@ def fetch(
         # Of every session in the span, the complete ones counted as done: a resumed fetch starts where
         # the last one stopped rather than at zero.
         rep = progress or core_progress.Reporter(JOB)
-        rep.phase("sessions", total=len(days), unit="sessions")
-        rep.advance("sessions", report["skipped"])
+        sym = symbol.upper()
+        rep.split("sessions", [sym] * len(days), unit="sessions", done=[sym] * report["skipped"])
         cap = _settings.concurrency(settings)  # one request in flight a session, within the tier
         pool = ThreadPoolExecutor(max_workers=max(1, min(int(workers), cap)))
         # Shut down cancelling what is queued, whatever ends the loop. A plain `with` waits for every
@@ -343,7 +343,7 @@ def fetch(
                     res = {"status": store.REFUSED, "reason": bad.reason, "detail": bad.detail}
                 conn.commit()
                 report["fetched" if res["status"] == store.COMPLETE else "refused"] += 1
-                rep.advance("sessions", current=day)
+                rep.advance("sessions", current=day, key=sym)
                 log(f"{day} {res}")
         finally:
             pool.shutdown(wait=True, cancel_futures=True)
