@@ -441,6 +441,17 @@ def run_order(row: dict) -> tuple:
     return (0 if study_first(row) else 1, -int(row.get("priority") or 0), row["id"])
 
 
+def queue_order(queued: list[dict]) -> list[dict]:
+    """Queued rows (each with `waits`, "ready" or why not) in the order the runner would take them as
+    things stand: the ready ones by `run_order`, then the waiting ones by priority, oldest first. What
+    `queue-list` reports as each row's `position`, so a reader never re-derives the rule."""
+    is_ready = [r for r in queued if r.get("waits") == "ready"]
+    waiting = [r for r in queued if r.get("waits") != "ready"]
+    return sorted(is_ready, key=run_order) + sorted(
+        waiting, key=lambda r: (-int(r.get("priority") or 0), r["id"])
+    )
+
+
 def ready(
     row: dict,
     now: datetime,

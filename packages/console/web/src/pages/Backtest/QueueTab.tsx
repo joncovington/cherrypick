@@ -148,7 +148,8 @@ export function progressLine(p: ResearchProgress): string {
 // --------------------------------------------------------------------------- the sections
 export interface QueuePlan {
   running: ResearchTask[];
-  /** In the order the runner takes them: ready first, then waiting; oldest first within each. */
+  /** In the order the runner takes them, as the orchestrator reports it (`position`); without one, ready
+   *  first, then waiting, oldest first within each. */
   queued: ResearchTask[];
   byHandLive: ResearchProgress[];
   /** Rows that failed or were stopped in the last ATTENTION_DAYS, newest first: the queue's own trouble. */
@@ -168,7 +169,10 @@ export function plan(q: ResearchQueue, nowEpochS = Date.now() / 1000, nowMs = et
   const running = q.tasks.filter((t) => t.status === "running").sort((a, b) => a.id - b.id);
   const queued = q.tasks
     .filter((t) => t.status === "queued")
-    .sort((a, b) => Number(b.waits === "ready") - Number(a.waits === "ready") || a.id - b.id);
+    .sort(
+      (a, b) =>
+        (a.position ?? Infinity) - (b.position ?? Infinity) || Number(b.waits === "ready") - Number(a.waits === "ready") || a.id - b.id,
+    );
   const attention = q.tasks
     .filter((t) => (t.status === "failed" || t.status === "stopped") && (endedMs(t) ?? 0) >= nowMs - ATTENTION_DAYS * 86_400_000)
     .sort((a, b) => (endedMs(b) ?? 0) - (endedMs(a) ?? 0) || b.id - a.id);

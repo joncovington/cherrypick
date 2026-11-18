@@ -719,3 +719,29 @@ def test_the_code_watch_sees_a_change_to_a_loaded_source_file(tmp_path):
     assert changed() is False
     src.write_text("x = 2\n", encoding="utf-8")
     assert changed() is True
+
+
+def test_queue_order_is_the_runners_ready_first_then_waiting_by_priority():
+    """The order `queue-list` reports: a raised row queued last still comes first, and a study whose
+    inputs are in comes before any priority, as `run_order` has it."""
+    rows = [
+        {"id": 378, "kind": "script", "after": None, "priority": 0, "waits": "ready"},
+        {"id": 384, "kind": "script", "after": None, "priority": 0, "waits": "ready"},
+        {"id": 390, "kind": "fetch-intraday-chains", "after": None, "priority": 10, "waits": "ready"},
+        {
+            "id": 391,
+            "kind": "fetch-sessions",
+            "after": "fullset/probe",
+            "priority": 10,
+            "waits": "waits for fullset/probe",
+        },
+        {
+            "id": 379,
+            "kind": "fetch-chain-paths",
+            "after": "item91/plan",
+            "priority": 0,
+            "waits": "waits for item91/plan",
+        },
+        {"id": 400, "kind": "script", "after": "x/fetch", "priority": 0, "waits": "ready"},
+    ]
+    assert [r["id"] for r in rq.queue_order(rows)] == [400, 390, 378, 384, 391, 379]

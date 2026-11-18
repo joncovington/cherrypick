@@ -52,6 +52,9 @@ export interface ResearchTask {
   note: string | null;
   /** A queued row only: "ready", or why it waits now. */
   waits: string | null;
+  /** A queued row only: its place in the order the runner would take them now (1 first), the
+   *  orchestrator's `queue_order` (priority included). Null from an older orchestrator. */
+  position: number | null;
   /** What the task's own progress file says (`core.progress`), written by the job and its children;
    *  null for a task that has not written one. */
   progress: ResearchProgress | null;
