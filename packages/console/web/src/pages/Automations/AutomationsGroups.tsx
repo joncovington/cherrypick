@@ -329,12 +329,12 @@ function GroupsIndex({ view, draft, edit, paper }: { view: GroupsEditView; draft
                 <tr>
                   <th>group</th>
                   <th>switch</th>
-                  <th>members</th>
-                  <th>on or waiting</th>
+                  <th className="num">members</th>
+                  <th className="num">on or waiting</th>
                   <th>budget</th>
                   <th>research verdicts</th>
-                  <th>open</th>
-                  <th>net, all</th>
+                  <th className="num">open</th>
+                  <th className="num">net, all</th>
                   <th></th>
                 </tr>
               </thead>
@@ -397,7 +397,7 @@ function GroupControls({ name, spec, was, nextSession, onChange }: { name: strin
       </div>
       <div className="builder-f">
         <label className="builder-lbl" htmlFor={`grp-${name}-start`}>
-          start <span className="builder-hint">· first session, blank: none</span>
+          start
         </label>
         <input
           id={`grp-${name}-start`}
@@ -412,11 +412,12 @@ function GroupControls({ name, spec, was, nextSession, onChange }: { name: strin
             onChange(next);
           }}
         />
+        <span className="muted grp-hint">First session; blank: none.</span>
       </div>
       {(["allocation", "max_risk"] as const).map((k) => (
         <div className="builder-f" key={k}>
           <label className="builder-lbl" htmlFor={`grp-${name}-${k}`}>
-            {k === "allocation" ? "allocation" : "max risk"} <span className="builder-hint">· $, &gt; 0, blank: none</span>
+            {k === "allocation" ? "allocation" : "max risk"}
           </label>
           <input
             key={`${k}-${String(spec[k] ?? "")}`}
@@ -430,6 +431,7 @@ function GroupControls({ name, spec, was, nextSession, onChange }: { name: strin
             defaultValue={spec[k] ?? ""}
             onBlur={(e) => set(k, e.currentTarget.value)}
           />
+          <span className="muted grp-hint">Dollars, above 0; blank: none.</span>
         </div>
       ))}
     </div>
@@ -524,8 +526,8 @@ function GroupPage({ view, draft, edit, paper, group }: { view: GroupsEditView; 
                     <th>so it is</th>
                     <th>research verdict</th>
                     {!none && <th>share %</th>}
-                    <th>open</th>
-                    <th>net, all</th>
+                    <th className="num">open</th>
+                    <th className="num">net, all</th>
                     <th>move to</th>
                     <th></th>
                   </tr>
@@ -541,7 +543,7 @@ function GroupPage({ view, draft, edit, paper, group }: { view: GroupsEditView; 
                           </Link>
                           {r.was !== r.now && <span className="chip chip-info grp-moved">moved here</span>}
                         </td>
-                        <td className="num">{r.m.symbol ?? "—"}</td>
+                        <td>{r.m.symbol ?? "—"}</td>
                         <td>
                           <OwnSwitch name={r.m.name} on={r.on} staged={r.on !== r.m.enabled} onChange={(on) => flip(r, on)} />
                         </td>

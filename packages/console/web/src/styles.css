@@ -11901,8 +11901,18 @@ svg.vol-curve text {
   padding: 0.6rem 0.8rem;
   color: var(--warn);
 }
+/* Four fields of one width, each label on one line, so the inputs sit level and the hints below. */
 .grp-controls {
   margin-bottom: 0.8rem;
+  grid-template-columns: repeat(auto-fill, minmax(12rem, 15rem));
+  gap: 0.6rem 1.2rem;
+  align-items: start;
+}
+.grp-controls .builder-lbl {
+  white-space: nowrap;
+}
+.grp-controls .grp-switch {
+  min-height: 2.25rem;
 }
 .grp-table td,
 .grp-table th {
