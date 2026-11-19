@@ -4349,7 +4349,7 @@
       "id": 92,
       "study": "item92",
       "title": "IV rank and realised-under-implied vol as entry filters for monthly short puts and put spreads on index funds",
-      "status": "declared",
+      "status": "failed",
       "legacy": false,
       "setup": "variance-premium",
       "side": "bullish",
@@ -4388,7 +4388,7 @@
       "results": [
         "{home}/data/backtest/results/research/item92/results.json"
       ],
-      "outcome": null,
+      "outcome": "fail: put-ivr30 fail; put-hv_lt_iv fail; spread-ivr30 fail; spread-hv_lt_iv fail, by the declared rule",
       "retest": null,
       "retest_note": "A pass is followed by an automation enrolled with its forward rule, not a retest; the chains are the vendor's, so a retest reads them only while the licence allows new work.",
       "retests": []
