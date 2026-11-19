@@ -41,7 +41,7 @@ from cherrypick.core import sources as src
 from .model import hhmm
 
 BLOCKS: dict[str, tuple[str, ...]] = {
-    "structure": ("symbol", "expiry", "legs"),
+    "structure": ("symbol", "expiry", "far_expiry", "legs"),
     "entry": ("entry", "weekdays", "skip_events"),
     "gates": ("gates",),
     "exit": ("exit",),
@@ -221,14 +221,37 @@ def _reader(need: dict):
     return lambda source: replays(need, source)
 
 
+def _far_class(arm: dict) -> str:
+    """The far expiry's class: an `after_near` rule's monthly or every expiry, any other rule's own."""
+    rule = arm["far_expiry"]
+    if rule.get("kind") == "after_near":
+        return "monthly" if rule.get("monthly") else "all"
+    return _expiry_class({"expiry": rule})
+
+
+def _far_leg(leg: dict) -> bool:
+    return leg.get("expiry") == "far"
+
+
 def needs(arm: dict) -> list[dict]:
-    """What a backtest of `arm` reads: [{"field", "expiry"?, "cadence"}]."""
+    """What a backtest of `arm` reads: [{"field", "expiry"?, "cadence", "far"?}]. The near chain
+    comes first. A structure with a far leg also reads the far expiry's chain (`"far": True`): a
+    later expiry, so at the close from the end-of-day chains and inside the session from the full
+    set's intraday chain stores."""
     expiry, cadence = _expiry_class(arm), _cadence(arm)
     # A later expiry inside the session: the intraday chain stores, the coarser at five minutes.
     chain_cadence = INTRADAY_CADENCE if cadence == "1m" and expiry != "0dte" else cadence
     out = [{"field": "chain", "expiry": expiry, "cadence": chain_cadence}]
-    if any((leg.get("strike") or {}).get("rule") == "delta" for leg in arm["legs"]):
+    legs = arm["legs"]
+    near = [g for g in legs if not _far_leg(g)]
+    if any((leg.get("strike") or {}).get("rule") == "delta" for leg in near):
         out.append({"field": "greeks", "expiry": expiry, "cadence": chain_cadence})
+    far = [g for g in legs if _far_leg(g)]
+    if far and arm.get("far_expiry"):
+        far_class, far_cadence = _far_class(arm), INTRADAY_CADENCE if cadence == "1m" else cadence
+        out.append({"field": "chain", "expiry": far_class, "cadence": far_cadence, "far": True})
+        if any((leg.get("strike") or {}).get("rule") == "delta" for leg in far):
+            out.append({"field": "greeks", "expiry": far_class, "cadence": far_cadence, "far": True})
     e = arm["entry"]
     intraday_trigger = e.get("kind") == "orb" or (
         e.get("kind") == "trigger" and not (e.get("trigger") or {}).get("daily")
@@ -236,6 +259,15 @@ def needs(arm: dict) -> list[dict]:
     if intraday_trigger:
         out.append({"field": "spot", "cadence": "1m"})
     return out
+
+
+def run_chain(arm: dict) -> dict:
+    """The chain need a run's source is named for: the near chain, or with a far leg entered inside
+    the session the far one, since the run then reads the full set's intraday chain stores (which
+    hold the same-day expiry beside them)."""
+    chains = [n for n in needs(arm) if n["field"] == "chain"]
+    far = next((n for n in chains if n.get("far")), None)
+    return far if far is not None and far["cadence"] == INTRADAY_CADENCE else chains[0]
 
 
 def suggestion(
@@ -331,8 +363,13 @@ def _window(arm: dict, inventory: dict, start: str, end: str, coverage, source: 
     every need is covered. The chain is taken at any density and the density is reported, so a thin
     span (Dolt before 2025) is a choice made knowingly, never a refusal."""
     out = {"start": start, "end": end, "source": source.name, "licensed": source.licensed, "density": None}
+    run = run_chain(arm)
     for need in needs(arm):
-        pinned = need["field"] in CHAIN_FIELDS
+        # The run's own chain (and every chain at the close, one end-of-day source) from `source`;
+        # the other expiry inside the session from whichever store replays it.
+        pinned = need["field"] in CHAIN_FIELDS and (
+            need["cadence"] == "1d" or bool(need.get("far")) == bool(run.get("far"))
+        )
         only = (lambda s, n=need: s.name == source.name and replays(n, s)) if pinned else _reader(need)
         got = coverage(inventory, need["field"], arm["symbol"], start, end, cadence=need["cadence"],
                        expiry=need.get("expiry"), licensed=source.licensed if pinned else False,
@@ -363,7 +400,7 @@ def windows(arm: dict, inventory: dict, today: date, coverage, *, licensed_ok: b
     `key` is what a run names. Pure over `coverage` and the registry."""
     last = cal.previous_trading_day(today).isoformat()
     year = date.fromordinal(cal.previous_trading_day(today).toordinal() - SUGGEST_DAYS).isoformat()
-    chain = next(n for n in needs(arm) if n["field"] == "chain")
+    chain = run_chain(arm)
     out: list[dict] = []
     for licensed in (False, True) if licensed_ok else (False,):
         spans = coverage(inventory, "chain", arm["symbol"], EARLIEST, last, cadence=chain["cadence"],

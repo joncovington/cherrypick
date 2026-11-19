@@ -14,6 +14,11 @@ nominal premium so the shape reads as a trade would: a structure that can only l
 its premium (sold premium) is lifted by part of its worst loss, one that can only gain (bought premium)
 lowered by part of its best gain, and one that does both left where it is. That premium is a drawing
 aid, never a price: the y axis is labelled in words (max profit, max loss), not dollars.
+
+A leg on the far expiry (a calendar's, a diagonal's) is drawn at the near expiry still holding time
+value: its value there by the normal (Bachelier) model with one drawing unit (`UNIT`) as the standard
+deviation to its own expiry (`far_value`). The curve is then sampled, not straight between strikes, and
+`modeled` is true: the peak is the model's, so the top reads "peak, modeled".
 """
 
 from __future__ import annotations
@@ -31,6 +36,27 @@ UNIT = 10.0
 PREMIUM_SHARE = 0.3
 #: The margin either side of the outer legs (and the spot), as a share of their span, at least a unit.
 MARGIN = 0.6
+#: How many points a curve with a far leg is sampled at, between its ends (strikes added).
+SAMPLES = 80
+
+
+def far_value(right: str, strike: float, at: float, sd: float = UNIT) -> float:
+    """A far leg's value at the near expiry, the underlying at `at`: the normal model's price with
+    standard deviation `sd` to the far expiry. Never below its intrinsic value."""
+    d = (at - strike) if right == "C" else (strike - at)
+    z = d / sd
+    return d * NormalDist().cdf(z) + sd * NormalDist().pdf(z)
+
+
+def _value(legs: list[Leg], x: float) -> float:
+    """sum(n * value) at the near expiry: intrinsic on a near leg, `far_value` on a far one."""
+    total = 0.0
+    for g in legs:
+        if g.expiry:
+            total += g.side * far_value(g.right, g.strike, x)
+        else:
+            total += pricing.intrinsic_value([g], x)
+    return total
 
 
 def _fmt(points: float) -> str:
@@ -110,15 +136,23 @@ def sketch(arm: dict) -> dict:
     for spec in arms_mod.internal_legs(arm):  # either spelling: the engine's form
         p = _place(spec.get("strike") or {}, spec["right"], placed)
         placed[spec["name"]] = p
-        legs.append(Leg(spec["name"], spec["right"], spec["side"], p["at"]))
-        legs_out.append({"name": spec["name"], "right": spec["right"], "side": spec["side"], **p})
+        far = spec.get("expiry") == "far"
+        legs.append(Leg(spec["name"], spec["right"], spec["side"], p["at"], expiry="far" if far else None))
+        row = {"name": spec["name"], "right": spec["right"], "side": spec["side"], **p}
+        legs_out.append({**row, "expiry": "far"} if far else row)
     if not legs:
         return {"legs": [], "curve": [], "ticks": [], "exact": True, "top": None, "bottom": None}
+    modeled = any(g.expiry for g in legs)
     xs = [g.strike for g in legs] + [0.0]
     span = max(xs) - min(xs)
     pad = max(span * MARGIN, UNIT)
     lo, hi = min(xs) - pad, max(xs) + pad
-    raw = pricing.payoff_curve(legs, 0.0, lo, hi)
+    if modeled:
+        step = (hi - lo) / SAMPLES
+        xs_at = sorted({*(lo + i * step for i in range(SAMPLES + 1)), *(g.strike for g in legs)})
+        raw = [(x, _value(legs, x)) for x in xs_at]
+    else:
+        raw = pricing.payoff_curve(legs, 0.0, lo, hi)
     best, worst = max(v for _, v in raw), min(v for _, v in raw)
     premium = PREMIUM_SHARE * -worst if best <= 0 else -PREMIUM_SHARE * best if worst >= 0 else 0.0
     curve = [[round(x, 3), round(v + premium, 3)] for x, v in raw]
@@ -135,11 +169,22 @@ def sketch(arm: dict) -> dict:
         key = round(g["at"], 3)
         if key != 0.0:
             ticks.setdefault(key, g["label"])
-    return {
+    top = "max profit" if bounded(top_end) else "profit, unlimited"
+    bottom = "max loss" if bounded(bottom_end) else "loss, unlimited"
+    if modeled:
+        # A sampled curve is never exactly flat at its ends: the engine's own bound reads the loss (a
+        # true bound where every far leg is bought), and the peak is the model's.
+        _profit, loss = pricing.payoff_extremes(legs, 0.0)
+        top = "peak, modeled" if top_end not in (curve[0], curve[-1]) else "profit, unlimited"
+        bottom = "max loss" if loss is not None else "loss, unlimited"
+    out = {
         "legs": [{**g, "at": round(g["at"], 3)} for g in legs_out],
         "curve": curve,
         "ticks": [{"at": k, "label": v} for k, v in sorted(ticks.items())],
         "exact": all(g["exact"] for g in legs_out),
-        "top": "max profit" if bounded(top_end) else "profit, unlimited",
-        "bottom": "max loss" if bounded(bottom_end) else "loss, unlimited",
+        "top": top,
+        "bottom": bottom,
     }
+    if modeled:
+        out["modeled"] = True
+    return out

@@ -138,7 +138,10 @@ alone):
     body): the module returns the generic shape from the rule (`sketch`: each leg's position and
     label, the curve in nominal units) and, where live quotes or our own last recorded session place
     the legs, the chain example with each row's offset from the money and the example's money; the
-    page draws them and computes no strike, position, price or P&L. A leg's words and its ID
+    page draws them and computes no strike, position, price or P&L. With a far leg both are at the
+    near expiry with that leg's time value by the module's model (`modeled`): the shape's title, top
+    and caption say so, the example names the modeled peak with each far leg's vol and days left, and
+    a far leg's tag reads "· far". A leg's words and its ID
     (`legWords.ts`: L2 · Short Put ×2, the next ID) are the page's. A leg is written in the page's
     own keys, `action` (BTO, STO), `qty` and `side` (put, call), which the module checks; the form
     reads the older spelling too (`parts`: `side` as signed contracts, `right`) and writes any leg it

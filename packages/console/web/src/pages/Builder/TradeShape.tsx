@@ -15,6 +15,9 @@ import { isLegId, openAbbr, openVerb, titleCase } from "./legWords";
  * session our own recorder holds, each row named by its distance from the strike nearest the spot,
  * each leg marked on its own side with its contracts, and that example's credit and extremes in a
  * line above it. The page draws what the module returned and works out nothing.
+ *
+ * A structure with a far leg (a calendar, a diagonal) is drawn at the near expiry with the far leg's
+ * time value by a model (`modeled`): its peak is the model's, so the line and the caption say so.
  */
 
 /** The keys the module never reads from an edit: the Builder's own `editableSpec` drops them too. */
@@ -67,14 +70,16 @@ export function legName(leg: { name: string; side: number; right: string }): str
 
 /** "STO 2 · L2 · Short Put", "BTO · Long Call": an entry leg as an order chain writes it, with its
  *  contracts when more than one. `legOrderWords` is the same in full, for the tag's title. */
-export function legOrder(leg: { name: string; side: number; right: string }): string {
+type OrderLeg = { name: string; side: number; right: string; expiry?: "far" };
+
+export function legOrder(leg: OrderLeg): string {
   const n = Math.abs(leg.side);
-  return `${openAbbr(leg.side)}${n > 1 ? ` ${n}` : ""} · ${legName(leg)}`;
+  return `${openAbbr(leg.side)}${n > 1 ? ` ${n}` : ""} · ${legName(leg)}${leg.expiry === "far" ? " · far" : ""}`;
 }
 
-export function legOrderWords(leg: { name: string; side: number; right: string }): string {
+export function legOrderWords(leg: OrderLeg): string {
   const n = Math.abs(leg.side);
-  return `${openVerb(leg.side)}${n > 1 ? ` ${n}` : ""} · ${legName(leg)}`;
+  return `${openVerb(leg.side)}${n > 1 ? ` ${n}` : ""} · ${legName(leg)}${leg.expiry === "far" ? " · on the far expiry" : ""}`;
 }
 
 /** The example's line: where it was placed and what it came to. */
@@ -86,9 +91,17 @@ export function exampleWords(p: BuilderPayoff): string {
   const mid = p.prices?.["mid"];
   const bits: string[] = [];
   if (mid !== undefined) bits.push(mid >= 0 ? `credit ${mid.toFixed(2)} at the mid` : `debit ${(-mid).toFixed(2)} at the mid`);
-  bits.push(p.max_profit === null || p.max_profit === undefined ? "profit unlimited" : `at most ${fmtCash(p.max_profit)}`);
+  if (p.modeled) bits.push(`about ${fmtCash(p.modeled.peak)} at most at the near expiry (modeled: ${modeledWords(p.modeled)})`);
+  else bits.push(p.max_profit === null || p.max_profit === undefined ? "profit unlimited" : `at most ${fmtCash(p.max_profit)}`);
   bits.push(p.max_loss === null || p.max_loss === undefined ? "loss unlimited" : `at worst ${fmtCash(-p.max_loss)} a contract`);
   return `For example, ${where}: ${bits.join(", ")}.`;
+}
+
+/** "L2 at 18.4% vol, 28 days left": what the model holds each far leg at. */
+export function modeledWords(m: NonNullable<BuilderPayoff["modeled"]>): string {
+  return m.legs
+    .map((l) => `${l.name} ${l.iv === null ? "at its intrinsic value" : `at ${(l.iv * 100).toFixed(1)}% vol`}, ${l.days} days left`)
+    .join("; ");
 }
 
 const W = 580;
@@ -147,7 +160,7 @@ export function markers(s: BuilderSketch): Array<{ at: number; text: string; sol
           const n = Math.abs(g.side);
           const words = `${g.side < 0 ? "Short" : "Long"} ${g.right === "C" ? "Call" : "Put"}`;
           if (!isLegId(g.name)) return titleCase(g.name) || words;
-          return `${g.name} · ${words}${n > 1 ? ` ×${n}` : ""}`;
+          return `${g.name} · ${words}${n > 1 ? ` ×${n}` : ""}${g.expiry === "far" ? " · far" : ""}`;
         })
         .join(" · "),
       sold: legs.some((g) => g.side < 0),
@@ -213,6 +226,7 @@ function Shape({ s }: { s: BuilderSketch }) {
         {s.exact
           ? "Drawn from the rule: each leg at its distance from the spot. Not to scale in dollars."
           : "Drawn from the rule: a leg placed by delta or a multiple sits where it reads, so the order is true and the spacing is not. Not to scale in dollars."}
+        {s.modeled && " At the near expiry, with the far leg's time value by a model: the peak is the model's, never a bound."}
       </figcaption>
     </figure>
   );
@@ -299,7 +313,7 @@ export function TradeShapeView({ p, stale = false }: { p: BuilderPayoff; stale?:
     <div className={stale ? "tshape is-stale" : "tshape"} aria-busy={stale}>
       <div className="tshape-pair">
         <div>
-          <h5 className="builder-lbl">the shape · one structure at expiry</h5>
+          <h5 className="builder-lbl">{p.sketch.modeled ? "the shape · at the near expiry, modeled" : "the shape · one structure at expiry"}</h5>
           <Shape s={p.sketch} />
         </div>
         <div>
