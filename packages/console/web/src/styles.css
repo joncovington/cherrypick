@@ -8400,7 +8400,66 @@ select.text-input {
   border: 1px solid var(--border);
 }
 .builder-qty {
-  width: 4.5rem;
+  width: 100%;
+}
+/* One leg, every leg on the same grid so its fields line up down the section. First line: the leg's
+   name, action, qty, side and strike by, then remove. Second line: the strike rule's own fields under
+   action, qty and side (a subgrid, so they take those columns exactly), and match under strike by,
+   empty where the rule has none. A phone stacks them two to a line. */
+.builder-cond.builder-leg-row {
+  display: grid;
+  grid-template-columns: 9rem repeat(4, minmax(0, 1fr)) 2.75rem;
+  align-items: end;
+  gap: 0.6rem;
+}
+.builder-leg-row > .builder-leg-name {
+  grid-row: span 2;
+  align-self: start;
+}
+.builder-leg-row > .builder-f,
+.builder-leg-row .builder-input {
+  min-width: 0;
+  width: 100%;
+}
+.builder-leg-rule {
+  grid-column: 2 / 5;
+  display: grid;
+  grid-template-columns: subgrid;
+  align-items: end;
+  min-width: 0;
+}
+.builder-leg-rule:empty {
+  display: none;
+}
+.builder-leg-match {
+  grid-column: 5;
+  min-width: 0;
+}
+.builder-leg-row .builder-remove {
+  grid-column: 6;
+  grid-row: 1;
+  justify-self: end;
+}
+@media (max-width: 700px) {
+  .builder-cond.builder-leg-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .builder-leg-row > .builder-leg-name {
+    grid-row: auto;
+    grid-column: 1 / -1;
+  }
+  .builder-leg-rule {
+    grid-column: 1 / -1;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .builder-leg-match,
+  .builder-leg-row .builder-remove {
+    grid-column: auto;
+    grid-row: auto;
+  }
+  .builder-leg-rule > [aria-hidden="true"] {
+    display: none;
+  }
 }
 .builder-leg-add {
   display: flex;
