@@ -8440,12 +8440,41 @@ select.text-input {
   grid-row: 1;
   justify-self: end;
 }
-@media (max-width: 700px) {
+/* The legs and the gates reflow by their own width, not the window's: the wizard's middle column is
+   narrower than the form's, and a phone narrower still. */
+.builder-rows {
+  container-type: inline-size;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+/* Narrow (the wizard): the leg's name on its own line, its four fields across the full width under
+   it, then the rule's fields under action, qty and side and match under strike by. */
+@container (max-width: 760px) {
+  .builder-cond.builder-leg-row {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .builder-leg-row > .builder-leg-name {
+    grid-row: 1;
+    grid-column: 1 / 4;
+  }
+  .builder-leg-row .builder-remove {
+    grid-column: 4;
+    grid-row: 1;
+  }
+  .builder-leg-rule {
+    grid-column: 1 / 4;
+  }
+  .builder-leg-match {
+    grid-column: 4;
+  }
+}
+/* A phone: two to a line. */
+@container (max-width: 480px) {
   .builder-cond.builder-leg-row {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .builder-leg-row > .builder-leg-name {
-    grid-row: auto;
     grid-column: 1 / -1;
   }
   .builder-leg-rule {
@@ -8460,6 +8489,49 @@ select.text-input {
   .builder-leg-rule > [aria-hidden="true"] {
     display: none;
   }
+}
+/* A gate: its picker in a fixed column, its fields in three equal cells (a fourth wraps under them),
+   remove at the end, so every gate's fields start in the same place. */
+.builder-cond.builder-gate-row {
+  display: grid;
+  grid-template-columns: minmax(9rem, 14rem) repeat(3, minmax(0, 1fr)) 2.75rem;
+  align-items: end;
+  gap: 0.6rem;
+}
+.builder-gate-row > .builder-f,
+.builder-gate-row .builder-input {
+  min-width: 0;
+  width: 100%;
+}
+.builder-gate-row > .builder-f:first-child {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  align-self: start;
+}
+.builder-gate-row .builder-remove {
+  grid-column: 5;
+  grid-row: 1;
+  justify-self: end;
+}
+@container (max-width: 480px) {
+  .builder-cond.builder-gate-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .builder-gate-row > .builder-f:first-child {
+    grid-column: 1 / -1;
+    grid-row: auto;
+  }
+  .builder-gate-row .builder-remove {
+    grid-column: auto;
+    grid-row: auto;
+  }
+}
+/* Exits, size and limits as three labelled groups. */
+.builder-sub {
+  margin: 0.8rem 0 0.4rem;
+}
+.builder-sub:first-child {
+  margin-top: 0;
 }
 .builder-leg-add {
   display: flex;
@@ -11843,6 +11915,8 @@ svg.vol-curve text {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr));
   gap: 0.6rem;
+  /* A label that wraps (a long bound hint) must not push its input below its neighbours'. */
+  align-items: end;
 }
 .builder-f {
   display: flex;

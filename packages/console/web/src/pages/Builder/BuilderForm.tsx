@@ -215,10 +215,11 @@ function GateRows({ schema, gates, stages, onChange, prefix }: { schema: Builder
   const shown = gates.map((g, i) => ({ g, i })).filter(({ g }) => stages.includes(byName[String(g["gate"])]?.stage ?? stages[0]!));
   return (
     <>
+      <div className="builder-rows">
       {shown.map(({ g, i }) => {
         const def = byName[String(g["gate"])];
         return (
-          <div key={`${prefix}-${i}-${String(g["gate"])}`} className="builder-cond">
+          <div key={`${prefix}-${i}-${String(g["gate"])}`} className="builder-cond builder-gate-row">
             <Select
               id={`${prefix}-${i}`}
               label="gate"
@@ -246,6 +247,7 @@ function GateRows({ schema, gates, stages, onChange, prefix }: { schema: Builder
           </div>
         );
       })}
+      </div>
       <div>
         <button type="button" className="btn" onClick={() => onChange([...gates, { gate: known[0]?.gate ?? "" }])}>
           + gate
@@ -507,6 +509,7 @@ export function LegFields({ schema, spec, onChange }: SectionProps) {
   const labels = legLabels(legs);
   return (
     <>
+      <div className="builder-rows">
       {legs.map((leg, i) => {
         const strike = obj(leg["strike"]);
         const rule = String(strike["rule"] ?? "");
@@ -596,6 +599,7 @@ export function LegFields({ schema, spec, onChange }: SectionProps) {
           </div>
         );
       })}
+      </div>
       <div className="builder-leg-add">
         <button
           type="button"
@@ -626,29 +630,44 @@ export function ExitFields({ schema, spec, onChange }: SectionProps) {
   );
 }
 
-/** Section 5's size and limits. */
+/** The limits in reading order: how many at once, how many a day, how often, then the rest the
+ *  module offers. */
+const LIMIT_ORDER = ["max_open", "per_day", "every_days", "one_per_expiry"];
+
+export function orderedLimits(limits: readonly string[]): string[] {
+  const known = LIMIT_ORDER.filter((k) => limits.includes(k));
+  return [...known, ...limits.filter((k) => !LIMIT_ORDER.includes(k))];
+}
+
+/** Section 5's size and limits, each its own labelled group. */
 export function SizeFields({ schema, spec, onChange }: SectionProps) {
   const set = (key: string, value: unknown) => onChange(withKey(spec, key, value));
   const size = obj(spec["size"]);
   const sizeKind = Object.keys(schema.sizes).find((k) => k in size) ?? "contracts";
   const limits = obj(spec["limits"]);
   return (
-    <div className="builder-grid">
-      <Select id="f-size-kind" label="size by" value={sizeKind} options={Object.keys(schema.sizes)} onChange={(k) => set("size", { [k]: 1 })} />
-      {(schema.sizes[sizeKind] ?? []).map((k) => (
-        <Field id={`f-size-${k}`} label={k} value={size[k]} required={k === sizeKind} t={schema.types?.size[k]} onChange={(v) => set("size", withKey(size, k, v))} />
-      ))}
-      {schema.limits.map((k) => (
-        <Field
-          id={`f-limit-${k}`}
-          label={k}
-          value={limits[k]}
-          required={k === "max_open" || k === "per_day"}
-          t={schema.types?.limits[k]}
-          onChange={(v) => set("limits", withKey(limits, k, v))}
-        />
-      ))}
-    </div>
+    <>
+      <h5 className="builder-lbl builder-sub">size</h5>
+      <div className="builder-grid">
+        <Select id="f-size-kind" label="size by" value={sizeKind} options={Object.keys(schema.sizes)} onChange={(k) => set("size", { [k]: 1 })} />
+        {(schema.sizes[sizeKind] ?? []).map((k) => (
+          <Field id={`f-size-${k}`} label={k} value={size[k]} required={k === sizeKind} t={schema.types?.size[k]} onChange={(v) => set("size", withKey(size, k, v))} />
+        ))}
+      </div>
+      <h5 className="builder-lbl builder-sub">limits</h5>
+      <div className="builder-grid">
+        {orderedLimits(schema.limits).map((k) => (
+          <Field
+            id={`f-limit-${k}`}
+            label={k}
+            value={limits[k]}
+            required={k === "max_open" || k === "per_day"}
+            t={schema.types?.limits[k]}
+            onChange={(v) => set("limits", withKey(limits, k, v))}
+          />
+        ))}
+      </div>
+    </>
   );
 }
 
@@ -711,6 +730,7 @@ export function BuilderForm({
         <SectionHead n={5} title="Exits, size, costs" blocks={["exit", "size"]} labels={labels} help="exits" />
         {lock(
           <>
+            <h5 className="builder-lbl builder-sub">exits</h5>
             <ExitFields {...p} />
             <SizeFields {...p} />
           </>,
