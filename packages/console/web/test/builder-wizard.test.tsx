@@ -2,8 +2,9 @@ import { describe, it, expect } from "vitest";
 import { renderToString } from "react-dom/server";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { BuilderSchema } from "@console/shared";
-import { BuilderWizard, Coverage, STEPS, TIPS, holdsCloseSnapshot, plainBlocks, problemKey, problemsUpTo, type StepId } from "../src/pages/Builder/BuilderWizard";
+import { BuilderWizard, Coverage, STEPS, TIPS, gateWords, holdsCloseSnapshot, plainBlocks, problemKey, problemsUpTo, type StepId } from "../src/pages/Builder/BuilderWizard";
 import { SuggestionLine } from "../src/pages/Builder/BuilderPage";
+import { orderedLimits } from "../src/pages/Builder/BuilderForm";
 
 const html = (el: React.ReactElement) => renderToString(<QueryClientProvider client={new QueryClient()}>{el}</QueryClientProvider>).replace(/<!--\s*-->/g, "");
 
@@ -87,6 +88,16 @@ describe("the entry's cadence", () => {
 });
 
 describe("the review, in plain English", () => {
+  it("names a gate with every setting it was given", () => {
+    expect(gateWords({ gate: "vix_level", max: 20 })).toBe("vix level at most 20");
+    expect(gateWords({ gate: "above_ma", kind: "ema", n: 10 })).toBe("above ma (kind ema, n 10)");
+    expect(gateWords({ gate: "reward_risk", min: 95 })).toBe("reward risk at least 95");
+  });
+
+  it("lists the limits in reading order, any others after", () => {
+    expect(orderedLimits(["every_days", "max_open", "one_per_expiry", "per_day", "x"])).toEqual(["max_open", "per_day", "every_days", "one_per_expiry", "x"]);
+  });
+
   it("reads each block from the spec", () => {
     const b = plainBlocks(PCS);
     expect(b.structure).toBe("SPY. The listed expiry 45-60 days out, the nearest first. Sell to open a Short Put at 0.2 delta, Buy to open a Long Put at 0.1 delta.");
