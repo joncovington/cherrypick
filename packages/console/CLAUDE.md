@@ -147,6 +147,11 @@ alone):
     `automation_strategy` (`/api/automations/builder/strategy`: a strategy's name and plain settings,
     checked by shape): the module builds the legs and the expiry (`strategies.py`) and the page writes
     them into the edit; the list and the settings are the schema's (`strategy`). It writes no config.
+    A calendar or a diagonal also writes the far expiry, and the close before the near expiry where
+    the automation has none (`withStrategy`); a one-expiry strategy leaves no far rule behind.
+    Section 1 shows the far expiry under the near one (`FarExpiry`: its rules are the schema's
+    `far_expiry`, a button adds it, removing it puts every leg back on near), and once there is one,
+    each leg picks Near or Far in an expiry column (`has-expiry`).
     The entry presets (`EntryPicker.tsx`, the signal section and the wizard's Entry step) are configcli
     `automation_entry` (`/api/automations/builder/entry`: a preset's name and plain settings, and
     each stacked filter's name and plain settings, checked by shape): the module builds the `entry`

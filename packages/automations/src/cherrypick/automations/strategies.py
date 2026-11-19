@@ -17,9 +17,13 @@ Settings (each strategy takes the ones it lists):
     width       points              a spread's or a wing's distance from the leg it is placed from
     width2      points              a broken-wing butterfly's far wing
     ratio       2..10               a ratio spread's sold contracts for each bought
+    far_days    days                a calendar's or a diagonal's far expiry: the first listed at
+                                    least this many days after the near one (`far_expiry` after_near)
 
-Where a strategy reaches a leg that needs a second expiry (a calendar, a diagonal) or a stock leg
-(covered call, stock), it is listed with `available: false` and the reason; the engine has neither yet.
+A calendar sells the near expiry and buys the far one at the same strike; a diagonal buys the far one
+`width` points further out. Both are bought for a debit and close before the near expiry
+(`exit.close_before_expiry_min`, which the engine requires of a far leg). A stock leg (covered call,
+stock) is listed with `available: false` and the reason; the engine has none yet.
 """
 
 from __future__ import annotations
@@ -40,14 +44,20 @@ SETTINGS: dict[str, dict] = {
     "width": {"type": "number", "above": 0, "default": 5},
     "width2": {"type": "number", "above": 0, "default": 10},
     "ratio": {"type": "int", "min": 2, "max": arms_mod.MAX_LEG_QUANTITY, "default": 2},
+    "far_days": {"type": "int", "min": 1, "max": 400, "default": 28},
 }
+
+#: The minutes before the near expiry's close a calendar or a diagonal closes: its far leg cannot be
+#: settled with the near one (`arms._far_problems`).
+CLOSE_BEFORE_NEAR_MIN = 15
 
 #: A sensible target for each way of placing, so switching `place_by` does not leave a delta of 10.
 TARGET_DEFAULTS = {"delta": 0.16, "pct": 2, "sd": 1, "points": 10}
 
 _WHEN = ["dte", "expiries"]
 _PLACE = ["place_by", "target"]
-_TWO_EXPIRIES = "needs named expiries: a leg on a second expiry"
+#: A calendar and a diagonal start at the money: 0 points from the spot.
+_ATM = {"place_by": "points", "target": 0}
 
 
 def _s(label: str, about: str, settings: list[str], **more) -> dict:
@@ -73,16 +83,35 @@ STRATEGIES: dict[str, dict] = {
                    ["direction", *_WHEN, "width"]),
     "jade_lizard": _s("Jade lizard", "A sold put, and a call spread above the spot.",
                       [*_WHEN, *_PLACE, "width"]),
-    "calendar": _s("Calendar", "The same strike on two expiries.", [], available=False, why=_TWO_EXPIRIES),
-    "diagonal": _s("Diagonal", "Two strikes on two expiries.", [], available=False, why=_TWO_EXPIRIES),
+    "calendar": _s("Calendar", "Sold on the near expiry, bought on a later one, at the same strike.",
+                   ["right", *_WHEN, "far_days", *_PLACE], defaults=_ATM),
+    "diagonal": _s("Diagonal", "A calendar with the far leg bought further out.",
+                   ["right", *_WHEN, "far_days", *_PLACE, "width"], defaults=_ATM),
     "covered": _s("Covered call · Stock", "Shares with a call sold against them.", [], available=False,
                   why="needs stock legs"),
     "custom": _s("Custom", "Any legs: starts from one, and you add the rest.", list(_WHEN)),
 }  # fmt: skip
 
 
+#: The strategies that may sit at the money (a target of 0 points from the spot).
+AT_THE_MONEY = {"calendar", "diagonal"}
+#: The strategies with a leg on a second expiry.
+TWO_EXPIRIES = {"calendar", "diagonal"}
+
+
 class Refused(ValueError):
     """A strategy or a setting the selector cannot build from."""
+
+
+def _default(key: str, spec: dict, own: dict, given: dict):
+    """A setting not given: the strategy's own default, else the setting's. The target follows how the
+    strikes are placed: the strategy's own target while its own placing stands, else that placing's
+    sensible target (`TARGET_DEFAULTS`), so switching to points never leaves a delta of 0.16."""
+    if key != "target":
+        return own.get(key, spec["default"])
+    if "target" in own and "place_by" not in given:
+        return own["target"]
+    return TARGET_DEFAULTS.get(given.get("place_by", own.get("place_by", "delta")), spec["default"])
 
 
 def _settings(name: str, given: dict) -> dict:
@@ -91,13 +120,11 @@ def _settings(name: str, given: dict) -> dict:
         raise Refused(f"strategy: one of {', '.join(STRATEGIES)}")
     if s.get("available") is False:
         raise Refused(f"{s['label']} {s['why']}")
+    own = s.get("defaults", {})
     out = {}
     for key in s["settings"]:
         spec = SETTINGS[key]
-        default = s.get("defaults", {}).get(key, spec["default"])
-        v = given.get(
-            key, TARGET_DEFAULTS.get(given.get("place_by", "delta")) if key == "target" else default
-        )
+        v = given[key] if key in given else _default(key, spec, own, given)
         if spec["type"] == "enum" and v not in spec["options"]:
             raise Refused(f"{key}: one of {', '.join(spec['options'])}")
         if spec["type"] in ("int", "number"):
@@ -107,8 +134,10 @@ def _settings(name: str, given: dict) -> dict:
                 raise Refused(f"{key}: a whole number")
             if "min" in spec and v < spec["min"] or "max" in spec and v > spec["max"]:
                 raise Refused(f"{key}: {spec.get('min')} to {spec.get('max')}")
-            if "above" in spec and v <= spec["above"]:
+            if "above" in spec and v <= spec["above"] and not (key == "target" and name in AT_THE_MONEY):
                 raise Refused(f"{key}: more than {spec['above']}")
+            if key == "target" and v < 0:
+                raise Refused("target: 0 or more")
         out[key] = v
     return out
 
@@ -179,6 +208,12 @@ def _legs(name: str, s: dict) -> list[dict]:
         return [_leg(1, sell, "put", {"rule": "spot", "points": 0, "match": "nearest"}),
                 _leg(2, sell, "call", {"rule": "same_as", "leg": "L1"}),
                 _leg(3, buy, "put", _from("L1", -w)), _leg(4, buy, "call", _from("L2", w))]  # fmt: skip
+    if name == "calendar":
+        return [_leg(1, "STO", right, place(away)),
+                {**_leg(2, "BTO", right, {"rule": "same_as", "leg": "L1"}), "expiry": "far"}]  # fmt: skip
+    if name == "diagonal":
+        return [_leg(1, "STO", right, place(away)),
+                {**_leg(2, "BTO", right, _from("L1", away * w)), "expiry": "far"}]  # fmt: skip
     if name == "jade_lizard":
         return [
             _leg(1, "STO", "put", place(-1)),
@@ -191,14 +226,20 @@ def _legs(name: str, s: dict) -> list[dict]:
 
 def build(name: str, given: dict | None = None) -> dict:
     """{"strategy", "settings", "legs", "expiry"} for strategy `name` with `given` settings (the rest
-    at their defaults). Raises Refused, naming the setting."""
+    at their defaults), and `far_expiry` for a calendar or a diagonal. Raises Refused, naming the
+    setting."""
     s = _settings(name, given or {})
-    return {
+    out = {
         "strategy": name,
         "settings": s,
         "legs": [arms_mod.written_leg(leg) for leg in _legs(name, s)],
         "expiry": expiry_rule(s["dte"], s["expiries"]),
     }
+    if name in TWO_EXPIRIES:
+        out["far_expiry"] = {"kind": "after_near", "days": int(s["far_days"])}
+        if s["expiries"] == "monthly":
+            out["far_expiry"]["monthly"] = True
+    return out
 
 
 def schema() -> dict:
@@ -212,6 +253,7 @@ def schema() -> dict:
                 "settings": v["settings"],
                 "available": v.get("available", True),
                 "why": v.get("why"),
+                "defaults": v.get("defaults", {}),
             }
             for k, v in STRATEGIES.items()
         },  # fmt: skip

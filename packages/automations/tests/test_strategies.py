@@ -24,7 +24,8 @@ AVAILABLE = [k for k, v in strategies.STRATEGIES.items() if v.get("available", T
 def test_every_strategy_at_every_setting_is_an_automation_the_engine_loads(name):
     for given in _combos(name):
         built = strategies.build(name, given)
-        spec = {**builderform.WIZARD_DEFAULTS, "legs": built["legs"], "expiry": built["expiry"]}
+        spec = builderform.strategy_answer(name, given)["spec"]
+        assert spec["legs"] == built["legs"] and spec.get("far_expiry") == built.get("far_expiry")
         arms = config.load_arms({"automations": {"try-it": spec}})
         loaded = arms["try-it"]
         assert len(loaded["legs"]) == len(built["legs"]), (name, given)
@@ -36,7 +37,9 @@ def test_the_legs_are_named_by_id_in_the_written_spelling():
     for name in AVAILABLE:
         legs = strategies.build(name)["legs"]
         assert [g["name"] for g in legs] == [f"L{i + 1}" for i in range(len(legs))], name
-        assert all(set(g) == {"name", "action", "qty", "side", "strike"} for g in legs), name
+        written = {"name", "action", "qty", "side", "strike"}
+        assert all(set(g) - {"expiry"} == written for g in legs), name
+        assert all(g.get("expiry", "far") == "far" for g in legs), name  # near is never written
 
 
 def _shape(name, **given):
@@ -102,7 +105,8 @@ def test_the_expiry_is_the_nearest_listed_at_least_that_far_out():
     "name, given, says",
     [
         ("nothing", {}, "strategy: one of"),
-        ("calendar", {}, "needs named expiries"),
+        ("calendar", {"target": -1}, "target: 0 or more"),
+        ("diagonal", {"far_days": 0}, "far_days: 1 to"),
         ("covered", {}, "needs stock legs"),
         ("vertical", {"width": 0}, "width: more than 0"),
         ("vertical", {"right": "both"}, "right: one of put, call"),
@@ -124,16 +128,33 @@ def test_the_wizard_gets_a_whole_automation_with_the_exits_its_expiry_allows():
     assert "close_at_dte" not in near and near["profit_target_pct"] == 50
     debit = builderform.strategy_answer("butterfly", {"dte": 7})
     assert debit["credit"] is False and debit["spec"]["exit"] == {}
-    assert builderform.strategy_answer("calendar", {})["problems"] == [
-        "Calendar needs named expiries: a leg on a second expiry"
-    ]
+    cal = builderform.strategy_answer("calendar", {"dte": 30})
+    assert cal["problems"] == [] and cal["credit"] is False
+    assert cal["spec"]["exit"] == {"close_before_expiry_min": strategies.CLOSE_BEFORE_NEAR_MIN}
+    assert cal["spec"]["far_expiry"] == {"kind": "after_near", "days": 28, "monthly": True}
+    assert config.load_arms({"automations": {"c": cal["spec"]}})["c"]["far_expiry"]["days"] == 28
 
 
 def test_the_schema_offers_every_strategy_and_says_why_one_cannot_be_built():
     s = builderform.schema()["strategy"]
     assert set(s["strategies"]) == set(strategies.STRATEGIES)
-    assert (
-        s["strategies"]["diagonal"]["available"] is False
-        and "named expiries" in s["strategies"]["diagonal"]["why"]
-    )
+    assert s["strategies"]["diagonal"]["available"] is True
+    assert s["strategies"]["covered"]["available"] is False and "stock" in s["strategies"]["covered"]["why"]
     assert s["strategies"]["custom"]["available"] is True
+
+
+def test_a_calendar_sells_near_and_buys_far_at_the_same_strike_and_a_diagonal_further_out():
+    cal = strategies.build("calendar", {"right": "call"})
+    assert [(g["action"], g["side"], g.get("expiry")) for g in cal["legs"]] == [
+        ("STO", "call", None),
+        ("BTO", "call", "far"),
+    ]
+    assert cal["legs"][0]["strike"] == {"rule": "spot", "points": 0, "match": "nearest"}
+    assert cal["legs"][1]["strike"] == {"rule": "same_as", "leg": "L1"}
+    put = strategies.build("diagonal", {"right": "put", "width": 5})["legs"][1]["strike"]
+    assert put == {"rule": "from_leg", "leg": "L1", "points": -5, "match": "nearest"}
+    weekly = strategies.build("calendar", {"expiries": "weekly", "far_days": 7})["far_expiry"]
+    assert weekly == {"kind": "after_near", "days": 7}
+    # Its own target stands until the placing changes; then the placing's own.
+    assert strategies.build("calendar")["settings"]["target"] == 0
+    assert strategies.build("calendar", {"place_by": "delta"})["settings"]["target"] == 0.16

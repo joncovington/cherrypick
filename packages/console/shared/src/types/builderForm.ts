@@ -44,6 +44,10 @@ export interface BuilderSchema {
    *  not say: a symbol's own dates, or past what a data label covers). Absent from an older module. */
   event_about?: Record<string, { name: string; when: string; next: string | null }>;
   expiry: Record<string, Record<string, boolean>>;
+  /** The far expiry's rules (#1318): every expiry rule and `after_near`; absent from an older module. */
+  far_expiry?: Record<string, Record<string, boolean>>;
+  /** Which expiry a leg may sit on: near, far. */
+  leg_expiries?: string[];
   /** The expiry keys that are true or false, drawn as checkboxes. */
   expiry_flags?: string[];
   strike_rules: Record<string, { keys: Record<string, boolean>; matches: string[]; default_match: string | null }>;
@@ -116,7 +120,7 @@ export interface BuilderStrategySetting {
 }
 
 export interface BuilderStrategySchema {
-  strategies: Record<string, { label: string; about: string; settings: string[]; available: boolean; why: string | null }>;
+  strategies: Record<string, { label: string; about: string; settings: string[]; available: boolean; why: string | null; defaults?: Record<string, string | number> }>;
   settings: Record<string, BuilderStrategySetting>;
   /** A sensible target for each way of placing the first strikes (delta 0.16, pct 2, sd 1, points 10). */
   target_defaults: Record<string, number>;
@@ -129,6 +133,8 @@ export interface BuilderStrategyResult {
   settings?: Record<string, string | number>;
   legs?: Array<Record<string, unknown>>;
   expiry?: Record<string, unknown>;
+  /** A calendar's or a diagonal's second expiry rule. */
+  far_expiry?: Record<string, unknown>;
   credit?: boolean;
   spec?: Record<string, unknown>;
   problems: string[];
