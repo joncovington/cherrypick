@@ -57,6 +57,29 @@ def payoff_extremes(legs, credit: float) -> tuple[float | None, float | None]:
     return profit, -min(values)
 
 
+def value_bounds(legs) -> tuple[float | None, float | None]:
+    """The least and most the structure can be worth per share, +sum(n * price), read off its payoff
+    at expiry: every leg shares one expiry, so its value now lies in that range. None where the payoff
+    is unbounded that way."""
+    pts = sorted({0.0, *(leg.strike for leg in legs)})
+    values = [intrinsic_value(legs, s) for s in pts]
+    slope = sum(leg.side for leg in legs if leg.right == "C")
+    lo = min(values) if slope >= 0 else None
+    hi = max(values) if slope <= 0 else None
+    return lo, hi
+
+
+def within_bounds(legs, value: float) -> bool:
+    """Whether `value` (+sum(n * price) per share) is one the structure can be worth. A mid outside it
+    is a quote that cannot be filled, never a price (`value_bounds`)."""
+    lo, hi = value_bounds(legs)
+    return (lo is None or value >= lo - BOUND_TOLERANCE) and (hi is None or value <= hi + BOUND_TOLERANCE)
+
+
+#: Rounding room on `within_bounds`, per share: a mid is quoted to the half cent.
+BOUND_TOLERANCE = 0.005
+
+
 def intrinsic_value(legs, settle: float) -> float:
     """What the structure pays at expiry per share: sum(n * intrinsic)."""
     total = 0.0

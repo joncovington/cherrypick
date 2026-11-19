@@ -203,6 +203,11 @@ reading open, the engine fixes one and says so here, because each is a measureme
   no data for passes its gate and is recorded `unknown`, never read as quiet.
 - **Sold legs need a bid.** A structure whose sold leg has none is `unpriced` and skipped, as everywhere
   in the suite (`core.legbars`).
+- **A mid the structure cannot be worth is no price.** A structure's value lies within its payoff at
+  expiry (`pricing.value_bounds`: 0 to the width on a $10 fly, within half a cent). An entry priced
+  outside it reads `unrealistic_price`; an open position's mark outside it is no reading, so no exit
+  fires on it and the trailing stop's best holds; a close outside it is held and tried again on the
+  next tick, settling at expiry if none comes.
 
 ## Money
 
