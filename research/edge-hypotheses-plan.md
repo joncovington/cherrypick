@@ -9063,6 +9063,14 @@ several hundred dollars against four legs' costs. `--similar` names no rejected 
     `forward` block declared before it trades.
   - **It fails or no verdict:** the 60/90 call calendar does not earn after costs and beyond its delta
     before the source's window, and the calendar family stays closed.
+- **Result (2026-11-18): the arm fails every bar in the design part; the holdout was not read.**
+  - **The three bars:** `stated` loses per entry against the bill on its debit and against its
+    financed delta in 2016-2018, and fails the tail bar as well.
+  - **The overlap:** the block bootstrap fails it too, so the verdict does not rest on overlapping
+    trades counted as many.
+  - **Decision:** as declared, the 60/90 call calendar does not earn after costs and beyond its delta
+    before the source's window. Nothing is built and the calendar family stays closed. The variants
+    and every figure are in the local result (`~/.cherrypick/data/backtest/results/research/item91/`).
 
 ### 92. IV rank and realised-under-implied vol as entry filters for monthly short puts and put spreads on index funds
 
@@ -9147,6 +9155,17 @@ threshold is 30 (33 design cycles, 44 holdout) and the recipe's own thresholds a
     same.
   - **All fail or no verdict:** neither filter rescues monthly index short premium after costs and
     drift; single names (Dolt chain IV, from 2019) are not pursued on this question.
+- **Result (2026-11-18): all four arms fail in the design part; no holdout was read.**
+  - **The three bars:** each arm nets above the bill per cycle before 2021-06 but not by enough to
+    clear the capital bar, and each fails the delta bar: the IV-rank arms sit above their financed
+    delta without clearing it, the realised-under-implied arms below it. The tail bar is no verdict
+    on every arm, under the bootstrap's floor of trades.
+  - **The filter rule:** on each structure, the entries a filter keeps do not beat the entries it
+    skips by the declared margin, so neither filter carries information of its own.
+  - **Decision:** as declared, neither IV rank at 30 nor realised vol under implied rescues monthly
+    index short premium after costs and drift. The engine's `vol_index_rank` gate stays without
+    support, no ratio gate is built, and single names are not pursued on this question. Every figure
+    is in the local result (`~/.cherrypick/data/backtest/results/research/item92/`).
 
 ### 93. Market Profile entry readings, stage A: four forecasts on SPX prices
 
