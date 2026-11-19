@@ -83,10 +83,10 @@ def test_at_settlement_the_body_is_one_symbol_charged_once(tmp_path):
 def test_a_side_is_a_whole_number_of_contracts_never_zero_and_never_past_the_cap():
     base = arms.ARMS["iron-fly-1000"]
     for bad in (0, True, 1.5, arms.MAX_LEG_QUANTITY + 1, -arms.MAX_LEG_QUANTITY - 1, "1"):
-        legs = [{**base["legs"][0], "side": bad}, *base["legs"][1:]]
+        legs = [{**arms.internal_leg(base["legs"][0])[0], "side": bad}, *base["legs"][1:]]
         assert any("side" in p for p in arms.validate({**base, "legs": legs})), bad
     for good in (-arms.MAX_LEG_QUANTITY, -2, 2, arms.MAX_LEG_QUANTITY):
-        legs = [{**base["legs"][0], "side": good}, *base["legs"][1:]]
+        legs = [{**arms.internal_leg(base["legs"][0])[0], "side": good}, *base["legs"][1:]]
         assert arms.validate({**base, "legs": legs}) == [], good
 
 
@@ -101,4 +101,4 @@ def test_no_shipped_automation_repeats_a_leg_name_or_holds_more_than_one_contrac
     for name, arm in arms.ARMS.items():
         names = [g["name"] for g in arm["legs"]]
         assert len(names) == len(set(names)), name
-        assert all(abs(g["side"]) == 1 for g in arm["legs"]), name
+        assert all(g["qty"] == 1 for g in arm["legs"]), name

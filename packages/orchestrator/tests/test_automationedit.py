@@ -182,3 +182,57 @@ def test_configcli_routes_the_payoff_op_to_the_module(monkeypatch):
     )
     out = configcli.handle({"op": "automation_payoff", "name": "mine"})
     assert out == {"ok": True, "state": "placed", "name": "mine"}
+
+
+OLDER = (
+    "{\r\n"
+    '  "automations": {\r\n'
+    '    "mine": {"enabled": false, "legs": [\r\n'
+    '      {"name": "short_put", "right": "P", "side": -1, "strike": {"rule": "delta"}}\r\n'
+    "    ]},\r\n"
+    '    "other": {"enabled": true}\r\n'
+    "  }\r\n"
+    "}\r\n"
+)
+WRITTEN = [{"name": "short_put", "action": "STO", "qty": 1, "side": "put", "strike": {"rule": "delta"}}]
+
+
+@pytest.fixture
+def olderfile(tmp_path, monkeypatch):
+    monkeypatch.setenv("CHERRYPICK_HOME", str(tmp_path))
+    path = core_home.config_path("automations")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(OLDER.encode("utf-8"))
+    return path
+
+
+def answers(convert, problems=()):
+    """A stand-in for the module's `cli legs-convert`."""
+
+    def run(_cfg, _req):
+        return {"ok": True, "convert": convert, "problems": list(problems)}
+
+    return run
+
+
+def test_converting_legs_is_a_dry_run_unless_applied_and_writes_only_the_legs(olderfile):
+    run = answers({"mine": WRITTEN})
+    before = olderfile.read_bytes()
+    out = automationedit.convert_legs({}, run=run)
+    assert out == {"ok": True, "applied": False, "convert": ["mine"]} and olderfile.read_bytes() == before
+    out = automationedit.convert_legs({}, apply=True, run=run)
+    assert out["ok"] is True and out["applied"] is True
+    doc = json.loads(olderfile.read_text(encoding="utf-8"))
+    assert doc["automations"]["mine"] == {"enabled": False, "legs": WRITTEN}
+    assert doc["automations"]["other"] == {"enabled": True}
+    assert b"\n" not in olderfile.read_bytes().replace(b"\r\n", b"")  # line endings kept
+
+
+def test_converting_legs_refuses_what_the_module_says_would_change_and_a_leg_it_does_not_write(olderfile):
+    before = olderfile.read_bytes()
+    moved = answers({"mine": WRITTEN}, ["mine: converting would change how it loads"])
+    assert automationedit.convert_legs({}, apply=True, run=moved)["code"] == "invalid"
+    older = answers({"mine": [{**WRITTEN[0], "right": "P"}]})
+    assert automationedit.convert_legs({}, apply=True, run=older)["code"] == "invalid"
+    assert automationedit.convert_legs({}, apply=True, run=lambda c, r: None)["code"] == "unavailable"
+    assert olderfile.read_bytes() == before

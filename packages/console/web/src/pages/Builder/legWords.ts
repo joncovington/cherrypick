@@ -4,12 +4,36 @@
  * Call ×2"). An automation saved before IDs keeps its own names, shown title-cased ("short_put" reads
  * "Short Put").
  *
- * The page's words and the stored keys differ: the page's **action** is the order (Buy to open, Sell to
- * open; an adjustment's Buy to close, Sell to close), stored as the leg's `side`, its contracts signed
- * (+ bought, − sold); the page's **side** is Put or Call, stored as `right`.
+ * A leg is written as the page reads it: `action` (BTO, STO; an adjustment's BTC, STC), `qty` (its
+ * contracts) and `side` (put, call). The module still reads the older spelling, `side` as the
+ * contracts signed and `right` as C or P, and its editor and saves convert it, so a leg here may be
+ * either; `parts` reads both, and `writtenLeg` writes the page's.
  */
 
-export type LegLike = { name?: unknown; side?: unknown; right?: unknown };
+export type LegLike = { name?: unknown; side?: unknown; right?: unknown; action?: unknown; qty?: unknown };
+
+/** A leg's order, contracts and Put or Call, from either spelling: `sign` -1 sold, +1 bought. */
+export function parts(leg: LegLike): { sign: -1 | 1; n: number; right: "P" | "C" } {
+  if (leg.action !== undefined || leg.qty !== undefined) {
+    const n = Number(leg.qty ?? 1);
+    return { sign: leg.action === "STO" ? -1 : 1, n: Number.isFinite(n) && n >= 1 ? n : 1, right: leg.side === "call" ? "C" : "P" };
+  }
+  const s = Number(leg.side ?? -1) || -1;
+  return { sign: s < 0 ? -1 : 1, n: Math.abs(s), right: leg.right === "C" ? "C" : "P" };
+}
+
+/** A leg in the page's spelling, its other keys kept: what the form writes back on any edit. */
+export function writtenLeg(leg: Record<string, unknown>): Record<string, unknown> {
+  const p = parts(leg);
+  const { right: _r, side: _s, action: _a, qty: _q, ...rest } = leg;
+  return { name: rest["name"], action: p.sign < 0 ? "STO" : "BTO", qty: p.n, side: p.right === "C" ? "call" : "put", ...rest };
+}
+
+/** The signed contracts of a leg in either spelling, for the verbs below. */
+export function signedQty(leg: LegLike): number {
+  const p = parts(leg);
+  return p.sign * p.n;
+}
 
 const ID = /^L(\d+)$/;
 
@@ -39,11 +63,8 @@ export function closeAbbr(side: number): string {
 
 /** "Long Put", "Short Call ×2": the leg's action, side and contracts. */
 export function legWords(leg: LegLike): string {
-  const side = Number(leg.side ?? 0);
-  const kind = side < 0 ? "Short" : "Long";
-  const right = leg.right === "C" ? "Call" : "Put";
-  const n = Math.abs(side);
-  return `${kind} ${right}${n > 1 ? ` ×${n}` : ""}`;
+  const p = parts(leg);
+  return `${p.sign < 0 ? "Short" : "Long"} ${p.right === "C" ? "Call" : "Put"}${p.n > 1 ? ` ×${p.n}` : ""}`;
 }
 
 /** An older leg name in words: "short_put" reads "Short Put". */
@@ -73,7 +94,8 @@ export function nextLegId(legs: readonly LegLike[], given = 0): string {
 /** A leg named in a sentence, without its contracts: "L2 · Short Put", or "Short Put" for an older name. */
 export function legPlain(leg: LegLike): string {
   const name = typeof leg.name === "string" ? leg.name : "";
-  const words = legWords({ ...leg, side: Math.sign(Number(leg.side ?? 0)) || -1 });
+  const p = parts(leg);
+  const words = `${p.sign < 0 ? "Short" : "Long"} ${p.right === "C" ? "Call" : "Put"}`;
   return isLegId(name) ? `${name} · ${words}` : name ? titleCase(name) : words;
 }
 
@@ -120,7 +142,7 @@ export function placeWords(strike: Record<string, unknown>, byName: Record<strin
 /** One entry leg as a sentence: "Sell to open a Short Put 5 below the spot", "Sell to open 2 × L2 · Short
  *  Put 5 below the L1 · Long Put". */
 export function legSentence(leg: LegLike & { strike?: unknown }, byName: Record<string, LegLike>): string {
-  const side = Number(leg.side ?? 0);
+  const side = signedQty(leg);
   const n = Math.abs(side) || 1;
   const strike = typeof leg.strike === "object" && leg.strike !== null ? (leg.strike as Record<string, unknown>) : {};
   return `${openVerb(side)} ${n > 1 ? `${n} ×` : "a"} ${legPlain(leg)} ${placeWords(strike, byName)}`;

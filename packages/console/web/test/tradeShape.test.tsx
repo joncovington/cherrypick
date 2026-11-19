@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { renderToString } from "react-dom/server";
 import type { BuilderPayoff, BuilderSketch } from "@console/shared";
 import { exampleWords, labelRows, legOrder, legOrderWords, markers, offsetWords, sendable, shapeGeometry, TradeShapeView, valueAt } from "../src/pages/Builder/TradeShape";
-import { closeAbbr, closeVerb, legLabel, legSentence, legWords, nextLegId, openAbbr, openVerb, titleCase } from "../src/pages/Builder/legWords";
+import { closeAbbr, closeVerb, legLabel, legSentence, legWords, nextLegId, openAbbr, openVerb, parts, signedQty, titleCase, writtenLeg } from "../src/pages/Builder/legWords";
 
 const q = (delta: number) => ({ bid: 1, ask: 1.1, delta });
 
@@ -62,6 +62,23 @@ const PLACED: BuilderPayoff = {
 };
 
 const html = (p: BuilderPayoff) => renderToString(<TradeShapeView p={p} />).replace(/<!--\s*-->/g, "");
+
+describe("a leg's two spellings", () => {
+  it("reads the page's spelling and the older one alike", () => {
+    expect(parts({ action: "STO", qty: 2, side: "put" })).toEqual({ sign: -1, n: 2, right: "P" });
+    expect(parts({ side: -2, right: "P" })).toEqual({ sign: -1, n: 2, right: "P" });
+    expect(parts({ action: "BTO", side: "call" })).toEqual({ sign: 1, n: 1, right: "C" });
+    expect(legWords({ action: "STO", qty: 2, side: "put" })).toBe(legWords({ side: -2, right: "P" }));
+  });
+
+  it("writes an older leg in the page's spelling, keeping its name and strike", () => {
+    const strike = { rule: "from_leg", leg: "L1", points: -5 };
+    expect(writtenLeg({ name: "L2", right: "P", side: -2, strike })).toEqual({ name: "L2", action: "STO", qty: 2, side: "put", strike });
+    const w = { name: "L1", action: "BTO", qty: 1, side: "call", strike };
+    expect(writtenLeg(w)).toEqual(w);
+    expect(signedQty({ action: "STO", qty: 3, side: "call" })).toBe(-3);
+  });
+});
 
 describe("a leg in words", () => {
   it("names the order that opens a leg and the one that closes it", () => {

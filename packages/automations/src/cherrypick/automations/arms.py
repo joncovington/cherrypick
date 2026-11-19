@@ -26,10 +26,12 @@ that defaulted silently would change what is measured):
                   `"daily": true` reads completed daily bars and takes no `bar_minutes`)
     weekdays      [0..4], Monday = 0
     skip_events   {"labels": [...], "through_expiry": bool}
-    legs          [{"name", "right": "C"|"P", "side": n, "strike": <strikes rule>}] in placement order
-                  (each rule's keys and its `match` mode: `strikes` docstring). `side` is the leg's
-                  contracts per structure, signed: + bought, - sold, never 0, at most `MAX_LEG_QUANTITY`
-                  either way. Each leg's `name` is its own: a later leg refers to an earlier one by it
+    legs          [{"name", "action": "BTO"|"STO", "qty": n, "side": "put"|"call", "strike": <strikes
+                  rule>}] in placement order (each rule's keys and its `match` mode: `strikes`
+                  docstring); `qty` is the leg's contracts per structure, 1 to `MAX_LEG_QUANTITY`. The
+                  older spelling, {"name", "right": "C"|"P", "side": signed contracts, "strike"}, is read
+                  for good; a leg is one or the other (`internal_leg`). Each leg's `name` is its own: a
+                  later leg refers to an earlier one by it
     gates         [{"gate": <gates.REGISTRY name>, ...}]
     size          {"contracts": N}, {"max_risk": dollars, "minimum": n} or
                   {"allocation_pct": p, "allocation": dollars, "max_dollars": x, "max_contracts": n},
@@ -250,8 +252,81 @@ def _strike_problems(where: str, rule, daily_entry: bool) -> list[str]:
     return p
 
 
+#: A leg's two spellings. Written (the Builder's, the shipped automations', and what `written_leg`
+#: converts an older one to): the order that opens it, its contracts and Put or Call, the page's own
+#: words. Older (still read, for good: configs, backups, replay records and ledgers hold it): `side` is
+#: the contracts signed (+ bought, - sold) and `right` is "C" or "P". Every leg is read into the older
+#: form (`internal_leg`), which is what the engine, the ledger and the block hash see, so an automation
+#: hashes the same in either spelling and none loses its backtest label for being converted.
+ACTIONS = {"BTO": 1, "STO": -1}
+LEG_SIDES = {"put": "P", "call": "C"}
+WRITTEN_LEG_KEYS = {"name", "action", "qty", "side", "strike"}
+OLDER_LEG_KEYS = {"name", "right", "side", "strike"}
+
+
+def _quantity_ok(n) -> bool:
+    return isinstance(n, int) and not isinstance(n, bool) and 1 <= n <= MAX_LEG_QUANTITY
+
+
+def internal_leg(leg, where: str = "leg") -> tuple[dict | None, list[str]]:
+    """`leg` in the form the engine reads ({name, right, side: signed contracts, strike}), from either
+    spelling, or (None, problems). A leg is one spelling or the other: `action` with an integer
+    `side`, or `right` beside `action`, is refused rather than guessed."""
+    if not isinstance(leg, dict):
+        return None, [f"{where}: a leg is an object"]
+    if "action" in leg or "qty" in leg:
+        p = [f"{where}: unknown key {k!r}" for k in sorted(set(leg) - WRITTEN_LEG_KEYS)]
+        if "right" in leg:
+            p.append(f"{where}: a leg is action/qty/side or the older side/right, not both")
+        if leg.get("action") not in ACTIONS:
+            p.append(f"{where}.action: {' or '.join(ACTIONS)}")
+        if leg.get("side") not in LEG_SIDES:
+            p.append(f"{where}.side: {' or '.join(LEG_SIDES)}")
+        qty = leg.get("qty", 1)
+        if not _quantity_ok(qty):
+            p.append(f"{where}.qty: a whole number of contracts, 1 to {MAX_LEG_QUANTITY}")
+        if p:
+            return None, p
+        signed = ACTIONS[leg["action"]] * qty
+        return {"name": leg.get("name", ""), "right": LEG_SIDES[leg["side"]], "side": signed,
+                "strike": leg.get("strike")}, []  # fmt: skip
+    p = [f"{where}: unknown key {k!r}" for k in sorted(set(leg) - OLDER_LEG_KEYS)]
+    side = leg.get("side")
+    if leg.get("right") not in ("C", "P"):
+        p.append(f"{where}: right/side (action BTO|STO, qty, side put|call)")
+    elif not (isinstance(side, int) and not isinstance(side, bool) and _quantity_ok(abs(side))):
+        p.append(
+            f"{where}: right/side (side: contracts, + bought, - sold, 1 to {MAX_LEG_QUANTITY} either way)"
+        )
+    if p:
+        return None, p
+    return {"name": leg.get("name", ""), "right": leg["right"], "side": side, "strike": leg.get("strike")}, []
+
+
+def written_leg(leg) -> dict:
+    """`leg` in the written spelling (action, qty, side), from either; a leg that is neither comes back
+    as it was, for the check to name."""
+    got, problems = internal_leg(leg)
+    if got is None or problems:
+        return leg
+    side = got["side"]
+    return {"name": got["name"], "action": "STO" if side < 0 else "BTO", "qty": abs(side),
+            "side": "call" if got["right"] == "C" else "put", "strike": got["strike"]}  # fmt: skip
+
+
+def internal_legs(arm: dict) -> list:
+    """Every leg of `arm` in the engine's form; one that cannot be read stays as it was (the check
+    names it)."""
+    out = []
+    for leg in arm.get("legs") or []:
+        got, _ = internal_leg(leg)
+        out.append(got if got is not None else leg)
+    return out
+
+
 def _leg(name, right, side, **strike):
-    return {"name": name, "right": right, "side": side, "strike": strike}
+    """A shipped leg, written in the page's spelling: `side` here is the signed contracts."""
+    return written_leg({"name": name, "right": right, "side": side, "strike": strike})
 
 
 ARMS: dict[str, dict] = {
@@ -574,15 +649,13 @@ def validate(arm: dict) -> list[str]:
     if not all(isinstance(d, int) and 0 <= d <= 4 for d in arm["weekdays"]):
         p.append(f"{name}.weekdays: {arm['weekdays']!r}")
     seen: set[str] = set()
-    for i, leg in enumerate(arm["legs"]):
+    for i, raw in enumerate(arm["legs"]):
         where = f"{name}.legs[{i}]"
-        side = leg.get("side")
-        if leg.get("right") not in ("C", "P"):
-            p.append(f"{where}: right/side")
-        elif not (isinstance(side, int) and not isinstance(side, bool) and 0 < abs(side) <= MAX_LEG_QUANTITY):
-            p.append(
-                f"{where}: right/side (side: contracts, + bought, - sold, 1 to {MAX_LEG_QUANTITY} either way)"
-            )
+        leg, leg_problems = internal_leg(raw, where)
+        p.extend(leg_problems)
+        if leg is None:
+            seen.add(raw.get("name", "") if isinstance(raw, dict) else "")
+            continue
         if leg.get("name", "") in seen:
             p.append(f"{where}.name: {leg.get('name')!r} is already a leg; each leg needs its own name")
         daily = arm["entry"].get("kind") == "trigger" and bool(
@@ -747,6 +820,10 @@ def load_arms(overrides: dict | None = None) -> dict[str, dict]:
         if name.startswith("_"):
             continue
         arms[name] = {**arms.get(name, {"name": name}), **change}
+    for a in arms.values():
+        # Either spelling in, the engine's out: what the loop, the ledger and the block hash read.
+        if isinstance(a.get("legs"), list):
+            a["legs"] = internal_legs(a)
     problems = [x for a in arms.values() for x in validate(a)]
     if problems:
         raise ValueError("; ".join(problems))
