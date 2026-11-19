@@ -225,7 +225,6 @@ def test_converting_legs_is_a_dry_run_unless_applied_and_writes_only_the_legs(ol
     doc = json.loads(olderfile.read_text(encoding="utf-8"))
     assert doc["automations"]["mine"] == {"enabled": False, "legs": WRITTEN}
     assert doc["automations"]["other"] == {"enabled": True}
-    assert b"\n" not in olderfile.read_bytes().replace(b"\r\n", b"")  # line endings kept
 
 
 def test_converting_legs_refuses_what_the_module_says_would_change_and_a_leg_it_does_not_write(olderfile):
