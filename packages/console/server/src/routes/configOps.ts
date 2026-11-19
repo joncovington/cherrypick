@@ -190,6 +190,20 @@ export function registerConfigRoutes(app: FastifyInstance, config: ConsoleConfig
     return today;
   });
 
+  /**
+   * The payoff under the Builder's legs: the structure the module's rules would take and its P&L at
+   * expiry (`cli builder-payoff`), on live quotes or the last session our own recorder holds, with the
+   * chain around the legs. A POST only because it may carry an unsaved edit; it writes nothing.
+   */
+  app.post("/api/automations/builder/payoff", async (req, reply) => {
+    const parsed = automationBody((req.body ?? {}) as Record<string, unknown>);
+    if (typeof parsed === "string") return reply.code(400).send({ error: parsed });
+    const result = sendBridgeFailure(reply, await callConfigCli({ op: "automation_payoff", ...parsed }));
+    if (result === null) return reply;
+    const { ok: _ok, ...payoff } = result;
+    return payoff;
+  });
+
   app.post("/api/automations/builder/draft", async (req, reply) => {
     const parsed = automationBody((req.body ?? {}) as Record<string, unknown>);
     if (typeof parsed === "string") return reply.code(400).send({ error: parsed });

@@ -469,7 +469,7 @@ export function Workspace({
               }}
             />
           ) : (
-            <BuilderForm schema={schema} spec={spec} labels={labels} onChange={edit} readOnly={readOnly} />
+            <BuilderForm schema={schema} spec={spec} labels={labels} onChange={edit} readOnly={readOnly} shape={{ name, automation: dirty ? spec : undefined }} />
           )}
           <ActionRow
             busy={busy}

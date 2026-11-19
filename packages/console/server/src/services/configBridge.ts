@@ -47,6 +47,7 @@ export type BridgeRequest =
   | { op: "automation_idea_holdout"; name: string; id: string; idea: string }
   | { op: "automation_draft"; name: string; automation?: Record<string, unknown> }
   | { op: "automation_today"; name: string; automation?: Record<string, unknown> }
+  | { op: "automation_payoff"; name: string; automation?: Record<string, unknown> }
   | { op: "automation_save"; name: string; automation: Record<string, unknown> }
   | { op: "automation_groups" }
   | { op: "automation_groups_check"; groups: Record<string, unknown>; members: Record<string, string | null>; switches: Record<string, boolean> }

@@ -1,10 +1,12 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { BuilderBlock, BuilderFieldType, BuilderSchema } from "@console/shared";
 import { TypedField, showValue, type FieldProps } from "./BuilderField";
 
 export { parseValue, showValue } from "./BuilderField";
 import { CardHelpButton } from "../../components/CardHelp";
 import { SECTION_HELP } from "./BuilderHelp";
+import { TradeShape } from "./TradeShape";
+import { isLegId, legLabels, legWords, nextLegId, titleCase } from "./legWords";
 
 /**
  * The Builder's form (#1180): the five sections of one automation, each field writing the same spec
@@ -60,6 +62,7 @@ function Select({
   options,
   onChange,
   blank,
+  words,
 }: {
   id: string;
   label: string;
@@ -68,6 +71,8 @@ function Select({
   onChange: (v: string) => void;
   /** What an unset value means (the engine's default); offered as the first choice. */
   blank?: string;
+  /** Each option's words where they are not the option itself ("P" reads "Put"). */
+  words?: Record<string, string>;
 }) {
   return (
     <div className="builder-f">
@@ -79,7 +84,7 @@ function Select({
         {!options.includes(value) && !(blank !== undefined && value === "") && <option value={value}>{value || "choose…"}</option>}
         {options.map((o) => (
           <option key={o} value={o}>
-            {o.replaceAll("_", " ")}
+            {words?.[o] ?? o.replaceAll("_", " ")}
           </option>
         ))}
       </select>
@@ -110,6 +115,7 @@ function KeyFields({
   flags = [],
   types,
   legs,
+  legLabels,
 }: {
   prefix: string;
   keys: Record<string, boolean>;
@@ -119,6 +125,7 @@ function KeyFields({
   flags?: string[];
   types?: Record<string, BuilderFieldType> | undefined;
   legs?: string[];
+  legLabels?: Record<string, string>;
 }) {
   return (
     <>
@@ -128,7 +135,17 @@ function KeyFields({
           !types && flags.includes(k) ? (
             <Flag key={`${prefix}-${k}`} id={`${prefix}-${k}`} label={k} value={o[k]} onChange={(v) => onChange(withKey(o, k, v))} />
           ) : (
-            <Field key={`${prefix}-${k}`} id={`${prefix}-${k}`} label={k} value={o[k]} required={req} t={types?.[k]} legs={legs} onChange={(v) => onChange(withKey(o, k, v))} />
+            <Field
+              key={`${prefix}-${k}`}
+              id={`${prefix}-${k}`}
+              label={k}
+              value={o[k]}
+              required={req}
+              t={types?.[k]}
+              legs={legs}
+              legLabels={legLabels}
+              onChange={(v) => onChange(withKey(o, k, v))}
+            />
           ),
         )}
     </>
@@ -477,10 +494,17 @@ export function GateFields({ schema, spec, onChange, stages, prefix }: SectionPr
   return <GateRows schema={schema} gates={gates} stages={stages} prefix={prefix} onChange={(next) => onChange(withKey(spec, "gates", next.length ? next : undefined))} />;
 }
 
-/** Section 4's legs: side, right, strike rule, its keys and match mode. */
+/** The most contracts one leg may hold, either way: the module's `arms.MAX_LEG_QUANTITY`, which its
+ *  check enforces; the box only stops a typo early. */
+const MAX_QTY = 10;
+
+/** Section 4's legs: each named by its ID and its words (L2 · Short Put ×2), its side and contracts,
+ *  right, strike rule, its keys and match mode. `side` is stored as the signed contracts. */
 export function LegFields({ schema, spec, onChange }: SectionProps) {
   const set = (key: string, value: unknown) => onChange(withKey(spec, key, value));
   const legs = list(spec["legs"]).map(obj);
+  const given = useRef(0);
+  const labels = legLabels(legs);
   return (
     <>
       {legs.map((leg, i) => {
@@ -488,17 +512,62 @@ export function LegFields({ schema, spec, onChange }: SectionProps) {
         const rule = String(strike["rule"] ?? "");
         const def = schema.strike_rules[rule];
         const setLeg = (next: Obj) => set("legs", legs.map((x, j) => (j === i ? next : x)));
+        const side = Number(leg["side"] ?? -1) || -1;
+        const qty = Math.abs(side);
+        const name = String(leg["name"] ?? "");
         return (
           <div key={`leg-${i}`} className="builder-cond">
-            <Field id={`f-leg-${i}-name`} label="leg" value={leg["name"]} required t={TEXT} onChange={(v) => setLeg(withKey(leg, "name", v))} />
-            <Select id={`f-leg-${i}-side`} label="side" value={String(leg["side"] ?? "")} options={["-1", "1"]} onChange={(v) => setLeg({ ...leg, side: Number(v) })} />
-            <Select id={`f-leg-${i}-right`} label="right" value={String(leg["right"] ?? "")} options={["P", "C"]} onChange={(v) => setLeg({ ...leg, right: v })} />
+            <div className="builder-f builder-leg-name">
+              <span className="builder-lbl">leg</span>
+              <span className="builder-leg-id">
+                {isLegId(name) && <span className="builder-leg-chip">{name}</span>}
+                <span>{isLegId(name) ? legWords(leg) : titleCase(name) || legWords(leg)}</span>
+              </span>
+            </div>
+            <Select
+              id={`f-leg-${i}-side`}
+              label="side"
+              value={side < 0 ? "sell" : "buy"}
+              options={["buy", "sell"]}
+              words={{ buy: "Buy", sell: "Sell" }}
+              onChange={(v) => setLeg({ ...leg, side: (v === "sell" ? -1 : 1) * qty })}
+            />
+            <div className="builder-f">
+              <label className="builder-lbl" htmlFor={`f-leg-${i}-qty`}>
+                qty
+              </label>
+              <input
+                id={`f-leg-${i}-qty`}
+                key={`qty-${qty}`}
+                className="builder-input builder-qty"
+                type="number"
+                inputMode="numeric"
+                min={1}
+                max={MAX_QTY}
+                step={1}
+                defaultValue={qty}
+                onBlur={(e) => {
+                  const n = Math.round(Number(e.currentTarget.value));
+                  if (Number.isFinite(n) && n >= 1 && n <= MAX_QTY && n !== qty) setLeg({ ...leg, side: Math.sign(side) * n });
+                  else e.currentTarget.value = String(qty);
+                }}
+              />
+            </div>
+            <Select
+              id={`f-leg-${i}-right`}
+              label="right"
+              value={String(leg["right"] ?? "")}
+              options={["P", "C"]}
+              words={{ P: "Put", C: "Call" }}
+              onChange={(v) => setLeg({ ...leg, right: v })}
+            />
             <Select id={`f-leg-${i}-rule`} label="strike by" value={rule} options={Object.keys(schema.strike_rules)} onChange={(r) => setLeg({ ...leg, strike: { rule: r } })} />
             <KeyFields
               prefix={`f-leg-${i}`}
               keys={def?.keys ?? {}}
               types={schema.types?.strike}
               legs={legs.slice(0, i).map((l) => String(l["name"] ?? ""))}
+              legLabels={labels}
               o={strike}
               onChange={(next) => setLeg({ ...leg, strike: { ...next, rule } })}
             />
@@ -512,16 +581,25 @@ export function LegFields({ schema, spec, onChange }: SectionProps) {
                 onChange={(m) => setLeg({ ...leg, strike: withKey(strike, "match", m === "" ? undefined : m) })}
               />
             )}
-            <button type="button" className="btn builder-remove" aria-label={`Remove leg ${String(leg["name"])}`} onClick={() => set("legs", legs.filter((_, j) => j !== i))}>
+            <button type="button" className="btn builder-remove" aria-label={`Remove leg ${labels[name] ?? name}`} onClick={() => set("legs", legs.filter((_, j) => j !== i))}>
               ×
             </button>
           </div>
         );
       })}
-      <div>
-        <button type="button" className="btn" onClick={() => set("legs", [...legs, { name: `leg_${legs.length + 1}`, right: "P", side: -1, strike: { rule: "delta" } }])}>
-          + leg
+      <div className="builder-leg-add">
+        <button
+          type="button"
+          className="btn"
+          onClick={() => {
+            const id = nextLegId(legs, given.current);
+            given.current = Number(id.slice(1));
+            set("legs", [...legs, { name: id, right: "P", side: -1, strike: { rule: "delta" } }]);
+          }}
+        >
+          + Add leg ({nextLegId(legs, given.current)})
         </button>
+        <span className="muted">Each leg keeps its ID: a removed one is not given again, and a new leg takes the next number.</span>
       </div>
     </>
   );
@@ -571,6 +649,7 @@ export function BuilderForm({
   labels,
   onChange,
   readOnly = false,
+  shape,
 }: {
   schema: BuilderSchema;
   spec: Spec;
@@ -579,6 +658,9 @@ export function BuilderForm({
   /** A saved automation: every field shown and none changeable (each section's fields sit in a
    *  disabled fieldset); the section help and the event key still open. */
   readOnly?: boolean;
+  /** The legs' shape and chain example under the structure: the automation's name, and the edit as
+   *  it stands when it is not the saved one. */
+  shape?: { name: string; automation?: Spec };
 }) {
   const p = { schema, spec, onChange };
   const lock = (body: React.ReactNode) => (
@@ -611,6 +693,7 @@ export function BuilderForm({
       <div className="builder-section">
         <SectionHead n={4} title="Structure: legs, then price" blocks={["structure"]} labels={labels} help="structure" />
         {lock(<LegFields {...p} />)}
+        {shape && <TradeShape name={shape.name} automation={shape.automation} />}
         <h5 className="builder-lbl">price and structure gates · read once the legs are chosen</h5>
         {lock(<GateFields {...p} stages={["structure"]} prefix="f-sgate" />)}
       </div>

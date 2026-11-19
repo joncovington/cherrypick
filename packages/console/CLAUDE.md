@@ -133,6 +133,14 @@ alone):
     so the page spells no gate, strike rule or exit of its own. "Today, live" is configcli
     `automation_today` (`/api/automations/builder/today`, a POST only because it may carry an
     unsaved edit): the module decides the automation now on a read-only snapshot and writes nothing.
+    The shape and chain example under the legs (and on the Groups tab's automation page,
+    `TradeShape.tsx`) are configcli `automation_payoff` (`/api/automations/builder/payoff`, the same
+    body): the module returns the generic shape from the rule (`sketch`: each leg's position and
+    label, the curve in nominal units) and, where live quotes or our own last recorded session place
+    the legs, the chain example with each row's offset from the money and the example's money; the
+    page draws them and computes no strike, position, price or P&L. A leg's words and its ID
+    (`legWords.ts`: L2 · Short Put ×2, the next ID) are the page's; its `side` is its signed
+    contracts, which the module checks.
     The wizard (`BuilderWizard.tsx`) is the same three calls and the same save: its shapes are the
     schema's, each step's Next is the module's draft check filtered to that step's keys, and it
     writes only through `/save`, always off.

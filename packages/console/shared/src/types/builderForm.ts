@@ -76,6 +76,56 @@ export interface BuilderTodayCheck {
   value: unknown;
 }
 
+/** One side of one strike in the chain example: the quote the structure was placed on. */
+export interface BuilderChainQuote {
+  bid: number | null;
+  ask: number | null;
+  delta: number | null;
+}
+
+/** `POST /api/automations/builder/payoff`: the structure the module's rules would take, its prices
+ *  per share and its P&L at expiry for one contract (whole-position dollars, at the mid, before fees
+ *  and slippage), placed on live quotes or the last session our own recorder holds. */
+/** The generic shape, from the rule alone (`sketch.sketch`): each leg's position (spot 0) and label,
+ *  the payoff at those positions in nominal units (never dollars), the ticks to label, and whether the
+ *  spacing is to scale (`exact`: every leg placed in points). */
+export interface BuilderSketch {
+  legs: Array<{ name: string; right: string; side: number; at: number; label: string; exact: boolean }>;
+  curve: Array<[number, number]>;
+  ticks: Array<{ at: number; label: string }>;
+  exact: boolean;
+  top: string | null;
+  bottom: string | null;
+}
+
+export interface BuilderPayoff {
+  name: string;
+  symbol: string;
+  state: "placed" | "not_placed" | "invalid" | "no_ledger";
+  /** Always with a resolved automation, placed or not. */
+  sketch?: BuilderSketch;
+  source?: { kind: "live" | "recorded"; at: string; source?: string };
+  spot?: number;
+  /** The listed strike nearest the spot: the chain example's 0. */
+  atm?: number;
+  expiry?: string;
+  legs?: Array<{ name: string; right: string; side: number; strike: number; offset: number }>;
+  prices?: Record<string, number>;
+  max_profit?: number | null;
+  max_loss?: number | null;
+  /** [settle, P&L] at each end and each strike between: the payoff is straight between them. */
+  curve?: Array<[number, number]>;
+  breakevens?: number[];
+  /** The listed strikes near the legs and the spot; `gap` where strikes between were left out. */
+  chain?: Array<{ strike: number; offset: number; put: BuilderChainQuote | null; call: BuilderChainQuote | null; gap: boolean }>;
+  /** Why it could not be placed on live quotes, and on the recorded session. */
+  live?: string;
+  recorded?: string;
+  problems?: string[];
+  reason?: string;
+  error?: string;
+}
+
 /** `POST /api/automations/builder/today`: the engine's decision now, as paper would make it. */
 export interface BuilderToday {
   name: string;

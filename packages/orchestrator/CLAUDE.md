@@ -341,8 +341,9 @@ filename; override with `paper.sla_state_prefix`.
   `group`, and each switched automation's `enabled` and the `start` the check gave it (each key set,
   added to its entry, or a new entry), all in one `apply_raw_save`; a switch carrying any other key is
   refused. `automation_today`
-  (`automationedit.today`) is the Builder's "Today, live": the module's `cli builder-today` with the
-  name and an unsaved edit on stdin, nothing else; it writes nothing. `automation_backtest` and
+  (`automationedit.today`) is the Builder's "Today, live", and `automation_payoff`
+  (`automationedit.payoff`) its shape and chain example: the module's `cli builder-today` or
+  `cli builder-payoff` with the name and an unsaved edit on stdin, nothing else; neither writes. `automation_backtest` and
   `automation_runs` (`automationrun.py`) are the Builder's backtest: the module's `cli builder` read
   gives the automation's suggestion (window, source; refused unless `possible`, or the request names
   one of its `windows` by key, whose dates and store the run then takes; a key it does not offer is

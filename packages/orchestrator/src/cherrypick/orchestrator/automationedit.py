@@ -46,6 +46,11 @@ def run_module_today(cfg: dict[str, Any], req: dict[str, Any]) -> dict[str, Any]
     return run_module_cli(cfg, "builder-today", req)
 
 
+def run_module_payoff(cfg: dict[str, Any], req: dict[str, Any]) -> dict[str, Any] | None:
+    """The module's answer to one `cli builder-payoff` request, or None when it could not be asked."""
+    return run_module_cli(cfg, "builder-payoff", req)
+
+
 def run_module_cli(cfg: dict[str, Any], command: str, req: dict[str, Any]) -> dict[str, Any] | None:
     """The automations module's `cli <command>` with `req` as JSON on stdin; its JSON answer, or None."""
     mcfg = (cfg.get("modules") or {}).get(TARGET) or {}
@@ -90,9 +95,20 @@ def draft(cfg: dict[str, Any], req: dict[str, Any], run: Runner = run_module_dra
 def today(cfg: dict[str, Any], req: dict[str, Any], run: Runner = run_module_today) -> dict[str, Any]:
     """The module's decision of `{name}` (or an unsaved `{name, automation}`) now, as paper would
     decide it, on a read-only snapshot (`cli builder-today`). Writes nothing."""
+    return _read(cfg, req, run, "automation_today")
+
+
+def payoff(cfg: dict[str, Any], req: dict[str, Any], run: Runner = run_module_payoff) -> dict[str, Any]:
+    """The structure `{name}` (or an unsaved `{name, automation}`) would take and its P&L at expiry, on
+    live quotes or the last session our own recorder holds (`cli builder-payoff`). Writes nothing."""
+    return _read(cfg, req, run, "automation_payoff")
+
+
+def _read(cfg: dict[str, Any], req: dict[str, Any], run: Runner, op: str) -> dict[str, Any]:
+    """One read of the module by name, with an unsaved edit passed through and nothing else."""
     name = req.get("name")
     if not isinstance(name, str) or not name:
-        return _err("automation_today needs a 'name'")
+        return _err(f"{op} needs a 'name'")
     body: dict[str, Any] = {"name": name}
     if "automation" in req:
         if not isinstance(req["automation"], dict):

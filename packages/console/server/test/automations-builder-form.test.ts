@@ -55,6 +55,26 @@ describe("today, live", () => {
   });
 });
 
+describe("the payoff under the legs", () => {
+  it("sends the name and an unsaved edit, nothing else, and returns the module's answer", async () => {
+    setBridgeCaller((req) => {
+      seen.push(req);
+      return { ok: true, name: "mine", state: "placed", curve: [[1, -2], [3, 4]] } as BridgeResult;
+    });
+    const res = await post("/api/automations/builder/payoff", { name: "mine", automation: { symbol: "SPX" }, strikes: [1] });
+    expect(res.statusCode).toBe(200);
+    expect(seen).toEqual([{ op: "automation_payoff", name: "mine", automation: { symbol: "SPX" } }]);
+    expect(res.json()).toEqual({ name: "mine", state: "placed", curve: [[1, -2], [3, 4]] });
+  });
+
+  it("refuses a body without a name, and needs the CSRF token", async () => {
+    expect((await post("/api/automations/builder/payoff", {})).statusCode).toBe(400);
+    const bare = await app.inject({ method: "POST", url: "/api/automations/builder/payoff", payload: { name: "mine" }, headers: { host: "127.0.0.1:5070" } });
+    expect(bare.statusCode).toBe(403);
+    expect(seen).toEqual([]);
+  });
+});
+
 describe("the form's schema", () => {
   it("is the module's answer without its ok flag, and a failed read says so", async () => {
     setBuilderSchemaCaller(() => ({ ok: true, json: { ok: true, exits: ["touch"] }, error: null }));

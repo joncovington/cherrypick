@@ -4,6 +4,7 @@ import type { BuilderAutomation, BuilderSchema, BuilderSuggestion, BuilderToday 
 import { builderBacktest, builderDraft, builderSave, builderToday } from "../../lib/api";
 import { EntryFields, ExitFields, GateFields, LegFields, SizeFields, UnderlyingFields, entryText, eventName, type Spec } from "./BuilderForm";
 import { TodayView } from "./BuilderToday";
+import { legSentence } from "./legWords";
 
 /**
  * The Builder's wizard (#1180, the approved mockup's eight artboards): a new automation built one
@@ -82,13 +83,8 @@ export function plainBlocks(spec: Spec, schema?: BuilderSchema): Record<"structu
           ? `the expiry ${String(e["days"])} trading days out`
           : `the expiry ${String(e["days"] ?? "?")} days out`;
   const legs = list(spec["legs"]).map(obj);
-  const legText = legs
-    .map((l) => {
-      const s = obj(l["strike"]);
-      const how = s["rule"] === "delta" ? `nearest ${String(s["target"])} delta` : `by ${String(s["rule"] ?? "?").replaceAll("_", " ")}`;
-      return `${Number(l["side"]) < 0 ? "sell" : "buy"} the ${l["right"] === "C" ? "call" : "put"} ${how}`;
-    })
-    .join(", ");
+  const byName = Object.fromEntries(legs.map((l) => [String(l["name"] ?? ""), l]));
+  const legText = legs.map((l) => legSentence(l, byName)).join(", ");
   const days = list(spec["weekdays"]).map(Number);
   const skip = list(obj(spec["skip_events"])["labels"]).map((l) => (schema ? eventName(schema, String(l)) : String(l)));
   const gates = list(spec["gates"]).map(obj);

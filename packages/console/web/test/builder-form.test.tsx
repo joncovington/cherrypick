@@ -160,8 +160,8 @@ describe("typed fields", () => {
     expect(out).toContain('<select id="f-orb-single_shot" class="builder-input"><option value="" selected="">default (yes)</option><option value="true">yes</option><option value="false">no</option></select>');
   });
 
-  it("offers only the legs placed before this one for a leg reference", () => {
-    expect(out).toContain('<select id="f-leg-1-leg" class="builder-input" required="" aria-required="true"><option value="">choose…</option><option value="short_put" selected="">short_put</option></select>');
+  it("offers only the legs placed before this one for a leg reference, each in words", () => {
+    expect(out).toContain('<select id="f-leg-1-leg" class="builder-input" required="" aria-required="true"><option value="">choose…</option><option value="short_put" selected="">Short Put</option></select>');
   });
 
   it("says what is required and what a greyed default means", () => {

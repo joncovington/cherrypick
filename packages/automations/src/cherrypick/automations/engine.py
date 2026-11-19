@@ -237,15 +237,10 @@ def decide(arm: dict, snap: Snapshot, *, costs: dict | None = None) -> Decision:
             return fail(f"gate:{g['gate']}", v)
         ok(f"gate:{g['gate']}", v)
 
-    chosen: dict[str, float] = {}
-    legs: list[Leg] = []
-    for spec in arm["legs"]:
-        k = strikes.pick(spec["strike"], spec["right"], snap, chain, chosen, fired=v)
-        if k is None or chain.get(k, spec["right"]) is None:
-            return fail(f"strike:{spec['name']}")
-        chosen[spec["name"]] = k
-        legs.append(Leg(spec["name"], spec["right"], spec["side"], k))
-    ok("strikes", chosen)
+    legs, why = place_legs(arm, snap, chain, fired=v)
+    if legs is None:
+        return fail(why)
+    ok("strikes", {leg.name: leg.strike for leg in legs})
 
     quotes = pricing.quotes_for(legs, chain)
     prices = pricing.structure_prices(quotes) if quotes else None
@@ -290,6 +285,45 @@ def decide(arm: dict, snap: Snapshot, *, costs: dict | None = None) -> Decision:
         fees_open=pricing.open_fee(sym, qty, legs),
     )
     return Decision(arm["name"], True, "enter", entry, checks)
+
+
+def place_legs(arm: dict, snap: Snapshot, chain: Chain, *, fired=None) -> tuple[list[Leg] | None, str | None]:
+    """The legs `arm`'s strike rules place on `chain`, in its leg order, each against the legs before
+    it: (legs, None), or (None, the failing check `strike:<leg>`)."""
+    chosen: dict[str, float] = {}
+    legs: list[Leg] = []
+    for spec in arm["legs"]:
+        k = strikes.pick(spec["strike"], spec["right"], snap, chain, chosen, fired=fired)
+        if k is None or chain.get(k, spec["right"]) is None:
+            return None, f"strike:{spec['name']}"
+        chosen[spec["name"]] = k
+        legs.append(Leg(spec["name"], spec["right"], spec["side"], k))
+    return legs, None
+
+
+def structure(arm: dict, snap: Snapshot) -> dict:
+    """The structure `arm` would take on `snap`, read as `decide` reads it but without its timing,
+    limits, event skips, gates or size: the expiry its rule names, the legs its strike rules place, the
+    prices at the legs' quotes, and the payoff at expiry. {"expiry", "legs", "prices", "max_profit",
+    "max_loss"} per share and the `chain` it was placed on, or {"why": the check that stopped it}. For
+    the Builder's payoff chart."""
+    expiry = resolve_expiry(arm, snap)
+    if expiry is None or expiry not in snap.chains:
+        return {"why": "no_expiry"}
+    chain = snap.chains[expiry]
+    due, fired = entry_due(arm, snap)
+    legs, why = place_legs(arm, snap, chain, fired=fired if due else None)
+    if legs is None:
+        return {"why": why, "expiry": expiry}
+    quotes = pricing.quotes_for(legs, chain)
+    prices = pricing.structure_prices(quotes) if quotes else None
+    if prices is None:
+        return {"why": "unpriced", "expiry": expiry, "legs": legs}
+    if not pricing.within_bounds(legs, -prices["mid"]):
+        return {"why": "unrealistic_price", "expiry": expiry, "legs": legs}
+    profit, loss = pricing.payoff_extremes(legs, prices["mid"])
+    return {"expiry": expiry, "legs": legs, "prices": prices, "max_profit": profit, "max_loss": loss,
+            "chain": chain}  # fmt: skip
 
 
 def size(rule: dict, loss_per_share: float) -> int:

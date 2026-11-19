@@ -18,6 +18,8 @@ export interface FieldProps {
   t?: BuilderFieldType | undefined;
   /** The legs placed before this one, for a `leg` field. */
   legs?: string[];
+  /** Each leg's words by its name ("L1 · Long Put"), for the `leg` field's choices. */
+  legLabels?: Record<string, string>;
   /** What a blank means where it is not the engine's default (a trigger's `within`: until it closes). */
   blankMeans?: string;
 }
@@ -88,7 +90,7 @@ function Label({ id, label, required, hint }: { id: string; label: string; requi
   );
 }
 
-export function TypedField({ id, label, value, onChange, required, t, legs = [], blankMeans }: FieldProps) {
+export function TypedField({ id, label, value, onChange, required, t, legs = [], legLabels = {}, blankMeans }: FieldProps) {
   const dflt = t?.default;
   const placeholder = dflt !== undefined ? `default ${word(dflt)}` : blankMeans;
   if (t?.type === "enum" || t?.type === "leg" || (t?.type === "bool" && dflt !== undefined)) {
@@ -113,7 +115,7 @@ export function TypedField({ id, label, value, onChange, required, t, legs = [],
           {cur !== "" && !opts.includes(cur) && <option value={cur}>{cur}</option>}
           {opts.map((o) => (
             <option key={o} value={o}>
-              {t.type === "bool" ? word(o === "true") : t.type === "leg" ? o : o.replaceAll("_", " ")}
+              {t.type === "bool" ? word(o === "true") : t.type === "leg" ? (legLabels[o] ?? o) : o.replaceAll("_", " ")}
             </option>
           ))}
         </select>

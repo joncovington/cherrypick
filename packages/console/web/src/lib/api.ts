@@ -29,6 +29,7 @@ import type {
   IdeaSearches,
   BuilderSaveResult,
   BuilderSchemaResult,
+  BuilderPayoff,
   BuilderToday,
   AutomationsPerformance,
   CurveEquity,
@@ -1418,6 +1419,11 @@ export function useBuilderSchema() {
 /** "Today, live": the engine's decision of this automation now, as paper would make it. */
 export function builderToday(name: string, automation?: Record<string, unknown>): Promise<BuilderToday & { ok?: boolean }> {
   return builderPost<BuilderToday & { ok: boolean }>("/api/automations/builder/today", automation === undefined ? { name } : { name, automation });
+}
+
+/** The structure this automation's rules would take and its payoff at expiry, from the module. */
+export function builderPayoff(name: string, automation?: Record<string, unknown>): Promise<BuilderPayoff & { ok?: boolean }> {
+  return builderPost<BuilderPayoff & { ok: boolean }>("/api/automations/builder/payoff", automation === undefined ? { name } : { name, automation });
 }
 
 /** Queue one explore backtest of a saved automation over one of its suggestion's windows (by key), or

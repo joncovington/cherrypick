@@ -26,8 +26,10 @@ that defaulted silently would change what is measured):
                   `"daily": true` reads completed daily bars and takes no `bar_minutes`)
     weekdays      [0..4], Monday = 0
     skip_events   {"labels": [...], "through_expiry": bool}
-    legs          [{"name", "right": "C"|"P", "side": 1|-1, "strike": <strikes rule>}] in placement order
-                  (each rule's keys and its `match` mode: `strikes` docstring)
+    legs          [{"name", "right": "C"|"P", "side": n, "strike": <strikes rule>}] in placement order
+                  (each rule's keys and its `match` mode: `strikes` docstring). `side` is the leg's
+                  contracts per structure, signed: + bought, - sold, never 0, at most `MAX_LEG_QUANTITY`
+                  either way. Each leg's `name` is its own: a later leg refers to an earlier one by it
     gates         [{"gate": <gates.REGISTRY name>, ...}]
     size          {"contracts": N}, {"max_risk": dollars, "minimum": n} or
                   {"allocation_pct": p, "allocation": dollars, "max_dollars": x, "max_contracts": n},
@@ -121,6 +123,8 @@ TOP_KEYS = {
     "note",
 }
 VERDICTS = ("passed", "failed", "no_verdict")
+#: The most contracts one leg may hold per structure, either way (a 1-2-1 fly's middle is 2).
+MAX_LEG_QUANTITY = 10
 
 LIMIT_KEYS = {"max_open", "per_day", "every_days", "one_per_expiry"}
 
@@ -572,8 +576,15 @@ def validate(arm: dict) -> list[str]:
     seen: set[str] = set()
     for i, leg in enumerate(arm["legs"]):
         where = f"{name}.legs[{i}]"
-        if leg.get("right") not in ("C", "P") or leg.get("side") not in (1, -1):
+        side = leg.get("side")
+        if leg.get("right") not in ("C", "P"):
             p.append(f"{where}: right/side")
+        elif not (isinstance(side, int) and not isinstance(side, bool) and 0 < abs(side) <= MAX_LEG_QUANTITY):
+            p.append(
+                f"{where}: right/side (side: contracts, + bought, - sold, 1 to {MAX_LEG_QUANTITY} either way)"
+            )
+        if leg.get("name", "") in seen:
+            p.append(f"{where}.name: {leg.get('name')!r} is already a leg; each leg needs its own name")
         daily = arm["entry"].get("kind") == "trigger" and bool(
             (arm["entry"].get("trigger") or {}).get("daily")
         )
