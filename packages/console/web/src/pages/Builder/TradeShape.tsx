@@ -281,6 +281,8 @@ function Rows({ gap, children }: { gap: boolean; children: ReactNode }) {
 /** Why there is no example, in the module's own words. */
 function NoExample({ p }: { p: BuilderPayoff }) {
   if (p.error) return <p className="tchain-none">The example could not be read: {p.error}</p>;
+  // One reason for both sources (a far leg, which neither can draw) is said once.
+  if (p.live && p.live === p.recorded) return <p className="tchain-none">No example yet: {p.live}.</p>;
   return (
     <p className="tchain-none">
       No example yet. On live quotes: {p.live ?? "—"}. On the last recorded session: {p.recorded ?? "—"}.

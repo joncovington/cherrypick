@@ -32,7 +32,7 @@ export type StepId = (typeof STEPS)[number]["id"];
 /** The spec keys each step writes: a problem about one of them belongs to that step. */
 export const STEP_KEYS: Record<StepId, string[]> = {
   start: ["name"],
-  underlying: ["symbol", "expiry", "weekdays", "skip_events"],
+  underlying: ["symbol", "expiry", "far_expiry", "weekdays", "skip_events"],
   legs: ["legs"],
   entry: ["entry"],
   gates: ["gates"],
@@ -97,7 +97,13 @@ export function plainBlocks(spec: Spec, schema?: BuilderSchema): Record<"structu
           : `the expiry ${String(e["days"] ?? "?")} days out`;
   const legs = list(spec["legs"]).map(obj);
   const byName = Object.fromEntries(legs.map((l) => [String(l["name"] ?? ""), l]));
-  const legText = legs.map((l) => legSentence(l, byName)).join(", ");
+  const legText = legs.map((l) => `${legSentence(l, byName)}${l["expiry"] === "far" ? " on the far expiry" : ""}`).join(", ");
+  const f = spec["far_expiry"] === undefined ? null : obj(spec["far_expiry"]);
+  const farText = !f
+    ? ""
+    : f["kind"] === "after_near"
+      ? ` The far expiry: the first listed ${f["monthly"] ? "monthly " : ""}expiry at least ${String(f["days"])} days after it.`
+      : " The far expiry: a later one by its own rule.";
   const days = list(spec["weekdays"]).map(Number);
   const skip = list(obj(spec["skip_events"])["labels"]).map((l) => (schema ? eventName(schema, String(l)) : String(l)));
   const gates = list(spec["gates"]).map(obj);
@@ -107,13 +113,14 @@ export function plainBlocks(spec: Spec, schema?: BuilderSchema): Record<"structu
   if (x["profit_target_pct"] !== undefined) exits.push(`take ${String(x["profit_target_pct"])}% of the most it can make`);
   if (x["stop_credit_multiple"] !== undefined) exits.push(`stop at a loss of ${String(x["stop_credit_multiple"])}x the credit`);
   if (x["close_at_dte"] !== undefined) exits.push(`close at ${String(x["close_at_dte"])} days to expiry`);
-  const others = Object.keys(x).filter((k) => !["profit_target_pct", "stop_credit_multiple", "close_at_dte"].includes(k));
+  if (x["close_before_expiry_min"] !== undefined) exits.push(`close ${String(x["close_before_expiry_min"])} minutes before the ${f ? "near " : ""}expiry's close`);
+  const others = Object.keys(x).filter((k) => !["profit_target_pct", "stop_credit_multiple", "close_at_dte", "close_before_expiry_min"].includes(k));
   if (others.length) exits.push(`also ${others.join(", ").replaceAll("_", " ")}`);
   const size = obj(spec["size"]);
   const lim = obj(spec["limits"]);
   const sizeText = size["contracts"] !== undefined ? `${String(size["contracts"])} contract${size["contracts"] === 1 ? "" : "s"}` : `sized by ${Object.keys(size)[0] ?? "?"}`;
   return {
-    structure: `${String(spec["symbol"] ?? "?")}. ${expiry[0]!.toUpperCase()}${expiry.slice(1)}. ${legText ? legText[0]!.toUpperCase() + legText.slice(1) : "No legs yet"}.`,
+    structure: `${String(spec["symbol"] ?? "?")}. ${expiry[0]!.toUpperCase()}${expiry.slice(1)}.${farText} ${legText ? legText[0]!.toUpperCase() + legText.slice(1) : "No legs yet"}.`,
     entry: `${entryText(obj(spec["entry"]))} ${days.length === 5 ? "Monday to Friday" : days.map((d) => DAYS[d]).join(", ")}${skip.length ? `, skipping ${skip.join(", ")} days` : ""}.`,
     gates: gateText,
     exit: exits.length ? `${exits.join("; ")[0]!.toUpperCase()}${exits.join("; ").slice(1)}.` : "No exit set: positions are held to expiry.",

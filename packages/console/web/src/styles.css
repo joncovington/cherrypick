@@ -8440,6 +8440,36 @@ select.text-input {
   grid-row: 1;
   justify-self: end;
 }
+/* With a far expiry each leg picks one: an expiry column after side, the rule's fields under action
+   to expiry, match under strike by. */
+.builder-cond.builder-leg-row.has-expiry {
+  /* Action's words are the longest and qty is one number: they share the room the new column takes. */
+  grid-template-columns: 9rem minmax(0, 1.35fr) minmax(0, 0.65fr) repeat(3, minmax(0, 1fr)) 2.75rem;
+}
+.builder-leg-row.has-expiry .builder-leg-rule {
+  grid-column: 2 / 6;
+}
+.builder-leg-row.has-expiry .builder-leg-match {
+  grid-column: 6;
+}
+.builder-leg-row.has-expiry .builder-remove {
+  grid-column: 7;
+}
+/* Section 1's far expiry: its rule and fields on the expiry's grid, remove at the end. */
+.builder-far {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 0.6rem;
+}
+.builder-far-row {
+  margin-top: 0.6rem;
+}
+.builder-far-row .builder-remove {
+  align-self: end;
+  justify-self: start;
+}
 /* The legs and the gates reflow by their own width, not the window's: the wizard's middle column is
    narrower than the form's, and a phone narrower still. */
 .builder-rows {
@@ -8468,6 +8498,17 @@ select.text-input {
   .builder-leg-match {
     grid-column: 4;
   }
+  .builder-cond.builder-leg-row.has-expiry {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+  .builder-leg-row.has-expiry > .builder-leg-name,
+  .builder-leg-row.has-expiry .builder-leg-rule {
+    grid-column: 1 / 5;
+  }
+  .builder-leg-row.has-expiry .builder-leg-match,
+  .builder-leg-row.has-expiry .builder-remove {
+    grid-column: 5;
+  }
 }
 /* A phone: two to a line. */
 @container (max-width: 480px) {
@@ -8488,6 +8529,18 @@ select.text-input {
   }
   .builder-leg-rule > [aria-hidden="true"] {
     display: none;
+  }
+  .builder-cond.builder-leg-row.has-expiry {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .builder-leg-row.has-expiry > .builder-leg-name,
+  .builder-leg-row.has-expiry .builder-leg-rule {
+    grid-column: 1 / -1;
+  }
+  .builder-leg-row.has-expiry .builder-leg-match,
+  .builder-leg-row.has-expiry .builder-remove {
+    grid-column: auto;
+    grid-row: auto;
   }
 }
 /* A gate: its picker in a fixed column, its fields in three equal cells (a fourth wraps under them),

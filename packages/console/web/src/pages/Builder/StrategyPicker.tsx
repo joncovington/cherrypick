@@ -33,6 +33,7 @@ const LABELS: Record<string, string> = {
   width: "width · points",
   width2: "far wing · points",
   ratio: "sold for each bought",
+  far_days: "far · days after near",
 };
 
 /** The target's label by how the strikes are placed. */
@@ -40,12 +41,14 @@ export function targetLabel(placeBy: string): string {
   return { delta: "target delta", pct: "% from the spot", sd: "standard deviations", points: "points from the spot" }[placeBy] ?? "target";
 }
 
-/** A strategy's settings as the form starts them: the module's defaults, the target by `place_by`. */
+/** A strategy's settings as the form starts them: the strategy's own defaults over the module's, the
+ *  target by `place_by` unless the strategy names its own (a calendar's 0 points: at the money). */
 export function startSettings(schema: BuilderStrategySchema, name: string): Record<string, string | number> {
-  const keys = schema.strategies[name]?.settings ?? [];
+  const s = schema.strategies[name];
+  const own = s?.defaults ?? {};
   const out: Record<string, string | number> = {};
-  for (const k of keys) out[k] = schema.settings[k]!.default;
-  if ("target" in out) out["target"] = schema.target_defaults[String(out["place_by"] ?? "delta")] ?? out["target"]!;
+  for (const k of s?.settings ?? []) out[k] = own[k] ?? schema.settings[k]!.default;
+  if ("target" in out && !("target" in own)) out["target"] = schema.target_defaults[String(out["place_by"] ?? "delta")] ?? out["target"]!;
   return out;
 }
 

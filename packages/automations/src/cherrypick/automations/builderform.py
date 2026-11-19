@@ -200,6 +200,12 @@ def schema(today: date | None = None) -> dict:
         "event_about": _event_about(today),
         "types": fieldtypes.types(sorted({*events.RULE_LABELS, *events.STORE_LABELS, *events.SYMBOL_LABELS})),
         "expiry": {k: dict(v) for k, v in arms_mod.EXPIRY_KEYS.items()},
+        # The far expiry's rules: every expiry rule, and after_near (`arms.AFTER_NEAR_KEYS`).
+        "far_expiry": {
+            **{k: dict(v) for k, v in arms_mod.EXPIRY_KEYS.items()},
+            "after_near": dict(arms_mod.AFTER_NEAR_KEYS),
+        },
+        "leg_expiries": list(arms_mod.LEG_EXPIRIES),
         "expiry_flags": list(arms_mod.EXPIRY_FLAGS),
         "strike_rules": {
             k: {
@@ -506,6 +512,10 @@ def strategy_answer(name: str, given: dict | None) -> dict:
     exit_rules = dict(CREDIT_RULES) if credit else {"close_at_dte": 21}
     if s["dte"] < CLOSE_AT_DTE_FROM:
         exit_rules.pop("close_at_dte", None)  # a 21-day close would end a nearer trade the next session
+    if "far_expiry" in built:
+        # A far leg closes before the near expiry: the engine requires it (`arms._far_problems`).
+        spec["far_expiry"] = built["far_expiry"]
+        exit_rules["close_before_expiry_min"] = strategies.CLOSE_BEFORE_NEAR_MIN
     spec["exit"] = exit_rules
     return {"ok": True, **built, "credit": credit, "spec": spec, "problems": []}
 

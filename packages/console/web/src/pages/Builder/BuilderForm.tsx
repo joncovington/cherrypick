@@ -275,12 +275,13 @@ export function UnderlyingFields({ schema, spec, onChange, readOnly = false }: S
   const labelsOn = list(skip["labels"]).map(String);
   const weekdays = list(spec["weekdays"]).map(Number);
   const exprKind = String(expiry["kind"] ?? "dte");
+  const far = spec["far_expiry"] !== undefined;
   return (
     <>
       <fieldset className="builder-lock" disabled={readOnly}>
       <div className="builder-grid">
         <Field id="f-symbol" label="symbol" value={spec["symbol"]} required t={TEXT} onChange={(v) => set("symbol", typeof v === "string" ? v.toUpperCase() : v)} />
-        <Select id="f-expiry-kind" label="expiry" value={exprKind} options={Object.keys(schema.expiry)} onChange={(k) => set("expiry", { kind: k })} />
+        <Select id="f-expiry-kind" label={far ? "near expiry" : "expiry"} value={exprKind} options={Object.keys(schema.expiry)} onChange={(k) => set("expiry", { kind: k })} />
         <KeyFields
           prefix="f-expiry"
           keys={schema.expiry[exprKind] ?? {}}
@@ -290,6 +291,7 @@ export function UnderlyingFields({ schema, spec, onChange, readOnly = false }: S
           onChange={(next) => set("expiry", { ...next, kind: exprKind })}
         />
       </div>
+      {schema.far_expiry && <FarExpiry schema={schema} spec={spec} onChange={onChange} />}
       <fieldset className="builder-days">
         <legend className="builder-lbl">weekdays</legend>
         {schema.weekdays.map((d) => (
@@ -311,6 +313,52 @@ export function UnderlyingFields({ schema, spec, onChange, readOnly = false }: S
         onChange={(next) => set("skip_events", next.length ? { ...skip, labels: next } : undefined)}
       />
     </>
+  );
+}
+
+/** The far expiry (#1318): a calendar's or a diagonal's second expiry, its rule set from the near one
+ *  (`after_near`) or from today, and the legs that sit on it pick it in their Expiry column. Absent,
+ *  a button adds it; removed, every leg goes back to the near expiry. */
+export function FarExpiry({ schema, spec, onChange }: SectionProps) {
+  const kinds = schema.far_expiry ?? {};
+  const rule = spec["far_expiry"] === undefined ? null : obj(spec["far_expiry"]);
+  if (rule === null) {
+    return (
+      <div className="builder-far">
+        <button type="button" className="btn" onClick={() => onChange(withKey(spec, "far_expiry", { kind: "after_near", days: 28 }))}>
+          + Far expiry
+        </button>
+        <span className="muted">For a calendar or a diagonal: a second expiry, and each leg picks Near or Far.</span>
+      </div>
+    );
+  }
+  const kind = String(rule["kind"] ?? "after_near");
+  const remove = () => {
+    const legs = list(spec["legs"]).map((l) => withKey(obj(l), "expiry", undefined));
+    onChange(withKey(withKey(spec, "far_expiry", undefined), "legs", legs));
+  };
+  return (
+    <div className="builder-grid builder-far-row">
+      <Select
+        id="f-far-kind"
+        label="far expiry"
+        value={kind}
+        options={Object.keys(kinds)}
+        words={{ after_near: "after near" }}
+        onChange={(k) => onChange(withKey(spec, "far_expiry", { kind: k }))}
+      />
+      <KeyFields
+        prefix="f-far"
+        keys={kinds[kind] ?? {}}
+        flags={schema.expiry_flags}
+        types={schema.types?.expiry}
+        o={rule}
+        onChange={(next) => onChange(withKey(spec, "far_expiry", { ...next, kind }))}
+      />
+      <button type="button" className="btn builder-remove" aria-label="Remove the far expiry" onClick={remove}>
+        ×
+      </button>
+    </div>
   );
 }
 
@@ -509,6 +557,8 @@ export function LegFields({ schema, spec, onChange }: SectionProps) {
   const legs = list(spec["legs"]).map(obj);
   const given = useRef(0);
   const labels = legLabels(legs);
+  // A leg picks its expiry once the automation has a far one (or a leg already sits on it).
+  const twoExpiries = spec["far_expiry"] !== undefined || legs.some((l) => l["expiry"] === "far");
   return (
     <>
       <div className="builder-rows">
@@ -523,7 +573,7 @@ export function LegFields({ schema, spec, onChange }: SectionProps) {
         const qty = Math.abs(side);
         const name = String(leg["name"] ?? "");
         return (
-          <div key={`leg-${i}`} className="builder-cond builder-leg-row">
+          <div key={`leg-${i}`} className={`builder-cond builder-leg-row${twoExpiries ? " has-expiry" : ""}`}>
             <div className="builder-f builder-leg-name">
               <span className="builder-lbl">leg</span>
               <span className="builder-leg-id">
@@ -568,6 +618,16 @@ export function LegFields({ schema, spec, onChange }: SectionProps) {
               words={{ put: "Put", call: "Call" }}
               onChange={(v) => setLeg({ ...w, side: v })}
             />
+            {twoExpiries && (
+              <Select
+                id={`f-leg-${i}-expiry`}
+                label="expiry"
+                value={leg["expiry"] === "far" ? "far" : "near"}
+                options={schema.leg_expiries ?? ["near", "far"]}
+                words={{ near: "Near", far: "Far" }}
+                onChange={(v) => setLeg(withKey(w, "expiry", v === "far" ? "far" : undefined))}
+              />
+            )}
             <Select id={`f-leg-${i}-rule`} label="strike by" value={rule} options={Object.keys(schema.strike_rules)} onChange={(r) => setLeg({ ...leg, strike: { rule: r } })} />
             <div className="builder-leg-rule">
               {/* A rule placed off the spot has no leg to name: keep its cell, so points and pct sit
@@ -680,6 +740,18 @@ export function structureName(filled: { label: string; legs: string } | null, le
   return JSON.stringify(legs) === filled.legs ? filled.label : `Custom (from ${filled.label})`;
 }
 
+/** The automation once a strategy fills it in: its legs and expiry, its far expiry (or none, so a
+ *  one-expiry strategy leaves no far rule behind), and for a far leg the close before the near expiry
+ *  the engine requires, kept where the automation already sets one. */
+export function withStrategy(spec: Spec, r: { legs?: Array<Record<string, unknown>>; expiry?: Record<string, unknown>; far_expiry?: Record<string, unknown>; spec?: Record<string, unknown> }): Spec {
+  let next = withKey({ ...spec, legs: r.legs ?? [], expiry: r.expiry ?? spec["expiry"] }, "far_expiry", r.far_expiry);
+  const close = obj(obj(r.spec)["exit"])["close_before_expiry_min"];
+  if (r.far_expiry && close !== undefined && obj(spec["exit"])["close_before_expiry_min"] === undefined) {
+    next = { ...next, exit: { ...obj(spec["exit"]), close_before_expiry_min: close } };
+  }
+  return next;
+}
+
 /** The gates once an entry preset is filled again: the gates it added last time, where they still
  *  stand as added, give way to its filters' new ones; every other gate (and one edited since) stays,
  *  in its place. */
@@ -774,7 +846,7 @@ export function BuilderForm({
             schema={schema.strategy}
             edited={list(spec["legs"]).length > 0 && JSON.stringify(spec["legs"]) !== filled?.legs}
             onFill={(r) => {
-              onChange({ ...spec, legs: r.legs ?? [], expiry: r.expiry ?? spec["expiry"] });
+              onChange(withStrategy(spec, r));
               setFilled({ label: schema.strategy!.strategies[r.strategy]?.label ?? r.strategy, legs: JSON.stringify(r.legs ?? []) });
             }}
           />
