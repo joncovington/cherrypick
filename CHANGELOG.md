@@ -22,6 +22,11 @@ beyond the latest release.
 
 ### What's new
 
+- **Automations ignore impossible prices.** A quote that puts a structure's mid outside what it can
+  be worth (a $10 fly entered for an $11 credit, or closed past its width) is no longer taken: the
+  entry is skipped as `unrealistic_price`, no exit fires on such a mark, and a close waits for the
+  next sane quote. Backtests and paper both change where a stored quote was bad; earlier runs that
+  closed on one overstated their result.
 - **Find ideas, on a saved automation.** The Builder searches the automation's newest long explore
   run for entry filters (VIX, RSI, trend and gap bands, weekdays, event days, alone or two at once)
   and lists them as hypotheses, never a change. A filter is scored by the days it would skip, and

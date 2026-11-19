@@ -251,6 +251,8 @@ def decide(arm: dict, snap: Snapshot, *, costs: dict | None = None) -> Decision:
     prices = pricing.structure_prices(quotes) if quotes else None
     if prices is None:
         return fail("unpriced")
+    if not pricing.within_bounds(legs, -prices["mid"]):
+        return fail("unrealistic_price", prices["mid"])
     profit_mid, loss_mid = pricing.payoff_extremes(legs, prices["mid"])
     if loss_mid is None:
         return fail("undefined_risk")
@@ -320,11 +322,14 @@ class Position:
 
 
 def _credit_now(pos: Position, chain: Chain) -> float | None:
-    """What the position's close would bring at mid (per share), None when a leg has no quote."""
+    """What the position's close would bring at mid (per share), None when a leg has no quote or the
+    mid is one the structure cannot be worth (`pricing.within_bounds`): no reading, so no exit fires on
+    it and the trailing stop's best does not move."""
     q = pricing.quotes_for(pos.entry.legs, chain)
     if q is None or not all(x["ask"] for x, _ in q):
         return None
-    return sum(n * (x["bid"] + x["ask"]) / 2 for x, n in q)
+    now = sum(n * (x["bid"] + x["ask"]) / 2 for x, n in q)
+    return now if pricing.within_bounds(pos.entry.legs, now) else None
 
 
 def structure_width(pos: Position, chain: Chain) -> float | None:
@@ -466,8 +471,10 @@ def manage(pos: Position, snap: Snapshot) -> tuple[str, object] | None:
 
 
 def close_position(pos: Position, kind: str, snap: Snapshot, *, costs: dict | None = None) -> dict | None:
-    """Close at `snap`'s quotes and return the trade, or None when the legs do not price yet. Gross is
-    mid to mid; each fill kind carries its own slippage and net."""
+    """Close at `snap`'s quotes and return the trade, or None when the legs do not price yet or their
+    mid is one the structure cannot be worth (`pricing.within_bounds`); either way the close is tried
+    again on the next tick, and settles at expiry if none comes. Gross is mid to mid; each fill kind
+    carries its own slippage and net."""
     e = pos.entry
     chain = snap.chains.get(e.expiry)
     q = pricing.quotes_for(e.legs, chain) if chain is not None else None
@@ -475,6 +482,8 @@ def close_position(pos: Position, kind: str, snap: Snapshot, *, costs: dict | No
     if flipped is None or pricing.structure_prices(flipped) is None:
         return None
     exit_credit = sum(n * (x["bid"] + x["ask"]) / 2 for x, n in q)
+    if not pricing.within_bounds(e.legs, exit_credit):
+        return None
     slip = {k: pricing.slippage(k, q, e.quantity, pos.symbol, costs) for k in pricing.KINDS}
     fee = pricing.close_fee(pos.symbol, e.quantity, e.legs)
     return _trade(pos, kind, snap.session, snap.minute, exit_credit, slip, fee, 0.0)
