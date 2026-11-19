@@ -22,6 +22,12 @@ beyond the latest release.
 
 ### What's new
 
+- **Backtested exits no longer go blind when a wing leaves the recorded strikes.** The same-day
+  stores hold a band of strikes around the spot, so on a day the market ran, a condor's far wing
+  could drop out of it and the position had no price for the rest of the day: its stop or target
+  never fired and it rode to settlement. Such a wing is now read as worth anywhere from 0 to the
+  farthest recorded strike's ask, an exit fires when it fires across that whole range, and the
+  close fills at the costly end. Backtests with intraday exits change, mostly on trending days.
 - **Automations ignore impossible prices.** A quote that puts a structure's mid outside what it can
   be worth (a $10 fly entered for an $11 credit, or closed past its width) is no longer taken: the
   entry is skipped as `unrealistic_price`, no exit fires on such a mark, and a close waits for the

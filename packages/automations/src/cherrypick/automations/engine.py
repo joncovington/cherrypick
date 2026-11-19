@@ -321,12 +321,62 @@ class Position:
         return self.entry.expiry
 
 
+def _beyond_band(legs, chain: Chain) -> dict[tuple[float, str], float] | None:
+    """The legs with no quote that lie beyond the strikes the chain holds on their side, each with the
+    most it can be worth: the ask of the farthest strike held on that side, since an option further out
+    is worth no more (`{}` when every leg is quoted). None when a leg is missing inside the band, or no
+    strike on its side carries an ask: that leg has no reading at all.
+
+    A store records a band of strikes around the spot, so on a day the market runs a far wing can
+    leave it while the position is open; read as missing, no exit could fire for the rest of the day."""
+    out: dict[tuple[float, str], float] = {}
+    for leg in legs:
+        q = chain.get(leg.strike, leg.right)
+        if q is not None and q.get("ask"):
+            continue
+        held = [r for r in chain.rows if r["right"] == leg.right and r.get("ask") is not None]
+        if not held:
+            return None
+        far = (
+            max(held, key=lambda r: float(r["strike"]))
+            if leg.right == "C"
+            else min(held, key=lambda r: float(r["strike"]))
+        )
+        k = float(far["strike"])
+        if not (leg.strike > k if leg.right == "C" else leg.strike < k):
+            return None
+        out[(float(leg.strike), leg.right)] = float(far["ask"])
+    return out
+
+
+class _Bounded:
+    """A chain with each leg beyond its band priced at one end of what it can be worth: `low` puts the
+    structure at the least it can be worth (a sold far leg at its cap, a bought one at 0), `high` at the
+    most. The far legs' quotes are one price, bid and ask alike, and carry no delta."""
+
+    def __init__(self, chain: Chain, legs, far: dict, *, low: bool):
+        self.expiry, self.rows, self.strikes = chain.expiry, chain.rows, chain.strikes
+        self._chain = chain
+        self._far = {}
+        sides = {(float(leg.strike), leg.right): leg.side for leg in legs}
+        for key, cap in far.items():
+            v = cap if (sides[key] < 0) == low else 0.0
+            self._far[key] = {"strike": key[0], "right": key[1], "bid": v, "ask": v, "bounded": True}
+
+    def get(self, strike: float, right: str) -> dict | None:
+        return self._far.get((float(strike), right)) or self._chain.get(strike, right)
+
+
+def _quoted(x: dict) -> bool:
+    return bool(x["ask"]) or bool(x.get("bounded"))
+
+
 def _credit_now(pos: Position, chain: Chain) -> float | None:
     """What the position's close would bring at mid (per share), None when a leg has no quote or the
     mid is one the structure cannot be worth (`pricing.within_bounds`): no reading, so no exit fires on
     it and the trailing stop's best does not move."""
     q = pricing.quotes_for(pos.entry.legs, chain)
-    if q is None or not all(x["ask"] for x, _ in q):
+    if q is None or not all(_quoted(x) for x, _ in q):
         return None
     now = sum(n * (x["bid"] + x["ask"]) / 2 for x, n in q)
     return now if pricing.within_bounds(pos.entry.legs, now) else None
@@ -336,7 +386,7 @@ def structure_width(pos: Position, chain: Chain) -> float | None:
     """The structure's bid/ask width per share (each leg's width times its size), None when a leg has
     no two-sided quote."""
     q = pricing.quotes_for(pos.entry.legs, chain)
-    if q is None or not all(x["ask"] for x, _ in q):
+    if q is None or not all(_quoted(x) for x, _ in q):
         return None
     return sum(abs(n) * (x["ask"] - x["bid"]) for x, n in q)
 
@@ -409,7 +459,22 @@ def manage(pos: Position, snap: Snapshot) -> tuple[str, object] | None:
     A `signal` exit is a trigger of the entry's shape (`{"trigger": ..., "bar_minutes": N}`) read on the
     position's underlying: due when it fires inside its window. On the entry day only a firing after the
     entry minute counts, and core's trigger takes the day's first firing in the window, so a signal that
-    first fired before the entry does not exit that day."""
+    first fired before the entry does not exit that day.
+
+    A leg beyond the band of strikes the chain holds (`_beyond_band`) is read at both ends of what it
+    can be worth, and an exit is due only when it is due on both readings; the trailing stop's best
+    moves on the lower one."""
+    chain = snap.chains.get(pos.entry.expiry)
+    far = _beyond_band(pos.entry.legs, chain) if chain is not None else None
+    if not far:
+        return _manage(pos, snap, chain, peak=True)
+    low = _manage(pos, snap, _Bounded(chain, pos.entry.legs, far, low=True), peak=True)
+    high = _manage(pos, snap, _Bounded(chain, pos.entry.legs, far, low=False), peak=False)
+    return low if (low is not None and high is not None) else None
+
+
+def _manage(pos: Position, snap: Snapshot, chain, *, peak: bool) -> tuple[str, object] | None:
+    """`manage` on one reading of the chain; `peak` says whether it may move the trailing stop's best."""
     r, e = pos.exit_rules, pos.entry
     touch = r.get("touch")
     if touch:
@@ -417,7 +482,6 @@ def manage(pos: Position, snap: Snapshot) -> tuple[str, object] | None:
         crossed = snap.spot <= limit if (touch.get("pct", touch.get("points")) < 0) else snap.spot >= limit
         if crossed:
             return "touch", limit
-    chain = snap.chains.get(e.expiry)
     if r.get("max_spread") is not None and chain is not None:
         width = structure_width(pos, chain)
         if width is not None and width > r["max_spread"] + 1e-9:
@@ -425,7 +489,7 @@ def manage(pos: Position, snap: Snapshot) -> tuple[str, object] | None:
     now = _credit_now(pos, chain) if chain is not None else None
     credit = e.prices["mid"]
     pnl = None if now is None else round((credit + now) * pricing.MULTIPLIER * e.quantity, 2)
-    if pnl is not None and (pos.peak_pnl is None or pnl > pos.peak_pnl):
+    if peak and pnl is not None and (pos.peak_pnl is None or pnl > pos.peak_pnl):
         pos.peak_pnl = pnl
     avoid = r.get("avoid_events")
     if avoid:
@@ -443,7 +507,7 @@ def manage(pos: Position, snap: Snapshot) -> tuple[str, object] | None:
     if r.get("stop_dollars") and pnl is not None and pnl <= -r["stop_dollars"] + 1e-9:
         return "stop", pnl
     trail = _trail_dollars(r.get("trailing_stop"), e)
-    if trail and pnl is not None and pos.peak_pnl >= trail[1] - 1e-9:
+    if trail and pnl is not None and pos.peak_pnl is not None and pos.peak_pnl >= trail[1] - 1e-9:
         if pnl <= pos.peak_pnl - trail[0] + 1e-9:
             return "trailing_stop", pnl
     if r.get("profit_target_pct") and now is not None and e.max_profit:
@@ -474,12 +538,16 @@ def close_position(pos: Position, kind: str, snap: Snapshot, *, costs: dict | No
     """Close at `snap`'s quotes and return the trade, or None when the legs do not price yet or their
     mid is one the structure cannot be worth (`pricing.within_bounds`); either way the close is tried
     again on the next tick, and settles at expiry if none comes. Gross is mid to mid; each fill kind
-    carries its own slippage and net."""
+    carries its own slippage and net. A leg beyond the chain's band (`_beyond_band`) closes at the end
+    of its range that costs most: a sold far leg bought back at its cap, a bought one sold for 0."""
     e = pos.entry
     chain = snap.chains.get(e.expiry)
+    far = _beyond_band(e.legs, chain) if chain is not None else None
+    if far:
+        chain = _Bounded(chain, e.legs, far, low=True)
     q = pricing.quotes_for(e.legs, chain) if chain is not None else None
-    flipped = None if q is None else [(x, -n) for x, n in q]
-    if flipped is None or pricing.structure_prices(flipped) is None:
+    real = None if q is None else [(x, -n) for x, n in q if not x.get("bounded")]
+    if real is None or (real and pricing.structure_prices(real) is None):
         return None
     exit_credit = sum(n * (x["bid"] + x["ask"]) / 2 for x, n in q)
     if not pricing.within_bounds(e.legs, exit_credit):

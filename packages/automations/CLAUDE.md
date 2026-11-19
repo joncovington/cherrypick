@@ -208,6 +208,13 @@ reading open, the engine fixes one and says so here, because each is a measureme
   outside it reads `unrealistic_price`; an open position's mark outside it is no reading, so no exit
   fires on it and the trailing stop's best holds; a close outside it is held and tried again on the
   next tick, settling at expiry if none comes.
+- **A far wing beyond the recorded band is a range, not a gap.** A store holds a band of strikes
+  around the spot, so on a day the market runs an open position's far wing can leave it
+  (`engine._beyond_band`: a leg with no quote further out than the farthest strike held on its side).
+  Such a leg is worth from 0 to that farthest strike's ask. `manage` reads the position at both ends
+  and an exit is due only when it is due on both (the trailing stop's best moves on the lower); the
+  close fills at the costly end, a sold far leg bought back at the cap and a bought one sold for 0.
+  A leg missing inside the band is still no reading.
 
 ## Money
 
