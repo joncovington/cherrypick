@@ -19,7 +19,7 @@ path of the result file, never a licensed figure.
 | [range-features.md](range-features.md) | The declared range-features study: four chart features against a HAR baseline for SPX range. It found nothing. |
 | [box-edge-0dte-routine.md](box-edge-0dte-routine.md) | A daily SPX 0DTE routine reconstructed from public sessions, tested as reversion at the expected-move box edge (research item 8). It failed. |
 | [breakeven-condor.md](breakeven-condor.md) | The 0DTE break-even iron condor and its fit as a MEIC arm. |
-| [market-profile-entry-plan.md](market-profile-entry-plan.md) | Market Profile readings as SPX 0DTE entry signals: four candidates, each against the same trade on every day. Drafted, not declared. |
+| [market-profile-entry-plan.md](market-profile-entry-plan.md) | Market Profile readings as SPX 0DTE entry signals: four candidates, each against the same trade on every day. Closed: all four failed as item 93. |
 | [vxm-plan.md](vxm-plan.md) | The contango switch in Mini VIX futures, answered from settlement history. The half-size arm earns less than SVXY for the same drawdown, so it is not built. |
 
 Sources are credited in [docs/strategy-sources.md](../docs/strategy-sources.md), each with our measured result.

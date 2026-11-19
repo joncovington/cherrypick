@@ -22,6 +22,11 @@ and 81 are copied from their scripts (a study does not load another study's scri
 
 - `study`: one run over the whole history, cut at the declared split, written to
   `{results}/results.json` with a top-level `verdict` (`{test: word}`).
+- `holdout-report`: after every test failed its design check, the user asked to see the holdout
+  anyway. Each test's statistic on the holdout alone, with its standard error, t and whether it has
+  the declared sign, written to `{results}/holdout-report.json`. Reported, never judged: it changes
+  no verdict, and `results.json` is left as the study wrote it. Seeing it uses up this holdout for
+  these four readings, so a later item on any of them is judged on data from after the run.
 """
 
 from __future__ import annotations
@@ -681,6 +686,36 @@ def reported(days: list[dict], rule: dict) -> dict:
     return out
 
 
+def holdout_report(days: list[dict], rule: dict, *, resamples: int | None = None) -> dict:
+    """Each test on the holdout alone, measured the way the design was: reported, never judged."""
+    bs = rule["bootstrap"]
+    n_draws = resamples or bs["resamples"]
+    out: dict = {}
+    for name, spec in rule["tests"].items():
+        if name == "balance":
+            rows = by_part(balance_rows(days, rule), rule)["holdout"]
+            effect = signal_coef(rows)
+            se = boot_se_coef(rows, block=bs["block"], resamples=n_draws, seed=bs["seed"])
+            entry: dict = {"n": len(rows), "events": int(sum(r["signal"] for r in rows))}
+        else:
+            xs = [d["diff"] for d in matched(name, days, rule)[0]["holdout"]]
+            effect = _mean(xs)
+            se = boot_se_mean(xs, block=bs["block"], resamples=n_draws, seed=bs["seed"])
+            entry = {"events": len(xs)}
+        t = effect / se if effect is not None and se else None
+        entry.update(
+            {
+                "effect": effect,
+                "se": se,
+                "t": t,
+                "declared_sign": effect is not None and spec["sign"] * effect > 0,
+                "at_least_min_effect": effect is not None and spec["sign"] * effect >= spec["min_effect"],
+            }
+        )
+        out[name] = entry
+    return out
+
+
 # --------------------------------------------------------------------------- the store (read-only)
 
 
@@ -753,12 +788,47 @@ def cmd_study(args) -> int:
     return 0
 
 
+def cmd_holdout_report(args) -> int:
+    rule = FORECAST_RULE
+    study = json.loads((out_dir() / "results.json").read_text(encoding="utf-8"))
+    conn = sqlite3.connect(f"file:{store_path()}?mode=ro", uri=True)
+    try:
+        sessions = load_sessions(conn, rule["symbol"], rule["through"])
+    finally:
+        conn.close()
+    inputs = fingerprint(sessions)
+    if inputs["sha256"] != study["inputs"]["sha256"]:
+        print(json.dumps({"error": "the store no longer matches the study's fingerprint"}))
+        return 2
+    with core_progress.Reporter("profile_entry_readings_item93-holdout-report") as rep:
+        rep.split("holdout", [rule["symbol"]], unit="steps")
+        days, _ = build_days(sessions, rule)
+        report = holdout_report(days, rule)
+        rep.advance("holdout", key=rule["symbol"], current="tests")
+    doc = {
+        "licence": "derived from licensed vendor data: never commit or publish",
+        "item": 93,
+        "reported": "reported, never judged: the declared verdicts stand as results.json has them",
+        "verdict": study["verdict"],
+        "holdout_from": rule["splits"][0],
+        "tests": report,
+        "inputs": inputs,
+    }
+    path = Path(args.out) if args.out else out_dir() / "holdout-report.json"
+    path.write_text(json.dumps(doc, indent=1, default=str), encoding="utf-8")
+    print(json.dumps({"written": str(path)}))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     sub = ap.add_subparsers(dest="step", required=True)
     p = sub.add_parser("study")
     p.add_argument("--out", default=None)
     p.set_defaults(fn=cmd_study)
+    p = sub.add_parser("holdout-report")
+    p.add_argument("--out", default=None)
+    p.set_defaults(fn=cmd_holdout_report)
     args = ap.parse_args(argv)
     return args.fn(args)
 

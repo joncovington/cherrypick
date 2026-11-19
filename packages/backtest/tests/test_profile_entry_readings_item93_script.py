@@ -187,3 +187,13 @@ def test_the_fingerprint_holds_counts_and_a_hash_never_a_price():
     fp = m.fingerprint(_sessions(3))
     assert set(fp) == {"sessions", "stamps", "first", "last", "sha256"}
     assert fp["stamps"] == 3 * 389
+
+
+def test_the_holdout_report_reads_only_the_holdout_and_judges_nothing():
+    days, _ = m.build_days(_sessions(80, start=date(2025, 3, 3)), RULE)
+    rep = m.holdout_report(days, RULE, resamples=20)
+    assert set(rep) == set(RULE["tests"])
+    assert all("verdict" not in t for t in rep.values())
+    design_only = [d for d in days if d["date"] < RULE["splits"][0]]
+    empty = m.holdout_report(design_only, RULE, resamples=20)
+    assert all(t["events"] == 0 and t["effect"] is None for t in empty.values())
