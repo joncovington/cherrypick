@@ -7,6 +7,7 @@ import { CardHelpButton } from "../../components/CardHelp";
 import { SECTION_HELP } from "./BuilderHelp";
 import { TradeShape } from "./TradeShape";
 import { StrategyPicker } from "./StrategyPicker";
+import { EntryPicker } from "./EntryPicker";
 import { isLegId, legLabels, legWords, nextLegId, openVerb, signedQty, titleCase, writtenLeg } from "./legWords";
 
 /**
@@ -679,6 +680,22 @@ export function structureName(filled: { label: string; legs: string } | null, le
   return JSON.stringify(legs) === filled.legs ? filled.label : `Custom (from ${filled.label})`;
 }
 
+/** The gates once an entry preset is filled again: the gates it added last time, where they still
+ *  stand as added, give way to its filters' new ones; every other gate (and one edited since) stays,
+ *  in its place. */
+export function withFilterGates(gates: unknown, added: string[], next: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
+  const left = [...added];
+  const kept = list(gates)
+    .map(obj)
+    .filter((g) => {
+      const i = left.indexOf(JSON.stringify(g));
+      if (i < 0) return true;
+      left.splice(i, 1);
+      return false;
+    });
+  return [...kept, ...next];
+}
+
 export function BuilderForm({
   schema,
   spec,
@@ -701,6 +718,8 @@ export function BuilderForm({
   const p = { schema, spec, onChange };
   // What the strategy selector last filled in: its name and the legs as filled, so an edit reads Custom.
   const [filled, setFilled] = useState<{ label: string; legs: string } | null>(null);
+  // What the entry presets last filled in: the preset's name, the entry as filled and the gates added.
+  const [entryFilled, setEntryFilled] = useState<{ label: string; legs: string; gates: string[] } | null>(null);
   const lock = (body: React.ReactNode) => (
     <fieldset className="builder-lock" disabled={readOnly}>
       {body}
@@ -720,6 +739,26 @@ export function BuilderForm({
 
       <div className="builder-section">
         <SectionHead n={2} title="Signal: when to enter" blocks={["entry"]} labels={labels} help="signal" />
+        {!readOnly && schema.entry_presets && (
+          <EntryPicker
+            schema={schema.entry_presets}
+            edited={spec["entry"] !== undefined && JSON.stringify(spec["entry"]) !== entryFilled?.legs}
+            onFill={(r) => {
+              const gates = withFilterGates(spec["gates"], entryFilled?.gates ?? [], r.gates ?? []);
+              onChange(withKey({ ...spec, entry: r.entry ?? spec["entry"] }, "gates", gates.length ? gates : undefined));
+              setEntryFilled({
+                label: schema.entry_presets!.entries[r.preset]?.label ?? r.preset,
+                legs: JSON.stringify(r.entry ?? null),
+                gates: (r.gates ?? []).map((g) => JSON.stringify(g)),
+              });
+            }}
+          />
+        )}
+        {!readOnly && (
+          <p className="muted builder-structure">
+            entry: <b>{structureName(entryFilled, spec["entry"])}</b>
+          </p>
+        )}
         {lock(<EntryFields {...p} />)}
       </div>
 

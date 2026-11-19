@@ -37,7 +37,7 @@ from zoneinfo import ZoneInfo
 from cherrypick.core import signals
 
 from . import arms as arms_mod
-from . import enrolment, events, fieldtypes, gates, sizing, strategies
+from . import enrolment, entrypresets, events, fieldtypes, gates, sizing, strategies
 from . import strikes as st
 
 ENTRY_KINDS: dict[str, dict[str, bool]] = {
@@ -228,6 +228,7 @@ def schema(today: date | None = None) -> dict:
         },
         "credit_rules": dict(CREDIT_RULES),
         "strategy": strategies.schema(),
+        "entry_presets": entrypresets.schema(),
     }
 
 
@@ -491,3 +492,26 @@ def strategy_answer(name: str, given: dict | None) -> dict:
         exit_rules.pop("close_at_dte", None)  # a 21-day close would end a nearer trade the next session
     spec["exit"] = exit_rules
     return {"ok": True, **built, "credit": credit, "spec": spec, "problems": []}
+
+
+def entry_answer(name: str, given: dict | None, filters: list[dict] | None) -> dict:
+    """`cli builder-entry`: the entry preset's `entry` and the gates of the filters stacked on it, in
+    their order, for the signal section and the wizard. A preset or setting it cannot build from comes
+    back as a problem, named by the filter it belongs to."""
+    problems: list[str] = []
+    try:
+        built = entrypresets.build_entry(name, given or {})
+    except entrypresets.Refused as exc:
+        built, problems = None, [str(exc)]
+    stacked, gates_out = [], []
+    for i, f in enumerate(filters or []):
+        try:
+            one = entrypresets.build_filter(str(f.get("filter", "")), f.get("settings") or {})
+        except entrypresets.Refused as exc:
+            problems.append(f"filters[{i}]: {exc}")
+            continue
+        stacked.append(one)
+        gates_out.extend(one["gates"])
+    if built is None or problems:
+        return {"ok": True, "preset": name, "problems": problems}
+    return {"ok": True, **built, "filters": stacked, "gates": gates_out, "problems": []}

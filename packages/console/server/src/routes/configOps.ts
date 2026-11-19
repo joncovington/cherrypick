@@ -57,6 +57,13 @@ export const FULLSET_SYMBOL = /^[A-Z][A-Z.]{0,5}$/;
 export const WINDOW_KEY = /^[a-z0-9-]{1,48}:\d{4}-\d{2}-\d{2}:\d{4}-\d{2}-\d{2}$/;
 /** A strategy's name or a setting's key: the module's own words, checked by shape here. */
 export const STRATEGY_NAME = /^[a-z][a-z0-9_]{0,39}$/;
+
+/** Settings of plain values, each keyed by a setting's name; null when anything else. */
+function plainSettings(v: unknown): Record<string, string | number | boolean> | null {
+  if (typeof v !== "object" || v === null || Array.isArray(v)) return null;
+  const ok = Object.entries(v as Record<string, unknown>).every(([k, x]) => STRATEGY_NAME.test(k) && ["string", "number", "boolean"].includes(typeof x));
+  return ok ? (v as Record<string, string | number | boolean>) : null;
+}
 /** An idea search's result name, and one idea's id in it (`dim:kind:index`, at most two joined by &). */
 export const IDEA_SEARCH = /^ideas-[a-z0-9][a-z0-9-]{1,47}-\d{10}$/;
 export const IDEA_ID = /^[A-Za-z_:-]+:(bin|below|above):\d(&[A-Za-z_:-]+:(bin|below|above):\d)?$/;
@@ -220,6 +227,32 @@ export function registerConfigRoutes(app: FastifyInstance, config: ConsoleConfig
     const plain = Object.entries(settings as Record<string, unknown>).every(([k, v]) => STRATEGY_NAME.test(k) && ["string", "number", "boolean"].includes(typeof v));
     if (!plain) return reply.code(400).send({ error: "settings: plain values only" });
     const result = sendBridgeFailure(reply, await callConfigCli({ op: "automation_strategy", strategy: name, settings: settings as Record<string, string | number | boolean> }));
+    if (result === null) return reply;
+    const { ok: _ok, ...answer } = result;
+    return answer;
+  });
+
+  /**
+   * The entry presets: an entry preset's entry and the gates of the filters stacked on it
+   * (`cli builder-entry`). Sends the preset's name, its settings and each filter's name and settings
+   * (plain values only) and nothing else; writes nothing.
+   */
+  app.post("/api/automations/builder/entry", async (req, reply) => {
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const name = body["entry"];
+    const settings = plainSettings(body["settings"] ?? {});
+    const filters = body["filters"] ?? [];
+    if (typeof name !== "string" || !STRATEGY_NAME.test(name)) return reply.code(400).send({ error: "entry: an entry preset's name" });
+    if (settings === null) return reply.code(400).send({ error: "settings: an object of plain values" });
+    if (!Array.isArray(filters) || filters.length > 20) return reply.code(400).send({ error: "filters: a list" });
+    const stacked: Array<{ filter: string; settings: Record<string, string | number | boolean> }> = [];
+    for (const f of filters as unknown[]) {
+      const one = (f ?? {}) as Record<string, unknown>;
+      const s = plainSettings(one["settings"] ?? {});
+      if (typeof one["filter"] !== "string" || !STRATEGY_NAME.test(one["filter"]) || s === null) return reply.code(400).send({ error: "filters: each a filter's name and plain settings" });
+      stacked.push({ filter: one["filter"], settings: s });
+    }
+    const result = sendBridgeFailure(reply, await callConfigCli({ op: "automation_entry", entry: name, settings, filters: stacked }));
     if (result === null) return reply;
     const { ok: _ok, ...answer } = result;
     return answer;

@@ -63,6 +63,46 @@ export interface BuilderSchema {
   credit_rules: Record<string, number>;
   /** The strategy selector's choices (`strategies.schema`); absent from an older module. */
   strategy?: BuilderStrategySchema;
+  /** The entry presets and filters (`entrypresets.schema`); absent from an older module. */
+  entry_presets?: BuilderEntrySchema;
+}
+
+/** One setting an entry preset or a filter takes, from the module. */
+export interface BuilderEntrySetting {
+  type: "enum" | "int" | "number" | "time";
+  options?: string[];
+  default: string | number;
+  min?: number;
+  max?: number;
+  label: string;
+}
+
+/** One entry preset or filter: its words, the settings it takes and its own defaults. */
+export interface BuilderEntryPreset {
+  label: string;
+  group: string;
+  about: string;
+  suits: string;
+  settings: string[];
+  defaults: Record<string, string | number>;
+}
+
+export interface BuilderEntrySchema {
+  entries: Record<string, BuilderEntryPreset>;
+  filters: Record<string, BuilderEntryPreset>;
+  settings: Record<string, BuilderEntrySetting>;
+}
+
+/** `POST /api/automations/builder/entry`: the preset's entry and the stacked filters' gates, in
+ *  order; or what it could not build from, in `problems`. */
+export interface BuilderEntryResult {
+  preset: string;
+  settings?: Record<string, string | number>;
+  entry?: Record<string, unknown>;
+  filters?: Array<{ filter: string; settings: Record<string, string | number>; gates: Array<Record<string, unknown>> }>;
+  gates?: Array<Record<string, unknown>>;
+  problems: string[];
+  error?: string;
 }
 
 /** One setting a strategy takes: its type, default and bounds, from the module. */

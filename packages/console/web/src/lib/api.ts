@@ -31,6 +31,7 @@ import type {
   BuilderSchemaResult,
   BuilderPayoff,
   BuilderStrategyResult,
+  BuilderEntryResult,
   BuilderToday,
   AutomationsPerformance,
   CurveEquity,
@@ -1430,6 +1431,15 @@ export function builderPayoff(name: string, automation?: Record<string, unknown>
 /** A strategy's legs and expiry from its settings, and a whole automation from it, by the module. */
 export function builderStrategy(strategy: string, settings: Record<string, string | number>): Promise<BuilderStrategyResult & { ok?: boolean }> {
   return builderPost<BuilderStrategyResult & { ok: boolean }>("/api/automations/builder/strategy", { strategy, settings });
+}
+
+/** An entry preset's entry and the gates of the filters stacked on it, by the module. */
+export function builderEntry(
+  entry: string,
+  settings: Record<string, string | number>,
+  filters: Array<{ filter: string; settings: Record<string, string | number> }>,
+): Promise<BuilderEntryResult & { ok?: boolean }> {
+  return builderPost<BuilderEntryResult & { ok: boolean }>("/api/automations/builder/entry", { entry, settings, filters });
 }
 
 /** Queue one explore backtest of a saved automation over one of its suggestion's windows (by key), or
