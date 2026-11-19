@@ -16,6 +16,15 @@ would: the snapshot `feed.snapshot_for` builds from the stream cache and the pap
 read-only, then `paper.decide_all` on a copy of the automation switched on. It returns the engine's
 own answer: the entry and the legs it would take, or the first failing check, with every check it
 read. Nothing is written: no decision row, no register row, no replay record, no order.
+
+**The payoff** (`payoff`, `cli builder-payoff`) is the structure the automation's rules would take,
+for the chart under its legs: the expiry its rule names, the strikes its rules place
+(`engine.structure`, the placement `decide` makes, without the timing, limits, event skips, gates or
+size), the price at the legs' mids, and its P&L at expiry for one contract. It is placed on the live
+quotes when the stream cache holds a snapshot now, and otherwise on the last session our own recorder
+holds for a same-day expiry, at the first stored minute of the entry window (`driver.snapshot_at`,
+the backtest's snapshot), never on a licensed store. A later expiry is placed on live quotes only: our
+own stores hold no intraday chain for it. The answer names which it used. Writes nothing.
 """
 
 from __future__ import annotations
@@ -125,13 +134,14 @@ WIZARD_DEFAULTS = {
 
 
 def wizard_spec(shape: str) -> dict:
-    """A whole automation from one starting shape: the defaults, the shape's legs and, for a credit
-    shape, the credit-trade exits."""
+    """A whole automation from one starting shape: the defaults, the shape's legs named by their IDs
+    (L1, L2, … in order, as the Builder names a leg it adds) and, for a credit shape, the credit-trade
+    exits."""
     import copy
 
     s = SHAPES[shape]
     spec = copy.deepcopy(WIZARD_DEFAULTS)
-    spec["legs"] = copy.deepcopy(s["legs"])
+    spec["legs"] = [{**copy.deepcopy(leg), "name": f"L{i + 1}"} for i, leg in enumerate(s["legs"])]
     spec["exit"] = dict(CREDIT_RULES) if s["credit"] else {"close_at_dte": 21}
     return spec
 
@@ -294,3 +304,159 @@ def today(config: dict, arm: dict, when: datetime, *, conn, cache_path: str, evt
             "max_profit": e.max_profit,
         }
     return res
+
+
+#: How far beyond the outer strikes (and the spot) the payoff is drawn: this share of the spot, or the
+#: distance between the outer strikes when that is wider.
+PAYOFF_MARGIN = 0.004
+#: How many of the store's latest sessions are tried for one that holds the entry window.
+RECORDED_TRIES = 10
+
+
+def payoff(config: dict, arm: dict, when: datetime, *, conn, cache_path: str, evts, recorded=None) -> dict:
+    """The structure `arm` would take and its P&L at expiry, on the live quotes or, without them, on
+    the last recorded session (module docstring). `recorded` stands in for `recorded_structure`."""
+    from . import config as config_mod
+    from . import engine, feed
+    from . import sketch as sketch_mod
+
+    live = {**arm, "enabled": True}
+    sym = live["symbol"].upper()
+    out: dict[str, Any] = {"ok": True, "name": live["name"], "symbol": sym, "sketch": sketch_mod.sketch(live)}
+    spec = config_mod.symbols(config, {live["name"]: live}).get(sym)
+    if spec is None:
+        live_why = f"no stream settings for {sym}"
+    else:
+        params = config_mod.defaults(config)
+        snap, info = feed.snapshot_for(cache_path, conn, spec, sym, when, params, [live], events=evts)
+        if snap is None:
+            live_why = str(info.get("refusal") or "no snapshot")
+        else:
+            got = engine.structure(live, snap)
+            if "prices" in got:
+                return _placed(out, got, snap, {"kind": "live", "at": when.isoformat(timespec="minutes")})
+            live_why = got["why"]
+    snap, source, rec_why = (recorded or recorded_structure)(live, when.date(), evts)
+    if snap is not None:
+        got = engine.structure(live, snap)
+        if "prices" in got:
+            return _placed(out, got, snap, source)
+        rec_why = got["why"]
+    return {**out, "state": "not_placed", "live": live_why, "recorded": rec_why}
+
+
+def recorded_structure(arm: dict, today: date, evts):
+    """(snapshot, source, why) for `arm` on the last session our own recorder holds for its same-day
+    expiry, at the first stored minute of its entry window: the snapshot the backtest driver builds.
+    (None, None, why) where there is none. Never a licensed store."""
+    from cherrypick.core import home, sources, volindex
+    from cherrypick.core.sources import inventory
+
+    from . import driver, feed
+    from .history import StoreHistory
+
+    if enrolment._expiry_class(arm) != "0dte":
+        return (
+            None,
+            None,
+            "a later expiry is placed on live quotes only (our own stores hold no intraday chain for it)",
+        )
+    found = None
+    for w in enrolment.windows(arm, inventory.load(), today, sources.coverage, licensed_ok=False):
+        source = sources.by_name(w["source"])
+        if w["licensed"] or source.licensed or source.probe.backend != "sqlite":
+            continue
+        path = home.data_dir() / source.probe.where
+        if path.exists():
+            found = (w, source, path)
+            break
+    if found is None:
+        return None, None, f"none of our own stores holds {arm['symbol'].upper()}'s same-day chain"
+    w, source, path = found
+    h = StoreHistory(path, arm["symbol"])
+    first, last = feed.entry_window(arm)
+    vix = volindex.closes("VIX") if feed.reads(arm)["vix"] else None
+    for session in [d for d in h.sessions if d <= w["end"]][-RECORDED_TRIES:][::-1]:
+        minute = next((m for m in h.minutes(session) if first <= m <= last), None)
+        if minute is None:
+            continue
+        snap = driver.snapshot_at([arm], h, session, minute, driver.Book(), events=evts, vix_daily=vix)
+        if snap is not None:
+            at = f"{session}T{minute // 60:02d}:{minute % 60:02d}"
+            return snap, {"kind": "recorded", "at": at, "source": source.name}, None
+    return None, None, f"{source.name} holds no recent session with a minute in the entry window"
+
+
+def _placed(out: dict, got: dict, snap, source: dict) -> dict:
+    """The answer for a placed structure: per share prices as the engine gives them, and the payoff for
+    one contract in whole-position dollars."""
+    from . import pricing
+
+    legs, credit = got["legs"], got["prices"]["mid"]
+    ks = [leg.strike for leg in legs]
+    pad = max(snap.spot * PAYOFF_MARGIN, max(ks) - min(ks))
+    lo, hi = min(min(ks), snap.spot) - pad, max(max(ks), snap.spot) + pad
+    points = pricing.payoff_curve(legs, credit, lo, hi)
+    m = pricing.MULTIPLIER
+
+    def dollars(v):
+        return None if v is None else round(v * m, 2)
+
+    listed = got["chain"].strikes
+    atm = min(listed, key=lambda k: (abs(k - snap.spot), k)) if listed else snap.spot
+    return {
+        **out,
+        "state": "placed",
+        "source": source,
+        "spot": snap.spot,
+        "atm": atm,
+        "expiry": got["expiry"],
+        "legs": [
+            {
+                "name": g.name,
+                "right": g.right,
+                "side": g.side,
+                "strike": g.strike,
+                "offset": round(g.strike - atm, 2),
+            }
+            for g in legs
+        ],  # fmt: skip
+        "prices": got["prices"],
+        "max_profit": dollars(got["max_profit"]),
+        "max_loss": dollars(got["max_loss"]),
+        "curve": [[round(x, 2), dollars(y)] for x, y in points],
+        "breakevens": [round(b, 2) for b in pricing.breakevens(points)],
+        "chain": chain_slice(got["chain"], ks, snap.spot),
+    }
+
+
+#: How many listed strikes either side of each leg (and of the spot) the chain example shows.
+CHAIN_AROUND = 2
+
+
+def chain_slice(chain, strikes: list[float], spot: float) -> list[dict]:
+    """The listed strikes near the legs and the spot, as the chain they were placed on: each strike's
+    put and call (bid, ask, delta), its `offset` from the listed strike nearest the spot (0), and `gap`
+    where listed strikes between were left out."""
+    listed = chain.strikes
+    if not listed:
+        return []
+    near = min(listed, key=lambda k: (abs(k - spot), k))
+    keep: set[int] = set()
+    for k in [*strikes, near]:
+        i = listed.index(k) if k in listed else min(range(len(listed)), key=lambda j: abs(listed[j] - k))
+        keep.update(range(max(0, i - CHAIN_AROUND), min(len(listed), i + CHAIN_AROUND + 1)))
+
+    def side(k: float, right: str) -> dict | None:
+        q = chain.get(k, right)
+        if q is None:
+            return None
+        return {f: q.get(f) for f in ("bid", "ask", "delta")}
+
+    out, last = [], None
+    for i in sorted(keep):
+        k = listed[i]
+        out.append({"strike": k, "offset": round(k - near, 2), "put": side(k, "P"), "call": side(k, "C"),
+                    "gap": last is not None and i > last + 1})  # fmt: skip
+        last = i
+    return out

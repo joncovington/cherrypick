@@ -112,6 +112,10 @@ def handle(req: dict[str, Any]) -> dict[str, Any]:
     if op == "automation_today":
         # The Builder's "Today, live": the module decides it now as paper would; writes nothing.
         return automationedit.today(cfg, req)
+    if op == "automation_payoff":
+        # The Builder's payoff chart: the structure the module's rules would take, on live quotes or
+        # the last session our own recorder holds; writes nothing.
+        return automationedit.payoff(cfg, req, automationedit.run_module_payoff)
     if op == "automation_save":
         # The Builder's save: that check, then the one entry it returned (always off) written
         # through the same raw-save path as every config save.

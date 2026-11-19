@@ -57,6 +57,26 @@ def payoff_extremes(legs, credit: float) -> tuple[float | None, float | None]:
     return profit, -min(values)
 
 
+def payoff_curve(legs, credit: float, lo: float, hi: float) -> list[tuple[float, float]]:
+    """The structure's P&L per share at expiry, taken at signed `credit`, as (settle, P&L) at `lo`, each
+    strike between and `hi`. The payoff is straight between strikes, so these points draw it exactly."""
+    xs = sorted({lo, hi, *(leg.strike for leg in legs if lo < leg.strike < hi)})
+    return [(x, credit + intrinsic_value(legs, x)) for x in xs]
+
+
+def breakevens(points: list[tuple[float, float]]) -> list[float]:
+    """Where a straight-line curve through `points` crosses zero, in order."""
+    out: list[float] = []
+    for (x0, y0), (x1, y1) in zip(points, points[1:], strict=False):
+        if y0 == 0 and (not out or out[-1] != x0):
+            out.append(x0)
+        elif (y0 < 0 < y1) or (y1 < 0 < y0):
+            out.append(x0 + (x1 - x0) * (-y0) / (y1 - y0))
+    if points and points[-1][1] == 0 and (not out or out[-1] != points[-1][0]):
+        out.append(points[-1][0])
+    return out
+
+
 def value_bounds(legs) -> tuple[float | None, float | None]:
     """The least and most the structure can be worth per share, +sum(n * price), read off its payoff
     at expiry: every leg shares one expiry, so its value now lies in that range. None where the payoff
@@ -94,20 +114,32 @@ def slippage(kind: str, quotes, quantity: int, symbol: str, config: dict | None 
     if kind == "mid":
         return 0.0
     if kind == "verdict":
-        return fees.slippage_dollars([q for q, _ in quotes], quantity, config or {}, symbol=symbol)
+        # One quote per contract the structure holds: a leg of two contracts concedes twice.
+        each = [q for q, n in quotes for _ in range(abs(n))]
+        return fees.slippage_dollars(each, quantity, config or {}, symbol=symbol)
     if kind == "stress":
         p = structure_prices(quotes)
         return 0.0 if p is None else round(p["cost"] / 2.0 * MULTIPLIER * quantity, 2)
     raise ValueError(kind)
 
 
+def contracts(legs) -> int:
+    """The contracts one structure holds: each leg's `side` counts its contracts, whatever its sign."""
+    return sum(abs(g.side) for g in legs)
+
+
 def open_fee(symbol: str, quantity: int, legs) -> float:
-    return fees.ic_open_fee(symbol, quantity, legs=len(legs), sell_legs=sum(1 for g in legs if g.side < 0))
+    """Charged per contract, so a leg of two contracts is charged twice."""
+    return fees.ic_open_fee(
+        symbol, quantity, legs=contracts(legs), sell_legs=contracts(g for g in legs if g.side < 0)
+    )
 
 
 def close_fee(symbol: str, quantity: int, legs) -> float:
     """Closing sells the legs held long."""
-    return fees.ic_close_fee(symbol, quantity, legs=len(legs), sell_legs=sum(1 for g in legs if g.side > 0))
+    return fees.ic_close_fee(
+        symbol, quantity, legs=contracts(legs), sell_legs=contracts(g for g in legs if g.side > 0)
+    )
 
 
 def settlement_fee(legs, settle: float) -> float:

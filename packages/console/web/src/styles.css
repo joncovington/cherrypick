@@ -8240,6 +8240,175 @@ select.text-input {
   border-top: 2px solid var(--text-dim);
 }
 
+/* The Builder's trade shape (pages/Builder/TradeShape.tsx): the module's placed structure as its
+   payoff at expiry beside the chain it was placed on, under the legs and on the automation page. */
+.tshape {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-top: 0.8rem;
+}
+.tshape.is-stale {
+  opacity: 0.55;
+}
+.tshape-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.6rem;
+  margin: 0;
+  font-size: 0.85rem;
+}
+/* The shape beside the chain; stacked on a phone. */
+.tshape-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  align-items: start;
+}
+@media (max-width: 700px) {
+  .tshape-pair {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.tshape-pair h5 {
+  margin: 0 0 0.4rem;
+}
+/* Drawn at its own size: stacked in a wide column it stays readable rather than scaling up. */
+.tshape-figure .pay-svg {
+  max-width: 600px;
+}
+.tshape-line {
+  stroke: var(--accent);
+}
+.tshape-gain {
+  fill: color-mix(in srgb, var(--pos) 22%, transparent);
+}
+.tshape-loss {
+  fill: color-mix(in srgb, var(--neg) 22%, transparent);
+}
+.tshape-note {
+  margin: 0;
+  font-size: 0.78rem;
+}
+.tchain-table td,
+.tchain-table th {
+  vertical-align: middle;
+  padding: 0.18rem 0.3rem;
+  font-size: 12px;
+}
+/* A leg's tag may wrap to two lines in a narrow column rather than push the deltas out of view. */
+.tchain-table td {
+  white-space: normal;
+}
+.tchain-table .chip {
+  font-size: 10px;
+  padding: 0 0.35rem;
+}
+.tchain-table .tchain-k {
+  text-align: center;
+  white-space: nowrap;
+}
+.tchain-table td.tchain-sell {
+  background: color-mix(in srgb, var(--warn) 14%, transparent);
+}
+.tchain-table td.tchain-buy {
+  background: color-mix(in srgb, var(--pos) 14%, transparent);
+}
+.tchain-gap td {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 11px;
+  padding: 0.1rem;
+}
+.tchain-atm td {
+  border-top: 1px solid var(--chart-grid-strong);
+  border-bottom: 1px solid var(--chart-grid-strong);
+}
+.tchain-atm .tchain-k {
+  font-weight: 700;
+  color: var(--text);
+}
+.tchain-table .tchain-k {
+  color: var(--text-muted);
+}
+.tchain-tag {
+  display: block;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: normal;
+}
+.tchain-tag.is-sold {
+  color: var(--warn);
+}
+.tchain-tag.is-bought {
+  color: var(--pos);
+}
+.tchain-none {
+  margin: 0;
+  padding: 1rem;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+.tshape-example {
+  margin: 0 0 0.4rem;
+  font-size: 13px;
+}
+.tshape-word {
+  fill: var(--text-dim);
+  font-size: 11px;
+}
+.tshape-spot {
+  fill: var(--text);
+}
+.tshape-sold {
+  fill: var(--warn);
+}
+.tshape-bought {
+  fill: var(--pos);
+}
+.tshape-leg {
+  font-size: 12px;
+  font-weight: 600;
+}
+.tshape-leg.is-sold {
+  fill: var(--warn);
+}
+.tshape-leg.is-bought {
+  fill: var(--pos);
+}
+/* The Builder's leg: its ID chip and its words, read-only; a quantity box beside its side. */
+.builder-leg-id {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.25rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.builder-leg-chip {
+  font-family: var(--num-face);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 0.15rem 0.5rem;
+  border-radius: 6px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+}
+.builder-qty {
+  width: 4.5rem;
+}
+.builder-leg-add {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.8rem;
+}
+
 .mdl {
   display: flex;
   flex-direction: column;

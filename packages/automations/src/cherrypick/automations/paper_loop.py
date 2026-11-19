@@ -46,6 +46,11 @@ MULT = 100
 _logger = logging.getLogger("automations_paper_loop")
 
 
+def _count(side: int) -> str:
+    """A leg's contracts in the journal's leg list: nothing for one, `2x` for two."""
+    return f"{abs(side)}x" if abs(side) > 1 else ""
+
+
 def log_file():
     return _home.logs_dir("automations") / "automations_paper.log"
 
@@ -414,7 +419,7 @@ def _enter(conn, arm: dict, spec: dict, snap, decision, *, when: datetime) -> st
             "decided_at": now,
         },
     )
-    legs = " ".join(f"{'+' if g.side > 0 else '-'}{g.strike:g}{g.right}" for g in e.legs)
+    legs = " ".join(f"{'+' if g.side > 0 else '-'}{_count(g.side)}{g.strike:g}{g.right}" for g in e.legs)
     db.record_decision(
         conn,
         trade_date=snap.session,

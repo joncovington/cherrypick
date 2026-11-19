@@ -9,6 +9,7 @@ import { FliesTile } from "../Flies/FliesSession";
 import { builderDraft, groupsCheck, groupsSave, useAutomations, useAutomationsBuilder, useAutomationsPerformance, useBuilderSchema, useGroupsEdit } from "../../lib/api";
 import { fmtMoney } from "../../lib/format";
 import { plainBlocks } from "../Builder/BuilderWizard";
+import { TradeShape } from "../Builder/TradeShape";
 
 /**
  * Automations › Groups, a drill-down: every group (`?` none), one group (`?group=`), one automation
@@ -737,6 +738,9 @@ function AutomationPage({ view, draft, edit, paper, group, name }: { view: Group
         <FliesTile title="research verdict" value={r.m.verdict === null ? "—" : (VERDICT_WORDS[r.m.verdict] ?? r.m.verdict)} tone={r.m.verdict === "passed" ? "pos" : "dim"} foot="the register's label on it" />
         <FliesTile title="paper trades" value={String(paper.trades[name] ?? 0)} tone="dim" foot={`open now ${paper.open[name] ?? 0}`} />
         <FliesTile title="net, all" value={fmtMoney(paper.net[name] ?? null)} tone="dim" foot="a few weeks of paper is a forward read, not a verdict" />
+        <Card title="the shape and the chain" collapseKey="automations-automation-shape" className="lv-12" help={HELP}>
+          <TradeShape name={name} />
+        </Card>
       </Section>
     </>
   );

@@ -21,6 +21,9 @@
     builder-today   one automation (JSON on stdin: name, optionally an unsaved automation) decided now
                as paper would, on a read-only snapshot: the entry and legs it would take, or the
                first failing check, with every check. Writes nothing
+    builder-payoff  the structure one automation (JSON on stdin as builder-today) would take and its
+               P&L at expiry, on live quotes or else the last session our own recorder holds. Writes
+               nothing
     replay-day the nightly check: a session's recorded ticks through the backtest's decision path, each
                decision or fill that differs listed; exit 1 when any does (a record-less day is 0)
 
@@ -162,6 +165,16 @@ def cmd_builder_schema(args) -> int:
 
 
 def cmd_builder_today(args) -> int:
+    return _builder_read(args, "today")
+
+
+def cmd_builder_payoff(args) -> int:
+    return _builder_read(args, "payoff")
+
+
+def _builder_read(args, kind: str) -> int:
+    """One automation (JSON on stdin: name, optionally an unsaved automation) read now on a read-only
+    snapshot: `builderform.today` or `builderform.payoff`. Writes nothing."""
     import sqlite3
     import sys
 
@@ -185,7 +198,7 @@ def cmd_builder_today(args) -> int:
         return _print({"ok": True, "name": arm["name"], "state": "no_ledger", "reason": str(exc)})
     try:
         evts = events.load_calendar((config.get("events") or {}).get("path"))
-        out = builderform.today(
+        out = getattr(builderform, kind)(
             config, arm, now_et(), conn=conn, cache_path=provider.stream_cache_path(config), evts=evts
         )
     finally:
@@ -241,6 +254,7 @@ def main(argv=None) -> int:
     sub.add_parser("draft").set_defaults(fn=cmd_draft)
     sub.add_parser("builder-schema").set_defaults(fn=cmd_builder_schema)
     sub.add_parser("builder-today").set_defaults(fn=cmd_builder_today)
+    sub.add_parser("builder-payoff").set_defaults(fn=cmd_builder_payoff)
     p = sub.add_parser("replay-day")
     p.add_argument("--date", help="YYYY-MM-DD; default today, or the last trading day")
     p.set_defaults(fn=cmd_replay_day)

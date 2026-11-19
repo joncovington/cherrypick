@@ -154,3 +154,31 @@ def test_today_passes_the_name_and_an_unsaved_edit_through_and_maps_failures():
     assert automationedit.today({}, {}, run=run)["code"] == "bad_request"
     assert automationedit.today({}, {"name": "mine", "automation": []}, run=run)["code"] == "bad_request"
     assert automationedit.today({}, {"name": "mine"}, run=lambda c, b: None)["code"] == "unavailable"
+
+
+def test_payoff_passes_the_name_and_an_unsaved_edit_through_and_maps_failures():
+    seen = []
+
+    def run(_cfg, body):
+        seen.append(body)
+        return {"ok": True, "name": body["name"], "state": "placed"}
+
+    assert automationedit.payoff({}, {"name": "mine"}, run=run)["state"] == "placed"
+    automationedit.payoff({}, {"name": "mine", "automation": {"symbol": "SPX"}, "start": "x"}, run=run)
+    assert seen == [{"name": "mine"}, {"name": "mine", "automation": {"symbol": "SPX"}}]
+    assert automationedit.payoff({}, {}, run=run)["error"] == "automation_payoff needs a 'name'"
+    assert (
+        automationedit.payoff({}, {"name": "mine"}, run=lambda c, b: {"ok": False})["code"] == "bad_request"
+    )
+    assert automationedit.payoff({}, {"name": "mine"}, run=lambda c, b: None)["code"] == "unavailable"
+
+
+def test_configcli_routes_the_payoff_op_to_the_module(monkeypatch):
+    from cherrypick.orchestrator import configcli
+
+    monkeypatch.setattr(configcli.cfgmod, "load_config", lambda *a, **k: {})
+    monkeypatch.setattr(
+        automationedit, "run_module_payoff", lambda c, b: {"ok": True, "state": "placed", **b}
+    )
+    out = configcli.handle({"op": "automation_payoff", "name": "mine"})
+    assert out == {"ok": True, "state": "placed", "name": "mine"}
