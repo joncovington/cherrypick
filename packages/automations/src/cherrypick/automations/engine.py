@@ -15,7 +15,7 @@ from cherrypick.core import entrychecks, signals
 from . import gates as gates_mod
 from . import indicators as ind
 from . import pricing, sizing, strikes
-from .model import Chain, Decision, Entry, Leg, Snapshot, hhmm
+from .model import Chain, Decision, Entry, Leg, Snapshot, far_legs, hhmm
 
 ET = ZoneInfo("America/New_York")
 OHLC = ("open", "high", "low", "close")
@@ -26,8 +26,34 @@ def resolve_expiry(arm: dict, snap: Snapshot) -> str | None:
     """The listed expiry the arm's rule names today, or None when none is listed. `at_least` and
     `between` count calendar days from the session; the others aim at a date and take the listed expiry
     nearest it within `tolerance`. `monthly` keeps only the standard monthlies."""
-    rule = arm["expiry"]
-    listed = sorted(e for e in snap.chains if e >= snap.session)
+    return _resolve(arm["expiry"], snap)
+
+
+def has_far_legs(arm: dict) -> bool:
+    """Whether any of `arm`'s legs sits on its far expiry (`"expiry": "far"`)."""
+    return any(isinstance(g, dict) and g.get("expiry") == "far" for g in arm.get("legs", []))
+
+
+def resolve_far_expiry(arm: dict, snap: Snapshot, near: str) -> str | None:
+    """The listed expiry `arm`'s `far_expiry` names today, strictly after `near`, or None. Its rule is
+    any `expiry` rule (counted from the session), or `{"kind": "after_near", "days": N}`: the first
+    listed expiry at least N calendar days after `near` (`monthly` keeps only the monthlies)."""
+    rule = arm.get("far_expiry")
+    if not rule:
+        return None
+    if rule["kind"] == "after_near":
+        listed = sorted(e for e in snap.chains if e > near)
+        if rule.get("monthly"):
+            listed = [e for e in listed if cal.is_monthly_expiry(date.fromisoformat(e))]
+        start = date.fromisoformat(near)
+        inside = [e for e in listed if (date.fromisoformat(e) - start).days >= rule["days"]]
+        return inside[0] if inside else None
+    far = _resolve(rule, snap, after=near)
+    return far
+
+
+def _resolve(rule: dict, snap: Snapshot, *, after: str | None = None) -> str | None:
+    listed = sorted(e for e in snap.chains if e >= snap.session and (after is None or e > after))
     if rule.get("monthly"):
         listed = [e for e in listed if cal.is_monthly_expiry(date.fromisoformat(e))]
     today = snap.session_date
@@ -218,6 +244,12 @@ def decide(arm: dict, snap: Snapshot, *, costs: dict | None = None) -> Decision:
     if lim.get("one_per_expiry") and any(p.expiry == expiry for p in opened):
         return fail("one_per_expiry", expiry)
     ok("expiry", expiry)
+    far = None
+    if has_far_legs(arm):
+        far = resolve_far_expiry(arm, snap, expiry)
+        if far is None:
+            return fail("no_far_expiry")
+        ok("far_expiry", far)
 
     skip = arm.get("skip_events") or {}
     last = date.fromisoformat(expiry) if skip.get("through_expiry") else snap.session_date
@@ -227,7 +259,7 @@ def decide(arm: dict, snap: Snapshot, *, costs: dict | None = None) -> Decision:
             return fail(f"event:{label}", True)
         checks.append((f"event:{label}", True, "unknown" if hit is None else False))
 
-    chain = snap.chains[expiry]
+    chain = _with_far(snap.chains[expiry], snap, far)
     ctx = gates_mod.Ctx(snap, arm, chain, expiry)
     for g in arm.get("gates", []):
         if gates_mod.stage_of(g) != "market":
@@ -237,7 +269,7 @@ def decide(arm: dict, snap: Snapshot, *, costs: dict | None = None) -> Decision:
             return fail(f"gate:{g['gate']}", v)
         ok(f"gate:{g['gate']}", v)
 
-    legs, why = place_legs(arm, snap, chain, fired=v)
+    legs, why = place_legs(arm, snap, chain, fired=v, far=far)
     if legs is None:
         return fail(why)
     ok("strikes", {leg.name: leg.strike for leg in legs})
@@ -287,17 +319,30 @@ def decide(arm: dict, snap: Snapshot, *, costs: dict | None = None) -> Decision:
     return Decision(arm["name"], True, "enter", entry, checks)
 
 
-def place_legs(arm: dict, snap: Snapshot, chain: Chain, *, fired=None) -> tuple[list[Leg] | None, str | None]:
+def _with_far(chain: Chain, snap: Snapshot, far: str | None) -> Chain:
+    """The near `chain`, able to read a far leg's quotes off `far`'s chain."""
+    return chain if far is None else chain.with_others({far: snap.chains[far]})
+
+
+def place_legs(
+    arm: dict, snap: Snapshot, chain: Chain, *, fired=None, far: str | None = None
+) -> tuple[list[Leg] | None, str | None]:
     """The legs `arm`'s strike rules place on `chain`, in its leg order, each against the legs before
-    it: (legs, None), or (None, the failing check `strike:<leg>`)."""
+    it: (legs, None), or (None, the failing check `strike:<leg>`). A leg on the far expiry is placed on
+    `far`'s chain (`chain.others`); a rule that refers to an earlier leg reads its strike whichever
+    expiry it sits on, so a calendar's far leg is `same_as` its near one."""
     chosen: dict[str, float] = {}
     legs: list[Leg] = []
     for spec in arm["legs"]:
-        k = strikes.pick(spec["strike"], spec["right"], snap, chain, chosen, fired=fired)
-        if k is None or chain.get(k, spec["right"]) is None:
+        on_far = spec.get("expiry") == "far"
+        own = chain.others.get(far) if on_far and far else (None if on_far else chain)
+        if own is None:
+            return None, f"strike:{spec['name']}"
+        k = strikes.pick(spec["strike"], spec["right"], snap, own, chosen, fired=fired)
+        if k is None or own.get(k, spec["right"]) is None:
             return None, f"strike:{spec['name']}"
         chosen[spec["name"]] = k
-        legs.append(Leg(spec["name"], spec["right"], spec["side"], k))
+        legs.append(Leg(spec["name"], spec["right"], spec["side"], k, far if on_far else None))
     return legs, None
 
 
@@ -306,13 +351,18 @@ def structure(arm: dict, snap: Snapshot) -> dict:
     limits, event skips, gates or size: the expiry its rule names, the legs its strike rules place, the
     prices at the legs' quotes, and the payoff at expiry. {"expiry", "legs", "prices", "max_profit",
     "max_loss"} per share and the `chain` it was placed on, or {"why": the check that stopped it}. For
-    the Builder's payoff chart."""
+    the Builder's payoff chart. With far legs, `far_expiry` names the second expiry."""
     expiry = resolve_expiry(arm, snap)
     if expiry is None or expiry not in snap.chains:
         return {"why": "no_expiry"}
-    chain = snap.chains[expiry]
+    far = None
+    if has_far_legs(arm):
+        far = resolve_far_expiry(arm, snap, expiry)
+        if far is None:
+            return {"why": "no_far_expiry", "expiry": expiry}
+    chain = _with_far(snap.chains[expiry], snap, far)
     due, fired = entry_due(arm, snap)
-    legs, why = place_legs(arm, snap, chain, fired=fired if due else None)
+    legs, why = place_legs(arm, snap, chain, fired=fired if due else None, far=far)
     if legs is None:
         return {"why": why, "expiry": expiry}
     quotes = pricing.quotes_for(legs, chain)
@@ -322,8 +372,11 @@ def structure(arm: dict, snap: Snapshot) -> dict:
     if not pricing.within_bounds(legs, -prices["mid"]):
         return {"why": "unrealistic_price", "expiry": expiry, "legs": legs}
     profit, loss = pricing.payoff_extremes(legs, prices["mid"])
-    return {"expiry": expiry, "legs": legs, "prices": prices, "max_profit": profit, "max_loss": loss,
-            "chain": chain}  # fmt: skip
+    out = {"expiry": expiry, "legs": legs, "prices": prices, "max_profit": profit, "max_loss": loss,
+           "chain": chain}  # fmt: skip
+    if far is not None:
+        out["far_expiry"] = far
+    return out
 
 
 def size(rule: dict, loss_per_share: float) -> int:
@@ -353,6 +406,20 @@ class Position:
     @property
     def expiry(self) -> str:
         return self.entry.expiry
+
+
+def held_chain(entry: Entry, snap: Snapshot) -> Chain | None:
+    """The chain an open position's legs are read from: its expiry's, able to read a far leg off that
+    leg's own expiry (absent there, the leg has no quote). None when the snapshot holds no chain for
+    its expiry.
+
+    A position with far legs is never read past the band of strikes held (`_beyond_band`): a missing
+    leg is no reading, and the close waits. Held to its near expiry unclosed, it settles there with each
+    far leg at its intrinsic value (`settle_position`), the least a bought far leg is worth."""
+    chain = snap.chains.get(entry.expiry)
+    if chain is None or not far_legs(entry.legs):
+        return chain
+    return chain.with_others(snap.chains)
 
 
 def _beyond_band(legs, chain: Chain) -> dict[tuple[float, str], float] | None:
@@ -447,7 +514,8 @@ def position_delta(pos: Position, chain: Chain) -> float | None:
     listed or carries no delta: a missing delta is no reading, never zero."""
     total = 0.0
     for leg in pos.entry.legs:
-        q = chain.get(leg.strike, leg.right)
+        own = chain.for_leg(leg)
+        q = None if own is None else own.get(leg.strike, leg.right)
         if q is None or q.get("delta") is None:
             return None
         total += leg.side * float(q["delta"])
@@ -498,8 +566,8 @@ def manage(pos: Position, snap: Snapshot) -> tuple[str, object] | None:
     A leg beyond the band of strikes the chain holds (`_beyond_band`) is read at both ends of what it
     can be worth, and an exit is due only when it is due on both readings; the trailing stop's best
     moves on the lower one."""
-    chain = snap.chains.get(pos.entry.expiry)
-    far = _beyond_band(pos.entry.legs, chain) if chain is not None else None
+    chain = held_chain(pos.entry, snap)
+    far = _beyond_band(pos.entry.legs, chain) if chain is not None and not far_legs(pos.entry.legs) else None
     if not far:
         return _manage(pos, snap, chain, peak=True)
     low = _manage(pos, snap, _Bounded(chain, pos.entry.legs, far, low=True), peak=True)
@@ -575,8 +643,8 @@ def close_position(pos: Position, kind: str, snap: Snapshot, *, costs: dict | No
     carries its own slippage and net. A leg beyond the chain's band (`_beyond_band`) closes at the end
     of its range that costs most: a sold far leg bought back at its cap, a bought one sold for 0."""
     e = pos.entry
-    chain = snap.chains.get(e.expiry)
-    far = _beyond_band(e.legs, chain) if chain is not None else None
+    chain = held_chain(e, snap)
+    far = _beyond_band(e.legs, chain) if chain is not None and not far_legs(e.legs) else None
     if far:
         chain = _Bounded(chain, e.legs, far, low=True)
     q = pricing.quotes_for(e.legs, chain) if chain is not None else None
@@ -592,12 +660,21 @@ def close_position(pos: Position, kind: str, snap: Snapshot, *, costs: dict | No
 
 
 def settle_position(pos: Position, settle: float, session: str | None = None) -> dict:
-    """Held to the expiry's settlement print `settle`: intrinsic value, no exit slippage."""
+    """Held to the expiry's settlement print `settle`: intrinsic value, no exit slippage. A far leg (one
+    on a later expiry) is valued at its intrinsic too, the least a bought one is worth: such a position
+    is meant to close before its near expiry (`arms` requires `close_before_expiry_min`)."""
     e = pos.entry
     value = pricing.intrinsic_value(e.legs, settle)
     zero = dict.fromkeys(pricing.KINDS, 0.0)
     return _trade(
-        pos, "settlement", session or e.expiry, None, value, zero, 0.0, pricing.settlement_fee(e.legs, settle)
+        pos,
+        "settlement",
+        session or e.expiry,
+        None,
+        value,
+        zero,
+        0.0,
+        pricing.settlement_fee([g for g in e.legs if g.expiry is None], settle),
     )
 
 
@@ -613,7 +690,7 @@ def _trade(pos, kind, session, minute, exit_credit, exit_slip, close_fee, settle
         "session": e.session,
         "entry_minute": e.minute,
         "expiry": e.expiry,
-        "legs": [{"name": g.name, "right": g.right, "side": g.side, "strike": g.strike} for g in e.legs],
+        "legs": [g.to_dict() for g in e.legs],
         "quantity": e.quantity,
         "risk": risk(e),
         "entry_mid": e.prices["mid"],

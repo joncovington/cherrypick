@@ -24,7 +24,8 @@ def quotes_for(legs, chain) -> list[tuple[dict, int]] | None:
     """(quote, signed quantity) per leg, or None when a leg is not listed."""
     out = []
     for leg in legs:
-        q = chain.get(leg.strike, leg.right)
+        own = chain.for_leg(leg) if hasattr(chain, "for_leg") else chain
+        q = None if own is None else own.get(leg.strike, leg.right)
         if q is None:
             return None
         out.append((q, leg.side))
@@ -38,7 +39,15 @@ def structure_prices(quotes) -> dict | None:
 
 def payoff_extremes(legs, credit: float) -> tuple[float | None, float | None]:
     """(maximum profit, maximum loss) per share at expiry for a structure taken at signed `credit`.
-    Profit is None when unbounded. Loss is None when the structure is not defined-risk."""
+    Profit is None when unbounded. Loss is None when the structure is not defined-risk.
+
+    With legs on a later expiry (`Leg.expiry`), this is read at the near expiry with each far leg at
+    its intrinsic value. A bought far leg is worth at least that, so the loss is a true bound; a sold
+    one is not bounded by it, so such a structure reads as not defined-risk. Its profit depends on
+    the far legs' time value, which no payoff at expiry gives: None."""
+    far = [g for g in legs if getattr(g, "expiry", None)]
+    if any(g.side < 0 for g in far):
+        return None, None
     pts = sorted({0.0, *(leg.strike for leg in legs)})
     top = pts[-1] + 1.0
 
@@ -53,7 +62,7 @@ def payoff_extremes(legs, credit: float) -> tuple[float | None, float | None]:
     values = [value(s) for s in [*pts, top]]
     if slope < 0:
         return None, None
-    profit = None if slope > 0 else max(values)
+    profit = None if slope > 0 or far else max(values)
     return profit, -min(values)
 
 
@@ -80,12 +89,19 @@ def breakevens(points: list[tuple[float, float]]) -> list[float]:
 def value_bounds(legs) -> tuple[float | None, float | None]:
     """The least and most the structure can be worth per share, +sum(n * price), read off its payoff
     at expiry: every leg shares one expiry, so its value now lies in that range. None where the payoff
-    is unbounded that way."""
+    is unbounded that way.
+
+    With legs on a later expiry the far legs carry time value the payoff at expiry does not hold: a
+    bought far leg only raises the value, so the least it can be worth still holds where every far leg
+    is bought, and the most has no bound read from strikes."""
     pts = sorted({0.0, *(leg.strike for leg in legs)})
     values = [intrinsic_value(legs, s) for s in pts]
     slope = sum(leg.side for leg in legs if leg.right == "C")
     lo = min(values) if slope >= 0 else None
     hi = max(values) if slope <= 0 else None
+    far = [g for g in legs if getattr(g, "expiry", None)]
+    if far:
+        return (lo if all(g.side > 0 for g in far) else None), None
     return lo, hi
 
 

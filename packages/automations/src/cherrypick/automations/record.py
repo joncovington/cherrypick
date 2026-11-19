@@ -38,7 +38,8 @@ def decision_summary(d: Decision) -> dict:
         out["entry"] = {
             "expiry": e.expiry,
             "quantity": e.quantity,
-            "legs": [[g.name, g.right, g.side, g.strike] for g in e.legs],
+            # A far leg carries its expiry fifth; a one-expiry record is as it always was.
+            "legs": [[g.name, g.right, g.side, g.strike, *([g.expiry] if g.expiry else [])] for g in e.legs],
             "prices": e.prices,
             "slippage": e.slippage,
             "fees_open": e.fees_open,

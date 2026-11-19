@@ -10,6 +10,9 @@ import pytest
 
 from cherrypick.automations import arms, config, drafts, enrolment
 
+#: A near leg's written keys: `expiry` is kept only on a far leg, so a one-expiry leg is as it was.
+NEAR_KEYS = arms.WRITTEN_LEG_KEYS - {"expiry"}
+
 STRIKE = {"rule": "delta", "target": 0.2}
 
 
@@ -38,7 +41,7 @@ def test_written_is_the_inverse_of_internal():
         {"name": "b", "right": "C", "side": 1, "strike": STRIKE},
     ):
         written = arms.written_leg(older)
-        assert set(written) == arms.WRITTEN_LEG_KEYS
+        assert set(written) == NEAR_KEYS
         assert _older(written) == older
         assert arms.written_leg(written) == written
 
@@ -68,7 +71,7 @@ def test_a_leg_is_one_spelling_or_the_other_and_never_guessed(leg, says):
 
 def test_the_shipped_automations_are_written_in_the_page_spelling():
     for name, arm in arms.ARMS.items():
-        assert all(set(leg) == arms.WRITTEN_LEG_KEYS for leg in arm["legs"]), name
+        assert all(set(leg) == NEAR_KEYS for leg in arm["legs"]), name
 
 
 def test_every_shipped_automation_loads_and_hashes_the_same_in_either_spelling():
@@ -88,9 +91,9 @@ def test_the_editor_starts_from_the_written_spelling_and_a_save_writes_it():
     older = [_older(leg) for leg in arms.ARMS["iron-fly-1000"]["legs"]]
     cfg = {"automations": {"iron-fly-1000": {"legs": older}}}
     spec = drafts.editable(cfg, "iron-fly-1000")
-    assert all(set(leg) == arms.WRITTEN_LEG_KEYS for leg in spec["legs"])
+    assert all(set(leg) == NEAR_KEYS for leg in spec["legs"])
     out = drafts.draft(cfg, "mine-copy", {**spec, "legs": older}, __import__("datetime").date(2026, 1, 5))
-    assert out["problems"] == [] and all(set(leg) == arms.WRITTEN_LEG_KEYS for leg in out["entry"]["legs"])
+    assert out["problems"] == [] and all(set(leg) == NEAR_KEYS for leg in out["entry"]["legs"])
 
 
 def test_the_conversion_lists_older_legs_and_proves_nothing_moves():
