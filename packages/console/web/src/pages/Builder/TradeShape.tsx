@@ -2,7 +2,7 @@ import { useEffect, useId, useState, type ReactNode } from "react";
 import type { BuilderPayoff, BuilderSketch } from "@console/shared";
 import { builderPayoff } from "../../lib/api";
 import { fmtCash } from "../../lib/format";
-import { isLegId, titleCase } from "./legWords";
+import { isLegId, openAbbr, openVerb, titleCase } from "./legWords";
 
 /**
  * The trade's shape beside a chain example, both from the module (`cli builder-payoff`).
@@ -65,10 +65,16 @@ export function legName(leg: { name: string; side: number; right: string }): str
   return isLegId(leg.name) ? `${leg.name} · ${words}` : titleCase(leg.name) || words;
 }
 
-/** "Sell 2 · L2 · Short Put", "Buy · Long Call": a leg as an order, with its contracts when more than one. */
+/** "STO 2 · L2 · Short Put", "BTO · Long Call": an entry leg as an order chain writes it, with its
+ *  contracts when more than one. `legOrderWords` is the same in full, for the tag's title. */
 export function legOrder(leg: { name: string; side: number; right: string }): string {
   const n = Math.abs(leg.side);
-  return `${leg.side < 0 ? "Sell" : "Buy"}${n > 1 ? ` ${n}` : ""} · ${legName(leg)}`;
+  return `${openAbbr(leg.side)}${n > 1 ? ` ${n}` : ""} · ${legName(leg)}`;
+}
+
+export function legOrderWords(leg: { name: string; side: number; right: string }): string {
+  const n = Math.abs(leg.side);
+  return `${openVerb(leg.side)}${n > 1 ? ` ${n}` : ""} · ${legName(leg)}`;
 }
 
 /** The example's line: where it was placed and what it came to. */
@@ -128,7 +134,7 @@ export function labelRows(xs: number[], gap = 40): number[] {
   });
 }
 
-/** The legs at one position as one marker: "Short Put · Short Call", "L2 · Sell 2 · Short Put". */
+/** The legs at one position as one marker: "Short Put · Short Call", "L2 · Short Put ×2". */
 export function markers(s: BuilderSketch): Array<{ at: number; text: string; sold: boolean; many: boolean }> {
   const byAt = new Map<number, BuilderSketch["legs"]>();
   for (const g of s.legs) byAt.set(g.at, [...(byAt.get(g.at) ?? []), g]);
@@ -141,7 +147,7 @@ export function markers(s: BuilderSketch): Array<{ at: number; text: string; sol
           const n = Math.abs(g.side);
           const words = `${g.side < 0 ? "Short" : "Long"} ${g.right === "C" ? "Call" : "Put"}`;
           if (!isLegId(g.name)) return titleCase(g.name) || words;
-          return n > 1 ? `${g.name} · ${g.side < 0 ? "Sell" : "Buy"} ${n} · ${words}` : `${g.name} · ${words}`;
+          return `${g.name} · ${words}${n > 1 ? ` ×${n}` : ""}`;
         })
         .join(" · "),
       sold: legs.some((g) => g.side < 0),
@@ -225,7 +231,7 @@ function Chain({ p }: { p: BuilderPayoff }) {
   };
   const tags = (k: number, right: string) =>
     on(k, right).map((l) => (
-      <span key={l.name} className={l.side < 0 ? "tchain-tag is-sold" : "tchain-tag is-bought"}>
+      <span key={l.name} className={l.side < 0 ? "tchain-tag is-sold" : "tchain-tag is-bought"} title={legOrderWords(l)}>
         {legOrder(l)}
       </span>
     ));

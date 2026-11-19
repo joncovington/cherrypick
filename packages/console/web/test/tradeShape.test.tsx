@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { renderToString } from "react-dom/server";
 import type { BuilderPayoff, BuilderSketch } from "@console/shared";
-import { exampleWords, labelRows, legOrder, markers, offsetWords, sendable, shapeGeometry, TradeShapeView, valueAt } from "../src/pages/Builder/TradeShape";
-import { legLabel, legSentence, legWords, nextLegId, titleCase } from "../src/pages/Builder/legWords";
+import { exampleWords, labelRows, legOrder, legOrderWords, markers, offsetWords, sendable, shapeGeometry, TradeShapeView, valueAt } from "../src/pages/Builder/TradeShape";
+import { closeAbbr, closeVerb, legLabel, legSentence, legWords, nextLegId, openAbbr, openVerb, titleCase } from "../src/pages/Builder/legWords";
 
 const q = (delta: number) => ({ bid: 1, ask: 1.1, delta });
 
@@ -64,6 +64,14 @@ const PLACED: BuilderPayoff = {
 const html = (p: BuilderPayoff) => renderToString(<TradeShapeView p={p} />).replace(/<!--\s*-->/g, "");
 
 describe("a leg in words", () => {
+  it("names the order that opens a leg and the one that closes it", () => {
+    expect(openVerb(-2)).toBe("Sell to open");
+    expect(openVerb(1)).toBe("Buy to open");
+    expect(closeVerb(-1)).toBe("Buy to close");
+    expect(closeVerb(3)).toBe("Sell to close");
+    expect([openAbbr(-1), openAbbr(1), closeAbbr(-1), closeAbbr(1)]).toEqual(["STO", "BTO", "BTC", "STC"]);
+  });
+
   it("names a leg by its ID and its side, right and contracts", () => {
     expect(legWords({ side: -2, right: "P" })).toBe("Short Put ×2");
     expect(legLabel({ name: "L2", side: -2, right: "P" })).toBe("L2 · Short Put ×2");
@@ -82,10 +90,10 @@ describe("a leg in words", () => {
     const l1 = { name: "L1", side: 1, right: "P", strike: { rule: "spot", points: 0 } };
     const l2 = { name: "L2", side: -2, right: "P", strike: { rule: "from_leg", leg: "L1", points: -5 } };
     const by = { L1: l1, L2: l2 };
-    expect(legSentence(l1, by)).toBe("Buy a L1 · Long Put at the strike nearest the spot");
-    expect(legSentence(l2, by)).toBe("Sell 2 × L2 · Short Put 5 below the L1 · Long Put");
+    expect(legSentence(l1, by)).toBe("Buy to open a L1 · Long Put at the strike nearest the spot");
+    expect(legSentence(l2, by)).toBe("Sell to open 2 × L2 · Short Put 5 below the L1 · Long Put");
     expect(legSentence({ name: "short_call", side: -1, right: "C", strike: { rule: "same_as", leg: "short_put" } }, { short_put: { name: "short_put", side: -1, right: "P" } })).toBe(
-      "Sell a Short Call at the same strike as the Short Put",
+      "Sell to open a Short Call at the same strike as the Short Put",
     );
   });
 });
@@ -98,8 +106,9 @@ describe("the trade shape", () => {
   });
 
   it("names an order with its contracts when more than one", () => {
-    expect(legOrder({ name: "L2", side: -2, right: "P" })).toBe("Sell 2 · L2 · Short Put");
-    expect(legOrder({ name: "short_call", side: -1, right: "C" })).toBe("Sell · Short Call");
+    expect(legOrder({ name: "L2", side: -2, right: "P" })).toBe("STO 2 · L2 · Short Put");
+    expect(legOrderWords({ name: "L2", side: -2, right: "P" })).toBe("Sell to open 2 · L2 · Short Put");
+    expect(legOrder({ name: "short_call", side: -1, right: "C" })).toBe("STO · Short Call");
   });
 
   it("puts legs on one position into one marker, and marks one holding more than a contract", () => {
@@ -112,7 +121,7 @@ describe("the trade shape", () => {
       ],
     };
     const m = markers(fly);
-    expect(m.map((x) => x.text)).toEqual(["L5 · Sell 2 · Short Put", "Short Put · Short Call"]);
+    expect(m.map((x) => x.text)).toEqual(["L5 · Short Put ×2", "Short Put · Short Call"]);
     expect(m[0]!.many).toBe(true);
   });
 
@@ -143,8 +152,9 @@ describe("the trade shape", () => {
     expect(out).toContain("max profit");
     expect(out).toContain("max loss");
     expect(out).toContain("0 · spot");
-    expect(out).toContain("Sell · Short Put");
-    expect(out).toContain("Buy · Long Call");
+    expect(out).toContain("STO · Short Put");
+    expect(out).toContain('title="Sell to open · Short Put"');
+    expect(out).toContain("BTO · Long Call");
     expect(out).toContain("For example, on the last recorded session");
     expect(out).not.toContain("7325");
     expect(out).not.toContain("7332");

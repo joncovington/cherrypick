@@ -1,8 +1,12 @@
 /**
  * A leg in words, for the Builder, the shape and the chain. A leg added in the Builder is named by its
- * ID (L1, L2, …), given once and never reused; its words follow its side and right ("Long Put", "Short
+ * ID (L1, L2, …), given once and never reused; its words follow its action and side ("Long Put", "Short
  * Call ×2"). An automation saved before IDs keeps its own names, shown title-cased ("short_put" reads
- * "Short Put"). `side` is the leg's contracts, signed: + bought, − sold.
+ * "Short Put").
+ *
+ * The page's words and the stored keys differ: the page's **action** is the order (Buy to open, Sell to
+ * open; an adjustment's Buy to close, Sell to close), stored as the leg's `side`, its contracts signed
+ * (+ bought, − sold); the page's **side** is Put or Call, stored as `right`.
  */
 
 export type LegLike = { name?: unknown; side?: unknown; right?: unknown };
@@ -13,7 +17,27 @@ export function isLegId(name: unknown): boolean {
   return typeof name === "string" && ID.test(name);
 }
 
-/** "Long Put", "Short Call ×2": the leg's side, right and contracts. */
+/** The order that opens a leg: "Sell to open" for a sold one (`side` < 0), "Buy to open" for a bought one. */
+export function openVerb(side: number): string {
+  return side < 0 ? "Sell to open" : "Buy to open";
+}
+
+/** The order that closes a leg held: "Buy to close" a sold one, "Sell to close" a bought one. */
+export function closeVerb(side: number): string {
+  return side < 0 ? "Buy to close" : "Sell to close";
+}
+
+/** The opening order's abbreviation, as an order chain writes it: STO, BTO. */
+export function openAbbr(side: number): string {
+  return side < 0 ? "STO" : "BTO";
+}
+
+/** The closing order's abbreviation: BTC a sold leg, STC a bought one. */
+export function closeAbbr(side: number): string {
+  return side < 0 ? "BTC" : "STC";
+}
+
+/** "Long Put", "Short Call ×2": the leg's action, side and contracts. */
 export function legWords(leg: LegLike): string {
   const side = Number(leg.side ?? 0);
   const kind = side < 0 ? "Short" : "Long";
@@ -93,13 +117,13 @@ export function placeWords(strike: Record<string, unknown>, byName: Record<strin
   }
 }
 
-/** One leg as a sentence: "Sell a Short Put 5 below the spot", "Sell 2 L2 · Short Put 5 below the L1 · Long Put". */
+/** One entry leg as a sentence: "Sell to open a Short Put 5 below the spot", "Sell to open 2 × L2 · Short
+ *  Put 5 below the L1 · Long Put". */
 export function legSentence(leg: LegLike & { strike?: unknown }, byName: Record<string, LegLike>): string {
   const side = Number(leg.side ?? 0);
   const n = Math.abs(side) || 1;
-  const verb = side < 0 ? "Sell" : "Buy";
   const strike = typeof leg.strike === "object" && leg.strike !== null ? (leg.strike as Record<string, unknown>) : {};
-  return `${verb} ${n > 1 ? `${n} ×` : "a"} ${legPlain(leg)} ${placeWords(strike, byName)}`;
+  return `${openVerb(side)} ${n > 1 ? `${n} ×` : "a"} ${legPlain(leg)} ${placeWords(strike, byName)}`;
 }
 
 /** Each leg's label by its name, for a picker of legs. */

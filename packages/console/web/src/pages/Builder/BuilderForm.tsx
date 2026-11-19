@@ -6,7 +6,7 @@ export { parseValue, showValue } from "./BuilderField";
 import { CardHelpButton } from "../../components/CardHelp";
 import { SECTION_HELP } from "./BuilderHelp";
 import { TradeShape } from "./TradeShape";
-import { isLegId, legLabels, legWords, nextLegId, titleCase } from "./legWords";
+import { isLegId, legLabels, legWords, nextLegId, openVerb, titleCase } from "./legWords";
 
 /**
  * The Builder's form (#1180): the five sections of one automation, each field writing the same spec
@@ -525,11 +525,11 @@ export function LegFields({ schema, spec, onChange }: SectionProps) {
               </span>
             </div>
             <Select
-              id={`f-leg-${i}-side`}
-              label="side"
+              id={`f-leg-${i}-action`}
+              label="action"
               value={side < 0 ? "sell" : "buy"}
               options={["buy", "sell"]}
-              words={{ buy: "Buy", sell: "Sell" }}
+              words={{ buy: openVerb(1), sell: openVerb(-1) }}
               onChange={(v) => setLeg({ ...leg, side: (v === "sell" ? -1 : 1) * qty })}
             />
             <div className="builder-f">
@@ -555,7 +555,7 @@ export function LegFields({ schema, spec, onChange }: SectionProps) {
             </div>
             <Select
               id={`f-leg-${i}-right`}
-              label="right"
+              label="side"
               value={String(leg["right"] ?? "")}
               options={["P", "C"]}
               words={{ P: "Put", C: "Call" }}
