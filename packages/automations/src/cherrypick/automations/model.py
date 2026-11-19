@@ -8,6 +8,7 @@ Times are minutes since midnight Eastern. A quote row is a dict with `strike`, `
 
 from __future__ import annotations
 
+import copy
 from dataclasses import asdict, dataclass, field
 from datetime import date
 
@@ -23,16 +24,33 @@ def mid(q: dict) -> float:
 
 
 class Chain:
-    """One expiry's quotes, indexed by (strike, right)."""
+    """One expiry's quotes, indexed by (strike, right). A structure with legs on a second expiry (a
+    calendar, a diagonal) reads them through `for_leg`: the chain is the near one, and `others` holds
+    the rest by expiry (`with_others`)."""
 
     def __init__(self, expiry: str, rows: list[dict]):
         self.expiry = expiry
         self.rows = [r for r in rows if r.get("strike") is not None]
         self._by = {(float(r["strike"]), r["right"]): r for r in self.rows}
         self.strikes = sorted({k[0] for k in self._by})
+        self.others: dict[str, Chain] = {}
 
     def get(self, strike: float, right: str) -> dict | None:
         return self._by.get((float(strike), right))
+
+    def for_leg(self, leg) -> Chain | None:
+        """The chain `leg` sits on: this one, or the one of its own expiry (`Leg.expiry`); None when
+        that expiry's chain is not held, so a leg is never read off another expiry's quotes."""
+        e = getattr(leg, "expiry", None)
+        if e is None or e == self.expiry:
+            return self
+        return self.others.get(e)
+
+    def with_others(self, chains: dict[str, Chain]) -> Chain:
+        """This chain with `chains` (by expiry) to read a leg on another expiry from."""
+        view = copy.copy(self)
+        view.others = {k: v for k, v in chains.items() if k != self.expiry}
+        return view
 
     def both(self, strike: float) -> bool:
         return (float(strike), "C") in self._by and (float(strike), "P") in self._by
@@ -146,6 +164,21 @@ class Leg:
     right: str
     side: int  # +1 bought, -1 sold
     strike: float
+    #: The leg's own expiry when it is not the entry's (a calendar's or a diagonal's far leg); None on
+    #: every leg of a one-expiry structure, which is every structure recorded before far legs existed.
+    expiry: str | None = None
+
+    def to_dict(self) -> dict:
+        """JSON-able form; `expiry` only when the leg has its own, so a one-expiry record is unchanged."""
+        d = {"name": self.name, "right": self.right, "side": self.side, "strike": self.strike}
+        if self.expiry is not None:
+            d["expiry"] = self.expiry
+        return d
+
+
+def far_legs(legs) -> bool:
+    """Whether any leg sits on an expiry of its own (`Leg.expiry`)."""
+    return any(getattr(g, "expiry", None) for g in legs)
 
 
 @dataclass
@@ -167,7 +200,9 @@ class Entry:
 
     def to_dict(self) -> dict:
         """JSON-able form (the paper ledger keeps the entry whole; round-trips through `from_dict`)."""
-        return asdict(self)
+        d = asdict(self)
+        d["legs"] = [g.to_dict() for g in self.legs]
+        return d
 
     @classmethod
     def from_dict(cls, d: dict) -> Entry:

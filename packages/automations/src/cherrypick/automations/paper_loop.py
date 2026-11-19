@@ -259,7 +259,7 @@ def run_positions(
         if spot is not None:
             snap = feed.position_snapshot(
                 pos,
-                rows or [],
+                feed.by_expiry(pos, legs, rows) if rows else [],
                 spot,
                 when,
                 exit_rules=exit_rules,
@@ -368,10 +368,11 @@ def _enter(conn, arm: dict, spec: dict, snap, decision, *, when: datetime) -> st
     mult = MULT * e.quantity
     pid = f"{arm['name']}:{snap.session}"
     now = when.isoformat(timespec="seconds")
-    chain = snap.chains[e.expiry]
+    chain = engine.held_chain(e, snap)
     leg_rows = []
     for g in e.legs:
-        q = chain.get(g.strike, g.right) or {}
+        own = chain.for_leg(g)
+        q = (own.get(g.strike, g.right) if own is not None else None) or {}
         leg_rows.append(
             {
                 "position_id": pid,
@@ -381,6 +382,7 @@ def _enter(conn, arm: dict, spec: dict, snap, decision, *, when: datetime) -> st
                 "strike": g.strike,
                 "streamer_symbol": q.get("streamer_symbol"),
                 "occ_symbol": q.get("occ_symbol"),
+                "expiration": g.expiry,
                 "status": "open",
             }
         )

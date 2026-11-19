@@ -318,6 +318,10 @@ PAYOFF_MARGIN = 0.004
 RECORDED_TRIES = 10
 
 
+#: Why a structure with a far leg draws no payoff yet.
+FAR_PAYOFF_WHY = "a leg on a later expiry: its payoff needs that leg's time value, which is not modeled yet"
+
+
 def payoff(config: dict, arm: dict, when: datetime, *, conn, cache_path: str, evts, recorded=None) -> dict:
     """The structure `arm` would take and its P&L at expiry, on the live quotes or, without them, on
     the last recorded session (module docstring). `recorded` stands in for `recorded_structure`."""
@@ -327,6 +331,18 @@ def payoff(config: dict, arm: dict, when: datetime, *, conn, cache_path: str, ev
 
     live = {**arm, "enabled": True}
     sym = live["symbol"].upper()
+    if engine.has_far_legs(live):
+        # A payoff at the near expiry leaves out the far legs' time value, which is most of the trade:
+        # nothing is drawn until that value is modeled, rather than a shape that is not the trade's.
+        why = FAR_PAYOFF_WHY
+        return {
+            "ok": True,
+            "name": live["name"],
+            "symbol": sym,
+            "state": "not_placed",
+            "live": why,
+            "recorded": why,
+        }
     out: dict[str, Any] = {"ok": True, "name": live["name"], "symbol": sym, "sketch": sketch_mod.sketch(live)}
     spec = config_mod.symbols(config, {live["name"]: live}).get(sym)
     if spec is None:
