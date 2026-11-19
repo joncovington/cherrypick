@@ -160,6 +160,12 @@ describe("typed fields", () => {
     expect(out).toContain('<select id="f-orb-single_shot" class="builder-input"><option value="" selected="">default (yes)</option><option value="true">yes</option><option value="false">no</option></select>');
   });
 
+  it("shows an older leg by its action and side in the page's words", () => {
+    expect(out).toMatch(/id="f-leg-0-action"[^]*?value="sell" selected="">Sell to open</);
+    expect(out).toMatch(/id="f-leg-1-action"[^]*?value="buy" selected="">Buy to open</);
+    expect(out).toMatch(/id="f-leg-0-right"[^]*?value="put" selected="">Put</);
+  });
+
   it("offers only the legs placed before this one for a leg reference, each in words", () => {
     expect(out).toContain('<select id="f-leg-1-leg" class="builder-input" required="" aria-required="true"><option value="">choose…</option><option value="short_put" selected="">Short Put</option></select>');
   });

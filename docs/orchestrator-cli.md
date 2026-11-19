@@ -174,6 +174,7 @@ unknown, never met). `--checks` takes the same kinds and is only reported in the
 
 | Command | What it does | Flags |
 |---|---|---|
+| `automations-legs-convert` | Rewrite this machine's automations stored in the older leg spelling (`side` as signed contracts, `right`) in the written one (`action`, `qty`, `side`). The automations module lists them and proves no automation loads differently or changes a block hash; one save, backed up. | `--apply` (otherwise a dry run) |
 | `remind-add` | Add one reminder; everything is checked now, so a row the job would refuse is never added. | `--title`, `--file` (the message, as `notify-send`'s), `--due` (ET, `YYYY-MM-DDTHH:MM`), `--done-when <json list>`, `--checks <json list>`, `--renotify-hours` |
 | `remind-list` | Every reminder, soonest first; each live one with its conditions as read now. | — |
 | `remind-done` | Close a live reminder by hand. | `--reminder-id`, `--note` |

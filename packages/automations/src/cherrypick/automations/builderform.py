@@ -56,7 +56,10 @@ TRIGGER_FORMS: dict[str, dict[str, bool]] = {
 
 
 def _delta_leg(name: str, right: str, side: int, target: float) -> dict:
-    return {"name": name, "right": right, "side": side, "strike": {"rule": "delta", "target": target}}
+    """A wizard leg placed by delta, in the written spelling (action, qty, side)."""
+    return arms_mod.written_leg(
+        {"name": name, "right": right, "side": side, "strike": {"rule": "delta", "target": target}}
+    )
 
 
 #: The wizard's starting shapes: legs placed by delta, each one the engine accepts as it stands

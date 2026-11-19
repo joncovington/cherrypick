@@ -180,3 +180,54 @@ def save(
         code = "conflict" if "changed on disk" in error else "guarded" if "guarded" in error else "invalid"
         return {**result, "code": code}
     return {**result, "name": name, "added": added, "enabled": False, "view": checked.get("view")}
+
+
+def run_module_legs(cfg: dict[str, Any], req: dict[str, Any]) -> dict[str, Any] | None:
+    """The module's answer to `cli legs-convert`, or None when it could not be asked."""
+    return run_module_cli(cfg, "legs-convert", req)
+
+
+#: The written spelling of a leg, all a conversion may write (`arms.WRITTEN_LEG_KEYS` in the module).
+WRITTEN_LEG_KEYS = frozenset({"name", "action", "qty", "side", "strike"})
+
+
+def convert_legs(
+    cfg: dict[str, Any], *, apply: bool = False, run: Runner = run_module_legs
+) -> dict[str, Any]:
+    """Rewrite this machine's automations stored in the older leg spelling (side/right) in the written
+    one (action/qty/side). The module names them and proves the conversion changes how none of them
+    loads (`cli legs-convert`); this writes only each one's `legs`, in one save with its backup, and
+    only with `apply`. A dry run lists them."""
+    answer = run(cfg, {})
+    if not answer:
+        return _err("the automations module could not be asked (is it installed?)", "unavailable")
+    if not answer.get("ok"):
+        return _err(str(answer.get("error") or "the automations module refused the request"))
+    problems = answer.get("problems") or []
+    if problems:
+        return _err("; ".join(map(str, problems)), "invalid", problems=problems)
+    convert = answer.get("convert")
+    if not isinstance(convert, dict):
+        return _err("the module returned nothing to convert", "invalid")
+    for name, legs in convert.items():
+        if not isinstance(legs, list) or not all(
+            isinstance(g, dict) and not (set(g) - WRITTEN_LEG_KEYS) for g in legs
+        ):
+            return _err(f"the module returned legs for {name} this writer does not take", "invalid")
+    names = sorted(convert)
+    if not apply or not names:
+        return {"ok": True, "applied": False, "convert": names}
+    try:
+        path = configedit._target_path(cfg, TARGET)
+    except KeyError as exc:
+        return _err(str(exc), "not_found")
+    text = path.read_text(encoding="utf-8")
+    block = _block(text)
+    if block is None:
+        return _err("the automations config has no automations block", "not_found")
+    for name in names:
+        text = configedit.splice_value(text, f"/{block}/{_token(name)}/legs", convert[name])
+    result = configedit.apply_raw_save(cfg, TARGET, text, None)
+    if not result.get("ok"):
+        return {**result, "code": "invalid"}
+    return {**result, "applied": True, "convert": names}

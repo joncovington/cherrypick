@@ -110,6 +110,9 @@ Subcommands:
                        allow-listed conditions), --renotify-hours. Pushed until --done-when holds.
   remind-list          The reminders, with each live one's conditions as read now.
   remind-done          Close a reminder by hand (--reminder-id, --note).
+  automations-legs-convert  Rewrite this machine's automations stored in the older leg spelling
+                       (side/right) in the written one (action/qty/side); the module proves no
+                       automation loads differently. Dry run unless --apply; one save, backed up.
   remind-cancel        Drop a reminder (--reminder-id).
   remind-run           Push the due reminders, close the met ones (the supervisor's reminders job).
   external-check       Judge one external report file (the path after the verb) against the
@@ -2015,6 +2018,17 @@ def cmd_queue_run(cfg, lane: str | None = None) -> None:
         sys.exit(1)
 
 
+def cmd_automations_legs_convert(cfg, apply: bool) -> None:
+    """Rewrite the older leg spelling in this machine's automations config (automationedit.convert_legs).
+    Dry run unless --apply; exits 1 on a refusal."""
+    from cherrypick.orchestrator import automationedit
+
+    out = automationedit.convert_legs(cfg, apply=apply)
+    _emit(out)
+    if not out.get("ok"):
+        sys.exit(1)
+
+
 def cmd_remind_add(args) -> None:
     """Add one dated reminder (orchestrator/reminders.py). The message comes from --file, as
     notify-send's, so nothing a shell would expand is lost. Refused rows are never added."""
@@ -2986,6 +3000,7 @@ def build_parser() -> argparse.ArgumentParser:
             "remind-add",
             "remind-list",
             "remind-done",
+            "automations-legs-convert",
             "remind-cancel",
             "remind-run",
             "external-check",
@@ -3161,6 +3176,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--apply",
         action="store_true",
         help="For migrate-home: perform the move; for retests: queue the rows (default is a dry run); "
+        "for automations-legs-convert: write the converted legs; "
         "for migrations: run the pending migrations",
     )
     parser.add_argument(
@@ -3464,6 +3480,7 @@ def main() -> None:
         "remind-add": lambda: cmd_remind_add(args),
         "remind-list": lambda: cmd_remind_list(cfg),
         "remind-done": lambda: cmd_remind_close(args, done=True),
+        "automations-legs-convert": lambda: cmd_automations_legs_convert(cfg, args.apply),
         "remind-cancel": lambda: cmd_remind_close(args, done=False),
         "remind-run": lambda: cmd_remind_run(cfg),
         "external-check": lambda: cmd_external_check(args.name),

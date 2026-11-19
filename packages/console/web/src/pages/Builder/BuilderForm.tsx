@@ -6,7 +6,7 @@ export { parseValue, showValue } from "./BuilderField";
 import { CardHelpButton } from "../../components/CardHelp";
 import { SECTION_HELP } from "./BuilderHelp";
 import { TradeShape } from "./TradeShape";
-import { isLegId, legLabels, legWords, nextLegId, openVerb, titleCase } from "./legWords";
+import { isLegId, legLabels, legWords, nextLegId, openVerb, signedQty, titleCase, writtenLeg } from "./legWords";
 
 /**
  * The Builder's form (#1180): the five sections of one automation, each field writing the same spec
@@ -511,8 +511,10 @@ export function LegFields({ schema, spec, onChange }: SectionProps) {
         const strike = obj(leg["strike"]);
         const rule = String(strike["rule"] ?? "");
         const def = schema.strike_rules[rule];
-        const setLeg = (next: Obj) => set("legs", legs.map((x, j) => (j === i ? next : x)));
-        const side = Number(leg["side"] ?? -1) || -1;
+        // Every edit writes the leg in the page's spelling (action, qty, side), whichever it was read in.
+        const setLeg = (next: Obj) => set("legs", legs.map((x, j) => (j === i ? writtenLeg(next) : x)));
+        const w = writtenLeg(leg);
+        const side = signedQty(leg);
         const qty = Math.abs(side);
         const name = String(leg["name"] ?? "");
         return (
@@ -530,7 +532,7 @@ export function LegFields({ schema, spec, onChange }: SectionProps) {
               value={side < 0 ? "sell" : "buy"}
               options={["buy", "sell"]}
               words={{ buy: openVerb(1), sell: openVerb(-1) }}
-              onChange={(v) => setLeg({ ...leg, side: (v === "sell" ? -1 : 1) * qty })}
+              onChange={(v) => setLeg({ ...w, action: v === "sell" ? "STO" : "BTO" })}
             />
             <div className="builder-f">
               <label className="builder-lbl" htmlFor={`f-leg-${i}-qty`}>
@@ -548,7 +550,7 @@ export function LegFields({ schema, spec, onChange }: SectionProps) {
                 defaultValue={qty}
                 onBlur={(e) => {
                   const n = Math.round(Number(e.currentTarget.value));
-                  if (Number.isFinite(n) && n >= 1 && n <= MAX_QTY && n !== qty) setLeg({ ...leg, side: Math.sign(side) * n });
+                  if (Number.isFinite(n) && n >= 1 && n <= MAX_QTY && n !== qty) setLeg({ ...w, qty: n });
                   else e.currentTarget.value = String(qty);
                 }}
               />
@@ -556,10 +558,10 @@ export function LegFields({ schema, spec, onChange }: SectionProps) {
             <Select
               id={`f-leg-${i}-right`}
               label="side"
-              value={String(leg["right"] ?? "")}
-              options={["P", "C"]}
-              words={{ P: "Put", C: "Call" }}
-              onChange={(v) => setLeg({ ...leg, right: v })}
+              value={String(w["side"] ?? "put")}
+              options={["put", "call"]}
+              words={{ put: "Put", call: "Call" }}
+              onChange={(v) => setLeg({ ...w, side: v })}
             />
             <Select id={`f-leg-${i}-rule`} label="strike by" value={rule} options={Object.keys(schema.strike_rules)} onChange={(r) => setLeg({ ...leg, strike: { rule: r } })} />
             <KeyFields
@@ -594,7 +596,7 @@ export function LegFields({ schema, spec, onChange }: SectionProps) {
           onClick={() => {
             const id = nextLegId(legs, given.current);
             given.current = Number(id.slice(1));
-            set("legs", [...legs, { name: id, right: "P", side: -1, strike: { rule: "delta" } }]);
+            set("legs", [...legs, { name: id, action: "STO", qty: 1, side: "put", strike: { rule: "delta" } }]);
           }}
         >
           + Add leg ({nextLegId(legs, given.current)})

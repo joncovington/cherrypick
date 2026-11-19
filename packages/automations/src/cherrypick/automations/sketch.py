@@ -20,6 +20,7 @@ from __future__ import annotations
 
 from statistics import NormalDist
 
+from . import arms as arms_mod
 from . import pricing
 from .model import Leg
 
@@ -106,7 +107,7 @@ def sketch(arm: dict) -> dict:
     placed: dict[str, dict] = {}
     legs_out: list[dict] = []
     legs: list[Leg] = []
-    for spec in arm["legs"]:
+    for spec in arms_mod.internal_legs(arm):  # either spelling: the engine's form
         p = _place(spec.get("strike") or {}, spec["right"], placed)
         placed[spec["name"]] = p
         legs.append(Leg(spec["name"], spec["right"], spec["side"], p["at"]))
