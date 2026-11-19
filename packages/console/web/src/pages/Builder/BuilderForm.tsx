@@ -6,6 +6,7 @@ export { parseValue, showValue } from "./BuilderField";
 import { CardHelpButton } from "../../components/CardHelp";
 import { SECTION_HELP } from "./BuilderHelp";
 import { TradeShape } from "./TradeShape";
+import { StrategyPicker } from "./StrategyPicker";
 import { isLegId, legLabels, legWords, nextLegId, openVerb, signedQty, titleCase, writtenLeg } from "./legWords";
 
 /**
@@ -671,6 +672,13 @@ export function SizeFields({ schema, spec, onChange }: SectionProps) {
   );
 }
 
+/** The structure's name: the strategy filled in, "Custom (from Iron condor)" once its legs were
+ *  edited, "Custom" when no strategy filled them. */
+export function structureName(filled: { label: string; legs: string } | null, legs: unknown): string {
+  if (filled === null) return "Custom";
+  return JSON.stringify(legs) === filled.legs ? filled.label : `Custom (from ${filled.label})`;
+}
+
 export function BuilderForm({
   schema,
   spec,
@@ -691,6 +699,8 @@ export function BuilderForm({
   shape?: { name: string; automation?: Spec };
 }) {
   const p = { schema, spec, onChange };
+  // What the strategy selector last filled in: its name and the legs as filled, so an edit reads Custom.
+  const [filled, setFilled] = useState<{ label: string; legs: string } | null>(null);
   const lock = (body: React.ReactNode) => (
     <fieldset className="builder-lock" disabled={readOnly}>
       {body}
@@ -720,6 +730,21 @@ export function BuilderForm({
 
       <div className="builder-section">
         <SectionHead n={4} title="Structure: legs, then price" blocks={["structure"]} labels={labels} help="structure" />
+        {!readOnly && schema.strategy && (
+          <StrategyPicker
+            schema={schema.strategy}
+            edited={list(spec["legs"]).length > 0 && JSON.stringify(spec["legs"]) !== filled?.legs}
+            onFill={(r) => {
+              onChange({ ...spec, legs: r.legs ?? [], expiry: r.expiry ?? spec["expiry"] });
+              setFilled({ label: schema.strategy!.strategies[r.strategy]?.label ?? r.strategy, legs: JSON.stringify(r.legs ?? []) });
+            }}
+          />
+        )}
+        {!readOnly && (
+        <p className="muted builder-structure">
+          structure: <b>{structureName(filled, spec["legs"])}</b>
+        </p>
+        )}
         {lock(<LegFields {...p} />)}
         {shape && <TradeShape name={shape.name} automation={shape.automation} />}
         <h5 className="builder-lbl">price and structure gates · read once the legs are chosen</h5>

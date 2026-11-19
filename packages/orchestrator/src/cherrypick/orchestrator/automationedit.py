@@ -104,6 +104,28 @@ def payoff(cfg: dict[str, Any], req: dict[str, Any], run: Runner = run_module_pa
     return _read(cfg, req, run, "automation_payoff")
 
 
+def run_module_strategy(cfg: dict[str, Any], req: dict[str, Any]) -> dict[str, Any] | None:
+    """The module's answer to one `cli builder-strategy` request, or None when it could not be asked."""
+    return run_module_cli(cfg, "builder-strategy", req)
+
+
+def strategy(cfg: dict[str, Any], req: dict[str, Any], run: Runner = run_module_strategy) -> dict[str, Any]:
+    """A strategy's legs and expiry from its settings, and a whole automation from it for the wizard
+    (`cli builder-strategy`): the strategy's name and its settings object, nothing else. Writes nothing."""
+    name = req.get("strategy")
+    settings = req.get("settings", {})
+    if not isinstance(name, str) or not name:
+        return _err("automation_strategy needs a 'strategy'")
+    if not isinstance(settings, dict):
+        return _err("'settings' must be an object")
+    answer = run(cfg, {"strategy": name, "settings": settings})
+    if not answer:
+        return _err("the automations module could not be asked (is it installed?)", "unavailable")
+    if not answer.get("ok"):
+        return _err(str(answer.get("error") or "the automations module refused the request"), "bad_request")
+    return answer
+
+
 def _read(cfg: dict[str, Any], req: dict[str, Any], run: Runner, op: str) -> dict[str, Any]:
     """One read of the module by name, with an unsaved edit passed through and nothing else."""
     name = req.get("name")

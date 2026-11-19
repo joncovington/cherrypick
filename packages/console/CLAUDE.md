@@ -143,7 +143,12 @@ alone):
     own keys, `action` (BTO, STO), `qty` and `side` (put, call), which the module checks; the form
     reads the older spelling too (`parts`: `side` as signed contracts, `right`) and writes any leg it
     edits back in the page's (`writtenLeg`). The module's editor and saves convert as well.
-    The wizard (`BuilderWizard.tsx`) is the same three calls and the same save: its shapes are the
+    The strategy selector (`StrategyPicker.tsx`, the legs section and the wizard's Start) is configcli
+    `automation_strategy` (`/api/automations/builder/strategy`: a strategy's name and plain settings,
+    checked by shape): the module builds the legs and the expiry (`strategies.py`) and the page writes
+    them into the edit; the list and the settings are the schema's (`strategy`). It writes no config.
+    The wizard (`BuilderWizard.tsx`) is the same calls and the same save: its strategies (or, from an
+    older module, its shapes) are the
     schema's, each step's Next is the module's draft check filtered to that step's keys, and it
     writes only through `/save`, always off.
   - **The Builder's backtest queues; it writes no config** (`/api/automations/builder/backtest`,

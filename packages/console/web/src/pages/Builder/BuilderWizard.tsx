@@ -1,10 +1,11 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import type { BuilderAutomation, BuilderSchema, BuilderSuggestion, BuilderToday } from "@console/shared";
 import { builderBacktest, builderDraft, builderSave, builderToday } from "../../lib/api";
 import { EntryFields, ExitFields, GateFields, LegFields, SizeFields, UnderlyingFields, entryText, eventName, type Spec } from "./BuilderForm";
 import { TodayView } from "./BuilderToday";
 import { legSentence } from "./legWords";
+import { StrategyPicker } from "./StrategyPicker";
 
 /**
  * The Builder's wizard (#1180, the approved mockup's eight artboards): a new automation built one
@@ -152,7 +153,7 @@ export const TIPS: Record<string, string> = {
 
 /** Each step's question and the line under it. */
 const HEAD: Record<StepId, [string, string]> = {
-  start: ["What shape will it trade?", "Pick a shape to start from. Its legs, exits and limits are filled in for you, and every one can be changed in the steps that follow."],
+  start: ["What will it trade?", "Pick a strategy to start from, or Custom for legs of your own. Its legs, expiry, exits and limits are filled in for you, and every one can be changed in the steps that follow."],
   underlying: ["What does it trade, and which expiry?", "The symbol and the expiry rule. The coverage below says whether the data we hold (our own first, the vendor's while the licence allows) can backtest this, before you build the rest."],
   legs: ["Which strikes?", "The legs come filled in from the shape. Each leg is placed by a rule, mostly by delta; change the rule or the target, or add a leg."],
   entry: ["When does it enter?", "At a time each eligible day, on the first break of the opening range, or when a signal fires."],
@@ -166,7 +167,7 @@ const HEAD: Record<StepId, [string, string]> = {
 
 /** The step's own explanation, in the panel beside it. */
 const ABOUT: Record<StepId, string> = {
-  start: "A shape is a starting point, not a strategy: it sets the legs, and every one can be changed in the steps that follow. A copy starts from another automation's settings.",
+  start: "A strategy is a starting point, not a recommendation: it sets the legs and the expiry, and every one can be changed in the steps that follow. Custom starts from one leg. A copy starts from another automation's settings.",
   underlying: "What it trades and which expiry. The coverage below says whether the data we hold (our own first, the vendor's while the licence allows) can backtest this, before you build the rest.",
   legs: "The legs come from the shape. Each is placed by a rule, here mostly by delta; change the rule or the target, or add a leg.",
   entry: "When it opens a trade: at a time, on an opening-range break, or when a signal fires.",
@@ -268,6 +269,10 @@ export function BuilderWizard({
   const [reached, setReached] = useState(opening);
   const [name, setName] = useState(copyFrom ? `${copyFrom}-copy` : "my-automation");
   const [shape, setShape] = useState<string | null>(copyFrom ? null : firstShape);
+  // A strategy's credit, as the module said; and whether the selector has applied once (a copy, or a
+  // strategy chosen, is not replaced by coming back to this step).
+  const [credit, setCredit] = useState<boolean | null>(null);
+  const applied = useRef(Boolean(copyFrom));
   const [source, setSource] = useState<string>(copyFrom ?? "");
   const [spec, setSpec] = useState<Spec>(() => (copyFrom ? {} : structuredClone(schema.shapes[firstShape]!.spec)));
   const [tip, setTip] = useState<string | null>(null);
@@ -418,10 +423,25 @@ export function BuilderWizard({
           <TipText id="name" open={tip} />
         </div>
         <div className="wiz-row">
-          <span className="builder-lbl">Shape</span>
+          <span className="builder-lbl">{schema.strategy ? "Strategy" : "Shape"}</span>
           <Tip id="shape" open={tip} onToggle={toggle} label="What is a shape?" />
         </div>
         <TipText id="shape" open={tip} />
+        {schema.strategy ? (
+          <StrategyPicker
+            schema={schema.strategy}
+            auto
+            initial={shape && shape in schema.strategy.strategies ? shape : "vertical"}
+            applyOnMount={!applied.current}
+            onFill={(r) => {
+              applied.current = true;
+              setShape(r.strategy);
+              setCredit(r.credit ?? null);
+              setSource("");
+              if (r.spec) setSpec(structuredClone(r.spec));
+            }}
+          />
+        ) : (
         <div className="wiz-shapes" role="radiogroup" aria-label="Shape">
           {Object.entries(schema.shapes).map(([k, s]) => (
             <button
@@ -442,6 +462,7 @@ export function BuilderWizard({
             </button>
           ))}
         </div>
+        )}
         <div className="wiz-field">
           <div className="wiz-row">
             <label className="builder-lbl" htmlFor="wiz-copy">
@@ -548,7 +569,7 @@ export function BuilderWizard({
       <>
         <div className="wiz-preset">
           <div className="wiz-row">
-            <strong>{shape && schema.shapes[shape]?.credit ? "Your credit-trade rules" : "Exits"}</strong>
+            <strong>{(credit ?? (shape && schema.shapes[shape]?.credit)) ? "Your credit-trade rules" : "Exits"}</strong>
             <Tip id="rules" open={tip} onToggle={toggle} label="Why these rules?" />
             <label className="wiz-toggle">
               <input type="checkbox" checked={customise} onChange={(e) => setCustomise(e.currentTarget.checked)} /> customise

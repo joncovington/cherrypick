@@ -111,7 +111,7 @@ describe("the review, in plain English", () => {
 describe("the wizard", () => {
   it("opens on the start step with the schema's shapes and the spread chosen", () => {
     const out = at("start");
-    expect(out).toContain("What shape will it trade?");
+    expect(out).toContain("What will it trade?");
     for (const s of Object.values(SCHEMA.shapes)) expect(out).toContain(s.label);
     expect(out).toMatch(/role="radio" aria-checked="true" class="wiz-shape is-on"><span class="wiz-shape-t">Put credit spread/);
     expect(out).toContain("Next: Underlying and expiry");

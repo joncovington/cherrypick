@@ -37,7 +37,7 @@ from zoneinfo import ZoneInfo
 from cherrypick.core import signals
 
 from . import arms as arms_mod
-from . import enrolment, events, fieldtypes, gates, sizing
+from . import enrolment, events, fieldtypes, gates, sizing, strategies
 from . import strikes as st
 
 ENTRY_KINDS: dict[str, dict[str, bool]] = {
@@ -227,6 +227,7 @@ def schema(today: date | None = None) -> dict:
             for k, s in SHAPES.items()
         },
         "credit_rules": dict(CREDIT_RULES),
+        "strategy": strategies.schema(),
     }
 
 
@@ -463,3 +464,30 @@ def chain_slice(chain, strikes: list[float], spot: float) -> list[dict]:
                     "gap": last is not None and i > last + 1})  # fmt: skip
         last = i
     return out
+
+
+#: The strategies sold for a credit when short: they start from the credit-trade exits, as the wizard's
+#: credit shapes do.
+#: The DTE from which the 21-day close is kept: a trade entered nearer than this would close at once.
+CLOSE_AT_DTE_FROM = 35
+CREDIT_STRATEGIES = {"option", "vertical", "straddle", "strangle", "iron_condor", "iron_fly", "jade_lizard"}
+
+
+def strategy_answer(name: str, given: dict | None) -> dict:
+    """`cli builder-strategy`: the strategy's legs and expiry for the legs section, and a whole
+    automation from it for the wizard (the wizard's defaults, the legs, the expiry and, for a credit
+    strategy, the credit-trade exits). A setting it cannot build from comes back as a problem."""
+    import copy
+
+    try:
+        built = strategies.build(name, given or {})
+    except strategies.Refused as exc:
+        return {"ok": True, "strategy": name, "problems": [str(exc)]}
+    s = built["settings"]
+    credit = name in CREDIT_STRATEGIES and s.get("direction", "short") == "short" or name == "jade_lizard"
+    spec = {**copy.deepcopy(WIZARD_DEFAULTS), "legs": built["legs"], "expiry": built["expiry"]}
+    exit_rules = dict(CREDIT_RULES) if credit else {"close_at_dte": 21}
+    if s["dte"] < CLOSE_AT_DTE_FROM:
+        exit_rules.pop("close_at_dte", None)  # a 21-day close would end a nearer trade the next session
+    spec["exit"] = exit_rules
+    return {"ok": True, **built, "credit": credit, "spec": spec, "problems": []}
