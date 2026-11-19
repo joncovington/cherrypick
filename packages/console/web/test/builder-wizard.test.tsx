@@ -89,7 +89,7 @@ describe("the entry's cadence", () => {
 describe("the review, in plain English", () => {
   it("reads each block from the spec", () => {
     const b = plainBlocks(PCS);
-    expect(b.structure).toBe("SPY. The listed expiry 45-60 days out, the nearest first. Sell a Short Put at 0.2 delta, Buy a Long Put at 0.1 delta.");
+    expect(b.structure).toBe("SPY. The listed expiry 45-60 days out, the nearest first. Sell to open a Short Put at 0.2 delta, Buy to open a Long Put at 0.1 delta.");
     expect(b.entry).toBe("Enter at 15:55, for 5 minutes. Monday to Friday.");
     expect(b.gates).toBe("None: every eligible day is entered.");
     expect(b.exit).toBe("Take 50% of the most it can make; stop at a loss of 1x the credit; close at 21 days to expiry.");

@@ -140,7 +140,9 @@ alone):
     the legs, the chain example with each row's offset from the money and the example's money; the
     page draws them and computes no strike, position, price or P&L. A leg's words and its ID
     (`legWords.ts`: L2 · Short Put ×2, the next ID) are the page's; its `side` is its signed
-    contracts, which the module checks.
+    contracts, which the module checks. The page's words differ from the stored keys: **action**
+    (Buy/Sell to open, and to close for an adjustment, `openVerb`/`closeVerb`) is the sign of `side`,
+    and the page's **side** (Put or Call) is `right`.
     The wizard (`BuilderWizard.tsx`) is the same three calls and the same save: its shapes are the
     schema's, each step's Next is the module's draft check filtered to that step's keys, and it
     writes only through `/save`, always off.
