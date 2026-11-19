@@ -132,6 +132,12 @@ def snapshot_at(
     )
 
 
+def held_expiries(entry) -> list[str]:
+    """The expiries an open position's legs sit on: its own, and each far leg's (`Leg.expiry`), so a
+    held calendar is read off the far chain it was entered on, not today's far rule."""
+    return sorted({entry.expiry, *(g.expiry for g in entry.legs if getattr(g, "expiry", None))})
+
+
 def _manage(history, session, minute, book, arms, *, events, vix_daily, costs, volumes=None) -> None:
     for pos in list(book.open):
         if pos.entry.expiry < session:
@@ -147,7 +153,7 @@ def _manage(history, session, minute, book, arms, *, events, vix_daily, costs, v
             book,
             events=events,
             vix_daily=vix_daily,
-            expiries=[pos.entry.expiry],
+            expiries=held_expiries(pos.entry),
             volumes=volumes,
         )
         if snap is None:

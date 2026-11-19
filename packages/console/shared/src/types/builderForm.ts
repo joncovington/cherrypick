@@ -168,12 +168,20 @@ export interface BuilderChainQuote {
  *  the payoff at those positions in nominal units (never dollars), the ticks to label, and whether the
  *  spacing is to scale (`exact`: every leg placed in points). */
 export interface BuilderSketch {
-  legs: Array<{ name: string; right: string; side: number; at: number; label: string; exact: boolean }>;
+  legs: Array<{ name: string; right: string; side: number; at: number; label: string; exact: boolean; expiry?: "far" }>;
   curve: Array<[number, number]>;
   ticks: Array<{ at: number; label: string }>;
   exact: boolean;
   top: string | null;
   bottom: string | null;
+  /** A far leg drawn at the near expiry with its time value by a model: the peak is the model's. */
+  modeled?: boolean;
+}
+
+/** A payoff with a far leg: its peak at the near expiry by the model, and each far leg's entry vol. */
+export interface BuilderModeled {
+  peak: number;
+  legs: Array<{ name: string; iv: number | null; days: number }>;
 }
 
 export interface BuilderPayoff {
@@ -187,7 +195,10 @@ export interface BuilderPayoff {
   /** The listed strike nearest the spot: the chain example's 0. */
   atm?: number;
   expiry?: string;
-  legs?: Array<{ name: string; right: string; side: number; strike: number; offset: number }>;
+  legs?: Array<{ name: string; right: string; side: number; strike: number; offset: number; expiry?: "far" }>;
+  /** The far legs' expiry, with `modeled`, when the structure has one. */
+  far_expiry?: string;
+  modeled?: BuilderModeled;
   prices?: Record<string, number>;
   max_profit?: number | null;
   max_loss?: number | null;

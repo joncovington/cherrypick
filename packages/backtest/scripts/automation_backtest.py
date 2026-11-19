@@ -33,7 +33,7 @@ from pathlib import Path
 
 from cherrypick.automations import arms as ens_arms
 from cherrypick.automations import config as ens_config
-from cherrypick.automations import driver, enrolment, events, history
+from cherrypick.automations import driver, engine, enrolment, events, history
 from cherrypick.core import chaindelta, home, jsonio, progress, volindex
 from cherrypick.core import sources as src
 from cherrypick.core.clock import ET
@@ -95,8 +95,12 @@ EOD_SOURCES = ("dolt-chains", "vendor-eod-chains")
 
 
 def same_day(arms: dict[str, dict]) -> bool:
-    """Every arm expires the session it enters: the recorder-schema stores price it through the day."""
-    return all(a["expiry"]["kind"] == "dte" and a["expiry"]["days"] == 0 for a in arms.values())
+    """Every arm expires the session it enters, with no leg on a later expiry: the recorder-schema
+    stores price it through the day (they hold no later expiry)."""
+    return all(
+        a["expiry"]["kind"] == "dte" and a["expiry"]["days"] == 0 and not engine.has_far_legs(a)
+        for a in arms.values()
+    )
 
 
 def choose_eod_source(
@@ -123,9 +127,10 @@ def choose_eod_source(
 
 
 def intraday(arms: dict[str, dict]) -> bool:
-    """An arm enters inside the session on a later expiry: its chain is read through the session from
-    the full set's intraday chain stores (`enrolment.needs` asks for it at their cadence)."""
-    return any(enrolment.needs(a)[0]["cadence"] == enrolment.INTRADAY_CADENCE for a in arms.values())
+    """An arm enters inside the session on a later expiry, or holds a leg on one: its chains are read
+    through the session from the full set's intraday chain stores, with the same-day store beside them
+    (`enrolment.needs` asks for each at their cadence)."""
+    return any(enrolment.run_chain(a)["cadence"] == enrolment.INTRADAY_CADENCE for a in arms.values())
 
 
 def choose_intraday_source(

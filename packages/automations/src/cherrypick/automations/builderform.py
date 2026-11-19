@@ -30,6 +30,7 @@ own stores hold no intraday chain for it. The answer names which it used. Writes
 from __future__ import annotations
 
 import inspect
+import math
 from datetime import date, datetime
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -324,8 +325,12 @@ PAYOFF_MARGIN = 0.004
 RECORDED_TRIES = 10
 
 
-#: Why a structure with a far leg draws no payoff yet.
-FAR_PAYOFF_WHY = "a leg on a later expiry: its payoff needs that leg's time value, which is not modeled yet"
+#: How many points a payoff with a far leg is sampled at between its ends (strikes added): the far
+#: leg's modeled value is curved, not straight between strikes.
+FAR_SAMPLES = 80
+#: How many of a far leg's standard deviations to the far expiry (at its entry vol) a payoff with one is
+#: drawn beyond the strikes: wide enough to hold the tent's breakevens.
+FAR_SDS = 2.0
 
 
 def payoff(config: dict, arm: dict, when: datetime, *, conn, cache_path: str, evts, recorded=None) -> dict:
@@ -337,18 +342,6 @@ def payoff(config: dict, arm: dict, when: datetime, *, conn, cache_path: str, ev
 
     live = {**arm, "enabled": True}
     sym = live["symbol"].upper()
-    if engine.has_far_legs(live):
-        # A payoff at the near expiry leaves out the far legs' time value, which is most of the trade:
-        # nothing is drawn until that value is modeled, rather than a shape that is not the trade's.
-        why = FAR_PAYOFF_WHY
-        return {
-            "ok": True,
-            "name": live["name"],
-            "symbol": sym,
-            "state": "not_placed",
-            "live": why,
-            "recorded": why,
-        }
     out: dict[str, Any] = {"ok": True, "name": live["name"], "symbol": sym, "sketch": sketch_mod.sketch(live)}
     spec = config_mod.symbols(config, {live["name"]: live}).get(sym)
     if spec is None:
@@ -422,8 +415,13 @@ def _placed(out: dict, got: dict, snap, source: dict) -> dict:
     legs, credit = got["legs"], got["prices"]["mid"]
     ks = [leg.strike for leg in legs]
     pad = max(snap.spot * PAYOFF_MARGIN, max(ks) - min(ks))
+    far = far_model(legs, got, snap) if got.get("far_expiry") else None
+    if far:
+        # A calendar's tent is as wide as the far leg's move: drawn to `FAR_SDS` of it either side.
+        moves = [snap.spot * v["iv"] * math.sqrt(v["years"]) for v in far.values() if v["iv"]]
+        pad = max(pad, FAR_SDS * max(moves, default=0.0))
     lo, hi = min(min(ks), snap.spot) - pad, max(max(ks), snap.spot) + pad
-    points = pricing.payoff_curve(legs, credit, lo, hi)
+    points = _far_curve(legs, credit, lo, hi, far) if far else pricing.payoff_curve(legs, credit, lo, hi)
     m = pricing.MULTIPLIER
 
     def dollars(v):
@@ -445,6 +443,7 @@ def _placed(out: dict, got: dict, snap, source: dict) -> dict:
                 "side": g.side,
                 "strike": g.strike,
                 "offset": round(g.strike - atm, 2),
+                **({"expiry": "far"} if getattr(g, "expiry", None) else {}),
             }
             for g in legs
         ],  # fmt: skip
@@ -454,6 +453,72 @@ def _placed(out: dict, got: dict, snap, source: dict) -> dict:
         "curve": [[round(x, 2), dollars(y)] for x, y in points],
         "breakevens": [round(b, 2) for b in pricing.breakevens(points)],
         "chain": chain_slice(got["chain"], ks, snap.spot),
+        **({} if far is None else {"far_expiry": got["far_expiry"], "modeled": _modeled(far, points, m)}),
+    }
+
+
+def far_model(legs, got: dict, snap) -> dict[str, dict]:
+    """Per far leg, what the model values it with at the near expiry: {name: {"iv", "years"}}. The vol
+    is the leg's own at entry (the quote's `iv`, else implied from its mid by Black-Scholes at the spot),
+    held to the near expiry; `years` is what is left of the far expiry then. A leg whose vol cannot be
+    read is held at its intrinsic value (no `iv`), the least a bought leg is worth."""
+    from cherrypick.core import bs
+
+    near, far = date.fromisoformat(got["expiry"]), date.fromisoformat(got["far_expiry"])
+    session = date.fromisoformat(snap.session)
+    left_today = max(snap.close_minute - snap.minute, 0) / 1440 if snap.close_minute else 0.0
+    years_now = ((far - session).days + left_today) / 365.0
+    years_then = (far - near).days / 365.0
+    out: dict[str, dict] = {}
+    for g in legs:
+        if not getattr(g, "expiry", None):
+            continue
+        own = got["chain"].for_leg(g)
+        q = None if own is None else own.get(g.strike, g.right)
+        iv = None if q is None else q.get("iv")
+        if not iv and q is not None and q.get("bid") is not None and q.get("ask") is not None:
+            iv = bs.implied_vol(snap.spot, g.strike, years_now, (q["bid"] + q["ask"]) / 2.0, g.right, 0.0)
+        out[g.name] = {"iv": round(iv, 4) if iv and iv > 0.0001 else None, "years": years_then}
+    return out
+
+
+def _far_value(g, x: float, model: dict) -> float:
+    from cherrypick.core import bs
+
+    m = model.get(g.name) or {}
+    if not m.get("iv"):
+        return bs.intrinsic(x, g.strike, g.right)
+    return bs.price(x, g.strike, m["years"], m["iv"], g.right, 0.0)
+
+
+def _far_curve(legs, credit: float, lo: float, hi: float, model: dict) -> list[tuple[float, float]]:
+    """The P&L per share at the near expiry with each far leg at its modeled value (`far_model`),
+    sampled: a near leg at its intrinsic value, a far leg by Black-Scholes at its entry vol."""
+    step = (hi - lo) / FAR_SAMPLES
+    inside = [g.strike for g in legs if lo < g.strike < hi]
+    xs = sorted({*(lo + i * step for i in range(FAR_SAMPLES + 1)), *inside})
+    out = []
+    for x in xs:
+        v = credit
+        for g in legs:
+            v += g.side * (_far_value(g, x, model) if getattr(g, "expiry", None) else _intrinsic(g, x))
+        out.append((x, v))
+    return out
+
+
+def _intrinsic(g, x: float) -> float:
+    return max(x - g.strike, 0.0) if g.right == "C" else max(g.strike - x, 0.0)
+
+
+def _modeled(model: dict, points, m: int) -> dict:
+    """The modeled payoff's own reading: the peak of the curve (the model's, never a bound) and each far
+    leg's vol and days left at the near expiry."""
+    peak = max(y for _, y in points)
+    return {
+        "peak": round(peak * m, 2),
+        "legs": [
+            {"name": n, "iv": v["iv"], "days": round(v["years"] * 365)} for n, v in model.items()
+        ],  # fmt: skip
     }
 
 

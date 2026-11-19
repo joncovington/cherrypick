@@ -4,14 +4,27 @@ held and closed off its own chain, and a one-expiry automation reads exactly as 
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
 import pytest
+from cherrypick.core import bs
 from market import spx_snapshot
 
-from cherrypick.automations import arms, builderform, db, engine, feed, pricing, record
+from cherrypick.automations import (
+    arms,
+    builderform,
+    db,
+    driver,
+    engine,
+    enrolment,
+    feed,
+    pricing,
+    record,
+    sketch,
+)
 from cherrypick.automations.model import Entry, Leg
 
 MON = "2026-11-16"
@@ -267,8 +280,84 @@ def test_the_replay_record_carries_a_far_legs_expiry_only():
     assert legs[0] == ["L1", "P", -1, 6000.0] and legs[1] == ["L2", "P", 1, 6000.0, FAR]
 
 
-def test_the_builder_draws_no_at_expiry_payoff_for_a_far_leg():
-    got = builderform.payoff(
-        {}, loaded(CAL), datetime(2026, 11, 16, 10, 0), conn=None, cache_path="", evts=None
+# --- the modeled payoff -------------------------------------------------------------------------------
+def test_the_sketch_draws_a_calendar_as_a_tent_with_its_peak_modeled():
+    sk = sketch.sketch(loaded(CAL))
+    assert sk["modeled"] is True and sk["top"] == "peak, modeled" and sk["bottom"] == "max loss"
+    assert sk["legs"][1]["expiry"] == "far" and "expiry" not in sk["legs"][0]
+    ys = [y for _, y in sk["curve"]]
+    peak = max(sk["curve"], key=lambda p: p[1])
+    assert peak[0] == 0.0 and ys[0] < 0 and ys[-1] < 0  # highest at the shared strike, a debit at the wings
+
+
+def test_a_one_expiry_sketch_is_not_modeled():
+    one = {**loaded(CAL), "legs": [loaded(CAL)["legs"][0]]}
+    one.pop("far_expiry")
+    assert "modeled" not in sketch.sketch(one)
+
+
+def placed_calendar():
+    a = loaded(CAL)
+    s = snap()
+    got = engine.structure(a, s)
+    return builderform._placed({"ok": True}, got, s, {"kind": "live", "at": "2026-11-16T10:00"}), got, s
+
+
+def test_the_placed_calendar_values_its_far_leg_at_its_entry_vol():
+    out, got, s = placed_calendar()
+    assert out["far_expiry"] == FAR and out["legs"][1]["expiry"] == "far"
+    leg = out["modeled"]["legs"][0]
+    assert leg["name"] == "L2" and leg["days"] == 28 and leg["iv"] > 0
+    model = builderform.far_model(got["legs"], got, s)
+    at = 6000.0
+    far = bs.price(at, 6000.0, 28 / 365, model["L2"]["iv"], "P", 0.0)
+    want = got["prices"]["mid"] - max(6000.0 - at, 0) + far
+    y = dict((x, v) for x, v in out["curve"])[at]
+    assert y == pytest.approx(round(want * 100, 2), abs=0.02)
+    assert out["modeled"]["peak"] == pytest.approx(max(v for _, v in out["curve"]))
+
+
+def test_the_placed_calendar_is_drawn_wide_enough_to_hold_both_breakevens():
+    out, _got, _s = placed_calendar()
+    low, high = out["breakevens"]
+    assert out["curve"][0][1] < 0 < out["modeled"]["peak"] and out["curve"][-1][1] < 0
+    assert low < 6000.0 < high
+
+
+def test_the_modeled_curve_never_goes_below_the_engines_loss_bound():
+    out, _got, _s = placed_calendar()
+    assert out["max_profit"] is None and out["max_loss"] > 0
+    assert min(v for _, v in out["curve"]) >= -out["max_loss"] - 0.01
+
+
+# --- backtest coverage and replay ---------------------------------------------------------------------
+def test_a_far_leg_asks_for_the_far_chain_too():
+    got = enrolment.needs(loaded(CAL))
+    chains = [n for n in got if n["field"] == "chain"]
+    assert chains == [
+        {"field": "chain", "expiry": "all", "cadence": "5m"},
+        {"field": "chain", "expiry": "monthly", "cadence": "5m", "far": True},
+    ]
+    assert enrolment.run_chain(loaded(CAL))["far"] is True
+
+
+def test_a_same_day_calendar_names_the_intraday_store_for_its_run():
+    zero = loaded(cal(expiry={"kind": "dte", "days": 0}))
+    near, far = (n for n in enrolment.needs(zero) if n["field"] == "chain")
+    assert near == {"field": "chain", "expiry": "0dte", "cadence": "1m"} and far["cadence"] == "5m"
+    assert enrolment.run_chain(zero) is not None and enrolment.run_chain(zero)["far"] is True
+
+
+def test_the_far_rule_is_in_the_structure_block_and_one_expiry_hashes_are_unchanged():
+    one = {k: v for k, v in CAL.items() if k != "far_expiry"}
+    part = {k: one[k] for k in ("symbol", "expiry", "legs")}  # the block's keys before far expiries
+    text = json.dumps(part, sort_keys=True, separators=(",", ":"), default=str)
+    assert enrolment.block_hash(one, "structure") == hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
+    assert enrolment.block_hash(CAL, "structure") != enrolment.block_hash(
+        cal(far_expiry={"kind": "after_near", "days": 35, "monthly": True}), "structure"
     )
-    assert got["state"] == "not_placed" and got["live"] == builderform.FAR_PAYOFF_WHY and "sketch" not in got
+
+
+def test_a_held_calendar_is_replayed_off_the_far_chain_it_entered():
+    _a, pos = held()
+    assert driver.held_expiries(pos.entry) == [NEAR, FAR]
