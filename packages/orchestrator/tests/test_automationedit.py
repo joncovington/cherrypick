@@ -235,3 +235,29 @@ def test_converting_legs_refuses_what_the_module_says_would_change_and_a_leg_it_
     assert automationedit.convert_legs({}, apply=True, run=older)["code"] == "invalid"
     assert automationedit.convert_legs({}, apply=True, run=lambda c, r: None)["code"] == "unavailable"
     assert olderfile.read_bytes() == before
+
+
+def test_strategy_passes_the_name_and_settings_through_and_maps_failures():
+    seen = []
+
+    def run(_cfg, body):
+        seen.append(body)
+        return {"ok": True, "strategy": body["strategy"], "legs": [], "problems": []}
+
+    assert automationedit.strategy({}, {"strategy": "vertical", "settings": {"width": 5}, "x": 1}, run=run)[
+        "ok"
+    ]
+    assert seen == [{"strategy": "vertical", "settings": {"width": 5}}]
+    assert automationedit.strategy({}, {}, run=run)["code"] == "bad_request"
+    assert automationedit.strategy({}, {"strategy": "v", "settings": []}, run=run)["code"] == "bad_request"
+    assert automationedit.strategy({}, {"strategy": "v"}, run=lambda c, b: None)["code"] == "unavailable"
+
+
+def test_configcli_routes_the_strategy_op_to_the_module(monkeypatch):
+    monkeypatch.setattr(configcli.cfgmod, "load_config", lambda *a, **k: {})
+    monkeypatch.setattr(automationedit, "run_module_strategy", lambda c, b: {"ok": True, **b})
+    assert configcli.handle({"op": "automation_strategy", "strategy": "vertical"}) == {
+        "ok": True,
+        "strategy": "vertical",
+        "settings": {},
+    }

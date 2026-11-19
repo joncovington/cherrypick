@@ -21,6 +21,8 @@
                its legs in the written one (action/qty/side), and whether converting them would change
                how any automation loads (it must not). Reads only: the orchestrator writes
     builder-schema  every choice the Builder's form offers, from the engine's own tables
+    builder-strategy  a strategy's legs and expiry from its settings (JSON on stdin: strategy, settings),
+               and a whole automation from it for the wizard. Writes nothing
     builder-today   one automation (JSON on stdin: name, optionally an unsaved automation) decided now
                as paper would, on a read-only snapshot: the entry and legs it would take, or the
                first failing check, with every check. Writes nothing
@@ -167,6 +169,20 @@ def cmd_legs_convert(args) -> int:
     return _print(drafts.leg_conversion(config_mod.load_config(args.config)))
 
 
+def cmd_builder_strategy(args) -> int:
+    import sys
+
+    from . import builderform
+
+    try:
+        req = json.loads(sys.stdin.read() or "{}")
+    except json.JSONDecodeError as exc:
+        return _print({"ok": False, "error": f"request is not valid JSON: {exc}"})
+    if not isinstance(req, dict) or not isinstance(req.get("settings", {}), dict):
+        return _print({"ok": False, "error": "request: an object with strategy and, optionally, settings"})
+    return _print(builderform.strategy_answer(str(req.get("strategy", "")), req.get("settings") or {}))
+
+
 def cmd_builder_schema(args) -> int:
     from . import builderform
 
@@ -262,6 +278,7 @@ def main(argv=None) -> int:
     sub.add_parser("builder").set_defaults(fn=cmd_builder)
     sub.add_parser("draft").set_defaults(fn=cmd_draft)
     sub.add_parser("builder-schema").set_defaults(fn=cmd_builder_schema)
+    sub.add_parser("builder-strategy").set_defaults(fn=cmd_builder_strategy)
     sub.add_parser("legs-convert").set_defaults(fn=cmd_legs_convert)
     sub.add_parser("builder-today").set_defaults(fn=cmd_builder_today)
     sub.add_parser("builder-payoff").set_defaults(fn=cmd_builder_payoff)

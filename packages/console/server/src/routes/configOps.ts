@@ -55,6 +55,8 @@ function sendBridgeFailure(reply: FastifyReply, result: BridgeResult): BridgeOk 
 /** An underlying's root as the full set spells one (backtest `fullset.SYMBOL`). */
 export const FULLSET_SYMBOL = /^[A-Z][A-Z.]{0,5}$/;
 export const WINDOW_KEY = /^[a-z0-9-]{1,48}:\d{4}-\d{2}-\d{2}:\d{4}-\d{2}-\d{2}$/;
+/** A strategy's name or a setting's key: the module's own words, checked by shape here. */
+export const STRATEGY_NAME = /^[a-z][a-z0-9_]{0,39}$/;
 /** An idea search's result name, and one idea's id in it (`dim:kind:index`, at most two joined by &). */
 export const IDEA_SEARCH = /^ideas-[a-z0-9][a-z0-9-]{1,47}-\d{10}$/;
 export const IDEA_ID = /^[A-Za-z_:-]+:(bin|below|above):\d(&[A-Za-z_:-]+:(bin|below|above):\d)?$/;
@@ -202,6 +204,25 @@ export function registerConfigRoutes(app: FastifyInstance, config: ConsoleConfig
     if (result === null) return reply;
     const { ok: _ok, ...payoff } = result;
     return payoff;
+  });
+
+  /**
+   * The strategy selector: a strategy's legs and expiry from its settings, and a whole automation from
+   * it for the wizard (`cli builder-strategy`). Sends the strategy's name and its settings (plain
+   * values only) and nothing else; writes nothing.
+   */
+  app.post("/api/automations/builder/strategy", async (req, reply) => {
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const name = body["strategy"];
+    const settings = body["settings"] ?? {};
+    if (typeof name !== "string" || !STRATEGY_NAME.test(name)) return reply.code(400).send({ error: "strategy: a strategy's name" });
+    if (typeof settings !== "object" || settings === null || Array.isArray(settings)) return reply.code(400).send({ error: "settings: an object" });
+    const plain = Object.entries(settings as Record<string, unknown>).every(([k, v]) => STRATEGY_NAME.test(k) && ["string", "number", "boolean"].includes(typeof v));
+    if (!plain) return reply.code(400).send({ error: "settings: plain values only" });
+    const result = sendBridgeFailure(reply, await callConfigCli({ op: "automation_strategy", strategy: name, settings: settings as Record<string, string | number | boolean> }));
+    if (result === null) return reply;
+    const { ok: _ok, ...answer } = result;
+    return answer;
   });
 
   app.post("/api/automations/builder/draft", async (req, reply) => {

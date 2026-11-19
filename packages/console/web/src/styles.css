@@ -12538,6 +12538,131 @@ svg.vol-curve text {
   line-height: 1.55;
   max-width: 640px;
 }
+/* The strategy selector (StrategyPicker.tsx): the module's strategies down the left, the chosen one's
+   settings on the right, in the Builder's legs section and the wizard's Start step. Custom set apart
+   at the end; a strategy that cannot be built yet greyed, with why. A phone stacks the two. */
+.strat {
+  container-type: inline-size;
+  display: grid;
+  grid-template-columns: minmax(11rem, 15rem) minmax(0, 1fr);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  margin-bottom: 0.8rem;
+}
+.strat-list {
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-sunken);
+  border-right: 1px solid var(--border);
+  min-width: 0;
+}
+.strat-head {
+  padding: 0.55rem 0.8rem;
+  border-bottom: 1px solid var(--border);
+}
+.strat-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.25rem;
+  padding: 0.35rem 0.8rem;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.85rem;
+  text-align: left;
+  cursor: pointer;
+}
+.strat-item:hover:not(:disabled) {
+  background: var(--surface-raised);
+}
+.strat-item.is-on {
+  background: color-mix(in srgb, var(--accent) 14%, var(--surface));
+  box-shadow: inset 3px 0 0 var(--accent);
+  font-weight: 700;
+}
+.strat-item:disabled {
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+.strat-item.is-custom {
+  border-top: 1px solid var(--chart-grid-strong);
+}
+.strat-why {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  text-align: right;
+}
+.strat-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  padding: 0.8rem 1rem;
+  min-width: 0;
+}
+.strat-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.6rem;
+}
+.strat-title b {
+  font-size: 1rem;
+}
+.strat-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
+  gap: 0.6rem;
+  align-items: end;
+}
+.strat-seg-f {
+  grid-column: span 2;
+}
+.strat-seg {
+  display: flex;
+  gap: 0.25rem;
+}
+.strat-seg button {
+  flex: 1 1 0;
+  min-height: 2.25rem;
+  padding: 0 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+.strat-seg button.is-on {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 18%, var(--surface));
+  font-weight: 600;
+}
+.strat-act {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.85rem;
+}
+.builder-structure {
+  margin: 0 0 0.5rem;
+  font-size: 0.85rem;
+}
+@media (max-width: 700px) {
+  .strat {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .strat-list {
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+}
 .wiz-shapes {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));

@@ -75,6 +75,29 @@ describe("the payoff under the legs", () => {
   });
 });
 
+describe("the strategy selector", () => {
+  it("sends the strategy and its plain settings, nothing else, and returns the module's answer", async () => {
+    setBridgeCaller((req) => {
+      seen.push(req);
+      return { ok: true, strategy: "vertical", legs: [{ name: "L1" }], problems: [] } as BridgeResult;
+    });
+    const res = await post("/api/automations/builder/strategy", { strategy: "vertical", settings: { width: 5, right: "put" }, extra: 1 });
+    expect(res.statusCode).toBe(200);
+    expect(seen).toEqual([{ op: "automation_strategy", strategy: "vertical", settings: { width: 5, right: "put" } }]);
+    expect(res.json()).toEqual({ strategy: "vertical", legs: [{ name: "L1" }], problems: [] });
+  });
+
+  it("refuses a name or settings out of shape, and needs the CSRF token", async () => {
+    expect((await post("/api/automations/builder/strategy", {})).statusCode).toBe(400);
+    expect((await post("/api/automations/builder/strategy", { strategy: "../x" })).statusCode).toBe(400);
+    expect((await post("/api/automations/builder/strategy", { strategy: "vertical", settings: { width: { a: 1 } } })).statusCode).toBe(400);
+    expect((await post("/api/automations/builder/strategy", { strategy: "vertical", settings: [] })).statusCode).toBe(400);
+    const bare = await app.inject({ method: "POST", url: "/api/automations/builder/strategy", payload: { strategy: "vertical" }, headers: { host: "127.0.0.1:5070" } });
+    expect(bare.statusCode).toBe(403);
+    expect(seen).toEqual([]);
+  });
+});
+
 describe("the form's schema", () => {
   it("is the module's answer without its ok flag, and a failed read says so", async () => {
     setBuilderSchemaCaller(() => ({ ok: true, json: { ok: true, exits: ["touch"] }, error: null }));

@@ -61,6 +61,38 @@ export interface BuilderSchema {
   shapes: Record<string, { label: string; about: string; risk: string; credit: boolean; spec: Record<string, unknown> }>;
   /** The credit-trade exits, in the engine's own keys. */
   credit_rules: Record<string, number>;
+  /** The strategy selector's choices (`strategies.schema`); absent from an older module. */
+  strategy?: BuilderStrategySchema;
+}
+
+/** One setting a strategy takes: its type, default and bounds, from the module. */
+export interface BuilderStrategySetting {
+  type: "enum" | "int" | "number";
+  options?: string[];
+  default: string | number;
+  min?: number;
+  max?: number;
+  above?: number;
+}
+
+export interface BuilderStrategySchema {
+  strategies: Record<string, { label: string; about: string; settings: string[]; available: boolean; why: string | null }>;
+  settings: Record<string, BuilderStrategySetting>;
+  /** A sensible target for each way of placing the first strikes (delta 0.16, pct 2, sd 1, points 10). */
+  target_defaults: Record<string, number>;
+}
+
+/** `POST /api/automations/builder/strategy`: the strategy's legs and expiry, and a whole automation
+ *  from it for the wizard; or the setting it could not build from, in `problems`. */
+export interface BuilderStrategyResult {
+  strategy: string;
+  settings?: Record<string, string | number>;
+  legs?: Array<Record<string, unknown>>;
+  expiry?: Record<string, unknown>;
+  credit?: boolean;
+  spec?: Record<string, unknown>;
+  problems: string[];
+  error?: string;
 }
 
 /** `GET /api/automations/builder/schema`. */

@@ -116,6 +116,9 @@ def handle(req: dict[str, Any]) -> dict[str, Any]:
         # The Builder's payoff chart: the structure the module's rules would take, on live quotes or
         # the last session our own recorder holds; writes nothing.
         return automationedit.payoff(cfg, req, automationedit.run_module_payoff)
+    if op == "automation_strategy":
+        # The Builder's strategy selector: the legs and expiry a strategy's settings make; writes nothing.
+        return automationedit.strategy(cfg, req, automationedit.run_module_strategy)
     if op == "automation_save":
         # The Builder's save: that check, then the one entry it returned (always off) written
         # through the same raw-save path as every config save.

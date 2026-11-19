@@ -342,8 +342,11 @@ filename; override with `paper.sla_state_prefix`.
   added to its entry, or a new entry), all in one `apply_raw_save`; a switch carrying any other key is
   refused. `automation_today`
   (`automationedit.today`) is the Builder's "Today, live", and `automation_payoff`
-  (`automationedit.payoff`) its shape and chain example: the module's `cli builder-today` or
-  `cli builder-payoff` with the name and an unsaved edit on stdin, nothing else; neither writes. `run.py automations-legs-convert` (`automationedit.convert_legs`, not a
+  (`automationedit.payoff`) its shape and chain example, and `automation_strategy` (`automationedit.strategy`,
+  the strategy's name and settings only) its strategy selector: the module's `cli builder-today`,
+  `cli builder-strategy` or
+  `cli builder-payoff` with the name and an unsaved edit (or the strategy and its settings) on stdin, nothing
+  else; none writes. `run.py automations-legs-convert` (`automationedit.convert_legs`, not a
   configcli op) rewrites the older leg spelling: the module's `cli legs-convert` names the automations and
   proves none loads differently, and this writes only each one's `legs`, in one save, dry run unless
   `--apply`. `automation_backtest` and
