@@ -27,6 +27,16 @@ export function closeVerb(side: number): string {
   return side < 0 ? "Buy to close" : "Sell to close";
 }
 
+/** The opening order's abbreviation, as an order chain writes it: STO, BTO. */
+export function openAbbr(side: number): string {
+  return side < 0 ? "STO" : "BTO";
+}
+
+/** The closing order's abbreviation: BTC a sold leg, STC a bought one. */
+export function closeAbbr(side: number): string {
+  return side < 0 ? "BTC" : "STC";
+}
+
 /** "Long Put", "Short Call ×2": the leg's action, side and contracts. */
 export function legWords(leg: LegLike): string {
   const side = Number(leg.side ?? 0);
