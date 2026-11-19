@@ -1,7 +1,9 @@
 # Market Profile entry signals: plan
 
-> **Status (2026-11-18): stage A declared as research item 93** (all four candidates, one batch), not yet
-> run. Stage B is declared per candidate, only for those that pass.
+> **Status (2026-11-18): closed. Stage A ran as research item 93, and all four candidates failed**, so
+> no stage B is declared. The profile stays a chart, and item 81's first-hour width remains the one
+> profile reading that has passed. The verdicts are in the register and in section 93 of
+> [edge-hypotheses-plan.md](edge-hypotheses-plan.md).
 
 ## The question
 

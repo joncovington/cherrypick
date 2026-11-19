@@ -9272,6 +9272,20 @@ history and profile as items 80 and 81.
   - **`balance` fails:** the profile's balance reading adds nothing beyond item 81's width. A condor on
     narrow first hours alone stays a possible separate item, declared on its own.
   - **A test fails or has no verdict:** that candidate is closed. The profile stays a chart.
+- **Result (2026-11-18): all four fail the design check, so none goes to stage B.** Each had enough
+  events for a verdict.
+  - `balance`: the signal adds nothing beyond item 81's width and the HAR terms. It misses on size, on
+    t and on the halves, which disagree. The narrow first hour is the whole reading.
+  - `acceptance`: the wrong sign, and the halves disagree. An hour held beyond value does not keep
+    going: item 80's fail holds later in the day.
+  - `rejection`: positive in the first half and negative in the second, far below the t bar.
+  - `unfinished`: the declared sign in both halves, but under both the effect and the t bar, with the
+    later half near zero. It is no target for anything.
+  - **The holdout, looked at after the fails at the user's request, reported and never judged:** no
+    test reaches its effect bar there, and `balance` has the wrong sign. It changes no verdict. It was
+    seen, so a later item on any of these readings is judged on sessions after 2026-11-13. The
+    figures are in `holdout-report.json` beside the results, written by the script's
+    `holdout-report` step.
 
 ## Not worth revisiting
 

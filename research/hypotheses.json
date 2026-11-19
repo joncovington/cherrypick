@@ -4397,7 +4397,7 @@
       "id": 93,
       "study": "item93",
       "title": "Market Profile entry readings, stage A: four forecasts on SPX prices",
-      "status": "declared",
+      "status": "failed",
       "legacy": false,
       "setup": "market-profile",
       "side": "signal",
@@ -4446,11 +4446,12 @@
         "packages/backtest/tests/test_profile_entry_readings_item93_script.py"
       ],
       "results": [
-        "{home}/data/backtest/results/research/item93/results.json"
+        "{home}/data/backtest/results/research/item93/results.json",
+        "{home}/data/backtest/results/research/item93/holdout-report.json"
       ],
-      "outcome": null,
+      "outcome": "all four fail the design check, so no stage B: balance adds nothing beyond item 81's width and the HAR terms; acceptance has the wrong sign and the halves disagree; rejection's halves disagree; unfinished has the declared sign in both halves but is under its effect and t bars. The holdout was looked at afterwards at the user's request, reported and never judged: no test reaches its effect bar there. The profile stays a chart",
       "retest": null,
-      "retest_note": "A forecast: a passing test is carried by a stage B item that prices its trade on the three bars.",
+      "retest_note": "Closed. The holdout to 2026-11-13 has been seen, so a later item on any of these readings is judged on sessions after that.",
       "retests": []
     }
   ],
