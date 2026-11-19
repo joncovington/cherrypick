@@ -518,7 +518,7 @@ export function LegFields({ schema, spec, onChange }: SectionProps) {
         const qty = Math.abs(side);
         const name = String(leg["name"] ?? "");
         return (
-          <div key={`leg-${i}`} className="builder-cond">
+          <div key={`leg-${i}`} className="builder-cond builder-leg-row">
             <div className="builder-f builder-leg-name">
               <span className="builder-lbl">leg</span>
               <span className="builder-leg-id">
@@ -564,25 +564,32 @@ export function LegFields({ schema, spec, onChange }: SectionProps) {
               onChange={(v) => setLeg({ ...w, side: v })}
             />
             <Select id={`f-leg-${i}-rule`} label="strike by" value={rule} options={Object.keys(schema.strike_rules)} onChange={(r) => setLeg({ ...leg, strike: { rule: r } })} />
-            <KeyFields
-              prefix={`f-leg-${i}`}
-              keys={def?.keys ?? {}}
-              types={schema.types?.strike}
-              legs={legs.slice(0, i).map((l) => String(l["name"] ?? ""))}
-              legLabels={labels}
-              o={strike}
-              onChange={(next) => setLeg({ ...leg, strike: { ...next, rule } })}
-            />
-            {def && def.matches.length > 0 && (
-              <Select
-                id={`f-leg-${i}-match`}
-                label="match"
-                value={String(strike["match"] ?? "")}
-                options={def.matches}
-                blank={def.default_match ? `default (${def.default_match})` : "required: choose one"}
-                onChange={(m) => setLeg({ ...leg, strike: withKey(strike, "match", m === "" ? undefined : m) })}
+            <div className="builder-leg-rule">
+              {/* A rule placed off the spot has no leg to name: keep its cell, so points and pct sit
+                  in the same columns as a rule placed off another leg's. */}
+              {def && !("leg" in def.keys) && ("points" in def.keys || "pct" in def.keys) && <div aria-hidden="true" />}
+              <KeyFields
+                prefix={`f-leg-${i}`}
+                keys={def?.keys ?? {}}
+                types={schema.types?.strike}
+                legs={legs.slice(0, i).map((l) => String(l["name"] ?? ""))}
+                legLabels={labels}
+                o={strike}
+                onChange={(next) => setLeg({ ...leg, strike: { ...next, rule } })}
               />
-            )}
+            </div>
+            <div className="builder-leg-match">
+              {def && def.matches.length > 0 && (
+                <Select
+                  id={`f-leg-${i}-match`}
+                  label="match"
+                  value={String(strike["match"] ?? "")}
+                  options={def.matches}
+                  blank={def.default_match ? `default (${def.default_match})` : "required: choose one"}
+                  onChange={(m) => setLeg({ ...leg, strike: withKey(strike, "match", m === "" ? undefined : m) })}
+                />
+              )}
+            </div>
             <button type="button" className="btn builder-remove" aria-label={`Remove leg ${labels[name] ?? name}`} onClick={() => set("legs", legs.filter((_, j) => j !== i))}>
               ×
             </button>
