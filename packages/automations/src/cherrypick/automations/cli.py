@@ -23,6 +23,8 @@
     builder-schema  every choice the Builder's form offers, from the engine's own tables
     builder-strategy  a strategy's legs and expiry from its settings (JSON on stdin: strategy, settings),
                and a whole automation from it for the wizard. Writes nothing
+    builder-entry   an entry preset's entry and the gates of the filters stacked on it (JSON on stdin:
+               entry, settings, filters [{filter, settings}]). Writes nothing
     builder-today   one automation (JSON on stdin: name, optionally an unsaved automation) decided now
                as paper would, on a read-only snapshot: the entry and legs it would take, or the
                first failing check, with every check. Writes nothing
@@ -183,6 +185,26 @@ def cmd_builder_strategy(args) -> int:
     return _print(builderform.strategy_answer(str(req.get("strategy", "")), req.get("settings") or {}))
 
 
+def cmd_builder_entry(args) -> int:
+    import sys
+
+    from . import builderform
+
+    try:
+        req = json.loads(sys.stdin.read() or "{}")
+    except json.JSONDecodeError as exc:
+        return _print({"ok": False, "error": f"request is not valid JSON: {exc}"})
+    filters = req.get("filters", []) if isinstance(req, dict) else None
+    if (
+        not isinstance(req, dict)
+        or not isinstance(req.get("settings", {}), dict)
+        or not isinstance(filters, list)
+        or not all(isinstance(f, dict) and isinstance(f.get("settings", {}), dict) for f in filters)
+    ):
+        return _print({"ok": False, "error": "request: an object with entry, settings and filters"})
+    return _print(builderform.entry_answer(str(req.get("entry", "")), req.get("settings") or {}, filters))
+
+
 def cmd_builder_schema(args) -> int:
     from . import builderform
 
@@ -279,6 +301,7 @@ def main(argv=None) -> int:
     sub.add_parser("draft").set_defaults(fn=cmd_draft)
     sub.add_parser("builder-schema").set_defaults(fn=cmd_builder_schema)
     sub.add_parser("builder-strategy").set_defaults(fn=cmd_builder_strategy)
+    sub.add_parser("builder-entry").set_defaults(fn=cmd_builder_entry)
     sub.add_parser("legs-convert").set_defaults(fn=cmd_legs_convert)
     sub.add_parser("builder-today").set_defaults(fn=cmd_builder_today)
     sub.add_parser("builder-payoff").set_defaults(fn=cmd_builder_payoff)

@@ -12352,7 +12352,8 @@ svg.vol-curve text {
   white-space: pre;
   overflow-x: auto;
 }
-.builder-actions .btn-primary {
+.builder-actions .btn-primary,
+.strat-act .btn-primary {
   border-color: var(--accent);
   background: color-mix(in srgb, var(--accent) 18%, transparent);
   font-weight: 600;
@@ -12649,6 +12650,59 @@ svg.vol-curve text {
   align-items: center;
   gap: 0.6rem;
   font-size: 0.85rem;
+}
+/* The entry presets (EntryPicker.tsx): the strategy selector's frame, the presets grouped down the
+   left, the chosen one's settings and the stacked filters on the right. */
+.entry-group {
+  display: flex;
+  flex-direction: column;
+}
+.entry-group-head {
+  padding: 0.45rem 0.8rem 0.2rem;
+  font-size: 0.65rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+}
+.entry-chip {
+  font-size: 0.75rem;
+  padding: 0.1rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-muted);
+}
+.entry-chip.is-caution {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+.entry-filters {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--border);
+}
+.entry-filter {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 2.75rem;
+  gap: 0.4rem 0.6rem;
+  align-items: center;
+  padding: 0.5rem 0.7rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.entry-filter-name {
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+.entry-filter .strat-fields {
+  grid-column: 1 / -1;
+  grid-row: 2;
+}
+.entry-add {
+  align-self: flex-start;
+  width: auto;
 }
 .builder-structure {
   margin: 0 0 0.5rem;

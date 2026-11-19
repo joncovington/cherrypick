@@ -147,6 +147,12 @@ alone):
     `automation_strategy` (`/api/automations/builder/strategy`: a strategy's name and plain settings,
     checked by shape): the module builds the legs and the expiry (`strategies.py`) and the page writes
     them into the edit; the list and the settings are the schema's (`strategy`). It writes no config.
+    The entry presets (`EntryPicker.tsx`, the signal section and the wizard's Entry step) are configcli
+    `automation_entry` (`/api/automations/builder/entry`: a preset's name and plain settings, and
+    each stacked filter's name and plain settings, checked by shape): the module builds the `entry`
+    and the filters' gates (`entrypresets.py`); the page sets the entry and adds the gates, and a
+    second fill swaps out only the gates the last one added that still stand as added
+    (`withFilterGates`). The lists and settings are the schema's (`entry_presets`). It writes no config.
     The wizard (`BuilderWizard.tsx`) is the same calls and the same save: its strategies (or, from an
     older module, its shapes) are the
     schema's, each step's Next is the module's draft check filtered to that step's keys, and it

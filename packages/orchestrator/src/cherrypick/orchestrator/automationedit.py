@@ -126,6 +126,40 @@ def strategy(cfg: dict[str, Any], req: dict[str, Any], run: Runner = run_module_
     return answer
 
 
+def run_module_entry(cfg: dict[str, Any], req: dict[str, Any]) -> dict[str, Any] | None:
+    """The module's answer to one `cli builder-entry` request, or None when it could not be asked."""
+    return run_module_cli(cfg, "builder-entry", req)
+
+
+def entry(cfg: dict[str, Any], req: dict[str, Any], run: Runner = run_module_entry) -> dict[str, Any]:
+    """An entry preset's entry and the gates of the filters stacked on it (`cli builder-entry`): the
+    preset's name, its settings and the filters, each a name and its settings, nothing else. Writes
+    nothing."""
+    name = req.get("entry")
+    settings = req.get("settings", {})
+    filters = req.get("filters", [])
+    if not isinstance(name, str) or not name:
+        return _err("automation_entry needs an 'entry'")
+    if not isinstance(settings, dict):
+        return _err("'settings' must be an object")
+    if not isinstance(filters, list) or not all(
+        isinstance(f, dict) and isinstance(f.get("filter"), str) and isinstance(f.get("settings", {}), dict)
+        for f in filters
+    ):
+        return _err("'filters' must be a list of {filter, settings}")
+    body = {
+        "entry": name,
+        "settings": settings,
+        "filters": [{"filter": f["filter"], "settings": f.get("settings", {})} for f in filters],
+    }
+    answer = run(cfg, body)
+    if not answer:
+        return _err("the automations module could not be asked (is it installed?)", "unavailable")
+    if not answer.get("ok"):
+        return _err(str(answer.get("error") or "the automations module refused the request"), "bad_request")
+    return answer
+
+
 def _read(cfg: dict[str, Any], req: dict[str, Any], run: Runner, op: str) -> dict[str, Any]:
     """One read of the module by name, with an unsaved edit passed through and nothing else."""
     name = req.get("name")

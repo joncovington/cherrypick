@@ -2,10 +2,11 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import type { BuilderAutomation, BuilderSchema, BuilderSuggestion, BuilderToday } from "@console/shared";
 import { builderBacktest, builderDraft, builderSave, builderToday } from "../../lib/api";
-import { EntryFields, ExitFields, GateFields, LegFields, SizeFields, UnderlyingFields, entryText, eventName, type Spec } from "./BuilderForm";
+import { EntryFields, ExitFields, GateFields, LegFields, SizeFields, UnderlyingFields, entryText, eventName, withFilterGates, withKey, type Spec } from "./BuilderForm";
 import { TodayView } from "./BuilderToday";
 import { legSentence } from "./legWords";
 import { StrategyPicker } from "./StrategyPicker";
+import { EntryPicker, type Stacked } from "./EntryPicker";
 
 /**
  * The Builder's wizard (#1180, the approved mockup's eight artboards): a new automation built one
@@ -273,6 +274,8 @@ export function BuilderWizard({
   // strategy chosen, is not replaced by coming back to this step).
   const [credit, setCredit] = useState<boolean | null>(null);
   const applied = useRef(Boolean(copyFrom));
+  // The entry preset last applied and the gates its filters added, so applying another replaces them.
+  const entryPreset = useRef<{ name: string; settings?: Record<string, string | number>; filters: Stacked[]; gates: string[] }>({ name: "daily_time", filters: [], gates: [] });
   const [source, setSource] = useState<string>(copyFrom ?? "");
   const [spec, setSpec] = useState<Spec>(() => (copyFrom ? {} : structuredClone(schema.shapes[firstShape]!.spec)));
   const [tip, setTip] = useState<string | null>(null);
@@ -543,6 +546,26 @@ export function BuilderWizard({
         </div>
         <TipText id="kind" open={tip} />
         <TipText id="cad" open={tip} />
+        {schema.entry_presets && (
+          <EntryPicker
+            schema={schema.entry_presets}
+            auto
+            initial={entryPreset.current.name}
+            initialSettings={entryPreset.current.settings}
+            initialFilters={entryPreset.current.filters}
+            applyOnMount={false}
+            onFill={(r) => {
+              const gates = withFilterGates(spec["gates"], entryPreset.current.gates, r.gates ?? []);
+              entryPreset.current = {
+                name: r.preset,
+                settings: r.settings,
+                filters: (r.filters ?? []).map((f) => ({ filter: f.filter, settings: f.settings })),
+                gates: (r.gates ?? []).map((g) => JSON.stringify(g)),
+              };
+              setSpec(withKey({ ...spec, entry: r.entry ?? spec["entry"] }, "gates", gates.length ? gates : undefined));
+            }}
+          />
+        )}
         <EntryFields {...sectionProps} />
         {!holdsCloseSnapshot(obj(spec["entry"])) && (
           <p className="wiz-warn" role="status">

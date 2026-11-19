@@ -261,3 +261,45 @@ def test_configcli_routes_the_strategy_op_to_the_module(monkeypatch):
         "strategy": "vertical",
         "settings": {},
     }
+
+
+def test_entry_passes_the_preset_settings_and_filters_through_and_maps_failures():
+    seen = []
+
+    def run(_cfg, body):
+        seen.append(body)
+        return {"ok": True, "preset": body["entry"], "problems": []}
+
+    req = {
+        "entry": "rsi_pullback",
+        "settings": {"below": 5},
+        "filters": [{"filter": "vix_band", "x": 1}],
+        "y": 2,
+    }
+    assert automationedit.entry({}, req, run=run)["ok"]
+    assert seen == [
+        {
+            "entry": "rsi_pullback",
+            "settings": {"below": 5},
+            "filters": [{"filter": "vix_band", "settings": {}}],
+        }
+    ]
+    assert automationedit.entry({}, {}, run=run)["code"] == "bad_request"
+    assert automationedit.entry({}, {"entry": "orb", "settings": []}, run=run)["code"] == "bad_request"
+    assert (
+        automationedit.entry({}, {"entry": "orb", "filters": [{"settings": {}}]}, run=run)["code"]
+        == "bad_request"
+    )
+    assert automationedit.entry({}, {"entry": "orb", "filters": {}}, run=run)["code"] == "bad_request"
+    assert automationedit.entry({}, {"entry": "orb"}, run=lambda c, b: None)["code"] == "unavailable"
+
+
+def test_configcli_routes_the_entry_op_to_the_module(monkeypatch):
+    monkeypatch.setattr(configcli.cfgmod, "load_config", lambda *a, **k: {})
+    monkeypatch.setattr(automationedit, "run_module_entry", lambda c, b: {"ok": True, **b})
+    assert configcli.handle({"op": "automation_entry", "entry": "orb"}) == {
+        "ok": True,
+        "entry": "orb",
+        "settings": {},
+        "filters": [],
+    }
