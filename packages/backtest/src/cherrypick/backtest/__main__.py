@@ -545,6 +545,10 @@ def cmd_read(args) -> int:
         out = readout.automation_run(args.name or "", args.id or "")
         _emit(out)
         return 0 if out.get("ok") else 1
+    if args.what == "automation-reference":
+        out = readout.automation_reference(args.name or "", args.id or "")
+        _emit(out)
+        return 0 if out.get("ok") else 1
     if args.what in ("idea-searches", "idea-search"):
         from . import ideafiles
 
@@ -803,8 +807,8 @@ def main(argv: list[str] | None = None) -> int:
         "what",
         choices=(
             "overview", "run", "trades", "path", "stores", "summaries", "signals", "signal",
-            "automation-runs", "automation-run", "fullset", "portfolio-sources", "idea-searches",
-            "idea-search", "settings-grids", "settings-grid",
+            "automation-runs", "automation-run", "automation-reference", "fullset", "portfolio-sources",
+            "idea-searches", "idea-search", "settings-grids", "settings-grid",
         ),
     )  # fmt: skip
     rd.add_argument("--ids", default=None, help="with `summaries`: run ids, comma separated")
@@ -812,14 +816,14 @@ def main(argv: list[str] | None = None) -> int:
         "--name",
         default=None,
         help="with `signal`: the signal study's name; with `automation-runs`, `automation-run`, "
-        "`idea-searches`, `idea-search`, `settings-grids` or `settings-grid`: the automation",
+        "`automation-reference`, `idea-searches`, `idea-search`, `settings-grids` or `settings-grid`: "
+        "the automation",
     )
     rd.add_argument(
         "--id",
         default=None,
-        help="with `run`, `trades` or `path`: the run id; with `automation-run`, `idea-search` or "
-        "`settings-grid`: the "
-        "result's name",
+        help="with `run`, `trades` or `path`: the run id; with `automation-run`, `automation-reference`, "
+        "`idea-search` or `settings-grid`: the result's name",
     )
     rd.add_argument("--arm", default=None, help="with `trades` or `path`: the arm")
     rd.add_argument("--session", default=None, help="with `path`: the trade's session (YYYY-MM-DD)")

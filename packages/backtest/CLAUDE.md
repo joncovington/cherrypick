@@ -403,7 +403,14 @@ each run stored (its switch and notes ignored). `robustness` holds the study kit
 trades, in-sample and never a verdict: the 5 best exit sessions (`core.robustness.best_sessions`),
 per-trade net with fees and slippage at 1.5x and 2x (settlement never scaled), the block bootstrap
 drawdown over the run's own length (resamples cut as runs grow, floor 400, the count shown), and exit
-quarters, a quarter counting only with 10 or more sessions traded. `read portfolio-sources` lists
+quarters, a quarter counting only with 10 or more sessions traded. `read automation-reference --name
+--id` reduces one Builder run to the automation's backtest reference (`automationref.py`, pure), which
+the automation page sets paper against: the 10th to 90th percentile of a trade's net (the usual range
+is the 10th to 90th), the entry rate and each missed reason's share of the sessions, each exit kind's
+share, the 10th, 50th and 90th percentile of the running net over the next 20 trades (the stationary
+block bootstrap at the kill criteria's mean block, seeded), and the sample a reading needs, computed
+(`core.stats.sessions_needed`, the run's mean as the edge); under 30 trades it is `insufficient`.
+`read portfolio-sources` lists
 every Builder run and every `research/<item>/study*.json` whose arms carry engine trades, for
 Compare's portfolio tab (any file under `results/` is listed as licensed).
 
