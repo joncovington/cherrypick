@@ -103,7 +103,20 @@ function Spark({ ys }: { ys: number[] }) {
 }
 
 /** The explore-runs list: the queue's rows first, then each finished run, newest first. */
-export function ExploreRunsList({ data, onOpen }: { data: BuilderRuns; onOpen: (run: string) => void }) {
+/** `reference` is the run pinned as the automation's backtest reference; `onPin` pins a run, or unpins with null. */
+export function ExploreRunsList({
+  data,
+  onOpen,
+  reference = null,
+  onPin,
+  pinning = false,
+}: {
+  data: BuilderRuns;
+  onOpen: (run: string) => void;
+  reference?: string | null;
+  onPin?: (run: string | null) => void;
+  pinning?: boolean;
+}) {
   const live = data.tasks.filter((t) => t.status === "queued" || t.status === "running");
   const failed = data.tasks.filter((t) => t.status === "failed");
   return (
@@ -146,6 +159,22 @@ export function ExploreRunsList({ data, onOpen }: { data: BuilderRuns; onOpen: (
                       <button type="button" className="link-button" onClick={() => onOpen(r.run)}>
                         {runLabel(r.run)}
                       </button>
+                      {onPin && (
+                        <span className="builder-run-ref">
+                          {r.run === reference ? (
+                            <>
+                              <span className="chip chip-ok">reference</span>
+                              <button type="button" className="link-button" disabled={pinning} onClick={() => onPin(null)}>
+                                Unpin
+                              </button>
+                            </>
+                          ) : (
+                            <button type="button" className="link-button" disabled={pinning} onClick={() => onPin(r.run)}>
+                              Use as reference
+                            </button>
+                          )}
+                        </span>
+                      )}
                     </td>
                     <td className="builder-run-change">{changeLine(r.changes, i < data.runs.length - 1)}</td>
                     <td>{arm?.trades ?? "—"}</td>
@@ -159,6 +188,13 @@ export function ExploreRunsList({ data, onOpen }: { data: BuilderRuns; onOpen: (
             </tbody>
           </table>
         </div>
+      )}
+      {onPin && data.runs.length > 0 && (
+        <p className="muted">
+          {reference === null
+            ? "No run is this automation's backtest reference yet. Its page sets paper against the run you pin, and the yardstick moves only when you pin another."
+            : `Paper is set against ${runLabel(reference)} on the automation's page.`}
+        </p>
       )}
       {data.tasks.length === 0 && data.runs.length === 0 && <p className="muted">No backtest queued from here yet.</p>}
       {data.withheld > 0 && <p className="muted">{data.withheld} licensed result(s) not shown.</p>}

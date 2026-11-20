@@ -181,6 +181,14 @@ alone):
     changed; one run's card (`/api/automations/builder/run`, configcli `automation_run`) is read
     whole by the backtest package. A licensed result is shown only while `backtestResultsOn`
     (fail closed: one not plainly unlicensed is withheld and counted, and its card refused 403).
+  - **The Builder's reference pin writes the `references` block alone**
+    (`/api/automations/builder/reference`, configcli `automation_reference`,
+    `orchestrator.referenceedit`). The route sends the name and one of that automation's own
+    Builder runs (`builder-<name>-<10 digits>`, checked by shape here), or null to unpin; the
+    module checks the pin (`cli reference-check`), the backtest package confirms the run exists,
+    and only the block is written. A pin changes nothing an automation trades. The explore-runs
+    list marks the pinned run and offers **Use as reference** on the others; the automation page
+    sets paper against the pinned run.
   - **The Builder's idea search queues, declares and tests; it writes no config**
     (`/api/automations/builder/ideas`, configcli `automation_ideas` and `automation_idea_searches`;
     `/idea-search`, `/idea-declare`, `/idea-holdout`). Find ideas sends the name alone; the run and the

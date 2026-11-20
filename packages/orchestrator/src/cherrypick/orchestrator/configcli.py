@@ -136,6 +136,12 @@ def handle(req: dict[str, Any]) -> dict[str, Any]:
         # The Groups page's save: that check, then the groups block and the moved automations' `group`
         # it returned, written through the same raw-save path as every config save.
         return groupedit.save(cfg, req, groupedit.run_module_check)
+    if op == "automation_reference":
+        # The Builder's pin of one Builder run as an automation's backtest reference: the module's check,
+        # the backtest package's word that the run exists, then the `references` block it returned.
+        from . import referenceedit
+
+        return referenceedit.save(cfg, req, referenceedit.run_module_check, referenceedit.run_backtest_runs)
     if op == "fullset_plan":
         # What adding an underlying to the full set would fetch, from the backtest's planner; writes nothing.
         return fullsetadd.plan(cfg, req)

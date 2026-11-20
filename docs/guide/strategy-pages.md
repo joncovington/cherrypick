@@ -125,6 +125,7 @@ For an underlying outside the full set's seven that our data does not cover, the
 Under a saved automation's sections:
 
 - **Explore run** queues one run of the saved automation on the research queue, over the window picked beside it. Each choice is a span one store holds for every part of the automation: the last year, and everything that store holds, ours first. A thin span (Dolt before 2025, about three days a week) says so, and the vendor's store is offered only where it reaches further back than ours, marked licensed. The line under the picker says what the chosen store holds. It is offered only for a saved, unedited automation some store covers. The run is descriptive (no verdict), changes no label and turns nothing on. It waits on the research queue behind the full option set's fetch.
+- **Use as reference**, on a finished run in the list, pins that run as the automation's backtest reference: its own page sets each paper trade and the running net against it. The pinned run is marked **reference**, with **Unpin** beside it. The yardstick moves only when you pin another run, never when a new run lands. Pinning changes nothing the automation trades.
 - **Declare…** and **Promote to paper** are shown disabled. A study declaration is written and reviewed outside the page, and turning an automation on is a hand edit or its group's switch.
 
 ### Ideas

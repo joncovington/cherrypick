@@ -57,6 +57,7 @@ export function shapeBuilder(json: Record<string, unknown> | null): BuilderAutom
         return { block: String(x["block"] ?? ""), state, keys: obj(x["keys"]) };
       }),
       forward: r["forward"] ? obj(r["forward"]) : null,
+      reference: str(r["reference"]),
       suggestion: sug
         ? {
             blocks: Array.isArray(sug["blocks"]) ? (sug["blocks"] as unknown[]).map(String) : [],

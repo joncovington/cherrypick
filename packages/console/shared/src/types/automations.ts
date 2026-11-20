@@ -305,6 +305,17 @@ export interface BuilderAutomation {
   blocks: BuilderBlock[];
   forward: Record<string, unknown> | null;
   suggestion: BuilderSuggestion | null;
+  /** The Builder run pinned as its backtest reference (`builder-<name>-<YYMMDDHHMM>`), or none. */
+  reference: string | null;
+}
+
+/** `POST /api/automations/builder/reference`: the pin written (`run` null: unpinned). */
+export interface BuilderReferenceResult {
+  ok: boolean;
+  name?: string;
+  run?: string | null;
+  error?: string;
+  problems?: string[];
 }
 
 /** `GET /api/automations/builder`: every automation block by block, or why the package could not answer. */
