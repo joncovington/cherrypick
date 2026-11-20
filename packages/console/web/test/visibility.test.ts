@@ -185,8 +185,8 @@ describe("the nav lists", () => {
       ["/meic", "1"],
       ["/bwb", "2"],
       ["/earnings", "3"],
-      ["/automations", "5"],
       ["/experiments", "4"],
+      ["/automations", "5"],
     ]);
     expect(experiments.map((l) => l.to)).toEqual(["/calendars", "/curve", "/contango", "/weeklyput", "/ladder", "/flies"]);
   });

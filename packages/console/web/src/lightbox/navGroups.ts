@@ -274,11 +274,10 @@ export type LadderSlideId = (typeof LADDER_SLIDES)[number]["id"];
  */
 export const AUTOMATIONS_SLIDES = [
   { id: "summary", label: "today" },
-  // Which automations switch together, and each group's switch and budget (2026-11-18).
-  { id: "groups", label: "groups" },
-  // The Builder (2026-11-20, from the rail's research section): build an automation here, then
-  // switch it on in its group on the tab beside it.
+  // The Builder: build an automation here, then switch it on in its group on the tab after it.
   { id: "builder", label: "builder" },
+  // Which automations switch together, and each group's switch and budget.
+  { id: "groups", label: "groups" },
   { id: "positions", label: "positions" },
   { id: "history", label: "history" },
   { id: "decisions", label: "decisions" },
@@ -603,10 +602,10 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
   },
   automations: {
     slides: AUTOMATIONS_SLIDES,
-    simple: ["summary", "groups", "builder", "performance", "positions", "guide"],
+    simple: ["summary", "builder", "groups", "performance", "positions", "guide"],
     groups: [
       { label: "today", ids: ["summary"] },
-      { label: "set up", ids: ["groups", "builder"] },
+      { label: "set up", ids: ["builder", "groups"] },
       { label: "tables", ids: ["positions", "history"] },
       { label: "evidence", ids: ["decisions"] },
       { label: "study", ids: ["performance", "costs"] },

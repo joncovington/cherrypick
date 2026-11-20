@@ -25,9 +25,10 @@ for your install drops off the list.
   Experiments.
 - **Hover a link** to see its shortcut. The keyboard shortcuts are:
   - `g` then a letter goes to a page: `g l` Live, `g r` Reports, `g c` Charts, `g g` GEX, `g i`
-    Screeners, `g m` Compare, `g b` Backtest, `g a` Advisor, `g s` System, `g h` Help, `g o` Config.
+    Screeners, `g m` Compare, `g b` Backtest, `g a` Advisor, `g s` System, `g h` Help, `g o` Config, and
+    `g u` the Builder (a tab of Automations).
     Press the second key within a second of the first.
-  - A digit goes to a module: `1` MEIC, `2` BWB, `3` Earnings, `4` Experiments. A module that is off
+  - A digit goes to a module: `1` MEIC, `2` BWB, `3` Earnings, `4` Experiments, `5` Automations. A module that is off
     leaves its digit unused; the others keep theirs.
   - `j` and `k` step to the next and previous tab of the page you are on, and stop at the ends.
   - Nothing fires while you are typing in a box.

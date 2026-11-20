@@ -55,17 +55,17 @@ export function railHalves<T extends NavLinkDef>(links: readonly T[]): { above: 
 
 /**
  * The rail's Modules section: the live-capable
- * modules, Automations, then the Experiments page. Each keeps its digit whether or not another is on: `2` is BWB
+ * modules, the Experiments page, then Automations. Each keeps its digit whether or not another is on: `2` is BWB
  * every day, so a module switched off no longer moves the others' keys.
  */
 export const MODULE_LINKS: readonly NavLinkDef[] = [
   { to: "/meic", label: "MEIC", key: "1" },
   { to: "/bwb", label: "BWB", key: "2" },
   { to: "/earnings", label: "Earnings", key: "3" },
-  // Out of Experiments onto the rail (2026-11-18): the suite's own builder writes it and its groups are
-  // switched on its Groups tab. Key 5, so the keys before it keep their meaning.
-  { to: "/automations", label: "Automations", key: "5" },
   { to: "/experiments", label: "Experiments", key: "4" },
+  // The suite's own automations: built on its Builder tab, switched on its Groups tab. Key 5, after
+  // Experiments, so the digits run in order down the rail.
+  { to: "/automations", label: "Automations", key: "5" },
 ];
 
 /**

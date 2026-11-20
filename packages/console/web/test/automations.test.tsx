@@ -237,7 +237,7 @@ describe("automations' models", () => {
 
 describe("automations' place in the console", () => {
   it("has a tab for each page the spec names", () => {
-    expect(AUTOMATIONS_SLIDES.map((s) => s.id)).toEqual(["summary", "groups", "builder", "positions", "history", "decisions", "performance", "costs", "guide"]);
+    expect(AUTOMATIONS_SLIDES.map((s) => s.id)).toEqual(["summary", "builder", "groups", "positions", "history", "decisions", "performance", "costs", "guide"]);
   });
 
   it("is hidden when the suite says its module is off, shown when unknown", () => {
