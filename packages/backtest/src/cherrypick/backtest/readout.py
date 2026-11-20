@@ -397,6 +397,25 @@ def automation_run(name: str, run: str) -> dict:
     return {"ok": False, "error": f"no Builder run {run!r} for {name}"}
 
 
+def automation_reference(name: str, run: str) -> dict:
+    """Automation `name`'s backtest reference from its Builder run `run` (`automationref.reference`):
+    the usual range of a trade's net, the entry rate, the exit mix, the band of running-net paths and
+    the computed sample, with whether the run is licensed."""
+    from . import automationref
+
+    if not AUTOMATION_NAME.match(name or ""):
+        return {"ok": False, "error": "name must be an automation's name"}
+    docs, _unreadable = _builder_docs(name)
+    for doc, licensed in docs:
+        if doc.get("name") == run:
+            try:
+                out = automationref.reference(doc, name)
+            except (KeyError, TypeError, ValueError, AttributeError, ZeroDivisionError) as exc:
+                return {"ok": False, "error": f"the result could not be read: {exc}"}
+            return {"ok": True, "licensed": licensed, **out}
+    return {"ok": False, "error": f"no Builder run {run!r} for {name}"}
+
+
 def signal_study(name: str) -> dict:
     """One signal study's whole result, or a refusal naming why."""
     if not SIGNAL_NAME.match(name or ""):
