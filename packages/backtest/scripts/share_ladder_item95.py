@@ -33,8 +33,9 @@ import sqlite3
 import statistics
 import sys
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from cherrypick.core import home, progress, treasury
 from cherrypick.core import stats as core_stats
@@ -117,6 +118,7 @@ CHAIN = (
 )
 
 INF = float("inf")
+NY = ZoneInfo("America/New_York")
 
 
 def out_dir() -> Path:
@@ -886,17 +888,25 @@ def default_paths() -> tuple[Path, Path]:
     return out_dir() / "minute_bars.db", home.home() / "data" / "research" / "item26" / "bars.db"
 
 
+def last_whole_month_end(today: date) -> str:
+    """The declared window's end: the last day of the month before `today`'s (New York date), so a
+    month still being traded is never read."""
+    return date.fromordinal(today.replace(day=1).toordinal() - 1).isoformat()
+
+
 def cmd_study(args) -> int:
     minute_db, daily_db = default_paths()
     smoke = args.step == "smoke"
     funds = ["SOXL", "TQQQ"] if smoke else list(FUNDS)
     job = "item95-smoke" if smoke else "item95-study"
+    last_day = "2016-12-31" if smoke else last_whole_month_end(datetime.now(NY).date())
     with progress.Reporter(job) as rep:
-        block = run(funds, minute_db, daily_db, bill_reader(), rep, last_day="2016-12-31" if smoke else None)
+        block = run(funds, minute_db, daily_db, bill_reader(), rep, last_day=last_day)
         if not smoke:
             block["hourly_check"] = hourly_check(daily_db, rep)
     doc = {
         "item": 95,
+        "window": [SPEC["first_session"], last_day],
         "spec": {**SPEC, "hours": list(SPEC["hours"])},
         "rule": RULE,
         "control_rule": CONTROL_RULE,
