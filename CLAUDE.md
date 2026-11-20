@@ -16,6 +16,8 @@ Packages: `packages/orchestrator`, `packages/meic`, `packages/earnings`, `packag
 
 - **Live orders** exist only in meic, flies and bwb (flies and bwb are retired, ship off and refuse
   to arm while off), each behind its own gate and a per-day arm. Every other package is paper-only or read-only.
+  ladder has a live gate and a per-day arm but no order path yet (pending #1337): arming it records the arm and
+  places nothing.
 - **orchestrator** drives modules by subprocess, never by import. It places no order and never flips
   a live gate. It runs a module's live loop only while that day's human-written arm record is valid
   (MEIC's also runs unarmed, to manage what its book holds; only entries need the arm), settles

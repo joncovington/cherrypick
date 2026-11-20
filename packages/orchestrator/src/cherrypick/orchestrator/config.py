@@ -476,7 +476,7 @@ PAPER_ONLY_MODULES: frozenset[str] = frozenset({"earnings"})
 # `live_trading_enabled` still reads every module's switch as before, so a switch found on outside
 # this set is shown, never hidden. `tests/test_live_path_modules.py` fails when a package gains or
 # loses a `live_loop.py` without this set following, and the console mirrors it (`liveLock.ts`).
-LIVE_PATH_MODULES: frozenset[str] = frozenset({"bwb", "flies", "meic"})
+LIVE_PATH_MODULES: frozenset[str] = frozenset({"bwb", "flies", "ladder", "meic"})
 
 
 def has_live_path(module: str) -> bool:

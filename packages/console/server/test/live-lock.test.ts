@@ -73,12 +73,13 @@ describe("module live gates", () => {
     expect(readModuleGate(config, "bwb").liveEnabled).toBeNull();
     writeModuleConfig("flies", { live: {} });
     expect(readModuleGate(config, "flies").liveEnabled).toBeNull();
+    expect(readModuleGate(config, "ladder")).toMatchObject({ liveEnabled: null, livePath: true });
   });
 
   it("a module with no live path is paper by construction, not unknown, with or without a switch", () => {
     writeModuleConfig("contango", { arms: {} });
     expect(readModuleGate(config, "contango")).toMatchObject({ liveEnabled: false, livePath: false });
-    expect(readModuleGate(config, "ladder")).toMatchObject({ liveEnabled: false, livePath: false });
+    expect(readModuleGate(config, "weeklyput")).toMatchObject({ liveEnabled: false, livePath: false });
     writeModuleConfig("calendars", { live: { enabled: false } });
     expect(readModuleGate(config, "calendars")).toMatchObject({ liveEnabled: false, livePath: false });
   });

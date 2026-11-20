@@ -36,14 +36,16 @@ Earnings had a fifth, hand-placed path; it was removed in v0.12.0 and earnings i
 | **MEIC** | `meic/live_loop.py`, `live_orders.py` | `enable_live_trading` in MEIC's config **and** `live.symbol` **and** `live.gate0_confirmed` **and** a per-day arm record written by `/live-meic-start` or `live_loop --arm --confirm YES` **and** a designated account **and** the halt flag. Sized from the config's `live` block (which may name one arm via `live.arm`) under `max_open_bp_dollars` and `live.max_structures_per_day`, plus its daily-loss breaker. Self-disarms at 17:00 ET. The interactive agent session (`/meic-start`) remains a second, unscheduled path behind `enable_live_trading`. |
 | **Flies** | `flies/live_loop.py`, `live_orders.py` | **Not** `enable_live_trading`. A separate `live.enabled` **and** `live.gate0_confirmed` attestation, **and** a per-day arm record written by `/live-flies-start` or `live_loop --arm --confirm YES`, **and** `modules.flies.enabled` (the module is retired and off by default), **and** a designated account, **and** the halt flag. Self-disarms every evening. |
 | **BWB** | `bwb/live_loop.py`, `live_orders.py` | The flies posture (2026-09-18): `live.enabled` **and** `live.gate0_confirmed` **and** a per-day arm record written by `/live-bwb-start` or `live_loop --arm --confirm YES` **and** `modules.bwb.enabled` (the module is retired and off by default) **and** a designated account **and** the halt flag, plus `live.arm` naming one of the four base books. Self-disarms every evening. Trades the full daily ladder under a worst-case margin cap (with a firing arm's future add-on reserved), one structure per day, a cost-derived credit floor, and a mark-drawdown breaker that blocks entries only. No closing orders: SPX cash-settles, on an official print or not at all. |
+| **Ladder** | `ladder/live_gates.py`, `live_loop.py` | **No order path exists yet** (#1337): the gates, the live config block and the daily arm are built and nothing is placed. The gates, in `live_loop --status`: `live.enabled`, `live.gate0_confirmed` (a human attestation), `modules.ladder.enabled`, a valid arm record for today written by `/live-ladder-start` or `live_loop --arm --confirm YES`, a designated account, `live.arm` naming an enabled paper arm, `live.symbols` inside the fund list, and valid limits (lot, per-fund and total caps, group cap, dollar ceiling, drawdown breaker, hours). The halt flag blocks new buys only. The block ships off and has no `live.task_name`, so the supervisor derives no `ladder-live` job. Self-disarms at `live.disarm_at` (20:00 ET). Not one of the loops described below until its order path lands. |
 
-The three are **loops**: once the gate is open they act on their own schedule without asking
-again.
+MEIC, flies and BWB are **loops**: once the gate is open they act on their own schedule without asking
+again. The ladder row is a gate and an arm with no loop behind it yet.
 
 **Arming from a terminal.** The three loops arm the same way, with or without Claude Code. A person runs
-`python -m cherrypick.<meic|flies|bwb>.live_loop --arm --confirm YES`: it prints `DISCLAIMER.md` verbatim and
+`python -m cherrypick.<meic|flies|bwb|ladder>.live_loop --arm --confirm YES`: it prints `DISCLAIMER.md` verbatim and
 arms nothing, writing no record, unless the confirmation is exactly `YES`. Flies and bwb also refuse while
-`modules.<m>.enabled` is false in the suite config (both are retired and ship off). `--disarm` removes the
+`modules.<m>.enabled` is false in the suite config (both are retired and ship off), and the ladder refuses
+while that or `live.enabled` or `live.gate0_confirmed` is off. `--disarm` removes the
 record. The slash commands call `--install-task` after their own fresh YES: the same arm without a prompt
 (the agent path), with the same module-off refusal. Neither flag opens any other gate; readiness, the halt
 flag and the supervisor check still apply.

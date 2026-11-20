@@ -53,5 +53,48 @@
       "target": "fixed",
       "enabled": true
     }
+  },
+  "live_header": "===== the live path: gates and the daily arm only, NO order path yet (issue #1337), shipped OFF =====",
+  "_live_note": "Nothing here places an order: the ladder has no order path yet. This block holds the gates and limits a future live loop will run under, and `python -m cherrypick.ladder.live_loop --status` shows each gate with its verdict. Live needs ALL of: live.enabled true, live.gate0_confirmed a human attestation, modules.ladder.enabled in the suite config, a valid arm record for today (`/live-ladder-start`, or `live_loop --arm --confirm YES`, which prints DISCLAIMER.md and arms nothing without an exact YES), a designated account, live.arm naming an enabled paper arm, live.symbols inside the fund list, and valid limits. The halt flag blocks new buys only. enabled and gate0_confirmed are guarded: the Config page cannot write them.",
+  "live": {
+    "enabled": false,
+    "_enabled_note": "Off. Guarded: set by hand, never from the Config page.",
+    "gate0_confirmed": "",
+    "_gate0_confirmed_note": "Empty. A human attestation (who and when), written by hand, as the suite's other live blocks carry it. Guarded.",
+    "arm": "session",
+    "_arm_note": "The ONE paper arm whose rule would trade live money. It must be an enabled arm below. Switching it is a journaled measurement break.",
+    "symbols": [
+      "TQQQ"
+    ],
+    "_symbols_note": "The funds that may trade live. Each must be in `names`. TQQQ by default; any fund in the ladder's list may be added on a machine. The caps below are per fund.",
+    "lot_dollars": 1000,
+    "_lot_dollars_note": "Dollars per lot, in whole shares at the buy level, never more.",
+    "max_open_lots": 1,
+    "_max_open_lots_note": "Open lots per fund. A resting buy counts as if filled.",
+    "max_open_lots_total": 2,
+    "_max_open_lots_total_note": "Open lots across every fund; at least max_open_lots.",
+    "correlated_groups": {
+      "nasdaq-semis": [
+        "TQQQ",
+        "SOXL",
+        "TECL",
+        "QLD",
+        "USD"
+      ]
+    },
+    "_correlated_groups_note": "Funds that move together. max_open_lots_per_group caps the lots open across one group, resting buys included.",
+    "max_open_lots_per_group": 1,
+    "_max_open_lots_per_group_note": "Open lots across one correlated group.",
+    "max_open_dollars": 2500,
+    "_max_open_dollars_note": "Ceiling on open lots plus resting buys together, in dollars; at least one lot.",
+    "drawdown_breaker_frac": 0.5,
+    "_drawdown_breaker_frac_note": "New buys stop once the open lots' mark is down this share of the dollar budget (max_open_dollars). It blocks new buys only; held lots keep their resting sells.",
+    "session_start": "08:15",
+    "_session_start_note": "ET. The first minute a live loop may act (extended hours, as paper trades).",
+    "disarm_at": "20:00",
+    "_disarm_at_note": "ET. The day's arm ends here: a live tick past this time, or one that finds an arm record dated another day, disarms itself. Arming is per day.",
+    "hospital_alert_days": 18,
+    "_hospital_alert_days_note": "A lot open longer than this many days raises an alert. It is never acted on automatically; there is no stop.",
+    "_task_name_note": "No live.task_name yet, on purpose: the supervisor derives a <module>-live job from that key, and there is no order loop to run. It is added with the order path."
   }
 }

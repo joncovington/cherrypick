@@ -1,8 +1,8 @@
 # cherrypick-ladder
 
 ⚠️ **EXPERIMENTAL.** The share dip ladder in paper, on leveraged index funds (TQQQ first): buy a lot
-7% down, sell each lot on its own at +4% of its cost, no stop, no time limit. **Paper-only,
-credential-free, no live path** (posture: root file). Ledger: `~/.cherrypick/data/ladder/paper_trades.db`.
+7% down, sell each lot on its own at +4% of its cost, no stop, no time limit. **Paper-only
+in practice: the live path is gates and an arm with no order path yet** (see Live; posture: root file). Ledger: `~/.cherrypick/data/ladder/paper_trades.db`.
 Off by default: the orchestrator runs `--once` every 60 s on trading days as the `ladder-paper` job once
 `modules.ladder.enabled` is set (trade schema `ladder_lot`); the loop gates its own hours.
 
@@ -71,13 +71,37 @@ chain is read. A fund removed from the config stays requested until its last lot
 
 `rules.py` (levels, targets, size, money, pure), `provider.py` (read-only cache views), `db.py`
 (ledger), `paper_loop.py` (the tick), `stream_request.py`, `analytics.py` (the forward read),
-`cli.py` (status, lots, summary).
+`cli.py` (status, lots, summary), `live_gates.py`, `live_loop.py` and `credentials.py` (the live gates and
+arm, no orders).
 
 ## Commands
 
 Commands to run the package, its tests and its lint are in [README.md](README.md#commands).
 
 `paper_loop --force` acts outside the hours, for testing only.
+
+## Live (gates and arm only; no order path, #1337)
+
+`live_gates.py` (pure: a list of named gates, each with a verdict and a reason), `live_loop.py` (the
+commands) and `credentials.py` (the designated account's presence). Nothing places, cancels or
+changes an order, and a source scan in the tests holds that. The `live` block in the config ships off.
+
+- **Gates:** `live.enabled`; `live.gate0_confirmed` (a human attestation, who and when); the suite's
+  `modules.ladder.enabled`; a valid arm record for today; a designated account; `live.arm` naming an
+  enabled paper arm; `live.symbols` non-empty and inside `names`; valid limits. The halt flag is
+  reported but blocks new buys only.
+- **Limits** (validated by the `live.limits` gate, enforced by the order layer later): `lot_dollars`,
+  `max_open_lots` per fund, `max_open_lots_total`, `max_open_lots_per_group` over `correlated_groups` (the
+  shipped group is `nasdaq-semis`), `max_open_dollars` (open lots plus resting buys), `drawdown_breaker_frac`
+  (blocks new buys only) and `hospital_alert_days` (an alert, never an action).
+- **Arm:** `live_loop --arm --confirm YES` prints `DISCLAIMER.md` and writes the day's record only on
+  exactly `YES` while the first three gates hold; `--install-task` is the same without the prompt
+  (`/live-ladder-start`). Both need a running supervisor, as every module's arm does. `--disarm` removes
+  the record. The record is good for its date; `live.disarm_at` (20:00 ET) ends the day.
+- **`--status`** is one JSON object: every gate, the masked account, whether it is armed today.
+  **`--once`** evaluates the same and logs that there is no order path.
+- There is no `live.task_name`, so the supervisor derives no `ladder-live` job. The guarded pointers
+  and the live-path set name the module; the order layer, ledger and loop are later work.
 
 ## Boundaries
 
