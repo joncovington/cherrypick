@@ -31,6 +31,9 @@ venv/
 # invisible before -- declare them so that stays true regardless of tool version or behavior.
 .pytest_cache/
 .ruff_cache/
+# A Windows --basetemp passed through Git Bash loses its backslashes and becomes a relative folder
+# named like "Users<name>AppData...scratchpadbt-1", created here at the root.
+/Users*/
 
 # Scratch work. Every package's CLAUDE.md states "scratch work goes in a gitignored .tmp/"; all seven
 # packages honored that and the root did not, so following the rule here used to commit the file.
