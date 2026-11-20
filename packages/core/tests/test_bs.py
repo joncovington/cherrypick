@@ -75,3 +75,45 @@ def test_the_chance_is_not_delta():
     assert bs.prob_itm(100, 110.09, t, v, "C", r) == pytest.approx(0.131, abs=1e-3)
     assert bs.delta(100, 92.11, t, v, "P", r) == pytest.approx(-0.15, abs=1e-3)
     assert bs.prob_itm(100, 92.11, t, v, "P", r) == pytest.approx(0.171, abs=1e-3)
+
+
+def _implied_vol_reference(spot, strike, years, mid, right, rate, div=0.0):
+    """`implied_vol` as it was before its fast form: 100 halvings, each through `price`."""
+    if years <= 0 or mid is None or spot <= 0:
+        return None
+    if mid <= bs.intrinsic(spot, strike, right) + 1e-9:
+        return 0.0001
+    lo, hi = 0.0001, 5.0
+    if bs.price(spot, strike, years, hi, right, rate, div) < mid:
+        return None
+    for _ in range(100):
+        mid_vol = (lo + hi) / 2.0
+        if bs.price(spot, strike, years, mid_vol, right, rate, div) > mid:
+            hi = mid_vol
+        else:
+            lo = mid_vol
+    return (lo + hi) / 2.0
+
+
+def test_the_fast_solve_returns_the_very_float_the_hundred_step_one_did():
+    """Stored IV and delta must not move: the fast form is the same float, bit for bit, across
+    rights, moneyness, expiries from minutes to years, rates, yields, mids at and past the edges."""
+    import random
+
+    rng = random.Random(20261119)
+    cases = 0
+    for _ in range(4000):
+        spot = rng.uniform(5, 6000)
+        strike = spot * math.exp(rng.uniform(-0.6, 0.6))
+        years = rng.choice([rng.uniform(1e-5, 0.003), rng.uniform(0.003, 0.3), rng.uniform(0.3, 3.0)])
+        rate, div = rng.choice([0.0, rng.uniform(0, 0.06)]), rng.choice([0.0, rng.uniform(0, 0.05)])
+        right = rng.choice("CP")
+        vol = rng.uniform(0.02, 3.0)
+        mid = bs.price(spot, strike, years, vol, right, rate, div) * rng.choice([1.0, rng.uniform(0.5, 1.5)])
+        for m in (mid, mid + 1e-7, bs.intrinsic(spot, strike, right) + 2e-9, mid * 50):
+            want = _implied_vol_reference(spot, strike, years, m, right, rate, div)
+            got = bs.implied_vol(spot, strike, years, m, right, rate, div)
+            assert got == want or (got is None and want is None), (spot, strike, years, m, right, rate, div)
+            assert got is None or math.copysign(1, got) == math.copysign(1, want)
+            cases += 1
+    assert cases == 16000

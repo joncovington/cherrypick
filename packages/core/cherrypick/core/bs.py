@@ -66,7 +66,14 @@ def prob_itm(
 def implied_vol(
     spot: float, strike: float, years: float, mid: float, right: str, rate: float, div: float = 0.0
 ) -> float | None:
-    """The vol that prices `mid`, by bisection; None when no vol can (a mid below intrinsic, no time)."""
+    """The vol that prices `mid`, by bisection; None when no vol can (a mid below intrinsic, no time).
+
+    Up to 100 halvings of [0.0001, 5]. Two things make it fast without moving a bit of the answer:
+    the terms of `price` that do not depend on the vol are worked out once, in the same order of
+    operations, so each step's price is the very float `price` gives; and the loop stops once the
+    midpoint equals an end of the interval. From then on no step can change `lo` or `hi` (the
+    interval is two adjacent floats, or one), so the remaining halvings would return the same
+    float. That happens after about 58 steps."""
     if years <= 0 or mid is None or spot <= 0:
         return None
     if mid <= intrinsic(spot, strike, right) + 1e-9:
@@ -74,10 +81,32 @@ def implied_vol(
     lo, hi = 0.0001, 5.0
     if price(spot, strike, years, hi, right, rate, div) < mid:
         return None
+    # `price`'s terms with no vol in them, each computed exactly as `price` and `_d1` compute it.
+    log_moneyness = math.log(spot / strike)
+    drift = rate - div
+    root_years = math.sqrt(years)
+    spot_carry = spot * math.exp(-div * years)
+    strike_disc = strike * math.exp(-rate * years)
+    root_two = math.sqrt(2.0)
+    erf = math.erf
+    call = right == "C"
     for _ in range(100):
         mid_vol = (lo + hi) / 2.0
-        if price(spot, strike, years, mid_vol, right, rate, div) > mid:
+        d1 = (log_moneyness + (drift + mid_vol * mid_vol / 2.0) * years) / (mid_vol * root_years)
+        d2 = d1 - mid_vol * root_years
+        if call:
+            value = spot_carry * (0.5 * (1.0 + erf(d1 / root_two))) - strike_disc * (
+                0.5 * (1.0 + erf(d2 / root_two))
+            )
+        else:
+            value = strike_disc * (0.5 * (1.0 + erf(-d2 / root_two))) - spot_carry * (
+                0.5 * (1.0 + erf(-d1 / root_two))
+            )
+        settled = mid_vol == lo or mid_vol == hi
+        if value > mid:
             hi = mid_vol
         else:
             lo = mid_vol
+        if settled:
+            break
     return (lo + hi) / 2.0
