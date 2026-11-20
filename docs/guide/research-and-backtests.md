@@ -2,7 +2,8 @@
 
 The suite does not take a strategy on trust. An idea is written down as a test, run once, and recorded
 whatever it finds. This page explains how that works and how to read it: the research register, a declared
-test, the research queue, the backtest package, and the reports the console draws from them.
+test, the research queue, the backtest package, stock minute bars from Alpaca, and the reports the console
+draws from them.
 
 ## The licence rule
 
@@ -230,6 +231,54 @@ python -m cherrypick.backtest purge --apply
 
 The first command is a dry run that lists what would go. `purge --apply --derived` also removes results
 computed from the data.
+
+## Stock minute bars from Alpaca
+
+ThetaData is the source for option quotes. For a study that needs a fund's or a stock's own price minute
+by minute over years, Alpaca's market-data API is an alternative. The broker's candles reach back only a
+few weeks at five minutes and about ten months hourly, and Yahoo's hourly bars about two years. Items 95
+and 96 (the share ladder at minute resolution) use it.
+
+**What a free Alpaca account serves:**
+
+- **One-minute bars from 2016** on the consolidated tape, 04:00 to 20:00 ET (pre-market and after-hours
+  included). The last 15 minutes are refused, so a fetch always ends before then.
+- **The overnight session** (20:00 to 04:00 ET, Blue Ocean), from about September 2024 for the leveraged
+  funds checked.
+- **Unadjusted prices**, the ones a fund actually traded at. A study applies splits itself.
+- Up to 200 requests a minute.
+
+**Setting it up:**
+
+1. Sign up at [alpaca.markets](https://alpaca.markets). A paper-trading account is enough: nothing needs to
+   be funded, and the suite never trades through Alpaca.
+2. In the paper account's dashboard, generate an API key. You get a key ID and a secret.
+3. Store both in your keyring. Input is hidden, so nothing shows as you paste:
+
+   ```bash
+   python scripts/fetch_minute_bars.py key set
+   python scripts/fetch_minute_bars.py key status
+   ```
+
+   `key status` says whether each one is stored, never its value. They live under the keyring service
+   `cherrypick-alpaca`.
+
+**Fetching:** a fetch names the symbols and the first month, and resumes month by month:
+
+```bash
+python scripts/fetch_minute_bars.py fetch --symbols SOXL,TQQQ --from 2016-01
+python scripts/fetch_minute_bars.py fetch --feed boats --symbols SOXL,TQQQ --from 2024-09
+python scripts/fetch_minute_bars.py status [--feed boats]
+```
+
+The day bars go to `~/.cherrypick/data/research/item95/minute_bars.db` and the overnight bars to
+`item96/overnight_bars.db`. A month already fetched is skipped, and the current month is always fetched
+again. Seventeen funds from 2016 take about an hour at the free plan's rate.
+
+**The rule for this data:** it is free, but for your personal use, like the suite's Yahoo data. It stays
+under `~/.cherrypick` and never goes into the repo, a pull request or a post. It is not ThetaData's
+licence: nothing has to be deleted when you stop, and a result computed from it may be described in the
+plan.
 
 ## Reading a study's report
 
