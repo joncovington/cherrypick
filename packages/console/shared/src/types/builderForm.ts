@@ -61,8 +61,6 @@ export interface BuilderSchema {
   limits: string[];
   sizes: Record<string, string[]>;
   progression: string[];
-  /** The wizard's starting shapes, each a whole automation the engine accepts as it stands. */
-  shapes: Record<string, { label: string; about: string; risk: string; credit: boolean; spec: Record<string, unknown> }>;
   /** The credit-trade exits, in the engine's own keys. */
   credit_rules: Record<string, number>;
   /** The strategy selector's choices (`strategies.schema`); absent from an older module. */
@@ -141,6 +139,9 @@ export interface BuilderEntryPreset {
   suits: string;
   settings: string[];
   defaults: Record<string, string | number>;
+  /** The strategies it suits: each a strategy and any settings it must have (`fits`); absent from an
+   *  older module. */
+  fits?: Array<{ strategy: string } & Record<string, string>>;
 }
 
 export interface BuilderEntrySchema {

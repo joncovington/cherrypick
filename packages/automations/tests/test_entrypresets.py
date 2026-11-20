@@ -20,7 +20,7 @@ def _combos(table: dict, name: str):
 
 
 def _load(entry: dict, gates: list[dict]) -> dict:
-    spec = {**builderform.WIZARD_DEFAULTS, "legs": LEGS, "entry": entry, "gates": gates}
+    spec = {**builderform.STRATEGY_DEFAULTS, "legs": LEGS, "entry": entry, "gates": gates}
     return config.load_arms({"automations": {"try-it": spec}})["try-it"]
 
 
@@ -99,3 +99,42 @@ def test_the_schema_lists_every_preset_with_settings_it_describes():
     assert set(s["entries"]) == set(entrypresets.ENTRIES) and set(s["filters"]) == set(entrypresets.FILTERS)
     for p in [*s["entries"].values(), *s["filters"].values()]:
         assert p["label"] and p["group"] and all(k in s["settings"] for k in p["settings"])
+
+
+def _fit_problems() -> list[str]:
+    """A preset's fit naming no strategy the selector offers, or a setting or a value that strategy
+    does not take."""
+    s = strategies.schema()
+    out = []
+    for name, preset in entrypresets.ENTRIES.items():
+        for fit in preset.get("fits", []):
+            st = s["strategies"].get(fit.get("strategy"))
+            if st is None or not st["available"]:
+                out.append(f"{name}: {fit.get('strategy')!r} is no strategy the selector builds")
+                continue
+            for k, v in fit.items():
+                if k == "strategy":
+                    continue
+                if k not in st["settings"]:
+                    out.append(f"{name}: {fit['strategy']} takes no {k!r}")
+                elif v not in (s["settings"][k].get("options") or [v]):
+                    out.append(f"{name}: {fit['strategy']}'s {k} is never {v!r}")
+    return out
+
+
+def test_every_presets_fit_is_a_strategy_and_settings_the_selector_offers():
+    assert _fit_problems() == []
+    assert entrypresets.schema()["entries"]["rsi_pullback"]["fits"] == entrypresets.SHORT_PUT
+
+
+@pytest.mark.parametrize(
+    "fit, expect",
+    [
+        ({"strategy": "condor"}, "'condor' is no strategy"),
+        ({"strategy": "jade_lizard", "direction": "short"}, "jade_lizard takes no 'direction'"),
+        ({"strategy": "vertical", "right": "both"}, "vertical's right is never 'both'"),
+    ],
+)
+def test_the_fit_check_refuses_each_kind_of_gap(monkeypatch, fit, expect):
+    monkeypatch.setitem(entrypresets.ENTRIES, "orb", {**entrypresets.ENTRIES["orb"], "fits": [fit]})
+    assert any(expect in p for p in _fit_problems())

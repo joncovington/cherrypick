@@ -6,7 +6,7 @@ import { ExitsSection, FiltersSection } from "./FiltersExits";
 import { Line, Marked, Slot, without, type Seg } from "./sentence";
 import { FormSelect, More, Row, TriggerLines, type MoreItem } from "./lines";
 import { automationWords, joined, list, lower, obj, strategySegs } from "./specWords";
-import { grouped, presetStart, strategyStart } from "./presets";
+import { grouped, presetStart, presetSuits, strategyStart } from "./presets";
 import { TradeShapeView } from "./TradeShape";
 import { Tip, TipText, holdsCloseSnapshot, useTips } from "./builderTips";
 import { isLegId, legPlain, writtenLeg } from "./legWords";
@@ -522,6 +522,7 @@ function EntrySection({
   preset,
   setPreset,
   tips,
+  strategy,
 }: {
   schema: BuilderSchema;
   W: BuilderWords;
@@ -530,6 +531,8 @@ function EntrySection({
   preset: Preset | null;
   setPreset: (p: Preset | null) => void;
   tips: ReturnType<typeof useTips>;
+  /** The strategy that filled the legs, for the presets that suit it. */
+  strategy: Strategy | null;
 }) {
   const specRef = useRef(spec);
   specRef.current = spec;
@@ -602,6 +605,7 @@ function EntrySection({
                   onClick={() => pick(k)}
                 >
                   {p.label}
+                  {presetSuits(p, strategy) && <span className="b-fit">suits</span>}
                 </button>
               ))}
             </div>
@@ -840,7 +844,7 @@ export function BuilderForm({
         <TradeSection schema={schema} W={W} spec={spec} onChange={onChange} strategy={strategy} setStrategy={setStrategy} payoff={payoff} tips={tips} />
       </Sec>
       <Sec {...sec(1)} line={said.entry}>
-        <EntrySection schema={schema} W={W} spec={spec} onChange={onChange} preset={preset} setPreset={setPreset} tips={tips} />
+        <EntrySection schema={schema} W={W} spec={spec} onChange={onChange} preset={preset} setPreset={setPreset} tips={tips} strategy={strategy} />
       </Sec>
       <Sec {...sec(2)} line={said.filters.length ? joined(said.filters, " · ") : [{ t: "none · optional" }]}>
         <FiltersSection schema={schema} W={W} spec={spec} onChange={onChange} />

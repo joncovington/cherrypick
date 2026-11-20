@@ -189,16 +189,8 @@ def test_the_command_opens_the_ledger_read_only_and_answers_on_stdout(tmp_path, 
     assert out["ok"] is True and out["name"] == "iron-fly-1000" and opened == [str(tmp_path / "paper.db")]
 
 
-def test_every_wizard_shape_is_an_automation_the_engine_accepts():
+def test_the_credit_trade_rules_are_the_engines_own_exits():
     s = builderform.schema()
-    assert set(s["shapes"]) == set(builderform.SHAPES)
-    for key, shape in s["shapes"].items():
-        name = "wiz-" + key.replace("_", "-")
-        arm, problems = builderform.resolve({}, name, shape["spec"])
-        assert problems == [], (key, problems)
-        assert len(arm["legs"]) == len(builderform.SHAPES[key]["legs"])
-    credit = {"profit_target_pct": 50, "stop_credit_multiple": 1, "close_at_dte": 21}
-    assert s["shapes"]["put_credit_spread"]["spec"]["exit"] == credit == s["credit_rules"]
-    assert s["shapes"]["custom"]["spec"]["exit"] == {"close_at_dte": 21}
-    # monthlies, so our own end-of-day chains can backtest every shape
-    assert all(sh["spec"]["expiry"].get("monthly") is True for sh in s["shapes"].values())
+    assert s["credit_rules"] == {"profit_target_pct": 50, "stop_credit_multiple": 1, "close_at_dte": 21}
+    assert set(s["credit_rules"]) <= arms_mod.EXIT_KEYS
+    assert "shapes" not in s, "the wizard is retired; strategies start an automation"

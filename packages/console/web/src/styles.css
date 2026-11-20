@@ -13216,3 +13216,9 @@ span.b-start {
 .b-flag b {
   color: var(--warn);
 }
+
+.b-fit {
+  color: var(--pos);
+  font-size: 0.7rem;
+  font-weight: 400;
+}

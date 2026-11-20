@@ -866,6 +866,14 @@
      "type": "number"
     }
    },
+   "open_change_pct": {
+    "min": {
+     "type": "number"
+    },
+    "max": {
+     "type": "number"
+    }
+   },
    "vix_level": {
     "min": {
      "type": "number"
@@ -1441,6 +1449,23 @@
   },
   {
    "gate": "gap_pct",
+   "stage": "signal",
+   "runs": "market",
+   "params": [
+    {
+     "name": "min",
+     "required": false,
+     "default": null
+    },
+    {
+     "name": "max",
+     "required": false,
+     "default": null
+    }
+   ]
+  },
+  {
+   "gate": "open_change_pct",
    "stage": "signal",
    "runs": "market",
    "params": [
@@ -2134,7 +2159,8 @@
      "at",
      "window"
     ],
-    "defaults": {}
+    "defaults": {},
+    "fits": []
    },
    "near_close": {
     "label": "Near the close",
@@ -2147,7 +2173,8 @@
     ],
     "defaults": {
      "at": "15:55"
-    }
+    },
+    "fits": []
    },
    "rsi_pullback": {
     "label": "Pullback in an uptrend",
@@ -2162,7 +2189,19 @@
     ],
     "defaults": {
      "at": "15:50"
-    }
+    },
+    "fits": [
+     {
+      "strategy": "option",
+      "direction": "short",
+      "right": "put"
+     },
+     {
+      "strategy": "vertical",
+      "direction": "short",
+      "right": "put"
+     }
+    ]
    },
    "down_days": {
     "label": "Down days in an uptrend",
@@ -2176,7 +2215,19 @@
     ],
     "defaults": {
      "at": "15:50"
-    }
+    },
+    "fits": [
+     {
+      "strategy": "option",
+      "direction": "short",
+      "right": "put"
+     },
+     {
+      "strategy": "vertical",
+      "direction": "short",
+      "right": "put"
+     }
+    ]
    },
    "rsi_overbought": {
     "label": "Overbought in a downtrend",
@@ -2191,7 +2242,19 @@
     ],
     "defaults": {
      "at": "15:50"
-    }
+    },
+    "fits": [
+     {
+      "strategy": "option",
+      "direction": "short",
+      "right": "call"
+     },
+     {
+      "strategy": "vertical",
+      "direction": "short",
+      "right": "call"
+     }
+    ]
    },
    "ma_cross": {
     "label": "Moving-average cross",
@@ -2206,7 +2269,12 @@
      "from",
      "until"
     ],
-    "defaults": {}
+    "defaults": {},
+    "fits": [
+     {
+      "strategy": "vertical"
+     }
+    ]
    },
    "orb": {
     "label": "Opening-range breakout",
@@ -2218,7 +2286,12 @@
      "direction",
      "latest"
     ],
-    "defaults": {}
+    "defaults": {},
+    "fits": [
+     {
+      "strategy": "vertical"
+     }
+    ]
    },
    "gap_fill": {
     "label": "Gap fill",
@@ -2234,7 +2307,33 @@
     "defaults": {
      "from": "09:35",
      "until": "12:00"
-    }
+    },
+    "fits": [
+     {
+      "strategy": "iron_condor",
+      "direction": "short"
+     },
+     {
+      "strategy": "iron_fly",
+      "direction": "short"
+     },
+     {
+      "strategy": "strangle",
+      "direction": "short"
+     },
+     {
+      "strategy": "straddle",
+      "direction": "short"
+     },
+     {
+      "strategy": "butterfly",
+      "direction": "long"
+     },
+     {
+      "strategy": "broken_wing",
+      "direction": "long"
+     }
+    ]
    },
    "after_event": {
     "label": "After an event",
@@ -2246,7 +2345,36 @@
      "sessions",
      "at"
     ],
-    "defaults": {}
+    "defaults": {},
+    "fits": [
+     {
+      "strategy": "option",
+      "direction": "short"
+     },
+     {
+      "strategy": "vertical",
+      "direction": "short"
+     },
+     {
+      "strategy": "strangle",
+      "direction": "short"
+     },
+     {
+      "strategy": "straddle",
+      "direction": "short"
+     },
+     {
+      "strategy": "iron_condor",
+      "direction": "short"
+     },
+     {
+      "strategy": "iron_fly",
+      "direction": "short"
+     },
+     {
+      "strategy": "jade_lizard"
+     }
+    ]
    },
    "custom": {
     "label": "Custom",
@@ -2257,7 +2385,8 @@
      "at",
      "window"
     ],
-    "defaults": {}
+    "defaults": {},
+    "fits": []
    }
   },
   "filters": {
@@ -2270,7 +2399,8 @@
      "vix_min",
      "vix_max"
     ],
-    "defaults": {}
+    "defaults": {},
+    "fits": []
    },
    "iv_rank": {
     "label": "Implied vol rank elevated",
@@ -2281,7 +2411,8 @@
      "rank_min",
      "lookback"
     ],
-    "defaults": {}
+    "defaults": {},
+    "fits": []
    },
    "iv_over_rv": {
     "label": "Implied over realized",
@@ -2292,7 +2423,8 @@
      "edge_min",
      "rv_n"
     ],
-    "defaults": {}
+    "defaults": {},
+    "fits": []
    },
    "calm_open": {
     "label": "Calm open",
@@ -2303,7 +2435,8 @@
      "gap_max",
      "vix_up_max"
     ],
-    "defaults": {}
+    "defaults": {},
+    "fits": []
    },
    "quiet_day": {
     "label": "Quiet so far today",
@@ -2313,7 +2446,8 @@
     "settings": [
      "move_max"
     ],
-    "defaults": {}
+    "defaults": {},
+    "fits": []
    },
    "uptrend": {
     "label": "In an uptrend",
@@ -2323,7 +2457,8 @@
     "settings": [
      "ma_n"
     ],
-    "defaults": {}
+    "defaults": {},
+    "fits": []
    }
   },
   "settings": {
@@ -2998,6 +3133,12 @@
     "group": "Price move",
     "about": "The open against the previous close, in percent.",
     "sentence": "the opening gap is {range}%"
+   },
+   "open_change_pct": {
+    "label": "Move since the open",
+    "group": "Price move",
+    "about": "The price against today's open, in percent.",
+    "sentence": "the move since the open is {range}%"
    },
    "above_ma": {
     "label": "Above a moving average",

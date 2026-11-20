@@ -69,6 +69,37 @@ SETTINGS: dict[str, dict] = {
 }
 
 
+#: The strategies a preset suits, as the Builder's strategy line can match them: each a strategy
+#: (`strategies.STRATEGIES`) and any settings it must have (sold, on puts). The Builder marks a
+#: preset "suits" when the chosen strategy matches one; `suits` says it in words.
+SHORT_PUT = [
+    {"strategy": "option", "direction": "short", "right": "put"},
+    {"strategy": "vertical", "direction": "short", "right": "put"},
+]
+SHORT_CALL = [
+    {"strategy": "option", "direction": "short", "right": "call"},
+    {"strategy": "vertical", "direction": "short", "right": "call"},
+]
+SPREADS = [{"strategy": "vertical"}]
+RANGE_BOUND = [
+    {"strategy": "iron_condor", "direction": "short"},
+    {"strategy": "iron_fly", "direction": "short"},
+    {"strategy": "strangle", "direction": "short"},
+    {"strategy": "straddle", "direction": "short"},
+    {"strategy": "butterfly", "direction": "long"},
+    {"strategy": "broken_wing", "direction": "long"},
+]
+SELLING = [
+    {"strategy": "option", "direction": "short"},
+    {"strategy": "vertical", "direction": "short"},
+    {"strategy": "strangle", "direction": "short"},
+    {"strategy": "straddle", "direction": "short"},
+    {"strategy": "iron_condor", "direction": "short"},
+    {"strategy": "iron_fly", "direction": "short"},
+    {"strategy": "jade_lizard"},
+]
+
+
 def _p(label: str, group: str, about: str, settings: list[str], suits: str = "", **more) -> dict:
     return {"label": label, "group": group, "about": about, "settings": settings, "suits": suits, **more}
 
@@ -97,6 +128,7 @@ ENTRIES: dict[str, dict] = {
         ["rsi_n", "below", "trend_n", "at"],
         "short puts, put spreads",
         defaults={"at": "15:50"},
+        fits=SHORT_PUT,
     ),
     "down_days": _p(
         "Down days in an uptrend",
@@ -105,6 +137,7 @@ ENTRIES: dict[str, dict] = {
         ["days", "trend_n", "at"],
         "short puts, put spreads",
         defaults={"at": "15:50"},
+        fits=SHORT_PUT,
     ),
     "rsi_overbought": _p(
         "Overbought in a downtrend",
@@ -113,6 +146,7 @@ ENTRIES: dict[str, dict] = {
         ["rsi_n", "above", "trend_n", "at"],
         "short calls, call spreads",
         defaults={"at": "15:50"},
+        fits=SHORT_CALL,
     ),
     "ma_cross": _p(
         "Moving-average cross",
@@ -120,6 +154,7 @@ ENTRIES: dict[str, dict] = {
         "A fast average crossing a slow one on intraday bars, inside a window.",
         ["fast", "slow", "direction", "bar_minutes", "from", "until"],
         "spreads on the side of the cross",
+        fits=SPREADS,
     ),
     "orb": _p(
         "Opening-range breakout",
@@ -127,6 +162,7 @@ ENTRIES: dict[str, dict] = {
         "The price leaving the first minutes' range, once, no later than a set time.",
         ["minutes", "direction", "latest"],
         "spreads on the side of the break",
+        fits=SPREADS,
     ),
     "gap_fill": _p(
         "Gap fill",
@@ -134,6 +170,7 @@ ENTRIES: dict[str, dict] = {
         "An opening gap of at least a set size closing back to the prior close.",
         ["min_pct", "bar_minutes", "from", "until"],
         "range-bound structures",
+        fits=RANGE_BOUND,
         defaults={"from": "09:35", "until": "12:00"},
     ),
     "after_event": _p(
@@ -142,6 +179,7 @@ ENTRIES: dict[str, dict] = {
         "A set number of sessions after a calendar event, at a set time: the volatility after it.",
         ["event", "sessions", "at"],
         "premium selling after the event",
+        fits=SELLING,
     ),
     "custom": _p(
         "Custom",
@@ -375,7 +413,7 @@ def schema() -> dict:
     def show(table: dict) -> dict:
         return {
             k: {key: v.get(key) for key in ("label", "group", "about", "suits", "settings")}
-            | {"defaults": v.get("defaults", {})}
+            | {"defaults": v.get("defaults", {}), "fits": v.get("fits", [])}
             for k, v in table.items()
         }
 
