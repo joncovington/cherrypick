@@ -607,6 +607,17 @@ class Broker:
             self._reset()
             return []
 
+    def positions(self) -> list[dict] | None:
+        """The account's open positions (`core.broker.positions`), or None when they could not be
+        read. Fails closed the way `history` does, and never returns `[]` for a failure: an empty list
+        means the account holds nothing, which is a claim a caller may act on."""
+        try:
+            self._ensure()
+            return self.run(_broker.positions(self._account, self._session))
+        except Exception:  # noqa: BLE001 -- fail-closed, see docstring
+            self._reset()
+            return None
+
     def history(self, trade_date: str, symbol: str | None = None) -> tuple[list[dict] | None, str | None]:
         """Real broker transactions for one session (the fee-reconciliation source of truth).
         Fails closed: any error returns `(None, reason)`, which a caller treats as "try again

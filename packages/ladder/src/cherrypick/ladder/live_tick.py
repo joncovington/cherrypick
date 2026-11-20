@@ -16,7 +16,13 @@ imports out of every other ladder file. The adapter is built inside `run_once`, 
      realized money, then refine fees from the broker's transaction rows. A fill the ledger has not
      seen yet cannot reach `plan`, so a resting buy that already filled is never cancelled and
      re-placed. A read that fails leaves the tick without a plan (`reconcile_incomplete`)
-  4. plan inputs, `orders.plan`, `orders.Executor`
+  4. **splits** (before the reconcile, ledger only): each `live.splits` entry gone ex since a lot was
+     bought restates that lot once (`apply_splits`), so the planner prices the new terms
+  5. **positions cross-check**, after the reconcile and before the plan (`check_positions`): the broker's
+     equity shares per fund against the ledger's open live shares (`live_checks`). A shortfall, a
+     suspected split or an unreadable read stops that fund's (or every fund's) new buys and leaves
+     the resting sells alone
+  6. plan inputs, `orders.plan`, `orders.Executor`
 
 **Unarmed**, and before `session_start`, the tick stops after the reconcile: it reads, it places and
 cancels nothing. **At `disarm_at`** the tick still runs once more while the arm is valid: the planner
@@ -48,7 +54,7 @@ from cherrypick.core import looplock
 from cherrypick.core import redact as _redact
 from cherrypick.core.clock import ET, hhmm_to_min, minute_of_day, now_et, now_iso
 
-from cherrypick.ladder import live_db, live_gates, live_loop, orders, paper_loop, provider, rules
+from cherrypick.ladder import live_checks, live_db, live_gates, live_loop, orders, paper_loop, provider, rules
 
 _logger = logging.getLogger("ladder_live_tick")
 
@@ -81,6 +87,31 @@ def orphans_path() -> str:
 
 def once_lock_path() -> str:
     return os.path.join(_data_dir(), "live_once.lock")
+
+
+def checks_path() -> str:
+    """The last tick's splits, positions cross-check and dry-run intents, for `--status` (no broker)."""
+    return os.path.join(_data_dir(), "live_checks.json")
+
+
+def read_checks() -> dict:
+    try:
+        with open(checks_path(), encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _write_checks(state: dict) -> None:
+    try:
+        os.makedirs(_data_dir(), exist_ok=True)
+        tmp = checks_path() + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(state, f, default=str)
+        os.replace(tmp, checks_path())
+    except OSError:
+        pass  # a status note must never break a tick
 
 
 def dry_run(config: dict) -> bool:
@@ -482,6 +513,89 @@ def reconcile(conn, broker, config: dict, *, when: datetime, account: str | None
     return out
 
 
+# --------------------------------------------------------------------------- splits
+def restate_lot(lot: dict, split: live_checks.Split) -> dict:
+    """The lot's columns at the split's terms. Shares and cost go through the planner's own `restate`,
+    so the ledger and the plan agree on how a reverse split rounds. The money columns are cash that
+    moved and do not change."""
+    view = orders.restate(
+        {"symbol": lot["symbol"], "shares": int(lot["quantity"]), "cost": float(lot["buy_price"])},
+        split.factor,
+    )
+    out = {"quantity": view["shares"], "buy_price": round(view["cost"], 6)}
+    if lot.get("buy_level") is not None:
+        out["buy_level"] = round(float(lot["buy_level"]) / split.factor, 6)
+    if lot.get("target_price") is not None:
+        out["target_price"] = round(float(lot["target_price"]) / split.factor, 6)
+    return out
+
+
+def apply_splits(conn, config: dict, *, when: datetime, arm: str, log=_log) -> dict:
+    """Restate the open lots for every `live.splits` entry gone ex since the lot was bought, once each.
+
+    Ledger-only (no broker), so it runs before the reconcile: a sell the broker adjusted for the split
+    then fills against shares the ledger already counts the same way. Idempotent: each application is
+    recorded with the lot in one transaction (`live_db.apply_lot_split`), so a second tick finds it
+    done. The planner then sees new terms, so a resting sell at the old terms is cancelled and the
+    new one placed. Returns {"problems", "applied", "alerts"}."""
+    live = live_gates.live_block(config)
+    splits, problems = live_checks.parse_splits(live)
+    out: dict = {"problems": problems, "applied": [], "alerts": []}
+    if not splits:
+        return out
+    today = when.astimezone(ET).date()
+    day = today.isoformat()
+    done = live_db.lot_splits(conn)
+    for lot in live_db.open_lots(conn):
+        for s in live_checks.due(splits, lot, today, done):
+            update = restate_lot(lot, s)
+            record = {
+                "symbol": s.fund,
+                "ex_date": s.ex_date,
+                "to_shares": s.to,
+                "for_shares": s.per,
+                "shares_before": int(lot["quantity"]),
+                "shares_after": update["quantity"],
+                "price_before": float(lot["buy_price"]),
+                "price_after": update["buy_price"],
+                "applied_at": now_iso(),
+            }
+            if not live_db.apply_lot_split(conn, lot["position_id"], update, record):
+                continue
+            done.add((lot["position_id"], s.ex_date))
+            what = (
+                f"restated {lot['position_id']} for the {s.ratio} split of {s.fund} (ex {s.ex_date}): "
+                f"{record['shares_before']} -> {record['shares_after']} shares"
+            )
+            log(what)
+            out["applied"].append(lot["position_id"])
+            _journal(conn, day=day, arm=arm, symbol=s.fund, mode="split", reason=what, accepted=True,
+                     detail=record)  # fmt: skip
+            if update["quantity"] < 1:
+                alert = {"kind": "split_leaves_no_whole_share", "lot": lot["position_id"], "symbol": s.fund}
+                out["alerts"].append(alert)
+                _journal(conn, day=day, arm=arm, symbol=s.fund, mode="alert",
+                         reason=f"split_leaves_no_whole_share {lot['position_id']}", accepted=False,
+                         detail=alert)  # fmt: skip
+            lot = {**lot, **update}
+    return out
+
+
+# --------------------------------------------------------------------------- positions cross-check
+def check_positions(conn, broker, funds: list[str]) -> dict:
+    """The ledger's open live shares per fund against the broker's equity shares (`live_checks`).
+    Read only. A read that raises, or a broker with no positions read, is unreadable, never empty."""
+    ledger: dict[str, int] = {}
+    for lot in live_db.open_lots(conn):
+        symbol = str(lot["symbol"]).upper()
+        ledger[symbol] = ledger.get(symbol, 0) + int(lot["quantity"])
+    try:
+        rows = broker.positions()
+    except Exception:  # noqa: BLE001
+        rows = None
+    return live_checks.cross_check(ledger, rows, funds)
+
+
 # --------------------------------------------------------------------------- plan inputs
 def plan_inputs(conn, config: dict, rule: dict, *, when: datetime, cache_path: str) -> dict:
     live = live_gates.live_block(config)
@@ -498,8 +612,23 @@ def plan_inputs(conn, config: dict, rule: dict, *, when: datetime, cache_path: s
     anchors = {}
     if rule["entry"] == "chain":
         anchors = {s: paper_loop.chain_anchor(live_db.lots_of(conn, arm, s)) for s in symbols}
+    # The ledger's lots are restated by `apply_splits` before this runs, so the planner is given no
+    # factor; only the reference close (the previous session's, from the cache) can still be on the
+    # old side of a split, and `restated_reference` settles that against the fund's bid.
+    splits, _ = live_checks.parse_splits(live)
+    prev = _cal.previous_trading_day(today)
     return {
-        "ref_close": {s: provider.reference_close(cache_path, s, today) for s in symbols},
+        "ref_close": {
+            s: live_checks.restated_reference(
+                provider.reference_close(cache_path, s, today),
+                splits,
+                s,
+                bid=marks.get(s),
+                prev_session=prev,
+                today=today,
+            )
+            for s in symbols
+        },
         "lots": [
             {
                 "id": lot["position_id"],
@@ -523,7 +652,24 @@ def plan_inputs(conn, config: dict, rule: dict, *, when: datetime, cache_path: s
 
 
 # --------------------------------------------------------------------------- apply and record
-def _record_results(conn, results: list[dict], *, arm: str, day: str, dry: bool, account: str | None) -> None:
+def _same_terms(prior: dict | None, detail: dict) -> bool:
+    """Whether the last dry-run row for this intended order states the terms it states now."""
+    if prior is None:
+        return False
+    try:
+        old = json.loads(prior.get("detail") or "null")
+    except ValueError:
+        return False
+    return isinstance(old, dict) and all(old.get(k) == detail.get(k) for k in ("shares", "limit", "tif"))
+
+
+def _record_results(
+    conn, results: list[dict], *, arm: str, day: str, dry: bool, account: str | None
+) -> list[dict]:
+    """Journal what the executor did. Returns the dry-run intents (the orders it would send), which
+    `--status` lists; the journal takes one only when it is new or its terms changed since the last
+    row for that client id, so a standing intent is one row and not one per minute."""
+    intents: list[dict] = []
     for r in results:
         a = r["action"]
         spec = a.get("spec") or {}
@@ -533,8 +679,11 @@ def _record_results(conn, results: list[dict], *, arm: str, day: str, dry: bool,
         if spec:
             detail.update(shares=leg.get("quantity"), limit=spec.get("price"), tif=spec.get("time_in_force"))
         if dry:
-            _journal(conn, day=day, arm=arm, symbol=a["symbol"], mode="dry_run", reason=f"would {what}",
-                     accepted=True, detail=detail)  # fmt: skip
+            intents.append({"what": what, **detail})
+            reason = f"would {what}"
+            if not _same_terms(live_db.last_dry_run(conn, arm, a["symbol"], reason), detail):
+                _journal(conn, day=day, arm=arm, symbol=a["symbol"], mode="dry_run", reason=reason,
+                         accepted=True, detail=detail)  # fmt: skip
             continue
         if not r.get("ok"):
             detail.update(error=r.get("error"), skipped=r.get("skipped"), uncertain=r.get("uncertain"),
@@ -584,15 +733,20 @@ def _record_results(conn, results: list[dict], *, arm: str, day: str, dry: bool,
             accepted=True,
             detail=detail,
         )
+    return intents
 
 
 def _cycle(conn, broker, config, rule, *, when, cache_path, account, armed, halted, dry, log) -> dict:
-    """Reconcile, then plan and apply. One pass."""
+    """Splits, reconcile, the positions cross-check, then plan and apply. One pass."""
     live = live_gates.live_block(config)
     arm = str(live["arm"]).strip()
     day = when.astimezone(ET).date().isoformat()
+    # Ledger only, so before the broker is read: lots restated for a split the human has declared.
+    split = apply_splits(conn, config, when=when, arm=arm, log=log)
     rec = reconcile(conn, broker, config, when=when, account=account, log=log)
     summary: dict = {"reconcile": {k: v for k, v in rec.items() if v not in ([], 0)}}
+    if split["applied"] or split["problems"]:
+        summary["splits"] = {k: v for k, v in split.items() if v}
     if not rec["complete"]:
         return {**summary, "planned": False, "skipped": "reconcile_incomplete", "new_lots": rec["new_lots"]}
     summary["new_lots"], summary["closed_lots"] = rec["new_lots"], rec["closed_lots"]
@@ -609,15 +763,49 @@ def _cycle(conn, broker, config, rule, *, when, cache_path, account, armed, halt
     for lot in live_db.open_lots(conn, arm):
         if lot.get("exit_reason") == REVIEW_MARK:
             note("alert", lot["symbol"], f"{REVIEW_MARK} {lot['position_id']}")
+    funds = [str(s).upper() for s in live.get("symbols") or []]
+    check = check_positions(conn, broker, funds)
+    block = dict(check["blocked"])
+    for problem in split["problems"]:
+        note("alert", "-", f"splits_invalid: {problem}")
+    if split["problems"]:  # a split entry it cannot read may be a split it is not applying
+        block.update({f: "splits_invalid" for f in funds})
+    if not check["readable"]:
+        note("alert", "-", "positions_unreadable: the broker's positions could not be read; no new buys")
+    for fund, why in check["blocked"].items():
+        if check["readable"]:
+            note("alert", fund, why, check["funds"].get(fund))
+    for fund, row in check["funds"].items():
+        if row["status"] == "surplus" and fund not in check["blocked"]:
+            _journal(conn, day=day, arm=arm, symbol=fund, mode="positions", accepted=True, detail=row,
+                     reason=f"surplus: broker holds {row['broker']:g}, ledger {row['ledger']}; "
+                            "the rest is not the ladder's and is left alone")  # fmt: skip
+    summary["positions"] = {
+        "readable": check["readable"],
+        "blocked": check["blocked"],
+        "funds": check["funds"],
+    }
     inputs = plan_inputs(conn, config, rule, when=when, cache_path=cache_path)
-    the_plan = orders.plan(live, rule, when=when, armed=armed, halted=halted, **inputs)
+    the_plan = orders.plan(live, rule, when=when, armed=armed, halted=halted, block_buys=block, **inputs)
     for alert in the_plan.alerts:
         note("alert", str(alert.get("symbol", "-")), f"{alert['kind']} {alert.get('lot', '')}".strip(), alert)
     for text in the_plan.buys_blocked:
         symbol, _, why = text.partition(": ")
         note("blocked", symbol if why else "-", why or text)
     results = orders.Executor(broker, dry_run=dry, log=log).apply(the_plan)
-    _record_results(conn, results, arm=arm, day=day, dry=dry, account=account)
+    intents = _record_results(conn, results, arm=arm, day=day, dry=dry, account=account)
+    _write_checks(
+        {
+            "at": now_iso(),
+            "date": day,
+            "positions": summary["positions"],
+            "splits": {
+                "declared": [s.__dict__ for s in live_checks.parse_splits(live)[0]],
+                "problems": split["problems"],
+            },
+            "intents": intents,
+        }
+    )
     summary.update(
         planned=True,
         plan=the_plan.as_dict(),

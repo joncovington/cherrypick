@@ -86,7 +86,8 @@ what it may write. The package's own CLAUDE.md holds the detail.
   `live.gate0_confirmed`, both guarded) and in dry-run (`live.dry_run` true, guarded), with no
   `live.task_name`. `live_loop --arm --confirm YES`, `--install-task` and `--disarm` write the day's
   arm record, `--status` reads the gates, and `--once` runs one tick through the ladder's own broker
-  adapter (designated account only): it reads the broker, reconciles a separate live ledger
+  adapter (designated account only): it reads the broker (orders, fills, fees and the account's
+  positions, which it compares with its own ledger's shares and never adopts), reconciles a separate live ledger
   (`~/.cherrypick/data/ladder/live_trades.db`), and while armed plans orders for the live arm. In
   dry-run it journals what it would send and sends nothing. Real orders need `live.dry_run: false`
   and every gate, re-checked on each placement. Only `ldr.` client ids are its own: it never touches

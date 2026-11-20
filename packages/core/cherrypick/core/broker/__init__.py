@@ -654,6 +654,33 @@ async def recover_by_identifier(account: Any, session: Any, external_identifier:
     return None
 
 
+async def positions(account: Any, session: Any) -> list[dict]:
+    """Every open position on the account, as [{symbol, instrument_type, underlying_symbol, quantity}]
+    with `quantity` signed (long +, short -). GET-only.
+
+    Read from the SDK's `CurrentPosition` (`Account.get_positions`): `quantity` is an unsigned
+    Decimal and `quantity_direction` the string "Long", "Short" or "Zero". A row whose direction is
+    none of those cannot be signed, so the whole read raises rather than count it as flat: a caller
+    must treat a position it cannot read as unknown, never as zero. Zero-quantity rows are dropped."""
+    out: list[dict] = []
+    for p in await account.get_positions(session):
+        qty = float(getattr(p, "quantity", 0) or 0)
+        direction = str(getattr(p, "quantity_direction", "") or "").strip().lower()
+        if direction == "zero" or qty == 0:
+            continue
+        if direction not in ("long", "short"):
+            raise ValueError(f"position {getattr(p, 'symbol', '?')!r} has an unreadable direction")
+        out.append(
+            {
+                "symbol": str(getattr(p, "symbol", "")),
+                "instrument_type": str(getattr(p, "instrument_type", "")),
+                "underlying_symbol": str(getattr(p, "underlying_symbol", "") or ""),
+                "quantity": -abs(qty) if direction == "short" else abs(qty),
+            }
+        )
+    return out
+
+
 def opens_position(spec: dict) -> bool:
     """Whether an order spec opens anything: any leg whose action is "... to open" (the human action
     strings `build_order` maps). Openings are what a halt, a kill verdict or an unarmed day refuse;

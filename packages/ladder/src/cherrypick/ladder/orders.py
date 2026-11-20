@@ -29,7 +29,12 @@ re-placed with an `.rN` suffix, at most three times.
 **Splits** are an input: `splits[fund]` is the factor (new shares per old share) the stored lots and the
 reference close have not yet been restated by. The planner restates both itself and prices every order
 at the restated terms. The old orders do not match the new ids, so they are cancelled and re-placed;
-nothing relies on the broker's own adjustment.
+nothing relies on the broker's own adjustment. The live tick restates the ledger's lots itself, once
+(`live_checks`, `live_tick.apply_splits`), so it passes no factor for lots; the planner's factor stays
+for a caller whose lots are not yet restated.
+
+**Blocked funds** (`block_buys`, the positions cross-check) take no new buy and lose their resting
+buys; their sells are planned as ever.
 
 Order specs are plain dicts for `cherrypick.core.broker.build_order`.
 """
@@ -258,13 +263,16 @@ def plan(
     anchors: dict[str, float | None] | None = None,
     splits: dict[str, float] | None = None,
     ended_ids: Iterable[str] = (),
+    block_buys: dict[str, str] | None = None,
 ) -> Plan:
     """What to place, cancel and keep. Pure: no clock, no broker, no ledger.
 
     `lots` are the open live lots ({id, symbol, shares, cost, buy_date}); `working` is the broker's
     working-order list ({order_id, external_identifier, ...}); `buys_today` counts the fund's lots
     bought this session, sold or not; `marks` is each fund's bid; `anchors` is `chain`'s last lot
-    bought per fund; `ended_ids` are client ids the broker ended unfilled today."""
+    bought per fund; `ended_ids` are client ids the broker ended unfilled today. `block_buys` maps a
+    fund to why it may take no new buy (the positions cross-check): its resting buys are cancelled and
+    none placed, and its sells are untouched."""
     out = Plan(armed=armed)
     if not armed:
         out.buys_blocked.append("unarmed")
@@ -286,6 +294,7 @@ def plan(
     splits = {k.upper(): v for k, v in (splits or {}).items()}
     ref_close = {k.upper(): v for k, v in ref_close.items()}
     ended = set(ended_ids)
+    blocked = {k.upper(): v for k, v in (block_buys or {}).items()}
 
     held = [restate(lot, splits.get(str(lot["symbol"]).upper())) for lot in lots]
     mine = [(w, parse_id(w.get("external_identifier"))) for w in working]
@@ -320,6 +329,9 @@ def plan(
     for lot in held:
         desired_occ.add(lot["symbol"], lot["shares"], lot["cost"])
     for symbol in symbols:
+        if symbol in blocked:
+            out.buys_blocked.append(f"{symbol}: {blocked[symbol]}")
+            continue
         ref = ref_close.get(symbol)
         if not ref:
             out.buys_blocked.append(f"{symbol}: no_reference_close")
@@ -365,7 +377,7 @@ def plan(
 
     want = {d["id"] for d in desired}
     # Funds whose reference is missing keep what rests; every other resting buy must be wanted.
-    no_ref = {s for s in symbols if not ref_close.get(s)}
+    no_ref = {s for s in symbols if not ref_close.get(s) and s not in blocked}
     occ = _Occupancy(live)
     for lot in held:
         occ.add(lot["symbol"], lot["shares"], lot["cost"])
@@ -377,7 +389,9 @@ def plan(
             seen.add(eid)
             out.actions.append(_keep(w, p["symbol"], "buy", "resting"))
         else:
-            out.actions.append(_cancel(w, p["symbol"], "buy", "not_wanted"))
+            out.actions.append(
+                _cancel(w, p["symbol"], "buy", "blocked" if p["symbol"] in blocked else "not_wanted")
+            )
     for d in desired:
         if d["id"] in seen:
             continue
