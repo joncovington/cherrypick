@@ -4506,7 +4506,7 @@
       "id": 95,
       "study": "item95",
       "title": "The ladder's paper rules at one-minute resolution: the four paper arms, 2016 on",
-      "status": "declared",
+      "status": "failed",
       "legacy": false,
       "setup": "dip-buy",
       "side": "bullish",
@@ -4560,13 +4560,13 @@
       ],
       "retest": null,
       "retests": [],
-      "outcome": null
+      "outcome": "every arm fails CONTROL_RULE (RULE passes for all): session passes every check but Holm across the four arms, its design edge over random entries positive in both halves and at 3x the spread; once and decay have a negative second half, chain's t is under 2; buy-and-hold beats every arm on the equity-index funds, so paper keeps all four arms and the console keeps saying it is not a tested edge"
     },
     {
       "id": 96,
       "study": "item96",
       "title": "The ladder's paper arms with overnight hours, 2024-09 on",
-      "status": "declared",
+      "status": "passed",
       "legacy": false,
       "setup": "dip-buy",
       "side": "bullish",
@@ -4604,7 +4604,7 @@
       ],
       "retest": null,
       "retests": [],
-      "outcome": null
+      "outcome": "provisional pass (no split, two years): all hours beat paper hours for session on most funds, carried by the commodity, gold-miner and China funds; TQQQ, the one fund tastytrade trades overnight, shows no gain, so the proposal is to keep paper's hours"
     }
   ],
   "rule_changes": []
