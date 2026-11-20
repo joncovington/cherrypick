@@ -74,6 +74,38 @@ def test_a_later_expiry_takes_the_days_close_and_a_debit_structure_the_debit_sto
     assert any(k.startswith("stop_debit_pct") for k in g) and not any(k.startswith("stop_credit") for k in g)
 
 
+def test_a_structure_that_sets_no_stop_takes_only_the_stop_its_entry_can_fire():
+    condor = {**FLY, "exit": {"profit_target_pct": 50}}
+    assert exitgrid.entry_kind(condor) == "credit"
+    g = exitgrid.variants(condor)
+    assert any(k.startswith("stop_credit") for k in g)
+    assert not any(k.startswith("stop_debit_pct") for k in g), "a condor's debit stop never fires"
+
+    debit_call = {
+        **FLY,
+        "exit": {},
+        "legs": [
+            _leg("long_call", "C", 1, rule="spot", points=0, match="nearest"),
+            _leg("short_call", "C", -1, rule="from_leg", leg="long_call", points=10, match="nearest"),
+        ],
+    }
+    assert exitgrid.entry_kind(debit_call) == "debit"
+    g = exitgrid.variants(debit_call)
+    assert any(k.startswith("stop_debit_pct") for k in g) and not any(k.startswith("stop_credit") for k in g)
+
+    calendar = {
+        **FLY,
+        "exit": {},
+        "legs": [
+            _leg("near", "C", -1, rule="spot", points=0, match="nearest"),
+            {**_leg("far", "C", 1, rule="same_as", leg="near"), "expiry": "far"},
+        ],
+    }
+    assert exitgrid.entry_kind(calendar) is None, "the rule doesn't say; either stop may fire"
+    g = exitgrid.variants(calendar)
+    assert any(k.startswith("stop_debit_pct") for k in g) and any(k.startswith("stop_credit") for k in g)
+
+
 # --------------------------------------------------------------------------- scoring
 def _sessions(n=240):
     d, out = date(2025, 1, 2), []
