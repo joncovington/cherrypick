@@ -11907,6 +11907,16 @@ svg.vol-curve text {
   font-size: 0.85rem;
   margin: 0.2rem 0;
 }
+/* The pin under a run's time: the reference chip and Unpin, or Use as reference. */
+.builder-run-ref {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.2rem;
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
 .builder-run-changes {
   margin: 0;
   padding-left: 1.25rem;

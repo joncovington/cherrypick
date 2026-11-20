@@ -47,6 +47,23 @@ describe("the explore-runs list", () => {
     expect(out).toContain("1 licensed result(s) not shown.");
   });
 
+  it("offers each run as the reference, and marks the pinned one with an unpin", () => {
+    const none = html(<ExploreRunsList data={data} onOpen={() => {}} onPin={() => {}} />);
+    expect(none.match(/>Use as reference<\/button>/g)?.length).toBe(2);
+    expect(none).toContain("No run is this automation&#x27;s backtest reference yet.");
+    const pinned = html(<ExploreRunsList data={data} onOpen={() => {}} reference="builder-mine-2611151730" onPin={() => {}} />);
+    expect(pinned.match(/>Use as reference<\/button>/g)?.length).toBe(1);
+    expect(pinned).toContain('<span class="chip chip-ok">reference</span>');
+    expect(pinned).toContain(">Unpin</button>");
+    expect(pinned).toContain("Paper is set against 11-15 17:30 on the automation&#x27;s page.");
+  });
+
+  it("offers no pin where the page gives no way to save one", () => {
+    const out = html(<ExploreRunsList data={data} onOpen={() => {}} />);
+    expect(out).not.toContain("Use as reference");
+    expect(out).not.toContain(">Reference</th>");
+  });
+
   it("says so when nothing was queued", () => {
     expect(html(<ExploreRunsList data={{ ...data, tasks: [], runs: [], withheld: 0 }} onOpen={() => {}} />)).toContain(
       "No backtest queued from here yet.",

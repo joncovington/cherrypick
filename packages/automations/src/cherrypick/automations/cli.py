@@ -11,8 +11,12 @@
                it: its problems, the groups block a save would write and the automations it moves.
                Writes nothing
     replay     run a replay record file again and say where the decisions differ
-    builder    every automation block by block, each block's backtest label, its start, forward rule
-               and backtest suggestion (the console's Builder page). Config and the registry's cache only
+    reference-check  the Builder's pin of one Builder run as an automation's backtest reference (JSON on
+               stdin: name, run; run null to unpin) checked: its problems and the references block a
+               save would write. Writes nothing
+    builder    every automation block by block, each block's backtest label, its start, forward rule,
+               backtest suggestion and pinned reference run (the console's Builder page). Config and the
+               registry's cache only
     draft      the Builder's check of one edited automation (JSON on stdin: name, automation): its
                problems, the entry a save would write (always off, its register label kept as stored)
                and its Builder row. Without `automation`, the automation as an editor starts from it.
@@ -120,6 +124,20 @@ def cmd_groups_check(args) -> int:
     return _print(groupedit.check(config_mod.load_config(args.config), req))
 
 
+def cmd_reference_check(args) -> int:
+    """The Builder's pin of a backtest reference (JSON on stdin: {name, run}, run null to unpin) checked:
+    its problems and the `references` block a save would write. Writes nothing."""
+    import sys
+
+    from . import references
+
+    try:
+        req = json.loads(sys.stdin.read() or "{}")
+    except json.JSONDecodeError as exc:
+        return _print({"ok": False, "error": f"request is not valid JSON: {exc}"})
+    return _print(references.check(config_mod.load_config(args.config), req))
+
+
 def cmd_replay(args) -> int:
     from . import events, record
 
@@ -138,7 +156,16 @@ def cmd_builder(args) -> int:
     arms = config_mod.load_arms(config)
     today = now_et().date()
     suggestions = paper_loop.backtest_suggestions(arms, today)
-    rows = [enrolment.builder_view(a, suggestions.get(n)) for n, a in sorted(arms.items())]
+    from . import references
+
+    try:
+        pinned = references.references(config)
+    except ValueError:
+        pinned = {}
+    rows = [
+        {**enrolment.builder_view(a, suggestions.get(n)), "reference": pinned.get(n)}
+        for n, a in sorted(arms.items())
+    ]
     return _print(
         {"ok": True, "date": today.isoformat(), "blocks": list(enrolment.BLOCKS), "automations": rows}
     )
@@ -294,6 +321,7 @@ def main(argv=None) -> int:
     sub.add_parser("groups").set_defaults(fn=cmd_groups)
     sub.add_parser("groups-view").set_defaults(fn=cmd_groups_view)
     sub.add_parser("groups-check").set_defaults(fn=cmd_groups_check)
+    sub.add_parser("reference-check").set_defaults(fn=cmd_reference_check)
     p = sub.add_parser("replay")
     p.add_argument("file")
     p.set_defaults(fn=cmd_replay)

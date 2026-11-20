@@ -37,6 +37,7 @@ import type {
   IdeaSearch,
   IdeaSearches,
   BuilderSaveResult,
+  BuilderReferenceResult,
   BuilderSchemaResult,
   BuilderPayoff,
   BuilderStrategyResult,
@@ -1478,6 +1479,11 @@ export function builderDraft(name: string, automation?: Record<string, unknown>)
 /** Save one automation through the orchestrator's config editor. It is always saved off. */
 export function builderSave(name: string, automation: Record<string, unknown>): Promise<BuilderSaveResult> {
   return builderPost<BuilderSaveResult>("/api/automations/builder/save", { name, automation });
+}
+
+/** Pin one of the automation's Builder runs as its backtest reference (`run` null unpins). */
+export function builderReference(name: string, run: string | null): Promise<BuilderReferenceResult> {
+  return builderPost<BuilderReferenceResult>("/api/automations/builder/reference", { name, run });
 }
 
 /** The form's choices: the engine's own tables. They change only with the code. */

@@ -58,6 +58,9 @@ export const WINDOW_KEY = /^[a-z0-9-]{1,48}:\d{4}-\d{2}-\d{2}:\d{4}-\d{2}-\d{2}$
 /** A strategy's name or a setting's key: the module's own words, checked by shape here. */
 export const STRATEGY_NAME = /^[a-z][a-z0-9_]{0,39}$/;
 
+/** An automation's name, as the backtest package and the module spell it. */
+const AUTOMATION_NAME = /^[a-z0-9][a-z0-9-]{1,47}$/;
+
 /** Settings of plain values, each keyed by a setting's name; null when anything else. */
 function plainSettings(v: unknown): Record<string, string | number | boolean> | null {
   if (typeof v !== "object" || v === null || Array.isArray(v)) return null;
@@ -446,6 +449,34 @@ export function registerConfigRoutes(app: FastifyInstance, config: ConsoleConfig
    * vendor's store) is shown only while licensed results may be (`backtestResultsOn`); otherwise it is
    * left out and counted in `withheld`. Fail closed: a result not plainly unlicensed is licensed.
    */
+  /**
+   * The Builder's pin of one of the automation's own Builder runs as its backtest reference (`run` null
+   * unpins), through the orchestrator's editor like every config write here (configcli
+   * `automation_reference`, `orchestrator.referenceedit`): the module's check, the backtest package's word
+   * that the run exists, then the `references` block alone. A pin changes nothing an automation trades.
+   */
+  app.post("/api/automations/builder/reference", async (req, reply) => {
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const name = body["name"];
+    const run = body["run"] ?? null;
+    if (typeof name !== "string" || !AUTOMATION_NAME.test(name)) return reply.code(400).send({ error: "name: an automation's name" });
+    if (run !== null && (typeof run !== "string" || !new RegExp(`^builder-${name}-\\d{10}$`).test(run))) {
+      return reply.code(400).send({ error: "run: one of this automation's Builder runs, or null to unpin" });
+    }
+    const result = await callConfigCli({ op: "automation_reference", name, run });
+    if (!result.ok) {
+      const problems = (result as unknown as Record<string, unknown>)["problems"];
+      return reply.code(statusForCode(result.code)).send({
+        error: result.error,
+        code: result.code,
+        ...(Array.isArray(problems) ? { problems } : {}),
+      });
+    }
+    invalidateAutomationsBuilder();
+    app.log.info(`automation reference ${run === null ? "unpinned" : "pinned"} from the builder: ${name}`);
+    return { ok: true, name, run };
+  });
+
   app.get("/api/automations/builder/runs", async (req, reply) => {
     const name = String(((req.query ?? {}) as Record<string, unknown>)["name"] ?? "");
     if (name === "" || name.length > 48) return reply.code(400).send({ error: "name (up to 48 characters) required" });

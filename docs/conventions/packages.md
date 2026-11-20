@@ -125,9 +125,11 @@ what it may write. The package's own CLAUDE.md holds the detail.
   (own store `~/.cherrypick/data/console/`); reads the shared credential, never writes one. The one
   bounded exception is the **Config page**: the live-trading halt toggle and a short allow-list of
   settings, applied through the orchestrator's config editor as a subprocess, so the guarded
-  live-trading fields stay unreachable. The Builder adds three more, each through the orchestrator:
-  saving one automation (always off), queueing its explore backtest, and adding an underlying to
-  the full set (its vendor fetches queued, capped per click, only while the licence allows new work).
+  live-trading fields stay unreachable. The Builder adds four more, each through the orchestrator:
+  saving one automation (always off), queueing its explore backtest, adding an underlying to the
+  full set (its vendor fetches queued, capped per click, only while the licence allows new work),
+  and pinning one of an automation's Builder runs as its backtest reference (the `references` block
+  alone, which nothing the automation trades reads).
   The Automations › Groups tab adds one more: the automation groups (switch, start, allocation, cap,
   shares, membership) and each automation's own switch, written after the automations module's
   check; a switch turned on starts at the next session (the module sets it). Paper only.

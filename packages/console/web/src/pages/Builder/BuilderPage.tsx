@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import type { BuilderAutomation, BuilderBlock, BuilderSchema, BuilderSuggestion, BuilderToday, BuilderWindow } from "@console/shared";
-import { builderBacktest, builderDraft, builderSave, builderToday, fullSetAdd, fullSetPlan, useAutomationsBuilder, useBuilderRuns, useBuilderSchema, type FullSetAdded, type FullSetPlan } from "../../lib/api";
+import { builderBacktest, builderDraft, builderReference, builderSave, builderToday, fullSetAdd, fullSetPlan, useAutomationsBuilder, useBuilderRuns, useBuilderSchema, type FullSetAdded, type FullSetPlan } from "../../lib/api";
 import { BuilderForm, type OpenSections, type Preset, type Spec, type Strategy } from "./BuilderForm";
 import { Coverage } from "./builderTips";
 import { Marked } from "./sentence";
@@ -186,11 +186,29 @@ export type Mode = { kind: "saved"; name: string } | { kind: "copy"; from: strin
 /** The automation's explore runs, and one run's card when opened. */
 function RunsPanel({ name }: { name: string }) {
   const q = useBuilderRuns(name, true);
+  const builder = useAutomationsBuilder();
+  const qc = useQueryClient();
   const [open, setOpen] = useState<string | null>(null);
+  const [pinning, setPinning] = useState(false);
+  const [pinError, setPinError] = useState<string | null>(null);
+  const reference = builder.data?.automations.find((a) => a.name === name)?.reference ?? null;
+  const pin = async (run: string | null) => {
+    setPinning(true);
+    setPinError(null);
+    const r = await builderReference(name, run);
+    setPinning(false);
+    if (!r.ok) setPinError(r.problems?.join("; ") ?? r.error ?? "The pin was not saved.");
+    void qc.invalidateQueries({ queryKey: ["automations-builder"] });
+  };
   if (open !== null) return <RunCardPanel name={name} run={open} onClose={() => setOpen(null)} />;
   if (q.isLoading) return <div className="muted">Reading the runs…</div>;
   if (q.error || !q.data) return <div className="error">Could not read the runs.</div>;
-  return <ExploreRunsList data={q.data} onOpen={setOpen} />;
+  return (
+    <>
+      <ExploreRunsList data={q.data} onOpen={setOpen} reference={reference} onPin={(run) => void pin(run)} pinning={pinning} />
+      {pinError && <p className="error">{pinError}</p>}
+    </>
+  );
 }
 
 /** "Today, live", read when asked: an unsaved edit is decided as it stands. */
