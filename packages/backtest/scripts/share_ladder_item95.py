@@ -136,6 +136,7 @@ class Session:
     max_bid: float
     bars: list  # (start, end, min_ask, max_bid) per bar, in order
     last_bid: float
+    f: float = 1.0  # the raw price over the split-adjusted one: every later split's ratio multiplied
 
 
 @dataclass
@@ -150,8 +151,11 @@ class Tape:
     skipped: dict = field(default_factory=dict)
     _table: list | None = None
 
-    def add_session(self, day: str, ref: float, bars: list[list[tuple[float, float]]]) -> None:
-        """`bars`: per bar, its quotes as (bid, ask) in path order."""
+    def add_session(
+        self, day: str, ref: float, bars: list[list[tuple[float, float]]], f: float = 1.0
+    ) -> None:
+        """`bars`: per bar, its quotes as (bid, ask) in path order, in the session's raw prices; `f`
+        the session's split factor (raw over adjusted), so a price carries across a split as x f'/f."""
         a = len(self.bid)
         spans = []
         for quotes in bars:
@@ -175,9 +179,21 @@ class Tape:
                 max(x[3] for x in spans),
                 spans,
                 self.bid[b - 1],
+                f,
             )
         )
         self._table = None
+        self._changes = None
+
+    def next_change(self, k: int) -> int:
+        """The first session index after `k` whose split factor differs from session k's (or the end)."""
+        if getattr(self, "_changes", None) is None:
+            n = len(self.sessions)
+            out = [n] * n
+            for j in range(n - 2, -1, -1):
+                out[j] = j + 1 if self.sessions[j + 1].f != self.sessions[j].f else out[j + 1]
+            self._changes = out
+        return self._changes[k]
 
     # sparse table over the sessions' highest bids: the first session from `k` reaching `t`
     def _build(self) -> None:
@@ -229,10 +245,15 @@ class Lot:
     price: float
     shares: int
     target_rule: str
+    f: float = 1.0  # its buy session's split factor: the lot's price and shares are in those terms
     exit_i: int | None = None
     exit_session: int | None = None
-    sell: float | None = None
+    sell: float | None = None  # the fill, in the exit session's raw price
     open: bool = True
+
+    def in_buy_terms(self, price: float, f: float) -> float:
+        """A raw price of a session with split factor `f`, in the lot's own (buy-session) terms."""
+        return price * self.f / f
 
 
 def _scan(tape: Tape, s: Session, start: int, test) -> int | None:
@@ -248,21 +269,26 @@ def _scan(tape: Tape, s: Session, start: int, test) -> int | None:
     return None
 
 
-def _target(lot: Lot, day: str) -> float:
-    age = rules.age_days(date.fromisoformat(lot.day), date.fromisoformat(day))
-    return rules.target(lot.target_rule, cost=lot.price, shares=lot.shares, age=age, gain=SPEC["gain"])
+def _target(lot: Lot, s: Session) -> float:
+    """The lot's sell limit in session `s`: paper's target for its age, in s's raw prices. Across a
+    split the resting order is restated at the split's ratio, rounded to the cent the safe way."""
+    age = rules.age_days(date.fromisoformat(lot.day), date.fromisoformat(s.day))
+    t = rules.target(lot.target_rule, cost=lot.price, shares=lot.shares, age=age, gain=SPEC["gain"])
+    return t if s.f == lot.f else rules.ceil_cent(t * s.f / lot.f)
 
 
 def find_exit(tape: Tape, lot: Lot, eligible: int, stop: int) -> None:
     """Set the lot's exit: the first quote from `eligible` (a later bar than its buy) whose bid
-    reaches its target for that session's age, among sessions before `stop`; else it stays open."""
+    reaches its target for that session's age, among sessions before `stop`; else it stays open.
+    Between one session and the next step of the decay schedule or the next split the target is
+    constant, so the sessions in between are searched in one go."""
     sessions = tape.sessions
     k = lot.session
     while k < stop:
         s = sessions[k]
         start = eligible if k == lot.session else s.a
         if start < s.b:
-            t = _target(lot, s.day)
+            t = _target(lot, s)
             if s.max_bid >= t:
                 hit = _scan(
                     tape, s, start, lambda bd, ak, bmin, bmax, t=t: (bmax >= t) if bd is None else bd >= t
@@ -272,26 +298,18 @@ def find_exit(tape: Tape, lot: Lot, eligible: int, stop: int) -> None:
                     prev = tape.bid[hit - 1] if hit > s.a else None
                     lot.sell = rules.sell_fill(t, tape.bid[hit], prev)
                     return
-        # jump: the target is constant until the decay schedule's next step
         k += 1
         if k >= stop:
             return
-        if lot.target_rule == "fixed":
-            t = _target(lot, sessions[k].day)
-            nxt = tape.first_session_reaching(k, stop, t)
-            if nxt is None:
-                return
-            k = nxt
-        else:
+        seg_stop = min(stop, tape.next_change(k))
+        if lot.target_rule != "fixed":
             age = rules.age_days(date.fromisoformat(lot.day), date.fromisoformat(sessions[k].day))
             edge = next((d for d in (rules.DECAY_HOLD_DAYS, rules.DECAY_BREAKEVEN_DAYS) if age <= d), None)
-            seg_stop = stop
             if edge is not None:
                 limit = date.fromordinal(date.fromisoformat(lot.day).toordinal() + edge).isoformat()
-                seg_stop = min(stop, bisect.bisect_right(tape.days, limit, lo=k))
-            t = _target(lot, sessions[k].day)
-            nxt = tape.first_session_reaching(k, seg_stop, t) if seg_stop > k else None
-            k = nxt if nxt is not None else seg_stop
+                seg_stop = min(seg_stop, bisect.bisect_right(tape.days, limit, lo=k))
+        nxt = tape.first_session_reaching(k, seg_stop, _target(lot, sessions[k]))
+        k = nxt if nxt is not None else seg_stop
 
 
 def run_arm(tape: Tape, entry: str, target_rule: str, first: int = 0, stop: int | None = None) -> list[Lot]:
@@ -300,7 +318,7 @@ def run_arm(tape: Tape, entry: str, target_rule: str, first: int = 0, stop: int 
     stop = len(tape.sessions) if stop is None else stop
     lots: list[Lot] = []
     open_: list[Lot] = []
-    anchor = None
+    anchor = None  # chain's last lot bought, split-adjusted (its fill over its session's factor)
     for k in range(first, stop):
         s = tape.sessions[k]
         bought_today = 0
@@ -310,8 +328,9 @@ def run_arm(tape: Tape, entry: str, target_rule: str, first: int = 0, stop: int 
             bi = INF
             blocked = (entry == "once" and bought_today) or len(open_) >= SPEC["cap"]
             if not blocked:
+                last_buy = None if anchor is None else round(anchor * s.f, 6)
                 level = rules.buy_level(
-                    entry, ref_close=s.ref, last_buy=anchor, drop=SPEC["drop"], bought_today=bought_today
+                    entry, ref_close=s.ref, last_buy=last_buy, drop=SPEC["drop"], bought_today=bought_today
                 )
                 if level is not None and rules.lot_shares(SPEC["lot_dollars"], level) >= SPEC["min_shares"]:
                     if s.min_ask <= level:
@@ -334,14 +353,14 @@ def run_arm(tape: Tape, entry: str, target_rule: str, first: int = 0, stop: int 
                 prev = tape.ask[bi - 1] if bi > s.a else None
                 fill = rules.buy_fill(level, tape.ask[bi], prev)
                 lot = Lot(
-                    k, s.day, bi, level, fill, rules.lot_shares(SPEC["lot_dollars"], level), target_rule
+                    k, s.day, bi, level, fill, rules.lot_shares(SPEC["lot_dollars"], level), target_rule, s.f
                 )
                 find_exit(tape, lot, tape.bar_end[bi], stop)
                 lots.append(lot)
                 open_.append(lot)
                 bought_today += 1
                 if entry == "chain":
-                    anchor = fill
+                    anchor = fill / s.f
                 i = bi
                 continue
             break
@@ -350,10 +369,14 @@ def run_arm(tape: Tape, entry: str, target_rule: str, first: int = 0, stop: int 
 
 # --------------------------------------------------------------------------- money and measures
 def lot_money(tape: Tape, lot: Lot, stop: int) -> dict:
-    """Closed: paper's money at its sale. Open at the window's end: marked at the last bid."""
+    """Closed: paper's money at its sale. Open at the window's end: marked at the last bid. A sale
+    or mark after a split is put back in the lot's own terms (same dollars, the buy's share count)."""
     end = tape.sessions[stop - 1]
     closed = lot.exit_i is not None
-    sell = lot.sell if closed else end.last_bid
+    if closed:
+        sell = lot.in_buy_terms(lot.sell, tape.sessions[lot.exit_session].f)
+    else:
+        sell = lot.in_buy_terms(end.last_bid, end.f)
     m = rules.money(lot.shares, lot.price, sell)
     last_day = tape.sessions[lot.exit_session].day if closed else end.day
     days = rules.age_days(date.fromisoformat(lot.day), date.fromisoformat(last_day))
@@ -407,7 +430,7 @@ def control_lots(
         shares = rules.lot_shares(SPEC["lot_dollars"], price)
         if shares < SPEC["min_shares"]:
             continue
-        lot = Lot(k, tape.sessions[k].day, i, price, price, shares, target_rule)
+        lot = Lot(k, tape.sessions[k].day, i, price, price, shares, target_rule, tape.sessions[k].f)
         find_exit(tape, lot, tape.bar_end[i], stop)
         lots.append(lot)
         open_.append(lot)
@@ -601,6 +624,17 @@ def daily_closes(conn: sqlite3.Connection, symbol: str) -> dict[str, float]:
     return out
 
 
+def split_ratios(conn: sqlite3.Connection, symbol: str) -> dict[str, float]:
+    """Item 26's split events, {ex-date: new shares per old} (2-for-1 is 2, 1-for-10 is 0.1)."""
+    return {
+        d[:10]: num / den
+        for d, num, den in conn.execute(
+            "SELECT date, numerator, denominator FROM splits WHERE symbol = ?", (symbol,)
+        )
+        if num and den
+    }
+
+
 def tape_from_bars(
     rows,
     closes: dict[str, float],
@@ -608,12 +642,24 @@ def tape_from_bars(
     first_day: str,
     last_day: str | None = None,
     hours: tuple[str, str] | None = None,
+    splits: dict[str, float] | None = None,
 ) -> Tape:
-    """A fund's tape from (start 'YYYY-MM-DDTHH:MM', o, h, l, c) rows in time order, inside the hours,
-    each session's reference the previous daily close; a session whose last regular-hours bar closes
-    over `daily_disagree` from its daily close is skipped and counted."""
+    """A fund's tape from raw (start 'YYYY-MM-DDTHH:MM', o, h, l, c) rows in time order, inside the
+    hours. `closes` are split-adjusted (item 26's series) and `splits` {ex-date: ratio} turn them raw:
+    session D's factor f is every later split's ratio multiplied, its reference the previous close x
+    f (the close as the exchange posts it on D, adjusted only on a split's own day). A session whose
+    last regular-hours bar closes over `daily_disagree` from its raw daily close is skipped and
+    counted. With no `splits` the rows are taken as split-adjusted and every factor is 1."""
     lo, hi = hours or SPEC["hours"]
     days = sorted(closes)
+    split_days = sorted(splits or {})
+
+    def factor(day: str) -> float:
+        f = 1.0
+        for d in split_days[bisect.bisect_right(split_days, day) :]:
+            f *= splits[d]
+        return f
+
     tape = Tape()
     skipped = {"no_reference": 0, "no_daily_close": 0, "disagrees": 0}
     current, bars, last_regular = None, [], None
@@ -630,10 +676,11 @@ def tape_from_bars(
         if j == 0:
             skipped["no_reference"] += 1
             return
-        if last_regular is None or abs(last_regular / closes[current] - 1) > SPEC["daily_disagree"]:
+        f = factor(current)
+        if last_regular is None or abs(last_regular / (closes[current] * f) - 1) > SPEC["daily_disagree"]:
             skipped["disagrees"] += 1
             return
-        tape.add_session(current, closes[days[j - 1]], bars)
+        tape.add_session(current, round(closes[days[j - 1]] * f, 4), bars, f)
 
     for start, o, h, low, c in rows:
         day, hhmm = start[:10], start[11:16]
@@ -686,7 +733,8 @@ def reported(tape: Tape, lots: list[Lot], rows: list[dict], stop: int) -> dict:
     for lot, r in zip(lots, rows, strict=True):
         end = lot.exit_session if r["closed"] else n
         for k in range(lot.session, min(end, n)):
-            mark[k] += lot.shares * (tape.sessions[k].last_bid - lot.price)
+            s = tape.sessions[k]
+            mark[k] += lot.shares * (lot.in_buy_terms(s.last_bid, s.f) - lot.price)
             tied[k] += lot.shares * lot.price
         if r["closed"]:
             realized[lot.exit_session] += r["net"]
@@ -753,8 +801,9 @@ def run(
             missing.append(fund)
             rep.advance("funds", key=fund, current=fund)
             continue
-        tape = tape_from_bars(rows, closes, SPEC["half_spread"], first, last_day)
-        wide = tape_from_bars(rows, closes, CONTROL_RULE["cost_half_spread"], first, last_day)
+        splits = split_ratios(dconn, fund)
+        tape = tape_from_bars(rows, closes, SPEC["half_spread"], first, last_day, splits=splits)
+        wide = tape_from_bars(rows, closes, CONTROL_RULE["cost_half_spread"], first, last_day, splits=splits)
         counts[fund] = {
             "bars": len(rows),
             "first": rows[0][0],
