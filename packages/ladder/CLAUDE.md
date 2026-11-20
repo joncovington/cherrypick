@@ -182,9 +182,10 @@ import (`orders.py` may import the one pure id reader). The `live` block in the 
   ledger (`modules.ladder.live.notify_trades`, on in the example, with `live_db` declared and no
   `task_name`, so it derives no job): each live lot's buy and sale, labelled LIVE with the desktop toast,
   the sale as net with fees in their own figure and where they came from; and the journal rows a person
-  has to read, each once: `alert` rows, a `split` applied, a `positions` surplus, and the two `blocked`
-  rows that stop every buy (`drawdown_breaker`, invalid limits). `dry_run`, `order`, `refused` and every
-  other `blocked` row are not announced; the orders themselves come from `live-fill-alerts`, which names
+  has to read, each once: `alert` rows, a `split` applied, a `positions` surplus, a `refused` live
+  submission or cancel (with the gate, hold or broker error that stopped it), and the two `blocked`
+  rows that stop every buy (`drawdown_breaker`, invalid limits). `dry_run`, `order` and every other
+  `blocked` row are not announced; the orders themselves come from `live-fill-alerts`, which names
   an order `ladder` by its published ids or its `ldr.` client id. `record_decision` collapses a session
   day's identical rows into one with a count, so a breaker held for a hundred ticks is one row and one
   notice; a standing condition (a hospital lot) is announced again the next session day. The notifier

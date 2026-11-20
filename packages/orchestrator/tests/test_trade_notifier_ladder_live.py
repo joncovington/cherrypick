@@ -176,7 +176,6 @@ def test_a_dry_run_ledger_has_no_lots_and_announces_nothing_of_its_own():
     _journal(conn, "dry_run", "TQQQ", "would place buy TQQQ ldr.b.TQQQ.20261123.1.10x9300",
              {"shares": 10, "limit": 93.0})  # fmt: skip
     _journal(conn, "order", "TQQQ", "place buy TQQQ x", {"ok": True})
-    _journal(conn, "refused", "TQQQ", "place buy TQQQ x failed", {"error": "gated"})
     _live_pass(conn, state, rec)
     assert rec.sent == []
 
@@ -213,6 +212,16 @@ _KINDS = [
     ("blocked", "-", "drawdown_breaker", None, ["drawdown breaker tripped", "Sells already resting"]),
     ("blocked", "limits_invalid", "max_open_lots_total below max_open_lots", None,
      ["limits are invalid", "max_open_lots_total below max_open_lots"]),
+    ("refused", "TQQQ", "place buy TQQQ ldr.b.TQQQ.20261123.1.10x9300 failed",
+     {"ok": False, "unmet_gates": ["arm.record: not armed today"]},
+     ["order not sent", "place buy TQQQ ldr.b.TQQQ.20261123.1.10x9300 was not sent",
+      "gated: arm.record: not armed today", "planned again next tick"]),
+    ("refused", "TQQQ", "place sell TQQQ ldr.s.x.10x9672 failed",
+     {"ok": False, "skipped": "broker_hold"}, ["was not sent", "uncertain outcome"]),
+    ("refused", "TQQQ", "place buy TQQQ ldr.b.x failed",
+     {"ok": False, "uncertain": True}, ["outcome is uncertain"]),
+    ("refused", "TQQQ", "cancel buy TQQQ ldr.b.x failed",
+     {"ok": False, "error": "order not found"}, ["cancel buy TQQQ ldr.b.x was not sent", "order not found"]),
 ]  # fmt: skip
 
 
@@ -265,7 +274,7 @@ def test_routine_blocked_rows_and_other_modes_are_not_read_at_all():
         _journal(conn, "blocked", "-", reason)
     for why in ("name_cap_full", "no_reference_close", "ended_today", "lot_too_small"):
         _journal(conn, "blocked", "TQQQ", why)
-    for mode in ("dry_run", "order", "refused"):
+    for mode in ("dry_run", "order"):
         _journal(conn, mode, "TQQQ", "x")
     assert conn.execute(tn._LADDER_ALERT_SQL).fetchall() == []
     _journal(conn, "blocked", "-", "drawdown_breaker")

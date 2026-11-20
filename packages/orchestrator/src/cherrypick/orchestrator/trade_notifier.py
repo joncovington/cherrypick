@@ -1866,14 +1866,16 @@ def _ladder_process(conn, st: dict, notifier: Notifier, name: str) -> dict:
 # one (a hospital lot) is announced again the next session day, as the journal writes it again.
 #
 # What is read, and what is left out on purpose, is decided in SQL so the routine rows never leave the
-# database: `alert` (the tick's own alarms), `split` (a restatement from `live.splits` applied) and
-# `positions` (a surplus of the account's shares over the ledger's), plus the two `blocked` reasons
-# that stop every buy and mean a person should look: the drawdown breaker and invalid limits.
-# `dry_run` and `order` rows are the order path's own record (the account's order notices announce
-# the orders, `livefills`), `refused` is a submission the executor could not send, and every other
-# `blocked` row (unarmed, before the session, a cap full) is the planner working as designed.
+# database: `alert` (the tick's own alarms), `split` (a restatement from `live.splits` applied),
+# `positions` (a surplus of the account's shares over the ledger's) and `refused` (a live submission
+# or cancel the executor could not send: a gate that flipped mid-tick, a broker error, a held
+# placement), plus the two `blocked` reasons that stop every buy and mean a person should look: the
+# drawdown breaker and invalid limits. `dry_run` and `order` rows are the order path's own record (the
+# account's order notices announce the orders, `livefills`), and every other `blocked` row (unarmed,
+# before the session, a cap full) is the planner working as designed. A refused row's reason names
+# the client id, which is stable for the session, so a refusal repeated every tick is one notice.
 _LADDER_ALERT_SQL = (
-    "SELECT * FROM ladder_decisions WHERE mode IN ('alert', 'split', 'positions') "
+    "SELECT * FROM ladder_decisions WHERE mode IN ('alert', 'split', 'positions', 'refused') "
     "OR (mode = 'blocked' AND (reason = 'drawdown_breaker' OR symbol = 'limits_invalid')) ORDER BY id"
 )
 
@@ -1913,6 +1915,21 @@ def _ladder_alert_text(r) -> tuple[str, str]:
             f"{symbol} surplus",
             f"{symbol}: the broker holds {held} shares, the ledger {detail.get('ledger', '?')}. The extra "
             "shares are not the ladder's and it left them alone; nothing was done.",
+        )
+    if mode == "refused":
+        what = reason.removesuffix(" failed")
+        gates = detail.get("unmet_gates") or []
+        if detail.get("skipped") == "broker_hold":
+            why = "held: an earlier placement this tick had an uncertain outcome"
+        elif gates:
+            why = "gated: " + "; ".join(str(g) for g in gates)
+        elif detail.get("uncertain"):
+            why = "the outcome is uncertain; the placement is held until it is resolved"
+        else:
+            why = str(detail.get("error") or "the broker refused it")
+        return (
+            f"{symbol} order not sent",
+            f"{symbol}: {what} was not sent ({why}). Nothing else was done; it is planned again next tick.",
         )
     if mode == "blocked" and reason == "drawdown_breaker":
         return (
