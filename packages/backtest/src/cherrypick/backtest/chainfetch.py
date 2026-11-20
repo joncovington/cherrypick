@@ -12,7 +12,8 @@ list also reads). Its order is kept; a repeated request is fetched once.
 **The store** is `eod_chains.db` in the licensed vendor directory (`paths.ensure_vendor_dir`, marker
 first): `eod_chain_quotes` holds the rows, `eod_chain_requests` what became of each request --
 `complete` (rows written), `empty` (the vendor holds nothing for it, its `no_data` included) or
-`refused` (with why). A run
+`refused` (with why). `eod_chain_paths` records each daily path, and `eod_chain_days` each session
+a path fetch asked for, with every expiry the vendor's answer held. A run
 skips complete and empty requests and retries refused ones, so it is resumable and a re-run is
 cheap; `refetch` replaces everything asked for. A fatal refusal (`vendor.FATAL`: the session was
 taken by another login) stops the run instead of marking every remaining request refused.
@@ -33,9 +34,11 @@ import json
 import sqlite3
 import time
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
+from cherrypick.core import calendar as cal
 from cherrypick.core import progress as core_progress
 
 from . import paths
@@ -63,6 +66,10 @@ CREATE TABLE IF NOT EXISTS eod_chain_paths (
     status TEXT NOT NULL, sessions INTEGER NOT NULL DEFAULT 0, rows INTEGER NOT NULL DEFAULT 0,
     detail TEXT, fetched_at REAL NOT NULL,
     PRIMARY KEY (symbol, expiration, start, through));
+CREATE TABLE IF NOT EXISTS eod_chain_days (
+    symbol TEXT NOT NULL, session TEXT NOT NULL, status TEXT NOT NULL, expirations TEXT,
+    rows INTEGER NOT NULL DEFAULT 0, detail TEXT, fetched_at REAL NOT NULL,
+    PRIMARY KEY (symbol, session));
 """
 
 
@@ -283,17 +290,77 @@ def read_path_requests(path: Path) -> list[tuple[str, str, str, str]]:
     return list(seen)
 
 
-def write_path(conn: sqlite3.Connection, key: tuple[str, str, str, str], rows: list[dict]) -> tuple[int, int]:
-    """One expiry's daily path: each session's rows replace that session's chain and record it
-    complete (so a single-session reader sees it), and the path itself is recorded, all in one
-    transaction. Returns (sessions, rows)."""
-    sym, exp, start, through = key
-    by_day: dict[str, list[dict]] = {}
-    for r in rows:
-        if start <= r["session"] <= through:
-            by_day.setdefault(r["session"], []).append(r)
+def path_days(key: tuple[str, str, str, str]) -> list[str]:
+    """The trading sessions a path covers: from its start through its end or its expiry, whichever
+    comes first (nothing trades after the expiry)."""
+    _sym, exp, start, through = key
+    d, last = date.fromisoformat(start), min(date.fromisoformat(through), date.fromisoformat(exp))
+    out = []
+    while d <= last:
+        if cal.is_trading_day(d):
+            out.append(d.isoformat())
+        d += timedelta(days=1)
+    return out
+
+
+def _held(conn: sqlite3.Connection, symbols: set[str]) -> tuple[dict, dict]:
+    """What the store already answers for these symbols: each chain's (status, rows) from
+    `eod_chain_requests`, and each answered day's expiries from `eod_chain_days`."""
+    chains: dict[tuple[str, str, str], tuple[str, int]] = {}
+    listed: dict[tuple[str, str], frozenset[str]] = {}
+    for sym in symbols:
+        for day, exp, st, n in conn.execute(
+            "SELECT session, expiration, status, rows FROM eod_chain_requests "
+            "WHERE symbol = ? AND status IN (?, ?)",
+            (sym, COMPLETE, EMPTY),
+        ):
+            chains[(sym, day, exp)] = (st, int(n or 0))
+        for day, exps in conn.execute(
+            "SELECT session, expirations FROM eod_chain_days WHERE symbol = ? AND status = ?", (sym, COMPLETE)
+        ):
+            listed[(sym, day)] = frozenset(json.loads(exps or "[]"))
+    return chains, listed
+
+
+#: What one path holds on one of its sessions: rows of its chain, absent from an answered day (the
+#: expiry was not in that session's chains), the vendor holding nothing for the whole day, or a refusal.
+ANSWERED, ABSENT, NODATA = "answered", "absent", "nodata"
+
+
+def judge_path(outcomes: list[tuple[str, Any]]) -> tuple[str, int, int, str | None]:
+    """A path's record from its sessions' outcomes, in date order: (status, sessions, rows, detail).
+    Pure. A refused session refuses the path with its reason. With none answered the path is empty,
+    as a vendor `no_data` over the whole range was. A day the vendor answered nothing for, AFTER a
+    session of the path answered, is a hole (`path_gap`): the path is refused and retried rather than
+    stored with a gap. Days before the first answer are the expiry not listed yet. An expiry absent
+    from a day the vendor answered is that session's answer, not a hole."""
+    for kind, value in outcomes:
+        if kind == REFUSED:
+            return REFUSED, 0, 0, value
+    seen = False
+    sessions = rows = 0
+    for i, (kind, value) in enumerate(outcomes):
+        if kind == ANSWERED:
+            seen = True
+            sessions += 1
+            rows += value
+        elif kind == NODATA and seen:
+            return REFUSED, 0, 0, f"path_gap: the vendor held nothing for session {i + 1} of {len(outcomes)}"
+    return (COMPLETE, sessions, rows, None) if rows else (EMPTY, 0, 0, None)
+
+
+def write_day(
+    conn: sqlite3.Connection, sym: str, day: str, chains: dict[str, list[dict]], wanted: set[str]
+) -> dict[str, int]:
+    """One session's answer: the wanted expiries' chains written (each recorded complete, so a
+    single-session reader sees it) and the day recorded with every expiry it held, all in one
+    transaction. Returns {expiration: rows} for the wanted expiries it held."""
+    kept: dict[str, int] = {}
     with conn:
-        for day, day_rows in sorted(by_day.items()):
+        for exp in sorted(wanted & chains.keys()):
+            rows = chains[exp]
+            if not rows:
+                continue
             conn.execute(
                 "DELETE FROM eod_chain_quotes WHERE symbol = ? AND session = ? AND expiration = ?",
                 (sym, day, exp),
@@ -305,13 +372,22 @@ def write_path(conn: sqlite3.Connection, key: tuple[str, str, str, str], rows: l
                 [
                     (sym, day, exp, r["strike"], r["right"], r.get("bid"), r.get("ask"), r.get("close"),
                      r.get("volume"), r.get("bid_size"), r.get("ask_size"))
-                    for r in day_rows
+                    for r in rows
                 ],
             )  # fmt: skip
-            _record(conn, (sym, day, exp), COMPLETE, len(day_rows), None)
-        n = sum(len(v) for v in by_day.values())
-        _record_path(conn, key, COMPLETE if n else EMPTY, len(by_day), n, None)
-    return len(by_day), n
+            _record(conn, (sym, day, exp), COMPLETE, len(rows), None)
+            kept[exp] = len(rows)
+        held = sorted(e for e, r in chains.items() if r)
+        _record_day(conn, (sym, day), COMPLETE, held, sum(kept.values()), None)
+    return kept
+
+
+def _record_day(conn, key, status: str, expirations: list[str], rows: int, detail: str | None) -> None:
+    conn.execute(
+        "INSERT OR REPLACE INTO eod_chain_days "
+        "(symbol, session, status, expirations, rows, detail, fetched_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (*key, status, json.dumps(expirations), rows, detail, time.time()),
+    )
 
 
 def _record_path(conn, key, status: str, sessions: int, rows: int, detail: str | None) -> None:
@@ -334,10 +410,17 @@ def fetch_paths(
     stop=None,
     log=print,
 ) -> dict[str, Any]:
-    """The daily path of each expiry over [start, through], one vendor call per 7-day chunk of the
-    range (`eod_chain_range`; a request spans under a year): what a replay needs to mark a held
-    contract every session, not only on the day it was opened. Resumable, stopped by a fatal
-    refusal, and by `stop` as `fetch_chains` is."""
+    """The daily path of each expiry over [start, through]: what a replay needs to mark a held
+    contract every session, not only on the day it was opened.
+
+    Asked by session, not by expiry: one vendor call (`eod_chain_day`) answers every expiry a
+    symbol had on one session, for about what one expiry costs, and a session several paths cover
+    is asked once. Only the expiries some path wants are kept. A session the store already answers
+    for a path (its chain recorded, or the day recorded without that expiry) is not asked again. A
+    path is recorded as soon as every one of its sessions is answered (`judge_path`); a stopped or
+    aborted run leaves the rest unrecorded, and the next run asks only what they still lack.
+    Resumable, stopped by a fatal refusal, and by `stop` as `fetch_chains` is. Counts are paths, as
+    the research queue reads them; `days` counts the vendor calls."""
     conn = connect(settings)
     try:
         done: set = set()
@@ -360,18 +443,60 @@ def fetch_paths(
             "settled": 0,
             "sessions": 0,
             "rows": 0,
+            "days": {"asked": 0, "answered": 0, "no_data": 0, "refused": 0},
             "stopped": False,
         }
         if limit is not None:
             todo = todo[:limit]
         started = time.monotonic()
-        # Answered of the whole request list, as `fetch_chains`: a resumed fetch starts where the last
-        # one stopped rather than at zero.
         rep = core_progress.Reporter("backtest-fetch-chain-paths")
         rep.split(
             "paths", (k[0] for k in requests), unit="expiries", done=(k[0] for k in requests if k in done)
         )
-        pending = iter(todo)
+        chains, listed = ({}, {}) if refetch else _held(conn, {k[0] for k in todo})
+
+        # Each open path's sessions, what each already holds, and the days still to ask.
+        outcome: dict[tuple, dict[str, tuple[str, Any]]] = {}
+        waiting: dict[tuple, int] = {}
+        wanted: dict[tuple[str, str], set[str]] = {}
+        paths_on: dict[tuple[str, str], list[tuple]] = {}
+        order: dict[tuple[str, str], None] = {}
+        for key in todo:
+            sym, exp = key[0], key[1]
+            outcome[key] = {}
+            for day in path_days(key):
+                held = chains.get((sym, day, exp))
+                if held is not None:
+                    outcome[key][day] = (ANSWERED, held[1]) if held[0] == COMPLETE else (ABSENT, 0)
+                elif (sym, day) in listed and exp not in listed[(sym, day)]:
+                    outcome[key][day] = (ABSENT, 0)
+                else:
+                    wanted.setdefault((sym, day), set()).add(exp)
+                    paths_on.setdefault((sym, day), []).append(key)
+                    order.setdefault((sym, day), None)
+                    waiting[key] = waiting.get(key, 0) + 1
+
+        def settle(key) -> None:
+            """Record a path whose every session is answered."""
+            days = outcome.pop(key)
+            status, sessions, rows, detail = judge_path([days[d] for d in sorted(days)])
+            with conn:
+                _record_path(conn, key, status, sessions, rows, detail)
+            if status == REFUSED:
+                report["refused"] += 1
+                reason = _reason(detail)
+                report["settled"] += settled(VendorRefusal(reason or "", ""), key, prior)
+            else:
+                report[status] += 1
+                report["sessions"] += sessions
+                report["rows"] += rows
+            rep.advance("paths", current=f"{key[0]} {key[1]}", key=key[0])
+
+        for key in todo:
+            if not waiting.get(key):
+                settle(key)
+
+        pending, logged = iter(order), 0
         with ThreadPoolExecutor(max(1, workers)) as ex:
             running = {}
 
@@ -379,11 +504,12 @@ def fetch_paths(
                 if stop is not None and stop():
                     report["stopped"] = True
                     return False
-                key = next(pending, None)
-                if key is None:
+                day_key = next(pending, None)
+                if day_key is None:
                     return False
-                sym, exp, start, through = key
-                running[ex.submit(client.eod_chain_range, vendor_root(sym), start, through, exp)] = key
+                sym, day = day_key
+                running[ex.submit(client.eod_chain_day, vendor_root(sym), day)] = day_key
+                report["days"]["asked"] += 1
                 return True
 
             for _ in range(max(1, workers)):
@@ -392,42 +518,53 @@ def fetch_paths(
             while running:
                 finished, _ = wait(running, return_when=FIRST_COMPLETED)
                 for fut in finished:
-                    key = running.pop(fut)
+                    sym, day = day_key = running.pop(fut)
                     try:
-                        rows = fut.result()
+                        answer = fut.result()
                     except VendorRefusal as refusal:
                         if refusal.reason == NO_DATA:
-                            write_path(conn, key, [])
-                            report["empty"] += 1
-                        else:
                             with conn:
-                                _record_path(
-                                    conn, key, REFUSED, 0, 0, f"{refusal.reason}: {refusal.detail}"[:300]
-                                )
-                            report["refused"] += 1
-                            report["settled"] += settled(refusal, key, prior)
+                                _record_day(conn, day_key, EMPTY, [], 0, None)
+                            report["days"]["no_data"] += 1
+                            result = {k: (NODATA, 0) for k in paths_on[day_key]}
+                        else:
+                            detail = f"{refusal.reason}: {refusal.detail}"[:300]
+                            with conn:
+                                _record_day(conn, day_key, REFUSED, [], 0, detail)
+                            report["days"]["refused"] += 1
+                            result = {k: (REFUSED, detail) for k in paths_on[day_key]}
                         if refusal.reason in FATAL:
                             report["aborted"] = f"{refusal.reason}: {refusal.detail}"[:300]
                             for other in running:
                                 other.cancel()
                             running.clear()
                             break
-                    except Exception as exc:  # noqa: BLE001 -- one request's failure is that request's
+                    except Exception as exc:  # noqa: BLE001 -- one day's failure is that day's
+                        detail = f"{type(exc).__name__}: {exc}"[:300]
                         with conn:
-                            _record_path(conn, key, REFUSED, 0, 0, f"{type(exc).__name__}: {exc}"[:300])
-                        report["refused"] += 1
+                            _record_day(conn, day_key, REFUSED, [], 0, detail)
+                        report["days"]["refused"] += 1
+                        result = {k: (REFUSED, detail) for k in paths_on[day_key]}
                     else:
-                        days, n = write_path(conn, key, rows)
-                        report["complete" if n else "empty"] += 1
-                        report["sessions"] += days
-                        report["rows"] += n
-                    rep.advance("paths", current=f"{key[0]} {key[1]}", key=key[0])
+                        kept = write_day(conn, sym, day, answer, wanted[day_key])
+                        report["days"]["answered"] += 1
+                        result = {
+                            k: (ANSWERED, kept[k[1]]) if k[1] in kept else (ABSENT, 0)
+                            for k in paths_on[day_key]
+                        }
+                    for key, got in result.items():
+                        outcome[key][day] = got
+                        waiting[key] -= 1
+                        if not waiting[key]:
+                            settle(key)
                     if not report.get("aborted"):
                         submit_next()
-                done_n = report["complete"] + report["empty"] + report["refused"]
-                if done_n and done_n % 50 == 0:
-                    rate = done_n / max(1e-9, time.monotonic() - started)
-                    log(f"paths {done_n}/{len(todo)} ({rate:.3f}/s), {report['refused']} refused")
+                n = report["days"]["asked"]
+                if n and n % 100 == 0 and n != logged:
+                    logged = n
+                    rate = n / max(1e-9, time.monotonic() - started)
+                    log(f"days {n}/{len(order)} ({rate:.2f}/s); paths {report['complete'] + report['empty']}"
+                        f" stored, {report['refused']} refused")  # fmt: skip
                 if report.get("aborted"):
                     break
         report["seconds"] = round(time.monotonic() - started, 1)
