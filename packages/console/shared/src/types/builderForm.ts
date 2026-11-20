@@ -69,6 +69,52 @@ export interface BuilderSchema {
   strategy?: BuilderStrategySchema;
   /** The entry presets and filters (`entrypresets.schema`); absent from an older module. */
   entry_presets?: BuilderEntrySchema;
+  /** The indicators a signal's `a` or `b` can be, each with its keys; absent from an older module. */
+  sources?: Record<string, string[]>;
+  /** How each choice reads as a sentence (`words.schema`); absent from an older module. */
+  words?: BuilderWords;
+}
+
+/** One choice in words: its name, list heading and line, with a `{key}` slot where each control sits
+ *  (`{range}` a filter's min and max together, `{symbol}` the underlying in a strategy's line). */
+export interface BuilderChoiceWords {
+  label?: string;
+  group?: string;
+  about?: string;
+  sentence: string;
+  /** The keys the sentence leaves out, each with its own phrase, under "More options". */
+  more?: Record<string, string>;
+  /** How a value reads where its own spelling would not: an enum's options, a flag's "true" and
+   *  "false", a nullable key's "null" and "n". */
+  values?: Record<string, Record<string, string>>;
+  /** What the form writes for a required key that "More options" shows. */
+  start?: Record<string, unknown>;
+}
+
+export interface BuilderWords {
+  entry: Record<string, BuilderChoiceWords>;
+  trigger: Record<string, BuilderChoiceWords>;
+  signal_rules: Record<string, BuilderChoiceWords>;
+  signals: Record<string, BuilderChoiceWords>;
+  sources: Record<string, BuilderChoiceWords>;
+  gates: Record<string, BuilderChoiceWords>;
+  /** How `{range}` reads with both bounds, only `min` or only `max`. */
+  range: { both: string; min: string; max: string };
+  exits: Record<string, BuilderChoiceWords>;
+  /** The nested keys of an exit that is an object ({exit: {key: required}}). */
+  exit_parts: Record<string, Record<string, boolean>>;
+  strikes: Record<string, BuilderChoiceWords>;
+  /** How a strike's `match` reads, for a rule aimed at a price and one aimed at the option's value. */
+  matches: { price: Record<string, string>; value: Record<string, string> };
+  expiry: Record<string, BuilderChoiceWords>;
+  sizes: Record<string, BuilderChoiceWords>;
+  progression: BuilderChoiceWords;
+  limits: Record<string, BuilderChoiceWords>;
+  strategies: Record<string, BuilderChoiceWords>;
+  strategy_values: Record<string, Record<string, string>>;
+  /** A strategy's settings its expiry line shows rather than its own sentence. */
+  strategy_expiry_settings: string[];
+  strategy_groups: string[];
 }
 
 /** One setting an entry preset or a filter takes, from the module. */

@@ -7,7 +7,9 @@ and their keys (`arms.EXPIRY_KEYS`), the strike rules, their keys and match mode
 `strikes`), the gates with their parameters from each gate function's signature and the stage each
 reads (`gates.REGISTRY`, `gates.CORE_STAGE`), the exits (`arms.EXIT_KEYS`), the limits, the sizes and
 their progression (`sizing`), core's signal kinds and their parameters (`core.signals.KINDS`), and the
-event labels with each one's name, when it falls and its next day (`events`). A signal parameter's
+event labels with each one's name, when it falls and its next day (`events`), the indicators a
+signal's `a` or `b` can be with their keys (`sources`), and how each choice reads as a sentence
+(`words`). A signal parameter's
 type is core's validator, which the schema cannot state, so the form takes the value as typed and the
 module's check says what is wrong.
 
@@ -38,7 +40,7 @@ from zoneinfo import ZoneInfo
 from cherrypick.core import signals
 
 from . import arms as arms_mod
-from . import enrolment, entrypresets, events, fieldtypes, gates, sizing, strategies
+from . import enrolment, entrypresets, events, fieldtypes, gates, sizing, strategies, words
 from . import strikes as st
 
 ENTRY_KINDS: dict[str, dict[str, bool]] = {
@@ -52,7 +54,7 @@ ORB_DIRECTIONS = ("above", "below")
 #: null for until the window closes).
 TRIGGER_FORMS: dict[str, dict[str, bool]] = {
     "at": {"at": True, "within": True},
-    "signal": {"signal": True, "window": True, "within": True, "daily": False},
+    "signal": {"signal": True, "window": True, "within": True, "daily": False, "developing": False},
 }
 
 
@@ -196,6 +198,8 @@ def schema(today: date | None = None) -> dict:
             for k, kind in sorted(signals.KINDS.items())
         },
         "signal_rules": sorted(signals._RULES),
+        # The indicators a signal's `a` or `b` can be, and each one's keys (`core.signals`).
+        "sources": {k: list(v) for k, v in signals._SOURCES.items()},
         "weekdays": [0, 1, 2, 3, 4],
         "event_labels": sorted({*events.RULE_LABELS, *events.STORE_LABELS, *events.SYMBOL_LABELS}),
         "event_about": _event_about(today),
@@ -236,6 +240,7 @@ def schema(today: date | None = None) -> dict:
         "credit_rules": dict(CREDIT_RULES),
         "strategy": strategies.schema(),
         "entry_presets": entrypresets.schema(),
+        "words": words.schema(),
     }
 
 
