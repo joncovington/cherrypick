@@ -74,7 +74,8 @@ def test_arm_with_exact_yes_prints_the_disclaimer_and_writes_the_record(capsys, 
     assert _live.disclaimer_text().strip().splitlines()[0] in out
     assert armed_file().exists()
     result = parse(out)
-    assert result["ok"] and result["order_path"] is False
+    assert result["ok"] and result["order_path"] is True and result["dry_run"] is True
+    assert "dry-run" in result["note"]
 
 
 @pytest.mark.parametrize("confirm", [None, "yes", "Yes", "YES ", "Y", "no", ""])
@@ -148,7 +149,7 @@ def test_status_masks_the_account_and_makes_no_broker_call(capsys, suite, write_
     assert code == 0
     assert "****0000" in out and "1234567" not in out
     status = json.loads(out)
-    assert status["order_path"] is False and status["account"] == "****0000"
+    assert status["order_path"] is True and status["dry_run"] is True and status["account"] == "****0000"
     assert status["armed_today"] is False
     names = [g["name"] for g in status["gates"]]
     assert names == [
@@ -198,18 +199,25 @@ def test_status_without_an_account_names_the_gate(capsys, suite, write_config, m
     assert status["account"] is None and "account.designated" in status["unmet_gates"]
 
 
-def test_once_only_evaluates_and_says_there_is_no_order_path(capsys, suite, write_config):
-    code, out = run(capsys, "--config", write_config(live_config()), "--once")
-    assert code == 0
-    status = json.loads(out)
-    assert status["order_path"] is False and "no order path" in status["note"]
-    log = live_loop.log_file().read_text(encoding="utf-8")
-    assert "no order path yet" in log
+def test_once_with_the_gates_unmet_reads_nothing_and_builds_no_broker(capsys, suite, monkeypatch):
+    from cherrypick.ladder import live_tick
+
+    built = []
+    monkeypatch.setattr(live_tick, "BrokerAdapter", lambda config: built.append(config))
+    code, out = run(capsys, "--once")  # the example as shipped: live.enabled is false
+    result = json.loads(out)
+    assert code == 0 and built == []
+    assert result["skipped"] == "gates_unmet" and "live.enabled" in result["unmet_gates"]
+    assert result["order_path"] is True and result["dry_run"] is True
 
 
 # --------------------------------------------------------------------------- the fence
+# Trading imports (the broker seam, the execution adapter, the SDK, a session) live in `live_tick.py`
+# and nowhere else in the ladder. `orders.py` holds the one pure id reader, held to it by its own test.
 FORBIDDEN = ("broker", "execution", "live_orders", "tastytrade", "session", "order")
-FENCED = ("live_loop.py", "live_gates.py", "credentials.py")
+TRADING_MODULE = "live_tick.py"
+ORDER_LAYER = "orders.py"
+FENCED = tuple(sorted(p.name for p in SRC.glob("*.py") if p.name not in (TRADING_MODULE, ORDER_LAYER)))
 
 
 def imported_names(source: str) -> list[str]:
@@ -230,6 +238,18 @@ def violations(source: str) -> list[str]:
 @pytest.mark.parametrize("name", FENCED)
 def test_the_live_path_imports_no_order_or_broker_trading_code(name):
     assert violations((SRC / name).read_text(encoding="utf-8")) == []
+
+
+def test_the_fence_covers_paper_rules_gates_and_the_commands():
+    assert {"paper_loop.py", "rules.py", "live_gates.py", "live_loop.py", "credentials.py", "db.py"} <= set(
+        FENCED
+    )
+    assert TRADING_MODULE not in FENCED
+
+
+def test_the_trading_module_is_where_the_trading_imports_are():
+    """The scan is not vacuous: the one module allowed to trade does import the seam."""
+    assert violations((SRC / TRADING_MODULE).read_text(encoding="utf-8"))
 
 
 def test_there_is_no_order_module_beside_the_live_path():

@@ -36,7 +36,7 @@ Config edits the suite's settings from the browser. Its tabs follow the groups o
 
 ### What you see
 
-At the top of every Config tab, above the settings, is the halt control: a banner reading either "Live entries permitted" or "Live entries halted", with a row of chips beneath it, one per module, that says why the module is or is not live. Only meic, flies, bwb and ladder have a live path (the ladder's is a gate and an arm with no order path yet). Each of those shows `live enabled`, `live switch off`, or `unknown` when its switch cannot be read, plus `module off` when the module itself is switched off, and flies shows whether it is armed today. Every other module shows `paper only · no live path`: it places no order whatever its config says. If such a module's config switches live on anyway, it shows `switch on · no live path` as a warning.
+At the top of every Config tab, above the settings, is the halt control: a banner reading either "Live entries permitted" or "Live entries halted", with a row of chips beneath it, one per module, that says why the module is or is not live. Only meic, flies, bwb and ladder have a live path (the ladder's order path ships in dry-run and sends nothing until `live.dry_run` is set to false by hand). Each of those shows `live enabled`, `live switch off`, or `unknown` when its switch cannot be read, plus `module off` when the module itself is switched off, and flies shows whether it is armed today. Every other module shows `paper only · no live path`: it places no order whatever its config says. If such a module's config switches live on anyway, it shows `switch on · no live path` as a warning.
 
 Below that are the settings for the tab you are on.
 

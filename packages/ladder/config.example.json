@@ -55,12 +55,14 @@
     }
   },
   "live_header": "===== the live path: gates and the daily arm only, NO order path yet (issue #1337), shipped OFF =====",
-  "_live_note": "Nothing here places an order: the ladder has no order path yet. This block holds the gates and limits a future live loop will run under, and `python -m cherrypick.ladder.live_loop --status` shows each gate with its verdict. Live needs ALL of: live.enabled true, live.gate0_confirmed a human attestation, modules.ladder.enabled in the suite config, a valid arm record for today (`/live-ladder-start`, or `live_loop --arm --confirm YES`, which prints DISCLAIMER.md and arms nothing without an exact YES), a designated account, live.arm naming an enabled paper arm, live.symbols inside the fund list, and valid limits. The halt flag blocks new buys only. enabled and gate0_confirmed are guarded: the Config page cannot write them.",
+  "_live_note": "The order path ships in dry-run: with live.dry_run true the tick reads the broker and journals the orders it would send, and sends none. This block holds the gates and limits the live loop runs under, and `python -m cherrypick.ladder.live_loop --status` shows each gate with its verdict. Live needs ALL of: live.enabled true, live.gate0_confirmed a human attestation, modules.ladder.enabled in the suite config, a valid arm record for today (`/live-ladder-start`, or `live_loop --arm --confirm YES`, which prints DISCLAIMER.md and arms nothing without an exact YES), a designated account, live.arm naming an enabled paper arm, live.symbols inside the fund list, and valid limits. The halt flag blocks new buys only. enabled and gate0_confirmed are guarded: the Config page cannot write them.",
   "live": {
     "enabled": false,
     "_enabled_note": "Off. Guarded: set by hand, never from the Config page.",
     "gate0_confirmed": "",
     "_gate0_confirmed_note": "Empty. A human attestation (who and when), written by hand, as the suite's other live blocks carry it. Guarded.",
+    "dry_run": true,
+    "_dry_run_note": "On. While true the live tick sends nothing: it reads the broker, reconciles, and journals the orders it would place or cancel (decisions, mode dry_run), so a shadow week can be checked against paper's lots. Real orders need this set to false by hand AND every gate. Guarded: the Config page cannot write it.",
     "arm": "session",
     "_arm_note": "The ONE paper arm whose rule would trade live money. It must be an enabled arm below. Switching it is a journaled measurement break.",
     "symbols": [
@@ -95,6 +97,6 @@
     "_disarm_at_note": "ET. The day's arm ends here: a live tick past this time, or one that finds an arm record dated another day, disarms itself. Arming is per day.",
     "hospital_alert_days": 18,
     "_hospital_alert_days_note": "A lot open longer than this many days raises an alert. It is never acted on automatically; there is no stop.",
-    "_task_name_note": "No live.task_name yet, on purpose: the supervisor derives a <module>-live job from that key, and there is no order loop to run. It is added with the order path."
+    "_task_name_note": "No live.task_name yet, on purpose: the supervisor derives a <module>-live job from that key, and the job is installed in a later step. Until then `live_loop --once` is run by hand."
   }
 }

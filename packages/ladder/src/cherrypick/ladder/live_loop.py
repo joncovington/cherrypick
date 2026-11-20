@@ -1,20 +1,22 @@
-"""The ladder's live loop, gates and arm only. There is no order path yet (issue #1337).
+"""The ladder's live loop commands (issue #1337): arm, disarm, status and one tick.
 
-What exists: the readiness gates (`live_gates`), the per-day arm record (`cherrypick.core.live`) and
-a status readout. What does not: any order, any broker call that places, cancels or changes
-anything, the `live.task_name` that would make the supervisor run this as a job, and a live ledger.
-A source scan in the tests holds that: this file and `live_gates` import nothing that trades.
+The order path exists and ships in dry-run: `live_tick` holds the broker adapter, the reconcile and the
+tick, and is the only ladder module that imports anything that trades. This file imports nothing that
+does (a source scan in the tests holds that), so arming, disarming and reading the status never reach a
+broker.
 
     --arm --confirm YES   print DISCLAIMER.md; write today's arm record on exactly YES, only while
                           live.enabled, live.gate0_confirmed and modules.ladder.enabled hold
     --install-task        the same arm without the prompt (/live-ladder-start calls it after its YES)
     --disarm              remove the arm record
-    --status              one JSON readiness object: every gate, the masked account, armed today
-    --once                evaluate readiness and log that there is no order path yet
+    --status              one JSON object: every gate, the masked account, armed today, dry-run or
+                          live, anything held after an uncertain submit; no broker call
+    --once                one tick (`live_tick.run_once`): gates, orphan sweep, reconcile, then plan
+                          and apply while armed. Sends nothing while `live.dry_run` is true
 
-The arm is per day. The record is good for its date only, and `live.disarm_at` (ET) ends the day: a
-future tick calls `cherrypick.core.live.should_disarm` first and disarms itself on a stale date or
-past that time. Today `--once` reports the same verdict through the `arm.record` gate.
+The arm is per day. The record is good for its date only, and `live.disarm_at` (ET) ends the day: the
+tick removes a record dated another day before it reads anything, and at `disarm_at` it cancels the
+resting buys while the arm is still valid, then disarms itself.
 """
 
 from __future__ import annotations
@@ -35,7 +37,11 @@ from cherrypick.ladder import live_gates, paper_loop, stream_request
 
 MODULE = "ladder"
 ARMED_BY = "live-ladder-start"
-NO_ORDER_PATH = "the ladder has no order path yet: arming records the arm and nothing else"
+DRY_RUN_NOTE = (
+    "the order path ships in dry-run: the tick reads the broker and journals the orders it would send, "
+    "and sends none until live.dry_run is set to false by hand"
+)
+LIVE_NOTE = "live.dry_run is false: with every gate held, the tick places and cancels real orders"
 
 _logger = logging.getLogger("ladder_live_loop")
 
@@ -89,11 +95,17 @@ def status(config: dict, *, designated: str | None = None, when=None) -> dict:
     account = designated if designated is not None else _designated()
     gates = gates_now(config, designated=account, when=when)
     today = when.date().isoformat()
+    from cherrypick.ladder import live_tick
+
+    dry = live_tick.dry_run(config)
     return {
         "ok": True,
         "module": MODULE,
-        "order_path": False,
-        "note": NO_ORDER_PATH,
+        "order_path": True,
+        "dry_run": dry,
+        "mode": "dry-run" if dry else "live",
+        "note": DRY_RUN_NOTE if dry else LIVE_NOTE,
+        "held": live_tick.read_held(),
         "today": today,
         "armed_today": arm_stamp_date() == today,
         "armed_for": arm_stamp_date(),
@@ -120,9 +132,12 @@ def install_task(config: dict | None = None) -> dict:
         }
     out = _live.arm(MODULE, date=now_et().date().isoformat(), at=now_iso(), armed_by=ARMED_BY)
     if out.get("ok"):
-        out["order_path"] = False
-        out["note"] = NO_ORDER_PATH
-        out.pop("cadence", None)  # there is no ladder-live job to tick
+        from cherrypick.ladder import live_tick
+
+        out["order_path"] = True
+        out["dry_run"] = live_tick.dry_run(config)
+        out["note"] = DRY_RUN_NOTE if out["dry_run"] else LIVE_NOTE
+        out.pop("cadence", None)  # there is no ladder-live supervisor job to tick yet
     return out
 
 
@@ -130,20 +145,17 @@ def uninstall_task() -> dict:
     return _live.disarm(MODULE)
 
 
-def run_once(config: dict, *, designated: str | None = None, when=None) -> dict:
-    """Evaluate readiness and say there is no order path. Places nothing, cancels nothing."""
-    report = status(config, designated=designated, when=when)
-    _log(
-        f"tick: ready={report['ready']} armed_today={report['armed_today']} "
-        f"unmet={report['unmet_gates']}; no order path yet"
-    )
-    return report
+def run_once(config: dict, **kwargs) -> dict:
+    """One tick: `live_tick.run_once`. The broker adapter is built there, after the gates pass."""
+    from cherrypick.ladder import live_tick
+
+    return live_tick.run_once(config, **kwargs)
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description="cherrypick-ladder live gates and arm (no order path yet)")
+    ap = argparse.ArgumentParser(description="cherrypick-ladder live loop: arm, status and one tick")
     ap.add_argument("--config")
-    ap.add_argument("--once", action="store_true", help="evaluate readiness; places nothing")
+    ap.add_argument("--once", action="store_true", help="one tick; sends nothing while live.dry_run is true")
     ap.add_argument("--status", action="store_true", help="one JSON readiness object")
     ap.add_argument(
         "--arm", action="store_true", help="arm for today: prints DISCLAIMER.md, needs --confirm YES"

@@ -22,11 +22,13 @@ beyond the latest release.
 
 ### What's new
 
-- **The ladder has live gates and a daily arm, and still no way to place an order.** Its config gains
+- **The ladder has live gates, a daily arm and an order path that ships in dry-run.** Its config gains
   a `live` block, shipped off, and `python -m cherrypick.ladder.live_loop` gains `--status` (every
-  gate with its verdict, the account masked), `--arm --confirm YES`, `--install-task` (for
-  `/live-ladder-start`), `--disarm` and `--once`. `live.enabled` and `live.gate0_confirmed` are
-  guarded from the Config page. Arming records the arm and nothing else; the order path is issue #1337.
+  gate with its verdict, the account masked, dry-run or live), `--arm --confirm YES`, `--install-task`
+  (for `/live-ladder-start`), `--disarm` and `--once`. `--once` reads the broker, keeps a separate live
+  ledger (`live_trades.db`) up to date with what filled, and while armed plans the live arm's orders.
+  `live.dry_run` is true as shipped: it journals the orders it would send and sends none. `live.enabled`,
+  `live.gate0_confirmed` and `live.dry_run` are guarded from the Config page. Issue #1337.
 - **The ladder has a console page.** `/ladder` (under Experiments) shows each fund's previous close and
   every arm's next buy level, the open lots with the group's 18-day "hospital" flagged, the sold lots as
   trades, and each arm's realised and unrealised result. Its help tab says the rule is not a tested edge.

@@ -276,3 +276,14 @@ def test_a_shipped_advice_block_names_its_base_a_way_the_suite_reads(module: str
         f"{module}: advice.{unknown} is not a spelling core.advice reads {BASE_ARM_KEYS}; "
         'the base would silently resolve to "control"'
     )
+
+
+def test_ladder_guards_the_dry_run_switch_with_the_rest_of_its_live_block():
+    """The ladder's order path ships in dry-run, and `live.dry_run` is what turns the journal into
+    orders. A surface that cannot arm the loop must not be able to switch it to sending."""
+    from cherrypick.orchestrator.configedit import guard_violations
+
+    assert {"/live/dry_run", "/live/enabled", "/live/arm", "/live/symbols"} <= set(GUARDED["ladder"])
+    base = {"live": {"dry_run": True}}
+    assert guard_violations("ladder", base, {"live": {"dry_run": False}}) == ["/live/dry_run"]
+    assert guard_violations("ladder", base, base) == []
