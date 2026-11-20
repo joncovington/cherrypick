@@ -53,7 +53,7 @@ describe("the module digits", () => {
   });
 
   it("ignores a digit no module claims", () => {
-    expect(press(IDLE, "6").action).toBeNull();
+    expect(press(IDLE, "7").action).toBeNull();
     expect(press(IDLE, "9").action).toBeNull();
     expect(press(IDLE, "0").action).toBeNull();
   });
