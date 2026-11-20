@@ -5334,6 +5334,58 @@ select.text-input {
   background: var(--accent);
 }
 
+/* The Builder's window picker, beside Explore run: it takes the row's spare width and shrinks with it,
+   so the button stays beside it and a phone never runs it past the card. */
+.builder-window {
+  display: flex;
+  flex: 1 1 18rem;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+}
+.builder-window select {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  font-family: inherit;
+  font-size: 13px;
+}
+
+/* The full set's progress (Backtest -> data): one meter per underlying and part. Its own prefix:
+   `fs-` is FilterSort's. */
+.fullset-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.5rem 1rem;
+  margin-bottom: 0.75rem;
+}
+.fullset-head .fullset-meter {
+  min-width: min(100%, 360px);
+}
+/* A cell's meter has no name: the bar takes the room, the share sits after it. The columns share the
+   card's width; below its least width it scrolls inside its wrap, never the page. */
+.fullset-wrap {
+  overflow-x: auto;
+}
+.fullset-table {
+  table-layout: fixed;
+  width: 100%;
+  min-width: 44rem;
+}
+.fullset-table th:first-child {
+  width: 9em;
+}
+.fullset-table .fullset-meter {
+  grid-template-columns: minmax(24px, 1fr) max-content;
+  gap: 8px;
+}
+.fullset-table tr.fullset-total th,
+.fullset-table tr.fullset-total td {
+  border-top: 1px solid var(--border);
+  font-weight: 600;
+}
+
 /* The queue's expanded row: the fields that do not fit a five-column row, then the log's tail. */
 .queue-detail-row > td {
   background: var(--surface-sunken);
@@ -6316,8 +6368,39 @@ select.text-input {
 
 .q-top {
   display: grid;
-  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 0.8fr);
   gap: 12px;
+}
+
+/* One lane of the research queue: its name above its running task (or an idle tile). */
+.q-lane {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.q-lane > .study-tile {
+  flex: 1 1 auto;
+}
+.q-lane-title {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.q-lane-title .muted {
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+@media (max-width: 900px) {
+  .q-top {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+  .q-top .q-side {
+    grid-column: 1 / -1;
+  }
 }
 
 .q-top .study-hero {
@@ -8155,6 +8238,359 @@ select.text-input {
 
 .pay-key.is-before::before {
   border-top: 2px solid var(--text-dim);
+}
+
+/* The Builder's trade shape (pages/Builder/TradeShape.tsx): the module's placed structure as its
+   payoff at expiry beside the chain it was placed on, under the legs and on the automation page. */
+.tshape {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-top: 0.8rem;
+}
+.tshape.is-stale {
+  opacity: 0.55;
+}
+.tshape-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.6rem;
+  margin: 0;
+  font-size: 0.85rem;
+}
+/* The shape beside the chain; stacked on a phone. */
+.tshape-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  align-items: start;
+}
+@media (max-width: 700px) {
+  .tshape-pair {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.tshape-pair h5 {
+  margin: 0 0 0.4rem;
+}
+/* Drawn at its own size: stacked in a wide column it stays readable rather than scaling up. */
+.tshape-figure .pay-svg {
+  max-width: 600px;
+}
+.tshape-line {
+  stroke: var(--accent);
+}
+.tshape-gain {
+  fill: color-mix(in srgb, var(--pos) 22%, transparent);
+}
+.tshape-loss {
+  fill: color-mix(in srgb, var(--neg) 22%, transparent);
+}
+.tshape-note {
+  margin: 0;
+  font-size: 0.78rem;
+}
+.tchain-table td,
+.tchain-table th {
+  vertical-align: middle;
+  padding: 0.18rem 0.3rem;
+  font-size: 12px;
+}
+/* A leg's tag may wrap to two lines in a narrow column rather than push the deltas out of view. */
+.tchain-table td {
+  white-space: normal;
+}
+.tchain-table .chip {
+  font-size: 10px;
+  padding: 0 0.35rem;
+}
+.tchain-table .tchain-k {
+  text-align: center;
+  white-space: nowrap;
+}
+.tchain-table td.tchain-sell {
+  background: color-mix(in srgb, var(--warn) 14%, transparent);
+}
+.tchain-table td.tchain-buy {
+  background: color-mix(in srgb, var(--pos) 14%, transparent);
+}
+.tchain-gap td {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 11px;
+  padding: 0.1rem;
+}
+.tchain-atm td {
+  border-top: 1px solid var(--chart-grid-strong);
+  border-bottom: 1px solid var(--chart-grid-strong);
+}
+.tchain-atm .tchain-k {
+  font-weight: 700;
+  color: var(--text);
+}
+.tchain-table .tchain-k {
+  color: var(--text-muted);
+}
+.tchain-tag {
+  display: block;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: normal;
+}
+.tchain-tag.is-sold {
+  color: var(--warn);
+}
+.tchain-tag.is-bought {
+  color: var(--pos);
+}
+.tchain-none {
+  margin: 0;
+  padding: 1rem;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+.tshape-example {
+  margin: 0 0 0.4rem;
+  font-size: 13px;
+}
+.tshape-word {
+  fill: var(--text-dim);
+  font-size: 11px;
+}
+.tshape-spot {
+  fill: var(--text);
+}
+.tshape-sold {
+  fill: var(--warn);
+}
+.tshape-bought {
+  fill: var(--pos);
+}
+.tshape-leg {
+  font-size: 12px;
+  font-weight: 600;
+}
+.tshape-leg.is-sold {
+  fill: var(--warn);
+}
+.tshape-leg.is-bought {
+  fill: var(--pos);
+}
+/* The Builder's leg: its ID chip and its words, read-only; a quantity box beside its side. */
+.builder-leg-id {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.25rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.builder-leg-chip {
+  font-family: var(--num-face);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 0.15rem 0.5rem;
+  border-radius: 6px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+}
+.builder-qty {
+  width: 100%;
+}
+/* One leg, every leg on the same grid so its fields line up down the section. First line: the leg's
+   name, action, qty, side and strike by, then remove. Second line: the strike rule's own fields under
+   action, qty and side (a subgrid, so they take those columns exactly), and match under strike by,
+   empty where the rule has none. A phone stacks them two to a line. */
+.builder-cond.builder-leg-row {
+  display: grid;
+  grid-template-columns: 9rem repeat(4, minmax(0, 1fr)) 2.75rem;
+  align-items: end;
+  gap: 0.6rem;
+}
+.builder-leg-row > .builder-leg-name {
+  grid-row: span 2;
+  align-self: start;
+}
+.builder-leg-row > .builder-f,
+.builder-leg-row .builder-input {
+  min-width: 0;
+  width: 100%;
+}
+.builder-leg-rule {
+  grid-column: 2 / 5;
+  display: grid;
+  grid-template-columns: subgrid;
+  align-items: end;
+  min-width: 0;
+}
+.builder-leg-rule:empty {
+  display: none;
+}
+.builder-leg-match {
+  grid-column: 5;
+  min-width: 0;
+}
+.builder-leg-row .builder-remove {
+  grid-column: 6;
+  grid-row: 1;
+  justify-self: end;
+}
+/* With a far expiry each leg picks one: an expiry column after side, the rule's fields under action
+   to expiry, match under strike by. */
+.builder-cond.builder-leg-row.has-expiry {
+  /* Action's words are the longest and qty is one number: they share the room the new column takes. */
+  grid-template-columns: 9rem minmax(0, 1.35fr) minmax(0, 0.65fr) repeat(3, minmax(0, 1fr)) 2.75rem;
+}
+.builder-leg-row.has-expiry .builder-leg-rule {
+  grid-column: 2 / 6;
+}
+.builder-leg-row.has-expiry .builder-leg-match {
+  grid-column: 6;
+}
+.builder-leg-row.has-expiry .builder-remove {
+  grid-column: 7;
+}
+/* Section 1's far expiry: its rule and fields on the expiry's grid, remove at the end. */
+.builder-far {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 0.6rem;
+}
+.builder-far-row {
+  margin-top: 0.6rem;
+}
+.builder-far-row .builder-remove {
+  align-self: end;
+  justify-self: start;
+}
+/* The legs and the gates reflow by their own width, not the window's: the wizard's middle column is
+   narrower than the form's, and a phone narrower still. */
+.builder-rows {
+  container-type: inline-size;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+/* Narrow (the wizard): the leg's name on its own line, its four fields across the full width under
+   it, then the rule's fields under action, qty and side and match under strike by. */
+@container (max-width: 760px) {
+  .builder-cond.builder-leg-row {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .builder-leg-row > .builder-leg-name {
+    grid-row: 1;
+    grid-column: 1 / 4;
+  }
+  .builder-leg-row .builder-remove {
+    grid-column: 4;
+    grid-row: 1;
+  }
+  .builder-leg-rule {
+    grid-column: 1 / 4;
+  }
+  .builder-leg-match {
+    grid-column: 4;
+  }
+  .builder-cond.builder-leg-row.has-expiry {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+  .builder-leg-row.has-expiry > .builder-leg-name,
+  .builder-leg-row.has-expiry .builder-leg-rule {
+    grid-column: 1 / 5;
+  }
+  .builder-leg-row.has-expiry .builder-leg-match,
+  .builder-leg-row.has-expiry .builder-remove {
+    grid-column: 5;
+  }
+}
+/* A phone: two to a line. */
+@container (max-width: 480px) {
+  .builder-cond.builder-leg-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .builder-leg-row > .builder-leg-name {
+    grid-column: 1 / -1;
+  }
+  .builder-leg-rule {
+    grid-column: 1 / -1;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .builder-leg-match,
+  .builder-leg-row .builder-remove {
+    grid-column: auto;
+    grid-row: auto;
+  }
+  .builder-leg-rule > [aria-hidden="true"] {
+    display: none;
+  }
+  .builder-cond.builder-leg-row.has-expiry {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .builder-leg-row.has-expiry > .builder-leg-name,
+  .builder-leg-row.has-expiry .builder-leg-rule {
+    grid-column: 1 / -1;
+  }
+  .builder-leg-row.has-expiry .builder-leg-match,
+  .builder-leg-row.has-expiry .builder-remove {
+    grid-column: auto;
+    grid-row: auto;
+  }
+}
+/* A gate: its picker in a fixed column, its fields in three equal cells (a fourth wraps under them),
+   remove at the end, so every gate's fields start in the same place. */
+.builder-cond.builder-gate-row {
+  display: grid;
+  grid-template-columns: minmax(9rem, 14rem) repeat(3, minmax(0, 1fr)) 2.75rem;
+  align-items: end;
+  gap: 0.6rem;
+}
+.builder-gate-row > .builder-f,
+.builder-gate-row .builder-input {
+  min-width: 0;
+  width: 100%;
+}
+.builder-gate-row > .builder-f:first-child {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  align-self: start;
+}
+.builder-gate-row .builder-remove {
+  grid-column: 5;
+  grid-row: 1;
+  justify-self: end;
+}
+@container (max-width: 480px) {
+  .builder-cond.builder-gate-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .builder-gate-row > .builder-f:first-child {
+    grid-column: 1 / -1;
+    grid-row: auto;
+  }
+  .builder-gate-row .builder-remove {
+    grid-column: auto;
+    grid-row: auto;
+  }
+}
+/* Exits, size and limits as three labelled groups. */
+.builder-sub {
+  margin: 0.8rem 0 0.4rem;
+}
+.builder-sub:first-child {
+  margin-top: 0;
+}
+.builder-leg-add {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.8rem;
 }
 
 .mdl {
@@ -11356,6 +11792,114 @@ svg.vol-curve text {
   border-radius: 3px;
   background: var(--chart-neutral);
 }
+.builder-robustness-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
+  gap: 0.75rem;
+}
+.builder-robustness-item {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.6rem 0.75rem;
+  background: var(--surface);
+  min-width: 0;
+}
+.builder-robustness-item h5 {
+  margin: 0 0 0.35rem;
+  font-size: 0.85rem;
+}
+.builder-robustness-item p {
+  margin: 0.25rem 0;
+}
+.builder-quarters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin-top: 0.4rem;
+}
+.builder-quarter {
+  font-size: 0.7rem;
+  padding: 1px 4px;
+  border-radius: 4px;
+  color: var(--surface);
+}
+.builder-quarter.up {
+  background: var(--accent);
+}
+.builder-quarter.down {
+  background: var(--neg);
+}
+.builder-quarter.thin {
+  opacity: 0.4;
+}
+
+/* The idea search: its table of hypotheses, a survivor's row marked, a held-out verdict. */
+.builder-ideas-lead {
+  font-size: 0.85rem;
+  margin: 0.4rem 0;
+}
+.builder-ideas-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.builder-idea {
+  padding: 0.4rem 0 0.4rem 0.5rem;
+  border-bottom: 1px solid var(--surface-hover);
+  border-left: 3px solid transparent;
+  font-size: 0.8rem;
+}
+.builder-idea.survives {
+  border-left-color: var(--accent);
+}
+.builder-idea-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.25rem 0.75rem;
+}
+.builder-idea-name {
+  font-weight: 600;
+}
+.builder-idea-head > .muted {
+  font-size: 0.75rem;
+}
+.builder-idea-figs {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  margin-top: 0.2rem;
+}
+.builder-idea-figs .num {
+  font-family: var(--num-face);
+}
+.builder-idea-verdict {
+  font-size: 0.75rem;
+  padding: 1px 6px;
+  border-radius: 4px;
+  color: var(--text);
+  background: var(--surface-hover);
+}
+.builder-idea-verdict.passed {
+  color: var(--surface);
+  background: var(--verdict-pass);
+}
+.builder-idea-verdict.failed {
+  color: var(--surface);
+  background: var(--verdict-fail);
+}
+.builder-idea-declaration pre {
+  font-size: 0.75rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 20rem;
+  overflow: auto;
+}
+.builder-idea-brief {
+  font-size: 0.85rem;
+  margin: 0.2rem 0;
+}
 .builder-run-changes {
   margin: 0;
   padding-left: 1.25rem;
@@ -11424,12 +11968,21 @@ svg.vol-curve text {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr));
   gap: 0.6rem;
+  /* A label that wraps (a long bound hint) must not push its input below its neighbours'. */
+  align-items: end;
 }
 .builder-f {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
   min-width: 0;
+}
+/* A true-or-false key sits at the left, level with the text fields beside it. */
+.builder-flag {
+  align-self: flex-start;
+  width: 1.1rem;
+  height: 1.1rem;
+  margin: 0.55rem 0;
 }
 .builder-lbl {
   font-size: 0.68rem;
@@ -11457,6 +12010,350 @@ svg.vol-curve text {
   flex-wrap: wrap;
   gap: 0.4rem 0.9rem;
   font-size: 0.85rem;
+}
+/* A section's fields, disabled together for a saved automation; it lays out as if it were not there. */
+.builder-lock {
+  display: contents;
+}
+.builder-lock:disabled .builder-input,
+.builder-lock:disabled input,
+.builder-lock:disabled select {
+  opacity: 1;
+  color: var(--text);
+  cursor: default;
+}
+.builder-lock:disabled .builder-remove,
+.builder-lock:disabled .builder-cond ~ div > .btn,
+.builder-lock:disabled > div > .btn {
+  display: none;
+}
+.builder-readonly {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0;
+  padding: 0.55rem 0.8rem;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+/* Automations › Groups: every group › one group › one automation, a staged-changes bar along the
+   bottom, and Review over the page. */
+.grp-flow {
+  padding-bottom: 4.5rem;
+}
+.grp-crumbs {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+.grp-crumbs b {
+  color: var(--text);
+}
+.grp-cell {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+.grp-actions {
+  white-space: nowrap;
+  text-align: right;
+}
+.grp-actions .btn + .btn {
+  margin-left: 0.4rem;
+}
+.grp-flow .chip-info {
+  border-color: var(--accent);
+  color: color-mix(in srgb, var(--accent) 55%, var(--text));
+}
+.grp-flow .btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #ffffff;
+}
+.grp-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 2rem;
+}
+.grp-switch input {
+  width: 1.1rem;
+  height: 1.1rem;
+}
+.grp-hint {
+  font-size: 0.78rem;
+}
+.grp-staged td {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+.grp-add {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.7rem 0.8rem;
+  margin-bottom: 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-sunken);
+  max-height: 16rem;
+  overflow-y: auto;
+}
+.grp-add-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.85rem;
+  min-height: 2rem;
+}
+.grp-checks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.grp-check {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.55rem 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.9rem;
+}
+.grp-check:last-child {
+  border-bottom: 0;
+}
+.grp-check > span:first-child {
+  width: 1.4rem;
+  height: 1.4rem;
+  border-radius: 50%;
+  border: 1px solid currentColor;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  flex: none;
+}
+.grp-check.is-ok > span:first-child {
+  color: var(--pos);
+}
+.grp-check.is-wait > span:first-child {
+  color: var(--accent);
+}
+.grp-check.is-no > span:first-child {
+  color: var(--warn);
+}
+.grp-rule p {
+  margin: 0 0 0.45rem;
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+.grp-rule .builder-lbl {
+  display: inline-block;
+  min-width: 5.5rem;
+}
+.grp-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 1rem;
+  padding: 0.6rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-raised);
+  font-size: 0.85rem;
+}
+.grp-bar.is-staged {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface-raised));
+}
+.grp-bar-text {
+  color: var(--text-muted);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.grp-spacer {
+  flex: 1;
+}
+.grp-review-back {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: rgba(5, 6, 8, 0.6);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 5vh 1rem;
+  overflow-y: auto;
+}
+.grp-review {
+  width: min(920px, 100%);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  display: flex;
+  flex-direction: column;
+}
+.grp-review-head,
+.grp-review-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 1rem 1.4rem;
+}
+.grp-review-head {
+  border-bottom: 1px solid var(--border);
+}
+.grp-review-head h2 {
+  margin: 0;
+  font-size: 1.3rem;
+  flex: 1 1 auto;
+}
+.grp-review-foot {
+  border-top: 1px solid var(--border);
+}
+.grp-close {
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  border-radius: 50%;
+}
+.grp-review-body {
+  padding: 1rem 1.4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+.grp-review-body p {
+  margin: 0;
+}
+.grp-was {
+  text-decoration: line-through;
+}
+.grp-where {
+  font-family: var(--num-face);
+  text-align: left;
+}
+.grp-ok {
+  align-self: flex-start;
+}
+.grp-impact {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: 0.8rem;
+}
+.grp-warn {
+  border: 1px solid var(--warn);
+  border-radius: 8px;
+  padding: 0.6rem 0.8rem;
+  color: var(--warn);
+}
+/* Four fields of one width, each label on one line, so the inputs sit level and the hints below. */
+.grp-controls {
+  margin-bottom: 0.8rem;
+  grid-template-columns: repeat(auto-fill, minmax(12rem, 15rem));
+  gap: 0.6rem 1.2rem;
+  align-items: start;
+}
+.grp-controls .builder-lbl {
+  white-space: nowrap;
+}
+.grp-controls .grp-switch {
+  min-height: 2.25rem;
+}
+.grp-table td,
+.grp-table th {
+  vertical-align: middle;
+}
+.grp-num {
+  width: 6rem;
+}
+.grp-moved {
+  margin-left: 0.5rem;
+}
+.grp-new {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 0.8rem;
+}
+.grp-changes {
+  margin: 0 0 0.6rem;
+  padding-left: 1.2rem;
+}
+.builder-req {
+  color: var(--neg);
+  font-weight: 700;
+}
+/* A field's bounds beside its label (whole, ≥ 1, ET), in the label's own case. */
+.builder-hint {
+  text-transform: none;
+  letter-spacing: 0;
+  opacity: 0.8;
+}
+.builder-input::placeholder {
+  color: var(--text-muted);
+  opacity: 0.7;
+}
+.builder-input:invalid:not(:placeholder-shown),
+.builder-input[type="time"]:invalid {
+  border-color: var(--neg);
+}
+.builder-form-key {
+  margin: 0;
+  font-size: 0.8rem;
+}
+.builder-events > legend {
+  display: inline-flex;
+  align-items: center;
+  margin-bottom: 0.35rem;
+}
+/* The event key spans the row under the checkboxes. */
+.builder-event-key {
+  flex: 1 1 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+  margin-top: 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-sunken);
+}
+.builder-event-key th {
+  text-align: left;
+  font-weight: 600;
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  padding: 0.4rem 0.7rem;
+  border-bottom: 1px solid var(--border);
+}
+.builder-event-key td {
+  padding: 0.35rem 0.7rem;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+.builder-event-key td:first-child {
+  white-space: nowrap;
+  font-weight: 600;
+}
+.builder-event-key td.num {
+  font-family: var(--num-face);
+  white-space: nowrap;
+}
+.builder-event-key tfoot td {
+  border-bottom: 0;
+  font-weight: 400;
+  white-space: normal;
 }
 .builder-cond {
   display: flex;
@@ -11508,7 +12405,8 @@ svg.vol-curve text {
   white-space: pre;
   overflow-x: auto;
 }
-.builder-actions .btn-primary {
+.builder-actions .btn-primary,
+.strat-act .btn-primary {
   border-color: var(--accent);
   background: color-mix(in srgb, var(--accent) 18%, transparent);
   font-weight: 600;
@@ -11693,6 +12591,184 @@ svg.vol-curve text {
   font-size: 0.8rem;
   line-height: 1.55;
   max-width: 640px;
+}
+/* The strategy selector (StrategyPicker.tsx): the module's strategies down the left, the chosen one's
+   settings on the right, in the Builder's legs section and the wizard's Start step. Custom set apart
+   at the end; a strategy that cannot be built yet greyed, with why. A phone stacks the two. */
+.strat {
+  container-type: inline-size;
+  display: grid;
+  grid-template-columns: minmax(11rem, 15rem) minmax(0, 1fr);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  margin-bottom: 0.8rem;
+}
+.strat-list {
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-sunken);
+  border-right: 1px solid var(--border);
+  min-width: 0;
+}
+.strat-head {
+  padding: 0.55rem 0.8rem;
+  border-bottom: 1px solid var(--border);
+}
+.strat-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.25rem;
+  padding: 0.35rem 0.8rem;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.85rem;
+  text-align: left;
+  cursor: pointer;
+}
+.strat-item:hover:not(:disabled) {
+  background: var(--surface-raised);
+}
+.strat-item.is-on {
+  background: color-mix(in srgb, var(--accent) 14%, var(--surface));
+  box-shadow: inset 3px 0 0 var(--accent);
+  font-weight: 700;
+}
+.strat-item:disabled {
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+.strat-item.is-custom {
+  border-top: 1px solid var(--chart-grid-strong);
+}
+.strat-why {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  text-align: right;
+}
+.strat-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  padding: 0.8rem 1rem;
+  min-width: 0;
+}
+.strat-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.6rem;
+}
+.strat-title b {
+  font-size: 1rem;
+}
+.strat-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
+  gap: 0.6rem;
+  align-items: end;
+}
+.strat-seg-f {
+  grid-column: span 2;
+}
+.strat-seg {
+  display: flex;
+  gap: 0.25rem;
+}
+.strat-seg button {
+  flex: 1 1 0;
+  min-height: 2.25rem;
+  padding: 0 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+.strat-seg button.is-on {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 18%, var(--surface));
+  font-weight: 600;
+}
+.strat-act {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.85rem;
+}
+/* The entry presets (EntryPicker.tsx): the strategy selector's frame, the presets grouped down the
+   left, the chosen one's settings and the stacked filters on the right. */
+.entry-group {
+  display: flex;
+  flex-direction: column;
+}
+.entry-group-head {
+  padding: 0.45rem 0.8rem 0.2rem;
+  font-size: 0.65rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+}
+.entry-chip {
+  font-size: 0.75rem;
+  padding: 0.1rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-muted);
+}
+.entry-chip.is-caution {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+.entry-filters {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--border);
+}
+.entry-filter {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 2.75rem;
+  gap: 0.4rem 0.6rem;
+  align-items: center;
+  padding: 0.5rem 0.7rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.entry-filter-name {
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+.entry-filter .strat-fields {
+  grid-column: 1 / -1;
+  grid-row: 2;
+}
+.entry-add {
+  align-self: flex-start;
+  width: auto;
+}
+.builder-structure {
+  margin: 0 0 0.5rem;
+  font-size: 0.85rem;
+}
+@media (max-width: 700px) {
+  .strat {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .strat-list {
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
 }
 .wiz-shapes {
   display: grid;

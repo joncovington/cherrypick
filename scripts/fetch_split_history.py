@@ -40,6 +40,7 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 from cherrypick.core import home as _home
+from cherrypick.core import progress
 from cherrypick.technicals import paths
 
 SOURCE = "https://www.splithistory.com/{symbol}/"
@@ -165,9 +166,13 @@ def main(argv=None) -> int:
         conn = sqlite3.connect(path)
         conn.executescript(SCHEMA)
     failed = 0
-    for i, symbol in enumerate(s.strip().upper() for s in args.symbols):
+    wanted = [s.strip().upper() for s in args.symbols]
+    rep = progress.Reporter("fetch_split_history")
+    rep.split("symbols", wanted, unit="symbols")
+    for i, symbol in enumerate(wanted):
         if i:
             time.sleep(PAUSE_S)
+        rep.advance("symbols", key=symbol, current=symbol)
         if args.declare:
             source = f"declared: {args.source}"
             splits = sorted(declared(args.declare))
@@ -194,6 +199,7 @@ def main(argv=None) -> int:
         if conn is not None:
             store(conn, symbol, rows, fetched_at, source)
             conn.commit()
+    rep.finish("done")
     if conn is not None:
         conn.close()
         print(f"stored in {path}")

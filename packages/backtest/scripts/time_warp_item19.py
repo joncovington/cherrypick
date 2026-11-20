@@ -36,6 +36,7 @@ from datetime import date, datetime
 from pathlib import Path
 
 from cherrypick.core import fees, home, robustness
+from cherrypick.core import progress as core_progress
 from cherrypick.core import stats as core_stats
 
 from cherrypick.backtest import paths
@@ -250,11 +251,13 @@ def run_session(
 
 
 def sessions(
-    tw: sqlite3.Connection, days: list[str], vix: dict, closes: dict, **kw
+    tw: sqlite3.Connection, days: list[str], vix: dict, closes: dict, prog=None, **kw
 ) -> tuple[list[dict], Counter]:
     rows, skips = [], Counter()
     width_shift = kw.pop("width_shift", 0)
     for day in days:
+        if prog is not None:
+            prog.advance("sessions", key="SPX", current=day)
         loaded = load_session(tw, day)
         if loaded is None:
             skips["not fetched"] += 1
@@ -403,18 +406,22 @@ def main(argv: list[str] | None = None) -> int:
     days = trading_days(tw, args.start, args.end)
 
     results: dict = {}
-    for fill in FILLS:
-        rows, skips = sessions(tw, days, vix, closes, at=ENTRY_TIME, share=DEBIT_SHARE, fill=fill)
-        tests = {arm: score(rows, arm, args.start, args.end) for arm in ARMS}
-        if fill == "working":
-            judge(tests)
-        results[fill] = {
-            "tests": tests,
-            "skips": dict(skips),
-            "describe": {a: describe(rows, a) for a in ARMS},
-        }
-        if fill == "working":
-            working_rows = rows
+    with core_progress.Reporter("time_warp_item19-study") as prog:
+        prog.split("sessions", ["SPX"] * (len(days) * len(FILLS)), unit="days")
+        for fill in FILLS:
+            rows, skips = sessions(
+                tw, days, vix, closes, prog=prog, at=ENTRY_TIME, share=DEBIT_SHARE, fill=fill
+            )
+            tests = {arm: score(rows, arm, args.start, args.end) for arm in ARMS}
+            if fill == "working":
+                judge(tests)
+            results[fill] = {
+                "tests": tests,
+                "skips": dict(skips),
+                "describe": {a: describe(rows, a) for a in ARMS},
+            }
+            if fill == "working":
+                working_rows = rows
 
     verdict = results["working"]["tests"]
     out = {

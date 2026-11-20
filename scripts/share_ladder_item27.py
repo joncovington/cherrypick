@@ -49,6 +49,7 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from cherrypick.core import progress
 from cherrypick.core import stats as core_stats
 from cherrypick.core.home import data_dir
 
@@ -314,7 +315,8 @@ def judge(per_name: dict[str, dict]) -> dict:
     return out
 
 
-def study(db: Path, only: list[str] | None) -> dict:
+def study(db: Path, only: list[str] | None, rep=None) -> dict:
+    """`rep` is a progress Reporter: the names, each counted under its own symbol."""
     import sqlite3
 
     sys.path.insert(0, str(HERE))
@@ -326,7 +328,20 @@ def study(db: Path, only: list[str] | None) -> dict:
         names = [n for n in names if n in only]
     windows = {"design": sl.DESIGN, "half1": sl.HALVES[0], "half2": sl.HALVES[1], "holdout": sl.HOLDOUT}
     per_name: dict[str, dict] = {}
-    for k, name in enumerate(names):
+    counted = (
+        names
+        if rep is None
+        else progress.track(
+            names,
+            job="share_ladder_item27-study",
+            phase="names",
+            unit="names",
+            key=lambda n: n,
+            current=lambda n: n,
+            reporter=rep,
+        )
+    )
+    for k, name in enumerate(counted):
         bars = sl.daily_bars(conn, name)
         one_x = COUNTERPART.get(name)
         under = sl.daily_bars(conn, one_x) if one_x else None
@@ -360,7 +375,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--json", type=Path, default=None)
     ap.add_argument("--names", default=None, help="comma-separated subset (a trial run, not a verdict)")
     args = ap.parse_args(argv)
-    result = study(args.db, args.names.split(",") if args.names else None)
+    with progress.Reporter("share_ladder_item27-study") as rep:
+        result = study(args.db, args.names.split(",") if args.names else None, rep)
     path = args.json or DIR / "results.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(result, indent=1, default=str), encoding="utf-8")

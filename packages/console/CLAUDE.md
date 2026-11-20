@@ -115,27 +115,85 @@ alone):
   - **The Builder's save is the same path for one automation** (`/api/automations/builder/draft` and
     `/save`, configcli `automation_draft` / `automation_save`). The route sends a name and an
     automation and nothing else; the orchestrator runs the module's own check and writes the entry it
-    returned, which is always off. The page never turns an automation on, and never writes its
-    register label.
+    returned, which is always off. The Builder never turns an automation on, and never writes its
+    register label. A saved automation opens read-only; a change to one is a copy.
+  - **Automations › Groups writes the groups and the switches by the same path**
+    (`/api/automations/groups/edit`, `/check`, `/save`; configcli `automation_groups*`,
+    `orchestrator.groupedit`). Three levels (every group, `?group=`, `?group=&automation=`), each
+    change staged and written only from Review. The route sends the groups that will have members
+    (each spec whole), the automations that move and the automations whose own switch flips (true or
+    false), nothing else; the module (`cli groups-check`) loads the change as the paper loop would and
+    returns the `groups` block, the moves and the switches with the start it gave each one switched on
+    (the next session, so a paper record never begins mid-day), which are all the orchestrator
+    writes. Each automation's state (`on`, `waiting`, `off_group`, `off_own`) is the module's
+    (`cli groups-view`), and Review's "what it does to trading" lays the module's after-view beside the
+    view now; the page derives no state. Paper only: nothing here places an order.
   - **The Builder's form reads the module's schema and "Today, live"; neither writes.** The form's
     choices are `cli builder-schema` (`/api/automations/builder/schema`, the engine's own tables),
     so the page spells no gate, strike rule or exit of its own. "Today, live" is configcli
     `automation_today` (`/api/automations/builder/today`, a POST only because it may carry an
     unsaved edit): the module decides the automation now on a read-only snapshot and writes nothing.
-    The wizard (`BuilderWizard.tsx`) is the same three calls and the same save: its shapes are the
+    The shape and chain example under the legs (and on the Groups tab's automation page,
+    `TradeShape.tsx`) are configcli `automation_payoff` (`/api/automations/builder/payoff`, the same
+    body): the module returns the generic shape from the rule (`sketch`: each leg's position and
+    label, the curve in nominal units) and, where live quotes or our own last recorded session place
+    the legs, the chain example with each row's offset from the money and the example's money; the
+    page draws them and computes no strike, position, price or P&L. With a far leg both are at the
+    near expiry with that leg's time value by the module's model (`modeled`): the shape's title, top
+    and caption say so, the example names the modeled peak with each far leg's vol and days left, and
+    a far leg's tag reads "· far". A leg's words and its ID
+    (`legWords.ts`: L2 · Short Put ×2, the next ID) are the page's. A leg is written in the page's
+    own keys, `action` (BTO, STO), `qty` and `side` (put, call), which the module checks; the form
+    reads the older spelling too (`parts`: `side` as signed contracts, `right`) and writes any leg it
+    edits back in the page's (`writtenLeg`). The module's editor and saves convert as well.
+    The strategy selector (`StrategyPicker.tsx`, the legs section and the wizard's Start) is configcli
+    `automation_strategy` (`/api/automations/builder/strategy`: a strategy's name and plain settings,
+    checked by shape): the module builds the legs and the expiry (`strategies.py`) and the page writes
+    them into the edit; the list and the settings are the schema's (`strategy`). It writes no config.
+    A calendar or a diagonal also writes the far expiry, and the close before the near expiry where
+    the automation has none (`withStrategy`); a one-expiry strategy leaves no far rule behind.
+    Section 1 shows the far expiry under the near one (`FarExpiry`: its rules are the schema's
+    `far_expiry`, a button adds it, removing it puts every leg back on near), and once there is one,
+    each leg picks Near or Far in an expiry column (`has-expiry`).
+    The entry presets (`EntryPicker.tsx`, the signal section and the wizard's Entry step) are configcli
+    `automation_entry` (`/api/automations/builder/entry`: a preset's name and plain settings, and
+    each stacked filter's name and plain settings, checked by shape): the module builds the `entry`
+    and the filters' gates (`entrypresets.py`); the page sets the entry and adds the gates, and a
+    second fill swaps out only the gates the last one added that still stand as added
+    (`withFilterGates`). The lists and settings are the schema's (`entry_presets`). It writes no config.
+    The wizard (`BuilderWizard.tsx`) is the same calls and the same save: its strategies (or, from an
+    older module, its shapes) are the
     schema's, each step's Next is the module's draft check filtered to that step's keys, and it
     writes only through `/save`, always off.
   - **The Builder's backtest queues; it writes no config** (`/api/automations/builder/backtest`,
-    configcli `automation_backtest`). The route sends the name alone. The orchestrator takes the
-    window and the source from the automation's own backtest suggestion (our own stores first, the
-    vendor's only while the licence allows new work, marked `licensed`), refuses where that is not
-    possible or a run is already live, and adds one
+    configcli `automation_backtest`). The route sends the name and at most one window key, the
+    module's own token for one of the suggestion's `windows` (checked by shape here, `WINDOW_KEY`);
+    dates and a store from the page are never sent. The orchestrator takes the window and the source
+    from the automation's own backtest suggestion (our own stores first, the vendor's only while the
+    licence allows new work, marked `licensed`), refuses a key the suggestion does not offer, where
+    a run is not possible or one is already live, and adds one
     research-queue `script` row of the automation backtest driver. The run is an explore run: no
     trial, no verdict, no label moved. The explore-runs list (`/api/automations/builder/runs`,
     configcli `automation_runs`) shows its rows and results, each with its net curve and what it
     changed; one run's card (`/api/automations/builder/run`, configcli `automation_run`) is read
     whole by the backtest package. A licensed result is shown only while `backtestResultsOn`
     (fail closed: one not plainly unlicensed is withheld and counted, and its card refused 403).
+  - **The Builder's idea search queues, declares and tests; it writes no config**
+    (`/api/automations/builder/ideas`, configcli `automation_ideas` and `automation_idea_searches`;
+    `/idea-search`, `/idea-declare`, `/idea-holdout`). Find ideas sends the name alone; the run and the
+    split are the backtest package's. Declare and the held-out test send the name, the search's id
+    (`IDEA_SEARCH`) and one idea's id (`IDEA_ID`), checked by shape. Both read the search first, so a
+    licensed search withheld by `backtestResultsOn` is never declared from or spent (403, fail
+    closed). Declare drafts a register row into the search's result; the row is added to the
+    register by hand.
+  - **Adding an underlying to the full set queues fetches; it writes no config**
+    (`/api/automations/builder/fullset-plan`, configcli `fullset_plan`, a dry run, counts only; and
+    `/api/automations/builder/fullset-add`, configcli `fullset_add`, behind the CSRF token). Offered
+    (`AddToFullSet`) only where the suggestion is not possible and says the underlying is outside the
+    set (`full_set: false`; an older module that does not say gets no offer). The route sends the
+    symbol (checked by shape, `FULLSET_SYMBOL`) and the automation's name; the span, the 300-session
+    cap, the licence check and the rows are the orchestrator's. The page shows the plan first and
+    adds on a second click. The bridge gives these two ops longer timeouts (`SLOW_OPS`).
   - This surface **cannot touch `enable_live_trading`, flies' `live.enabled`/`gate0_confirmed`, or the
     live loss/deploy limits** in either direction: `configedit.GUARDED` refuses them, and the page
     shows them as locked rows with that table's hint.

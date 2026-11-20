@@ -4249,7 +4249,7 @@
       "id": 90,
       "study": "item90",
       "title": "Two published signal entries on SPX 0DTE: an opening-range breakout put spread and an ADX condor",
-      "status": "declared",
+      "status": "failed",
       "legacy": false,
       "setup": "indicator-rule",
       "side": "signal",
@@ -4288,7 +4288,7 @@
       "results": [
         "{home}/data/backtest/results/research/item90/results.json"
       ],
-      "outcome": null,
+      "outcome": "fail: orb-put-spread fail; adx-condor fail, by the declared rule",
       "retest": null,
       "retest_note": "A pass is followed by an automation with its own forward block, not a retest; the store is the vendor's, so a retest needs the licence.",
       "retests": []
@@ -4297,7 +4297,7 @@
       "id": 91,
       "study": "item91",
       "title": "The weekly SPY at-the-money call calendar: 60 days short, 90 long, out at +30% or the short's expiry",
-      "status": "declared",
+      "status": "failed",
       "legacy": false,
       "setup": "term-structure",
       "side": "neutral",
@@ -4340,7 +4340,7 @@
       "results": [
         "{home}/data/backtest/results/research/item91/results.json"
       ],
-      "outcome": null,
+      "outcome": "fail: stated fail, by the declared rule",
       "retest": null,
       "retest_note": "A pass is followed by an arm of the calendars paper module with its forward block, not a retest.",
       "retests": []
@@ -4349,7 +4349,7 @@
       "id": 92,
       "study": "item92",
       "title": "IV rank and realised-under-implied vol as entry filters for monthly short puts and put spreads on index funds",
-      "status": "declared",
+      "status": "failed",
       "legacy": false,
       "setup": "variance-premium",
       "side": "bullish",
@@ -4388,9 +4388,70 @@
       "results": [
         "{home}/data/backtest/results/research/item92/results.json"
       ],
-      "outcome": null,
+      "outcome": "fail: put-ivr30 fail; put-hv_lt_iv fail; spread-ivr30 fail; spread-hv_lt_iv fail, by the declared rule",
       "retest": null,
       "retest_note": "A pass is followed by an automation enrolled with its forward rule, not a retest; the chains are the vendor's, so a retest reads them only while the licence allows new work.",
+      "retests": []
+    },
+    {
+      "id": 93,
+      "study": "item93",
+      "title": "Market Profile entry readings, stage A: four forecasts on SPX prices",
+      "status": "failed",
+      "legacy": false,
+      "setup": "market-profile",
+      "side": "signal",
+      "structure": "none",
+      "window": "intraday",
+      "measure": "per SPX session against the prior session's value area (2.5-point rows, CBOT 70%): balance, the log range from 10:30 to the close over the prior close on days inside the first hour at 10:30; acceptance, the side-signed log return to the close after two 30-minute periods wholly beyond value (C onward, by 13:00); rejection, a touch of the far edge after an open outside value and two periods wholly inside (by 12:30); unfinished, a touch within five sessions of the prior session's poor extremes and single-print runs within 3%",
+      "expected": "balance: negative (an inside open with a narrow first hour narrows the day beyond item 81's w); acceptance, rejection, unfinished: positive against their matched baselines",
+      "sample": "full SPX sessions in the licensed one-minute store, 2022-05-16..2026-11-13, one run cut at 2025-07-01 (design before, holdout from); < 40 design events (or < 200 design days for balance) = no verdict, < 20 holdout events = provisional",
+      "rule": "FORECAST_RULE, per test: balance, the signal's least-squares coefficient beside the HAR terms, the gap and w, at least 0.10 in size; the others, the mean of event less matched baseline from the non-event days of the same part, at least 0.0010 (acceptance), 0.10 (rejection), 0.05 (unfinished); one-sided t >= 2.5 in the declared direction from a stationary block bootstrap (mean block 10, 10,000 draws, seed 93); the declared sign in each design half (2023-12-01); holdout, read after a design pass: the declared sign; t 2.5 keeps Holm across the four from binding",
+      "mechanism": "balance: a market agreeing on yesterday's value with a quiet first hour stays quiet; acceptance: time held outside value is new value; rejection: a failed auction outside value rotates through it; unfinished: an auction that ended without excess is revisited",
+      "rivals": [
+        {
+          "explanation": "it is item 81's width again",
+          "check": "w is in the balance model"
+        },
+        {
+          "explanation": "volatility clustering or the gap",
+          "check": "the HAR terms and the gap are controls"
+        },
+        {
+          "explanation": "the day's drift or the clock",
+          "check": "same side, same period end, non-event days"
+        },
+        {
+          "explanation": "any price that moved goes further",
+          "check": "same distance, same way, same time or span"
+        },
+        {
+          "explanation": "event days",
+          "check": "reported without FOMC decision days"
+        },
+        {
+          "explanation": "one regime",
+          "check": "the declared sign in both design halves"
+        },
+        {
+          "explanation": "many tries",
+          "check": "four tests at t 2.5, one parameter set each"
+        }
+      ],
+      "pointer": "research/edge-hypotheses-plan.md#93-market-profile-entry-readings-stage-a-four-forecasts-on-spx-prices",
+      "scripts": [
+        "packages/backtest/scripts/profile_entry_readings_item93.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_profile_entry_readings_item93_script.py"
+      ],
+      "results": [
+        "{home}/data/backtest/results/research/item93/results.json",
+        "{home}/data/backtest/results/research/item93/holdout-report.json"
+      ],
+      "outcome": "all four fail the design check, so no stage B: balance adds nothing beyond item 81's width and the HAR terms; acceptance has the wrong sign and the halves disagree; rejection's halves disagree; unfinished has the declared sign in both halves but is under its effect and t bars. The holdout was looked at afterwards at the user's request, reported and never judged: no test reaches its effect bar there. The profile stays a chart",
+      "retest": null,
+      "retest_note": "Closed. The holdout to 2026-11-13 has been seen, so a later item on any of these readings is judged on sessions after that.",
       "retests": []
     }
   ],

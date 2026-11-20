@@ -76,7 +76,7 @@ from collections import Counter, defaultdict
 from datetime import date, timedelta
 from pathlib import Path
 
-from cherrypick.core import american, bs, fees, robustness
+from cherrypick.core import american, bs, fees, progress, robustness
 from cherrypick.core import calendar as cal
 from cherrypick.core import stats as core_stats
 
@@ -833,13 +833,24 @@ def _split_free(bars: dict, sessions: list[date]) -> bool:
     )
 
 
-def study(conn, oi_conn, events, reports, span, status, bars, divs, iv_hist):
+def study(conn, oi_conn, events, reports, span, status, bars, divs, iv_hist, reporter=None):
     """Every event's record, then every arm's trade with its control. Pure of the stores' paths."""
     drops: Counter = Counter()
     arm_drops: dict[str, Counter] = defaultdict(Counter)
     control_drops: dict[str, Counter] = defaultdict(Counter)
     recs = []
-    for e in events:
+    todo = events
+    if reporter is not None:
+        todo = progress.track(
+            events,
+            job="earnings_diagonal_item52-study",
+            phase="events",
+            unit="events",
+            key=lambda e: e["symbol"],
+            current=lambda e: e["entry_session"],
+            reporter=reporter,
+        )
+    for e in todo:
         sym = e["symbol"]
         key = sym.upper()
         report = date.fromisoformat(e["report_date"])
@@ -891,7 +902,19 @@ def study(conn, oi_conn, events, reports, span, status, bars, divs, iv_hist):
     if len(readings) >= 3:
         cheap_cut = statistics.quantiles(readings, n=3, method="inclusive")[0]
     trades = []
-    for r in recs:
+    held = recs
+    if reporter is not None:
+        reporter.close_phase("events")
+        held = progress.track(
+            recs,
+            job="earnings_diagonal_item52-study",
+            phase="positions",
+            unit="events",
+            key=lambda r: r["e"]["symbol"],
+            current=lambda r: r["e"]["entry_session"],
+            reporter=reporter,
+        )
+    for r in held:
         e, st = r["e"], r["st"]
         sym, key, b = e["symbol"], st["sym"], bars[e["symbol"]]
         report = st["report"]
@@ -1015,7 +1038,10 @@ def cmd_study(args) -> int:
     raw = load_dividends()
     divs = {n: next((raw[s] for s in sorted(e31._spellings(n)) if s in raw), None) for n in names}
     iv_hist = load_iv_history(names, bars, args.host, args.port)
-    trades, recs, info = study(chains, oi, events, reports, span, status, bars, divs, iv_hist)
+    with progress.Reporter("earnings_diagonal_item52-study") as rep:
+        trades, recs, info = study(
+            chains, oi, events, reports, span, status, bars, divs, iv_hist, reporter=rep
+        )
     arms = evaluate(trades)
     result = {
         **info,

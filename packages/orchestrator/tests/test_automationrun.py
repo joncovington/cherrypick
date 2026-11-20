@@ -39,15 +39,19 @@ class _Queue:
         return self._rows
 
 
-def _queue(view, q=None):
+def _queue(view, q=None, **req):
     q = q or _Queue()
-    out = ar.queue({}, {"name": "mine"}, builder=lambda _cfg: view, add=q.add, rows=q.rows, now=NOW)
+    out = ar.queue({}, {"name": "mine", **req}, builder=lambda _cfg: view, add=q.add, rows=q.rows, now=NOW)
     return out, q
+
+
+DOLT_ALL = {"key": "dolt-chains:2019-02-09:2026-11-13", "start": "2019-02-09", "end": "2026-11-13",
+            "source": "dolt-chains", "licensed": False, "density": 0.67, "thin": True}  # fmt: skip
 
 
 def test_it_queues_the_driver_over_the_suggestions_window_and_source():
     out, q = _queue(_view())
-    assert out == {"ok": True, "name": "mine", "run": "builder-mine-2611161730", "task": 401,
+    assert out == {"ok": True, "name": "mine", "run": "builder-mine-2611161730", "task": 401, "key": None,
                    "window": ["2025-11-14", "2026-11-13"], "source": "recorded-0dte"}  # fmt: skip
     ((study, kind, args, kw),) = q.added
     assert (study, kind, kw) == ("builder", "script", {"step": "mine-2611161730"})
@@ -145,3 +149,28 @@ def test_one_runs_card_is_asked_for_by_its_exact_name_only():
         {}, {"name": "mine", "run": "builder-mine-2611161730"}, read=lambda n, r: {"ok": False, "error": "no"}
     )
     assert missing["code"] == "not_found"
+
+
+def test_a_named_window_takes_its_own_dates_and_store():
+    out, q = _queue(_view(suggestion={**POSSIBLE, "windows": [DOLT_ALL]}), window=DOLT_ALL["key"])
+    assert out["ok"] and out["window"] == ["2019-02-09", "2026-11-13"] and out["source"] == "dolt-chains"
+    args = q.added[0][2]["args"]
+    assert (
+        args[args.index("--from") + 1] == "2019-02-09" and args[args.index("--source") + 1] == "dolt-chains"
+    )
+
+
+def test_a_window_the_suggestion_does_not_offer_is_refused():
+    out, q = _queue(
+        _view(suggestion={**POSSIBLE, "windows": [DOLT_ALL]}), window="dolt-chains:2010-01-04:2026-11-13"
+    )
+    assert out["ok"] is False and out["code"] == "invalid" and q.added == []
+
+
+def test_a_window_runs_where_the_last_year_is_not_covered():
+    """A store that stopped early (QQQ's same-day store, 2026-10-12) still offers its span."""
+    short = {**POSSIBLE, "possible": False, "windows": [DOLT_ALL]}
+    out, _q = _queue(_view(suggestion=short))
+    assert out["ok"] is False
+    out, q = _queue(_view(suggestion=short), window=DOLT_ALL["key"])
+    assert out["ok"] and len(q.added) == 1

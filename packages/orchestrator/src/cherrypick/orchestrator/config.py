@@ -470,6 +470,19 @@ def module_logs_dir(name: str) -> Path:
 # paper-only in v0.12.0; a leftover `enable_live_trading: true` in its file must not show it as live.
 PAPER_ONLY_MODULES: frozenset[str] = frozenset({"earnings"})
 
+# Modules that have a live path at all: a `live_loop` that can place an order behind its own gate.
+# Every other module is paper by construction, so a surface can say "no live path" instead of
+# reading a missing switch as unknown. This names what exists and never decides a gate:
+# `live_trading_enabled` still reads every module's switch as before, so a switch found on outside
+# this set is shown, never hidden. `tests/test_live_path_modules.py` fails when a package gains or
+# loses a `live_loop.py` without this set following, and the console mirrors it (`liveLock.ts`).
+LIVE_PATH_MODULES: frozenset[str] = frozenset({"bwb", "flies", "meic"})
+
+
+def has_live_path(module: str) -> bool:
+    """Whether `module` has a live loop at all (`LIVE_PATH_MODULES`)."""
+    return module in LIVE_PATH_MODULES
+
 
 def live_trading_enabled(module_cfg_doc: dict[str, Any], module: str | None = None) -> bool:
     """Whether a module's OWN config document (not the orchestrator's) has live trading switched
@@ -971,7 +984,8 @@ def fundamentals_settings(cfg: dict[str, Any]) -> dict[str, Any]:
 
 
 def research_queue_settings(cfg: dict[str, Any]) -> dict[str, Any]:
-    """The research queue (`research-queue`, orchestrator/researchqueue.py). On by default: with no
+    """The research queue (its two jobs, `research-queue-vendor` and `research-queue-local`;
+    orchestrator/researchqueue.py). On by default: with no
     rows it does nothing, and every row is an allow-listed kind. `interval_seconds` is how often the
     supervisor looks for a ready row. The ThetaData blackout follows `backtest.fetch_at`: from
     `blackout_before_minutes` before it to `blackout_after_minutes` after, on trading days."""

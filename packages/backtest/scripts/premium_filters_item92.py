@@ -24,6 +24,7 @@ from pathlib import Path
 
 from cherrypick.core import bs, fees, treasury
 from cherrypick.core import calendar as cal
+from cherrypick.core import progress as core_progress
 
 from cherrypick.backtest.study import checks as ck
 from cherrypick.backtest.study import rule as kit_rule
@@ -457,12 +458,16 @@ def before(series: list[tuple[str, float]], session: str) -> list[float]:
     return [v for d, v in series if d < session and v is not None and v > 0]
 
 
-def collect(inputs: Inputs, conn, vols: dict, closes: dict) -> tuple[list[dict], dict]:
+def collect(inputs: Inputs, conn, vols: dict, closes: dict, rep=None) -> tuple[list[dict], dict]:
     """Every entry of both structures over every declared path, each with its filter states, and the
-    skips by structure."""
+    skips by structure. `rep` is a progress Reporter, when the caller keeps one."""
     keys = sorted({(s, e) for s, e, _, _ in inputs.keys}, key=lambda k: (k[1], k[0]))
     entries, skips = [], {s: defaultdict(int) for s in STRUCTURES}
+    if rep is not None:
+        rep.split("paths", [sym for sym, _ in keys], unit="paths")
     for sym, exp in keys:
+        if rep is not None:
+            rep.advance("paths", key=sym, current=exp)
         day = entry_day(exp)
         sessions = inputs.sessions(conn, sym, exp)
         if day is None or day not in sessions:
@@ -531,8 +536,8 @@ def summary(ts: list[dict]) -> dict:
     }
 
 
-def study(inputs: Inputs, conn, rate, vols: dict, closes: dict) -> dict:
-    entries, skips = collect(inputs, conn, vols, closes)
+def study(inputs: Inputs, conn, rate, vols: dict, closes: dict, rep=None) -> dict:
+    entries, skips = collect(inputs, conn, vols, closes, rep)
     split = RULE["splits"][0]
     names = [*ARMS, *REPORTED, "put-ivr_lt30", "spread-ivr_lt30"]
     by_arm = {}
@@ -607,7 +612,8 @@ def cmd_study(args) -> int:
     vols = {ix: vol_closes(ix) for ix in set(SPEC["funds"].values())}
     closes = {f: fund_closes(f) for f in SPEC["funds"]}
     try:
-        block = study(inputs, conn, rate_reader(), vols, closes)
+        with core_progress.Reporter("premium_filters_item92-study") as rep:
+            block = study(inputs, conn, rate_reader(), vols, closes, rep)
         read = inputs.fingerprint(conn)
     finally:
         conn.close()

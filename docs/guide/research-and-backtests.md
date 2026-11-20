@@ -31,6 +31,18 @@ the retired modules. `research/hypotheses.json` holds the same items in a form a
 per item with its status, its rule and a pointer to its section. The register holds no licensed figures: a
 row names a verdict and the local path of a result file, never a number from the data.
 
+When a queued study finishes, its notice names each arm's verdict and the command that records it:
+
+```
+python tools/record_verdict.py item90 --dry-run   # the edit, printed
+python tools/record_verdict.py item90             # the edit, a branch, a commit and a docs PR
+```
+
+It sets the row's status and an outcome line of words (each arm and its verdict, by the declared rule),
+checks the register, and opens the PR from a fresh worktree. It records only a result that carries the
+study kit's verdict block, which is computed from the declared rule; an older study's row stays a hand
+edit. The plan section's Result paragraph is written by hand.
+
 Check the register with:
 
 ```
@@ -96,9 +108,9 @@ it has passed.
 
 ## The research queue
 
-A long study can mean hours of data fetching. The research queue runs such tasks one at a time, from rows
+A long study can mean hours of data fetching. The research queue runs such tasks in two lanes, one at a time in each (fetches on the vendor's one session, and scripts beside them), from rows
 in a table, so a task does not die with your terminal and never collides with the nightly fetch. The
-supervisor's `research-queue` job takes the next ready row every minute.
+supervisor's two queue jobs each take their lane's next ready row every minute.
 
 A row is named `study/step`, such as `item69/study`. Rows run in priority order, oldest first among equals.
 A row can wait on another (`--after`), for a time (`--not-before`), or for a free vendor session. A fetch
@@ -109,7 +121,7 @@ that reaches its stop time or the nightly window stops and is queued again to re
 | `python packages/orchestrator/run.py queue-list` | The rows, newest first, with why each queued row is waiting and where a finished row's result is. `--study item69` narrows it. |
 | `python packages/orchestrator/run.py queue-priority --task-id 12 --priority 5` | Reorders a queued row. A higher number runs first. |
 | `python packages/orchestrator/run.py queue-cancel --task-id 12` | Cancels a queued row. |
-| `python packages/orchestrator/run.py queue-run` | What the job runs: ready rows one after another until none is ready. You rarely run it by hand. |
+| `python packages/orchestrator/run.py queue-run --lane vendor\|local` | What the two jobs run: one lane's ready rows one after another until none is ready. You rarely run it by hand. |
 | `python packages/orchestrator/run.py queue-add --study item69 --task script ...` | Adds a row. `--task-args` is a JSON object whose keys depend on the kind. |
 
 A row can only be one of a short allow-list of kinds: the ThetaData fetches, or a
@@ -168,6 +180,27 @@ python -m cherrypick.backtest run meic --arms control --window design --cadence 
   and is spent once per spec, and so does an `all` run that reaches the holdout's dates (a forward run
   wholly after them spends nothing). A design or `all` run is recorded as a trial, so a result is
   judged against how many things were tried.
+
+### Fetching the full set
+
+To have the same history the suite's own studies draw on, fetch the full set: option data for SPX, QQQ,
+XSP, SPY, IWM, GLD and TLT from 2020:
+
+```
+python packages/backtest/scripts/fetch_full_set.py plan
+python packages/orchestrator/run.py queue-chain --study fullset --script packages/backtest/scripts/fetch_full_set.py
+python packages/backtest/scripts/fetch_full_set.py status
+```
+
+`plan` writes the request files and prints how many requests each part holds and the most disk the
+intraday parts could take (a few hundred gigabytes, so point `store.dir` at a big drive first).
+`queue-chain` queues the fetches on the research queue: a ten-request probe first, so a subscription that
+cannot serve the set stops at once, then each underlying's same-day expiries, the end-of-day chains,
+open interest, the expiries 1 to 7 days out at one minute, and those 8 to 90 days out at five minutes.
+It runs for days at two requests at a time, and resumes wherever it stopped. `status` shows how far it
+has got, overall, for each part and for each underlying, and so does the **Full set fetch** card at the
+top of Backtest → Data. To bring the set up to date later, run `plan`
+and `queue-chain` again: only what is new is fetched.
 
 To fetch each new session automatically, set `"backtest": {"fetch": true}` in `~/.cherrypick/config.json`
 and run `python packages/orchestrator/run.py install` again. The `backtest-fetch` job then runs at 18:45 ET
@@ -251,7 +284,8 @@ Open a tile for five tabs:
 
 ### `queue`, `sources`, `runs` and `data`
 
-`queue` is what the supervisor is doing now: the running task with its progress, what is up next and why
+`queue` is what the supervisor is doing now: the running task with its progress (overall, and for each
+symbol when the task covers several: a task's detail lists them as `SPX 120/300 (40%)`), what is up next and why
 each row waits, and anything that failed in the last 7 days. `runs` is one tile per replay, with a summary
 of each arm against `control`, its equity line, health checks and settings. The health checks list the
 warnings first, such as a result resting on its best five sessions. `data` shows the licence clock

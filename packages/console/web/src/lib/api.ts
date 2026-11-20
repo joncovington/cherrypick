@@ -16,13 +16,22 @@ import type {
   AutomationsHistory,
   AutomationsPayload,
   AutomationGroupsResult,
+  GroupsChange,
+  GroupsCheckResult,
+  GroupsEditView,
   BuilderBacktestResult,
   BuilderDraftResult,
   BuilderResult,
   BuilderRunCard,
   BuilderRuns,
+  IdeaActionResult,
+  IdeaSearch,
+  IdeaSearches,
   BuilderSaveResult,
   BuilderSchemaResult,
+  BuilderPayoff,
+  BuilderStrategyResult,
+  BuilderEntryResult,
   BuilderToday,
   AutomationsPerformance,
   CurveEquity,
@@ -1090,6 +1099,7 @@ import type {
   PnlExcursion,
   PnlTrace,
   PortfolioReading,
+  PortfolioSources,
   PnlTradesResult,
 } from "@console/shared";
 
@@ -1146,6 +1156,15 @@ export function usePortfolio(arms: string[], period: "day" | "week", weights: "e
     enabled: arms.length > 0,
     refetchInterval: 300_000,
     placeholderData: (prev) => prev,
+  });
+}
+
+/** The backtest results the portfolio tab can hold beside paper arms (`GET /api/portfolio/backtests`). */
+export function usePortfolioSources() {
+  return useQuery<PortfolioSources>({
+    queryKey: ["portfolio-sources"],
+    queryFn: () => getJson<PortfolioSources>("/api/portfolio/backtests"),
+    staleTime: 600_000,
   });
 }
 
@@ -1358,6 +1377,28 @@ async function builderPost<T extends { ok: boolean; error?: string }>(url: strin
   return { ...json, ok: false, error: typeof json["error"] === "string" ? json["error"] : `HTTP ${res.status}` } as T;
 }
 
+/** The Groups page: every group with its spec and members, and the automations in none. */
+export function useGroupsEdit() {
+  return useQuery<GroupsEditView>({
+    queryKey: ["automations-groups-edit"],
+    queryFn: () => getJson<GroupsEditView>("/api/automations/groups/edit"),
+    staleTime: 30_000,
+  });
+}
+
+/** The module's check of a change to the groups; writes nothing. */
+export function groupsCheck(change: GroupsChange): Promise<GroupsCheckResult> {
+  return builderPost("/api/automations/groups/check", change);
+}
+
+/** That check, then the groups block, the moves and the switches it returned written through the config
+ *  editor. */
+export function groupsSave(
+  change: GroupsChange,
+): Promise<{ ok: boolean; error?: string; problems?: string[]; moved?: string[]; switched?: string[]; backup?: string | null }> {
+  return builderPost("/api/automations/groups/save", change);
+}
+
 /** The module's check of one automation; by name alone, the automation as the editor starts from it. */
 export function builderDraft(name: string, automation?: Record<string, unknown>): Promise<BuilderDraftResult> {
   return builderPost<BuilderDraftResult>("/api/automations/builder/draft", automation === undefined ? { name } : { name, automation });
@@ -1382,9 +1423,59 @@ export function builderToday(name: string, automation?: Record<string, unknown>)
   return builderPost<BuilderToday & { ok: boolean }>("/api/automations/builder/today", automation === undefined ? { name } : { name, automation });
 }
 
-/** Queue one explore backtest of a saved automation; the window and source are the module's own. */
-export function builderBacktest(name: string): Promise<BuilderBacktestResult> {
-  return builderPost<BuilderBacktestResult>("/api/automations/builder/backtest", { name });
+/** The structure this automation's rules would take and its payoff at expiry, from the module. */
+export function builderPayoff(name: string, automation?: Record<string, unknown>): Promise<BuilderPayoff & { ok?: boolean }> {
+  return builderPost<BuilderPayoff & { ok: boolean }>("/api/automations/builder/payoff", automation === undefined ? { name } : { name, automation });
+}
+
+/** A strategy's legs and expiry from its settings, and a whole automation from it, by the module. */
+export function builderStrategy(strategy: string, settings: Record<string, string | number>): Promise<BuilderStrategyResult & { ok?: boolean }> {
+  return builderPost<BuilderStrategyResult & { ok: boolean }>("/api/automations/builder/strategy", { strategy, settings });
+}
+
+/** An entry preset's entry and the gates of the filters stacked on it, by the module. */
+export function builderEntry(
+  entry: string,
+  settings: Record<string, string | number>,
+  filters: Array<{ filter: string; settings: Record<string, string | number> }>,
+): Promise<BuilderEntryResult & { ok?: boolean }> {
+  return builderPost<BuilderEntryResult & { ok: boolean }>("/api/automations/builder/entry", { entry, settings, filters });
+}
+
+/** Queue one explore backtest of a saved automation over one of its suggestion's windows (by key), or
+ *  the last year when none is named; the dates and the store are the module's own. */
+export function builderBacktest(name: string, window?: string): Promise<BuilderBacktestResult> {
+  return builderPost<BuilderBacktestResult>("/api/automations/builder/backtest", window === undefined ? { name } : { name, window });
+}
+
+/** What adding an underlying to the full set would fetch: the backtest planner's counts. */
+export interface FullSetPlan {
+  symbol: string;
+  from: string | null;
+  through: string | null;
+  requests: Record<string, number>;
+  concurrent: number | null;
+  cap_sessions: number | null;
+  within_cap: boolean;
+}
+
+export interface FullSetAdded {
+  ok: true;
+  symbol: string;
+  from: string | null;
+  through: string | null;
+  tasks: number[];
+  run: { task: number | null; run: string | null } | null;
+  run_error: string | null;
+}
+
+export function fullSetPlan(symbol: string): Promise<FullSetPlan> {
+  return getJson<FullSetPlan>(`/api/automations/builder/fullset-plan?symbol=${encodeURIComponent(symbol)}`);
+}
+
+/** Add the underlying to the full set and queue its fetches, then `name`'s backtest after them. */
+export function fullSetAdd(name: string, symbol: string): Promise<FullSetAdded> {
+  return builderPost<FullSetAdded>("/api/automations/builder/fullset-add", { name, symbol });
 }
 
 /** One automation's run card: its queued backtests and their results. Polled while one is live. */
@@ -1395,6 +1486,40 @@ export function useBuilderRuns(name: string, enabled: boolean) {
     enabled,
     staleTime: 5_000,
     refetchInterval: (q) => (q.state.data?.tasks.some((t) => t.status === "queued" || t.status === "running") ? 10_000 : false),
+  });
+}
+
+/** Queue one idea search of a saved automation; its run and split are the backtest package's. */
+export function builderFindIdeas(name: string): Promise<IdeaActionResult> {
+  return builderPost<IdeaActionResult>("/api/automations/builder/ideas", { name });
+}
+
+/** Draft one surviving idea's register row into its search, the split already fixed. */
+export function ideaDeclare(name: string, id: string, idea: string): Promise<IdeaActionResult> {
+  return builderPost<IdeaActionResult>("/api/automations/builder/idea-declare", { name, id, idea });
+}
+
+/** A declared idea's one held-out test. It cannot be repeated. */
+export function ideaHoldout(name: string, id: string, idea: string): Promise<IdeaActionResult> {
+  return builderPost<IdeaActionResult>("/api/automations/builder/idea-holdout", { name, id, idea });
+}
+
+/** One automation's idea searches: queued and finished. Polled while one is live. */
+export function useIdeaSearches(name: string) {
+  return useQuery<IdeaSearches>({
+    queryKey: ["automations-builder-ideas", name],
+    queryFn: () => getJson<IdeaSearches>(`/api/automations/builder/ideas?name=${encodeURIComponent(name)}`),
+    staleTime: 5_000,
+    refetchInterval: (q) => (q.state.data?.tasks.some((t) => t.status === "queued" || t.status === "running") ? 10_000 : false),
+  });
+}
+
+/** One idea search whole. Declare and the held-out test change it, so it is refetched after either. */
+export function useIdeaSearch(name: string, id: string) {
+  return useQuery<IdeaSearch>({
+    queryKey: ["automations-builder-idea-search", name, id],
+    queryFn: () => getJson<IdeaSearch>(`/api/automations/builder/idea-search?name=${encodeURIComponent(name)}&id=${encodeURIComponent(id)}`),
+    staleTime: 60_000,
   });
 }
 

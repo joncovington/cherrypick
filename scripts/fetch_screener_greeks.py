@@ -65,7 +65,7 @@ import time
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
-from cherrypick.core import legbars
+from cherrypick.core import legbars, progress
 from cherrypick.core.broker import standard_chains
 
 LISTS = (
@@ -232,9 +232,10 @@ def _broker(sym: str) -> str:
     return sym.replace(".", "/")
 
 
-async def collect(session, wanted: dict, limit: int | None, plans: dict | None = None) -> tuple:
+async def collect(session, wanted: dict, limit: int | None, plans: dict | None = None, rep=None) -> tuple:
     """(result, candidates, problem). `result` holds the list rows' windows, exactly as before;
-    `candidates` the credit-spread candidates `plans` names, from the same paced session."""
+    `candidates` the credit-spread candidates `plans` names, from the same paced session. `rep` is a
+    progress Reporter: the chain listings by name, then the option streams by underlying."""
     from tastytrade import DXLinkStreamer
     from tastytrade.dxfeed import Greeks, Quote, Summary
     from tastytrade.instruments import NestedOptionChain
@@ -254,9 +255,13 @@ async def collect(session, wanted: dict, limit: int | None, plans: dict | None =
                 result[sym]["spot"] = float(close) if close else None
 
     streamer_of: dict[str, tuple[str, str, float, str]] = {}  # streamer symbol -> (sym, exp, strike, right)
+    if rep is not None:
+        rep.split("chains", symbols, unit="names")
     for n, sym in enumerate(symbols):
         if n:
             await asyncio.sleep(CHAIN_PAUSE_S)
+        if rep is not None:
+            rep.advance("chains", key=sym, current=sym)
         try:
             chains = await NestedOptionChain.get(session, _broker(sym))
         except Exception as exc:  # noqa: BLE001 -- recorded with its reason, never dropped
@@ -308,6 +313,9 @@ async def collect(session, wanted: dict, limit: int | None, plans: dict | None =
     batches = [names[i : i + BATCH] for i in range(0, len(names), BATCH)]
     done = 0
     problem = None
+    if rep is not None:
+        under = {**{ss: v[0] for ss, v in streamer_of.items()}, **{ss: v[0] for ss, v in cand_of.items()}}
+        rep.split("options", [under[n] for n in names], unit="options")
     for attempt, pace in enumerate((SUBSCRIBE_PACE_S, 2 * SUBSCRIBE_PACE_S)):
         if attempt:
             print(f"DXLink closed ({problem}); reopening once in {RECONNECT_PAUSE_S:.0f}s", file=sys.stderr)
@@ -327,6 +335,9 @@ async def collect(session, wanted: dict, limit: int | None, plans: dict | None =
                         await streamer.unsubscribe(cls, chunk)
                         await asyncio.sleep(pace)
                     await asyncio.sleep(max(0.0, MIN_BATCH_S - (time.monotonic() - started)))
+                    if rep is not None:
+                        for n in chunk:
+                            rep.advance("options", key=under[n], current=under[n])
                     done += 1
             problem = None
             break
@@ -789,17 +800,22 @@ def plan_earnings_legs(rows: list[dict], chains: dict[str, list]) -> list[dict]:
 
 
 async def _chain_listings(
-    session, ub, symbols: list[str], cache: dict, dte_range: tuple[int, int] | None = None
+    session, ub, symbols: list[str], cache: dict, dte_range: tuple[int, int] | None = None, rep=None
 ) -> None:
     """Each name's chain listing (expirations in `dte_range`, the builder's range by default; strikes
     with their call and put symbols) into `cache`, in the universe builder's own format: listings
-    only, no quotes. One call a name, a second apart; a 429 stops the run."""
+    only, no quotes. One call a name, a second apart; a 429 stops the run. `rep` is a progress
+    Reporter: names already in the cache count as skipped."""
     from tastytrade.instruments import NestedOptionChain
 
     lo, hi = dte_range or ub.RULE["option_dte_range"]
+    if rep is not None:
+        rep.split("chains", symbols, unit="names", done=[s for s in symbols if s in cache])
     for sym in symbols:
         if sym in cache:
             continue
+        if rep is not None:
+            rep.advance("chains", key=sym, current=sym)
         try:
             chains = await NestedOptionChain.get(session, ub.to_tastytrade(sym))
         except Exception as exc:  # noqa: BLE001 -- a name without a chain is recorded as such
@@ -850,10 +866,13 @@ def cmd_strikes(_args) -> int:
     root = store_dir() / "screener-greeks"
     chain_path = root / "chains" / f"{today.isoformat()}.json"
     chains = ub._read_json(chain_path, {})
+    rep = progress.Reporter("fetch_screener_greeks-strikes")
     try:
         session = SessionManager(store).get_session()
-        asyncio.run(_chain_listings(session, ub, sorted({r["symbol"] for r in rows}), chains))
+        asyncio.run(_chain_listings(session, ub, sorted({r["symbol"] for r in rows}), chains, rep=rep))
+        rep.finish("done")
     except Exception as exc:  # noqa: BLE001 -- keep the listings gathered so far for the next run
+        rep.finish("failed")
         ub._write_json(chain_path, chains)
         print(json.dumps({"ok": False, "reason": f"{type(exc).__name__}: {exc}"[:300]}))
         return 1
@@ -966,7 +985,7 @@ async def _quote_options(session, ub, legs: list[dict]) -> None:
 
 
 async def _measure_then_legs(
-    session, ub, names, chain_cache, lists, today, skip, limit, earnings=(), marks=()
+    session, ub, names, chain_cache, lists, today, skip, limit, earnings=(), marks=(), rep=None
 ):
     """The spread readings, then the legs, in one event loop. The legs: every row of a name not held
     illiquid, the vendor's option against the monthly on the user's cycle, with chains from this
@@ -974,7 +993,7 @@ async def _measure_then_legs(
     in neither gets its vendor legs only. Then the earnings calendar's suggested spreads (`earnings`,
     its rows), whose names were measured with the rest so their chains are cached. A failure in the
     legs keeps the spread readings; a failure in the earnings spreads keeps both."""
-    measured = await ub._measure(session, names, chain_cache, None)
+    measured = await ub._measure(session, names, chain_cache, None, rep)
     chains = {**ub._read_json(ub.store_dir() / "chains" / f"{today.isoformat()}.json", {}), **chain_cache}
     legs = plan_legs(lists, chains, skip, ub.is_monthly)[:limit]
     try:
@@ -1035,6 +1054,7 @@ def cmd_measure(args) -> int:
     chain_path = root / "chains" / f"{today.isoformat()}.json"
     chain_cache = ub._read_json(chain_path, {})
     started = datetime.now(UTC)
+    rep = progress.Reporter("fetch_screener_greeks-measure")
     try:
         session = SessionManager(store).get_session()
         # One event loop for both steps: the broker session's connection belongs to the loop it was
@@ -1051,9 +1071,12 @@ def cmd_measure(args) -> int:
                 args.limit,
                 earnings,
                 marks,
+                rep,
             )
         )
+        rep.finish("done")
     except Exception as exc:  # noqa: BLE001 -- keep the chains gathered so far for the next run
+        rep.finish("failed")
         ub._write_json(chain_path, chain_cache)
         print(json.dumps({"ok": False, "reason": f"{type(exc).__name__}: {exc}"[:300]}))
         return 1
@@ -1451,7 +1474,7 @@ def latest_metrics() -> tuple[str | None, dict]:
 
 
 async def _income_quotes(
-    session, ub, names: list[str], cache: dict, ivs: dict | None = None
+    session, ub, names: list[str], cache: dict, ivs: dict | None = None, rep=None
 ) -> tuple[dict, dict, str | None]:
     """(spots, plans, problem): each name's price (mid in hours, else mark, else last), its plan on the
     cycle monthly, and the options quoted in place. Chain listings go through the day's shared cache,
@@ -1461,7 +1484,7 @@ async def _income_quotes(
 
     problem = None
     try:
-        await _chain_listings(session, ub, names, cache)
+        await _chain_listings(session, ub, names, cache, rep=rep)
     except Exception as exc:  # noqa: BLE001 -- a 429: keep what was listed
         problem = f"chain listings stopped: {type(exc).__name__}: {exc}"[:300]
     spots: dict[str, float | None] = {}
@@ -1531,10 +1554,13 @@ def cmd_income(args) -> int:
     started = datetime.now(UTC)
     metrics_day, metric_rows = latest_metrics()
     ivs = {s: plan_vol(metric_rows.get(s) or {}) for s in names}
+    rep = progress.Reporter("fetch_screener_greeks-income")
     try:
         session = SessionManager(store).get_session()
-        spots, plans, problem = asyncio.run(_income_quotes(session, ub, names, cache, ivs))
+        spots, plans, problem = asyncio.run(_income_quotes(session, ub, names, cache, ivs, rep))
+        rep.finish("done")
     except Exception as exc:  # noqa: BLE001 -- keep the listings gathered so far for the next run
+        rep.finish("failed")
         ub._write_json(chain_path, cache)
         print(json.dumps({"ok": False, "reason": f"{type(exc).__name__}: {exc}"[:300]}))
         return 1
@@ -1667,7 +1693,9 @@ def skate_clock(expiries: set[str], now) -> dict[str, tuple[int, float]]:
     return out
 
 
-async def _skate_quotes(session, ub, doc: dict, cfg: dict, cache: dict, now) -> tuple[list[dict], str | None]:
+async def _skate_quotes(
+    session, ub, doc: dict, cfg: dict, cache: dict, now, rep=None
+) -> tuple[list[dict], str | None]:
     """(the scored name-sides, a problem or None): listings, spots, stage one, stage two."""
     from cherrypick.technicals import skate
     from tastytrade.market_data import get_market_data_by_type
@@ -1675,7 +1703,7 @@ async def _skate_quotes(session, ub, doc: dict, cfg: dict, cache: dict, now) -> 
     problem = None
     names = sorted(doc.get("names") or {})
     try:
-        await _chain_listings(session, ub, names, cache, SKATE_DTE_RANGE)
+        await _chain_listings(session, ub, names, cache, SKATE_DTE_RANGE, rep)
     except Exception as exc:  # noqa: BLE001 -- a 429: score what was listed
         problem = f"chain listings stopped: {type(exc).__name__}: {exc}"[:300]
     spots: dict[str, float] = {}
@@ -1757,10 +1785,13 @@ def cmd_skate(args) -> int:
     chain_path = root / "chains" / f"{today.isoformat()}.json"
     cache = ub._read_json(chain_path, {})
     started = datetime.now(UTC)
+    rep = progress.Reporter("fetch_screener_greeks-skate")
     try:
         session = SessionManager(store).get_session()
-        rows, problem = asyncio.run(_skate_quotes(session, ub, doc, cfg, cache, now))
+        rows, problem = asyncio.run(_skate_quotes(session, ub, doc, cfg, cache, now, rep))
+        rep.finish("done")
     except Exception as exc:  # noqa: BLE001 -- keep the listings gathered so far for the next run
+        rep.finish("failed")
         ub._write_json(chain_path, cache)
         print(json.dumps({"ok": False, "reason": f"{type(exc).__name__}: {exc}"[:300]}))
         return 1
@@ -1871,7 +1902,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     plans = {s: p for s, p in candidate_plan(day).items() if s.replace("/", ".") not in skip}
     started = time.monotonic()
-    result, cand, problem = asyncio.run(collect(session, wanted, args.limit, plans))
+    with progress.Reporter("fetch_screener_greeks-greeks") as rep:
+        result, cand, problem = asyncio.run(collect(session, wanted, args.limit, plans, rep))
     problem = problem or rate_limit_problem(result) or rate_limit_problem(cand)
     doc = {
         "list_date": day,

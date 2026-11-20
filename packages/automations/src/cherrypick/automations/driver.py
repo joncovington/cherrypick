@@ -58,6 +58,25 @@ class Book:
         return out
 
 
+def recent_entries(days: list[str], session: str) -> list[str]:
+    """An arm's entry days as a decision reads them: today's (the per-day limit, `no_position_today`)
+    and the latest before today (`every_days`). The book keeps them in session order, so that is the
+    list's tail; handing the engine the whole history every minute made a long run quadratic."""
+    i = len(days)
+    while i and days[i - 1] >= session:
+        i -= 1
+    return days[max(i - 1, 0) :]
+
+
+def results_for(arms: list[dict], book: Book) -> dict[str, list[float]]:
+    """Closed results for the arms that read them: a size with a `progression` (`sizing.progressed`).
+    No other rule reads them, so no other arm's are built."""
+    names = {a["name"] for a in arms if (a.get("size") or {}).get("progression")}
+    if not names:
+        return {}
+    return {k: v for k, v in book.results().items() if k in names}
+
+
 def snapshot_at(
     arms: list[dict],
     history: StoreHistory,
@@ -99,9 +118,9 @@ def snapshot_at(
         vix=history.vix_at(session, minute) if any(n["vix"] for n in needs) else None,
         vix_prev_close=vix_prior[-1] if vix_prior and any(n["vix"] for n in needs) else None,
         events=events,
-        entries={k: list(v) for k, v in book.entries.items()},
+        entries={k: recent_entries(v, session) for k, v in book.entries.items()},
         open_positions=book.open_positions(),
-        results=book.results(),
+        results=results_for(arms, book),
         close_minute=_close_minute(day),
         with_gex=any(n["gex"] for n in needs),
         daily=history.daily_before(session) if any(n["daily"] for n in needs) else None,
@@ -111,6 +130,12 @@ def snapshot_at(
         vol_closes=feed.vol_history(history.symbol, day, max(n["vol_closes"] for n in needs) if needs else 0),
         volumes={s: (volumes or {}).get(s, {}) for a in arms for s in arms_mod.volume_symbols(a)},
     )
+
+
+def held_expiries(entry) -> list[str]:
+    """The expiries an open position's legs sit on: its own, and each far leg's (`Leg.expiry`), so a
+    held calendar is read off the far chain it was entered on, not today's far rule."""
+    return sorted({entry.expiry, *(g.expiry for g in entry.legs if getattr(g, "expiry", None))})
 
 
 def _manage(history, session, minute, book, arms, *, events, vix_daily, costs, volumes=None) -> None:
@@ -128,7 +153,7 @@ def _manage(history, session, minute, book, arms, *, events, vix_daily, costs, v
             book,
             events=events,
             vix_daily=vix_daily,
-            expiries=[pos.entry.expiry],
+            expiries=held_expiries(pos.entry),
             volumes=volumes,
         )
         if snap is None:

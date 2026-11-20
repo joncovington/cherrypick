@@ -1581,14 +1581,31 @@ def derive_jobs(
     )
     rqs = cfgmod.research_queue_settings(cfg)
     add(
-        "research-queue",
+        # The vendor lane's own id: the one-lane job it replaced (`research-queue`, retired 2026-11-18)
+        # may still hold a running row as an adopted child after a restart, and a new id never waits
+        # on it.
+        "research-queue-vendor",
         lambda: JobSpec(
-            id="research-queue",
+            id="research-queue-vendor",
             # Long research tasks from rows (orchestrator/researchqueue.py): each tick runs the oldest
             # ready row to its end, so a fetch of many hours runs inside this job, and the overlap
             # guard keeps a second tick from starting another. Allow-listed kinds only; a ThetaData
             # task keeps clear of backtest-fetch's window and of a held session.
-            argv=_run_py(pythonw, launcher, "queue-run"),
+            # The vendor lane: fetches, one at a time on the vendor's one session.
+            argv=_run_py(pythonw, launcher, "queue-run", "--lane", "vendor"),
+            kind=KIND_INTERVAL,
+            interval_seconds=rqs["interval_seconds"],
+            enabled=rqs["enabled"],
+            enabled_reason="" if rqs["enabled"] else "disabled in config (research_queue.enabled)",
+        ),
+    )
+    add(
+        "research-queue-local",
+        lambda: JobSpec(
+            id="research-queue-local",
+            # The local lane: scripts (plans, smoke runs, studies, the Builder's runs), one at a time,
+            # beside whatever fetch the vendor lane runs.
+            argv=_run_py(pythonw, launcher, "queue-run", "--lane", "local"),
             kind=KIND_INTERVAL,
             interval_seconds=rqs["interval_seconds"],
             enabled=rqs["enabled"],

@@ -28,6 +28,48 @@ def _doc(path):
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def test_track_counts_a_loop_overall_and_per_symbol_and_finishes_its_file(tmp_path, monkeypatch):
+    monkeypatch.setattr(progress, "_pid_alive", lambda pid: True)
+    rows = [{"fund": "SPY"}, {"fund": "QQQ"}, {"fund": "SPY"}]
+    seen = []
+    for r in progress.track(rows, job="item-study", phase="trades", key=lambda r: r["fund"]):
+        seen.append(r["fund"])
+    assert seen == ["SPY", "QQQ", "SPY"]
+    (view,) = progress.read_all()
+    assert view["state"] == "done" and view["fraction"] == 1.0
+    assert view["by_symbol"]["SPY"] == {"done": 2, "total": 2, "share": 1.0}
+    with pytest.raises(RuntimeError):
+        for _ in progress.track(rows, job="item-fail", phase="trades"):
+            raise RuntimeError("boom")
+    view = {v["job"]: v for v in progress.read_all()}["item-fail"]
+    assert view["state"] == "failed" and view["note"] == "stopped at 0/3"
+
+
+def test_a_phase_split_by_symbol_counts_each_and_the_whole(tmp_path, monkeypatch):
+    monkeypatch.setattr(progress, "_pid_alive", lambda pid: True)
+    clock, path = Clock(), tmp_path / "q7.json"
+    rep = progress.Reporter("fetch", path=path, clock=clock, throttle_s=0)
+    keys = ["SPX", "SPX", "QQQ", "SPX"]
+    assert progress.counts_by(keys) == {"SPX": 3, "QQQ": 1}
+    rep.phase("requests", total=len(keys), unit="windows", by=progress.counts_by(keys))
+    rep.advance("requests", key="SPX")
+    rep.advance("requests", key="SPX", skipped=True)
+    rep.advance("requests", key="IWM")  # not opened with it: counted, with no total
+    clock.t += 10
+    view = progress.read_job("q7", tmp_path, now=clock.t)
+    assert view["fraction"] == pytest.approx(3 / 4)
+    assert view["by_symbol"] == {
+        "SPX": {"done": 2, "total": 3, "share": pytest.approx(0.6667, abs=1e-4)},
+        "QQQ": {"done": 0, "total": 1, "share": 0.0},
+        "IWM": {"done": 1, "total": None, "share": None},
+    }
+    assert "[IWM 1]" in view["line"]
+    rep.advance("requests", key="QQQ")
+    assert "[QQQ 1/1]" in progress.read_job("q7", tmp_path, now=clock.t)["line"]
+    rep.phase("requests", total=2)  # reopened without a split: the old split goes
+    assert progress.read_job("q7", tmp_path, now=clock.t)["by_symbol"] is None
+
+
 def test_a_hand_started_job_writes_its_own_file_and_names_it_for_children(tmp_path):
     rep = progress.Reporter("backtest-validate", clock=Clock())
     assert rep.path == progress.progress_dir() / f"backtest-validate-{os.getpid()}.json"
@@ -102,6 +144,46 @@ def test_the_eta_comes_from_the_overall_fraction(tmp_path, monkeypatch):
     rep.advance("sessions")  # a quarter done in 600 s
     view = progress.read_job("q6", tmp_path, now=clock.t)
     assert view["eta_s"] == 1800 and "~00:30 remaining" in view["line"]
+
+
+def test_a_job_counted_in_steps_estimates_only_the_step_under_way(tmp_path, monkeypatch):
+    """2026-11-18: the full set's SPX fetch, 1296 of 1511 sessions in five hours, then a VIX pass,
+    read 43% and six hours left: the overall share counted the light VIX step the same as the
+    sessions. The steps are unlike, so the time left is the running step's, from its own pace."""
+    monkeypatch.setattr(progress, "_pid_alive", lambda pid: True)
+    clock = Clock(1000.0)
+    path = tmp_path / "q11.json"
+    rep = progress.Reporter("fetch", path=path, clock=clock, throttle_s=0)
+    rep.phase("steps", total=2, unit="steps")
+    rep.at("steps", "sessions")
+    rep.phase("sessions", total=100, unit="sessions")
+    clock.t = 1800.0
+    rep.advance("sessions", 80)  # 10 s each
+    view = progress.read_job("q11", tmp_path, now=clock.t)
+    assert view["fraction"] == 0.4
+    assert view["eta_s"] == 200, "20 sessions left at 10 s each, not the job's pace over 40%"
+    assert view["steps_after"] == 1
+    assert "~00:03 remaining in this step, then 1 more step" in view["line"]
+    rep.close_phase("sessions")
+    rep.advance("steps", current="vix")
+    rep.phase("vix", total=10, unit="sessions")
+    clock.t = 1810.0
+    rep.advance("vix", 5)
+    view = progress.read_job("q11", tmp_path, now=clock.t)
+    assert view["eta_s"] == 10 and view["steps_after"] == 0
+    assert view["line"].endswith("<00:01 remaining in this step")
+
+
+def test_a_job_without_steps_says_nothing_of_steps(tmp_path, monkeypatch):
+    monkeypatch.setattr(progress, "_pid_alive", lambda pid: True)
+    clock = Clock(1000.0)
+    path = tmp_path / "q12.json"
+    rep = progress.Reporter("run", path=path, clock=clock, throttle_s=0)
+    rep.phase("sessions", total=4)
+    clock.t = 1600.0
+    rep.advance("sessions")
+    view = progress.read_job("q12", tmp_path, now=clock.t)
+    assert view["steps_after"] is None and "step" not in view["line"]
 
 
 def test_the_rate_is_the_innermost_counted_phase_per_item(tmp_path, monkeypatch):

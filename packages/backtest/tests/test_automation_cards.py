@@ -48,6 +48,16 @@ def test_the_net_is_the_verdict_kinds_and_the_drawdown_the_closed_trades():
     assert [p["dd"] for p in curve] == [0.0, -80.0, -130.0, -90.0]
 
 
+def test_net_at_mid_is_the_recorded_mid_net_and_reconciles_with_the_slippage():
+    tiles, rows = ac.tiles(TRADES, 40), ac.years(TRADES)
+    assert tiles["net_mid"] == pytest.approx(10.0 + 4 * 0.5)
+    for r in rows:
+        assert r["net_mid"] == pytest.approx(r["net"] + r["slippage"])  # P&L before slippage
+    # Read as recorded, never derived: a trade whose mid net says otherwise is shown as it says.
+    odd = [dict(TRADES[0], net={"verdict": -50.0, "mid": -10.0})]
+    assert ac.tiles(odd, 1)["net_mid"] == pytest.approx(-10.0)
+
+
 def test_a_long_curve_is_thinned_keeping_both_ends():
     many = [_t("2025-01-02", f"2025-01-{(i % 28) + 1:02d}", 1.0, minute=f"{i:05d}") for i in range(1000)]
     curve = ac.curve(many, 50)
@@ -117,3 +127,52 @@ def test_trades_closing_the_same_session_are_ordered_by_their_minute():
     early = _t("2025-03-03", "2025-03-03", -5.0, minute=600)
     clock = _t("2025-03-03", "2025-03-03", 1.0, minute="12:00")
     assert [t["net"]["verdict"] for t in ac.ordered([late, clock, early])] == [-5.0, 1.0, 5.0]
+
+
+def test_a_quarter_counts_only_with_enough_sessions_and_trades_fall_in_their_exit_quarter():
+    q = ac.quarters(TRADES, min_sessions=1)
+    assert [r["quarter"] for r in q["rows"]] == ["2025-Q1", "2025-Q2", "2026-Q1"]
+    # the 2025-12-30 entry closed 2026-01-02, so it is 2026-Q1's, beside the 02-02 trade
+    assert q["rows"][2] == {"quarter": "2026-Q1", "trades": 2, "sessions": 2, "net": -10.0, "counted": True}
+    assert q["counted"] == 3 and q["profitable"] == 1
+    thin = ac.quarters(TRADES, min_sessions=2)
+    assert thin["counted"] == 1 and thin["profitable"] == 0
+    assert [r["counted"] for r in thin["rows"]] == [False, False, True]
+
+
+def test_cost_stress_scales_fees_and_slippage_but_never_settlement():
+    reads = ac.robustness_reads(TRADES)
+    rows = {r["multiplier"]: r["mean_net"] for r in reads["cost_stress"]["rows"]}
+    # costs per trade: fees 1.3 + slippage 0.5 = 1.8; the 12.0 settlement does not scale
+    assert rows[1.0] == pytest.approx(2.5)
+    assert rows[1.5] == pytest.approx(2.5 - 0.5 * 1.8)
+    assert rows[2.0] == pytest.approx(2.5 - 1.8)
+    assert reads["cost_stress"]["survives"] is True
+
+
+def test_best_sessions_are_exit_sessions_and_a_short_run_is_too_thin_to_bootstrap():
+    reads = ac.robustness_reads(TRADES)
+    assert reads["best_sessions"]["insufficient"] is True  # 4 sessions, k = 5
+    assert reads["drawdown"]["insufficient"] is True and reads["drawdown"]["actual"] == pytest.approx(130.0)
+    many = [_t(f"2025-{1 + i // 20:02d}-{1 + i % 20:02d}", f"2025-{1 + i // 20:02d}-{1 + i % 20:02d}",
+               (60.0 if i % 3 else -100.0)) for i in range(120)]  # fmt: skip
+    reads = ac.robustness_reads(many)
+    best = reads["best_sessions"]
+    assert best["n"] == 120 and len(best["sessions"]) == 5 and best["rests_on_best"] is False
+    dd = reads["drawdown"]
+    assert (
+        dd["evidence_trades"] == 120
+        and dd["horizon"] == 120
+        and dd["resamples"] == ac.card_resamples(120) == ac.CARD_RESAMPLES
+    )
+    assert ac.card_resamples(2500) == 400 and ac.card_resamples(10_000) == ac.CARD_RESAMPLES_FLOOR
+    assert 0 < dd["drawdown_reduce"] <= dd["drawdown_block"]
+    assert dd["actual"] == pytest.approx(-ac.max_drawdown(many))
+
+
+def test_the_card_carries_the_robustness_reads(tmp_path, monkeypatch):
+    own = tmp_path / "own"
+    monkeypatch.setattr(paths, "automations_dir", lambda licensed: tmp_path / "lic" if licensed else own)
+    _write(own, "builder-mine-2611161730", "2026-11-16T17:30", {"exit": {"stop": 2.0}})
+    out = readout.automation_run("mine", "builder-mine-2611161730")
+    assert set(out["robustness"]) == {"best_sessions", "cost_stress", "drawdown", "quarters"}

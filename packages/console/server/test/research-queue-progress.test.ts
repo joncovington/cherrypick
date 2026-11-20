@@ -24,6 +24,8 @@ describe("a job's progress (core.progress)", () => {
     const p = toProgress(view);
     expect(p).toMatchObject({ file: "q3", state: "running", fraction: 0.5, etaSeconds: 1800, ageSeconds: 4 });
     expect(p?.rate).toEqual({ phase: "sessions", secondsEach: 57.25 });
+    expect(p?.stepsAfter).toBeNull();
+    expect(toProgress({ ...view, steps_after: 1 })?.stepsAfter).toBe(1);
     expect(toProgress({ ...view, rate: null })?.rate).toBeNull();
     expect(toProgress({ ...view, rate: { phase: "sessions", seconds_each: 0 } })?.rate).toBeNull();
     expect(p?.phases.map((ph) => `${ph.name} ${ph.done}/${ph.total} ${ph.current}`)).toEqual([
@@ -36,6 +38,15 @@ describe("a job's progress (core.progress)", () => {
     expect(toProgress(null)).toBeNull();
     expect(toProgress({ job: "x" })).toBeNull();
     expect(toProgress({ ...view, state: "sleeping" })).toBeNull();
+  });
+
+  it("keeps each symbol's count in the job's order, and none without a split", () => {
+    const by = { SPX: { done: 2, total: 4, share: 0.5 }, IWM: { done: 1, total: null, share: null } };
+    expect(toProgress({ ...view, by_symbol: by })?.bySymbol).toEqual([
+      { symbol: "SPX", done: 2, total: 4, share: 0.5 },
+      { symbol: "IWM", done: 1, total: null, share: null },
+    ]);
+    expect(toProgress(view)?.bySymbol).toEqual([]);
   });
 
   it("carries runs started by hand beside the queue's tasks", () => {

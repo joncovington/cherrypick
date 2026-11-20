@@ -164,6 +164,71 @@ export interface AutomationGroup {
   automations: AutomationGroupMember[];
 }
 
+/** What lets an automation enter, or the one thing that stops it (`automations.groupedit`): `on` (its own
+ *  switch on, its group on or none, its start come), `waiting` (all but the start, which is `from`),
+ *  `off_group` (its own switch on, its group off), `off_own` (its own switch off). */
+export type AutomationState = "on" | "waiting" | "off_group" | "off_own";
+
+/** One automation on the Groups pages: its OWN switch beside the state it is in, its own start, its
+ *  research verdict, its underlying, whether it ships with the module and whether it has a forward rule. */
+export interface GroupsEditMember {
+  name: string;
+  enabled: boolean;
+  start: string | null;
+  state: AutomationState;
+  /** The date a `waiting` automation starts. */
+  from: string | null;
+  verdict: AutomationVerdict;
+  symbol: string | null;
+  shipped: boolean;
+  forward: boolean;
+}
+
+/** A group's spec as the module's `groups` block holds it (`config.groups`). */
+export interface GroupSpec {
+  enabled: boolean;
+  start?: string;
+  allocation?: number;
+  max_risk?: number;
+  /** Each member's percent of the allocation and the cap, at most 100 in all. */
+  shares?: Record<string, number>;
+}
+
+export interface GroupsEditGroup extends GroupSpec {
+  name: string;
+  members: GroupsEditMember[];
+}
+
+/** `GET /api/automations/groups/edit`: every group and every automation in none (`cli groups-view`). */
+export interface GroupsEditView {
+  today: string;
+  /** The session a switch made today starts from. */
+  next_session: string;
+  counts: Record<AutomationState, number>;
+  groups: GroupsEditGroup[];
+  ungrouped: GroupsEditMember[];
+}
+
+/** A change to the groups: every group that will have members, each spec whole, the automations that
+ *  move (`null`: into no group) and the automations whose own switch flips. */
+export interface GroupsChange {
+  groups: Record<string, GroupSpec>;
+  members: Record<string, string | null>;
+  switches: Record<string, boolean>;
+}
+
+/** `POST /api/automations/groups/check`: the module's problems, what a save would write, and the view as
+ *  it would be after it. */
+export interface GroupsCheckResult {
+  ok: boolean;
+  error?: string;
+  problems?: string[];
+  moves?: Record<string, string | null>;
+  switches?: Record<string, { enabled: boolean; start?: string }>;
+  notes?: string[];
+  after?: GroupsEditView | null;
+}
+
 /** `GET /api/automations/groups`: every group, or the reason the package could not be asked. */
 export interface AutomationGroupsResult {
   groups: AutomationGroup[];
@@ -199,6 +264,22 @@ export interface BuilderNeed {
   monthly?: { source: string; first: string | null; through: string | null };
 }
 
+/** A window a Builder run may take: a span one store holds for every need (`enrolment.windows`). */
+export interface BuilderWindow {
+  /** What a run names; the orchestrator refuses one the module does not offer. */
+  key: string;
+  start: string;
+  end: string;
+  source: string;
+  licensed: boolean;
+  /** The chain store's share of the trading days in the window, when it is counted. */
+  density: number | null;
+  /** Under the registry's dense mark: Dolt's early years, about three days a week. */
+  thin: boolean;
+  /** What the store holds, in the registry's words. */
+  holds: string;
+}
+
 export interface BuilderSuggestion {
   blocks: string[];
   window: [string, string];
@@ -206,6 +287,10 @@ export interface BuilderSuggestion {
   possible: boolean;
   /** Some need is covered by a licensed store. */
   licensed: boolean;
+  /** One of the full set's own seven underlyings; another can be added to it. */
+  full_set?: boolean;
+  /** Every window our stores can replay, our own first. Absent from an older module. */
+  windows?: BuilderWindow[];
 }
 
 export interface BuilderAutomation {
@@ -264,6 +349,8 @@ export interface BuilderBacktestResult {
   task?: number | null;
   window?: [string, string];
   source?: string | null;
+  /** The window key the run took, or null for the last year. */
+  key?: string | null;
   error?: string;
   code?: string;
 }
@@ -323,7 +410,54 @@ export interface BuilderRunYear {
   settlement: number;
   slippage: number;
   net: number;
+  /** Gross - fees - settlement at mid, before slippage. */
+  net_mid?: number;
   max_dd: number;
+}
+
+/** One exit quarter of a run; `counted` once it has enough sessions to count. */
+export interface BuilderRunQuarter {
+  quarter: string;
+  trades: number;
+  sessions: number;
+  net: number;
+  counted: boolean;
+}
+
+/**
+ * The study kit's robustness reads over one run's trades (`automationcards.robustness_reads`):
+ * in-sample, one run, never a verdict.
+ */
+export interface BuilderRunRobustness {
+  best_sessions:
+    | { k: number; n: number; insufficient: true }
+    | {
+        k: number;
+        n: number;
+        sessions: string[];
+        best_net: number;
+        total_net: number;
+        /** The best sessions' part of a positive total; null when the total is zero or below. */
+        share: number | null;
+        rest_mean: number;
+        rests_on_best: boolean;
+      };
+  /** Mean net per trade with fees and slippage scaled; settlement does not scale. */
+  cost_stress: { rows: Array<{ multiplier: number; mean_net: number | null }>; pass_stress: number; survives: boolean } | null;
+  /** Losses as positive dollars. Under the evidence floor only `insufficient` and the counts. */
+  drawdown: {
+    actual: number;
+    insufficient?: true;
+    evidence_trades: number;
+    min_evidence?: number;
+    horizon?: number;
+    resamples?: number;
+    drawdown_reduce?: number;
+    drawdown_block?: number;
+    streak_reduce?: number;
+    streak_block?: number;
+  };
+  quarters: { rows: BuilderRunQuarter[]; min_sessions: number; counted: number; profitable: number };
 }
 
 /** One closed trade as the run recorded it. */
@@ -360,6 +494,8 @@ export interface BuilderRunCard {
   licensed: boolean;
   tiles: {
     net: number;
+    /** The same trades at mid: gross - fees - settlement, before slippage (P&L + slippage). */
+    net_mid?: number;
     gross: number;
     trades: number;
     sessions: number | null;
@@ -370,6 +506,8 @@ export interface BuilderRunCard {
   };
   curve: Array<{ i: number; session: string | null; net: number; gross: number; dd: number }>;
   years: BuilderRunYear[];
+  /** Absent on a card read by an older backtest package. */
+  robustness?: BuilderRunRobustness;
   skips: Array<{ reason: string; sessions: number }>;
   previous: string | null;
   changes: BuilderRunChange[];
@@ -384,4 +522,103 @@ export interface BuilderRuns {
   /** Licensed results left out while the licensed-results gate is shut. */
   withheld: number;
   results_unavailable: boolean;
+}
+
+/** The idea search (#1294): entry filters for one saved automation, scored on the part of one Builder
+ *  run before its split. Hypotheses only; a surviving idea is declared, then tested once. */
+export type IdeaGate = "loses" | "beats_menu" | "plateau" | "stable" | "adds" | "pays_at_1_5x";
+
+export interface IdeaHeldOutRead {
+  idea: string;
+  at: string;
+  use: number;
+  sessions: number;
+  skipped: number;
+  skipped_mean: number | null;
+  uplift: number;
+  ci: [number, number] | null;
+  verdict: "passed" | "failed" | "no_verdict";
+}
+
+export interface IdeaRow {
+  id: string;
+  idea: string;
+  conditions: string[];
+  skipped: number;
+  skipped_share: number;
+  skipped_mean: number | null;
+  skipped_ci: [number, number] | null;
+  uplift: number;
+  uplift_shrunk: number;
+  z: number;
+  p: number;
+  p_menu: number;
+  holm: boolean;
+  bh: boolean;
+  plateau: { verdict: "plateau" | "lone_peak" | "no_neighbours"; axes: Array<{ condition: string; verdict: string }> };
+  stability: { folds_negative: number; stable: boolean };
+  adds: { adds: boolean } | null;
+  cost: { mean_by_multiplier: Record<string, number | null>; survives: boolean } | null;
+  held_out: { planned_sessions: number; mde: number | null; testable: boolean };
+  gates: Record<IdeaGate, boolean>;
+  survives: boolean;
+  /** The register row drafted when it was declared, or null. */
+  declaration: Record<string, unknown> | null;
+  /** Its one held-out test, once read. */
+  held_out_read: IdeaHeldOutRead | null;
+}
+
+export interface IdeaSearchBrief {
+  name: string;
+  automation: string;
+  run: string;
+  symbol: string;
+  source: string | null;
+  sessions: [string, string];
+  split: string;
+  base: { sessions: number; trades: number; net: number; mean_session: number; held_out_sessions: number };
+  tried: number;
+  survivors: number;
+  holm_survivors: number;
+  bh_survivors: number;
+  generated_at: string;
+  licensed: boolean;
+  declared: string[];
+  held_out_used: number;
+}
+
+export interface IdeaSearch extends IdeaSearchBrief {
+  draws: number;
+  null_min_median: number | null;
+  rules: Record<string, number>;
+  rows: IdeaRow[];
+  held_out_uses: IdeaHeldOutRead[];
+}
+
+export interface IdeaSearchTask {
+  id: number | null;
+  search: string;
+  status: string;
+  queued_at: string | null;
+  finished_at: string | null;
+  note: string | null;
+}
+
+export interface IdeaSearches {
+  name: string;
+  tasks: IdeaSearchTask[];
+  searches: IdeaSearchBrief[];
+  withheld: number;
+  results_unavailable: boolean;
+}
+
+export interface IdeaActionResult {
+  ok: boolean;
+  error?: string;
+  code?: string;
+  search?: string;
+  task?: number | null;
+  split?: string;
+  row?: Record<string, unknown>;
+  verdict?: IdeaHeldOutRead["verdict"];
 }

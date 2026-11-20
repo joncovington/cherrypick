@@ -1,10 +1,18 @@
-"""The research queue: long research tasks run by the supervisor, one at a time, from rows in a table.
+"""The research queue: long research tasks run by the supervisor from rows in a table, one at a time in
+each of two lanes.
 
 A study's fetch can take nine hours and wants the vendor account's one session; run by hand from a
 terminal or an assistant's session, it dies with that session and collides with the nightly
 `backtest-fetch`. Here a task is a ROW (`state/research_queue.db`), added with `run.py queue-add`, and
-the supervisor's `research-queue` job takes the oldest ready row every minute and runs it, then the
+the supervisor's queue jobs (one per lane, below) take the oldest ready row every minute and runs it, then the
 next ready row straight away (`run_ready`), so a chain of rows has no gap between them.
+
+**Two lanes** (2026-11-18, the user's ask). A row's lane is its kind's: `vendor` for a kind that needs
+the vendor's one session (every fetch), `local` for one that needs nothing (a script). Each lane runs
+one row at a time, its own job (`research-queue-vendor` with `--lane vendor`, `research-queue-local` with
+`--lane local`), so a study replaying for a day no longer holds up a fetch, and a fetch of weeks no
+longer holds up a study. Within a lane every rule below holds as it did; a chain's `after` order
+holds across lanes. A run given no lane checks and takes every row, the one-lane queue it was.
 
 **Priority** (2026-11-03, the user's ask): a row's `priority` (a whole number, default 0) orders the
 queue: the ready row with the highest priority runs first, the oldest among equals. Set it on the way
@@ -272,11 +280,14 @@ MAX_LIMIT = 100_000
 
 #: The store variants `fetch-sessions` may write (backtest `store.TAGS`). Never the plain store: the
 #: nightly `backtest-fetch` is its writer.
-STORE_TAGS = ("wide",)
+STORE_TAGS = ("wide", "full", "added")
 
 #: The 0DTE datasets `fetch-sessions` may name (backtest `settings.DEFAULTS["datasets"]`); absent, SPX,
 #: the fetch verb's own default. Spelt here, as `STORE_TAGS` is, so a typo never queues.
-DATASETS = ("SPX", "QQQ", "NDX", "XSP")
+DATASETS = ("SPX", "QQQ", "NDX", "XSP", "SPY", "IWM", "GLD", "TLT")
+#: On the `added` tag the dataset is an underlying added to the full set (backtest `fullsetadd`), any
+#: root spelt as the set spells one (`fullset.SYMBOL`); the fetch refuses one never added.
+ADDED_SYMBOL = re.compile(r"^[A-Z][A-Z.]{0,5}$")
 
 
 def _day_arg(args: dict, key: str) -> str:
@@ -299,7 +310,10 @@ def _sessions_argv(args: dict, python: str) -> list[str]:
     if lo > hi:
         raise Refused("fetch-sessions' 'from' is after its 'to'")
     dataset = args.get("dataset", "SPX")
-    if dataset not in DATASETS:
+    if tag == "added":
+        if not isinstance(dataset, str) or not ADDED_SYMBOL.match(dataset) or dataset in DATASETS:
+            raise Refused("fetch-sessions on the 'added' tag names an added underlying, not one of the set's")
+    elif dataset not in DATASETS:
         raise Refused(f"fetch-sessions' 'dataset' is one of {', '.join(DATASETS)}")
     # One request in flight a session against Standard's four concurrent (backtest fetch.fetch).
     argv = [python, "-m", "cherrypick.backtest", "fetch", "--store-tag", tag, "--cadence", str(cadence),
@@ -435,10 +449,38 @@ def study_first(row: dict) -> bool:
     return THETADATA not in needs and bool(row.get("after"))
 
 
+LANES = ("vendor", "local")
+
+
+def lane_of(row: dict) -> str:
+    """`vendor` for a kind that needs the vendor's one session, `local` for anything else."""
+    return "vendor" if THETADATA in KINDS.get(row.get("kind"), ((), False))[0] else "local"
+
+
 def run_order(row: dict) -> tuple:
     """The sort key among ready rows (smallest runs first): a study row whose inputs are in before
     everything else, then the highest priority, then the oldest."""
     return (0 if study_first(row) else 1, -int(row.get("priority") or 0), row["id"])
+
+
+def positions(queued: list[dict]) -> dict[int, int]:
+    """Each queued row's place in its own lane's order (`queue_order` per lane), by id."""
+    out: dict[int, int] = {}
+    for lane in LANES:
+        for i, r in enumerate(queue_order([r for r in queued if lane_of(r) == lane]), start=1):
+            out[r["id"]] = i
+    return out
+
+
+def queue_order(queued: list[dict]) -> list[dict]:
+    """Queued rows (each with `waits`, "ready" or why not) in the order the runner would take them as
+    things stand: the ready ones by `run_order`, then the waiting ones by priority, oldest first. What
+    `queue-list` reports as each row's `position`, so a reader never re-derives the rule."""
+    is_ready = [r for r in queued if r.get("waits") == "ready"]
+    waiting = [r for r in queued if r.get("waits") != "ready"]
+    return sorted(is_ready, key=run_order) + sorted(
+        waiting, key=lambda r: (-int(r.get("priority") or 0), r["id"])
+    )
 
 
 def ready(
@@ -524,6 +566,15 @@ def output_doc(row: dict) -> dict | None:
     except (OSError, ValueError):
         return None
     return doc if isinstance(doc, dict) else None
+
+
+def verdict_words(doc: dict | None) -> str | None:
+    """A study's verdict as its finish notice names it: each arm and its word, words only (a verdict
+    block's `{arm: word}`), or None for a result without one."""
+    v = (doc or {}).get("verdict")
+    if not isinstance(v, dict) or not v or not all(isinstance(w, str) for w in v.values()):
+        return None
+    return ", ".join(f"{a} {w}" for a, w in v.items())
 
 
 def zero_trade_arms(doc: dict | None) -> list[str]:
@@ -929,9 +980,13 @@ def run_next(
     spawn: Callable[..., subprocess.Popen] = subprocess.Popen,
     notify: Callable[[str, str, str], Any] | None = None,
     licence: Callable[[], dict | None] | None = None,
+    lane: str | None = None,
 ) -> dict:
     """Recover orphaned rows, then run the first ready row by `run_order` (a study whose inputs are
-    in, then the highest priority, then the oldest) to its end. Returns what it did."""
+    in, then the highest priority, then the oldest) to its end. Returns what it did. With a `lane`,
+    only that lane's rows: one running in it stops the run, one running in the other does not."""
+    if lane is not None and lane not in LANES:
+        raise ValueError(f"lane is one of {', '.join(LANES)}")
     if is_trading_day is None:
         from cherrypick.core import calendar as cal
 
@@ -959,13 +1014,17 @@ def run_next(
                 ", ".join(name(r) for r in cancelled),
             )
         with conn:
-            if conn.execute("SELECT 1 FROM tasks WHERE status = 'running'").fetchone():
-                return {"ok": True, "ran": None, "why": "a task is running", "recovered": recovered}
+            running = [dict(r) for r in conn.execute("SELECT id, kind FROM tasks WHERE status = 'running'")]
+            if any(lane is None or lane_of(r) == lane for r in running):
+                why = "a task is running" if lane is None else f"a task is running in the {lane} lane"
+                return {"ok": True, "ran": None, "why": why, "recovered": recovered}
             held = session_held()
             waiting = {}
             candidates = []
             for r in conn.execute("SELECT * FROM tasks WHERE status = 'queued'").fetchall():
                 row = dict(r)
+                if lane is not None and lane_of(row) != lane:
+                    continue
                 after_status = prereq_status(conn, row.get("after"), row["id"])
                 why = ready(row, now(), is_trading_day, held, window, after_status)
                 if why is None:
@@ -1054,6 +1113,10 @@ def run_next(
         elif status in ("done", "stopped"):
             where = result.get("output") or result.get("input") or str(log)
             said = f"{_summary(report) or 'finished'}; {where}"
+            words = verdict_words(output_doc(pick)) if status == "done" and pick["kind"] == "script" else None
+            if words:
+                # A study that wrote a verdict: name it, and the one command that records it.
+                said += f"; verdict: {words}; record it with python tools/record_verdict.py {pick['study']}"
             if warning:
                 notify("WARNING", f"Research task {status} with gaps: {title}", f"{warning}; {said}")
             else:
@@ -1103,14 +1166,15 @@ def run_ready(
     *,
     run: Callable[[dict[str, Any]], dict] | None = None,
     code_changed: Callable[[], bool] | None = None,
+    lane: str | None = None,
 ) -> dict:
-    """Run ready rows one after another until none is ready: the `research-queue` job. Config is
+    """Run ready rows one after another until none is ready: a queue job (one lane, or both as one). Config is
     read again before each row, so a blackout or interval changed mid-chain applies to the next one.
     It stops after a row put back to `queued` (a fetch stopped for the blackout), so a row is never
     retried in a loop; every other outcome is final, and a finished row is never picked again. It
     also stops, before starting a row, once its own code has changed on disk (`watch_code`): the
     next interval's process runs the rest on the new code."""
-    run = run or run_next
+    run = run or (lambda cfg: run_next(cfg, lane=lane))
     code_changed = code_changed or watch_code()
     ran: list[dict] = []
     out: dict = {}

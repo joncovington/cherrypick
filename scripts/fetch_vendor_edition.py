@@ -62,6 +62,7 @@ _HERE = str(Path(__file__).resolve().parent)
 if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
 import _common  # noqa: E402
+from cherrypick.core import progress  # noqa: E402
 
 KEYRING_SERVICE = "cherrypick-vendor-report"
 USERNAME, PASSWORD = "username", "password"
@@ -1015,6 +1016,9 @@ def cmd_charts(args) -> int:
     hits: list[str] = []
     captured: dict[str, dict] = {}
     saved, failed, visited = [], [], 0
+    rep = progress.Reporter("fetch_vendor_edition-charts")
+    rep.split("tickers", panel, unit="tickers")
+    run_state = "failed"  # "done" once the panel loop has run through without a throttle or an error
     with sync_playwright() as pw:
         ctx = _open_browser(pw, headed=args.headed)
         page = ctx.new_page()
@@ -1063,6 +1067,7 @@ def cmd_charts(args) -> int:
                     raise Throttled("; ".join(hits[:3]))
                 if visited:
                     _pause(CHART_PAUSE_RANGE_S)
+                rep.advance("tickers", key=ticker, current=ticker)
                 captured.clear()
                 page.goto(base + ticker, wait_until="domcontentloaded", timeout=90_000)
                 visited += 1
@@ -1123,6 +1128,7 @@ def cmd_charts(args) -> int:
                 )
             if hits:
                 raise Throttled("; ".join(hits[:3]))
+            run_state = "done"
             print(_save_watchlists(watchlists.get("body"), run_session))
             clear_session_fetch("charts")
             if not screener_failed:
@@ -1147,6 +1153,7 @@ def cmd_charts(args) -> int:
             return 1
         finally:
             ctx.close()
+            rep.finish(run_state)
     print(f"{len(saved)} saved, {len(failed)} rejected, {visited} pages visited")
     if failed:
         _warn("Chart collector rejected some captures", "\n".join(f"{t}: {'; '.join(p)}" for t, p in failed))

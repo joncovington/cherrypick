@@ -15,7 +15,8 @@ and `queue-chain --script <path>` queues every step in order, each `--after` the
 after `--after` when given). It is read by parsing the file, never by importing it, as the correction
 log is (`studyversion`). In any string, `{results}` is the study's own result folder under the
 backtest data directory (`$BACKTEST_DATA_DIR`, else the home's `data/backtest`, then
-`results/research/<study>`) and `{home}` the suite's home.
+`results/research/<study>`), `{home}` the suite's home, and `{last_session}` the last trading day
+before the ET date the chain is queued (a fetch that runs through the last finished session).
 
 - A `script` step's task is the script itself with the step's `args`; any other kind takes the step's
   `task_args`, checked by the queue's allow-list like any row (`researchqueue.add`).
@@ -63,18 +64,19 @@ class BadChain(ValueError):
     """A CHAIN that is not a literal tuple of well-formed steps."""
 
 
-def read_chain(script: Path) -> list[dict]:
-    """The script's CHAIN, checked; empty when it declares none."""
+def read_chain(script: Path, name: str = "CHAIN", subs: dict[str, str] | None = None) -> list[dict]:
+    """The script's CHAIN (or the literal `name`, a template such as the full set's `ADD_CHAIN`, with
+    `subs` filled in before it is checked), checked; empty when it declares none."""
     tree = ast.parse(Path(script).read_text(encoding="utf-8"))
     for node in tree.body:
         if isinstance(node, ast.Assign) and any(
-            isinstance(t, ast.Name) and t.id == "CHAIN" for t in node.targets
+            isinstance(t, ast.Name) and t.id == name for t in node.targets
         ):
             try:
                 chain = ast.literal_eval(node.value)
             except ValueError as exc:
-                raise BadChain(f"{Path(script).name}: CHAIN must be a literal") from exc
-            return check(chain, Path(script).name)
+                raise BadChain(f"{Path(script).name}: {name} must be a literal") from exc
+            return check(_fill(chain, subs) if subs else chain, Path(script).name)
     return []
 
 
@@ -87,6 +89,8 @@ def check(chain, name: str = "CHAIN") -> list[dict]:
             raise BadChain(
                 f"{name}: step {i + 1} needs step and kind, and only {', '.join(sorted(STEP_KEYS))}"
             )
+        if not isinstance(s["step"], str) or not rq.SLUG.match(s["step"]):
+            raise BadChain(f"{name}: step {s['step']!r} must be a lowercase slug, as the queue's names are")
         repeat = s.get("repeat", 1)
         if "repeat" in s:
             if s["kind"] == "script":
@@ -125,7 +129,7 @@ def _fill(value: Any, subs: dict[str, str]) -> Any:
         for k, v in subs.items():
             value = value.replace("{" + k + "}", v)
         return value
-    if isinstance(value, list):
+    if isinstance(value, (list, tuple)):
         return [_fill(v, subs) for v in value]
     if isinstance(value, dict):
         return {k: _fill(v, subs) for k, v in value.items()}
@@ -133,10 +137,21 @@ def _fill(value: Any, subs: dict[str, str]) -> Any:
 
 
 def plan_rows(
-    chain: list[dict], study: str, script_rel: str, results: Path, after: str | None = None
+    chain: list[dict],
+    study: str,
+    script_rel: str,
+    results: Path,
+    after: str | None = None,
+    last_session: str | None = None,
 ) -> list[dict]:
-    """The rows a chain queues, in order: each one's study, step, kind, task args, output and after."""
-    subs = {"results": results.as_posix(), "home": _home.home().as_posix()}
+    """The rows a chain queues, in order: each one's study, step, kind, task args, output and after.
+    `last_session` fills `{last_session}` (the trading day before today ET, unless a caller fixes it)."""
+    if last_session is None:
+        from cherrypick.core import calendar as _cal
+        from cherrypick.core import clock as _clock
+
+        last_session = _cal.previous_trading_day(_clock.now_et().date()).isoformat()
+    subs = {"results": results.as_posix(), "home": _home.home().as_posix(), "last_session": last_session}
     rows, prev = [], after
     for s in chain:
         s = _fill(s, subs)

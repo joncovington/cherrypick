@@ -49,10 +49,11 @@ describe("the module digits", () => {
     expect(press(IDLE, "2").action).toEqual({ kind: "navigate", to: "/bwb" });
     expect(press(IDLE, "3").action).toEqual({ kind: "navigate", to: "/earnings" });
     expect(press(IDLE, "4").action).toEqual({ kind: "navigate", to: "/experiments" });
+    expect(press(IDLE, "5").action).toEqual({ kind: "navigate", to: "/automations" });
   });
 
   it("ignores a digit no module claims", () => {
-    expect(press(IDLE, "5").action).toBeNull();
+    expect(press(IDLE, "6").action).toBeNull();
     expect(press(IDLE, "9").action).toBeNull();
     expect(press(IDLE, "0").action).toBeNull();
   });

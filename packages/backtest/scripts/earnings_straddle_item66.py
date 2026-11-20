@@ -34,7 +34,7 @@ from collections import defaultdict
 from datetime import date
 from pathlib import Path
 
-from cherrypick.core import fees, robustness
+from cherrypick.core import fees, progress, robustness
 
 _spec = importlib.util.spec_from_file_location(
     "earnings_strangle_item47", Path(__file__).with_name("earnings_strangle_item47.py")
@@ -152,7 +152,14 @@ def collect(args) -> tuple[list[dict], dict]:
     conn = sqlite3.connect(f"file:{store.as_posix()}?mode=ro", uri=True)
     drops: dict[str, int] = defaultdict(int)
     trades: list[dict] = []
-    for e in events:
+    for e in progress.track(
+        events,
+        job="earnings_straddle_item66-study",
+        phase="events",
+        unit="events",
+        key=lambda e: e["symbol"],
+        current=lambda e: e["report_date"],
+    ):
         sym = e["symbol"]
         report = date.fromisoformat(e["report_date"])
         window = e47.window_of(report)

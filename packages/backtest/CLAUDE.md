@@ -123,7 +123,8 @@ same file, and a month boundary would leave each month's first sessions without 
 cadence, too: the replay ticks once per stored sample, so a mixed file would replay some days at 15 s
 and some at 60 s. And one file per strike count: a declared store tag (`store.TAGS`; `wide` keeps 40
 strikes each side for items 42 and 44) is its own file (`SPX-60s-wide.db`), fetched by the research
-queue's `fetch-sessions`, never by the nightly job. A study points the runner at it with
+queue's `fetch-sessions`, never by the nightly job. A tag may carry its own first session (`from`),
+which overrides the dataset's: `full`, the full set's, starts at 2020-01-01. A study points the runner at it with
 `store.tagged(settings, tag)`.
 
 **History is 1-minute; the recorder era is 15 s.** The vendor drops every sub-minute
@@ -198,6 +199,13 @@ feed's gamma, a sub-minute tick before 2026) is declared above and stated as a l
 data feed's delta, which lags its quotes by about a minute; from then on, and in every history run, it
 is `core.chaindelta`'s delta from each source's own mids (`computed`). Do not pool MEIC paper or
 recorded-era results across that date.
+
+## Every long job reports its progress, overall and per symbol
+
+Every fetch verb, the runner and every study script report through `core.progress`, and a phase over
+several symbols opens with `Reporter.split` (one key per item) and counts each item with `advance(...,
+key=symbol)`, so the queue and the console show the whole and each symbol. A resumed job counts what it
+already holds as skipped, overall and per symbol. A new fetch or study is not done until it does both.
 
 ## The runner
 
@@ -378,15 +386,48 @@ named); a vendor store only while `licensing.status` is active, so new work neve
 data after its subscription ends. An arm that does not expire the session it enters reads end-of-day
 chains instead (`dolt-chains`, or `vendor-eod-chains` while licensed, its delta computed from mids by
 `core.chaindelta`) at one tick a session, 15:59, with daily bars from the stock history (raw);
-`--min-density` accepts Dolt's thinner years knowingly. An arm that declares a volume symbol reads it
+`--min-density` accepts Dolt's thinner years knowingly. An arm that enters inside the session on a
+later expiry, or holds a leg on one (`intraday`, `enrolment.run_chain`), reads the symbol's full-set intraday chain stores instead
+(`history.IntradayChainHistory`: near at one minute, middle at five, the same-day store for spot where
+it holds the session, else the nearest expiry's parity forward), only while the licence allows new
+work. An arm that declares a volume symbol reads it
 from the recorded one-minute bars (`profile-bars`, regular hours), and the run is refused where those
 do not cover the dates. The result is an explore run (no trial, no
 verdict; `signal_versions` names each library signal an arm read, by version) under `paths.automations_dir`: `results/automations/` when it read the vendor's store, beside
 it otherwise. The Builder's runs (`builder-<name>-<stamp>.json`) are read back by `read automation-runs`
 and `read automation-run` (`automationcards.py`, pure): the net is the verdict kind's, every year row is
-gross - fees - settlement - slippage = P&L, trades fall in their exit year, the drawdown is the closed
+gross - fees - settlement - slippage = P&L, with the run's own `net["mid"]` beside it as net at mid
+(P&L before slippage, context only), trades fall in their exit year, the drawdown is the closed
 trades', skips are the driver's own reasons without `entered`, and a change is a key of the automation
-each run stored (its switch and notes ignored).
+each run stored (its switch and notes ignored). `robustness` holds the study kit's reads of the same
+trades, in-sample and never a verdict: the 5 best exit sessions (`core.robustness.best_sessions`),
+per-trade net with fees and slippage at 1.5x and 2x (settlement never scaled), the block bootstrap
+drawdown over the run's own length (resamples cut as runs grow, floor 400, the count shown), and exit
+quarters, a quarter counting only with 10 or more sessions traded. `read portfolio-sources` lists
+every Builder run and every `research/<item>/study*.json` whose arms carry engine trades, for
+Compare's portfolio tab (any file under `results/` is listed as licensed).
+
+**The idea search** (`ideasearch.py`, pure; `ideafiles.py`; `scripts/idea_search.py`) reads one Builder
+run and hands back entry filters as hypotheses, never a change. `ideas plan` names the newest run with
+120 or more entry sessions and fixes the split two thirds of the way through its span; the
+orchestrator puts both in the queued command. The search reads the P&L of trades entered before the
+split only (the later sessions are counted by name, for each idea's planned test size). The menu is
+fixed in code (`DIMS`, `EVENT_LABELS`): each bin or tail of the prior close's VIX, RSI(14), 200-day
+trend and move, VIX over 20-day realised volatility, the opening gap, the weekday and each event
+label, read from our own daily bars, VIX closes and the event calendar; pairs are two single bins
+of two dimensions. A candidate skips 10 or more design sessions and at most half. It survives only
+if the skipped sessions' bootstrap interval is below zero, it beats the best random filter of the
+whole menu (`core.stats.menu_placebo`, `p_menu` at most 0.05), no ordered condition is a lone peak,
+it loses in both design halves and 3 of 4 folds, each part adds on its own (a pair's second
+condition; a tail's widest bin), and the kept trades pay at 1.5x fees and slippage. Holm and BH
+over every try are reported beside it. `held_out.testable` is `planned_mde` over the held-out
+count against the uplift left after the menu's luck (`uplift_shrunk`). The result,
+`ideas-<automation>-<stamp>.json`, sits beside its run (licensed when the run was) with every
+session's features. `ideas declare` drafts a surviving testable idea's register row into it (no
+figures; the id, study and mechanism are the declarer's); `ideas holdout` reads a declared idea's
+later sessions once, by the rule in its row, and logs each use in `held_out_uses`. A licensed run is
+searched or tested only while the licence allows new work. `read idea-searches` and `read
+idea-search` serve the Builder.
 
 **The advisor's specs** (`run-advised`, `advised.py`): the advisor queues `backtest_spec` replies it
 admitted against flies' own advice bounds (off until `advisor.backtest_proposals`); this reads the
@@ -429,6 +470,29 @@ range is no part of a request's identity, so two requests for overlapping bars o
 the same range, and a file repeating a window with two ranges is refused. Item 38 (the calendars module's
 own rule, `packages/backtest/scripts/calendars_item38.py`) finds its start with the same verb: its listing step is a file of
 one-bar probes, not a call to the vendor's expirations list, which a `script` row may not make.
+
+A file may name its store at the top (`"store"`), one of `intradayfetch.STORES`: the shared one or the
+full set's per-underlying stores (`fullset.INTRADAY_STORES`, same schema). Any other name is refused before
+a request is sent.
+
+**The full set** (`fullset.py`, pure; `packages/backtest/scripts/fetch_full_set.py`): SPX, QQQ, XSP, SPY,
+IWM, GLD and TLT from 2020-01-01 in three stores per underlying (same-day at 60 s under the `full` tag,
+1-7 days out at one minute, 8-90 days out at five minutes), plus every weekly, monthly and quarter-end
+expiry's end-of-day path and open interest. The plan asks for candidate expiries by the exchanges' rules,
+never the vendor's listing, so planning holds no vendor session; an expiry never listed comes back
+`empty` once. `plan` writes the request files, the script's CHAIN queues the fetches (probe first), and
+`status` reads overall, per-part and per-underlying progress from the stores' own ledgers
+(`fullsetprogress.py`, also `read fullset` for the console's Data tab).
+
+**Additions to the full set** (`fullsetadd.py`, the script's `add SYM [--from] [--dry-run]` and
+`ADD_CHAIN`): another underlying, added on this machine and recorded in the set's folder
+(`additions.json`, never in the repo), planned like the seven (`fullset.plan_added`, its symbol its
+root) from its own first session. Every addition shares three declared stores, its rows keyed by
+symbol, so adding one declares no file: `added-60s.db` (the `added` store tag, `shared`; the fetch
+takes an added symbol as its dataset, `fetch._dataset`), `added-near-1m.db` and `added-mid-5m.db`.
+The registry reads which symbols each holds from its ledger's per-symbol spans (`stores._shape`, the
+same-day `vendor_sessions` by `trade_date`). `plan` writes the additions' files too. The orchestrator's
+`fullset_add` queues an addition from the Builder (up to 300 sessions a click).
 
 **The add-on weeklies fetch** (`fetch-addon-weeklies`, `addonfetch.py`; item 35): SPXW weekly put minute
 greeks over a bwb position's life, plus a 10:00 strip of ATM calls, from a `{requests: [{expiration, first,

@@ -44,6 +44,7 @@ import urllib.error
 import urllib.request
 from datetime import UTC, datetime
 
+from cherrypick.core import progress
 from cherrypick.technicals import paths, symbols
 
 PAUSE_S = 2.0
@@ -167,7 +168,8 @@ def main(argv=None) -> int:
         "stopped": None,
     }
     started = time.monotonic()
-    failed = run(conn, *session(), todo, report)
+    rep = progress.Reporter("fetch_analyst_revisions")
+    failed = run(conn, *session(), todo, report, rep=rep)
     # One pass more, on a fresh session, over the symbols that failed: a dropped connection or a
     # read timeout on one name in a thousand is the network, not the source, and on its own it made
     # the nightly job report a failure. What still fails on the retry is reported; after a 429
@@ -175,7 +177,8 @@ def main(argv=None) -> int:
     if failed and not report["stopped"]:
         report["retried"] = [f"{sym}: {error}" for sym, error in failed]
         time.sleep(PAUSE_S)
-        failed = run(conn, *session(), [sym for sym, _ in failed], report)
+        failed = run(conn, *session(), [sym for sym, _ in failed], report, rep=rep, phase="retry")
+    rep.finish("done")
     report["failed"] = [f"{sym}: {error}" for sym, error in failed]
     if conn is not None:
         conn.close()
@@ -184,13 +187,19 @@ def main(argv=None) -> int:
     return 0 if report["ok"] else 1
 
 
-def run(conn, opener, crumb, todo: list[str], report: dict) -> list[tuple[str, str]]:
+def run(
+    conn, opener, crumb, todo: list[str], report: dict, rep=None, phase: str = "symbols"
+) -> list[tuple[str, str]]:
     """Fetch and store each of `todo`, counting into `report`; returns the (symbol, error) pairs
-    that failed. A 429 stops the pass and sets `report["stopped"]`."""
+    that failed. A 429 stops the pass and sets `report["stopped"]`. `rep` is a progress Reporter."""
     failed = []
+    if rep is not None:
+        rep.split(phase, todo, unit="symbols")
     for i, sym in enumerate(todo):
         if i:
             time.sleep(PAUSE_S)
+        if rep is not None:
+            rep.advance(phase, key=sym, current=sym)
         now = datetime.now(UTC).isoformat(timespec="seconds")
         url = HISTORY_URL.format(symbol=sym.replace(".", "-"), crumb=crumb)
         try:

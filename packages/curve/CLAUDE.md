@@ -121,8 +121,8 @@ vendor-imagined.
 
 No live path, no order code, no keyring, no live account. Before any live rung: (a) post-assignment
 management; (b) VXX reverse-split detection and a halt procedure; (c) the exposure telemetry read as the
-paper-to-live gap. **`live.enabled` is an inert placeholder** (the pmcc pattern): nothing checks it and it
-is `configedit.GUARDED`.
+paper-to-live gap. The config has no live gate; the suite's surfaces show curve as "no live path"
+(`config.LIVE_PATH_MODULES`).
 
 ## Layout
 

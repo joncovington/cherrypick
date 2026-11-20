@@ -56,6 +56,44 @@ STORE_LABELS = ("PPI", "NFP", "PCE")
 #: Labels whose dates are the symbol's own; the calendar keys them `label:SYMBOL`.
 SYMBOL_LABELS = symbolevents.LABELS
 
+#: Each label's name and when it falls, in words, for a reader who does not know the calendar.
+ABOUT = {
+    "Earnings": ("Earnings", "The symbol's own earnings report day."),
+    "ExDividend": (
+        "Ex-dividend",
+        "The symbol's own ex-dividend day. A short call can be assigned the day before.",
+    ),
+    "FOMC": ("Fed decision (FOMC)", "The Federal Reserve's rate decision, 2:00 PM ET, eight times a year."),
+    "FirstWeekly": (
+        "First weekly expiry",
+        "The first Friday of the month (the Thursday when it is a holiday).",
+    ),
+    "FuturesRoll": (
+        "Futures roll",
+        "The Thursday a week before triple witching, when index futures roll to the next quarter.",
+    ),
+    "MonthEnd": ("Month end", "The last trading day of the month."),
+    "NFP": ("Jobs report (NFP)", "The monthly employment report, 8:30 AM ET, usually the first Friday."),
+    "OPEX": (
+        "Monthly options expiry (OPEX)",
+        "The third Friday of the month (the Thursday when it is a holiday).",
+    ),
+    "PCE": ("PCE inflation", "The Fed's preferred inflation measure, 8:30 AM ET, near the end of the month."),
+    "PMI-Mfg": (
+        "Manufacturing PMI",
+        "The ISM manufacturing survey, 10:00 AM ET, the 1st trading day of the month.",
+    ),
+    "PMI-Svcs": ("Services PMI", "The ISM services survey, 10:00 AM ET, the 3rd trading day of the month."),
+    "PPI": ("Producer prices (PPI)", "Wholesale inflation, 8:30 AM ET, mid-month."),
+    "QuarterEnd": ("Quarter end", "The last trading day of March, June, September and December."),
+    "TripleWitching": (
+        "Triple witching",
+        "The third Friday of March, June, September and December: stock options, index options and index "
+        "futures expire together.",
+    ),
+    "VIXExpiry": ("VIX expiry", "A Wednesday, 30 days before the next month's third Friday."),
+}
+
 
 def _first_trading_days(year: int, month: int, n: int) -> date:
     d = date(year, month, 1)
@@ -161,6 +199,21 @@ class EventCalendar:
                 out.append(d.isoformat())
             d += timedelta(days=1)
         return out
+
+
+def next_day(cal: EventCalendar, label: str, today: date, horizon: int = 120) -> str | None:
+    """The first day from `today` carrying the label, within `horizon` days, or None when none does or
+    the calendar stops speaking for the label before one is found (a symbol label never answers here)."""
+    if label in SYMBOL_LABELS:
+        return None
+    for i in range(horizon + 1):
+        d = today + timedelta(days=i)
+        v = cal._on(label, d)
+        if v is None:
+            return None
+        if v:
+            return d.isoformat()
+    return None
 
 
 def load_calendar(path=None, *, store_root=None, symbol_file=None) -> EventCalendar:

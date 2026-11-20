@@ -120,6 +120,8 @@ export interface SystemModuleRow {
   enabled: boolean;
   kind: string | null;
   liveEnabled: boolean | null;
+  /** Whether the module has a live loop at all; false = paper by construction. */
+  livePath: boolean;
   armedToday: boolean;
   jobs: Array<{ id: string; state: string; level: SystemLevel }>;
   heartbeatAgeSeconds: number | null;

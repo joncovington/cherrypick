@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import path from "node:path";
 import fs from "node:fs";
 import os from "node:os";
-import { readPortfolio, setPortfolioCaller } from "../src/readers/portfolio.js";
+import { readPortfolio, readPortfolioSources, setPortfolioCaller } from "../src/readers/portfolio.js";
 import { MODULE_ERA } from "../src/readers/performance.js";
 import type { ConsoleConfig } from "../src/config.js";
 import type { PortfolioReading } from "@console/shared";
@@ -49,6 +49,54 @@ describe("readPortfolio", () => {
     expect(argv.slice(argv.indexOf("--start"), argv.indexOf("--start") + 2)).toEqual(["--start", "2026-08-21"]);
     expect(argv).toContain("week");
     expect(argv).toContain("booked");
+  });
+
+  const listing = () =>
+    Promise.resolve({
+      ok: true,
+      unreadable: [],
+      sources: [
+        { id: "automations/builder-mine-2611161730", kind: "builder" as const, label: "builder-mine-2611161730", arms: ["mine"],
+          window: ["2025-11-17", "2026-11-16"] as [string, string], licensed: false, generated_at: null, path: "/bt/automations/builder-mine-2611161730.json" },
+        { id: "results/research/item75/study-all", kind: "study" as const, label: "item 75 study-all", arms: ["iron-condor-1345"],
+          window: ["2022-05-16", "2026-11-13"] as [string, string], licensed: true, generated_at: null, path: "/bt/results/research/item75/study-all.json" },
+      ],
+    });  // fmt: skip
+
+  it("resolves a backtest arm to its listed file, from the earliest chosen run's first session", async () => {
+    const seen: string[][] = [];
+    setPortfolioCaller((argv) => (seen.push(argv), Promise.resolve(ok)), listing, () => Promise.resolve(true));
+    const out = await readPortfolio(fakeConfig(), {
+      arms: ["flies:control", "bt:automations/builder-mine-2611161730#mine", "bt:results/research/item75/study-all#iron-condor-1345"],
+      period: "day", weights: "equal_risk", mode: "paper",
+    });  // fmt: skip
+    const argv = seen[0] as string[];
+    const manifest = JSON.parse(argv[argv.indexOf("--manifest") + 1] as string) as Array<Record<string, unknown>>;
+    expect(manifest.slice(1)).toEqual([
+      { key: "bt:automations/builder-mine-2611161730#mine", kind: "backtest", path: "/bt/automations/builder-mine-2611161730.json", arm: "mine", licensed: false },
+      { key: "bt:results/research/item75/study-all#iron-condor-1345", kind: "backtest", path: "/bt/results/research/item75/study-all.json", arm: "iron-condor-1345", licensed: true },
+    ]);
+    expect(argv[argv.indexOf("--start") + 1]).toBe("2022-05-16");
+    expect(out.failures).toEqual([]);
+  });
+
+  it("never reads a path it was not listed, nor a licensed source while the results gate is closed", async () => {
+    const seen: string[][] = [];
+    setPortfolioCaller((argv) => (seen.push(argv), Promise.resolve(ok)), listing, () => Promise.resolve(false));
+    const out = await readPortfolio(fakeConfig(), {
+      arms: ["bt:../../etc/passwd#x", "bt:results/research/item75/study-all#iron-condor-1345", "bt:automations/builder-mine-2611161730#other"],
+      period: "day", weights: "equal_risk", mode: "paper",
+    });  // fmt: skip
+    const argv = seen[0] as string[];
+    expect(JSON.parse(argv[argv.indexOf("--manifest") + 1] as string)).toEqual([]);
+    expect(out.failures.map((f) => f.key)).toEqual([
+      "bt:../../etc/passwd#x",
+      "bt:results/research/item75/study-all#iron-condor-1345",
+      "bt:automations/builder-mine-2611161730#other",
+    ]);
+    const listed = await readPortfolioSources();
+    expect(listed.sources.map((s) => s.id)).toEqual(["automations/builder-mine-2611161730"]);
+    expect(listed.sources[0]).not.toHaveProperty("path");
   });
 
   it("names an arm it cannot resolve rather than dropping it", async () => {

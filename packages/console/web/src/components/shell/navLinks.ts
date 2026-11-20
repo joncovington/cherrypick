@@ -56,13 +56,16 @@ export function railHalves<T extends NavLinkDef>(links: readonly T[]): { above: 
 
 /**
  * The rail's Modules section: the live-capable
- * modules, then the Experiments page. Each keeps its digit whether or not another is on: `2` is BWB
+ * modules, Automations, then the Experiments page. Each keeps its digit whether or not another is on: `2` is BWB
  * every day, so a module switched off no longer moves the others' keys.
  */
 export const MODULE_LINKS: readonly NavLinkDef[] = [
   { to: "/meic", label: "MEIC", key: "1" },
   { to: "/bwb", label: "BWB", key: "2" },
   { to: "/earnings", label: "Earnings", key: "3" },
+  // Out of Experiments onto the rail (2026-11-18): the suite's own builder writes it and its groups are
+  // switched on its Groups tab. Key 5, so the keys before it keep their meaning.
+  { to: "/automations", label: "Automations", key: "5" },
   { to: "/experiments", label: "Experiments", key: "4" },
 ];
 
@@ -78,7 +81,6 @@ export const EXPERIMENT_LINKS: readonly NavLinkDef[] = [
   { to: "/curve", label: "Curve" },
   { to: "/contango", label: "Contango" },
   { to: "/weeklyput", label: "Weekly put" },
-  { to: "/automations", label: "Automations" },
   { to: "/flies", label: "Flies" },
 ];
 

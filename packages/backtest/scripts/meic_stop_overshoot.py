@@ -27,6 +27,7 @@ from pathlib import Path
 
 from cherrypick.core import db as core_db
 from cherrypick.core import home
+from cherrypick.core import progress as core_progress
 
 from cherrypick.backtest import paths
 
@@ -91,15 +92,22 @@ def _read(path: Path, arm: str | None = None) -> list[dict]:
         conn.close()
 
 
-def replay_rows(study: str, arm: str) -> list[dict]:
+def replay_rows(study: str, arm: str, reporter: core_progress.Reporter | None = None) -> list[dict]:
     """One arm's stopped sides across every run a study's result files name."""
     rows = []
+    dbs = []
     for f in sorted((paths.results_dir() / "research" / study).glob("study-*.json")):
         run_id = json.loads(f.read_text(encoding="utf-8")).get("run_id")
         if not run_id:
             continue
-        for db in sorted((paths.results_dir() / "runs" / run_id).glob("*.db")):
-            rows += _read(db, arm)
+        dbs += sorted((paths.results_dir() / "runs" / run_id).glob("*.db"))
+    if reporter is not None:
+        dbs = core_progress.track(
+            dbs, job="meic_stop_overshoot", phase="ledgers", unit="ledgers", key=lambda _: "SPX",
+            current=lambda db: db.stem, reporter=reporter,
+        )  # fmt: skip
+    for db in dbs:
+        rows += _read(db, arm)
     return rows
 
 
@@ -123,11 +131,12 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
 
     meic = home.data_dir("meic")
-    sources = {
-        "live": summary(_read(meic / "meic_trades.db")),
-        "paper (all arms)": summary(_read(meic / "paper_trades.db")),
-        f"replay {args.study} {args.arm}": summary(replay_rows(args.study, args.arm)),
-    }
+    with core_progress.Reporter("meic_stop_overshoot") as rep:
+        sources = {
+            "live": summary(_read(meic / "meic_trades.db")),
+            "paper (all arms)": summary(_read(meic / "paper_trades.db")),
+            f"replay {args.study} {args.arm}": summary(replay_rows(args.study, args.arm, rep)),
+        }
     for name, s in sources.items():
         print(_line(name, s))
     live_n = sources["live"]["n"]

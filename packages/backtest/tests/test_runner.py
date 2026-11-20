@@ -418,9 +418,9 @@ def test_a_resumed_run_reports_its_reused_sessions_as_skipped(world, clean_commi
     real = runner.core_progress.Reporter
 
     class Recording(real):
-        def advance(self, name, n=1, *, current=None, skipped=False):
+        def advance(self, name, n=1, *, current=None, skipped=False, key=None):
             advanced.append((current, skipped))
-            return super().advance(name, n, current=current, skipped=skipped)
+            return super().advance(name, n, current=current, skipped=skipped, key=key)
 
     monkeypatch.setattr(runner.core_progress, "Reporter", Recording)
     _rerun(s)

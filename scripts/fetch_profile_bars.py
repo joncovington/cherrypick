@@ -26,13 +26,21 @@ prices (they differ by the calendar spread).
 8,000-bar cap cuts to what it has; `--full` does that for every symbol. After that the last
 `RESTATE_DAYS` are refetched, well inside the cap even for a future, so a corrected candle lands.
 
+**Five-minute backfill.** `--backfill-5m` is a one-off, not a job. The feed keeps 5-minute bars further
+back than 1-minute ones (probed 2026-11-17: SPY and QQQ from 2026-08-20; /ES capped at 8,000 bars,
+about six weeks), so one run saves the weeks before the minute recorder began. It asks the regular
+session only: with extended hours the overnight bars use up the 8,000-bar cap by 2026-10-08, and the
+profile reads the regular session anyway. They go to their own
+table, `profile_bars_5m`, which nothing reads by default, so no 1-minute reader ever sees a 5-minute
+bar. From the recorder's first day on, the 1-minute bars hold the same sessions at finer grain.
+
 **Exit.** Non-zero on a failed fetch, missing credentials, an unreadable futures map, or any symbol
 coming back with no bars at all (each of the six trades every session), so the job retries.
 
 Read-only against the broker. A script, not package code, because it reaches the network. Run after
 the futures' 17:00 ET close, so the day's last bars are finished.
 
-    python scripts/fetch_profile_bars.py [--full]
+    python scripts/fetch_profile_bars.py [--full | --backfill-5m]
 """
 
 from __future__ import annotations
@@ -48,7 +56,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from cherrypick.core import home as _home
-from cherrypick.core import streamcache
+from cherrypick.core import progress, streamcache
 from cherrypick.core.auth import SHARED_SERVICE, CredentialStore, SessionManager
 
 _ET = ZoneInfo("America/New_York")
@@ -70,6 +78,12 @@ SNAP_SNIP = 0x10
 # of SPX on 2026-11-14 it returned exactly 8,000 from 10-19 and ended with SNAP_END, not SNAP_SNIP
 # (SNAP_SNIP came only when asked for about 100 days). A symbol that reaches the cap was clipped.
 FEED_CAP = 8000
+TABLE = "profile_bars"
+# The one-off five-minute backfill: its own table, and asked from further back than the feed holds.
+BACKFILL_INTERVAL = "5m"
+BACKFILL_WIDTH_MS = 300_000
+BACKFILL_TABLE = "profile_bars_5m"
+BACKFILL_DEPTH_DAYS = 150
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS profile_bars (
@@ -92,6 +106,7 @@ def connect(path: Path | str | None = None) -> sqlite3.Connection:
         Path(path).parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(path)
     conn.execute(SCHEMA)
+    conn.execute(SCHEMA.replace(TABLE, BACKFILL_TABLE, 1))  # the same columns, its own table
     return conn
 
 
@@ -128,12 +143,19 @@ def start_for(held_ts: int | None, now: datetime, full: bool = False) -> datetim
 
 def is_minute(label: str) -> bool:
     """dxFeed drops a multiplier of 1, so a 1-minute candle arrives labelled `{=m}`."""
+    return is_interval(label, INTERVAL)
+
+
+def is_interval(label: str, interval: str) -> bool:
+    """Whether a candle label carries the asked width; a 1-minute one may arrive as `{=m}`."""
     inner = label.split("{", 1)[1].rstrip("}") if "{" in label else ""
     period = next((p[1:] for p in inner.split(",") if p.startswith("=")), None)
-    return period in ("m", "1m")
+    return period == interval or (interval == "1m" and period == "m")
 
 
-async def fetch(session, starts: dict[str, datetime], sdk=None):
+async def fetch(
+    session, starts: dict[str, datetime], sdk=None, interval: str = INTERVAL, extended: bool = True
+):
     """Candles per streamer symbol: ({streamer symbol: {ts_ms: bar}}, {symbols the feed clipped}).
     REMOVE events and priceless candles are dropped; a missing volume is 0. Clipped is the feed's
     SNAP_SNIP flag or a symbol that came back with `FEED_CAP` bars, since the flag is not always sent."""
@@ -150,7 +172,7 @@ async def fetch(session, starts: dict[str, datetime], sdk=None):
             by_start.setdefault(start, []).append(sym)
         for start, syms in by_start.items():
             await streamer.subscribe_candle(
-                syms, interval=INTERVAL, start_time=start, extended_trading_hours=True
+                syms, interval=interval, start_time=start, extended_trading_hours=extended
             )
         started = time.monotonic()
         while time.monotonic() - started < MAX_WAIT_S:
@@ -163,7 +185,7 @@ async def fetch(session, starts: dict[str, datetime], sdk=None):
                 continue
             label = str(event.event_symbol or "")
             base = label.split("{", 1)[0]
-            if base not in starts or not is_minute(label):
+            if base not in starts or not is_interval(label, interval):
                 continue
             flags = int(event.event_flags or 0)
             if flags & SNAP_SNIP:
@@ -187,12 +209,20 @@ async def fetch(session, starts: dict[str, datetime], sdk=None):
 
 
 def store_bars(
-    conn: sqlite3.Connection, symbol: str, contract: str, bars: dict[int, dict], now: datetime
+    conn: sqlite3.Connection,
+    symbol: str,
+    contract: str,
+    bars: dict[int, dict],
+    now: datetime,
+    table: str = TABLE,
+    width_ms: int = WIDTH_MS,
 ) -> list[int]:
     """Upsert the finished bars; returns the starts offered. A bar still forming is left for the next
     run. A bar already held from another contract is kept as it is (see Futures, above)."""
+    if table not in (TABLE, BACKFILL_TABLE):
+        raise ValueError(f"unknown table {table!r}")
     now_ms = now.timestamp() * 1000.0
-    done = sorted(ts for ts in bars if ts + WIDTH_MS <= now_ms)
+    done = sorted(ts for ts in bars if ts + width_ms <= now_ms)
     fetched = time.time()
     rows = []
     for ts in done:
@@ -214,12 +244,12 @@ def store_bars(
             )
         )
     conn.executemany(
-        "INSERT INTO profile_bars (symbol, ts_ms, contract, et_day, et_time, open, high, low, close, volume, "
+        f"INSERT INTO {table} (symbol, ts_ms, contract, et_day, et_time, open, high, low, close, volume, "
         "fetched_at) VALUES (?,?,?,?,?,?,?,?,?,?,?) "
         "ON CONFLICT(symbol, ts_ms) DO UPDATE SET et_day=excluded.et_day, et_time=excluded.et_time, "
         "open=excluded.open, high=excluded.high, low=excluded.low, close=excluded.close, "
         "volume=excluded.volume, fetched_at=excluded.fetched_at "
-        "WHERE profile_bars.contract = excluded.contract",
+        f"WHERE {table}.contract = excluded.contract",
         rows,
     )
     return done
@@ -230,17 +260,35 @@ def _et_stamp(ts: int | None) -> str | None:
 
 
 async def run(
-    session, conn: sqlite3.Connection, now: datetime, fmap: dict, full: bool = False, sdk=None
+    session,
+    conn: sqlite3.Connection,
+    now: datetime,
+    fmap: dict,
+    full: bool = False,
+    sdk=None,
+    rep=None,
+    backfill: bool = False,
 ) -> list[dict]:
-    """One fetch (one DXLink session) for every symbol, stored as it arrives."""
+    """One fetch (one DXLink session) for every symbol, stored as it arrives. `rep` is a progress
+    Reporter. `backfill` asks 5-minute bars from as far back as the feed holds, into their own table."""
     feed = contracts(fmap)
     held = latest(conn)
-    starts = {feed[s]: start_for(held.get(s), now, full) for s in SYMBOLS}
-    bars, clipped = await fetch(session, starts, sdk)
+    if backfill:
+        starts = {feed[s]: now - timedelta(days=BACKFILL_DEPTH_DAYS) for s in SYMBOLS}
+        interval, table, width_ms = BACKFILL_INTERVAL, BACKFILL_TABLE, BACKFILL_WIDTH_MS
+    else:
+        starts = {feed[s]: start_for(held.get(s), now, full) for s in SYMBOLS}
+        interval, table, width_ms = INTERVAL, TABLE, WIDTH_MS
+    if rep is not None:
+        rep.split("symbols", SYMBOLS, unit="symbols")
+        rep.at("symbols", "fetching")
+    bars, clipped = await fetch(session, starts, sdk, interval, extended=not backfill)
     out = []
     for sym in SYMBOLS:
+        if rep is not None:
+            rep.advance("symbols", key=sym, current=sym)
         got = bars.get(feed[sym], {})
-        offered = store_bars(conn, sym, feed[sym], got, now)
+        offered = store_bars(conn, sym, feed[sym], got, now, table, width_ms)
         out.append(
             {
                 "symbol": sym,
@@ -249,7 +297,7 @@ async def run(
                 "stored": len(offered),
                 "first": _et_stamp(offered[0] if offered else None),
                 "last": _et_stamp(offered[-1] if offered else None),
-                "deep": full or sym not in held,
+                "deep": backfill or full or sym not in held,
                 "clipped": feed[sym] in clipped,
             }
         )
@@ -265,7 +313,11 @@ def outcome(summary: list[dict]) -> dict:
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--full", action="store_true", help="refetch the feed's full depth for every symbol")
+    mode = ap.add_mutually_exclusive_group()
+    mode.add_argument("--full", action="store_true", help="refetch the feed's full depth for every symbol")
+    mode.add_argument(
+        "--backfill-5m", action="store_true", help="one-off: save the feed's 5-minute bars to profile_bars_5m"
+    )
     args = ap.parse_args(argv)
 
     store = CredentialStore(SHARED_SERVICE)
@@ -280,15 +332,20 @@ def main(argv=None) -> int:
         print(json.dumps({"ok": False, "reason": f"futures map: {type(exc).__name__}: {exc}"}))
         return 1
     conn = connect()
+    rep = progress.Reporter("fetch_profile_bars")
     try:
         try:
             session = SessionManager(store).get_session()
-            summary = asyncio.run(run(session, conn, datetime.now(UTC), fmap, args.full))
+            summary = asyncio.run(
+                run(session, conn, datetime.now(UTC), fmap, args.full, rep=rep, backfill=args.backfill_5m)
+            )
         except Exception as exc:  # noqa: BLE001 -- a failed fetch keeps every bar already held
+            rep.finish("failed")
             print(json.dumps({"ok": False, "reason": f"{type(exc).__name__}: {exc}"}))
             return 1
     finally:
         conn.close()
+    rep.finish("done")
     verdict = outcome(summary)
     print(json.dumps({**verdict, "db": str(db_path()), "series": summary}, indent=2))
     return 0 if verdict["ok"] else 1

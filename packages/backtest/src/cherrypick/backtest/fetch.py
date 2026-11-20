@@ -199,9 +199,18 @@ def _write_closes(conn, symbol: str, closes: dict, source: str) -> None:
 
 
 def _dataset(settings: dict, symbol: str) -> dict:
+    """The configured dataset; on the `added` store tag, an underlying added to the full set
+    (`fullsetadd`), its symbol its root, from the day it was added from."""
     for d in settings["datasets"]:
         if d["symbol"].upper() == symbol.upper():
             return d
+    if settings["store"].get("tag") == "added":
+        from . import fullsetadd
+
+        entry = fullsetadd.load().get(symbol.upper())
+        if entry is not None:
+            return {"symbol": symbol.upper(), "root": symbol.upper(), "dte": 0, "from": entry["from"]}
+        raise ValueError(f"{symbol!r} has not been added to the full set (fetch_full_set.py add)")
     raise ValueError(f"no dataset {symbol!r} in the backtest config")
 
 
@@ -258,7 +267,8 @@ def fetch(
     if hasattr(client, "on_retry"):
         client.on_retry = log  # a stalled call and its reconnect show in the fetch's own log
     try:
-        days = session_days(client.expirations(root), max(start, ds["from"]), end)
+        # A store tag may set its own first session (`store.TAGS`, the full set's), else the dataset's.
+        days = session_days(client.expirations(root), max(start, st.get("from") or ds["from"]), end)
         todo = [d for d in days if refetch or store.session_status(conn, symbol, d) != store.COMPLETE]
         closes: dict = {}
         if days:
@@ -294,8 +304,8 @@ def fetch(
         # Of every session in the span, the complete ones counted as done: a resumed fetch starts where
         # the last one stopped rather than at zero.
         rep = progress or core_progress.Reporter(JOB)
-        rep.phase("sessions", total=len(days), unit="sessions")
-        rep.advance("sessions", report["skipped"])
+        sym = symbol.upper()
+        rep.split("sessions", [sym] * len(days), unit="sessions", done=[sym] * report["skipped"])
         cap = _settings.concurrency(settings)  # one request in flight a session, within the tier
         pool = ThreadPoolExecutor(max_workers=max(1, min(int(workers), cap)))
         # Shut down cancelling what is queued, whatever ends the loop. A plain `with` waits for every
@@ -342,7 +352,7 @@ def fetch(
                     res = {"status": store.REFUSED, "reason": bad.reason, "detail": bad.detail}
                 conn.commit()
                 report["fetched" if res["status"] == store.COMPLETE else "refused"] += 1
-                rep.advance("sessions", current=day)
+                rep.advance("sessions", current=day, key=sym)
                 log(f"{day} {res}")
         finally:
             pool.shutdown(wait=True, cancel_futures=True)

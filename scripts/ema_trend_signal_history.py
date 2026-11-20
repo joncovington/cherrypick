@@ -30,6 +30,7 @@ import sys
 from datetime import date
 from pathlib import Path
 
+from cherrypick.core import progress
 from cherrypick.technicals import store as _store
 
 HISTORY_DB = Path.home() / ".cherrypick" / "data" / "technicals" / "history.db"
@@ -98,7 +99,14 @@ def main(argv=None) -> int:
     conn.row_factory = sqlite3.Row
     start = date.fromisoformat(args.start)
     rep = {}
-    for sym in args.symbols.split(","):
+    for sym in progress.track(
+        args.symbols.split(","),
+        job="ema_trend_signal_history",
+        phase="symbols",
+        unit="symbols",
+        key=lambda s: s,
+        current=lambda s: s,
+    ):
         bars = [b for b in _store.adjusted_bars(conn, sym) if b.close and date.fromisoformat(b.date) >= start]
         if len(bars) < 100:
             print(f"{sym}: too few bars", file=sys.stderr)

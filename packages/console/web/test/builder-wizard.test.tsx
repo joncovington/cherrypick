@@ -2,8 +2,9 @@ import { describe, it, expect } from "vitest";
 import { renderToString } from "react-dom/server";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { BuilderSchema } from "@console/shared";
-import { BuilderWizard, Coverage, STEPS, TIPS, holdsCloseSnapshot, plainBlocks, problemKey, problemsUpTo, type StepId } from "../src/pages/Builder/BuilderWizard";
+import { BuilderWizard, Coverage, STEPS, TIPS, gateWords, holdsCloseSnapshot, plainBlocks, problemKey, problemsUpTo, type StepId } from "../src/pages/Builder/BuilderWizard";
 import { SuggestionLine } from "../src/pages/Builder/BuilderPage";
+import { orderedLimits } from "../src/pages/Builder/BuilderForm";
 
 const html = (el: React.ReactElement) => renderToString(<QueryClientProvider client={new QueryClient()}>{el}</QueryClientProvider>).replace(/<!--\s*-->/g, "");
 
@@ -87,9 +88,19 @@ describe("the entry's cadence", () => {
 });
 
 describe("the review, in plain English", () => {
+  it("names a gate with every setting it was given", () => {
+    expect(gateWords({ gate: "vix_level", max: 20 })).toBe("vix level at most 20");
+    expect(gateWords({ gate: "above_ma", kind: "ema", n: 10 })).toBe("above ma (kind ema, n 10)");
+    expect(gateWords({ gate: "reward_risk", min: 95 })).toBe("reward risk at least 95");
+  });
+
+  it("lists the limits in reading order, any others after", () => {
+    expect(orderedLimits(["every_days", "max_open", "one_per_expiry", "per_day", "x"])).toEqual(["max_open", "per_day", "every_days", "one_per_expiry", "x"]);
+  });
+
   it("reads each block from the spec", () => {
     const b = plainBlocks(PCS);
-    expect(b.structure).toBe("SPY. The listed expiry 45-60 days out, the nearest first. Sell the put nearest 0.2 delta, buy the put nearest 0.1 delta.");
+    expect(b.structure).toBe("SPY. The listed expiry 45-60 days out, the nearest first. Sell to open a Short Put at 0.2 delta, Buy to open a Long Put at 0.1 delta.");
     expect(b.entry).toBe("Enter at 15:55, for 5 minutes. Monday to Friday.");
     expect(b.gates).toBe("None: every eligible day is entered.");
     expect(b.exit).toBe("Take 50% of the most it can make; stop at a loss of 1x the credit; close at 21 days to expiry.");
@@ -100,7 +111,7 @@ describe("the review, in plain English", () => {
 describe("the wizard", () => {
   it("opens on the start step with the schema's shapes and the spread chosen", () => {
     const out = at("start");
-    expect(out).toContain("What shape will it trade?");
+    expect(out).toContain("What will it trade?");
     for (const s of Object.values(SCHEMA.shapes)) expect(out).toContain(s.label);
     expect(out).toMatch(/role="radio" aria-checked="true" class="wiz-shape is-on"><span class="wiz-shape-t">Put credit spread/);
     expect(out).toContain("Next: Underlying and expiry");

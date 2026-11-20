@@ -14,6 +14,7 @@ import {
   etaText,
   BacktestQueueTab,
   headline,
+  laneOf,
   paceText,
   rateText,
   plan,
@@ -77,6 +78,8 @@ function task(over: Partial<ResearchTask>): ResearchTask {
     exitCode: null,
     note: null,
     waits: "the ThetaData session is held by another process",
+    lane: null,
+    position: null,
     progress: null,
     ...over,
   };
@@ -125,7 +128,54 @@ describe("the research queue tab: the footer", () => {
   });
 });
 
+describe("the research queue tab: two lanes", () => {
+  const script = { kind: "script", needs: "", args: { path: "packages/backtest/scripts/x.py" } };
+  const tasks = () => [
+    task({ id: 377, study: "item90", step: "study", name: "item90/study", ...script, lane: "local", status: "running", startedAt: "2026-11-16T23:45:24", waits: null }),
+    task({ id: 390, study: "fullset", step: "probe", name: "fullset/probe", lane: "vendor", waits: "ready", position: 1 }),
+    task({ id: 391, study: "fullset", step: "zero-spx", name: "fullset/zero-spx", lane: "vendor", waits: "waits for fullset/probe", position: 2 }),
+    task({ id: 378, study: "item91", step: "plan", name: "item91/plan", ...script, lane: "local", waits: "ready", position: 1 }),
+  ];
+
+  it("numbers up next within each lane and names each lane's next row", () => {
+    const items = queueItems(queue(tasks()), NOW);
+    const next = items.filter((i) => i.kind === "task" && i.section === "next");
+    expect(next.map((i) => (i.kind === "task" ? `${laneOf(i.t)}:${String(i.pos)}:${i.t.step}` : ""))).toEqual([
+      "vendor:1:probe",
+      "vendor:2:zero-spx",
+      "local:1:plan",
+    ]);
+    expect(headline(plan(queue(tasks())))).toBe("1 running · 3 queued · next vendor: fullset/probe · next local: item91/plan");
+  });
+
+  it("shows each lane's running task or an idle tile, and one up-next list per lane", () => {
+    const html = render(queue(tasks()));
+    expect(html).toContain('data-lane="vendor"');
+    expect(html).toContain('data-lane="local"');
+    expect(html).toMatch(/data-lane="vendor"[\s\S]*?Nothing running[\s\S]*?data-lane="local"[\s\S]*?data-task="377"/);
+    expect(html).toContain("Up next · vendor lane");
+    expect(html).toContain("Up next · local lane");
+  });
+
+  it("reads an older orchestrator's row's lane from what it needs", () => {
+    expect(laneOf(task({ lane: null }))).toBe("vendor");
+    expect(laneOf(task({ lane: null, needs: "", kind: "script" }))).toBe("local");
+  });
+});
+
 describe("the research queue tab: sections", () => {
+  it("lists queued rows by the orchestrator's position, so a raised row queued last is next", () => {
+    const tasks = [
+      task({ id: 378, step: "plan", waits: "ready", position: 2 }),
+      task({ id: 384, step: "plan-2", waits: "ready", position: 3 }),
+      task({ id: 390, step: "probe", waits: "ready", position: 1 }),
+      task({ id: 391, step: "zero-spx", waits: "waits for fullset/probe", position: 4 }),
+    ];
+    const p = plan(queue(tasks));
+    expect(p.queued.map((x) => x.id)).toEqual([390, 378, 384, 391]);
+    expect(headline(p)).toContain("next vendor: item17/probe");
+  });
+
   it("puts running first, then queued in the runner's order: ready first, oldest first", () => {
     const tasks = [
       task({ id: 5, step: "late-wait" }),
@@ -137,7 +187,7 @@ describe("the research queue tab: sections", () => {
     const p = plan(queue(tasks));
     expect(p.running.map((t) => t.step)).toEqual(["running"]);
     expect(p.queued.map((t) => t.step)).toEqual(["ready-early", "ready-late", "early-wait", "late-wait"]);
-    expect(headline(p)).toBe("1 running · 4 queued · next: item17/ready-early");
+    expect(headline(p)).toBe("1 running · 4 queued · next vendor: item17/ready-early");
     // The running task is the large tile; up next is numbered in the runner's order.
     const items = queueItems(queue(tasks), NOW);
     expect(items.map((i) => (i.kind === "task" ? `${i.section}:${i.t.step}` : i.key))).toEqual([
@@ -321,6 +371,11 @@ describe("the research queue tab: helpers", () => {
     expect(etaText(600)).toBe("about 10 min left");
     expect(etaText(20)).toBe("under a minute left");
     expect(etaText(null)).toBeNull();
+    // a job counted in steps: the estimate is the running step's (2026-11-18: the full set read 6 h for 48 min)
+    expect(etaText(2880, 1)).toBe("about 48 min left in this step, then 1 more step");
+    expect(etaText(2880, 2)).toBe("about 48 min left in this step, then 2 more steps");
+    expect(etaText(20, 0)).toBe("under a minute left in this step");
+    expect(paceText(byHand({ etaSeconds: 2880, stepsAfter: 1 }))).toBe("57.2 s/session · about 48 min left in this step, then 1 more step");
     // the rate sits beside the time left (2026-11-06: the card showed only the time left)
     expect(rateText({ phase: "sessions", secondsEach: 57.24 })).toBe("57.2 s/session");
     expect(rateText({ phase: "symbol-days", secondsEach: 0.25 })).toBe("4.0 symbol-days/s");

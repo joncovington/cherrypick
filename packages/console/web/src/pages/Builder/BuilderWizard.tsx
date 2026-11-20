@@ -1,9 +1,12 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import type { BuilderAutomation, BuilderSchema, BuilderSuggestion, BuilderToday } from "@console/shared";
 import { builderBacktest, builderDraft, builderSave, builderToday } from "../../lib/api";
-import { EntryFields, ExitFields, GateFields, LegFields, SizeFields, UnderlyingFields, entryText, type Spec } from "./BuilderForm";
+import { EntryFields, ExitFields, GateFields, LegFields, SizeFields, UnderlyingFields, entryText, eventName, withFilterGates, withKey, type Spec } from "./BuilderForm";
 import { TodayView } from "./BuilderToday";
+import { legSentence } from "./legWords";
+import { StrategyPicker } from "./StrategyPicker";
+import { EntryPicker, type Stacked } from "./EntryPicker";
 
 /**
  * The Builder's wizard (#1180, the approved mockup's eight artboards): a new automation built one
@@ -29,7 +32,7 @@ export type StepId = (typeof STEPS)[number]["id"];
 /** The spec keys each step writes: a problem about one of them belongs to that step. */
 export const STEP_KEYS: Record<StepId, string[]> = {
   start: ["name"],
-  underlying: ["symbol", "expiry", "weekdays", "skip_events"],
+  underlying: ["symbol", "expiry", "far_expiry", "weekdays", "skip_events"],
   legs: ["legs"],
   entry: ["entry"],
   gates: ["gates"],
@@ -71,7 +74,18 @@ const list = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
 const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
 
 /** The automation block by block, in plain English, as the review step reads it. */
-export function plainBlocks(spec: Spec): Record<"structure" | "entry" | "gates" | "exit" | "size", string> {
+/** One gate in words with every setting it was given: "vix level at most 20", "above ma (kind ema, n
+ *  10)", "reward risk at least 95". The bounds read as at least / at most; the rest by name. */
+export function gateWords(g: Record<string, unknown>): string {
+  const lo = g["min"] !== undefined ? ` at least ${String(g["min"])}` : "";
+  const hi = g["max"] !== undefined ? ` at most ${String(g["max"])}` : "";
+  const rest = Object.entries(g)
+    .filter(([k, v]) => !["gate", "min", "max"].includes(k) && v !== undefined)
+    .map(([k, v]) => `${k.replaceAll("_", " ")} ${typeof v === "object" ? JSON.stringify(v) : String(v)}`);
+  return `${String(g["gate"]).replaceAll("_", " ")}${lo}${hi}${rest.length ? ` (${rest.join(", ")})` : ""}`;
+}
+
+export function plainBlocks(spec: Spec, schema?: BuilderSchema): Record<"structure" | "entry" | "gates" | "exit" | "size", string> {
   const e = obj(spec["expiry"]);
   const expiry =
     e["kind"] === "between"
@@ -82,37 +96,31 @@ export function plainBlocks(spec: Spec): Record<"structure" | "entry" | "gates" 
           ? `the expiry ${String(e["days"])} trading days out`
           : `the expiry ${String(e["days"] ?? "?")} days out`;
   const legs = list(spec["legs"]).map(obj);
-  const legText = legs
-    .map((l) => {
-      const s = obj(l["strike"]);
-      const how = s["rule"] === "delta" ? `nearest ${String(s["target"])} delta` : `by ${String(s["rule"] ?? "?").replaceAll("_", " ")}`;
-      return `${Number(l["side"]) < 0 ? "sell" : "buy"} the ${l["right"] === "C" ? "call" : "put"} ${how}`;
-    })
-    .join(", ");
+  const byName = Object.fromEntries(legs.map((l) => [String(l["name"] ?? ""), l]));
+  const legText = legs.map((l) => `${legSentence(l, byName)}${l["expiry"] === "far" ? " on the far expiry" : ""}`).join(", ");
+  const f = spec["far_expiry"] === undefined ? null : obj(spec["far_expiry"]);
+  const farText = !f
+    ? ""
+    : f["kind"] === "after_near"
+      ? ` The far expiry: the first listed ${f["monthly"] ? "monthly " : ""}expiry at least ${String(f["days"])} days after it.`
+      : " The far expiry: a later one by its own rule.";
   const days = list(spec["weekdays"]).map(Number);
-  const skip = list(obj(spec["skip_events"])["labels"]).map(String);
+  const skip = list(obj(spec["skip_events"])["labels"]).map((l) => (schema ? eventName(schema, String(l)) : String(l)));
   const gates = list(spec["gates"]).map(obj);
-  const gateText = gates.length
-    ? gates
-        .map((g) => {
-          const lo = g["min"] !== undefined ? ` at least ${String(g["min"])}` : "";
-          const hi = g["max"] !== undefined ? ` at most ${String(g["max"])}` : "";
-          return `${String(g["gate"]).replaceAll("_", " ")}${lo}${hi}`;
-        })
-        .join("; ")
-    : "None: every eligible day is entered.";
+  const gateText = gates.length ? gates.map(gateWords).join("; ") : "None: every eligible day is entered.";
   const x = obj(spec["exit"]);
   const exits: string[] = [];
   if (x["profit_target_pct"] !== undefined) exits.push(`take ${String(x["profit_target_pct"])}% of the most it can make`);
   if (x["stop_credit_multiple"] !== undefined) exits.push(`stop at a loss of ${String(x["stop_credit_multiple"])}x the credit`);
   if (x["close_at_dte"] !== undefined) exits.push(`close at ${String(x["close_at_dte"])} days to expiry`);
-  const others = Object.keys(x).filter((k) => !["profit_target_pct", "stop_credit_multiple", "close_at_dte"].includes(k));
+  if (x["close_before_expiry_min"] !== undefined) exits.push(`close ${String(x["close_before_expiry_min"])} minutes before the ${f ? "near " : ""}expiry's close`);
+  const others = Object.keys(x).filter((k) => !["profit_target_pct", "stop_credit_multiple", "close_at_dte", "close_before_expiry_min"].includes(k));
   if (others.length) exits.push(`also ${others.join(", ").replaceAll("_", " ")}`);
   const size = obj(spec["size"]);
   const lim = obj(spec["limits"]);
   const sizeText = size["contracts"] !== undefined ? `${String(size["contracts"])} contract${size["contracts"] === 1 ? "" : "s"}` : `sized by ${Object.keys(size)[0] ?? "?"}`;
   return {
-    structure: `${String(spec["symbol"] ?? "?")}. ${expiry[0]!.toUpperCase()}${expiry.slice(1)}. ${legText ? legText[0]!.toUpperCase() + legText.slice(1) : "No legs yet"}.`,
+    structure: `${String(spec["symbol"] ?? "?")}. ${expiry[0]!.toUpperCase()}${expiry.slice(1)}.${farText} ${legText ? legText[0]!.toUpperCase() + legText.slice(1) : "No legs yet"}.`,
     entry: `${entryText(obj(spec["entry"]))} ${days.length === 5 ? "Monday to Friday" : days.map((d) => DAYS[d]).join(", ")}${skip.length ? `, skipping ${skip.join(", ")} days` : ""}.`,
     gates: gateText,
     exit: exits.length ? `${exits.join("; ")[0]!.toUpperCase()}${exits.join("; ").slice(1)}.` : "No exit set: positions are held to expiry.",
@@ -153,8 +161,8 @@ export const TIPS: Record<string, string> = {
 
 /** Each step's question and the line under it. */
 const HEAD: Record<StepId, [string, string]> = {
-  start: ["What shape will it trade?", "Pick a shape to start from. Its legs, exits and limits are filled in for you, and every one can be changed in the steps that follow."],
-  underlying: ["What does it trade, and which expiry?", "The symbol and the expiry rule. The coverage below says whether our own data can backtest this, before you build the rest."],
+  start: ["What will it trade?", "Pick a strategy to start from, or Custom for legs of your own. Its legs, expiry, exits and limits are filled in for you, and every one can be changed in the steps that follow."],
+  underlying: ["What does it trade, and which expiry?", "The symbol and the expiry rule. The coverage below says whether the data we hold (our own first, the vendor's while the licence allows) can backtest this, before you build the rest."],
   legs: ["Which strikes?", "The legs come filled in from the shape. Each leg is placed by a rule, mostly by delta; change the rule or the target, or add a leg."],
   entry: ["When does it enter?", "At a time each eligible day, on the first break of the opening range, or when a signal fires."],
   gates: [
@@ -167,8 +175,8 @@ const HEAD: Record<StepId, [string, string]> = {
 
 /** The step's own explanation, in the panel beside it. */
 const ABOUT: Record<StepId, string> = {
-  start: "A shape is a starting point, not a strategy: it sets the legs, and every one can be changed in the steps that follow. A copy starts from another automation's settings.",
-  underlying: "What it trades and which expiry. The coverage below says whether our own data can backtest this, before you build the rest.",
+  start: "A strategy is a starting point, not a recommendation: it sets the legs and the expiry, and every one can be changed in the steps that follow. Custom starts from one leg. A copy starts from another automation's settings.",
+  underlying: "What it trades and which expiry. The coverage below says whether the data we hold (our own first, the vendor's while the licence allows) can backtest this, before you build the rest.",
   legs: "The legs come from the shape. Each is placed by a rule, here mostly by delta; change the rule or the target, or add a leg.",
   entry: "When it opens a trade: at a time, on an opening-range break, or when a signal fires.",
   gates: "Optional checks that skip a day. Every gate is another condition to backtest, so add only what you mean to test.",
@@ -211,7 +219,7 @@ export function Coverage({ s, onMonthly }: { s: BuilderSuggestion | null | undef
       <span className={s.possible ? "wiz-ok" : "wiz-warn"}>
         {s.possible
           ? `Covered by ${s.licensed ? "the licensed vendor store" : "our own data"}, ${s.window[0]} to ${s.window[1]}`
-          : "Not covered by our own data yet"}
+          : "Not covered by the data we hold yet"}
       </span>
       {short.map((n) => (
         <p key={n.field} className="muted">
@@ -269,6 +277,12 @@ export function BuilderWizard({
   const [reached, setReached] = useState(opening);
   const [name, setName] = useState(copyFrom ? `${copyFrom}-copy` : "my-automation");
   const [shape, setShape] = useState<string | null>(copyFrom ? null : firstShape);
+  // A strategy's credit, as the module said; and whether the selector has applied once (a copy, or a
+  // strategy chosen, is not replaced by coming back to this step).
+  const [credit, setCredit] = useState<boolean | null>(null);
+  const applied = useRef(Boolean(copyFrom));
+  // The entry preset last applied and the gates its filters added, so applying another replaces them.
+  const entryPreset = useRef<{ name: string; settings?: Record<string, string | number>; filters: Stacked[]; gates: string[] }>({ name: "daily_time", filters: [], gates: [] });
   const [source, setSource] = useState<string>(copyFrom ?? "");
   const [spec, setSpec] = useState<Spec>(() => (copyFrom ? {} : structuredClone(schema.shapes[firstShape]!.spec)));
   const [tip, setTip] = useState<string | null>(null);
@@ -403,7 +417,7 @@ export function BuilderWizard({
     );
   }
 
-  const blocks = plainBlocks(spec);
+  const blocks = plainBlocks(spec, schema);
   const sectionProps = { schema, spec, onChange: (s: Spec) => setSpec(s) };
   const body: Record<StepId, ReactNode> = {
     start: (
@@ -419,10 +433,25 @@ export function BuilderWizard({
           <TipText id="name" open={tip} />
         </div>
         <div className="wiz-row">
-          <span className="builder-lbl">Shape</span>
+          <span className="builder-lbl">{schema.strategy ? "Strategy" : "Shape"}</span>
           <Tip id="shape" open={tip} onToggle={toggle} label="What is a shape?" />
         </div>
         <TipText id="shape" open={tip} />
+        {schema.strategy ? (
+          <StrategyPicker
+            schema={schema.strategy}
+            auto
+            initial={shape && shape in schema.strategy.strategies ? shape : "vertical"}
+            applyOnMount={!applied.current}
+            onFill={(r) => {
+              applied.current = true;
+              setShape(r.strategy);
+              setCredit(r.credit ?? null);
+              setSource("");
+              if (r.spec) setSpec(structuredClone(r.spec));
+            }}
+          />
+        ) : (
         <div className="wiz-shapes" role="radiogroup" aria-label="Shape">
           {Object.entries(schema.shapes).map(([k, s]) => (
             <button
@@ -443,6 +472,7 @@ export function BuilderWizard({
             </button>
           ))}
         </div>
+        )}
         <div className="wiz-field">
           <div className="wiz-row">
             <label className="builder-lbl" htmlFor="wiz-copy">
@@ -488,7 +518,7 @@ export function BuilderWizard({
         <UnderlyingFields {...sectionProps} />
         <div className="wiz-cov" role="status">
           <div className="wiz-row">
-            <span className="builder-lbl">Backtest coverage, our own data</span>
+            <span className="builder-lbl">Backtest coverage</span>
             <Tip id="cov" open={tip} onToggle={toggle} label="What is a backtest, and why does coverage matter?" />
           </div>
           <TipText id="cov" open={tip} />
@@ -523,6 +553,26 @@ export function BuilderWizard({
         </div>
         <TipText id="kind" open={tip} />
         <TipText id="cad" open={tip} />
+        {schema.entry_presets && (
+          <EntryPicker
+            schema={schema.entry_presets}
+            auto
+            initial={entryPreset.current.name}
+            initialSettings={entryPreset.current.settings}
+            initialFilters={entryPreset.current.filters}
+            applyOnMount={false}
+            onFill={(r) => {
+              const gates = withFilterGates(spec["gates"], entryPreset.current.gates, r.gates ?? []);
+              entryPreset.current = {
+                name: r.preset,
+                settings: r.settings,
+                filters: (r.filters ?? []).map((f) => ({ filter: f.filter, settings: f.settings })),
+                gates: (r.gates ?? []).map((g) => JSON.stringify(g)),
+              };
+              setSpec(withKey({ ...spec, entry: r.entry ?? spec["entry"] }, "gates", gates.length ? gates : undefined));
+            }}
+          />
+        )}
         <EntryFields {...sectionProps} />
         {!holdsCloseSnapshot(obj(spec["entry"])) && (
           <p className="wiz-warn" role="status">
@@ -549,7 +599,7 @@ export function BuilderWizard({
       <>
         <div className="wiz-preset">
           <div className="wiz-row">
-            <strong>{shape && schema.shapes[shape]?.credit ? "Your credit-trade rules" : "Exits"}</strong>
+            <strong>{(credit ?? (shape && schema.shapes[shape]?.credit)) ? "Your credit-trade rules" : "Exits"}</strong>
             <Tip id="rules" open={tip} onToggle={toggle} label="Why these rules?" />
             <label className="wiz-toggle">
               <input type="checkbox" checked={customise} onChange={(e) => setCustomise(e.currentTarget.checked)} /> customise

@@ -90,6 +90,29 @@ def test_a_split_recorded_twice_is_applied_once_on_the_day_the_price_jumped():
     assert all(abs(b.close - a.close) / a.close < 0.05 for a, b in zip(out, out[1:], strict=False))
 
 
+def _gap(prior_close: float, open_: float, close: float) -> list[Bar]:
+    return [
+        Bar("2026-10-13", prior_close, prior_close, prior_close, prior_close, 1),
+        Bar("2026-10-14", open_, open_, close, close, 1),
+    ]
+
+
+def test_a_split_the_prices_never_made_is_dropped():
+    """SKYD: Dolt's 2-for-1 on 2026-10-14, but 9.27 opened at 7.60 -- a bad day, not a split."""
+    assert dedupe_splits(_gap(9.27, 7.60, 7.06), [Split("2026-10-14", 2, 1)]) == []
+    assert dedupe_splits(_gap(1.805, 1.82, 1.6), [Split("2026-10-14", 5, 4)]) == [], "ENVX's 5-for-4"
+
+
+def test_a_real_split_that_gapped_off_its_ratio_is_kept():
+    """CHPT's 1-for-20 opened at 15.6x, a real split nearer its ratio than no move; a scrip dividend
+    (SCCO 1.0106) is too small to judge from a day's move and is always kept."""
+    reverse = Split("2026-10-14", 1, 20)
+    assert dedupe_splits(_gap(0.5, 7.78, 8.1), [reverse]) == [reverse]
+    assert dedupe_splits(_gap(10.0, 5.1, 5.0), [Split("2026-10-14", 2, 1)]) == [Split("2026-10-14", 2, 1)]
+    scrip = Split("2026-10-14", 1.0106, 1)
+    assert dedupe_splits(_gap(179.36, 177.15, 173.49), [scrip]) == [scrip]
+
+
 def test_distinct_splits_and_bad_rows_are_handled():
     bars = _bars(10.0, 5.0)
     assert dedupe_splits(

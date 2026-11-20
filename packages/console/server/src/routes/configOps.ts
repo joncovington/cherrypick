@@ -1,9 +1,10 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
 import type { ConsoleConfig } from "../config.js";
-import { callConfigCli, statusForCode, type BridgeOk, type BridgeResult } from "../services/configBridge.js";
+import { callConfigCli, statusForCode, type BridgeOk, type BridgeRequest, type BridgeResult } from "../services/configBridge.js";
 import { readLockStatus } from "../services/liveLock.js";
 import { backtestResultsOn, getFeatures, invalidateFeatures } from "../services/featuresBridge.js";
 import { invalidateAutomationsBuilder } from "../services/automationsBuilderBridge.js";
+import { invalidateAutomationGroups } from "../services/automationsGroupsBridge.js";
 import { getPrefs, setPref } from "../store/consoleDb.js";
 
 /**
@@ -49,6 +50,23 @@ function sendBridgeFailure(reply: FastifyReply, result: BridgeResult): BridgeOk 
   });
   return null;
 }
+
+/** A window key as the automations module writes one (`enrolment.windows`): `<source>:<start>:<end>`. */
+/** An underlying's root as the full set spells one (backtest `fullset.SYMBOL`). */
+export const FULLSET_SYMBOL = /^[A-Z][A-Z.]{0,5}$/;
+export const WINDOW_KEY = /^[a-z0-9-]{1,48}:\d{4}-\d{2}-\d{2}:\d{4}-\d{2}-\d{2}$/;
+/** A strategy's name or a setting's key: the module's own words, checked by shape here. */
+export const STRATEGY_NAME = /^[a-z][a-z0-9_]{0,39}$/;
+
+/** Settings of plain values, each keyed by a setting's name; null when anything else. */
+function plainSettings(v: unknown): Record<string, string | number | boolean> | null {
+  if (typeof v !== "object" || v === null || Array.isArray(v)) return null;
+  const ok = Object.entries(v as Record<string, unknown>).every(([k, x]) => STRATEGY_NAME.test(k) && ["string", "number", "boolean"].includes(typeof x));
+  return ok ? (v as Record<string, string | number | boolean>) : null;
+}
+/** An idea search's result name, and one idea's id in it (`dim:kind:index`, at most two joined by &). */
+export const IDEA_SEARCH = /^ideas-[a-z0-9][a-z0-9-]{1,47}-\d{10}$/;
+export const IDEA_ID = /^[A-Za-z_:-]+:(bin|below|above):\d(&[A-Za-z_:-]+:(bin|below|above):\d)?$/;
 
 export function registerConfigRoutes(app: FastifyInstance, config: ConsoleConfig): void {
   /**
@@ -181,6 +199,65 @@ export function registerConfigRoutes(app: FastifyInstance, config: ConsoleConfig
     return today;
   });
 
+  /**
+   * The payoff under the Builder's legs: the structure the module's rules would take and its P&L at
+   * expiry (`cli builder-payoff`), on live quotes or the last session our own recorder holds, with the
+   * chain around the legs. A POST only because it may carry an unsaved edit; it writes nothing.
+   */
+  app.post("/api/automations/builder/payoff", async (req, reply) => {
+    const parsed = automationBody((req.body ?? {}) as Record<string, unknown>);
+    if (typeof parsed === "string") return reply.code(400).send({ error: parsed });
+    const result = sendBridgeFailure(reply, await callConfigCli({ op: "automation_payoff", ...parsed }));
+    if (result === null) return reply;
+    const { ok: _ok, ...payoff } = result;
+    return payoff;
+  });
+
+  /**
+   * The strategy selector: a strategy's legs and expiry from its settings, and a whole automation from
+   * it for the wizard (`cli builder-strategy`). Sends the strategy's name and its settings (plain
+   * values only) and nothing else; writes nothing.
+   */
+  app.post("/api/automations/builder/strategy", async (req, reply) => {
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const name = body["strategy"];
+    const settings = body["settings"] ?? {};
+    if (typeof name !== "string" || !STRATEGY_NAME.test(name)) return reply.code(400).send({ error: "strategy: a strategy's name" });
+    if (typeof settings !== "object" || settings === null || Array.isArray(settings)) return reply.code(400).send({ error: "settings: an object" });
+    const plain = Object.entries(settings as Record<string, unknown>).every(([k, v]) => STRATEGY_NAME.test(k) && ["string", "number", "boolean"].includes(typeof v));
+    if (!plain) return reply.code(400).send({ error: "settings: plain values only" });
+    const result = sendBridgeFailure(reply, await callConfigCli({ op: "automation_strategy", strategy: name, settings: settings as Record<string, string | number | boolean> }));
+    if (result === null) return reply;
+    const { ok: _ok, ...answer } = result;
+    return answer;
+  });
+
+  /**
+   * The entry presets: an entry preset's entry and the gates of the filters stacked on it
+   * (`cli builder-entry`). Sends the preset's name, its settings and each filter's name and settings
+   * (plain values only) and nothing else; writes nothing.
+   */
+  app.post("/api/automations/builder/entry", async (req, reply) => {
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const name = body["entry"];
+    const settings = plainSettings(body["settings"] ?? {});
+    const filters = body["filters"] ?? [];
+    if (typeof name !== "string" || !STRATEGY_NAME.test(name)) return reply.code(400).send({ error: "entry: an entry preset's name" });
+    if (settings === null) return reply.code(400).send({ error: "settings: an object of plain values" });
+    if (!Array.isArray(filters) || filters.length > 20) return reply.code(400).send({ error: "filters: a list" });
+    const stacked: Array<{ filter: string; settings: Record<string, string | number | boolean> }> = [];
+    for (const f of filters as unknown[]) {
+      const one = (f ?? {}) as Record<string, unknown>;
+      const s = plainSettings(one["settings"] ?? {});
+      if (typeof one["filter"] !== "string" || !STRATEGY_NAME.test(one["filter"]) || s === null) return reply.code(400).send({ error: "filters: each a filter's name and plain settings" });
+      stacked.push({ filter: one["filter"], settings: s });
+    }
+    const result = sendBridgeFailure(reply, await callConfigCli({ op: "automation_entry", entry: name, settings, filters: stacked }));
+    if (result === null) return reply;
+    const { ok: _ok, ...answer } = result;
+    return answer;
+  });
+
   app.post("/api/automations/builder/draft", async (req, reply) => {
     const parsed = automationBody((req.body ?? {}) as Record<string, unknown>);
     if (typeof parsed === "string") return reply.code(400).send({ error: parsed });
@@ -215,16 +292,95 @@ export function registerConfigRoutes(app: FastifyInstance, config: ConsoleConfig
   });
 
   /**
+   * The Automations › Groups page, through the orchestrator's editor like every config write here
+   * (configcli `automation_groups*`, `orchestrator.groupedit`). The view and the check write nothing;
+   * the save runs the module's check and writes only what it returned: the `groups` block, each moved
+   * automation's `group`, and each switched automation's `enabled` and the start the module gave it
+   * (the next session, switched on). The automations module is paper only, so a switch here starts or
+   * stops paper entries, never an order. The page sends switches as true or false; the start is never
+   * the page's.
+   */
+  app.get("/api/automations/groups/edit", async (_req, reply) => {
+    const result = sendBridgeFailure(reply, await callConfigCli({ op: "automation_groups" }));
+    if (result === null) return reply;
+    const { ok: _ok, ...view } = result;
+    return view;
+  });
+
+  type GroupsBody = { groups: Record<string, unknown>; members: Record<string, string | null>; switches: Record<string, boolean> };
+  const groupsBody = (body: Record<string, unknown>): GroupsBody | string => {
+    const groups = body["groups"];
+    const members = body["members"] ?? {};
+    const switches = body["switches"] ?? {};
+    if (typeof groups !== "object" || groups === null || Array.isArray(groups)) return "groups must be an object";
+    if (typeof members !== "object" || members === null || Array.isArray(members)) return "members must be an object";
+    if (typeof switches !== "object" || switches === null || Array.isArray(switches)) return "switches must be an object";
+    for (const [name, g] of Object.entries(members as Record<string, unknown>)) {
+      if (name.length === 0 || name.length > 48) return "a member's name is up to 48 characters";
+      if (g !== null && (typeof g !== "string" || g.length === 0 || g.length > 48)) return `members.${name}: a group name (up to 48 characters) or null`;
+    }
+    for (const [name, on] of Object.entries(switches as Record<string, unknown>)) {
+      if (name.length === 0 || name.length > 48) return "an automation's name is up to 48 characters";
+      if (typeof on !== "boolean") return `switches.${name}: true or false`;
+    }
+    if (JSON.stringify(body).length > MAX_AUTOMATION_CHARS) return `the change is larger than ${MAX_AUTOMATION_CHARS} characters`;
+    return { groups: groups as Record<string, unknown>, members: members as Record<string, string | null>, switches: switches as Record<string, boolean> };
+  };
+
+  app.post("/api/automations/groups/check", async (req, reply) => {
+    const parsed = groupsBody((req.body ?? {}) as Record<string, unknown>);
+    if (typeof parsed === "string") return reply.code(400).send({ error: parsed });
+    const result = sendBridgeFailure(reply, await callConfigCli({ op: "automation_groups_check", ...parsed }));
+    if (result === null) return reply;
+    return {
+      ok: true,
+      problems: result["problems"] ?? [],
+      moves: result["moves"] ?? {},
+      switches: result["switches"] ?? {},
+      notes: result["notes"] ?? [],
+      after: result["after"] ?? null,
+    };
+  });
+
+  app.post("/api/automations/groups/save", async (req, reply) => {
+    const parsed = groupsBody((req.body ?? {}) as Record<string, unknown>);
+    if (typeof parsed === "string") return reply.code(400).send({ error: parsed });
+    const result = await callConfigCli({ op: "automation_groups_save", ...parsed });
+    if (!result.ok) {
+      const problems = (result as unknown as Record<string, unknown>)["problems"];
+      return reply.code(statusForCode(result.code)).send({
+        error: result.error,
+        code: result.code,
+        ...(Array.isArray(problems) ? { problems } : {}),
+      });
+    }
+    invalidateAutomationGroups();
+    invalidateAutomationsBuilder();
+    const moved = Array.isArray(result["moved"]) ? (result["moved"] as string[]) : [];
+    const switched = Array.isArray(result["switched"]) ? (result["switched"] as string[]) : [];
+    app.log.info(`automation groups saved from the console: ${moved.length} moved, ${switched.length} switched`);
+    return { ok: true, moved, switched, groups: result["groups"] ?? [], backup: result["backup"] ?? null };
+  });
+
+  /**
    * The Builder's backtest (#1180): one explore run of one saved automation, queued on the research
    * queue by the orchestrator (`automationrun.queue`, a `script` row of the automation backtest driver).
    * Descriptive, no trial and no verdict; it writes no config and turns nothing on. The orchestrator
-   * refuses unless the automation's own suggestion says our data covers it. Only the name is sent:
-   * the window and the source are the module's, never the page's.
+   * refuses unless the automation's own suggestion says our data covers it. The name is sent, and at
+   * most one of the suggestion's own window keys: the dates and the store are the module's, never the
+   * page's, and the orchestrator refuses a key the module does not offer.
    */
   app.post("/api/automations/builder/backtest", async (req, reply) => {
-    const parsed = automationBody((req.body ?? {}) as Record<string, unknown>);
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const parsed = automationBody(body);
     if (typeof parsed === "string") return reply.code(400).send({ error: parsed });
-    const result = sendBridgeFailure(reply, await callConfigCli({ op: "automation_backtest", name: parsed.name }));
+    const key = body["window"];
+    if (key !== undefined && (typeof key !== "string" || !WINDOW_KEY.test(key))) {
+      return reply.code(400).send({ error: "window is one of the suggestion's window keys" });
+    }
+    const ask: BridgeRequest =
+      typeof key === "string" ? { op: "automation_backtest", name: parsed.name, window: key } : { op: "automation_backtest", name: parsed.name };
+    const result = sendBridgeFailure(reply, await callConfigCli(ask));
     if (result === null) return reply;
     app.log.info(`automation backtest queued from the builder: ${parsed.name} (task ${String(result["task"] ?? "?")})`);
     return {
@@ -234,6 +390,51 @@ export function registerConfigRoutes(app: FastifyInstance, config: ConsoleConfig
       task: result["task"] ?? null,
       window: result["window"] ?? null,
       source: result["source"] ?? null,
+      key: result["key"] ?? null,
+    };
+  });
+
+  /**
+   * Adding an underlying to the full set (#1253): what it would fetch (`fullset_plan`, the backtest
+   * planner's dry run, counts only), and the addition itself (`fullset_add`): its fetches queued by the
+   * orchestrator, capped per click and only while new work may use the vendor, with this automation's
+   * explore backtest queued after them. The page sends the symbol and the automation's name; the span,
+   * the cap and the rows are the orchestrator's.
+   */
+  app.get("/api/automations/builder/fullset-plan", async (req, reply) => {
+    const symbol = String(((req.query ?? {}) as Record<string, unknown>)["symbol"] ?? "").toUpperCase();
+    if (!FULLSET_SYMBOL.test(symbol)) return reply.code(400).send({ error: "symbol is an underlying's root" });
+    const result = sendBridgeFailure(reply, await callConfigCli({ op: "fullset_plan", symbol }));
+    if (result === null) return reply;
+    return {
+      symbol,
+      from: result["from"] ?? null,
+      through: result["through"] ?? null,
+      requests: result["requests"] ?? {},
+      concurrent: result["concurrent"] ?? null,
+      cap_sessions: result["cap_sessions"] ?? null,
+      within_cap: result["within_cap"] === true,
+    };
+  });
+
+  app.post("/api/automations/builder/fullset-add", async (req, reply) => {
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const parsed = automationBody(body);
+    if (typeof parsed === "string") return reply.code(400).send({ error: parsed });
+    const symbol = String(body["symbol"] ?? "").toUpperCase();
+    if (!FULLSET_SYMBOL.test(symbol)) return reply.code(400).send({ error: "symbol is an underlying's root" });
+    const result = sendBridgeFailure(reply, await callConfigCli({ op: "fullset_add", symbol, run: parsed.name }));
+    if (result === null) return reply;
+    const run = (result["run"] ?? null) as Record<string, unknown> | null;
+    app.log.info(`full set: ${symbol} added from the builder for ${parsed.name} (${String((result["tasks"] as unknown[] | undefined)?.length ?? 0)} rows)`);
+    return {
+      ok: true,
+      symbol,
+      from: result["from"] ?? null,
+      through: result["through"] ?? null,
+      tasks: Array.isArray(result["tasks"]) ? result["tasks"] : [],
+      run: run && run["ok"] === true ? { task: run["task"] ?? null, run: run["run"] ?? null } : null,
+      run_error: run && run["ok"] !== true ? String(run["error"] ?? "the backtest was not queued") : null,
     };
   });
 
@@ -277,6 +478,92 @@ export function registerConfigRoutes(app: FastifyInstance, config: ConsoleConfig
     const { ok: _ok, ...card } = result;
     return card;
   });
+
+  /**
+   * The idea search (#1294): "Find ideas" queues one search of the automation's newest long enough
+   * Builder run (`ideaqueue.queue`, a `script` row; the run and the split are the backtest package's),
+   * and the page reads the searches back. Declare drafts one surviving idea's register row into its
+   * result; the held-out test reads a declared idea's later sessions once. Neither writes a config or
+   * the register. A licensed result is shown, declared from or tested only while licensed results may
+   * be shown; fail closed, as the run card is.
+   */
+  app.post("/api/automations/builder/ideas", async (req, reply) => {
+    const parsed = automationBody((req.body ?? {}) as Record<string, unknown>);
+    if (typeof parsed === "string") return reply.code(400).send({ error: parsed });
+    const result = sendBridgeFailure(reply, await callConfigCli({ op: "automation_ideas", name: parsed.name }));
+    if (result === null) return reply;
+    app.log.info(`idea search queued from the builder: ${parsed.name} (task ${String(result["task"] ?? "?")})`);
+    return {
+      ok: true,
+      name: parsed.name,
+      search: result["search"] ?? null,
+      task: result["task"] ?? null,
+      run: result["run"] ?? null,
+      split: result["split"] ?? null,
+    };
+  });
+
+  app.get("/api/automations/builder/ideas", async (req, reply) => {
+    const name = String(((req.query ?? {}) as Record<string, unknown>)["name"] ?? "");
+    if (name === "" || name.length > 48) return reply.code(400).send({ error: "name (up to 48 characters) required" });
+    const result = sendBridgeFailure(reply, await callConfigCli({ op: "automation_idea_searches", name }));
+    if (result === null) return reply;
+    const open = backtestResultsOn(await getFeatures());
+    const all = Array.isArray(result["searches"]) ? (result["searches"] as Array<Record<string, unknown>>) : [];
+    const searches = all.filter((s) => open || s["licensed"] === false);
+    return {
+      name,
+      tasks: Array.isArray(result["tasks"]) ? result["tasks"] : [],
+      searches,
+      withheld: all.length - searches.length,
+      results_unavailable: result["results_unavailable"] === true,
+    };
+  });
+
+  /** One search read whole, or a reply already sent: refused when it is licensed and those are withheld. */
+  const ideaSearch = async (reply: FastifyReply, name: string, id: string): Promise<BridgeOk | null> => {
+    const result = sendBridgeFailure(reply, await callConfigCli({ op: "automation_idea_search", name, id }));
+    if (result === null) return null;
+    if (result["licensed"] !== false && !backtestResultsOn(await getFeatures())) {
+      reply.code(403).send({ error: "a licensed result, not shown while licensed results are withheld", code: "withheld" });
+      return null;
+    }
+    return result;
+  };
+
+  app.get("/api/automations/builder/idea-search", async (req, reply) => {
+    const q = (req.query ?? {}) as Record<string, unknown>;
+    const name = String(q["name"] ?? "");
+    const id = String(q["id"] ?? "");
+    if (!IDEA_SEARCH.test(id) || name === "" || name.length > 48) return reply.code(400).send({ error: "name and id required" });
+    const result = await ideaSearch(reply, name, id);
+    if (result === null) return reply;
+    const { ok: _ok, ...search } = result;
+    return search;
+  });
+
+  for (const [path, op] of [
+    ["/api/automations/builder/idea-declare", "automation_idea_declare"],
+    ["/api/automations/builder/idea-holdout", "automation_idea_holdout"],
+  ] as const) {
+    app.post(path, async (req, reply) => {
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const parsed = automationBody(body);
+      if (typeof parsed === "string") return reply.code(400).send({ error: parsed });
+      const id = body["id"];
+      const idea = body["idea"];
+      if (typeof id !== "string" || !IDEA_SEARCH.test(id) || typeof idea !== "string" || !IDEA_ID.test(idea)) {
+        return reply.code(400).send({ error: "id is one of its idea searches and idea one idea in it" });
+      }
+      // Read first: a licensed search withheld from view is neither declared from nor spent.
+      if ((await ideaSearch(reply, parsed.name, id)) === null) return reply;
+      const result = sendBridgeFailure(reply, await callConfigCli({ op, name: parsed.name, id, idea }));
+      if (result === null) return reply;
+      app.log.info(`${op === "automation_idea_declare" ? "idea declared" : "held-out test read"} from the builder: ${parsed.name} ${id} ${idea}`);
+      const { ok: _ok, ...out } = result;
+      return { ok: true, ...out };
+    });
+  }
 
   // The console's own display preferences: its own store, no blast radius, so they save on change
   // rather than through a staged section.

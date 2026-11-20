@@ -165,6 +165,14 @@ def test_a_session_fetch_of_another_dataset_names_it_and_spx_keeps_its_argv():
     assert rq.result_of(row, {}, Path("q.log"))["store"] == "backtest QQQ wide 0DTE store"
 
 
+def test_the_full_set_fetches_its_funds_into_the_full_store():
+    args = {"store_tag": "full", "from": "2020-01-01", "to": "2026-11-16", "dataset": "TLT", "workers": 2}
+    argv = rq.build_argv("fetch-sessions", args, PY)
+    assert argv[argv.index("--store-tag") + 1] == "full" and argv[argv.index("--dataset") + 1] == "TLT"
+    for sym in ("SPY", "IWM", "GLD"):
+        rq.build_argv("fetch-sessions", {**args, "dataset": sym}, PY)
+
+
 def test_anything_off_the_allow_list_is_refused(files):
     with pytest.raises(rq.Refused, match="unknown kind"):
         rq.build_argv("shell", {"cmd": "del /s *"}, PY)
@@ -711,3 +719,116 @@ def test_the_code_watch_sees_a_change_to_a_loaded_source_file(tmp_path):
     assert changed() is False
     src.write_text("x = 2\n", encoding="utf-8")
     assert changed() is True
+
+
+def test_queue_order_is_the_runners_ready_first_then_waiting_by_priority():
+    """The order `queue-list` reports: a raised row queued last still comes first, and a study whose
+    inputs are in comes before any priority, as `run_order` has it."""
+    rows = [
+        {"id": 378, "kind": "script", "after": None, "priority": 0, "waits": "ready"},
+        {"id": 384, "kind": "script", "after": None, "priority": 0, "waits": "ready"},
+        {"id": 390, "kind": "fetch-intraday-chains", "after": None, "priority": 10, "waits": "ready"},
+        {
+            "id": 391,
+            "kind": "fetch-sessions",
+            "after": "fullset/probe",
+            "priority": 10,
+            "waits": "waits for fullset/probe",
+        },
+        {
+            "id": 379,
+            "kind": "fetch-chain-paths",
+            "after": "item91/plan",
+            "priority": 0,
+            "waits": "waits for item91/plan",
+        },
+        {"id": 400, "kind": "script", "after": "x/fetch", "priority": 0, "waits": "ready"},
+    ]
+    assert [r["id"] for r in rq.queue_order(rows)] == [400, 390, 378, 384, 391, 379]
+
+
+def _lane_db(files, tmp_path, monkeypatch):
+    monkeypatch.setattr(rq, "session_held", lambda state_dir=None: False)
+    monkeypatch.setattr(rq, "log_dir", lambda: tmp_path / "logs")
+    monkeypatch.setattr(rq, "repo_root", lambda: files["root"])
+    monkeypatch.setattr(rq, "git_tracked", _tracked)
+    db = tmp_path / "q.db"
+    rq.add("item90", "script", {"path": "scripts/study.py"}, step="study", path=db,
+           root=files["root"], tracked=_tracked)  # fmt: skip
+    rq.add("fullset", "fetch-chains", {"requests": str(files["req"])}, step="probe", priority=10, path=db)
+    rq.add("item91", "script", {"path": "scripts/study.py"}, step="plan", path=db,
+           root=files["root"], tracked=_tracked)  # fmt: skip
+    return db
+
+
+def _lane_run(db, lane):
+    spawned = []
+
+    def spawn(argv, **kw):
+        spawned.append(argv)
+        return _Proc(0, '{"complete": 1}')
+
+    out = rq.run_next(path=db, now=lambda: _at("2026-10-24T20:00"), is_trading_day=_weekday, spawn=spawn,
+                      notify=lambda *a: None, licence=lambda: None, lane=lane)  # fmt: skip
+    return out, spawned
+
+
+def test_a_study_running_in_the_local_lane_does_not_hold_up_a_fetch(files, tmp_path, monkeypatch):
+    db = _lane_db(files, tmp_path, monkeypatch)
+    with rq.connect(db) as conn:  # item 90's study is running, as it was on 11-18
+        conn.execute("UPDATE tasks SET status = 'running', pid = 4242 WHERE id = 1")
+    monkeypatch.setattr(rq, "pid_alive", lambda pid: True)
+    out, spawned = _lane_run(db, "vendor")
+    assert out["ran"] == 2 and "fetch-chains" in spawned[0]
+    # The local lane is busy with the study: its plan waits; without a lane, nothing starts at all.
+    out, spawned = _lane_run(db, "local")
+    assert out["ran"] is None and "local lane" in out["why"] and spawned == []
+    out, _ = _lane_run(db, None)
+    assert out["ran"] is None and out["why"] == "a task is running"
+
+
+def test_each_lane_takes_only_its_own_rows(files, tmp_path, monkeypatch):
+    db = _lane_db(files, tmp_path, monkeypatch)
+    out, spawned = _lane_run(db, "local")
+    assert out["ran"] == 1 and spawned[0][-1].endswith("study.py")  # the oldest script, not the raised fetch
+    out, _ = _lane_run(db, "vendor")
+    assert out["ran"] == 2
+    assert [rq.lane_of(r) for r in rq.rows(db)] == ["local", "vendor", "local"]
+    with pytest.raises(ValueError, match="lane is one of"):
+        rq.run_next(path=db, lane="both")
+
+
+def test_positions_count_within_each_lane():
+    rows = [
+        {"id": 378, "kind": "script", "after": None, "priority": 0, "waits": "ready"},
+        {"id": 390, "kind": "fetch-intraday-chains", "after": None, "priority": 10, "waits": "ready"},
+        {"id": 384, "kind": "script", "after": None, "priority": 0, "waits": "ready"},
+        {"id": 391, "kind": "fetch-sessions", "after": "fullset/probe", "priority": 10, "waits": "waits"},
+    ]
+    assert rq.positions(rows) == {390: 1, 391: 2, 378: 1, 384: 2}
+
+
+def test_a_finished_study_names_its_verdict_and_how_to_record_it():
+    assert rq.verdict_words({"verdict": {"orb-put-spread": "fail", "adx-condor": "fail"}}) == (
+        "orb-put-spread fail, adx-condor fail"
+    )
+    assert rq.verdict_words({"verdict": "fail"}) is None
+    assert rq.verdict_words({"verdict": {"a": 1.5}}) is None  # a figure is never named
+    assert rq.verdict_words(None) is None
+
+
+def test_the_finish_notice_carries_the_verdict(files, tmp_path, monkeypatch):
+    monkeypatch.setattr(rq, "session_held", lambda state_dir=None: False)
+    monkeypatch.setattr(rq, "log_dir", lambda: tmp_path / "logs")
+    monkeypatch.setattr(rq, "repo_root", lambda: files["root"])
+    monkeypatch.setattr(rq, "git_tracked", _tracked)
+    out = tmp_path / "results.json"
+    out.write_text(json.dumps({"verdict": {"arm-a": "fail"}}), encoding="utf-8")
+    db = tmp_path / "q.db"
+    rq.add("item90", "script", {"path": "scripts/study.py"}, step="study", output=str(out), path=db,
+           root=files["root"], tracked=_tracked)  # fmt: skip
+    sent = []
+    rq.run_next(path=db, now=lambda: _at("2026-10-24T20:00"), is_trading_day=_weekday,
+                spawn=lambda argv, **kw: _Proc(0, "{}"), licence=lambda: None,
+                notify=lambda level, title, msg: sent.append(msg))  # fmt: skip
+    assert "verdict: arm-a fail; record it with python tools/record_verdict.py item90" in sent[-1]

@@ -23,7 +23,7 @@ import json
 import sys
 from typing import Any
 
-from . import automationedit, automationrun, configedit, liveops
+from . import automationedit, automationrun, configedit, fullsetadd, groupedit, ideaqueue, liveops
 from . import config as cfgmod
 
 
@@ -112,10 +112,37 @@ def handle(req: dict[str, Any]) -> dict[str, Any]:
     if op == "automation_today":
         # The Builder's "Today, live": the module decides it now as paper would; writes nothing.
         return automationedit.today(cfg, req)
+    if op == "automation_payoff":
+        # The Builder's payoff chart: the structure the module's rules would take, on live quotes or
+        # the last session our own recorder holds; writes nothing.
+        return automationedit.payoff(cfg, req, automationedit.run_module_payoff)
+    if op == "automation_strategy":
+        # The Builder's strategy selector: the legs and expiry a strategy's settings make; writes nothing.
+        return automationedit.strategy(cfg, req, automationedit.run_module_strategy)
+    if op == "automation_entry":
+        # The Builder's entry presets: the entry and the stacked filters' gates; writes nothing.
+        return automationedit.entry(cfg, req, automationedit.run_module_entry)
     if op == "automation_save":
         # The Builder's save: that check, then the one entry it returned (always off) written
         # through the same raw-save path as every config save.
         return automationedit.save(cfg, req)
+    if op == "automation_groups":
+        # The Groups page: every group and every automation by group, from the module. Reads only.
+        return groupedit.view(cfg, req, groupedit.run_module_view)
+    if op == "automation_groups_check":
+        # The Groups page's check of a change, by the module; writes nothing.
+        return groupedit.check(cfg, req, groupedit.run_module_check)
+    if op == "automation_groups_save":
+        # The Groups page's save: that check, then the groups block and the moved automations' `group`
+        # it returned, written through the same raw-save path as every config save.
+        return groupedit.save(cfg, req, groupedit.run_module_check)
+    if op == "fullset_plan":
+        # What adding an underlying to the full set would fetch, from the backtest's planner; writes nothing.
+        return fullsetadd.plan(cfg, req)
+    if op == "fullset_add":
+        # The Builder's addition to the full set: its fetches queued (capped, only while new work may
+        # use the vendor), and with `run` that automation's backtest after them. No config write.
+        return fullsetadd.add(cfg, req)
     if op == "automation_backtest":
         # The Builder's backtest: one explore run queued on the research queue (a `script` row), never
         # a config write; refused unless the automation's own suggestion says our data covers it.
@@ -126,6 +153,22 @@ def handle(req: dict[str, Any]) -> dict[str, Any]:
     if op == "automation_run":
         # The Builder's run card: one result read whole by the backtest package. Reads only.
         return automationrun.run_card(cfg, req)
+    if op == "automation_ideas":
+        # The Builder's idea search: one search of the newest long enough run queued on the research
+        # queue (a `script` row), its split fixed in the command; never a config write.
+        return ideaqueue.queue(cfg, req)
+    if op == "automation_idea_searches":
+        # That automation's idea searches: queue rows and results in brief. Reads only.
+        return ideaqueue.searches(cfg, req)
+    if op == "automation_idea_search":
+        # One idea search's whole result. Reads only.
+        return ideaqueue.search(cfg, req)
+    if op == "automation_idea_declare":
+        # Declare: one surviving idea's register row drafted into its result. No config or register write.
+        return ideaqueue.declare(cfg, req)
+    if op == "automation_idea_holdout":
+        # A declared idea's one held-out test, logged on its result. No config write.
+        return ideaqueue.holdout(cfg, req)
     return _err(f"unknown op: {op!r}")
 
 

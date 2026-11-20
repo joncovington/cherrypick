@@ -55,6 +55,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 
+from cherrypick.core import progress
 from cherrypick.core import stats as core_stats
 from cherrypick.core.home import data_dir
 
@@ -426,7 +427,8 @@ def judge(per_name: dict[str, dict]) -> dict:
     return out
 
 
-def study(db: Path, only: list[str] | None) -> dict:
+def study(db: Path, only: list[str] | None, rep=None) -> dict:
+    """`rep` is a progress Reporter: the names, each counted under its own symbol."""
     from fetch_ladder_bars import COUNTERPART  # noqa: PLC0415 - the fetch's own table, beside this script
 
     conn = sqlite3.connect(db)
@@ -436,7 +438,20 @@ def study(db: Path, only: list[str] | None) -> dict:
     windows = {"design": DESIGN, "half1": HALVES[0], "half2": HALVES[1], "holdout": HOLDOUT}
     per_name: dict[str, dict] = {}
     reported: dict[str, dict] = {}
-    for k, name in enumerate(names):
+    counted = (
+        names
+        if rep is None
+        else progress.track(
+            names,
+            job="share_ladder_item26-study",
+            phase="names",
+            unit="names",
+            key=lambda n: n,
+            current=lambda n: n,
+            reporter=rep,
+        )
+    )
+    for k, name in enumerate(counted):
         bars = daily_bars(conn, name)
         per_name[name] = {}
         for a, arm in enumerate(ARMS):
@@ -582,7 +597,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--names", default=None, help="comma-separated subset (a trial run, not a verdict)")
     args = ap.parse_args(argv)
     if args.step == "study":
-        result = study(args.db, args.names.split(",") if args.names else None)
+        with progress.Reporter("share_ladder_item26-study") as rep:
+            result = study(args.db, args.names.split(",") if args.names else None, rep)
         path = args.json or DIR / "results.json"
         summary = {a: v["verdict"] for a, v in result["verdict"].items()}
     else:

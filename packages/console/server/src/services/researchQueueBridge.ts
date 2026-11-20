@@ -98,9 +98,14 @@ export function toProgress(v: unknown): ResearchProgress | null {
     phases,
     fraction: n(r["fraction"]),
     etaSeconds: n(r["eta_s"]),
+    stepsAfter: n(r["steps_after"]),
     rate: toRate(r["rate"]),
     ageSeconds: n(r["age_s"]),
     line: s(r["line"]) ?? "",
+    bySymbol: Object.entries(rec(r["by_symbol"])).map(([symbol, x]) => {
+      const b = rec(x);
+      return { symbol, done: n(b["done"]) ?? 0, total: n(b["total"]), share: n(b["share"]) };
+    }),
     note: s(r["note"]),
     startedAt: n(r["started_at"]),
     updatedAt: n(r["updated_at"]),
@@ -135,6 +140,8 @@ function toTask(v: unknown): ResearchTask | null {
     exitCode: n(r["exit_code"]),
     note: s(r["note"]),
     waits: s(r["waits"]),
+    lane: r["lane"] === "vendor" || r["lane"] === "local" ? r["lane"] : null,
+    position: n(r["position"]),
     progress: toProgress(r["progress"]),
   };
 }

@@ -32,6 +32,7 @@ from datetime import date
 from pathlib import Path
 
 from cherrypick.core import calendar as cal
+from cherrypick.core import progress as core_progress
 from cherrypick.technicals import earnings_calendar as ec
 from cherrypick.technicals import history, store, universe
 from cherrypick.technicals import land as _land
@@ -55,10 +56,17 @@ def trading_days(start: str, end: str) -> list[str]:
     return out
 
 
-def members(conn, start: str, end: str) -> dict[str, set[str]]:
+def members(
+    conn, start: str, end: str, reporter: core_progress.Reporter | None = None
+) -> dict[str, set[str]]:
     """Each stock's sessions in [start, end] on which it passes the bar, judged from the session before."""
     out: dict[str, set[str]] = {}
-    for sym in store.stocks(conn, history.names_peaking_at_least(conn, FLOOR)):
+    syms = store.stocks(conn, history.names_peaking_at_least(conn, FLOOR))
+    if reporter is not None:
+        syms = core_progress.track(
+            syms, job="flow_fetch_plan", phase="names", unit="names", key=lambda s: s, reporter=reporter
+        )
+    for sym in syms:
         bars = store.raw_bars(conn, sym)
         med = universe.rolling_median([b.close * (b.volume or 0.0) for b in bars])
         days = {
@@ -126,7 +134,8 @@ def main() -> int:
     grid = grid_sessions(first, lo, hi)
     # Reaction days fall up to a session past the window, and windows reach back before it.
     days = trading_days(f"{int(lo[:4]) - 1}-01-01", f"{hi[:4]}-12-31")
-    member = members(history.connect(), lo, hi)
+    with core_progress.Reporter("flow_fetch_plan") as rep:
+        member = members(history.connect(), lo, hi, rep)
     dolt = _land._connect({**_land.DEFAULTS}, "earnings")
     try:
         cur = dolt.cursor()

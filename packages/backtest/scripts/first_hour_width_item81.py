@@ -33,6 +33,8 @@ from datetime import date, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from cherrypick.core import progress as core_progress
+
 #: The correction log: one entry per fix to this replay, oldest first (orchestrator/studyversion.py).
 REPLAY_CORRECTIONS = ()
 
@@ -304,8 +306,12 @@ def judge_test(rows: list[dict], rule: dict, name: str, *, resamples: int | None
     return {**out, "verdict": word, "provisional": provisional}
 
 
-def judge(rows: list[dict], rule: dict, *, resamples: int | None = None) -> dict:
-    tests = {name: judge_test(rows, rule, name, resamples=resamples) for name in rule["tests"]}
+def judge(rows: list[dict], rule: dict, *, resamples: int | None = None, reporter=None) -> dict:
+    tests = {}
+    for name in rule["tests"]:
+        tests[name] = judge_test(rows, rule, name, resamples=resamples)
+        if reporter is not None:
+            reporter.advance("tests", key=rule["symbol"], current=name)
     return {"tests": tests, "verdict": {name: t["verdict"] for name, t in tests.items()}}
 
 
@@ -413,7 +419,9 @@ def cmd_study(args) -> int:
     finally:
         conn.close()
     rows, dropped = build_rows(sessions, rule)
-    block = judge(rows, rule)
+    with core_progress.Reporter("first_hour_width_item81-study") as rep:
+        rep.split("tests", [rule["symbol"]] * len(rule["tests"]), unit="tests")
+        block = judge(rows, rule, reporter=rep)
     doc = {
         "licence": "derived from licensed vendor data: never commit or publish",
         "item": 81,

@@ -36,11 +36,12 @@ import json
 from datetime import date
 
 from cherrypick.core import calendar as cal
+from cherrypick.core import sources as src
 
 from .model import hhmm
 
 BLOCKS: dict[str, tuple[str, ...]] = {
-    "structure": ("symbol", "expiry", "legs"),
+    "structure": ("symbol", "expiry", "far_expiry", "legs"),
     "entry": ("entry", "weekdays", "skip_events"),
     "gates": ("gates",),
     "exit": ("exit",),
@@ -185,12 +186,72 @@ def _cadence(arm: dict) -> str:
     return "1d" if daily or at_close else "1m"
 
 
+#: Why an entry inside the session on a later expiry is not covered: only the full set's intraday chain
+#: stores replay it (the end-of-day chains price only the close), and none holds it yet.
+NO_REPLAY = (
+    "an entry inside the session on a later expiry is replayed from the full set's intraday chain stores, "
+    "and none holds it yet"
+)
+
+
+#: The full set's intraday chain stores (backtest `fullset`): expiries 1-7 days out at one minute, 8-90
+#: at five. An entry inside the session on a later expiry asks for its chain at five minutes, the
+#: coarser of the two, so either store can cover it.
+INTRADAY_STORES = ("-near-1m.db", "-mid-5m.db")
+INTRADAY_CADENCE = "5m"
+
+
+def replays(need: dict, source: src.Source) -> bool:
+    """Whether the automation driver can replay `need` from `source`. A chain (and its greeks) on a
+    same-day expiry comes from a store in the recorder's schema (`history.StoreHistory`); a later
+    expiry at the close from end-of-day chains at the 15:59 tick (`history.DailyChainHistory`), and
+    inside the session from the full set's intraday chain stores (`history.IntradayChainHistory`).
+    Other fields are read as they are."""
+    if need["field"] not in ("chain", "greeks"):
+        return True
+    if need.get("expiry") == "0dte":
+        return "0dte" in source.expiries and source.probe.backend in ("sqlite", "store_cache")
+    if need["cadence"] == "1d":
+        return source.cadence == "1d"
+    return source.probe.where.endswith(INTRADAY_STORES)
+
+
+def _reader(need: dict):
+    """`replays` for one need, as `coverage`'s `only`."""
+    return lambda source: replays(need, source)
+
+
+def _far_class(arm: dict) -> str:
+    """The far expiry's class: an `after_near` rule's monthly or every expiry, any other rule's own."""
+    rule = arm["far_expiry"]
+    if rule.get("kind") == "after_near":
+        return "monthly" if rule.get("monthly") else "all"
+    return _expiry_class({"expiry": rule})
+
+
+def _far_leg(leg: dict) -> bool:
+    return leg.get("expiry") == "far"
+
+
 def needs(arm: dict) -> list[dict]:
-    """What a backtest of `arm` reads: [{"field", "expiry"?, "cadence"}]."""
+    """What a backtest of `arm` reads: [{"field", "expiry"?, "cadence", "far"?}]. The near chain
+    comes first. A structure with a far leg also reads the far expiry's chain (`"far": True`): a
+    later expiry, so at the close from the end-of-day chains and inside the session from the full
+    set's intraday chain stores."""
     expiry, cadence = _expiry_class(arm), _cadence(arm)
-    out = [{"field": "chain", "expiry": expiry, "cadence": cadence}]
-    if any((leg.get("strike") or {}).get("rule") == "delta" for leg in arm["legs"]):
-        out.append({"field": "greeks", "expiry": expiry, "cadence": cadence})
+    # A later expiry inside the session: the intraday chain stores, the coarser at five minutes.
+    chain_cadence = INTRADAY_CADENCE if cadence == "1m" and expiry != "0dte" else cadence
+    out = [{"field": "chain", "expiry": expiry, "cadence": chain_cadence}]
+    legs = arm["legs"]
+    near = [g for g in legs if not _far_leg(g)]
+    if any((leg.get("strike") or {}).get("rule") == "delta" for leg in near):
+        out.append({"field": "greeks", "expiry": expiry, "cadence": chain_cadence})
+    far = [g for g in legs if _far_leg(g)]
+    if far and arm.get("far_expiry"):
+        far_class, far_cadence = _far_class(arm), INTRADAY_CADENCE if cadence == "1m" else cadence
+        out.append({"field": "chain", "expiry": far_class, "cadence": far_cadence, "far": True})
+        if any((leg.get("strike") or {}).get("rule") == "delta" for leg in far):
+            out.append({"field": "greeks", "expiry": far_class, "cadence": far_cadence, "far": True})
     e = arm["entry"]
     intraday_trigger = e.get("kind") == "orb" or (
         e.get("kind") == "trigger" and not (e.get("trigger") or {}).get("daily")
@@ -198,6 +259,15 @@ def needs(arm: dict) -> list[dict]:
     if intraday_trigger:
         out.append({"field": "spot", "cadence": "1m"})
     return out
+
+
+def run_chain(arm: dict) -> dict:
+    """The chain need a run's source is named for: the near chain, or with a far leg entered inside
+    the session the far one, since the run then reads the full set's intraday chain stores (which
+    hold the same-day expiry beside them)."""
+    chains = [n for n in needs(arm) if n["field"] == "chain"]
+    far = next((n for n in chains if n.get("far")), None)
+    return far if far is not None and far["cadence"] == INTRADAY_CADENCE else chains[0]
 
 
 def suggestion(
@@ -223,7 +293,8 @@ def suggestion(
 
         def ask(licensed: bool, need=need) -> dict:
             return coverage(inventory, need["field"], arm["symbol"], start, end, cadence=need["cadence"],
-                            expiry=need.get("expiry"), licensed=licensed)  # fmt: skip
+                            expiry=need.get("expiry"), licensed=licensed,
+                            only=_reader(need))  # fmt: skip
 
         got, licensed = ask(False), False
         if not got.get("covered") and licensed_ok:
@@ -240,6 +311,12 @@ def suggestion(
             near = next((s for s in got.get("sources") or [] if s.get("first")), None)
             if near is not None:
                 row["nearest"] = {k: near.get(k) for k in ("source", "first", "last", "why")}
+            elif (
+                need["field"] in ("chain", "greeks")
+                and need.get("expiry") != "0dte"
+                and need["cadence"] != "1d"
+            ):
+                row["why"] = NO_REPLAY
             elif not got.get("sources"):
                 row["why"] = (
                     f"none of our stores holds {need.get('expiry') or 'its'} expiries at {need['cadence']}"
@@ -247,13 +324,14 @@ def suggestion(
             if need.get("expiry") == "all":
                 # Every expiry is asked for since the rule can land on a weekly; monthlies may be held.
                 alt = coverage(inventory, need["field"], arm["symbol"], start, end, cadence=need["cadence"],
-                               expiry="monthly", licensed=False)  # fmt: skip
+                               expiry="monthly", licensed=False,
+                               only=_reader({**need, "expiry": "monthly"}))  # fmt: skip
                 if alt.get("covered"):
-                    src = next((s for s in alt.get("sources") or [] if s.get("source") == alt["best"]), {})
+                    held = next((s for s in alt.get("sources") or [] if s.get("source") == alt["best"]), {})
                     row["monthly"] = {
                         "source": alt["best"],
-                        "first": src.get("first"),
-                        "through": src.get("through"),
+                        "first": held.get("first"),
+                        "through": held.get("through"),
                     }
         rows.append(row)
     possible = all(r["covered"] for r in rows)
@@ -265,7 +343,93 @@ def suggestion(
         "needs": rows,
         "possible": possible,
         "licensed": any(r["licensed"] for r in rows),
+        # One of the full set's own seven; any other underlying can be added to it (the Builder offers to).
+        "full_set": arm["symbol"].upper() in src.FULL_SET,
+        "windows": windows(arm, inventory, today, coverage, licensed_ok=licensed_ok),
     }
+
+
+#: No window starts before this: the chain stores reach no further back.
+EARLIEST = "2010-01-04"
+#: A store holding less of its span's sessions than this is not offered (a short sample store); Dolt's
+#: thin early years (about three days a week) are above it and offered as thin.
+OFFER_DENSITY = 0.5
+CHAIN_FIELDS = ("chain", "greeks")
+
+
+def _window(arm: dict, inventory: dict, start: str, end: str, coverage, source: src.Source) -> dict | None:
+    """A run over `start`..`end` with the chain (and its greeks) from `source`, every other need from a
+    store as `suggestion` asks one (our own, the vendor's only alongside a licensed chain). None unless
+    every need is covered. The chain is taken at any density and the density is reported, so a thin
+    span (Dolt before 2025) is a choice made knowingly, never a refusal."""
+    out = {"start": start, "end": end, "source": source.name, "licensed": source.licensed, "density": None}
+    run = run_chain(arm)
+    for need in needs(arm):
+        # The run's own chain (and every chain at the close, one end-of-day source) from `source`;
+        # the other expiry inside the session from whichever store replays it.
+        pinned = need["field"] in CHAIN_FIELDS and (
+            need["cadence"] == "1d" or bool(need.get("far")) == bool(run.get("far"))
+        )
+        only = (lambda s, n=need: s.name == source.name and replays(n, s)) if pinned else _reader(need)
+        got = coverage(inventory, need["field"], arm["symbol"], start, end, cadence=need["cadence"],
+                       expiry=need.get("expiry"), licensed=source.licensed if pinned else False,
+                       only=only, min_density=0.0 if pinned else src.DENSE)  # fmt: skip
+        if not got.get("covered") and not pinned and source.licensed:
+            got = coverage(inventory, need["field"], arm["symbol"], start, end, cadence=need["cadence"],
+                           expiry=need.get("expiry"), licensed=True, only=only)  # fmt: skip
+        if not got.get("covered"):
+            return None
+        row = next((s for s in got.get("sources") or [] if s.get("source") == got.get("best")), {})
+        out["end"] = min(out["end"], row.get("through") or end)
+        if pinned and row.get("density") is not None:
+            out["density"] = row["density"] if out["density"] is None else min(out["density"], row["density"])
+    out["thin"] = out["density"] is not None and out["density"] < src.DENSE
+    out["holds"] = source.holds
+    out["key"] = f"{source.name}:{out['start']}:{out['end']}"
+    return out
+
+
+def windows(arm: dict, inventory: dict, today: date, coverage, *, licensed_ok: bool = False) -> list[dict]:
+    """The windows a Builder run may take, from what the stores hold, our own first: for each store the
+    driver can replay the chain from, the last year it holds and everything it holds, each ending where
+    the store stops (a store that stopped early still offers its span). A licensed store is offered
+    only while the licence allows new work, and only for a window that starts before every one of our
+    own. A store holding under `OFFER_DENSITY` of its span is left out, and of two stores with the same
+    span the first (finest cadence) is kept; a window inside one already offered (as licensed or not)
+    is left out. Each is {"key", "start", "end", "source", "licensed", "density", "thin", "holds"};
+    `key` is what a run names. Pure over `coverage` and the registry."""
+    last = cal.previous_trading_day(today).isoformat()
+    year = date.fromordinal(cal.previous_trading_day(today).toordinal() - SUGGEST_DAYS).isoformat()
+    chain = run_chain(arm)
+    out: list[dict] = []
+    for licensed in (False, True) if licensed_ok else (False,):
+        spans = coverage(inventory, "chain", arm["symbol"], EARLIEST, last, cadence=chain["cadence"],
+                         expiry=chain.get("expiry"), licensed=licensed, only=_reader(chain),
+                         min_density=0.0)  # fmt: skip
+        for row in spans.get("sources") or []:
+            if not row.get("first") or row.get("licensed", False) != licensed:
+                continue
+            try:
+                source = src.by_name(row["source"])
+            except KeyError:
+                continue
+            first, stop = max(row["first"], EARLIEST), min(row.get("last") or last, last)
+            if first > stop:
+                continue
+            earliest_own = min((w["start"] for w in out if not w["licensed"]), default=None)
+            for lo in dict.fromkeys((max(first, year), first)):
+                if licensed and earliest_own is not None and lo >= earliest_own:
+                    continue  # the vendor's only where it reaches further back than our own
+                w = _window(arm, inventory, lo, stop, coverage, source)
+                if w is None or (w["density"] is not None and w["density"] < OFFER_DENSITY):
+                    continue
+                inside = any(
+                    x["licensed"] == w["licensed"] and x["start"] <= w["start"] and w["end"] <= x["end"]
+                    for x in out
+                )
+                if not inside:
+                    out.append(w)
+    return out
 
 
 def builder_view(arm: dict, suggestion_row: dict | None) -> dict:

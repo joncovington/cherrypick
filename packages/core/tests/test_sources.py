@@ -43,9 +43,13 @@ def test_providing_filters_by_cadence_expiry_and_licence():
     assert "vol-curve-5m" in {s.name for s in src.providing("closes", cadence="1h")}, "finer serves coarser"
     # Weeklies: Dolt holds monthlies only, the vendor holds every expiry but is licensed.
     assert src.providing("chain", expiry="weekly") == []
+    # The full set's near and middle stores hold weeklies too, one pair per underlying.
     assert {s.name for s in src.providing("chain", expiry="weekly", licensed=True)} == {
         "vendor-eod-chains",
         "vendor-intraday-chains",
+        *(f"vendor-{part}-{sym.lower()}" for sym in src.FULL_SET for part in ("near", "mid")),
+        "vendor-near-added",
+        "vendor-mid-added",
     }
     assert "dolt-chains" in {s.name for s in src.providing("chain", expiry="monthly")}
     assert "recorded-0dte" in {s.name for s in src.providing("chain", expiry="0dte")}
@@ -405,3 +409,17 @@ def test_a_store_a_few_sessions_behind_still_covers_through_its_last_session():
     far = src.coverage(doc, "chain", "SPY", "2025-11-16", "2026-11-20", expiry="monthly", days=_days)
     assert not far["covered"], "seven sessions behind is more than the lag"
     assert "ends 2026-11-13, before 2026-11-20" in far["sources"][0]["why"]
+
+
+def test_only_keeps_the_sources_a_caller_can_read():
+    days = src.trading_days("2025-01-02", "2026-11-13")
+    span = {"store": {"first": "2025-01-02", "last": "2026-11-13", "sessions": days}}
+    held = {"sources": {"vendor-mid-spy": span, "vendor-eod-chains": {"symbols": {"SPY": span["store"]}}}}
+    both = src.coverage(
+        held, "chain", "SPY", "2025-11-13", "2026-11-13", cadence="1d", expiry="monthly", licensed=True
+    )
+    assert both["best"] == "vendor-mid-spy"  # the finer cadence first
+    eod = src.coverage(held, "chain", "SPY", "2025-11-13", "2026-11-13", cadence="1d", expiry="monthly",
+                       licensed=True, only=lambda s: s.cadence == "1d")  # fmt: skip
+    assert eod["best"] == "vendor-eod-chains"
+    assert "vendor-mid-spy" not in {x["source"] for x in eod["sources"]}

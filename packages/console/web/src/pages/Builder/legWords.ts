@@ -1,0 +1,154 @@
+/**
+ * A leg in words, for the Builder, the shape and the chain. A leg added in the Builder is named by its
+ * ID (L1, L2, …), given once and never reused; its words follow its action and side ("Long Put", "Short
+ * Call ×2"). An automation saved before IDs keeps its own names, shown title-cased ("short_put" reads
+ * "Short Put").
+ *
+ * A leg is written as the page reads it: `action` (BTO, STO; an adjustment's BTC, STC), `qty` (its
+ * contracts) and `side` (put, call). The module still reads the older spelling, `side` as the
+ * contracts signed and `right` as C or P, and its editor and saves convert it, so a leg here may be
+ * either; `parts` reads both, and `writtenLeg` writes the page's.
+ */
+
+export type LegLike = { name?: unknown; side?: unknown; right?: unknown; action?: unknown; qty?: unknown };
+
+/** A leg's order, contracts and Put or Call, from either spelling: `sign` -1 sold, +1 bought. */
+export function parts(leg: LegLike): { sign: -1 | 1; n: number; right: "P" | "C" } {
+  if (leg.action !== undefined || leg.qty !== undefined) {
+    const n = Number(leg.qty ?? 1);
+    return { sign: leg.action === "STO" ? -1 : 1, n: Number.isFinite(n) && n >= 1 ? n : 1, right: leg.side === "call" ? "C" : "P" };
+  }
+  const s = Number(leg.side ?? -1) || -1;
+  return { sign: s < 0 ? -1 : 1, n: Math.abs(s), right: leg.right === "C" ? "C" : "P" };
+}
+
+/** A leg in the page's spelling, its other keys kept: what the form writes back on any edit. */
+export function writtenLeg(leg: Record<string, unknown>): Record<string, unknown> {
+  const p = parts(leg);
+  const { right: _r, side: _s, action: _a, qty: _q, ...rest } = leg;
+  return { name: rest["name"], action: p.sign < 0 ? "STO" : "BTO", qty: p.n, side: p.right === "C" ? "call" : "put", ...rest };
+}
+
+/** The signed contracts of a leg in either spelling, for the verbs below. */
+export function signedQty(leg: LegLike): number {
+  const p = parts(leg);
+  return p.sign * p.n;
+}
+
+const ID = /^L(\d+)$/;
+
+export function isLegId(name: unknown): boolean {
+  return typeof name === "string" && ID.test(name);
+}
+
+/** The order that opens a leg: "Sell to open" for a sold one (`side` < 0), "Buy to open" for a bought one. */
+export function openVerb(side: number): string {
+  return side < 0 ? "Sell to open" : "Buy to open";
+}
+
+/** The order that closes a leg held: "Buy to close" a sold one, "Sell to close" a bought one. */
+export function closeVerb(side: number): string {
+  return side < 0 ? "Buy to close" : "Sell to close";
+}
+
+/** The opening order's abbreviation, as an order chain writes it: STO, BTO. */
+export function openAbbr(side: number): string {
+  return side < 0 ? "STO" : "BTO";
+}
+
+/** The closing order's abbreviation: BTC a sold leg, STC a bought one. */
+export function closeAbbr(side: number): string {
+  return side < 0 ? "BTC" : "STC";
+}
+
+/** "Long Put", "Short Call ×2": the leg's action, side and contracts. */
+export function legWords(leg: LegLike): string {
+  const p = parts(leg);
+  return `${p.sign < 0 ? "Short" : "Long"} ${p.right === "C" ? "Call" : "Put"}${p.n > 1 ? ` ×${p.n}` : ""}`;
+}
+
+/** An older leg name in words: "short_put" reads "Short Put". */
+export function titleCase(name: string): string {
+  return name
+    .split(/[_\s]+/)
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+}
+
+/** How a leg is named on the page: "L2 · Short Put ×2" for an ID, else its own name in words. */
+export function legLabel(leg: LegLike): string {
+  const name = typeof leg.name === "string" ? leg.name : "";
+  if (isLegId(name)) return `${name} · ${legWords(leg)}`;
+  return name ? titleCase(name) : legWords(leg);
+}
+
+/** The next leg's ID: one past the highest these legs hold (or past their count, for older names) and
+ *  past `given`, the highest the page has handed out, so an ID removed this session is not reused. */
+export function nextLegId(legs: readonly LegLike[], given = 0): string {
+  const used = legs.map((l) => (typeof l.name === "string" ? ID.exec(l.name) : null)).filter((m): m is RegExpExecArray => m !== null);
+  const top = used.length ? used.reduce((m, x) => Math.max(m, Number(x[1])), 0) : legs.length;
+  return `L${Math.max(top, given) + 1}`;
+}
+
+/** A leg named in a sentence, without its contracts: "L2 · Short Put", or "Short Put" for an older name. */
+export function legPlain(leg: LegLike): string {
+  const name = typeof leg.name === "string" ? leg.name : "";
+  const p = parts(leg);
+  const words = `${p.sign < 0 ? "Short" : "Long"} ${p.right === "C" ? "Call" : "Put"}`;
+  return isLegId(name) ? `${name} · ${words}` : name ? titleCase(name) : words;
+}
+
+function dist(points: unknown, from: string): string {
+  const p = Number(points ?? 0);
+  if (!Number.isFinite(p) || p === 0) return `at ${from}`;
+  return `${Math.abs(p)} ${p < 0 ? "below" : "above"} ${from}`;
+}
+
+/** Where a leg's strike rule puts it, in words, naming any leg it is placed from. */
+export function placeWords(strike: Record<string, unknown>, byName: Record<string, LegLike>): string {
+  const ref = (n: unknown) => (typeof n === "string" && byName[n] ? `the ${legPlain(byName[n])}` : `leg ${String(n)}`);
+  const pct = strike["pct"] !== undefined ? `${Math.abs(Number(strike["pct"]))}% ${Number(strike["pct"]) < 0 ? "below" : "above"}` : null;
+  switch (strike["rule"]) {
+    case "spot":
+      return pct ? `${pct} the spot` : Number(strike["points"] ?? 0) === 0 ? "at the strike nearest the spot" : dist(strike["points"], "the spot");
+    case "prev_close":
+      return pct ? `${pct} the previous close` : dist(strike["points"], "the previous close");
+    case "open":
+      return pct ? `${pct} the open` : dist(strike["points"], "the open");
+    case "from_leg":
+      return pct ? `${pct} ${ref(strike["leg"])}` : dist(strike["points"], ref(strike["leg"]));
+    case "same_as":
+      return `at the same strike as ${ref(strike["leg"])}`;
+    case "match_width":
+      return `from ${ref(strike["from"])} by the width between ${(Array.isArray(strike["width_of"]) ? strike["width_of"] : []).map(ref).join(" and ")}`;
+    case "delta":
+      return `at ${String(strike["target"] ?? "?")} delta`;
+    case "premium":
+      return `priced near $${String(strike["target"] ?? "?")}`;
+    case "expected_move":
+      return `${String(strike["times"] ?? "?")} expected moves from the spot`;
+    case "std_dev":
+      return `${String(strike["sd"] ?? "?")} standard deviations from the spot`;
+    case "opening_range":
+      return `at the opening range's ${String(strike["level"] ?? "?")}`;
+    case "entry_level":
+      return "at the spot when the entry fired";
+    default:
+      return `by ${String(strike["rule"] ?? "?").replaceAll("_", " ")}`;
+  }
+}
+
+/** One entry leg as a sentence: "Sell to open a Short Put 5 below the spot", "Sell to open 2 × L2 · Short
+ *  Put 5 below the L1 · Long Put". */
+export function legSentence(leg: LegLike & { strike?: unknown }, byName: Record<string, LegLike>): string {
+  const side = signedQty(leg);
+  const n = Math.abs(side) || 1;
+  const strike = typeof leg.strike === "object" && leg.strike !== null ? (leg.strike as Record<string, unknown>) : {};
+  return `${openVerb(side)} ${n > 1 ? `${n} ×` : "a"} ${legPlain(leg)} ${placeWords(strike, byName)}`;
+}
+
+/** Each leg's label by its name, for a picker of legs. */
+export function legLabels(legs: readonly LegLike[]): Record<string, string> {
+  return Object.fromEntries(legs.filter((l) => typeof l.name === "string").map((l) => [String(l.name), legLabel(l)]));
+}

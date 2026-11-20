@@ -67,6 +67,7 @@ from pathlib import Path
 
 from cherrypick.core import bs, fees, impliedvar
 from cherrypick.core import calendar as cal
+from cherrypick.core import progress as core_progress
 from cherrypick.core import stats as core_stats
 
 GROUPS = {
@@ -689,10 +690,13 @@ def read_cboe(name: str) -> dict[date, float]:
         }
 
 
-def collect(log=None) -> tuple[dict, dict, dict]:
+def collect(log=None, rep=None) -> tuple[dict, dict, dict]:
     """Every trade from the store: {(name, tenor, leg): {cycle: trade}}, drop counts per name and
-    tenor, and the IV-against-realised rows per (name, tenor)."""
+    tenor, and the IV-against-realised rows per (name, tenor). `rep` is a progress Reporter, when the
+    caller keeps one."""
     conn = _chain_store()
+    if rep is not None:
+        rep.split("cycles", [sym for sym in NAMES for _ in cycles()], unit="cycles")
     trades: dict[tuple[str, int, str], dict[str, dict]] = {}
     drops: dict[str, dict[str, dict[str, int]]] = {}
     ivrows: dict[tuple[str, int], list[dict]] = {}
@@ -700,6 +704,8 @@ def collect(log=None) -> tuple[dict, dict, dict]:
         for sym in NAMES:
             drops[sym] = {str(t): {} for t in TENORS}
             for e in cycles():
+                if rep is not None:
+                    rep.advance("cycles", key=sym, current=e.isoformat())
                 req = path_request(sym, e)
                 if _path_status(conn, req) != "complete":
                     continue
@@ -769,8 +775,8 @@ def beside_a_pass(key: str, cell: dict, cells: dict, neighbours: dict, trades: d
     return out
 
 
-def study(account: float = ACCOUNT, log=None) -> tuple[dict, dict]:
-    trades, drops, ivrows = collect(log)
+def study(account: float = ACCOUNT, log=None, rep=None) -> tuple[dict, dict]:
+    trades, drops, ivrows = collect(log, rep)
     cells = cells_for(trades, LEGS)
     verdict = judge(cells)
     extra = [leg for leg in ALL_LEGS if leg not in LEGS]
@@ -951,7 +957,8 @@ def cmd_study(args) -> int:
     if not _chain_store_path().exists():
         print("no chain store: run the item46/fetch-chain-paths row first", file=sys.stderr)
         return 2
-    result, trade_log = study(args.account, log=lambda m: print(m, file=sys.stderr))
+    with core_progress.Reporter("variance_premium_item46-study") as rep:
+        result, trade_log = study(args.account, log=lambda m: print(m, file=sys.stderr), rep=rep)
     out = _out_dir()
     path = Path(args.json) if args.json else out / "results.json"
     path.write_text(json.dumps(result, indent=1), encoding="utf-8")

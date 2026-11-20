@@ -31,7 +31,7 @@ from __future__ import annotations
 import math
 import random
 import statistics
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 
 DEFAULT_SEED = 20261012
 DEFAULT_RESAMPLES = 2000
@@ -157,6 +157,89 @@ def day_placebo(
         "mean": round(mean, 4),
         "draws": draws,
         "beaten_by": round(at_least / draws, 4),
+    }
+
+
+def menu_placebo(
+    values: Mapping[str, float],
+    skipped: Mapping[str, Iterable[str]],
+    *,
+    draws: int = DEFAULT_RESAMPLES,
+    seed: int = DEFAULT_SEED,
+    tick: Callable[[int], None] | None = None,
+) -> dict:
+    """Day filters searched from a menu, each against chance counting every try (a max-T permutation,
+    Westfall & Young 1993).
+
+    `values` maps every session to its value; `skipped` maps each candidate filter to the sessions it
+    would skip. A filter wants low-valued skipped sessions, so each candidate's statistic is its
+    skipped sessions' sum, standardised by the spread a random set of as many sessions would have
+    (finite-population, so a two-session filter is not read as more extreme than a fifty-session one
+    for its size alone). Each draw shuffles the values across sessions once and reads every candidate
+    under that one shuffle, so candidates that skip overlapping days stay as alike as they are.
+
+    Per candidate: `p`, the share of draws (add-one) at least as low as its own statistic, which is
+    `day_placebo`'s question for that filter alone; and `p_menu`, the share whose LOWEST statistic
+    across the whole menu is at least as low -- the filter must beat the best random filter of the
+    menu, not a typical one. `null_min_median` is that lowest statistic's median: what the search's
+    own luck reaches. A candidate that skips no session or every one is listed with `z` None and is
+    not counted in `tried`. Seeded. `tick`, when given, is called with each finished draw's count:
+    telemetry for a caller's progress, never read back."""
+    pool = sorted(values)
+    n = len(pool)
+    at = {s: i for i, s in enumerate(pool)}
+    data = [float(values[s]) for s in pool]
+    mu = statistics.fmean(data) if data else 0.0
+    var = statistics.pvariance(data) if n > 1 else 0.0
+    cands: dict[str, tuple[list[int], float, float]] = {}
+    out: dict[str, dict] = {}
+    for name, sessions in skipped.items():
+        idx = sorted({at[s] for s in sessions if s in at})
+        k = len(idx)
+        if k == 0 or k == n or var <= 0:
+            out[name] = {"sessions": k, "of": n, "mean": None, "z": None, "p": None, "p_menu": None}
+            continue
+        scale = math.sqrt(k * (n - k) / (n - 1) * var)
+        z = (sum(data[i] for i in idx) - k * mu) / scale
+        cands[name] = (idx, scale, z)
+        out[name] = {"sessions": k, "of": n, "mean": round(statistics.fmean(data[i] for i in idx), 4)}
+    own = dict.fromkeys(cands, 0)
+    menu = dict.fromkeys(cands, 0)
+    lows: list[float] = []
+    if cands:
+        rng = random.Random(seed)
+        perm = list(data)
+        tol = 1e-9
+        for d in range(draws):
+            rng.shuffle(perm)
+            low = math.inf
+            for name, (idx, scale, z) in cands.items():
+                zd = (sum(perm[i] for i in idx) - len(idx) * mu) / scale
+                if zd <= z + tol:
+                    own[name] += 1
+                low = min(low, zd)
+            lows.append(low)
+            if tick is not None:
+                tick(d + 1)
+            for name, (_idx, _scale, z) in cands.items():
+                if low <= z + tol:
+                    menu[name] += 1
+    for name, (_idx, scale, z) in cands.items():
+        out[name].update(
+            {
+                "z": round(z, 4),
+                "scale": round(scale, 4),
+                "p": round((own[name] + 1) / (draws + 1), 4),
+                "p_menu": round((menu[name] + 1) / (draws + 1), 4),
+            }
+        )
+    return {
+        "tried": len(cands),
+        "sessions": n,
+        "mean": round(mu, 4),
+        "draws": draws if cands else 0,
+        "null_min_median": round(statistics.median(lows), 4) if lows else None,
+        "candidates": out,
     }
 
 

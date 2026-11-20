@@ -269,7 +269,8 @@ filename; override with `paper.sla_state_prefix`.
   the tick (e.g. `trade_notifier.run`) sit inside `try/except`. Nothing EOD-shaped touches the tick.
 - **Read surfaces read files, never the broker**, and this package serves **no HTTP read surface**
   (the console is the one). `liveops.py` is the live gate surface: each module's `enable_live_trading`
-  (home config first, then in-repo), its designated live account (masked, via keyring), and the suite
+  (home config first, then in-repo), whether it has a live path at all (`config.LIVE_PATH_MODULES`,
+  held to the packages with a `live_loop.py` by a test; it labels, it never decides a gate), its designated live account (masked, via keyring), and the suite
   **halt flag**, `state/halt-live.flag`, whose *presence* is the signal (path defined by
   `cherrypick.core.home.halt_flag_path()`, which the live loops poll; `liveops.halt_flag_path()`
   mirrors it). It writes **exactly one thing: the halt flag**, via `set_halt` (create to halt, delete
@@ -333,16 +334,45 @@ filename; override with `paper.sla_state_prefix`.
   and `automation_save` (`automationedit.py`) are the Builder's: the automations module's `cli draft`
   by subprocess (its own check; this package never imports it), then the one entry that check
   returned, refused unless it is off, replaced or added (`configedit.insert_key`) at
-  `/automations/<name>` and written through `apply_raw_save`. `automation_today`
-  (`automationedit.today`) is the Builder's "Today, live": the module's `cli builder-today` with the
-  name and an unsaved edit on stdin, nothing else; it writes nothing. `automation_backtest` and
+  `/automations/<name>` and written through `apply_raw_save`. `automation_groups`,
+  `automation_groups_check` and `automation_groups_save` (`groupedit.py`) are the console's Groups
+  tab: the module's `cli groups-view` and `cli groups-check` by subprocess, then the `groups` block the
+  check returned (replaced, or added at the document root, pointer `""`), each moved automation's
+  `group`, and each switched automation's `enabled` and the `start` the check gave it (each key set,
+  added to its entry, or a new entry), all in one `apply_raw_save`; a switch carrying any other key is
+  refused. `automation_today`
+  (`automationedit.today`) is the Builder's "Today, live", and `automation_payoff`
+  (`automationedit.payoff`) its shape and chain example, and `automation_strategy` (`automationedit.strategy`,
+  the strategy's name and settings only) its strategy selector, and `automation_entry`
+  (`automationedit.entry`, the preset's name and settings and each filter's name and settings only) its
+  entry presets: the module's `cli builder-today`, `cli builder-strategy`, `cli builder-entry` or
+  `cli builder-payoff` with the name and an unsaved edit (or the strategy, or the preset and filters, and
+  their settings) on stdin, nothing else; none writes. `run.py automations-legs-convert` (`automationedit.convert_legs`, not a
+  configcli op) rewrites the older leg spelling: the module's `cli legs-convert` names the automations and
+  proves none loads differently, and this writes only each one's `legs`, in one save, dry run unless
+  `--apply`. `automation_backtest` and
   `automation_runs` (`automationrun.py`) are the Builder's backtest: the module's `cli builder` read
-  gives the automation's suggestion (window, source; refused unless `possible`), then one
+  gives the automation's suggestion (window, source; refused unless `possible`, or the request names
+  one of its `windows` by key, whose dates and store the run then takes; a key it does not offer is
+  refused), then one
   `researchqueue.add` of a `script` row, study `builder`, step `<name>-<YYMMDDHHMM>`, running
   `automation_backtest.py run` into the result `builder-<name>-<stamp>.json`; one live row per
   automation. The explore-runs list reads those rows and `backtest read automation-runs`;
   `automation_run` reads one run's card (`backtest read automation-run`, the run named exactly
-  `builder-<name>-<10 digits>`). Its `features` op
+  `builder-<name>-<10 digits>`). `automation_ideas`, `automation_idea_searches`, `automation_idea_search`,
+  `automation_idea_declare` and `automation_idea_holdout` (`ideaqueue.py`) are the Builder's idea
+  search: `backtest ideas plan` names the run and the split, then one `script` row, study `ideas`, step
+  `<name>-<YYMMDDHHMM>`, runs `idea_search.py run` with both in its command; one live row per
+  automation. Declare and the held-out test are `backtest ideas declare|holdout`, by name, search and
+  idea; neither writes a config or the register. A run may also wait `after` an addition to the full set
+  (`fullset/add-...` only); it then queues without `possible` and without a source, the driver
+  choosing by coverage once the data is in. `fullset_plan` and `fullset_add` (`fullsetadd.py`) add an
+  underlying to the full set: the backtest script's `add SYM --dry-run` sizes it, `add` refuses
+  unless `backtestgate.backtest_feature` is available and over `CAP_SESSIONS` (300) sessions, then
+  the script records it and writes its request files, and its `ADD_CHAIN` (read with its
+  placeholders filled, `studychain.read_chain(script, name, subs)`) is queued whole in study
+  `fullset` at `PRIORITY` 11, with the named automation's run after its last row. The queue's
+  `fetch-sessions` takes the `added` store tag with an added underlying's symbol only. Its `features` op
   (`capabilities.py`) is the console's only answer to "what is on": `capabilities`, `modules`
   (switch plus capabilities), `services`, `features` (`backtest` and `backtest_results` fail closed:
   new vendor work, and showing the vendor's results until the purge date) and `live`, each module's live master

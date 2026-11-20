@@ -22,6 +22,47 @@ beyond the latest release.
 
 ### What's new
 
+- **Backtested exits no longer go blind when a wing leaves the recorded strikes.** The same-day
+  stores hold a band of strikes around the spot, so on a day the market ran, a condor's far wing
+  could drop out of it and the position had no price for the rest of the day: its stop or target
+  never fired and it rode to settlement. Such a wing is now read as worth anywhere from 0 to the
+  farthest recorded strike's ask, an exit fires when it fires across that whole range, and the
+  close fills at the costly end. Backtests with intraday exits change, mostly on trending days.
+- **Automations ignore impossible prices.** A quote that puts a structure's mid outside what it can
+  be worth (a $10 fly entered for an $11 credit, or closed past its width) is no longer taken: the
+  entry is skipped as `unrealistic_price`, no exit fires on such a mark, and a close waits for the
+  next sane quote. Backtests and paper both change where a stored quote was bad; earlier runs that
+  closed on one overstated their result.
+- **Find ideas, on a saved automation.** The Builder searches the automation's newest long explore
+  run for entry filters (VIX, RSI, trend and gap bands, weekdays, event days, alone or two at once)
+  and lists them as hypotheses, never a change. A filter is scored by the days it would skip, and
+  must beat the best random filter of the whole menu, hold across neighbouring bands and folds, and
+  leave trades that pay at 1.5x costs, all on the part of the run before a split fixed when the
+  search is queued. A survivor can be declared (its register row drafted) and then tested once on
+  the later part. `core.stats.menu_placebo` is the max-over-menu baseline.
+- **How a Builder run holds up.** The run card gains the reads a study gets, from the same trades
+  and never a verdict: what the 5 best days carry, P&L per trade with costs at 1.5x and 2x, the
+  drawdown range with the trades reshuffled, and how many quarters were profitable.
+- **Backtests on Compare's portfolio tab.** Beside one paper arm per module, add any number of
+  backtest arms: each Builder automation's newest run and the arms of a study result (item 75's eight,
+  for one). Correlation, effective arms, the drawdown saving and contributions read them as they read
+  paper, each backtest arm counted from its run's first session and labelled backtest. A licensed
+  result is offered only while the results gate is open, and the reading says it holds one.
+  `core.portfolio`'s manifest takes a `backtest` entry (a result file and an arm), and
+  `backtest read portfolio-sources` lists what can be chosen.
+- **Risk held at once, on the portfolio tab.** For the chosen arms, each session's peak of the max
+  loss open at the same time, the median, 95th percentile and worst of those peaks, and the worst
+  sessions with each arm's part. A trade with no recorded max loss is named and the card says it is
+  a floor. An automation's closed trades now record `risk`, their max loss, so Builder runs and
+  studies from here on are measured; older runs read as unmeasured.
+- **Add an underlying to the full set from the Builder.** Where our data does not cover an
+  automation on an underlying outside the full set's seven, the Builder offers to add it: the plan
+  first (requests and sessions, a year back by default), then one click queues its fetches on the
+  vendor's queue and the automation's explore run after them. Up to 300 sessions a click, only while
+  the licence allows new work; the data and the result are licensed. Additions are recorded on this
+  machine only and share three stores (`added-60s.db`, `added-near-1m.db`, `added-mid-5m.db`), keyed
+  by symbol, which the source registry reads per symbol. `fetch_full_set.py add SYM` adds a longer
+  span by hand, and `plan` keeps every addition current.
 - **The Builder builds an automation in a form.** One automation at a time, opened, new or copied.
   It is built in five sections with each block's backtest label: underlying and data, the entry
   signal in plain English, the market and chain gates, the legs and their price gates, and exits,
@@ -30,6 +71,51 @@ beyond the latest release.
   Declare and Promote to paper shown disabled. Beside it, **Today, live** decides the automation
   now as paper would, on a read-only snapshot (`cli builder-today`): every check, and the legs it
   would take or the check that stops it. The explore runs and run cards sit beside it too.
+- **A fetch run in steps estimates the step under way.** A job counted in steps (the SPX session
+  fetch, then its VIX pass) shows the time left in the running step at that step's own pace, and
+  how many steps follow ("about 48 min left in this step, then 1 more step"), on the queue card and
+  in the progress line. Before, the light VIX step counted as half the job and the estimate ran
+  hours long.
+- **Multi-day automations replayed through the session.** An automation that enters inside the
+  session on an expiry after it (a 10:30 entry on a monthly) is backtested from the full set's
+  intraday chain stores: expiries 1-7 days out at one minute and 8-90 at five, each read no older
+  than its interval. Where the same-day store has no spot that session, the nearest expiry's parity
+  forward stands for it, a declared limit. Before, such a run counted `needs_intraday` every session.
+  The Builder's coverage counts those stores as they fill.
+- **A finished study's verdict, recorded in one command.** The queue's finish notice names each arm's
+  verdict and the command that records it. `python tools/record_verdict.py itemNN` sets the register
+  row's status and a words-only outcome from the study kit's verdict block, checks the register and
+  opens the docs PR from a fresh worktree; a result without the kit's block is refused.
+- **The research queue runs in two lanes.** Fetches run one at a time on the vendor's session (the
+  `research-queue-vendor` job, which replaces `research-queue`), and scripts run one at a time beside
+  them (the `research-queue-local` job), so a day-long study no longer holds up a fetch. A chain's order holds across the lanes. The
+  queue tab shows each lane's running task and its own up-next list, and lists rows in the runner's
+  order, priority included. Needs a supervisor restart (`supervise --restart`) to start the second
+  job.
+- **A daily signal on the developing bar.** A daily trigger takes `"developing": true` (with `within`
+  null) to read today's bar as it stands each minute: the session's open, its high and low so far
+  and the price now. It is due at any minute in the window when the signal fires on that bar. A
+  daily trigger without it still acts on yesterday's completed bar.
+- **A gap measured at the first bar's close.** The gap signal takes `at: "first_bar_close"` to read
+  the session's first bar's close (9:35 on five-minute bars) instead of its open. Without it a gap
+  reads, and versions, as before.
+- **A trailing stop in percent, and net at mid on the run card.** An automation's trailing stop can
+  be `{"pct": p, "activate_pct": a}`, each a percent of the trade's max profit (it never fires on a
+  structure without one). The Builder's run card shows each run's net at mid beside its P&L: the
+  same trades filled at mid, P&L before slippage, as the run recorded it.
+- **Long automation backtests run in linear time.** The driver's snapshot at each minute copied every
+  arm's entry history and rebuilt every arm's closed results from the whole book, so a run slowed
+  as its book grew (item 90's placebo pass: 63 s a session near its end, 11 s now). It now carries
+  what a decision reads; trades and reasons are identical.
+- **The Builder's Explore run picks its window.** Beside the button, every span a store holds for the
+  whole automation: the last year and everything that store holds, ours first, a thin span's share of
+  sessions shown, and the vendor's only where it reaches further back than ours, marked licensed. A
+  store that stopped early still offers its span. The page sends only the module's window key; the
+  orchestrator refuses one the module does not offer.
+- **Backtest coverage counts only stores the backtest can replay.** A same-day chain comes from a
+  store in the recorder's schema and a later expiry from end-of-day chains; an entry inside the
+  session on a later expiry has no replay yet, and the coverage line says so. Before this, the full
+  set's one- and five-minute stores could be named for a run that reads neither.
 - **Monthly expiries, and coverage that reaches our own chains.** An expiry rule (`between`,
   `at_least`) takes `"monthly": true` to pick only standard monthlies (`core.calendar.monthly_expiry`:
   the third Friday, or the session before a holiday). The wizard's shapes use it, so each is covered
@@ -37,7 +123,8 @@ beyond the latest release.
   a store up to five trading days behind the last finished session (one written the next morning)
   as covering, and the run ends at its last session. A need no store can supply now says why, and a
   rule allowing any expiry that monthlies would cover says so, with **Use monthlies only** in the
-  wizard.
+  wizard. The Builder's form shows `monthly` as a checkbox (the schema names the expiry keys that
+  are true or false).
 - **The Builder's wizard.** **New** and **Copy as new** build an automation in seven steps (start,
   underlying and expiry, legs, entry, gates, exits and size, review), for someone new to
   backtesting. It starts from a shape (short put, credit spreads, iron condor, iron fly, custom legs),

@@ -36,7 +36,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from cherrypick.core import calendar as cal
-from cherrypick.core import home, killcriteria
+from cherrypick.core import home, killcriteria, progress
 from cherrypick.core import stats as core_stats
 from cherrypick.ensemble import arms as arm_mod
 from cherrypick.ensemble import engine, pricing, snapshot
@@ -717,20 +717,46 @@ def _unique(reqs: list[dict]) -> list[dict]:
 ZERO_DTE = ("orb-put-spread", "iron-fly-1000", "iron-condor-1345", "put-spread-1300", "long-put-1030")
 
 
-def study(spx: Spx, intra: Intraday, gld_closes: dict[str, float], events: EventCalendar, only=None) -> dict:
+def study(
+    spx: Spx,
+    intra: Intraday,
+    gld_closes: dict[str, float],
+    events: EventCalendar,
+    only=None,
+    reporter: progress.Reporter | None = None,
+) -> dict:
     arms = {k: v for k, v in arm_mod.load_arms().items() if not only or k in only}
     ctx = {"events": events, "entries": {}, "open": []}
     sessions = [s for s in spx.sessions if s >= STORE_START]
     by_arm, why = {}, {}
-    for name in [a for a in ZERO_DTE if a in arms]:
-        by_arm[name], why[name] = run_zero_dte(arms[name], spx, ctx, sessions)
-    if "iron-fly-1dte-1330" in arms:
-        by_arm["iron-fly-1dte-1330"], why["iron-fly-1dte-1330"] = run_one_dte_spx(
-            arms["iron-fly-1dte-1330"], spx, intra, ctx, sessions
+    zero_dte = [a for a in ZERO_DTE if a in arms]
+    one_dte = ["iron-fly-1dte-1330"] if "iron-fly-1dte-1330" in arms else []
+    gld = [n for n in ("gld-call-spread-20d", "gld-call-spread-1dte") if n in arms]
+    if reporter is not None:
+        reporter.split(
+            "sessions",
+            [arms[n]["symbol"] for n in zero_dte + one_dte + gld for _ in sessions],
+            unit="arm-days",
         )
-    for name in ("gld-call-spread-20d", "gld-call-spread-1dte"):
-        if name in arms:
-            by_arm[name], why[name] = run_gld(arms[name], intra, gld_closes, ctx, sessions)
+
+    def over(name: str):
+        """The sessions one arm walks, each counted once the arm is through it."""
+        if reporter is None:
+            return sessions
+
+        def counted():
+            for s in sessions:
+                yield s
+                reporter.advance("sessions", key=arms[name]["symbol"], current=f"{name} {s}")
+
+        return counted()
+
+    for name in zero_dte:
+        by_arm[name], why[name] = run_zero_dte(arms[name], spx, ctx, over(name))
+    for name in one_dte:
+        by_arm[name], why[name] = run_one_dte_spx(arms[name], spx, intra, ctx, over(name))
+    for name in gld:
+        by_arm[name], why[name] = run_gld(arms[name], intra, gld_closes, ctx, over(name))
     verdicts = {name: judge_arm(ts) for name, ts in by_arm.items()}
     flags = holm({n: v.get("bootstrap", {}).get("p") for n, v in verdicts.items()})
     for name, v in verdicts.items():
@@ -814,7 +840,8 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 0
     only = {a for a in args.arms.split(",") if a}
-    out = study(spx, intra, gld_daily_closes(), load_events(), only or None)
+    with progress.Reporter("ensemble_item75-study") as rep:
+        out = study(spx, intra, gld_daily_closes(), load_events(), only or None, reporter=rep)
     target = args.json or base / f"study-{out['window'][0]}-all.json"
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(json.dumps(out, indent=1, default=str), encoding="utf-8")

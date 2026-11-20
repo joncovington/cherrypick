@@ -9,6 +9,7 @@ import { fmtCount } from "../../lib/format";
 import { WithOverview, fmtBytes, mainTable } from "./BacktestPage";
 import { CardLightbox, LightboxFrame, useOpenParam, type LightboxTab } from "./CardLightbox";
 import { GuideLink } from "../../components/GuideLink";
+import { FullSetCard } from "./FullSetCard";
 
 /**
  * The Backtest page's data tab as cards: the licence and the stores' totals first, then one tile per
@@ -380,6 +381,7 @@ export function BacktestDataTab() {
     <WithOverview>
       {(d, updatedAt) => (
         <div className="cards cards-wide">
+          <FullSetCard />
           <Card
             title="Data"
             collapseKey="backtest-data"

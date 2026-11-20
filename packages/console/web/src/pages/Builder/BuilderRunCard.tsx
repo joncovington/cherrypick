@@ -1,13 +1,20 @@
 import { useState } from "react";
-import type { BuilderRunCard, BuilderRunChange, BuilderRunResult, BuilderRuns, BuilderRunTrade } from "@console/shared";
+import type {
+  BuilderRunCard,
+  BuilderRunChange,
+  BuilderRunResult,
+  BuilderRunRobustness,
+  BuilderRuns,
+  BuilderRunTrade,
+} from "@console/shared";
 import { useBuilderRunCard } from "../../lib/api";
 import { fmtMoney } from "../../lib/format";
 
 /**
  * The Builder's explore runs (#1180): the list of an automation's Builder backtests, each with its net
  * curve and what it changed from the run before, and one run's whole card. Every figure is the run's
- * own (`backtest read automation-run[s]`): this draws, it computes nothing. An explore run is
- * description only: no trial, no verdict.
+ * own (`backtest read automation-run[s]`), the robustness reads included: this draws, it computes
+ * nothing. An explore run is description only: no trial, no verdict.
  */
 
 const W = 1000;
@@ -170,6 +177,119 @@ function Tile({ label, value: v, foot }: { label: string; value: string; foot?: 
   );
 }
 
+/** "1.5×", the way a cost multiplier reads. */
+function times(m: number): string {
+  return `${m % 1 ? m.toFixed(1) : m.toFixed(0)}×`;
+}
+
+/** How the run holds up: what its best days carry, its costs scaled, its drawdown reshuffled, its quarters. */
+export function RobustnessView({ r }: { r: BuilderRunRobustness }) {
+  const best = r.best_sessions;
+  const dd = r.drawdown;
+  const q = r.quarters;
+  return (
+    <section className="builder-run-section builder-robustness">
+      <div className="builder-run-section-head">
+        <h4>How it holds up</h4>
+        <span className="muted">in-sample reads of this one run, never a verdict</span>
+      </div>
+      <div className="builder-robustness-grid">
+        <div className="builder-robustness-item" data-read="best-sessions">
+          <h5>Best {best.k} days</h5>
+          {"insufficient" in best ? (
+            <p className="muted">Too few sessions ({best.n}) to set the best {best.k} apart.</p>
+          ) : (
+            <>
+              <p className="num">
+                {fmtMoney(best.best_net)} of {fmtMoney(best.total_net)}
+                {best.share !== null ? ` · ${Math.round(best.share * 100)}%` : ""}
+              </p>
+              <p className={best.rests_on_best ? "error" : "muted"}>
+                {best.rests_on_best
+                  ? `Without them the other ${best.n - best.k} sessions average ${fmtMoney(best.rest_mean)}: the result is those days.`
+                  : `The other ${best.n - best.k} sessions still average ${fmtMoney(best.rest_mean)} each.`}
+              </p>
+            </>
+          )}
+        </div>
+
+        <div className="builder-robustness-item" data-read="cost-stress">
+          <h5>Costs scaled</h5>
+          {r.cost_stress === null ? (
+            <p className="muted">No closed trades.</p>
+          ) : (
+            <>
+              <table className="builder-run-table">
+                <thead>
+                  <tr>
+                    <th scope="col">Fees + slippage</th>
+                    <th scope="col">Per trade</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {r.cost_stress.rows.map((row) => (
+                    <tr key={row.multiplier}>
+                      <td>{times(row.multiplier)}</td>
+                      <td>{fmtMoney(row.mean_net)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <p className={r.cost_stress.survives ? "muted" : "error"}>
+                {r.cost_stress.survives
+                  ? `Still pays at ${times(r.cost_stress.pass_stress)}, the bar a study must clear.`
+                  : `Stops paying by ${times(r.cost_stress.pass_stress)}, the bar a study must clear.`}{" "}
+                Settlement is not scaled.
+              </p>
+            </>
+          )}
+        </div>
+
+        <div className="builder-robustness-item" data-read="drawdown">
+          <h5>Drawdown reshuffled</h5>
+          {dd.insufficient ? (
+            <p className="muted">
+              Actual {fmtMoney(-dd.actual)}. Too few trades to reshuffle ({dd.evidence_trades} of {dd.min_evidence ?? "?"}).
+            </p>
+          ) : (
+            <>
+              <p className="num">
+                actual {fmtMoney(-dd.actual)} · p95 {fmtMoney(-(dd.drawdown_reduce ?? 0))} · p99 {fmtMoney(-(dd.drawdown_block ?? 0))}
+              </p>
+              <p className="muted">
+                The same trades in {dd.resamples} reshuffled orders (week-long blocks), {dd.horizon} trades each. Longest losing
+                streak p95 {dd.streak_reduce}, p99 {dd.streak_block}. Not a forecast or a floor.
+              </p>
+            </>
+          )}
+        </div>
+
+        <div className="builder-robustness-item" data-read="quarters">
+          <h5>Quarters</h5>
+          <p className="num">
+            {q.profitable} of {q.counted} profitable
+          </p>
+          <p className="muted">
+            Counting quarters with at least {q.min_sessions} sessions traded
+            {q.rows.length > q.counted ? `; ${q.rows.length - q.counted} thinner shown, not counted` : ""}.
+          </p>
+          <div className="builder-quarters">
+            {q.rows.map((row) => (
+              <span
+                key={row.quarter}
+                className={`builder-quarter ${row.net > 0 ? "up" : "down"}${row.counted ? "" : " thin"}`}
+                title={`${row.quarter}: ${fmtMoney(row.net)}, ${row.trades} trades, ${row.sessions} sessions${row.counted ? "" : " (not counted)"}`}
+              >
+                {row.quarter.slice(2)}
+              </span>
+            ))}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 /** One run's whole card. */
 export function RunCardView({ card }: { card: BuilderRunCard }) {
   const [gross, setGross] = useState(true);
@@ -195,6 +315,7 @@ export function RunCardView({ card }: { card: BuilderRunCard }) {
       </p>
       <div className="builder-tiles">
         <Tile label="P&L" value={fmtMoney(t.net)} foot="net of fees, settlement, slippage" />
+        {t.net_mid !== undefined && <Tile label="Net at mid" value={fmtMoney(t.net_mid)} foot="filled at mid: P&L before slippage" />}
         <Tile label="Trades" value={String(t.trades)} foot={t.sessions !== null ? `of ${t.sessions} sessions` : undefined} />
         <Tile label="Per trade" value={fmtMoney(t.per_trade)} foot="net" />
         <Tile label="Win rate" value={t.win_rate === null ? "—" : `${Math.round(t.win_rate * 100)}%`} />
@@ -248,6 +369,9 @@ export function RunCardView({ card }: { card: BuilderRunCard }) {
                   <th scope="col">Settlement</th>
                   <th scope="col">Slippage</th>
                   <th scope="col">P&amp;L</th>
+                  <th scope="col" title="gross - fees - settlement: the same trades filled at mid, before slippage">
+                    Net at mid
+                  </th>
                   <th scope="col">Max DD</th>
                 </tr>
               </thead>
@@ -261,6 +385,7 @@ export function RunCardView({ card }: { card: BuilderRunCard }) {
                     <td>{fmtMoney(y.settlement)}</td>
                     <td>{fmtMoney(y.slippage)}</td>
                     <td>{fmtMoney(y.net)}</td>
+                    <td>{y.net_mid === undefined ? "—" : fmtMoney(y.net_mid)}</td>
                     <td>{fmtMoney(y.max_dd)}</td>
                   </tr>
                 ))}
@@ -292,6 +417,8 @@ export function RunCardView({ card }: { card: BuilderRunCard }) {
           )}
         </section>
       </div>
+
+      {card.robustness && <RobustnessView r={card.robustness} />}
 
       <section className="builder-run-section">
         <div className="builder-run-section-head">

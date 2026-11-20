@@ -54,6 +54,7 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 
 from cherrypick.core import fees, home, treasury
+from cherrypick.core import progress as core_progress
 
 from cherrypick.backtest.study import rule as kit_rule
 
@@ -657,8 +658,14 @@ def out_dir() -> Path:
 # --------------------------------------------------------------------------- the run
 
 
-def study(funds: dict[str, list[dict]], others: dict[str, list[dict]], rate) -> dict:
+def study(funds: dict[str, list[dict]], others: dict[str, list[dict]], rate, rep=None) -> dict:
+    """`rep` is a progress Reporter, when the caller keeps one: each (arm, fund) replay counts one."""
     split = RULE["splits"][0]
+    if rep is not None:
+        keys = [s for _ in ARMS for s in (*funds, *funds, *others)] + [
+            s for _ in BASELINES for s in (*funds, *funds)
+        ]
+        rep.split("replays", keys, unit="replays")
 
     def parts(ts: list[dict]) -> dict:
         return {"design": summary([t for t in ts if t["date"] < split]),
@@ -668,6 +675,8 @@ def study(funds: dict[str, list[dict]], others: dict[str, list[dict]], rate) -> 
         trades, info = [], {}
         for sym, bars in fs.items():
             ts, inf = arm_trades(arm, sym, bars, long_only=long_only)
+            if rep is not None:
+                rep.advance("replays", key=sym, current=f"{arm} {sym}")
             trades += ts
             info[sym] = inf
         return trades, info
@@ -721,7 +730,8 @@ def cmd_study(args) -> int:
     others = load_funds(bars_db(), OTHER_FUNDS, SPEC["through"], last=args.smoke)
     if any(not b for b in funds.values()):
         raise SystemExit(f"a judged fund has no bars in {bars_db()}")
-    block = study(funds, others, bill_reader())
+    with core_progress.Reporter("trend_indicators_item89-study") as rep:
+        block = study(funds, others, bill_reader(), rep)
     doc = {"note": "derived from personal-use broker and public data: never commit or publish", "item": 89,
            "spec": SPEC, "control_rule": CONTROL_RULE, **block,
            "inputs": fingerprint({**funds, **others}),

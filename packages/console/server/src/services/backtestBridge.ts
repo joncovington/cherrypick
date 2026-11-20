@@ -1,5 +1,6 @@
 import type {
   BacktestOverview,
+  FullSetProgress,
   BacktestRunReport,
   BacktestTradeLog,
   BacktestTradePath,
@@ -45,6 +46,7 @@ export const RUN_READ_TIMEOUT_MS = 120_000;
 
 export type BacktestRequest =
   | { kind: "overview" }
+  | { kind: "fullset" }
   | { kind: "run"; id: string; capital?: number; riskPct?: number; riskUnit?: string; ddPct?: number }
   | { kind: "trades"; id: string; arm: string }
   | { kind: "path"; id: string; arm: string; session: string; position: string }
@@ -53,6 +55,9 @@ export type BacktestRequest =
 function spawnRequest(req: BacktestRequest): Promise<SpawnedJson> {
   if (req.kind === "overview") {
     return spawnModuleCliAsync(["-m", "cherrypick.backtest", "read", "overview"], UNAVAILABLE);
+  }
+  if (req.kind === "fullset") {
+    return spawnModuleCliAsync(["-m", "cherrypick.backtest", "read", "fullset"], UNAVAILABLE);
   }
   if (req.kind === "trades") {
     // Exit 1 is the module's refusal (no such run or arm), read as an answer.
@@ -92,8 +97,8 @@ export function resetBacktestCache(): void {
 
 function memo(req: BacktestRequest, now: number): Promise<SpawnedJson> {
   const key =
-    req.kind === "overview"
-      ? "overview"
+    req.kind === "overview" || req.kind === "fullset"
+      ? req.kind
       : req.kind === "trades"
         ? `trades|${req.id}|${req.arm}`
         : req.kind === "path"
@@ -120,6 +125,11 @@ function shape<T>(res: SpawnedJson, pick: (json: Record<string, unknown>) => unk
 
 export async function readBacktestOverview(now = Date.now()): Promise<BridgedResult<BacktestOverview>> {
   return shape<BacktestOverview>(await memo({ kind: "overview" }, now), (j) => j);
+}
+
+/** The full set's fetch progress (`read fullset`): counts from the stores' own ledgers, read-only. */
+export async function readFullSetProgress(now = Date.now()): Promise<BridgedResult<FullSetProgress>> {
+  return shape<FullSetProgress>(await memo({ kind: "fullset" }, now), (j) => j);
 }
 
 /** The caller has already checked `id` against `BACKTEST_RUN_ID`, `capital` against

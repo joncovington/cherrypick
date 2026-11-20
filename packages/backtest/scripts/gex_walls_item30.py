@@ -52,6 +52,7 @@ from pathlib import Path
 
 from cherrypick.core import bs, treasury
 from cherrypick.core import calendar as cal
+from cherrypick.core import progress as core_progress
 from cherrypick.core import stats as core_stats
 from cherrypick.core.gex import compute_gex_profile, net_walls
 
@@ -465,12 +466,15 @@ def cmd_study(args) -> int:
             exps[date.fromisoformat(s)].add(date.fromisoformat(e))
         result["daily_expiry_weeks"][sym] = daily_expiry_weeks(exps)
 
-    def window(wname: str) -> tuple[dict, dict]:
+    def window(wname: str, rep: core_progress.Reporter) -> tuple[dict, dict]:
         w0, w1 = WINDOWS[wname]
         mid = w0 + (w1 - w0) / 2
         win: dict = {"from": w0.isoformat(), "to": w1.isoformat(), "missing": {}, "by_h": {}}
         walled = {}
-        for sym in NAMES:
+        for sym in core_progress.track(
+            NAMES, job="gex_walls_item30-study", phase=f"{wname}-walls", unit="names",
+            key=lambda s: s, reporter=rep,
+        ):  # fmt: skip
             walled[sym], win["missing"][sym] = load_walls(vend, oist, bars[sym], sym, w0, w1, rates)
         judged_counts: dict = {}
         for h in (H, *H_REPORTED):
@@ -491,11 +495,12 @@ def cmd_study(args) -> int:
         result["windows"][wname] = win
         return win["by_h"][str(H)]["net"], judged_counts
 
-    design, counts = window("design")
-    enough = all(n >= MIN_WALL_DAYS for n in counts.values())
-    # The holdout is computed whatever the design result (the user's call, 2026-10-30, before any
-    # data was fetched); verdict() still fails a design fail.
-    holdout = window("holdout")[0] if enough else None
+    with core_progress.Reporter("gex_walls_item30-study") as rep:
+        design, counts = window("design", rep)
+        enough = all(n >= MIN_WALL_DAYS for n in counts.values())
+        # The holdout is computed whatever the design result (the user's call, 2026-10-30, before any
+        # data was fetched); verdict() still fails a design fail.
+        holdout = window("holdout", rep)[0] if enough else None
     result["verdict"] = verdict(design, holdout, enough)
     result["window"] = f"{WINDOWS['design'][0]}..{WINDOWS['design'][1]}" + (
         f"; holdout {WINDOWS['holdout'][0]}..{WINDOWS['holdout'][1]}" if holdout is not None else ""

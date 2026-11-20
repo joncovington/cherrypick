@@ -115,11 +115,15 @@ def target_dates(arm: dict, today: date) -> list[date]:
 
 
 def expiries_for(arm: dict, today: date, listed: list[str]) -> list[str]:
-    """The expiry `arm` names today among the listed ones; with none listed, every date its rule allows."""
-    from .engine import resolve_expiry
+    """The expiry `arm` names today among the listed ones; with none listed, every date its rule allows.
+    An arm with a far leg names its far expiry as well."""
+    from .engine import has_far_legs, resolve_expiry, resolve_far_expiry
 
     if not listed:
-        return [d.isoformat() for d in target_dates(arm, today)]
+        near = target_dates(arm, today)
+        if not has_far_legs(arm) or not arm.get("far_expiry"):
+            return [d.isoformat() for d in near]
+        return sorted({d.isoformat() for d in near + far_target_dates(arm, today, near)})
     skeleton = Snapshot(
         session=today.isoformat(),
         minute=0,
@@ -132,7 +136,21 @@ def expiries_for(arm: dict, today: date, listed: list[str]) -> list[str]:
         closes=[],
     )
     e = resolve_expiry(arm, skeleton)
-    return [e] if e else []
+    if not e:
+        return []
+    far = resolve_far_expiry(arm, skeleton, e) if has_far_legs(arm) else None
+    return [e, far] if far else [e]
+
+
+def far_target_dates(arm: dict, today: date, near: list[date]) -> list[date]:
+    """The dates `arm`'s far rule can name, for a cache that has not listed expirations yet: an
+    `after_near` rule's reach past each near date, any other rule's own dates."""
+    rule = arm["far_expiry"]
+    if rule["kind"] != "after_near":
+        return target_dates({**arm, "expiry": rule}, today)
+    reach = 35 if rule.get("monthly") else AT_LEAST_REACH
+    out = sorted({d + timedelta(days=rule["days"] + k) for d in near for k in range(reach + 1)})
+    return [d for d in out if _cal.is_monthly_expiry(d)][:1] if rule.get("monthly") else out
 
 
 def trail_complete(trail: list[tuple[int, float]], grace: int) -> bool:
@@ -297,9 +315,22 @@ def _cal_close_minute(today: date) -> int:
     return int(h) * 60 + int(m)
 
 
+def by_expiry(pos: dict, legs: list[dict], rows: list[dict]) -> list[dict] | dict[str, list[dict]]:
+    """A position's leg quote rows (in its legs' order) grouped by each leg's expiry (`ensemble_legs.
+    expiration`, the position's when null): the rows as they are when every leg is on one, so a
+    calendar's two legs at one strike each sit on their own chain."""
+    own = [g.get("expiration") or pos["expiration"] for g in legs]
+    if len(set(own)) <= 1:
+        return rows
+    out: dict[str, list[dict]] = {}
+    for e, row in zip(own, rows, strict=True):
+        out.setdefault(e, []).append(row)
+    return out
+
+
 def position_snapshot(
     pos: dict,
-    leg_rows: list[dict],
+    leg_rows: list[dict] | dict[str, list[dict]],
     spot: float,
     when: datetime,
     *,
@@ -312,7 +343,8 @@ def position_snapshot(
     the spot, the clock, and what its exit reads. A signal exit gets today's recorded trail, the earlier
     sessions' (an intraday signal) or the daily bars (a daily one) and the event calendar, exactly as an
     entry trigger does; without them a signal exit could never fire in paper while it fires in the
-    backtest. No gates run on it, so nothing else is read."""
+    backtest. No gates run on it, so nothing else is read. `leg_rows` is the legs' rows in order, all on the
+    position's expiry, or `{expiry: rows}` for a position with legs on two (`by_expiry`)."""
     today = when.date()
     minute = when.hour * 60 + when.minute
     as_arm = {"entry": {}, "exit": exit_rules or {}}
@@ -327,7 +359,7 @@ def position_snapshot(
         spot=spot,
         prev_close=spot,
         day_open=spot,
-        quotes={pos["expiration"]: leg_rows},
+        quotes=leg_rows if isinstance(leg_rows, dict) else {pos["expiration"]: leg_rows},
         trail=db.trail(conn, pos["symbol"], today.isoformat(), through=minute) if signal else [],
         closes=[],
         events=events,

@@ -22,8 +22,15 @@ job's own phases with its live children's, outermost first, so a validation read
 
 **Reading it** costs file reads only. The view adds what a job cannot say about itself: the overall
 fraction and ETA across nested phases, the innermost counted phase's rate (``8.2 s/path``),
+the ETA of only the step under way where a job counts unlike stages in a phase whose unit is
+``steps`` (`steps_after` says how many follow),
 ``stalled`` (alive, no update for `STALL_SECONDS`) and
 ``orphaned`` (the process is gone and never wrote a final state).
+
+**Per symbol.** A phase may split its count by key (`phase(..., by={"SPX": 120, "QQQ": 80})`,
+`advance(..., key="SPX")`): the view's `by_symbol` is each key's done, total and share, read from the
+outermost phase that splits, and the line names the key being worked on with its own count. Every
+fetch and study reports both the whole and each symbol.
 
 Telemetry, never a dependency: a write that fails is skipped, and nothing here raises into the job.
 """
@@ -33,7 +40,7 @@ from __future__ import annotations
 import json
 import os
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -45,7 +52,17 @@ STALL_SECONDS = 600
 RETAIN_DAYS = 30
 _THROTTLE_S = 1.0
 
-__all__ = ["ENV", "Reporter", "progress_dir", "read_all", "read_job", "prune", "summary_line"]
+__all__ = [
+    "ENV",
+    "Reporter",
+    "counts_by",
+    "progress_dir",
+    "read_all",
+    "read_job",
+    "prune",
+    "summary_line",
+    "track",
+]
 
 
 def progress_dir() -> Path:
@@ -115,10 +132,13 @@ class Reporter:
     def _find(self, name: str) -> dict | None:
         return next((p for p in self.doc["phases"] if p["name"] == name), None)
 
-    def phase(self, name: str, *, total: int | None = None, unit: str = "") -> None:
-        """Open (or reset) a phase. A phase opened after others nests inside them."""
+    def phase(
+        self, name: str, *, total: int | None = None, unit: str = "", by: Mapping[str, int] | None = None
+    ) -> None:
+        """Open (or reset) a phase. A phase opened after others nests inside them. `by` splits its
+        total by key (a symbol, mostly): `{key: total}`, counted by `advance(..., key=)`."""
         found = self._find(name)
-        entry = {
+        entry: dict[str, Any] = {
             "name": name,
             "done": 0,
             "total": total,
@@ -126,16 +146,23 @@ class Reporter:
             "current": None,
             "started_at": self._clock(),
         }
+        if by is not None:
+            entry["by"] = {str(k): {"done": 0, "total": int(v)} for k, v in by.items()}
         if found is None:
             self.doc["phases"].append(entry)
         else:
             found.pop("skipped", None)  # a reopened phase has skipped nothing yet
+            found.pop("by", None)
             found.update(entry)
         self._write(force=True)
 
-    def advance(self, name: str, n: int = 1, *, current: Any = None, skipped: bool = False) -> None:
+    def advance(
+        self, name: str, n: int = 1, *, current: Any = None, skipped: bool = False, key: Any = None
+    ) -> None:
         """Count `n` items of a phase done. `skipped` marks items done without work (a resumed job's
-        finished sessions): they count toward the share done, never toward the rate or the ETA."""
+        finished sessions): they count toward the share done, never toward the rate or the ETA. `key`
+        counts them toward that key of the phase's `by` as well (a key it was not opened with is
+        added, with no total), and names it as the key being worked on."""
         found = self._find(name)
         if found is None:
             self.phase(name)
@@ -143,9 +170,22 @@ class Reporter:
         found["done"] = int(found["done"]) + n
         if skipped:
             found["skipped"] = int(found.get("skipped") or 0) + n
+        if key is not None:
+            slot = found.setdefault("by", {}).setdefault(str(key), {"done": 0, "total": None})
+            slot["done"] = int(slot["done"]) + n
+            found["key"] = str(key)
         if current is not None:
             found["current"] = str(current)
         self._write()
+
+    def split(self, name: str, keys: Iterable[Any], *, unit: str = "", done: Iterable[Any] = ()) -> None:
+        """Open a phase over items whose keys are `keys` (one per item: its symbol), split by key, and
+        count the items already done (`done`, their keys) as skipped: a resumed job's view starts where
+        it stopped, overall and per key."""
+        keys = list(keys)
+        self.phase(name, total=len(keys), unit=unit, by=counts_by(keys))
+        for k, n in counts_by(done).items():
+            self.advance(name, n, skipped=True, key=k)
 
     def at(self, name: str, current: Any) -> None:
         """Name what a phase is working on without counting it done."""
@@ -237,10 +277,37 @@ def _worked(p: dict) -> int:
     return max(0, int(p.get("done") or 0) - int(p.get("skipped") or 0))
 
 
+STEPS = "steps"
+
+
+def _steps_after(phases: list[dict]) -> int | None:
+    """Steps still to come after the one under way, where the job counts its stages as `steps`
+    (unlike stages: a fetch, then its VIX pass); None when it does not."""
+    for p in phases:
+        if p.get("unit") == STEPS and p.get("total"):
+            return max(0, int(p["total"]) - int(p.get("done") or 0) - 1)
+    return None
+
+
+def _step_eta(phases: list[dict], now: float) -> float | None:
+    """Seconds left in the step under way: its innermost counted phase's pace over the items it
+    worked. The steps are unlike, so the pace of one says nothing of the next."""
+    for p in reversed(phases):
+        if p.get("unit") == STEPS:
+            return None
+        total, worked, begun = p.get("total"), _worked(p), p.get("started_at")
+        if total and worked > 0 and begun is not None and now > begun:
+            return (now - begun) / worked * max(0, int(total) - int(p.get("done") or 0))
+    return None
+
+
 def _eta(phases: list[dict], share: float, started: float, now: float) -> float | None:
-    """Seconds left. Across nested phases, the job's elapsed time scaled by its share left; where a
-    phase skipped items, that phase's own pace over the items it worked, so a resume does not read
-    as nearly finished."""
+    """Seconds left. In a job counted in `steps`, only the step under way (`_step_eta`); across
+    other nested phases, the job's elapsed time scaled by its share left; where a phase skipped
+    items, that phase's own pace over the items it worked, so a resume does not read as nearly
+    finished."""
+    if _steps_after(phases) is not None:
+        return _step_eta(phases, now)
     for p in phases:
         skipped, total = int(p.get("skipped") or 0), p.get("total")
         if skipped and total:
@@ -249,6 +316,82 @@ def _eta(phases: list[dict], share: float, started: float, now: float) -> float 
                 return None
             return (now - begun) / worked * max(0, int(total) - int(p.get("done") or 0))
     return (now - started) * (1 - share) / share
+
+
+def counts_by(keys: Iterable[Any]) -> dict[str, int]:
+    """`{key: how many}` over a job's items, in first-seen order: the `by` a phase opens with."""
+    out: dict[str, int] = {}
+    for k in keys:
+        out[str(k)] = out.get(str(k), 0) + 1
+    return out
+
+
+def track(
+    items: Iterable[Any],
+    *,
+    job: str,
+    phase: str,
+    unit: str = "",
+    key: Callable[[Any], Any] | None = None,
+    current: Callable[[Any], Any] | None = None,
+    reporter: Reporter | None = None,
+):
+    """Yield `items`, counting each done once the loop body has run, overall and (with `key`, the
+    item's symbol) per symbol. A study wraps its main loop in this one call:
+
+        for row in progress.track(rows, job="item89-study", phase="trades", key=lambda r: r["fund"]):
+            ...
+
+    Without `reporter` it writes its own job file and finishes it: `done` when the loop runs to its
+    end, `failed` (noting how far it got) when it stops before. Telemetry only: what the loop
+    computes never depends on it."""
+    items = list(items)
+    rep = reporter or Reporter(job)
+    if key is None:
+        rep.phase(phase, total=len(items), unit=unit)
+    else:
+        rep.split(phase, (key(i) for i in items), unit=unit)
+    try:
+        for item in items:
+            yield item
+            rep.advance(
+                phase,
+                key=None if key is None else key(item),
+                current=None if current is None else current(item),
+            )
+    except GeneratorExit:
+        # The loop stopped before its last item: a `break`, or the body raised (a generator cannot
+        # tell the two apart). Either way the job did not finish what it counted toward.
+        if reporter is None:
+            done = next((p["done"] for p in rep.doc["phases"] if p["name"] == phase), 0)
+            rep.note(f"stopped at {done}/{len(items)}")
+            rep.finish("failed")
+        raise
+    except BaseException:
+        if reporter is None:
+            rep.finish("failed")
+        raise
+    if reporter is None:
+        rep.finish("done")
+
+
+def _by_symbol(phases: list[dict]) -> dict[str, dict] | None:
+    """Each key's done, total and share, from the outermost phase that splits its count; None when
+    none does."""
+    for p in phases:
+        by = p.get("by")
+        if by:
+            return {
+                k: {
+                    "done": int(v.get("done") or 0),
+                    "total": v.get("total"),
+                    "share": round(min(1.0, int(v.get("done") or 0) / v["total"]), 4)
+                    if v.get("total")
+                    else None,
+                }
+                for k, v in by.items()
+            }
+    return None
 
 
 def _per_item(name: str) -> str:
@@ -283,7 +426,10 @@ def _view(doc: dict, children: list[dict], now: float) -> dict:
         "phases": phases,
         "fraction": None if share is None else round(share, 4),
         "eta_s": None if eta is None else round(eta),
+        # Set where `eta_s` covers only the step under way: how many steps follow it.
+        "steps_after": _steps_after(phases) if eta is not None else None,
         "rate": _rate(phases, now) if state == "running" else None,
+        "by_symbol": _by_symbol(phases),
         "note": doc.get("note"),
     }
     view["line"] = summary_line(view)
@@ -296,6 +442,14 @@ def summary_line(view: dict) -> str:
     for p in view.get("phases") or []:
         count = f"{p.get('done', 0)}/{p['total']}" if p.get("total") else str(p.get("done", 0))
         part = f"{p['name']} {count}" + (f" {p['unit']}" if p.get("unit") else "")
+        key = p.get("key")
+        slot = (p.get("by") or {}).get(key) if key else None
+        if slot:
+            part += (
+                f" [{key} {slot['done']}/{slot['total']}]"
+                if slot.get("total")
+                else f" [{key} {slot['done']}]"
+            )
         if p.get("current"):
             part += f" ({p['current']})"
         parts.append(part)
@@ -305,7 +459,13 @@ def summary_line(view: dict) -> str:
         parts.append(f"{each:.1f} s/{_per_item(name)}" if each >= 1 else f"{1 / each:.1f} {name}/s")
     if view.get("eta_s") is not None:
         mins = round(view["eta_s"] / 60)
-        parts.append(f"~{mins // 60:02d}:{mins % 60:02d} remaining" if mins >= 1 else "<00:01 remaining")
+        left = f"~{mins // 60:02d}:{mins % 60:02d} remaining" if mins >= 1 else "<00:01 remaining"
+        after = view.get("steps_after")
+        if after is not None:
+            left += " in this step" + (
+                f", then {after} more step{'s' if after != 1 else ''}" if after else ""
+            )
+        parts.append(left)
     if view.get("state") in ("stalled", "orphaned"):
         parts.append(view["state"])
     return " · ".join(parts)

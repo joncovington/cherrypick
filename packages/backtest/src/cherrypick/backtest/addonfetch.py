@@ -179,8 +179,7 @@ def fetch_spans(
             "stopped": False,
         }
         rep = core_progress.Reporter("backtest-fetch-addon-weeklies")
-        rep.phase("requests", total=len(spans), unit="spans")
-        rep.advance("requests", report["already"])
+        rep.split("requests", ["SPXW"] * len(spans), unit="spans", done=["SPXW"] * report["already"])
         pending = iter(todo)
         with ThreadPoolExecutor(max(1, workers)) as ex:
             running = {}
@@ -218,7 +217,7 @@ def fetch_spans(
                         report["rows"] += write_span(conn, span, rows)
                         report["complete"] += 1
                         log(f"{span[0]} {span[1]}..{span[2]}: {len(rows)} rows")
-                    rep.advance("requests", current=f"{span[0]} {span[1]}")
+                    rep.advance("requests", current=f"{span[0]} {span[1]}", key="SPXW")
                     if not report.get("aborted"):
                         submit_next()
                 if report.get("aborted"):

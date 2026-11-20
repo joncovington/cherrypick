@@ -27,7 +27,15 @@ Packages: `packages/orchestrator`, `packages/meic`, `packages/earnings`, `packag
   save of one automation (always off), both through the orchestrator's config editor, and the
   Builder's backtest: one explore run of one saved automation, queued on the research queue by
   the orchestrator, only where our data covers it (our own stores first, the vendor's only while
-  the licence allows new work, its result then licensed).
+  the licence allows new work, its result then licensed), and the Builder's addition of an
+  underlying to the full set: its vendor fetches queued by the orchestrator, up to 300 sessions a
+  click and only while the licence allows new work, with that automation's run after them, and the
+  Builder's idea search: one search of one saved automation's newest long run, queued on the research
+  queue by the orchestrator, its Declare (one surviving idea's register row drafted into the search's
+  result) and one held-out test per declared idea, logged there. The
+  Automations › Groups tab writes the automation groups (each group's switch, start, allocation, cap
+  and shares, which group each automation is in, and each automation's own switch, switched on from
+  the next session), through the same editor after the automations module's own check. Paper only.
 - **backtest**: the licence outranks everything. Vendor data and anything derived from it stay under
   `~/.cherrypick`, never in this repo, a PR, an issue or a published artifact.
 

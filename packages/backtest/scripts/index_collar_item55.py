@@ -54,6 +54,7 @@ from pathlib import Path
 
 from cherrypick.core import calendar as cal
 from cherrypick.core import fees
+from cherrypick.core import progress as core_progress
 from cherrypick.core import stats as core_stats
 
 SYMBOL = "SPY"
@@ -451,9 +452,12 @@ def simulate(sessions: dict, expiry: date) -> tuple[dict | None, str | None]:
     return out, None
 
 
-def run_all(conn) -> tuple[list[dict], dict]:
+def run_all(conn, job: str = "index_collar_item55") -> tuple[list[dict], dict]:
     cycles, drops = [], {}
-    for exp in expiries(conn):
+    for exp in core_progress.track(
+        expiries(conn), job=job, phase="expiries", unit="expiries",
+        key=lambda _: SYMBOL, current=lambda e: e.isoformat(),
+    ):  # fmt: skip
         t, why = simulate(load_expiry(conn, exp), exp)
         if t is None:
             drops[why] = drops.get(why, 0) + 1
@@ -489,7 +493,7 @@ def arm_summary(cycles: list[dict], arm: str) -> dict:
 def cmd_plan(args) -> int:
     conn = _store()
     exps = expiries(conn)
-    cycles, drops = run_all(conn)
+    cycles, drops = run_all(conn, "index_collar_item55-plan")
     conn.close()
     counts = {w: len(in_window(cycles, w)) for w in ("design", "holdout")}
     short = {w: n for w, n in counts.items() if n < MIN_CYCLES[w]}
@@ -519,7 +523,7 @@ def cmd_plan(args) -> int:
 
 def cmd_design(args) -> int:
     conn = _store()
-    cycles, drops = run_all(conn)
+    cycles, drops = run_all(conn, "index_collar_item55-design")
     conn.close()
     d = _dir(args.out_dir)
     (d / "cycles.json").write_text(json.dumps(cycles), encoding="utf-8")

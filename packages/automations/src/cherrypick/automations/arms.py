@@ -7,7 +7,7 @@ that defaulted silently would change what is measured):
 
     name, symbol, enabled
     group         the automation group it belongs to (a set of like automations, switched as one:
-                  `config.groups`); the shipped eight are the `ensemble` group
+                  `config.groups`), or null for none; the shipped eight are the `ensemble` group
     register      {"item": N, "verdict": "passed"|"failed"|"no_verdict", "blocks": {block: hash}}: the
                   research register's verdict on it, a label read from the register, never from a
                   result file; `blocks` records each block as the study ran it (`enrolment`)
@@ -18,6 +18,11 @@ that defaulted silently would change what is measured):
                   {"kind": "between", "min": N, "max": M, "prefer": "first"|"last"}: a listed expiry N
                   to M calendar days out, the nearest (`first`, the default) or the farthest
                   either with "monthly": true takes only standard monthlies (`calendar.monthly_expiry`)
+    far_expiry    a calendar's or a diagonal's second expiry, for the legs with "expiry": "far": any
+                  `expiry` rule (a listed expiry after the near one), or {"kind": "after_near", "days":
+                  N, "monthly": bool}: the first listed expiry N or more calendar days after the near
+                  one. With a far leg: at least one leg stays near, every far leg is bought, and
+                  `exit.close_before_expiry_min` is required (`_far_problems`)
     entry         {"kind": "time", "at": "HH:MM", "window": minutes}
                   {"kind": "orb", "minutes": 60, "direction": "above", "latest": "HH:MM", "single_shot": bool}
                   {"kind": "trigger", "trigger": <core.entrychecks trigger>, "bar_minutes": N}
@@ -26,8 +31,13 @@ that defaulted silently would change what is measured):
                   `"daily": true` reads completed daily bars and takes no `bar_minutes`)
     weekdays      [0..4], Monday = 0
     skip_events   {"labels": [...], "through_expiry": bool}
-    legs          [{"name", "right": "C"|"P", "side": 1|-1, "strike": <strikes rule>}] in placement order
-                  (each rule's keys and its `match` mode: `strikes` docstring)
+    legs          [{"name", "action": "BTO"|"STO", "qty": n, "side": "put"|"call", "strike": <strikes
+                  rule>}] in placement order (each rule's keys and its `match` mode: `strikes`
+                  docstring); `qty` is the leg's contracts per structure, 1 to `MAX_LEG_QUANTITY`. The
+                  older spelling, {"name", "right": "C"|"P", "side": signed contracts, "strike"}, is read
+                  for good; a leg is one or the other (`internal_leg`). Each leg's `name` is its own: a
+                  later leg refers to an earlier one by it, whichever expiry either sits on. Either
+                  spelling takes "expiry": "near" (the default) or "far" (`far_expiry`)
     gates         [{"gate": <gates.REGISTRY name>, ...}]
     size          {"contracts": N}, {"max_risk": dollars, "minimum": n} or
                   {"allocation_pct": p, "allocation": dollars, "max_dollars": x, "max_contracts": n},
@@ -42,7 +52,8 @@ that defaulted silently would change what is measured):
                   "stop_credit_multiple": m (a credit entry's loss at m times its credit),
                   "stop_debit_pct": p (a debit entry's loss at p% of its debit),
                   "stop_dollars": x, "profit_dollars": x (open P&L, whole-position dollars),
-                  "trailing_stop": {"dollars": d, "activate_dollars": a},
+                  "trailing_stop": {"dollars": d, "activate_dollars": a}
+                  or {"pct": p, "activate_pct": a} (% of the trade's max profit),
                   "avoid_events": {"labels": [...], "before_close_min": n} (a forced close the
                   session before a listed event),
                   "max_spread": x (no exit while the structure's bid/ask is wider than $x a share),
@@ -109,6 +120,7 @@ TOP_KEYS = {
     "start",
     "forward",
     "expiry",
+    "far_expiry",
     "entry",
     "weekdays",
     "skip_events",
@@ -120,6 +132,8 @@ TOP_KEYS = {
     "note",
 }
 VERDICTS = ("passed", "failed", "no_verdict")
+#: The most contracts one leg may hold per structure, either way (a 1-2-1 fly's middle is 2).
+MAX_LEG_QUANTITY = 10
 
 LIMIT_KEYS = {"max_open", "per_day", "every_days", "one_per_expiry"}
 
@@ -164,6 +178,8 @@ EXPIRY_KEYS = {
     "at_least": {"days": True, "monthly": False},
     "between": {"min": True, "max": True, "prefer": False, "monthly": False},
 }
+#: The expiry keys that are true or false.
+EXPIRY_FLAGS = ("monthly",)
 
 
 def _whole(v, least: int = 0) -> bool:
@@ -189,8 +205,53 @@ def _expiry_problems(where: str, rule) -> list[str]:
             p.append(f"{where}: min is after max")
     if rule.get("prefer") not in (None, "first", "last"):
         p.append(f"{where}.prefer: first or last")
-    if "monthly" in rule and not isinstance(rule["monthly"], bool):
-        p.append(f"{where}.monthly: true or false")
+    for k in EXPIRY_FLAGS:
+        if k in rule and not isinstance(rule[k], bool):
+            p.append(f"{where}.{k}: true or false")
+    return p
+
+
+#: The far expiry's rule: any `expiry` rule (counted from the session), or `after_near`: the first
+#: listed expiry at least `days` calendar days after the near one.
+AFTER_NEAR_KEYS = {"days": True, "monthly": False}
+
+
+def _far_problems(name: str, arm: dict) -> list[str]:
+    """`far_expiry` and the legs on it: a far leg needs the rule, the rule needs a far leg, at least one
+    leg stays near, every far leg is bought (a sold one's risk is not bounded by the strikes, so the
+    engine could not size it), and the position closes before its near expiry
+    (`close_before_expiry_min`): a far leg cannot be settled with the near ones."""
+    legs = [g for g in (internal_leg(raw)[0] for raw in arm.get("legs") or []) if g is not None]
+    far = [g for g in legs if g.get("expiry") == "far"]
+    rule = arm.get("far_expiry")
+    p: list[str] = []
+    if rule is not None:
+        if isinstance(rule, dict) and rule.get("kind") == "after_near":
+            p += [
+                f"{name}.far_expiry: unknown key {k!r}"
+                for k in sorted(set(rule) - set(AFTER_NEAR_KEYS) - {"kind"})
+            ]
+            if not _whole(rule.get("days"), 1):
+                p.append(f"{name}.far_expiry.days: a whole number of days, 1 or more")
+            if "monthly" in rule and not isinstance(rule["monthly"], bool):
+                p.append(f"{name}.far_expiry.monthly: true or false")
+        else:
+            p.extend(_expiry_problems(f"{name}.far_expiry", rule))
+        if not far:
+            p.append(f"{name}.far_expiry: no leg is on the far expiry")
+    if not far:
+        return p
+    if rule is None:
+        p.append(f"{name}.far_expiry: required, a leg is on the far expiry")
+    if len(far) == len(legs):
+        p.append(f"{name}.legs: at least one leg on the near expiry")
+    for g in far:
+        if isinstance(g.get("side"), int) and g["side"] < 0:
+            p.append(f"{name}.legs: {g.get('name')!r} is sold on the far expiry; a far leg is bought")
+    if (arm.get("exit") or {}).get("close_before_expiry_min") is None:
+        p.append(
+            f"{name}.exit.close_before_expiry_min: required with a far leg, to close before the near expiry"
+        )
     return p
 
 
@@ -242,8 +303,102 @@ def _strike_problems(where: str, rule, daily_entry: bool) -> list[str]:
     return p
 
 
+#: A leg's two spellings. Written (the Builder's, the shipped automations', and what `written_leg`
+#: converts an older one to): the order that opens it, its contracts and Put or Call, the page's own
+#: words. Older (still read, for good: configs, backups, replay records and ledgers hold it): `side` is
+#: the contracts signed (+ bought, - sold) and `right` is "C" or "P". Every leg is read into the older
+#: form (`internal_leg`), which is what the engine, the ledger and the block hash see, so an automation
+#: hashes the same in either spelling and none loses its backtest label for being converted.
+ACTIONS = {"BTO": 1, "STO": -1}
+LEG_SIDES = {"put": "P", "call": "C"}
+WRITTEN_LEG_KEYS = {"name", "action", "qty", "side", "strike", "expiry"}
+OLDER_LEG_KEYS = {"name", "right", "side", "strike", "expiry"}
+#: Which of the automation's expiries a leg sits on: `near` (its `expiry`, the default) or `far` (its
+#: `far_expiry`). Read as `near` when absent, and kept only as `far`, so a one-expiry automation's legs
+#: (and its block hash) are as they were.
+LEG_EXPIRIES = ("near", "far")
+
+
+def _quantity_ok(n) -> bool:
+    return isinstance(n, int) and not isinstance(n, bool) and 1 <= n <= MAX_LEG_QUANTITY
+
+
+def internal_leg(leg, where: str = "leg") -> tuple[dict | None, list[str]]:
+    """`leg` in the form the engine reads ({name, right, side: signed contracts, strike}), from either
+    spelling, or (None, problems). A leg is one spelling or the other: `action` with an integer
+    `side`, or `right` beside `action`, is refused rather than guessed."""
+    if not isinstance(leg, dict):
+        return None, [f"{where}: a leg is an object"]
+    if "action" in leg or "qty" in leg:
+        p = [f"{where}: unknown key {k!r}" for k in sorted(set(leg) - WRITTEN_LEG_KEYS)]
+        if "right" in leg:
+            p.append(f"{where}: a leg is action/qty/side or the older side/right, not both")
+        if leg.get("action") not in ACTIONS:
+            p.append(f"{where}.action: {' or '.join(ACTIONS)}")
+        if leg.get("side") not in LEG_SIDES:
+            p.append(f"{where}.side: {' or '.join(LEG_SIDES)}")
+        qty = leg.get("qty", 1)
+        if not _quantity_ok(qty):
+            p.append(f"{where}.qty: a whole number of contracts, 1 to {MAX_LEG_QUANTITY}")
+        p += _leg_expiry_problems(where, leg)
+        if p:
+            return None, p
+        signed = ACTIONS[leg["action"]] * qty
+        return _far({"name": leg.get("name", ""), "right": LEG_SIDES[leg["side"]], "side": signed,
+                     "strike": leg.get("strike")}, leg), []  # fmt: skip
+    p = [f"{where}: unknown key {k!r}" for k in sorted(set(leg) - OLDER_LEG_KEYS)]
+    side = leg.get("side")
+    if leg.get("right") not in ("C", "P"):
+        p.append(f"{where}: right/side (action BTO|STO, qty, side put|call)")
+    elif not (isinstance(side, int) and not isinstance(side, bool) and _quantity_ok(abs(side))):
+        p.append(
+            f"{where}: right/side (side: contracts, + bought, - sold, 1 to {MAX_LEG_QUANTITY} either way)"
+        )
+    p += _leg_expiry_problems(where, leg)
+    if p:
+        return None, p
+    return _far(
+        {"name": leg.get("name", ""), "right": leg["right"], "side": side, "strike": leg.get("strike")}, leg
+    ), []
+
+
+def _leg_expiry_problems(where: str, leg: dict) -> list[str]:
+    if "expiry" in leg and leg["expiry"] not in LEG_EXPIRIES:
+        return [f"{where}.expiry: {' or '.join(LEG_EXPIRIES)}"]
+    return []
+
+
+def _far(out: dict, leg: dict) -> dict:
+    """`out` with `"expiry": "far"` when `leg` sits on the far expiry; a near leg carries no key."""
+    if leg.get("expiry") == "far":
+        out["expiry"] = "far"
+    return out
+
+
+def written_leg(leg) -> dict:
+    """`leg` in the written spelling (action, qty, side), from either; a leg that is neither comes back
+    as it was, for the check to name."""
+    got, problems = internal_leg(leg)
+    if got is None or problems:
+        return leg
+    side = got["side"]
+    return _far({"name": got["name"], "action": "STO" if side < 0 else "BTO", "qty": abs(side),
+                 "side": "call" if got["right"] == "C" else "put", "strike": got["strike"]}, got)  # fmt: skip
+
+
+def internal_legs(arm: dict) -> list:
+    """Every leg of `arm` in the engine's form; one that cannot be read stays as it was (the check
+    names it)."""
+    out = []
+    for leg in arm.get("legs") or []:
+        got, _ = internal_leg(leg)
+        out.append(got if got is not None else leg)
+    return out
+
+
 def _leg(name, right, side, **strike):
-    return {"name": name, "right": right, "side": side, "strike": strike}
+    """A shipped leg, written in the page's spelling: `side` here is the signed contracts."""
+    return written_leg({"name": name, "right": right, "side": side, "strike": strike})
 
 
 ARMS: dict[str, dict] = {
@@ -545,8 +700,11 @@ def validate(arm: dict) -> list[str]:
     if missing:
         return p + [f"{name}: missing {k!r}" for k in missing]
     p.extend(_expiry_problems(f"{name}.expiry", arm["expiry"]))
-    if "group" in arm and not (isinstance(arm["group"], str) and arm["group"].strip() == arm["group"] != ""):
-        p.append(f"{name}.group: a name")
+    p.extend(_far_problems(name, arm))
+    # A name, or null for no group: a change laid over a shipped automation takes it out of its group.
+    g = arm.get("group")
+    if g is not None and not (isinstance(g, str) and g.strip() == g != ""):
+        p.append(f"{name}.group: a name, or null for none")
     reg = arm.get("register")
     if reg is not None and not (
         isinstance(reg, dict)
@@ -564,10 +722,15 @@ def validate(arm: dict) -> list[str]:
     if not all(isinstance(d, int) and 0 <= d <= 4 for d in arm["weekdays"]):
         p.append(f"{name}.weekdays: {arm['weekdays']!r}")
     seen: set[str] = set()
-    for i, leg in enumerate(arm["legs"]):
+    for i, raw in enumerate(arm["legs"]):
         where = f"{name}.legs[{i}]"
-        if leg.get("right") not in ("C", "P") or leg.get("side") not in (1, -1):
-            p.append(f"{where}: right/side")
+        leg, leg_problems = internal_leg(raw, where)
+        p.extend(leg_problems)
+        if leg is None:
+            seen.add(raw.get("name", "") if isinstance(raw, dict) else "")
+            continue
+        if leg.get("name", "") in seen:
+            p.append(f"{where}.name: {leg.get('name')!r} is already a leg; each leg needs its own name")
         daily = arm["entry"].get("kind") == "trigger" and bool(
             (arm["entry"].get("trigger") or {}).get("daily")
         )
@@ -634,13 +797,23 @@ def _num(v) -> bool:
 
 
 def _trailing_ok(v) -> bool:
-    return (
-        isinstance(v, dict)
-        and set(v) <= {"dollars", "activate_dollars"}
-        and _num(v.get("dollars"))
-        and v["dollars"] > 0
-        and (_num(v.get("activate_dollars", 0)) and v.get("activate_dollars", 0) >= 0)
-    )
+    """In dollars (`dollars`, `activate_dollars`) or in percent of the trade's max profit (`pct` above 0
+    and at most 100, `activate_pct` 0 or more), never the two mixed."""
+    if not isinstance(v, dict):
+        return False
+    if set(v) <= {"dollars", "activate_dollars"}:
+        return (
+            _num(v.get("dollars"))
+            and v["dollars"] > 0
+            and (_num(v.get("activate_dollars", 0)) and v.get("activate_dollars", 0) >= 0)
+        )
+    if set(v) <= {"pct", "activate_pct"}:
+        return (
+            _num(v.get("pct"))
+            and 0 < v["pct"] <= 100
+            and (_num(v.get("activate_pct", 0)) and v.get("activate_pct", 0) >= 0)
+        )
+    return False
 
 
 def _avoid_ok(v) -> bool:
@@ -720,6 +893,10 @@ def load_arms(overrides: dict | None = None) -> dict[str, dict]:
         if name.startswith("_"):
             continue
         arms[name] = {**arms.get(name, {"name": name}), **change}
+    for a in arms.values():
+        # Either spelling in, the engine's out: what the loop, the ledger and the block hash read.
+        if isinstance(a.get("legs"), list):
+            a["legs"] = internal_legs(a)
     problems = [x for a in arms.values() for x in validate(a)]
     if problems:
         raise ValueError("; ".join(problems))

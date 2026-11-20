@@ -103,12 +103,16 @@ Subcommands:
   queue-cancel         Cancel a queued task (--task-id).
   queue-priority       Reorder a queued task (--task-id, --priority N): the ready row with the
                        highest priority runs next, the oldest among equals.
-  queue-run            Run ready tasks one after another, each to its end (the research-queue job).
+  queue-run            Run ready tasks one after another, each to its end; --lane vendor|local
+                       runs one lane (the research-queue and research-queue-local jobs).
   remind-add           Add a dated reminder (orchestrator/reminders.py): --title, --file (the
                        message), --due (ET, YYYY-MM-DDTHH:MM), --done-when / --checks (JSON lists of
                        allow-listed conditions), --renotify-hours. Pushed until --done-when holds.
   remind-list          The reminders, with each live one's conditions as read now.
   remind-done          Close a reminder by hand (--reminder-id, --note).
+  automations-legs-convert  Rewrite this machine's automations stored in the older leg spelling
+                       (side/right) in the written one (action/qty/side); the module proves no
+                       automation loads differently. Dry run unless --apply; one save, backed up.
   remind-cancel        Drop a reminder (--reminder-id).
   remind-run           Push the due reminders, close the met ones (the supervisor's reminders job).
   external-check       Judge one external report file (the path after the verb) against the
@@ -1933,7 +1937,8 @@ def cmd_queue_chain(args) -> None:
 
 
 def cmd_queue_list(cfg, args) -> None:
-    """The queue's rows, newest first, each queued one with why it waits now."""
+    """The queue's rows, newest first, each queued one with why it waits now and its `position` in the
+    order the runner would take them (`researchqueue.queue_order`)."""
     from datetime import datetime
 
     from cherrypick.core import calendar as cal
@@ -1965,6 +1970,13 @@ def cmd_queue_list(cfg, args) -> None:
         r["args"] = json.loads(r["args"])
         r["result"] = json.loads(r["result"]) if r.get("result") else None
         out.append(r)
+    # Each row's lane, and each queued row's place in its lane's order (ready by run_order, priority
+    # included, then waiting).
+    places = rq.positions([r for r in out if r["status"] == "queued"])
+    for r in out:
+        r["lane"] = rq.lane_of(r)
+        if r["status"] == "queued":
+            r["position"] = places[r["id"]]
     by_hand = [v for stem, v in views.items() if not (stem.startswith("q") and stem[1:].isdigit())]
     _emit({"ok": True, "session_held": held, "blackout": list(window), "tasks": out, "by_hand": by_hand})
 
@@ -1993,15 +2005,27 @@ def cmd_queue_priority(args) -> None:
         sys.exit(1)
 
 
-def cmd_queue_run(cfg) -> None:
-    """The supervisor's research-queue job: run ready tasks one after another, each to its end, until
-    none is ready. The config is read again before each later task."""
+def cmd_queue_run(cfg, lane: str | None = None) -> None:
+    """The supervisor's research-queue jobs: run ready tasks one after another, each to its end, until
+    none is ready, in one lane (`--lane vendor|local`) or, without one, across both. The config is
+    read again before each later task."""
     from cherrypick.orchestrator import researchqueue as rq
 
     loads = iter([cfg])
-    out = rq.run_ready(lambda: next(loads, None) or cfgmod.load_config())
+    out = rq.run_ready(lambda: next(loads, None) or cfgmod.load_config(), lane=lane)
     _emit(out)
     if not out.get("ok", True):
+        sys.exit(1)
+
+
+def cmd_automations_legs_convert(cfg, apply: bool) -> None:
+    """Rewrite the older leg spelling in this machine's automations config (automationedit.convert_legs).
+    Dry run unless --apply; exits 1 on a refusal."""
+    from cherrypick.orchestrator import automationedit
+
+    out = automationedit.convert_legs(cfg, apply=apply)
+    _emit(out)
+    if not out.get("ok"):
         sys.exit(1)
 
 
@@ -2976,6 +3000,7 @@ def build_parser() -> argparse.ArgumentParser:
             "remind-add",
             "remind-list",
             "remind-done",
+            "automations-legs-convert",
             "remind-cancel",
             "remind-run",
             "external-check",
@@ -3151,6 +3176,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--apply",
         action="store_true",
         help="For migrate-home: perform the move; for retests: queue the rows (default is a dry run); "
+        "for automations-legs-convert: write the converted legs; "
         "for migrations: run the pending migrations",
     )
     parser.add_argument(
@@ -3286,6 +3312,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--stop-by", default=None, help="For queue-add: stop a fetch by then (ET, YYYY-MM-DDTHH:MM)"
+    )
+    parser.add_argument(
+        "--lane",
+        default=None,
+        choices=("vendor", "local"),
+        help="For queue-run: only the rows of this lane (vendor fetches, or local scripts)",
     )
     parser.add_argument(
         "--after",
@@ -3444,10 +3476,11 @@ def main() -> None:
         "queue-list": lambda: cmd_queue_list(cfg, args),
         "queue-cancel": lambda: cmd_queue_cancel(args),
         "queue-priority": lambda: cmd_queue_priority(args),
-        "queue-run": lambda: cmd_queue_run(cfg),
+        "queue-run": lambda: cmd_queue_run(cfg, args.lane),
         "remind-add": lambda: cmd_remind_add(args),
         "remind-list": lambda: cmd_remind_list(cfg),
         "remind-done": lambda: cmd_remind_close(args, done=True),
+        "automations-legs-convert": lambda: cmd_automations_legs_convert(cfg, args.apply),
         "remind-cancel": lambda: cmd_remind_close(args, done=False),
         "remind-run": lambda: cmd_remind_run(cfg),
         "external-check": lambda: cmd_external_check(args.name),

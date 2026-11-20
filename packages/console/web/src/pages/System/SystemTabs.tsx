@@ -593,7 +593,15 @@ export function ModulesSection({ posture, armDates = {} }: { posture?: ReactNode
                   </td>
                   <td className={m.enabled ? "" : "muted"}>{m.enabled ? "yes" : "no"}</td>
                   <td className={m.liveEnabled === true ? "pnl-neg" : "muted"}>
-                    {m.liveEnabled === null ? "—" : m.liveEnabled ? (m.armedToday ? "ENABLED · ARMED" : "ENABLED") : "paper only"}
+                    {m.liveEnabled === true
+                      ? m.armedToday
+                        ? "ENABLED · ARMED"
+                        : "ENABLED"
+                      : !m.livePath
+                        ? "no live path"
+                        : m.liveEnabled === null
+                          ? "unknown"
+                          : "live switch off"}
                     {!m.armedToday && armDates[m.id] != null && <span className="muted"> · last armed {armDates[m.id]}</span>}
                   </td>
                   <td>

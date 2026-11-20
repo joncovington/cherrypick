@@ -60,6 +60,7 @@ from cherrypick.contango import cli as _cli  # noqa: E402
 from cherrypick.contango import paper_loop as _loop  # noqa: E402
 from cherrypick.contango import regime as _regime  # noqa: E402
 from cherrypick.contango import replay as _replay  # noqa: E402
+from cherrypick.core import progress  # noqa: E402
 
 CFE_URL = "https://cdn.cboe.com/data/us/futures/market_statistics/historical_data/{p}/{p}_{d}.csv"
 TICK = 0.05
@@ -388,7 +389,15 @@ def main(argv=None) -> int:
         ("VXM", 1.0, 100_000),
     ]
     arms = _loop.enabled_arms(config)
-    for start in args.start or ["2018-03-01", "2013-05-20"]:
+    starts = args.start or ["2018-03-01", "2013-05-20"]
+    rep = progress.Reporter("contango_vx_replay")
+    # One run per (window, arm), counted under the arm's risk fund (its futures stand in for it).
+    rep.split(
+        "runs",
+        [_loop._symbols(_loop.merged_params(config, a))[0] for _ in starts for a in arms],
+        unit="runs",
+    )
+    for start in starts:
         days = [d for d in usable if d >= start]
         print(f"\n== {days[0]}..{days[-1]} ({len(days)} sessions) ==")
         print(
@@ -406,6 +415,7 @@ def main(argv=None) -> int:
         years: dict[str, dict[str, float]] = {}
         for arm in arms:
             params = _loop.merged_params(config, arm)
+            rep.advance("runs", key=_loop._symbols(params)[0], current=f"{start} {arm}")
             synth_run = _replay.run(days, ratio, synth, shv, params, cost_bps=args.cost_bps)
             print(
                 _row(
@@ -447,6 +457,7 @@ def main(argv=None) -> int:
             for y in sorted({y for v in years.values() for y in v}):
                 cells = "".join(f"{years[c][y] * 100:19.1f}%" if y in years[c] else f"{'':>20}" for c in cols)
                 print(f"  {y}           {cells}")
+    rep.finish("done")
     return 0
 
 

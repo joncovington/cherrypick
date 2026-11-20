@@ -9,7 +9,8 @@ there and added as the block's last entry when it is new, so the rest of the fil
 
 **A saved automation is always off.** The check returns the entry with `enabled: false`, and this module
 refuses one that is not, so the console can neither turn an automation on through a save nor change that
-by sending something else. Turning one on stays a hand edit or the group switch.
+by sending something else. Turning one on is the Groups page's switch (`groupedit`), from the next
+session, after the module's own check.
 """
 
 from __future__ import annotations
@@ -43,6 +44,11 @@ def run_module_draft(cfg: dict[str, Any], req: dict[str, Any]) -> dict[str, Any]
 def run_module_today(cfg: dict[str, Any], req: dict[str, Any]) -> dict[str, Any] | None:
     """The module's answer to one `cli builder-today` request, or None when it could not be asked."""
     return run_module_cli(cfg, "builder-today", req)
+
+
+def run_module_payoff(cfg: dict[str, Any], req: dict[str, Any]) -> dict[str, Any] | None:
+    """The module's answer to one `cli builder-payoff` request, or None when it could not be asked."""
+    return run_module_cli(cfg, "builder-payoff", req)
 
 
 def run_module_cli(cfg: dict[str, Any], command: str, req: dict[str, Any]) -> dict[str, Any] | None:
@@ -89,9 +95,76 @@ def draft(cfg: dict[str, Any], req: dict[str, Any], run: Runner = run_module_dra
 def today(cfg: dict[str, Any], req: dict[str, Any], run: Runner = run_module_today) -> dict[str, Any]:
     """The module's decision of `{name}` (or an unsaved `{name, automation}`) now, as paper would
     decide it, on a read-only snapshot (`cli builder-today`). Writes nothing."""
+    return _read(cfg, req, run, "automation_today")
+
+
+def payoff(cfg: dict[str, Any], req: dict[str, Any], run: Runner = run_module_payoff) -> dict[str, Any]:
+    """The structure `{name}` (or an unsaved `{name, automation}`) would take and its P&L at expiry, on
+    live quotes or the last session our own recorder holds (`cli builder-payoff`). Writes nothing."""
+    return _read(cfg, req, run, "automation_payoff")
+
+
+def run_module_strategy(cfg: dict[str, Any], req: dict[str, Any]) -> dict[str, Any] | None:
+    """The module's answer to one `cli builder-strategy` request, or None when it could not be asked."""
+    return run_module_cli(cfg, "builder-strategy", req)
+
+
+def strategy(cfg: dict[str, Any], req: dict[str, Any], run: Runner = run_module_strategy) -> dict[str, Any]:
+    """A strategy's legs and expiry from its settings, and a whole automation from it for the wizard
+    (`cli builder-strategy`): the strategy's name and its settings object, nothing else. Writes nothing."""
+    name = req.get("strategy")
+    settings = req.get("settings", {})
+    if not isinstance(name, str) or not name:
+        return _err("automation_strategy needs a 'strategy'")
+    if not isinstance(settings, dict):
+        return _err("'settings' must be an object")
+    answer = run(cfg, {"strategy": name, "settings": settings})
+    if not answer:
+        return _err("the automations module could not be asked (is it installed?)", "unavailable")
+    if not answer.get("ok"):
+        return _err(str(answer.get("error") or "the automations module refused the request"), "bad_request")
+    return answer
+
+
+def run_module_entry(cfg: dict[str, Any], req: dict[str, Any]) -> dict[str, Any] | None:
+    """The module's answer to one `cli builder-entry` request, or None when it could not be asked."""
+    return run_module_cli(cfg, "builder-entry", req)
+
+
+def entry(cfg: dict[str, Any], req: dict[str, Any], run: Runner = run_module_entry) -> dict[str, Any]:
+    """An entry preset's entry and the gates of the filters stacked on it (`cli builder-entry`): the
+    preset's name, its settings and the filters, each a name and its settings, nothing else. Writes
+    nothing."""
+    name = req.get("entry")
+    settings = req.get("settings", {})
+    filters = req.get("filters", [])
+    if not isinstance(name, str) or not name:
+        return _err("automation_entry needs an 'entry'")
+    if not isinstance(settings, dict):
+        return _err("'settings' must be an object")
+    if not isinstance(filters, list) or not all(
+        isinstance(f, dict) and isinstance(f.get("filter"), str) and isinstance(f.get("settings", {}), dict)
+        for f in filters
+    ):
+        return _err("'filters' must be a list of {filter, settings}")
+    body = {
+        "entry": name,
+        "settings": settings,
+        "filters": [{"filter": f["filter"], "settings": f.get("settings", {})} for f in filters],
+    }
+    answer = run(cfg, body)
+    if not answer:
+        return _err("the automations module could not be asked (is it installed?)", "unavailable")
+    if not answer.get("ok"):
+        return _err(str(answer.get("error") or "the automations module refused the request"), "bad_request")
+    return answer
+
+
+def _read(cfg: dict[str, Any], req: dict[str, Any], run: Runner, op: str) -> dict[str, Any]:
+    """One read of the module by name, with an unsaved edit passed through and nothing else."""
     name = req.get("name")
     if not isinstance(name, str) or not name:
-        return _err("automation_today needs a 'name'")
+        return _err(f"{op} needs a 'name'")
     body: dict[str, Any] = {"name": name}
     if "automation" in req:
         if not isinstance(req["automation"], dict):
@@ -163,3 +236,54 @@ def save(
         code = "conflict" if "changed on disk" in error else "guarded" if "guarded" in error else "invalid"
         return {**result, "code": code}
     return {**result, "name": name, "added": added, "enabled": False, "view": checked.get("view")}
+
+
+def run_module_legs(cfg: dict[str, Any], req: dict[str, Any]) -> dict[str, Any] | None:
+    """The module's answer to `cli legs-convert`, or None when it could not be asked."""
+    return run_module_cli(cfg, "legs-convert", req)
+
+
+#: The written spelling of a leg, all a conversion may write (`arms.WRITTEN_LEG_KEYS` in the module).
+WRITTEN_LEG_KEYS = frozenset({"name", "action", "qty", "side", "strike"})
+
+
+def convert_legs(
+    cfg: dict[str, Any], *, apply: bool = False, run: Runner = run_module_legs
+) -> dict[str, Any]:
+    """Rewrite this machine's automations stored in the older leg spelling (side/right) in the written
+    one (action/qty/side). The module names them and proves the conversion changes how none of them
+    loads (`cli legs-convert`); this writes only each one's `legs`, in one save with its backup, and
+    only with `apply`. A dry run lists them."""
+    answer = run(cfg, {})
+    if not answer:
+        return _err("the automations module could not be asked (is it installed?)", "unavailable")
+    if not answer.get("ok"):
+        return _err(str(answer.get("error") or "the automations module refused the request"))
+    problems = answer.get("problems") or []
+    if problems:
+        return _err("; ".join(map(str, problems)), "invalid", problems=problems)
+    convert = answer.get("convert")
+    if not isinstance(convert, dict):
+        return _err("the module returned nothing to convert", "invalid")
+    for name, legs in convert.items():
+        if not isinstance(legs, list) or not all(
+            isinstance(g, dict) and not (set(g) - WRITTEN_LEG_KEYS) for g in legs
+        ):
+            return _err(f"the module returned legs for {name} this writer does not take", "invalid")
+    names = sorted(convert)
+    if not apply or not names:
+        return {"ok": True, "applied": False, "convert": names}
+    try:
+        path = configedit._target_path(cfg, TARGET)
+    except KeyError as exc:
+        return _err(str(exc), "not_found")
+    text = path.read_text(encoding="utf-8")
+    block = _block(text)
+    if block is None:
+        return _err("the automations config has no automations block", "not_found")
+    for name in names:
+        text = configedit.splice_value(text, f"/{block}/{_token(name)}/legs", convert[name])
+    result = configedit.apply_raw_save(cfg, TARGET, text, None)
+    if not result.get("ok"):
+        return {**result, "code": "invalid"}
+    return {**result, "applied": True, "convert": names}

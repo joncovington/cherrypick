@@ -50,7 +50,7 @@ def halt_status(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
         mcfg = cfg.get("modules", {}).get(name) or {}
         root = cfgmod.module_root(mcfg, name)
         flag, _source = _live_enabled(name, root) if root.exists() else (None, None)
-        modules.append({"module": name, "live_enabled": flag})
+        modules.append({"module": name, "live_enabled": flag, "live_path": cfgmod.has_live_path(name)})
         any_live = any_live or bool(flag)
     halt = halt_flag_path()
     return {
@@ -109,6 +109,7 @@ def run(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
             {
                 "module": name,
                 "live_enabled": flag,  # None = no readable config (unknown, not off)
+                "live_path": cfgmod.has_live_path(name),  # False = paper by construction
                 "config_source": source,
                 "designated": mask_account(designated) if designated else None,
             }

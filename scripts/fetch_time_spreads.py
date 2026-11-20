@@ -89,17 +89,24 @@ def reach(spot: float, iv: float | None, dte: int) -> float:
     return spot * max(REACH_MIN, REACH_SD * sd)
 
 
-async def _metrics(session, ub, names: list[str]) -> list:
+async def _metrics(session, ub, names: list[str], rep=None) -> list:
     from tastytrade.metrics import get_market_metrics
 
     out = []
+    if rep is not None:
+        rep.split("metrics", names, unit="names")
+    seen = 0
     for batch in ub._batches([ub.to_tastytrade(s) for s in names], METRICS_BATCH):
         out += await get_market_metrics(session, batch)
+        if rep is not None:
+            for s in names[seen : seen + len(batch)]:
+                rep.advance("metrics", key=s, current=s)
+            seen += len(batch)
         await asyncio.sleep(ub.TT_PAUSE_S)
     return out
 
 
-async def _chains(session, ub, rows: dict[str, dict]) -> tuple[dict, str | None]:
+async def _chains(session, ub, rows: dict[str, dict], rep=None) -> tuple[dict, str | None]:
     """{symbol: {spot, front, back}} for the shortlisted rows, each expiry's strikes within reach
     quoted; and the problem that stopped the reads, if one did (what was read is kept)."""
     from cherrypick.core.broker import standard_chains
@@ -119,7 +126,11 @@ async def _chains(session, ub, rows: dict[str, dict]) -> tuple[dict, str | None]
     out: dict[str, dict] = {}
     legs: dict[str, dict] = {}
     problem = None
+    if rep is not None:
+        rep.split("chains", names, unit="names")
     for sym in names:
+        if rep is not None:
+            rep.advance("chains", key=sym, current=sym)
         row, spot = rows[sym], spots.get(sym)
         entry: dict = {"spot": spot}
         out[sym] = entry
@@ -169,6 +180,7 @@ def main(argv: list[str] | None = None) -> int:
     from zoneinfo import ZoneInfo
 
     from cherrypick.core import calendar as cal
+    from cherrypick.core import progress
     from cherrypick.core.auth import SHARED_SERVICE, CredentialStore, SessionManager
     from cherrypick.manage import timespreads as ts
     from cherrypick.technicals import liquidity
@@ -205,7 +217,7 @@ def main(argv: list[str] | None = None) -> int:
 
     async def both() -> tuple[list, list, dict, str | None]:
         # One event loop for every read: the session's connection belongs to the loop it opened on.
-        metrics = await _metrics(session, ub, names)
+        metrics = await _metrics(session, ub, names, rep)
         rows = [
             ts.term_row(metric_plain(m, sectors.get(str(m.symbol).replace("/", "."))), today) for m in metrics
         ]
@@ -214,14 +226,17 @@ def main(argv: list[str] | None = None) -> int:
         if args.term_only or not short:
             return rows, short, {}, None
         by_name = {r["symbol"]: r for r in rows}
-        chains, problem = await _chains(session, ub, {s: by_name[s] for s in short})
+        chains, problem = await _chains(session, ub, {s: by_name[s] for s in short}, rep)
         return rows, short, chains, problem
 
+    rep = progress.Reporter("fetch_time_spreads")
     try:
         rows, short, chains, problem = asyncio.run(both())
     except Exception as exc:  # noqa: BLE001
+        rep.finish("failed")
         print(json.dumps({"ok": False, "reason": f"{type(exc).__name__}: {exc}"[:300]}))
         return 1
+    rep.finish("done")
     doc = {
         "taken_at": started.isoformat(),
         "session": today.isoformat(),

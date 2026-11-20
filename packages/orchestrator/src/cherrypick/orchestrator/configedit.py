@@ -66,21 +66,6 @@ GUARDED: dict[str, dict[str, str]] = {
         "/live/daily_loss_halt_dollars": "live loss halt — hand-edit deliberately, not from this surface",
         "/live/account_deploy_limit_pct": "live risk cap — hand-edit deliberately, not from this surface",
     },
-    "calendars": {
-        "/live/enabled": (
-            "placeholder — no live loop exists yet; see the module CLAUDE.md's live-trading prerequisites"
-        ),
-    },
-    "pmcc": {
-        "/live/enabled": (
-            "placeholder — no live loop exists yet; see the module CLAUDE.md's live-trading prerequisites"
-        ),
-    },
-    "curve": {
-        "/live/enabled": (
-            "placeholder — no live loop exists yet; see the module CLAUDE.md's live-trading prerequisites"
-        ),
-    },
     "bwb": {
         "/live/enabled": "bwb live is armed per-day via /live-bwb-start; this flag is a plan-rung step",
         "/live/gate0_confirmed": "a human attestation string — write it by hand, with the plan doc open",
@@ -147,7 +132,10 @@ _EXAMPLE_REL: dict[str, str] = {
 
 
 def _pointer_tokens(pointer: str) -> list[str]:
-    """RFC 6901 pointer → reference tokens. '/live/enabled' → ['live', 'enabled']."""
+    """RFC 6901 pointer → reference tokens. '/live/enabled' → ['live', 'enabled']; '' is the whole
+    document (a top-level key is inserted at it)."""
+    if pointer == "":
+        return []
     if not pointer.startswith("/"):
         raise ValueError(f"JSON pointer must start with '/': {pointer!r}")
     return [tok.replace("~1", "/").replace("~0", "~") for tok in pointer[1:].split("/")]

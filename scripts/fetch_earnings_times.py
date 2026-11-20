@@ -41,6 +41,7 @@ import urllib.request
 from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
+from cherrypick.core import progress
 from cherrypick.technicals import paths
 
 DAYS = 30
@@ -140,9 +141,12 @@ def main(argv=None) -> int:
     wanted = weekdays(today, args.days)
     doc: dict = {"fetched_at": None, "dates": {}, "sources": {}, "failed": []}
     started = time.monotonic()
+    rep = progress.Reporter("fetch_earnings_times")
+    rep.phase("dates", total=len(wanted), unit="dates")  # the calendar spans every name: no symbol key
     for k, d in enumerate(wanted):
         if k:
             time.sleep(PAUSE_S)
+        rep.advance("dates", current=d.isoformat())
         try:
             doc["dates"][d.isoformat()] = parse(fetch_day(d))
             doc["sources"][d.isoformat()] = "nasdaq"
@@ -165,6 +169,7 @@ def main(argv=None) -> int:
                 doc["sources"][day] = "yahoo"
         except Exception as exc:  # noqa: BLE001 -- the fallback failing leaves the dates to the calendar's others
             doc["failed"].append(f"yahoo: {type(exc).__name__}: {str(exc)[:100]}")
+    rep.finish("done")
     doc["dates"] = dict(sorted(doc["dates"].items()))
     doc["sources"] = dict(sorted(doc["sources"].items()))
     doc["fetched_at"] = datetime.now(UTC).isoformat()

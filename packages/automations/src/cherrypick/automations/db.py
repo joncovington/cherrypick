@@ -207,6 +207,8 @@ CREATE TABLE IF NOT EXISTS measurement_breaks (
 # Columns added after the first release, per table. Empty at birth.
 _ADDED_COLUMNS: dict[str, dict[str, str]] = {
     "ensemble_positions": {"peak_pnl": "REAL"},
+    # A leg's own expiry when it is not the position's (a calendar's far leg); null on every other leg.
+    "ensemble_legs": {"expiration": "TEXT"},
     "ensemble_trail": {"day_volume": "REAL"},
 }
 
@@ -282,10 +284,14 @@ def open_position_count(conn) -> int:
 
 
 def open_expirations(conn) -> dict[str, list[str]]:
-    """{symbol: [expirations]} still held open: what the stream request keeps subscribed."""
+    """{symbol: [expirations]} still held open: what the stream request keeps subscribed. A leg on an
+    expiry of its own (a calendar's far leg) holds that one too."""
     out: dict[str, list[str]] = {}
     for r in conn.execute(
-        "SELECT DISTINCT symbol, expiration FROM ensemble_positions WHERE status = 'open' ORDER BY 1, 2"
+        "SELECT symbol, expiration FROM ensemble_positions WHERE status = 'open' "
+        "UNION SELECT p.symbol, l.expiration FROM ensemble_legs l "
+        "JOIN ensemble_positions p ON p.position_id = l.position_id "
+        "WHERE p.status = 'open' AND l.expiration IS NOT NULL ORDER BY 1, 2"
     ):
         out.setdefault(r["symbol"], []).append(r["expiration"])
     return out

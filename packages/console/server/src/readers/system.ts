@@ -25,7 +25,7 @@ import type { ConsoleConfig } from "../config.js";
 import { readJson } from "./db.js";
 import { tailFile } from "./logs.js";
 import { pidAlive, readAlertDaemonHealth } from "../services/alertDaemon.js";
-import { readLockStatus, sessionDateEt } from "../services/liveLock.js";
+import { LIVE_PATH_MODULES, readLockStatus, sessionDateEt } from "../services/liveLock.js";
 import { streamerFreshness } from "./streamcache.js";
 import { meicLiveAccounts, meicLiveBlock } from "./meicLive.js";
 import { streamerInstances } from "./logins.js";
@@ -323,7 +323,7 @@ export function readSystemModules(config: ConsoleConfig): SystemModulesPayload {
   const holds = new Set(readHolds(config).map((h) => h.name));
   const { jobs } = readJobs(config, holds);
   const lock = readLockStatus(config);
-  const gates = new Map(lock.modules.map((g) => [g.id, g.liveEnabled]));
+  const gates = new Map(lock.modules.map((g) => [g.id, g]));
   const data = path.join(config.paths.cherrypick, "data");
 
   const modules = moduleIds(config).map(({ id, enabled, kind }): SystemModuleRow => {
@@ -342,7 +342,8 @@ export function readSystemModules(config: ConsoleConfig): SystemModulesPayload {
       id,
       enabled,
       kind,
-      liveEnabled: gates.get(id) ?? null,
+      liveEnabled: gates.get(id)?.liveEnabled ?? null,
+      livePath: gates.get(id)?.livePath ?? LIVE_PATH_MODULES.includes(id),
       armedToday: armedToday(config, id).armed,
       jobs: jobs
         .filter((j) => j.id === id || j.id.startsWith(`${id}-`))

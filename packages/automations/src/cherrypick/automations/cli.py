@@ -5,6 +5,11 @@
     decisions  the narrative journal (--date), the gate that blocked each refused arm
     summary    each arm's closed trades, net and drawdown, and the arms together
     arms       the arms the config resolves to (shipped, with this machine's changes laid over)
+    groups-view   every group (switch, start, budget, shares) and every automation by group, each with
+               its own switch (the console's Groups page)
+    groups-check  a change to the groups (JSON on stdin: groups, members) checked as the loop loads
+               it: its problems, the groups block a save would write and the automations it moves.
+               Writes nothing
     replay     run a replay record file again and say where the decisions differ
     builder    every automation block by block, each block's backtest label, its start, forward rule
                and backtest suggestion (the console's Builder page). Config and the registry's cache only
@@ -12,10 +17,20 @@
                problems, the entry a save would write (always off, its register label kept as stored)
                and its Builder row. Without `automation`, the automation as an editor starts from it.
                Writes nothing
+    legs-convert    this machine's automations stored in the older leg spelling (side/right), each with
+               its legs in the written one (action/qty/side), and whether converting them would change
+               how any automation loads (it must not). Reads only: the orchestrator writes
     builder-schema  every choice the Builder's form offers, from the engine's own tables
+    builder-strategy  a strategy's legs and expiry from its settings (JSON on stdin: strategy, settings),
+               and a whole automation from it for the wizard. Writes nothing
+    builder-entry   an entry preset's entry and the gates of the filters stacked on it (JSON on stdin:
+               entry, settings, filters [{filter, settings}]). Writes nothing
     builder-today   one automation (JSON on stdin: name, optionally an unsaved automation) decided now
                as paper would, on a read-only snapshot: the entry and legs it would take, or the
                first failing check, with every check. Writes nothing
+    builder-payoff  the structure one automation (JSON on stdin as builder-today) would take and its
+               P&L at expiry, on live quotes or else the last session our own recorder holds. Writes
+               nothing
     replay-day the nightly check: a session's recorded ticks through the backtest's decision path, each
                decision or fill that differs listed; exit 1 when any does (a record-less day is 0)
 
@@ -83,6 +98,28 @@ def cmd_groups(args) -> int:
     return _print({"ok": True, "groups": config_mod.group_status(config_mod.load_arms(config), config)})
 
 
+def cmd_groups_view(args) -> int:
+    """Every group with its switch, start, budget and shares, and every automation by group (its own
+    switch beside the group's), for the console's Groups page. Config only."""
+    from . import groupedit
+
+    return _print({"ok": True, **groupedit.view(config_mod.load_config(args.config))})
+
+
+def cmd_groups_check(args) -> int:
+    """A change to the groups (JSON on stdin: {groups, members}) checked as the loop would load it: its
+    problems, the `groups` block a save would write and the automations it moves. Writes nothing."""
+    import sys
+
+    from . import groupedit
+
+    try:
+        req = json.loads(sys.stdin.read() or "{}")
+    except json.JSONDecodeError as exc:
+        return _print({"ok": False, "error": f"request is not valid JSON: {exc}"})
+    return _print(groupedit.check(config_mod.load_config(args.config), req))
+
+
 def cmd_replay(args) -> int:
     from . import events, record
 
@@ -128,6 +165,46 @@ def cmd_draft(args) -> int:
     return _print(drafts.draft(config, name, req["automation"], now_et().date()))
 
 
+def cmd_legs_convert(args) -> int:
+    from . import drafts
+
+    return _print(drafts.leg_conversion(config_mod.load_config(args.config)))
+
+
+def cmd_builder_strategy(args) -> int:
+    import sys
+
+    from . import builderform
+
+    try:
+        req = json.loads(sys.stdin.read() or "{}")
+    except json.JSONDecodeError as exc:
+        return _print({"ok": False, "error": f"request is not valid JSON: {exc}"})
+    if not isinstance(req, dict) or not isinstance(req.get("settings", {}), dict):
+        return _print({"ok": False, "error": "request: an object with strategy and, optionally, settings"})
+    return _print(builderform.strategy_answer(str(req.get("strategy", "")), req.get("settings") or {}))
+
+
+def cmd_builder_entry(args) -> int:
+    import sys
+
+    from . import builderform
+
+    try:
+        req = json.loads(sys.stdin.read() or "{}")
+    except json.JSONDecodeError as exc:
+        return _print({"ok": False, "error": f"request is not valid JSON: {exc}"})
+    filters = req.get("filters", []) if isinstance(req, dict) else None
+    if (
+        not isinstance(req, dict)
+        or not isinstance(req.get("settings", {}), dict)
+        or not isinstance(filters, list)
+        or not all(isinstance(f, dict) and isinstance(f.get("settings", {}), dict) for f in filters)
+    ):
+        return _print({"ok": False, "error": "request: an object with entry, settings and filters"})
+    return _print(builderform.entry_answer(str(req.get("entry", "")), req.get("settings") or {}, filters))
+
+
 def cmd_builder_schema(args) -> int:
     from . import builderform
 
@@ -135,6 +212,16 @@ def cmd_builder_schema(args) -> int:
 
 
 def cmd_builder_today(args) -> int:
+    return _builder_read(args, "today")
+
+
+def cmd_builder_payoff(args) -> int:
+    return _builder_read(args, "payoff")
+
+
+def _builder_read(args, kind: str) -> int:
+    """One automation (JSON on stdin: name, optionally an unsaved automation) read now on a read-only
+    snapshot: `builderform.today` or `builderform.payoff`. Writes nothing."""
     import sqlite3
     import sys
 
@@ -158,7 +245,7 @@ def cmd_builder_today(args) -> int:
         return _print({"ok": True, "name": arm["name"], "state": "no_ledger", "reason": str(exc)})
     try:
         evts = events.load_calendar((config.get("events") or {}).get("path"))
-        out = builderform.today(
+        out = getattr(builderform, kind)(
             config, arm, now_et(), conn=conn, cache_path=provider.stream_cache_path(config), evts=evts
         )
     finally:
@@ -205,13 +292,19 @@ def main(argv=None) -> int:
     sub.add_parser("summary").set_defaults(fn=cmd_summary)
     sub.add_parser("arms").set_defaults(fn=cmd_arms)
     sub.add_parser("groups").set_defaults(fn=cmd_groups)
+    sub.add_parser("groups-view").set_defaults(fn=cmd_groups_view)
+    sub.add_parser("groups-check").set_defaults(fn=cmd_groups_check)
     p = sub.add_parser("replay")
     p.add_argument("file")
     p.set_defaults(fn=cmd_replay)
     sub.add_parser("builder").set_defaults(fn=cmd_builder)
     sub.add_parser("draft").set_defaults(fn=cmd_draft)
     sub.add_parser("builder-schema").set_defaults(fn=cmd_builder_schema)
+    sub.add_parser("builder-strategy").set_defaults(fn=cmd_builder_strategy)
+    sub.add_parser("builder-entry").set_defaults(fn=cmd_builder_entry)
+    sub.add_parser("legs-convert").set_defaults(fn=cmd_legs_convert)
     sub.add_parser("builder-today").set_defaults(fn=cmd_builder_today)
+    sub.add_parser("builder-payoff").set_defaults(fn=cmd_builder_payoff)
     p = sub.add_parser("replay-day")
     p.add_argument("--date", help="YYYY-MM-DD; default today, or the last trading day")
     p.set_defaults(fn=cmd_replay_day)

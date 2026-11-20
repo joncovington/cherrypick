@@ -74,7 +74,7 @@ from concurrent.futures import ProcessPoolExecutor
 from datetime import date
 from pathlib import Path
 
-from cherrypick.core import bs, fees, home, legbars, robustness
+from cherrypick.core import bs, fees, home, legbars, progress, robustness
 from cherrypick.core import stats as core_stats
 from cherrypick.core.procs import default_workers
 
@@ -1255,8 +1255,14 @@ def main(argv: list[str] | None = None) -> int:
         for s in names
     ]
     priced, far, drops, empty = [], [], Counter(), Counter()
-    with ProcessPoolExecutor(args.workers) as ex:
-        for part in ex.map(price_name, jobs, chunksize=8):
+    with (
+        progress.Reporter(f"credit_spread_item17-item{args.item}") as rep,
+        ProcessPoolExecutor(args.workers) as ex,
+    ):
+        by_name = {j["symbol"]: len(j["trades"]) for j in jobs}
+        rep.phase("trades", total=sum(by_name.values()), unit="trades", by=by_name)
+        for job, part in zip(jobs, ex.map(price_name, jobs, chunksize=8), strict=True):
+            rep.advance("trades", len(job["trades"]), key=job["symbol"], current=job["symbol"])
             priced.extend(part["priced"])
             far.extend(part["far"])
             drops.update(part["drops"])

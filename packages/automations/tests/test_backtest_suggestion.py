@@ -9,6 +9,8 @@ import json
 import subprocess
 from datetime import date
 
+from cherrypick.core import sources as src
+
 from cherrypick.automations import arms, enrolment
 from cherrypick.automations.licence import allows_new_work as real_allows_new_work
 
@@ -19,7 +21,9 @@ TODAY = date(2026, 11, 16)
 def fake_coverage(covered: set[str]):
     calls = []
 
-    def coverage(inventory, field, symbol, start, end, *, cadence=None, expiry=None, licensed=False):
+    def coverage(
+        inventory, field, symbol, start, end, *, cadence=None, expiry=None, licensed=False, only=None, **_
+    ):
         calls.append({"field": field, "symbol": symbol, "start": start, "end": end, "cadence": cadence,
                       "expiry": expiry, "licensed": licensed})  # fmt: skip
         ok = field in covered
@@ -116,7 +120,9 @@ def vendor_only_coverage():
     """Our own stores hold nothing; the vendor's (licensed) covers every need."""
     calls = []
 
-    def coverage(inventory, field, symbol, start, end, *, cadence=None, expiry=None, licensed=False):
+    def coverage(
+        inventory, field, symbol, start, end, *, cadence=None, expiry=None, licensed=False, only=None, **_
+    ):
         calls.append(licensed)
         if licensed:
             return {"covered": True, "best": f"vendor-{field}", "sources": []}
@@ -150,7 +156,9 @@ def test_our_own_store_is_preferred_and_the_vendor_not_asked_when_it_covers():
     cov = fake_coverage({"chain", "greeks", "spot"})
     s = enrolment.suggestion(fresh(), {}, TODAY, cov, licensed_ok=True)
     assert s["possible"] is True and s["licensed"] is False
-    assert all(c["licensed"] is False for c in cov.calls)
+    # The last year's needs ask our own stores only; the windows list asks the vendor's spans (the
+    # inventory cache, no vendor call) to offer a longer history where it reaches further back.
+    assert all(c["licensed"] is False for c in cov.calls if c["start"] == s["window"][0])
 
 
 def test_the_suggestions_ask_the_licence_once_and_only_when_a_backtest_falls_short(monkeypatch):
@@ -195,7 +203,9 @@ def test_the_licence_reads_as_allowing_new_work_only_on_a_plain_active_answer():
 def _sources(**by):
     """A coverage stand-in answering per (field, expiry): a covering store's row, or none at all."""
 
-    def coverage(inventory, field, symbol, start, end, *, cadence=None, expiry=None, licensed=False):
+    def coverage(
+        inventory, field, symbol, start, end, *, cadence=None, expiry=None, licensed=False, only=None, **_
+    ):
         hit = by.get(expiry)
         if hit is None:
             return {"covered": False, "best": None, "sources": []}
@@ -225,3 +235,125 @@ def test_a_need_no_store_holds_says_so_and_names_monthlies_when_they_would_cover
     assert chain["why"] == "none of our stores holds all expiries at 1d"
     assert chain["monthly"] == {"source": "dolt-chains", "first": "2019-02-09", "through": "2026-11-13"}
     assert "monthly" not in enrolment.suggestion(arm, {}, TODAY, _sources())["needs"][0]
+
+
+def test_the_driver_replays_a_chain_only_from_a_store_it_can_read():
+    """A same-day chain from a recorder-schema store, a later expiry at the close from end-of-day chains,
+    and one inside the session from the full set's 1- and 5-minute stores; never a study's own intraday
+    store, and never an intraday store for a close entry."""
+    by = src.by_name
+    zero = {"field": "chain", "expiry": "0dte", "cadence": "1m"}
+    assert enrolment.replays(zero, by("recorded-0dte")) and enrolment.replays(zero, by("vendor-0dte-spx-60s"))
+    daily = {"field": "chain", "expiry": "monthly", "cadence": "1d"}
+    assert enrolment.replays(daily, by("dolt-chains")) and enrolment.replays(daily, by("vendor-eod-chains"))
+    assert not enrolment.replays(daily, by("vendor-mid-spy"))
+    intraday = {"field": "chain", "expiry": "1dte", "cadence": enrolment.INTRADAY_CADENCE}
+    assert enrolment.replays(intraday, by("vendor-near-spy")) and enrolment.replays(
+        intraday, by("vendor-mid-spy")
+    )
+    assert not enrolment.replays(intraday, by("vendor-intraday-chains"))
+    assert not enrolment.replays(intraday, by("dolt-chains"))
+    assert enrolment.replays({"field": "spot", "cadence": "1m"}, by("spot-trail"))
+
+
+def _span(first, last, sessions):
+    return {"store": {"first": first, "last": last, "sessions": sessions}}
+
+
+def test_a_store_the_driver_cannot_read_never_covers_a_need():
+    """Over a real coverage call: SPY's middle store would cover a monthly at the close, but the driver
+    reads only end-of-day chains for it, so the suggestion takes those or nothing."""
+    days = src.trading_days("2020-01-02", "2026-11-13")
+    inv = {"sources": {"vendor-mid-spy": _span("2020-01-02", "2026-11-13", days)}}
+    arm = fresh(symbol="SPY", expiry={"kind": "between", "min": 45, "max": 60, "monthly": True},
+                entry={"kind": "time", "at": "15:55", "window": 5})  # fmt: skip
+    s = enrolment.suggestion(arm, inv, TODAY, src.coverage, licensed_ok=True)
+    chain = next(n for n in s["needs"] if n["field"] == "chain")
+    assert chain["covered"] is False and chain["source"] is None
+    inv["sources"]["vendor-eod-chains"] = {
+        "symbols": {"SPY": {"first": "2020-01-02", "last": "2026-11-13", "sessions": days}}
+    }
+    s = enrolment.suggestion(arm, inv, TODAY, src.coverage, licensed_ok=True)
+    assert next(n for n in s["needs"] if n["field"] == "chain")["source"] == "vendor-eod-chains"
+
+
+def test_an_intraday_entry_on_a_later_expiry_reads_the_intraday_stores_or_says_none_holds_it():
+    arm = fresh(
+        symbol="SPY", expiry={"kind": "dte", "days": 1}, entry={"kind": "time", "at": "10:30", "window": 5}
+    )
+    days = src.trading_days("2020-01-02", "2026-11-13")
+    assert enrolment.needs(arm)[0] == {"field": "chain", "expiry": "1dte", "cadence": "5m"}
+    inv = {"sources": {"vendor-near-spy": _span("2020-01-02", "2026-11-13", days)}}
+    s = enrolment.suggestion(arm, inv, TODAY, src.coverage, licensed_ok=True)
+    chain = next(n for n in s["needs"] if n["field"] == "chain")
+    assert s["possible"] is True and chain["source"] == "vendor-near-spy"
+    s = enrolment.suggestion(arm, {"sources": {}}, TODAY, src.coverage, licensed_ok=True)
+    chain = next(n for n in s["needs"] if n["field"] == "chain")
+    assert s["possible"] is False and chain["why"] == enrolment.NO_REPLAY
+
+
+def _held(**spans):
+    """An inventory doc: each source's SPY span, as `inventory.run` writes one."""
+    out = {}
+    for name, (first, last, density) in spans.items():
+        span = {"first": first, "last": last, "sessions": round(src.trading_days(first, last) * density)}
+        out[name] = {"symbols": {"SPY": span}, "store": span}
+    return {"sources": out}
+
+
+MONTHLY = {"expiry": {"kind": "between", "min": 45, "max": 60, "monthly": True},
+           "entry": {"kind": "time", "at": "15:55", "window": 5}, "symbol": "SPY"}  # fmt: skip
+
+
+def test_the_windows_offer_the_last_year_and_everything_held_our_own_first():
+    inv = _held(
+        **{
+            "dolt-chains": ("2019-02-11", "2026-11-13", 0.67),
+            "stock-history": ("2010-01-04", "2026-11-13", 1.0),
+        }
+    )
+    arm = fresh(**MONTHLY)
+    ws = enrolment.windows(arm, inv, TODAY, src.coverage)
+    assert [(w["source"], w["start"]) for w in ws] == [
+        ("dolt-chains", "2025-11-13"),
+        ("dolt-chains", "2019-02-11"),
+    ]
+    assert ws[1]["thin"] is True and ws[1]["density"] < src.DENSE and ws[0]["licensed"] is False
+    assert ws[1]["holds"] == src.by_name("dolt-chains").holds
+    assert enrolment.suggestion(arm, inv, TODAY, src.coverage)["windows"] == ws
+
+
+def test_a_licensed_window_only_where_it_reaches_further_back_and_only_when_allowed():
+    inv = _held(**{"dolt-chains": ("2019-02-11", "2026-11-13", 0.67),
+                   "vendor-eod-chains": ("2016-01-04", "2026-11-13", 1.0)})  # fmt: skip
+    arm = fresh(**MONTHLY)
+    assert all(not w["licensed"] for w in enrolment.windows(arm, inv, TODAY, src.coverage))
+    ws = enrolment.windows(arm, inv, TODAY, src.coverage, licensed_ok=True)
+    lic = [w for w in ws if w["licensed"]]
+    assert [(w["source"], w["start"]) for w in lic] == [("vendor-eod-chains", "2016-01-04")]
+
+
+def test_a_store_that_stopped_early_offers_its_span_and_a_sample_store_is_not_offered():
+    inv = _held(
+        **{
+            "dolt-chains": ("2019-02-11", "2026-10-09", 0.9),
+            "vendor-eod-chains": ("2016-01-04", "2026-11-13", 0.01),
+        }
+    )
+    ws = enrolment.windows(fresh(**MONTHLY), inv, TODAY, src.coverage, licensed_ok=True)
+    assert {w["end"] for w in ws} == {"2026-10-09"}
+    assert all(w["source"] == "dolt-chains" for w in ws)
+
+
+def test_an_underlying_added_to_the_full_set_is_covered_from_the_shared_store_by_its_own_span():
+    """The shared `added` store holds every addition, keyed by symbol: its per-symbol span confirms the
+    one asked for and refuses one never added. The suggestion says which underlyings are the set's own."""
+    days = src.trading_days("2025-11-03", "2026-11-13")
+    span = {"first": "2025-11-03", "last": "2026-11-13", "sessions": days}
+    inv = {"sources": {"vendor-0dte-added-60s": {"symbols": {"ABC": span}, "store": span}}}
+    added = enrolment.suggestion(fresh(symbol="ABC"), inv, TODAY, src.coverage, licensed_ok=True)
+    chain = next(n for n in added["needs"] if n["field"] == "chain")
+    assert added["possible"] and chain["source"] == "vendor-0dte-added-60s" and added["full_set"] is False
+    other = enrolment.suggestion(fresh(symbol="XYZ"), inv, TODAY, src.coverage, licensed_ok=True)
+    assert not other["possible"] and other["full_set"] is False
+    assert enrolment.suggestion(fresh(symbol="SPY"), inv, TODAY, src.coverage)["full_set"] is True

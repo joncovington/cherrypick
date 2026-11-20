@@ -1,7 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { renderToString } from "react-dom/server";
-import type { BuilderSchema, BuilderToday } from "@console/shared";
-import { BuilderForm, entryText, parseValue, showValue, withKey } from "../src/pages/Builder/BuilderForm";
+import type { BuilderSchema, BuilderToday, BuilderTypes } from "@console/shared";
+import { numberProblem } from "../src/pages/Builder/BuilderField";
+import { BuilderForm, EventSkips, entryText, parseValue, showValue, withKey } from "../src/pages/Builder/BuilderForm";
+import { plainBlocks } from "../src/pages/Builder/BuilderWizard";
 import { legText, TodayView } from "../src/pages/Builder/BuilderToday";
 import { SECTION_HELP } from "../src/pages/Builder/BuilderHelp";
 
@@ -107,6 +109,119 @@ describe("the form", () => {
   });
 });
 
+describe("a read-only form", () => {
+  const out = html(<BuilderForm schema={SCHEMA} spec={SPEC} labels={{}} onChange={() => {}} readOnly />);
+  const editable = html(<BuilderForm schema={SCHEMA} spec={SPEC} labels={{}} onChange={() => {}} />);
+
+  it("puts every section's fields in a disabled fieldset, the help still open", () => {
+    expect(out.match(/<fieldset class="builder-lock" disabled="">/g)?.length).toBe(6);
+    expect(out).toContain('<input type="checkbox" disabled="" checked=""/> FOMC');
+    // Each section's head, with its help, closes before its lock opens, so the help still opens.
+    const heads = out.match(/<div class="builder-section-head">.*?<\/div><fieldset class="builder-lock" disabled="">/g) ?? [];
+    expect(heads.length).toBe(5);
+    expect(heads.every((h) => h.includes('class="help-q"'))).toBe(true);
+    expect(out).not.toContain("required. A greyed value");
+  });
+
+  it("is not locked when editable", () => {
+    expect(editable).not.toContain('disabled=""');
+    expect(editable).toContain("required. A greyed value");
+  });
+});
+
+describe("typed fields", () => {
+  const INT1 = { type: "int" as const, min: 1 };
+  const TYPES: BuilderTypes = {
+    expiry: { days: { type: "int", min: 0 }, min: { type: "int", min: 0 }, max: { type: "int", min: 0 }, monthly: { type: "bool" } },
+    entry: { time: { at: { type: "time" }, window: { ...INT1, default: 5 } }, orb: { minutes: INT1, latest: { type: "time" }, single_shot: { type: "bool", default: true } } },
+    trigger: {},
+    signals: { kinds: {}, rules: {} },
+    strike: { target: { type: "number", above: 0 }, at_most: { type: "number" }, leg: { type: "leg" }, points: { type: "number" }, pct: { type: "number" } },
+    gates: { gex_ratio: { strikes: INT1, mode: { type: "enum", options: ["nearest", "above", "below"], default: "nearest" } } },
+    exit: { touch: { type: "json" }, profit_target_pct: { type: "number", above: 0 } },
+    size: { contracts: INT1 },
+    limits: { max_open: INT1, per_day: { type: "int", min: 1, max: 1 } },
+  };
+  const out = html(<BuilderForm schema={{ ...SCHEMA, types: TYPES }} spec={SPEC} labels={{}} onChange={() => {}} />);
+
+  it("draws a whole number as a bounded number box with its bounds beside the label", () => {
+    expect(out).toContain('<input id="f-orb-minutes" class="builder-input" type="number" inputMode="numeric" step="1" min="1" required="" aria-required="true" value="60"/>');
+    expect(out).toContain('for="f-limit-per_day">per day<span class="builder-req"> *</span><span class="builder-hint"> · whole, = 1</span>');
+    expect(out).toContain('<input id="f-leg-0-target" class="builder-input" type="number" inputMode="decimal" step="any"');
+  });
+
+  it("draws a time as a time picker, in Eastern time", () => {
+    expect(out).toContain('<input id="f-orb-latest" class="builder-input" type="time" required="" aria-required="true" value="13:00"/>');
+    expect(out).toContain('latest<span class="builder-req"> *</span><span class="builder-hint"> · ET</span>');
+  });
+
+  it("offers the engine's words, its default first and unwritten", () => {
+    expect(out).toContain('<option value="" selected="">default (nearest)</option><option value="nearest">nearest</option>');
+    expect(out).toContain('<select id="f-orb-single_shot" class="builder-input"><option value="" selected="">default (yes)</option><option value="true">yes</option><option value="false">no</option></select>');
+  });
+
+  it("shows an older leg by its action and side in the page's words", () => {
+    expect(out).toMatch(/id="f-leg-0-action"[^]*?value="sell" selected="">Sell to open</);
+    expect(out).toMatch(/id="f-leg-1-action"[^]*?value="buy" selected="">Buy to open</);
+    expect(out).toMatch(/id="f-leg-0-right"[^]*?value="put" selected="">Put</);
+  });
+
+  it("offers only the legs placed before this one for a leg reference, each in words", () => {
+    expect(out).toContain('<select id="f-leg-1-leg" class="builder-input" required="" aria-required="true"><option value="">choose…</option><option value="short_put" selected="">Short Put</option></select>');
+  });
+
+  it("says what is required and what a greyed default means", () => {
+    expect(out).toContain('<span class="builder-req">*</span> required. A greyed value in an empty field is the engine&#x27;s default');
+  });
+
+  it("refuses a number outside its bounds, in words", () => {
+    expect(numberProblem({ type: "int", min: 1 }, "0")).toBe("at least 1");
+    expect(numberProblem({ type: "int", min: 1 }, "1.5")).toBe("a whole number");
+    expect(numberProblem({ type: "number", above: 0 }, "0")).toBe("more than 0");
+    expect(numberProblem({ type: "number", above: 0, max: 4 }, "5")).toBe("at most 4");
+    expect(numberProblem({ type: "int", min: 1, or: ["session"] }, "session")).toBeNull();
+    expect(numberProblem({ type: "int", min: 1, or: ["session"] }, "x")).toBe("a whole number or session");
+    expect(numberProblem({ type: "int", min: 1 }, "")).toBeNull();
+  });
+});
+
+describe("the event skips", () => {
+  const ABOUT = {
+    FOMC: { name: "Fed decision (FOMC)", when: "The Federal Reserve's rate decision.", next: "2026-12-09" },
+    MonthEnd: { name: "Month end", when: "The last trading day of the month.", next: "2026-11-30" },
+    Earnings: { name: "Earnings", when: "The symbol's own earnings report day.", next: null },
+  };
+  const schema = { ...SCHEMA, event_labels: ["Earnings", "FOMC", "MonthEnd"], event_about: ABOUT };
+
+  it("shows the module's names, sorted by name, and checks the labels the spec names", () => {
+    const out = html(<EventSkips schema={schema} on={["FOMC"]} onChange={() => {}} />);
+    expect(out).toMatch(/<input type="checkbox" checked=""\/> Fed decision \(FOMC\)/);
+    expect(out).toContain('title="The last trading day of the month."');
+    expect(out.indexOf("Earnings")).toBeLessThan(out.indexOf("Fed decision")); // by name, not by label
+    expect(out.indexOf("Fed decision")).toBeLessThan(out.indexOf("Month end"));
+    expect(out).toContain('aria-label="What are these events?"');
+    expect(out).not.toContain("builder-event-key"); // the key is closed until asked for
+  });
+
+  it("opens a key of what each event is, when it falls and its next day", () => {
+    const out = html(<EventSkips schema={schema} on={[]} onChange={() => {}} keyOpen />);
+    expect(out).toContain("<td>Fed decision (FOMC)</td><td>The Federal Reserve&#x27;s rate decision.</td><td class=\"num\">Wed 2026-12-09</td>");
+    expect(out).toContain("<td>Month end</td><td>The last trading day of the month.</td><td class=\"num\">Mon 2026-11-30</td>");
+    expect(out).toContain("<td>Earnings</td><td>The symbol&#x27;s own earnings report day.</td><td class=\"num\">—</td>");
+  });
+
+  it("falls back to the bare labels, with no key, from a module that sends no names", () => {
+    const out = html(<EventSkips schema={SCHEMA} on={[]} onChange={() => {}} keyOpen />);
+    expect(out).toMatch(/<input type="checkbox"\/> FOMC/);
+    expect(out).not.toContain("What are these events?");
+    expect(out).not.toContain("builder-event-key");
+  });
+
+  it("names the skipped events in the wizard's plain English", () => {
+    expect(plainBlocks({ ...SPEC, skip_events: { labels: ["FOMC", "MonthEnd"] } }, schema).entry).toContain("skipping Fed decision (FOMC), Month end days");
+  });
+});
+
 describe("today, live", () => {
   const base: BuilderToday = { name: "mine", state: "would_skip", window: ["10:00", "10:04"], in_window: true, at: "2026-11-17T10:02-05:00" };
 
@@ -137,6 +252,18 @@ describe("today, live", () => {
 });
 
 describe("a leg's match mode", () => {
+  it("draws the schema's expiry flags as checkboxes, checked only when set", () => {
+    const schema = { ...SCHEMA, expiry: { between: { min: true, max: true, monthly: false } }, expiry_flags: ["monthly"] };
+    const on = html(<BuilderForm schema={schema} spec={{ ...SPEC, expiry: { kind: "between", min: 45, max: 60, monthly: true } }} labels={{}} onChange={() => {}} />);
+    expect(on).toMatch(/<input id="f-expiry-monthly" class="builder-flag" type="checkbox" checked=""/);
+    expect(on).toContain('<input id="f-expiry-min" class="builder-input" required="" aria-required="true" value="45"');
+    const off = html(<BuilderForm schema={schema} spec={{ ...SPEC, expiry: { kind: "between", min: 45, max: 60 } }} labels={{}} onChange={() => {}} />);
+    expect(off).toMatch(/<input id="f-expiry-monthly" class="builder-flag" type="checkbox"\/>/);
+    // Without the schema naming it, a key stays a text field.
+    const old = html(<BuilderForm schema={{ ...schema, expiry_flags: undefined }} spec={{ ...SPEC, expiry: { kind: "between", min: 45, max: 60, monthly: true } }} labels={{}} onChange={() => {}} />);
+    expect(old).toContain('<input id="f-expiry-monthly" class="builder-input" value="true"');
+  });
+
   it("offers the engine's default when none is set, and says when one is required", () => {
     const out = html(<BuilderForm schema={SCHEMA} spec={SPEC} labels={{}} onChange={() => {}} />);
     expect(out).toContain('<option value="" selected="">default (nearest)</option>');

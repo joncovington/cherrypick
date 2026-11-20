@@ -38,7 +38,16 @@ def editable(config: dict, name: str) -> dict | None:
     if name not in arms_mod.ARMS and name not in overrides:
         return None
     base = copy.deepcopy(arms_mod.ARMS.get(name, {"name": name}))
-    return {**base, **copy.deepcopy(overrides.get(name) or {}), "name": name}
+    out = {**base, **copy.deepcopy(overrides.get(name) or {}), "name": name}
+    return _written(out)
+
+
+def _written(spec: dict) -> dict:
+    """`spec` with its legs in the written spelling (action, qty, side), whichever it was stored in:
+    the editor always shows, and a save always writes, the page's own words."""
+    if isinstance(spec.get("legs"), list):
+        spec = {**spec, "legs": [arms_mod.written_leg(leg) for leg in spec["legs"]]}
+    return spec
 
 
 def _with(config: dict, overrides: dict) -> dict:
@@ -59,7 +68,7 @@ def draft(config: dict, name: str, automation: dict, today: date) -> dict:
     if not isinstance(automation, dict):
         return {"ok": True, "name": name, "problems": ["automation: an object"]}
     current = editable(config, name)
-    entry = {k: copy.deepcopy(v) for k, v in automation.items() if k not in ("name", "register")}
+    entry = _written({k: copy.deepcopy(v) for k, v in automation.items() if k not in ("name", "register")})
     if current is not None and "register" in current:
         entry["register"] = copy.deepcopy(current["register"])
     entry["enabled"] = False
@@ -80,3 +89,34 @@ def draft(config: dict, name: str, automation: dict, today: date) -> dict:
         "view": enrolment.builder_view(arms[name], suggestion),
         "new": current is None,
     }
+
+
+def leg_conversion(config: dict) -> dict:
+    """The machine's automations whose legs are stored in the older spelling, each with its legs
+    in the written one, and the proof that converting them changes nothing: every automation loads to
+    the same legs and block hashes after as before (so no backtest label moves). `problems` is
+    non-empty when it would, and then nothing may be written. Reads only."""
+    overrides = config_mod.arm_overrides(config)
+    convert = {}
+    for name, entry in sorted(overrides.items()):
+        legs = entry.get("legs") if isinstance(entry, dict) else None
+        if not isinstance(legs, list):
+            continue
+        written = [arms_mod.written_leg(leg) for leg in legs]
+        if written != legs:
+            convert[name] = written
+    if not convert:
+        return {"ok": True, "convert": {}, "problems": []}
+    after = {**overrides, **{n: {**overrides[n], "legs": legs} for n, legs in convert.items()}}
+    try:
+        was = config_mod.load_arms(config)
+        now = config_mod.load_arms(_with(config, after))
+    except ValueError as exc:
+        return {"ok": True, "convert": convert, "problems": [str(exc)]}
+    problems = [
+        f"{n}: converting would change how it loads"
+        for n in sorted(was)
+        if was[n]["legs"] != now[n]["legs"]
+        or enrolment.block_hashes(was[n]) != enrolment.block_hashes(now[n])
+    ]
+    return {"ok": True, "convert": convert, "problems": problems}

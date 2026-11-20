@@ -158,9 +158,8 @@ Skipping ex-div weeks is a paper simplification only. Any live path MUST first h
 **post-assignment management** — detecting surprise/early assignment and a defined disposal/repair
 procedure, since live assignment cannot be excluded by skipping weeks — and (b) a **calculated
 ex-div decision** priced as expected assignment cost against the week's edge, never a default.
-Prerequisites, not enhancements. **`live.enabled` is an inert placeholder**: it lets config/console
-surfaces show "paper only" (`readModuleGate`/`liveops._live_enabled`), nothing checks it, and it is
-`configedit.GUARDED`; flipping it by hand does nothing.
+Prerequisites, not enhancements. The config has no live gate: the suite's surfaces show this module
+as "no live path" because it is not in the orchestrator's `config.LIVE_PATH_MODULES`.
 
 ## Layout
 

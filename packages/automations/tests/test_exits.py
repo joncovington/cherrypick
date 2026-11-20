@@ -68,6 +68,24 @@ def test_a_trailing_stop_follows_the_best_pnl_once_it_has_reached_its_trigger():
     assert engine.manage(unarmed, at(unarmed, hours=0.5, spot=5990.0)) is None
 
 
+def test_a_percent_trailing_stop_reads_the_max_profit():
+    pos = held({"trailing_stop": {"pct": 5, "activate_pct": 10}})
+    full = pos.entry.max_profit * 100 * pos.entry.quantity  # the 8.74 credit, whole position
+    assert engine.manage(pos, at(pos, hours=1)) is None and pos.peak_pnl == 171.0  # armed at 10%
+    assert 171.0 - 150.0 < 0.05 * full < 171.0 - 118.0
+    assert engine.manage(pos, at(pos, hours=1, spot=5995.0)) is None  # +150, 21 off the best
+    assert engine.manage(pos, at(pos, hours=0.5, spot=5990.0)) == ("trailing_stop", 118.0)
+    # Armed only past 25% of max profit (about +219): +171 never arms it.
+    unarmed = held({"trailing_stop": {"pct": 5, "activate_pct": 25}})
+    assert engine.manage(unarmed, at(unarmed, hours=1)) is None
+    assert engine.manage(unarmed, at(unarmed, hours=0.5, spot=5990.0)) is None
+    # No max profit to measure: the rule never fires.
+    open_ended = held({"trailing_stop": {"pct": 1}})
+    open_ended.entry = dataclasses.replace(open_ended.entry, max_profit=None)
+    assert engine.manage(open_ended, at(open_ended, hours=1)) is None
+    assert engine.manage(open_ended, at(open_ended, hours=0.5, spot=5990.0)) is None
+
+
 def test_a_wide_spread_holds_every_exit_and_leaves_the_peak_where_it_was():
     pos = held({"max_spread": 1.0, "stop_dollars": 60, "trailing_stop": {"dollars": 40}})
     assert engine.manage(pos, at(pos, spot=5960.0, half_spread=0.5)) is None  # 4.00 wide: held
@@ -117,6 +135,10 @@ def test_avoid_events_closes_the_session_before_the_event_at_its_time():
         ({"max_spread": 0}, "exit.max_spread"),
         ({"trailing_stop": {"dollars": 0}}, "exit.trailing_stop"),
         ({"trailing_stop": {"dollars": 50, "percent": 5}}, "exit.trailing_stop"),
+        ({"trailing_stop": {"pct": 0}}, "exit.trailing_stop"),
+        ({"trailing_stop": {"pct": 101}}, "exit.trailing_stop"),
+        ({"trailing_stop": {"pct": 5, "activate_dollars": 100}}, "exit.trailing_stop"),
+        ({"trailing_stop": {"pct": 5, "activate_pct": -1}}, "exit.trailing_stop"),
         ({"avoid_events": {"labels": []}}, "exit.avoid_events"),
         ({"avoid_events": {"labels": ["FOMC"], "before_close_min": 500}}, "exit.avoid_events"),
         ({"avoid_events": {"labels": ["FOMC"], "at": "15:00"}}, "exit.avoid_events"),

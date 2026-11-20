@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { PnlDay, PortfolioReading } from "@console/shared";
+import { BACKTEST_ARM_PREFIX, portfolioArmLabel, type PnlDay, type PortfolioOpenRisk, type PortfolioReading, type PortfolioSource } from "@console/shared";
 import { Card, PnlCell } from "../../components/DataTable";
 import { HelpSection, type CardHelpContent } from "../../components/CardHelp";
 import { FilterGroup } from "../../components/FilterSort";
@@ -8,7 +8,7 @@ import { useFilterPanel } from "../useFilterPanel";
 import { TileGrid } from "../../components/performance/TileGrid";
 import { Tile } from "../../components/performance/Tile";
 import { fmtMoney, fmtPct } from "../../lib/format";
-import { usePnlCalendar, usePortfolio } from "../../lib/api";
+import { usePnlCalendar, usePortfolio, usePortfolioSources } from "../../lib/api";
 import { useMode } from "../../lib/useMode";
 import { useFeatures } from "../../lib/useFeatures";
 import { isModuleVisible } from "../../lib/visibility";
@@ -40,6 +40,39 @@ export function defaultArm(tags: string[]): string | null {
   return tags.find((t) => !t.startsWith("advised:") && !t.includes("@")) ?? null;
 }
 
+/** One backtest arm the picker offers: its key, what it reads as, and the run behind it. */
+export interface BacktestOption {
+  key: string;
+  label: string;
+  licensed: boolean;
+  window: [string, string] | null;
+}
+
+/** Every study arm, and each Builder automation's arms from its newest run only (older runs of the
+ *  same automation are its history, not another strategy). */
+export function backtestOptions(sources: PortfolioSource[]): BacktestOption[] {
+  const newest = new Map<string, PortfolioSource>();
+  const out: BacktestOption[] = [];
+  for (const s of sources) {
+    if (s.kind !== "builder") continue;
+    const name = s.arms.join(",");
+    const held = newest.get(name);
+    if (held === undefined || (s.generated_at ?? s.id) > (held.generated_at ?? held.id)) newest.set(name, s);
+  }
+  for (const s of [...newest.values(), ...sources.filter((x) => x.kind === "study")]) {
+    for (const arm of s.arms) {
+      const span = s.window === null ? "" : `, ${s.window[0]} → ${s.window[1]}`;
+      out.push({
+        key: `${BACKTEST_ARM_PREFIX}${s.id}#${arm}`,
+        label: s.kind === "builder" ? `${arm} (Builder run${span})` : `${arm} (${s.label}${span})`,
+        licensed: s.licensed,
+        window: s.window,
+      });
+    }
+  }
+  return out.sort((a, b) => a.label.localeCompare(b.label));
+}
+
 function corrTone(r: number | null): string | undefined {
   if (r === null) return undefined;
   return r >= 0.5 ? "pnl-neg" : r <= -0.2 ? "pnl-pos" : undefined;
@@ -48,6 +81,79 @@ function corrTone(r: number | null): string | undefined {
 function fmtR(r: number | null): string {
   return r === null ? "—" : r.toFixed(2);
 }
+
+/** Max loss held at once: each session's peak of the summed open max loss, and the sessions it peaked. */
+export function OpenRiskCard({ r }: { r: PortfolioOpenRisk }) {
+  const unmeasured = Object.entries(r.unmeasured);
+  const whole = Object.entries(r.whole_session);
+  const share = (v: number | undefined) => (v === undefined ? "max loss open at once; give an account to read it as a share" : `${fmtPct(v * 100)} of the account`);
+  return (
+    <Card title="risk held at once" help={OPEN_RISK_HELP}>
+      {r.floor && (
+        <p style={{ fontSize: 12 }}>
+          <span className="chip chip-warn" style={{ marginRight: 6 }}>a floor</span>
+          trades with no recorded max loss are left out:{" "}
+          {unmeasured.map(([k, n]) => `${portfolioArmLabel(k)} (${String(n)})`).join(", ")}
+        </p>
+      )}
+      {whole.length > 0 && (
+        <p className="muted" style={{ fontSize: 12 }}>
+          no entry or exit time recorded, so held for their whole sessions: {whole.map(([k, n]) => `${portfolioArmLabel(k)} (${String(n)})`).join(", ")}
+        </p>
+      )}
+      {r.sessions === 0 ? (
+        <p className="muted">no trade with a recorded max loss in the window</p>
+      ) : (
+        <>
+          <TileGrid count={3}>
+            <Tile label="peak, median session" value={fmtMoney(r.peaks.median)} tone="dim" n={r.sessions} nUnit="sessions" title={share(r.of_account?.median)} />
+            <Tile label="peak, 95th percentile" value={fmtMoney(r.peaks.p95)} tone="neg" title={share(r.of_account?.p95)} />
+            <Tile label="peak, worst session" value={fmtMoney(r.peaks.max)} tone="neg" title={share(r.of_account?.max)} />
+          </TileGrid>
+          <div className="table-scroll">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>session</th>
+                  <th title="the most max loss open at one moment that session">held at once</th>
+                  <th>by arm, at that moment</th>
+                </tr>
+              </thead>
+              <tbody>
+                {r.worst_sessions.map((w) => (
+                  <tr key={w.session}>
+                    <td>{w.session}</td>
+                    <td>{fmtMoney(w.peak)}</td>
+                    <td className="muted">
+                      {Object.entries(w.by_arm)
+                        .sort((a, b) => b[1] - a[1])
+                        .map(([k, v]) => `${portfolioArmLabel(k)} ${fmtMoney(v)}`)
+                        .join(" · ")}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+    </Card>
+  );
+}
+
+const OPEN_RISK_HELP: CardHelpContent = {
+  title: "Risk held at once",
+  body: (
+    <HelpSection title="The most the arms could lose together">
+      <p>
+        Each trade's defined maximum loss, held from its entry to its exit, summed across the chosen arms. Each session reads its peak, and
+        the tiles are those peaks over the sessions anything was open. A position held overnight counts from every session it spans. A trade
+        with no recorded maximum loss is named and left out, so the reading is then a floor; a trade whose source records no time is held for
+        its whole sessions.
+      </p>
+    </HelpSection>
+  ),
+};
 
 export function PortfolioView({ p }: { p: PortfolioReading }) {
   const n = p.shared.arms?.length ?? p.arms.filter((a) => a.periods_traded > 0).length;
@@ -65,6 +171,12 @@ export function PortfolioView({ p }: { p: PortfolioReading }) {
               {f.key} not read
             </span>
           ))}
+        </p>
+      )}
+      {p.licensed === true && (
+        <p className="muted" style={{ fontSize: 12 }}>
+          <span className="chip chip-warn" style={{ marginRight: 6 }}>licensed</span>
+          holds a backtest derived from licensed vendor data: this reading stays on this machine
         </p>
       )}
       {tooNew.length > 0 && (
@@ -130,8 +242,8 @@ export function PortfolioView({ p }: { p: PortfolioReading }) {
               .sort((x, y) => Math.abs(y.zero_filled ?? 0) - Math.abs(x.zero_filled ?? 0))
               .map((c) => (
                 <tr key={`${c.a}|${c.b}`} className={thin(c.zero_filled_periods) ? "muted" : undefined}>
-                  <td className="mono">{c.a}</td>
-                  <td className="mono">{c.b}</td>
+                  <td className="mono" title={c.a}>{portfolioArmLabel(c.a)}</td>
+                  <td className="mono" title={c.b}>{portfolioArmLabel(c.b)}</td>
                   <td className={thin(c.zero_filled_periods) ? undefined : corrTone(c.zero_filled)}>{fmtR(c.zero_filled)}</td>
                   <td>{String(c.zero_filled_periods)}</td>
                   <td className={thin(c.similarity_periods) ? undefined : corrTone(c.similarity)}>{fmtR(c.similarity)}</td>
@@ -149,6 +261,7 @@ export function PortfolioView({ p }: { p: PortfolioReading }) {
         </table>
       </div>
       </Card>
+      {p.open_risk !== undefined && <OpenRiskCard r={p.open_risk} />}
       </Section>
 
       <Section concept="stand" tag="contribution" question="What does each arm add?">
@@ -158,7 +271,7 @@ export function PortfolioView({ p }: { p: PortfolioReading }) {
           <thead>
             <tr>
               <th>arm</th>
-              <th>first close</th>
+              <th title="its first close; a backtest arm counts from its run's first session">from</th>
               <th title={`${unit} with a close`}>traded</th>
               <th>net, booked</th>
               <th title="its net in the combined book, after weighting">in the book</th>
@@ -174,8 +287,8 @@ export function PortfolioView({ p }: { p: PortfolioReading }) {
                 const c = p.contribution.find((x) => x.key === a.key);
                 return (
                   <tr key={a.key}>
-                    <td className="mono">{a.key}</td>
-                    <td>{a.first ?? "—"}</td>
+                    <td className="mono" title={a.key}>{portfolioArmLabel(a.key)}</td>
+                    <td>{a.span_from ?? a.first ?? "—"}</td>
                     <td>{String(a.periods_traded)}</td>
                     <td><PnlCell v={a.net} /></td>
                     <td><PnlCell v={c?.net ?? null} /></td>
@@ -211,7 +324,7 @@ export function PortfolioView({ p }: { p: PortfolioReading }) {
                     <td className="muted">
                       {Object.entries(w.by_arm)
                         .sort((a, b) => a[1] - b[1])
-                        .map(([k, v]) => `${k} ${fmtMoney(v)}`)
+                        .map(([k, v]) => `${portfolioArmLabel(k)} ${fmtMoney(v)}`)
                         .join(" · ")}
                     </td>
                   </tr>
@@ -260,6 +373,14 @@ const PICK_HELP: CardHelpContent = {
           advised experiment: a starting point, not a judgement of which arm is the strategy.
         </p>
       </HelpSection>
+      <HelpSection title="Backtests beside paper">
+        <p>
+          Add any number of backtest arms: each Builder automation's newest run, and the arms of a study result. A backtest arm counts from its
+          run's first session, so its quiet opening days read as zeros, and the window then starts at the earliest chosen run. Each arm is
+          labelled backtest; it is never summed with a paper arm into one. A result derived from licensed vendor data is listed only while
+          the results gate is open, and the reading says it holds one.
+        </p>
+      </HelpSection>
       <HelpSection title="How the correlation is read">
         <p>
           Correlation is shown two ways: over every session or week in both arms' spans with a no-close period counted as zero, and over
@@ -281,25 +402,31 @@ export function PortfolioTab() {
   const [chosen, setChosen] = useState<Record<string, string>>({});
   const [period, setPeriod] = useState<"day" | "week">("day");
   const [weights, setWeights] = useState<"equal_risk" | "booked">("equal_risk");
+  const [backtests, setBacktests] = useState<string[]>([]);
+  const sources = usePortfolioSources();
+  const options = sources.data?.ok === true ? backtestOptions(sources.data.sources) : [];
   const pick = (module: string, tags: string[]) => (module in chosen ? chosen[module] ?? "" : (defaultArm(tags) ?? ""));
-  const arms = [...modules.entries()].map(([m, tags]) => [m, pick(m, tags)] as const).filter(([, t]) => t !== "").map(([m, t]) => `${m}:${t}`);
+  const paperArms = [...modules.entries()].map(([m, tags]) => [m, pick(m, tags)] as const).filter(([, t]) => t !== "").map(([m, t]) => `${m}:${t}`);
+  const arms = [...paperArms, ...backtests];
   const { data, isLoading, isError, dataUpdatedAt } = usePortfolio(arms, period, weights, mode);
   const changedPicks = [...modules.entries()].filter(([m, tags]) => pick(m, tags) !== (defaultArm(tags) ?? "")).length;
-  const changed = changedPicks + (period !== "day" ? 1 : 0) + (weights !== "equal_risk" ? 1 : 0);
+  const changed = changedPicks + backtests.length + (period !== "day" ? 1 : 0) + (weights !== "equal_risk" ? 1 : 0);
   const filter = useFilterPanel({
     parts: [
-      arms.length === 0 ? "no arm chosen" : arms.join(", "),
+      arms.length === 0 ? "no arm chosen" : arms.map(portfolioArmLabel).join(", "),
       period === "week" ? "weekly" : "daily",
       weights === "booked" ? "as booked" : "equal risk",
     ],
     changed,
     reset: () => {
       setChosen({});
+      setBacktests([]);
       setPeriod("day");
       setWeights("equal_risk");
     },
     children: (
       <>
+        {modules.size > 0 && (
         <FilterGroup title="arms" note="one per module">
           {[...modules.entries()].map(([m, tags]) => (
             <label key={m} style={{ fontSize: 12, display: "block", marginBottom: "0.35rem" }}>
@@ -314,6 +441,39 @@ export function PortfolioTab() {
               </select>
             </label>
           ))}
+        </FilterGroup>
+        )}
+        <FilterGroup title="backtests" note="any number, beside the paper arms">
+          {backtests.map((k) => (
+            <span key={k} className="chip" style={{ fontSize: 11, marginRight: 6, display: "inline-block", marginBottom: 4 }} title={k}>
+              {portfolioArmLabel(k)}{" "}
+              <button type="button" className="link-button" aria-label={`remove ${portfolioArmLabel(k)}`} onClick={() => setBacktests(backtests.filter((x) => x !== k))}>
+                ×
+              </button>
+            </span>
+          ))}
+          {sources.data !== undefined && !sources.data.ok ? (
+            <p className="muted" style={{ fontSize: 12 }}>{sources.data.error ?? "backtest results unavailable"}</p>
+          ) : (
+            <select
+              className="chip review-session-select"
+              aria-label="add a backtest arm"
+              value=""
+              onChange={(e) => {
+                if (e.target.value !== "") setBacktests([...backtests, e.target.value]);
+              }}
+            >
+              <option value="">{options.length === 0 ? "no backtest results" : "add a backtest arm…"}</option>
+              {options
+                .filter((o) => !backtests.includes(o.key))
+                .map((o) => (
+                  <option key={o.key} value={o.key}>
+                    {o.label}
+                    {o.licensed ? " · licensed" : ""}
+                  </option>
+                ))}
+            </select>
+          )}
         </FilterGroup>
         <FilterGroup title="period">
           <select className="chip review-session-select" aria-label="period" value={period} onChange={(e) => setPeriod(e.target.value === "week" ? "week" : "day")}>
@@ -330,22 +490,23 @@ export function PortfolioTab() {
       </>
     ),
   });
-  const ready = !calendar.isLoading && modules.size > 0 && arms.length > 0 && !isLoading && data !== undefined && data.ok;
+  const pickable = modules.size > 0 || options.length > 0;
+  const ready = !calendar.isLoading && pickable && arms.length > 0 && !isLoading && data !== undefined && data.ok;
   return (
     <div className="pf-layout">
       <Section concept="stand" tag="the arms" question="Which arms am I holding together?">
       <Card
-        title="one arm per module"
+        title="one arm per module, and backtests"
         updatedAt={dataUpdatedAt}
         isError={isError}
         help={PICK_HELP}
-        controls={modules.size > 0 ? filter.button : null}
+        controls={pickable ? filter.button : null}
       >
-        {modules.size > 0 ? filter.body : null}
+        {pickable ? filter.body : null}
         {calendar.isLoading ? (
           <span className="skeleton skeleton-text" style={{ width: "50%" }} />
-        ) : modules.size === 0 ? (
-          <p className="muted">{calendar.isError ? "the arms could not be read" : `no arm has closed a ${mode} trade yet`}</p>
+        ) : !pickable ? (
+          <p className="muted">{calendar.isError ? "the arms could not be read" : `no arm has closed a ${mode} trade yet, and no backtest result is listed`}</p>
         ) : arms.length === 0 ? (
           <p className="muted">choose at least one arm</p>
         ) : isLoading || data === undefined ? (

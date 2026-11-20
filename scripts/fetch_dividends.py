@@ -25,6 +25,7 @@ import sys
 import time
 from datetime import UTC, datetime, timedelta
 
+from cherrypick.core import progress
 from cherrypick.core.auth import SHARED_SERVICE, CredentialStore, SessionManager
 from cherrypick.core.jsonio import write_json_atomic
 from cherrypick.technicals import paths, symbols
@@ -60,9 +61,12 @@ async def fetch(session, todo: list[str], doc: dict) -> dict:
     from tastytrade.metrics import get_dividends
 
     report = {"fetched": 0, "failed": []}
+    rep = progress.Reporter("fetch_dividends")
+    rep.split("symbols", todo, unit="symbols")
     for i, sym in enumerate(todo):
         if i:
             await asyncio.sleep(PAUSE_S)
+        rep.advance("symbols", key=sym, current=sym)
         try:
             rows = await get_dividends(session, sym.replace(".", "/"))
         except Exception as exc:  # noqa: BLE001 -- keep the previous history; report and go on
@@ -77,6 +81,7 @@ async def fetch(session, todo: list[str], doc: dict) -> dict:
         report["fetched"] += 1
         if report["fetched"] % 50 == 0:
             save(doc)  # progress survives an interrupted first run
+    rep.finish("done")
     return report
 
 

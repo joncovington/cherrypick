@@ -10,6 +10,11 @@ where licensed results go. An automation without a suggestion (every block backt
 suggestion is not possible (our data does not cover it) is refused, as is a second run while one is
 live.
 
+**Which window.** The suggestion also lists `windows`: each span a store the backtest can replay holds
+for every need (the last year, everything held, a licensed store only where it reaches further back
+than our own). A request may name one by its `key`; the run then takes that window and that store. A
+key the suggestion does not offer is refused. Without one, the run takes the last year, as before.
+
 **What it is not.** The run is descriptive: an explore run, no trial and no verdict, so no split is
 declared and nothing moves a register label, a gate or a config. It reads stores and writes one result
 file (`builder-<automation>-<YYMMDDHHMM>.json`, where the driver puts results). It never turns an
@@ -41,6 +46,8 @@ DRIVER = "packages/backtest/scripts/automation_backtest.py"
 #: slug (no double dash), which `researchqueue.add` checks.
 NAME = re.compile(r"^[a-z0-9][a-z0-9-]{1,47}$")
 LIVE = ("queued", "running")
+#: The only rows a Builder run may wait on: an addition to the full set (`fullsetadd`).
+AFTER_PREFIX = "fullset/add-"
 TIMEOUT_S = 60
 
 
@@ -120,7 +127,16 @@ def queue(
     sug = view.get("suggestion")
     if not sug:
         return _err("every block of this automation is backtested already; nothing to suggest", "invalid")
-    if not sug.get("possible"):
+    key = req.get("window")
+    after = req.get("after")
+    if after is not None and (not isinstance(after, str) or not after.startswith(AFTER_PREFIX)):
+        return _err(f"a run waits only on an addition to the full set ({AFTER_PREFIX}...)", "invalid")
+    chosen = None
+    if key is not None:
+        chosen = next((w for w in sug.get("windows") or [] if w.get("key") == key), None)
+        if chosen is None:
+            return _err(f"{key!r} is not a window our data offers for {name}", "invalid")
+    elif not sug.get("possible") and after is None:
         short = [n.get("field") for n in sug.get("needs") or [] if not n.get("covered")]
         return _err(
             f"our data does not cover a backtest of it ({', '.join(map(str, short)) or 'a need'})", "invalid"
@@ -128,7 +144,7 @@ def queue(
     live = [r for r in rows(study=STUDY) if _step(r, name) and r.get("status") in LIVE]
     if live:
         return _err(f"a backtest of {name} is already {live[0]['status']} (task {live[0]['id']})", "conflict")
-    start, end = sug["window"]
+    start, end = (chosen["start"], chosen["end"]) if chosen else sug["window"]
     stamp = now or datetime.now(ET)
     run = run_name(name, stamp)
     args = [
@@ -144,11 +160,14 @@ def queue(
         "--to",
         end,
     ]
-    source = _chain_source(sug.get("needs") or [])
+    # A run waiting on an addition takes no source: the data is not in yet, so the driver chooses by
+    # coverage when it starts.
+    source = None if after else chosen["source"] if chosen else _chain_source(sug.get("needs") or [])
     if source:
         args += ["--source", source]
     try:
-        row = add(STUDY, "script", {"path": DRIVER, "args": args}, step=run.removeprefix(f"{STUDY}-"))
+        row = add(STUDY, "script", {"path": DRIVER, "args": args}, step=run.removeprefix(f"{STUDY}-"),
+                  **({"after": after} if after else {}))  # fmt: skip
     except researchqueue.Refused as exc:
         return _err(str(exc), "invalid")
     return {
@@ -158,6 +177,8 @@ def queue(
         "task": row.get("id"),
         "window": [start, end],
         "source": source,
+        "key": key,
+        **({"after": after} if after else {}),
     }
 
 
