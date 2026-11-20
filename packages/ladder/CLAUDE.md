@@ -76,7 +76,8 @@ chain is read. A fund removed from the config stays requested until its last lot
 `cli.py` (status, lots, summary), `live_gates.py`, `live_loop.py` and `credentials.py` (the live gates,
 the arm and the commands; none imports anything that trades), `orders.py` (the pure order planner and
 the executor over an injected broker), `live_db.py` (the live ledger), `live_tick.py` (the broker
-adapter, the reconcile and the tick: the only module that imports the broker seam).
+adapter, the reconcile and the tick: the only module that imports the broker seam), `live_checks.py` (pure: the
+split entries and the positions comparison).
 
 ## Commands
 
@@ -107,20 +108,47 @@ import (`orders.py` may import the one pure id reader). The `live` block in the 
   (`/live-ladder-start`). Both need a running supervisor, as every module's arm does. `--disarm` removes
   the record. The record is good for its date; `live.disarm_at` (20:00 ET) ends the day.
 - **`--status`** is one JSON object: every gate, the masked account, whether it is armed today, `mode`
-  (`dry-run` or `live`) and `held` (what an uncertain submit is holding). It makes no broker call and
+  (`dry-run` or `live`), `held` (what an uncertain submit is holding) and `checks` (the last tick's
+  positions cross-check, declared splits and dry-run intents). It makes no broker call and
   `ready` reflects the gates only. **`--once`** runs one tick (below).
 - There is no `live.task_name`, so the supervisor derives no `ladder-live` job and a tick is run by
   hand. The supervisor job comes with a later step.
 - **Dry-run (`live.dry_run`, guarded)** is true unless it is exactly `false`. The tick still reads the
   broker, but the executor logs the orders it would place or cancel into the decisions journal
   (`mode = dry_run`, the order's client id in the reason, the shares, limit and time in force in the
-  detail) and calls the broker for nothing, so a shadow week can be checked against paper's lots. The
-  adapter refuses a live placement while the flag is true, whatever the caller passed.
+  detail) and calls the broker for nothing, so a shadow week can be checked against paper's lots. An
+  intent is journaled when it is new or its terms changed since the last row for that client id;
+  `--status` lists every standing intent. The adapter refuses a live placement while the flag is true, whatever the caller passed.
 - **The tick (`live_loop --once`)**, in this order: the dead-man's switch (an arm record dated another
   day is removed before any broker read); the gates that block everything (any unmet and nothing is
-  read, no adapter built); the orphan sweep; the reconcile; then, only inside `session_start` to
-  `disarm_at` and armed, the plan inputs, `orders.plan` and the executor. Unarmed, or outside those
-  hours, it stops after the reconcile.
+  read, no adapter built); the orphan sweep; the splits; the reconcile; then, only inside
+  `session_start` to `disarm_at` and armed, the positions cross-check, the plan inputs, `orders.plan`
+  and the executor. Unarmed, or outside those hours, it stops after the reconcile.
+  - **Splits** have no feed. The suite's split data is not fit for a live tick (Dolt's split table is
+    refreshed by hand and holds splits the prices never made and misses real ones; the public history
+    is fetched per symbol by a script; the broker has no split endpoint; a package may not import a
+    script), so the source is the person's: `live.splits`, a list of
+    `{"fund", "ex_date", "to", "for"}` (`to` new shares for `for` old ones). Before the reconcile, each
+    open lot bought before an entry's ex-date is restated once: shares by the factor (rounded down),
+    cost and levels by its inverse, money columns untouched. Each application is recorded with the lot
+    in one transaction (`ladder_lot_splits`), so it never repeats, and journaled (`mode = split`). The
+    planner then sees new terms: a resting sell at the old ones is cancelled and the new one placed on
+    the next run. A reverse split that leaves less than one share is alerted. The reference close
+    (the previous session's, which the cache may hold on either side of the split) is restated by the
+    factor only when that lands nearer the fund's bid than the raw close does; with no bid it is
+    unknown and the fund's buys wait. An entry the tick cannot read blocks every fund's new buys.
+  - **Positions cross-check**, after the reconcile and before the plan, in dry-run too. The broker's
+    equity shares in each fund are compared with the ledger's open live shares in it, so only the
+    ladder's own shares count and options and other instruments are ignored. Broker below ledger is a
+    shortfall and stops that fund's new buys. Broker above ledger is the person's own shares: reported
+    (`mode = positions`), never adopted, no reason to stop. A mismatch whose ratio is a whole-number
+    split (2:1 through 20:1, or the reverse) is reported as a suspected split and stops the fund's new
+    buys too, but nothing is restated: only a `live.splits` entry restates. An unreadable positions
+    read (core's `Broker.positions` returns None, never an empty list) stops every fund's new buys.
+    Stopped means the fund's resting buys are cancelled and none placed; resting sells are never
+    touched. Each stop is an `alert` journal row, and `--status` shows the last tick's reason under
+    `checks`, with the dry-run orders it would send. A fill or sell landing between the reconcile and
+    the positions read shows as a one-tick mismatch.
   - **Reconcile first.** It reads the broker's word on every order the ledger holds open and adopts any
     `ldr.` order the ledger lacks (a crash between a place and its ledger row), so a fill the ledger
     has not seen reaches the planner as a lot, not as a resting buy it would cancel or re-place. A
@@ -167,8 +195,10 @@ import (`orders.py` may import the one pure id reader). The `live` block in the 
     `disarm_at` cancel resting buys and place none; none of them touches a sell.
   - A lot open past `hospital_alert_days` is an alert, as is a sell for no known lot or a split that
     leaves no whole share. Orders whose client id is not ours are never touched.
-  - Splits come in as a factor per fund (new shares per old); the planner restates the stored lots and
-    the reference close and prices every order at the restated terms.
+  - Splits come in as a factor per fund (new shares per old); the planner restates the lots it is
+    given and the reference close and prices every order at the restated terms. The live tick restates
+    the ledger itself and passes no factor for lots. A fund in `block_buys` (the positions
+    cross-check) takes no new buy and loses its resting buys; its sells are planned as ever.
   - Client ids carry the order's terms, so the same state plans the same ids and the broker's working
     list alone says what is resting. A sell the broker ended unfilled is re-placed with a retry suffix,
     three times at most.

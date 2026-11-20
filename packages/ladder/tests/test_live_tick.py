@@ -52,8 +52,23 @@ class FakeBroker:
         self.orders_error: Exception | None = None
         self.unreadable: set[str] = set()
         self.transactions: list[dict] = []
+        self.shares: dict[str, float] = {}  # equity shares held, moved by every fill
+        self.extra: list[dict] = []  # positions the ladder did not make (options, hand-held shares)
+        self.positions_error = False
+        self.positions_calls = 0
 
     # --- what the tick calls
+    def positions(self):
+        self.positions_calls += 1
+        if self.positions_error:
+            return None
+        rows = [
+            {"symbol": s, "instrument_type": "Equity", "underlying_symbol": s, "quantity": q}
+            for s, q in self.shares.items()
+            if q
+        ]
+        return rows + [dict(r) for r in self.extra]
+
     def place(self, spec, live):
         eid = spec["external_identifier"]
         self.calls.append(("place", eid, live))
@@ -112,6 +127,10 @@ class FakeBroker:
         spec_qty = qty if qty is not None else int(orders.parse_id(row["external_identifier"])["shares"])
         row["fills"] = [{"quantity": str(spec_qty), "fill_price": str(price), "filled_at": at, "symbol": "x"}]
         row.update(status="Filled", terminal=True)
+        parsed = orders.parse_id(row["external_identifier"]) or {}
+        symbol = row["underlying_symbol"]
+        sign = 1 if parsed.get("side") == "buy" else -1
+        self.shares[symbol] = self.shares.get(symbol, 0) + sign * spec_qty
 
     def hand_order(self, eid, symbol="TQQQ"):
         oid = str(self.next_id)
@@ -377,7 +396,11 @@ def test_dry_run_sends_nothing_and_journals_the_intended_orders(world):
     assert detail["shares"] == 10 and detail["limit"] == 93.0 and detail["tif"] == "Ext"
     assert live_db.orders(world.conn) == []  # nothing placed, so no order row
     tick(world, cfg, "09:01")
-    assert decisions(world, "dry_run")[0]["occurrences"] == 2  # the same intent collapses into one row
+    [row] = decisions(world, "dry_run")  # the same intent is not journaled again ...
+    assert row["occurrences"] == 1
+    assert [i["what"] for i in live_tick.read_checks()["intents"]] == [
+        f"place buy TQQQ {BUY1}"
+    ]  # ... and is listed
 
 
 @pytest.mark.parametrize("value", [True, "false", None, 0, "no"])
@@ -590,12 +613,16 @@ def adapter(world, monkeypatch):
     async def working_orders(account, session):
         return []
 
+    async def positions(account, session):
+        return []
+
     def ensure(self):
         self._account, self._session, self._resolved_for = "acct", "sess", ACCOUNT
 
     monkeypatch.setattr(core_broker, "place_order", place_order)
     monkeypatch.setattr(core_broker, "orders_today", orders_today)
     monkeypatch.setattr(core_broker, "working_orders", working_orders)
+    monkeypatch.setattr(core_broker, "positions", positions)
     monkeypatch.setattr(core_broker, "build_order", lambda spec: spec)
     monkeypatch.setattr(live_tick.BrokerAdapter, "_ensure", ensure)
     sdk.place_order = place_order

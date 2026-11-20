@@ -106,6 +106,7 @@ def status(config: dict, *, designated: str | None = None, when=None) -> dict:
         "mode": "dry-run" if dry else "live",
         "note": DRY_RUN_NOTE if dry else LIVE_NOTE,
         "held": live_tick.read_held(),
+        "checks": live_tick.read_checks(),
         "today": today,
         "armed_today": arm_stamp_date() == today,
         "armed_for": arm_stamp_date(),

@@ -66,6 +66,22 @@ CREATE TABLE IF NOT EXISTS ladder_orders (
     updated_at          TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_ladder_orders_open ON ladder_orders(final, symbol);
+
+-- One row per split applied to a lot: what makes a restatement happen once.
+CREATE TABLE IF NOT EXISTS ladder_lot_splits (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    position_id   TEXT NOT NULL,
+    symbol        TEXT NOT NULL,
+    ex_date       TEXT NOT NULL,
+    to_shares     REAL NOT NULL,
+    for_shares    REAL NOT NULL,
+    shares_before INTEGER NOT NULL,
+    shares_after  INTEGER NOT NULL,
+    price_before  REAL NOT NULL,
+    price_after   REAL NOT NULL,
+    applied_at    TEXT,
+    UNIQUE (position_id, ex_date)
+);
 """
 
 LIVE_SCHEMA = _paper._SCHEMA + _ORDERS_SCHEMA
@@ -167,6 +183,45 @@ def open_lots(conn, arm: str | None = None, symbol: str | None = None) -> list[d
         sql += " AND symbol = ?"
         args.append(symbol)
     return [dict(r) for r in conn.execute(sql + " ORDER BY buy_time, id", args)]
+
+
+def lot_splits(conn) -> set[tuple[str, str]]:
+    """(position id, ex date) of every split already applied to a lot."""
+    return {(r[0], r[1]) for r in conn.execute("SELECT position_id, ex_date FROM ladder_lot_splits")}
+
+
+def apply_lot_split(conn, position_id: str, update: dict, record: dict) -> bool:
+    """Restate one lot and record that it was, in one transaction: either both land or neither does.
+    False, with nothing written, when the lot has already had this split."""
+    if conn.execute(
+        "SELECT 1 FROM ladder_lot_splits WHERE position_id = ? AND ex_date = ?",
+        (position_id, record["ex_date"]),
+    ).fetchone():
+        return False
+    try:
+        _store.upsert(
+            conn, "ladder_positions", ("position_id",), {"position_id": position_id, **update}, commit=False
+        )
+        cols = ", ".join(["position_id", *record])
+        marks = ", ".join("?" for _ in range(len(record) + 1))
+        conn.execute(
+            f"INSERT INTO ladder_lot_splits ({cols}) VALUES ({marks})", [position_id, *record.values()]
+        )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    return True
+
+
+def last_dry_run(conn, arm: str, symbol: str, reason: str) -> dict | None:
+    """The newest dry-run journal row for this intended order (any day), or None."""
+    r = conn.execute(
+        "SELECT * FROM ladder_decisions WHERE mode = 'dry_run' AND arm = ? AND symbol = ? AND reason = ? "
+        "ORDER BY id DESC LIMIT 1",
+        (arm, symbol, reason),
+    ).fetchone()
+    return dict(r) if r else None
 
 
 def lots_of(conn, arm: str, symbol: str) -> list[dict]:
