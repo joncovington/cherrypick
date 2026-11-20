@@ -31,17 +31,17 @@ A page the suite has switched off is not shown (see *What is off is not shown* b
 | BWB | `/bwb` | today, positions, history, decisions, arms, entry vol, live vs paper, performance, analysis, advisor, help | Retired; ships off. |
 | Earnings | `/earnings` | today, positions, history, decisions, screening, strategies, advisor | Active; paper only. |
 | Automations | `/automations` | today, groups, positions, history, decisions, performance, costs, help (8 tabs) | Paper only. The automations are whatever the ledger names; the Builder writes them, and `groups` (every group › one group › one automation, staged and reviewed) switches, budgets and groups them. |
+| Ladder | `/ladder` | today, live, open lots, history, arms, decisions, help (7 tabs) | Experimental. Every tab but `live` is the paper book. `live` only reads the live path, which ships in dry-run and off. Not a tested edge; the help tab says so. |
 | Experiments | `/experiments` | experiments | The comparison page for the paper-only experiments and the retired modules below. |
 | PMCC | `/pmcc` | today, by arm, positions, tracker, history, decisions, arms, performance, analysis, costs, advisor, help | Retired; ships off. |
 | Calendars | `/calendars` | today, plan, positions, history, decisions, arms, policies, performance, analysis, advisor, help | Experimental; paper only. |
 | Curve | `/curve` | today, regime, positions, history, decisions, arms, performance, analysis, costs, advisor, help | Retired; ships off. |
 | Contango | `/contango` | today, regime, positions, history, decisions, arms, performance, analysis, costs, help | Experimental; paper only. |
 | Weekly put | `/weeklyput` | today, cycles, positions, history, decisions, performance, costs, help (8 tabs) | Experimental; paper only. |
-| Ladder | `/ladder` | today, live, open lots, history, arms, decisions, help (7 tabs) | Experimental. Every tab but `live` is the paper book. `live` only reads the live path, which ships in dry-run and off. Not a tested edge; the help tab says so. |
 | Flies | `/flies` | session, summary, forest, timeline, positions, history, books, opening range, attempts, decisions, gates vs control, live vs paper, selector, regime cuts, intraday agent, completion, performance, analysis, costs, advisor, help | Retired; ships off. |
 
 The simple view shows a shorter tab list per page (`ModuleNavDecl.simple`); the detail view shows all.
-Keyboard: `g` plus the page's key for suite pages, a bare digit for the five modules on the rail,
+Keyboard: `g` plus the page's key for suite pages, a bare digit for the six modules on the rail,
 `j`/`k` for tabs.
 
 The sections below are the working notes for each page. Read the section for a page before changing it.
@@ -94,7 +94,7 @@ user's path. The rules that follow from them:
 - **The same evidence is shown once.** A module's `arms` tab keeps what Compare does not show (each
   arm's guide, Contango's NAV comparison, Curve's flip divergence, BWB's fire counts); the module
   `advisor` tabs stay off the module pages while the advisor is paused.
-- **Rail keys are fixed:** MEIC 1, BWB 2, Earnings 3, Experiments 4, Automations 5 (an off module's digit does
+- **Rail keys are fixed:** MEIC 1, BWB 2, Earnings 3, Experiments 4, Automations 5, Ladder 6 (an off module's digit does
   nothing); Config is `g o`; the Suite header is dropped when Config is all it would hold.
 - **Income candidates stay on Live portfolio**, where they are sized to the user's delta and theta
   room, and are not ranked ("top three") because nothing about them has a tested edge.
