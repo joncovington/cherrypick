@@ -6,11 +6,11 @@ export { parseValue, showValue } from "./BuilderField";
 import { isLegId, legLabels, legWords, nextLegId, openVerb, signedQty, titleCase, writtenLeg } from "./legWords";
 
 /**
- * The Builder's field editors: the legs (Edit legs), the filter gates, the exits, the far expiry and the
- * event list, each field writing the same spec the JSON editor holds and the paper loop reads. Every
- * choice comes from the module's schema (`cli builder-schema`, the engine's own tables); whether a value
- * is right is the module's Check. A blank field removes its key. The page's sentences (`BuilderForm`)
- * lay these in where a line cannot hold them.
+ * The Builder's field editors: the legs (Edit legs), the far expiry and the event list, each field
+ * writing the same spec the JSON editor holds and the paper loop reads. Every choice comes from the
+ * module's schema (`cli builder-schema`, the engine's own tables); whether a value is right is the
+ * module's Check. A blank field removes its key. The page's sentences (`BuilderForm`) lay these in
+ * where a line cannot hold them.
  */
 
 export type Spec = Record<string, unknown>;
@@ -132,54 +132,6 @@ export function KeyFields({
             />
           ),
         )}
-    </>
-  );
-}
-
-function GateRows({ schema, gates, stages, onChange, prefix }: { schema: BuilderSchema; gates: Obj[]; stages: string[]; onChange: (next: Obj[]) => void; prefix: string }) {
-  const known = schema.gates.filter((g) => stages.includes(g.stage));
-  const byName = Object.fromEntries(schema.gates.map((g) => [g.gate, g]));
-  const shown = gates.map((g, i) => ({ g, i })).filter(({ g }) => stages.includes(byName[String(g["gate"])]?.stage ?? stages[0]!));
-  return (
-    <>
-      <div className="builder-rows">
-      {shown.map(({ g, i }) => {
-        const def = byName[String(g["gate"])];
-        return (
-          <div key={`${prefix}-${i}-${String(g["gate"])}`} className="builder-cond builder-gate-row">
-            <Select
-              id={`${prefix}-${i}`}
-              label="gate"
-              value={String(g["gate"] ?? "")}
-              options={known.map((k) => k.gate)}
-              onChange={(name) => onChange(gates.map((x, j) => (j === i ? { gate: name } : x)))}
-            />
-            {(def?.params ?? []).map((p) => {
-              const t = schema.types?.gates[String(g["gate"])]?.[p.name];
-              return (
-                <Field
-                  key={`${prefix}-${i}-${p.name}`}
-                  id={`${prefix}-${i}-${p.name}`}
-                  label={t || p.default === null || p.default === undefined ? p.name : `${p.name} (${showValue(p.default)})`}
-                  value={g[p.name]}
-                  required={p.required}
-                  t={t}
-                  onChange={(v) => onChange(gates.map((x, j) => (j === i ? withKey(x, p.name, v) : x)))}
-                />
-              );
-            })}
-            <button type="button" className="btn builder-remove" aria-label={`Remove gate ${String(g["gate"])}`} onClick={() => onChange(gates.filter((_, j) => j !== i))}>
-              ×
-            </button>
-          </div>
-        );
-      })}
-      </div>
-      <div>
-        <button type="button" className="btn" onClick={() => onChange([...gates, { gate: known[0]?.gate ?? "" }])}>
-          + gate
-        </button>
-      </div>
     </>
   );
 }
@@ -314,12 +266,6 @@ export function EventSkips({
   );
 }
 
-/** The gates of the given stages, in the spec's own order. */
-export function GateFields({ schema, spec, onChange, stages, prefix }: SectionProps & { stages: string[]; prefix: string }) {
-  const gates = list(spec["gates"]).map(obj);
-  return <GateRows schema={schema} gates={gates} stages={stages} prefix={prefix} onChange={(next) => onChange(withKey(spec, "gates", next.length ? next : undefined))} />;
-}
-
 /** The most contracts one leg may hold, either way: the module's `arms.MAX_LEG_QUANTITY`, which its
  *  check enforces; the box only stops a typo early. */
 const MAX_QTY = 10;
@@ -452,27 +398,6 @@ export function LegFields({ schema, spec, onChange }: SectionProps) {
       </div>
     </>
   );
-}
-
-/** Section 5's exit keys, one field each. */
-export function ExitFields({ schema, spec, onChange }: SectionProps) {
-  const exit = obj(spec["exit"]);
-  return (
-    <div className="builder-grid">
-      {schema.exits.map((k) => (
-        <Field key={`f-exit-${k}`} id={`f-exit-${k}`} label={k} value={exit[k]} t={schema.types?.exit[k]} onChange={(v) => onChange(withKey(spec, "exit", withKey(exit, k, v)))} />
-      ))}
-    </div>
-  );
-}
-
-/** The limits in reading order: how many at once, how many a day, how often, then the rest the
- *  module offers. */
-const LIMIT_ORDER = ["max_open", "per_day", "every_days", "one_per_expiry"];
-
-export function orderedLimits(limits: readonly string[]): string[] {
-  const known = LIMIT_ORDER.filter((k) => limits.includes(k));
-  return [...known, ...limits.filter((k) => !LIMIT_ORDER.includes(k))];
 }
 
 /** The automation once a strategy fills it in: its legs and expiry, its far expiry (or none, so a

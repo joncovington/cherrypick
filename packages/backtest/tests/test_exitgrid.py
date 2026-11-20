@@ -12,6 +12,7 @@ from datetime import date, timedelta
 from pathlib import Path
 
 import pytest
+from cherrypick.core import structures
 
 from cherrypick.backtest import exitgrid, gridfiles, ideasearch, paths
 
@@ -76,7 +77,7 @@ def test_a_later_expiry_takes_the_days_close_and_a_debit_structure_the_debit_sto
 
 def test_a_structure_that_sets_no_stop_takes_only_the_stop_its_entry_can_fire():
     condor = {**FLY, "exit": {"profit_target_pct": 50}}
-    assert exitgrid.entry_kind(condor) == "credit"
+    assert structures.entry_kind(condor) == "credit"
     g = exitgrid.variants(condor)
     assert any(k.startswith("stop_credit") for k in g)
     assert not any(k.startswith("stop_debit_pct") for k in g), "a condor's debit stop never fires"
@@ -89,7 +90,7 @@ def test_a_structure_that_sets_no_stop_takes_only_the_stop_its_entry_can_fire():
             _leg("short_call", "C", -1, rule="from_leg", leg="long_call", points=10, match="nearest"),
         ],
     }
-    assert exitgrid.entry_kind(debit_call) == "debit"
+    assert structures.entry_kind(debit_call) == "debit"
     g = exitgrid.variants(debit_call)
     assert any(k.startswith("stop_debit_pct") for k in g) and not any(k.startswith("stop_credit") for k in g)
 
@@ -101,7 +102,7 @@ def test_a_structure_that_sets_no_stop_takes_only_the_stop_its_entry_can_fire():
             {**_leg("far", "C", 1, rule="same_as", leg="near"), "expiry": "far"},
         ],
     }
-    assert exitgrid.entry_kind(calendar) is None, "the rule doesn't say; either stop may fire"
+    assert structures.entry_kind(calendar) is None, "the rule doesn't say; either stop may fire"
     g = exitgrid.variants(calendar)
     assert any(k.startswith("stop_debit_pct") for k in g) and any(k.startswith("stop_credit") for k in g)
 

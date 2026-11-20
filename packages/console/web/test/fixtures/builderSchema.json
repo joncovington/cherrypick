@@ -3132,6 +3132,29 @@
    "min": "at least {min}",
    "max": "at most {max}"
   },
+  "stages": {
+   "signal": "before the order",
+   "chain": "on the chain",
+   "structure": "on the priced trade"
+  },
+  "exit_rows": [
+   "Profit",
+   "Loss",
+   "Time",
+   "Events"
+  ],
+  "exit_starts": {
+   "credit_rules": {
+    "label": "Credit-trade rules",
+    "about": "The module's starting exits for a trade sold for a credit; each stays editable.",
+    "sentence": "Credit-trade rules"
+   },
+   "hold": {
+    "label": "Hold to expiry",
+    "about": "No exit: it settles at expiry.",
+    "sentence": "Hold to expiry"
+   }
+  },
   "exits": {
    "profit_target_pct": {
     "label": "Take profit",

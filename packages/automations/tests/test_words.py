@@ -191,6 +191,26 @@ def test_the_indicator_check_catches_a_missing_choice(monkeypatch):
     assert _source_choice_gaps() == ["prior_period.period"]
 
 
+def _row_gaps() -> list[str]:
+    """A filter stage with no tag, or an exit row naming no exit group."""
+    from cherrypick.automations import gates
+
+    out = [f"stage {s}" for s in sorted(set(gates.CORE_STAGE.values()) - set(words.STAGES))]
+    groups = {w["group"] for w in words.EXITS.values()}
+    out += [f"row {r}" for r in words.EXIT_ROWS if r not in groups]
+    return out
+
+
+def test_every_filter_stage_has_its_tag_and_every_exit_row_is_a_group():
+    assert _row_gaps() == []
+
+
+def test_the_row_check_catches_a_missing_stage_and_a_stray_row(monkeypatch):
+    monkeypatch.setattr(words, "STAGES", {k: v for k, v in words.STAGES.items() if k != "chain"})
+    monkeypatch.setattr(words, "EXIT_ROWS", (*words.EXIT_ROWS, "Hedges"))
+    assert _row_gaps() == ["stage chain", "row Hedges"]
+
+
 def test_the_schema_carries_the_words_and_the_indicator_list():
     s = builderform.schema()
     assert s["words"] == words.schema()

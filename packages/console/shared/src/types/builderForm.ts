@@ -100,6 +100,12 @@ export interface BuilderWords {
   gates: Record<string, BuilderChoiceWords>;
   /** How `{range}` reads with both bounds, only `min` or only `max`. */
   range: { both: string; min: string; max: string };
+  /** When a filter is read, by its stage: the tag beside its line. */
+  stages?: Record<string, string>;
+  /** The exit groups given a row each, in order; the rest sit under "More options". */
+  exit_rows?: string[];
+  /** The exits a trade can start from: the credit-trade rules, or none (held to expiry). */
+  exit_starts?: Record<string, BuilderChoiceWords>;
   exits: Record<string, BuilderChoiceWords>;
   /** The nested keys of an exit that is an object ({exit: {key: required}}). */
   exit_parts: Record<string, Record<string, boolean>>;
@@ -236,6 +242,9 @@ export interface BuilderPayoff {
   state: "placed" | "not_placed" | "invalid" | "no_ledger";
   /** Always with a resolved automation, placed or not. */
   sketch?: BuilderSketch;
+  /** Whether the rule enters for a credit or a debit (`core.structures.entry_kind`), or null when it
+   *  does not say; absent from an older module. */
+  entry_kind?: "credit" | "debit" | null;
   source?: { kind: "live" | "recorded"; at: string; source?: string };
   spot?: number;
   /** The listed strike nearest the spot: the chain example's 0. */

@@ -36,7 +36,7 @@ import statistics
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 
-from cherrypick.core import robustness, stats
+from cherrypick.core import robustness, stats, structures
 
 from . import ideasearch
 
@@ -97,46 +97,6 @@ def _bought(arm: Mapping) -> bool:
     return any(int(g.get("side", 0)) > 0 for g in arm.get("legs") or [] if isinstance(g.get("side"), int))
 
 
-def _wing(leg: Mapping, by_name: Mapping) -> Mapping | None:
-    """The leg `leg` is a wing of: the one it is placed from by points, further out of the money (a
-    put below, a call above) and on the same expiry. None when it is placed any other way."""
-    rule = leg.get("strike") or {}
-    ref = by_name.get(rule.get("leg")) if rule.get("rule") == "from_leg" else None
-    points = rule.get("points") or 0
-    if not ref or rule.get("pct") is not None or ref.get("right") != leg.get("right"):
-        return None
-    if (leg.get("expiry") or None) != (ref.get("expiry") or None):
-        return None
-    outward = points < 0 if leg.get("right") == "P" else points > 0
-    return ref if outward else None
-
-
-def entry_kind(arm: Mapping) -> str | None:
-    """Whether the structure enters for a credit or a debit, from its rule alone: "credit" when every
-    bought leg is a wing of a sold one (a condor, an iron fly, a credit vertical), "debit" when every
-    sold leg is a wing of a bought one (a debit vertical), and None when the rule doesn't say (a
-    calendar, a long butterfly), where either stop may fire."""
-    legs = [g for g in arm.get("legs") or [] if isinstance(g.get("side"), int)]
-    by_name = {g.get("name"): g for g in legs}
-    sold = [g for g in legs if g["side"] < 0]
-    bought = [g for g in legs if g["side"] > 0]
-    if sold and not bought:
-        return "credit"
-    if bought and not sold:
-        return "debit"
-
-    def wings_of(those, side):
-        return bool(those) and all(
-            (ref := _wing(g, by_name)) is not None and ref["side"] * side < 0 for g in those
-        )
-
-    if wings_of(bought, 1):
-        return "credit"
-    if wings_of(sold, -1):
-        return "debit"
-    return None
-
-
 def _applies(axis: str, arm: Mapping) -> bool:
     """Whether an axis can act on the automation, from its rule alone (no P&L is read): a credit stop
     on a structure that enters for a credit, a debit stop on one that enters for a debit (both where
@@ -146,7 +106,7 @@ def _applies(axis: str, arm: Mapping) -> bool:
     another."""
     when = AXES[axis].get("applies")
     own = arm.get("exit") or {}
-    kind = entry_kind(arm)
+    kind = structures.entry_kind(arm)
     if when == "credit":
         return _sold(arm) and kind != "debit" and "stop_debit_pct" not in own
     if when == "debit":
