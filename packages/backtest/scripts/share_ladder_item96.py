@@ -28,8 +28,9 @@ import sqlite3
 import statistics
 import sys
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from cherrypick.core import home, progress, treasury
 from cherrypick.core import stats as core_stats
@@ -110,6 +111,7 @@ CHAIN = (
 )
 
 INF = float("inf")
+NY = ZoneInfo("America/New_York")
 
 
 def out_dir() -> Path:
@@ -737,12 +739,26 @@ def default_paths() -> dict[str, Path]:
     }
 
 
+def last_whole_month_end(today: date) -> str:
+    """The declared window's end: the last day of the month before `today`'s (New York date), so a
+    month still being traded is never read."""
+    return date.fromordinal(today.replace(day=1).toordinal() - 1).isoformat()
+
+
 def cmd_study(args) -> int:
     smoke = args.step == "smoke"
     funds = ["SOXL", "TQQQ"] if smoke else list(FUNDS)
+    last_day = "2024-12-31" if smoke else last_whole_month_end(datetime.now(NY).date())
     with progress.Reporter("item96-smoke" if smoke else "item96-study") as rep:
-        block = run(funds, default_paths(), bill_reader(), rep, last_day="2024-12-31" if smoke else None)
-    doc = {"item": 96, "spec": SPEC, "rule": RULE, "paired_rule": PAIRED_RULE, **block}
+        block = run(funds, default_paths(), bill_reader(), rep, last_day=last_day)
+    doc = {
+        "item": 96,
+        "window": [SPEC["first_session"], last_day],
+        "spec": SPEC,
+        "rule": RULE,
+        "paired_rule": PAIRED_RULE,
+        **block,
+    }
     if smoke:
         doc = {**doc, "smoke": True, "verdict": "smoke"}
     path = Path(args.out) if args.out else out_dir() / ("smoke.json" if smoke else "results.json")

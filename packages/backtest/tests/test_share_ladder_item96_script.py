@@ -87,3 +87,10 @@ def test_both_rules_must_pass():
     assert m.combined("pass", "pass") == "pass"
     assert m.combined("pass", "fail") == "fail"
     assert m.combined("no verdict", "pass") == "no verdict"
+
+
+def test_the_window_ends_at_the_last_whole_month():
+    from datetime import date
+
+    assert m.last_whole_month_end(date(2026, 11, 19)) == "2026-10-31"
+    assert m.last_whole_month_end(date(2027, 1, 2)) == "2026-12-31"
