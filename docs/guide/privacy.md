@@ -50,6 +50,9 @@ These are the only outside connections it makes.
   copy. Only the pull travels; nothing of yours is sent.
 - **ThetaData.** If you subscribe for backtests, the suite fetches quote history from them with your own
   key.
+- **Alpaca.** If you store an Alpaca key, the research fetch (`scripts/fetch_minute_bars.py`) downloads
+  stock minute bars with it. Each request names the symbols and dates wanted and nothing else. The suite
+  never trades through Alpaca. See [research-and-backtests.md](research-and-backtests.md#stock-minute-bars-from-alpaca).
 - **A remote for your settings.** The opt-in config backup keeps a git history of `config.json` and
   `config/*.json`. Only if you give it a remote and turn pushing on does anything leave the machine. Those
   files hold settings, never passwords, but they do hold your choices; use a private remote.
@@ -114,7 +117,8 @@ There are three separate things to remove. Do them in this order.
    - `cherrypick-notify`: Discord, Slack and Telegram webhooks;
    - `meicagent` and `earningsagent`: a module's own login, if you ever entered one for a module (also
      `fliesagent` and `bwbagent` for the retired modules);
-   - `cherrypick-thetadata`: the ThetaData key, if you set one.
+   - `cherrypick-thetadata`: the ThetaData key, if you set one;
+   - `cherrypick-alpaca`: the Alpaca key ID and secret, if you set them.
 
    In Windows Credential Manager, open the Windows credentials list and remove the entries that name those
    services. On macOS, search Keychain Access for `cherrypick`. On Linux, use your keyring app (such as
