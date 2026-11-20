@@ -200,6 +200,8 @@ Every fetch verb, the runner and every study script report through `core.progres
 several symbols opens with `Reporter.split` (one key per item) and counts each item with `advance(...,
 key=symbol)`, so the queue and the console show the whole and each symbol. A resumed job counts what it
 already holds as skipped, overall and per symbol. A new fetch or study is not done until it does both.
+A study from the scaffold has it wired: its `study` (smoke included) opens the `Reporter` and hands it
+to `trades`, whose docstring says what to count (`tools/tests/test_study_new.py` holds the wiring).
 
 ## The runner
 
