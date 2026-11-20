@@ -995,6 +995,13 @@ h2 {
   border: 1px solid color-mix(in srgb, var(--accent-live) 55%, transparent);
 }
 
+/* The live tab of a module whose order path ships in dry-run: not LIVE, and not paper either. */
+.badge-dryrun {
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px dashed var(--text-dim);
+}
+
 .badge-paper {
   background: color-mix(in srgb, var(--pos) 12%, transparent);
   color: var(--pos);

@@ -25,7 +25,7 @@ import { TradeCard } from "../Live/TradeCard";
 import { bidFromLevel, lotModel, pctOfCost, price, targetText, whenEt } from "./ladderModels";
 
 /**
- * The ladder's pages (packages/ladder): a paper-only share dip ladder on leveraged index funds, four
+ * The ladder's pages (packages/ladder): a share dip ladder (a paper book here; the live tab is `LadderLive.tsx`) on leveraged index funds, four
  * arms, one lot per row in the ledger. Today's next buy levels and the per-arm summary are the module's
  * own CLI answers (`/api/ladder/{status,summary}`); the ledger read (`/api/ladder`, `/history`) feeds the
  * lots. The page derives display transforms and nothing else.
@@ -236,7 +236,7 @@ export function LadderPositions({ data }: { data: LadderPayload | undefined }) {
 const MONEY = tradeMoneyColumns<LadderHistoryRow>("the shares bought, per share: a debit");
 
 /** The standard's money block, with the sale's words in place of the options' ones. */
-const MONEY_COLUMNS: ColumnDef<LadderHistoryRow>[] = MONEY.money.map((c) => {
+export const MONEY_COLUMNS: ColumnDef<LadderHistoryRow>[] = MONEY.money.map((c) => {
   if (c.id === "entry") return { ...c, title: "the purchase: shares times the price paid, negative" };
   if (c.id === "exit") return { ...c, title: "the sale: shares times the price sold at, positive" };
   if (c.id === "settle") return { ...c, title: "none for shares: recorded as zero" };
@@ -494,7 +494,7 @@ export function LadderHelp({ status }: { status: LadderStatus | undefined }) {
           <div className="pmcc-prose">
             <p>
               On each leveraged fund (TQQQ and SOXL) it buys a lot of whole shares when the price is 7% under a reference, and sells each lot on its own at 4%
-              over what that lot cost. No stop and no time limit. Paper only: there is no order path anywhere in the module.
+              over what that lot cost. No stop and no time limit. These pages are the paper book. The module also has a live path that ships in dry-run and off; the live tab only reads it, and arming is the /live-ladder-start command.
             </p>
             <p>
               Each arm is one entry rule paired with one target rule, and each keeps its own book. The arms on this machine, each with the

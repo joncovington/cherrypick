@@ -60,6 +60,8 @@ import { readContango, readContangoHistory } from "../readers/contango.js";
 import { readWeeklyput, readWeeklyputHistory, weeklyputDbPath } from "../readers/weeklyput.js";
 import { ladderDbPath, readLadder, readLadderHistory } from "../readers/ladder.js";
 import { readLadderStatus, readLadderSummary } from "../services/ladderBridge.js";
+import { readLadderLive } from "../readers/ladderLive.js";
+import { readLadderLiveStatus } from "../services/ladderLiveBridge.js";
 import { readAutomations, readAutomationsHistory, readAutomationsPerformance } from "../readers/automations.js";
 import { readAutomationGroups } from "../services/automationsGroupsBridge.js";
 import { readAutomationsBuilder, readBuilderSchema } from "../services/automationsBuilderBridge.js";
@@ -496,6 +498,10 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
   app.get("/api/ladder/status", async () => readLadderStatus(ladderDbPath(config)));
   app.get("/api/ladder/summary", async () => readLadderSummary(ladderDbPath(config)));
   app.get("/api/ladder/decisions", async () => readDecisions(config, "ladder", null));
+  // The ladder's live view: `live_trades.db` (absent on most machines) and the module's own `live_loop
+  // --status`. Two GETs and no verb: arming is `/live-ladder-start`, never a route here.
+  app.get("/api/ladder/live", async () => readLadderLive(config));
+  app.get("/api/ladder/live/status", async () => readLadderLiveStatus());
   app.get("/api/weeklyput/status", async () => readWeeklyputStatus(weeklyputDbPath(config)));
   app.get("/api/weeklyput/cycles", async () => readWeeklyputCycles(weeklyputDbPath(config)));
   app.get("/api/weeklyput/summary", async () => readWeeklyputSummary(weeklyputDbPath(config)));

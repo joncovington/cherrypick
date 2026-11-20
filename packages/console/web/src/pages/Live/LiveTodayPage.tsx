@@ -363,7 +363,7 @@ const NET_HELP: CardHelpContent = {
       <HelpSection title="Open at mark">
         <p>
           What the loops still hold, at mark, net of fees to date: flies at the loop&apos;s own mid mark, bwb at its usable mark, MEIC at
-          the stream cache&apos;s mid. The first figure totals the loops; each loop&apos;s part follows. A loop holding something it cannot
+          the stream cache&apos;s mid; the ladder keeps no mark on a held lot, so it reads n/r while it holds one. The first figure totals the loops; each loop&apos;s part follows. A loop holding something it cannot
           mark (or whose fees are unrecorded) reads n/r, and so does the total, rather than a part that reads as the whole. By hand is the
           day&apos;s net with its held legs at mark, beside the total and never in it.
         </p>
@@ -382,7 +382,7 @@ const LOOP_HELP: CardHelpContent = {
     <>
       <HelpSection title="Worst case and mark">
         <p>
-          The worst case is each loop&apos;s own measure, said in its hover: at expiry for flies, the stop distance for MEIC, the box for bwb.
+          The worst case is each loop&apos;s own measure, said in its hover: at expiry for flies, the stop distance for MEIC, the box for bwb, the whole cost of the open lots for the ladder (shares carry no stop).
           It is never added across loops. The mark is unrealised net of fees to date on every loop, and the top card totals it.
         </p>
       </HelpSection>

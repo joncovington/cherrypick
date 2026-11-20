@@ -245,14 +245,16 @@ export const WEEKLYPUT_SLIDES = [
 export type WeeklyputSlideId = (typeof WEEKLYPUT_SLIDES)[number]["id"];
 
 /**
- * ladder's tabs: the paper share dip ladder on leveraged index funds. `summary` (today) is each fund's
- * previous close and every arm's next buy level; `positions` the lots held, the old ones flagged as
+ * ladder's tabs: the share dip ladder on leveraged index funds. `summary` (today) is each fund's
+ * previous close and every arm's next buy level; `live` the live loop's gates, mode and own ledger
+ * (read only; the other tabs are the paper book); `positions` the lots held, the old ones flagged as
  * the group's "hospital"; `history` the sold lots as the trades they were; `arms` each arm's lots,
  * net and open lots in the group's terms. No advisor, regime, performance or costs tab: the module
  * declares no advice bounds, keeps no daily series, and its costs are one column of the history.
  */
 export const LADDER_SLIDES = [
   { id: "summary", label: "today" },
+  { id: "live", label: "live" },
   { id: "positions", label: "open lots" },
   { id: "history", label: "history" },
   { id: "arms", label: "arms" },
@@ -590,9 +592,9 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
   },
   ladder: {
     slides: LADDER_SLIDES,
-    simple: ["summary", "positions", "history", "arms", "guide"],
+    simple: ["summary", "live", "positions", "history", "arms", "guide"],
     groups: [
-      { label: "today", ids: ["summary"] },
+      { label: "today", ids: ["summary", "live"] },
       { label: "tables", ids: ["positions", "history"] },
       { label: "evidence", ids: ["arms", "decisions"] },
       { label: "help", ids: ["guide"] },

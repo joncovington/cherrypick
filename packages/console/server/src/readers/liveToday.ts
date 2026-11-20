@@ -1,6 +1,6 @@
 /**
- * The Live page's `today` tab (2026-10-15): every live loop's day on one payload -- flies, MEIC and
- * bwb -- composed from the readers that already serve them. Nothing here is a new money rule:
+ * The Live page's `today` tab (2026-10-15): every live loop's day on one payload -- flies, MEIC, bwb and
+ * the ladder -- composed from the readers that already serve them. Nothing here is a new money rule:
  *
  * - **flies**: the arm record and halt flag are `services/liveLock`, the loop pill
  *   `readFliesLoopStatus`, today's positions and mark `fliesLive.ts`'s `positionsFor` /
@@ -67,6 +67,7 @@ import {
   totalsOf,
 } from "./meicLive.js";
 import { readBwb, readBwbHistory } from "./bwb.js";
+import { readLadderLive } from "./ladderLive.js";
 import { readLiveHandAll } from "./liveHand.js";
 import { meicLoopState } from "./meic.js";
 import { LIVE_BOOKS } from "./liveBooks.js";
@@ -467,6 +468,80 @@ function readBwbToday(config: ConsoleConfig, session: string, minute: number): L
   };
 }
 
+// --------------------------------------------------------------------------- ladder
+/** `live_gates.DEFAULT_DISARM_AT`: the ladder's own end of day, in ET, when `live.disarm_at` is unset. */
+const LADDER_DISARM_AT = "20:00";
+/** The ladder's live loop ticks about once a minute inside its hours; a few minutes without one is idle. */
+const LADDER_LIVE_WITHIN_SECONDS = 180;
+
+/**
+ * The ladder's live day, from its own live reader (`readLadderLive`: files and SQLite, no process).
+ * Its figures differ from the options loops' in three honest ways, each said in its basis: a lot is
+ * shares, so the worst case is the whole cost of what is held (no stop, and a fund can go to zero); the
+ * ladder's breaker is a drawdown on the open lots' mark that blocks new buys, not a daily-loss limit, so
+ * no limit is stated here and the live tab shows the module's own gates; and the live ledger keeps no mark
+ * on a held lot, so what it holds is unmarked and the suite's unrealised total says so rather than part-summing.
+ */
+function readLadderToday(config: ConsoleConfig, now: Date, session: string, minute: number): LoopRead {
+  const p = readLadderLive(config, now);
+  const ladderCfg = readJson(path.join(config.paths.cherrypick, "config", "ladder.json"));
+  const live = liveBlock(ladderCfg);
+  const record = readJson(path.join(config.paths.cherrypick, "state", "ladder-live-arm.json"));
+  const symbols = Array.isArray(live["symbols"]) ? (live["symbols"] as unknown[]).filter((s): s is string => typeof s === "string") : [];
+  const arm = armFrom(
+    record,
+    session,
+    minute,
+    { ...live, disarm_time: str(live["disarm_at"]) ?? LADDER_DISARM_AT },
+    readModuleGate(config, "ladder").liveEnabled,
+    symbols.length === 0 ? null : symbols.join("/"),
+  );
+  const base = {
+    loop: "ladder" as const,
+    to: "/ladder/live",
+    ledger: p.ledger,
+    ledgerError: p.ledgerError,
+    arm,
+    workingBasis: "orders resting at the broker: buys at their levels, and a sell on each held lot",
+    worstCaseBasis: "the whole cost of the open lots: shares carry no stop and a fund can go to zero",
+    orphans: p.orphans,
+    held: heldCount(config.paths.ladderDir),
+    brokerHealth: readBrokerHealth(config.paths.ladderDir),
+    breaker: breakerOf(
+      null,
+      null,
+      "no daily-loss limit: the ladder's breaker is a drawdown on the open lots' mark that stops new buys (the live tab shows its gates)",
+    ),
+    overdue: [],
+  };
+  if (p.ledger !== "ok") {
+    return { ...base, loopState: null, open: 0, working: 0, worstCase: null, entriesToday: 0, today: null, mark: null };
+  }
+  const todays = p.closedLots.filter((r) => r.sellSession === session);
+  const money = moneyOf(
+    todays.map((r) => ({ gross: r.grossPnl, fees: r.fees, settlementFees: r.settlementFees })),
+    "lots sold today (by sale session), gross − fees, at the broker's fills; the fees are the schedule's until the broker's own rows are read",
+  );
+  const iteration = p.lastIteration;
+  return {
+    ...base,
+    loopState:
+      iteration === null
+        ? { state: "no-data", lastAt: null, ageSeconds: null }
+        : {
+            state: iteration.ageSeconds < LADDER_LIVE_WITHIN_SECONDS ? "live" : "idle",
+            lastAt: new Date(iteration.ranAt * 1000).toISOString(),
+            ageSeconds: iteration.ageSeconds,
+          },
+    open: p.openLots.length,
+    working: p.orders.filter((o) => !o.final).length,
+    worstCase: p.openLots.length === 0 ? 0 : round2(p.openLots.reduce((s, l) => s + l.entryValue, 0)),
+    entriesToday: p.openLots.filter((l) => l.buySession === session).length + p.closedLots.filter((r) => r.buySession === session).length,
+    today: money,
+    mark: { value: null, at: null, basis: "the live ledger keeps no mark on a held lot, so what the ladder holds is unmarked" },
+  };
+}
+
 // --------------------------------------------------------------------------- attention and suite
 function attentionFor(l: LiveTodayLoop): LiveAttentionItem[] {
   const out: LiveAttentionItem[] = [];
@@ -607,6 +682,7 @@ export function readLiveToday(config: ConsoleConfig, now: Date = new Date()): Li
     readMeicToday(config, now),
     ...meicLiveAccounts(config).map((login) => readMeicToday(config, now, login)),
     readBwbToday(config, session, minute),
+    readLadderToday(config, now, session, minute),
   ].map(
     (l): LiveTodayLoop => {
       // A MEIC live account on another login is MEIC's: the module's switch is its switch.

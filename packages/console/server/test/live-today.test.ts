@@ -9,6 +9,7 @@ import { registerSecurity } from "../src/security.js";
 import { registerLiveRoutes } from "../src/routes/live.js";
 import { readLiveToday } from "../src/readers/liveToday.js";
 import { closePooledDbs } from "../src/readers/db.js";
+import { populatedLiveLedger } from "./ladderLiveFixture.js";
 
 /**
  * The Live page's `today` tab composes the per-loop readers into one payload. What is pinned: each
@@ -27,7 +28,7 @@ let root: string;
 let config: ConsoleConfig;
 
 function cfg(r: string): ConsoleConfig {
-  for (const d of ["state", "config", "flies", "meic", "bwb", "gex"]) fs.mkdirSync(path.join(r, d), { recursive: true });
+  for (const d of ["state", "config", "flies", "meic", "bwb", "ladder", "gex"]) fs.mkdirSync(path.join(r, d), { recursive: true });
   fs.writeFileSync(path.join(r, "config.json"), JSON.stringify({ modules: { flies: {}, meic: {}, bwb: {} } }));
   return {
     port: 0,
@@ -44,6 +45,7 @@ function cfg(r: string): ConsoleConfig {
       pmccDir: "",
       curveDir: "",
       bwbDir: path.join(r, "bwb"),
+      ladderDir: path.join(r, "ladder"),
       gexDir: path.join(r, "gex"),
       reviewDir: "",
       manageDir: "",
@@ -164,13 +166,14 @@ describe("readLiveToday", () => {
       ["flies", "absent"],
       ["meic", "absent"],
       ["bwb", "absent"],
+      ["ladder", "absent"],
     ]);
     expect(p.attention).toEqual([]);
     expect(p.halted).toBe(false);
     expect(p.suite.armed).toEqual([]);
     // Nothing read is nothing summed -- the absent loops are named, not counted as zeros.
     expect(p.suite.summed).toEqual([]);
-    expect(p.suite.excluded.map((e) => e.loop)).toEqual(["flies", "meic", "bwb"]);
+    expect(p.suite.excluded.map((e) => e.loop)).toEqual(["flies", "meic", "bwb", "ladder"]);
     expect(p.suite.net).toBeNull();
   });
 
@@ -244,7 +247,7 @@ describe("readLiveToday", () => {
     expect(bwb!.mark!.value).toBe(27.7);
     expect(bwb!.breaker).toMatchObject({ limit: 100, figure: 80.36, tripped: false });
 
-    for (const l of p.loops) {
+    for (const l of p.loops.filter((x) => x.ledger === "ok")) {
       const t = l.today!;
       expect(Math.round((t.gross - t.fees - t.settlementRecorded) * 100) / 100).toBe(t.net);
     }
@@ -258,6 +261,34 @@ describe("readLiveToday", () => {
     // flies' settlement is n/r, so the suite's is too -- never the recorded share dressed as the whole.
     expect(p.suite.settlementFees).toBeNull();
     expect(p.suite.trades).toBe(4);
+  });
+
+  it("composes the ladder's live day: its own arm file, its lots as shares, and no mark it does not have", () => {
+    writeJson("config/ladder.json", { live: { enabled: true, arm: "session", symbols: ["TQQQ"], disarm_at: "20:00" } });
+    writeJson("state/ladder-live-arm.json", { date: DAY, at: `${DAY}T08:10:00-04:00` });
+    writeJson("ladder/live_orphans.json", { at: `${DAY}T11:00:00-04:00`, orphans: [{ order_id: 7 }] });
+    populatedLiveLedger(path.join(root, "ladder")).close();
+
+    const p = readLiveToday(config, NOON);
+    const ladder = p.loops.find((l) => l.loop === "ladder")!;
+    expect(ladder).toMatchObject({ ledger: "ok", to: "/ladder/live", open: 2, working: 2, entriesToday: 1 });
+    expect(ladder.arm).toMatchObject({ armed: true, stale: false, disarmTime: "20:00", pastDisarm: false, liveEnabled: true, arm: "session", symbol: "TQQQ" });
+    // Shares carry no stop and can go to zero: the worst case is what the open lots cost.
+    expect(ladder.worstCase).toBe(-1400);
+    // The lot sold today, in the money layout: -960 + 998.40 = 38.40 gross, less 0.07 of fees.
+    expect(ladder.today).toMatchObject({ trades: 1, gross: 38.4, fees: 0.07, settlementFees: 0, net: 38.33 });
+    expect(Math.round((ladder.today!.gross - ladder.today!.fees! - ladder.today!.settlementRecorded) * 100) / 100).toBe(ladder.today!.net);
+    // The live ledger keeps no mark on a held lot, so the suite's unrealised total says so and is n/r.
+    expect(ladder.mark).toMatchObject({ value: null });
+    expect(p.suite.unrealised.value).toBeNull();
+    expect(p.suite.unrealised.unmarked).toContainEqual({ loop: "ladder", reason: "2 open, not all marked" });
+    // No daily-loss limit exists for it: the breaker says so rather than reading as clear.
+    expect(ladder.breaker).toMatchObject({ limit: null, tripped: null });
+    expect(ladder.orphans).toEqual({ at: `${DAY}T11:00:00-04:00`, count: 1 });
+    expect(p.attention.filter((a) => a.loop === "ladder").map((a) => a.kind)).toEqual(["orphaned_orders"]);
+    expect(p.suite.summed).toEqual(["ladder"]);
+    expect(p.suite.net).toBe(38.33);
+    expect(p.suite.armed).toEqual(["ladder"]);
   });
 
   it("raises every attention item from its own file or ledger state", () => {
@@ -305,6 +336,7 @@ describe("readLiveToday", () => {
       ["flies", false, true],
       ["meic", true, false],
       ["bwb", null, false], // a module the config does not name is not called off
+      ["ladder", null, false],
     ]);
     const db = fliesLedger();
     fly(db, "F1", { status: "open", trade_date: DAY });
@@ -330,7 +362,7 @@ describe("readLiveToday", () => {
     await app.ready();
     const res = await app.inject({ method: "GET", url: "/api/live/today", headers: { host: "127.0.0.1:5070" } });
     expect(res.statusCode).toBe(200);
-    expect(res.json().loops.map((l: { loop: string }) => l.loop)).toEqual(["flies", "meic", "bwb"]);
+    expect(res.json().loops.map((l: { loop: string }) => l.loop)).toEqual(["flies", "meic", "bwb", "ladder"]);
     await app.close();
   });
 });

@@ -1,5 +1,5 @@
-import type { BwbCycleRow, BwbOpenPosition, LiveLoopId, LiveMeicOpenRow, LiveMeicPayload, MeicTradeRow } from "@console/shared";
-import { useBwb, useBwbHistory } from "../../lib/api";
+import type { BwbCycleRow, BwbOpenPosition, LadderLivePayload, LiveLoopId, LiveMeicOpenRow, LiveMeicPayload, MeicTradeRow } from "@console/shared";
+import { useBwb, useBwbHistory, useLadderLive } from "../../lib/api";
 import { fmtCash, fmtMoney } from "../../lib/format";
 import { tone } from "./manageParts";
 import { useLiveMeic } from "./MeicLivePage";
@@ -131,6 +131,50 @@ export function bwbChains(open: BwbOpenPosition[], closed: BwbCycleRow[], sessio
   return [...open.map(bwbOpenChain), ...closed.filter((r) => r.closedSession === session).map(bwbResolvedChain)];
 }
 
+function ladderBuy(symbol: string, qty: number, price: number, cash: number | null, at: string | null): DayStep {
+  return { at: hhmm(at), role: "open", price: `${price.toFixed(2)}/sh`, cash, what: `buy ${String(qty)} ${symbol}` };
+}
+
+/**
+ * The ladder's live day: every lot held (the buy, and the sell resting at the broker where the ledger
+ * has one), then the lots sold today. Shares carry no credit or debit price, so a step's price is the
+ * per-share fill and its cash the whole position, signed (the purchase negative, the sale positive).
+ */
+export function ladderChains(p: LadderLivePayload, session: string): DayChain[] {
+  const open = p.openLots.map((l): DayChain => {
+    const steps: DayStep[] = [ladderBuy(l.symbol, l.quantity, l.buyPrice, l.entryValue, l.buyTime)];
+    if (l.sell !== null) {
+      steps.push({ at: null, role: l.sell.final ? "close" : "working", price: `${l.sell.limit.toFixed(2)}/sh`, cash: null, what: `sell ${String(l.quantity)} ${l.symbol} · ${l.sell.state}${l.sell.tif ? ` · ${l.sell.tif}` : ""}` });
+    }
+    return { id: `ladder-${l.positionId}`, title: `${l.symbol} lot`, sub: `${l.arm} arm · bought ${l.buySession}`, steps, open: true, net: null, netLabel: "held, unmarked" };
+  });
+  const sold = p.closedLots
+    .filter((r) => r.sellSession === session)
+    .map(
+      (r): DayChain => ({
+        id: `ladder-${r.positionId}`,
+        title: `${r.symbol} lot`,
+        sub: `${r.arm} arm · ${r.exitReason ?? "sold"}`,
+        steps: [
+          ladderBuy(r.symbol, r.quantity ?? 0, r.buyPrice, r.entryCash, r.buyTime),
+          { at: hhmm(r.sellTime), role: "closed", price: r.sellPrice === null ? null : `${r.sellPrice.toFixed(2)}/sh`, cash: r.exitCash, what: `sell ${String(r.quantity ?? 0)} ${r.symbol}` },
+        ],
+        open: false,
+        net: r.netPnl,
+        netLabel: r.netPnl === null ? "net n/r (fees not recorded)" : "net",
+      }),
+    );
+  return [...open, ...sold];
+}
+
+function LadderOrders({ session }: { session: string }) {
+  const { data, isLoading, isError } = useLadderLive();
+  if (isError) return <p className="pnl-neg">The ladder&apos;s live ledger could not be read.</p>;
+  if (isLoading || data === undefined) return <p className="muted">Reading the ladder&apos;s live ledger…</p>;
+  if (data.ledger !== "ok") return <p className="muted">{data.ledger === "absent" ? "No live ledger on this machine." : `Read failed: ${data.ledgerError ?? "unknown"}`}</p>;
+  return <DayChains chains={ladderChains(data, session)} empty="Nothing held and nothing sold today." />;
+}
+
 const DOT_ROLE: Record<string, string> = { open: "open", working: "add", add: "add", close: "close", stopped: "close", closed: "close", settled: "roll", expired: "roll" };
 
 export function DayChains({ chains, empty }: { chains: DayChain[]; empty: string }) {
@@ -197,5 +241,6 @@ export function LoopOrders({ loop, session }: { loop: LiveLoopId; session: strin
   // A MEIC live account on another broker login: `meic.<login>`.
   if (loop.startsWith("meic.")) return <MeicOrders login={loop.slice("meic.".length)} />;
   if (loop === "bwb") return <BwbOrders session={session} />;
+  if (loop === "ladder") return <LadderOrders session={session} />;
   return <p className="muted">This loop's orders are on its own tab.</p>;
 }

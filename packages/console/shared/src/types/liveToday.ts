@@ -1,13 +1,13 @@
 // ------------------------------------------------------------------- live today (Live page, today tab)
 // Every live loop's day on one page (`server/src/readers/liveToday.ts`, `GET /api/live/today`),
-// composed from the per-loop readers: flies (`fliesLive.ts`, `flies.ts`), MEIC (`meicLive.ts`) and
+// composed from the per-loop readers: flies (`fliesLive.ts`, `flies.ts`), MEIC (`meicLive.ts`), the ladder (`ladderLive.ts`) and
 // bwb (`bwb.ts`, `liveBooks.ts`). Nothing here is a new money rule; each loop's figures are its own
 // reader's, and the suite line totals only what every loop states the same way.
 
 import type { LiveMeicBrokerHealth } from "./liveMeic.js";
 
 /** A live loop: flies, bwb, or one of MEIC's live accounts -- `meic` (the main login) or `meic.<login>`. */
-export type LiveLoopId = "flies" | "meic" | "bwb" | `meic.${string}`;
+export type LiveLoopId = "flies" | "meic" | "bwb" | "ladder" | `meic.${string}`;
 
 export interface LiveTodayArm {
   /** Armed means armed FOR TODAY: the loop's arm record is present and dated today's ET session. */
