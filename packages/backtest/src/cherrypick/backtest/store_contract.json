@@ -1,5 +1,44 @@
 {
  "eod_chains.db": {
+  "eod_chain_days": {
+   "columns": [
+    [
+     "symbol",
+     "TEXT"
+    ],
+    [
+     "session",
+     "TEXT"
+    ],
+    [
+     "status",
+     "TEXT"
+    ],
+    [
+     "expirations",
+     "TEXT"
+    ],
+    [
+     "rows",
+     "INTEGER"
+    ],
+    [
+     "detail",
+     "TEXT"
+    ],
+    [
+     "fetched_at",
+     "REAL"
+    ]
+   ],
+   "codes": {
+    "status": [
+     "complete",
+     "empty",
+     "refused"
+    ]
+   }
+  },
   "eod_chain_paths": {
    "columns": [
     [

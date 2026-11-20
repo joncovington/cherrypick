@@ -265,10 +265,14 @@ holdout once (a marker is written before the read).
 - Its first user is edge-hypotheses item 14.
 - **Daily paths** (`fetch-chain-paths`): a request names an expiry and a date range, and
   every session's close in that range lands as its own complete session-chain, so a replay can mark
-  a held contract each day. The vendor drops a two-month whole-chain range at 60 s, so the client
-  asks a week at a time. An empty week before the expiry was listed is skipped; an empty week
-  after one that answered refuses the path (`path_gap`), so it is retried rather than stored with a
-  hole. A request refused again with the same fixed reason as before (`chainfetch.SETTLED`) is
+  a held contract each day. **It asks by session, not by expiry:** the vendor's end-of-day endpoint
+  costs about the same per session whatever the expiries (one expiry 3-4 s a session, every expiry
+  of a session 2-3 s), so one call per symbol and trading day answers every path that day covers,
+  and only the expiries some path wants are kept. `eod_chain_days` records each day asked and the
+  expiries it held, so a held session is not asked again. A day the vendor holds nothing for before
+  a path's first answered session is the expiry not listed yet; one after it refuses the path
+  (`path_gap`), so it is retried rather than stored with a hole. An expiry missing from a day that
+  answered is that session's answer. A path has no length limit. A request refused again with the same fixed reason as before (`chainfetch.SETTLED`) is
   counted `settled`, so the research queue passes a repeat pass with nothing left to serve. Paths are recorded in `eod_chain_paths`, resumable the same way, and `--stop-by` bounds a
   run as it does `fetch-chains`, so the research queue can run one.
 The console's Backtest page reads `python -m cherrypick.backtest read overview|run` (`readout.py`).

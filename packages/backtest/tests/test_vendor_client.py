@@ -236,39 +236,6 @@ def test_a_stalled_call_reconnects_on_the_same_session_and_is_retried(monkeypatc
     assert lines == ["retry option_list_expirations in 2s (stalled; reconnecting)"]
 
 
-def test_a_daily_path_is_asked_for_in_chunks_and_dated_by_the_report_not_the_last_trade(monkeypatch):
-    """A whole chain over two months is dropped by the vendor at 60 s, so the range goes in
-    week-sized chunks; a chunk before the expiry was listed holds nothing and is skipped."""
-    from datetime import date, datetime
-
-    class Frame:  # the slice of a DataFrame the client uses; CI has no pandas
-        def __init__(self, rows):
-            self.rows = rows
-
-        def itertuples(self, index=False):
-            return (types.SimpleNamespace(**r) for r in self.rows)
-
-    asked = []
-
-    def call(method, **kw):
-        asked.append((kw["start_date"], kw["end_date"]))
-        if kw["start_date"] == date(2024, 1, 1):
-            raise VendorRefusal("no_data", "No data found")
-        day = datetime.combine(kw["end_date"], datetime.min.time())
-        return Frame(
-            [{"created": day, "last_trade": datetime(2023, 12, 1), "strike": 100.0, "right": "put",
-              "bid": 1.0, "ask": 1.2, "close": float("nan"), "volume": 0, "bid_size": 1, "ask_size": 1}]
-        )  # fmt: skip
-
-    client = td.ThetaDataClient.__new__(td.ThetaDataClient)
-    monkeypatch.setattr(client, "_call", call, raising=False)
-    rows = client.eod_chain_range("SPY", "2024-01-01", "2024-01-20", "2024-02-16")
-    assert asked == [(date(2024, 1, 1), date(2024, 1, 7)), (date(2024, 1, 8), date(2024, 1, 14)),
-                     (date(2024, 1, 15), date(2024, 1, 20))]  # fmt: skip
-    assert [r["session"] for r in rows] == ["2024-01-14", "2024-01-20"]
-    assert rows[0]["right"] == "PUT" and rows[0]["close"] is None
-
-
 class _Frame:  # the slice of a DataFrame the client uses; CI has no pandas
     def __init__(self, rows):
         self.rows = rows
@@ -277,88 +244,68 @@ class _Frame:  # the slice of a DataFrame the client uses; CI has no pandas
         return (types.SimpleNamespace(**r) for r in self.rows)
 
 
-def _path_client(monkeypatch, answer):
-    """A client whose vendor answers each chunk with `answer(start_date, end_date)`."""
+def _day_client(monkeypatch, frame):
+    """A client whose vendor answers every call with `frame` (or raises it), recording the asks."""
     asked = []
 
     def call(method, **kw):
-        asked.append((kw["start_date"], kw["end_date"]))
-        return answer(kw["start_date"], kw["end_date"])
+        asked.append((method, kw))
+        if isinstance(frame, Exception):
+            raise frame
+        return frame
 
     client = td.ThetaDataClient.__new__(td.ThetaDataClient)
     monkeypatch.setattr(client, "_call", call, raising=False)
     return client, asked
 
 
-def _one_row(end):
+def test_a_session_is_asked_once_for_every_expiry_and_grouped_by_expiry(monkeypatch):
+    """One call per session: the end-of-day endpoint costs about the same per session whatever the
+    expiries, so a path fetch asks every expiry at once and keeps the ones it wants."""
+    from datetime import date, datetime
+
+    day = datetime(2024, 1, 12)
+    feb, mar = "2024-02-16", "2024-03-15"
+    frame = _Frame(
+        [{"created": day, "last_trade": datetime(2023, 12, 1), "expiration": feb, "strike": 100.0,
+          "right": "put", "bid": 1.0, "ask": 1.2, "close": float("nan"), "volume": 0, "bid_size": 1,
+          "ask_size": 1},
+         {"created": day, "expiration": mar, "strike": 100.0, "right": "call", "bid": 2.0, "ask": 2.2},
+         {"created": day, "expiration": feb, "strike": 101.0, "right": "call", "bid": 0.5, "ask": 0.6}]
+    )  # fmt: skip
+    client, asked = _day_client(monkeypatch, frame)
+    out = client.eod_chain_day("SPY", "2024-01-12")
+    ((method, kw),) = asked
+    assert method == "option_history_eod" and kw["expiration"] == "*"
+    assert kw["start_date"] == kw["end_date"] == date(2024, 1, 12)
+    assert sorted(out) == ["2024-02-16", "2024-03-15"]
+    assert [r["strike"] for r in out["2024-02-16"]] == [100.0, 101.0]
+    first = out["2024-02-16"][0]
+    assert first["right"] == "PUT" and first["close"] is None  # dated by the report, NaN leaves as None
+
+
+def test_a_row_reported_on_another_day_or_undated_is_dropped(monkeypatch):
     from datetime import datetime
 
-    day = datetime.combine(end, datetime.min.time())
-    return _Frame([{"created": day, "strike": 100.0, "right": "call", "bid": 1.0, "ask": 1.1}])
+    feb = "2024-02-16"
+    frame = _Frame([{"created": datetime(2024, 1, 12), "expiration": feb, "strike": 100.0, "right": "C"},
+                    {"created": datetime(2024, 1, 11), "expiration": feb, "strike": 101.0, "right": "C"},
+                    {"created": None, "expiration": feb, "strike": 102.0, "right": "C"}])  # fmt: skip
+    client, _ = _day_client(monkeypatch, frame)
+    assert [r["strike"] for r in client.eod_chain_day("SPY", "2024-01-12")["2024-02-16"]] == [100.0]
 
 
-def test_a_chunk_with_nothing_after_one_that_answered_refuses_the_path(monkeypatch):
-    """A hole in the middle of a path is not the expiry being unlisted: the path is refused (and so
-    retried on a later run), never stored complete with a week missing, and never as `no_data`,
-    which would record it permanently empty."""
-    from datetime import date
-
-    def answer(lo, hi):
-        if lo == date(2024, 1, 8):
-            raise VendorRefusal("no_data", "No data found")
-        return _one_row(hi)
-
-    client, _ = _path_client(monkeypatch, answer)
+def test_a_day_reply_with_rows_but_no_created_column_is_refused_not_stored_empty(monkeypatch):
+    client, _ = _day_client(
+        monkeypatch, _Frame([{"expiration": "2024-02-16", "strike": 100.0, "right": "C"}])
+    )
     with pytest.raises(VendorRefusal) as refused:
-        client.eod_chain_range("SPY", "2024-01-01", "2024-01-20", "2024-02-16")
-    assert refused.value.reason == "path_gap"
-
-
-def test_a_weekend_tail_with_nothing_is_not_a_hole_and_the_range_stops_at_the_expiry(monkeypatch):
-    from datetime import date
-
-    def answer(lo, hi):
-        if lo == date(2024, 1, 13):
-            raise VendorRefusal("no_data", "No data found")
-        return _one_row(date(2024, 1, 12))
-
-    client, asked = _path_client(monkeypatch, answer)
-    # 01-06 (Sat) .. 01-12 (Fri), then a Saturday-Sunday tail with no session in it
-    rows = client.eod_chain_range("SPY", "2024-01-06", "2024-01-14", "2024-02-16")
-    assert asked == [(date(2024, 1, 6), date(2024, 1, 12)), (date(2024, 1, 13), date(2024, 1, 14))]
-    assert [r["session"] for r in rows] == ["2024-01-12"]
-    # nothing is asked for after the expiry, so a `through` past it is not a hole either
-    client, asked = _path_client(monkeypatch, answer)
-    client.eod_chain_range("SPY", "2024-01-08", "2024-01-31", "2024-01-12")
-    assert asked == [(date(2024, 1, 8), date(2024, 1, 12))]
-
-
-def test_a_reply_with_rows_but_no_created_column_is_refused_not_stored_empty(monkeypatch):
-    client, _ = _path_client(monkeypatch, lambda lo, hi: _Frame([{"strike": 100.0, "right": "call"}]))
-    with pytest.raises(VendorRefusal) as refused:
-        client.eod_chain_range("SPY", "2024-01-01", "2024-01-20", "2024-02-16")
+        client.eod_chain_day("SPY", "2024-01-12")
     assert refused.value.reason == "bad_response"
 
 
-def test_a_row_without_its_report_date_is_skipped(monkeypatch):
-    from datetime import datetime
-
-    def answer(lo, hi):
-        day = datetime.combine(hi, datetime.min.time())
-        return _Frame([{"created": day, "strike": 100.0, "right": "call"},
-                       {"created": None, "strike": 101.0, "right": "call"}])  # fmt: skip
-
-    client, _ = _path_client(monkeypatch, answer)
-    rows = client.eod_chain_range("SPY", "2024-01-01", "2024-01-07", "2024-02-16")
-    assert [r["strike"] for r in rows] == [100.0]
-
-
-def test_a_daily_path_with_nothing_anywhere_is_the_vendors_no_data(monkeypatch):
-    def call(method, **kw):
-        raise VendorRefusal("no_data", "No data found")
-
-    client = td.ThetaDataClient.__new__(td.ThetaDataClient)
-    monkeypatch.setattr(client, "_call", call, raising=False)
+def test_a_day_with_nothing_is_the_vendors_no_data(monkeypatch):
+    client, _ = _day_client(monkeypatch, VendorRefusal("no_data", "No data found"))
     with pytest.raises(VendorRefusal) as refused:
-        client.eod_chain_range("SPY", "2024-01-01", "2024-01-20", "2024-02-16")
+        client.eod_chain_day("SPY", "2024-01-12")
     assert refused.value.reason == "no_data"
