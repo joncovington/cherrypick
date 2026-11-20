@@ -4561,6 +4561,50 @@
       "retest": null,
       "retests": [],
       "outcome": null
+    },
+    {
+      "id": 96,
+      "study": "item96",
+      "title": "The ladder's paper arms with overnight hours, 2024-09 on",
+      "status": "declared",
+      "legacy": false,
+      "setup": "dip-buy",
+      "side": "bullish",
+      "structure": "shares",
+      "window": "multi-day",
+      "measure": "per fund and arm, net as a percentage of the fund's budget (3 lots of $1,000) a year, open lots marked at the last bid, in all hours (the session's Blue Ocean overnight bars from 20:00 the evening before, then its day bars from 04:00) less the same in paper's hours (08:15-20:00), over the same sessions; item 95's replay copied (cherrypick.ladder.rules in run_once's order, raw prices, splits applied); judged arm session",
+      "expected": "no verdict or a fail: few judged funds and lots, and a 7% overnight fall that recovers before 08:15 is rare",
+      "sample": "item 26's 17 funds, judged only with overnight bars on at least half the window's sessions; sessions 2024-09-20 to the last whole month in both stores; no split, so a pass is provisional; < 8 judged funds or < 60 all-hours lots = no verdict",
+      "rule": "both, on the session arm: RULE, the kit's bars on the all-hours lots, one row per entry session across judged funds (capital t >= 2.0 over the 3-month bill on the cost; tail 10,000 draws seed 96, the sample's own rows a year; delta not applicable; no split; < 60 rows = no verdict); PAIRED_RULE: per judged fund, all hours less paper hours in % of budget a year, mean > 0 with one-sided t > 2.0, positive on more than half the funds, positive at three times the half-spread",
+      "mechanism": "access: a fund that falls 7% overnight and recovers before 08:15 gives a lot paper's hours never see, and a target can be reached overnight; against it, thin and wide overnight prices",
+      "rivals": [
+        {
+          "explanation": "more hours, more lots, more of the same",
+          "check": "paired per fund over the same sessions; the capital bar asks whether the lots earn over the bill"
+        },
+        {
+          "explanation": "thin overnight prints",
+          "check": "positive at three times the half-spread; coverage reported"
+        },
+        {
+          "explanation": "one fund",
+          "check": "sign count across funds; thinly covered funds not judged"
+        }
+      ],
+      "pointer": "research/edge-hypotheses-plan.md#96-the-ladders-paper-arms-with-overnight-hours-2024-09-on",
+      "scripts": [
+        "packages/backtest/scripts/share_ladder_item96.py",
+        "scripts/fetch_minute_bars.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_share_ladder_item96_script.py"
+      ],
+      "results": [
+        "{home}/data/research/item96/results.json"
+      ],
+      "retest": null,
+      "retests": [],
+      "outcome": null
     }
   ],
   "rule_changes": []

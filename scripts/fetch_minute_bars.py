@@ -13,7 +13,11 @@ refuses the last 15 minutes of the tape, so a fetch ends before then. Personal u
 `cherrypick-alpaca`): `key set` prompts for the key id and secret with hidden input, `key status`
 says whether both are there. Neither is ever printed, logged or written to a file.
 
-**What is stored** (`minute_bars.db`): `bars` (symbol, start as New York local time
+**Two feeds, two stores** (`--feed`, `FEEDS`): `sip`, the consolidated tape 04:00-20:00 ET, into
+`research/item95/minute_bars.db`; `boats`, Blue Ocean's overnight session 20:00-04:00 ET (served
+from 2024-09 for these funds), into `research/item96/overnight_bars.db`. Same schema in each.
+
+**What is stored**: `bars` (symbol, start as New York local time
 `YYYY-MM-DDTHH:MM`, open, high, low, close, volume, trades, vwap), one row per minute that traded;
 a minute with no trade has no row, as the API serves it. `fetched` records each (symbol, month)
 fetched whole, so a re-run skips them; the current month is always fetched again.
@@ -21,7 +25,8 @@ fetched whole, so a re-run skips them; the current month is always fetched again
     python scripts/fetch_minute_bars.py key set
     python scripts/fetch_minute_bars.py key status
     python scripts/fetch_minute_bars.py fetch --symbols SOXL,TQQQ --from 2016-01 [--to 2026-11]
-    python scripts/fetch_minute_bars.py status
+    python scripts/fetch_minute_bars.py fetch --feed boats --symbols SOXL,TQQQ --from 2024-09
+    python scripts/fetch_minute_bars.py status [--feed boats]
 """
 
 from __future__ import annotations
@@ -50,14 +55,18 @@ MIN_GAP_S = 0.35  # the free plan allows 200 requests a minute; stay well under 
 TAPE_DELAY = timedelta(minutes=20)  # the free plan refuses the last 15 minutes of the tape
 
 
-def store_dir() -> Path:
-    d = home.home() / "data" / "research" / "item95"
+#: feed: (the study folder its store sits in, the store's file name)
+FEEDS = {"sip": ("item95", "minute_bars.db"), "boats": ("item96", "overnight_bars.db")}
+
+
+def store_dir(feed: str = "sip") -> Path:
+    d = home.home() / "data" / "research" / FEEDS[feed][0]
     d.mkdir(parents=True, exist_ok=True)
     return d
 
 
-def connect(path: Path | None = None) -> sqlite3.Connection:
-    conn = sqlite3.connect(path or store_dir() / "minute_bars.db")
+def connect(path: Path | None = None, feed: str = "sip") -> sqlite3.Connection:
+    conn = sqlite3.connect(path or store_dir(feed) / FEEDS[feed][1])
     conn.executescript(
         """
         CREATE TABLE IF NOT EXISTS bars (symbol TEXT, start TEXT, open REAL, high REAL, low REAL,
@@ -160,7 +169,7 @@ def _get(params: dict, hdrs: dict) -> dict:
     raise SystemExit("Alpaca did not answer after 5 tries")
 
 
-def fetch_month(conn, symbol: str, month: str, hdrs: dict, now: datetime) -> int:
+def fetch_month(conn, symbol: str, month: str, hdrs: dict, now: datetime, feed: str = "sip") -> int:
     start, end = month_span(month, now)
     if end <= start:
         return 0
@@ -173,7 +182,7 @@ def fetch_month(conn, symbol: str, month: str, hdrs: dict, now: datetime) -> int
             "end": end.isoformat().replace("+00:00", "Z"),
             "limit": PAGE,
             "adjustment": "raw",
-            "feed": "sip",
+            "feed": feed,
             "sort": "asc",
         }
         if token:
@@ -199,12 +208,12 @@ def cmd_fetch(args) -> int:
     last = args.to or now.astimezone(NY).strftime("%Y-%m")
     wanted = months(args.first, last)
     current = now.astimezone(NY).strftime("%Y-%m")
-    conn = connect()
+    conn = connect(feed=args.feed)
     hdrs = headers()
     done = {(s, m) for s, m in conn.execute("SELECT symbol, month FROM fetched") if m != current}
     todo = [(s, m) for s in symbols for m in wanted if (s, m) not in done]
     counts = {"rows": 0, "months": 0, "skipped": len(symbols) * len(wanted) - len(todo)}
-    with progress.Reporter("fetch_minute_bars") as rep:
+    with progress.Reporter(f"fetch_minute_bars_{args.feed}") as rep:
         rep.split(
             "months",
             [s for s in symbols for _ in wanted],
@@ -213,15 +222,15 @@ def cmd_fetch(args) -> int:
         )
         for symbol, month in todo:
             rep.at("months", f"{symbol} {month}")
-            counts["rows"] += fetch_month(conn, symbol, month, hdrs, now)
+            counts["rows"] += fetch_month(conn, symbol, month, hdrs, now, args.feed)
             counts["months"] += 1
             rep.advance("months", key=symbol, current=f"{symbol} {month}")
     print(json.dumps(counts))
     return 0
 
 
-def cmd_status(_args) -> int:
-    conn = connect()
+def cmd_status(args) -> int:
+    conn = connect(feed=args.feed)
     out = {
         s: {"first": a, "last": b, "rows": n}
         for s, a, b, n in conn.execute(
@@ -252,8 +261,11 @@ def main(argv: list[str] | None = None) -> int:
     f.add_argument("--symbols", required=True)
     f.add_argument("--from", dest="first", required=True, help="first month, YYYY-MM")
     f.add_argument("--to", default=None, help="last month, YYYY-MM (default: this month)")
+    f.add_argument("--feed", choices=tuple(FEEDS), default="sip")
     f.set_defaults(fn=cmd_fetch)
-    sub.add_parser("status").set_defaults(fn=cmd_status)
+    st = sub.add_parser("status")
+    st.add_argument("--feed", choices=tuple(FEEDS), default="sip")
+    st.set_defaults(fn=cmd_status)
     args = ap.parse_args(argv)
     return args.fn(args)
 
