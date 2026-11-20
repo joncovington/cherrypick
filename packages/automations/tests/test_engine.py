@@ -243,6 +243,20 @@ def test_one_day_fly_sits_on_the_gex_strike_with_a_matched_call_wing():
     assert d.entry.expiry == TUE
 
 
+def test_open_change_reads_spot_against_the_open():
+    """Spot 1% under the open while level with the previous close: the open change sees the fall, the
+    move since the previous close does not."""
+    arm = copy.deepcopy(A["iron-fly-1dte-1330"])
+    snap = dte1_snap(day_open=6060.0)  # spot 6000, previous close 6000
+    assert engine.decide(arm, snap).enter
+    arm["gates"] = [{"gate": "open_change_pct", "min": -1.25, "max": 0.0}]
+    assert engine.decide(arm, snap).enter
+    arm["gates"] = [{"gate": "open_change_pct", "min": -0.5}]
+    assert why(None, snap, arm)[0] == "gate:open_change_pct"
+    arm["gates"] = [{"gate": "change_pct", "min": -0.5}]
+    assert engine.decide(arm, snap).enter
+
+
 def test_one_day_fly_gates():
     arm = A["iron-fly-1dte-1330"]
     assert (

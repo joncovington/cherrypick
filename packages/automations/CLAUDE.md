@@ -181,7 +181,8 @@ reading open, the engine fixes one and says so here, because each is a measureme
   source does not define it.
 - **Intraday RSI(14) and Stoch(14,3,3)** read completed five-minute bars of the spot trail. The slow
   stochastic's smoothed %K is the line compared with a level.
-- **Gap** is the open against the previous close; **change** is spot against the previous close.
+- **Gap** is the open against the previous close; **change** is spot against the previous close; **open
+  change** is spot against today's open (the first spot at or after 09:30 on a replay, as paper takes it).
 - **IV gates** read the underlying's Cboe vol index (`core.volindex`: VIX for SPX, GVZ for GLD), its close
   before the session, as the signal study's expected move does: `vol_index_rank` and
   `vol_index_percentile` against its `lookback` closes before that (252 by default), `vol_index_minus_rv`
