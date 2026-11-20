@@ -72,7 +72,7 @@ chain is read. A fund removed from the config stays requested until its last lot
 `rules.py` (levels, targets, size, money, pure), `provider.py` (read-only cache views), `db.py`
 (ledger), `paper_loop.py` (the tick), `stream_request.py`, `analytics.py` (the forward read),
 `cli.py` (status, lots, summary), `live_gates.py`, `live_loop.py` and `credentials.py` (the live gates and
-arm, no orders).
+arm, no orders), `orders.py` (the order planner and executor, not yet run by anything).
 
 ## Commands
 
@@ -80,11 +80,13 @@ Commands to run the package, its tests and its lint are in [README.md](README.md
 
 `paper_loop --force` acts outside the hours, for testing only.
 
-## Live (gates and arm only; no order path, #1337)
+## Live (gates, arm and an order layer nothing runs yet; #1337)
 
 `live_gates.py` (pure: a list of named gates, each with a verdict and a reason), `live_loop.py` (the
-commands) and `credentials.py` (the designated account's presence). Nothing places, cancels or
-changes an order, and a source scan in the tests holds that. The `live` block in the config ships off.
+commands), `credentials.py` (the designated account's presence) and `orders.py` (the order planner and
+executor). Nothing in production builds a broker, so nothing places, cancels or changes an order; a
+source scan in the tests holds that for the gates and the loop and bars `orders.py` from importing
+anything that can submit. The `live` block in the config ships off.
 
 - **Gates:** `live.enabled`; `live.gate0_confirmed` (a human attestation, who and when); the suite's
   `modules.ladder.enabled`; a valid arm record for today; a designated account; `live.arm` naming an
@@ -101,7 +103,32 @@ changes an order, and a source scan in the tests holds that. The `live` block in
 - **`--status`** is one JSON object: every gate, the masked account, whether it is armed today.
   **`--once`** evaluates the same and logs that there is no order path.
 - There is no `live.task_name`, so the supervisor derives no `ladder-live` job. The guarded pointers
-  and the live-path set name the module; the order layer, ledger and loop are later work.
+  and the live-path set name the module; the live ledger, the tick and reconcile are later work.
+- **The planner (`orders.plan`)** is pure: it takes the live block, the arm's rule, each fund's
+  reference close, the open lots, the broker's working orders, the day's fills per fund, the funds'
+  marks and the time, and returns place, cancel and keep actions per fund. Unarmed it returns nothing.
+  - Buys rest at `rules.buy_level`'s levels (the call paper makes) from `session_start`, whole shares
+    sized at the level from `lot_dollars`, as extended-hours day limits (`Ext`). Every resting buy is
+    cancelled at `disarm_at`. A buy the broker ended the same day is not re-placed that session.
+  - Each open lot has one `GTC Ext` limit sell at its target, placed as soon as the lot is known. A
+    changed target (`decay`'s days 31 and 121) or a split changes the order's terms: the old order is
+    cancelled and the new one placed on the next run, once the broker no longer lists the old one.
+  - Caps hold before every buy, a resting buy counting as if filled: lots per fund, in all and per
+    correlated group, and `max_open_dollars` over open cost plus resting buys. A fund with no
+    reference close places nothing and its resting buys are left alone.
+  - The drawdown breaker compares the open lots' unrealized result with `drawdown_breaker_frac` of the
+    budget, which is `max_open_dollars`. A lot with no mark trips it. The breaker, the halt flag and
+    `disarm_at` cancel resting buys and place none; none of them touches a sell.
+  - A lot open past `hospital_alert_days` is an alert, as is a sell for no known lot or a split that
+    leaves no whole share. Orders whose client id is not ours are never touched.
+  - Splits come in as a factor per fund (new shares per old); the planner restates the stored lots and
+    the reference close and prices every order at the restated terms.
+  - Client ids carry the order's terms, so the same state plans the same ids and the broker's working
+    list alone says what is resting. A sell the broker ended unfilled is re-placed with a retry suffix,
+    three times at most.
+- **The executor (`orders.Executor`)** applies a plan through a broker object handed to it, cancels
+  first. Dry-run logs what it would send and calls the broker for nothing. A place whose outcome is
+  uncertain stops the remaining places that run. It refuses an unarmed plan.
 
 ## Boundaries
 

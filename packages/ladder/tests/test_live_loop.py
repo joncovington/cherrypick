@@ -234,7 +234,7 @@ def test_the_live_path_imports_no_order_or_broker_trading_code(name):
 
 def test_there_is_no_order_module_beside_the_live_path():
     present = {p.name for p in SRC.glob("*.py")}
-    assert not present & {"live_orders.py", "broker_cli.py", "orders.py"}
+    assert not present & {"live_orders.py", "broker_cli.py"}
 
 
 def test_the_fence_catches_an_order_import():
