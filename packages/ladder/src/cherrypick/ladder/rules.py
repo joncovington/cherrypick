@@ -19,7 +19,9 @@ Two exit rules:
   95% of cost from day 121 (calendar days from the lot's buy session).
 
 Prices are limit prices, so they round to the cent: a buy level rounds down, a target rounds up, so
-a rounded order never fills on worse terms than the rule's own number.
+a rounded order never fills on worse terms than the rule's own number. A resting limit fills at the
+limit when the price crosses it between two quotes, and at the market when the market was already
+through it (a gap into the session, or an order placed under water).
 """
 
 from __future__ import annotations
@@ -79,6 +81,26 @@ def lot_shares(lot_dollars: float, price: float) -> int:
     return int(math.floor(lot_dollars / price + 1e-9))
 
 
+def buy_fill(level: float, ask: float, prev_ask: float | None) -> float:
+    """A buy limit at `level` that fills against `ask` (at or under it). `prev_ask` is the fund's
+    ask one tick earlier this session, None on the session's first quote.
+
+    The price crossed the level between two quotes when the earlier ask was over it: the order was
+    resting, so it fills at the level. Otherwise the market was already through the level when the
+    order met it (a gap into the session, or an order placed under water), so it fills at the ask."""
+    if prev_ask is not None and prev_ask > level:
+        return round(level, 2)
+    return round(min(level, ask), 2)
+
+
+def sell_fill(target_price: float, bid: float, prev_bid: float | None) -> float:
+    """A sell limit at `target_price` that fills against `bid` (at or over it); `buy_fill`'s rule,
+    mirrored: the target when the bid crossed it between quotes, else the bid."""
+    if prev_bid is not None and prev_bid < target_price:
+        return round(target_price, 2)
+    return round(max(target_price, bid), 2)
+
+
 def breakeven(cost: float, shares: int) -> float:
     """The lowest cent price at which selling `shares` bought at `cost` nets at least zero after the
     sale's pass-through fees (buys carry none at tastytrade)."""
@@ -110,8 +132,9 @@ def target_stage(rule: str, age: int) -> str:
 
 
 def money(shares: int, buy: float, sell: float) -> dict:
-    """A closed lot's money, signed cash flow, whole-position dollars. Fills are at the limit, so
-    slippage is zero by construction (paper's stated assumption); settlement is zero for shares."""
+    """A closed lot's money, signed cash flow, whole-position dollars. Fills are resting limits, at
+    the limit or better, so slippage is zero by construction (paper's stated assumption); settlement
+    is zero for shares."""
     entry_value = round(-shares * buy, 2)
     exit_value = round(shares * sell, 2)
     gross = round(entry_value + exit_value, 2)

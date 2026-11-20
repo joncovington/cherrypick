@@ -7,7 +7,7 @@
   },
   "defaults_header": "===== sizing, caps, hours =====",
   "_sizing_note": "lot_dollars buys whole shares at the buy level, never more than the dollars; a lot that rounds under min_shares is refused (lot_too_small). max_open_lots caps one arm's open lots on one fund, max_open_lots_total one arm's across every fund. Each arm keeps its own book.",
-  "_fill_note": "A buy fills at its level when the fund's ask is at or under it; a sell fills at its target when the bid is at or over it. Both are resting limits, so the fill is the limit price and slippage is zero by construction. Fees are core.fees' stock pass-throughs: none on a buy, SEC fee and FINRA TAF on a sell.",
+  "_fill_note": "A buy fills when the fund's ask is at or under its level; a sell fills when the bid is at or over its target. Both are resting limits: the fill is the limit when the price crossed it since the previous tick, and the market (ask or bid) when the market was already through it (a gap into the session, or an order placed under water). A lot is sized at its level and its target is worked from its fill. Slippage is zero by construction. Fees are core.fees' stock pass-throughs: none on a buy, SEC fee and FINRA TAF on a sell.",
   "_hours_note": "session_start to session_end (ET) on trading days: tastytrade's equity day, 08:15 to 20:00. The stream cache only holds quotes while the streamer runs (08:45 to about 20:00), so nothing fills overnight even on a fund the broker trades overnight.",
   "_reference_note": "The reference close is the previous session's posted close (stream_summary), never a last trade. A session without one does not buy (no_reference_close).",
   "defaults": {

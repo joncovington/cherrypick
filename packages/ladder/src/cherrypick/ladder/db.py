@@ -20,7 +20,7 @@ from cherrypick.core import ledgerstore as _ledgerstore
 _SCHEMA = """
 -- One row per lot. Money is signed cash flow, whole-position dollars: entry_value is the purchase
 -- (-), exit_value the sale (+), entry_value + exit_value = gross_pnl;
--- gross_pnl - fees - settlement - slippage = net_pnl. Fills are at the limit, so slippage is 0 by
+-- gross_pnl - fees - settlement - slippage = net_pnl. Fills are resting limits, so slippage is 0 by
 -- construction and settlement is 0 for shares.
 CREATE TABLE IF NOT EXISTS ladder_positions (
     id               INTEGER PRIMARY KEY AUTOINCREMENT,

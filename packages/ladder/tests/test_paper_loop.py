@@ -32,33 +32,75 @@ def test_nothing_buys_above_the_level(config, ledger, cache):
 
 def test_once_buys_one_lot_a_session_at_the_level(config, ledger, cache):
     cfg = _only(config, "once")
-    cache.summary("TQQQ", DAY, prev_day_close=100.0).quote("TQQQ", 80.00, 80.02)
+    cache.summary("TQQQ", DAY, prev_day_close=100.0).quote("TQQQ", 92.98, 93.00)
     _tick(cfg, ledger, cache)
     _tick(cfg, ledger, cache, hhmm="10:01")
     lots = db.open_lots(ledger)
     assert len(lots) == 1
     lot = lots[0]
-    assert lot["buy_price"] == 93.0 and lot["quantity"] == 10
+    assert lot["buy_price"] == 93.0 and lot["buy_level"] == 93.0 and lot["quantity"] == 10
     assert lot["position_id"] == f"once:TQQQ:{DAY}:1"
     assert lot["entry_value"] == -930.0 and lot["target_price"] == 96.72
 
 
-def test_chain_keeps_buying_down_to_the_cap_on_a_gap(config, ledger, cache):
+def test_a_gap_under_the_level_buys_at_the_ask_sized_at_the_level(config, ledger, cache):
+    cfg = _only(config, "once")
+    cache.summary("TQQQ", DAY, prev_day_close=100.0).quote("TQQQ", 80.00, 80.02)
+    _tick(cfg, ledger, cache)
+    lot = db.open_lots(ledger)[0]
+    assert lot["buy_level"] == 93.0 and lot["buy_price"] == 80.02 and lot["quantity"] == 10
+    # 80.02 x 1.04 = 83.2208 -> 83.23: the target is worked from the fill
+    assert lot["entry_value"] == -800.2 and lot["target_price"] == 83.23
+
+
+def test_a_price_crossing_between_ticks_fills_at_the_limit(config, ledger, cache):
+    cfg = _only(config, "once")
+    cache.summary("TQQQ", DAY, prev_day_close=100.0).quote("TQQQ", 93.45, 93.50)
+    _tick(cfg, ledger, cache)
+    cache.quote("TQQQ", 92.00, 92.05)
+    _tick(cfg, ledger, cache, hhmm="10:01")
+    lot = db.open_lots(ledger)[0]
+    assert lot["buy_price"] == 93.0 and lot["buy_ask"] == 92.05
+    cache.quote("TQQQ", 96.50, 96.55)
+    _tick(cfg, ledger, cache, hhmm="11:00")
+    cache.quote("TQQQ", 97.40, 97.45)
+    _tick(cfg, ledger, cache, hhmm="11:01")
+    closed = db.positions(ledger, status="closed")[0]
+    assert closed["sell_price"] == 96.72 and closed["sell_bid"] == 97.40
+
+
+def test_a_gap_over_the_target_sells_at_the_bid(config, ledger, cache):
+    cfg = _only(config, "once")
+    cache.summary("TQQQ", DAY, prev_day_close=100.0).quote("TQQQ", 92.98, 93.00)
+    _tick(cfg, ledger, cache)
+    cache.summary("TQQQ", NEXT, prev_day_close=97.0).quote("TQQQ", 98.00, 98.03)
+    _tick(cfg, ledger, cache, day=NEXT)
+    closed = db.positions(ledger, status="closed")[0]
+    assert closed["target_price"] == 96.72 and closed["sell_price"] == 98.0
+    assert closed["exit_value"] == 980.0 and closed["slippage"] == 0.0
+
+
+def test_chain_chains_from_each_fill_down_to_the_cap(config, ledger, cache):
     cfg = _only(config, "chain")
     cache.summary("TQQQ", DAY, prev_day_close=100.0).quote("TQQQ", 70.00, 70.02)
     _tick(cfg, ledger, cache)
+    # a gap fills the first lot at the ask; the next level is 93% of that fill, not of 93.00
+    assert [lot["buy_price"] for lot in db.open_lots(ledger)] == [70.02]
+    for i, ask in enumerate((65.11, 60.55, 56.31)):
+        cache.quote("TQQQ", round(ask - 0.02, 2), ask)
+        _tick(cfg, ledger, cache, hhmm=f"1{i + 1}:00")
     lots = db.open_lots(ledger)
-    assert [lot["buy_price"] for lot in lots] == [93.0, 86.49, 80.43]
-    assert [lot["chained_from"] for lot in lots] == [None, 93.0, 86.49]
+    assert [lot["buy_price"] for lot in lots] == [70.02, 65.11, 60.55]
+    assert [lot["chained_from"] for lot in lots] == [None, 70.02, 65.11]
     reasons = {r["reason"] for r in ledger.execute("SELECT reason FROM ladder_decisions")}
     assert "name_cap_full" in reasons
 
 
 def test_a_lot_sells_at_its_target_and_frees_its_slot(config, ledger, cache):
     cfg = _only(config, "chain")
-    cache.summary("TQQQ", DAY, prev_day_close=100.0).quote("TQQQ", 92.90, 92.95)
+    cache.summary("TQQQ", DAY, prev_day_close=100.0).quote("TQQQ", 92.98, 93.00)
     _tick(cfg, ledger, cache)
-    cache.quote("TQQQ", 86.40, 86.45)
+    cache.quote("TQQQ", 86.47, 86.49)
     _tick(cfg, ledger, cache, hhmm="10:30")
     assert [lot["buy_price"] for lot in db.open_lots(ledger)] == [93.0, 86.49]
     # 86.49 x 1.04 = 89.9496 -> 89.95: the second lot sells, the first holds
@@ -80,14 +122,14 @@ def test_a_lot_sells_at_its_target_and_frees_its_slot(config, ledger, cache):
 
 def test_an_empty_book_resets_the_chain_to_the_reference(config, ledger, cache):
     cfg = _only(config, "chain")
-    cache.summary("TQQQ", DAY, prev_day_close=100.0).quote("TQQQ", 92.90, 92.95)
+    cache.summary("TQQQ", DAY, prev_day_close=100.0).quote("TQQQ", 92.98, 93.00)
     _tick(cfg, ledger, cache)
     cache.quote("TQQQ", 96.72, 96.75)
     _tick(cfg, ledger, cache, hhmm="12:00")
     assert db.open_lots(ledger) == []
     lots = [dict(r) for r in ledger.execute("SELECT * FROM ladder_positions")]
     assert paper_loop.chain_anchor(lots) is None
-    cache.quote("TQQQ", 92.90, 92.95)
+    cache.quote("TQQQ", 92.98, 93.00)
     _tick(cfg, ledger, cache, hhmm="13:00")
     assert [lot["buy_price"] for lot in db.open_lots(ledger)] == [93.0]
 
@@ -136,13 +178,13 @@ def test_a_lot_too_small_is_refused(config, ledger, cache):
 
 
 def test_the_arm_cap_spans_funds(config, ledger, cache):
-    cfg = _only(config, "chain")
+    cfg = _only(config, "session")
     cfg["defaults"] = {**cfg["defaults"], "max_open_lots_total": 4}
     cfg["names"] = {"TQQQ": {}, "SPXL": {}}
     cache.summary("TQQQ", DAY, prev_day_close=100.0).quote("TQQQ", 70.0, 70.02)
     cache.summary("SPXL", DAY, prev_day_close=200.0).quote("SPXL", 140.0, 140.04)
     _tick(cfg, ledger, cache)
-    assert db.open_count(ledger, "chain") == 4
+    assert db.open_count(ledger, "session") == 4
     reasons = {r["reason"] for r in ledger.execute("SELECT reason FROM ladder_decisions")}
     assert "arm_cap_full" in reasons
 
@@ -193,8 +235,10 @@ def test_status_shows_each_arms_next_level(config, ledger, cache):
 
 def test_session_restarts_from_the_close_each_session_over_older_lots(config, ledger, cache):
     cfg = _only(config, "session")
-    cache.summary("TQQQ", DAY, prev_day_close=100.0).quote("TQQQ", 86.40, 86.45)
+    cache.summary("TQQQ", DAY, prev_day_close=100.0).quote("TQQQ", 92.98, 93.00)
     _tick(cfg, ledger, cache)
+    cache.quote("TQQQ", 86.47, 86.49)
+    _tick(cfg, ledger, cache, hhmm="10:30")
     assert [lot["buy_price"] for lot in db.open_lots(ledger)] == [93.0, 86.49]
     assert [lot["chained_from"] for lot in db.open_lots(ledger)] == [None, None]
     # the 86.49 lot sells at 89.95; its level does not buy again this session
@@ -214,6 +258,8 @@ def test_session_stops_at_the_name_cap(config, ledger, cache):
     cfg = _only(config, "session")
     cache.summary("TQQQ", DAY, prev_day_close=100.0).quote("TQQQ", 70.00, 70.02)
     _tick(cfg, ledger, cache)
-    assert [lot["buy_price"] for lot in db.open_lots(ledger)] == [93.0, 86.49, 80.43]
+    # a gap through three levels fills all three resting orders at the ask
+    assert [lot["buy_price"] for lot in db.open_lots(ledger)] == [70.02, 70.02, 70.02]
+    assert [lot["buy_level"] for lot in db.open_lots(ledger)] == [93.0, 86.49, 80.43]
     reasons = {r["reason"] for r in ledger.execute("SELECT reason FROM ladder_decisions")}
     assert "name_cap_full" in reasons

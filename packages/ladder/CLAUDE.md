@@ -37,9 +37,12 @@ Nothing here says the rule has an edge.
 
 ## What paper adds, and says
 
-1. **Fills are resting limits read off one quote a minute.** A buy fills at its level when the ask
-   is at or under it; a sell fills at its target when the bid is at or over it. The fill is the
-   limit price, so slippage is zero by construction, and a touch shorter than a tick is missed.
+1. **Fills are resting limits read off one quote a minute.** A buy fills when the ask
+   is at or under its level, a sell when the bid is at or over its target. The fill is the limit
+   when the price crossed it since the previous tick (the order was resting as the market moved
+   through it), and the market (ask or bid) when the market was already through it: a gap into the
+   session, or an order placed under water. A lot is sized at its level and costs its fill; its target is worked from the fill.
+   Slippage is zero by construction, and a touch shorter than a tick is missed.
 2. **A lot can be bought and sold in the same session, and a sold lot frees its slot at once**, as a
    live account's would. Item 26's daily replay allowed neither; the group's own fills do both.
 3. **Hours are tastytrade's equity day, 08:15 to 20:00 ET**, but the stream cache only holds quotes
