@@ -83,12 +83,14 @@ def test_decay_schedule():
     assert rules.target("fixed", cost=cost, shares=shares, age=500) == 52.0
 
 
-def test_breakeven_covers_the_sale_fees_and_no_more():
+def test_breakeven_covers_both_fills_fees_and_no_more():
     cost, shares = 50.0, 20
     be = rules.breakeven(cost, shares)
-    assert be * shares - fees.stock_trade_fee(shares, be, side="sell") >= cost * shares
+    buy = fees.stock_trade_fee(shares, cost, side="buy", ndigits=4)
+    assert buy > 0  # the clearing fee: a buy is not free
+    assert be * shares - fees.stock_trade_fee(shares, be, side="sell", ndigits=4) - buy >= cost * shares
     below = round(be - 0.01, 2)
-    assert below * shares - fees.stock_trade_fee(shares, below, side="sell") < cost * shares
+    assert below * shares - fees.stock_trade_fee(shares, below, side="sell", ndigits=4) - buy < cost * shares
 
 
 def test_lot_shares_never_spend_more_than_the_lot():

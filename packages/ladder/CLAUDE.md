@@ -58,7 +58,7 @@ Nothing here says the rule has an edge.
 
 A position is one lot. Signed cash flow, whole-position dollars: `entry_value` (the purchase, −) +
 `exit_value` (the sale, +) = `gross_pnl`; `gross_pnl` − `fees` − `settlement` − `slippage` =
-`net_pnl`. Fees are `core.fees.stock_trade_fee`: none on a buy, the SEC fee and FINRA TAF on a sale.
+`net_pnl`. Fees are `core.fees.stock_trade_fee`: the clearing fee on the buy and the sale, the SEC fee and FINRA TAF on the sale.
 Settlement and slippage are zero. `exit_reason` is `target_gain`, `target_breakeven` or
 `target_floor`.
 

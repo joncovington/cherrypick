@@ -57,8 +57,8 @@ earned 4–6 points a year less than SVXY for the same drawdown.
    stint and the cash in one transaction. A sell whose buy then refused would leave an arm in
    cash its rule never chose.
 3. **Fills at mid, with slippage as its own column.** Slippage is half the quoted spread, floored
-   at `slippage_floor_bps` (2) of mid. Fees are `core.fees.stock_trade_fee`: buys free, sells
-   pay SEC and TAF.
+   at `slippage_floor_bps` (2) of mid. Fees are `core.fees.stock_trade_fee`: the clearing fee on
+   every fill, and the SEC fee and TAF on a sell.
 4. **Distributions are credited from the local technicals store**, never the network. SHV's
    monthly dividend is most of its return, so a cash stint without it would flatter the risk arm.
    A distribution is owed to a stint that held at the ex-date open: entered on an earlier session

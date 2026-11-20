@@ -22,6 +22,8 @@ Pure functions; no broker, no I/O.
 
 from __future__ import annotations
 
+import math
+
 # --------------------------------------------------------------------------- 1. cost-adjusted fills
 DEFAULT_COSTS = {
     "commission_open_per_contract": 1.00,
@@ -248,37 +250,49 @@ def ic_expire_fee(itm_legs: int = 0) -> float:
 
 
 # --------------------------------------------------------------------------- 3. the SHARE side
-# What a cash-settled symbol never reaches: an American-style option that finishes ITM delivers
-# STOCK, and the stock then has to be disposed of. Two pass-throughs land on the disposal, both on
-# SELLS only, and neither is on the option schedule above:
+# What a stock or ETF fill costs at tastytrade (tastytrade.com/commissions-and-fees, updated
+# 2026-10-28), and what an American-style option that finishes ITM costs once it delivers stock:
 #
-#   SEC Section 31 fee   $27.80 per $1,000,000 of principal, sells only. Re-rated annually by the
-#                        SEC -- this is the FY2024 rate and it is the one line here most likely to
-#                        be stale; it is a constant rather than a config key so that a suite-wide
-#                        re-check updates every consumer at once.
-#   FINRA TAF (equity)   $0.000166 per share sold, capped at $8.30 per trade. Note this is the
-#                        SHARE rate, an order of magnitude below the per-contract option TAF above.
+#   Commission           $0 to open and to close.
+#   Clearing fee         $0.0008 per share, on BUYS AND SELLS (tastytrade's own pass-through).
+#   SEC Section 31 fee   $20.60 per $1,000,000 of principal, sells only (the FY2026 rate, effective
+#                        2026-04-04; the SEC re-rates it each year).
+#   FINRA TAF (equity)   $0.000195 per share sold, capped at $9.79 a trade. The SHARE rate, an order
+#                        of magnitude below the per-contract option TAF above. FINRA charged $0 on
+#                        sales from 2026-10-01 to 2026-12-31; that holiday is not modelled, so a
+#                        study replays to the same figure whenever it runs.
 #
-# tastytrade charges no commission on stock, so there is no open-side charge and no per-share
-# commission on the close: the disposal cost is these two pass-throughs and nothing else.
-SEC_FEE_PER_DOLLAR_SOLD = 27.80 / 1_000_000
-EQUITY_TAF_PER_SHARE_SOLD = 0.000166
-EQUITY_TAF_CAP_PER_TRADE = 8.30
+# Each charge is rounded UP on its own, as the broker's own transaction rows show it: the clearing
+# fee and the TAF to a tenth of a cent, the SEC fee to the cent (checked 2026-11-19 against every
+# stock fill in the account since June: commission, clearing and regulatory fields to the tenth of
+# a cent). Constants, not config keys, so a re-check updates every consumer at once.
+CLEARING_FEE_PER_SHARE = 0.0008
+SEC_FEE_PER_DOLLAR_SOLD = 20.60 / 1_000_000
+EQUITY_TAF_PER_SHARE_SOLD = 0.000195
+EQUITY_TAF_CAP_PER_TRADE = 9.79
+
+
+def _ceil_to(x: float, step: float) -> float:
+    """`x` rounded up to a whole number of `step`s (a float's last-digit noise is not a step)."""
+    n = round(x / step, 9)
+    return math.ceil(n) * step
 
 
 def stock_trade_fee(shares: int, price: float, *, side: str, ndigits: int = 2) -> float:
-    """Pass-through cost of one stock fill. Buys are free at tastytrade; sells carry the SEC fee on
-    principal plus the per-share FINRA TAF, capped.
+    """Pass-through cost of one stock fill: the clearing fee on any fill, and on a sell the SEC fee
+    on principal plus the per-share FINRA TAF, capped, each rounded up as the broker charges it.
 
-    `side` is the direction of THIS fill ("buy" or "sell"), not of the position it closes — a short
-    share position is opened by a sell and closed by a buy, so the charge lands on the opening
-    fill, and a long one is the other way round.
+    `side` is the direction of THIS fill ("buy" or "sell"), not of the position it closes: a short
+    share position is opened by a sell and closed by a buy, so the regulatory charge lands on the
+    opening fill, and a long one is the other way round.
     """
-    if side != "sell" or shares <= 0 or price <= 0:
+    if side not in ("buy", "sell") or shares <= 0 or price <= 0:
         return 0.0
-    sec = shares * price * SEC_FEE_PER_DOLLAR_SOLD
-    taf = min(shares * EQUITY_TAF_PER_SHARE_SOLD, EQUITY_TAF_CAP_PER_TRADE)
-    return round(sec + taf, ndigits)
+    fee = _ceil_to(shares * CLEARING_FEE_PER_SHARE, 0.001)
+    if side == "sell":
+        fee += _ceil_to(shares * price * SEC_FEE_PER_DOLLAR_SOLD, 0.01)
+        fee += min(_ceil_to(shares * EQUITY_TAF_PER_SHARE_SOLD, 0.001), EQUITY_TAF_CAP_PER_TRADE)
+    return round(fee, ndigits)
 
 
 def assignment_round_trip_fee(
