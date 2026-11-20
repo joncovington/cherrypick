@@ -119,7 +119,7 @@ def test_a_setting_it_cannot_build_from_is_refused_by_name(name, given, says):
         strategies.build(name, given)
 
 
-def test_the_wizard_gets_a_whole_automation_with_the_exits_its_expiry_allows():
+def test_the_builder_gets_a_whole_automation_with_the_exits_its_expiry_allows():
     out = builderform.strategy_answer("iron_condor", {"dte": 45})
     assert out["problems"] == [] and out["credit"] is True
     assert out["spec"]["exit"] == builderform.CREDIT_RULES

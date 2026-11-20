@@ -32,3 +32,11 @@ export function grouped(table: Record<string, BuilderEntryPreset>): Array<[strin
   for (const [k, p] of Object.entries(table)) out.set(p.group, [...(out.get(p.group) ?? []), [k, p]]);
   return [...out.entries()];
 }
+
+/** Whether a preset suits the strategy that filled the legs: one of its fits names that strategy, and
+ *  every setting the fit names is the strategy's (a short put for "short puts"). None without a
+ *  strategy: Custom legs suit nothing in particular. */
+export function presetSuits(p: BuilderEntryPreset, strategy: { name: string; settings: Record<string, string | number> } | null): boolean {
+  if (!strategy) return false;
+  return (p.fits ?? []).some((f) => f.strategy === strategy.name && Object.entries(f).every(([k, v]) => k === "strategy" || strategy.settings[k] === v));
+}

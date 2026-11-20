@@ -22,7 +22,7 @@
                how any automation loads (it must not). Reads only: the orchestrator writes
     builder-schema  every choice the Builder's form offers, from the engine's own tables
     builder-strategy  a strategy's legs and expiry from its settings (JSON on stdin: strategy, settings),
-               and a whole automation from it for the wizard. Writes nothing
+               and a whole automation from it for the Builder. Writes nothing
     builder-entry   an entry preset's entry and the gates of the filters stacked on it (JSON on stdin:
                entry, settings, filters [{filter, settings}]). Writes nothing
     builder-today   one automation (JSON on stdin: name, optionally an unsaved automation) decided now

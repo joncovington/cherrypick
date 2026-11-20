@@ -10,11 +10,12 @@ import { automationWords, blockWords } from "../src/pages/Builder/specWords";
 import { legText, TodayView } from "../src/pages/Builder/BuilderToday";
 import { SECTION_HELP } from "../src/pages/Builder/BuilderHelp";
 import { holdsCloseSnapshot } from "../src/pages/Builder/builderTips";
+import { presetSuits } from "../src/pages/Builder/presets";
 import { exitFits, exitStart, unshown } from "../src/pages/Builder/FiltersExits";
 
 const html = (el: React.ReactElement) => renderToString(el).replace(/<!--\s*-->/g, "");
 
-/** The automations module's own schema (`cli builder-schema` as of 2026-11-20, without the shapes). */
+/** The automations module's own schema (`cli builder-schema` as of 2026-11-20). */
 const SCHEMA = FIXTURE as unknown as BuilderSchema;
 const W = SCHEMA.words!;
 
@@ -235,6 +236,19 @@ describe("the one-page form", () => {
     expect(out).toMatch(/<option value="null" selected="">any time before the window closes<\/option>/);
     expect(out.match(/<span class="b-lead">Only if<\/span>/g)?.length).toBe(1);
     expect(out).toContain("+ Add a condition");
+  });
+
+  it("marks the presets the strategy suits, and none for Custom legs", () => {
+    const eps = SCHEMA.entry_presets!;
+    expect(presetSuits(eps.entries["gap_fill"]!, STRATEGY)).toBe(true);
+    expect(presetSuits(eps.entries["rsi_pullback"]!, STRATEGY)).toBe(false);
+    expect(presetSuits(eps.entries["rsi_pullback"]!, { name: "vertical", settings: { direction: "short", right: "put" } })).toBe(true);
+    expect(presetSuits(eps.entries["rsi_pullback"]!, { name: "vertical", settings: { direction: "short", right: "call" } })).toBe(false);
+    expect(presetSuits(eps.entries["gap_fill"]!, null)).toBe(false);
+    const out = form({ open: { entry: true } });
+    const marked = [...out.matchAll(/>([^<>]+)<span class="b-fit">suits<\/span>/g)].map((m) => m[1]);
+    expect(marked).toEqual(["Gap fill", "After an event"]);
+    expect(form({ open: { entry: true }, strategy: null })).not.toContain('class="b-fit"');
   });
 
   it("puts the rules a line leaves out under More options, and the whole entry under Edit as rule", () => {

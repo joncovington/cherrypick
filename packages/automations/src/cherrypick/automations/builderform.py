@@ -58,78 +58,15 @@ TRIGGER_FORMS: dict[str, dict[str, bool]] = {
 }
 
 
-def _delta_leg(name: str, right: str, side: int, target: float) -> dict:
-    """A wizard leg placed by delta, in the written spelling (action, qty, side)."""
-    return arms_mod.written_leg(
-        {"name": name, "right": right, "side": side, "strike": {"rule": "delta", "target": target}}
-    )
-
-
-#: The wizard's starting shapes: legs placed by delta, each one the engine accepts as it stands
-#: (`tests/test_builderform.py` resolves every one). A starting point, never a recommendation.
-SHAPES: dict[str, dict] = {
-    "short_put": {
-        "label": "Short put",
-        "about": "Sell one put below the market.",
-        "risk": "undefined risk: cash-secured",
-        "credit": True,
-        "legs": [_delta_leg("short_put", "P", -1, 0.16)],
-    },
-    "put_credit_spread": {
-        "label": "Put credit spread",
-        "about": "Sell a put, buy a lower one.",
-        "risk": "defined risk: the width less the credit",
-        "credit": True,
-        "legs": [_delta_leg("short_put", "P", -1, 0.20), _delta_leg("long_put", "P", 1, 0.10)],
-    },
-    "call_credit_spread": {
-        "label": "Call credit spread",
-        "about": "Sell a call, buy a higher one.",
-        "risk": "defined risk: the width less the credit",
-        "credit": True,
-        "legs": [_delta_leg("short_call", "C", -1, 0.20), _delta_leg("long_call", "C", 1, 0.10)],
-    },
-    "iron_condor": {
-        "label": "Iron condor",
-        "about": "A put spread and a call spread around the market.",
-        "risk": "defined risk: the wider side's width less the credit",
-        "credit": True,
-        "legs": [
-            _delta_leg("short_put", "P", -1, 0.16),
-            _delta_leg("long_put", "P", 1, 0.05),
-            _delta_leg("short_call", "C", -1, 0.16),
-            _delta_leg("long_call", "C", 1, 0.05),
-        ],
-    },
-    "iron_fly": {
-        "label": "Iron fly",
-        "about": "Sell the at-the-money put and call, buy both wings.",
-        "risk": "defined risk: the width less the credit",
-        "credit": True,
-        "legs": [
-            _delta_leg("short_put", "P", -1, 0.50),
-            _delta_leg("long_put", "P", 1, 0.10),
-            _delta_leg("short_call", "C", -1, 0.50),
-            _delta_leg("long_call", "C", 1, 0.10),
-        ],
-    },
-    "custom": {
-        "label": "Custom legs",
-        "about": "Start with one leg and add your own.",
-        "risk": "risk depends on the legs",
-        "credit": False,
-        "legs": [_delta_leg("leg_1", "P", -1, 0.20)],
-    },
-}
-
 #: The credit-trade preset, in the engine's own exit keys: half the credit taken (`profit_target_pct`
 #: of max profit, which for a credit trade is the credit), a stop at a loss equal to the credit, and a
 #: close at 21 days to expiry.
 CREDIT_RULES = {"profit_target_pct": 50, "stop_credit_multiple": 1, "close_at_dte": 21}
 
-#: What a new automation starts from beside its shape: the monthly cycle 45-60 days out, an entry at
-#: 15:55 (inside the end-of-day tick, so a backtest can read it), one contract, one open, one a day.
-WIZARD_DEFAULTS = {
+#: What a strategy's whole automation starts from (`strategy_answer`): the monthly cycle 45-60 days
+#: out, an entry at 15:55 (inside the end-of-day tick, so a backtest can read it), one contract, one
+#: open, one a day.
+STRATEGY_DEFAULTS = {
     "symbol": "SPY",
     "expiry": {"kind": "between", "min": 45, "max": 60, "monthly": True},
     "entry": {"kind": "time", "at": "15:55", "window": 5},
@@ -137,19 +74,6 @@ WIZARD_DEFAULTS = {
     "size": {"contracts": 1},
     "limits": {"max_open": 1, "per_day": 1},
 }
-
-
-def wizard_spec(shape: str) -> dict:
-    """A whole automation from one starting shape: the defaults, the shape's legs named by their IDs
-    (L1, L2, … in order, as the Builder names a leg it adds) and, for a credit shape, the credit-trade
-    exits."""
-    import copy
-
-    s = SHAPES[shape]
-    spec = copy.deepcopy(WIZARD_DEFAULTS)
-    spec["legs"] = [{**copy.deepcopy(leg), "name": f"L{i + 1}"} for i, leg in enumerate(s["legs"])]
-    spec["exit"] = dict(CREDIT_RULES) if s["credit"] else {"close_at_dte": 21}
-    return spec
 
 
 def _gate(name: str, fn) -> dict:
@@ -227,16 +151,6 @@ def schema(today: date | None = None) -> dict:
         "limits": sorted(arms_mod.LIMIT_KEYS),
         "sizes": {k: sorted(v) for k, v in sizing.SIZE_KEYS.items()},
         "progression": sorted(sizing.PROGRESSION_KEYS),
-        "shapes": {
-            k: {
-                "label": s["label"],
-                "about": s["about"],
-                "risk": s["risk"],
-                "credit": s["credit"],
-                "spec": wizard_spec(k),
-            }
-            for k, s in SHAPES.items()
-        },
         "credit_rules": dict(CREDIT_RULES),
         "strategy": strategies.schema(),
         "entry_presets": entrypresets.schema(),
@@ -566,7 +480,7 @@ def chain_slice(chain, strikes: list[float], spot: float) -> list[dict]:
     return out
 
 
-#: The strategies sold for a credit when short: they start from the credit-trade exits, as the wizard's
+#: The strategies sold for a credit when short: they start from the credit-trade exits, as the Builder's
 #: credit shapes do.
 #: The DTE from which the 21-day close is kept: a trade entered nearer than this would close at once.
 CLOSE_AT_DTE_FROM = 35
@@ -575,7 +489,7 @@ CREDIT_STRATEGIES = {"option", "vertical", "straddle", "strangle", "iron_condor"
 
 def strategy_answer(name: str, given: dict | None) -> dict:
     """`cli builder-strategy`: the strategy's legs and expiry for the legs section, and a whole
-    automation from it for the wizard (the wizard's defaults, the legs, the expiry and, for a credit
+    automation from it for the Builder (`STRATEGY_DEFAULTS`, the legs, the expiry and, for a credit
     strategy, the credit-trade exits). A setting it cannot build from comes back as a problem."""
     import copy
 
@@ -585,7 +499,7 @@ def strategy_answer(name: str, given: dict | None) -> dict:
         return {"ok": True, "strategy": name, "problems": [str(exc)]}
     s = built["settings"]
     credit = name in CREDIT_STRATEGIES and s.get("direction", "short") == "short" or name == "jade_lizard"
-    spec = {**copy.deepcopy(WIZARD_DEFAULTS), "legs": built["legs"], "expiry": built["expiry"]}
+    spec = {**copy.deepcopy(STRATEGY_DEFAULTS), "legs": built["legs"], "expiry": built["expiry"]}
     exit_rules = dict(CREDIT_RULES) if credit else {"close_at_dte": 21}
     if s["dte"] < CLOSE_AT_DTE_FROM:
         exit_rules.pop("close_at_dte", None)  # a 21-day close would end a nearer trade the next session
@@ -599,7 +513,7 @@ def strategy_answer(name: str, given: dict | None) -> dict:
 
 def entry_answer(name: str, given: dict | None, filters: list[dict] | None) -> dict:
     """`cli builder-entry`: the entry preset's `entry` and the gates of the filters stacked on it, in
-    their order, for the signal section and the wizard. A preset or setting it cannot build from comes
+    their order, for the Builder's entry section. A preset or setting it cannot build from comes
     back as a problem, named by the filter it belongs to."""
     problems: list[str] = []
     try:
