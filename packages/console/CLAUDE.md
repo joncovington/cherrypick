@@ -130,7 +130,11 @@ alone):
     view now; the page derives no state. Paper only: nothing here places an order. One automation's
     own page (`/automations/automation/<name>`, framed as the groups tab) reads only: its rule, its
     switches' state, its record and its decisions, each filtered to its name from the module's own
-    endpoints (in the automations ledger an arm is the automation's name).
+    endpoints (in the automations ledger an arm is the automation's name). Its "Is it working?"
+    (`/api/automations/automation/reading`, `readers/automationReading.ts`) passes through the
+    backtest package's `read automation-reading` for the pinned run, with the forward rule's
+    `min_obs` as the declared sample; the page only scales the figures onto a strip and a chart. A
+    licensed run's figures are withheld while `backtestResultsOn` is false.
   - **The Builder's form reads the module's schema and "Today, live"; neither writes.** The Builder
     is Automations' `builder` tab (`/builder` redirects there; `g u` is its tab chord,
     `navLinks.TAB_SHORTCUTS`). The form's choices are `cli builder-schema`

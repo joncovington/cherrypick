@@ -136,3 +136,146 @@ def reference(
         "band_resamples": resamples,
         "sample_computed": stats.sessions_needed(sd, mean) if mean > 0 else None,
     }
+
+
+# --------------------------------------------------------------------------- paper against the reference
+#: Fewer paper trades than this and the page says "too few" rather than a place.
+MIN_PAPER = 5
+#: The band is drawn this many trades past the paper record, so the page shows the road ahead.
+AHEAD = 20
+
+
+def place(value: float, low: float, high: float) -> str:
+    """`below`, `inside` or `above` the closed range [low, high]."""
+    return "below" if value < low else "above" if value > high else "inside"
+
+
+def percentile_of(sorted_values: list[float], x: float) -> float:
+    """Where `x` falls among the run's trade nets, 0 to 100: the share at or below it (ties half)."""
+    below = sum(1 for v in sorted_values if v < x)
+    equal = sum(1 for v in sorted_values if v == x)
+    return round(100 * (below + equal / 2) / len(sorted_values), 1)
+
+
+def reading(
+    doc: dict,
+    name: str,
+    paper: list[dict],
+    entries: dict[str, int] | None = None,
+    *,
+    declared: int | None = None,
+    resamples: int = RESAMPLES,
+    seed: int = SEED,
+) -> dict:
+    """Automation `name`'s paper record (`paper`: its closed trades in close order, each with `session` and
+    `net`) set against its pinned Builder run `doc`.
+
+    - Each trade's place against the run's usual range (10th to 90th percentile of a trade's net) and its
+      percentile among the run's trades.
+    - The running net, with the run's band of paths drawn to `AHEAD` trades past the record, and where the
+      running net now sits in the band at its own trade count.
+    - The sample: `declared` (the automation's forward rule's `min_obs`) when given, else the run's
+      computed one, with how many trades paper has.
+    - Paper's entry rate from the session register (`entries`: entered and missed arm-days; pending ones
+      are not counted), beside the run's.
+    - `state`: `no_reference` (the run has too few trades), `no_trades`, `too_few` (under `MIN_PAPER`),
+      else the running net's place: `inside`, `below` or `above` the band.
+    """
+    n = len(paper)
+    ref = reference(doc, name, horizon=max(HORIZON, n + AHEAD), resamples=resamples, seed=seed)
+    entered = (entries or {}).get("entered", 0)
+    missed = (entries or {}).get("missed", 0)
+    paper_entry = {
+        "entered": entered,
+        "missed": missed,
+        "rate": round(entered / (entered + missed), 4) if entered + missed else None,
+    }
+    if ref["insufficient"]:
+        return {"reference": ref, "state": "no_reference", "paper": {"trades": n, "entry": paper_entry}}
+    p = ref["percentiles"]
+    ranked = sorted(_net(t) for t in doc.get("trades") or [] if t.get("arm", name) == name)
+    rows, total = [], 0.0
+    for i, t in enumerate(paper, start=1):
+        net = float(t.get("net") or 0.0)
+        total += net
+        rows.append(
+            {
+                "i": i,
+                "session": t.get("session"),
+                "net": round(net, 2),
+                "place": place(net, p["p10"], p["p90"]),
+                "percentile": percentile_of(ranked, net),
+                "running": round(total, 2),
+            }
+        )
+    counts = {k: sum(1 for r in rows if r["place"] == k) for k in ("below", "inside", "above")}
+    at = ref["band"][n - 1] if n else None
+    running_place = place(total, at["p10"], at["p90"]) if at else None
+    state = "no_trades" if n == 0 else "too_few" if n < MIN_PAPER else running_place
+    needed = declared if isinstance(declared, int) and declared > 0 else ref["sample_computed"]
+    return {
+        "reference": ref,
+        "state": state,
+        "paper": {
+            "trades": n,
+            "rows": rows,
+            "counts": counts,
+            "net": round(total, 2),
+            "mean": round(total / n, 2) if n else None,
+            "running_place": running_place,
+            "band_at": at,
+            "entry": paper_entry,
+        },
+        "sample": {
+            "needed": needed,
+            "basis": "declared"
+            if needed is not None and needed == declared
+            else "computed"
+            if needed is not None
+            else None,
+            "have": n,
+        },
+    }
+
+
+def paper_record(db_path: str, name: str) -> tuple[list[dict], dict[str, int]]:
+    """Automation `name`'s closed paper trades in close order (core's ledger reader, read-only) and its
+    session register's entered and missed arm-days. Empty when the ledger does not exist yet."""
+    import sqlite3
+    from pathlib import Path
+
+    from cherrypick.core import ledgers as core_ledgers
+
+    if not Path(db_path).exists():
+        return [], {}
+    conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    conn.row_factory = sqlite3.Row
+    try:
+        rows = [r for r in core_ledgers.READERS["ensemble_trade"](conn) if r.get("arm") == name]
+        rows.sort(key=lambda r: (str(r.get("session") or ""), str(r.get("exit_time") or "")))
+        paper = [{"session": r.get("session"), "net": r.get("net_pnl")} for r in rows]
+        try:
+            counts = dict(
+                conn.execute(
+                    "SELECT outcome, COUNT(*) FROM ensemble_entries WHERE arm = ? GROUP BY outcome", (name,)
+                ).fetchall()
+            )
+        except sqlite3.OperationalError:
+            counts = {}
+    finally:
+        conn.close()
+    return paper, {k: int(v) for k, v in counts.items()}
+
+
+def paper_db_path() -> str:
+    """The automations paper ledger: its override, else `data/automations/paper_trades.db` (the module's own
+    rule, spelt here because this package imports no strategy module)."""
+    import os
+
+    from cherrypick.core import home
+
+    return (
+        os.environ.get("AUTOMATIONS_DB_PATH")
+        or os.environ.get("ENSEMBLE_DB_PATH")
+        or str(home.data_dir("automations") / "paper_trades.db")
+    )

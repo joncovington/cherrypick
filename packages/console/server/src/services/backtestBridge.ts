@@ -50,7 +50,8 @@ export type BacktestRequest =
   | { kind: "run"; id: string; capital?: number; riskPct?: number; riskUnit?: string; ddPct?: number }
   | { kind: "trades"; id: string; arm: string }
   | { kind: "path"; id: string; arm: string; session: string; position: string }
-  | { kind: "summaries"; ids: string[] };
+  | { kind: "summaries"; ids: string[] }
+  | { kind: "reading"; name: string; run: string; declared: number | null };
 
 function spawnRequest(req: BacktestRequest): Promise<SpawnedJson> {
   if (req.kind === "overview") {
@@ -65,6 +66,11 @@ function spawnRequest(req: BacktestRequest): Promise<SpawnedJson> {
   }
   if (req.kind === "summaries") {
     return spawnModuleCliAsync(["-m", "cherrypick.backtest", "read", "summaries", "--ids", req.ids.join(",")], UNAVAILABLE);
+  }
+  if (req.kind === "reading") {
+    const args = ["-m", "cherrypick.backtest", "read", "automation-reading", "--name", req.name, "--id", req.run];
+    if (req.declared !== null) args.push("--declared", String(req.declared));
+    return spawnModuleCliAsync(args, UNAVAILABLE, [0, 1]);
   }
   if (req.kind === "path") {
     const args = ["-m", "cherrypick.backtest", "read", "path", "--id", req.id, "--arm", req.arm];
@@ -105,7 +111,9 @@ function memo(req: BacktestRequest, now: number): Promise<SpawnedJson> {
           ? `path|${req.id}|${req.arm}|${req.session}|${req.position}`
           : req.kind === "summaries"
             ? `summaries|${req.ids.join(",")}`
-            : `run|${req.id}|${String(req.capital ?? "")}|${String(req.riskPct ?? "")}|${req.riskUnit ?? ""}|${String(req.ddPct ?? "")}`;
+            : req.kind === "reading"
+              ? `reading|${req.name}|${req.run}|${String(req.declared ?? "")}`
+              : `run|${req.id}|${String(req.capital ?? "")}|${String(req.riskPct ?? "")}|${req.riskUnit ?? ""}|${String(req.ddPct ?? "")}`;
   const hit = cache.get(key);
   if (hit !== undefined && now - hit.at < TTL_MS) return hit.value;
   // Expired entries go when anything is read, so the map holds at most a window's worth of ids.
@@ -134,6 +142,17 @@ export async function readFullSetProgress(now = Date.now()): Promise<BridgedResu
 
 /** The caller has already checked `id` against `BACKTEST_RUN_ID`, `capital` against
  *  `BACKTEST_CAPITAL` and `riskPct` against `BACKTEST_RISK_PCT`. */
+/** An automation's paper record against its pinned Builder run (`read automation-reading`). The caller
+ *  has checked the name and the run's shape; the licence gate is the caller's too. */
+export async function readAutomationReading(
+  name: string,
+  run: string,
+  declared: number | null,
+  now = Date.now(),
+): Promise<BridgedResult<Record<string, unknown>>> {
+  return shape<Record<string, unknown>>(await memo({ kind: "reading", name, run, declared }, now), (j) => j);
+}
+
 export async function readBacktestRun(
   id: string,
   capital?: number,

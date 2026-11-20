@@ -735,3 +735,74 @@ export interface IdeaActionResult {
   row?: Record<string, unknown>;
   verdict?: IdeaHeldOutRead["verdict"];
 }
+
+/** The 10th, 50th and 90th percentile of the running net after `k` trades of the pinned run. */
+export interface ReferenceBandPoint {
+  k: number;
+  p10: number;
+  p50: number;
+  p90: number;
+}
+
+/** An automation's backtest reference, from its pinned Builder run (`backtest read automation-reading`). */
+export interface AutomationReference {
+  run: string;
+  automation: string;
+  symbol: string | null;
+  first: string | null;
+  last: string | null;
+  trades: number;
+  sessions: number | null;
+  insufficient: boolean;
+  min_trades?: number;
+  mean?: number;
+  sd?: number;
+  /** p10, p25, p50, p75, p90 of a trade's net: the usual range is p10 to p90. */
+  percentiles?: Record<string, number>;
+  entry_rate?: number | null;
+  missed?: Record<string, number>;
+  exits?: Record<string, number>;
+  band?: ReferenceBandPoint[];
+  sample_computed?: number | null;
+}
+
+export type ReadingPlace = "below" | "inside" | "above";
+
+/** One paper trade against the reference. */
+export interface ReadingRow {
+  i: number;
+  session: string | null;
+  net: number;
+  place: ReadingPlace;
+  /** Where the trade falls among the run's trades, 0 to 100. */
+  percentile: number;
+  running: number;
+}
+
+/**
+ * `GET /api/automations/automation/reading?name=`: the automation's paper record set against its pinned
+ * Builder run, computed by the backtest package. `pinned` null: no run pinned. `withheld`: the run is
+ * licensed and licensed results are not shown now.
+ */
+export interface AutomationReading {
+  name: string;
+  pinned: string | null;
+  withheld: boolean;
+  error: string | null;
+  reading: {
+    state: "no_reference" | "no_trades" | "too_few" | ReadingPlace;
+    licensed: boolean;
+    reference: AutomationReference;
+    paper: {
+      trades: number;
+      rows?: ReadingRow[];
+      counts?: Record<ReadingPlace, number>;
+      net?: number;
+      mean?: number | null;
+      running_place?: ReadingPlace | null;
+      band_at?: ReferenceBandPoint | null;
+      entry: { entered: number; missed: number; rate: number | null };
+    };
+    sample?: { needed: number | null; basis: "declared" | "computed" | null; have: number };
+  } | null;
+}

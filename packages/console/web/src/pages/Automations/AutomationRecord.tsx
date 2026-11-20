@@ -11,11 +11,12 @@ import { fmtMoney } from "../../lib/format";
 import { blockWords } from "../Builder/specWords";
 import { TradeShape } from "../Builder/TradeShape";
 import { ClosedStructures, OpenTable } from "./AutomationsPages";
+import { WorkingSection } from "./AutomationWorking";
 
 /**
  * One automation's page (`/automations/automation/<name>`): everything about one automation in one
- * place, in the order every arm page follows: what it does, then what it has done, then what it
- * decided. It reads only. Its switches and its group are changed in Groups (the drill-in this page
+ * place, in the order every arm page follows: what it does, whether it is working against its pinned
+ * backtest reference, then what it has done, then what it decided. It reads only. Its switches and its group are changed in Groups (the drill-in this page
  * links to, where changes are staged and reviewed), and its rule in the Builder.
  *
  * In the automations ledger an arm is the automation's name, so its record is the module's own rows
@@ -113,6 +114,7 @@ export function RuleCard({ name, help }: { name: string; help: CardHelpContent }
 
 const JUMPS = [
   { id: "automation-rule", label: "The rule" },
+  { id: "automation-working", label: "Is it working?" },
   { id: "automation-record", label: "What it did" },
   { id: "automation-decisions", label: "Decisions" },
 ] as const;
@@ -174,6 +176,7 @@ export function AutomationRecordPage({ name }: { name: string }) {
           <TradeShape name={name} />
         </Card>
       </Section>
+      <WorkingSection name={name} />
       <Section id="automation-record" concept="hist" tag="what it did" question="What has it done on paper?">
         <FliesTile title="net P&L" value={line === undefined ? (perf.data === undefined ? null : "—") : fmtMoney(line.net)} tone={line === undefined ? "dim" : line.net > 0 ? "pos" : line.net < 0 ? "neg" : "dim"} foot="net at the suite's slippage model, closed structures" />
         <FliesTile title="drawdown" value={line === undefined || line.trades === 0 ? "—" : fmtMoney(-line.drawdown)} tone={line !== undefined && line.drawdown > 0 ? "neg" : "dim"} foot="largest peak-to-trough fall of the running net" />

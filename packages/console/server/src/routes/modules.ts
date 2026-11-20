@@ -82,6 +82,7 @@ import { buildGexProfile, gexSymbols } from "../services/gexProfile.js";
 import { buildGexPanel } from "../services/gexPanel.js";
 import { readLogTail } from "../readers/logs.js";
 import { getFeatures } from "../services/featuresBridge.js";
+import { readAutomationReadingFor } from "../readers/automationReading.js";
 import { readSystemPanel } from "../services/suite.js";
 import { suiteEra } from "../readers/db.js";
 
@@ -518,6 +519,12 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
   app.get("/api/automations/groups", async () => readAutomationGroups());
   app.get("/api/automations/builder", async () => readAutomationsBuilder());
   app.get("/api/automations/builder/schema", async () => readBuilderSchema());
+  // One automation's paper record set against its pinned Builder run (the backtest package computes it).
+  app.get("/api/automations/automation/reading", async (req, reply) => {
+    const name = String(((req.query ?? {}) as Record<string, unknown>)["name"] ?? "");
+    if (!/^[a-z0-9][a-z0-9-]{1,47}$/.test(name)) return reply.code(400).send({ error: "name: an automation's name" });
+    return readAutomationReadingFor(name);
+  });
   app.get("/api/curve/history", async (req) => {
     const q = (req.query ?? {}) as Record<string, unknown>;
     const pick = (k: string, max: number): string | null => {

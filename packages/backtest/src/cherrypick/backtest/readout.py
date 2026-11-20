@@ -416,6 +416,26 @@ def automation_reference(name: str, run: str) -> dict:
     return {"ok": False, "error": f"no Builder run {run!r} for {name}"}
 
 
+def automation_reading(name: str, run: str, declared: int | None = None) -> dict:
+    """Automation `name`'s paper record set against its pinned Builder run `run`
+    (`automationref.reading`): each trade's place in the run's usual range, the running net in its band,
+    the sample (`declared`, the forward rule's `min_obs`, else computed) and the entry rates."""
+    from . import automationref
+
+    if not AUTOMATION_NAME.match(name or ""):
+        return {"ok": False, "error": "name must be an automation's name"}
+    docs, _unreadable = _builder_docs(name)
+    for doc, licensed in docs:
+        if doc.get("name") == run:
+            paper, entries = automationref.paper_record(automationref.paper_db_path(), name)
+            try:
+                out = automationref.reading(doc, name, paper, entries, declared=declared)
+            except (KeyError, TypeError, ValueError, AttributeError, ZeroDivisionError) as exc:
+                return {"ok": False, "error": f"the result could not be read: {exc}"}
+            return {"ok": True, "licensed": licensed, "run": run, "automation": name, **out}
+    return {"ok": False, "error": f"no Builder run {run!r} for {name}"}
+
+
 def signal_study(name: str) -> dict:
     """One signal study's whole result, or a refusal naming why."""
     if not SIGNAL_NAME.match(name or ""):
