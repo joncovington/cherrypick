@@ -12,14 +12,14 @@ describe("module nav links", () => {
   it("links every trading module: the live-capable ones on the rail, the rest through Experiments", () => {
     const linked = [...MODULE_LINKS, ...EXPERIMENT_LINKS].map((l) => l.to.slice(1)).filter((id) => id !== "experiments");
     expect([...linked].sort()).toEqual([...TRADING_MODULE_ORDER].sort());
-    expect(MODULE_LINKS.map((l) => l.to)).toEqual(["/meic", "/bwb", "/earnings", "/automations", "/experiments"]);
+    expect(MODULE_LINKS.map((l) => l.to)).toEqual(["/meic", "/bwb", "/earnings", "/experiments", "/automations"]);
     expect(EXPERIMENT_LINKS.map((l) => l.to)).not.toContain("/automations");
   });
 
   it("gives every link a distinct shortcut, Config's included", () => {
     // Automations took 5 when it joined the rail, so the keys before it kept their meaning.
     const keys = MODULE_LINKS.map((l) => l.key);
-    expect(keys).toEqual(["1", "2", "3", "5", "4"]);
+    expect(keys).toEqual(["1", "2", "3", "4", "5"]);
     const chords = [...SUITE_LINKS, CONFIG_LINK].map((l) => l.key);
     expect(new Set(chords).size).toBe(chords.length);
     expect(CONFIG_LINK.key).toBe("o");
