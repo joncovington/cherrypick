@@ -9306,6 +9306,101 @@ history and profile as items 80 and 81.
     figures are in `holdout-report.json` beside the results, written by the script's
     `holdout-report` step.
 
+### 94. The mean-reversion signal as a short-put entry time, a retest of items 17 and 18
+
+Declared 2026-11-19, before any option quote of it was read. The source is a sponsored screener demo
+reviewed that day: one of its three put-selling scans waits for RSI(14) under 30 on a name with good
+scores, then sells a put with a 75% or better chance of expiring worthless. Our nearest rule is
+`mr-300m`: the long mean-reversion setup (a lower Bollinger band touch with RSI(14) under 30) on names
+trading $300M a day. It passed the setup study's round 2 on stock fills. Only the signal and baseline
+counts were computed before writing this, from our stock history and the earnings calendar: 1,226
+signal entries (897 before the split, 329 after) and 6,122 baselines.
+
+**A retest, said out loud.** Item 17 put this signal under a put spread (short nearest 0.20 delta)
+against the same random-day baselines. That cell cleared its t bar in both halves but failed Holm. Its
+excess came mostly from the baselines losing, and it sat near breakeven on its own. Item 18 then spent
+the holdout on that cell and got no verdict: too few of its legs could be traded. This item changes the
+structure to a cash-secured put, which has no long leg and no credit floor. **Both windows below have
+already been read for this signal in spread form**, so even a pass here is provisional: it would lead
+to a forward check, not to a screen.
+
+- **Question:** does selling a monthly put on the session after an `mr-300m` signal earn, after costs,
+  more than the bill on its cash and more than the same delta financed? And does it beat the same put
+  sold on random sessions of the same name and year?
+- **Where the edge would live:** **timing**. After a sharp drop in a liquid name, put skew is rich and
+  the stock has bounced more often than chance (the setup's stock result). A put sold then collects
+  both. Against it: the premium alone measured fair to slightly negative after costs (the short-put
+  delta studies and the delta-hedged tests). Item 17 found the signal's spread version near breakeven.
+- **The signal and the baselines,** item 14's rules, restated in the script:
+  - **The universe:** every name whose `peaks` reach $300M a day, less the leveraged, inverse and
+    volatility funds (item 17's exclusion).
+  - **The signal:** the setup engine's `reversion` entries, allowed only on a session the name traded
+    $300M or more, counted by `study.counted` (in the universe, outside a corporate-action shadow).
+  - **The entry:** the close of the session after the signal.
+  - **Baselines:** five per signal, from the same name. Each is a random session of the same calendar
+    year on which the name was in the universe at $300M the session before. The draw is seeded by the
+    trade's id and uses the same exclusions.
+  - **Exclusions:** no standard monthly 30-45 days out; the expiry after the window; an earnings report
+    between entry and expiry (Dolt's calendar); a suspected unadjusted split inside the trade. Each is
+    counted.
+- **The trade (`SPEC`):**
+  - **Structure:** on the latest standard monthly 30-45 calendar days out, a **short put nearest 0.25
+    delta** (about the scan's 75%), cash-secured, with buying power of strike × 100. Delta comes from
+    the chain's own mids (the kit's `Chain`: Black-76 at r = 0 off the parity forward). A put without a
+    two-sided quote skips the entry, counted.
+  - **Exit:** held to expiry and settled at the name's raw close on the expiry session (the technicals
+    stock history).
+  - **Money:** fills at mid with core's slippage model, core's option fees, and core's assignment fee
+    when it finishes in the money. Each sits in its own column.
+  - **Reads:** one end-of-day chain per entry, its own session's (`fetch-chain-paths` with a one-day
+    path), so no other session is fetched.
+- **Window:** entries from 2021-01-04 (the tier's end-of-day reach) to expiries on or before
+  2026-11-20. One run, **cut at 2025-07-01**: design before, holdout from. The holdout is read only
+  after a design pass.
+- **The rule, two literals in the script; a pass needs both:**
+  - **`RULE`, the three bars** on **one row per monthly expiry**: the signal entries on that expiry
+    across the names pooled, net and buying power summed.
+    - **Capital:** the net less the 3-month bill on the buying power over the days held, one-sided
+      t ≥ 2.0.
+    - **Tail:** 10,000 draws, seed 94, the sample's own expiries a year.
+    - **Delta applies:** each entry's delta is financed on the same capital.
+    - **Floors:** fewer than 40 design expiries, or 12 holdout expiries, is no verdict.
+  - **`TIMING_RULE`, the timing's own information:** per entry, net over buying power, signal entries
+    against baselines.
+    - **Design:** the difference of means at one-sided t ≥ 2.0, with standard errors clustered by expiry.
+    - **Holdout:** read only after a design pass of both rules; the difference above zero.
+    - **Floors:** fewer than 100 entries on either side in the design part, or 30 in the holdout, is no
+      verdict.
+  - One judged arm (`put25`), so no Holm.
+- **Reported, never judged:**
+  - the same rules at 0.16 delta (our short-put list's strike);
+  - the signal entries whose put passes `core.legbars`' spread bar (10% of mid or a nickel; the store
+    holds no open interest);
+  - both baselines on their own;
+  - per part and year: entries, win rate, assignments, mean net, credit, slippage;
+  - each exclusion's and skip's count.
+- **Rival explanations, each with its check:**
+  - *It is the market's drift on a long-delta position:* **Check:** the delta bar; the timing rule
+    compares against the same structure on random days.
+  - *The baselines lose, the signal doesn't earn (item 17's finding):* **Check:** RULE judges the signal
+    entries on their own; the timing rule alone cannot pass the arm.
+  - *Untradable strikes (item 18's no verdict):* **Check:** a naked put has no long wing. The
+    spread-bar subset is reported, and the fill pays core's slippage on every entry.
+  - *Hindsight in the windows:* **Check:** stated above. A pass is provisional and goes to a forward
+    check.
+- **Declared limits:** early assignment is not modelled (an upper bound); an ex-dividend date inside the
+  trade is kept (the forward carries it); the name list is today's history (survivorship); one contract
+  per entry, and entries on one expiry overlap; the setup engine's rule is read as it stands today.
+- **Data and results:** `packages/backtest/scripts/reversion_put_item94.py`, queued with `queue-chain`
+  after the full set (`--after fullset/mid-tlt-2`). Licensed: results stay under
+  `~/.cherrypick/data/backtest/results/research/item94/`, and this plan records the verdict without
+  figures.
+- **Decides:**
+  - **A pass:** provisional. A forward check on entries after 2026-11-20 decides whether a "sell a put
+    after a mean-reversion signal" alert is built.
+  - **A fail or no verdict:** with items 17 and 18, the mean-reversion signal adds nothing to selling
+    premium on its names; the oversold-put screen is not built.
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:
