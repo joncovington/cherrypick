@@ -9527,6 +9527,25 @@ been read at daily resolution.
   - **Across a split** a held lot's target is restated at the ratio (rounded up to the cent), and
     `chain`'s last lot is carried at the ratio, as a broker restates resting orders.
   - **The daily guard** compares each session's last regular-hours minute with its raw daily close.
+- **Result (2026-11-20): fail, every arm; `session` misses only on the correction for testing four
+  arms.** One run over 2016-01-04 to 2026-10-31, all 17 funds, raw prices, the 2026 fee schedule
+  (#1334). A first run on the old fee model was set aside unread.
+  - **`RULE` passes for every arm**, in both parts: the lots earn well over the bill on their cost,
+    and the tail bar holds.
+  - **`CONTROL_RULE` fails every arm.** `session` passes every check but Holm: its design edge over
+    random entries is positive on about three funds in four, in both design halves and at three times
+    the spread, with a one-sided t of about 2.4 (p about 0.016, where Holm across four arms needs
+    0.0125). The holdout edge stays positive, on more than half the funds. `once` misses Holm by a
+    hair and has a negative second half; `decay` has a negative second half; `chain`'s t is under 2.
+  - **Against item 26:** at minute resolution the timing edge is several times item 26's daily
+    reading (whose t was under 1), and about a quarter of lots sell the session they were bought.
+  - **Reported:** buy-and-hold beats every arm on the equity-index funds; the worst drawdown on a
+    fund comes near its whole $3,000 budget; lots on the commodity and China funds stayed open for
+    years (the longest from 2016 to the window's end). The hourly cross-check ranks the arms as the
+    minute replay does.
+  - Every figure is in `~/.cherrypick/data/research/item95/results.json`.
+- **What this decides:** the fail branch. Paper keeps all four arms; the console keeps saying the
+  rule is not a tested edge. `session` is the strongest arm and the one to watch in paper.
 - **Decides:**
   - **A pass:** a proposal to make the passing arm paper's default and to size a live pilot from its
     drawdown and longest open lot. Nothing changes in the running module without the user and a
@@ -9589,6 +9608,21 @@ nothing was measured. tastytrade lets TQQQ trade overnight and not SOXL, so the 
   `~/.cherrypick/data/research/item96/overnight_bars.db`, and item 95's day bars. The replay is
   `packages/backtest/scripts/share_ladder_item96.py`, run as a research-queue chain. Results stay
   under `~/.cherrypick/data/research/item96/`; this plan records the verdict.
+- **Result (2026-11-20): provisional pass.** One run over 2024-09-20 to 2026-10-31, the 2026 fee
+  schedule; all 17 funds had overnight bars on more than half their sessions and were judged.
+  - **`RULE` passes** on the all-hours `session` lots.
+  - **`PAIRED_RULE` passes:** all hours beat paper hours on 14 of 17 funds, with a one-sided t a
+    little over 2, still positive at three times the half-spread.
+  - **Where it comes from:** the commodity, gold-miner and China funds (overnight falls bought and
+    sold before the open). SOXL does worse in all hours, and TQQQ, the one fund tastytrade trades
+    overnight, is about the same either way. The other arms gain less (`chain` on half the funds).
+  - **Read it with its limits:** two years; thin overnight prints standing in for quotes at a
+    half-cent half-spread on funds whose overnight spreads are likely wider; no broker in the suite
+    trades most of these funds overnight.
+  - Every figure is in `~/.cherrypick/data/research/item96/results.json`.
+- **What this decides:** a provisional pass leads to a proposal, not a change: an overnight paper arm
+  on TQQQ is the only one tastytrade could trade, and TQQQ shows no gain, so the proposal is to keep
+  paper's hours; the user decides.
 - **Decides:**
   - **A pass (provisional):** a proposal for an overnight paper arm on TQQQ, to check forward.
   - **A fail or no verdict:** the ladder keeps paper's hours.
