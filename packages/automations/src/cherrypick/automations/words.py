@@ -346,6 +346,12 @@ GATES: dict[str, Words] = {
         "about": "The open against the previous close, in percent.",
         "sentence": "the opening gap is {range}%",
     },
+    "open_change_pct": {
+        "label": "Move since the open",
+        "group": "Price move",
+        "about": "The price against today's open, in percent.",
+        "sentence": "the move since the open is {range}%",
+    },
     "above_ma": {
         "label": "Above a moving average",
         "group": "Trend",

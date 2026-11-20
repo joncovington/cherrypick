@@ -68,6 +68,12 @@ def gap_pct(ctx, min=None, max=None):
     return _between(v, min, max), v
 
 
+def open_change_pct(ctx, min=None, max=None):
+    """Spot against today's open, in percent: the move since the session opened, not the gap."""
+    v = _pct(ctx.snap.spot, ctx.snap.day_open)
+    return _between(v, min, max), v
+
+
 def vix_level(ctx, min=None, max=None):
     v = ctx.snap.vix
     return _between(v, min, max), v
@@ -229,6 +235,7 @@ REGISTRY = {
     "sd_change": ("market", sd_change),
     "change_pct": ("market", change_pct),
     "gap_pct": ("market", gap_pct),
+    "open_change_pct": ("market", open_change_pct),
     "vix_level": ("market", vix_level),
     "vix_change_pct": ("market", vix_change_pct),
     "above_ma": ("market", above_ma),
@@ -255,6 +262,7 @@ CORE_STAGE = {
     "sd_change": "signal",
     "change_pct": "signal",
     "gap_pct": "signal",
+    "open_change_pct": "signal",
     "vix_level": "signal",
     "vix_change_pct": "signal",
     "above_ma": "signal",

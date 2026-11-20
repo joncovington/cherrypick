@@ -22,6 +22,9 @@ beyond the latest release.
 
 ### What's new
 
+- **A filter on the move since the open.** The Builder's "Move since the open" (`open_change_pct`) reads
+  the price against today's open, in percent, beside the opening gap and the move since the previous
+  close.
 - **The ladder has live gates, a daily arm and an order path that ships in dry-run.** Its config gains
   a `live` block, shipped off, and `python -m cherrypick.ladder.live_loop` gains `--status` (every
   gate with its verdict, the account masked, dry-run or live), `--arm --confirm YES`, `--install-task`
