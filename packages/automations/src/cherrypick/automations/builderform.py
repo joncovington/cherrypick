@@ -37,7 +37,7 @@ from datetime import date, datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from cherrypick.core import signals
+from cherrypick.core import signals, structures
 
 from . import arms as arms_mod
 from . import enrolment, entrypresets, events, fieldtypes, gates, sizing, strategies, words
@@ -347,7 +347,14 @@ def payoff(config: dict, arm: dict, when: datetime, *, conn, cache_path: str, ev
 
     live = {**arm, "enabled": True}
     sym = live["symbol"].upper()
-    out: dict[str, Any] = {"ok": True, "name": live["name"], "symbol": sym, "sketch": sketch_mod.sketch(live)}
+    out: dict[str, Any] = {
+        "ok": True,
+        "name": live["name"],
+        "symbol": sym,
+        "sketch": sketch_mod.sketch(live),
+        # Credit or debit from the rule alone (`core.structures.entry_kind`), for the exits the page offers.
+        "entry_kind": structures.entry_kind(live),
+    }
     spec = config_mod.symbols(config, {live["name"]: live}).get(sym)
     if spec is None:
         live_why = f"no stream settings for {sym}"

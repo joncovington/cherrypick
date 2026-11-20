@@ -439,7 +439,7 @@ code (`AXES`), one setting changed at a time: credit stops at 1, 1.5, 2 and 3x, 
 and 75%, profit targets at 25, 50 and 75%, a close 15, 60 or 120 minutes before a same-day expiry or 7,
 14 or 21 days before a later one, the width (legs placed by points from another leg) at 0.5, 1.5 and
 2x, and each exit the automation sets switched off; its own value is the base, a stop kind it does not
-set is skipped where it sets the other, a stop its entry can't fire is skipped (`entry_kind`: a credit
+set is skipped where it sets the other, a stop its entry can't fire is skipped (`core.structures.entry_kind`: a credit
 where every bought leg is a wing placed further out from a sold one, a debit the other way round, both
 kinds where the rule doesn't say), and a setting the module's check refuses is listed and never
 replayed. Each runs under its own name, its group cap counting only its own positions and any gate

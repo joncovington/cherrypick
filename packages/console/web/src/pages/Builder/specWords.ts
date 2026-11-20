@@ -117,10 +117,12 @@ export function legSegs(W: BuilderWords, leg: Obj, byName: Record<string, Obj>):
   return [t(`${verb} `), { t: legPlain(leg), v: true }, t(" "), ...place, ...extra];
 }
 
-/** A filter gate. */
-export function gateSegs(W: BuilderWords, g: Obj): Seg[] {
-  const w = W.gates[String(g["gate"] ?? "")];
-  return w ? say(w.sentence, g, w, { range: W.range }) : [{ t: String(g["gate"] ?? "a filter"), v: true }];
+/** A filter gate, a setting left unset read as the gate's own default (RSI's 14). */
+export function gateSegs(W: BuilderWords, g: Obj, schema?: BuilderSchema): Seg[] {
+  const name = String(g["gate"] ?? "");
+  const w = W.gates[name];
+  const types = schema?.types?.gates[name];
+  return w ? say(w.sentence, g, w, { range: W.range, dflt: (slot) => types?.[slot]?.default }) : [{ t: name || "a filter", v: true }];
 }
 
 /** Each exit set, in the order the module words them (profit, loss, price, signal, time, events), then
@@ -192,7 +194,7 @@ export function automationWords(
   const expiry = expirySegs(W, schema, obj(spec["expiry"]));
   const skip = list(obj(spec["skip_events"])["labels"]).map((l) => schema.event_about?.[String(l)]?.name ?? String(l));
   const entry = entrySegs(W, schema, obj(spec["entry"]));
-  const filters = list(spec["gates"]).map((g) => gateSegs(W, obj(g)));
+  const filters = list(spec["gates"]).map((g) => gateSegs(W, obj(g), schema));
   const exits = exitSegs(W, schema, obj(spec["exit"]));
   const size = sizeSegs(W, schema, obj(spec["size"]));
   const limits = limitSegs(W, obj(spec["limits"]));

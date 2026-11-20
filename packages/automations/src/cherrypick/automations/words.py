@@ -461,6 +461,31 @@ GATES: dict[str, Words] = {
 #: How `{range}` reads with one or both bounds set.
 RANGE_WORDS = {"both": "between {min} and {max}", "min": "at least {min}", "max": "at most {max}"}
 
+#: When a filter is read, by its stage (`gates.CORE_STAGE`): the tag beside its line.
+STAGES = {
+    "signal": "before the order",
+    "chain": "on the chain",
+    "structure": "on the priced trade",
+}
+
+#: The exit groups the form gives a row each, in order; the rest are under "More options".
+EXIT_ROWS = ("Profit", "Loss", "Time", "Events")
+
+#: The exits a trade can start from: the module's credit-trade rules (`builderform.CREDIT_RULES`),
+#: or none, held to expiry. The form names the one the exits match, else Custom.
+EXIT_STARTS: dict[str, Words] = {
+    "credit_rules": {
+        "label": "Credit-trade rules",
+        "about": "The module's starting exits for a trade sold for a credit; each stays editable.",
+        "sentence": "Credit-trade rules",
+    },
+    "hold": {
+        "label": "Hold to expiry",
+        "about": "No exit: it settles at expiry.",
+        "sentence": "Hold to expiry",
+    },
+}
+
 # --------------------------------------------------------------------------- exits
 EXITS: dict[str, Words] = {
     "profit_target_pct": {
@@ -882,6 +907,9 @@ def schema() -> dict:
         "sources": SOURCES,
         "gates": GATES,
         "range": RANGE_WORDS,
+        "stages": STAGES,
+        "exit_rows": list(EXIT_ROWS),
+        "exit_starts": EXIT_STARTS,
         "exits": EXITS,
         "exit_parts": EXIT_PARTS,
         "strikes": STRIKES,

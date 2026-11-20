@@ -6,6 +6,7 @@ from __future__ import annotations
 from datetime import date
 from types import SimpleNamespace
 
+from cherrypick.core import structures
 from market import CALENDAR
 from test_builderform import _counts
 from test_paper_loop import at, world
@@ -87,6 +88,8 @@ def test_with_neither_it_names_both_reasons(tmp_path):
                   recorded=lambda a, t, e: (None, None, "no store"))  # fmt: skip
     assert out["state"] == "not_placed" and out["live"] and out["recorded"] == "no store"
     assert "curve" not in out
+    # Credit or debit is the rule's, so it is said even where no session places the legs.
+    assert out["entry_kind"] == structures.entry_kind(w.arms["iron-fly-1000"]) == "credit"
 
 
 def test_the_recorded_session_is_never_read_from_a_licensed_store(tmp_path, monkeypatch):

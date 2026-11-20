@@ -10,6 +10,7 @@ import { automationWords, blockWords } from "../src/pages/Builder/specWords";
 import { legText, TodayView } from "../src/pages/Builder/BuilderToday";
 import { SECTION_HELP } from "../src/pages/Builder/BuilderHelp";
 import { holdsCloseSnapshot } from "../src/pages/Builder/builderTips";
+import { exitFits, exitStart, unshown } from "../src/pages/Builder/FiltersExits";
 
 const html = (el: React.ReactElement) => renderToString(el).replace(/<!--\s*-->/g, "");
 
@@ -57,7 +58,7 @@ const STRATEGY: Strategy = {
 const CLOSED: OpenSections = { trade: false, entry: false, filters: false, exits: false, size: false };
 const NO_PAYOFF = { empty: false, data: null, stale: false, last: null };
 
-function form(p: { spec?: Record<string, unknown>; open?: Partial<OpenSections>; readOnly?: boolean; strategy?: Strategy | null; labels?: Record<string, "backtested" | "changed" | "not_backtested">; schema?: BuilderSchema }) {
+function form(p: { spec?: Record<string, unknown>; open?: Partial<OpenSections>; readOnly?: boolean; strategy?: Strategy | null; labels?: Record<string, "backtested" | "changed" | "not_backtested">; schema?: BuilderSchema; kind?: "credit" | "debit" | null }) {
   return html(
     <BuilderForm
       schema={p.schema ?? SCHEMA}
@@ -71,7 +72,7 @@ function form(p: { spec?: Record<string, unknown>; open?: Partial<OpenSections>;
       setStrategy={() => {}}
       preset={null}
       setPreset={() => {}}
-      payoff={NO_PAYOFF}
+      payoff={p.kind === undefined ? NO_PAYOFF : { ...NO_PAYOFF, last: { name: "x", symbol: "SPY", state: "not_placed", entry_kind: p.kind } }}
     />,
   );
 }
@@ -147,6 +148,7 @@ describe("the automation in words", () => {
   it("gives Groups one line a block in the same words", () => {
     const b = blockWords(W, SCHEMA, IC);
     expect(b.gates).toBe("VIX is between 14 and 30");
+    expect(blockWords(W, SCHEMA, { ...IC, gates: [{ gate: "rsi", max: 30 }] }).gates).toBe("RSI(14) is at most 30");
     expect(b.exit).toBe("Take profit at 50% of the most it can make; stop at a loss of 1× the credit; close with 21 days left");
     expect(blockWords(W, SCHEMA, { ...IC, gates: [], exit: {} }).exit).toBe("None: held to expiry.");
   });
@@ -271,6 +273,84 @@ describe("the one-page form", () => {
   it("puts a ? on each section, opening its own help", () => {
     const out = form({});
     for (const t of ["1 · Trade", "2 · Entry", "3 · Filters", "4 · Exits", "5 · Size and limits"]) expect(out).toContain(`aria-label="About ${t}"`);
+  });
+});
+
+describe("the filters", () => {
+  it("draws each gate as its line, its band as one, with the stage it is read at", () => {
+    const out = form({ open: { filters: true }, spec: { ...IC, gates: [{ gate: "vix_level", min: 14, max: 30 }, { gate: "rsi", max: 30 }, { gate: "mid_price", min: 0.5 }] } });
+    expect(out).toMatch(/<span class="b-filter-name" title="[^"]*">VIX level<\/span><span class="word">VIX is<\/span><span class="word">between<\/span><input id="g-0-min"[^>]*value="14"\/><span class="word">and<\/span><input id="g-0-max"[^>]*value="30"\/>/);
+    expect(out).toMatch(/<input id="g-1-min"[^>]*aria-label="at least" value=""\/>/);
+    expect(out).toMatch(/<input id="g-1-bars"[^>]*placeholder="5"/);
+    expect(out).toContain('<span class="chip b-stage">before the order</span>');
+    expect(out).toContain('<span class="chip b-stage">on the priced trade</span>');
+    expect(out).toContain('aria-label="Remove filter VIX level"');
+    expect(out).toContain("+ Add a filter");
+  });
+
+  it("says so when there are none", () => {
+    expect(form({ open: { filters: true }, spec: { ...IC, gates: undefined } })).toContain("No filters: every day the entry allows is entered.");
+  });
+});
+
+describe("the exits", () => {
+  it("names the starting set the exits are, Custom otherwise", () => {
+    expect(exitStart(SCHEMA, { ...SCHEMA.credit_rules })).toBe("credit_rules");
+    expect(exitStart(SCHEMA, {})).toBe("hold");
+    expect(exitStart(SCHEMA, { profit_target_pct: 50 })).toBeNull();
+    const out = form({ open: { exits: true }, spec: { ...IC, exit: { ...SCHEMA.credit_rules } }, kind: "credit" });
+    expect(out).toMatch(/class="b-start is-on" aria-pressed="true"[^>]*>Credit-trade rules<\/button>/);
+    expect(out).toContain("this trade enters for a credit");
+  });
+
+  it("gives profit, loss, time and events a row each, every exit set as its line", () => {
+    const out = form({ open: { exits: true }, spec: { ...IC, exit: { profit_target_pct: 50, stop_credit_multiple: 1, stop_dollars: 400, close_at_dte: 21 } }, kind: "credit" });
+    const rows = [...out.matchAll(/aria-label="(\w+) exits"/g)].map((m) => m[1]);
+    expect(rows).toEqual(["Profit", "Loss", "Time", "Events"]);
+    expect(out).toMatch(/<span class="word">Take profit at<\/span><input id="x-profit_target_pct"[^>]*value="50"\/><span class="word">% of the most it can make<\/span>/);
+    // Two stops at once, the first reached closes it.
+    expect(out).toContain('aria-label="Remove Stop loss, credit trades"');
+    expect(out).toContain('aria-label="Remove Stop loss in dollars"');
+    expect(out).toMatch(/aria-label="Add a profit exit"><option value="" selected="">\+ Add another<\/option>/);
+    // Both stops a credit trade can fire are set, so the loss row offers no more.
+    expect(out).not.toContain('aria-label="Add a loss exit"');
+    expect(out).toMatch(/role="switch" class="b-sw" aria-checked="false" aria-label="Events exits"/);
+  });
+
+  it("offers only the stop the trade can fire", () => {
+    expect(exitFits("stop_debit_pct", "credit")).toBe(false);
+    expect(exitFits("stop_credit_multiple", "debit")).toBe(false);
+    expect(exitFits("stop_credit_multiple", null) && exitFits("stop_debit_pct", undefined)).toBe(true);
+    const credit = form({ open: { exits: true }, spec: { ...IC, exit: {} }, kind: "credit" });
+    expect(credit).not.toContain('<option value="stop_debit_pct"');
+    expect(credit).toContain('<option value="stop_credit_multiple"');
+    const debit = form({ open: { exits: true }, spec: { ...IC, exit: {} }, kind: "debit" });
+    expect(debit).not.toContain('<option value="stop_credit_multiple"');
+    expect(debit).not.toContain(">Credit-trade rules</button>");
+  });
+
+  it("draws an event exit's minutes and its events as tags", () => {
+    const out = form({ open: { exits: true }, spec: { ...IC, exit: { avoid_events: { labels: ["FOMC"] } } } });
+    expect(out).toMatch(/<span class="word">Close<\/span><input id="x-avoid_events-before_close_min"[^>]*placeholder="60"/);
+    expect(out).toMatch(/<span class="b-tag">Fed decision \(FOMC\)<button type="button" aria-label="Stop closing ahead of Fed decision \(FOMC\)">/);
+  });
+
+  it("closes Edit as rule when the lines show it all, and opens it naming what they cannot", () => {
+    expect(unshown(W, { profit_target_pct: 50, trailing_stop: { dollars: 50, activate_dollars: 100 } })).toEqual([]);
+    expect(unshown(W, { trailing_stop: { dollars: 50, step: 5 }, hedge: true })).toEqual(["trailing_stop.step", "hedge"]);
+    const shut = form({ open: { exits: true }, spec: { ...IC, exit: { profit_target_pct: 50 } } });
+    expect(shut).toContain("the lines above show all of this rule");
+    const open = form({ open: { exits: true }, spec: { ...IC, exit: { trailing_stop: { dollars: 50, step: 5 } } } });
+    expect(open).toMatch(/<details class="b-more" open=""><summary>Edit as rule <span class="muted">opened by itself/);
+    expect(open).toContain("This rule also sets <code>trailing_stop.step</code>");
+  });
+
+  it("draws a signal exit with the entry's own trigger lines", () => {
+    const sig = { trigger: { signal: { kind: "cross", a: { name: "close" }, b: { name: "sma", n: 20 }, direction: "below", seed: true }, window: { open: "09:45", close: "15:45" }, within: null }, bar_minutes: 5 };
+    const out = form({ open: { exits: true }, spec: { ...IC, exit: { signal: sig } } });
+    expect(out).toContain('<div class="b-exit-trigger">');
+    expect(out).toMatch(/<input id="x-sig-window.open"[^>]*value="09:45"/);
+    expect(out).toMatch(/<details class="b-more"><summary>More options <span class="muted">1<!-- --> set|<details class="b-more"><summary>More options <span class="muted">1 set/);
   });
 });
 
