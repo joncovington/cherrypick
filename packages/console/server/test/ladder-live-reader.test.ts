@@ -77,7 +77,7 @@ describe("open and sold live lots", () => {
   it("lists the lots held with their age, hospital flag and the sell resting at the broker", () => {
     populatedLiveLedger(dir).close();
     const p = readLadderLive(config, NOW);
-    const [old, recent] = p.openLots; // oldest first
+    const [recent, old] = p.openLots; // newest buy first
     expect(recent).toMatchObject({ positionId: "session:TQQQ:2026-10-15:1", symbol: "TQQQ", quantity: 20, entryValue: -1000, daysHeld: 0, hospital: false });
     expect(recent!.sell).toEqual({ side: "sell", state: "working", limit: 52, tif: "GTC_EXT", final: false });
     expect(old).toMatchObject({ symbol: "SOXL", daysHeld: 25, hospital: true, sell: null });

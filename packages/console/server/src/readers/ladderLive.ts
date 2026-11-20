@@ -172,7 +172,7 @@ function readLedger(db: DatabaseHandle, today: string, now: Date): Read {
   const sells = new Map(orderRows.flatMap((o) => (str(o["client_id"]) === null ? [] : [[str(o["client_id"])!, o] as const])));
   const hasLots = hasTable(db, "ladder_positions");
   const openLots = hasLots
-    ? all(db, "SELECT * FROM ladder_positions WHERE status = 'open' ORDER BY buy_time, id").map((r) => openLot(r, today, sells))
+    ? all(db, "SELECT * FROM ladder_positions WHERE status = 'open' ORDER BY buy_time DESC, id DESC").map((r) => openLot(r, today, sells))
     : [];
   // The totals and the rows come from one list, so the chip cannot disagree with the table.
   const sold = hasLots ? all(db, "SELECT * FROM ladder_positions WHERE status = 'closed' ORDER BY sell_time DESC, id DESC").map(closedLot) : [];
