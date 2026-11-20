@@ -161,6 +161,7 @@ def test_each_trigger_form_the_schema_offers_is_one_core_accepts():
         "window": {"open": "09:45", "close": "10:00"},
         "within": None,
         "daily": False,
+        "developing": False,
     }
     ec.validate_trigger({k: sig[k] for k in forms["signal"]})
 
