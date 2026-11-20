@@ -8,7 +8,8 @@ No paywalled data is involved. Most readings come from data the suite already pr
 stream cache (index and vol levels, sector board, USO/GLD commodity proxies, from the broker feed)
 and the GEX recorder's gamma flip and walls. Beside them sit free public files that
 `scripts/fetch_market_files.py` fetches outside the package into `~/.cherrypick/data/market-files/`:
-Cboe's index histories and delayed SPX chain, Treasury's yield curve, BEA's release calendar
+Cboe's index histories, the broker's SPX option greeks (for the 30-day 25-delta risk reversal),
+Treasury's yield curve, BEA's release calendar
 (FRED's too, only once a FRED key is stored), and OCC's daily option volume by underlying — the
 pack's **hot options** ranking, the Hot Options Report's index segment and top single names rebuilt
 from OCC's own public file. The week's earnings, with implied moves, come from

@@ -22,6 +22,13 @@ beyond the latest release.
 
 ### What's new
 
+- **The morning pack's SPX risk reversal comes from the broker.** Cboe's delayed SPX chain moved
+  behind a host that refuses scripts on 2026-11-19, so every market-files run warned and the row
+  stopped. The 30-day 25-delta risk reversal is now read from the broker's SPXW greeks by the
+  evening run, between the close and 20:15 ET (when SPX options' overnight session opens); a morning
+  retry reports a missing session rather than take overnight values. Rows keep a `source`, and the
+  Cboe and broker IVs were never compared on one session, so read a step across 11-19 with that in
+  mind.
 - **Backtested exits no longer go blind when a wing leaves the recorded strikes.** The same-day
   stores hold a band of strikes around the spot, so on a day the market ran, a condor's far wing
   could drop out of it and the position had no price for the rest of the day: its stop or target

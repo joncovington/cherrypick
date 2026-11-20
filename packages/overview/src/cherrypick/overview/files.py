@@ -16,7 +16,6 @@ import csv
 import io
 import json
 import math
-import re
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -43,10 +42,6 @@ TREASURY_URL = (
 # The tenors the pack reports, by Treasury's own column names: `cherrypick.core.treasury`'s, since
 # the fair-value build reads the same file for its risk-free rate (2026-10-28).
 TENORS = _treasury.TENORS
-
-# Cboe's delayed SPX option chain: every strike of every expiration with IV and delta, as of the
-# last close. ~13 MB; only the derived risk-reversal row is kept.
-SPX_CHAIN_URL = "https://cdn.cboe.com/api/global/delayed_quotes/options/_SPX.json"
 
 # BEA's release schedule, keyless: GDP, Personal Income and Outlays (PCE), trade, and others.
 BEA_URL = "https://apps.bea.gov/API/signup/release_dates.json"
@@ -133,9 +128,25 @@ def history_problems(old: list, new: list) -> list[str]:
     return problems
 
 
-_OPTION_RE = re.compile(r"^SPXW(\d{6})([CP])(\d{8})$")
 RR_TARGET_DTE = 30
 RR_DELTA = 0.25
+# Where a row's IVs and deltas came from. Rows up to 2026-11-18 say `cboe_delayed_spx_chain`: Cboe's
+# delayed chain, which moved behind a host that refuses scripts on 2026-11-19. The two sources'
+# IV models were never read on the same session, so a step across that date may be the source.
+RR_SOURCE = "broker_dxlink_greeks"
+
+
+def rr_expirations(session: date, expirations: list[date], target_dte: int = RR_TARGET_DTE) -> list[date]:
+    """The expirations a constant-maturity reading at `target_dte` calendar days from `session`
+    needs: the last one at or before it and the first at or after it (one, when an expiration falls
+    on the day). Empty when either side is missing; the reading is then not taken, never
+    extrapolated."""
+    later = sorted(e for e in set(expirations) if e > session)
+    below = [e for e in later if (e - session).days <= target_dte]
+    above = [e for e in later if (e - session).days >= target_dte]
+    if not below or not above:
+        return []
+    return list(dict.fromkeys((below[-1], above[0])))
 
 
 def _wing_iv(options: list[dict], target: float) -> float | None:
@@ -145,7 +156,11 @@ def _wing_iv(options: list[dict], target: float) -> float | None:
     pts = sorted(
         (o["delta"], o["iv"])
         for o in options
-        if o["iv"] > 0 and o["bid"] > 0 and o["ask"] >= o["bid"] and abs(o["delta"]) < 0.5
+        if all(isinstance(o.get(k), (int, float)) for k in ("iv", "delta", "bid", "ask"))
+        and o["iv"] > 0
+        and o["bid"] > 0
+        and o["ask"] >= o["bid"]
+        and abs(o["delta"]) < 0.5
     )
     for (d0, v0), (d1, v1) in zip(pts, pts[1:], strict=False):
         if d0 <= target <= d1 and d1 > d0:
@@ -153,36 +168,26 @@ def _wing_iv(options: list[dict], target: float) -> float | None:
     return None
 
 
-def risk_reversal(chain_text: str, target_dte: int = RR_TARGET_DTE) -> dict | None:
-    """The constant-maturity 25-delta risk reversal from Cboe's delayed SPX chain: the 25-delta
-    call's IV minus the 25-delta put's, in vol points, at `target_dte` calendar days. Negative is
-    the normal SPX state (puts cost more). It is a near-the-money skew measure, not Cboe's SKEW
-    index (a tail measure), and is never shown under that name.
+def risk_reversal(
+    session: date, spot: float, options: list[dict], target_dte: int = RR_TARGET_DTE
+) -> dict | None:
+    """The constant-maturity 25-delta risk reversal of the SPX chain at `session`'s close: the
+    25-delta call's IV minus the 25-delta put's, in vol points, at `target_dte` calendar days.
+    Negative is the normal SPX state (puts cost more). It is a near-the-money skew measure, not
+    Cboe's SKEW index (a tail measure), and is never shown under that name.
 
-    Each wing is interpolated in delta within an expiration (PM-settled SPXW only, one root for
-    every date); the two expirations bracketing the target are then interpolated in total variance
-    (sigma^2 * t, linear in t), the standard way to put a smile on a constant maturity. None when
-    the chain cannot be read or no pair of expirations brackets the target."""
-    try:
-        data = json.loads(chain_text)["data"]
-        as_of = date.fromisoformat(str(data["last_trade_time"])[:10])
-        spot = float(data["current_price"])
-    except (ValueError, KeyError, TypeError):
-        return None
+    `options` are PM-settled SPXW options, each `{"expiration": date, "right": "C" | "P", "iv",
+    "delta", "bid", "ask"}` (a missing value is None). Each wing is interpolated in delta within an
+    expiration; the two expirations bracketing the target (`rr_expirations`) are then interpolated
+    in total variance (sigma^2 * t, linear in t), the standard way to put a smile on a constant
+    maturity. None when no pair of expirations brackets the target or a wing has no bracket."""
     by_exp: dict[date, dict[str, list[dict]]] = {}
-    for o in data.get("options") or []:
-        m = _OPTION_RE.match(str(o.get("option", "")))
-        if not m:
-            continue
-        try:
-            row = {k: float(o[k]) for k in ("iv", "delta", "bid", "ask")}
-        except (KeyError, TypeError, ValueError):
-            continue
-        exp = datetime.strptime(m.group(1), "%y%m%d").date()
-        by_exp.setdefault(exp, {"C": [], "P": []})[m.group(2)].append(row)
+    for o in options:
+        if o.get("right") in ("C", "P") and isinstance(o.get("expiration"), date):
+            by_exp.setdefault(o["expiration"], {"C": [], "P": []})[o["right"]].append(o)
     wings = []
     for exp in sorted(by_exp):
-        dte = (exp - as_of).days
+        dte = (exp - session).days
         if dte <= 0:
             continue
         call = _wing_iv(by_exp[exp]["C"], RR_DELTA)
@@ -204,14 +209,14 @@ def risk_reversal(chain_text: str, target_dte: int = RR_TARGET_DTE) -> dict | No
 
     call_iv, put_iv = at_target(2), at_target(3)
     return {
-        "session": as_of.isoformat(),
+        "session": session.isoformat(),
         "spot": spot,
         "target_dte": target_dte,
         "call_25d_iv_pct": round(call_iv * 100, 2),
         "put_25d_iv_pct": round(put_iv * 100, 2),
         "rr_vol_pts": round((call_iv - put_iv) * 100, 2),
         "expirations": [{"expiration": w[1].isoformat(), "dte": w[0]} for w in dict.fromkeys((lo, hi))],
-        "source": "cboe_delayed_spx_chain",
+        "source": RR_SOURCE,
     }
 
 

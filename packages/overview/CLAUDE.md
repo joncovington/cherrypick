@@ -64,7 +64,11 @@ less than the file on disk is refused. **Every reader takes values strictly befo
   vol, record-only. **`yields`**: the last curve before the session, 2s10s and 3m10y, and one-day
   changes in bp. **`calendar.releases`**: the next seven days with ET times where given; no
   consensus estimates (no free source). **`vol_regime.risk_reversal_25d_30d`**: the 30-day 25-delta
-  risk reversal from Cboe's delayed SPX chain, one row a session — never shown as SKEW.
+  risk reversal, one row a session — never shown as SKEW. The fetcher reads it from the broker's
+  SPXW greeks (read-only, the one broker step in the script) between the close and 20:15 ET, when
+  SPX options' overnight session opens; the morning retry reports a missing row and never takes
+  one. Each row's `source` says where it came from: rows to 2026-11-18 are Cboe's delayed chain,
+  which now refuses scripts, and the two IV models were never read on the same session.
 - **`calendar.earnings`**: the next seven days' announcements among the market report's stocks, each
   with its implied move (`scripts/fetch_earnings_moves.py`: 0.85 x the ATM straddle on the first
   expiration that can trade the print — the earnings module's rule, copied and pinned equal by a
