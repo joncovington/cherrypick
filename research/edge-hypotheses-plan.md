@@ -9401,6 +9401,126 @@ to a forward check, not to a screen.
   - **A fail or no verdict:** with items 17 and 18, the mean-reversion signal adds nothing to selling
     premium on its names; the oversold-put screen is not built.
 
+### 95. The ladder's paper rules at one-minute resolution: the four paper arms, 2016 on
+
+Declared 2026-11-19, before any minute bar was fetched. The source is the user: after the paper
+ladder's fill was corrected (#1328) and its history rebuilt, "now that we have corrected the model,
+can we backtest it further?" Item 26 judged the rule on daily bars and failed every arm. Daily bars
+cannot do what paper does: buy and sell the same lot in one session, fill at the minute the price
+gets there, and step down 7% at a time within a session. This item replays the paper module's own
+rules over one-minute bars.
+
+**What is not new, said out loud.** Item 26's `steps` arms are the `session` rule, and its daily
+fills already took the open on a gap. Its reported hourly check, over 2023-12 to 2026-10, made a few
+points a year less than its daily replay. What this item adds is the minute: same-session round
+trips, fills at minute resolution, paper's sizing and fees, and ten years where item 26's intraday
+check had three. Item 26's design years (2016-2019) are part of this design window, so they have
+been read at daily resolution.
+
+- **Question:** do the paper ladder's four arms, run minute by minute with paper's fills, earn more
+  than the same number of lots bought at random minutes, with the same exits, caps and costs?
+- **Where the edge would live:** **signal**, as item 26: short-term reversion after a large intraday
+  fall in a daily-reset fund, and here also the rebound inside the same session, which daily bars
+  could not count. Against it: a 3x fund's path decay and a hold-until-up rule with no stop.
+- **The rules are paper's, imported, not copied.** The replay calls `cherrypick.ladder.rules`
+  (`buy_level`, `buy_fill`, `sell_fill`, `target`, `target_stage`, `lot_shares`, `money`) and
+  follows `paper_loop.run_once`'s order inside each quote: sells first, then buys, `chain` and
+  `session` buying on while the next level is through and a slot is free, `once` one lot a session.
+  A test replays the paper ledger's own recorded ticks (2026-11-16 to 11-19) through the study's
+  driver and requires the same lots as the paper loop recorded.
+- **Arms, all judged:** paper's four, with paper's settings.
+  - `session`: each session's n-th lot at 93%^n of the previous close, fixed +4% target.
+  - `chain`: the first lot at 93% of the previous close, each further lot at 93% of the last lot
+    bought, across sessions while one is held; fixed +4%.
+  - `once`: at most one lot a session at 93% of the previous close; fixed +4%.
+  - `decay`: `once` with item 27's decaying target (breakeven after day 30, 95% after day 120).
+- **Sizing and caps:** a lot is $1,000 in whole shares, sized at its level; a lot under 3 shares is
+  refused. At most 3 lots open per fund per arm. Paper's arm-wide cap across funds (6) is not
+  applied: each fund keeps its own book and is judged on its own, as item 26's names were.
+- **Hours:** paper's, 08:15 to 20:00 ET on trading days.
+- **The reference close:** the previous session's regular close from item 26's daily series (the
+  broker's candle, else Yahoo's, by item 26's rule), so both items read the same close.
+- **From bars to quotes:** each minute bar becomes up to four quotes, in order: the open; then the
+  bar's low and high, the one nearer the open first; then the close. Each quote's bid is the price
+  less half a cent and its ask the price plus half a cent. A lot bought on a bar's quote may not sell
+  on a later quote of the same bar (the worse order, where a bar cannot tell). A minute with no
+  trade has no bar and no quote. A session whose last regular-hours minute closes more than 3% from
+  the daily series' close is skipped and counted (a split adjusted in one source and not the other).
+  Lots open across a skipped session wait for the next one.
+- **Fills:** paper's (`buy_fill`, `sell_fill`): at the limit when the price crossed it since the
+  previous quote, at the ask or bid when the market was already through it (the session's first
+  quote, or a level placed under water). The previous quote is the previous one in the path, the
+  same session.
+- **Costs:** paper's: `rules.money` (core's stock fees: none on a buy, SEC fee and FINRA TAF on a
+  sale), plus the half-cent half-spread in every fill. **Checked** at three times the half-spread.
+- **The control:** item 26's, at minute resolution. For each fund and arm, 200 draws, seed 95: as
+  many lots each calendar year as the arm opened that year, bought at random minutes inside the
+  hours on sessions with a reference close (one lot a session at most), at that minute's ask. Each
+  draw lot has the arm's own exit and the 3-lot cap; a draw whose cap is full is skipped, as the
+  arm's would be.
+- **Measured:** per fund and arm, net as a percentage of the fund's budget (3 lots, $3,000) a year,
+  idle days included, open lots marked at the last bid at the window's end; **edge** is that less
+  the control's mean.
+- **Funds:** item 26's 17 judged funds (one per index and leverage), each with minute bars from
+  2016-01-04. A fund Alpaca does not serve from then is out and listed.
+- **Window:** sessions 2016-01-04 through the last whole month fetched. **One run, cut at
+  2022-01-01:** design 2016-2021, holdout 2022 on, by each lot's buy session. The holdout counts only
+  after a design pass. Fewer than 8 funds, or 300 closed lots in an arm in the design part, is no
+  verdict.
+- **The rule, two literals in the script; an arm passes only on both:**
+  - **`RULE`, the study kit's bars**, on one row per entry session per arm: that session's lots
+    across the funds pooled, net and cost summed, days weighted by cost, each lot's days to its sale
+    (or to the window's end, marked at the last bid), the 3-month bill on the session (`core.treasury`,
+    else FRED's DGS3MO).
+    - **Capital:** net less the bill on the cost over the days held, one-sided t ≥ 2.0.
+    - **Tail:** 10,000 draws, seed 95, the sample's own entries a year.
+    - **Delta: not applicable.** A share lot financed is the lot itself, so the delta bar cannot see
+      entry timing; the control rule below is the timing test.
+    - **Split** at 2022-01-01; fewer than 300 design rows, or 100 holdout rows, is no verdict.
+  - **`CONTROL_RULE`, item 26's timing test**, per arm, in the design part:
+    - the per-fund edge has a mean above zero and a one-sided t above 2, Holm across the four arms;
+    - edge positive on more than half the funds;
+    - mean edge positive in both halves of the design (2016-2018, 2019-2021), each its own run
+      starting with no lots;
+    - mean edge still positive at three times the half-spread;
+    - then the holdout: mean edge above zero and positive on more than half the funds.
+- **Reported, never judged:** the drawdown with open lots marked at the bid, the longest open lot,
+  the most capital tied up, buy-and-hold, the share of lots sold the session they were bought, the
+  group's terms (lots sold within 18 days, lots open past 18 days), each arm by year, and the same
+  replay on item 26's hourly bars over their span.
+- **Rival explanations, each with its check:**
+  - *A bull market, not a signal:* the random-entry control, same lots a year, same exits.
+  - *Leverage:* reported per fund; the equity-index and commodity funds are listed apart, as in
+    item 26.
+  - *A few funds:* the sign count across funds.
+  - *One era:* both design halves must agree; the holdout holds 2022 and the 2024-2025 falls.
+  - *Costs:* the check at three times the half-spread.
+  - *Four arms, one lucky:* Holm across the four.
+  - *The bar path:* the nearer-extreme order and the no-same-bar rule are fixed here; the hourly
+    replay is reported beside it.
+- **Declared limits:** one-minute trade bars stand in for quotes, with a fixed half-cent half-spread
+  (paper's funds trade a cent wide; a thin fund's real spread is wider, which the cost check
+  bounds); a touch inside a minute that the bar's range shows but no quote would have filled at is
+  counted as filled; no overnight session (tastytrade's equity day only); survivors only (funds that
+  exist today); split-adjusted prices, dividends ignored, as item 26.
+- **Expected, recorded before the run:** a fail, like item 26. Same-session round trips should lift
+  every arm a little, but the result is set by lots stuck for years in long falls, which the minute
+  does not change.
+- **Data:** `scripts/fetch_minute_bars.py` (Alpaca's free market-data API: the consolidated tape
+  from 2016, extended hours, split-adjusted; the user's own key in the OS keyring) into
+  `~/.cherrypick/data/research/item95/`, never the repo. The replay is
+  `packages/backtest/scripts/share_ladder_item95.py`, a pure function of those files, item 26's
+  daily bars and the bill, run as a research-queue chain. It imports `cherrypick.ladder.rules`, which
+  is pure (it imports `core.fees` alone), so backtest's CI job installs ladder. A test replays the
+  paper ledger's recorded ticks through the replay and requires paper's own lots (run where the
+  ledger exists). Results stay in that folder; this plan records the verdict.
+- **Decides:**
+  - **A pass:** a proposal to make the passing arm paper's default and to size a live pilot from its
+    drawdown and longest open lot. Nothing changes in the running module without the user and a
+    declared boundary.
+  - **A fail or no verdict:** paper keeps running all four arms as it is; its console tab keeps
+    saying the rule is not a tested edge.
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:
