@@ -165,8 +165,9 @@ jobs:
             # automations reads core only (its indicators are core.indicators).
             uv pip install -e ../core -e ".[dev]"
           elif [ "${{ matrix.package }}" == "backtest" ]; then
-            # item 75's driver and tests load the automations engine; several scripts read technicals.
-            uv pip install -e ../core -e ../technicals -e ../automations -e ".[dev]"
+            # item 75's driver and tests load the automations engine; several scripts read technicals;
+            # item 95's replay imports the ladder's rules (pure).
+            uv pip install -e ../core -e ../technicals -e ../automations -e ../ladder -e ".[dev]"
           else
             # packages/core is not on PyPI (Private :: Do Not Upload); every consumer declares it as
             # a plain named dependency, so it is installed in the same resolve, from its directory.

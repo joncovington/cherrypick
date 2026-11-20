@@ -4501,6 +4501,66 @@
       "retest": null,
       "retest_note": "A pass is provisional and is followed by a forward check on entries after 2026-11-20, not a yearly retest.",
       "retests": []
+    },
+    {
+      "id": 95,
+      "study": "item95",
+      "title": "The ladder's paper rules at one-minute resolution: the four paper arms, 2016 on",
+      "status": "declared",
+      "legacy": false,
+      "setup": "dip-buy",
+      "side": "bullish",
+      "structure": "shares",
+      "window": "multi-day",
+      "measure": "per fund and arm, net as a percentage of the fund's budget (3 lots of $1,000) a year, idle days included, open lots marked at the last bid, less a random-entry control's mean (same lots a year at random minutes inside 08:15-20:00 ET, at the ask, same exit and cap, 200 draws, seed 95); the paper module's rules imported (cherrypick.ladder.rules) and driven in run_once's order over one-minute bars, each bar four quotes (open, nearer extreme, farther extreme, close) at a half-cent half-spread; arms session, chain, once, decay",
+      "expected": "a fail, like item 26: same-session round trips lift every arm a little, but lots stuck for years in long falls set the result",
+      "sample": "item 26's 17 judged funds with Alpaca one-minute bars from 2016-01-04; sessions 2016-01-04 to the last whole month fetched, one run cut at 2022-01-01 (design before, holdout from, by buy session), the holdout counting only after a design pass; < 8 funds or < 300 closed lots an arm in the design part = no verdict",
+      "rule": "both, per arm: RULE, the kit's bars on one row per entry session (lots across funds pooled; capital t >= 2.0 over the 3-month bill on the cost; tail 10,000 draws seed 95, the sample's own rows a year; delta not applicable; split 2022-01-01; < 300 design or 100 holdout rows = no verdict); CONTROL_RULE, in the design part: per-fund edge mean > 0 with one-sided t > 2, Holm across the four arms; positive on more than half the funds; positive in both design halves (2016-2018, 2019-2021, each its own run); positive at three times the half-spread; then holdout mean > 0 and positive on more than half the funds",
+      "mechanism": "short-term reversion after a large intraday fall in a daily-reset fund, including the rebound inside the same session that daily bars could not count, against the fund's path decay and the open losses a no-stop rule keeps",
+      "rivals": [
+        {
+          "explanation": "long a bull market, not a signal",
+          "check": "judged as edge over the random-entry control"
+        },
+        {
+          "explanation": "leverage, not the trigger",
+          "check": "per-fund results reported, equity-index and commodity funds apart"
+        },
+        {
+          "explanation": "a few funds",
+          "check": "sign count across funds beside the mean"
+        },
+        {
+          "explanation": "one era",
+          "check": "both design halves must agree; the holdout holds 2022 and the 2024-2025 falls"
+        },
+        {
+          "explanation": "costs",
+          "check": "positive at three times the half-spread"
+        },
+        {
+          "explanation": "four arms, one lucky",
+          "check": "Holm across the four judged arms"
+        },
+        {
+          "explanation": "the assumed path inside a bar",
+          "check": "nearer-extreme order and no sale on the bar a lot was bought in, fixed in the declaration; the same replay on item 26's hourly bars reported"
+        }
+      ],
+      "pointer": "research/edge-hypotheses-plan.md#95-the-ladders-paper-rules-at-one-minute-resolution-the-four-paper-arms-2016-on",
+      "scripts": [
+        "packages/backtest/scripts/share_ladder_item95.py",
+        "scripts/fetch_minute_bars.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_share_ladder_item95_script.py"
+      ],
+      "results": [
+        "{home}/data/research/item95/results.json"
+      ],
+      "retest": null,
+      "retests": [],
+      "outcome": null
     }
   ],
   "rule_changes": []
