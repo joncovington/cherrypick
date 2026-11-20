@@ -66,6 +66,21 @@ GUARDED: dict[str, dict[str, str]] = {
         "/live/daily_loss_halt_dollars": "live loss halt — hand-edit deliberately, not from this surface",
         "/live/account_deploy_limit_pct": "live risk cap — hand-edit deliberately, not from this surface",
     },
+    # ladder's live block holds gates and limits only: no order path exists yet (#1337). Its limits are
+    # guarded as bwb's are, so a surface that cannot arm the loop cannot widen it either.
+    "ladder": {
+        "/live/enabled": "ladder live is armed per-day via /live-ladder-start; this flag is a plan-rung step",
+        "/live/gate0_confirmed": "a human attestation string — write it by hand, with the plan doc open",
+        "/live/arm": "which arm trades live — switching it is a journaled live measurement break, by hand",
+        "/live/symbols": "which funds trade live money — hand-edit deliberately, never from here",
+        "/live/lot_dollars": "live lot size — hand-edit deliberately, never from here",
+        "/live/max_open_lots": "live per-fund cap — hand-edit deliberately, never from here",
+        "/live/max_open_lots_total": "live total cap — hand-edit deliberately, never from here",
+        "/live/correlated_groups": "live correlated-group map — hand-edit deliberately, never from here",
+        "/live/max_open_lots_per_group": "live group cap — hand-edit deliberately, never from here",
+        "/live/max_open_dollars": "live dollar ceiling — hand-edit deliberately, never from here",
+        "/live/drawdown_breaker_frac": "live buy breaker — hand-edit deliberately, never from here",
+    },
     "bwb": {
         "/live/enabled": "bwb live is armed per-day via /live-bwb-start; this flag is a plan-rung step",
         "/live/gate0_confirmed": "a human attestation string — write it by hand, with the plan doc open",

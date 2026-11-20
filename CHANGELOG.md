@@ -22,6 +22,11 @@ beyond the latest release.
 
 ### What's new
 
+- **The ladder has live gates and a daily arm, and still no way to place an order.** Its config gains
+  a `live` block, shipped off, and `python -m cherrypick.ladder.live_loop` gains `--status` (every
+  gate with its verdict, the account masked), `--arm --confirm YES`, `--install-task` (for
+  `/live-ladder-start`), `--disarm` and `--once`. `live.enabled` and `live.gate0_confirmed` are
+  guarded from the Config page. Arming records the arm and nothing else; the order path is issue #1337.
 - **The ladder has a console page.** `/ladder` (under Experiments) shows each fund's previous close and
   every arm's next buy level, the open lots with the group's 18-day "hospital" flagged, the sold lots as
   trades, and each arm's realised and unrealised result. Its help tab says the rule is not a tested edge.

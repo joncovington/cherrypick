@@ -37,7 +37,7 @@ export interface ModuleGate {
  * test there keeps equal to the packages that ship a `live_loop.py`; `test/live-path-mirror.test.ts`
  * pins this copy to that one. Kept here rather than bridged because the lock is polled.
  */
-export const LIVE_PATH_MODULES: readonly string[] = ["bwb", "flies", "meic"];
+export const LIVE_PATH_MODULES: readonly string[] = ["bwb", "flies", "ladder", "meic"];
 
 /** Read from the module's own file and ignored there: earnings went paper-only in v0.12.0. */
 const PAPER_ONLY_MODULES: readonly string[] = ["earnings"];
