@@ -555,6 +555,16 @@ def cmd_read(args) -> int:
         )
         _emit(out)
         return 0 if out.get("ok") else 1
+    if args.what in ("settings-grids", "settings-grid"):
+        from . import gridfiles
+
+        out = (
+            gridfiles.grids(args.name or "")
+            if args.what == "settings-grids"
+            else gridfiles.grid_result(args.name or "", args.id or "")
+        )
+        _emit(out)
+        return 0 if out.get("ok") else 1
     if args.what == "fullset":
         from . import fullsetprogress, paths
 
@@ -601,6 +611,22 @@ def cmd_ideas(args) -> int:
         out = ideafiles.declare(args.name, args.id or "", args.idea or "")
     else:
         out = ideafiles.holdout(args.name, args.id or "", args.idea or "", settings.load(args.config))
+    _emit(out)
+    return 0 if out.get("ok") else 1
+
+
+def cmd_grid(args) -> int:
+    """The settings grid's three verbs: `plan` (the run a grid would replay and its split, the idea
+    search's own plan), `declare` (draft one surviving setting's register row into its result) and
+    `holdout` (that setting's one held-out test, logged on the result). JSON on stdout."""
+    from . import gridfiles, ideafiles
+
+    if args.verb == "plan":
+        out = ideafiles.plan(args.name)
+    elif args.verb == "declare":
+        out = gridfiles.declare(args.name, args.id or "", args.setting or "")
+    else:
+        out = gridfiles.holdout(args.name, args.id or "", args.setting or "", settings.load(args.config))
     _emit(out)
     return 0 if out.get("ok") else 1
 
@@ -778,7 +804,7 @@ def main(argv: list[str] | None = None) -> int:
         choices=(
             "overview", "run", "trades", "path", "stores", "summaries", "signals", "signal",
             "automation-runs", "automation-run", "fullset", "portfolio-sources", "idea-searches",
-            "idea-search",
+            "idea-search", "settings-grids", "settings-grid",
         ),
     )  # fmt: skip
     rd.add_argument("--ids", default=None, help="with `summaries`: run ids, comma separated")
@@ -786,12 +812,13 @@ def main(argv: list[str] | None = None) -> int:
         "--name",
         default=None,
         help="with `signal`: the signal study's name; with `automation-runs`, `automation-run`, "
-        "`idea-searches` or `idea-search`: the automation",
+        "`idea-searches`, `idea-search`, `settings-grids` or `settings-grid`: the automation",
     )
     rd.add_argument(
         "--id",
         default=None,
-        help="with `run`, `trades` or `path`: the run id; with `automation-run` or `idea-search`: the "
+        help="with `run`, `trades` or `path`: the run id; with `automation-run`, `idea-search` or "
+        "`settings-grid`: the "
         "result's name",
     )
     rd.add_argument("--arm", default=None, help="with `trades` or `path`: the arm")
@@ -824,6 +851,12 @@ def main(argv: list[str] | None = None) -> int:
     ix.add_argument("--id", default=None, help="with `declare` or `holdout`: the search result's name")
     ix.add_argument("--idea", default=None, help="with `declare` or `holdout`: the idea's id in that result")
     ix.set_defaults(fn=cmd_ideas)
+    gx = sub.add_parser("grid", help="the settings grid: plan one, declare a setting, its one held-out test")
+    gx.add_argument("verb", choices=("plan", "declare", "holdout"))
+    gx.add_argument("--name", required=True, help="the saved automation")
+    gx.add_argument("--id", default=None, help="with `declare` or `holdout`: the grid result's name")
+    gx.add_argument("--setting", default=None, help="with `declare` or `holdout`: the setting's id there")
+    gx.set_defaults(fn=cmd_grid)
     sub.add_parser(
         "inventory", help="count every store changed since its last count (the Data tab's numbers)"
     ).set_defaults(fn=cmd_inventory)

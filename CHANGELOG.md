@@ -40,6 +40,14 @@ beyond the latest release.
   leave trades that pay at 1.5x costs, all on the part of the run before a split fixed when the
   search is queued. A survivor can be declared (its register row drafted) and then tested once on
   the later part. `core.stats.menu_placebo` is the max-over-menu baseline.
+- **Try settings, on a saved automation.** The Builder replays the automation as its newest long
+  explore run did, and beside it the same automation with one exit or width setting changed: stops,
+  profit targets, a close before expiry, the width, and each exit it sets switched off. A setting is
+  scored by what it changes per session against the automation's own replay, and must beat the best
+  random change of the whole grid, agree with its neighbouring settings, gain across folds, and still
+  gain at 1.5x costs, all before a split fixed when the grid is queued. Declare and the one held-out
+  test work as Find ideas' do. Each setting is a full replay, so a grid takes queue time.
+  `core.stats.setting_placebo` is its max-over-grid baseline.
 - **How a Builder run holds up.** The run card gains the reads a study gets, from the same trades
   and never a verdict: what the 5 best days carry, P&L per trade with costs at 1.5x and 2x, the
   drawdown range with the trades reshuffled, and how many quarters were profitable.

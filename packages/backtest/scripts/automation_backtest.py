@@ -300,46 +300,36 @@ def summarise(book) -> dict:
     return out
 
 
-def cmd_run(args) -> int:
-    s = settings.load(None)
-    cfg = ens_config.load_config()
-    every = ens_config.load_arms(cfg)
-    names = [n.strip() for n in args.arms.split(",") if n.strip()]
-    missing = [n for n in names if n not in every]
-    if missing:
-        print(json.dumps({"ok": False, "error": f"no arm {missing[0]!r}"}))
-        return 1
-    chosen = {n: {**every[n], "enabled": True} for n in names}
-    symbol = args.symbol.upper()
-    start, end = args.start, args.end
+def prepare(
+    chosen: dict[str, dict], symbol: str, start: str, end: str, named, s: dict, *, min_density: float
+):
+    """The store a run of `chosen` reads over `start`..`end` and its history: (source, store path,
+    history, VIX closes, volumes). Raises `Refused` with why none can be read. The Builder's run and the
+    settings grid (`exit_grid.py`) both read through this, so the grid replays the run's own store."""
     licensed_ok, inv = licensing.status(s)["active"], src_inventory.load()
-    try:
-        if same_day(chosen):
-            source = choose_source(symbol, start, end, args.source, licensed_ok=licensed_ok, inv=inv)
-        elif intraday(chosen):
-            source = choose_intraday_source(
-                symbol,
-                start,
-                end,
-                args.source,
-                licensed_ok=licensed_ok,
-                inv=inv,
-                min_density=args.min_density,
-            )
-        else:
-            source = choose_eod_source(
-                symbol,
-                start,
-                end,
-                args.source,
-                licensed_ok=licensed_ok,
-                inv=inv,
-                min_density=args.min_density,
-            )
-        check_volume(volume_symbols(chosen), start, end, inv=inv, min_density=args.min_density)
-    except Refused as exc:
-        print(json.dumps({"ok": False, "error": str(exc)}))
-        return 2
+    if same_day(chosen):
+        source = choose_source(symbol, start, end, named, licensed_ok=licensed_ok, inv=inv)
+    elif intraday(chosen):
+        source = choose_intraday_source(
+            symbol,
+            start,
+            end,
+            named,
+            licensed_ok=licensed_ok,
+            inv=inv,
+            min_density=min_density,
+        )
+    else:
+        source = choose_eod_source(
+            symbol,
+            start,
+            end,
+            named,
+            licensed_ok=licensed_ok,
+            inv=inv,
+            min_density=min_density,
+        )
+    check_volume(volume_symbols(chosen), start, end, inv=inv, min_density=min_density)
     vix_daily = volindex.closes("VIX")
     volumes = {s: profile_volumes(s) for s in volume_symbols(chosen)}
     if same_day(chosen):
@@ -357,6 +347,28 @@ def cmd_run(args) -> int:
         )
         bars = stock_daily(symbol) or index_daily(symbol)
         h = history.DailyChainHistory(symbol, bars, loader, vix_daily=vix_daily)
+    return source, store, h, vix_daily, volumes
+
+
+def cmd_run(args) -> int:
+    s = settings.load(None)
+    cfg = ens_config.load_config()
+    every = ens_config.load_arms(cfg)
+    names = [n.strip() for n in args.arms.split(",") if n.strip()]
+    missing = [n for n in names if n not in every]
+    if missing:
+        print(json.dumps({"ok": False, "error": f"no arm {missing[0]!r}"}))
+        return 1
+    chosen = {n: {**every[n], "enabled": True} for n in names}
+    symbol = args.symbol.upper()
+    start, end = args.start, args.end
+    try:
+        source, store, h, vix_daily, volumes = prepare(
+            chosen, symbol, start, end, args.source, s, min_density=args.min_density
+        )
+    except Refused as exc:
+        print(json.dumps({"ok": False, "error": str(exc)}))
+        return 2
     sessions = [d for d in h.sessions if start <= d <= end]
     calendar = events.load_calendar((cfg.get("events") or {}).get("path"))
     book = driver.Book()

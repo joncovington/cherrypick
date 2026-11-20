@@ -245,4 +245,33 @@ export const SECTION_HELP: Record<string, CardHelpContent> = {
       </>
     ),
   },
+  grid: {
+    title: "Settings",
+    body: (
+      <>
+        <HelpSection title="What a grid is">
+          <p>
+            Try settings replays the automation as its newest Builder run with at least 120 sessions traded did, and beside it
+            the same automation with one setting changed: a stop at 1, 1.5, 2 or 3x the credit (or 25, 50 or 75% of a debit), a
+            profit target at 25, 50 or 75%, a close 15, 60 or 120 minutes before expiry (7, 14 or 21 days on a later expiry),
+            the width at half, one and a half or twice, and each exit it sets switched off. Each is a full replay, so a grid
+            takes queue time. It never changes the automation.
+          </p>
+        </HelpSection>
+        <HelpSection title="How a setting is scored">
+          <p>
+            By what it changes: each session's net with the setting less the automation's own, before the split. The change
+            must plainly gain, beat the best random change the whole grid could have found by luck, agree with its neighbouring
+            settings, gain in both halves and most folds, and still gain with fees and slippage at 1.5x.
+          </p>
+        </HelpSection>
+        <HelpWarn title="The held-out part is spent once per setting">
+          <p>
+            The later sessions are never read by the grid. Declare drafts a surviving setting's register row with the split
+            fixed; Test once reads the later sessions for that setting, and every use is logged on the grid.
+          </p>
+        </HelpWarn>
+      </>
+    ),
+  },
 };

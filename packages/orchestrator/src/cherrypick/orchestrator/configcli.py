@@ -23,7 +23,7 @@ import json
 import sys
 from typing import Any
 
-from . import automationedit, automationrun, configedit, fullsetadd, groupedit, ideaqueue, liveops
+from . import automationedit, automationrun, configedit, fullsetadd, gridqueue, groupedit, ideaqueue, liveops
 from . import config as cfgmod
 
 
@@ -169,6 +169,22 @@ def handle(req: dict[str, Any]) -> dict[str, Any]:
     if op == "automation_idea_holdout":
         # A declared idea's one held-out test, logged on its result. No config write.
         return ideaqueue.holdout(cfg, req)
+    if op == "automation_grid":
+        # The Builder's settings grid: one replay of the automation and every exit and width setting
+        # beside it, queued on the research queue with the split fixed. Writes no config.
+        return gridqueue.queue(cfg, req)
+    if op == "automation_grids":
+        # That automation's settings grids: queue rows and results in brief. Reads only.
+        return gridqueue.grids(cfg, req)
+    if op == "automation_grid_result":
+        # One settings grid's rows, never its trades. Reads only.
+        return gridqueue.grid(cfg, req)
+    if op == "automation_grid_declare":
+        # Declare: one surviving setting's register row drafted into its result. No config or register write.
+        return gridqueue.declare(cfg, req)
+    if op == "automation_grid_holdout":
+        # A declared setting's one held-out test, logged on its result. No config write.
+        return gridqueue.holdout(cfg, req)
     return _err(f"unknown op: {op!r}")
 
 

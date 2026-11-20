@@ -45,6 +45,11 @@ export type BridgeRequest =
   | { op: "automation_idea_search"; name: string; id: string }
   | { op: "automation_idea_declare"; name: string; id: string; idea: string }
   | { op: "automation_idea_holdout"; name: string; id: string; idea: string }
+  | { op: "automation_grid"; name: string }
+  | { op: "automation_grids"; name: string }
+  | { op: "automation_grid_result"; name: string; id: string }
+  | { op: "automation_grid_declare"; name: string; id: string; setting: string }
+  | { op: "automation_grid_holdout"; name: string; id: string; setting: string }
   | { op: "automation_draft"; name: string; automation?: Record<string, unknown> }
   | { op: "automation_today"; name: string; automation?: Record<string, unknown> }
   | { op: "automation_payoff"; name: string; automation?: Record<string, unknown> }

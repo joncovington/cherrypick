@@ -137,6 +137,12 @@ Each filter skips days: the prior close's VIX, RSI, trend or move in a band, VIX
 
 A filter that passes every check offers **Declare**, which drafts its register row with the split fixed (shown for copying into the register, with its mechanism added by hand). Once declared, **Test once on held-out** reads the later sessions for that idea, one time; the search logs every use of the held-out part. A filter the later part could not detect says **Not testable on our history**. Others name the checks they missed.
 
+### Settings
+
+**Try settings** asks the opposite question: not which days to skip, but which exits and width to use. It replays the automation as its newest explore run with at least 120 sessions traded did, and beside it the same automation with one setting changed: a stop at 1, 1.5, 2 or 3 times the credit (or 25, 50 or 75% of a debit), a profit target at 25, 50 or 75%, a close 15, 60 or 120 minutes before expiry (7, 14 or 21 days on a later expiry), the width at half, one and a half or twice, and each exit it already sets switched off. Its own value on each is the base, not a candidate. Each setting is a full replay, so a grid waits its turn on the queue and takes a while.
+
+The split is fixed when the grid is queued, as for Find ideas, and the grid reads only the sessions before it. A setting is scored by what it changes: each session's net with it less the automation's own. The list gives each setting the days it changed, the change per day and its interval, the gain and that gain after the grid's own luck is taken off, how it ranks against random changes across the whole grid, whether its neighbouring settings agree, how many of four folds it gained in, and whether the gain holds with fees and slippage at 1.5x. A setting that changed too few days, or that the automations module's check refused, is named as not scored. **Declare** and **Test once on held-out** work as for ideas.
+
 Beside the form:
 
 - **Today, live** decides the automation now as the paper loop would, on today's stream cache (an unsaved edit as it stands), without writing anything. It lists every check with its value and result, and the legs it would take in the order chain or the check that would stop it.

@@ -67,6 +67,9 @@ function plainSettings(v: unknown): Record<string, string | number | boolean> | 
 /** An idea search's result name, and one idea's id in it (`dim:kind:index`, at most two joined by &). */
 export const IDEA_SEARCH = /^ideas-[a-z0-9][a-z0-9-]{1,47}-\d{10}$/;
 export const IDEA_ID = /^[A-Za-z_:-]+:(bin|below|above):\d(&[A-Za-z_:-]+:(bin|below|above):\d)?$/;
+/** A settings grid's result name, and one setting's id in it (`axis=value`, `width=x1.5`, `axis=off`). */
+export const GRID = /^grid-[a-z0-9][a-z0-9-]{1,47}-\d{10}$/;
+export const SETTING_ID = /^[a-z_]+=(off|x?\d+(\.\d+)?)$/;
 
 export function registerConfigRoutes(app: FastifyInstance, config: ConsoleConfig): void {
   /**
@@ -560,6 +563,91 @@ export function registerConfigRoutes(app: FastifyInstance, config: ConsoleConfig
       const result = sendBridgeFailure(reply, await callConfigCli({ op, name: parsed.name, id, idea }));
       if (result === null) return reply;
       app.log.info(`${op === "automation_idea_declare" ? "idea declared" : "held-out test read"} from the builder: ${parsed.name} ${id} ${idea}`);
+      const { ok: _ok, ...out } = result;
+      return { ok: true, ...out };
+    });
+  }
+
+  /**
+   * The settings grid (#1294): "Try settings" queues one replay of the automation and every exit and
+   * width setting of the grid beside it (`gridqueue.queue`, a `script` row; the run and the split are
+   * the backtest package's), and the page reads the grids back, never their trades. Declare and the
+   * held-out test are the idea search's, by setting. A licensed result is shown, declared from or tested
+   * only while licensed results may be shown; fail closed.
+   */
+  app.post("/api/automations/builder/grid", async (req, reply) => {
+    const parsed = automationBody((req.body ?? {}) as Record<string, unknown>);
+    if (typeof parsed === "string") return reply.code(400).send({ error: parsed });
+    const result = sendBridgeFailure(reply, await callConfigCli({ op: "automation_grid", name: parsed.name }));
+    if (result === null) return reply;
+    app.log.info(`settings grid queued from the builder: ${parsed.name} (task ${String(result["task"] ?? "?")})`);
+    return {
+      ok: true,
+      name: parsed.name,
+      grid: result["grid"] ?? null,
+      task: result["task"] ?? null,
+      run: result["run"] ?? null,
+      split: result["split"] ?? null,
+    };
+  });
+
+  app.get("/api/automations/builder/grids", async (req, reply) => {
+    const name = String(((req.query ?? {}) as Record<string, unknown>)["name"] ?? "");
+    if (name === "" || name.length > 48) return reply.code(400).send({ error: "name (up to 48 characters) required" });
+    const result = sendBridgeFailure(reply, await callConfigCli({ op: "automation_grids", name }));
+    if (result === null) return reply;
+    const open = backtestResultsOn(await getFeatures());
+    const all = Array.isArray(result["grids"]) ? (result["grids"] as Array<Record<string, unknown>>) : [];
+    const grids = all.filter((g) => open || g["licensed"] === false);
+    return {
+      name,
+      tasks: Array.isArray(result["tasks"]) ? result["tasks"] : [],
+      grids,
+      withheld: all.length - grids.length,
+      results_unavailable: result["results_unavailable"] === true,
+    };
+  });
+
+  /** One grid read whole, or a reply already sent: refused when it is licensed and those are withheld. */
+  const gridResult = async (reply: FastifyReply, name: string, id: string): Promise<BridgeOk | null> => {
+    const result = sendBridgeFailure(reply, await callConfigCli({ op: "automation_grid_result", name, id }));
+    if (result === null) return null;
+    if (result["licensed"] !== false && !backtestResultsOn(await getFeatures())) {
+      reply.code(403).send({ error: "a licensed result, not shown while licensed results are withheld", code: "withheld" });
+      return null;
+    }
+    return result;
+  };
+
+  app.get("/api/automations/builder/grid-result", async (req, reply) => {
+    const q = (req.query ?? {}) as Record<string, unknown>;
+    const name = String(q["name"] ?? "");
+    const id = String(q["id"] ?? "");
+    if (!GRID.test(id) || name === "" || name.length > 48) return reply.code(400).send({ error: "name and id required" });
+    const result = await gridResult(reply, name, id);
+    if (result === null) return reply;
+    const { ok: _ok, ...grid } = result;
+    return grid;
+  });
+
+  for (const [path, op] of [
+    ["/api/automations/builder/grid-declare", "automation_grid_declare"],
+    ["/api/automations/builder/grid-holdout", "automation_grid_holdout"],
+  ] as const) {
+    app.post(path, async (req, reply) => {
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const parsed = automationBody(body);
+      if (typeof parsed === "string") return reply.code(400).send({ error: parsed });
+      const id = body["id"];
+      const setting = body["setting"];
+      if (typeof id !== "string" || !GRID.test(id) || typeof setting !== "string" || !SETTING_ID.test(setting)) {
+        return reply.code(400).send({ error: "id is one of its settings grids and setting one setting in it" });
+      }
+      // Read first: a licensed grid withheld from view is neither declared from nor spent.
+      if ((await gridResult(reply, parsed.name, id)) === null) return reply;
+      const result = sendBridgeFailure(reply, await callConfigCli({ op, name: parsed.name, id, setting }));
+      if (result === null) return reply;
+      app.log.info(`${op === "automation_grid_declare" ? "setting declared" : "held-out test read"} from the builder: ${parsed.name} ${id} ${setting}`);
       const { ok: _ok, ...out } = result;
       return { ok: true, ...out };
     });

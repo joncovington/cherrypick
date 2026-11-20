@@ -24,6 +24,9 @@ import type {
   BuilderResult,
   BuilderRunCard,
   BuilderRuns,
+  GridActionResult,
+  GridResult,
+  Grids,
   IdeaActionResult,
   IdeaSearch,
   IdeaSearches,
@@ -1511,6 +1514,40 @@ export function useIdeaSearches(name: string) {
     queryFn: () => getJson<IdeaSearches>(`/api/automations/builder/ideas?name=${encodeURIComponent(name)}`),
     staleTime: 5_000,
     refetchInterval: (q) => (q.state.data?.tasks.some((t) => t.status === "queued" || t.status === "running") ? 10_000 : false),
+  });
+}
+
+/** Queue one settings grid of a saved automation; its run and split are the backtest package's. */
+export function builderTrySettings(name: string): Promise<GridActionResult> {
+  return builderPost<GridActionResult>("/api/automations/builder/grid", { name });
+}
+
+/** Draft one surviving setting's register row into its grid, the split already fixed. */
+export function gridDeclare(name: string, id: string, setting: string): Promise<GridActionResult> {
+  return builderPost<GridActionResult>("/api/automations/builder/grid-declare", { name, id, setting });
+}
+
+/** A declared setting's one held-out test. It cannot be repeated. */
+export function gridHoldout(name: string, id: string, setting: string): Promise<GridActionResult> {
+  return builderPost<GridActionResult>("/api/automations/builder/grid-holdout", { name, id, setting });
+}
+
+/** One automation's settings grids: queued and finished. Polled while one is live. */
+export function useGrids(name: string) {
+  return useQuery<Grids>({
+    queryKey: ["automations-builder-grids", name],
+    queryFn: () => getJson<Grids>(`/api/automations/builder/grids?name=${encodeURIComponent(name)}`),
+    staleTime: 5_000,
+    refetchInterval: (q) => (q.state.data?.tasks.some((t) => t.status === "queued" || t.status === "running") ? 10_000 : false),
+  });
+}
+
+/** One settings grid's rows. Declare and the held-out test change it, so it is refetched after either. */
+export function useGridResult(name: string, id: string) {
+  return useQuery<GridResult>({
+    queryKey: ["automations-builder-grid", name, id],
+    queryFn: () => getJson<GridResult>(`/api/automations/builder/grid-result?name=${encodeURIComponent(name)}&id=${encodeURIComponent(id)}`),
+    staleTime: 60_000,
   });
 }
 

@@ -194,6 +194,43 @@ def test_menu_placebo_is_seeded_and_lists_a_filter_with_nothing_to_say():
         assert one["candidates"][name]["z"] is None
 
 
+def _changes(k: int, seed: int, n: int = 200) -> dict[str, float]:
+    """A setting that moves `k` of `n` sessions by noise."""
+    rng = random.Random(seed)
+    days = [f"d{i:03d}" for i in range(n)]
+    moved = set(rng.sample(days, k))
+    return {d: (rng.gauss(0, 10) if d in moved else 0.0) for d in days}
+
+
+def test_setting_placebo_finds_a_setting_that_helps():
+    menu = {f"r{j}": _changes(40, j) for j in range(20)}
+    good = _changes(40, 99)
+    menu["good"] = {d: v + (4.0 if v else 0.0) for d, v in good.items()}
+    out = stats.setting_placebo(menu, draws=500)
+    assert out["tried"] == 21
+    assert out["candidates"]["good"]["p"] < 0.01
+    assert out["candidates"]["good"]["p_menu"] < 0.05
+
+
+def test_setting_placebo_reads_the_best_of_many_noise_settings_as_chance():
+    # The guard the settings grid rests on: over pure noise, the best of 60 settings looks like a gain
+    # on its own (`p`), and reading it against the best random change of the menu says it is not.
+    menu = {f"r{j}": _changes(30, j) for j in range(60)}
+    out = stats.setting_placebo(menu, draws=500)
+    best = max(out["candidates"].values(), key=lambda c: c["z"])
+    assert best["p"] < 0.05
+    assert best["p_menu"] > 0.2
+    assert out["null_max_median"] > 2.0
+
+
+def test_setting_placebo_is_seeded_and_lists_a_setting_that_changes_nothing():
+    menu = {"a": _changes(20, 1, 40), "same": dict.fromkeys(_changes(20, 1, 40), 0.0)}
+    one = stats.setting_placebo(menu, draws=200)
+    assert one == stats.setting_placebo(menu, draws=200)
+    assert one != stats.setting_placebo(menu, draws=200, seed=1)
+    assert one["tried"] == 1 and one["candidates"]["same"]["z"] is None
+
+
 def test_stationary_indices_wrap_and_are_seeded():
     a = stats.stationary_indices(50, 10, random.Random(1))
     assert a == stats.stationary_indices(50, 10, random.Random(1))
