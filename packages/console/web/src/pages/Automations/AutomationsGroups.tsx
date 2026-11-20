@@ -1,15 +1,15 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import type { AutomationState, GroupSpec, GroupsChange, GroupsCheckResult, GroupsEditMember, GroupsEditView } from "@console/shared";
 import { Card } from "../../components/DataTable";
 import { HelpSection, type CardHelpContent } from "../../components/CardHelp";
 import { Section } from "../../components/Section";
 import { FliesTile } from "../Flies/FliesSession";
-import { builderDraft, groupsCheck, groupsSave, useAutomations, useAutomationsBuilder, useAutomationsPerformance, useBuilderSchema, useGroupsEdit } from "../../lib/api";
+import { groupsCheck, groupsSave, useAutomations, useAutomationsPerformance, useGroupsEdit } from "../../lib/api";
 import { fmtMoney } from "../../lib/format";
-import { blockWords } from "../Builder/specWords";
-import { TradeShape } from "../Builder/TradeShape";
+import { AutomationRecordPage } from "./AutomationRecord";
+import { automationHref } from "./automationsModels";
 
 /**
  * Automations › Groups, a drill-down: every group (`?` none), one group (`?group=`), one automation
@@ -539,7 +539,7 @@ function GroupPage({ view, draft, edit, paper, group }: { view: GroupsEditView; 
                     return (
                       <tr key={r.m.name} className={staged ? "grp-staged" : undefined}>
                         <td>
-                          <Link to={`/automations/groups?group=${encodeURIComponent(group)}&automation=${encodeURIComponent(r.m.name)}`} className="num">
+                          <Link to={automationHref(r.m.name)} className="num">
                             {r.m.name}
                           </Link>
                           {r.was !== r.now && <span className="chip chip-info grp-moved">moved here</span>}
@@ -618,18 +618,6 @@ function Check({ ok, wait, children }: { ok: boolean; wait?: boolean; children: 
 }
 
 function AutomationPage({ view, draft, edit, paper, group, name }: { view: GroupsEditView; draft: GroupsChange; edit: (d: GroupsChange) => void; paper: Paper; group: string; name: string }) {
-  const schema = useBuilderSchema();
-  const builder = useAutomationsBuilder();
-  const [spec, setSpec] = useState<Record<string, unknown> | null>(null);
-  useEffect(() => {
-    let live = true;
-    void builderDraft(name).then((r) => {
-      if (live && r.ok && r.automation) setSpec(r.automation as Record<string, unknown>);
-    });
-    return () => {
-      live = false;
-    };
-  }, [name]);
   const r = placement(view, draft).find((x) => x.m.name === name);
   if (r === undefined) return <p className="muted">No automation named {name}.</p>;
   const g = r.now;
@@ -640,8 +628,6 @@ function AutomationPage({ view, draft, edit, paper, group, name }: { view: Group
   const groupStart = gspec?.enabled && gWas && !gWas.enabled ? (gspec.start && gspec.start > view.next_session ? gspec.start : view.next_session) : gspec?.start;
   const first = [start, groupStart].filter((d): d is string => typeof d === "string").sort().pop() ?? null;
   const startCome = first === null || first <= view.today;
-  const blocks = builder.data?.automations.find((a) => a.name === name)?.blocks ?? [];
-  const words = spec && schema.data?.schema?.words ? blockWords(schema.data.schema.words, schema.data.schema, spec) : null;
   const groupNames = Object.keys(draft.groups).sort();
   const budget = gspec !== undefined && (gspec.allocation !== undefined || gspec.max_risk !== undefined);
   return (
@@ -702,44 +688,12 @@ function AutomationPage({ view, draft, edit, paper, group, name }: { view: Group
           </div>
         </Card>
       </Section>
-      <Section concept="add" tag="the rule" question="What does it place, and when?">
-        <Card
-          title="in plain English"
-          collapseKey="automations-automation-rule"
-          className="lv-8"
-          help={HELP}
-          controls={
-            <span className="grp-cell">
-              <Link className="btn" to={`/automations/builder?automation=${encodeURIComponent(name)}`}>
-                View in Builder
-              </Link>
-            </span>
-          }
-        >
-          {words === null ? (
-            <p className="muted">Reading the rule…</p>
-          ) : (
-            <div className="grp-rule">
-              {(["structure", "entry", "gates", "exit", "size"] as const).map((k) => (
-                <p key={k}>
-                  <span className="builder-lbl">{k}</span> {words[k]}
-                </p>
-              ))}
-            </div>
-          )}
-          <span className="grp-cell">
-            {blocks.map((b) => (
-              <span key={b.block} className={b.state === "backtested" ? "chip chip-ok" : b.state === "changed" ? "chip chip-warn" : "chip"}>
-                {b.block} · {b.state === "backtested" ? "backtested" : b.state === "changed" ? "changed since its backtest" : "not backtested"}
-              </span>
-            ))}
-          </span>
-        </Card>
-        <FliesTile title="research verdict" value={r.m.verdict === null ? "—" : (VERDICT_WORDS[r.m.verdict] ?? r.m.verdict)} tone={r.m.verdict === "passed" ? "pos" : "dim"} foot="the register's label on it" />
-        <FliesTile title="paper trades" value={String(paper.trades[name] ?? 0)} tone="dim" foot={`open now ${paper.open[name] ?? 0}`} />
-        <FliesTile title="net, all" value={fmtMoney(paper.net[name] ?? null)} tone="dim" foot="a few weeks of paper is a forward read, not a verdict" />
-        <Card title="the shape and the chain" collapseKey="automations-automation-shape" className="lv-12" help={HELP}>
-          <TradeShape name={name} />
+      <Section concept="add" tag="its page" question="What does it do, and what has it done?">
+        <Card title="the rule and the record" collapseKey="automations-automation-page" className="lv-12" help={HELP}>
+          <p className="muted">Its rule in plain words, its research verdict, what it has done on paper and what it decided are on its own page.</p>
+          <Link className="btn" to={automationHref(name)}>
+            Open {name} ›
+          </Link>
         </Card>
       </Section>
     </>
@@ -950,8 +904,10 @@ export function GroupsFlow({ view, onSaved }: { view: GroupsEditView; onSaved?: 
 
 /** The Groups tab: the module's view, drilled into, staged, reviewed and saved through the orchestrator. */
 export function AutomationsGroupsPage() {
+  const { name } = useParams();
   const q = useGroupsEdit();
   const qc = useQueryClient();
+  if (name !== undefined) return <AutomationRecordPage name={name} />;
   if (q.isLoading) return <div className="muted">Reading the groups…</div>;
   if (q.error || !q.data) return <div className="error">Could not read the groups{q.error ? `: ${String(q.error)}` : "."}</div>;
   return (

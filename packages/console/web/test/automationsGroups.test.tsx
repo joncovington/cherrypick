@@ -125,6 +125,7 @@ describe("the three levels", () => {
     expect(out).toContain('aria-label="iron-condor-1345 share percent"');
     expect(out).toContain("+ Add automations");
     expect(out).toContain('href="/automations/groups?group=ensemble&amp;automation=iron-condor-1345"');
+    expect(out).toContain('href="/automations/automation/iron-condor-1345"');
   });
 
   it("one automation: the three things it needs, and where it sits", () => {
@@ -132,7 +133,8 @@ describe("the three levels", () => {
     expect(out).toContain("<b>iron-condor-1345</b>");
     expect(out).toContain("Will it trade, and if not, what stops it?");
     expect(out).toMatch(/grp-check is-no.*Its group/);
-    expect(out).toContain('href="/automations/builder?automation=iron-condor-1345"');
+    expect(out).toContain('href="/automations/automation/iron-condor-1345"');
+    expect(out).not.toContain("What does it place, and when?");
   });
 
   it("is a tab of the automations module", () => {

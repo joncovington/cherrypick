@@ -21,9 +21,9 @@ const NAME: Record<Concept, string> = {
 };
 
 /** `tag` names the section in the colour of `concept`, where another tab's own words fit better. */
-export function Section({ concept, question, tag, children }: { concept: Concept; question: string; tag?: string; children: ReactNode }) {
+export function Section({ concept, question, tag, id, children }: { concept: Concept; question: string; tag?: string; id?: string; children: ReactNode }) {
   return (
-    <section className={`pf-sec pf-c-${concept}`} aria-label={tag ?? NAME[concept]}>
+    <section id={id} className={`pf-sec pf-c-${concept}`} aria-label={tag ?? NAME[concept]}>
       <div className="pf-sec-head">
         <span className="pf-tag">{tag ?? NAME[concept]}</span>
         <h3>{question}</h3>

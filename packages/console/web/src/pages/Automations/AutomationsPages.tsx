@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import type { AutomationGroupsResult, AutomationsHistoryRow, AutomationsLine, AutomationsPayload, AutomationsPerformance, AutomationsPosition } from "@console/shared";
 import { Card, DataCard, PnlCell } from "../../components/DataTable";
 import { TradeTotalsChip, tradeMoneyColumns } from "../../components/TradeMoney";
@@ -18,7 +19,7 @@ import { GuideLink } from "../../components/GuideLink";
 import { useAutomationGroups, useAutomationsHistory } from "../../lib/api";
 import { fmtCash, fmtMoney, fmtNum } from "../../lib/format";
 import { TradeCard, TradeCards } from "../Live/TradeCard";
-import { closedModel, dailyCurve, gateWords, openModel, shapeWords, todayCounts } from "./automationsModels";
+import { automationHref, closedModel, dailyCurve, gateWords, openModel, shapeWords, todayCounts } from "./automationsModels";
 
 /**
  * automations' pages (packages/automations): research item 75's arms in paper. An arm is one configured
@@ -59,7 +60,7 @@ const OUTCOME_CHIP: Record<string, string> = { entered: "chip chip-ok", missed: 
 const structure = (p: { legs: AutomationsPosition["legs"] }): string => shapeWords(p.legs);
 
 /** The open structures as a table: what each took in, where it marks, and what it is worth now. */
-function OpenTable({ positions, loading }: { positions: AutomationsPosition[]; loading: boolean }) {
+export function OpenTable({ positions, loading }: { positions: AutomationsPosition[]; loading: boolean }) {
   const open = positions.filter((p) => p.status === "open").sort((a, b) => a.arm.localeCompare(b.arm) || a.symbol.localeCompare(b.symbol));
   return (
     <DataCard
@@ -78,7 +79,9 @@ function OpenTable({ positions, loading }: { positions: AutomationsPosition[]; l
     >
       {open.map((p) => (
         <tr key={p.positionId}>
-          <td>{p.arm}</td>
+          <td>
+            <Link to={automationHref(p.arm)}>{p.arm}</Link>
+          </td>
           <td>{p.symbol}</td>
           <td>{p.expiration}</td>
           <td className="muted" style={{ textAlign: "left" }}>
@@ -122,7 +125,9 @@ export function GroupsCard({ result, loading }: { result: AutomationGroupsResult
           <td>
             <span className={group.enabled ? "chip chip-ok" : "chip chip-warn"}>{group.enabled ? "on" : "off"}</span>
           </td>
-          <td>{a.name}</td>
+          <td>
+            <Link to={automationHref(a.name)}>{a.name}</Link>
+          </td>
           <td className="muted">{a.enabled ? "on" : "off"}</td>
           <td>
             {a.verdict === null ? "—" : <span className={VERDICT_CHIP[a.verdict] ?? "chip"}>{VERDICT_WORDS[a.verdict] ?? a.verdict}</span>}
@@ -167,7 +172,9 @@ export function AutomationsToday({ data, loading }: { data: AutomationsPayload |
         >
           {today.map((r) => (
             <tr key={`${r.arm}-${r.symbol}`}>
-              <td>{r.arm}</td>
+              <td>
+                <Link to={automationHref(r.arm)}>{r.arm}</Link>
+              </td>
               <td>{r.symbol}</td>
               <td>
                 <span className={OUTCOME_CHIP[r.outcome] ?? "chip"}>{r.outcome}</span>
@@ -232,7 +239,7 @@ export function AutomationsPositions({ data }: { data: AutomationsPayload | unde
 const MONEY = tradeMoneyColumns<AutomationsHistoryRow>("the whole structure at the mid per share: a credit or a debit");
 
 const HISTORY_DEFS: ColumnDef<AutomationsHistoryRow>[] = [
-  { id: "arm", header: "arm", kind: "describe", render: (r) => r.arm, sortValue: (r) => r.arm },
+  { id: "arm", header: "arm", kind: "describe", render: (r) => <Link to={automationHref(r.arm)}>{r.arm}</Link>, sortValue: (r) => r.arm },
   { id: "symbol", header: "name", kind: "describe", render: (r) => r.symbol, sortValue: (r) => r.symbol },
   { id: "entered", header: "entered", kind: "describe", render: (r) => r.entrySession, sortValue: (r) => r.entrySession },
   { id: "closed", header: "closed", kind: "describe", render: (r) => r.exitSession ?? "—", sortValue: (r) => r.exitSession },
@@ -254,13 +261,12 @@ const HISTORY_DEFS: ColumnDef<AutomationsHistoryRow>[] = [
   }),
 ];
 
-export function AutomationsHistory({ data }: { data: AutomationsPayload | undefined }) {
+/** The closed structures, every arm's or one arm's (`arm`, an automation's own page). */
+export function ClosedStructures({ arm }: { arm: string | null }) {
   const { from, to } = useUrlDateRange();
-  const history = useAutomationsHistory({ arm: null, from, to });
+  const history = useAutomationsHistory({ arm, from, to });
   const [open, setOpen] = useState<string | null>(null);
   return (
-    <div className="pf-layout">
-      <Section concept="hist" tag="the record" question="How did each structure end?">
         <HistoryTable
           table="automations-history"
           title="closed structures"
@@ -295,6 +301,14 @@ export function AutomationsHistory({ data }: { data: AutomationsPayload | undefi
           }
           detailClassName="cal-detail-row"
         />
+  );
+}
+
+export function AutomationsHistory({ data }: { data: AutomationsPayload | undefined }) {
+  return (
+    <div className="pf-layout">
+      <Section concept="hist" tag="the record" question="How did each structure end?">
+        <ClosedStructures arm={null} />
       </Section>
       <MeasurementBreaks breaks={data?.measurementBreaks ?? []} />
     </div>
@@ -370,7 +384,7 @@ export function AutomationsPerformancePage({ perf }: { perf: AutomationsPerforma
         >
           {rows.map(([arm, l]) => (
             <tr key={arm} style={arm === COMBINED ? { fontWeight: 600 } : undefined}>
-              <td>{arm}</td>
+              <td>{arm === COMBINED ? arm : <Link to={automationHref(arm)}>{arm}</Link>}</td>
               <td>{l.trades}</td>
               <td>{l.wins}</td>
               <td>{l.mean === null ? "—" : fmtMoney(l.mean)}</td>
@@ -416,7 +430,7 @@ export function AutomationsCosts({ perf }: { perf: AutomationsPerformance | unde
         >
           {rows.map(([arm, l]) => (
             <tr key={arm} style={arm === COMBINED ? { fontWeight: 600 } : undefined}>
-              <td>{arm}</td>
+              <td>{arm === COMBINED ? arm : <Link to={automationHref(arm)}>{arm}</Link>}</td>
               <td>{l.trades}</td>
               <td>{fmtCash(l.gross)}</td>
               <td>{fmtMoney(-l.fees)}</td>

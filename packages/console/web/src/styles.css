@@ -12059,6 +12059,38 @@ svg.vol-curve text {
 .grp-crumbs b {
   color: var(--text);
 }
+/* One automation's page: a row of links to its sections. */
+.ar-jump {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.ar-jump a {
+  font-size: 0.82rem;
+  padding: 0.2rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-muted);
+  text-decoration: none;
+}
+.ar-facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.5rem 0.9rem;
+  margin: 0 0 0.9rem;
+  font-size: 0.88rem;
+}
+.ar-facts dt {
+  color: var(--text-muted);
+}
+.ar-facts dd {
+  margin: 0;
+}
+.ar-jump a:hover,
+.ar-jump a:focus-visible {
+  border-color: var(--accent);
+  color: var(--text);
+}
 .grp-cell {
   display: inline-flex;
   flex-wrap: wrap;
