@@ -103,11 +103,11 @@ describe("the ladder's open lots", () => {
     expect(bare.targetStage).toBe("breakeven");
   });
 
-  it("count days from the buy session to today in New York and flag the hospital", () => {
+  it("count days from the buy session to today in New York and flag the hospital, newest buy first", () => {
     const lots = read().openLots;
     expect(lots.map((l) => [l.arm, l.daysHeld, l.hospital])).toEqual([
-      ["decay", 31, true],
       ["once", 1, false],
+      ["decay", 31, true],
     ]);
   });
 

@@ -196,7 +196,7 @@ export function readLadder(config: ConsoleConfig, now: Date = new Date()): Ladde
   return withReadOnlyDb<LadderPayload>(ladderDbPath(config), emptyPayload(today, declared), (db) => {
     const openLots = hasTable(db, "ladder_positions")
       ? db
-          .prepare<[], Record<string, unknown>>("SELECT * FROM ladder_positions WHERE status = 'open' ORDER BY buy_time, id")
+          .prepare<[], Record<string, unknown>>("SELECT * FROM ladder_positions WHERE status = 'open' ORDER BY buy_time DESC, id DESC")
           .all()
           .map((r) => openLot(r, today))
       : [];
