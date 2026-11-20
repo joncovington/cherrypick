@@ -232,6 +232,14 @@ list and flags are in [docs/orchestrator-cli.md](../../docs/orchestrator-cli.md)
 - The advice consumers (`cherrypick.core.advice`, each module's bounds, the loops' session-start
   re-validation) are untouched by any of this; absent advice means baseline.
 
+**The trade notifier's sources.** `trade_notifier.run` reads each enabled module's paper ledger
+(`paper.notify_trades`) and, separately, its live ledger (`live.notify_trades` with `live_db`), under
+the state key `<name>:live`, every live event through `_LiveNotifier` (LIVE title and body, the desktop
+toast). A live ledger runs its schema's paper adapter unless `_LIVE_SCHEMAS` names one that adds to it:
+the ladder's reads the live journal as well (`alert`, `split` and `positions` rows and the breaker and
+invalid-limits `blocked` rows, filtered in SQL), each row once by id, seeded on first sight and for a
+state written before the alarms existed. `live-fill-alerts` announces the orders themselves.
+
 **Per-schema dispatch.** Each paper DB's schema is selected by `paper.trade_schema` (`meic_ic`,
 `earnings`, `fly_book`, …). The canonical set is `schemas.SCHEMAS`, and `tests/test_schema_registry.py`
 enforces that every surface registry (`report.py` readers and `_OPEN_READERS`, `reconcile.py`,

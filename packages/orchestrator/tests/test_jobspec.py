@@ -1228,7 +1228,11 @@ def test_every_module_with_a_live_ledger_declares_the_reconcile_job():
     example = json.loads(
         (Path(__file__).resolve().parents[1] / "config.example.json").read_text(encoding="utf-8")
     )
-    live_modules = sorted(name for name, mod in example["modules"].items() if mod.get("live"))
+    # A live block with no `task_name` derives no live job and is notification wiring only (the
+    # ladder's `live.notify_trades`; its tick refines fees itself): no loop for a reconcile to follow.
+    live_modules = sorted(
+        name for name, mod in example["modules"].items() if (mod.get("live") or {}).get("task_name")
+    )
     assert {"flies", "bwb", "meic"} <= set(live_modules), live_modules
     for module in live_modules:
         paper = example["modules"][module]["paper"]

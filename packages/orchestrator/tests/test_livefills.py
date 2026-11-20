@@ -114,3 +114,33 @@ def test_the_old_state_shape_is_dropped_not_misread(tmp_path, monkeypatch):
         encoding="utf-8",
     )
     assert [s["kind"] for s in _run(inbox, _Recorder())["sent"]] == ["filled"]
+
+
+def test_a_ladder_order_is_named_ladder_whether_or_not_its_ledger_has_published_it(tmp_path, monkeypatch):
+    """The ladder publishes its ledger's order ids at the top of each tick (`publish_known_orders`), so an
+    order it placed later in that tick is not yet in `live_known_orders/ladder.json`: its `ldr.` client id
+    names it meanwhile. Shown to fail without the prefix: it read 'a live loop'. A fill of one the ledger
+    knows is named by the ledger. A ladder order wakes no loop (the ladder has no live task)."""
+    from cherrypick.core import execution as _execution
+
+    inbox = _setup(
+        tmp_path,
+        monkeypatch,
+        [
+            ("L1", "Live", {"external_identifier": "ldr.b.TQQQ.20261123.1.10x9300"}),
+            ("L2", "Live", {"external_identifier": "ldr.s.session-TQQQ-20261123-1.10x9672"}),
+        ],
+    )  # fmt: skip
+    monkeypatch.setattr(
+        _execution, "_known_orders_dir", lambda: livefills._home.state_dir() / "live_known_orders"
+    )
+    _execution.publish_known_orders("ladder", ["L2"], now_iso="2026-11-02T10:00:00-05:00")
+    rec = _Recorder()
+    out = livefills.run({}, notifier=rec, today=DAY, inbox=inbox)
+    assert [(s["order_id"], s["module"]) for s in out["sent"]] == [("L1", "ladder"), ("L2", "ladder")]
+    assert [m["title"] for m in rec.sent] == ["LIVE order placed: ladder"] * 2
+    assert out["woken"] == []
+    add(inbox, [("L1", "Filled", {"external_identifier": "ldr.b.TQQQ.20261123.1.10x9300"})])
+    rec2 = _Recorder()
+    livefills.run({}, notifier=rec2, today=DAY, inbox=inbox)
+    assert rec2.sent[0]["title"] == "LIVE fill: ladder"
