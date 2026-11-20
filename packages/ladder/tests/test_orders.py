@@ -480,8 +480,16 @@ def test_an_uncertain_place_holds_the_rest():
 
 
 # --------------------------------------------------------------------------- the fence
-ALLOWED = {"cherrypick.core.execution", "cherrypick.core.execution.order_id_of"}
+READER = "cherrypick.core.execution.order_id_of"  # a pure reader of a place result: the one allowed import
 FORBIDDEN = ("broker", "execution", "tastytrade", "session", "auth")
+
+
+def violations(source: str) -> list[str]:
+    names = imports_in(source)
+    others = [n for n in names if n.startswith("cherrypick.core.execution.") and n != READER]
+    if READER in names and not others:
+        names = [n for n in names if n != "cherrypick.core.execution"]
+    return [n for n in names if n != READER and any(w in n.lower() for w in FORBIDDEN)]
 
 
 def imports_of(path: pathlib.Path) -> list[str]:
@@ -508,18 +516,11 @@ def test_the_order_fence_catches_a_trading_import():
         "import tastytrade",
         "from cherrypick.core.auth import get_session",
     ):
-        flagged = [
-            n for n in imports_in(line + "\n") if n not in ALLOWED and any(w in n.lower() for w in FORBIDDEN)
-        ]
-        assert flagged, line
+        assert violations(line + "\n"), line
 
 
 def test_the_order_layer_imports_nothing_that_can_submit():
-    bad = [
-        n
-        for n in imports_of(SRC / "orders.py")
-        if n not in ALLOWED and any(w in n.lower() for w in FORBIDDEN)
-    ]
+    bad = violations((SRC / "orders.py").read_text(encoding="utf-8"))
     assert bad == []
 
 
