@@ -35,4 +35,11 @@ else
     echo "==> packages/console skipped -- install pnpm (npm install -g pnpm) to build the console UI"
 fi
 
+# The repo's own git hooks (tools/hooks): the pre-commit check keeps a home directory and this
+# machine's user name out of a commit. One setting covers every worktree of the clone.
+if git -C "$ROOT" rev-parse --git-dir >/dev/null 2>&1; then
+    echo "==> git hooks (core.hooksPath tools/hooks)"
+    git -C "$ROOT" config core.hooksPath tools/hooks
+fi
+
 echo "==> done"

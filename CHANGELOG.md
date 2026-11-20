@@ -19,6 +19,10 @@ beyond the latest release.
   config's `modules.ensemble` reads as `modules.automations`, `config/ensemble.json` and
   `data/ensemble/` are read while only they exist, and `cherrypick.ensemble` still imports. Rename
   them when you like; the ledger's tables keep their names.
+- **A developer checkout runs a pre-commit check.** `scripts/dev-install.ps1` or `.sh` now sets
+  `git config core.hooksPath tools/hooks`, whose pre-commit hook runs `tools/check_personal.py
+  --staged`: a commit that holds a home directory, a path mangled from one, or this machine's user
+  name is refused. Rerun dev-install, or set that one config line, to get it.
 
 ### What's new
 
@@ -38,7 +42,7 @@ beyond the latest release.
   loop has a ledger, the lots held, the lots sold (fees in their own column, with whether they are the
   schedule's or the broker's), the orders and the journal. It reads only: arming stays the
   `/live-ladder-start` command. The suite-wide Live page lists the ladder as a loop too. Issue #1337.
-- **The ladder has a console page.** `/ladder` (under Experiments) shows each fund's previous close and
+- **The ladder has a console page.** `/ladder` (on the rail, key 6) shows each fund's previous close and
   every arm's next buy level, the open lots with the group's 18-day "hospital" flagged, the sold lots as
   trades, and each arm's realised and unrealised result. Its help tab says the rule is not a tested edge.
 - **The morning pack's SPX risk reversal comes from the broker.** Cboe's delayed SPX chain moved

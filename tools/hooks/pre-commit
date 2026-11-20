@@ -1,0 +1,11 @@
+#!/bin/sh
+# Refuse a commit that would put a home directory, a path mangled from one, or this machine's user
+# name into the repo (or an account fact: the same gate CI runs). The name is read from the machine
+# at run time, so only a local check can see it. Installed by scripts/dev-install.{ps1,sh}
+# (git config core.hooksPath tools/hooks), which covers every worktree of the clone.
+if command -v python >/dev/null 2>&1; then
+    PY=python
+else
+    PY=python3
+fi
+exec "$PY" tools/check_personal.py --staged
