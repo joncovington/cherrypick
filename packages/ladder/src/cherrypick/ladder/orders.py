@@ -1,8 +1,8 @@
 """The ladder's order layer (issue #1337, part 2): a pure planner and an executor over an injected broker.
 
-Nothing here builds a broker, reads the ledger or runs on a tick. The loop (part 3) hands the planner
-the state it read; the planner returns actions; the executor applies them through whatever broker
-object it was given, or logs them in dry-run and sends nothing.
+Nothing here builds a broker, reads the ledger or runs on a tick. The tick (`live_tick`) hands the
+planner the state it read; the planner returns actions; the executor applies them through whatever
+broker object it was given, or logs them in dry-run and sends nothing.
 
 **The planner (`plan`)** is a pure function of its inputs. Per fund, in the order of `live.symbols`:
 
@@ -523,6 +523,8 @@ class Executor:
         out = {"action": a.as_dict(), "ok": bool(res.get("ok")) and oid is not None, "order_id": oid}
         if not res.get("ok"):
             out["error"] = res.get("error")
+        if res.get("unmet_gates"):
+            out["unmet_gates"] = list(res["unmet_gates"])
         if res.get("uncertain"):
             out["uncertain"] = True
         return out

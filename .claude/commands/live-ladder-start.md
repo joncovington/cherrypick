@@ -1,12 +1,13 @@
 ---
-description: Arm (or disarm) the ladder live gate for TODAY, behind a required literal YES confirmation. The ladder has no order path yet
+description: Arm (or disarm) the ladder live gate for TODAY, behind a required literal YES confirmation. The ladder's order path ships in dry-run and off
 argument-hint: [--stop]
 ---
 
-Arm the ladder's live gate for today. **The ladder has no order path yet (issue #1337): arming only
-writes the arm record.** Nothing is bought, sold or cancelled, no supervisor job runs, and the record
-does nothing until the order loop exists. The command is here so the arm ritual is the same one the
-other modules use and is ready when the order path lands.
+Arm the ladder's live gate for today. **The ladder has an order path (issue #1337) that ships in
+dry-run and off.** Arming writes the arm record. While `live.dry_run` is true (the shipped value) a
+tick reads the broker and journals the orders it would send, and places and cancels nothing. Real
+orders need `live.dry_run: false` set by hand, with every gate held. No supervisor job runs the tick
+yet: it is `live_loop --once`, run by hand.
 
 The arm record is `~/.cherrypick/state/ladder-live-arm.json`. It is good for its date only; the live
 config's `disarm_at` (default 20:00 ET) ends the day, and tomorrow needs a fresh run of this command.
@@ -28,8 +29,9 @@ config's `disarm_at` (default 20:00 ET) ends the day, and tomorrow needs a fresh
    python -m cherrypick.ladder.live_loop --status
    ```
    Present in plain language: every gate with its verdict and reason; the designated account (masked,
-   `****1234`); `halt_flag` (it blocks new buys only, and once there are orders it would not touch
-   resting sells); the live block's `arm`, `symbols`, `lot_dollars`, the lot caps, `max_open_dollars`
+   `****1234`); `mode` (`dry-run` or `live`, from `live.dry_run`) and `held` (anything an uncertain
+   submit is holding); `halt_flag` (it blocks new buys only and never touches resting sells); the
+   live block's `arm`, `symbols`, `lot_dollars`, the lot caps, `max_open_dollars`
    and the drawdown breaker. A failing config gate, an unset account or an unknown arm is not
    fixed here: report it.
    Check `~/.cherrypick/state/supervisor.last.json` is fresh (under about 90 s old). A stale or absent
@@ -39,7 +41,8 @@ config's `disarm_at` (default 20:00 ET) ends the day, and tomorrow needs a fresh
    or shorten it). Then ask for explicit confirmation with the AskUserQuestion tool, naming the masked
    account, the arm, the symbols and the self-disarm time, with exactly two options: **"YES, I accept
    the disclaimer; arm the ladder for today"** and **"No, cancel"**. Say plainly in the question that
-   the ladder has no order path yet, so this records the arm and places nothing. Anything but the
+   whether the loop is in dry-run (it sends nothing) or live (`live.dry_run` false: it places and
+   cancels real orders). Anything but the
    literal YES option stops here with no action taken.
 
 4. **Arm.** Once YES is confirmed:
@@ -52,7 +55,7 @@ config's `disarm_at` (default 20:00 ET) ends the day, and tomorrow needs a fresh
    off, no supervisor) is final: report it and do not work around it.
 
 5. **Verify and report**: `--status` now shows `armed_today` true. Report the armed-for date, the
-   self-disarm time, and that no order path exists yet so nothing will trade. Stop early with
+   self-disarm time, and the mode: in dry-run nothing will trade. Stop early with
    `/live-ladder-start --stop`, or `python -m cherrypick.ladder.live_loop --disarm`.
 
 ## Stop / disarm (`--stop`)
@@ -66,5 +69,5 @@ config's `disarm_at` (default 20:00 ET) ends the day, and tomorrow needs a fresh
 
 ## Escape hatch
 
-`python -m cherrypick.ladder.live_loop --once` evaluates readiness and logs that there is no order
-path. It places nothing.
+`python -m cherrypick.ladder.live_loop --once` runs one tick: it reads the broker and reconciles the
+live ledger always, and plans orders only while armed. In dry-run (the shipped value) it sends nothing.

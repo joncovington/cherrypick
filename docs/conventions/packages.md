@@ -77,16 +77,21 @@ what it may write. The package's own CLAUDE.md holds the detail.
   the second package, after fundamentals, to declare that dependency.
 - **packages/ladder** — ⚠️ EXPERIMENTAL. The share dip ladder in paper on leveraged index funds
   (TQQQ first): a lot bought 7% down, each lot sold on its own at +4%, no stop. Arms `chain`,
-  `once` (item 26, which failed) and `decay` (item 27's passing target). **Paper-only,
-  credential-free**, a stream-cache consumer: fills are resting limits tested against one quote a
-  minute, the reference close is a posted close (`stream_summary`), never a last trade. Writes only
-  its own ledger (trade schema `ladder_lot`) and its stream request. Off by default in the example: the
-  orchestrator runs it as `ladder-paper` once `modules.ladder.enabled` is set. **Live: gates and a
-  per-day arm only, no order path yet (#1337).** Its `live` block ships off (`live.enabled`,
-  `live.gate0_confirmed`, both guarded) with no `live.task_name`; `live_loop --arm --confirm YES`,
-  `--install-task`, `--disarm`, `--status` and `--once` write or read the arm record and evaluate
-  readiness, and place, cancel and change nothing. Reads the keyring for the designated account's
-  presence only, shown masked.
+  `once` (item 26, which failed) and `decay` (item 27's passing target). **Paper is credential-free**,
+  a stream-cache consumer: fills are resting limits tested against one quote a
+  minute, the reference close is a posted close (`stream_summary`), never a last trade. Paper writes
+  only its own ledger (trade schema `ladder_lot`) and its stream request. Off by default in the example: the
+  orchestrator runs it as `ladder-paper` once `modules.ladder.enabled` is set. **Live: an order path
+  that ships in dry-run and off (#1337).** Its `live` block ships off (`live.enabled`,
+  `live.gate0_confirmed`, both guarded) and in dry-run (`live.dry_run` true, guarded), with no
+  `live.task_name`. `live_loop --arm --confirm YES`, `--install-task` and `--disarm` write the day's
+  arm record, `--status` reads the gates, and `--once` runs one tick through the ladder's own broker
+  adapter (designated account only): it reads the broker, reconciles a separate live ledger
+  (`~/.cherrypick/data/ladder/live_trades.db`), and while armed plans orders for the live arm. In
+  dry-run it journals what it would send and sends nothing. Real orders need `live.dry_run: false`
+  and every gate, re-checked on each placement. Only `ldr.` client ids are its own: it never touches
+  another module's or a hand order. Reads the keyring for the designated account and the broker
+  session; the account is shown masked.
 - **packages/bwb** — **Retired 2026-11-08; off by default; may be reinstated** (the owner switched
   entries off; the module goes off once flat; reinstating means `modules.bwb.enabled` and the arms'
   `enabled`). Daily-laddered SPX put broken-wing butterflies, ~7 DTE, held to expiry; was paper by

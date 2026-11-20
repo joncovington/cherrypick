@@ -2,7 +2,9 @@
 
 ⚠️ **EXPERIMENTAL.** The share dip ladder in paper, on leveraged index funds (TQQQ first): buy a lot
 7% down, sell each lot on its own at +4% of its cost, no stop, no time limit. **Paper-only
-in practice: the live path is gates and an arm with no order path yet** (see Live; posture: root file). Ledger: `~/.cherrypick/data/ladder/paper_trades.db`.
+in practice: the live path is gates, an arm and an order path that ships in dry-run and off** (see Live;
+posture: root file). Ledgers: `~/.cherrypick/data/ladder/paper_trades.db` and, for live,
+`live_trades.db` beside it.
 Off by default: the orchestrator runs `--once` every 60 s on trading days as the `ladder-paper` job once
 `modules.ladder.enabled` is set (trade schema `ladder_lot`); the loop gates its own hours.
 
@@ -71,8 +73,10 @@ chain is read. A fund removed from the config stays requested until its last lot
 
 `rules.py` (levels, targets, size, money, pure), `provider.py` (read-only cache views), `db.py`
 (ledger), `paper_loop.py` (the tick), `stream_request.py`, `analytics.py` (the forward read),
-`cli.py` (status, lots, summary), `live_gates.py`, `live_loop.py` and `credentials.py` (the live gates and
-arm, no orders), `orders.py` (the order planner and executor, not yet run by anything).
+`cli.py` (status, lots, summary), `live_gates.py`, `live_loop.py` and `credentials.py` (the live gates,
+the arm and the commands; none imports anything that trades), `orders.py` (the pure order planner and
+the executor over an injected broker), `live_db.py` (the live ledger), `live_tick.py` (the broker
+adapter, the reconcile and the tick: the only module that imports the broker seam).
 
 ## Commands
 
@@ -80,19 +84,21 @@ Commands to run the package, its tests and its lint are in [README.md](README.md
 
 `paper_loop --force` acts outside the hours, for testing only.
 
-## Live (gates, arm and an order layer nothing runs yet; #1337)
+## Live (gates, arm, order layer, tick and ledger; ships in dry-run and off; #1337)
 
 `live_gates.py` (pure: a list of named gates, each with a verdict and a reason), `live_loop.py` (the
-commands), `credentials.py` (the designated account's presence) and `orders.py` (the order planner and
-executor). Nothing in production builds a broker, so nothing places, cancels or changes an order; a
-source scan in the tests holds that for the gates and the loop and bars `orders.py` from importing
-anything that can submit. The `live` block in the config ships off.
+commands), `credentials.py` (the designated account's presence), `orders.py` (the order planner and
+executor), `live_db.py` (the live ledger) and `live_tick.py` (the broker adapter, the reconcile and the
+tick). `live_tick.py` is the only module that imports the broker seam, and it builds the adapter inside
+the tick, never at import; a source scan in the tests holds every other ladder file to no trading
+import (`orders.py` may import the one pure id reader). The `live` block in the config ships off and
+`live.dry_run` ships true.
 
 - **Gates:** `live.enabled`; `live.gate0_confirmed` (a human attestation, who and when); the suite's
   `modules.ladder.enabled`; a valid arm record for today; a designated account; `live.arm` naming an
   enabled paper arm; `live.symbols` non-empty and inside `names`; valid limits. The halt flag is
   reported but blocks new buys only.
-- **Limits** (validated by the `live.limits` gate, enforced by the order layer later): `lot_dollars`,
+- **Limits** (validated by the `live.limits` gate, enforced by the order layer): `lot_dollars`,
   `max_open_lots` per fund, `max_open_lots_total`, `max_open_lots_per_group` over `correlated_groups` (the
   shipped group is `nasdaq-semis`), `max_open_dollars` (open lots plus resting buys), `drawdown_breaker_frac`
   (blocks new buys only) and `hospital_alert_days` (an alert, never an action).
@@ -100,10 +106,50 @@ anything that can submit. The `live` block in the config ships off.
   exactly `YES` while the first three gates hold; `--install-task` is the same without the prompt
   (`/live-ladder-start`). Both need a running supervisor, as every module's arm does. `--disarm` removes
   the record. The record is good for its date; `live.disarm_at` (20:00 ET) ends the day.
-- **`--status`** is one JSON object: every gate, the masked account, whether it is armed today.
-  **`--once`** evaluates the same and logs that there is no order path.
-- There is no `live.task_name`, so the supervisor derives no `ladder-live` job. The guarded pointers
-  and the live-path set name the module; the live ledger, the tick and reconcile are later work.
+- **`--status`** is one JSON object: every gate, the masked account, whether it is armed today, `mode`
+  (`dry-run` or `live`) and `held` (what an uncertain submit is holding). It makes no broker call and
+  `ready` reflects the gates only. **`--once`** runs one tick (below).
+- There is no `live.task_name`, so the supervisor derives no `ladder-live` job and a tick is run by
+  hand. The supervisor job comes with a later step.
+- **Dry-run (`live.dry_run`, guarded)** is true unless it is exactly `false`. The tick still reads the
+  broker, but the executor logs the orders it would place or cancel into the decisions journal
+  (`mode = dry_run`, the order's client id in the reason, the shares, limit and time in force in the
+  detail) and calls the broker for nothing, so a shadow week can be checked against paper's lots. The
+  adapter refuses a live placement while the flag is true, whatever the caller passed.
+- **The tick (`live_loop --once`)**, in this order: the dead-man's switch (an arm record dated another
+  day is removed before any broker read); the gates that block everything (any unmet and nothing is
+  read, no adapter built); the orphan sweep; the reconcile; then, only inside `session_start` to
+  `disarm_at` and armed, the plan inputs, `orders.plan` and the executor. Unarmed, or outside those
+  hours, it stops after the reconcile.
+  - **Reconcile first.** It reads the broker's word on every order the ledger holds open and adopts any
+    `ldr.` order the ledger lacks (a crash between a place and its ledger row), so a fill the ledger
+    has not seen reaches the planner as a lot, not as a resting buy it would cancel or re-place. A
+    filled buy becomes a lot at the broker's fill price; a filled sell closes it with realized money. A
+    read that fails ends the tick before the plan (`reconcile_incomplete`). A lot whose sell order
+    ended with only part of its shares sold stays open, is alerted, and is planned nothing until a
+    person looks.
+  - **Orphans** are working orders carrying one of our client ids (`ldr.`) that the ledger never
+    recorded. Another module's order in the same account, or a hand order, is not ours and is never
+    counted or touched. A sweep that cannot read the broker is unknown, not zero, and ends the tick.
+  - **Disarm.** At `disarm_at` the tick runs once more while the arm still counts: the planner cancels
+    every resting buy, a second reconcile-and-plan pass rests the sell of a buy that filled as it was
+    cancelled, and only then the loop disarms itself. A sell is never cancelled by the disarm, the
+    halt flag or the breaker.
+  - **The adapter (`BrokerAdapter`)** is `core.execution.Broker` with the ladder's credentials, the
+    designated account and the gates injected, and a hold file (`live_held.json`) that outlives the
+    process, so an uncertain submit blocks the next minute's tick too. It re-reads the gates on every
+    placement: a gate that blocks everything stops any order, the halt flag stops one that opens a
+    position, and a gate flipped mid-tick bites on the next order.
+- **The live ledger (`live_trades.db`)** is a separate file from paper's and is never resolved from
+  `LADDER_DB_PATH`. It has paper's tables, so every ladder reader reads it, plus `ladder_orders` (one
+  row per order: client id, broker order id, side, fund, lot, shares, limit, state, fill, fees, whether
+  adopted) and these columns on `ladder_positions`: the masked account, both order ids and client ids,
+  each side's fees and where they came from. A lot is keyed `<arm>:<fund>:<session>:<n>`, the id paper
+  uses, taken from the buy's client id so it is stable. Money is the layout above with the broker's
+  fills: `entry_value` + `exit_value` = `gross_pnl`; `gross_pnl` − `fees` = `net_pnl`; settlement and
+  slippage zero. Fees start as the model's (`core.fees.stock_trade_fee`, `fees_source = modeled`) and are
+  replaced by the broker's own transaction rows for that order when they are readable
+  (`fees_source = broker`). An account number is never stored.
 - **The planner (`orders.plan`)** is pure: it takes the live block, the arm's rule, each fund's
   reference close, the open lots, the broker's working orders, the day's fills per fund, the funds'
   marks and the time, and returns place, cancel and keep actions per fund. Unarmed it returns nothing.

@@ -2,8 +2,7 @@
 
 Pure. Every input is passed in (the config, the suite-config switch, the arm record's date, the
 designated account, the halt flag, the clock), so nothing here reads a keyring, a file or a broker.
-There is no order path in this module or beside it yet: these gates say whether a future loop may
-act, and `live_loop` shows them.
+These gates say whether the live tick may act, and `live_loop` shows them.
 
 Two kinds of gate, told apart by `blocks`:
 
