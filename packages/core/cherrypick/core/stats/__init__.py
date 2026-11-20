@@ -243,6 +243,82 @@ def menu_placebo(
     }
 
 
+def setting_placebo(
+    diffs: Mapping[str, Mapping[str, float]],
+    *,
+    draws: int = DEFAULT_RESAMPLES,
+    seed: int = DEFAULT_SEED,
+    tick: Callable[[int], None] | None = None,
+) -> dict:
+    """Settings searched from a menu, each a paired change against one base run, against chance
+    counting every try (a max-T sign-flip test, Westfall & Young 1993).
+
+    `diffs` maps each candidate setting to its per-session difference from the base (the setting's net
+    less the base's, every session of the part read, 0 where neither traded). A setting wants a high
+    sum. Under the null that it changes nothing in expectation, each session's difference is as likely
+    either sign, so each candidate's statistic is its sum over the square root of its sum of squares,
+    and each draw flips every session's sign at random once and reads every candidate under those same
+    flips, so settings that move the same sessions stay as alike as they are.
+
+    Per candidate: `p`, the share of draws (add-one) at least as high as its own statistic; and
+    `p_menu`, the share whose HIGHEST statistic across the menu is at least as high -- the setting must
+    beat the best random change of the whole menu, not a typical one. `null_max_median` is that highest
+    statistic's median: what the search's own luck reaches. A candidate that changes no session is
+    listed with `z` None and not counted in `tried`. Seeded. `tick` is called with each finished
+    draw's count: telemetry for a caller's progress, never read back."""
+    pool = sorted({s for d in diffs.values() for s in d})
+    n = len(pool)
+    at = {s: i for i, s in enumerate(pool)}
+    cands: dict[str, tuple[list[tuple[int, float]], float, float]] = {}
+    out: dict[str, dict] = {}
+    for name, d in diffs.items():
+        pairs = [(at[s], float(v)) for s, v in d.items() if v]
+        ss = sum(v * v for _, v in pairs)
+        mean = round(sum(v for _, v in pairs) / n, 4) if n else None
+        out[name] = {"sessions": n, "moved": len(pairs), "mean": mean}
+        if ss <= 0:
+            out[name].update({"z": None, "p": None, "p_menu": None})
+            continue
+        scale = math.sqrt(ss)
+        cands[name] = (pairs, scale, sum(v for _, v in pairs) / scale)
+    own = dict.fromkeys(cands, 0)
+    menu = dict.fromkeys(cands, 0)
+    highs: list[float] = []
+    if cands:
+        rng = random.Random(seed)
+        tol = 1e-9
+        for d in range(draws):
+            signs = [1.0 if rng.random() < 0.5 else -1.0 for _ in range(n)]
+            high = -math.inf
+            for name, (pairs, scale, z) in cands.items():
+                zd = sum(signs[i] * v for i, v in pairs) / scale
+                if zd >= z - tol:
+                    own[name] += 1
+                high = max(high, zd)
+            highs.append(high)
+            if tick is not None:
+                tick(d + 1)
+            for name, (_pairs, _scale, z) in cands.items():
+                if high >= z - tol:
+                    menu[name] += 1
+    for name, (_pairs, scale, z) in cands.items():
+        out[name].update(
+            {
+                "z": round(z, 4),
+                "scale": round(scale, 4),
+                "p": round((own[name] + 1) / (draws + 1), 4),
+                "p_menu": round((menu[name] + 1) / (draws + 1), 4),
+            }
+        )
+    return {
+        "tried": len(cands),
+        "sessions": n,
+        "draws": draws if cands else 0,
+        "null_max_median": round(statistics.median(highs), 4) if highs else None,
+        "candidates": out,
+    }
+
+
 def stationary_indices(
     n: int, mean_block: float, rng: random.Random, *, length: int | None = None
 ) -> list[int]:

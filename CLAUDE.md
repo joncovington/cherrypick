@@ -32,7 +32,9 @@ Packages: `packages/orchestrator`, `packages/meic`, `packages/earnings`, `packag
   click and only while the licence allows new work, with that automation's run after them, and the
   Builder's idea search: one search of one saved automation's newest long run, queued on the research
   queue by the orchestrator, its Declare (one surviving idea's register row drafted into the search's
-  result) and one held-out test per declared idea, logged there. The
+  result) and one held-out test per declared idea, logged there, and its settings grid the same way
+  (one replay of that run's automation and each exit and width setting beside it, its Declare and one
+  held-out test per declared setting). The
   Automations › Groups tab writes the automation groups (each group's switch, start, allocation, cap
   and shares, which group each automation is in, and each automation's own switch, switched on from
   the next session), through the same editor after the automations module's own check. Paper only.

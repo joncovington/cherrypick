@@ -6,6 +6,7 @@ import type { BuilderAutomation, BuilderBlock, BuilderSchema, BuilderSuggestion,
 import { builderBacktest, builderDraft, builderSave, builderToday, fullSetAdd, fullSetPlan, useAutomationsBuilder, useBuilderRuns, useBuilderSchema, type FullSetAdded, type FullSetPlan } from "../../lib/api";
 import { BuilderForm, type Spec } from "./BuilderForm";
 import { ExploreRunsList, RunCardPanel } from "./BuilderRunCard";
+import { GridsPanel } from "./BuilderGrid";
 import { IdeasPanel } from "./BuilderIdeas";
 import { TodayView } from "./BuilderToday";
 import { CardHelpButton } from "../../components/CardHelp";
@@ -532,6 +533,15 @@ export function Workspace({
                 <CardHelpButton cardTitle="Ideas" help={SECTION_HELP["ideas"]!} />
               </div>
               <IdeasPanel name={mode.name} />
+            </div>
+          )}
+          {mode.kind === "saved" && (
+            <div className="builder-section">
+              <div className="builder-run-section-head">
+                <h4>Settings · exits and width to declare</h4>
+                <CardHelpButton cardTitle="Settings" help={SECTION_HELP["grid"]!} />
+              </div>
+              <GridsPanel name={mode.name} />
             </div>
           )}
         </aside>

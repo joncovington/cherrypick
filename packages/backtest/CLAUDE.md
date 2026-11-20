@@ -423,6 +423,29 @@ later sessions once, by the rule in its row, and logs each use in `held_out_uses
 searched or tested only while the licence allows new work. `read idea-searches` and `read
 idea-search` serve the Builder.
 
+**The settings grid** (`exitgrid.py`, pure; `gridfiles.py`; `scripts/exit_grid.py`) asks which exits and
+width, where the idea search asks which days. A setting changes the trades, so each is its own replay:
+the driver takes the run `ideas plan` names (the same split rule, `grid plan`) and replays the
+automation that run stored, as the base, and every setting of the grid beside it in one pass of the
+automation driver over that run's span and store (`automation_backtest.prepare`, the Builder run's own
+choice); `base_matches_run` says whether the base gave the run's trades again. The grid is fixed in
+code (`AXES`), one setting changed at a time: credit stops at 1, 1.5, 2 and 3x, debit stops at 25, 50
+and 75%, profit targets at 25, 50 and 75%, a close 15, 60 or 120 minutes before a same-day expiry or 7,
+14 or 21 days before a later one, the width (legs placed by points from another leg) at 0.5, 1.5 and
+2x, and each exit the automation sets switched off; its own value is the base, a stop kind it does not
+set is skipped where it sets the other, and a setting the module's check refuses is listed and never
+replayed. Each runs under its own name, its group cap counting only its own positions and any gate
+that names the automation naming it. A setting is scored by its per-session change against the base
+over the design sessions (0 where neither traded); one changing fewer than `MIN_MOVED` sessions is
+listed unscored. It survives only if the mean change's bootstrap interval is above zero, it beats the
+best random change of the whole grid (`core.stats.setting_placebo`, a sign-flip max-T, `p_menu` at
+most 0.05), it is no lone peak on its axis (`robustness.neighbourhood`, the base at 0 among its
+neighbours), it gains in both design halves and 3 of 4 folds, and the change stays positive with fees
+and slippage at 1.5x. The result, `grid-<automation>-<stamp>.json`, sits beside its run and holds
+every setting's trades over the whole span; its reads (`read settings-grids`, `read settings-grid`)
+never serve them, and only `grid holdout` reads a declared setting's later sessions, once, logged in
+`held_out_uses`.
+
 **The advisor's specs** (`run-advised`, `advised.py`): the advisor queues `backtest_spec` replies it
 admitted against flies' own advice bounds (off until `advisor.backtest_proposals`); this reads the
 queue by subprocess, turns each into a config-defined arm `advised:<name>-<id>` (the base arm's params

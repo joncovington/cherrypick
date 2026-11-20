@@ -364,7 +364,11 @@ filename; override with `paper.sla_state_prefix`.
   search: `backtest ideas plan` names the run and the split, then one `script` row, study `ideas`, step
   `<name>-<YYMMDDHHMM>`, runs `idea_search.py run` with both in its command; one live row per
   automation. Declare and the held-out test are `backtest ideas declare|holdout`, by name, search and
-  idea; neither writes a config or the register. A run may also wait `after` an addition to the full set
+  idea; neither writes a config or the register. `automation_grid`, `automation_grids`,
+  `automation_grid_result`, `automation_grid_declare` and `automation_grid_holdout` (`gridqueue.py`)
+  are its settings grid, the same shape: `backtest grid plan` (the idea search's plan), then one
+  `script` row, study `grid`, running `exit_grid.py run`; Declare and the held-out test are `backtest
+  grid declare|holdout` by name, grid and setting. A run may also wait `after` an addition to the full set
   (`fullset/add-...` only); it then queues without `possible` and without a source, the driver
   choosing by coverage once the data is in. `fullset_plan` and `fullset_add` (`fullsetadd.py`) add an
   underlying to the full set: the backtest script's `add SYM --dry-run` sizes it, `add` refuses

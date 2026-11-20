@@ -612,6 +612,108 @@ export interface IdeaSearches {
   results_unavailable: boolean;
 }
 
+/** The settings grid (#1294): exit and width settings for one saved automation, each a replay beside
+ *  the automation's own over one Builder run's span, scored on the part before its split. Hypotheses
+ *  only; a surviving setting is declared, then tested once. */
+export type GridGate = "gains" | "beats_menu" | "plateau" | "stable" | "pays_at_1_5x";
+
+export interface GridHeldOutRead {
+  setting: string;
+  at: string;
+  use: number;
+  sessions: number;
+  moved: number;
+  mean_change: number | null;
+  gain: number;
+  ci: [number, number] | null;
+  verdict: "passed" | "failed" | "no_verdict";
+}
+
+export interface GridRow {
+  id: string;
+  axis: string;
+  setting: string;
+  moved: number;
+  /** False for a setting that changed too few sessions to be scored (`why`). */
+  scored: boolean;
+  why?: string;
+  mean_change?: number | null;
+  change_ci?: [number, number] | null;
+  gain?: number;
+  gain_shrunk?: number;
+  z?: number;
+  p?: number;
+  p_menu?: number;
+  holm?: boolean;
+  bh?: boolean;
+  plateau?: { verdict: "plateau" | "lone_peak" | "no_neighbours" | "unmeasured" };
+  stability?: { folds_positive: number; stable: boolean };
+  cost?: { mean_change_at_1_5x: number | null };
+  held_out?: { planned_sessions: number; mde: number | null; testable: boolean };
+  gates?: Record<GridGate, boolean>;
+  survives: boolean;
+  declaration: Record<string, unknown> | null;
+  held_out_read: GridHeldOutRead | null;
+}
+
+export interface GridBrief {
+  name: string;
+  automation: string;
+  run: string;
+  symbol: string;
+  source: string | null;
+  sessions: [string, string];
+  split: string;
+  base: { sessions: number; trades: number; net: number; held_out_sessions: number };
+  tried: number;
+  survivors: number;
+  holm_survivors: number;
+  bh_survivors: number;
+  /** Whether replaying the automation gave the run's own trades again. */
+  base_matches_run: boolean;
+  generated_at: string;
+  licensed: boolean;
+  declared: string[];
+  held_out_used: number;
+}
+
+export interface GridResult extends GridBrief {
+  draws: number;
+  null_max_median: number | null;
+  /** Settings the module's check refused, each with its first problem; never replayed. */
+  refused: Record<string, string>;
+  rows: GridRow[];
+  held_out_uses: GridHeldOutRead[];
+}
+
+export interface GridTask {
+  id: number | null;
+  grid: string;
+  status: string;
+  queued_at: string | null;
+  finished_at: string | null;
+  note: string | null;
+}
+
+export interface Grids {
+  name: string;
+  tasks: GridTask[];
+  grids: GridBrief[];
+  withheld: number;
+  results_unavailable: boolean;
+}
+
+export interface GridActionResult {
+  ok: boolean;
+  error?: string;
+  code?: string;
+  grid?: string;
+  task?: number | null;
+  split?: string;
+  row?: Record<string, unknown>;
+  verdict?: GridHeldOutRead["verdict"];
+}
+
 export interface IdeaActionResult {
   ok: boolean;
   error?: string;

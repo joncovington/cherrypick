@@ -186,6 +186,12 @@ alone):
     licensed search withheld by `backtestResultsOn` is never declared from or spent (403, fail
     closed). Declare drafts a register row into the search's result; the row is added to the
     register by hand.
+  - **The Builder's settings grid queues, declares and tests the same way; it writes no config**
+    (`/api/automations/builder/grid` and `/grids`, configcli `automation_grid` and `automation_grids`;
+    `/grid-result`, `/grid-declare`, `/grid-holdout`, `BuilderGrid.tsx`). Try settings sends the name
+    alone. Declare and the held-out test send the name, the grid's id (`GRID`) and one setting's id
+    (`SETTING_ID`), checked by shape, and read the grid first, so a withheld licensed grid is never
+    declared from or spent. A grid's read serves its rows, never its trades.
   - **Adding an underlying to the full set queues fetches; it writes no config**
     (`/api/automations/builder/fullset-plan`, configcli `fullset_plan`, a dry run, counts only; and
     `/api/automations/builder/fullset-add`, configcli `fullset_add`, behind the CSRF token). Offered
