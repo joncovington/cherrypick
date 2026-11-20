@@ -37,6 +37,11 @@ from . import supervisor as _supervisor
 
 PLACED = frozenset({"received", "routed", "in flight", "live", "contingent"})
 
+#: The ladder's client ids all start `ldr.` (its package owns the format). Its ledger publishes its
+#: order ids at the top of each tick, so an order placed later in that tick is unknown to `_owners`
+#: for up to a minute; the prefix names it meanwhile, rather than "a live loop".
+LADDER_ID_PREFIX = "ldr."
+
 
 def state_path():
     return _home.state_dir() / "live_fill_alerts.json"
@@ -90,6 +95,8 @@ def _who(event: dict, owners: dict[str, str]) -> tuple[str, str]:
     owner = owners.get(str(event["order_id"]))
     if owner:
         return owner, ""
+    if str(event.get("external_identifier") or "").startswith(LADDER_ID_PREFIX):
+        return "ladder", " Placed this minute; the ladder's ledger records it on its next tick."
     if event.get("external_identifier"):
         return "a live loop", " No ledger has published it yet; a loop's own order, placed this minute."
     return "manual", " No live ledger records it and it carries no suite identifier: a manual order."

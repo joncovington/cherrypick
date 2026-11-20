@@ -440,3 +440,31 @@ def test_a_new_dry_run_intent_is_journaled_when_the_level_moves(world):
     world.cache.summary("TQQQ", DAY, prev_day_close=101.0)  # a new close: new level, new terms
     tick(world, cfg, "09:01")
     assert len(decisions(world, "dry_run")) == 2
+
+
+# --------------------------------------------------------------------------- what the notifier reads
+# `trade_notifier` (orchestrator) announces these journal rows and cannot import this package, so the
+# row shapes it matches on are pinned here: mode, symbol and reason, one row a day however many ticks.
+def test_the_breaker_is_one_blocked_row_a_day_however_many_ticks_hold_it(world):
+    cfg = cfg_with(drawdown_breaker_frac=0.1)
+    held_lot(world, cfg)
+    session_two(world, close=96.0, bid=60.0, shares=10)  # the lot is down 330 against a 250 limit
+    for minute in ("09:00", "09:01", "09:02", "09:03"):
+        tick2(world, cfg, minute)
+    rows = [d for d in decisions(world, "blocked") if d["reason"] == "drawdown_breaker"]
+    assert [(r["symbol"], r["occurrences"]) for r in rows] == [("-", 4)]
+
+
+def test_the_positions_rows_carry_the_fields_the_notifier_prints(world):
+    cfg = cfg_with()
+    held_lot(world, cfg)
+    session_two(world, close=96.0, bid=95.0, shares=15)
+    tick2(world, cfg)
+    [row] = decisions(world, "positions")
+    assert row["symbol"] == "TQQQ" and row["reason"].startswith("surplus")
+    assert json.loads(row["detail"]) == {"ledger": 10, "broker": 15.0, "status": "surplus",
+                                         "suspected_split": None}  # fmt: skip
+    session_two(world, close=96.0, bid=95.0, shares=6)
+    tick2(world, cfg, "09:01")
+    [alert] = decisions(world, "alert")
+    assert alert["symbol"] == "TQQQ" and alert["reason"].startswith("positions_shortfall:")

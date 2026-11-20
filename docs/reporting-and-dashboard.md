@@ -117,7 +117,10 @@ warning channels. **It ships as `["log"]`**: push notifications are off by defau
 you elsewhere only once you add `desktop`, `discord` or `slack` there. The console's own on-screen trade
 toasts are always on and need no setting. Per module, it is opt-in via `paper.notify_trades`; a module's
 **live** ledger is a separate opt-in (`live.notify_trades`) and its pushes carry a LIVE prefix and a
-desktop toast, because real money warrants one where paper deliberately doesn't.
+desktop toast, because real money warrants one where paper deliberately doesn't. The ladder's live
+ledger also pushes its journal alarms through this path: a hospital lot, the drawdown breaker, a
+positions mismatch or suspected split, a split applied, a surplus, a sell that keeps ending, a partial
+fill. Each is announced once.
 
 **MEIC runs several parallel arms, so per-trade pushes can get loud.** `notify.trade_summary.mode`
 decides how its events reach you:

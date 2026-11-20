@@ -152,6 +152,7 @@ def _trim_ids(ids, floor: int, id_of=int) -> tuple[list, int]:
 
 from cherrypick.core import db as _db  # noqa: E402
 from cherrypick.core import ledgers as _ledgers  # noqa: E402 — the one per-schema net rule
+from cherrypick.core import redact as _redact  # noqa: E402 — account numbers masked on the way out
 from cherrypick.core.db import connect_ro as _connect_ro  # noqa: E402 — shared read-only opener
 
 
@@ -958,7 +959,7 @@ def _position_id(r) -> str:
 
 def _run_stages(conn, st: dict, notifier: Notifier, name: str, stages: list, rows_fn=None) -> dict:
     """One pass over a text-keyed schema's notifiable stages. Each stage is (state key, event,
-    title, formatter, embed builder, query[, id function]); a row whose id is not yet remembered
+    title, formatter, embed builder, query[, id function[, level]]); a row whose id is not yet remembered
     under the key is pushed once and remembered.
 
     The remembered ids are pruned to the ids the stage's own query still returns, never cut to a
@@ -968,12 +969,14 @@ def _run_stages(conn, st: dict, notifier: Notifier, name: str, stages: list, row
     for stage in stages:
         key, event, title, fmt, embed_fn, query = stage[:6]
         id_of = stage[6] if len(stage) > 6 else _position_id
+        level = stage[7] if len(stage) > 7 else "INFO"
         all_rows = rows_fn(conn, query) if rows_fn else conn.execute(query).fetchall()
         present = {id_of(r) for r in all_rows}
         notified = set(st.get(key, []))
         rows = [r for r in all_rows if id_of(r) not in notified]
         for r in rows:
-            notifier.notify("INFO", f"trade.{name}.{event}.{id_of(r)}", title, fmt(r), embed=embed_fn(r))
+            lvl = level(r) if callable(level) else level
+            notifier.notify(lvl, f"trade.{name}.{event}.{id_of(r)}", title, fmt(r), embed=embed_fn(r))
             notified.add(id_of(r))
         st[key] = sorted(notified & present)
         counts[f"{event}s_notified"] = len(rows)
@@ -1823,9 +1826,11 @@ def _fmt_ladder_exit(r) -> str:
 
 
 def _embed_ladder_exit(r) -> dict:
+    source = r["fees_source"] if "fees_source" in r.keys() and r["fees_source"] else None  # live ledger only
+    fees = f"${r['fees'] or 0:.2f}" + (f" {source}" if source else "")
     details = (
         f"net {_signed(_net('ladder_lot', r))} (gross {_signed(r['gross_pnl'])}, "
-        f"fees ${r['fees'] or 0:.2f}, settlement ${r['settlement'] or 0:.2f}, "
+        f"fees {fees}, settlement ${r['settlement'] or 0:.2f}, "
         f"slippage ${r['slippage'] or 0:.2f}) · {r['exit_reason']} · held {r['hold_days']} days "
         f"since {r['buy_session']}"
     )
@@ -1852,6 +1857,197 @@ def _ladder_process(conn, st: dict, notifier: Notifier, name: str) -> dict:
         ),
     ]
     return _run_stages(conn, st, notifier, name, stages)
+
+
+# The ladder's LIVE ledger adds the journal rows a person has to read. Its lots go through the stages
+# above (the `<name>:live` pass wraps them in the LIVE label); this is the rest. `ladder_decisions`
+# collapses identical rows within a session day (same arm, fund, mode and reason is one row with a
+# count), so a condition that holds for a hundred ticks is one row and is announced once. A standing
+# one (a hospital lot) is announced again the next session day, as the journal writes it again.
+#
+# What is read, and what is left out on purpose, is decided in SQL so the routine rows never leave the
+# database: `alert` (the tick's own alarms), `split` (a restatement from `live.splits` applied),
+# `positions` (a surplus of the account's shares over the ledger's) and `refused` (a live submission
+# or cancel the executor could not send: a gate that flipped mid-tick, a broker error, a held
+# placement), plus the two `blocked` reasons that stop every buy and mean a person should look: the
+# drawdown breaker and invalid limits. `dry_run` and `order` rows are the order path's own record (the
+# account's order notices announce the orders, `livefills`), and every other `blocked` row (unarmed,
+# before the session, a cap full) is the planner working as designed. A refused row's reason names
+# the client id, which is stable for the session, so a refusal repeated every tick is one notice.
+_LADDER_ALERT_SQL = (
+    "SELECT * FROM ladder_decisions WHERE mode IN ('alert', 'split', 'positions', 'refused') "
+    "OR (mode = 'blocked' AND (reason = 'drawdown_breaker' OR symbol = 'limits_invalid')) ORDER BY id"
+)
+
+
+def _ladder_row_id(r) -> int:
+    return int(r["id"])
+
+
+def _ladder_alert_seed(conn) -> dict:
+    return {"notified_alert_ids": [_ladder_row_id(r) for r in conn.execute(_LADDER_ALERT_SQL)]}
+
+
+def _ladder_detail(r) -> dict:
+    try:
+        out = json.loads(r["detail"] or "null")
+    except (TypeError, ValueError):
+        return {}
+    return out if isinstance(out, dict) else {}
+
+
+def _ladder_alert_text(r) -> tuple[str, str]:
+    """(short label, one plain sentence) for a journal row: the fund, the lot, what happened, and
+    whether the ladder did anything about it. Account numbers never reach it: the journal masks
+    them on write and `_ladder_clean` masks again on the way out."""
+    mode, symbol, reason = r["mode"], r["symbol"], str(r["reason"] or "")
+    detail = _ladder_detail(r)
+    kind, _, rest = reason.partition(" ")
+    if mode == "split":
+        return (
+            "split applied",
+            f"{reason}. From your live.splits entry; the lot's cost and shares were restated.",
+        )
+    if mode == "positions":
+        broker = detail.get("broker")
+        held = f"{broker:g}" if isinstance(broker, int | float) else "?"
+        return (
+            f"{symbol} surplus",
+            f"{symbol}: the broker holds {held} shares, the ledger {detail.get('ledger', '?')}. The extra "
+            "shares are not the ladder's and it left them alone; nothing was done.",
+        )
+    if mode == "refused":
+        what = reason.removesuffix(" failed")
+        gates = detail.get("unmet_gates") or []
+        if detail.get("skipped") == "broker_hold":
+            why = "held: an earlier placement this tick had an uncertain outcome"
+        elif gates:
+            why = "gated: " + "; ".join(str(g) for g in gates)
+        elif detail.get("uncertain"):
+            why = "the outcome is uncertain; the placement is held until it is resolved"
+        else:
+            why = str(detail.get("error") or "the broker refused it")
+        return (
+            f"{symbol} order not sent",
+            f"{symbol}: {what} was not sent ({why}). Nothing else was done; it is planned again next tick.",
+        )
+    if mode == "blocked" and reason == "drawdown_breaker":
+        return (
+            "drawdown breaker",
+            "The drawdown breaker tripped: open lots are down past the limit, so new buys are stopped "
+            "until they recover. Sells already resting are untouched.",
+        )
+    if mode == "blocked":  # limits_invalid
+        return "limits invalid", f"The live limits are invalid, so no fund buys: {reason}."
+    if kind == "hospital":
+        age = detail.get("age_days")
+        held = f" open {age} days," if age is not None else ""
+        return (
+            f"{symbol} hospital lot",
+            f"{symbol} lot {rest}{held} is past hospital_alert_days. Nothing was done; its sell keeps "
+            "resting at its target.",
+        )
+    if kind in ("no_whole_shares_after_split", "split_leaves_no_whole_share"):
+        return (
+            f"{symbol} lot under one share",
+            f"{symbol} lot {rest} has less than one whole share after a split. No sell is planned for it; "
+            "it needs you.",
+        )
+    if kind == "sell_ended_repeatedly":
+        return (
+            f"{symbol} sell keeps ending",
+            f"{symbol} lot {rest}: its sell order ended unfilled several times and the ladder stopped "
+            "placing it again. It needs you.",
+        )
+    if kind == "orphan_sell":
+        return (
+            "orphan sell",
+            f"A resting sell for lot {rest}, which the ledger does not hold. Nothing was cancelled; "
+            "it needs you.",
+        )
+    if kind == "partial_buy":
+        return (
+            "partial buy",
+            f"Lot {symbol} filled only {detail.get('filled', '?')} shares and was recorded at that size.",
+        )
+    if kind in ("partial_sell", "partial_sell_review"):
+        lot = rest or symbol
+        return (
+            "partial sell",
+            f"Lot {lot} was sold in part. It stays open with no further sell planned until you look at it.",
+        )
+    if kind == "sell_filled_for_no_open_lot":
+        return (
+            "sell with no lot",
+            f"A sell order ({detail.get('order', '?')}) filled for a lot the ledger does not hold open. "
+            "Nothing was recorded; it needs you.",
+        )
+    if kind == "splits_invalid:":
+        return (
+            "splits invalid",
+            f"A live.splits entry cannot be read ({rest}). New buys are stopped on every fund.",
+        )
+    if kind == "positions_unreadable:":
+        return (
+            "positions unreadable",
+            "The broker's positions could not be read. New buys are stopped on every fund.",
+        )
+    if reason.startswith("suspected_split"):
+        return (
+            f"{symbol} suspected split",
+            f"{symbol}: {reason}. It looks like a split the ledger has not been told about. New buys on "
+            f"{symbol} are stopped; nothing was restated. Add it to live.splits to restate.",
+        )
+    if reason.startswith("positions_shortfall"):
+        return (
+            f"{symbol} shortfall",
+            f"{symbol}: {reason}. Shares the ledger holds are missing at the broker. New buys on "
+            f"{symbol} are stopped; resting sells are untouched.",
+        )
+    return f"{symbol} alert", f"{symbol}: {reason}."
+
+
+def _ladder_clean(text: str) -> str:
+    return _redact.redact_accounts(text)
+
+
+def _fmt_ladder_alert(r) -> str:
+    label, text = _ladder_alert_text(r)
+    return _ladder_clean(f"⚠️ Ladder LIVE {label} — {text} [{_arm(r)}]")
+
+
+def _embed_ladder_alert(r) -> dict:
+    label, text = _ladder_alert_text(r)
+    color = COLOR_ENTRY if r["mode"] in ("split", "positions") else COLOR_STOP
+    return _embed(color, _ladder_clean(f"ALERT · ladder {label}")[:256], _ladder_clean(text), footer=_arm(r))
+
+
+def _ladder_alert_level(r) -> str:
+    return "INFO" if r["mode"] in ("split", "positions") else "WARNING"
+
+
+def _ladder_live_seed(conn) -> dict:
+    return {**_ladder_seed(conn), **_ladder_alert_seed(conn)}
+
+
+def _ladder_live_process(conn, st: dict, notifier: Notifier, name: str) -> dict:
+    """The live ledger's pass: its lots, then its journal alarms. A state with no alert watermark yet
+    (written before alarms were announced) is seeded from the journal, not caught up on it."""
+    out = _ladder_process(conn, st, notifier, name)
+    if "notified_alert_ids" not in st:
+        st.update(_ladder_alert_seed(conn))
+        return out
+    stage = (
+        "notified_alert_ids",
+        "alert",
+        "Ladder alert",
+        _fmt_ladder_alert,
+        _embed_ladder_alert,
+        _LADDER_ALERT_SQL,
+        _ladder_row_id,
+        _ladder_alert_level,
+    )
+    return {**out, **_run_stages(conn, st, notifier, name, [stage])}
 
 
 # cherrypick-bwb keys on a text `position_id` and ladders daily like pmcc, with four notifiable
@@ -1986,6 +2182,12 @@ _SCHEMAS = {
     "weeklyput_put": (_weeklyput_seed, _weeklyput_process),
     "ensemble_trade": (_ensemble_seed, _ensemble_process),
     "ladder_lot": (_ladder_seed, _ladder_process),
+}
+
+# What a LIVE ledger adds to its schema's pass: the same lots, plus whatever the live file records that
+# paper's does not. A schema not listed here runs its paper adapter over the live file unchanged.
+_LIVE_SCHEMAS = {
+    "ladder_lot": (_ladder_live_seed, _ladder_live_process),
 }
 
 
@@ -2129,7 +2331,7 @@ def run(cfg: dict | None = None, *, dry_run: bool = False) -> dict:
             db_path = cfgmod.live_db_path(mcfg, name)
             if db_path is None or not db_path.exists():
                 continue
-            seed_fn, process_fn = adapter
+            seed_fn, process_fn = _LIVE_SCHEMAS.get(schema, adapter)
             live_channels = sorted(set(channels) | {"desktop"})
             live_notifier = _LiveNotifier(
                 recorder if recorder is not None else Notifier({**notify_cfg, "channels": live_channels})

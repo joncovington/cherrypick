@@ -90,7 +90,8 @@ what it may write. The package's own CLAUDE.md holds the detail.
   positions, which it compares with its own ledger's shares and never adopts), reconciles a separate live ledger
   (`~/.cherrypick/data/ladder/live_trades.db`), and while armed plans orders for the live arm. In
   dry-run it journals what it would send and sends nothing. Real orders need `live.dry_run: false`
-  and every gate, re-checked on each placement. Only `ldr.` client ids are its own: it never touches
+  and every gate, re-checked on each placement. Its live lots and alarms are announced by the
+  orchestrator's trade notifier, never by the package; its orders by `live-fill-alerts`. Only `ldr.` client ids are its own: it never touches
   another module's or a hand order. Reads the keyring for the designated account and the broker
   session; the account is shown masked.
 - **packages/bwb** — **Retired 2026-11-08; off by default; may be reinstated** (the owner switched
