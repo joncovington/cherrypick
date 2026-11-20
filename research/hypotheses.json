@@ -4453,6 +4453,54 @@
       "retest": null,
       "retest_note": "Closed. The holdout to 2026-11-13 has been seen, so a later item on any of these readings is judged on sessions after that.",
       "retests": []
+    },
+    {
+      "id": 94,
+      "study": "item94",
+      "title": "The mean-reversion signal as a short-put entry time, a retest of items 17 and 18",
+      "status": "declared",
+      "legacy": false,
+      "setup": "reversion",
+      "side": "bullish",
+      "structure": "short-put",
+      "window": "monthly",
+      "measure": "the session after each mr-300m signal (the setup engine's long reversion entry on a session the name traded $300M or more, counted, leveraged/inverse/vol funds out), at its close from the vendor's end-of-day chain: a cash-secured short put nearest 0.25 delta (Black-76 off mids, the kit's Chain) on the latest standard monthly 30-45 days out, held to expiry and settled at the name's raw close; fills at mid with core slippage, core fees and assignment fee; five baselines per signal, same name, random eligible session of the same year, same exclusions (no monthly 30-45 out, earnings inside, suspected split inside)",
+      "expected": "the signal's per-expiry net clears the 3-month bill on its buying power and the same delta financed at t 2.0, and signal entries beat their baselines in return on buying power at t 2.0",
+      "sample": "entries 2021-01-04 to expiries on or before 2026-11-20, one run cut at 2025-07-01 (design before, holdout from); 1,226 signals (897 / 329) and 6,122 baselines counted before declaring; RULE rows one per monthly expiry, < 40 design or 12 holdout expiries = no verdict; TIMING_RULE needs 100 entries each side in the design part and 30 in the holdout",
+      "rule": "RULE: the kit's three bars on per-expiry rows (capital t >= 2.0 over the 3-month bill; tail 10,000 draws seed 94, the sample's own expiries a year; delta applies); TIMING_RULE: per entry, net over buying power, signal minus baselines, one-sided t >= 2.0 clustered by expiry in the design part, then the holdout difference > 0 after a design pass of both; a pass needs both; one arm, no Holm; a pass is provisional (both windows were read for this signal in spread form by items 17 and 18)",
+      "mechanism": "after a sharp drop in a liquid name put skew is rich and the stock has bounced more than chance, so a put sold then collects both the premium and the rebound",
+      "rivals": [
+        {
+          "explanation": "the market's drift on a long-delta position",
+          "check": "the delta bar; the timing rule against the same put on random days"
+        },
+        {
+          "explanation": "the baselines lose rather than the signal earning (item 17's finding)",
+          "check": "RULE judges the signal entries on their own; the timing rule alone cannot pass"
+        },
+        {
+          "explanation": "untradable strikes (item 18's no verdict)",
+          "check": "a naked put has no long wing; the spread-bar subset reported; core slippage on every fill"
+        },
+        {
+          "explanation": "hindsight: both windows seen in spread form",
+          "check": "stated in the declaration; a pass is provisional and goes to a forward check"
+        }
+      ],
+      "pointer": "research/edge-hypotheses-plan.md#94-the-mean-reversion-signal-as-a-short-put-entry-time-a-retest-of-items-17-and-18",
+      "scripts": [
+        "packages/backtest/scripts/reversion_put_item94.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_reversion_put_item94_script.py"
+      ],
+      "results": [
+        "{home}/data/backtest/results/research/item94/results.json"
+      ],
+      "outcome": null,
+      "retest": null,
+      "retest_note": "A pass is provisional and is followed by a forward check on entries after 2026-11-20, not a yearly retest.",
+      "retests": []
     }
   ],
   "rule_changes": []
