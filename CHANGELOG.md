@@ -22,6 +22,9 @@ beyond the latest release.
 
 ### What's new
 
+- **The ladder has a console page.** `/ladder` (under Experiments) shows each fund's previous close and
+  every arm's next buy level, the open lots with the group's 18-day "hospital" flagged, the sold lots as
+  trades, and each arm's realised and unrealised result. Its help tab says the rule is not a tested edge.
 - **The morning pack's SPX risk reversal comes from the broker.** Cboe's delayed SPX chain moved
   behind a host that refuses scripts on 2026-11-19, so every market-files run warned and the row
   stopped. The 30-day 25-delta risk reversal is now read from the broker's SPXW greeks by the

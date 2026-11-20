@@ -1,6 +1,6 @@
 # Strategy pages
 
-Each trading module has its own page in the console: `/meic`, `/earnings`, `/calendars`, `/contango`, `/weeklyput` and `/automations`. The `/experiments` page sits above them with one card per paper experiment. Four retired modules, `/flies`, `/bwb`, `/pmcc` and `/curve`, ship switched off.
+Each trading module has its own page in the console: `/meic`, `/earnings`, `/calendars`, `/contango`, `/weeklyput`, `/ladder` and `/automations`. The `/experiments` page sits above them with one card per paper experiment. Four retired modules, `/flies`, `/bwb`, `/pmcc` and `/curve`, ship switched off.
 
 ## What you see
 
@@ -77,6 +77,10 @@ The chart is the ratio, session by session, against the two thresholds. Below it
 ## Weekly put (`/weeklyput`)
 
 Sells the put nearest 10 delta on four index and fund underlyings, seven days before each weekly expiry that is not a standard monthly, and holds it to expiry. Paper-only and experimental. It is judged by the cycle, one expiry at a time, not by the single put. Tabs: `summary` ("today"), `cycles`, `positions`, `history`, `decisions`, `performance`, `costs` and `guide` ("help"). `cycles` shows what each expiry earned, name by name, and which names were missed. An in-the-money fund put near expiry is flagged assignment-exposed: early assignment is measured, never modelled, so those results are an upper bound.
+
+## Ladder (`/ladder`)
+
+Buys a lot of a leveraged index fund (TQQQ and SOXL) when it trades 7% under a reference price and sells each lot on its own at 4% over what it cost, with no stop and no time limit. Arms run side by side, each an entry rule (`session`, `chain` or `once`) with a target rule (`fixed` or `decay`), as the ladder's config declares them; `session` with a fixed target is the Discord group's own rule. Paper-only and experimental, and not a tested edge: the rule failed its tests on daily and minute bars, and the help tab gives the verdicts. Tabs: `summary` ("today"), `positions` ("open lots"), `history`, `arms`, `decisions` and `guide` ("help"). Today shows each fund's previous close and where every arm would buy next, with how far the bid is from that level. Open lots flags any lot held past 18 days as the group's "hospital"; it is counted, never acted on. History lists the sold lots, and a row opens to the buy and the sale as an order. Arms describes each arm from the config and adds up its realised and unrealised result and its 18-day counts.
 
 ## Automations (`/automations`)
 
