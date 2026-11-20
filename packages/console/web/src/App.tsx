@@ -59,6 +59,10 @@ export default function App() {
         {/* The ensemble page is the automations page (#1200); old links and bookmarks follow it. */}
         <Route path="ensemble" element={<RenamedModule to="/automations" />} />
         <Route path="ensemble/:slide" element={<RenamedModule to="/automations" />} />
+        {/* The Builder is Automations' Builder tab (2026-11-20); its old page, tab and
+            `?automation=` links follow it there. */}
+        <Route path="builder" element={<MovedTo to="/automations/builder" />} />
+        <Route path="builder/:slide" element={<MovedTo to="/automations/builder" />} />
         {/* Champions & challengers was REMOVED 2026-08-20 — judging whether an arm earned
             anything belongs to the advisor's experiments now. Redirected rather than left to the
             generic 404, which tells the reader their build is stale and to reload: true for a

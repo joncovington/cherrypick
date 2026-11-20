@@ -88,6 +88,13 @@ describe("the module digits", () => {
     expect(press(first.state, "a", { now: 1100 }).action).toEqual({ kind: "navigate", to: "/advisor" });
   });
 
+  it("g u reaches Automations' Builder tab, and does nothing while automations is off", () => {
+    const first = press(IDLE, "g");
+    expect(press(first.state, "u", { now: 1100 }).action).toEqual({ kind: "navigate", to: "/automations/builder" });
+    const off = { ok: true as const, capabilities: {}, modules: { automations: { configured: false, enabled: false, missing: [] } }, services: {}, features: {} };
+    expect(press(first.state, "u", { now: 1100, features: off as never }).action).toBeNull();
+  });
+
   it("g b reaches the backtest whatever the licence gates say: the page is always there", () => {
     const off = { ok: true as const, capabilities: {}, modules: {}, services: {}, features: { backtest: false, backtest_results: false } };
     const first = press(IDLE, "g");

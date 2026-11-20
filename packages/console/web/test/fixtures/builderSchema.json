@@ -1,0 +1,3629 @@
+{
+ "ok": true,
+ "blocks": {
+  "structure": [
+   "symbol",
+   "expiry",
+   "far_expiry",
+   "legs"
+  ],
+  "entry": [
+   "entry",
+   "weekdays",
+   "skip_events"
+  ],
+  "gates": [
+   "gates"
+  ],
+  "exit": [
+   "exit"
+  ],
+  "size": [
+   "size",
+   "limits"
+  ]
+ },
+ "entry": {
+  "time": {
+   "at": true,
+   "window": false
+  },
+  "orb": {
+   "minutes": true,
+   "direction": true,
+   "latest": true,
+   "single_shot": false
+  },
+  "trigger": {
+   "trigger": true,
+   "bar_minutes": false,
+   "volume": false
+  }
+ },
+ "orb_directions": [
+  "above",
+  "below"
+ ],
+ "trigger_forms": {
+  "at": {
+   "at": true,
+   "within": true
+  },
+  "signal": {
+   "signal": true,
+   "window": true,
+   "within": true,
+   "daily": false,
+   "developing": false
+  }
+ },
+ "signals": {
+  "candle": [
+   "pattern"
+  ],
+  "change": [
+   "direction",
+   "from",
+   "pct"
+  ],
+  "change_from": [
+   "direction",
+   "pct",
+   "price"
+  ],
+  "consecutive": [
+   "direction",
+   "n",
+   "seed"
+  ],
+  "consolidation_break": [
+   "max_pct",
+   "n",
+   "side"
+  ],
+  "cross": [
+   "a",
+   "b",
+   "direction",
+   "seed"
+  ],
+  "distance": [
+   "direction",
+   "lookback",
+   "pct",
+   "side"
+  ],
+  "event": [
+   "at",
+   "days",
+   "event",
+   "timing",
+   "unit"
+  ],
+  "gap": [
+   "at",
+   "direction",
+   "pct"
+  ],
+  "gap_fill": [
+   "min_pct"
+  ],
+  "level_break": [
+   "k",
+   "side"
+  ],
+  "new_extreme": [
+   "lookback",
+   "side"
+  ],
+  "opening_range": [
+   "minutes",
+   "side"
+  ],
+  "prior_session": [
+   "side"
+  ],
+  "range": [
+   "a",
+   "direction",
+   "high",
+   "low",
+   "seed"
+  ],
+  "trend": [
+   "a",
+   "direction",
+   "n",
+   "seed"
+  ],
+  "trendline_break": [
+   "k",
+   "side"
+  ]
+ },
+ "signal_rules": [
+  "confirm",
+  "first_of_day",
+  "latest",
+  "only_when",
+  "reset"
+ ],
+ "sources": {
+  "close": [],
+  "sma": [
+   "n"
+  ],
+  "ema": [
+   "n"
+  ],
+  "rsi": [
+   "n"
+  ],
+  "cci": [
+   "n"
+  ],
+  "adx": [
+   "n"
+  ],
+  "atr": [
+   "n"
+  ],
+  "stochastic": [
+   "k_period",
+   "k_smooth",
+   "d_smooth",
+   "output"
+  ],
+  "macd": [
+   "fast",
+   "slow",
+   "signal",
+   "output"
+  ],
+  "vwap": [
+   "anchor",
+   "price",
+   "weight"
+  ],
+  "vwap_band": [
+   "anchor",
+   "price",
+   "weight",
+   "k",
+   "side"
+  ],
+  "relative_volume": [
+   "n"
+  ],
+  "volume_ratio": [
+   "n"
+  ],
+  "prior_period": [
+   "period",
+   "side"
+  ],
+  "opening_range": [
+   "minutes",
+   "level"
+  ]
+ },
+ "weekdays": [
+  0,
+  1,
+  2,
+  3,
+  4
+ ],
+ "event_labels": [
+  "Earnings",
+  "ExDividend",
+  "FOMC",
+  "FirstWeekly",
+  "FuturesRoll",
+  "MonthEnd",
+  "NFP",
+  "OPEX",
+  "PCE",
+  "PMI-Mfg",
+  "PMI-Svcs",
+  "PPI",
+  "QuarterEnd",
+  "TripleWitching",
+  "VIXExpiry"
+ ],
+ "event_about": {
+  "Earnings": {
+   "name": "Earnings",
+   "when": "The symbol's own earnings report day.",
+   "next": null
+  },
+  "ExDividend": {
+   "name": "Ex-dividend",
+   "when": "The symbol's own ex-dividend day. A short call can be assigned the day before.",
+   "next": null
+  },
+  "FOMC": {
+   "name": "Fed decision (FOMC)",
+   "when": "The Federal Reserve's rate decision, 2:00 PM ET, eight times a year.",
+   "next": "2026-12-09"
+  },
+  "FirstWeekly": {
+   "name": "First weekly expiry",
+   "when": "The first Friday of the month (the Thursday when it is a holiday).",
+   "next": "2026-12-04"
+  },
+  "FuturesRoll": {
+   "name": "Futures roll",
+   "when": "The Thursday a week before triple witching, when index futures roll to the next quarter.",
+   "next": "2026-12-10"
+  },
+  "MonthEnd": {
+   "name": "Month end",
+   "when": "The last trading day of the month.",
+   "next": "2026-11-30"
+  },
+  "NFP": {
+   "name": "Jobs report (NFP)",
+   "when": "The monthly employment report, 8:30 AM ET, usually the first Friday.",
+   "next": "2026-12-04"
+  },
+  "OPEX": {
+   "name": "Monthly options expiry (OPEX)",
+   "when": "The third Friday of the month (the Thursday when it is a holiday).",
+   "next": "2026-11-20"
+  },
+  "PCE": {
+   "name": "PCE inflation",
+   "when": "The Fed's preferred inflation measure, 8:30 AM ET, near the end of the month.",
+   "next": "2026-11-25"
+  },
+  "PMI-Mfg": {
+   "name": "Manufacturing PMI",
+   "when": "The ISM manufacturing survey, 10:00 AM ET, the 1st trading day of the month.",
+   "next": "2026-12-01"
+  },
+  "PMI-Svcs": {
+   "name": "Services PMI",
+   "when": "The ISM services survey, 10:00 AM ET, the 3rd trading day of the month.",
+   "next": "2026-12-03"
+  },
+  "PPI": {
+   "name": "Producer prices (PPI)",
+   "when": "Wholesale inflation, 8:30 AM ET, mid-month.",
+   "next": "2026-12-15"
+  },
+  "QuarterEnd": {
+   "name": "Quarter end",
+   "when": "The last trading day of March, June, September and December.",
+   "next": "2026-12-31"
+  },
+  "TripleWitching": {
+   "name": "Triple witching",
+   "when": "The third Friday of March, June, September and December: stock options, index options and index futures expire together.",
+   "next": "2026-12-18"
+  },
+  "VIXExpiry": {
+   "name": "VIX expiry",
+   "when": "A Wednesday, 30 days before the next month's third Friday.",
+   "next": "2026-12-16"
+  }
+ },
+ "types": {
+  "expiry": {
+   "days": {
+    "type": "int",
+    "min": 0
+   },
+   "tolerance": {
+    "type": "int",
+    "min": 0
+   },
+   "min": {
+    "type": "int",
+    "min": 0
+   },
+   "max": {
+    "type": "int",
+    "min": 0
+   },
+   "prefer": {
+    "type": "enum",
+    "options": [
+     "first",
+     "last"
+    ],
+    "default": "first"
+   },
+   "monthly": {
+    "type": "bool"
+   }
+  },
+  "entry": {
+   "time": {
+    "at": {
+     "type": "time"
+    },
+    "window": {
+     "type": "int",
+     "min": 1,
+     "default": 5
+    }
+   },
+   "orb": {
+    "minutes": {
+     "type": "int",
+     "min": 1
+    },
+    "direction": {
+     "type": "enum",
+     "options": [
+      "above",
+      "below"
+     ]
+    },
+    "latest": {
+     "type": "time"
+    },
+    "single_shot": {
+     "type": "bool",
+     "default": true
+    }
+   },
+   "trigger": {
+    "bar_minutes": {
+     "type": "int",
+     "min": 1
+    },
+    "volume": {
+     "type": "text"
+    }
+   }
+  },
+  "trigger": {
+   "at": {
+    "type": "time"
+   },
+   "within": {
+    "type": "int",
+    "min": 1
+   },
+   "open": {
+    "type": "time"
+   },
+   "close": {
+    "type": "time"
+   },
+   "daily": {
+    "type": "bool"
+   },
+   "developing": {
+    "type": "bool"
+   }
+  },
+  "signals": {
+   "kinds": {
+    "cross": {
+     "a": {
+      "type": "json",
+      "required": true
+     },
+     "b": {
+      "type": "json",
+      "required": true
+     },
+     "direction": {
+      "type": "enum",
+      "options": [
+       "above",
+       "below"
+      ],
+      "required": true
+     },
+     "seed": {
+      "type": "bool",
+      "required": true
+     }
+    },
+    "range": {
+     "a": {
+      "type": "json",
+      "required": true
+     },
+     "low": {
+      "type": "number",
+      "required": true
+     },
+     "high": {
+      "type": "number",
+      "required": true
+     },
+     "direction": {
+      "type": "enum",
+      "options": [
+       "enters",
+       "exits"
+      ],
+      "required": true
+     },
+     "seed": {
+      "type": "bool",
+      "required": true
+     }
+    },
+    "gap": {
+     "direction": {
+      "type": "enum",
+      "options": [
+       "up",
+       "down"
+      ],
+      "required": true
+     },
+     "pct": {
+      "type": "number",
+      "required": true
+     },
+     "at": {
+      "type": "enum",
+      "options": [
+       "open",
+       "first_bar_close"
+      ],
+      "required": false
+     }
+    },
+    "gap_fill": {
+     "min_pct": {
+      "type": "number",
+      "required": true
+     }
+    },
+    "change": {
+     "from": {
+      "type": "enum",
+      "options": [
+       "open",
+       "prior_close"
+      ],
+      "required": true
+     },
+     "direction": {
+      "type": "enum",
+      "options": [
+       "up",
+       "down"
+      ],
+      "required": true
+     },
+     "pct": {
+      "type": "number",
+      "required": true
+     }
+    },
+    "opening_range": {
+     "minutes": {
+      "type": "int",
+      "min": 1,
+      "required": true
+     },
+     "side": {
+      "type": "enum",
+      "options": [
+       "above",
+       "below"
+      ],
+      "required": true
+     }
+    },
+    "prior_session": {
+     "side": {
+      "type": "enum",
+      "options": [
+       "high",
+       "low"
+      ],
+      "required": true
+     }
+    },
+    "new_extreme": {
+     "side": {
+      "type": "enum",
+      "options": [
+       "high",
+       "low"
+      ],
+      "required": true
+     },
+     "lookback": {
+      "type": "int",
+      "min": 1,
+      "or": [
+       "session"
+      ],
+      "required": true
+     }
+    },
+    "distance": {
+     "side": {
+      "type": "enum",
+      "options": [
+       "high",
+       "low"
+      ],
+      "required": true
+     },
+     "lookback": {
+      "type": "int",
+      "min": 1,
+      "or": [
+       "session"
+      ],
+      "required": true
+     },
+     "direction": {
+      "type": "enum",
+      "options": [
+       "within",
+       "beyond"
+      ],
+      "required": true
+     },
+     "pct": {
+      "type": "number",
+      "min": 0,
+      "required": true
+     }
+    },
+    "consecutive": {
+     "n": {
+      "type": "int",
+      "min": 1,
+      "required": true
+     },
+     "direction": {
+      "type": "enum",
+      "options": [
+       "up",
+       "down"
+      ],
+      "required": true
+     },
+     "seed": {
+      "type": "bool",
+      "required": true
+     }
+    },
+    "trend": {
+     "a": {
+      "type": "json",
+      "required": true
+     },
+     "direction": {
+      "type": "enum",
+      "options": [
+       "rising",
+       "falling"
+      ],
+      "required": true
+     },
+     "n": {
+      "type": "int",
+      "min": 1,
+      "required": true
+     },
+     "seed": {
+      "type": "bool",
+      "required": true
+     }
+    },
+    "change_from": {
+     "price": {
+      "type": "number",
+      "above": 0,
+      "required": true
+     },
+     "direction": {
+      "type": "enum",
+      "options": [
+       "up",
+       "down"
+      ],
+      "required": true
+     },
+     "pct": {
+      "type": "number",
+      "min": 0,
+      "required": true
+     }
+    },
+    "event": {
+     "event": {
+      "type": "enum",
+      "options": [
+       "Earnings",
+       "ExDividend",
+       "FOMC",
+       "FirstWeekly",
+       "FuturesRoll",
+       "MonthEnd",
+       "NFP",
+       "OPEX",
+       "PCE",
+       "PMI-Mfg",
+       "PMI-Svcs",
+       "PPI",
+       "QuarterEnd",
+       "TripleWitching",
+       "VIXExpiry"
+      ],
+      "required": true
+     },
+     "timing": {
+      "type": "enum",
+      "options": [
+       "before",
+       "on",
+       "after"
+      ],
+      "required": true
+     },
+     "days": {
+      "type": "int",
+      "min": 0,
+      "required": true
+     },
+     "unit": {
+      "type": "enum",
+      "options": [
+       "sessions",
+       "calendar"
+      ],
+      "required": true
+     },
+     "at": {
+      "type": "time",
+      "required": true
+     }
+    },
+    "candle": {
+     "pattern": {
+      "type": "enum",
+      "options": [
+       "doji",
+       "hammer",
+       "shooting_star",
+       "bullish_engulfing",
+       "bearish_engulfing",
+       "inside_bar",
+       "outside_bar"
+      ],
+      "required": true
+     }
+    },
+    "level_break": {
+     "side": {
+      "type": "enum",
+      "options": [
+       "resistance",
+       "support"
+      ],
+      "required": true
+     },
+     "k": {
+      "type": "int",
+      "min": 1,
+      "required": true
+     }
+    },
+    "trendline_break": {
+     "side": {
+      "type": "enum",
+      "options": [
+       "resistance",
+       "support"
+      ],
+      "required": true
+     },
+     "k": {
+      "type": "int",
+      "min": 1,
+      "required": true
+     }
+    },
+    "consolidation_break": {
+     "n": {
+      "type": "int",
+      "min": 1,
+      "required": true
+     },
+     "max_pct": {
+      "type": "number",
+      "min": 0,
+      "required": true
+     },
+     "side": {
+      "type": "enum",
+      "options": [
+       "above",
+       "below"
+      ],
+      "required": true
+     }
+    }
+   },
+   "rules": {
+    "confirm": {
+     "type": "int",
+     "min": 1,
+     "required": false
+    },
+    "reset": {
+     "type": "number",
+     "min": 0,
+     "required": false
+    },
+    "first_of_day": {
+     "type": "bool",
+     "required": false
+    },
+    "latest": {
+     "type": "time",
+     "required": false
+    },
+    "only_when": {
+     "type": "json",
+     "required": false
+    }
+   }
+  },
+  "strike": {
+   "target": {
+    "type": "number",
+    "above": 0
+   },
+   "at_most": {
+    "type": "number"
+   },
+   "price": {
+    "type": "enum",
+    "options": [
+     "bid",
+     "ask",
+     "mid"
+    ]
+   },
+   "points": {
+    "type": "number"
+   },
+   "pct": {
+    "type": "number"
+   },
+   "leg": {
+    "type": "leg"
+   },
+   "from": {
+    "type": "leg"
+   },
+   "width_of": {
+    "type": "json"
+   },
+   "times": {
+    "type": "number"
+   },
+   "sd": {
+    "type": "number"
+   },
+   "minutes": {
+    "type": "int",
+    "min": 1
+   },
+   "level": {
+    "type": "enum",
+    "options": [
+     "high",
+     "low",
+     "mid"
+    ]
+   },
+   "strikes": {
+    "type": "int",
+    "min": 1
+   },
+   "measure": {
+    "type": "enum",
+    "options": [
+     "net_positive",
+     "net_negative",
+     "call_gex",
+     "put_gex",
+     "call_oi",
+     "put_oi"
+    ]
+   }
+  },
+  "gates": {
+   "sd_change": {
+    "min": {
+     "type": "number"
+    },
+    "max": {
+     "type": "number"
+    }
+   },
+   "change_pct": {
+    "min": {
+     "type": "number"
+    },
+    "max": {
+     "type": "number"
+    }
+   },
+   "gap_pct": {
+    "min": {
+     "type": "number"
+    },
+    "max": {
+     "type": "number"
+    }
+   },
+   "vix_level": {
+    "min": {
+     "type": "number"
+    },
+    "max": {
+     "type": "number"
+    }
+   },
+   "vix_change_pct": {
+    "min": {
+     "type": "number"
+    },
+    "max": {
+     "type": "number"
+    }
+   },
+   "above_ma": {
+    "kind": {
+     "type": "enum",
+     "options": [
+      "sma",
+      "ema"
+     ]
+    },
+    "n": {
+     "type": "int",
+     "min": 1
+    }
+   },
+   "rsi": {
+    "min": {
+     "type": "number"
+    },
+    "max": {
+     "type": "number"
+    },
+    "n": {
+     "type": "int",
+     "min": 1,
+     "default": 14
+    },
+    "bars": {
+     "type": "int",
+     "min": 1,
+     "default": 5
+    }
+   },
+   "stoch": {
+    "min": {
+     "type": "number"
+    },
+    "max": {
+     "type": "number"
+    },
+    "k": {
+     "type": "int",
+     "min": 1,
+     "default": 14
+    },
+    "k_smooth": {
+     "type": "int",
+     "min": 1,
+     "default": 3
+    },
+    "d_smooth": {
+     "type": "int",
+     "min": 1,
+     "default": 3
+    },
+    "bars": {
+     "type": "int",
+     "min": 1,
+     "default": 5
+    }
+   },
+   "gex_ratio": {
+    "strikes": {
+     "type": "int",
+     "min": 1
+    },
+    "mode": {
+     "type": "enum",
+     "options": [
+      "nearest",
+      "above",
+      "below"
+     ],
+     "default": "nearest"
+    },
+    "min": {
+     "type": "number"
+    },
+    "max": {
+     "type": "number"
+    }
+   },
+   "gex_put_total": {
+    "strikes": {
+     "type": "int",
+     "min": 1
+    },
+    "mode": {
+     "type": "enum",
+     "options": [
+      "nearest",
+      "above",
+      "below"
+     ],
+     "default": "above"
+    },
+    "min": {
+     "type": "number"
+    },
+    "max": {
+     "type": "number"
+    }
+   },
+   "gex_max_otm": {
+    "strikes": {
+     "type": "int",
+     "min": 1
+    },
+    "side": {
+     "type": "enum",
+     "options": [
+      "call",
+      "put"
+     ]
+    },
+    "max": {
+     "type": "number"
+    }
+   },
+   "expected_move_pct": {
+    "min": {
+     "type": "number"
+    },
+    "max": {
+     "type": "number"
+    }
+   },
+   "vol_index_rank": {
+    "min": {
+     "type": "number"
+    },
+    "max": {
+     "type": "number"
+    },
+    "lookback": {
+     "type": "int",
+     "min": 1,
+     "default": 252
+    }
+   },
+   "vol_index_percentile": {
+    "min": {
+     "type": "number"
+    },
+    "max": {
+     "type": "number"
+    },
+    "lookback": {
+     "type": "int",
+     "min": 1,
+     "default": 252
+    }
+   },
+   "vol_index_minus_rv": {
+    "min": {
+     "type": "number"
+    },
+    "max": {
+     "type": "number"
+    },
+    "n": {
+     "type": "int",
+     "min": 1,
+     "default": 20
+    }
+   },
+   "no_position_today": {
+    "arm": {
+     "type": "text"
+    }
+   },
+   "mid_price": {
+    "min": {
+     "type": "number"
+    },
+    "max": {
+     "type": "number"
+    }
+   },
+   "bid_ask": {
+    "max": {
+     "type": "number"
+    }
+   },
+   "reward_risk": {
+    "min": {
+     "type": "number"
+    }
+   }
+  },
+  "exit": {
+   "close_before_expiry_min": {
+    "type": "int",
+    "min": 0
+   },
+   "profit_target_pct": {
+    "type": "number",
+    "above": 0
+   },
+   "touch": {
+    "type": "json"
+   },
+   "signal": {
+    "type": "json"
+   },
+   "stop_credit_multiple": {
+    "type": "number",
+    "above": 0
+   },
+   "stop_debit_pct": {
+    "type": "number",
+    "above": 0,
+    "max": 100
+   },
+   "stop_dollars": {
+    "type": "number",
+    "above": 0
+   },
+   "profit_dollars": {
+    "type": "number",
+    "above": 0
+   },
+   "trailing_stop": {
+    "type": "json"
+   },
+   "avoid_events": {
+    "type": "json"
+   },
+   "max_spread": {
+    "type": "number",
+    "above": 0
+   },
+   "delta_limit": {
+    "type": "number",
+    "above": 0,
+    "max": 4
+   },
+   "close_at_dte": {
+    "type": "int",
+    "min": 0
+   }
+  },
+  "size": {
+   "contracts": {
+    "type": "int",
+    "min": 1
+   },
+   "max_risk": {
+    "type": "number",
+    "above": 0
+   },
+   "minimum": {
+    "type": "int",
+    "min": 0
+   },
+   "allocation_pct": {
+    "type": "number",
+    "above": 0,
+    "max": 100
+   },
+   "allocation": {
+    "type": "number",
+    "above": 0
+   },
+   "max_dollars": {
+    "type": "number",
+    "above": 0
+   },
+   "max_contracts": {
+    "type": "int",
+    "min": 1
+   },
+   "progression": {
+    "type": "json"
+   }
+  },
+  "limits": {
+   "max_open": {
+    "type": "int",
+    "min": 1
+   },
+   "per_day": {
+    "type": "int",
+    "min": 1,
+    "max": 1
+   },
+   "every_days": {
+    "type": "int",
+    "min": 1
+   },
+   "one_per_expiry": {
+    "type": "bool"
+   }
+  }
+ },
+ "expiry": {
+  "dte": {
+   "days": true,
+   "tolerance": false
+  },
+  "market_days": {
+   "days": true,
+   "tolerance": false
+  },
+  "calendar": {
+   "days": true,
+   "tolerance": false
+  },
+  "at_least": {
+   "days": true,
+   "monthly": false
+  },
+  "between": {
+   "min": true,
+   "max": true,
+   "prefer": false,
+   "monthly": false
+  }
+ },
+ "far_expiry": {
+  "dte": {
+   "days": true,
+   "tolerance": false
+  },
+  "market_days": {
+   "days": true,
+   "tolerance": false
+  },
+  "calendar": {
+   "days": true,
+   "tolerance": false
+  },
+  "at_least": {
+   "days": true,
+   "monthly": false
+  },
+  "between": {
+   "min": true,
+   "max": true,
+   "prefer": false,
+   "monthly": false
+  },
+  "after_near": {
+   "days": true,
+   "monthly": false
+  }
+ },
+ "leg_expiries": [
+  "near",
+  "far"
+ ],
+ "expiry_flags": [
+  "monthly"
+ ],
+ "strike_rules": {
+  "delta": {
+   "keys": {
+    "target": true,
+    "at_most": false
+   },
+   "matches": [
+    "nearest",
+    "above",
+    "below"
+   ],
+   "default_match": "nearest"
+  },
+  "premium": {
+   "keys": {
+    "target": true,
+    "price": true
+   },
+   "matches": [
+    "nearest",
+    "above",
+    "below"
+   ],
+   "default_match": null
+  },
+  "spot": {
+   "keys": {
+    "points": false,
+    "pct": false
+   },
+   "matches": [
+    "exact",
+    "nearest",
+    "above",
+    "below"
+   ],
+   "default_match": "nearest"
+  },
+  "prev_close": {
+   "keys": {
+    "points": false,
+    "pct": false
+   },
+   "matches": [
+    "exact",
+    "nearest",
+    "above",
+    "below"
+   ],
+   "default_match": "nearest"
+  },
+  "open": {
+   "keys": {
+    "points": false,
+    "pct": false
+   },
+   "matches": [
+    "exact",
+    "nearest",
+    "above",
+    "below"
+   ],
+   "default_match": "nearest"
+  },
+  "from_leg": {
+   "keys": {
+    "leg": true,
+    "points": false,
+    "pct": false
+   },
+   "matches": [
+    "exact",
+    "nearest",
+    "above",
+    "below"
+   ],
+   "default_match": "exact"
+  },
+  "same_as": {
+   "keys": {
+    "leg": true
+   },
+   "matches": [],
+   "default_match": null
+  },
+  "match_width": {
+   "keys": {
+    "from": true,
+    "width_of": true
+   },
+   "matches": [
+    "exact",
+    "nearest",
+    "above",
+    "below"
+   ],
+   "default_match": "nearest"
+  },
+  "expected_move": {
+   "keys": {
+    "times": true,
+    "points": false,
+    "pct": false
+   },
+   "matches": [
+    "exact",
+    "nearest",
+    "above",
+    "below"
+   ],
+   "default_match": null
+  },
+  "std_dev": {
+   "keys": {
+    "sd": true,
+    "points": false,
+    "pct": false
+   },
+   "matches": [
+    "exact",
+    "nearest",
+    "above",
+    "below"
+   ],
+   "default_match": null
+  },
+  "opening_range": {
+   "keys": {
+    "minutes": true,
+    "level": true,
+    "points": false,
+    "pct": false
+   },
+   "matches": [
+    "exact",
+    "nearest",
+    "above",
+    "below"
+   ],
+   "default_match": null
+  },
+  "entry_level": {
+   "keys": {
+    "points": false,
+    "pct": false
+   },
+   "matches": [
+    "exact",
+    "nearest",
+    "above",
+    "below"
+   ],
+   "default_match": null
+  },
+  "max_abs_gex": {
+   "keys": {
+    "strikes": true
+   },
+   "matches": [],
+   "default_match": null
+  },
+  "gex_max": {
+   "keys": {
+    "measure": true,
+    "strikes": true
+   },
+   "matches": [],
+   "default_match": null
+  }
+ },
+ "gates": [
+  {
+   "gate": "sd_change",
+   "stage": "signal",
+   "runs": "market",
+   "params": [
+    {
+     "name": "min",
+     "required": false,
+     "default": null
+    },
+    {
+     "name": "max",
+     "required": false,
+     "default": null
+    }
+   ]
+  },
+  {
+   "gate": "change_pct",
+   "stage": "signal",
+   "runs": "market",
+   "params": [
+    {
+     "name": "min",
+     "required": false,
+     "default": null
+    },
+    {
+     "name": "max",
+     "required": false,
+     "default": null
+    }
+   ]
+  },
+  {
+   "gate": "gap_pct",
+   "stage": "signal",
+   "runs": "market",
+   "params": [
+    {
+     "name": "min",
+     "required": false,
+     "default": null
+    },
+    {
+     "name": "max",
+     "required": false,
+     "default": null
+    }
+   ]
+  },
+  {
+   "gate": "vix_level",
+   "stage": "signal",
+   "runs": "market",
+   "params": [
+    {
+     "name": "min",
+     "required": false,
+     "default": null
+    },
+    {
+     "name": "max",
+     "required": false,
+     "default": null
+    }
+   ]
+  },
+  {
+   "gate": "vix_change_pct",
+   "stage": "signal",
+   "runs": "market",
+   "params": [
+    {
+     "name": "min",
+     "required": false,
+     "default": null
+    },
+    {
+     "name": "max",
+     "required": false,
+     "default": null
+    }
+   ]
+  },
+  {
+   "gate": "above_ma",
+   "stage": "signal",
+   "runs": "market",
+   "params": [
+    {
+     "name": "kind",
+     "required": true,
+     "default": null
+    },
+    {
+     "name": "n",
+     "required": true,
+     "default": null
+    }
+   ]
+  },
+  {
+   "gate": "rsi",
+   "stage": "signal",
+   "runs": "market",
+   "params": [
+    {
+     "name": "min",
+     "required": false,
+     "default": null
+    },
+    {
+     "name": "max",
+     "required": false,
+     "default": null
+    },
+    {
+     "name": "n",
+     "required": false,
+     "default": 14
+    },
+    {
+     "name": "bars",
+     "required": false,
+     "default": 5
+    }
+   ]
+  },
+  {
+   "gate": "stoch",
+   "stage": "signal",
+   "runs": "market",
+   "params": [
+    {
+     "name": "min",
+     "required": false,
+     "default": null
+    },
+    {
+     "name": "max",
+     "required": false,
+     "default": null
+    },
+    {
+     "name": "k",
+     "required": false,
+     "default": 14
+    },
+    {
+     "name": "k_smooth",
+     "required": false,
+     "default": 3
+    },
+    {
+     "name": "d_smooth",
+     "required": false,
+     "default": 3
+    },
+    {
+     "name": "bars",
+     "required": false,
+     "default": 5
+    }
+   ]
+  },
+  {
+   "gate": "gex_ratio",
+   "stage": "chain",
+   "runs": "market",
+   "params": [
+    {
+     "name": "strikes",
+     "required": true,
+     "default": null
+    },
+    {
+     "name": "mode",
+     "required": false,
+     "default": "nearest"
+    },
+    {
+     "name": "min",
+     "required": false,
+     "default": null
+    },
+    {
+     "name": "max",
+     "required": false,
+     "default": null
+    }
+   ]
+  },
+  {
+   "gate": "gex_put_total",
+   "stage": "chain",
+   "runs": "market",
+   "params": [
+    {
+     "name": "strikes",
+     "required": true,
+     "default": null
+    },
+    {
+     "name": "mode",
+     "required": false,
+     "default": "above"
+    },
+    {
+     "name": "min",
+     "required": false,
+     "default": null
+    },
+    {
+     "name": "max",
+     "required": false,
+     "default": null
+    }
+   ]
+  },
+  {
+   "gate": "gex_max_otm",
+   "stage": "chain",
+   "runs": "market",
+   "params": [
+    {
+     "name": "strikes",
+     "required": true,
+     "default": null
+    },
+    {
+     "name": "side",
+     "required": true,
+     "default": null
+    },
+    {
+     "name": "max",
+     "required": true,
+     "default": null
+    }
+   ]
+  },
+  {
+   "gate": "expected_move_pct",
+   "stage": "chain",
+   "runs": "market",
+   "params": [
+    {
+     "name": "min",
+     "required": false,
+     "default": null
+    },
+    {
+     "name": "max",
+     "required": false,
+     "default": null
+    }
+   ]
+  },
+  {
+   "gate": "vol_index_rank",
+   "stage": "signal",
+   "runs": "market",
+   "params": [
+    {
+     "name": "min",
+     "required": false,
+     "default": null
+    },
+    {
+     "name": "max",
+     "required": false,
+     "default": null
+    },
+    {
+     "name": "lookback",
+     "required": false,
+     "default": 252
+    }
+   ]
+  },
+  {
+   "gate": "vol_index_percentile",
+   "stage": "signal",
+   "runs": "market",
+   "params": [
+    {
+     "name": "min",
+     "required": false,
+     "default": null
+    },
+    {
+     "name": "max",
+     "required": false,
+     "default": null
+    },
+    {
+     "name": "lookback",
+     "required": false,
+     "default": 252
+    }
+   ]
+  },
+  {
+   "gate": "vol_index_minus_rv",
+   "stage": "signal",
+   "runs": "market",
+   "params": [
+    {
+     "name": "min",
+     "required": false,
+     "default": null
+    },
+    {
+     "name": "max",
+     "required": false,
+     "default": null
+    },
+    {
+     "name": "n",
+     "required": false,
+     "default": 20
+    }
+   ]
+  },
+  {
+   "gate": "no_position_today",
+   "stage": "signal",
+   "runs": "market",
+   "params": [
+    {
+     "name": "arm",
+     "required": true,
+     "default": null
+    }
+   ]
+  },
+  {
+   "gate": "mid_price",
+   "stage": "structure",
+   "runs": "structure",
+   "params": [
+    {
+     "name": "min",
+     "required": false,
+     "default": null
+    },
+    {
+     "name": "max",
+     "required": false,
+     "default": null
+    }
+   ]
+  },
+  {
+   "gate": "bid_ask",
+   "stage": "structure",
+   "runs": "structure",
+   "params": [
+    {
+     "name": "max",
+     "required": true,
+     "default": null
+    }
+   ]
+  },
+  {
+   "gate": "reward_risk",
+   "stage": "structure",
+   "runs": "structure",
+   "params": [
+    {
+     "name": "min",
+     "required": true,
+     "default": null
+    }
+   ]
+  }
+ ],
+ "exits": [
+  "avoid_events",
+  "close_at_dte",
+  "close_before_expiry_min",
+  "delta_limit",
+  "max_spread",
+  "profit_dollars",
+  "profit_target_pct",
+  "signal",
+  "stop_credit_multiple",
+  "stop_debit_pct",
+  "stop_dollars",
+  "touch",
+  "trailing_stop"
+ ],
+ "limits": [
+  "every_days",
+  "max_open",
+  "one_per_expiry",
+  "per_day"
+ ],
+ "sizes": {
+  "contracts": [
+   "contracts",
+   "progression"
+  ],
+  "max_risk": [
+   "max_risk",
+   "minimum",
+   "progression"
+  ],
+  "allocation_pct": [
+   "allocation",
+   "allocation_pct",
+   "max_contracts",
+   "max_dollars",
+   "minimum",
+   "progression"
+  ]
+ },
+ "progression": [
+  "after",
+  "ceiling",
+  "floor",
+  "step"
+ ],
+ "credit_rules": {
+  "profit_target_pct": 50,
+  "stop_credit_multiple": 1,
+  "close_at_dte": 21
+ },
+ "strategy": {
+  "strategies": {
+   "option": {
+    "label": "Option",
+    "about": "One option.",
+    "settings": [
+     "direction",
+     "right",
+     "dte",
+     "expiries",
+     "place_by",
+     "target"
+    ],
+    "available": true,
+    "why": null,
+    "defaults": {}
+   },
+   "vertical": {
+    "label": "Vertical",
+    "about": "Two options of one right, one sold and one bought further out.",
+    "settings": [
+     "direction",
+     "right",
+     "dte",
+     "expiries",
+     "place_by",
+     "target",
+     "width"
+    ],
+    "available": true,
+    "why": null,
+    "defaults": {}
+   },
+   "butterfly": {
+    "label": "Butterfly",
+    "about": "Long: two sold at the body, one bought each side, the wings equal.",
+    "settings": [
+     "direction",
+     "right",
+     "dte",
+     "expiries",
+     "place_by",
+     "target",
+     "width"
+    ],
+    "available": true,
+    "why": null,
+    "defaults": {
+     "direction": "long"
+    }
+   },
+   "broken_wing": {
+    "label": "Broken-wing butterfly",
+    "about": "Long: a butterfly with the far wing wider.",
+    "settings": [
+     "direction",
+     "right",
+     "dte",
+     "expiries",
+     "place_by",
+     "target",
+     "width",
+     "width2"
+    ],
+    "available": true,
+    "why": null,
+    "defaults": {
+     "direction": "long"
+    }
+   },
+   "ratio": {
+    "label": "Ratio spread",
+    "about": "One bought, more sold further out.",
+    "settings": [
+     "right",
+     "dte",
+     "expiries",
+     "place_by",
+     "target",
+     "width",
+     "ratio"
+    ],
+    "available": true,
+    "why": null,
+    "defaults": {}
+   },
+   "straddle": {
+    "label": "Straddle",
+    "about": "A put and a call at the strike nearest the spot.",
+    "settings": [
+     "direction",
+     "dte",
+     "expiries"
+    ],
+    "available": true,
+    "why": null,
+    "defaults": {}
+   },
+   "strangle": {
+    "label": "Strangle",
+    "about": "A put below the spot and a call above.",
+    "settings": [
+     "direction",
+     "dte",
+     "expiries",
+     "place_by",
+     "target"
+    ],
+    "available": true,
+    "why": null,
+    "defaults": {}
+   },
+   "iron_condor": {
+    "label": "Iron condor",
+    "about": "A put spread and a call spread around the spot.",
+    "settings": [
+     "direction",
+     "dte",
+     "expiries",
+     "place_by",
+     "target",
+     "width"
+    ],
+    "available": true,
+    "why": null,
+    "defaults": {}
+   },
+   "iron_fly": {
+    "label": "Iron fly",
+    "about": "A put and a call at the spot, a wing bought each side.",
+    "settings": [
+     "direction",
+     "dte",
+     "expiries",
+     "width"
+    ],
+    "available": true,
+    "why": null,
+    "defaults": {}
+   },
+   "jade_lizard": {
+    "label": "Jade lizard",
+    "about": "A sold put, and a call spread above the spot.",
+    "settings": [
+     "dte",
+     "expiries",
+     "place_by",
+     "target",
+     "width"
+    ],
+    "available": true,
+    "why": null,
+    "defaults": {}
+   },
+   "calendar": {
+    "label": "Calendar",
+    "about": "Sold on the near expiry, bought on a later one, at the same strike.",
+    "settings": [
+     "right",
+     "dte",
+     "expiries",
+     "far_days",
+     "place_by",
+     "target"
+    ],
+    "available": true,
+    "why": null,
+    "defaults": {
+     "place_by": "points",
+     "target": 0
+    }
+   },
+   "diagonal": {
+    "label": "Diagonal",
+    "about": "A calendar with the far leg bought further out.",
+    "settings": [
+     "right",
+     "dte",
+     "expiries",
+     "far_days",
+     "place_by",
+     "target",
+     "width"
+    ],
+    "available": true,
+    "why": null,
+    "defaults": {
+     "place_by": "points",
+     "target": 0
+    }
+   },
+   "covered": {
+    "label": "Covered call \u00b7 Stock",
+    "about": "Shares with a call sold against them.",
+    "settings": [],
+    "available": false,
+    "why": "needs stock legs",
+    "defaults": {}
+   },
+   "custom": {
+    "label": "Custom",
+    "about": "Any legs: starts from one, and you add the rest.",
+    "settings": [
+     "dte",
+     "expiries"
+    ],
+    "available": true,
+    "why": null,
+    "defaults": {}
+   }
+  },
+  "settings": {
+   "direction": {
+    "type": "enum",
+    "options": [
+     "short",
+     "long"
+    ],
+    "default": "short"
+   },
+   "right": {
+    "type": "enum",
+    "options": [
+     "put",
+     "call"
+    ],
+    "default": "put"
+   },
+   "dte": {
+    "type": "int",
+    "min": 0,
+    "max": 400,
+    "default": 45
+   },
+   "expiries": {
+    "type": "enum",
+    "options": [
+     "all",
+     "weekly",
+     "monthly"
+    ],
+    "default": "monthly"
+   },
+   "place_by": {
+    "type": "enum",
+    "options": [
+     "delta",
+     "pct",
+     "sd",
+     "points"
+    ],
+    "default": "delta"
+   },
+   "target": {
+    "type": "number",
+    "above": 0,
+    "default": 0.16
+   },
+   "width": {
+    "type": "number",
+    "above": 0,
+    "default": 5
+   },
+   "width2": {
+    "type": "number",
+    "above": 0,
+    "default": 10
+   },
+   "ratio": {
+    "type": "int",
+    "min": 2,
+    "max": 10,
+    "default": 2
+   },
+   "far_days": {
+    "type": "int",
+    "min": 1,
+    "max": 400,
+    "default": 28
+   }
+  },
+  "target_defaults": {
+   "delta": 0.16,
+   "pct": 2,
+   "sd": 1,
+   "points": 10
+  }
+ },
+ "entry_presets": {
+  "entries": {
+   "daily_time": {
+    "label": "Daily at a time",
+    "group": "Time",
+    "about": "Enters at the same minute each session the weekdays allow.",
+    "suits": "any structure",
+    "settings": [
+     "at",
+     "window"
+    ],
+    "defaults": {}
+   },
+   "near_close": {
+    "label": "Near the close",
+    "group": "Time",
+    "about": "Enters a few minutes before the close, on the day's settled move.",
+    "suits": "overnight and short-dated trades",
+    "settings": [
+     "at",
+     "window"
+    ],
+    "defaults": {
+     "at": "15:55"
+    }
+   },
+   "rsi_pullback": {
+    "label": "Pullback in an uptrend",
+    "group": "Trend and mean reversion",
+    "about": "A short-term oversold close while the longer trend is up: the day the 2-day RSI drops under 10 above the 200-day average, read on today's bar in the minutes before the close.",
+    "suits": "short puts, put spreads",
+    "settings": [
+     "rsi_n",
+     "below",
+     "trend_n",
+     "at"
+    ],
+    "defaults": {
+     "at": "15:50"
+    }
+   },
+   "down_days": {
+    "label": "Down days in an uptrend",
+    "group": "Trend and mean reversion",
+    "about": "Several down closes in a row while the close is above its long average.",
+    "suits": "short puts, put spreads",
+    "settings": [
+     "days",
+     "trend_n",
+     "at"
+    ],
+    "defaults": {
+     "at": "15:50"
+    }
+   },
+   "rsi_overbought": {
+    "label": "Overbought in a downtrend",
+    "group": "Trend and mean reversion",
+    "about": "A short-term overbought close while the longer trend is down: the mirror of the pullback.",
+    "suits": "short calls, call spreads",
+    "settings": [
+     "rsi_n",
+     "above",
+     "trend_n",
+     "at"
+    ],
+    "defaults": {
+     "at": "15:50"
+    }
+   },
+   "ma_cross": {
+    "label": "Moving-average cross",
+    "group": "Trend and mean reversion",
+    "about": "A fast average crossing a slow one on intraday bars, inside a window.",
+    "suits": "spreads on the side of the cross",
+    "settings": [
+     "fast",
+     "slow",
+     "direction",
+     "bar_minutes",
+     "from",
+     "until"
+    ],
+    "defaults": {}
+   },
+   "orb": {
+    "label": "Opening-range breakout",
+    "group": "Intraday",
+    "about": "The price leaving the first minutes' range, once, no later than a set time.",
+    "suits": "spreads on the side of the break",
+    "settings": [
+     "minutes",
+     "direction",
+     "latest"
+    ],
+    "defaults": {}
+   },
+   "gap_fill": {
+    "label": "Gap fill",
+    "group": "Intraday",
+    "about": "An opening gap of at least a set size closing back to the prior close.",
+    "suits": "range-bound structures",
+    "settings": [
+     "min_pct",
+     "bar_minutes",
+     "from",
+     "until"
+    ],
+    "defaults": {
+     "from": "09:35",
+     "until": "12:00"
+    }
+   },
+   "after_event": {
+    "label": "After an event",
+    "group": "Events",
+    "about": "A set number of sessions after a calendar event, at a set time: the volatility after it.",
+    "suits": "premium selling after the event",
+    "settings": [
+     "event",
+     "sessions",
+     "at"
+    ],
+    "defaults": {}
+   },
+   "custom": {
+    "label": "Custom",
+    "group": "Custom",
+    "about": "A fixed time to start from: any entry kind, signal and gates from here.",
+    "suits": "",
+    "settings": [
+     "at",
+     "window"
+    ],
+    "defaults": {}
+   }
+  },
+  "filters": {
+   "vix_band": {
+    "label": "VIX within a band",
+    "group": "Volatility",
+    "about": "VIX now between two levels: not too quiet, not a panic.",
+    "suits": "",
+    "settings": [
+     "vix_min",
+     "vix_max"
+    ],
+    "defaults": {}
+   },
+   "iv_rank": {
+    "label": "Implied vol rank elevated",
+    "group": "Volatility",
+    "about": "The underlying's vol index ranked high against its own last year.",
+    "suits": "",
+    "settings": [
+     "rank_min",
+     "lookback"
+    ],
+    "defaults": {}
+   },
+   "iv_over_rv": {
+    "label": "Implied over realized",
+    "group": "Volatility",
+    "about": "Options price more movement than the underlying has shown lately.",
+    "suits": "",
+    "settings": [
+     "edge_min",
+     "rv_n"
+    ],
+    "defaults": {}
+   },
+   "calm_open": {
+    "label": "Calm open",
+    "group": "The open",
+    "about": "A small opening gap and VIX not jumping.",
+    "suits": "",
+    "settings": [
+     "gap_max",
+     "vix_up_max"
+    ],
+    "defaults": {}
+   },
+   "quiet_day": {
+    "label": "Quiet so far today",
+    "group": "The open",
+    "about": "The price near the prior close at the entry.",
+    "suits": "",
+    "settings": [
+     "move_max"
+    ],
+    "defaults": {}
+   },
+   "uptrend": {
+    "label": "In an uptrend",
+    "group": "Trend",
+    "about": "The price above its long simple average.",
+    "suits": "",
+    "settings": [
+     "ma_n"
+    ],
+    "defaults": {}
+   }
+  },
+  "settings": {
+   "at": {
+    "type": "time",
+    "default": "10:00",
+    "label": "enter at \u00b7 ET"
+   },
+   "window": {
+    "type": "int",
+    "min": 1,
+    "max": 60,
+    "default": 5,
+    "label": "minutes to enter"
+   },
+   "rsi_n": {
+    "type": "int",
+    "min": 2,
+    "max": 50,
+    "default": 2,
+    "label": "RSI length"
+   },
+   "below": {
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "default": 10,
+    "label": "closes below"
+   },
+   "above": {
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "default": 90,
+    "label": "closes above"
+   },
+   "trend_n": {
+    "type": "int",
+    "min": 2,
+    "max": 400,
+    "default": 200,
+    "label": "trend \u00b7 SMA days"
+   },
+   "days": {
+    "type": "int",
+    "min": 1,
+    "max": 10,
+    "default": 3,
+    "label": "down closes in a row"
+   },
+   "fast": {
+    "type": "int",
+    "min": 2,
+    "max": 100,
+    "default": 9,
+    "label": "fast EMA"
+   },
+   "slow": {
+    "type": "int",
+    "min": 3,
+    "max": 200,
+    "default": 21,
+    "label": "slow EMA"
+   },
+   "direction": {
+    "type": "enum",
+    "options": [
+     "above",
+     "below"
+    ],
+    "default": "above",
+    "label": "crosses"
+   },
+   "bar_minutes": {
+    "type": "int",
+    "min": 1,
+    "max": 60,
+    "default": 5,
+    "label": "bar \u00b7 minutes"
+   },
+   "from": {
+    "type": "time",
+    "default": "09:45",
+    "label": "from \u00b7 ET"
+   },
+   "until": {
+    "type": "time",
+    "default": "15:30",
+    "label": "until \u00b7 ET"
+   },
+   "minutes": {
+    "type": "int",
+    "min": 1,
+    "max": 120,
+    "default": 30,
+    "label": "range \u00b7 minutes"
+   },
+   "latest": {
+    "type": "time",
+    "default": "12:00",
+    "label": "no later than \u00b7 ET"
+   },
+   "min_pct": {
+    "type": "number",
+    "min": 0,
+    "max": 10,
+    "default": 0.3,
+    "label": "gap at least \u00b7 %"
+   },
+   "event": {
+    "type": "enum",
+    "options": [
+     "PMI-Mfg",
+     "PMI-Svcs",
+     "OPEX",
+     "FOMC",
+     "MonthEnd",
+     "QuarterEnd",
+     "FirstWeekly",
+     "TripleWitching",
+     "VIXExpiry",
+     "FuturesRoll",
+     "PPI",
+     "NFP",
+     "PCE"
+    ],
+    "default": "FOMC",
+    "label": "event"
+   },
+   "sessions": {
+    "type": "int",
+    "min": 1,
+    "max": 10,
+    "default": 1,
+    "label": "sessions after"
+   },
+   "vix_min": {
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "default": 15,
+    "label": "at least"
+   },
+   "vix_max": {
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "default": 30,
+    "label": "at most"
+   },
+   "rank_min": {
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "default": 30,
+    "label": "rank at least"
+   },
+   "lookback": {
+    "type": "int",
+    "min": 20,
+    "max": 1000,
+    "default": 252,
+    "label": "over \u00b7 sessions"
+   },
+   "edge_min": {
+    "type": "number",
+    "min": -50,
+    "max": 50,
+    "default": 2,
+    "label": "at least \u00b7 vol points"
+   },
+   "rv_n": {
+    "type": "int",
+    "min": 5,
+    "max": 252,
+    "default": 20,
+    "label": "realized over \u00b7 sessions"
+   },
+   "gap_max": {
+    "type": "number",
+    "min": 0,
+    "max": 10,
+    "default": 0.5,
+    "label": "gap within \u00b7 %"
+   },
+   "vix_up_max": {
+    "type": "number",
+    "min": -100,
+    "max": 100,
+    "default": 5,
+    "label": "VIX up at most \u00b7 %"
+   },
+   "move_max": {
+    "type": "number",
+    "min": 0,
+    "max": 10,
+    "default": 0.3,
+    "label": "move within \u00b7 %"
+   },
+   "ma_n": {
+    "type": "int",
+    "min": 2,
+    "max": 400,
+    "default": 200,
+    "label": "SMA days"
+   }
+  }
+ },
+ "words": {
+  "entry": {
+   "time": {
+    "label": "At a time",
+    "about": "Enters at the same minute each session the weekdays allow.",
+    "sentence": "Enter at {at} ET",
+    "more": {
+     "window": "for up to {window} minutes after it"
+    }
+   },
+   "orb": {
+    "label": "Opening-range break",
+    "about": "Enters when the price leaves the range of the session's first minutes.",
+    "sentence": "Enter when the price breaks {direction} the first {minutes} minutes' range, no later than {latest} ET",
+    "more": {
+     "single_shot": "{single_shot}"
+    },
+    "values": {
+     "single_shot": {
+      "true": "only on the minute of the break",
+      "false": "on any minute after the break, until it enters"
+     }
+    }
+   },
+   "trigger": {
+    "label": "On a trigger",
+    "about": "Enters when a signal fires inside a window, or at a fixed time.",
+    "sentence": "Enter {trigger}",
+    "more": {
+     "bar_minutes": "reading {bar_minutes}-minute bars",
+     "volume": "weighing each bar by {volume}'s volume"
+    }
+   }
+  },
+  "trigger": {
+   "at": {
+    "label": "At a fixed time",
+    "about": "Enters at one minute, or the first minute it can within a few after.",
+    "sentence": "at {at} ET, within {within} minutes"
+   },
+   "signal": {
+    "label": "When a signal fires",
+    "about": "Enters on the signal's first firing between two times.",
+    "sentence": "when {signal}, between {window.open} and {window.close} ET, entering {within}",
+    "more": {
+     "daily": "{daily}",
+     "developing": "{developing}"
+    },
+    "values": {
+     "within": {
+      "null": "any time before the window closes",
+      "n": "within {within} minutes of the firing"
+     },
+     "daily": {
+      "true": "on daily bars, from the session before",
+      "false": "on intraday bars"
+     },
+     "developing": {
+      "true": "on today's daily bar as it stands, read each minute",
+      "false": "on completed daily bars only"
+     }
+    }
+   }
+  },
+  "signal_rules": {
+   "confirm": {
+    "label": "Confirm",
+    "sentence": "held for {confirm} bars in a row"
+   },
+   "reset": {
+    "label": "Reset",
+    "sentence": "re-arming only after it moves back {reset} past the level"
+   },
+   "first_of_day": {
+    "label": "Once a day",
+    "sentence": "{first_of_day}",
+    "values": {
+     "first_of_day": {
+      "true": "at most once a session",
+      "false": "as often as it fires"
+     }
+    }
+   },
+   "latest": {
+    "label": "No later than",
+    "sentence": "no later than {latest} ET"
+   },
+   "only_when": {
+    "label": "Only when",
+    "sentence": "only while {only_when} holds"
+   }
+  },
+  "signals": {
+   "cross": {
+    "label": "Crosses",
+    "group": "Indicators",
+    "about": "One indicator crossing above or below another, or a number.",
+    "sentence": "{a} crosses {direction} {b}",
+    "more": {
+     "seed": "{seed}"
+    },
+    "values": {
+     "seed": {
+      "true": "carrying its reading across sessions",
+      "false": "starting afresh each session"
+     }
+    },
+    "start": {
+     "seed": true
+    }
+   },
+   "range": {
+    "label": "Enters or leaves a band",
+    "group": "Indicators",
+    "about": "An indicator moving into, or out of, a band between two numbers.",
+    "sentence": "{a} {direction} the band {low} to {high}",
+    "more": {
+     "seed": "{seed}"
+    },
+    "values": {
+     "seed": {
+      "true": "carrying its reading across sessions",
+      "false": "starting afresh each session"
+     }
+    },
+    "start": {
+     "seed": true
+    }
+   },
+   "trend": {
+    "label": "Rising or falling",
+    "group": "Indicators",
+    "about": "An indicator higher (or lower) on each of its last few bars.",
+    "sentence": "{a} is {direction} for {n} bars",
+    "more": {
+     "seed": "{seed}"
+    },
+    "values": {
+     "seed": {
+      "true": "carrying its reading across sessions",
+      "false": "starting afresh each session"
+     }
+    },
+    "start": {
+     "seed": true
+    }
+   },
+   "consecutive": {
+    "label": "Closes in a row",
+    "group": "Price",
+    "about": "A run of bars that each close up, or each close down.",
+    "sentence": "the price closes {direction} {n} bars in a row",
+    "more": {
+     "seed": "{seed}"
+    },
+    "values": {
+     "seed": {
+      "true": "carrying its reading across sessions",
+      "false": "starting afresh each session"
+     },
+     "direction": {
+      "up": "up",
+      "down": "down"
+     }
+    },
+    "start": {
+     "seed": true
+    }
+   },
+   "gap": {
+    "label": "Opening gap",
+    "group": "The open",
+    "about": "The session opening away from the previous close.",
+    "sentence": "the session gaps {direction} at least {pct}%",
+    "more": {
+     "at": "read at {at}"
+    },
+    "values": {
+     "at": {
+      "open": "the open",
+      "first_bar_close": "the first bar's close"
+     }
+    }
+   },
+   "gap_fill": {
+    "label": "Gap fills",
+    "group": "The open",
+    "about": "The price coming back across an opening gap toward the previous close.",
+    "sentence": "an opening gap of at least {min_pct}% fills"
+   },
+   "change": {
+    "label": "Moves from the open or the close",
+    "group": "Price",
+    "about": "The price up or down a set percent since the open or the previous close.",
+    "sentence": "the price is {direction} {pct}% from {from}",
+    "values": {
+     "from": {
+      "open": "the open",
+      "prior_close": "the previous close"
+     }
+    }
+   },
+   "change_from": {
+    "label": "Moves from a price",
+    "group": "Price",
+    "about": "The price a set percent past a fixed level.",
+    "sentence": "the price is {direction} {pct}% from {price}"
+   },
+   "opening_range": {
+    "label": "Breaks the opening range",
+    "group": "The open",
+    "about": "The price leaving the range of the session's first minutes.",
+    "sentence": "the price breaks {side} the first {minutes} minutes' range"
+   },
+   "prior_session": {
+    "label": "Breaks yesterday's high or low",
+    "group": "Levels",
+    "about": "The price passing the previous session's high or low.",
+    "sentence": "the price breaks the previous session's {side}",
+    "values": {
+     "side": {
+      "high": "high",
+      "low": "low"
+     }
+    }
+   },
+   "new_extreme": {
+    "label": "New high or low",
+    "group": "Levels",
+    "about": "The price making a new high or low over a lookback.",
+    "sentence": "the price makes a new {side} over {lookback} bars",
+    "values": {
+     "side": {
+      "high": "high",
+      "low": "low"
+     }
+    }
+   },
+   "distance": {
+    "label": "Near or far from a high or low",
+    "group": "Levels",
+    "about": "The price within, or beyond, a percent of a recent high or low.",
+    "sentence": "the price is {direction} {pct}% of its {lookback}-bar {side}",
+    "values": {
+     "side": {
+      "high": "high",
+      "low": "low"
+     }
+    }
+   },
+   "level_break": {
+    "label": "Breaks a swing level",
+    "group": "Levels",
+    "about": "The close beyond the latest confirmed swing high or swing low.",
+    "sentence": "the close breaks the latest {side} swing, confirmed {k} bars either side"
+   },
+   "trendline_break": {
+    "label": "Breaks a trendline",
+    "group": "Levels",
+    "about": "The close beyond the line through the latest two swing highs or lows.",
+    "sentence": "the close breaks the {side} trendline, swings confirmed {k} bars either side"
+   },
+   "consolidation_break": {
+    "label": "Breaks out of a tight range",
+    "group": "Levels",
+    "about": "A close outside a run of bars that stayed within a narrow band.",
+    "sentence": "the price closes {side} {n} bars that spanned at most {max_pct}%"
+   },
+   "event": {
+    "label": "Around a calendar event",
+    "group": "Calendar",
+    "about": "A set number of days before, on or after a scheduled event.",
+    "sentence": "{days} {unit} {timing} {event}, at {at} ET",
+    "values": {
+     "unit": {
+      "sessions": "sessions",
+      "calendar": "calendar days"
+     }
+    }
+   },
+   "candle": {
+    "label": "Candle pattern",
+    "group": "Price",
+    "about": "One bar's shape, such as a hammer or an engulfing bar.",
+    "sentence": "a {pattern} bar closes",
+    "values": {
+     "pattern": {
+      "doji": "doji",
+      "hammer": "hammer",
+      "shooting_star": "shooting star",
+      "bullish_engulfing": "bullish engulfing",
+      "bearish_engulfing": "bearish engulfing",
+      "inside_bar": "inside",
+      "outside_bar": "outside"
+     }
+    }
+   }
+  },
+  "sources": {
+   "close": {
+    "label": "Price",
+    "group": "Price",
+    "sentence": "the close"
+   },
+   "sma": {
+    "label": "Simple moving average",
+    "group": "Averages",
+    "sentence": "the {n}-bar simple average"
+   },
+   "ema": {
+    "label": "Exponential moving average",
+    "group": "Averages",
+    "sentence": "the {n}-bar exponential average"
+   },
+   "vwap": {
+    "label": "VWAP",
+    "group": "Averages",
+    "sentence": "the VWAP from {anchor}",
+    "more": {
+     "price": "of each bar's {price}",
+     "weight": "{weight}"
+    },
+    "values": {
+     "price": {
+      "close": "close",
+      "hlc3": "high, low and close",
+      "ohlc4": "open, high, low and close"
+     },
+     "weight": {
+      "volume": "weighted by volume",
+      "equal": "every bar weighted the same"
+     }
+    },
+    "start": {
+     "price": "close",
+     "weight": "volume"
+    }
+   },
+   "vwap_band": {
+    "label": "VWAP band",
+    "group": "Averages",
+    "sentence": "the VWAP's {side} band {k} deviations out, from {anchor}",
+    "more": {
+     "price": "of each bar's {price}",
+     "weight": "{weight}"
+    },
+    "values": {
+     "price": {
+      "close": "close",
+      "hlc3": "high, low and close",
+      "ohlc4": "open, high, low and close"
+     },
+     "weight": {
+      "volume": "weighted by volume",
+      "equal": "every bar weighted the same"
+     },
+     "side": {
+      "upper": "upper",
+      "lower": "lower"
+     }
+    },
+    "start": {
+     "price": "close",
+     "weight": "volume"
+    }
+   },
+   "rsi": {
+    "label": "RSI",
+    "group": "Oscillators",
+    "sentence": "RSI({n})"
+   },
+   "stochastic": {
+    "label": "Stochastic",
+    "group": "Oscillators",
+    "sentence": "the stochastic's {output} ({k_period}, {k_smooth}, {d_smooth})",
+    "values": {
+     "output": {
+      "k": "%K",
+      "d": "%D"
+     }
+    }
+   },
+   "cci": {
+    "label": "CCI",
+    "group": "Oscillators",
+    "sentence": "CCI({n})"
+   },
+   "macd": {
+    "label": "MACD",
+    "group": "Oscillators",
+    "sentence": "the MACD {output} ({fast}, {slow}, {signal})",
+    "values": {
+     "output": {
+      "line": "line",
+      "signal": "signal line",
+      "histogram": "histogram"
+     }
+    }
+   },
+   "adx": {
+    "label": "ADX",
+    "group": "Trend strength",
+    "sentence": "ADX({n})"
+   },
+   "atr": {
+    "label": "ATR",
+    "group": "Trend strength",
+    "sentence": "ATR({n})"
+   },
+   "relative_volume": {
+    "label": "Relative volume",
+    "group": "Volume",
+    "sentence": "volume against the same minute over {n} sessions"
+   },
+   "volume_ratio": {
+    "label": "Volume ratio",
+    "group": "Volume",
+    "sentence": "volume against the last {n} bars"
+   },
+   "prior_period": {
+    "label": "Previous period's high or low",
+    "group": "Levels",
+    "sentence": "the previous {period}'s {side}",
+    "values": {
+     "side": {
+      "high": "high",
+      "low": "low"
+     },
+     "period": {
+      "session": "session",
+      "week": "week",
+      "month": "month"
+     }
+    }
+   },
+   "opening_range": {
+    "label": "Opening range",
+    "group": "Levels",
+    "sentence": "the first {minutes} minutes' {level}",
+    "values": {
+     "level": {
+      "high": "high",
+      "low": "low",
+      "mid": "midpoint"
+     }
+    }
+   }
+  },
+  "gates": {
+   "change_pct": {
+    "label": "Move today",
+    "group": "Price move",
+    "about": "The price's change since the previous close, in percent.",
+    "sentence": "today's move is {range}%"
+   },
+   "sd_change": {
+    "label": "Move today in standard deviations",
+    "group": "Price move",
+    "about": "Today's move against the day's expected move from VIX.",
+    "sentence": "today's move is {range} standard deviations"
+   },
+   "gap_pct": {
+    "label": "Opening gap",
+    "group": "Price move",
+    "about": "The open against the previous close, in percent.",
+    "sentence": "the opening gap is {range}%"
+   },
+   "above_ma": {
+    "label": "Above a moving average",
+    "group": "Trend",
+    "about": "The price above its average of the daily closes before today.",
+    "sentence": "the price is above its {n}-day {kind}",
+    "values": {
+     "kind": {
+      "sma": "simple average",
+      "ema": "exponential average"
+     }
+    }
+   },
+   "rsi": {
+    "label": "RSI",
+    "group": "Trend",
+    "about": "The relative strength index on intraday bars, 0 to 100.",
+    "sentence": "RSI({n}) is {range}",
+    "more": {
+     "bars": "on {bars}-minute bars"
+    }
+   },
+   "stoch": {
+    "label": "Stochastic",
+    "group": "Trend",
+    "about": "The stochastic's %K on intraday bars, 0 to 100.",
+    "sentence": "the stochastic is {range}",
+    "more": {
+     "k": "over {k} bars",
+     "k_smooth": "%K smoothed over {k_smooth}",
+     "d_smooth": "%D smoothed over {d_smooth}",
+     "bars": "on {bars}-minute bars"
+    }
+   },
+   "vix_level": {
+    "label": "VIX level",
+    "group": "Volatility",
+    "about": "VIX now, in index points.",
+    "sentence": "VIX is {range}"
+   },
+   "vix_change_pct": {
+    "label": "VIX change today",
+    "group": "Volatility",
+    "about": "VIX's change since its previous close, in percent.",
+    "sentence": "VIX's change today is {range}%"
+   },
+   "vol_index_rank": {
+    "label": "Implied vol rank",
+    "group": "Volatility",
+    "about": "The underlying's vol index ranked between its low and high over a lookback, 0 to 100.",
+    "sentence": "the vol index's rank is {range}",
+    "more": {
+     "lookback": "over {lookback} sessions"
+    }
+   },
+   "vol_index_percentile": {
+    "label": "Implied vol percentile",
+    "group": "Volatility",
+    "about": "The share of past sessions the vol index closed below today's, 0 to 100.",
+    "sentence": "the vol index's percentile is {range}",
+    "more": {
+     "lookback": "over {lookback} sessions"
+    }
+   },
+   "vol_index_minus_rv": {
+    "label": "Implied over realized vol",
+    "group": "Volatility",
+    "about": "The vol index less the underlying's realized vol, in vol points.",
+    "sentence": "implied vol less realized is {range} points",
+    "more": {
+     "n": "realized over {n} sessions"
+    }
+   },
+   "expected_move_pct": {
+    "label": "Expected move",
+    "group": "Volatility",
+    "about": "The at-the-money straddle on the trade's expiry, in percent of the price.",
+    "sentence": "the expected move is {range}%"
+   },
+   "gex_ratio": {
+    "label": "Dealer gamma balance",
+    "group": "Dealer positioning",
+    "about": "Calls' against puts' gamma exposure over strikes near the price.",
+    "sentence": "the gamma ratio over the {strikes} strikes {mode} the price is {range}",
+    "values": {
+     "mode": {
+      "nearest": "nearest",
+      "above": "above",
+      "below": "below"
+     }
+    }
+   },
+   "gex_put_total": {
+    "label": "Put gamma total",
+    "group": "Dealer positioning",
+    "about": "The summed put gamma exposure over strikes near the price, in dollars.",
+    "sentence": "put gamma over the {strikes} strikes {mode} the price is {range}"
+   },
+   "gex_max_otm": {
+    "label": "Largest gamma strike's distance",
+    "group": "Dealer positioning",
+    "about": "How far out of the money the largest-gamma strike near the price sits.",
+    "sentence": "the largest-gamma strike of the {strikes} nearest is at most {max}% out on the {side} side"
+   },
+   "no_position_today": {
+    "label": "Another automation is idle",
+    "group": "Other automations",
+    "about": "Another automation has neither entered today nor holds anything open.",
+    "sentence": "{arm} has not entered today and holds nothing"
+   },
+   "mid_price": {
+    "label": "Price of the trade",
+    "group": "The trade's price",
+    "about": "The structure's price at the mid, per share.",
+    "sentence": "the trade's mid is ${range}"
+   },
+   "bid_ask": {
+    "label": "Bid-ask width",
+    "group": "The trade's price",
+    "about": "The structure's whole bid-ask width, per share.",
+    "sentence": "the bid-ask is at most ${max} wide"
+   },
+   "reward_risk": {
+    "label": "Reward to risk",
+    "group": "The trade's price",
+    "about": "The most it can make over the most it can lose, at the mid.",
+    "sentence": "the reward is at least {min}% of the risk"
+   }
+  },
+  "range": {
+   "both": "between {min} and {max}",
+   "min": "at least {min}",
+   "max": "at most {max}"
+  },
+  "exits": {
+   "profit_target_pct": {
+    "label": "Take profit",
+    "group": "Profit",
+    "about": "Close once the trade has made this share of the most it can make.",
+    "sentence": "Take profit at {profit_target_pct}% of the most it can make"
+   },
+   "profit_dollars": {
+    "label": "Take profit in dollars",
+    "group": "Profit",
+    "about": "Close once the open P&L reaches a dollar amount.",
+    "sentence": "Take profit at ${profit_dollars}"
+   },
+   "trailing_stop": {
+    "label": "Trailing stop",
+    "group": "Profit",
+    "about": "Once the trade is up, close if it gives back a set amount from its best.",
+    "sentence": "Trail by ${trailing_stop.dollars} once up ${trailing_stop.activate_dollars}",
+    "more": {
+     "trailing_stop.pct": "or trail by {trailing_stop.pct}% of the most it can make",
+     "trailing_stop.activate_pct": "once up {trailing_stop.activate_pct}%"
+    }
+   },
+   "stop_credit_multiple": {
+    "label": "Stop loss, credit trades",
+    "group": "Loss",
+    "about": "Close a credit trade once its loss reaches a multiple of the credit.",
+    "sentence": "Stop at a loss of {stop_credit_multiple}\u00d7 the credit"
+   },
+   "stop_debit_pct": {
+    "label": "Stop loss, debit trades",
+    "group": "Loss",
+    "about": "Close a debit trade once it has lost this share of the debit.",
+    "sentence": "Stop at a loss of {stop_debit_pct}% of the debit"
+   },
+   "stop_dollars": {
+    "label": "Stop loss in dollars",
+    "group": "Loss",
+    "about": "Close once the open loss reaches a dollar amount.",
+    "sentence": "Stop at a loss of ${stop_dollars}"
+   },
+   "touch": {
+    "label": "Price touches a level",
+    "group": "Price",
+    "about": "Close when the price moves a set distance from where it entered.",
+    "sentence": "Close if the price moves {touch.points} points from the entry",
+    "more": {
+     "touch.pct": "or {touch.pct}% from the entry"
+    }
+   },
+   "delta_limit": {
+    "label": "Delta limit",
+    "group": "Price",
+    "about": "Close once the structure's delta per unit passes a size, either way.",
+    "sentence": "Close once its delta passes {delta_limit} either way"
+   },
+   "signal": {
+    "label": "On a signal",
+    "group": "Signal",
+    "about": "Close when a signal fires on the underlying, read as an entry's is.",
+    "sentence": "Close {signal.trigger}",
+    "more": {
+     "signal.bar_minutes": "reading {signal.bar_minutes}-minute bars",
+     "signal.volume": "weighing each bar by {signal.volume}'s volume"
+    }
+   },
+   "close_at_dte": {
+    "label": "Days left",
+    "group": "Time",
+    "about": "Close once this many calendar days are left to expiry.",
+    "sentence": "Close with {close_at_dte} days left"
+   },
+   "close_before_expiry_min": {
+    "label": "Before the expiry's close",
+    "group": "Time",
+    "about": "Close this many minutes before the near expiry's close.",
+    "sentence": "Close {close_before_expiry_min} minutes before expiry"
+   },
+   "avoid_events": {
+    "label": "Before an event",
+    "group": "Events",
+    "about": "Close the session before a listed event, a set time before the close.",
+    "sentence": "Close {avoid_events.before_close_min} minutes before the close ahead of {avoid_events.labels}"
+   },
+   "max_spread": {
+    "label": "Wide quotes",
+    "group": "Guards",
+    "about": "Hold off any exit while the structure's quotes are wider than this.",
+    "sentence": "Wait out quotes wider than ${max_spread} a share"
+   }
+  },
+  "exit_parts": {
+   "trailing_stop": {
+    "dollars": false,
+    "activate_dollars": false,
+    "pct": false,
+    "activate_pct": false
+   },
+   "touch": {
+    "points": false,
+    "pct": false
+   },
+   "signal": {
+    "trigger": true,
+    "bar_minutes": false,
+    "volume": false
+   },
+   "avoid_events": {
+    "labels": true,
+    "before_close_min": false
+   }
+  },
+  "strikes": {
+   "delta": {
+    "label": "Delta",
+    "group": "By the option",
+    "about": "The strike whose delta is nearest a target: 0.16 is about a 1 in 6 chance of finishing in the money.",
+    "sentence": "at {target} delta",
+    "more": {
+     "at_most": "never above {at_most} delta"
+    }
+   },
+   "premium": {
+    "label": "Premium",
+    "group": "By the option",
+    "about": "The strike whose option is priced nearest a dollar amount a share.",
+    "sentence": "priced near ${target} at the {price}"
+   },
+   "spot": {
+    "label": "From the price",
+    "group": "By the price",
+    "about": "A strike a set distance from the underlying's price now.",
+    "sentence": "from the price",
+    "more": {
+     "points": "shifted {points} points",
+     "pct": "shifted {pct}%"
+    }
+   },
+   "prev_close": {
+    "label": "From the previous close",
+    "group": "By the price",
+    "about": "A strike a set distance from the previous session's close.",
+    "sentence": "from the previous close",
+    "more": {
+     "points": "shifted {points} points",
+     "pct": "shifted {pct}%"
+    }
+   },
+   "open": {
+    "label": "From the open",
+    "group": "By the price",
+    "about": "A strike a set distance from the session's open.",
+    "sentence": "from the open",
+    "more": {
+     "points": "shifted {points} points",
+     "pct": "shifted {pct}%"
+    }
+   },
+   "expected_move": {
+    "label": "Expected moves",
+    "group": "By the price",
+    "about": "A strike a number of expected moves (the at-the-money straddle) from the price.",
+    "sentence": "{times} expected moves from the price",
+    "more": {
+     "points": "shifted {points} points",
+     "pct": "shifted {pct}%"
+    }
+   },
+   "std_dev": {
+    "label": "Standard deviations",
+    "group": "By the price",
+    "about": "A strike a number of standard deviations from the price, read off the straddle.",
+    "sentence": "{sd} standard deviations from the price",
+    "more": {
+     "points": "shifted {points} points",
+     "pct": "shifted {pct}%"
+    }
+   },
+   "opening_range": {
+    "label": "From the opening range",
+    "group": "By the price",
+    "about": "A strike at the opening range's high, low or midpoint, once the range has closed.",
+    "sentence": "at the first {minutes} minutes' {level}",
+    "more": {
+     "points": "shifted {points} points",
+     "pct": "shifted {pct}%"
+    },
+    "values": {
+     "level": {
+      "high": "high",
+      "low": "low",
+      "mid": "midpoint"
+     }
+    }
+   },
+   "entry_level": {
+    "label": "From the entry's price",
+    "group": "By the price",
+    "about": "A strike a set distance from the price when the entry fired.",
+    "sentence": "from the price at entry",
+    "more": {
+     "points": "shifted {points} points",
+     "pct": "shifted {pct}%"
+    }
+   },
+   "from_leg": {
+    "label": "From another leg",
+    "group": "From a leg",
+    "about": "A strike a set distance from a leg placed before it, as a spread's wing is.",
+    "sentence": "from {leg}",
+    "more": {
+     "points": "shifted {points} points",
+     "pct": "shifted {pct}%"
+    }
+   },
+   "same_as": {
+    "label": "Same as another leg",
+    "group": "From a leg",
+    "about": "The same strike as a leg placed before it.",
+    "sentence": "at the same strike as {leg}"
+   },
+   "match_width": {
+    "label": "Match another spread's width",
+    "group": "From a leg",
+    "about": "From one leg by the width between two others, so both sides match.",
+    "sentence": "from {from} by the width of {width_of}"
+   },
+   "max_abs_gex": {
+    "label": "Largest gamma strike",
+    "group": "By dealer positioning",
+    "about": "The strike with the largest gamma exposure near the price.",
+    "sentence": "at the largest-gamma strike of the {strikes} nearest"
+   },
+   "gex_max": {
+    "label": "Largest of a gamma measure",
+    "group": "By dealer positioning",
+    "about": "The strike that is largest on one gamma or open-interest measure near the price.",
+    "sentence": "at the largest {measure} strike of the {strikes} nearest",
+    "values": {
+     "measure": {
+      "net_positive": "net positive gamma",
+      "net_negative": "net negative gamma",
+      "call_gex": "call gamma",
+      "put_gex": "put gamma",
+      "call_oi": "call open interest",
+      "put_oi": "put open interest"
+     }
+    }
+   }
+  },
+  "matches": {
+   "price": {
+    "exact": "only that strike",
+    "nearest": "the nearest listed strike",
+    "above": "the first listed at or above",
+    "below": "the first listed at or below"
+   },
+   "value": {
+    "nearest": "the nearest",
+    "above": "the smallest at or above",
+    "below": "the largest at or below"
+   }
+  },
+  "expiry": {
+   "between": {
+    "label": "Between",
+    "about": "A listed expiry inside a range of calendar days out.",
+    "sentence": "Expiring between {min} and {max} days out, the {prefer}",
+    "more": {
+     "monthly": "{monthly}"
+    },
+    "values": {
+     "prefer": {
+      "first": "nearest",
+      "last": "farthest"
+     },
+     "monthly": {
+      "true": "monthlies only",
+      "false": "any listed expiry"
+     }
+    }
+   },
+   "at_least": {
+    "label": "At least",
+    "about": "The nearest listed expiry at least so many calendar days out.",
+    "sentence": "Expiring at least {days} days out",
+    "more": {
+     "monthly": "{monthly}"
+    },
+    "values": {
+     "monthly": {
+      "true": "monthlies only",
+      "false": "any listed expiry"
+     }
+    }
+   },
+   "dte": {
+    "label": "Exactly",
+    "about": "The listed expiry a set number of calendar days out.",
+    "sentence": "Expiring {days} days out",
+    "more": {
+     "tolerance": "or up to {tolerance} days off"
+    }
+   },
+   "calendar": {
+    "label": "Exactly, calendar days",
+    "about": "The listed expiry a set number of calendar days out.",
+    "sentence": "Expiring {days} calendar days out",
+    "more": {
+     "tolerance": "or up to {tolerance} days off"
+    }
+   },
+   "market_days": {
+    "label": "Exactly, trading days",
+    "about": "The listed expiry a set number of trading days out (0 is today's).",
+    "sentence": "Expiring {days} trading days out",
+    "more": {
+     "tolerance": "or up to {tolerance} days off"
+    }
+   },
+   "after_near": {
+    "label": "After the near expiry",
+    "about": "The first listed expiry at least so many days after the near one.",
+    "sentence": "The far leg expires at least {days} days after the near one",
+    "more": {
+     "monthly": "{monthly}"
+    },
+    "values": {
+     "monthly": {
+      "true": "monthlies only",
+      "false": "any listed expiry"
+     }
+    }
+   }
+  },
+  "sizes": {
+   "contracts": {
+    "label": "Contracts",
+    "about": "The same number of contracts every time.",
+    "sentence": "Trade {contracts} each time",
+    "values": {
+     "contracts": {
+      "1": "1 contract",
+      "n": "{contracts} contracts"
+     }
+    }
+   },
+   "max_risk": {
+    "label": "Risk budget",
+    "about": "The most contracts whose most-it-can-lose fits a dollar amount.",
+    "sentence": "Trade as many as fit ${max_risk} of risk",
+    "more": {
+     "minimum": "never fewer than {minimum}"
+    }
+   },
+   "allocation_pct": {
+    "label": "Share of an allocation",
+    "about": "The most contracts whose risk fits a percent of the money set aside.",
+    "sentence": "Trade as many as fit {allocation_pct}% of ${allocation}",
+    "more": {
+     "minimum": "never fewer than {minimum}",
+     "max_dollars": "at most ${max_dollars} of risk",
+     "max_contracts": "at most {max_contracts} contracts"
+    }
+   }
+  },
+  "progression": {
+   "label": "Step after a run",
+   "about": "After each loss (or win) in a row, change the count, held between a floor and a ceiling.",
+   "sentence": "after each {after} in a row, {step} contracts, between {floor} and {ceiling}",
+   "values": {
+    "after": {
+     "loss": "loss",
+     "win": "win"
+    }
+   }
+  },
+  "limits": {
+   "max_open": {
+    "label": "Most open",
+    "sentence": "at most {max_open} open at once"
+   },
+   "per_day": {
+    "label": "Per day",
+    "sentence": "at most {per_day} a day"
+   },
+   "every_days": {
+    "label": "Spacing",
+    "sentence": "at least {every_days} days between entries"
+   },
+   "one_per_expiry": {
+    "label": "One per expiry",
+    "sentence": "{one_per_expiry}",
+    "values": {
+     "one_per_expiry": {
+      "true": "one position per expiry",
+      "false": "any number per expiry"
+     }
+    }
+   }
+  },
+  "strategies": {
+   "option": {
+    "group": "One option",
+    "sentence": "{direction} a {right} on {symbol} at {target} {place_by}"
+   },
+   "vertical": {
+    "group": "Spreads",
+    "sentence": "{direction} a {right} spread on {symbol}, the short strike at {target} {place_by} and the other {width} points further out"
+   },
+   "ratio": {
+    "group": "Spreads",
+    "sentence": "Buy a {right} on {symbol} at {target} {place_by} and sell {ratio} more {width} points further out"
+   },
+   "butterfly": {
+    "group": "Spreads",
+    "sentence": "{direction} a {right} butterfly on {symbol}, the body at {target} {place_by} and wings {width} points wide"
+   },
+   "broken_wing": {
+    "group": "Spreads",
+    "sentence": "{direction} a broken-wing {right} butterfly on {symbol}, the body at {target} {place_by}, wings {width} and {width2} points wide"
+   },
+   "straddle": {
+    "group": "Both sides",
+    "sentence": "{direction} a straddle on {symbol} at the strike nearest the price"
+   },
+   "strangle": {
+    "group": "Both sides",
+    "sentence": "{direction} a strangle on {symbol} with both strikes at {target} {place_by}"
+   },
+   "iron_condor": {
+    "group": "Both sides",
+    "sentence": "{direction} an iron condor on {symbol} with short strikes at {target} {place_by} and wings {width} points wide"
+   },
+   "iron_fly": {
+    "group": "Both sides",
+    "sentence": "{direction} an iron fly on {symbol} at the price, wings {width} points wide"
+   },
+   "jade_lizard": {
+    "group": "Both sides",
+    "sentence": "Sell a jade lizard on {symbol}: a put at {target} {place_by} and a call spread {width} points wide"
+   },
+   "calendar": {
+    "group": "Two expiries",
+    "sentence": "Buy a {right} calendar on {symbol} at {target} {place_by}"
+   },
+   "diagonal": {
+    "group": "Two expiries",
+    "sentence": "Buy a {right} diagonal on {symbol} at {target} {place_by}, the far leg {width} points further out"
+   },
+   "covered": {
+    "group": "Stock",
+    "sentence": "Hold shares of {symbol} and sell a call against them"
+   },
+   "custom": {
+    "group": "Custom",
+    "sentence": "Any legs on {symbol}"
+   }
+  },
+  "strategy_values": {
+   "direction": {
+    "short": "Sell",
+    "long": "Buy"
+   },
+   "right": {
+    "put": "put",
+    "call": "call"
+   },
+   "place_by": {
+    "delta": "delta",
+    "pct": "% from the price",
+    "sd": "standard deviations from the price",
+    "points": "points from the price"
+   },
+   "expiries": {
+    "all": "any listed expiry",
+    "weekly": "weeklies",
+    "monthly": "monthlies"
+   }
+  },
+  "strategy_expiry_settings": [
+   "dte",
+   "expiries",
+   "far_days"
+  ],
+  "strategy_groups": [
+   "One option",
+   "Spreads",
+   "Both sides",
+   "Two expiries",
+   "Stock",
+   "Custom"
+  ]
+ }
+}

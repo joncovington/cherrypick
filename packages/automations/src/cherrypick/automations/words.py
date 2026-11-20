@@ -13,7 +13,8 @@ limit, a strategy) has an entry here keyed as the engine keys it:
               shown under "More options"
     values    {key: {value: words}}: how an enum's or a flag's value reads where its own spelling
               would not ("prior_close" reads "the previous close"; a flag's "true" and "false"); a
-              key that may be null has "null" for that and "n" for a number, its slot inside
+              key that may be null has "null" for that and "n" for a number, its slot inside, and a
+              number may have words of its own ("1" reads "1 contract")
     start     {key: value}: what the form writes for a key the engine requires but `more` shows,
               visible and editable there (a signal's `seed`, which the presets write true too)
 
@@ -61,7 +62,7 @@ ENTRY: dict[str, Words] = {
         },
     },
     "trigger": {
-        "label": "When a signal fires",
+        "label": "On a trigger",
         "about": "Enters when a signal fires inside a window, or at a fixed time.",
         "sentence": "Enter {trigger}",
         "more": {
@@ -251,7 +252,9 @@ SIGNALS: dict[str, Words] = {
     },
 }
 
-#: The indicators a signal's `a` or `b` can be (`core.signals` sources), each as a noun phrase.
+#: The indicators a signal's `a` or `b` can be (`core.signals` sources), each as a noun phrase. A key
+#: core holds to a few words has them all in `values`, so the form offers them as a choice; `anchor`
+#: ("session", a time, or an event) is typed, and every other key is a whole number.
 SOURCES: dict[str, Words] = {
     "close": {"label": "Price", "group": "Price", "sentence": "the close"},
     "sma": {"label": "Simple moving average", "group": "Averages", "sentence": "the {n}-bar simple average"},
@@ -279,6 +282,7 @@ SOURCES: dict[str, Words] = {
         "values": {
             "price": {"close": "close", "hlc3": "high, low and close", "ohlc4": "open, high, low and close"},
             "weight": {"volume": "weighted by volume", "equal": "every bar weighted the same"},
+            "side": {"upper": "upper", "lower": "lower"},
         },
         "start": {"price": "close", "weight": "volume"},
     },
@@ -312,7 +316,7 @@ SOURCES: dict[str, Words] = {
         "label": "Previous period's high or low",
         "group": "Levels",
         "sentence": "the previous {period}'s {side}",
-        "values": {"side": _SIDE_HL},
+        "values": {"side": _SIDE_HL, "period": {"session": "session", "week": "week", "month": "month"}},
     },
     "opening_range": {
         "label": "Opening range",
@@ -559,7 +563,7 @@ EXIT_PARTS = {
 }
 
 # --------------------------------------------------------------------------- strikes
-_SHIFT_MORE = {"points": "{points} points from it", "pct": "{pct}% from it"}
+_SHIFT_MORE = {"points": "shifted {points} points", "pct": "shifted {pct}%"}
 
 STRIKES: dict[str, Words] = {
     "delta": {
@@ -735,7 +739,8 @@ SIZES: dict[str, Words] = {
     "contracts": {
         "label": "Contracts",
         "about": "The same number of contracts every time.",
-        "sentence": "Trade {contracts} contracts",
+        "sentence": "Trade {contracts} each time",
+        "values": {"contracts": {"1": "1 contract", "n": "{contracts} contracts"}},
     },
     "max_risk": {
         "label": "Risk budget",

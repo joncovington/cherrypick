@@ -40,7 +40,6 @@ export const SUITE_LINKS: readonly NavLinkDef[] = [
   { to: "/gex", label: "GEX", key: "g", section: "market" },
   { to: "/gexpanel", label: "GEX panel", section: "market" },
   { to: "/screeners", label: "Screeners", key: "i", section: "market" },
-  { to: "/builder", label: "Builder", key: "u", section: "research" },
   { to: "/compare", label: "Compare", key: "m", section: "research" },
   { to: "/backtest", label: "Backtest", key: "b", section: "research" },
   { to: "/advisor", label: "Advisor", key: "a", section: "research" },
@@ -86,6 +85,21 @@ export const EXPERIMENT_LINKS: readonly NavLinkDef[] = [
 ];
 
 export const CONFIG_LINK: NavLinkDef = { to: "/config", label: "Config", key: "o" };
+
+/** A tab with a `g` chord of its own, advertised on the tab's rail link: the Builder kept its `g u`
+ *  when it moved under Automations (2026-11-20). Bound only while its module is visible. */
+export interface TabShortcut {
+  module: string;
+  slide: string;
+  key: string;
+}
+
+export const TAB_SHORTCUTS: readonly TabShortcut[] = [{ module: "automations", slide: "builder", key: "u" }];
+
+/** The `g` chord of one tab, or undefined. */
+export function tabShortcut(module: string, slide: string): TabShortcut | undefined {
+  return TAB_SHORTCUTS.find((s) => s.module === module && s.slide === slide);
+}
 
 /** Suite pages the SIMPLE view leaves off the rail: the experiment comparison, the backtest, the
  *  advisor and the suite's own health are developer surfaces. Still reachable by URL and shortcut,

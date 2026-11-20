@@ -1,9 +1,10 @@
 import { describe, it, expect } from "vitest";
 import { renderToString } from "react-dom/server";
 import type { BuilderSchema } from "@console/shared";
-import { BuilderForm, withStrategy } from "../src/pages/Builder/BuilderForm";
-import { startSettings } from "../src/pages/Builder/StrategyPicker";
-import { plainBlocks } from "../src/pages/Builder/BuilderWizard";
+import FIXTURE from "./fixtures/builderSchema.json";
+import { FarExpiry, LegFields, withStrategy } from "../src/pages/Builder/BuilderFields";
+import { LegTable } from "../src/pages/Builder/BuilderForm";
+import { strategyStart as startSettings } from "../src/pages/Builder/presets";
 
 const html = (el: React.ReactElement) => renderToString(el).replace(/<!--\s*-->/g, "");
 
@@ -48,8 +49,12 @@ const CAL = {
 
 describe("the far expiry", () => {
   it("shows the near and far rules, and each leg's expiry column", () => {
-    const out = html(<BuilderForm schema={SCHEMA} spec={CAL} labels={{}} onChange={() => {}} />);
-    expect(out).toContain(">near expiry<");
+    const out = html(
+      <>
+        <FarExpiry schema={SCHEMA} spec={CAL} onChange={() => {}} />
+        <LegFields schema={SCHEMA} spec={CAL} onChange={() => {}} />
+      </>,
+    );
     expect(out).toMatch(/<select id="f-far-kind"[^>]*>.*<option value="after_near" selected="">after near<\/option>/);
     expect(out).toContain('id="f-far-days"');
     expect(out).toContain('aria-label="Remove the far expiry"');
@@ -60,23 +65,26 @@ describe("the far expiry", () => {
 
   it("offers to add one, and shows no expiry column, on a one-expiry automation", () => {
     const one = { ...CAL, far_expiry: undefined, legs: [CAL.legs[0]] };
-    const out = html(<BuilderForm schema={SCHEMA} spec={one} labels={{}} onChange={() => {}} />);
+    const out = html(
+      <>
+        <FarExpiry schema={SCHEMA} spec={one} onChange={() => {}} />
+        <LegFields schema={SCHEMA} spec={one} onChange={() => {}} />
+      </>,
+    );
     expect(out).toContain("+ Far expiry");
-    expect(out).toContain(">expiry<");
     expect(out).not.toContain("f-leg-0-expiry");
     expect(out).not.toContain("has-expiry");
-    // An older module, with no far rules in its schema, offers none.
-    expect(html(<BuilderForm schema={{ ...SCHEMA, far_expiry: undefined }} spec={one} labels={{}} onChange={() => {}} />)).not.toContain("+ Far expiry");
   });
 });
 
-describe("the review's words", () => {
-  it("name the far expiry and the leg on it", () => {
-    const s = plainBlocks(CAL).structure;
-    expect(s).toContain("The far expiry: the first listed monthly expiry at least 28 days after it.");
-    expect(s).toMatch(/Long Put .* on the far expiry\.$/);
-    expect(plainBlocks(CAL).exit).toBe("Close 15 minutes before the near expiry's close.");
-    expect(plainBlocks({ ...CAL, far_expiry: undefined, legs: [CAL.legs[0]] }).structure).not.toContain("far");
+describe("the legs read-only", () => {
+  const W = (FIXTURE as unknown as BuilderSchema).words!;
+
+  it("name the expiry each leg sits on once there are two", () => {
+    const out = html(<LegTable schema={SCHEMA} W={W} legs={CAL.legs} far />);
+    expect(out).toContain("<th>Side</th><th>Expiry</th><th>Strike</th>");
+    expect(out).toMatch(/<td>put<\/td><td>far<\/td>/);
+    expect(html(<LegTable schema={SCHEMA} W={W} legs={[CAL.legs[0]!]} far={false} />)).not.toContain("<th>Expiry</th>");
   });
 });
 

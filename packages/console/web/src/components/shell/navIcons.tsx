@@ -304,7 +304,6 @@ const ICONS: Record<string, (p: NavIconProps) => ReactNode> = {
   "/backtest": BacktestIcon,
   "/screeners": ScreenersIcon,
   "/reports": ReportsIcon,
-  "/builder": BuilderIcon,
   "/compare": CompareIcon,
   "/experiments": ExperimentsIcon,
   "/advisor": AdvisorIcon,

@@ -1,878 +1,1090 @@
-import { useRef, useState } from "react";
-import type { BuilderBlock, BuilderFieldType, BuilderSchema } from "@console/shared";
-import { TypedField, showValue, type FieldProps } from "./BuilderField";
-
-export { parseValue, showValue } from "./BuilderField";
+import { useRef, useState, type ReactNode } from "react";
+import type { BuilderBlock, BuilderChoiceWords, BuilderFieldType, BuilderPayoff, BuilderSchema, BuilderWords } from "@console/shared";
+import { builderEntry, builderStrategy } from "../../lib/api";
+import { ExitFields, FarExpiry, GateFields, LegFields, eventName, withFilterGates, withKey, withStrategy, type Spec } from "./BuilderFields";
+import { Line, Marked, Slot, without, type Seg } from "./sentence";
+import { automationWords, joined, list, lower, obj, strategySegs } from "./specWords";
+import { grouped, presetStart, strategyStart } from "./presets";
+import { TradeShapeView } from "./TradeShape";
+import { Tip, TipText, holdsCloseSnapshot, useTips } from "./builderTips";
+import { isLegId, legPlain, writtenLeg } from "./legWords";
 import { CardHelpButton } from "../../components/CardHelp";
 import { SECTION_HELP } from "./BuilderHelp";
-import { TradeShape } from "./TradeShape";
-import { StrategyPicker } from "./StrategyPicker";
-import { EntryPicker } from "./EntryPicker";
-import { isLegId, legLabels, legWords, nextLegId, openVerb, signedQty, titleCase, writtenLeg } from "./legWords";
+
+export { parseValue, showValue, withKey } from "./BuilderFields";
+export type { Spec } from "./BuilderFields";
 
 /**
- * The Builder's form (#1180): the five sections of one automation, each field writing the same spec
- * the JSON editor holds and the paper loop reads. Every choice comes from the module's schema
- * (`cli builder-schema`, the engine's own tables), so the form offers nothing the engine would
- * refuse by name; whether a value is right is the module's Check. A value is typed as the field
- * shows it: a number, true or false, JSON for a list or an object, otherwise text. A blank field
- * removes its key.
+ * The Builder as one page (2026-11-20, replacing the full form and the wizard): five sections in order
+ * (the trade, the entry, the filters, the exits, the size and limits), each a disclosure that closes
+ * to its sentence. Every line is the module's own (`words.py`, the schema's `words`) with a control in
+ * each slot, so the page words no rule of its own; a line writes the same spec the JSON editor holds
+ * and the paper loop reads. The strategy and the entry preset fill in the trade and the entry through
+ * the module (`cli builder-strategy`, `cli builder-entry`) and every value stays editable. Filters and
+ * exits still draw one field per key; their lines come in the next step.
  */
 
-export type Spec = Record<string, unknown>;
 type Obj = Record<string, unknown>;
 
-const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
-const TEXT: BuilderFieldType = { type: "text" };
+export const SECTIONS = [
+  { id: "trade", n: 1, name: "Trade", blocks: ["structure"], help: "underlying" },
+  { id: "entry", n: 2, name: "Entry", blocks: ["entry"], help: "signal" },
+  { id: "filters", n: 3, name: "Filters", blocks: ["gates"], help: "gates" },
+  { id: "exits", n: 4, name: "Exits", blocks: ["exit"], help: "exits" },
+  { id: "size", n: 5, name: "Size and limits", blocks: ["size"], help: "exits" },
+] as const;
+export type SectionId = (typeof SECTIONS)[number]["id"];
+export type OpenSections = Record<SectionId, boolean>;
 
-const STATE_TEXT: Record<BuilderBlock["state"], string> = {
+/** The strategy that filled the legs: its settings, and the legs as filled, so an edit reads Custom. */
+export interface Strategy {
+  name: string;
+  settings: Record<string, string | number>;
+  legs: string;
+}
+
+/** The entry preset that filled the entry: the entry as filled and the gates it added. */
+export interface Preset {
+  name: string;
+  entry: string;
+  gates: string[];
+}
+
+/** The module's payoff for the shape and the chain example (`usePayoff`). */
+export interface Payoff {
+  empty: boolean;
+  data: BuilderPayoff | null;
+  stale: boolean;
+  last: BuilderPayoff | null;
+}
+
+const STATE_WORDS: Record<BuilderBlock["state"], string> = {
   backtested: "backtested",
   changed: "changed since its backtest",
   not_backtested: "not backtested",
 };
-const STATE_CHIP: Record<BuilderBlock["state"], string> = {
-  backtested: "chip chip-ok",
-  changed: "chip chip-warn",
-  not_backtested: "chip",
-};
+const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 
-function obj(v: unknown): Obj {
-  return typeof v === "object" && v !== null && !Array.isArray(v) ? (v as Obj) : {};
-}
-
-function list(v: unknown): unknown[] {
-  return Array.isArray(v) ? v : [];
-}
-
-/** `o` with `key` set to `value`, or removed when the value is undefined. */
-export function withKey(o: Obj, key: string, value: unknown): Obj {
-  const out = { ...o };
-  if (value === undefined) delete out[key];
-  else out[key] = value;
-  return out;
-}
-
-/** A field, typed where the module says (`BuilderField`); keyed on its value so an outside change redraws it. */
-function Field(p: FieldProps) {
-  return <TypedField key={`${p.id}-${showValue(p.value)}`} {...p} />;
-}
-
-function Select({
-  id,
-  label,
-  value,
-  options,
-  onChange,
-  blank,
-  words,
-}: {
-  id: string;
-  label: string;
-  value: string;
-  options: string[];
-  onChange: (v: string) => void;
-  /** What an unset value means (the engine's default); offered as the first choice. */
-  blank?: string;
-  /** Each option's words where they are not the option itself ("P" reads "Put"). */
-  words?: Record<string, string>;
-}) {
+function Row({ lead, children }: { lead: string; children: ReactNode }) {
   return (
-    <div className="builder-f">
-      <label className="builder-lbl" htmlFor={id}>
-        {label}
-      </label>
-      <select id={id} className="builder-input" value={value} onChange={(e) => onChange(e.currentTarget.value)}>
-        {blank !== undefined && <option value="">{blank}</option>}
-        {!options.includes(value) && !(blank !== undefined && value === "") && <option value={value}>{value || "choose…"}</option>}
-        {options.map((o) => (
-          <option key={o} value={o}>
-            {words?.[o] ?? o.replaceAll("_", " ")}
-          </option>
+    <div className="b-line">
+      <span className="b-lead">{lead}</span>
+      {children}
+    </div>
+  );
+}
+
+/** One "More options" line: its phrase with its control. */
+interface MoreItem {
+  key: string;
+  phrase: string;
+  t: BuilderFieldType | undefined;
+  w: BuilderChoiceWords | undefined;
+  value: unknown;
+  set: (v: unknown) => void;
+}
+
+function More({ title, items, extra, id }: { title: string; items: MoreItem[]; extra?: ReactNode; id: string }) {
+  const set = items.filter((i) => i.value !== undefined).length;
+  return (
+    <details className="b-more">
+      <summary>
+        {title} <span className="muted">{set ? `${String(set)} set` : items.length ? "all at their defaults" : ""}</span>
+      </summary>
+      <div className="b-opts">
+        {items.map((it) => (
+          <div key={it.key} className="b-opt">
+            <Line
+              template={it.phrase}
+              control={(slot) => <Slot id={`${id}-${it.key}`} label={slot.replaceAll("_", " ")} wordKey={slot} t={it.t} w={it.w} value={it.value} onChange={it.set} width={60} />}
+            />
+          </div>
         ))}
-      </select>
-    </div>
+        {extra}
+      </div>
+    </details>
   );
 }
 
-/** A true-or-false key: checked sets it, unchecked removes it (the engine reads absent as false). */
-function Flag({ id, label, value, onChange }: { id: string; label: string; value: unknown; onChange: (v: true | undefined) => void }) {
-  return (
-    <div className="builder-f">
-      <label className="builder-lbl" htmlFor={id}>
-        {label.replaceAll("_", " ")}
-      </label>
-      <input id={id} className="builder-flag" type="checkbox" checked={value === true} onChange={(e) => onChange(e.currentTarget.checked ? true : undefined)} />
-    </div>
-  );
-}
-
-/** The keys a kind takes ({key: required}), each a field on `o` drawn by its type in `types`; without
- *  types (an older module) a key in `flags` is a checkbox and the rest text. */
-function KeyFields({
-  prefix,
-  keys,
-  o,
-  onChange,
-  skip = [],
-  flags = [],
-  types,
-  legs,
-  legLabels,
-}: {
-  prefix: string;
-  keys: Record<string, boolean>;
-  o: Obj;
-  onChange: (next: Obj) => void;
-  skip?: string[];
-  flags?: string[];
-  types?: Record<string, BuilderFieldType> | undefined;
-  legs?: string[];
-  legLabels?: Record<string, string>;
-}) {
-  return (
-    <>
-      {Object.entries(keys)
-        .filter(([k]) => !skip.includes(k))
-        .map(([k, req]) =>
-          !types && flags.includes(k) ? (
-            <Flag key={`${prefix}-${k}`} id={`${prefix}-${k}`} label={k} value={o[k]} onChange={(v) => onChange(withKey(o, k, v))} />
-          ) : (
-            <Field
-              key={`${prefix}-${k}`}
-              id={`${prefix}-${k}`}
-              label={k}
-              value={o[k]}
-              required={req}
-              t={types?.[k]}
-              legs={legs}
-              legLabels={legLabels}
-              onChange={(v) => onChange(withKey(o, k, v))}
-            />
-          ),
-        )}
-    </>
-  );
-}
-
-function SectionHead({
+/** A section: its number, name, its line while closed, and its state. */
+function Sec({
+  id,
   n,
-  title,
-  blocks,
-  labels,
-  note,
+  name,
+  line,
+  state,
+  open,
+  onToggle,
+  readOnly,
+  next,
+  onNext,
   help,
+  children,
 }: {
+  id: SectionId;
   n: number;
-  title: string;
-  blocks: string[];
-  labels: Record<string, BuilderBlock["state"]>;
-  note?: string;
-  help: keyof typeof SECTION_HELP;
+  name: string;
+  help: string;
+  line: Seg[];
+  state: string;
+  open: boolean;
+  onToggle: (open: boolean) => void;
+  readOnly: boolean;
+  next?: string;
+  onNext?: () => void;
+  children: ReactNode;
 }) {
   return (
-    <div className="builder-section-head">
-      <h4>
-        {n} · {title}
-      </h4>
-      <CardHelpButton cardTitle={`${n} · ${title}`} help={SECTION_HELP[help]!} />
-      {blocks.map((b) => {
-        const s = labels[b] ?? "not_backtested";
-        return (
-          <span key={b} className={STATE_CHIP[s]}>
-            {b} · {STATE_TEXT[s]}
+    <details
+      className="b-sec"
+      id={`b-sec-${id}`}
+      open={open}
+      onToggle={(e) => {
+        if (e.currentTarget.open !== open) onToggle(e.currentTarget.open);
+      }}
+    >
+      <summary>
+        <span className="b-sec-n">{n}</span>
+        <span className="b-sec-name">{name}</span>
+        <span className="b-sec-line">
+          <Marked segs={line} />
+        </span>
+        <span className={`b-sec-state${state === "editing" ? " is-cur" : state === "backtested" ? " is-ok" : ""}`}>{state}</span>
+        {SECTION_HELP[help] && (
+          // The ? opens its help without opening or closing the section.
+          <span className="b-sec-help" onClick={(e) => e.preventDefault()}>
+            <CardHelpButton cardTitle={`${String(n)} · ${name}`} help={SECTION_HELP[help]} />
           </span>
-        );
-      })}
-      {note && <span className="muted builder-section-note">{note}</span>}
+        )}
+      </summary>
+      <div className="b-sec-body">
+        <fieldset className="builder-lock" disabled={readOnly}>
+          {children}
+        </fieldset>
+        {next && onNext && !readOnly && (
+          <div className="b-next">
+            <button type="button" className="btn" onClick={onNext}>
+              Next: {next}
+            </button>
+          </div>
+        )}
+      </div>
+    </details>
+  );
+}
+
+/** A strategy setting's type, from the strategy schema. */
+function settingType(schema: BuilderSchema, k: string): BuilderFieldType | undefined {
+  const s = schema.strategy?.settings[k];
+  if (!s) return undefined;
+  return { type: s.type, options: s.options, min: s.min, max: s.max, above: s.above } as BuilderFieldType;
+}
+
+/** The legs as the strategy left them, in aligned columns: what each leg does and how its strike is placed. */
+export function LegTable({ schema, W, legs, far }: { schema: BuilderSchema; W: BuilderWords; legs: Obj[]; far: boolean }) {
+  if (legs.length === 0) return <p className="muted">No legs yet: pick a strategy, or Edit legs to add them.</p>;
+  const byName = Object.fromEntries(legs.map((l) => [String(l["name"] ?? ""), l]));
+  const ref = (n: unknown) => (Array.isArray(n) ? n : [n]).map((x) => (byName[String(x)] ? legPlain(byName[String(x)]!) : String(x))).join(" and ");
+  return (
+    <div className="b-legtable-wrap">
+      <table className="b-legtable">
+        <thead>
+          <tr>
+            <th>Leg</th>
+            <th>Action</th>
+            <th>Qty</th>
+            <th>Side</th>
+            {far && <th>Expiry</th>}
+            <th>Strike</th>
+            <th>Placed by</th>
+            <th>From</th>
+            <th>Match</th>
+          </tr>
+        </thead>
+        <tbody>
+          {legs.map((leg, i) => {
+            const w = writtenLeg(leg);
+            const strike = obj(leg["strike"]);
+            const rule = String(strike["rule"] ?? "");
+            const def = schema.strike_rules[rule];
+            const key = ["target", "points", "pct", "times", "sd", "minutes", "strikes"].find((k) => strike[k] !== undefined);
+            const name = String(leg["name"] ?? "");
+            const from = strike["leg"] ?? strike["from"];
+            return (
+              <tr key={`${name}-${i}`}>
+                <td>{isLegId(name) ? <span className="b-leg-id">{name}</span> : legPlain(leg)}</td>
+                <td>{W.strategy_values["direction"]?.[w["action"] === "STO" ? "short" : "long"] ?? String(w["action"])}</td>
+                <td className="num">{String(w["qty"] ?? 1)}</td>
+                <td>{String(w["side"] ?? "")}</td>
+                {far && <td>{leg["expiry"] === "far" ? "far" : "near"}</td>}
+                <td className="num">{key ? `${String(strike[key])}${key === "pct" ? "%" : ""}` : "—"}</td>
+                <td>{W.strikes[rule]?.label ?? rule}</td>
+                <td className={from === undefined ? "dim" : undefined}>{from === undefined ? "—" : ref(from)}</td>
+                <td className={strike["match"] === undefined ? "dim" : undefined}>{String(strike["match"] ?? def?.default_match ?? "—")}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }
 
-/** One sentence for the entry, from its own fields. */
-export function entryText(entry: Obj): string {
-  const kind = entry["kind"];
-  if (kind === "time") return `Enter at ${showValue(entry["at"])}, for ${showValue(entry["window"] ?? 5)} minutes.`;
-  if (kind === "orb") {
-    return `Enter on the first break ${showValue(entry["direction"])} the ${showValue(entry["minutes"])}-minute opening range, until ${showValue(entry["latest"])}.`;
-  }
-  if (kind === "trigger") {
-    const t = obj(entry["trigger"]);
-    if ("at" in t) return `Enter at ${showValue(t["at"])}, for ${showValue(t["within"])} minutes.`;
-    const sig = obj(t["signal"]);
-    const params = Object.entries(sig)
-      .filter(([k]) => k !== "kind")
-      .map(([k, v]) => `${k} ${showValue(v)}`)
-      .join(", ");
-    const w = obj(t["window"]);
-    const bars = entry["bar_minutes"] ? ` on ${showValue(entry["bar_minutes"])}-minute bars` : "";
-    const daily = t["daily"] ? " on the last completed daily bar" : bars;
-    return `Enter on the first ${showValue(sig["kind"] ?? "signal")} firing (${params || "no settings"})${daily}, between ${showValue(w["open"])} and ${showValue(w["close"])}.`;
-  }
-  return "Choose how it enters.";
+/** What each event is, when it falls and its next day: the module's own words. */
+function EventKey({ schema }: { schema: BuilderSchema }) {
+  const about = schema.event_about;
+  if (!about) return null;
+  const labels = [...schema.event_labels].sort((a, b) => eventName(schema, a).localeCompare(eventName(schema, b)));
+  return (
+    <details className="b-more b-evkey">
+      <summary>What each event is</summary>
+      <table className="builder-event-key">
+        <thead>
+          <tr>
+            <th>Event</th>
+            <th>When</th>
+            <th>Next</th>
+          </tr>
+        </thead>
+        <tbody>
+          {labels.map((l) => (
+            <tr key={l}>
+              <td>{eventName(schema, l)}</td>
+              <td>{about[l]?.when}</td>
+              <td className="num">{about[l]?.next ?? "—"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </details>
+  );
 }
 
-function GateRows({ schema, gates, stages, onChange, prefix }: { schema: BuilderSchema; gates: Obj[]; stages: string[]; onChange: (next: Obj[]) => void; prefix: string }) {
-  const known = schema.gates.filter((g) => stages.includes(g.stage));
-  const byName = Object.fromEntries(schema.gates.map((g) => [g.gate, g]));
-  const shown = gates.map((g, i) => ({ g, i })).filter(({ g }) => stages.includes(byName[String(g["gate"])]?.stage ?? stages[0]!));
+// --------------------------------------------------------------------------- 1 trade
+function TradeSection({
+  schema,
+  W,
+  spec,
+  onChange,
+  strategy,
+  setStrategy,
+  payoff,
+  tips,
+}: {
+  schema: BuilderSchema;
+  W: BuilderWords;
+  spec: Spec;
+  onChange: (s: Spec) => void;
+  strategy: Strategy | null;
+  setStrategy: (s: Strategy | null) => void;
+  payoff: Payoff;
+  tips: ReturnType<typeof useTips>;
+}) {
+  const specRef = useRef(spec);
+  specRef.current = spec;
+  const legs = list(spec["legs"]).map(obj);
+  const [editing, setEditing] = useState(legs.length === 0);
+  const [confirm, setConfirm] = useState<string | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
+  const ss = schema.strategy;
+  const edited = strategy !== null && JSON.stringify(spec["legs"] ?? []) !== strategy.legs;
+  const name = strategy?.name ?? "custom";
+  const def = ss?.strategies[name];
+  const sw = W.strategies[name];
+
+  const apply = async (k: string, settings: Record<string, string | number>, picked: boolean) => {
+    const r = await builderStrategy(k, settings);
+    if (r.error) return setProblem(r.error);
+    if (r.problems?.length) return setProblem(r.problems.join("; "));
+    setProblem(null);
+    const cur = specRef.current;
+    const next = withStrategy(cur, r);
+    // A pick sets the expiry; a change to the strategy line rebuilds the legs and keeps the expiry line's.
+    onChange(picked ? next : { ...next, expiry: cur["expiry"] });
+    setStrategy({ name: k, settings, legs: JSON.stringify(r.legs ?? []) });
+    setEditing(false);
+    setConfirm(null);
+  };
+  const pick = (k: string) => {
+    if (k === "custom") {
+      setStrategy(null);
+      setEditing(true);
+      setConfirm(null);
+      return;
+    }
+    if (!ss) return;
+    if (legs.length > 0 && (strategy === null || edited) && confirm !== k) return setConfirm(k);
+    void apply(k, strategyStart(ss, k), true);
+  };
+  const setSetting = (k: string, v: unknown) => {
+    if (!strategy || !ss || v === undefined) return;
+    const next = { ...strategy.settings, [k]: v as string | number };
+    if (k === "place_by") next["target"] = ss.target_defaults[String(v)] ?? next["target"]!;
+    void apply(strategy.name, next, false);
+  };
+
+  const symbol = (
+    <Slot
+      id="t-symbol"
+      label="symbol"
+      t={{ type: "text" }}
+      value={spec["symbol"]}
+      width={76}
+      onChange={(v) => onChange(withKey(spec, "symbol", typeof v === "string" ? v.toUpperCase() : v))}
+    />
+  );
+  const ex = obj(spec["expiry"]);
+  const ek = String(ex["kind"] ?? Object.keys(schema.expiry)[0] ?? "dte");
+  const ew = W.expiry[ek];
+  const skip = obj(spec["skip_events"]);
+  const skipping = list(skip["labels"]).map(String);
+  const setSkip = (next: string[]) => onChange(withKey(spec, "skip_events", next.length ? { ...skip, labels: next } : undefined));
+  const weekdays = list(spec["weekdays"]).map(Number);
+  const far = spec["far_expiry"] !== undefined || legs.some((l) => l["expiry"] === "far");
+
   return (
     <>
-      <div className="builder-rows">
-      {shown.map(({ g, i }) => {
-        const def = byName[String(g["gate"])];
-        return (
-          <div key={`${prefix}-${i}-${String(g["gate"])}`} className="builder-cond builder-gate-row">
-            <Select
-              id={`${prefix}-${i}`}
-              label="gate"
-              value={String(g["gate"] ?? "")}
-              options={known.map((k) => k.gate)}
-              onChange={(name) => onChange(gates.map((x, j) => (j === i ? { gate: name } : x)))}
-            />
-            {(def?.params ?? []).map((p) => {
-              const t = schema.types?.gates[String(g["gate"])]?.[p.name];
+      <div className="b-split">
+        <nav className="b-rail" aria-label="Strategies">
+          <div className="b-rail-h">Strategy · fills in the legs</div>
+          {ss &&
+            W.strategy_groups.map((g) => {
+              const items = Object.entries(ss.strategies).filter(([k]) => (W.strategies[k]?.group ?? "Custom") === g);
+              if (items.length === 0) return null;
               return (
-                <Field
-                  key={`${prefix}-${i}-${p.name}`}
-                  id={`${prefix}-${i}-${p.name}`}
-                  label={t || p.default === null || p.default === undefined ? p.name : `${p.name} (${showValue(p.default)})`}
-                  value={g[p.name]}
-                  required={p.required}
-                  t={t}
-                  onChange={(v) => onChange(gates.map((x, j) => (j === i ? withKey(x, p.name, v) : x)))}
-                />
+                <div key={g} role="group" aria-label={g}>
+                  {g !== "Custom" && <div className="b-rail-g">{g}</div>}
+                  {items.map(([k, s]) => (
+                    <button
+                      key={k}
+                      type="button"
+                      className={`b-rail-i${name === k ? " is-on" : ""}${k === "custom" ? " is-custom" : ""}`}
+                      aria-pressed={name === k}
+                      disabled={!s.available}
+                      title={s.available ? s.about : (s.why ?? undefined)}
+                      onClick={() => pick(k)}
+                    >
+                      {s.label}
+                      {!s.available && <small>{s.why}</small>}
+                    </button>
+                  ))}
+                </div>
               );
             })}
-            <button type="button" className="btn builder-remove" aria-label={`Remove gate ${String(g["gate"])}`} onClick={() => onChange(gates.filter((_, j) => j !== i))}>
-              ×
-            </button>
+        </nav>
+        <div className="b-main">
+          <div className="b-head">
+            <h2>{def?.label ?? "Custom"}</h2>
+            {name !== "custom" && <span className="chip chip-warn">a starting point, not a recommendation</span>}
           </div>
-        );
-      })}
+          {def?.about && <p className="b-sub">{def.about}</p>}
+          {confirm && ss?.strategies[confirm] && (
+            <div className="b-confirm" role="alert">
+              <span>The legs below are your own. Replace them with {ss.strategies[confirm]!.label}?</span>
+              <button type="button" className="btn btn-primary" onClick={() => void apply(confirm, strategyStart(ss, confirm), confirm !== strategy?.name)}>
+                Replace them
+              </button>
+              <button type="button" className="btn" onClick={() => setConfirm(null)}>
+                Keep my legs
+              </button>
+            </div>
+          )}
+          <Row lead="Trade">
+            {strategy && sw ? (
+              edited ? (
+                <>
+                  <span className="word b-greyed">
+                    <Marked segs={strategySegs(W, strategy.name, strategy.settings, spec["symbol"])} />
+                  </span>
+                  <button type="button" className="btn btn-ghost" onClick={() => setConfirm(strategy.name)}>
+                    Rebuild from {def?.label}
+                  </button>
+                </>
+              ) : (
+                <Line
+                  template={sw.sentence}
+                  control={(slot) =>
+                    slot === "symbol" ? (
+                      symbol
+                    ) : (
+                      <Slot
+                        id={`t-${slot}`}
+                        label={slot.replaceAll("_", " ")}
+                        t={settingType(schema, slot)}
+                        w={{ ...sw, values: { ...W.strategy_values, ...(sw.values ?? {}) } }}
+                        wordKey={slot}
+                        value={strategy.settings[slot]}
+                        onChange={(v) => setSetting(slot, v)}
+                        width={60}
+                      />
+                    )
+                  }
+                />
+              )
+            ) : (
+              <Line template={W.strategies["custom"]?.sentence ?? "{symbol}"} control={() => symbol} />
+            )}
+            <Tip id="sym" open={tips.open} onToggle={tips.toggle} label="What is the underlying?" />
+          </Row>
+          <TipText id="sym" open={tips.open} />
+          {problem && (
+            <p className="error" role="alert">
+              {problem}
+            </p>
+          )}
+          <Row lead="Expiring">
+            <select
+              className="ctl"
+              aria-label="expiry rule"
+              value={ek}
+              onChange={(e) => {
+                const k = e.currentTarget.value;
+                const keys = schema.expiry[k] ?? {};
+                onChange(withKey(spec, "expiry", { kind: k, ...Object.fromEntries(Object.entries(ex).filter(([x]) => x in keys)) }));
+              }}
+            >
+              {Object.keys(schema.expiry).map((k) => (
+                <option key={k} value={k}>
+                  {W.expiry[k]?.label ?? k}
+                </option>
+              ))}
+            </select>
+            {ew && (
+              <Line
+                template={without(ew.sentence, "Expiring", ew.label ?? "")}
+                control={(slot) => (
+                  <Slot
+                    id={`t-exp-${slot}`}
+                    label={slot}
+                    t={schema.types?.expiry[slot]}
+                    w={ew}
+                    value={ex[slot]}
+                    width={56}
+                    onChange={(v) => onChange(withKey(spec, "expiry", withKey(ex, slot, v)))}
+                  />
+                )}
+              />
+            )}
+            <Tip id="exp" open={tips.open} onToggle={tips.toggle} label="What is the expiry?" />
+          </Row>
+          <TipText id="exp" open={tips.open} />
+          <Row lead="On">
+            {schema.weekdays.map((d) => (
+              <button
+                key={d}
+                type="button"
+                className={`b-day${weekdays.includes(d) ? " is-on" : ""}`}
+                aria-pressed={weekdays.includes(d)}
+                onClick={() => onChange(withKey(spec, "weekdays", (weekdays.includes(d) ? weekdays.filter((x) => x !== d) : [...weekdays, d]).sort()))}
+              >
+                {DAYS[d]}
+              </button>
+            ))}
+          </Row>
+          <Row lead="Skip">
+            {skipping.map((l) => (
+              <span key={l} className="b-tag" title={schema.event_about?.[l]?.when}>
+                {eventName(schema, l)}
+                <button type="button" aria-label={`Stop skipping ${eventName(schema, l)}`} onClick={() => setSkip(skipping.filter((x) => x !== l))}>
+                  ×
+                </button>
+              </span>
+            ))}
+            <select className="ctl b-add" aria-label="Add an event to skip" value="" onChange={(e) => e.currentTarget.value && setSkip([...skipping, e.currentTarget.value])}>
+              <option value="">+ Add an event</option>
+              {[...schema.event_labels]
+                .filter((l) => !skipping.includes(l))
+                .sort((a, b) => eventName(schema, a).localeCompare(eventName(schema, b)))
+                .map((l) => (
+                  <option key={l} value={l}>
+                    {eventName(schema, l)}
+                  </option>
+                ))}
+            </select>
+            <Tip id="ev" open={tips.open} onToggle={tips.toggle} label="Why skip an event?" />
+          </Row>
+          <TipText id="ev" open={tips.open} />
+          <More
+            title="More expiry options"
+            id="t-more"
+            items={Object.entries(ew?.more ?? {}).map(([k, phrase]) => ({
+              key: k,
+              phrase,
+              t: schema.types?.expiry[k],
+              w: ew,
+              value: ex[k],
+              set: (v: unknown) => onChange(withKey(spec, "expiry", withKey(ex, k, v))),
+            }))}
+            extra={
+              <>
+                {schema.far_expiry && (
+                  <div className="b-opt b-far">
+                    <FarExpiry schema={schema} spec={spec} onChange={onChange} />
+                  </div>
+                )}
+                <EventKey schema={schema} />
+              </>
+            }
+          />
+        </div>
       </div>
-      <div>
-        <button type="button" className="btn" onClick={() => onChange([...gates, { gate: known[0]?.gate ?? "" }])}>
-          + gate
-        </button>
+
+      <div className="b-legs">
+        <div className="b-legs-h">
+          <h3>The legs it makes</h3>
+          {SECTION_HELP["structure"] && <CardHelpButton cardTitle="The legs" help={SECTION_HELP["structure"]} />}
+          <span className="b-gap" />
+          <button type="button" className="btn" onClick={() => setEditing(!editing)}>
+            {editing ? "Done editing" : "Edit legs"}
+          </button>
+        </div>
+        {editing && strategy && <p className="b-note">Editing makes this Custom (from {def?.label}).</p>}
+        {editing ? <LegFields schema={schema} spec={spec} onChange={onChange} /> : <LegTable schema={schema} W={W} legs={legs} far={far} />}
       </div>
+      {payoff.empty ? (
+        <p className="muted">Add legs to see the trade's shape and where it lands on the chain.</p>
+      ) : (payoff.data ?? payoff.last) ? (
+        <TradeShapeView p={(payoff.data ?? payoff.last)!} stale={payoff.stale} />
+      ) : (
+        <p className="muted">Placing the legs…</p>
+      )}
     </>
   );
 }
 
-/** What every section's fields take: the schema, the whole spec and how to change it. */
-export interface SectionProps {
-  schema: BuilderSchema;
-  spec: Spec;
-  onChange: (next: Spec) => void;
+// --------------------------------------------------------------------------- 2 entry
+/** The signal kinds by the module's group, in the order each group first appears. */
+function signalGroups(W: BuilderWords, kinds: string[]): Array<[string, string[]]> {
+  const out = new Map<string, string[]>();
+  for (const k of kinds) {
+    const g = W.signals[k]?.group ?? "Other";
+    out.set(g, [...(out.get(g) ?? []), k]);
+  }
+  return [...out.entries()];
 }
 
-/** Section 1's fields: symbol, expiry rule, weekdays, event skips. Read-only, every field is shown and
- *  none changes; the event key still opens. */
-export function UnderlyingFields({ schema, spec, onChange, readOnly = false }: SectionProps & { readOnly?: boolean }) {
-  const set = (key: string, value: unknown) => onChange(withKey(spec, key, value));
-  const expiry = obj(spec["expiry"]);
-  const skip = obj(spec["skip_events"]);
-  const labelsOn = list(skip["labels"]).map(String);
-  const weekdays = list(spec["weekdays"]).map(Number);
-  const exprKind = String(expiry["kind"] ?? "dte");
-  const far = spec["far_expiry"] !== undefined;
+/** An indicator (or a number) as a pill: its choice, then its own line with a box for each setting. */
+function SourceControl({ W, schema, value, onChange, id }: { W: BuilderWords; schema: BuilderSchema; value: unknown; onChange: (v: unknown) => void; id: string }) {
+  const [number, setNumber] = useState(typeof value === "number");
+  const src = obj(value);
+  const name = number ? "#" : String(src["name"] ?? "");
+  const w = W.sources[name];
+  const groups = new Map<string, string[]>();
+  for (const k of Object.keys(schema.sources ?? {})) groups.set(W.sources[k]?.group ?? "Other", [...(groups.get(W.sources[k]?.group ?? "Other") ?? []), k]);
+  const typeOf = (k: string): BuilderFieldType =>
+    w?.values?.[k] ? { type: "enum", options: Object.keys(w.values[k]!) } : k === "anchor" ? { type: "text" } : { type: "int", min: 1 };
+  return (
+    <span className="b-pill">
+      <select
+        className="ctl"
+        aria-label="indicator"
+        value={name}
+        onChange={(e) => {
+          const n = e.currentTarget.value;
+          if (n === "#") {
+            setNumber(true);
+            onChange(undefined);
+          } else {
+            setNumber(false);
+            onChange(n ? { name: n, ...(W.sources[n]?.start ?? {}) } : undefined);
+          }
+        }}
+      >
+        {name === "" && <option value="">choose…</option>}
+        <option value="#">a number</option>
+        {[...groups.entries()].map(([g, ks]) => (
+          <optgroup key={g} label={g}>
+            {ks.map((k) => (
+              <option key={k} value={k}>
+                {W.sources[k]?.label ?? k}
+              </option>
+            ))}
+          </optgroup>
+        ))}
+      </select>
+      {number ? (
+        <Slot id={`${id}-n`} label="number" t={{ type: "number" }} value={typeof value === "number" ? value : undefined} onChange={onChange} width={64} />
+      ) : (
+        w &&
+        (schema.sources?.[name] ?? []).length > 0 && (
+          <Line
+            template={w.sentence}
+            control={(slot) => (
+              <Slot id={`${id}-${slot}`} label={slot.replaceAll("_", " ")} t={typeOf(slot)} w={w} value={src[slot]} width={52} onChange={(v) => onChange(withKey(src, slot, v))} />
+            )}
+          />
+        )
+      )}
+    </span>
+  );
+}
+
+/** A signal: its kind, grouped as the module groups them, then its line with a control in each slot. */
+function SignalControls({ W, schema, sig, onChange, id }: { W: BuilderWords; schema: BuilderSchema; sig: Obj; onChange: (s: Obj) => void; id: string }) {
+  const kind = String(sig["kind"] ?? "");
+  const w = W.signals[kind];
+  const types = schema.types?.signals.kinds[kind];
+  const rules = Object.fromEntries(Object.entries(sig).filter(([k]) => schema.signal_rules.includes(k)));
+  const events = Object.fromEntries(schema.event_labels.map((l) => [l, eventName(schema, l)]));
+  const ww = w ? { ...w, values: { ...(w.values ?? {}), event: events } } : undefined;
   return (
     <>
-      <fieldset className="builder-lock" disabled={readOnly}>
-      <div className="builder-grid">
-        <Field id="f-symbol" label="symbol" value={spec["symbol"]} required t={TEXT} onChange={(v) => set("symbol", typeof v === "string" ? v.toUpperCase() : v)} />
-        <Select id="f-expiry-kind" label={far ? "near expiry" : "expiry"} value={exprKind} options={Object.keys(schema.expiry)} onChange={(k) => set("expiry", { kind: k })} />
-        <KeyFields
-          prefix="f-expiry"
-          keys={schema.expiry[exprKind] ?? {}}
-          flags={schema.expiry_flags}
-          types={schema.types?.expiry}
-          o={expiry}
-          onChange={(next) => set("expiry", { ...next, kind: exprKind })}
-        />
-      </div>
-      {schema.far_expiry && <FarExpiry schema={schema} spec={spec} onChange={onChange} />}
-      <fieldset className="builder-days">
-        <legend className="builder-lbl">weekdays</legend>
-        {schema.weekdays.map((d) => (
-          <label key={d}>
-            <input
-              type="checkbox"
-              checked={weekdays.includes(d)}
-              onChange={(e) => set("weekdays", (e.currentTarget.checked ? [...weekdays, d] : weekdays.filter((x) => x !== d)).sort())}
-            />{" "}
-            {WEEKDAYS[d]}
-          </label>
+      <select className="ctl" aria-label="signal" value={kind} onChange={(e) => onChange({ kind: e.currentTarget.value, ...(W.signals[e.currentTarget.value]?.start ?? {}), ...rules })}>
+        {kind === "" && <option value="">choose a signal…</option>}
+        {signalGroups(W, Object.keys(schema.signals)).map(([g, ks]) => (
+          <optgroup key={g} label={g}>
+            {ks.map((k) => (
+              <option key={k} value={k}>
+                {W.signals[k]?.label ?? k}
+              </option>
+            ))}
+          </optgroup>
         ))}
-      </fieldset>
-      </fieldset>
-      <EventSkips
-        schema={schema}
-        on={labelsOn}
-        readOnly={readOnly}
-        onChange={(next) => set("skip_events", next.length ? { ...skip, labels: next } : undefined)}
-      />
+      </select>
+      {w && (
+        <Line
+          template={w.sentence}
+          control={(slot) =>
+            slot === "a" || slot === "b" ? (
+              <SourceControl W={W} schema={schema} value={sig[slot]} id={`${id}-${slot}`} onChange={(v) => onChange(withKey(sig, slot, v))} />
+            ) : (
+              <Slot id={`${id}-${slot}`} label={slot.replaceAll("_", " ")} t={types?.[slot]} w={ww} value={sig[slot]} width={56} onChange={(v) => onChange(withKey(sig, slot, v))} />
+            )
+          }
+        />
+      )}
     </>
   );
 }
 
-/** The far expiry (#1318): a calendar's or a diagonal's second expiry, its rule set from the near one
- *  (`after_near`) or from today, and the legs that sit on it pick it in their Expiry column. Absent,
- *  a button adds it; removed, every leg goes back to the near expiry. */
-export function FarExpiry({ schema, spec, onChange }: SectionProps) {
-  const kinds = schema.far_expiry ?? {};
-  const rule = spec["far_expiry"] === undefined ? null : obj(spec["far_expiry"]);
-  if (rule === null) {
-    return (
-      <div className="builder-far">
-        <button type="button" className="btn" onClick={() => onChange(withKey(spec, "far_expiry", { kind: "after_near", days: 28 }))}>
-          + Far expiry
-        </button>
-        <span className="muted">For a calendar or a diagonal: a second expiry, and each leg picks Near or Far.</span>
-      </div>
-    );
-  }
-  const kind = String(rule["kind"] ?? "after_near");
-  const remove = () => {
-    const legs = list(spec["legs"]).map((l) => withKey(obj(l), "expiry", undefined));
-    onChange(withKey(withKey(spec, "far_expiry", undefined), "legs", legs));
-  };
+/** A trigger's `within`: any time before the window closes (null), or a number of minutes. */
+function WithinControl({ w, value, onChange }: { w: BuilderChoiceWords; value: unknown; onChange: (v: unknown) => void }) {
+  const n = typeof value === "number";
   return (
-    <div className="builder-grid builder-far-row">
-      <Select
-        id="f-far-kind"
-        label="far expiry"
-        value={kind}
-        options={Object.keys(kinds)}
-        words={{ after_near: "after near" }}
-        onChange={(k) => onChange(withKey(spec, "far_expiry", { kind: k }))}
-      />
-      <KeyFields
-        prefix="f-far"
-        keys={kinds[kind] ?? {}}
-        flags={schema.expiry_flags}
-        types={schema.types?.expiry}
-        o={rule}
-        onChange={(next) => onChange(withKey(spec, "far_expiry", { ...next, kind }))}
-      />
-      <button type="button" className="btn builder-remove" aria-label="Remove the far expiry" onClick={remove}>
-        ×
-      </button>
-    </div>
+    <>
+      <select className="ctl" aria-label="when it enters" value={n ? "n" : "null"} onChange={(e) => onChange(e.currentTarget.value === "n" ? 5 : null)}>
+        <option value="null">{w.values?.["within"]?.["null"] ?? "until the window closes"}</option>
+        <option value="n">{(w.values?.["within"]?.["n"] ?? "within {within} minutes").replace("{within}", "N")}</option>
+      </select>
+      {n && (
+        <Line
+          template={w.values?.["within"]?.["n"] ?? "{within}"}
+          control={() => <Slot id="e-within" label="within" t={{ type: "int", min: 1 }} value={value} width={52} onChange={(v) => onChange(v === undefined ? null : v)} />}
+        />
+      )}
+    </>
   );
 }
 
-/** An event label's name, the module's own, or the label where an older module gives none. */
-export function eventName(schema: BuilderSchema, label: string): string {
-  return schema.event_about?.[label]?.name ?? label;
-}
-
-function dayText(iso: string): string {
-  const d = new Date(`${iso}T12:00:00Z`);
-  return `${WEEKDAYS[(d.getUTCDay() + 6) % 7] ?? ""} ${iso}`;
-}
-
-/** The event skips by name, sorted by name, with a key of what each is, when it falls and its next day
- *  (closed until its ? is pressed; `keyOpen` opens it at first). */
-export function EventSkips({
+function EntrySection({
   schema,
-  on,
+  W,
+  spec,
   onChange,
-  keyOpen = false,
-  readOnly = false,
+  preset,
+  setPreset,
+  tips,
 }: {
   schema: BuilderSchema;
-  on: string[];
-  onChange: (next: string[]) => void;
-  keyOpen?: boolean;
-  /** Checkboxes shown, not changeable; the key still opens. */
-  readOnly?: boolean;
+  W: BuilderWords;
+  spec: Spec;
+  onChange: (s: Spec) => void;
+  preset: Preset | null;
+  setPreset: (p: Preset | null) => void;
+  tips: ReturnType<typeof useTips>;
 }) {
-  const [key, setKey] = useState(keyOpen);
-  const labels = [...schema.event_labels].sort((a, b) => eventName(schema, a).localeCompare(eventName(schema, b)));
-  const about = schema.event_about;
-  return (
-    <fieldset className="builder-days builder-events">
-      <legend className="builder-lbl">
-        skip on these events
-        {about && (
-          <button type="button" className={key ? "wiz-q is-open" : "wiz-q"} aria-label="What are these events?" aria-expanded={key} onClick={() => setKey(!key)}>
-            ?
-          </button>
-        )}
-      </legend>
-      {labels.map((l) => (
-        <label key={l} title={about?.[l]?.when}>
-          <input type="checkbox" checked={on.includes(l)} disabled={readOnly || undefined} onChange={(e) => onChange(e.currentTarget.checked ? [...on, l] : on.filter((x) => x !== l))} />{" "}
-          {eventName(schema, l)}
-        </label>
-      ))}
-      {key && about && (
-        <table className="builder-event-key" role="note">
-          <thead>
-            <tr>
-              <th>Event</th>
-              <th>When</th>
-              <th>Next</th>
-            </tr>
-          </thead>
-          <tbody>
-            {labels.map((l) => (
-              <tr key={l}>
-                <td>{eventName(schema, l)}</td>
-                <td>{about[l]?.when}</td>
-                <td className="num">{about[l]?.next ? dayText(about[l]!.next!) : "—"}</td>
-              </tr>
-            ))}
-          </tbody>
-          <tfoot>
-            <tr>
-              <td colSpan={3} className="muted">
-                A skipped event means no new trade that day. A day the calendar has no data for is not skipped, and the backtest marks it
-                unknown. Earnings and ex-dividend are the symbol's own dates.
-              </td>
-            </tr>
-          </tfoot>
-        </table>
-      )}
-    </fieldset>
-  );
-}
-
-/** Section 2's fields: the entry kind and its keys, and the sentence. */
-export function EntryFields({ schema, spec, onChange }: SectionProps) {
-  const set = (key: string, value: unknown) => onChange(withKey(spec, key, value));
+  const specRef = useRef(spec);
+  specRef.current = spec;
+  const [confirm, setConfirm] = useState<string | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
+  const eps = schema.entry_presets;
   const entry = obj(spec["entry"]);
-  const trigger = obj(entry["trigger"]);
-  const form = "at" in trigger ? "at" : "signal";
-  const signal = obj(trigger["signal"]);
-  const entryKind = String(entry["kind"] ?? "time");
-  const types = schema.types;
-  const sigType = (p: string) => types?.signals.kinds[String(signal["kind"])]?.[p] ?? types?.signals.rules[p];
+  const kind = String(entry["kind"] ?? "time");
+  const ew = W.entry[kind];
+  const et = schema.types?.entry[kind];
+  const edited = preset === null ? spec["entry"] !== undefined : JSON.stringify(spec["entry"] ?? null) !== preset.entry;
+  const name = edited ? "custom" : (preset?.name ?? "custom");
+  const def = eps?.entries[name];
+  const setEntry = (next: Obj) => onChange(withKey(spec, "entry", next));
+
+  const apply = async (k: string) => {
+    if (!eps) return;
+    const r = await builderEntry(k, presetStart(eps, eps.entries[k]!), []);
+    if (r.error) return setProblem(r.error);
+    if (r.problems?.length) return setProblem(r.problems.join("; "));
+    setProblem(null);
+    const cur = specRef.current;
+    const gates = withFilterGates(cur["gates"], preset?.gates ?? [], r.gates ?? []);
+    onChange(withKey({ ...cur, entry: r.entry ?? cur["entry"] }, "gates", gates.length ? gates : undefined));
+    setPreset({ name: k, entry: JSON.stringify(r.entry ?? null), gates: (r.gates ?? []).map((g) => JSON.stringify(g)) });
+    setConfirm(null);
+  };
+  const pick = (k: string) => {
+    if (edited && confirm !== k) return setConfirm(k);
+    void apply(k);
+  };
+
+  const trig = obj(entry["trigger"]);
+  const form = "at" in trig ? "at" : "signal";
+  const tw = W.trigger[form];
+  const sig = obj(trig["signal"]);
+  const setTrig = (next: Obj) => setEntry({ ...entry, trigger: next });
+  const setSig = (next: Obj) => setTrig({ ...trig, signal: next });
+  const only = list(sig["only_when"]).map(obj);
+  const sigW = W.signals[String(sig["kind"] ?? "")];
+
+  const items: MoreItem[] = [];
+  if (kind === "trigger" && form === "signal") {
+    for (const r of schema.signal_rules.filter((x) => x !== "only_when")) {
+      const rw = W.signal_rules[r];
+      if (rw) items.push({ key: r, phrase: rw.sentence, t: schema.types?.signals.rules[r], w: rw, value: sig[r], set: (v) => setSig(withKey(sig, r, v)) });
+    }
+    for (const [k, phrase] of Object.entries(sigW?.more ?? {}))
+      items.push({ key: k, phrase, t: schema.types?.signals.kinds[String(sig["kind"])]?.[k], w: sigW, value: sig[k], set: (v) => setSig(withKey(sig, k, v)) });
+    for (const [k, phrase] of Object.entries(tw?.more ?? {}))
+      items.push({ key: `trigger-${k}`, phrase, t: schema.types?.trigger[k], w: tw, value: trig[k], set: (v) => setTrig(withKey(trig, k, v)) });
+  }
+  for (const [k, phrase] of Object.entries(ew?.more ?? {})) items.push({ key: `entry-${k}`, phrase, t: et?.[k], w: ew, value: entry[k], set: (v) => setEntry(withKey(entry, k, v)) });
+
   return (
-    <>
-      <div className="builder-grid">
-        <Select id="f-entry-kind" label="entry" value={entryKind} options={Object.keys(schema.entry)} onChange={(k) => set("entry", { kind: k })} />
-        {entryKind === "orb" ? (
-          <>
-            <KeyFields
-              prefix="f-orb"
-              keys={schema.entry["orb"] ?? {}}
-              types={types?.entry["orb"]}
-              o={entry}
-              skip={["direction"]}
-              onChange={(next) => set("entry", { ...next, kind: "orb" })}
-            />
-            <Select id="f-orb-direction" label="direction" value={String(entry["direction"] ?? "")} options={schema.orb_directions} onChange={(v) => set("entry", { ...entry, direction: v })} />
-          </>
-        ) : entryKind === "trigger" ? (
-          <>
-            <Select
-              id="f-trigger-form"
-              label="fires"
-              value={form}
-              options={Object.keys(schema.trigger_forms)}
-              onChange={(f) => set("entry", { ...entry, trigger: f === "at" ? { at: "", within: 5 } : { signal: {}, window: {}, within: null } })}
-            />
-            {form === "at" ? (
-              <KeyFields prefix="f-at" keys={schema.trigger_forms["at"] ?? {}} types={types?.trigger} o={trigger} onChange={(next) => set("entry", { ...entry, trigger: next })} />
-            ) : (
-              <>
-                <Select
-                  id="f-signal-kind"
-                  label="signal"
-                  value={String(signal["kind"] ?? "")}
-                  options={Object.keys(schema.signals)}
-                  onChange={(k) => set("entry", { ...entry, trigger: { ...trigger, signal: { kind: k } } })}
-                />
-                {[...(schema.signals[String(signal["kind"])] ?? []), ...schema.signal_rules].map((p) => (
-                  <Field
-                    key={`f-sig-${p}`}
-                    id={`f-sig-${p}`}
-                    label={p}
-                    value={signal[p]}
-                    required={sigType(p)?.required}
-                    t={sigType(p)}
-                    onChange={(v) => set("entry", { ...entry, trigger: { ...trigger, signal: withKey(signal, p, v) } })}
-                  />
-                ))}
-                {(["open", "close"] as const).map((w) => (
-                  <Field
-                    key={`f-win-${w}`}
-                    id={`f-win-${w}`}
-                    label={`window ${w}`}
-                    value={obj(trigger["window"])[w]}
-                    required
-                    t={types?.trigger[w]}
-                    onChange={(v) => set("entry", { ...entry, trigger: { ...trigger, window: withKey(obj(trigger["window"]), w, v) } })}
-                  />
-                ))}
-                <Field
-                  id="f-within"
-                  label={types ? "within" : "within (blank: until it closes)"}
-                  value={trigger["within"] ?? undefined}
-                  t={types?.trigger["within"]}
-                  blankMeans="until it closes"
-                  onChange={(v) => set("entry", { ...entry, trigger: { ...trigger, within: v === undefined ? null : v } })}
-                />
-                <Field id="f-daily" label="daily" value={trigger["daily"]} t={types?.trigger["daily"]} onChange={(v) => set("entry", { ...entry, trigger: withKey(trigger, "daily", v) })} />
-              </>
-            )}
-            <KeyFields
-              prefix="f-trig"
-              keys={schema.entry["trigger"] ?? {}}
-              types={types?.entry["trigger"]}
-              o={entry}
-              skip={["trigger"]}
-              onChange={(next) => set("entry", { ...next, kind: "trigger", trigger })}
-            />
-          </>
-        ) : (
-          <KeyFields prefix="f-time" keys={schema.entry["time"] ?? {}} types={types?.entry["time"]} o={entry} onChange={(next) => set("entry", { ...next, kind: "time" })} />
-        )}
-      </div>
-      <div className="builder-plain">
-        <span className="builder-lbl">in plain English</span>
-        <p>{entryText(entry)}</p>
-        <p className="muted">Read by the engine paper runs, at each tick in the window, Eastern time.</p>
-      </div>
-    </>
-  );
-}
-
-/** The gates of the given stages, in the spec's own order. */
-export function GateFields({ schema, spec, onChange, stages, prefix }: SectionProps & { stages: string[]; prefix: string }) {
-  const gates = list(spec["gates"]).map(obj);
-  return <GateRows schema={schema} gates={gates} stages={stages} prefix={prefix} onChange={(next) => onChange(withKey(spec, "gates", next.length ? next : undefined))} />;
-}
-
-/** The most contracts one leg may hold, either way: the module's `arms.MAX_LEG_QUANTITY`, which its
- *  check enforces; the box only stops a typo early. */
-const MAX_QTY = 10;
-
-/** Section 4's legs: each named by its ID and its words (L2 · Short Put ×2), its side and contracts,
- *  right, strike rule, its keys and match mode. `side` is stored as the signed contracts. */
-export function LegFields({ schema, spec, onChange }: SectionProps) {
-  const set = (key: string, value: unknown) => onChange(withKey(spec, key, value));
-  const legs = list(spec["legs"]).map(obj);
-  const given = useRef(0);
-  const labels = legLabels(legs);
-  // A leg picks its expiry once the automation has a far one (or a leg already sits on it).
-  const twoExpiries = spec["far_expiry"] !== undefined || legs.some((l) => l["expiry"] === "far");
-  return (
-    <>
-      <div className="builder-rows">
-      {legs.map((leg, i) => {
-        const strike = obj(leg["strike"]);
-        const rule = String(strike["rule"] ?? "");
-        const def = schema.strike_rules[rule];
-        // Every edit writes the leg in the page's spelling (action, qty, side), whichever it was read in.
-        const setLeg = (next: Obj) => set("legs", legs.map((x, j) => (j === i ? writtenLeg(next) : x)));
-        const w = writtenLeg(leg);
-        const side = signedQty(leg);
-        const qty = Math.abs(side);
-        const name = String(leg["name"] ?? "");
-        return (
-          <div key={`leg-${i}`} className={`builder-cond builder-leg-row${twoExpiries ? " has-expiry" : ""}`}>
-            <div className="builder-f builder-leg-name">
-              <span className="builder-lbl">leg</span>
-              <span className="builder-leg-id">
-                {isLegId(name) && <span className="builder-leg-chip">{name}</span>}
-                <span>{isLegId(name) ? legWords(leg) : titleCase(name) || legWords(leg)}</span>
-              </span>
+    <div className="b-split">
+      {eps && (
+        <nav className="b-rail" aria-label="Entry presets">
+          <div className="b-rail-h">Entry preset · fills in the entry</div>
+          {grouped(eps.entries).map(([g, ps]) => (
+            <div key={g} role="group" aria-label={g}>
+              {g !== "Custom" && <div className="b-rail-g">{g}</div>}
+              {ps.map(([k, p]) => (
+                <button
+                  key={k}
+                  type="button"
+                  className={`b-rail-i${name === k ? " is-on" : ""}${k === "custom" ? " is-custom" : ""}`}
+                  aria-pressed={name === k}
+                  title={p.about}
+                  onClick={() => pick(k)}
+                >
+                  {p.label}
+                </button>
+              ))}
             </div>
-            <Select
-              id={`f-leg-${i}-action`}
-              label="action"
-              value={side < 0 ? "sell" : "buy"}
-              options={["buy", "sell"]}
-              words={{ buy: openVerb(1), sell: openVerb(-1) }}
-              onChange={(v) => setLeg({ ...w, action: v === "sell" ? "STO" : "BTO" })}
-            />
-            <div className="builder-f">
-              <label className="builder-lbl" htmlFor={`f-leg-${i}-qty`}>
-                qty
-              </label>
-              <input
-                id={`f-leg-${i}-qty`}
-                key={`qty-${qty}`}
-                className="builder-input builder-qty"
-                type="number"
-                inputMode="numeric"
-                min={1}
-                max={MAX_QTY}
-                step={1}
-                defaultValue={qty}
-                onBlur={(e) => {
-                  const n = Math.round(Number(e.currentTarget.value));
-                  if (Number.isFinite(n) && n >= 1 && n <= MAX_QTY && n !== qty) setLeg({ ...w, qty: n });
-                  else e.currentTarget.value = String(qty);
-                }}
-              />
-            </div>
-            <Select
-              id={`f-leg-${i}-right`}
-              label="side"
-              value={String(w["side"] ?? "put")}
-              options={["put", "call"]}
-              words={{ put: "Put", call: "Call" }}
-              onChange={(v) => setLeg({ ...w, side: v })}
-            />
-            {twoExpiries && (
-              <Select
-                id={`f-leg-${i}-expiry`}
-                label="expiry"
-                value={leg["expiry"] === "far" ? "far" : "near"}
-                options={schema.leg_expiries ?? ["near", "far"]}
-                words={{ near: "Near", far: "Far" }}
-                onChange={(v) => setLeg(withKey(w, "expiry", v === "far" ? "far" : undefined))}
-              />
-            )}
-            <Select id={`f-leg-${i}-rule`} label="strike by" value={rule} options={Object.keys(schema.strike_rules)} onChange={(r) => setLeg({ ...leg, strike: { rule: r } })} />
-            <div className="builder-leg-rule">
-              {/* A rule placed off the spot has no leg to name: keep its cell, so points and pct sit
-                  in the same columns as a rule placed off another leg's. */}
-              {def && !("leg" in def.keys) && ("points" in def.keys || "pct" in def.keys) && <div aria-hidden="true" />}
-              <KeyFields
-                prefix={`f-leg-${i}`}
-                keys={def?.keys ?? {}}
-                types={schema.types?.strike}
-                legs={legs.slice(0, i).map((l) => String(l["name"] ?? ""))}
-                legLabels={labels}
-                o={strike}
-                onChange={(next) => setLeg({ ...leg, strike: { ...next, rule } })}
-              />
-            </div>
-            <div className="builder-leg-match">
-              {def && def.matches.length > 0 && (
-                <Select
-                  id={`f-leg-${i}-match`}
-                  label="match"
-                  value={String(strike["match"] ?? "")}
-                  options={def.matches}
-                  blank={def.default_match ? `default (${def.default_match})` : "required: choose one"}
-                  onChange={(m) => setLeg({ ...leg, strike: withKey(strike, "match", m === "" ? undefined : m) })}
-                />
-              )}
-            </div>
-            <button type="button" className="btn builder-remove" aria-label={`Remove leg ${labels[name] ?? name}`} onClick={() => set("legs", legs.filter((_, j) => j !== i))}>
-              ×
+          ))}
+        </nav>
+      )}
+      <div className="b-main">
+        <div className="b-head">
+          <h2>{def?.label ?? "Custom"}</h2>
+          {def?.suits && <span className="chip">suits: {def.suits}</span>}
+          {name !== "custom" && <span className="chip chip-warn">a starting point, not a tested edge</span>}
+        </div>
+        {def?.about && <p className="b-sub">{def.about}</p>}
+        {confirm && eps?.entries[confirm] && (
+          <div className="b-confirm" role="alert">
+            <span>The entry below is your own. Replace it with {eps.entries[confirm]!.label}?</span>
+            <button type="button" className="btn btn-primary" onClick={() => void apply(confirm)}>
+              Replace it
+            </button>
+            <button type="button" className="btn" onClick={() => setConfirm(null)}>
+              Keep my entry
             </button>
           </div>
-        );
-      })}
+        )}
+        {problem && (
+          <p className="error" role="alert">
+            {problem}
+          </p>
+        )}
+        <Row lead="Enter">
+          <select className="ctl" aria-label="how it enters" value={kind} onChange={(e) => setEntry({ kind: e.currentTarget.value })}>
+            {Object.keys(schema.entry).map((k) => (
+              <option key={k} value={k}>
+                {W.entry[k]?.label ?? k}
+              </option>
+            ))}
+          </select>
+          {kind === "trigger" ? (
+            <select
+              className="ctl"
+              aria-label="fires"
+              value={form}
+              onChange={(e) => setTrig(e.currentTarget.value === "at" ? { at: "", within: 5 } : { signal: {}, window: {}, within: null })}
+            >
+              {Object.keys(schema.trigger_forms).map((f) => (
+                <option key={f} value={f}>
+                  {W.trigger[f]?.label ?? f}
+                </option>
+              ))}
+            </select>
+          ) : (
+            ew && (
+              <Line
+                template={without(ew.sentence, "Enter")}
+                control={(slot) => (
+                  <Slot
+                    id={`e-${slot}`}
+                    label={slot.replaceAll("_", " ")}
+                    t={et?.[slot] ?? (slot === "direction" ? { type: "enum", options: schema.orb_directions } : undefined)}
+                    w={ew}
+                    value={entry[slot]}
+                    width={60}
+                    onChange={(v) => setEntry(withKey(entry, slot, v))}
+                  />
+                )}
+              />
+            )
+          )}
+          <Tip id="kind" open={tips.open} onToggle={tips.toggle} label="Which kind of entry?" />
+        </Row>
+        <TipText id="kind" open={tips.open} />
+        {kind === "trigger" && form === "signal" && tw && (
+          <>
+            <Row lead="When">
+              <SignalControls W={W} schema={schema} sig={sig} id="e-sig" onChange={setSig} />
+            </Row>
+            <Row lead="Between">
+              <Line
+                template={without(tw.sentence, "when {signal},", "between")}
+                control={(slot) =>
+                  slot === "within" ? (
+                    <WithinControl w={tw} value={trig["within"]} onChange={(v) => setTrig({ ...trig, within: v })} />
+                  ) : (
+                    <Slot
+                      id={`e-${slot}`}
+                      label={slot.replace("window.", "window ")}
+                      t={schema.types?.trigger[slot.replace("window.", "")]}
+                      value={obj(trig["window"])[slot.replace("window.", "")]}
+                      onChange={(v) => setTrig({ ...trig, window: withKey(obj(trig["window"]), slot.replace("window.", ""), v) })}
+                    />
+                  )
+                }
+              />
+            </Row>
+            {only.map((o, i) => (
+              <Row key={i} lead="Only if">
+                <SignalControls
+                  W={W}
+                  schema={schema}
+                  sig={o}
+                  id={`e-only-${i}`}
+                  onChange={(next) => setSig(withKey(sig, "only_when", only.map((x, j) => (j === i ? next : x))))}
+                />
+                <button
+                  type="button"
+                  className="b-x"
+                  aria-label="Remove condition"
+                  onClick={() => setSig(withKey(sig, "only_when", only.length > 1 ? only.filter((_, j) => j !== i) : undefined))}
+                >
+                  ×
+                </button>
+              </Row>
+            ))}
+            <div>
+              <button type="button" className="btn btn-ghost" onClick={() => setSig(withKey(sig, "only_when", [...only, { kind: "" }]))}>
+                + Add a condition
+              </button>
+            </div>
+          </>
+        )}
+        {kind === "trigger" && form === "at" && tw && (
+          <Row lead="At">
+            <Line
+              template={without(tw.sentence, "at")}
+              control={(slot) => <Slot id={`e-at-${slot}`} label={slot} t={schema.types?.trigger[slot]} value={trig[slot]} width={56} onChange={(v) => setTrig(withKey(trig, slot, v))} />}
+            />
+          </Row>
+        )}
+        {!holdsCloseSnapshot(entry) && (
+          <p className="muted b-cad">
+            This time misses the 15:59 chain our monthly history holds.
+            <Tip id="cad" open={tips.open} onToggle={tips.toggle} label="Which entry times can be backtested?" />
+          </p>
+        )}
+        <TipText id="cad" open={tips.open} />
+        <More title="More options" id="e-more" items={items} />
+        <details className="b-more">
+          <summary>
+            Edit as rule <span className="muted">the entry as the engine reads it</span>
+          </summary>
+          <textarea
+            key={JSON.stringify(entry)}
+            className="builder-editor-text"
+            aria-label="the entry as JSON"
+            spellCheck={false}
+            rows={Math.min(16, JSON.stringify(entry, null, 2).split("\n").length + 1)}
+            defaultValue={JSON.stringify(entry, null, 2)}
+            onBlur={(e) => {
+              const el = e.currentTarget;
+              try {
+                const v = JSON.parse(el.value) as unknown;
+                if (typeof v !== "object" || v === null || Array.isArray(v)) throw new Error("an object");
+                el.setCustomValidity("");
+                if (JSON.stringify(v) !== JSON.stringify(entry)) setEntry(v as Obj);
+              } catch {
+                el.setCustomValidity("The entry is a JSON object");
+                el.reportValidity();
+              }
+            }}
+          />
+        </details>
       </div>
-      <div className="builder-leg-add">
-        <button
-          type="button"
-          className="btn"
-          onClick={() => {
-            const id = nextLegId(legs, given.current);
-            given.current = Number(id.slice(1));
-            set("legs", [...legs, { name: id, action: "STO", qty: 1, side: "put", strike: { rule: "delta" } }]);
-          }}
-        >
-          + Add leg ({nextLegId(legs, given.current)})
-        </button>
-        <span className="muted">Each leg keeps its ID: a removed one is not given again, and a new leg takes the next number.</span>
-      </div>
-    </>
-  );
-}
-
-/** Section 5's exit keys, one field each. */
-export function ExitFields({ schema, spec, onChange }: SectionProps) {
-  const exit = obj(spec["exit"]);
-  return (
-    <div className="builder-grid">
-      {schema.exits.map((k) => (
-        <Field id={`f-exit-${k}`} label={k} value={exit[k]} t={schema.types?.exit[k]} onChange={(v) => onChange(withKey(spec, "exit", withKey(exit, k, v)))} />
-      ))}
     </div>
   );
 }
 
-/** The limits in reading order: how many at once, how many a day, how often, then the rest the
- *  module offers. */
-const LIMIT_ORDER = ["max_open", "per_day", "every_days", "one_per_expiry"];
-
-export function orderedLimits(limits: readonly string[]): string[] {
-  const known = LIMIT_ORDER.filter((k) => limits.includes(k));
-  return [...known, ...limits.filter((k) => !LIMIT_ORDER.includes(k))];
-}
-
-/** Section 5's size and limits, each its own labelled group. */
-export function SizeFields({ schema, spec, onChange }: SectionProps) {
-  const set = (key: string, value: unknown) => onChange(withKey(spec, key, value));
+// --------------------------------------------------------------------------- 5 size and limits
+function SizeSection({ schema, W, spec, onChange, tips }: { schema: BuilderSchema; W: BuilderWords; spec: Spec; onChange: (s: Spec) => void; tips: ReturnType<typeof useTips> }) {
   const size = obj(spec["size"]);
-  const sizeKind = Object.keys(schema.sizes).find((k) => k in size) ?? "contracts";
   const limits = obj(spec["limits"]);
+  const [chosen, setChosen] = useState<string | null>(null);
+  const kind = Object.keys(schema.sizes).find((k) => k in size) ?? chosen ?? "contracts";
+  const sw = W.sizes[kind];
+  const st = schema.types?.size;
+  const setSize = (next: Obj) => onChange(withKey(spec, "size", next));
+  const setLimit = (k: string, v: unknown) => onChange(withKey(spec, "limits", withKey(limits, k, v)));
+  const prog = size["progression"] === undefined ? null : obj(size["progression"]);
+  const items: MoreItem[] = Object.entries(sw?.more ?? {}).map(([k, phrase]) => ({ key: k, phrase, t: st?.[k], w: sw, value: size[k], set: (v) => setSize(withKey(size, k, v)) }));
+  for (const k of ["every_days", "one_per_expiry"].filter((x) => schema.limits.includes(x))) {
+    const lw = W.limits[k];
+    if (lw) items.push({ key: k, phrase: lw.sentence, t: schema.types?.limits[k], w: lw, value: limits[k], set: (v) => setLimit(k, v) });
+  }
+  const limitLine = (k: string) => {
+    const lw = W.limits[k];
+    return lw ? <Line template={lw.sentence} control={() => <Slot id={`s-${k}`} label={k.replaceAll("_", " ")} t={schema.types?.limits[k]} value={limits[k]} width={52} onChange={(v) => setLimit(k, v)} />} /> : null;
+  };
+  const progType = (k: string): BuilderFieldType =>
+    k === "after" ? { type: "enum", options: Object.keys(W.progression.values?.["after"] ?? {}) } : k === "step" ? { type: "int", or: ["double"] } : { type: "int", min: 1 };
   return (
     <>
-      <h5 className="builder-lbl builder-sub">size</h5>
-      <div className="builder-grid">
-        <Select id="f-size-kind" label="size by" value={sizeKind} options={Object.keys(schema.sizes)} onChange={(k) => set("size", { [k]: 1 })} />
-        {(schema.sizes[sizeKind] ?? []).map((k) => (
-          <Field id={`f-size-${k}`} label={k} value={size[k]} required={k === sizeKind} t={schema.types?.size[k]} onChange={(v) => set("size", withKey(size, k, v))} />
-        ))}
-      </div>
-      <h5 className="builder-lbl builder-sub">limits</h5>
-      <div className="builder-grid">
-        {orderedLimits(schema.limits).map((k) => (
-          <Field
-            id={`f-limit-${k}`}
-            label={k}
-            value={limits[k]}
-            required={k === "max_open" || k === "per_day"}
-            t={schema.types?.limits[k]}
-            onChange={(v) => set("limits", withKey(limits, k, v))}
+      <Row lead="Size">
+        <select
+          className="ctl"
+          aria-label="size by"
+          value={kind}
+          onChange={(e) => {
+            setChosen(e.currentTarget.value);
+            setSize(withKey({}, "progression", size["progression"]));
+          }}
+        >
+          {Object.keys(schema.sizes).map((k) => (
+            <option key={k} value={k}>
+              {W.sizes[k]?.label ?? k}
+            </option>
+          ))}
+        </select>
+        {sw && (
+          <Line
+            template={without(sw.sentence, "Trade")}
+            control={(slot) => <Slot id={`s-${slot}`} label={slot.replaceAll("_", " ")} t={st?.[slot]} value={size[slot]} width={72} onChange={(v) => setSize(withKey(size, slot, v))} />}
           />
-        ))}
-      </div>
+        )}
+        <Tip id="size" open={tips.open} onToggle={tips.toggle} label="How big should it be?" />
+      </Row>
+      <TipText id="size" open={tips.open} />
+      <Row lead="Limits">
+        {limitLine("max_open")}
+        <span className="word">·</span>
+        {limitLine("per_day")}
+        <Tip id="lim" open={tips.open} onToggle={tips.toggle} label="Why must it state limits?" />
+      </Row>
+      <TipText id="lim" open={tips.open} />
+      <More
+        title="More options"
+        id="s-more"
+        items={items}
+        extra={
+          <div className="b-opt">
+            {prog ? (
+              <>
+                <Line
+                  template={W.progression.sentence}
+                  control={(slot) => <Slot id={`s-prog-${slot}`} label={slot} t={progType(slot)} w={W.progression} value={prog[slot]} width={60} onChange={(v) => setSize(withKey(size, "progression", withKey(prog, slot, v)))} />}
+                />
+                <button type="button" className="b-x" aria-label="Remove the size step" onClick={() => setSize(withKey(size, "progression", undefined))}>
+                  ×
+                </button>
+              </>
+            ) : (
+              <button type="button" className="btn btn-ghost" title={W.progression.about} onClick={() => setSize(withKey(size, "progression", {}))}>
+                + {W.progression.label}
+              </button>
+            )}
+          </div>
+        }
+      />
     </>
   );
 }
 
-/** The structure's name: the strategy filled in, "Custom (from Iron condor)" once its legs were
- *  edited, "Custom" when no strategy filled them. */
-export function structureName(filled: { label: string; legs: string } | null, legs: unknown): string {
-  if (filled === null) return "Custom";
-  return JSON.stringify(legs) === filled.legs ? filled.label : `Custom (from ${filled.label})`;
-}
-
-/** The automation once a strategy fills it in: its legs and expiry, its far expiry (or none, so a
- *  one-expiry strategy leaves no far rule behind), and for a far leg the close before the near expiry
- *  the engine requires, kept where the automation already sets one. */
-export function withStrategy(spec: Spec, r: { legs?: Array<Record<string, unknown>>; expiry?: Record<string, unknown>; far_expiry?: Record<string, unknown>; spec?: Record<string, unknown> }): Spec {
-  let next = withKey({ ...spec, legs: r.legs ?? [], expiry: r.expiry ?? spec["expiry"] }, "far_expiry", r.far_expiry);
-  const close = obj(obj(r.spec)["exit"])["close_before_expiry_min"];
-  if (r.far_expiry && close !== undefined && obj(spec["exit"])["close_before_expiry_min"] === undefined) {
-    next = { ...next, exit: { ...obj(spec["exit"]), close_before_expiry_min: close } };
-  }
-  return next;
-}
-
-/** The gates once an entry preset is filled again: the gates it added last time, where they still
- *  stand as added, give way to its filters' new ones; every other gate (and one edited since) stays,
- *  in its place. */
-export function withFilterGates(gates: unknown, added: string[], next: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
-  const left = [...added];
-  const kept = list(gates)
-    .map(obj)
-    .filter((g) => {
-      const i = left.indexOf(JSON.stringify(g));
-      if (i < 0) return true;
-      left.splice(i, 1);
-      return false;
-    });
-  return [...kept, ...next];
-}
-
+// --------------------------------------------------------------------------- the form
 export function BuilderForm({
   schema,
   spec,
   labels,
   onChange,
   readOnly = false,
-  shape,
+  open,
+  onOpen,
+  strategy,
+  setStrategy,
+  preset,
+  setPreset,
+  payoff,
 }: {
   schema: BuilderSchema;
   spec: Spec;
   labels: Record<string, BuilderBlock["state"]>;
   onChange: (next: Spec) => void;
-  /** A saved automation: every field shown and none changeable (each section's fields sit in a
-   *  disabled fieldset); the section help and the event key still open. */
+  /** A saved automation: every line shown and none changeable. */
   readOnly?: boolean;
-  /** The legs' shape and chain example under the structure: the automation's name, and the edit as
-   *  it stands when it is not the saved one. */
-  shape?: { name: string; automation?: Spec };
+  open: OpenSections;
+  onOpen: (next: OpenSections) => void;
+  strategy: Strategy | null;
+  setStrategy: (s: Strategy | null) => void;
+  preset: Preset | null;
+  setPreset: (p: Preset | null) => void;
+  payoff: Payoff;
 }) {
-  const p = { schema, spec, onChange };
-  // What the strategy selector last filled in: its name and the legs as filled, so an edit reads Custom.
-  const [filled, setFilled] = useState<{ label: string; legs: string } | null>(null);
-  // What the entry presets last filled in: the preset's name, the entry as filled and the gates added.
-  const [entryFilled, setEntryFilled] = useState<{ label: string; legs: string; gates: string[] } | null>(null);
-  const lock = (body: React.ReactNode) => (
-    <fieldset className="builder-lock" disabled={readOnly}>
-      {body}
-    </fieldset>
-  );
+  const tips = useTips();
+  const W = schema.words;
+  if (!W) return <p className="error">The automations module sends no words for the form: it is older than this page.</p>;
+  const said = automationWords(W, schema, spec, strategy);
+  const state = (id: SectionId, blocks: readonly string[]): string => {
+    if (open[id] && !readOnly) return "editing";
+    const b = blocks.map((x) => labels[x]).find((x) => x !== undefined);
+    return b ? STATE_WORDS[b] : "";
+  };
+  const go = (from: SectionId, to: SectionId) => {
+    onOpen({ ...open, [from]: false, [to]: true });
+    setTimeout(() => document.getElementById(`b-sec-${to}`)?.scrollIntoView({ block: "start", behavior: "smooth" }), 0);
+  };
+  const toggle = (id: SectionId) => (v: boolean) => onOpen({ ...open, [id]: v });
+  const sec = (i: number) => {
+    const s = SECTIONS[i]!;
+    const next = SECTIONS[i + 1];
+    return { id: s.id, n: s.n, name: s.name, help: s.help, state: state(s.id, s.blocks), open: open[s.id], onToggle: toggle(s.id), readOnly, next: next?.name, onNext: next ? () => go(s.id, next.id) : undefined };
+  };
+  const tradeLine: Seg[] = [...said.trade, { t: ", " }, ...lower(said.expiry), ...(said.skip.length ? [{ t: " · skip " }, { t: said.skip.join(", "), v: true }] : [])];
   return (
-    <section className="builder-form" aria-label="The automation, block by block">
-      {!readOnly && (
-        <p className="muted builder-form-key">
-          <span className="builder-req">*</span> required. A greyed value in an empty field is the engine's default: left blank, the engine uses it.
-        </p>
-      )}
-      <div className="builder-section">
-        <SectionHead n={1} title="Underlying and data" blocks={["structure"]} labels={labels} help="underlying" />
-        <UnderlyingFields {...p} readOnly={readOnly} />
-      </div>
-
-      <div className="builder-section">
-        <SectionHead n={2} title="Signal: when to enter" blocks={["entry"]} labels={labels} help="signal" />
-        {!readOnly && schema.entry_presets && (
-          <EntryPicker
-            schema={schema.entry_presets}
-            edited={spec["entry"] !== undefined && JSON.stringify(spec["entry"]) !== entryFilled?.legs}
-            onFill={(r) => {
-              const gates = withFilterGates(spec["gates"], entryFilled?.gates ?? [], r.gates ?? []);
-              onChange(withKey({ ...spec, entry: r.entry ?? spec["entry"] }, "gates", gates.length ? gates : undefined));
-              setEntryFilled({
-                label: schema.entry_presets!.entries[r.preset]?.label ?? r.preset,
-                legs: JSON.stringify(r.entry ?? null),
-                gates: (r.gates ?? []).map((g) => JSON.stringify(g)),
-              });
-            }}
-          />
-        )}
-        {!readOnly && (
-          <p className="muted builder-structure">
-            entry: <b>{structureName(entryFilled, spec["entry"])}</b>
-          </p>
-        )}
-        {lock(<EntryFields {...p} />)}
-      </div>
-
-      <div className="builder-section">
-        <SectionHead n={3} title="Gates: the market and the chain" blocks={["gates"]} labels={labels} note="read before the legs are chosen" help="gates" />
-        {lock(<GateFields {...p} stages={["signal", "chain"]} prefix="f-gate" />)}
-      </div>
-
-      <div className="builder-section">
-        <SectionHead n={4} title="Structure: legs, then price" blocks={["structure"]} labels={labels} help="structure" />
-        {!readOnly && schema.strategy && (
-          <StrategyPicker
-            schema={schema.strategy}
-            edited={list(spec["legs"]).length > 0 && JSON.stringify(spec["legs"]) !== filled?.legs}
-            onFill={(r) => {
-              onChange(withStrategy(spec, r));
-              setFilled({ label: schema.strategy!.strategies[r.strategy]?.label ?? r.strategy, legs: JSON.stringify(r.legs ?? []) });
-            }}
-          />
-        )}
-        {!readOnly && (
-        <p className="muted builder-structure">
-          structure: <b>{structureName(filled, spec["legs"])}</b>
-        </p>
-        )}
-        {lock(<LegFields {...p} />)}
-        {shape && <TradeShape name={shape.name} automation={shape.automation} />}
-        <h5 className="builder-lbl">price and structure gates · read once the legs are chosen</h5>
-        {lock(<GateFields {...p} stages={["structure"]} prefix="f-sgate" />)}
-      </div>
-
-      <div className="builder-section">
-        <SectionHead n={5} title="Exits, size, costs" blocks={["exit", "size"]} labels={labels} help="exits" />
-        {lock(
-          <>
-            <h5 className="builder-lbl builder-sub">exits</h5>
-            <ExitFields {...p} />
-            <SizeFields {...p} />
-          </>,
-        )}
-        <p className="muted">Fills are paper's (mid with the suite's slippage model) and fees are core's: neither is set here. P&amp;L is net; fees, settlement and slippage each get their own column on the run card.</p>
-      </div>
+    <section className="b-form" aria-label="The automation, section by section">
+      <Sec {...sec(0)} line={tradeLine}>
+        <TradeSection schema={schema} W={W} spec={spec} onChange={onChange} strategy={strategy} setStrategy={setStrategy} payoff={payoff} tips={tips} />
+      </Sec>
+      <Sec {...sec(1)} line={said.entry}>
+        <EntrySection schema={schema} W={W} spec={spec} onChange={onChange} preset={preset} setPreset={setPreset} tips={tips} />
+      </Sec>
+      <Sec {...sec(2)} line={said.filters.length ? joined(said.filters, " · ") : [{ t: "none · optional" }]}>
+        <p className="b-sub">Every filter must pass. Market and chain filters are read before the legs are chosen; price filters after.</p>
+        <GateFields schema={schema} spec={spec} onChange={onChange} stages={["signal", "chain"]} prefix="f-gate" />
+        <h3 className="b-h3">The trade's price · read once the legs are chosen</h3>
+        <GateFields schema={schema} spec={spec} onChange={onChange} stages={["structure"]} prefix="f-sgate" />
+      </Sec>
+      <Sec {...sec(3)} line={said.exits.length ? joined(said.exits, " · ") : [{ t: "held to expiry" }]}>
+        <p className="b-sub">It closes at the first exit reached; none set holds it to expiry.</p>
+        <ExitFields schema={schema} spec={spec} onChange={onChange} />
+      </Sec>
+      <Sec {...sec(4)} line={[...said.size, ...(said.limits.length ? [{ t: " · " }, ...joined(said.limits, " · ")] : [])]}>
+        <SizeSection schema={schema} W={W} spec={spec} onChange={onChange} tips={tips} />
+        <p className="muted">Fills are paper's (mid with the suite's slippage model) and fees are core's: neither is set here. P&amp;L is net.</p>
+      </Sec>
     </section>
   );
 }

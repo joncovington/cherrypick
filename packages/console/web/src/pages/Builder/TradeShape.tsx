@@ -168,7 +168,7 @@ export function markers(s: BuilderSketch): Array<{ at: number; text: string; sol
     }));
 }
 
-function Shape({ s }: { s: BuilderSketch }) {
+export function Shape({ s }: { s: BuilderSketch }) {
   const g = shapeGeometry(s.curve);
   const zero = g.y(0);
   const id = useId().replace(/:/g, "");

@@ -1,8 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { renderToString } from "react-dom/server";
 import type { BuilderEntrySchema } from "@console/shared";
-import { EntryPicker, grouped, startSettings } from "../src/pages/Builder/EntryPicker";
-import { withFilterGates } from "../src/pages/Builder/BuilderForm";
+import { grouped, presetStart } from "../src/pages/Builder/presets";
+import { withFilterGates } from "../src/pages/Builder/BuilderFields";
 
 const SCHEMA: BuilderEntrySchema = {
   entries: {
@@ -12,7 +11,6 @@ const SCHEMA: BuilderEntrySchema = {
   },
   filters: {
     vix_band: { label: "VIX within a band", group: "Volatility", about: "VIX between two levels.", suits: "", settings: ["vix_min", "vix_max"], defaults: {} },
-    uptrend: { label: "In an uptrend", group: "Trend", about: "Above its average.", suits: "", settings: ["ma_n"], defaults: {} },
   },
   settings: {
     at: { type: "time", default: "10:00", label: "enter at · ET" },
@@ -20,40 +18,16 @@ const SCHEMA: BuilderEntrySchema = {
     rsi_n: { type: "int", min: 2, max: 50, default: 2, label: "RSI length" },
     vix_min: { type: "number", min: 0, max: 100, default: 15, label: "at least" },
     vix_max: { type: "number", min: 0, max: 100, default: 30, label: "at most" },
-    ma_n: { type: "int", min: 2, max: 400, default: 200, label: "SMA days" },
   },
 };
 
-const html = (el: React.ReactElement) => renderToString(el).replace(/<!--\s*-->/g, "");
-
 describe("the entry presets", () => {
-  it("lists every preset under its group, Custom set apart, and the filters to add", () => {
-    const out = html(<EntryPicker schema={SCHEMA} onFill={() => {}} initial="rsi_pullback" />);
-    for (const label of ["Daily at a time", "Pullback in an uptrend", "Custom", "Time", "Trend and mean reversion"]) expect(out).toContain(label);
-    expect(out).toContain("is-custom");
-    expect(out).toContain("+ Add filter");
-    expect(out).toMatch(/<optgroup label="Volatility"><option value="vix_band">VIX within a band/);
-    expect(out).toContain("a starting point, not a tested edge");
-    expect(out).toContain("Fill in the entry");
+  it("start a preset from its own defaults over the module's", () => {
+    expect(presetStart(SCHEMA, SCHEMA.entries["rsi_pullback"]!)).toEqual({ rsi_n: 2, at: "15:50" });
+    expect(presetStart(SCHEMA, SCHEMA.entries["daily_time"]!)).toEqual({ at: "10:00", window: 5 });
   });
 
-  it("shows only the chosen preset's settings, at its own defaults", () => {
-    const out = html(<EntryPicker schema={SCHEMA} onFill={() => {}} initial="rsi_pullback" />);
-    expect(out).toContain("RSI length");
-    expect(out).not.toContain("minutes to enter");
-    expect(out).toMatch(/value="15:50"/);
-    expect(startSettings(SCHEMA, SCHEMA.entries["rsi_pullback"]!)).toEqual({ rsi_n: 2, at: "15:50" });
-  });
-
-  it("comes back to the filters stacked earlier, each with its own settings and a remove", () => {
-    const out = html(<EntryPicker schema={SCHEMA} onFill={() => {}} auto initialFilters={[{ filter: "vix_band", settings: { vix_min: 12, vix_max: 25 } }, { filter: "gone", settings: {} }]} />);
-    expect(out).toContain("and · VIX within a band");
-    expect(out).toMatch(/value="12"/);
-    expect(out).toContain('aria-label="Remove filter VIX within a band"');
-    expect(out).not.toContain("Fill in the entry");
-  });
-
-  it("groups in the module's order", () => {
+  it("group in the module's order", () => {
     expect(grouped(SCHEMA.entries).map(([g]) => g)).toEqual(["Time", "Trend and mean reversion", "Custom"]);
   });
 });

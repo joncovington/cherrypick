@@ -3,7 +3,7 @@ import { NavLink, useSearchParams } from "react-router-dom";
 import { type ModuleId, isExperimental } from "../../lightbox/moduleOrder";
 import { NAV_DECL, navGroups, viewSlides } from "../../lightbox/navGroups";
 import { useViewMode } from "../../lib/viewMode";
-import { CONFIG_LINK, railHalves, suiteLinksFor, visibleNavLinks, type NavLinkDef } from "./navLinks";
+import { CONFIG_LINK, railHalves, suiteLinksFor, tabShortcut, visibleNavLinks, type NavLinkDef } from "./navLinks";
 import { useFeatures } from "../../lib/useFeatures";
 import { isAdvisorPaused, isSlideVisible } from "../../lib/visibility";
 import { useLiveLoopsInUse } from "../../lib/useLiveToday";
@@ -136,6 +136,7 @@ export function ModuleNav({ module, slide }: { module: ModuleId | null; slide: s
                     to={withQs(`/${String(module)}/${sl.id}`)}
                     className={sl.id === slide ? "mf-nav-slide active" : "mf-nav-slide"}
                     aria-current={sl.id === slide ? "page" : undefined}
+                    title={tabShortcut(String(module), sl.id) ? `${sl.label} (g ${tabShortcut(String(module), sl.id)!.key})` : undefined}
                   >
                     {sl.label}
                   </NavLink>

@@ -1,11 +1,17 @@
 import { describe, it, expect } from "vitest";
 import { renderToString } from "react-dom/server";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MemoryRouter } from "react-router-dom";
 import type { BuilderAutomation, BuilderSchema, BuilderWindow } from "@console/shared";
-import { ActionRow, NEW_SPEC, runBlocked, SuggestionLine, windowLabel, Workspace } from "../src/pages/Builder/BuilderPage";
+import { ActionRow, firstOpen, NEW_SPEC, runBlocked, SuggestionLine, windowLabel, Workspace } from "../src/pages/Builder/BuilderPage";
+import FIXTURE from "./fixtures/builderSchema.json";
 
 const html = (el: React.ReactElement) =>
-  renderToString(<QueryClientProvider client={new QueryClient()}>{el}</QueryClientProvider>).replace(/<!--\s*-->/g, "");
+  renderToString(
+    <MemoryRouter>
+      <QueryClientProvider client={new QueryClient()}>{el}</QueryClientProvider>
+    </MemoryRouter>,
+  ).replace(/<!--\s*-->/g, "");
 
 const BASE: BuilderAutomation = {
   name: "mine",
@@ -43,6 +49,9 @@ const SCHEMA: BuilderSchema = {
   progression: [],
 };
 
+/** The module's own schema, words and all (`cli builder-schema`). */
+const WORDED = FIXTURE as unknown as BuilderSchema;
+
 const POSSIBLE = { blocks: ["exit"], window: ["2025-11-13", "2026-11-13"] as [string, string], needs: [], possible: true, licensed: false };
 const win = (source: string, start: string, licensed = false, density: number | null = 1): BuilderWindow => ({
   key: `${source}:${start}:2026-11-13`,
@@ -67,16 +76,18 @@ describe("the workspace", () => {
     expect(out).toContain("start not set");
     expect(out).toContain("item 75: no verdict");
     expect(out).toContain(">View as JSON</button>");
-    expect(out).toContain("Today, live");
+    expect(out).toContain('aria-expanded="false">Today, live</button>');
     expect(out).toContain("Explore runs · this automation");
-    expect(out).toContain('aria-label="About Today, live"');
     expect(out).toContain('aria-label="About Explore runs"');
   });
 
   it("starts a new automation from the keys the loop requires, and has no runs yet", () => {
-    const out = html(<Workspace a={null} schema={SCHEMA} mode={{ kind: "new" }} onSaved={() => {}} />);
-    expect(out).toContain("1 · Underlying and data");
-    expect(out).toContain('class="chip">not saved</span>');
+    const out = html(<Workspace a={null} schema={WORDED} mode={{ kind: "new", n: 1 }} onSaved={() => {}} />);
+    expect(out).toMatch(/<details class="b-sec" id="b-sec-trade" open="">/);
+    expect(out).toContain('class="chip">draft · off</span>');
+    expect(out).toContain("This automation");
+    expect(out).toContain("After you save:");
+    expect(out).toMatch(/<a class="b-step" href="\/automations\/groups"[^>]*>Add to a group<\/a>/);
     expect(out).not.toContain("Explore runs · this automation");
     expect(Object.keys(NEW_SPEC).sort()).toEqual(["entry", "expiry", "legs", "limits", "size", "symbol", "weekdays"]);
   });
@@ -91,7 +102,7 @@ describe("the workspace", () => {
   });
 
   it("keeps a new automation and a copy editable", () => {
-    for (const mode of [{ kind: "new" as const }, { kind: "copy" as const, from: "mine" }]) {
+    for (const mode of [{ kind: "new" as const, n: 1 }, { kind: "copy" as const, from: "mine" }]) {
       const out = html(<Workspace a={BASE} schema={SCHEMA} mode={mode} onSaved={() => {}} />);
       expect(out).toContain(">Check</button>");
       expect(out).toContain(">Save (off)</button>");
@@ -103,6 +114,19 @@ describe("the workspace", () => {
     const out = html(<Workspace a={BASE} schema={SCHEMA} mode={{ kind: "copy", from: "mine" }} onSaved={() => {}} />);
     expect(out).toContain('value="mine-copy"');
     expect(out).not.toMatch(/<input id="builder-name"[^>]*disabled/);
+  });
+});
+
+describe("the sections a workspace opens with", () => {
+  it("opens a new automation and a copy at the trade, and a saved one closed", () => {
+    expect(firstOpen({ kind: "new", n: 1 })).toEqual({ trade: true, entry: false, filters: false, exits: false, size: false });
+    expect(firstOpen({ kind: "copy", from: "mine" }).trade).toBe(true);
+    expect(Object.values(firstOpen({ kind: "saved", name: "mine" })).some(Boolean)).toBe(false);
+  });
+
+  it("says the automation in the module's words above the sections", () => {
+    const out = html(<Workspace a={null} schema={WORDED} mode={{ kind: "new", n: 1 }} onSaved={() => {}} />);
+    expect(out).toMatch(/<p class="b-para">Any legs on <span class="said">SPX<\/span>, expiring <span class="said">0<\/span> days out\. Enter at <span class="said">10:00<\/span> ET/);
   });
 });
 
@@ -123,7 +147,7 @@ describe("the action row", () => {
     expect(runBlocked({ ...BASE, suggestion: POSSIBLE }, true, saved)).toContain("save the edit first");
     expect(runBlocked({ ...BASE, suggestion: { ...POSSIBLE, possible: false } }, false, saved)).toContain("does not cover");
     expect(runBlocked(BASE, false, saved)).toBe("every block is backtested already");
-    expect(runBlocked(null, false, { kind: "new" })).toBe("save the automation first");
+    expect(runBlocked(null, false, { kind: "new", n: 1 })).toBe("save the automation first");
   });
 
   it("offers a window our stores hold even where the last year is not covered", () => {
