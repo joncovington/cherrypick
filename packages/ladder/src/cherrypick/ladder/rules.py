@@ -1,13 +1,16 @@
 """The ladder's rule, pure: where the next lot buys, where each lot sells, and how big a lot is.
 
 Item 26's rule (research/edge-hypotheses-plan.md) as the Discord group trades it: buy a lot 7% under
-the reference close, sell each lot on its own at +4% of its cost, no stop, no time limit. Two entry
-rules, both item 26's:
+the reference close, sell each lot on its own at +4% of its cost, no stop, no time limit. Three entry
+rules:
 
-- `once`: at most one new lot a session, at 93% of the previous session's close.
+- `once`: at most one new lot a session, at 93% of the previous session's close (item 26's).
 - `chain`: with no lot open, the first lot at 93% of the previous session's close; then each
-  further lot at 93% of the last lot bought, in the same session or later. The group's posted
-  fills (11-13: 65.53 x 0.93^2 and x 0.93^3) are this rule.
+  further lot at 93% of the last lot bought, in the same session or later (item 26's).
+- `session`: every session starts again from the previous close, whatever older lots the arm still
+  holds: the session's first lot at 93% of it, its n-th at 93%^n. Each level buys once a session,
+  even after its lot sells. The group's posted SOXL fills are this rule (11-13: 65.53 x 0.93^2 and
+  x 0.93^3; 11-19: 49.26 x 0.93 while older lots from higher up were held).
 
 Two exit rules:
 
@@ -26,7 +29,7 @@ from datetime import date
 
 from cherrypick.core import fees as _fees
 
-ENTRY_RULES = ("once", "chain")
+ENTRY_RULES = ("once", "chain", "session")
 TARGET_RULES = ("fixed", "decay")
 
 DROP = 0.07
@@ -45,14 +48,24 @@ def ceil_cent(x: float) -> float:
 
 
 def buy_level(
-    rule: str, *, ref_close: float | None, last_buy: float | None, drop: float = DROP
+    rule: str,
+    *,
+    ref_close: float | None,
+    last_buy: float | None,
+    drop: float = DROP,
+    bought_today: int = 0,
 ) -> float | None:
     """The next lot's limit price, or None when there is no reference to price it from.
 
     `last_buy` is the most recent lot bought while lots are still open (None when the arm holds
-    none on this name), which only `chain` reads."""
+    none on this name), which only `chain` reads. `bought_today` is the lots the arm bought on this
+    name this session, sold or not, which only `session` reads."""
     if rule not in ENTRY_RULES:
         raise ValueError(f"unknown entry rule {rule!r}")
+    if rule == "session":
+        if ref_close is None or ref_close <= 0:
+            return None
+        return floor_cent(ref_close * (1 - drop) ** (bought_today + 1))
     base = last_buy if (rule == "chain" and last_buy is not None) else ref_close
     if base is None or base <= 0:
         return None

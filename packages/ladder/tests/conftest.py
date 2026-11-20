@@ -70,6 +70,7 @@ def config():
             "chain": {"entry": "chain", "target": "fixed"},
             "once": {"entry": "once", "target": "fixed"},
             "decay": {"entry": "once", "target": "decay"},
+            "session": {"entry": "session", "target": "fixed"},
         },
     }
 

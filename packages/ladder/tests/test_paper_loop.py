@@ -150,7 +150,7 @@ def test_the_arm_cap_spans_funds(config, ledger, cache):
 def test_arms_keep_separate_books(config, ledger, cache):
     cache.summary("TQQQ", DAY, prev_day_close=100.0).quote("TQQQ", 92.0, 92.02)
     _tick(config, ledger, cache)
-    assert sorted(lot["arm"] for lot in db.open_lots(ledger)) == ["chain", "decay", "once"]
+    assert sorted(lot["arm"] for lot in db.open_lots(ledger)) == ["chain", "decay", "once", "session"]
 
 
 def test_summary_counts_the_groups_18_day_hospital(config, ledger, cache):
@@ -187,4 +187,33 @@ def test_a_held_fund_stays_requested_after_it_leaves_the_config(config, ledger, 
 def test_status_shows_each_arms_next_level(config, ledger, cache):
     cache.summary("TQQQ", NEXT, prev_day_close=100.0)
     out = paper_loop.run_status(config, ledger, cache_path=cache.path)
-    assert out["ok"] and set(out["arms"]) == {"chain", "once", "decay"}
+    assert out["ok"] and set(out["arms"]) == {"chain", "once", "decay", "session"}
+    assert set(out["funds"]["TQQQ"]["next_buy"]) == {"chain", "once", "decay", "session"}
+
+
+def test_session_restarts_from_the_close_each_session_over_older_lots(config, ledger, cache):
+    cfg = _only(config, "session")
+    cache.summary("TQQQ", DAY, prev_day_close=100.0).quote("TQQQ", 86.40, 86.45)
+    _tick(cfg, ledger, cache)
+    assert [lot["buy_price"] for lot in db.open_lots(ledger)] == [93.0, 86.49]
+    assert [lot["chained_from"] for lot in db.open_lots(ledger)] == [None, None]
+    # the 86.49 lot sells at 89.95; its level does not buy again this session
+    cache.quote("TQQQ", 89.95, 89.97)
+    _tick(cfg, ledger, cache, hhmm="11:00")
+    cache.quote("TQQQ", 86.40, 86.45)
+    _tick(cfg, ledger, cache, hhmm="12:00")
+    assert [lot["buy_price"] for lot in db.open_lots(ledger)] == [93.0]
+    # next session: 93% of the new close, though the 93.00 lot is still held (chain would want 86.49)
+    cache.summary("TQQQ", NEXT, prev_day_close=88.0).quote("TQQQ", 81.80, 81.84)
+    _tick(cfg, ledger, cache, day=NEXT)
+    assert [lot["buy_price"] for lot in db.open_lots(ledger)] == [93.0, 81.84]
+    assert db.open_lots(ledger)[1]["position_id"] == f"session:TQQQ:{NEXT}:1"
+
+
+def test_session_stops_at_the_name_cap(config, ledger, cache):
+    cfg = _only(config, "session")
+    cache.summary("TQQQ", DAY, prev_day_close=100.0).quote("TQQQ", 70.00, 70.02)
+    _tick(cfg, ledger, cache)
+    assert [lot["buy_price"] for lot in db.open_lots(ledger)] == [93.0, 86.49, 80.43]
+    reasons = {r["reason"] for r in ledger.execute("SELECT reason FROM ladder_decisions")}
+    assert "name_cap_full" in reasons

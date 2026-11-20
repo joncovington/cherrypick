@@ -9,8 +9,9 @@ For each enabled arm and each fund, against one usable quote:
 1. **Sell.** Each open lot's target is worked out for today (`rules.target`); a bid at or over it
    sells the lot at the target, the resting limit's price. The lot's lowest bid seen is kept.
 2. **Buy.** The next lot's level is `rules.buy_level`; an ask at or under it buys a lot at the
-   level. `chain` keeps going while the ask is under each next level and slots remain; `once` buys
-   at most one lot a session. A lot sold this tick frees its slot now, as a live account's would.
+   level. `chain` and `session` keep going while the ask is under each next level and slots
+   remain; `once` buys at most one lot a session. A lot sold this tick frees its slot now, as a
+   live account's would.
 
 A fund with no usable quote, or no posted reference close, does nothing that tick and says so.
 """
@@ -202,7 +203,10 @@ def run_buys(conn, p: dict, symbol: str, q: dict, ref: float | None, *, today: d
             return bought
         lots = _all_lots(conn, p["arm"], symbol)
         anchor = chain_anchor(lots) if p["entry"] == "chain" else None
-        level = rules.buy_level(p["entry"], ref_close=ref, last_buy=anchor, drop=float(p["drop"]))
+        n = db.bought_in_session(conn, p["arm"], symbol, session) + 1
+        level = rules.buy_level(
+            p["entry"], ref_close=ref, last_buy=anchor, drop=float(p["drop"]), bought_today=n - 1
+        )
         if level is None:
             _refuse(conn, p, symbol, today, "no_reference_close")
             return bought
@@ -219,7 +223,6 @@ def run_buys(conn, p: dict, symbol: str, q: dict, ref: float | None, *, today: d
         if shares < int(p["min_shares"]):
             _refuse(conn, p, symbol, today, "lot_too_small", {"level": level, "shares": shares})
             return bought
-        n = db.bought_in_session(conn, p["arm"], symbol, session) + 1
         pid = f"{p['arm']}:{symbol}:{session}:{n}"
         now = stamp
         tgt = rules.target(p["target"], cost=level, shares=shares, age=0, gain=float(p["gain"]))
@@ -260,7 +263,12 @@ def run_buys(conn, p: dict, symbol: str, q: dict, ref: float | None, *, today: d
             accepted=True,
             detail=json.dumps({"lot": pid, "level": level, "shares": shares, "ref": ref, "anchor": anchor}),
         )
-        base = f"last lot {anchor:.2f}" if anchor is not None else f"prev close {ref:.2f}"
+        if anchor is not None:
+            base = f"last lot {anchor:.2f}"
+        elif p["entry"] == "session" and n > 1:
+            base = f"prev close {ref:.2f}, step {n}"
+        else:
+            base = f"prev close {ref:.2f}"
         _log(
             f"{p['arm']} {symbol}: bought {shares} at {level:.2f} ({base}, ask {q['ask']:.2f}), "
             f"target {tgt:.2f}"
@@ -340,7 +348,11 @@ def run_status(config: dict, conn, *, cache_path: str) -> dict:
             lots = _all_lots(conn, arm, symbol)
             anchor = chain_anchor(lots) if params["entry"] == "chain" else None
             levels[arm] = rules.buy_level(
-                params["entry"], ref_close=ref, last_buy=anchor, drop=float(params["drop"])
+                params["entry"],
+                ref_close=ref,
+                last_buy=anchor,
+                drop=float(params["drop"]),
+                bought_today=db.bought_in_session(conn, arm, symbol, today.isoformat()),
             )
         funds[symbol] = {
             "bid": q["bid"] if q else None,
