@@ -82,7 +82,8 @@ describe("one automation's page", () => {
     const record = out.indexOf('id="automation-record"');
     const decisions = out.indexOf('id="automation-decisions"');
     expect(rule).toBeGreaterThan(-1);
-    expect(record).toBeGreaterThan(rule);
+    expect(out.indexOf('id="automation-working"')).toBeGreaterThan(rule);
+    expect(record).toBeGreaterThan(out.indexOf('id="automation-working"'));
     expect(decisions).toBeGreaterThan(record);
     expect(out).toContain('href="#automation-record"');
     expect(out).toContain("off · its group");

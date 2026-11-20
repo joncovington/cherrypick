@@ -410,6 +410,13 @@ is the 10th to 90th), the entry rate and each missed reason's share of the sessi
 share, the 10th, 50th and 90th percentile of the running net over the next 20 trades (the stationary
 block bootstrap at the kill criteria's mean block, seeded), and the sample a reading needs, computed
 (`core.stats.sessions_needed`, the run's mean as the edge); under 30 trades it is `insufficient`.
+`read automation-reading --name --id [--declared N]` sets the automation's paper record against that
+run (`automationref.reading`, pure; the closed trades through `core.ledgers`' `ensemble_trade`
+reader and the session register's entered and missed days, both read-only from the automations
+ledger): each trade's place in the usual range and its percentile among the run's trades, the
+running net's place in the band at its own count (the band drawn 20 trades past the record), the
+sample (`--declared`, the forward rule's `min_obs`, else computed) and both entry rates. Its state
+is `no_reference`, `no_trades`, `too_few` (under 5 trades) or the running net's place.
 `read portfolio-sources` lists
 every Builder run and every `research/<item>/study*.json` whose arms carry engine trades, for
 Compare's portfolio tab (any file under `results/` is listed as licensed).

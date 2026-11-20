@@ -38,6 +38,7 @@ import type {
   IdeaSearches,
   BuilderSaveResult,
   BuilderReferenceResult,
+  AutomationReading,
   BuilderSchemaResult,
   BuilderPayoff,
   BuilderStrategyResult,
@@ -1645,6 +1646,16 @@ export function useBuilderRunCard(name: string, run: string) {
 }
 
 /** Each arm's closed trades, net and drawdown, and the arms stacked. */
+/** One automation's paper record against its pinned Builder run (the backtest package's reading). */
+export function useAutomationReading(name: string) {
+  return useQuery<AutomationReading>({
+    queryKey: ["automation-reading", name],
+    queryFn: () => getJson<AutomationReading>(`/api/automations/automation/reading?name=${encodeURIComponent(name)}`),
+    staleTime: 30_000,
+    refetchInterval: 120_000,
+  });
+}
+
 export function useAutomationsPerformance() {
   return useQuery<AutomationsPerformance>({
     queryKey: ["automations-performance"],
