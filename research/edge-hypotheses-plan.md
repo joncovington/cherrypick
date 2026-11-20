@@ -9534,6 +9534,65 @@ been read at daily resolution.
   - **A fail or no verdict:** paper keeps running all four arms as it is; its console tab keeps
     saying the rule is not a tested edge.
 
+### 96. The ladder's paper arms with overnight hours, 2024-09 on
+
+Declared 2026-11-19, before any overnight bar was fetched for it. The source is the user: Alpaca's
+free data includes Blue Ocean's overnight session (20:00 to 04:00 ET), and a probe that night found
+it serves SOXL and TQQQ from the night of 2024-09-19, thin at first (about a third of a night's
+minutes) and nearly every minute by 2026. The probe counted bars and printed one minute's prices;
+nothing was measured. tastytrade lets TQQQ trade overnight and not SOXL, so the paper module trades
+08:15 to 20:00 only.
+
+- **Question:** would the paper ladder's arms make more if they could also trade the overnight
+  session and the pre-market (from 20:00 the evening before to 08:15), over the same sessions?
+- **Where the edge would live:** **access**: a fund that falls 7% overnight and recovers before
+  08:15 gives a lot the paper hours never see, and a lot's target can be reached overnight. Against
+  it: overnight prices are thin and wide, and the same dips can go further after the open.
+- **The replay is item 95's, copied** (`share_ladder_item95.py`'s tape, fills, exits, splits and
+  money, as the backtest package asks: a study keeps its own copy). Each arm runs twice over the
+  same sessions:
+  - **paper hours:** the day bars from 08:15 to 20:00, item 95's replay exactly;
+  - **all hours:** the session's overnight bars (20:00 the evening before to 04:00), then its day
+    bars from 04:00 to 20:00.
+  - An overnight bar from 20:00 on day d belongs to the next trading day after d; one before 04:00
+    on day d to the first trading day on or after d. Its reference is that session's, the previous
+    close.
+- **Arms:** paper's four; **judged: `session` only** (the group's rule). The others are reported.
+- **Funds:** item 26's 17. A fund is judged only with overnight bars on at least half the window's
+  sessions; the rest are reported and listed.
+- **Window:** sessions from 2024-09-20 (the first with an overnight session before it) through the
+  last whole month in both stores. Too short to split, so **a pass is provisional**: it would lead
+  to a paper arm on TQQQ (the one fund tastytrade trades overnight), not to a change.
+- **The rule, two literals in the script; a pass needs both:**
+  - **`RULE`, the kit's bars** on the all-hours `session` arm, one row per entry session across
+    the judged funds: capital t ≥ 2.0 over the 3-month bill on the cost; tail 10,000 draws, seed
+    96, the sample's own rows a year; delta not applicable (a share lot); no split; fewer than 60
+    rows is no verdict.
+  - **`PAIRED_RULE`, the hours' own test:** per judged fund, the `session` arm's net as a % of the
+    fund's budget a year in all hours less the same in paper hours. Mean above zero with a
+    one-sided t above 2.0, positive on more than half the funds, and still positive at three times
+    the half-spread. Fewer than 8 judged funds, or 60 all-hours lots, is no verdict.
+- **Reported, never judged:** all four arms both ways per fund; lots by where they were bought
+  (night, pre-market, day); the share sold the session they were bought; each fund's overnight
+  coverage.
+- **Rival explanations, each with its check:**
+  - *More hours, more lots, more of the same:* the comparison is per fund over the same sessions,
+    and the capital bar asks whether the lots earn over the bill at all.
+  - *Thin overnight prints:* the cost check at three times the half-spread; coverage reported.
+  - *One fund:* the sign count; a fund with thin coverage is not judged.
+- **Declared limits:** a hypothetical: no broker in this suite trades SOXL overnight, and Blue
+  Ocean's prints stand in for the overnight market; item 95's limits (trade bars for quotes, a
+  fixed half-spread, survivors, dividends ignored) apply; two years hold few falls.
+- **Expected, recorded before the run:** no verdict or a fail. Few judged funds and few lots, and a
+  7% overnight fall that recovers before 08:15 is rare.
+- **Data:** `scripts/fetch_minute_bars.py fetch --feed boats` into
+  `~/.cherrypick/data/research/item96/overnight_bars.db`, and item 95's day bars. The replay is
+  `packages/backtest/scripts/share_ladder_item96.py`, run as a research-queue chain. Results stay
+  under `~/.cherrypick/data/research/item96/`; this plan records the verdict.
+- **Decides:**
+  - **A pass (provisional):** a proposal for an overnight paper arm on TQQQ, to check forward.
+  - **A fail or no verdict:** the ladder keeps paper's hours.
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:
