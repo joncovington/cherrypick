@@ -853,7 +853,14 @@ def run_once(
     summary["armed_today"] = armed_for == day
     if blockers:
         log("tick: gates unmet, nothing read: " + "; ".join(f"{g.name}: {g.reason}" for g in blockers))
-        return {**summary, "skipped": "gates_unmet", "unmet_gates": [g.name for g in blockers]}
+        out = {**summary, "skipped": "gates_unmet", "unmet_gates": [g.name for g in blockers]}
+        # The self-disarm still happens: an arm record left valid past disarm_at reads to the
+        # supervisor's watchdog as a failed self-disarm, and it sets the suite-wide halt flag.
+        if armed_for == day and now_min >= live_gates.disarm_minute(config):
+            log(f"disarm: past disarm_at ({live.get('disarm_at')}) with gates unmet; nothing was read")
+            live_loop.uninstall_task()
+            out["disarmed"] = True
+        return out
 
     start_min = hhmm_to_min(live.get("session_start") or live_gates.DEFAULT_SESSION_START, 8 * 60 + 15)
     end_min = live_gates.disarm_minute(config)
