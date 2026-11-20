@@ -1,6 +1,7 @@
 import { useState } from "react";
 import {
   LADDER_HOSPITAL_DAYS,
+  type LadderArmDecl,
   type LadderHistoryRow,
   type LadderPayload,
   type LadderStatus,
@@ -15,6 +16,7 @@ import { HelpSection, HelpWarn, type CardHelpContent } from "../../components/Ca
 import { Section } from "../../components/Section";
 import { FliesTile } from "../Flies/FliesSession";
 import { DecisionsCard } from "../../components/DecisionsCard";
+import { GuideLink } from "../../components/GuideLink";
 import { MeasurementBreaks } from "../../components/MeasurementBreaks";
 import { StatusLine } from "../../components/summary/ModuleSummary";
 import { useLadderHistory } from "../../lib/api";
@@ -64,9 +66,9 @@ function bridgeError(error: string | null | undefined) {
 }
 
 /** The arms in the module's own order, from whichever read has them. */
-function armNames(status: LadderStatus | undefined, summary: LadderSummary | undefined): string[] {
-  const fromStatus = Object.keys(status?.arms ?? {});
-  return fromStatus.length > 0 ? fromStatus : Object.keys(summary?.arms ?? {});
+function armNames(status: LadderStatus | undefined, summary: LadderSummary | undefined, decl: LadderArmDecl[] = []): string[] {
+  const names = [...Object.keys(status?.arms ?? {}), ...decl.map((a) => a.arm), ...Object.keys(summary?.arms ?? {})];
+  return [...new Set(names)];
 }
 
 export function LadderToday({
@@ -80,7 +82,7 @@ export function LadderToday({
 }) {
   if (data !== undefined && !data.dbPresent) return absentCard();
   const funds = Object.entries(status?.funds ?? {});
-  const arms = armNames(status, undefined);
+  const arms = armNames(status, undefined, data?.arms);
   const open = data?.openLots ?? [];
   const hospital = open.filter((l) => l.hospital).length;
   const iteration = data?.lastIteration ?? null;
@@ -345,15 +347,41 @@ function netTone(v: number): string {
 export function LadderArms({
   summary,
   status,
+  decl = [],
 }: {
   summary: LadderSummary | undefined;
   status: LadderStatus | undefined;
+  decl?: LadderArmDecl[];
 }) {
-  const names = armNames(status, summary);
+  const names = armNames(status, summary, decl);
   const arms = names.filter((n) => summary?.arms[n] !== undefined);
   return (
     <div className="pf-layout">
       {bridgeError(summary?.error)}
+      <Section concept="dir" tag="the arms" question="What does each arm do?">
+        <DataCard
+          title="arms on this machine"
+          className="lv-12"
+          headers={["arm", "entry", "target", "what it does"]}
+          loading={false}
+          rowCount={decl.length}
+          empty="no arm is declared in the ladder's config"
+        >
+          {decl.map((a) => (
+            <tr key={a.arm} className={a.enabled === false ? "muted" : undefined}>
+              <td>
+                {a.arm}
+                {a.enabled === false ? " (off)" : ""}
+              </td>
+              <td>{a.entry ?? status?.arms[a.arm]?.entry ?? "—"}</td>
+              <td>{a.target ?? status?.arms[a.arm]?.target ?? "—"}</td>
+              <td className="muted" style={{ textAlign: "left" }}>
+                {a.summary ?? "—"}
+              </td>
+            </tr>
+          ))}
+        </DataCard>
+      </Section>
       <Section concept="edge" tag="the reading" question="How is each arm doing so far?">
         <DataCard
           title="by arm"
@@ -431,6 +459,7 @@ export function LadderHelp({ status }: { status: LadderStatus | undefined }) {
   const hours = status?.hours ?? "08:15-20:00 ET";
   return (
     <div className="pf-layout">
+      <GuideLink to="/help/strategy-pages#ladder-ladder" />
       <Section concept="edge" tag="read this first" question="Does the rule work?">
         <Card title="not a tested edge" collapseKey="ladder-help-edge">
           <HelpWarn title="Every arm failed against random entry">
@@ -467,7 +496,10 @@ export function LadderHelp({ status }: { status: LadderStatus | undefined }) {
               On each leveraged fund (TQQQ and SOXL) it buys a lot of whole shares when the price is 7% under a reference, and sells each lot on its own at 4%
               over what that lot cost. No stop and no time limit. Paper only: there is no order path anywhere in the module.
             </p>
-            <p>The four arms differ only in where the next buy sits, and the last in where the sale sits:</p>
+            <p>
+              Each arm is one entry rule paired with one target rule, and each keeps its own book. The arms on this machine, each with the
+              config&apos;s own description, are listed on the arms tab. The entry rules:
+            </p>
             <ol className="pmcc-rules">
               <li>
                 <strong>session</strong>: every session starts again from the previous close. The first lot is bought at 93% of it, the second at 93% of that
@@ -480,9 +512,15 @@ export function LadderHelp({ status }: { status: LadderStatus | undefined }) {
               <li>
                 <strong>once</strong>: at most one lot per session, 7% under the previous close.
               </li>
+            </ol>
+            <p>The target rules:</p>
+            <ol className="pmcc-rules">
               <li>
-                <strong>decay</strong>: once, with a target that falls. It is +4% for the first 30 days, then breakeven after the sale&apos;s fees from day 31,
-                then 95% of cost from day 121 (calendar days from the buy session).
+                <strong>fixed</strong>: +4% of the lot&apos;s cost.
+              </li>
+              <li>
+                <strong>decay</strong>: +4% for the first 30 days, then breakeven after the sale&apos;s fees from day 31, then 95% of cost from day 121
+                (calendar days from the buy session).
               </li>
             </ol>
             <p>

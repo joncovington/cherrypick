@@ -45,6 +45,7 @@ const lot = (over: Partial<LadderOpenLot> = {}): LadderOpenLot => ({
 });
 
 const payload = (over: Partial<LadderPayload> = {}): LadderPayload => ({
+  arms: [{ arm: "chain", summary: "chain summary text", entry: "chain", target: "fixed", enabled: true }, { arm: "session-decay", summary: "fifth arm text", entry: "session", target: "decay", enabled: true }],
   session: "2026-11-20",
   dbPresent: true,
   today: "2026-11-20",
@@ -136,6 +137,13 @@ describe("ladder's arms tab", () => {
     expect(out).toContain("-$62.05");
     expect(out).toContain("$200.94"); // 262.99 - 62.05
     expect(out).toContain("-$6.00"); // -10 + 4
+  });
+
+  it("describes every declared arm from the config, a fifth included, with no code change", () => {
+    const out = html(<LadderArms summary={summary()} status={status()} decl={payload().arms} />);
+    expect(out).toContain("fifth arm text");
+    expect(out).toContain("session-decay");
+    expect(out).toContain("chain summary text");
   });
 
   it("says the module's summary could not be read", () => {

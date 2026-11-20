@@ -67,7 +67,19 @@ export interface LadderHistory {
   totals: TradeTotals;
 }
 
+/** One arm as the ladder's config declares it (or the ledger names it), with its own `_summary`. */
+export interface LadderArmDecl {
+  arm: string;
+  summary: string | null;
+  entry: string | null;
+  target: string | null;
+  /** False where the config switches it off; an arm only the ledger names is not declared at all. */
+  enabled: boolean | null;
+}
+
 export interface LadderPayload {
+  /** The arms: the config's `arms` block (this machine's, else the shipped example), then any the ledger names beyond it. */
+  arms: LadderArmDecl[];
   /** The session the loop last ran in. */
   session: string | null;
   dbPresent: boolean;

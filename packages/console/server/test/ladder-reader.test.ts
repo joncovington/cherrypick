@@ -127,6 +127,31 @@ describe("the ladder's open lots", () => {
   });
 });
 
+describe("the arms", () => {
+  it("come from the machine's config with their own summaries, then any arm only the ledger names", () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "console-ladder-home-"));
+    fs.mkdirSync(path.join(home, "config"));
+    fs.writeFileSync(
+      path.join(home, "config", "ladder.json"),
+      JSON.stringify({ arms: { "session-decay": { _summary: "a fifth arm", entry: "session", target: "decay", enabled: true }, once: { entry: "once", target: "fixed", enabled: false } } }),
+    );
+    const p = readLadder({ paths: { ladderDir: config.paths.ladderDir, cherrypick: home } } as unknown as ConsoleConfig, NOW);
+    expect(p.arms.slice(0, 2)).toEqual([
+      { arm: "session-decay", summary: "a fifth arm", entry: "session", target: "decay", enabled: true },
+      { arm: "once", summary: null, entry: "once", target: "fixed", enabled: false },
+    ]);
+    // The ledger holds session, chain and decay lots the config does not name.
+    expect(p.arms.slice(2).map((a) => a.arm)).toEqual(["chain", "decay", "session"]);
+  });
+
+  it("fall back to the shipped example when this machine has no config", () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "console-ladder-home-"));
+    const p = readLadder({ paths: { ladderDir: config.paths.ladderDir, cherrypick: home } } as unknown as ConsoleConfig, NOW);
+    expect(p.arms.length).toBeGreaterThan(0);
+    expect(p.arms[0]!.summary).not.toBeNull();
+  });
+});
+
 describe("an absent ledger", () => {
   it("is an empty page, flagged absent, not an error", () => {
     const none = { paths: { ladderDir: path.join(os.tmpdir(), "console-ladder-nowhere") } } as unknown as ConsoleConfig;

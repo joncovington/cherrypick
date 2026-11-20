@@ -28,7 +28,7 @@ export function LadderLightbox({ slide }: { slide: string }) {
     { id: "summary", label: LABEL.summary, render: () => <LadderToday data={data} status={status.data} loading={isLoading} /> },
     { id: "positions", label: LABEL.positions, render: () => <LadderPositions data={data} /> },
     { id: "history", label: LABEL.history, render: () => <LadderHistory data={data} /> },
-    { id: "arms", label: LABEL.arms, render: () => <LadderArms summary={summary.data} status={status.data} /> },
+    { id: "arms", label: LABEL.arms, render: () => <LadderArms summary={summary.data} status={status.data} decl={data?.arms} /> },
     { id: "decisions", label: LABEL.decisions, render: () => <LadderDecisions /> },
     { id: "guide", label: LABEL.guide, render: () => <LadderHelp status={status.data} /> },
   ];

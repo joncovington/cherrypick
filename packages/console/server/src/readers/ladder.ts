@@ -1,12 +1,14 @@
+import fs from "node:fs";
 import path from "node:path";
 import {
   LADDER_HOSPITAL_DAYS,
+  type LadderArmDecl,
   type LadderHistory,
   type LadderHistoryRow,
   type LadderOpenLot,
   type LadderPayload,
 } from "@console/shared";
-import type { ConsoleConfig } from "../config.js";
+import { REPO_ROOT, type ConsoleConfig } from "../config.js";
 import { rangeClauses, type DateRange } from "./dateRange.js";
 import { hasTable, num, str, type DatabaseHandle, withReadOnlyDb } from "./db.js";
 import { EMPTY_TRADE_TOTALS, tradeTotals } from "./positionCash.js";
@@ -149,13 +151,49 @@ export function readLadderHistory(config: ConsoleConfig, filter: LadderHistoryFi
   });
 }
 
-function emptyPayload(today: string): LadderPayload {
-  return { session: null, dbPresent: false, today, openLots: [], measurementBreaks: [], lastIteration: null };
+/** The declared arms, then any arm the ledger holds lots for that the config no longer names. */
+function withLedgerArms(declared: LadderArmDecl[], db: DatabaseHandle): LadderArmDecl[] {
+  if (!hasTable(db, "ladder_positions")) return declared;
+  const known = new Set(declared.map((a) => a.arm));
+  const extra = db
+    .prepare<[], { arm: string }>("SELECT DISTINCT arm FROM ladder_positions ORDER BY arm")
+    .all()
+    .filter((r) => !known.has(r.arm))
+    .map((r): LadderArmDecl => ({ arm: r.arm, summary: null, entry: null, target: null, enabled: null }));
+  return [...declared, ...extra];
+}
+
+function readJson(file: string): Record<string, unknown> | null {
+  try {
+    const j = JSON.parse(fs.readFileSync(file, "utf-8")) as unknown;
+    return typeof j === "object" && j !== null ? (j as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The arms the config declares, in its order: this machine's `ladder.json`, else the shipped example. */
+export function configuredArms(config: ConsoleConfig): LadderArmDecl[] {
+  const home = config.paths.cherrypick === undefined ? null : readJson(path.join(config.paths.cherrypick, "config", "ladder.json"));
+  const file = home?.["arms"] !== undefined ? home : readJson(path.join(REPO_ROOT, "packages", "ladder", "config.example.json"));
+  const block = file?.["arms"];
+  if (typeof block !== "object" || block === null) return [];
+  return Object.entries(block as Record<string, unknown>)
+    .filter(([name, v]) => !name.startsWith("_") && typeof v === "object" && v !== null)
+    .map(([arm, v]) => {
+      const a = v as Record<string, unknown>;
+      return { arm, summary: str(a["_summary"]), entry: str(a["entry"]), target: str(a["target"]), enabled: typeof a["enabled"] === "boolean" ? a["enabled"] : null };
+    });
+}
+
+function emptyPayload(today: string, arms: LadderArmDecl[] = []): LadderPayload {
+  return { arms, session: null, dbPresent: false, today, openLots: [], measurementBreaks: [], lastIteration: null };
 }
 
 export function readLadder(config: ConsoleConfig, now: Date = new Date()): LadderPayload {
   const today = etDate(now);
-  return withReadOnlyDb<LadderPayload>(ladderDbPath(config), emptyPayload(today), (db) => {
+  const declared = configuredArms(config);
+  return withReadOnlyDb<LadderPayload>(ladderDbPath(config), emptyPayload(today, declared), (db) => {
     const openLots = hasTable(db, "ladder_positions")
       ? db
           .prepare<[], Record<string, unknown>>("SELECT * FROM ladder_positions WHERE status = 'open' ORDER BY buy_time, id")
@@ -167,6 +205,7 @@ export function readLadder(config: ConsoleConfig, now: Date = new Date()): Ladde
       : undefined;
     const ranAt = iteration === undefined ? null : num(iteration["ran_at"]);
     return {
+      arms: withLedgerArms(declared, db),
       session: resolveFrom(db),
       dbPresent: true,
       today,
