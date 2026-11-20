@@ -155,6 +155,7 @@ def test_nothing_before_session_start_and_a_buy_after_it():
 
 
 def test_order_specs_are_the_shape_build_order_takes():
+    pytest.importorskip("tastytrade")  # the SDK is not installed in every package's CI
     p, _ = run(live=live_block(max_open_lots=2), lots=[lot(shares=10, cost=93.0)])
     buy = next(a for a in p.places if a.side == "buy").spec
     sell = next(a for a in p.places if a.side == "sell").spec
