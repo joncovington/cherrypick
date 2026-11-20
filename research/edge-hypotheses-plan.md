@@ -9502,18 +9502,31 @@ been read at daily resolution.
   (paper's funds trade a cent wide; a thin fund's real spread is wider, which the cost check
   bounds); a touch inside a minute that the bar's range shows but no quote would have filled at is
   counted as filled; no overnight session (tastytrade's equity day only); survivors only (funds that
-  exist today); split-adjusted prices, dividends ignored, as item 26.
+  exist today); dividends ignored, as item 26; after a split, a lot's sale and mark are put back
+  in its own buy terms (the same dollars), so its share count and fees stay the buy's.
 - **Expected, recorded before the run:** a fail, like item 26. Same-session round trips should lift
   every arm a little, but the result is set by lots stuck for years in long falls, which the minute
   does not change.
 - **Data:** `scripts/fetch_minute_bars.py` (Alpaca's free market-data API: the consolidated tape
-  from 2016, extended hours, split-adjusted; the user's own key in the OS keyring) into
+  from 2016, extended hours, unadjusted; the user's own key in the OS keyring) into
   `~/.cherrypick/data/research/item95/`, never the repo. The replay is
   `packages/backtest/scripts/share_ladder_item95.py`, a pure function of those files, item 26's
   daily bars and the bill, run as a research-queue chain. It imports `cherrypick.ladder.rules`, which
   is pure (it imports `core.fees` alone), so backtest's CI job installs ladder. A test replays the
   paper ledger's recorded ticks through the replay and requires paper's own lots (run where the
   ledger exists). Results stay in that folder; this plan records the verdict.
+- **Clarified 2026-11-19, after the declaration merged and before any run: raw prices.** The
+  first fetched month (SOXL, January 2016), checked only for its price scale against the daily
+  series, showed split-adjusted prices near $1.70 where the fund traded near $26. Paper trades raw
+  prices, and the rule's cent roundings, the half-cent spread, whole-share sizing and per-share
+  fees are only right at those. So the replay runs on unadjusted bars:
+  - **Prices:** Alpaca's unadjusted minute bars. Each session's factor is every later split's
+    ratio multiplied (item 26's split events), its raw daily close the adjusted close times that.
+  - **The reference close** is the previous close as the exchange posts it on the session: the
+    previous raw close, divided by the ratio on a split's own ex-date.
+  - **Across a split** a held lot's target is restated at the ratio (rounded up to the cent), and
+    `chain`'s last lot is carried at the ratio, as a broker restates resting orders.
+  - **The daily guard** compares each session's last regular-hours minute with its raw daily close.
 - **Decides:**
   - **A pass:** a proposal to make the passing arm paper's default and to size a live pilot from its
     drawdown and longest open lot. Nothing changes in the running module without the user and a

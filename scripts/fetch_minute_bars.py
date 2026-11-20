@@ -3,7 +3,9 @@ resolution) is replayed on.
 
 **Source: Alpaca's market-data API** (`data.alpaca.markets/v2/stocks/bars`), a free account's
 historical bars: the consolidated tape (`feed=sip`) from 2016, extended hours included (04:00-20:00
-ET), split-adjusted (`adjustment=split`, the same footing as item 26's daily bars). The free plan
+ET), unadjusted (`adjustment=raw`): the prices the fund traded at, as paper sees them, so a cent is
+a cent (split-adjusted, SOXL's 2016 prices are about $1.70 and every cent rounding and the spread
+would be fifteen times too coarse; the replay applies each split itself). The free plan
 refuses the last 15 minutes of the tape, so a fetch ends before then. Personal use: stored under
 `~/.cherrypick/data/research/item95/`, never the repo, never redistributed.
 
@@ -170,7 +172,7 @@ def fetch_month(conn, symbol: str, month: str, hdrs: dict, now: datetime) -> int
             "start": start.isoformat().replace("+00:00", "Z"),
             "end": end.isoformat().replace("+00:00", "Z"),
             "limit": PAGE,
-            "adjustment": "split",
+            "adjustment": "raw",
             "feed": "sip",
             "sort": "asc",
         }

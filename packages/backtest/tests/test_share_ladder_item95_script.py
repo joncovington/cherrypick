@@ -151,6 +151,37 @@ def test_both_rules_must_pass():
     }
 
 
+def test_raw_prices_take_each_split_from_its_ex_date():
+    # adjusted closes 50, 50, 51; a 2-for-1 on 01-06: raw 100, 100 before, 51 after
+    closes = {"2020-01-02": 50.0, "2020-01-03": 50.0, "2020-01-06": 51.0}
+    rows = [("2020-01-03T10:00", 100.0, 100.0, 100.0, 100.0), ("2020-01-06T10:00", 51.0, 51.0, 51.0, 51.0)]
+    tape = m.tape_from_bars(rows, closes, 0.005, "2020-01-01", splits={"2020-01-06": 2.0})
+    assert [(s.day, s.f, s.ref) for s in tape.sessions] == [
+        ("2020-01-03", 2.0, 100.0),
+        ("2020-01-06", 1.0, 50.0),
+    ]
+    assert tape.skipped["disagrees"] == 0
+
+
+def test_a_lot_held_across_a_split_sells_at_its_restated_target():
+    tape = m.Tape()
+    tape.add_session("2020-01-02", 100.0, [[(93.49, 93.5)], [(92.99, 93.0)]], f=2.0)
+    # after a 2-for-1 the 96.72 target is 48.36; a bid of 48.36 sells it, worth 96.72 a buy-term share
+    tape.add_session("2020-01-03", 47.0, [[(48.0, 48.01)], [(48.36, 48.37)]], f=1.0)
+    lot = lots(tape, "once")[0]
+    assert (lot.price, lot.shares, lot.sell, lot.exit_session) == (93.0, 10, 48.36, 1)
+    row = m.lot_money(tape, lot, len(tape.sessions))
+    assert row["net"] == rules.money(10, 93.0, 96.72)["net_pnl"]
+
+
+def test_the_chain_anchor_carries_across_a_split():
+    tape = m.Tape()
+    tape.add_session("2020-01-02", 100.0, [[(93.49, 93.5)], [(92.99, 93.0)]], f=2.0)
+    # the next chain level, 86.49 before the split, is 43.24 after a 2-for-1 (46.5 x 0.93 = 43.245)
+    tape.add_session("2020-01-03", 46.0, [[(43.5, 43.51)], [(43.23, 43.24)]], f=1.0)
+    assert [x.price for x in lots(tape, "chain")] == [93.0, 43.24]
+
+
 PAPER = Path(os.path.expanduser("~/.cherrypick/data/ladder/paper_trades.db"))
 
 
