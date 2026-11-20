@@ -186,7 +186,8 @@ def evaluate(
         "account.designated",
         bool(designated and str(designated).strip()),
         f"a designated account is set ({mask_account(designated)})",
-        "no designated account: set one with `cherrypick account --module ladder --set <last4>`",
+        "no designated account: set the suite-wide one with `run.py account --set <last4>` "
+        "(ladder reads it through; a ladder-only designation is not wired yet)",
     )
     add(
         "halt.flag",
