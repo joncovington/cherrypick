@@ -31,6 +31,19 @@ def test_levels_round_down_and_targets_round_up():
     assert rules.target("fixed", cost=52.69, shares=20, age=0) == 54.80  # 54.7976
 
 
+def test_a_crossing_fills_at_the_limit_and_a_gap_at_the_market():
+    # crossed since the last tick: the order was resting, so the limit
+    assert rules.buy_fill(93.0, 92.10, prev_ask=93.40) == 93.0
+    assert rules.sell_fill(96.72, 97.50, prev_bid=96.10) == 96.72
+    # the session's first quote, or the market already through the level a tick ago: the market
+    assert rules.buy_fill(93.0, 80.02, prev_ask=None) == 80.02
+    assert rules.buy_fill(93.0, 80.02, prev_ask=81.00) == 80.02
+    assert rules.sell_fill(96.72, 98.0, prev_bid=None) == 98.0
+    assert rules.sell_fill(96.72, 98.0, prev_bid=97.0) == 98.0
+    # a touch is the limit either way
+    assert rules.buy_fill(93.0, 93.0, prev_ask=None) == 93.0
+
+
 def test_session_steps_down_from_the_reference_close_only():
     assert rules.buy_level("session", ref_close=100.0, last_buy=80.0) == 93.0
     assert rules.buy_level("session", ref_close=100.0, last_buy=80.0, bought_today=1) == 86.49

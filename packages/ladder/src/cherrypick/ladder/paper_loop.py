@@ -7,11 +7,13 @@ trading days; one `run_once`, inside the trading hours (`session_start` to `sess
 For each enabled arm and each fund, against one usable quote:
 
 1. **Sell.** Each open lot's target is worked out for today (`rules.target`); a bid at or over it
-   sells the lot at the target, the resting limit's price. The lot's lowest bid seen is kept.
-2. **Buy.** The next lot's level is `rules.buy_level`; an ask at or under it buys a lot at the
-   level. `chain` and `session` keep going while the ask is under each next level and slots
-   remain; `once` buys at most one lot a session. A lot sold this tick frees its slot now, as a
-   live account's would.
+   sells the lot (`rules.sell_fill`: the target when the bid crossed it since the last tick, the
+   bid on a gap). The lot's lowest bid seen is kept.
+2. **Buy.** The next lot's level is `rules.buy_level`; an ask at or under it buys a lot sized at
+   the level (`rules.buy_fill`: the level when the ask crossed it since the last tick, the ask on
+   a gap). The lot's cost is its fill. `chain` and
+   `session` keep going while the ask is under each next level and slots remain; `once` buys at
+   most one lot a session. A lot sold this tick frees its slot now, as a live account's would.
 
 A fund with no usable quote, or no posted reference close, does nothing that tick and says so.
 """
@@ -131,6 +133,17 @@ def _all_lots(conn, arm: str, symbol: str) -> list[dict]:
     ]
 
 
+def _previous_quote(conn, symbol: str, today: date) -> dict:
+    """The fund's last usable quote earlier this session ({prev_bid, prev_ask}, None on the first):
+    what tells a price that crossed a level between ticks from one that gapped through it."""
+    row = conn.execute(
+        "SELECT bid, ask FROM ladder_snapshots WHERE symbol = ? AND trade_date = ? AND kind = 'tick' "
+        "AND status = 'ok' ORDER BY id DESC LIMIT 1",
+        (symbol, today.isoformat()),
+    ).fetchone()
+    return {"prev_bid": row[0] if row else None, "prev_ask": row[1] if row else None}
+
+
 # --------------------------------------------------------------------------- sell
 def run_sells(conn, p: dict, symbol: str, q: dict, *, today: date, stamp: str) -> int:
     sold = 0
@@ -150,10 +163,11 @@ def run_sells(conn, p: dict, symbol: str, q: dict, *, today: date, stamp: str) -
         if lot["low_bid"] is None or q["bid"] < lot["low_bid"]:
             update.update(low_bid=q["bid"], low_bid_time=now)
         if q["bid"] >= tgt:
-            m = rules.money(lot["quantity"], lot["buy_price"], tgt)
+            fill = rules.sell_fill(tgt, q["bid"], q.get("prev_bid"))
+            m = rules.money(lot["quantity"], lot["buy_price"], fill)
             update.update(
                 status="closed",
-                sell_price=tgt,
+                sell_price=fill,
                 sell_session=today.isoformat(),
                 sell_time=now,
                 sell_bid=q["bid"],
@@ -170,11 +184,13 @@ def run_sells(conn, p: dict, symbol: str, q: dict, *, today: date, stamp: str) -
                 mode="exit",
                 reason=update["exit_reason"],
                 accepted=True,
-                detail=json.dumps({"lot": lot["position_id"], "price": tgt, "net": m["net_pnl"]}),
+                detail=json.dumps(
+                    {"lot": lot["position_id"], "price": fill, "target": tgt, "net": m["net_pnl"]}
+                ),
             )
             _log(
-                f"{p['arm']} {symbol}: sold {lot['quantity']} at {tgt:.2f} (bought {lot['buy_price']:.2f} "
-                f"{lot['buy_session']}, day {age}), net {m['net_pnl']:.2f}"
+                f"{p['arm']} {symbol}: sold {lot['quantity']} at {fill:.2f} (target {tgt:.2f}, "
+                f"bought {lot['buy_price']:.2f} {lot['buy_session']}, day {age}), net {m['net_pnl']:.2f}"
             )
             sold += 1
         db.save_position(conn, update)
@@ -225,7 +241,8 @@ def run_buys(conn, p: dict, symbol: str, q: dict, ref: float | None, *, today: d
             return bought
         pid = f"{p['arm']}:{symbol}:{session}:{n}"
         now = stamp
-        tgt = rules.target(p["target"], cost=level, shares=shares, age=0, gain=float(p["gain"]))
+        fill = rules.buy_fill(level, q["ask"], q.get("prev_ask"))
+        tgt = rules.target(p["target"], cost=fill, shares=shares, age=0, gain=float(p["gain"]))
         db.open_lot(
             conn,
             {
@@ -238,7 +255,7 @@ def run_buys(conn, p: dict, symbol: str, q: dict, ref: float | None, *, today: d
                 "ref_close": ref,
                 "chained_from": anchor,
                 "buy_level": level,
-                "buy_price": level,
+                "buy_price": fill,
                 "buy_session": session,
                 "buy_time": now,
                 "buy_bid": q["bid"],
@@ -250,7 +267,7 @@ def run_buys(conn, p: dict, symbol: str, q: dict, ref: float | None, *, today: d
                 "low_bid_time": now,
                 "last_bid": q["bid"],
                 "last_mark_time": now,
-                "entry_value": round(-shares * level, 2),
+                "entry_value": round(-shares * fill, 2),
             },
         )
         db.record_decision(
@@ -261,7 +278,9 @@ def run_buys(conn, p: dict, symbol: str, q: dict, ref: float | None, *, today: d
             mode="entry",
             reason="bought",
             accepted=True,
-            detail=json.dumps({"lot": pid, "level": level, "shares": shares, "ref": ref, "anchor": anchor}),
+            detail=json.dumps(
+                {"lot": pid, "level": level, "fill": fill, "shares": shares, "ref": ref, "anchor": anchor}
+            ),
         )
         if anchor is not None:
             base = f"last lot {anchor:.2f}"
@@ -270,7 +289,7 @@ def run_buys(conn, p: dict, symbol: str, q: dict, ref: float | None, *, today: d
         else:
             base = f"prev close {ref:.2f}"
         _log(
-            f"{p['arm']} {symbol}: bought {shares} at {level:.2f} ({base}, ask {q['ask']:.2f}), "
+            f"{p['arm']} {symbol}: bought {shares} at {fill:.2f} (level {level:.2f}, {base}), "
             f"target {tgt:.2f}"
         )
         bought += 1
@@ -299,6 +318,8 @@ def run_once(
     for symbol, spec in funds.items():
         q = provider.quote(cache_path, symbol, max_quote_age_seconds=float(base["max_quote_age_seconds"]))
         ref = provider.reference_close(cache_path, symbol, today)
+        if q is not None:
+            q = {**q, **_previous_quote(conn, symbol, today)}
         db.record_snapshot(
             conn,
             trade_date=today.isoformat(),

@@ -12,7 +12,7 @@ from cherrypick.ladder import db
 
 def _buy_and_sell(config, ledger, cache):
     cfg = _only(config, "once")
-    cache.summary("TQQQ", DAY, prev_day_close=100.0).quote("TQQQ", 92.90, 92.95)
+    cache.summary("TQQQ", DAY, prev_day_close=100.0).quote("TQQQ", 92.98, 93.00)
     _tick(cfg, ledger, cache)
     cache.quote("TQQQ", 96.80, 96.85)
     _tick(cfg, ledger, cache, day=NEXT, hhmm="11:00")
@@ -20,7 +20,7 @@ def _buy_and_sell(config, ledger, cache):
 
 
 def test_an_unsold_lot_is_read_with_its_purchase_as_capital(config, ledger, cache):
-    cache.summary("TQQQ", DAY, prev_day_close=100.0).quote("TQQQ", 92.90, 92.95)
+    cache.summary("TQQQ", DAY, prev_day_close=100.0).quote("TQQQ", 92.98, 93.00)
     _tick(_only(config, "once"), ledger, cache)
     held = ledgers.OPEN_READERS["ladder_lot"](ledger)
     assert [(h["arm"], h["symbol"], h["strategy"], h["session"]) for h in held] == [
