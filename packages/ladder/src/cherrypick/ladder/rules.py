@@ -103,9 +103,12 @@ def sell_fill(target_price: float, bid: float, prev_bid: float | None) -> float:
 
 def breakeven(cost: float, shares: int) -> float:
     """The lowest cent price at which selling `shares` bought at `cost` nets at least zero after the
-    sale's pass-through fees (buys carry none at tastytrade)."""
+    pass-through fees of both fills (the buy's clearing fee; the sale's clearing, SEC and TAF)."""
+    buy_fee = _fees.stock_trade_fee(shares, cost, side="buy", ndigits=4)
     p = ceil_cent(cost)
-    while p * shares - _fees.stock_trade_fee(shares, p, side="sell") < cost * shares - 1e-9:
+    while (
+        p * shares - _fees.stock_trade_fee(shares, p, side="sell", ndigits=4) - buy_fee < cost * shares - 1e-9
+    ):
         p = round(p + 0.01, 2)
     return p
 
@@ -138,7 +141,9 @@ def money(shares: int, buy: float, sell: float) -> dict:
     entry_value = round(-shares * buy, 2)
     exit_value = round(shares * sell, 2)
     gross = round(entry_value + exit_value, 2)
-    fee = _fees.stock_trade_fee(shares, buy, side="buy") + _fees.stock_trade_fee(shares, sell, side="sell")
+    fee = _fees.stock_trade_fee(shares, buy, side="buy", ndigits=4) + _fees.stock_trade_fee(
+        shares, sell, side="sell", ndigits=4
+    )
     fee = round(fee, 2)
     return {
         "entry_value": entry_value,

@@ -4,6 +4,8 @@ Part 1 pins the cost-model outputs (extracted verbatim from EarningsAgent's cost
 the IC open-fee schedule reproduces MEICAgent's hardcoded fee_estimate_fallback_per_contract constants.
 """
 
+import math
+
 import pytest
 
 from cherrypick.core import fees
@@ -154,26 +156,34 @@ def test_ic_expire_fee_charges_five_dollars_per_settlement_event():
 
 
 # --------------------------------------------------------------------------- the share side
-def test_only_stock_sells_carry_a_pass_through():
-    """tastytrade charges no stock commission, so a buy is free and the whole cost sits on the
-    sell: SEC fee on principal plus the per-share FINRA TAF."""
-    assert fees.stock_trade_fee(100, 774.50, side="buy") == 0.0
-    sell = fees.stock_trade_fee(100, 774.50, side="sell")
-    expected = 100 * 774.50 * fees.SEC_FEE_PER_DOLLAR_SOLD + 100 * fees.EQUITY_TAF_PER_SHARE_SOLD
-    assert sell == round(expected, 2)
+def test_a_buy_pays_the_clearing_fee_alone():
+    """No commission, so a buy costs tastytrade's $0.0008 a share clearing fee, rounded up to a
+    tenth of a cent: 3 shares are $0.0024, charged $0.003."""
+    assert fees.stock_trade_fee(100, 40.00, side="buy", ndigits=4) == 0.08
+    assert fees.stock_trade_fee(3, 400.00, side="buy", ndigits=4) == 0.003
+
+
+def test_a_sell_adds_the_sec_fee_and_the_taf_each_rounded_up():
+    """100 shares at $40: clearing $0.08; SEC $4,000 x $20.60/M = $0.0824, up to $0.09; TAF
+    100 x $0.000195 = $0.0195, up to $0.020. 3 shares at $400: $0.003 + $0.03 + $0.001."""
+    assert fees.stock_trade_fee(100, 40.00, side="sell", ndigits=4) == 0.19
+    assert fees.stock_trade_fee(3, 400.00, side="sell", ndigits=4) == 0.034
 
 
 def test_the_equity_taf_is_per_share_and_capped():
     """An order of magnitude below the per-CONTRACT option TAF — mixing the two would overstate a
     share disposal by ~20x."""
     assert fees.EQUITY_TAF_PER_SHARE_SOLD < fees.TAF_PER_SELL_CONTRACT
-    huge = fees.stock_trade_fee(10_000_000, 1.00, side="sell")
-    assert huge == round(10_000_000 * fees.SEC_FEE_PER_DOLLAR_SOLD + fees.EQUITY_TAF_CAP_PER_TRADE, 2)
+    n = 10_000_000
+    huge = fees.stock_trade_fee(n, 1.00, side="sell", ndigits=4)
+    sec = math.ceil(round(n * fees.SEC_FEE_PER_DOLLAR_SOLD / 0.01, 9)) * 0.01
+    assert huge == round(n * fees.CLEARING_FEE_PER_SHARE + sec + fees.EQUITY_TAF_CAP_PER_TRADE, 4)
 
 
 def test_a_zero_or_negative_fill_is_free_rather_than_an_error():
     assert fees.stock_trade_fee(0, 774.50, side="sell") == 0.0
     assert fees.stock_trade_fee(100, 0.0, side="sell") == 0.0
+    assert fees.stock_trade_fee(100, 774.50, side="hold") == 0.0
 
 
 def test_an_assignment_round_trip_charges_the_event_once_and_the_sell_once():

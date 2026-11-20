@@ -16,8 +16,9 @@ def test_a_buy_is_whole_shares_and_leaves_the_remainder_in_cash():
     plan = engine.plan_switch(cash=10_000, holding=None, target_symbol="SVXY", quotes={"SVXY": SVXY})
     assert plan["ok"] and plan["sell"] is None
     assert plan["buy"]["shares"] == 199  # 10_000 / 50.01
-    assert plan["cash_after"] == pytest.approx(10_000 - 199 * 50.0 - 199 * 0.01, abs=0.01)
-    assert plan["buy"]["fees"] == 0.0
+    # the buy pays the clearing fee, 199 x $0.0008 = $0.1592, rounded up to $0.160
+    assert plan["buy"]["fees"] == 0.16
+    assert plan["cash_after"] == pytest.approx(10_000 - 199 * 50.0 - 199 * 0.01 - 0.16, abs=0.01)
 
 
 def test_both_legs_are_checked_before_either_is_planned():

@@ -7,8 +7,8 @@ spread, so `slippage` per share is that half-spread, floored at `slippage_floor_
 quote on a $50 fund is half a basis point, and nothing fills that well at size. The replay this module was
 built from charged 2 bps a side; the floor is that number.
 
-**Fees** are `cherrypick.core.fees.stock_trade_fee`: buys free, sells carry the SEC fee and FINRA
-TAF. No commission -- tastytrade charges none on shares.
+**Fees** are `cherrypick.core.fees.stock_trade_fee`: the clearing fee on every fill, and the SEC fee
+and FINRA TAF on a sell. No commission -- tastytrade charges none on shares.
 
 Whole shares only. What a buy cannot spend stays as cash earning nothing, and is shown, not hidden:
 on $10,000 that is under one share's price.
