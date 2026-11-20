@@ -385,6 +385,20 @@ def test_gates_unmet_means_the_broker_is_not_even_built(world, monkeypatch):
     assert out["skipped"] == "gates_unmet" and built == []
 
 
+def test_past_disarm_at_the_loop_disarms_even_with_a_gate_unmet(world, monkeypatch):
+    """A gate switched off while armed (live.enabled false mid-session) must not leave the arm record
+    valid past disarm_at: the watchdog would read it as a failed self-disarm and halt the suite."""
+    built = []
+    monkeypatch.setattr(live_tick, "BrokerAdapter", lambda config: built.append(1))
+    cfg = live_config(enabled=False)
+    out = tick(world, cfg, "19:30", broker=None)
+    assert out["skipped"] == "gates_unmet" and live_loop.arm_stamp_date() == DAY
+    assert "disarmed" not in out
+    out = tick(world, cfg, "20:00", broker=None)
+    assert out["skipped"] == "gates_unmet" and out["disarmed"] is True
+    assert live_loop.arm_stamp_date() is None and built == []
+
+
 # --------------------------------------------------------------------------- dry-run
 def test_dry_run_sends_nothing_and_journals_the_intended_orders(world):
     cfg = live_config(dry_run=True)
