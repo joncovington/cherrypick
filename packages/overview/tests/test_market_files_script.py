@@ -1,4 +1,4 @@
-"""The market-files fetcher's FRED calendar: paging and the declared releases.
+"""The market-files fetcher: FRED's paging and declared releases, and the risk reversal's window.
 
 The first live run with a key wrote a calendar with no releases in its first ten days -- this
 week's jobs report and jobless claims included -- because FRED lists ~40 releases a day and one
@@ -13,8 +13,9 @@ from __future__ import annotations
 
 import importlib.util
 import urllib.parse
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -184,3 +185,97 @@ def test_a_clean_run_after_a_warning_says_it_recovered_once(monkeypatch, tmp_pat
     assert sent[-1] == ("INFO", "Recovered: Market files incomplete")
     fmf._note_outcome([])
     assert len(sent) == 2  # said once, then forgotten
+
+
+# --------------------------------------------------------------------------- the risk reversal
+# 2026-11-19: Cboe's delayed chain moved behind a host that refuses scripts, and the row now comes
+# from the broker's greeks. SPX options trade overnight from 20:15 ET, so their IVs describe the
+# close only between the close and then; outside that window nothing is read.
+
+
+def _et(y, m, d, hh, mm):
+    return datetime(y, m, d, hh, mm, tzinfo=ZoneInfo("America/New_York"))
+
+
+@pytest.mark.parametrize(
+    ("now", "session", "open_"),
+    [
+        (_et(2026, 11, 19, 18, 45), date(2026, 11, 19), True),  # the evening run
+        (_et(2026, 11, 19, 16, 10), date(2026, 11, 18), False),  # SPX options still trading
+        (_et(2026, 11, 19, 20, 15), date(2026, 11, 19), False),  # the overnight session has opened
+        (_et(2026, 11, 20, 7, 45), date(2026, 11, 19), False),  # the morning retry
+        (_et(2026, 11, 22, 18, 45), date(2026, 11, 20), False),  # a Sunday
+        (_et(2026, 11, 27, 13, 20), date(2026, 11, 27), True),  # the early close: 13:00 + 15 min
+    ],
+)
+def test_the_risk_reversal_is_read_only_between_the_close_and_the_overnight_session(now, session, open_):
+    assert fmf.rr_window(now) == (session, open_)
+
+
+def _rr_options(session: date):
+    exp = date.fromordinal(session.toordinal() + 30)
+    return [
+        {"expiration": exp, "right": "C", "delta": 0.30, "iv": 0.10, "bid": 1.0, "ask": 1.1},
+        {"expiration": exp, "right": "C", "delta": 0.20, "iv": 0.12, "bid": 1.0, "ask": 1.1},
+        {"expiration": exp, "right": "P", "delta": -0.30, "iv": 0.16, "bid": 1.0, "ask": 1.1},
+        {"expiration": exp, "right": "P", "delta": -0.20, "iv": 0.18, "bid": 1.0, "ask": 1.1},
+    ]
+
+
+def test_the_evening_run_writes_the_session_row_beside_the_old_ones(monkeypatch, tmp_path):
+    import json
+
+    from cherrypick.overview import files
+
+    monkeypatch.setattr(files, "store_dir", lambda: tmp_path)
+    files.risk_reversal_path().parent.mkdir(parents=True)
+    old = {"session": "2026-11-18", "rr_vol_pts": -6.46, "source": "cboe_delayed_spx_chain"}
+    files.risk_reversal_path().write_text(json.dumps({"2026-11-18": old}), encoding="utf-8")
+    report = {"problems": []}
+    fmf.fetch_risk_reversal(report, _et(2026, 11, 19, 18, 45), read=lambda d: (7175.83, _rr_options(d)))
+    rows = json.loads(files.risk_reversal_path().read_text(encoding="utf-8"))
+    assert report["problems"] == []
+    assert rows["2026-11-18"] == old
+    assert (rows["2026-11-19"]["rr_vol_pts"], rows["2026-11-19"]["source"]) == (-6.0, files.RR_SOURCE)
+
+
+def test_outside_the_window_nothing_is_read_and_only_a_missing_row_is_a_problem(monkeypatch, tmp_path):
+    import json
+
+    from cherrypick.overview import files
+
+    monkeypatch.setattr(files, "store_dir", lambda: tmp_path)
+
+    def never(_day):
+        raise AssertionError("the broker was read outside the window")
+
+    report = {"problems": []}
+    fmf.fetch_risk_reversal(report, _et(2026, 11, 20, 7, 45), read=never)
+    assert report["problems"] == [
+        "SPX risk reversal: no row for 2026-11-19; it is read between the close and 20:15 ET"
+    ]
+    files.risk_reversal_path().parent.mkdir(parents=True)
+    files.risk_reversal_path().write_text(
+        json.dumps({"2026-11-19": {"session": "2026-11-19"}}), encoding="utf-8"
+    )
+    report = {"problems": []}
+    fmf.fetch_risk_reversal(report, _et(2026, 11, 20, 7, 45), read=never)
+    assert report["problems"] == []
+
+
+def test_a_broker_failure_or_an_unreadable_chain_is_a_problem_and_writes_nothing(monkeypatch, tmp_path):
+    from cherrypick.overview import files
+
+    monkeypatch.setattr(files, "store_dir", lambda: tmp_path)
+
+    def down(_day):
+        raise RuntimeError("broker credentials are missing")
+
+    report = {"problems": []}
+    fmf.fetch_risk_reversal(report, _et(2026, 11, 19, 18, 45), read=down)
+    fmf.fetch_risk_reversal(report, _et(2026, 11, 19, 18, 45), read=lambda d: (7175.83, []))
+    assert report["problems"] == [
+        "SPX risk reversal: broker: RuntimeError: broker credentials are missing",
+        "SPX risk reversal: the broker's chain gave no 25-delta reading (0 options read)",
+    ]
+    assert not files.risk_reversal_path().exists()

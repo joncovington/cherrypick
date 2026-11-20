@@ -1,12 +1,18 @@
 """Fetch the daily market files the morning pack reads: Cboe's index histories (SKEW, VIX, VIX1D,
-VIX3M, VVIX, VXN; VIX3M for `scripts/contango_replay.py`, VIX1D for `cherrypick.meic.replay`), Cboe's
-delayed SPX chain (reduced to the 30-day 25-delta risk reversal), Treasury's par yield curve, the
+VIX3M, VVIX, VXN; VIX3M for `scripts/contango_replay.py`, VIX1D for `cherrypick.meic.replay`), the
+broker's SPX chain (reduced to the 30-day 25-delta risk reversal), Treasury's par yield curve, the
 release calendars (BEA always, FRED when a
 key is stored), and OCC's option volume by underlying with Nasdaq Trader's symbol directory (the
 pack's `hot_options` ranking).
 
 Why a script: these are network fetches, and `packages/overview` is network-free by rule. It writes
 only `~/.cherrypick/data/market-files/`, and a failure leaves every file already there untouched.
+The risk reversal is the one step that reaches the broker: read-only, one DXLink session for the
+greeks and quotes of a few hundred SPXW options.
+
+The risk reversal is read only between the close (plus SPX options' extra quarter hour) and 20:15
+ET, when SPX options' overnight session opens and their IVs stop describing the close. The 18:45 run
+sits in that window; the 07:45 retry cannot take a missed session, so it reports the gap instead.
 The parsers are overview's own (`cherrypick.overview.files`), so a file is checked on arrival by the
 code that will read it, and a download that parses to less than the file on disk (a truncated or
 wrong file) is refused rather than written over good history.
@@ -34,6 +40,7 @@ A handful of requests per run, a few seconds apart.
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import random
 import sys
@@ -42,6 +49,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import UTC, date, datetime, timedelta
+from datetime import time as dt_time
 from pathlib import Path
 
 from cherrypick.core import progress
@@ -129,24 +137,139 @@ def fetch_cboe(report: dict, rep=None) -> None:
             report["cboe"][symbol] = {"rows": len(rows), "last": rows[-1][0].isoformat()}
 
 
-def fetch_risk_reversal(report: dict) -> None:
-    """Cboe's delayed SPX chain (~13 MB, every strike with IV and delta) reduced to one row: the
-    30-day 25-delta risk reversal for the chain's session. Only the row is kept, in a file keyed by
-    session, so a re-run replaces that session's row and never touches another's."""
+# The strikes asked for: out-of-the-money puts from 80% of spot and calls to 110%. A 30-day 25-delta
+# put sat 4.5% below spot on 2026-11-19 (VIX near 25); the band leaves room for a VIX past 50.
+RR_STRIKE_BAND = (0.80, 1.10)
+RR_SETTLE = timedelta(minutes=15)  # SPX options trade a quarter hour past the cash close
+RR_OVERNIGHT_OPENS = dt_time(20, 15)
+RR_BATCH = 100
+RR_SUBSCRIBE_PACE_S = 1.0
+RR_BATCH_TIMEOUT_S = 12.0
+
+
+def rr_window(now_et: datetime) -> tuple[date, bool]:
+    """(the last session whose close has passed, whether `now_et` is inside the window its risk
+    reversal is read in): from the close plus `RR_SETTLE` to `RR_OVERNIGHT_OPENS` on that day."""
+    from cherrypick.core import calendar as cal
+
+    today = now_et.date()
+    naive = now_et.replace(tzinfo=None)
+    if cal.is_trading_day(today):
+        settled = datetime.combine(today, dt_time.fromisoformat(cal.session_close_hhmm(today))) + RR_SETTLE
+        if naive >= settled:
+            return today, naive < datetime.combine(today, RR_OVERNIGHT_OPENS)
+    return cal.previous_trading_day(today), False
+
+
+def _rr_float(v) -> float | None:
     try:
-        text = _get(files.SPX_CHAIN_URL).decode("utf-8", errors="replace")
-    except (urllib.error.URLError, TimeoutError, OSError) as exc:
-        report["problems"].append(f"Cboe SPX chain: {exc}")
-        return
-    row = files.risk_reversal(text)
-    if row is None:
-        report["problems"].append("Cboe SPX chain: no 25-delta risk reversal could be read from it")
-        return
+        return None if v is None else float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+async def _rr_options(session, day: date) -> tuple[float | None, list[dict]]:
+    """(SPX's last price, the SPXW options around the two expirations bracketing 30 days, each with
+    the broker's IV, delta, bid and ask). Read-only: one chain listing, one DXLink session."""
+    from tastytrade import DXLinkStreamer
+    from tastytrade.dxfeed import Greeks, Quote
+    from tastytrade.instruments import NestedOptionChain
+    from tastytrade.market_data import get_market_data_by_type
+
+    md = await get_market_data_by_type(session, indices=["SPX"])
+    spot = next((_rr_float(q.last or q.mark or q.close) for q in md if q.symbol == "SPX"), None)
+    if not spot:
+        return None, []
+    chains = await NestedOptionChain.get(session, "SPX")
+    # SPXW only: PM-settled, one root for every date. SPX's own chain is the AM-settled monthly.
+    by_exp = {
+        e.expiration_date: e
+        for c in (chains if isinstance(chains, list) else [chains])
+        if getattr(c, "root_symbol", None) == "SPXW"
+        for e in c.expirations
+    }
+    lo, hi = RR_STRIKE_BAND
+    wanted: dict[str, dict] = {}
+    for exp in files.rr_expirations(day, list(by_exp)):
+        for k in by_exp[exp].strikes:
+            strike = float(k.strike_price)
+            if lo * spot <= strike < spot:
+                wanted[k.put_streamer_symbol] = {"expiration": exp, "right": "P", "strike": strike}
+            if spot <= strike <= hi * spot:
+                wanted[k.call_streamer_symbol] = {"expiration": exp, "right": "C", "strike": strike}
+    names = list(wanted)
+
+    async def drain(streamer, cls, n: int, deadline: float) -> None:
+        seen: set[str] = set()
+        while len(seen) < n and time.monotonic() < deadline:
+            try:
+                ev = await asyncio.wait_for(streamer.get_event(cls), timeout=deadline - time.monotonic())
+            except TimeoutError:
+                return
+            row = wanted.get(str(ev.event_symbol))
+            if row is None:
+                continue
+            if cls is Greeks:
+                row.update(iv=_rr_float(ev.volatility), delta=_rr_float(ev.delta))
+            else:
+                row.update(bid=_rr_float(ev.bid_price), ask=_rr_float(ev.ask_price))
+            seen.add(str(ev.event_symbol))
+
+    async with DXLinkStreamer(session) as streamer:
+        for i in range(0, len(names), RR_BATCH):
+            chunk = names[i : i + RR_BATCH]
+            for cls in (Greeks, Quote):
+                await streamer.subscribe(cls, chunk)
+                await asyncio.sleep(RR_SUBSCRIBE_PACE_S)
+            deadline = time.monotonic() + RR_BATCH_TIMEOUT_S
+            await asyncio.gather(
+                drain(streamer, Greeks, len(chunk), deadline), drain(streamer, Quote, len(chunk), deadline)
+            )
+            for cls in (Greeks, Quote):
+                await streamer.unsubscribe(cls, chunk)
+                await asyncio.sleep(RR_SUBSCRIBE_PACE_S)
+    return spot, list(wanted.values())
+
+
+def read_rr_options(day: date) -> tuple[float | None, list[dict]]:
+    """`_rr_options` under the suite's broker session. Raises on missing credentials."""
+    from cherrypick.core.auth import SHARED_SERVICE, CredentialStore, SessionManager
+
+    store = CredentialStore(SHARED_SERVICE)
+    if store.missing_secrets():
+        raise RuntimeError("broker credentials are missing")
+    return asyncio.run(_rr_options(SessionManager(store).get_session(), day))
+
+
+def fetch_risk_reversal(report: dict, now_et: datetime | None = None, read=None) -> None:
+    """The broker's SPX chain reduced to one row: the 30-day 25-delta risk reversal at the session's
+    close (`files.risk_reversal`). Only the row is kept, in a file keyed by session, so a re-run in
+    the window replaces that session's row and never touches another's. Outside the window nothing
+    is read; a session left without a row is a problem."""
+    read = read or read_rr_options
+    session, open_ = rr_window(now_et or datetime.now(files.ET))
     path = files.risk_reversal_path()
     try:
         rows = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
     except ValueError:
         rows = {}
+    if not open_:
+        if session.isoformat() not in rows:
+            report["problems"].append(
+                f"SPX risk reversal: no row for {session}; it is read between the close and 20:15 ET"
+            )
+        return
+    try:
+        spot, options = read(session)
+    except Exception as exc:  # noqa: BLE001 -- the broker's failure is reported, never raised
+        report["problems"].append(f"SPX risk reversal: broker: {type(exc).__name__}: {exc}"[:300])
+        return
+    row = files.risk_reversal(session, spot, options) if spot else None
+    if row is None:
+        report["problems"].append(
+            f"SPX risk reversal: the broker's chain gave no 25-delta reading ({len(options)} options read)"
+        )
+        return
     rows[row["session"]] = row
     _write(path, json.dumps(dict(sorted(rows.items())), indent=1))
     report["risk_reversal"] = {

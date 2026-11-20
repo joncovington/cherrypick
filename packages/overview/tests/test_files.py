@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import math
+from datetime import date
 
 from cherrypick.overview import facts, files
 
@@ -158,46 +159,46 @@ def test_fred_releases_join_the_calendar_without_a_time():
 
 # --------------------------------------------------------------------------- the risk reversal
 
-
-def _opt(exp: str, right: str, strike: int, delta: float, iv: float, bid: float = 1.0, root: str = "SPXW"):
-    return {
-        "option": f"{root}{exp}{right}{strike * 1000:08d}",
-        "delta": delta,
-        "iv": iv,
-        "bid": bid,
-        "ask": bid + 0.1,
-    }
+_SESSION = date(2026, 9, 25)
 
 
-def _chain(options, last="2026-09-25T16:14:59"):
-    return json.dumps({"data": {"current_price": 7743.41, "last_trade_time": last, "options": options}})
+def _opt(exp: date, right: str, delta: float, iv: float, bid: float | None = 1.0):
+    return {"expiration": exp, "right": right, "delta": delta, "iv": iv, "bid": bid, "ask": (bid or 0) + 0.1}
 
 
-def _flat_expiration(exp: str, call_iv: float, put_iv: float):
+def _rr(options):
+    return files.risk_reversal(_SESSION, 7743.41, options)
+
+
+def _flat_expiration(exp: date, call_iv: float, put_iv: float):
     """Wings bracketing +/-0.25 delta at a flat IV, so each wing interpolates to exactly that IV."""
     return [
-        _opt(exp, "C", 7900, 0.30, call_iv),
-        _opt(exp, "C", 7950, 0.20, call_iv),
-        _opt(exp, "P", 7500, -0.30, put_iv),
-        _opt(exp, "P", 7450, -0.20, put_iv),
+        _opt(exp, "C", 0.30, call_iv),
+        _opt(exp, "C", 0.20, call_iv),
+        _opt(exp, "P", -0.30, put_iv),
+        _opt(exp, "P", -0.20, put_iv),
     ]
 
 
 def test_each_wing_is_interpolated_in_delta():
+    exp = date(2026, 10, 25)
     chain = [
-        _opt("261025", "C", 7900, 0.30, 0.10),
-        _opt("261025", "C", 7950, 0.20, 0.12),  # 0.25 is halfway: 0.11
-        _opt("261025", "P", 7500, -0.30, 0.16),
-        _opt("261025", "P", 7450, -0.20, 0.18),  # -0.25 is halfway: 0.17
+        _opt(exp, "C", 0.30, 0.10),
+        _opt(exp, "C", 0.20, 0.12),  # 0.25 is halfway: 0.11
+        _opt(exp, "P", -0.30, 0.16),
+        _opt(exp, "P", -0.20, 0.18),  # -0.25 is halfway: 0.17
     ]
-    rr = files.risk_reversal(_chain(chain))
+    rr = _rr(chain)
     assert (rr["call_25d_iv_pct"], rr["put_25d_iv_pct"], rr["rr_vol_pts"]) == (11.0, 17.0, -6.0)
     assert rr["expirations"] == [{"expiration": "2026-10-25", "dte": 30}]
+    assert (rr["session"], rr["source"]) == ("2026-09-25", files.RR_SOURCE)
 
 
 def test_the_30_day_point_is_interpolated_in_total_variance():
-    chain = _flat_expiration("261023", 0.10, 0.16) + _flat_expiration("261026", 0.12, 0.18)
-    rr = files.risk_reversal(_chain(chain))
+    chain = _flat_expiration(date(2026, 10, 23), 0.10, 0.16) + _flat_expiration(
+        date(2026, 10, 26), 0.12, 0.18
+    )
+    rr = _rr(chain)
     # 28 and 31 days out; 30 is two-thirds of the way in total variance.
     w = lambda a, b: math.sqrt((a**2 * 28 + (b**2 * 31 - a**2 * 28) * 2 / 3) / 30) * 100  # noqa: E731
     assert rr["call_25d_iv_pct"] == round(w(0.10, 0.12), 2)
@@ -205,16 +206,26 @@ def test_the_30_day_point_is_interpolated_in_total_variance():
     assert [e["dte"] for e in rr["expirations"]] == [28, 31]
 
 
-def test_one_sided_quotes_and_the_am_root_do_not_count():
-    chain = _flat_expiration("261025", 0.10, 0.16)
+def test_one_sided_and_missing_quotes_do_not_count():
+    chain = _flat_expiration(date(2026, 10, 25), 0.10, 0.16)
     chain[0]["bid"] = 0.0  # the 0.30-delta call has no bid: the call wing no longer brackets 0.25
-    chain += [_opt("261025", "C", 7900, 0.30, 0.50, root="SPX")]  # an AM-settled row, never read
-    assert files.risk_reversal(_chain(chain)) is None
+    assert _rr(chain) is None
+    chain = _flat_expiration(date(2026, 10, 25), 0.10, 0.16)
+    chain[2]["iv"] = None  # the broker sent no greeks for the 0.30-delta put
+    assert _rr(chain) is None
 
 
 def test_no_expirations_bracketing_30_days_is_none_not_an_extrapolation():
-    assert files.risk_reversal(_chain(_flat_expiration("261009", 0.10, 0.16))) is None
-    assert files.risk_reversal("not json") is None
+    assert _rr(_flat_expiration(date(2026, 10, 9), 0.10, 0.16)) is None
+    assert _rr([]) is None
+
+
+def test_the_expirations_asked_for_are_the_pair_bracketing_30_days():
+    d = lambda m, day: date(2026, m, day)  # noqa: E731
+    listed = [d(9, 25), d(10, 9), d(10, 23), d(10, 26), d(11, 20)]
+    assert files.rr_expirations(_SESSION, listed) == [d(10, 23), d(10, 26)]
+    assert files.rr_expirations(_SESSION, [*listed, d(10, 25)]) == [d(10, 25)]  # one falls on the day
+    assert files.rr_expirations(_SESSION, [d(10, 9), d(10, 23)]) == []  # nothing past 30 days
 
 
 def test_the_pack_reads_the_risk_reversal_from_the_session_before():
