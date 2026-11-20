@@ -274,6 +274,9 @@ export const AUTOMATIONS_SLIDES = [
   { id: "summary", label: "today" },
   // Which automations switch together, and each group's switch and budget (2026-11-18).
   { id: "groups", label: "groups" },
+  // The Builder (2026-11-20, from the rail's research section): build an automation here, then
+  // switch it on in its group on the tab beside it.
+  { id: "builder", label: "builder" },
   { id: "positions", label: "positions" },
   { id: "history", label: "history" },
   { id: "decisions", label: "decisions" },
@@ -380,9 +383,6 @@ export const REPORTS_SLIDES = [
   { id: "eod", label: "eod" },
   { id: "external", label: "external" },
 ] as const satisfies readonly NavSlide[];
-
-/** The Builder (#1180): each automation block by block, labelled for what a backtest judged of it. */
-export const BUILDER_SLIDES = [{ id: "automations", label: "automations" }] as const satisfies readonly NavSlide[];
 
 /**
  * Compare (2026-10-12): every arm beside its control, from `core.compare`. One tab; scope, sort and
@@ -601,10 +601,10 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
   },
   automations: {
     slides: AUTOMATIONS_SLIDES,
-    simple: ["summary", "groups", "performance", "positions", "guide"],
+    simple: ["summary", "groups", "builder", "performance", "positions", "guide"],
     groups: [
       { label: "today", ids: ["summary"] },
-      { label: "set up", ids: ["groups"] },
+      { label: "set up", ids: ["groups", "builder"] },
       { label: "tables", ids: ["positions", "history"] },
       { label: "evidence", ids: ["decisions"] },
       { label: "study", ids: ["performance", "costs"] },
@@ -654,7 +654,6 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
     legacy: { "short-puts": "income", "covered-calls": "income" },
   },
   reports: { slides: REPORTS_SLIDES },
-  builder: { slides: BUILDER_SLIDES },
   compare: { slides: COMPARE_SLIDES },
   // An old `validation` link opens `data`; `/backtest/slices` is a route to Compare (App.tsx).
   backtest: { slides: BACKTEST_SLIDES, legacy: { validation: "data" } },

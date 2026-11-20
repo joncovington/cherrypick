@@ -1,5 +1,6 @@
 import type { SuiteFeatures } from "@console/shared";
-import { CONFIG_LINK, visibleNavLinks } from "../components/shell/navLinks";
+import { CONFIG_LINK, TAB_SHORTCUTS, visibleNavLinks } from "../components/shell/navLinks";
+import { isModuleVisible } from "./visibility";
 
 /**
  * The keyboard shortcuts the rail advertises in its link tooltips (`ModuleNav.shortcutTitle`).
@@ -51,7 +52,10 @@ export function reduceKey(state: KeyState, ev: KeyEvent): { state: KeyState; act
   if (state.pendingG !== null && ev.now - state.pendingG <= CHORD_MS) {
     // Config is never filtered, so its `g o` (2026-10-30) holds whatever else is off.
     const hit = [...links.suite, CONFIG_LINK].find((l) => l.key === ev.key);
-    return { state: idle, action: hit === undefined ? null : { kind: "navigate", to: hit.to } };
+    if (hit !== undefined) return { state: idle, action: { kind: "navigate", to: hit.to } };
+    // A tab's own chord (`g u`, Automations' Builder), while its module is on.
+    const tab = TAB_SHORTCUTS.find((s) => s.key === ev.key && isModuleVisible(s.module, ev.features));
+    return { state: idle, action: tab === undefined ? null : { kind: "navigate", to: `/${tab.module}/${tab.slide}` } };
   }
 
   if (ev.key === "g") return { state: { pendingG: ev.now }, action: null };

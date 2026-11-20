@@ -159,6 +159,38 @@ def test_every_choice_the_form_offers_is_worded_and_every_slot_is_its_own_key():
     assert _problems(builderform.schema()) == []
 
 
+def _source_choice_gaps() -> list[str]:
+    """Each indicator key core holds to a few words, without every one of them worded."""
+    from cherrypick.core import signals
+
+    held = {
+        "price": signals._PRICES,
+        "weight": ("volume", "equal"),
+        "period": signals._PERIODS,
+        "level": signals._LEVELS,
+    }
+    out = []
+    for name, keys in signals._SOURCES.items():
+        sides = ("upper", "lower") if name == "vwap_band" else ("high", "low")
+        for k in keys:
+            want = signals._OUTPUTS[name] if k == "output" else sides if k == "side" else held.get(k)
+            if want is not None and set(words.SOURCES[name].get("values", {}).get(k, {})) != set(want):
+                out.append(f"{name}.{k}")
+    return out
+
+
+def test_an_indicator_key_held_to_a_few_words_offers_them_all():
+    assert _source_choice_gaps() == []
+
+
+def test_the_indicator_check_catches_a_missing_choice(monkeypatch):
+    import copy
+
+    monkeypatch.setattr(words, "SOURCES", copy.deepcopy(words.SOURCES))
+    words.SOURCES["prior_period"]["values"].pop("period")
+    assert _source_choice_gaps() == ["prior_period.period"]
+
+
 def test_the_schema_carries_the_words_and_the_indicator_list():
     s = builderform.schema()
     assert s["words"] == words.schema()

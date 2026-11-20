@@ -1,57 +1,278 @@
 import { describe, it, expect } from "vitest";
 import { renderToString } from "react-dom/server";
-import type { BuilderSchema, BuilderToday, BuilderTypes } from "@console/shared";
+import type { BuilderSchema, BuilderToday } from "@console/shared";
+import FIXTURE from "./fixtures/builderSchema.json";
 import { numberProblem } from "../src/pages/Builder/BuilderField";
-import { BuilderForm, EventSkips, entryText, parseValue, showValue, withKey } from "../src/pages/Builder/BuilderForm";
-import { plainBlocks } from "../src/pages/Builder/BuilderWizard";
+import { LegFields, parseValue, showValue, withKey } from "../src/pages/Builder/BuilderFields";
+import { BuilderForm, type OpenSections, type Strategy } from "../src/pages/Builder/BuilderForm";
+import { at, cut, plain, rangeTemplate, say, setAt, valueWords, without } from "../src/pages/Builder/sentence";
+import { automationWords, blockWords } from "../src/pages/Builder/specWords";
 import { legText, TodayView } from "../src/pages/Builder/BuilderToday";
 import { SECTION_HELP } from "../src/pages/Builder/BuilderHelp";
+import { holdsCloseSnapshot } from "../src/pages/Builder/builderTips";
 
 const html = (el: React.ReactElement) => renderToString(el).replace(/<!--\s*-->/g, "");
 
-const SCHEMA: BuilderSchema = {
-  blocks: { structure: ["symbol", "expiry", "legs"], entry: ["entry", "weekdays", "skip_events"], gates: ["gates"], exit: ["exit"], size: ["size", "limits"] },
-  entry: { time: { at: true, window: false }, orb: { minutes: true, direction: true, latest: true, single_shot: false }, trigger: { trigger: true, bar_minutes: false, volume: false } },
-  orb_directions: ["above", "below"],
-  trigger_forms: { at: { at: true, within: true }, signal: { signal: true, window: true, within: true, daily: false } },
-  signals: { gap: ["direction", "pct"], cross: ["a", "b", "direction"] },
-  signal_rules: ["confirm", "first_of_day"],
-  weekdays: [0, 1, 2, 3, 4],
-  event_labels: ["FOMC", "MonthEnd"],
-  expiry: { dte: { days: true, tolerance: false } },
-  strike_rules: {
-    delta: { keys: { target: true, at_most: false }, matches: ["nearest", "above", "below"], default_match: "nearest" },
-    from_leg: { keys: { leg: true, points: false, pct: false }, matches: ["exact", "nearest"], default_match: "exact" },
-  },
-  gates: [
-    { gate: "vix_level", stage: "signal", runs: "market", params: [{ name: "min", required: false, default: null }, { name: "max", required: false, default: null }] },
-    { gate: "gex_ratio", stage: "chain", runs: "market", params: [{ name: "strikes", required: true, default: null }, { name: "mode", required: false, default: "nearest" }] },
-    { gate: "mid_price", stage: "structure", runs: "structure", params: [{ name: "min", required: false, default: null }] },
-  ],
-  exits: ["profit_target_pct", "touch"],
-  limits: ["max_open", "per_day"],
-  sizes: { contracts: ["contracts", "progression"], max_risk: ["max_risk", "minimum", "progression"] },
-  progression: ["after", "ceiling", "floor", "step"],
-};
+/** The automations module's own schema (`cli builder-schema` as of 2026-11-20, without the shapes). */
+const SCHEMA = FIXTURE as unknown as BuilderSchema;
+const W = SCHEMA.words!;
 
-const SPEC = {
-  symbol: "SPX",
-  expiry: { kind: "dte", days: 0 },
-  entry: { kind: "orb", minutes: 60, direction: "above", latest: "13:00" },
-  weekdays: [0, 1, 4],
+const IC = {
+  symbol: "SPY",
+  expiry: { kind: "between", min: 40, max: 50 },
+  entry: {
+    kind: "trigger",
+    bar_minutes: 5,
+    trigger: {
+      signal: {
+        kind: "cross",
+        a: { name: "rsi", n: 2 },
+        b: 10,
+        direction: "below",
+        seed: true,
+        only_when: [{ kind: "cross", a: { name: "close" }, b: { name: "sma", n: 200 }, direction: "above", seed: true }],
+      },
+      window: { open: "15:50", close: "15:59" },
+      within: null,
+    },
+  },
+  weekdays: [0, 1, 2, 3, 4],
   skip_events: { labels: ["FOMC"] },
   legs: [
-    { name: "short_put", right: "P", side: -1, strike: { rule: "delta", target: 0.35 } },
-    { name: "long_put", right: "P", side: 1, strike: { rule: "from_leg", leg: "short_put", points: -20 } },
+    { name: "L1", action: "STO", qty: 1, side: "put", strike: { rule: "delta", target: 0.16 } },
+    { name: "L2", action: "STO", qty: 1, side: "call", strike: { rule: "delta", target: 0.16 } },
+    { name: "L3", action: "BTO", qty: 1, side: "put", strike: { rule: "from_leg", leg: "L1", points: -10 } },
+    { name: "L4", action: "BTO", qty: 1, side: "call", strike: { rule: "from_leg", leg: "L2", points: 10 } },
   ],
-  gates: [
-    { gate: "gex_ratio", strikes: 16, min: -1.5 },
-    { gate: "mid_price", min: 0.15 },
-  ],
+  gates: [{ gate: "vix_level", min: 14, max: 30 }],
+  exit: { close_at_dte: 21, stop_credit_multiple: 1, profit_target_pct: 50 },
   size: { contracts: 1 },
-  limits: { max_open: 1, per_day: 1 },
-  exit: { touch: { points: -10 } },
+  limits: { max_open: 3, per_day: 1 },
 };
+const STRATEGY: Strategy = {
+  name: "iron_condor",
+  settings: { direction: "short", dte: 45, expiries: "monthly", place_by: "delta", target: 0.16, width: 10 },
+  legs: JSON.stringify(IC.legs),
+};
+const CLOSED: OpenSections = { trade: false, entry: false, filters: false, exits: false, size: false };
+const NO_PAYOFF = { empty: false, data: null, stale: false, last: null };
+
+function form(p: { spec?: Record<string, unknown>; open?: Partial<OpenSections>; readOnly?: boolean; strategy?: Strategy | null; labels?: Record<string, "backtested" | "changed" | "not_backtested">; schema?: BuilderSchema }) {
+  return html(
+    <BuilderForm
+      schema={p.schema ?? SCHEMA}
+      spec={p.spec ?? IC}
+      labels={p.labels ?? {}}
+      onChange={() => {}}
+      readOnly={p.readOnly}
+      open={{ ...CLOSED, ...p.open }}
+      onOpen={() => {}}
+      strategy={p.strategy === undefined ? STRATEGY : p.strategy}
+      setStrategy={() => {}}
+      preset={null}
+      setPreset={() => {}}
+      payoff={NO_PAYOFF}
+    />,
+  );
+}
+
+describe("a sentence", () => {
+  it("cuts a template into its words and its slots", () => {
+    expect(cut("at {at} ET, within {within} minutes")).toEqual([{ text: "at " }, { slot: "at" }, { text: " ET, within " }, { slot: "within" }, { text: " minutes" }]);
+    expect(cut("{trailing_stop.dollars}")).toEqual([{ slot: "trailing_stop.dollars" }]);
+  });
+
+  it("drops a phrase the line already shows beside it, only at a word's end", () => {
+    expect(without("Enter at {at} ET", "Enter")).toBe("at {at} ET");
+    expect(without("Expiring between {min} and {max} days out", "Expiring", "Between")).toBe("{min} and {max} days out");
+    expect(without("atleast {days}", "at")).toBe("atleast {days}");
+    expect(without("when {signal}, between {window.open}", "when {signal},", "between")).toBe("{window.open}");
+  });
+
+  it("reads a value in its own words: a flag, a null, a number phrase, an option, a list", () => {
+    const w = W.trigger["signal"];
+    expect(valueWords(w, "within", null)).toBe("any time before the window closes");
+    expect(valueWords(w, "within", 5)).toBe("within 5 minutes of the firing");
+    expect(valueWords(W.limits["one_per_expiry"], "one_per_expiry", true)).toBe("one position per expiry");
+    expect(valueWords(W.signals["change"], "from", "prior_close")).toBe("the previous close");
+    expect(valueWords(undefined, "x", "first_bar_close")).toBe("first bar close");
+  });
+
+  it("reads a filter's min and max as one band, either side alone", () => {
+    expect(rangeTemplate(W.range, { min: 1, max: 2 })).toBe(W.range.both);
+    expect(rangeTemplate(W.range, { min: 1 })).toBe(W.range.min);
+    expect(rangeTemplate(W.range, { max: 2 })).toBe(W.range.max);
+    expect(rangeTemplate(W.range, {})).toBeNull();
+    expect(plain(say(W.gates["vix_level"]!.sentence, { min: 14 }, W.gates["vix_level"], { range: W.range }))).toBe("VIX is at least 14");
+  });
+
+  it("marks a slot with no value, and reads and writes a nested key", () => {
+    expect(say("at {at} ET", {}, undefined)).toEqual([{ t: "at " }, { t: "…", v: true }, { t: " ET" }]);
+    expect(at({ window: { open: "09:45" } }, "window.open")).toBe("09:45");
+    expect(setAt({ window: { open: "09:45" } }, "window.close", "10:00")).toEqual({ window: { open: "09:45", close: "10:00" } });
+    expect(setAt({ window: { open: "09:45" } }, "window.open", undefined)).toEqual({});
+  });
+});
+
+describe("the automation in words", () => {
+  const said = automationWords(W, SCHEMA, IC, STRATEGY);
+  const p = plain(said.paragraph);
+
+  it("says the trade by its strategy, its expiry run on", () => {
+    expect(p.startsWith("Sell an iron condor on SPY with short strikes at 0.16 delta and wings 10 points wide, expiring between 40 and 50 days out, the nearest.")).toBe(true);
+  });
+
+  it("says the entry with its indicators, its window and its condition", () => {
+    expect(p).toContain("Enter when RSI(2) crosses below 10, between 15:50 and 15:59 ET, entering any time before the window closes, only while the close crosses above the 200-bar simple average holds");
+  });
+
+  it("says the filters, the exits in the module's order, the size and the limits", () => {
+    expect(p).toContain(", if VIX is between 14 and 30.");
+    expect(p).toContain("Take profit at 50% of the most it can make; stop at a loss of 1× the credit; close with 21 days left.");
+    expect(p).toContain("Trade 1 contract each time, at most 3 open at once, at most 1 a day.");
+    expect(plain(automationWords(W, SCHEMA, { ...IC, size: { contracts: 2 } }, STRATEGY).size)).toBe("Trade 2 contracts each time");
+    expect(p).toContain("Skips Fed decision (FOMC).");
+  });
+
+  it("marks every value the person set", () => {
+    const marked = said.paragraph.filter((s) => s.v).map((s) => s.t);
+    for (const v of ["SPY", "0.16", "10", "40", "50", "15:50", "50", "1", "21", "3"]) expect(marked).toContain(v);
+  });
+
+  it("says each leg by its strike rule when no strategy filled them", () => {
+    const t = plain(automationWords(W, SCHEMA, IC, null).trade);
+    expect(t).toContain("Any legs on SPY: Sell L1 · Short Put at 0.16 delta; Sell L2 · Short Call at 0.16 delta; Buy L3 · Long Put from L1 · Short Put");
+  });
+
+  it("gives Groups one line a block in the same words", () => {
+    const b = blockWords(W, SCHEMA, IC);
+    expect(b.gates).toBe("VIX is between 14 and 30");
+    expect(b.exit).toBe("Take profit at 50% of the most it can make; stop at a loss of 1× the credit; close with 21 days left");
+    expect(blockWords(W, SCHEMA, { ...IC, gates: [], exit: {} }).exit).toBe("None: held to expiry.");
+  });
+});
+
+describe("the one-page form", () => {
+  it("has the five sections in order, each closed to its line with its block's label", () => {
+    const out = form({ labels: { structure: "backtested", gates: "changed" } });
+    const names = [...out.matchAll(/<span class="b-sec-name">([^<]+)<\/span>/g)].map((m) => m[1]);
+    expect(names).toEqual(["Trade", "Entry", "Filters", "Exits", "Size and limits"]);
+    expect(out).toContain('<span class="b-sec-state is-ok">backtested</span>');
+    expect(out).toContain('<span class="b-sec-state">changed since its backtest</span>');
+    expect(out).not.toMatch(/<details[^>]*open=""/);
+    expect(out).toMatch(/b-sec-line"><span class="said">Sell<\/span> an iron condor on <span class="said">SPY<\/span>/);
+  });
+
+  it("marks the open section as editing and offers the next one", () => {
+    const out = form({ open: { trade: true } });
+    expect(out).toMatch(/<details class="b-sec" id="b-sec-trade" open="">/);
+    expect(out).toContain('<span class="b-sec-state is-cur">editing</span>');
+    expect(out).toContain("Next: <!-- -->Entry".replace("<!-- -->", ""));
+  });
+
+  it("lists the strategies under the module's groups, Custom last, the chosen one pressed", () => {
+    const out = form({ open: { trade: true } });
+    const rail = out.slice(out.indexOf('aria-label="Strategies"'), out.indexOf("b-main"));
+    for (const g of ["One option", "Spreads", "Both sides", "Two expiries"]) expect(rail).toContain(`<div class="b-rail-g">${g}</div>`);
+    expect(rail).toMatch(/class="b-rail-i is-on" aria-pressed="true"[^>]*>Iron condor/);
+    expect(rail.lastIndexOf("is-custom")).toBeGreaterThan(rail.indexOf("Calendar"));
+  });
+
+  it("draws the strategy's line with a control in each slot, in the module's words", () => {
+    const out = form({ open: { trade: true } });
+    expect(out).toMatch(/<select id="t-direction" class="ctl" aria-label="direction">.*<option value="short" selected="">Sell<\/option><option value="long">Buy<\/option>/);
+    expect(out).toContain('<input id="t-symbol" class="ctl" style="width:76px" aria-label="symbol" value="SPY"/>');
+    expect(out).toMatch(/<span class="word">with short strikes at<\/span><input id="t-target"/);
+    expect(out).toMatch(/<option value="pct">% from the price<\/option>/);
+  });
+
+  it("greys the strategy's line once the legs are edited, and offers to rebuild", () => {
+    const out = form({ open: { trade: true }, strategy: { ...STRATEGY, legs: "[]" } });
+    expect(out).toContain("b-greyed");
+    expect(out).toContain("Rebuild from <!-- -->Iron condor".replace("<!-- -->", ""));
+    expect(out).not.toContain('id="t-direction"');
+  });
+
+  it("puts the expiry rule's kind beside its lead and its values in the line", () => {
+    const out = form({ open: { trade: true } });
+    expect(out).toMatch(/<span class="b-lead">Expiring<\/span><select class="ctl" aria-label="expiry rule">.*<option value="between" selected="">Between<\/option>/);
+    expect(out).toContain('<input id="t-exp-min" class="ctl" style="width:56px" type="number" inputMode="numeric" step="1" min="0" aria-label="min" value="40"/>');
+    // Unset, the engine's default is shown chosen, once.
+    expect(out).toContain('<select id="t-exp-prefer" class="ctl" aria-label="prefer"><option value="first" selected="">nearest</option><option value="last">farthest</option></select>');
+  });
+
+  it("shows the weekdays as pressed buttons and the skipped events as tags by name", () => {
+    const out = form({ open: { trade: true }, spec: { ...IC, weekdays: [0, 2] } });
+    expect(out).toContain('<button type="button" class="b-day is-on" aria-pressed="true">Mon</button><button type="button" class="b-day" aria-pressed="false">Tue</button>');
+    expect(out).toMatch(/<span class="b-tag" title="[^"]+">Fed decision \(FOMC\)<button type="button" aria-label="Stop skipping Fed decision \(FOMC\)">×<\/button><\/span>/);
+    expect(out).toMatch(/<option value="" selected="">\+ Add an event<\/option>.*<option value="NFP">/);
+    expect(out).not.toMatch(/aria-label="Add an event to skip".*<option value="FOMC">/);
+  });
+
+  it("shows the legs read-only in columns until Edit legs", () => {
+    const out = form({ open: { trade: true } });
+    expect(out).toContain("<th>Leg</th><th>Action</th><th>Qty</th><th>Side</th><th>Strike</th><th>Placed by</th><th>From</th><th>Match</th>");
+    expect(out).toContain('<td><span class="b-leg-id">L3</span></td><td>Buy</td><td class="num">1</td><td>put</td><td class="num">-10</td><td>From another leg</td><td>L1 · Short Put</td><td class="dim">exact</td>');
+    expect(out).toContain(">Edit legs</button>");
+    expect(out).not.toContain('id="f-leg-0-action"');
+  });
+
+  it("opens straight into editing for an automation with no legs", () => {
+    const out = form({ open: { trade: true }, spec: { ...IC, legs: [] }, strategy: null });
+    expect(out).toContain(">Done editing</button>");
+    expect(out).toContain("+ Add leg (L1)");
+    expect(out).toMatch(/<h2>Custom<\/h2>/);
+  });
+
+  it("draws the entry as lines: how it enters, the signal, the window, each condition", () => {
+    const out = form({ open: { entry: true } });
+    expect(out).toMatch(/<select class="ctl" aria-label="how it enters">.*<option value="trigger" selected="">On a trigger<\/option>/);
+    expect(out).toMatch(/<span class="b-lead">When<\/span><select class="ctl" aria-label="signal">.*<option value="cross" selected="">Crosses<\/option>/);
+    expect(out).toMatch(/<span class="b-pill"><select class="ctl" aria-label="indicator">.*<option value="rsi" selected="">RSI<\/option>/);
+    expect(out).toMatch(/<span class="b-lead">Between<\/span><input id="e-window.open"[^>]*value="15:50"/);
+    expect(out).toMatch(/<option value="null" selected="">any time before the window closes<\/option>/);
+    expect(out.match(/<span class="b-lead">Only if<\/span>/g)?.length).toBe(1);
+    expect(out).toContain("+ Add a condition");
+  });
+
+  it("puts the rules a line leaves out under More options, and the whole entry under Edit as rule", () => {
+    const out = form({ open: { entry: true } });
+    expect(out).toContain('<span class="word">held for</span><input id="e-more-confirm"');
+    expect(out).toMatch(/<input id="e-more-seed" type="checkbox" checked=""\/> carrying its reading across sessions/);
+    expect(out).toMatch(/More options <span class="muted">\d set<\/span>/);
+    expect(out).toContain('aria-label="the entry as JSON"');
+  });
+
+  it("names a time entry outside the one daily snapshot", () => {
+    expect(form({ open: { entry: true }, spec: { ...IC, entry: { kind: "time", at: "10:00" } } })).toContain("misses the 15:59 chain");
+    expect(form({ open: { entry: true }, spec: { ...IC, entry: { kind: "time", at: "15:55" } } })).not.toContain("misses the 15:59 chain");
+    expect(holdsCloseSnapshot({ kind: "time", at: "15:55" })).toBe(true);
+  });
+
+  it("draws the size and the limits as lines", () => {
+    const out = form({ open: { size: true } });
+    expect(out).toMatch(/<select class="ctl" aria-label="size by"><option value="contracts" selected="">Contracts<\/option><option value="max_risk">Risk budget<\/option>/);
+    expect(out).toContain('<input id="s-contracts" class="ctl" style="width:72px" type="number" inputMode="numeric" step="1" min="1" aria-label="contracts" value="1"/>');
+    expect(out).toMatch(/<span class="word">at most<\/span><input id="s-max_open"[^>]*value="3"\/><span class="word">open at once<\/span>/);
+    expect(out).toContain("+ <!-- -->Step after a run".replace("<!-- -->", ""));
+  });
+
+  it("locks every section of a saved automation and offers no next step", () => {
+    const out = form({ readOnly: true, open: { trade: true } });
+    expect(out.match(/<fieldset class="builder-lock" disabled="">/g)?.length).toBe(5);
+    expect(out).not.toContain("Next: ");
+    expect(out).not.toContain("is-cur");
+  });
+
+  it("says so, rather than drawing fields, for a module that sends no words", () => {
+    expect(form({ schema: { ...SCHEMA, words: undefined } })).toContain("sends no words for the form");
+  });
+
+  it("puts a ? on each section, opening its own help", () => {
+    const out = form({});
+    for (const t of ["1 · Trade", "2 · Entry", "3 · Filters", "4 · Exits", "5 · Size and limits"]) expect(out).toContain(`aria-label="About ${t}"`);
+  });
+});
 
 describe("the form's values", () => {
   it("types a field the way it shows: number, flag, JSON, text; blank removes the key", () => {
@@ -66,114 +287,6 @@ describe("the form's values", () => {
     expect(showValue({ points: -10 })).toBe('{"points":-10}');
   });
 
-  it("says the entry in plain English from its own fields", () => {
-    expect(entryText({ kind: "time", at: "10:30" })).toBe("Enter at 10:30, for 5 minutes.");
-    expect(entryText(SPEC.entry)).toBe("Enter on the first break above the 60-minute opening range, until 13:00.");
-    const sig = { kind: "trigger", bar_minutes: 5, trigger: { signal: { kind: "gap", direction: "up", pct: 0.5 }, window: { open: "09:45", close: "10:00" }, within: null } };
-    expect(entryText(sig)).toBe("Enter on the first gap firing (direction up, pct 0.5) on 5-minute bars, between 09:45 and 10:00.");
-  });
-});
-
-describe("the form", () => {
-  const out = html(<BuilderForm schema={SCHEMA} spec={SPEC} labels={{ structure: "backtested", gates: "changed" }} onChange={() => {}} />);
-
-  it("has the five sections, each with its blocks' backtest labels", () => {
-    for (const t of ["1 · Underlying and data", "2 · Signal: when to enter", "3 · Gates: the market and the chain", "4 · Structure: legs, then price", "5 · Exits, size, costs"]) {
-      expect(out).toContain(t);
-    }
-    expect(out).toContain('class="chip chip-ok">structure · backtested');
-    expect(out).toContain('class="chip chip-warn">gates · changed since its backtest');
-    expect(out).toContain('class="chip">exit · not backtested');
-  });
-
-  it("offers only the schema's choices and shows the spec's values", () => {
-    expect(out).toContain('<option value="orb" selected="">orb</option>');
-    expect(out).toContain('value="short_put"');
-    expect(out).toContain('<option value="from_leg" selected="">from leg</option>');
-    expect(out).toContain('value="-20"');
-    expect(out).toContain("Enter on the first break above the 60-minute opening range");
-  });
-
-  it("puts market and chain gates in section 3 and price gates in section 4", () => {
-    const three = out.slice(out.indexOf("3 · Gates"), out.indexOf("4 · Structure"));
-    const four = out.slice(out.indexOf("4 · Structure"), out.indexOf("5 · Exits"));
-    expect(three).toContain('<option value="gex_ratio" selected="">gex ratio</option>');
-    expect(three).not.toContain('value="mid_price" selected');
-    expect(four).toContain('<option value="mid_price" selected="">mid price</option>');
-  });
-
-  it("checks the weekdays and events the spec names", () => {
-    expect(out).toMatch(/<input type="checkbox" checked=""\/> Mon/);
-    expect(out).toMatch(/<input type="checkbox"\/> Wed/);
-    expect(out).toMatch(/<input type="checkbox" checked=""\/> FOMC/);
-  });
-});
-
-describe("a read-only form", () => {
-  const out = html(<BuilderForm schema={SCHEMA} spec={SPEC} labels={{}} onChange={() => {}} readOnly />);
-  const editable = html(<BuilderForm schema={SCHEMA} spec={SPEC} labels={{}} onChange={() => {}} />);
-
-  it("puts every section's fields in a disabled fieldset, the help still open", () => {
-    expect(out.match(/<fieldset class="builder-lock" disabled="">/g)?.length).toBe(6);
-    expect(out).toContain('<input type="checkbox" disabled="" checked=""/> FOMC');
-    // Each section's head, with its help, closes before its lock opens, so the help still opens.
-    const heads = out.match(/<div class="builder-section-head">.*?<\/div><fieldset class="builder-lock" disabled="">/g) ?? [];
-    expect(heads.length).toBe(5);
-    expect(heads.every((h) => h.includes('class="help-q"'))).toBe(true);
-    expect(out).not.toContain("required. A greyed value");
-  });
-
-  it("is not locked when editable", () => {
-    expect(editable).not.toContain('disabled=""');
-    expect(editable).toContain("required. A greyed value");
-  });
-});
-
-describe("typed fields", () => {
-  const INT1 = { type: "int" as const, min: 1 };
-  const TYPES: BuilderTypes = {
-    expiry: { days: { type: "int", min: 0 }, min: { type: "int", min: 0 }, max: { type: "int", min: 0 }, monthly: { type: "bool" } },
-    entry: { time: { at: { type: "time" }, window: { ...INT1, default: 5 } }, orb: { minutes: INT1, latest: { type: "time" }, single_shot: { type: "bool", default: true } } },
-    trigger: {},
-    signals: { kinds: {}, rules: {} },
-    strike: { target: { type: "number", above: 0 }, at_most: { type: "number" }, leg: { type: "leg" }, points: { type: "number" }, pct: { type: "number" } },
-    gates: { gex_ratio: { strikes: INT1, mode: { type: "enum", options: ["nearest", "above", "below"], default: "nearest" } } },
-    exit: { touch: { type: "json" }, profit_target_pct: { type: "number", above: 0 } },
-    size: { contracts: INT1 },
-    limits: { max_open: INT1, per_day: { type: "int", min: 1, max: 1 } },
-  };
-  const out = html(<BuilderForm schema={{ ...SCHEMA, types: TYPES }} spec={SPEC} labels={{}} onChange={() => {}} />);
-
-  it("draws a whole number as a bounded number box with its bounds beside the label", () => {
-    expect(out).toContain('<input id="f-orb-minutes" class="builder-input" type="number" inputMode="numeric" step="1" min="1" required="" aria-required="true" value="60"/>');
-    expect(out).toContain('for="f-limit-per_day">per day<span class="builder-req"> *</span><span class="builder-hint"> · whole, = 1</span>');
-    expect(out).toContain('<input id="f-leg-0-target" class="builder-input" type="number" inputMode="decimal" step="any"');
-  });
-
-  it("draws a time as a time picker, in Eastern time", () => {
-    expect(out).toContain('<input id="f-orb-latest" class="builder-input" type="time" required="" aria-required="true" value="13:00"/>');
-    expect(out).toContain('latest<span class="builder-req"> *</span><span class="builder-hint"> · ET</span>');
-  });
-
-  it("offers the engine's words, its default first and unwritten", () => {
-    expect(out).toContain('<option value="" selected="">default (nearest)</option><option value="nearest">nearest</option>');
-    expect(out).toContain('<select id="f-orb-single_shot" class="builder-input"><option value="" selected="">default (yes)</option><option value="true">yes</option><option value="false">no</option></select>');
-  });
-
-  it("shows an older leg by its action and side in the page's words", () => {
-    expect(out).toMatch(/id="f-leg-0-action"[^]*?value="sell" selected="">Sell to open</);
-    expect(out).toMatch(/id="f-leg-1-action"[^]*?value="buy" selected="">Buy to open</);
-    expect(out).toMatch(/id="f-leg-0-right"[^]*?value="put" selected="">Put</);
-  });
-
-  it("offers only the legs placed before this one for a leg reference, each in words", () => {
-    expect(out).toContain('<select id="f-leg-1-leg" class="builder-input" required="" aria-required="true"><option value="">choose…</option><option value="short_put" selected="">Short Put</option></select>');
-  });
-
-  it("says what is required and what a greyed default means", () => {
-    expect(out).toContain('<span class="builder-req">*</span> required. A greyed value in an empty field is the engine&#x27;s default');
-  });
-
   it("refuses a number outside its bounds, in words", () => {
     expect(numberProblem({ type: "int", min: 1 }, "0")).toBe("at least 1");
     expect(numberProblem({ type: "int", min: 1 }, "1.5")).toBe("a whole number");
@@ -185,40 +298,29 @@ describe("typed fields", () => {
   });
 });
 
-describe("the event skips", () => {
-  const ABOUT = {
-    FOMC: { name: "Fed decision (FOMC)", when: "The Federal Reserve's rate decision.", next: "2026-12-09" },
-    MonthEnd: { name: "Month end", when: "The last trading day of the month.", next: "2026-11-30" },
-    Earnings: { name: "Earnings", when: "The symbol's own earnings report day.", next: null },
+describe("editing the legs", () => {
+  const old = {
+    ...IC,
+    legs: [
+      { name: "short_put", right: "P", side: -1, strike: { rule: "delta", target: 0.35 } },
+      { name: "long_put", right: "P", side: 1, strike: { rule: "from_leg", leg: "short_put", points: -20 } },
+    ],
   };
-  const schema = { ...SCHEMA, event_labels: ["Earnings", "FOMC", "MonthEnd"], event_about: ABOUT };
+  const out = html(<LegFields schema={SCHEMA} spec={old} onChange={() => {}} />);
 
-  it("shows the module's names, sorted by name, and checks the labels the spec names", () => {
-    const out = html(<EventSkips schema={schema} on={["FOMC"]} onChange={() => {}} />);
-    expect(out).toMatch(/<input type="checkbox" checked=""\/> Fed decision \(FOMC\)/);
-    expect(out).toContain('title="The last trading day of the month."');
-    expect(out.indexOf("Earnings")).toBeLessThan(out.indexOf("Fed decision")); // by name, not by label
-    expect(out.indexOf("Fed decision")).toBeLessThan(out.indexOf("Month end"));
-    expect(out).toContain('aria-label="What are these events?"');
-    expect(out).not.toContain("builder-event-key"); // the key is closed until asked for
+  it("shows an older leg by its action and side in the page's words", () => {
+    expect(out).toMatch(/id="f-leg-0-action"[^]*?value="sell" selected="">Sell to open</);
+    expect(out).toMatch(/id="f-leg-1-action"[^]*?value="buy" selected="">Buy to open</);
+    expect(out).toMatch(/id="f-leg-0-right"[^]*?value="put" selected="">Put</);
   });
 
-  it("opens a key of what each event is, when it falls and its next day", () => {
-    const out = html(<EventSkips schema={schema} on={[]} onChange={() => {}} keyOpen />);
-    expect(out).toContain("<td>Fed decision (FOMC)</td><td>The Federal Reserve&#x27;s rate decision.</td><td class=\"num\">Wed 2026-12-09</td>");
-    expect(out).toContain("<td>Month end</td><td>The last trading day of the month.</td><td class=\"num\">Mon 2026-11-30</td>");
-    expect(out).toContain("<td>Earnings</td><td>The symbol&#x27;s own earnings report day.</td><td class=\"num\">—</td>");
+  it("offers only the legs placed before this one for a leg reference, each in words", () => {
+    expect(out).toContain('<select id="f-leg-1-leg" class="builder-input" required="" aria-required="true"><option value="">choose…</option><option value="short_put" selected="">Short Put</option></select>');
   });
 
-  it("falls back to the bare labels, with no key, from a module that sends no names", () => {
-    const out = html(<EventSkips schema={SCHEMA} on={[]} onChange={() => {}} keyOpen />);
-    expect(out).toMatch(/<input type="checkbox"\/> FOMC/);
-    expect(out).not.toContain("What are these events?");
-    expect(out).not.toContain("builder-event-key");
-  });
-
-  it("names the skipped events in the wizard's plain English", () => {
-    expect(plainBlocks({ ...SPEC, skip_events: { labels: ["FOMC", "MonthEnd"] } }, schema).entry).toContain("skipping Fed decision (FOMC), Month end days");
+  it("offers the engine's default match when none is set", () => {
+    expect(out).toContain('<option value="" selected="">default (nearest)</option>');
+    expect(out).toContain('<option value="" selected="">default (exact)</option>');
   });
 });
 
@@ -251,35 +353,7 @@ describe("today, live", () => {
   });
 });
 
-describe("a leg's match mode", () => {
-  it("draws the schema's expiry flags as checkboxes, checked only when set", () => {
-    const schema = { ...SCHEMA, expiry: { between: { min: true, max: true, monthly: false } }, expiry_flags: ["monthly"] };
-    const on = html(<BuilderForm schema={schema} spec={{ ...SPEC, expiry: { kind: "between", min: 45, max: 60, monthly: true } }} labels={{}} onChange={() => {}} />);
-    expect(on).toMatch(/<input id="f-expiry-monthly" class="builder-flag" type="checkbox" checked=""/);
-    expect(on).toContain('<input id="f-expiry-min" class="builder-input" required="" aria-required="true" value="45"');
-    const off = html(<BuilderForm schema={schema} spec={{ ...SPEC, expiry: { kind: "between", min: 45, max: 60 } }} labels={{}} onChange={() => {}} />);
-    expect(off).toMatch(/<input id="f-expiry-monthly" class="builder-flag" type="checkbox"\/>/);
-    // Without the schema naming it, a key stays a text field.
-    const old = html(<BuilderForm schema={{ ...schema, expiry_flags: undefined }} spec={{ ...SPEC, expiry: { kind: "between", min: 45, max: 60, monthly: true } }} labels={{}} onChange={() => {}} />);
-    expect(old).toContain('<input id="f-expiry-monthly" class="builder-input" value="true"');
-  });
-
-  it("offers the engine's default when none is set, and says when one is required", () => {
-    const out = html(<BuilderForm schema={SCHEMA} spec={SPEC} labels={{}} onChange={() => {}} />);
-    expect(out).toContain('<option value="" selected="">default (nearest)</option>');
-    expect(out).toContain('<option value="" selected="">default (exact)</option>');
-    expect(out).not.toContain("choose…");
-  });
-});
-
 describe("the section help", () => {
-  it("puts a ? on each of the five sections, each opening its own help", () => {
-    const out = html(<BuilderForm schema={SCHEMA} spec={SPEC} labels={{}} onChange={() => {}} />);
-    for (const t of ["1 · Underlying and data", "2 · Signal: when to enter", "3 · Gates: the market and the chain", "4 · Structure: legs, then price", "5 · Exits, size, costs"]) {
-      expect(out).toContain(`aria-label="About ${t}"`);
-    }
-  });
-
   it("has a title and sections for every part of the page", () => {
     for (const key of ["underlying", "signal", "gates", "structure", "exits", "today", "runs"]) {
       const h = SECTION_HELP[key]!;

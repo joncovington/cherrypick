@@ -8,7 +8,7 @@ import { Section } from "../../components/Section";
 import { FliesTile } from "../Flies/FliesSession";
 import { builderDraft, groupsCheck, groupsSave, useAutomations, useAutomationsBuilder, useAutomationsPerformance, useBuilderSchema, useGroupsEdit } from "../../lib/api";
 import { fmtMoney } from "../../lib/format";
-import { plainBlocks } from "../Builder/BuilderWizard";
+import { blockWords } from "../Builder/specWords";
 import { TradeShape } from "../Builder/TradeShape";
 
 /**
@@ -641,7 +641,7 @@ function AutomationPage({ view, draft, edit, paper, group, name }: { view: Group
   const first = [start, groupStart].filter((d): d is string => typeof d === "string").sort().pop() ?? null;
   const startCome = first === null || first <= view.today;
   const blocks = builder.data?.automations.find((a) => a.name === name)?.blocks ?? [];
-  const words = spec && schema.data?.schema ? plainBlocks(spec, schema.data.schema) : null;
+  const words = spec && schema.data?.schema?.words ? blockWords(schema.data.schema.words, schema.data.schema, spec) : null;
   const groupNames = Object.keys(draft.groups).sort();
   const budget = gspec !== undefined && (gspec.allocation !== undefined || gspec.max_risk !== undefined);
   return (
@@ -710,7 +710,7 @@ function AutomationPage({ view, draft, edit, paper, group, name }: { view: Group
           help={HELP}
           controls={
             <span className="grp-cell">
-              <Link className="btn" to={`/builder?automation=${encodeURIComponent(name)}`}>
+              <Link className="btn" to={`/automations/builder?automation=${encodeURIComponent(name)}`}>
                 View in Builder
               </Link>
             </span>

@@ -1,10 +1,13 @@
 import { useEffect, useState } from "react";
-import { useSearchParams } from "react-router-dom";
-import { BuilderWizard } from "./BuilderWizard";
+import { Link, useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import type { BuilderAutomation, BuilderBlock, BuilderSchema, BuilderSuggestion, BuilderToday, BuilderWindow } from "@console/shared";
 import { builderBacktest, builderDraft, builderSave, builderToday, fullSetAdd, fullSetPlan, useAutomationsBuilder, useBuilderRuns, useBuilderSchema, type FullSetAdded, type FullSetPlan } from "../../lib/api";
-import { BuilderForm, type Spec } from "./BuilderForm";
+import { BuilderForm, type OpenSections, type Preset, type Spec, type Strategy } from "./BuilderForm";
+import { Coverage } from "./builderTips";
+import { Marked } from "./sentence";
+import { automationWords } from "./specWords";
+import { Shape, usePayoff } from "./TradeShape";
 import { ExploreRunsList, RunCardPanel } from "./BuilderRunCard";
 import { GridsPanel } from "./BuilderGrid";
 import { IdeasPanel } from "./BuilderIdeas";
@@ -13,13 +16,13 @@ import { CardHelpButton } from "../../components/CardHelp";
 import { SECTION_HELP } from "./BuilderHelp";
 
 /**
- * The Builder page (#1180): one automation at a time, built in five sections (structure and data,
- * the entry signal, the gates, the legs and their price, exits and size), beside the engine's decision
- * of it today and its explore runs. Every field writes the spec the paper loop reads; Check is the
- * module's own rule, Save goes through the orchestrator's config editor and is always off, and
- * Explore run queues the saved automation where our data covers it, and Find ideas searches its newest
- * long run for entry filters to declare. Adding a register row and turning an automation on happen
- * outside the page.
+ * The Builder (Automations' Builder tab, 2026-11-20): one automation at a time on one page. A summary
+ * paragraph in the module's own words sits above the five sections (the trade, the entry, the filters,
+ * the exits, the size and limits; `BuilderForm`), with Check, Save (off) and the engine's decision of
+ * it today. Every line writes the spec the paper loop reads; Check is the module's own rule, Save goes
+ * through the orchestrator's config editor and is always off, Explore run queues the saved automation
+ * where our data covers it, and Find ideas and Try settings search its runs for what to declare. Adding
+ * a register row and turning an automation on happen outside the page: on the Groups tab beside it.
  */
 
 /** What each block label says, in words. */
@@ -176,8 +179,9 @@ type Outcome =
   | { kind: "saved"; added: boolean; backup: string | null }
   | { kind: "queued"; text: string };
 
-/** A draft is an unsaved automation handed over from the wizard's "Open in the full form". */
-export type Mode = { kind: "saved"; name: string } | { kind: "copy"; from: string } | { kind: "new" } | { kind: "draft"; name: string; spec: Spec };
+/** What the workspace holds: a saved automation (read-only), a copy of one, or a new one (`n` counts
+ *  New presses, so each starts afresh). */
+export type Mode = { kind: "saved"; name: string } | { kind: "copy"; from: string } | { kind: "new"; n: number };
 
 /** The automation's explore runs, and one run's card when opened. */
 function RunsPanel({ name }: { name: string }) {
@@ -314,6 +318,12 @@ export function runBlocked(a: BuilderAutomation | null, dirty: boolean, mode: Mo
   return null;
 }
 
+/** Which sections a workspace opens with: a new automation or a copy at section 1, a saved one closed. */
+export function firstOpen(mode: Mode): OpenSections {
+  const open = mode.kind !== "saved";
+  return { trade: open, entry: false, filters: false, exits: false, size: false };
+}
+
 export function Workspace({
   a,
   schema,
@@ -332,18 +342,25 @@ export function Workspace({
   // A saved automation is shown, never edited here: a change is a new automation, copied from it.
   const readOnly = mode.kind === "saved";
   const source = mode.kind === "saved" ? mode.name : mode.kind === "copy" ? mode.from : null;
-  const [name, setName] = useState(mode.kind === "saved" || mode.kind === "draft" ? mode.name : mode.kind === "copy" ? `${mode.from}-copy` : "my-automation");
-  const [spec, setSpec] = useState<Spec | null>(mode.kind === "new" ? { ...NEW_SPEC } : mode.kind === "draft" ? mode.spec : null);
+  const [name, setName] = useState(mode.kind === "saved" ? mode.name : mode.kind === "copy" ? `${mode.from}-copy` : "my-automation");
+  const [spec, setSpec] = useState<Spec | null>(mode.kind === "new" ? { ...NEW_SPEC } : null);
   const [dirty, setDirty] = useState(mode.kind !== "saved");
   const [json, setJson] = useState<string | null>(null);
   const [labels, setLabels] = useState<Record<string, BuilderBlock["state"]>>(
     mode.kind === "saved" && a ? Object.fromEntries(a.blocks.map((b) => [b.block, b.state])) : {},
   );
   const [outcome, setOutcome] = useState<Outcome>({ kind: "idle" });
+  const [coverage, setCoverage] = useState<BuilderSuggestion | null>(null);
   const [busy, setBusy] = useState(false);
+  const [open, setOpen] = useState<OpenSections>(() => firstOpen(mode));
+  const [strategy, setStrategy] = useState<Strategy | null>(null);
+  // A new automation's entry is the page's starting point, not the person's: a preset replaces it unasked.
+  const [preset, setPreset] = useState<Preset | null>(mode.kind === "new" ? { name: "custom", entry: JSON.stringify(NEW_SPEC["entry"]), gates: [] } : null);
+  const [today, setToday] = useState(false);
   const windows = mode.kind === "saved" ? (a?.suggestion?.windows ?? []) : [];
   const [windowKey, setWindowKey] = useState<string | null>(null);
   const chosen = windows.some((w) => w.key === windowKey) ? windowKey : (windows[0]?.key ?? null);
+  const payoff = usePayoff(name, dirty && spec ? spec : undefined);
 
   useEffect(() => {
     if (source === null) return;
@@ -387,6 +404,7 @@ export function Workspace({
     else if (r.problems && r.problems.length > 0) setOutcome({ kind: "error", text: "Not saved as it stands:", problems: r.problems });
     else {
       setLabels(viewBlocks(r.view));
+      setCoverage((r.view as { suggestion?: BuilderSuggestion | null } | undefined)?.suggestion ?? null);
       setOutcome({ kind: "checked", isNew: r.new === true });
     }
   };
@@ -419,24 +437,32 @@ export function Workspace({
   };
 
   const why = runBlocked(a, dirty, mode);
+  const W = schema.words;
+  const paragraph = W && spec ? automationWords(W, schema, spec, strategy).paragraph : null;
+  const sketch = (payoff.data ?? payoff.last)?.sketch;
+  const all = (v: boolean): OpenSections => ({ trade: v, entry: v, filters: v, exits: v, size: v });
   return (
     <>
-      <div className="builder-picker">
-        <label className="builder-lbl" htmlFor="builder-name">
-          automation
-        </label>
-        <input id="builder-name" className="builder-input" value={name} disabled={mode.kind === "saved"} onChange={(e) => setName(e.target.value)} />
-        <span className="chip">{mode.kind === "saved" ? (a?.enabled ? "on" : "off") : "not saved"}</span>
-        {a?.group && mode.kind === "saved" && <span className="chip">group {a.group}</span>}
-        <span className="chip">start {(mode.kind === "saved" && a?.start) || "not set"}</span>
-        {a?.register && mode.kind === "saved" && (
-          <span className="chip">
-            item {a.register.item}: {a.register.verdict.replace("_", " ")}
-          </span>
-        )}
-        <button type="button" className="btn btn-quiet" onClick={() => setJson(json === null ? editorText(spec ?? {}) : null)}>
-          {json === null ? (readOnly ? "View as JSON" : "Edit as JSON") : "Back to the form"}
-        </button>
+      <div className="b-top">
+        <div className="b-name">
+          <input id="builder-name" className="ctl b-name-input" aria-label="Automation name" value={name} disabled={mode.kind === "saved"} onChange={(e) => setName(e.target.value)} />
+          <span className="chip">{mode.kind === "saved" ? (a?.enabled ? "on" : "off") : "draft · off"}</span>
+          {a?.group && mode.kind === "saved" && <span className="chip">group {a.group}</span>}
+          {mode.kind === "saved" && <span className="chip">start {a?.start || "not set"}</span>}
+          {a?.register && mode.kind === "saved" && (
+            <span className="chip">
+              item {a.register.item}: {a.register.verdict.replace("_", " ")}
+            </span>
+          )}
+        </div>
+        <div className="b-tools">
+          <button type="button" className="btn" disabled={json !== null} onClick={() => setOpen(all(true))}>
+            Open every section
+          </button>
+          <button type="button" className="btn" disabled={json !== null} onClick={() => setOpen(all(false))}>
+            Close every section
+          </button>
+        </div>
       </div>
       {readOnly && (
         <p className="builder-readonly" role="note">
@@ -451,40 +477,29 @@ export function Workspace({
       )}
       {mode.kind === "saved" && a?.suggestion && <SuggestionLine s={a.suggestion} />}
       {mode.kind === "saved" && a?.suggestion && <AddToFullSet name={a.name} symbol={a.symbol} s={a.suggestion} />}
-      <div className="builder-layout">
-        <div className="builder-form">
-          {spec === null ? (
-            <div className="muted">Reading {source}…</div>
-          ) : json !== null ? (
-            <textarea
-              className="builder-editor-text"
-              aria-label="automation"
-              spellCheck={false}
-              rows={Math.min(40, json.split("\n").length + 1)}
-              value={json}
-              readOnly={readOnly}
-              onChange={(e) => {
-                setJson(e.target.value);
-                setDirty(true);
-                setOutcome({ kind: "idle" });
-              }}
-            />
-          ) : (
-            <BuilderForm schema={schema} spec={spec} labels={labels} onChange={edit} readOnly={readOnly} shape={{ name, automation: dirty ? spec : undefined }} />
-          )}
-          <ActionRow
-            busy={busy}
-            editable={!readOnly}
-            canCheck={spec !== null}
-            canRun={why === null}
-            runWhy={why}
-            windows={windows}
-            chosen={chosen}
-            onChoose={setWindowKey}
-            onCheck={() => void check()}
-            onSave={() => void save()}
-            onRun={() => void run()}
-          />
+
+      <section className="b-summary" aria-label="This automation">
+        <div>
+          <h3 className="b-h3">This automation</h3>
+          <p className="b-para">{paragraph ? <Marked segs={paragraph} /> : spec === null ? `Reading ${source ?? ""}…` : ""}</p>
+          <div className="b-actions">
+            {!readOnly && (
+              <>
+                <button type="button" className="btn" disabled={busy || spec === null} onClick={() => void check()}>
+                  Check
+                </button>
+                <button type="button" className="btn btn-primary" disabled={busy || spec === null} onClick={() => void save()}>
+                  Save (off)
+                </button>
+              </>
+            )}
+            <button type="button" className="btn" aria-expanded={today} onClick={() => setToday(!today)}>
+              Today, live
+            </button>
+            <button type="button" className="btn btn-quiet" onClick={() => setJson(json === null ? editorText(spec ?? {}) : null)}>
+              {json === null ? (readOnly ? "View as JSON" : "Edit as JSON") : "Back to the sections"}
+            </button>
+          </div>
           {outcome.kind === "error" && (
             <div className="error" role="alert">
               {outcome.text}
@@ -500,6 +515,11 @@ export function Workspace({
           {outcome.kind === "checked" && (
             <div className="builder-check" role="status">
               No problems. {outcome.isNew ? "A new automation" : "This edit"} would save off, with the labels shown on each section.
+              {coverage && (
+                <div className="b-coverage">
+                  <Coverage s={coverage} />
+                </div>
+              )}
             </div>
           )}
           {outcome.kind === "saved" && (
@@ -512,12 +532,78 @@ export function Workspace({
               {outcome.text}
             </div>
           )}
+          {mode.kind !== "saved" && (
+            <div className="b-after">
+              <span>After you save:</span>
+              <span className="b-step">Explore run</span>→
+              <Link className="b-step" to="/automations/groups">
+                Add to a group
+              </Link>
+              →<span className="b-step">Switched on from the next session</span>
+            </div>
+          )}
         </div>
-        <aside className="builder-side" aria-label="Today and runs">
-          <div className="builder-section">
-            <TodayPanel name={name} spec={spec} dirty={dirty} />
+        {sketch && (
+          <div className="b-sum-shape" aria-label="The trade's shape">
+            <Shape s={sketch} />
           </div>
-          {mode.kind === "saved" && (
+        )}
+      </section>
+      {today && (
+        <div className="builder-section">
+          <TodayPanel name={name} spec={spec} dirty={dirty} />
+        </div>
+      )}
+
+      {spec === null ? (
+        <div className="muted">Reading {source}…</div>
+      ) : json !== null ? (
+        <textarea
+          className="builder-editor-text"
+          aria-label="automation"
+          spellCheck={false}
+          rows={Math.min(40, json.split("\n").length + 1)}
+          value={json}
+          readOnly={readOnly}
+          onChange={(e) => {
+            setJson(e.target.value);
+            setDirty(true);
+            setOutcome({ kind: "idle" });
+          }}
+        />
+      ) : (
+        <BuilderForm
+          schema={schema}
+          spec={spec}
+          labels={labels}
+          onChange={edit}
+          readOnly={readOnly}
+          open={open}
+          onOpen={setOpen}
+          strategy={strategy}
+          setStrategy={setStrategy}
+          preset={preset}
+          setPreset={setPreset}
+          payoff={payoff}
+        />
+      )}
+
+      {mode.kind === "saved" && (
+        <>
+          <ActionRow
+            busy={busy}
+            editable={false}
+            canCheck={false}
+            canRun={why === null}
+            runWhy={why}
+            windows={windows}
+            chosen={chosen}
+            onChoose={setWindowKey}
+            onCheck={() => {}}
+            onSave={() => {}}
+            onRun={() => void run()}
+          />
+          <div className="b-panels">
             <div className="builder-section">
               <div className="builder-run-section-head">
                 <h4>Explore runs · this automation</h4>
@@ -525,8 +611,6 @@ export function Workspace({
               </div>
               <RunsPanel name={mode.name} />
             </div>
-          )}
-          {mode.kind === "saved" && (
             <div className="builder-section">
               <div className="builder-run-section-head">
                 <h4>Ideas · entry filters to declare</h4>
@@ -534,8 +618,6 @@ export function Workspace({
               </div>
               <IdeasPanel name={mode.name} />
             </div>
-          )}
-          {mode.kind === "saved" && (
             <div className="builder-section">
               <div className="builder-run-section-head">
                 <h4>Settings · exits and width to declare</h4>
@@ -543,9 +625,9 @@ export function Workspace({
               </div>
               <GridsPanel name={mode.name} />
             </div>
-          )}
-        </aside>
-      </div>
+          </div>
+        </>
+      )}
     </>
   );
 }
@@ -557,7 +639,6 @@ export function BuilderPage() {
   const [params] = useSearchParams();
   const asked = params.get("automation");
   const [mode, setMode] = useState<Mode | null>(asked ? { kind: "saved", name: asked } : null);
-  const [wizard, setWizard] = useState<{ from: string | null; n: number } | null>(null);
   if (q.isLoading || s.isLoading) return <div className="muted">Loading the automations…</div>;
   if (q.error) return <div className="error">Could not read the automations: {String(q.error)}</div>;
   const data = q.data;
@@ -568,37 +649,7 @@ export function BuilderPage() {
   // The page opens on nothing: no automation is chosen for you, and no form shows until one is.
   const current: Mode | null = mode;
   const a = current?.kind === "saved" ? (data.automations.find((x) => x.name === current.name) ?? null) : null;
-  const key = !current
-    ? ""
-    : current.kind === "saved"
-      ? `saved:${current.name}`
-      : current.kind === "copy"
-        ? `copy:${current.from}`
-        : current.kind === "draft"
-          ? `draft:${current.name}`
-          : "new";
-  if (wizard) {
-    return (
-      <div className="builder-page">
-        <BuilderWizard
-          key={wizard.n}
-          schema={schema}
-          automations={data.automations}
-          copyFrom={wizard.from}
-          onCancel={() => setWizard(null)}
-          onAnother={() => setWizard({ from: null, n: wizard.n + 1 })}
-          onOpenForm={(name, spec) => {
-            setWizard(null);
-            setMode({ kind: "draft", name, spec });
-          }}
-          onSaved={(name) => {
-            setWizard(null);
-            setMode({ kind: "saved", name });
-          }}
-        />
-      </div>
-    );
-  }
+  const key = !current ? "" : current.kind === "saved" ? `saved:${current.name}` : current.kind === "copy" ? `copy:${current.from}` : `new:${current.n}`;
   return (
     <div className="builder-page">
       <div className="builder-picker">
@@ -623,16 +674,19 @@ export function BuilderPage() {
             </option>
           ))}
         </select>
-        <button type="button" className="btn" onClick={() => setWizard({ from: null, n: 0 })}>
+        <button type="button" className="btn" onClick={() => setMode({ kind: "new", n: (current?.kind === "new" ? current.n : 0) + 1 })}>
           New
         </button>
-        <button type="button" className="btn" disabled={current?.kind !== "saved"} onClick={() => current?.kind === "saved" && setWizard({ from: current.name, n: 0 })}>
+        <button type="button" className="btn" disabled={current?.kind !== "saved"} onClick={() => current?.kind === "saved" && setMode({ kind: "copy", from: current.name })}>
           Copy as new
         </button>
-        <button type="button" className="link-button" title="a blank automation straight in the form, without the steps" onClick={() => setMode({ kind: "new" })}>
-          new in the form
-        </button>
       </div>
+      {!current && (
+        <p className="muted b-start">
+          Open a saved automation to read it, or start a new one: pick a strategy, then its entry, filters, exits and size, each in its own
+          section. A new automation saves off.
+        </p>
+      )}
       {current && (
         <Workspace
           key={key}
@@ -640,7 +694,7 @@ export function BuilderPage() {
           schema={schema}
           mode={current}
           onSaved={(n) => setMode({ kind: "saved", name: n })}
-          onCopy={current.kind === "saved" ? () => setWizard({ from: current.name, n: 0 }) : undefined}
+          onCopy={current.kind === "saved" ? () => setMode({ kind: "copy", from: current.name }) : undefined}
         />
       )}
     </div>

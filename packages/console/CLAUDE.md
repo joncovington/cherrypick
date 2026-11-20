@@ -128,9 +128,13 @@ alone):
     writes. Each automation's state (`on`, `waiting`, `off_group`, `off_own`) is the module's
     (`cli groups-view`), and Review's "what it does to trading" lays the module's after-view beside the
     view now; the page derives no state. Paper only: nothing here places an order.
-  - **The Builder's form reads the module's schema and "Today, live"; neither writes.** The form's
-    choices are `cli builder-schema` (`/api/automations/builder/schema`, the engine's own tables),
-    so the page spells no gate, strike rule or exit of its own. "Today, live" is configcli
+  - **The Builder's form reads the module's schema and "Today, live"; neither writes.** The Builder
+    is Automations' `builder` tab (`/builder` redirects there; `g u` is its tab chord,
+    `navLinks.TAB_SHORTCUTS`). The form's choices are `cli builder-schema`
+    (`/api/automations/builder/schema`, the engine's own tables), so the page spells no gate, strike
+    rule or exit of its own, and its words are the schema's `words` (`words.py`): each section's line,
+    the summary paragraph and Groups' block lines are the module's sentences with each slot filled
+    (`sentence.tsx`, `specWords.ts`), and the page adds only the joins between sentences. "Today, live" is configcli
     `automation_today` (`/api/automations/builder/today`, a POST only because it may carry an
     unsaved edit): the module decides the automation now on a read-only snapshot and writes nothing.
     The shape and chain example under the legs (and on the Groups tab's automation page,
@@ -146,7 +150,7 @@ alone):
     own keys, `action` (BTO, STO), `qty` and `side` (put, call), which the module checks; the form
     reads the older spelling too (`parts`: `side` as signed contracts, `right`) and writes any leg it
     edits back in the page's (`writtenLeg`). The module's editor and saves convert as well.
-    The strategy selector (`StrategyPicker.tsx`, the legs section and the wizard's Start) is configcli
+    The strategy rail (section 1 of `BuilderForm.tsx`) is configcli
     `automation_strategy` (`/api/automations/builder/strategy`: a strategy's name and plain settings,
     checked by shape): the module builds the legs and the expiry (`strategies.py`) and the page writes
     them into the edit; the list and the settings are the schema's (`strategy`). It writes no config.
@@ -155,16 +159,12 @@ alone):
     Section 1 shows the far expiry under the near one (`FarExpiry`: its rules are the schema's
     `far_expiry`, a button adds it, removing it puts every leg back on near), and once there is one,
     each leg picks Near or Far in an expiry column (`has-expiry`).
-    The entry presets (`EntryPicker.tsx`, the signal section and the wizard's Entry step) are configcli
+    The entry preset rail (section 2) is configcli
     `automation_entry` (`/api/automations/builder/entry`: a preset's name and plain settings, and
     each stacked filter's name and plain settings, checked by shape): the module builds the `entry`
     and the filters' gates (`entrypresets.py`); the page sets the entry and adds the gates, and a
     second fill swaps out only the gates the last one added that still stand as added
     (`withFilterGates`). The lists and settings are the schema's (`entry_presets`). It writes no config.
-    The wizard (`BuilderWizard.tsx`) is the same calls and the same save: its strategies (or, from an
-    older module, its shapes) are the
-    schema's, each step's Next is the module's draft check filtered to that step's keys, and it
-    writes only through `/save`, always off.
   - **The Builder's backtest queues; it writes no config** (`/api/automations/builder/backtest`,
     configcli `automation_backtest`). The route sends the name and at most one window key, the
     module's own token for one of the suggestion's `windows` (checked by shape here, `WINDOW_KEY`);

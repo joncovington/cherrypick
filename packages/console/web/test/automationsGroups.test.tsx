@@ -132,7 +132,7 @@ describe("the three levels", () => {
     expect(out).toContain("<b>iron-condor-1345</b>");
     expect(out).toContain("Will it trade, and if not, what stops it?");
     expect(out).toMatch(/grp-check is-no.*Its group/);
-    expect(out).toContain('href="/builder?automation=iron-condor-1345"');
+    expect(out).toContain('href="/automations/builder?automation=iron-condor-1345"');
   });
 
   it("is a tab of the automations module", () => {
