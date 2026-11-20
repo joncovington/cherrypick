@@ -14,7 +14,8 @@ script carries everything the process now asks of a study, empty where the decla
 - `plan` and `study` subcommands, the study writing the kit's verdict block (one run, cut at the
   rule's splits) beside the licence note;
 - a progress file: `study` opens a `cherrypick.core.progress.Reporter` and hands it to `trades`,
-  which counts its sessions, so the queue shows how far a long run has got, its rate and ETA.
+  which counts its sessions overall and per symbol, so the queue shows how far a long run has got,
+  its rate and ETA.
 
 It writes code only. The declaration (the plan section and the register row) is written by hand, as
 before; this tool never touches either, and never reads licensed data.
@@ -117,10 +118,10 @@ def trades(inputs: Inputs, conn, rep: core_progress.Reporter) -> dict[str, list[
     the store only through `inputs` (`inputs.sessions`, `inputs.chain`): the paths this study asked
     for, never another study's.
 
-    Report as it goes: `rep.phase("sessions", total=len(sessions), unit="days")` before the loop
-    and `rep.advance("sessions", current=day)` after each session (open an inner phase for any
-    loop that repeats per session, such as placebo draws), so the queue can tell a slow run from
-    a stuck one."""
+    Report as it goes, overall and per symbol: `rep.split("sessions", [symbol for each (symbol,
+    session) to replay], unit="days")` before the loop and `rep.advance("sessions", key=symbol,
+    current=day)` after each one (open an inner phase for any loop that repeats per session, such as
+    placebo draws), so the queue can tell a slow run from a stuck one, and which symbol it is on."""
     raise NotImplementedError("item {n}: replay the declared rule")
 
 

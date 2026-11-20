@@ -74,6 +74,8 @@ def test_the_study_reports_its_progress(repo):
     assert reporters, "cmd_study opens no Reporter as rep"
     calls = [ast.unparse(c) for c in ast.walk(reporters[0]) if isinstance(c, ast.Call)]
     assert "trades(inputs, conn, rep)" in calls
+    doc = ast.get_docstring(_function(tree, "trades")) or ""
+    assert "rep.split(" in doc and "key=symbol" in doc, "trades says to count overall and per symbol"
 
 
 def test_nothing_is_overwritten(repo):
