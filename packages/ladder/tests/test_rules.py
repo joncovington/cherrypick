@@ -31,13 +31,25 @@ def test_levels_round_down_and_targets_round_up():
     assert rules.target("fixed", cost=52.69, shares=20, age=0) == 54.80  # 54.7976
 
 
-def test_the_groups_posted_soxl_fills_are_the_chain_rule():
-    """11-13: previous close 65.53, buys posted at 56.65 and 52.69, sold at 58.92 and 54.80."""
-    first = rules.buy_level("chain", ref_close=65.53, last_buy=None)
-    second = rules.buy_level("chain", ref_close=65.53, last_buy=first)
-    third = rules.buy_level("chain", ref_close=65.53, last_buy=second)
+def test_session_steps_down_from_the_reference_close_only():
+    assert rules.buy_level("session", ref_close=100.0, last_buy=80.0) == 93.0
+    assert rules.buy_level("session", ref_close=100.0, last_buy=80.0, bought_today=1) == 86.49
+    assert rules.buy_level("session", ref_close=100.0, last_buy=None, bought_today=2) == 80.43
+    assert rules.buy_level("session", ref_close=None, last_buy=93.0) is None
+
+
+def test_the_groups_posted_soxl_fills_are_the_session_rule():
+    """11-13: previous close 65.53, buys posted at 56.65 and 52.69, sold at 58.92 and 54.80.
+    11-19: previous close 49.26 with lots from earlier sessions open, buy 45.82, sold 47.66."""
+    second = rules.buy_level("session", ref_close=65.53, last_buy=None, bought_today=1)
+    third = rules.buy_level("session", ref_close=65.53, last_buy=None, bought_today=2)
     assert abs(second - 56.65) < 0.05
     assert abs(third - 52.69) < 0.05
+    level = rules.buy_level("session", ref_close=49.26, last_buy=50.43, bought_today=0)
+    assert abs(level - 45.82) < 0.05
+    assert abs(rules.target("fixed", cost=level, shares=21, age=0) - 47.66) < 0.05
+    # chain, anchored on an older lot, would have been nowhere near
+    assert rules.buy_level("chain", ref_close=49.26, last_buy=50.43) == 46.89
 
 
 def test_decay_schedule():

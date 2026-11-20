@@ -22,7 +22,7 @@ internals.
 | Automations | eight short-dated SPX and GLD option arms | **off** (experimental) | none |
 | Ladder | dip-bought lots of a leveraged index fund, each sold at +4% | **off** (experimental) | none |
 
-Every shipped example config runs `control` alone except contango's (`control` and `flipexit`), weeklyput's (`unhedged`), automations' (its eight), ladder's (`chain`, `once`, `decay`) and the four retired modules', which ship with every arm off (PMCC's examples name `shield`, `shield_hold` and `shield_guard`; its `control` is retired too). Any other arm named below is added in a machine's own
+Every shipped example config runs `control` alone except contango's (`control` and `flipexit`), weeklyput's (`unhedged`), automations' (its eight), ladder's (`chain`, `once`, `decay`, `session`) and the four retired modules', which ship with every arm off (PMCC's examples name `shield`, `shield_hold` and `shield_guard`; its `control` is retired too). Any other arm named below is added in a machine's own
 config. BWB, calendars and curve build their comparison books into the module and run them unless the
 config sets that book's `enabled` to `false`, as their examples do.
 

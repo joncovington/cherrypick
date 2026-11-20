@@ -22,7 +22,11 @@ Nothing here says the rule has an edge.
   - `once`: at most one lot a session, at 93% of the reference close.
   - `chain`: with no lot open, the first lot at 93% of the reference close; then each further lot at
     93% of the last lot bought, the same session or later. A sold lot does not move the anchor; an
-    empty book resets it. The group's posted SOXL fills of 2026-11-13 are this rule.
+    empty book resets it.
+  - `session`: every session starts again from the reference close, whatever older lots the arm
+    holds: its first lot at 93% of the close, its n-th at 93%^n. Each level buys once a session,
+    even after its lot sells. The group's posted SOXL fills (2026-11-13 and 2026-11-19) are this
+    rule; on 11-19 `chain`, anchored on an older lot, missed theirs.
 - **Target rules:** `fixed` 104% of cost; `decay` (item 27) 104% to day 30, breakeven after the sale's
   fees from day 31, 95% of cost from day 121, in calendar days from the buy session.
 - **Rounding:** a buy level rounds down to the cent and a target up, so a rounded limit never fills

@@ -6,9 +6,10 @@
 > commands below.
 
 ladder buys a leveraged index fund in lots when it falls 7% and sells each lot on its own at +4% of
-what it paid. It starts with TQQQ and three arms: `chain` (the Discord group's rule: each further lot
-7% under the last), `once` (item 26's base: one lot a session, 7% under the previous close) and
-`decay` (item 27's fix for long holds: the target falls to breakeven after a month). Item 26 failed
+what it paid. It starts with TQQQ and four arms: `session` (the Discord group's rule: each session
+steps down 7% at a time from the previous close), `chain` (item 26's: each further lot 7% under the
+last one bought, across sessions), `once` (item 26's base: one lot a session, 7% under the previous
+close) and `decay` (item 27's fix for long holds: the target falls to breakeven after a month). Item 26 failed
 its history test; this runs it in paper to watch it at real quotes.
 
 See [CLAUDE.md](CLAUDE.md) for the rule, what paper adds to it, the money layout and the stream needs.
