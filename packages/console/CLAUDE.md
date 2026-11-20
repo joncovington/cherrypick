@@ -127,7 +127,10 @@ alone):
     (the next session, so a paper record never begins mid-day), which are all the orchestrator
     writes. Each automation's state (`on`, `waiting`, `off_group`, `off_own`) is the module's
     (`cli groups-view`), and Review's "what it does to trading" lays the module's after-view beside the
-    view now; the page derives no state. Paper only: nothing here places an order.
+    view now; the page derives no state. Paper only: nothing here places an order. One automation's
+    own page (`/automations/automation/<name>`, framed as the groups tab) reads only: its rule, its
+    switches' state, its record and its decisions, each filtered to its name from the module's own
+    endpoints (in the automations ledger an arm is the automation's name).
   - **The Builder's form reads the module's schema and "Today, live"; neither writes.** The Builder
     is Automations' `builder` tab (`/builder` redirects there; `g u` is its tab chord,
     `navLinks.TAB_SHORTCUTS`). The form's choices are `cli builder-schema`

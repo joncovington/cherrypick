@@ -8,6 +8,11 @@ import type { TradeCardLeg, TradeCardModel } from "../Live/TradeCard";
  * whatever the ledger names, so nothing below knows one.
  */
 
+/** One automation's page. In the automations ledger an arm is the automation's name, so an arm links here too. */
+export function automationHref(name: string): string {
+  return `/automations/automation/${encodeURIComponent(name)}`;
+}
+
 const money = (v: number | null): string =>
   v === null ? "—" : `$${Math.abs(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 

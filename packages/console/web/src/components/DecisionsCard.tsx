@@ -9,10 +9,11 @@ import { useDecisions, type DecisionsModule } from "../lib/api";
  * row is a distinct (arm, symbol, reason) this session, `occurrences` counting a gate that
  * refused the identical way tick after tick as one row rather than a flood of duplicates. Entered
  * rows (accepted) surface as a plain chip; every refusal keeps its own reason text so "why didn't
- * this arm trade today" never comes down to a generic "no".
+ * this arm trade today" never comes down to a generic "no". `arm` keeps one arm's rows (an arm's own page).
  */
-export function DecisionsCard({ module, mode = "paper" }: { module: DecisionsModule; mode?: TradingMode }) {
+export function DecisionsCard({ module, mode = "paper", arm }: { module: DecisionsModule; mode?: TradingMode; arm?: string }) {
   const { data, isLoading, isError, dataUpdatedAt } = useDecisions(module, mode);
+  const rows = arm === undefined ? (data?.rows ?? []) : (data?.rows ?? []).filter((r) => r.arm === arm);
   return (
     <DataCard
       title={`Entry decisions${data?.tradeDate !== null && data?.tradeDate !== undefined ? ` (${data.tradeDate})` : ""}`}
@@ -20,11 +21,11 @@ export function DecisionsCard({ module, mode = "paper" }: { module: DecisionsMod
       numFrom={3}
       loading={isLoading}
       isError={isError}
-      rowCount={data?.rows.length ?? 0}
+      rowCount={rows.length}
       empty={data?.mode === "live" ? "no live decisions recorded yet" : "no decisions recorded this session"}
       updatedAt={dataUpdatedAt}
     >
-      {data?.rows.map((r, i) => (
+      {rows.map((r, i) => (
         <tr key={`${r.arm}-${r.symbol}-${r.reason}-${String(i)}`}>
           <td>{r.arm}</td>
           <td>{r.symbol}</td>

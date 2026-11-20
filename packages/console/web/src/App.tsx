@@ -76,6 +76,9 @@ export default function App() {
         {/* One guide page (`/help/<slug>`), inside Help's `guides` tab; `/help/faq` is the FAQ tab. A guide's
             slug is not a tab id, so the generic route would rewrite it to the first tab. */}
         <Route path="help/:slug" element={<HelpRoute />} />
+        {/* One automation's page (`/automations/automation/<name>`), framed as Automations › groups,
+            where every automation is listed. */}
+        <Route path="automations/automation/:name" element={<ModuleRoute forced={{ module: "automations", slide: "groups" }} />} />
         <Route path=":module" element={<ModuleRoute />} />
         <Route path=":module/:slide" element={<ModuleRoute />} />
         {/* Catch-all. Without it an unmatched path renders NOTHING — a blank screen that reads as

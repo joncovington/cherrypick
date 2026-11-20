@@ -11,6 +11,14 @@ import { useBoolPref, usePrefsSync, usePrefsVersion, getPref, prefWritesSettled 
 import { useTradeNotifications } from "../../lib/useTradeNotifications";
 import { useKeyboardNav } from "../../lib/useKeyboardNav";
 
+/** A page that lives under a tab without being one marks that tab on the rail: one automation's page
+ *  (`/automations/automation/<name>`) is reached from, and framed as, Automations' groups tab. */
+const UNDER_TAB: Partial<Record<string, Record<string, string>>> = { automations: { automation: "groups" } };
+
+export function railSlide(module: string, seg: string): string {
+  return UNDER_TAB[module]?.[seg] ?? seg;
+}
+
 export function Shell() {
   const location = useLocation();
   // Every page is framed now (2026-10-11): the rail is the ONE nav and renders HERE, on the shell,
@@ -56,7 +64,7 @@ export function Shell() {
           column 2 and cannot leave a notch where they meet. Collapsed (the default since
           2026-10-01) the first column folds to 64px and the wordmark to the cherry alone. The
           toggle lives at the rail's foot; nothing else opens or closes it. */}
-      <ModuleNav module={module} slide={location.pathname.split("/")[2] ?? ""} />
+      <ModuleNav module={module} slide={railSlide(seg, location.pathname.split("/")[2] ?? "")} />
       <StatusHeader />
       <main className={module !== null ? "shell-content shell-content-flush" : "shell-content"}>
         {/* Keyed by the MODULE, not the full pathname. The key exists to remount on navigation so
