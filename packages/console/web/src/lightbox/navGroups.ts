@@ -245,6 +245,24 @@ export const WEEKLYPUT_SLIDES = [
 export type WeeklyputSlideId = (typeof WEEKLYPUT_SLIDES)[number]["id"];
 
 /**
+ * ladder's tabs: the paper share dip ladder on leveraged index funds. `summary` (today) is each fund's
+ * previous close and every arm's next buy level; `positions` the lots held, the old ones flagged as
+ * the group's "hospital"; `history` the sold lots as the trades they were; `arms` each arm's lots,
+ * net and open lots in the group's terms. No advisor, regime, performance or costs tab: the module
+ * declares no advice bounds, keeps no daily series, and its costs are one column of the history.
+ */
+export const LADDER_SLIDES = [
+  { id: "summary", label: "today" },
+  { id: "positions", label: "open lots" },
+  { id: "history", label: "history" },
+  { id: "arms", label: "arms" },
+  { id: "decisions", label: "decisions" },
+  { id: "guide", label: "help" },
+] as const satisfies readonly NavSlide[];
+
+export type LadderSlideId = (typeof LADDER_SLIDES)[number]["id"];
+
+/**
  * automations' tabs: item 75's arms in paper. `summary` (today) is each arm's session and the gate that
  * blocked any that did not enter; `positions` the open structures as the orders that opened them;
  * `history` the closed ones in the trade table standard; `performance` each arm's net and drawdown,
@@ -566,6 +584,17 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
       { label: "tables", ids: ["cycles", "positions", "history"] },
       { label: "evidence", ids: ["decisions"] },
       { label: "study", ids: ["performance", "costs"] },
+      { label: "help", ids: ["guide"] },
+    ],
+    legacy: { session: "summary" },
+  },
+  ladder: {
+    slides: LADDER_SLIDES,
+    simple: ["summary", "positions", "history", "arms", "guide"],
+    groups: [
+      { label: "today", ids: ["summary"] },
+      { label: "tables", ids: ["positions", "history"] },
+      { label: "evidence", ids: ["arms", "decisions"] },
       { label: "help", ids: ["guide"] },
     ],
     legacy: { session: "summary" },

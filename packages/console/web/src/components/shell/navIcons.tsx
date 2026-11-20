@@ -89,6 +89,19 @@ function ContangoIcon() {
   );
 }
 
+/* Rungs stepping down a price line, the lowest one filled — the share dip ladder. */
+function LadderIcon() {
+  return (
+    <Svg>
+      <path d="M5 5h14" opacity="0.45" />
+      <path d="M7 10h10" opacity="0.7" />
+      <path d="M9 15h6" />
+      <path d="M12 5v14" opacity="0.45" />
+      <circle cx="12" cy="19" r="1.5" />
+    </Svg>
+  );
+}
+
 /* A short put's payoff hinge with a week tick row beneath — the weekly index put. */
 function WeeklyputIcon() {
   return (
@@ -304,6 +317,7 @@ const ICONS: Record<string, (p: NavIconProps) => ReactNode> = {
   "/curve": CurveIcon,
   "/contango": ContangoIcon,
   "/weeklyput": WeeklyputIcon,
+  "/ladder": LadderIcon,
   "/automations": AutomationsIcon,
   "/bwb": BwbIcon,
   "/calendars": CalendarsIcon,

@@ -58,6 +58,8 @@ import { readCurve, readCurveHistory, readCurveMeta, resolveCurveSession } from 
 import { readContangoMetrics, readCurveEquity, readPmccEquity } from "../services/navBridge.js";
 import { readContango, readContangoHistory } from "../readers/contango.js";
 import { readWeeklyput, readWeeklyputHistory, weeklyputDbPath } from "../readers/weeklyput.js";
+import { ladderDbPath, readLadder, readLadderHistory } from "../readers/ladder.js";
+import { readLadderStatus, readLadderSummary } from "../services/ladderBridge.js";
 import { readAutomations, readAutomationsHistory, readAutomationsPerformance } from "../readers/automations.js";
 import { readAutomationGroups } from "../services/automationsGroupsBridge.js";
 import { readAutomationsBuilder, readBuilderSchema } from "../services/automationsBuilderBridge.js";
@@ -482,7 +484,17 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
     return readWeeklyputHistory(config, { arm, symbol, range: parseDateRange(q) });
   });
   app.get("/api/weeklyput/decisions", async () => readDecisions(config, "weeklyput", null));
-  // ladder (paper, no page yet): its decision journal through the shared card's reader.
+  // ladder (paper). The lots held, the sold lots, and the module's own next buy levels and per-arm
+  // summary (`status`, `summary`): the page never re-derives them. Read-only; no order path.
+  app.get("/api/ladder", async () => readLadder(config));
+  app.get("/api/ladder/history", async (req) => {
+    const q = (req.query ?? {}) as Record<string, unknown>;
+    const arm = typeof q["arm"] === "string" && q["arm"] !== "" && q["arm"].length <= 40 ? q["arm"] : null;
+    const symbol = typeof q["symbol"] === "string" && /^[A-Z]{1,5}$/.test(q["symbol"]) ? q["symbol"] : null;
+    return readLadderHistory(config, { arm, symbol, range: parseDateRange(q) });
+  });
+  app.get("/api/ladder/status", async () => readLadderStatus(ladderDbPath(config)));
+  app.get("/api/ladder/summary", async () => readLadderSummary(ladderDbPath(config)));
   app.get("/api/ladder/decisions", async () => readDecisions(config, "ladder", null));
   app.get("/api/weeklyput/status", async () => readWeeklyputStatus(weeklyputDbPath(config)));
   app.get("/api/weeklyput/cycles", async () => readWeeklyputCycles(weeklyputDbPath(config)));

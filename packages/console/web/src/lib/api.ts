@@ -8,6 +8,10 @@ import type {
   ContangoMetrics,
   ContangoHistory,
   ContangoPayload,
+  LadderHistory,
+  LadderPayload,
+  LadderStatus,
+  LadderSummary,
   WeeklyputCycles,
   WeeklyputHistory,
   WeeklyputPayload,
@@ -1328,6 +1332,48 @@ export function useWeeklyputHistory(filter: { arm: string | null; from: string |
   return useQuery<WeeklyputHistory>({
     queryKey: ["weeklyput-history", filter],
     queryFn: () => getJson<WeeklyputHistory>(`/api/weeklyput/history?${params.toString()}`),
+    refetchInterval: 60_000,
+    placeholderData: (prev) => prev,
+  });
+}
+
+/** ladder's ledger: the lots held, the loop's last run and the measurement breaks. */
+export function useLadder() {
+  return useQuery<LadderPayload>({
+    queryKey: ["ladder"],
+    queryFn: () => getJson<LadderPayload>("/api/ladder"),
+    refetchInterval: 30_000,
+  });
+}
+
+/** The module's own read of the day (`ladder status`): each fund's previous close and each arm's next buy level. */
+export function useLadderStatus() {
+  return useQuery<LadderStatus>({
+    queryKey: ["ladder-status"],
+    queryFn: () => getJson<LadderStatus>("/api/ladder/status"),
+    staleTime: 20_000,
+    refetchInterval: 30_000,
+  });
+}
+
+/** The forward read per arm (`ladder summary`). */
+export function useLadderSummary() {
+  return useQuery<LadderSummary>({
+    queryKey: ["ladder-summary"],
+    queryFn: () => getJson<LadderSummary>("/api/ladder/summary"),
+    staleTime: 20_000,
+    refetchInterval: 30_000,
+  });
+}
+
+/** Sold lots over the date range (by the session they sold in), with totals over all of them. */
+export function useLadderHistory(filter: { arm: string | null; from: string | null; to: string | null }) {
+  const params = new URLSearchParams();
+  if (filter.arm !== null) params.set("arm", filter.arm);
+  rangeParams(params, filter);
+  return useQuery<LadderHistory>({
+    queryKey: ["ladder-history", filter],
+    queryFn: () => getJson<LadderHistory>(`/api/ladder/history?${params.toString()}`),
     refetchInterval: 60_000,
     placeholderData: (prev) => prev,
   });

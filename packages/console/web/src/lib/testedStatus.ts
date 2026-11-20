@@ -43,6 +43,11 @@ export const TESTED_STATUS: Readonly<Record<string, TestedStatus>> = {
       "The unhedged arm passed item 57's checks in replay; the hedged arm failed. Paper reads it forward, and under 80 cycles that is a forward read, not a verdict.",
     source: "packages/weeklyput/CLAUDE.md",
   },
+  ladder: {
+    words:
+      "Not a tested edge: on daily bars (item 26) and on minute bars (item 95) every arm failed against random entry. Only the decay target's fix for long holds passed (item 27). Paper watches it trade at real quotes.",
+    source: "packages/ladder/CLAUDE.md",
+  },
   automations: {
     words:
       "The arms are a third-party portfolio's rules, read over all history in one pass (item 75). Paper reads them forward, and a few weeks of paper is a forward read, not a verdict.",

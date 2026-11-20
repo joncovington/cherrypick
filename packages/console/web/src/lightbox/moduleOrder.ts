@@ -2,7 +2,7 @@
  *  loop first, flies leading as the one trading daily, then the four paper-only experiments.
  *  contango sits beside curve: the same VIX/VIX3M signal, held in shares rather than traded in VXX
  *  options. weeklyput follows them: item 57's weekly index put, paper-only; automations last: item 75's arms, paper-only. */
-export const TRADING_MODULE_ORDER = ["flies", "meic", "bwb", "earnings", "pmcc", "calendars", "curve", "contango", "weeklyput", "automations"] as const;
+export const TRADING_MODULE_ORDER = ["flies", "meic", "bwb", "earnings", "pmcc", "calendars", "curve", "contango", "weeklyput", "ladder", "automations"] as const;
 
 export type TradingModuleId = (typeof TRADING_MODULE_ORDER)[number];
 
@@ -34,6 +34,7 @@ export const MODULE_LABEL: Record<ModuleId, string> = {
   curve: "curve",
   contango: "contango",
   weeklyput: "weeklyput",
+  ladder: "ladder",
   automations: "automations",
   bwb: "bwb",
   calendars: "Calendars",
@@ -60,7 +61,7 @@ export const MODULE_LABEL: Record<ModuleId, string> = {
  * One list, read by the rail, the header menu and each page's title, so the chip cannot appear in
  * one place and not another.
  */
-export const EXPERIMENTAL_MODULES: ReadonlySet<string> = new Set<ModuleId>(["calendars", "pmcc", "curve", "contango", "weeklyput", "automations", "gexpanel"]);
+export const EXPERIMENTAL_MODULES: ReadonlySet<string> = new Set<ModuleId>(["calendars", "pmcc", "curve", "contango", "weeklyput", "ladder", "automations", "gexpanel"]);
 
 export function isExperimental(id: string): boolean {
   return EXPERIMENTAL_MODULES.has(id);
