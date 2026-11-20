@@ -32,6 +32,12 @@ beyond the latest release.
   ledger (`live_trades.db`) up to date with what filled, and while armed plans the live arm's orders.
   `live.dry_run` is true as shipped: it journals the orders it would send and sends none. `live.enabled`,
   `live.gate0_confirmed` and `live.dry_run` are guarded from the Config page. Issue #1337.
+- **The ladder's console page has a Live tab.** It shows the live loop's nine gates with the module's
+  own reason for each, whether it is in dry-run or live, whether it is armed today, the halt flag, held
+  submissions and orphans, the last tick's positions check and the standing dry-run intents, and, once the
+  loop has a ledger, the lots held, the lots sold (fees in their own column, with whether they are the
+  schedule's or the broker's), the orders and the journal. It reads only: arming stays the
+  `/live-ladder-start` command. The suite-wide Live page lists the ladder as a loop too. Issue #1337.
 - **The ladder has a console page.** `/ladder` (under Experiments) shows each fund's previous close and
   every arm's next buy level, the open lots with the group's 18-day "hospital" flagged, the sold lots as
   trades, and each arm's realised and unrealised result. Its help tab says the rule is not a tested edge.

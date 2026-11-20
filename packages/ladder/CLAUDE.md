@@ -191,6 +191,11 @@ import (`orders.py` may import the one pure id reader). The `live` block in the 
   notice; a standing condition (a hospital lot) is announced again the next session day. The notifier
   matches on these rows' `mode`, `symbol` and `reason` and cannot import this package; the tests pin
   them (`test_live_splits.py`, "what the notifier reads"), so changing one means changing the notifier.
+- **The console's Live tab** (`/ladder/live`) reads `--status` (the gate list, `mode`, `ready`, `held`,
+  `checks`, the masked `account`) and `live_trades.db` (the lot, order and journal columns above), read
+  only, and has no control. It reads the gates through this command and never re-derives them, so
+  changing the `--status` document's keys means changing `ladderLiveBridge.ts`, whose test runs the real
+  command. The suite-wide Live page lists the ladder from the same ledger and the arm record.
 - **The planner (`orders.plan`)** is pure: it takes the live block, the arm's rule, each fund's
   reference close, the open lots, the broker's working orders, the day's fills per fund, the funds'
   marks and the time, and returns place, cancel and keep actions per fund. Unarmed it returns nothing.

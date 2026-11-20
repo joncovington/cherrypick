@@ -53,6 +53,15 @@ a mirror with a test against the module itself. These are the current ones.
   tab. The verdict is the module's own (`arm_verdict`); a failed or malformed answer is
   `{ok: false, error}` and the card says so, never "ready". `--status` reads files and the ledger
   only, never the broker.
+- **The ladder's live readiness is bridged** (`services/ladderLiveBridge.ts`, memoised 10 s):
+  `python -m cherrypick.ladder.live_loop --status` gives the nine gates with their reasons, `mode`,
+  `ready`, the arm, the halt flag, `held` and the last tick's `checks` for the ladder's `live` tab.
+  Whether the loop may act is the module's own `live_gates`; the bridge takes the stricter reading if a
+  document says ready beside a failing gate, calls anything but an explicit `dry_run: false` dry-run, and
+  gives `{ok: false, error}` for a dead or malformed answer, never ready and never not ready.
+  `server/test/ladder-live-bridge.test.ts` pins the shape and, last, runs the module's own `--status`
+  (this checkout's source, an empty home), skipping visibly when Python cannot. It is the only file
+  that names `ladder.live_loop` and its only verb is `--status` (`ladder-live-no-write.test.ts`).
 - **Flies evidence** (`services/fliesEvidenceBridge.ts`, memoised 2 min): `run.py live-gap`
   (live vs paper paired per session, split at the `completion_rule` break; each unmatched entry
   carries the other book's reason and category, each pair its largest gap, and a "why the books

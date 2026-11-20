@@ -37,7 +37,7 @@ A page the suite has switched off is not shown (see *What is off is not shown* b
 | Curve | `/curve` | today, regime, positions, history, decisions, arms, performance, analysis, costs, advisor, help | Retired; ships off. |
 | Contango | `/contango` | today, regime, positions, history, decisions, arms, performance, analysis, costs, help | Experimental; paper only. |
 | Weekly put | `/weeklyput` | today, cycles, positions, history, decisions, performance, costs, help (8 tabs) | Experimental; paper only. |
-| Ladder | `/ladder` | today, open lots, history, arms, decisions, help (6 tabs) | Experimental; paper only. Not a tested edge; the help tab says so. |
+| Ladder | `/ladder` | today, live, open lots, history, arms, decisions, help (7 tabs) | Experimental. Every tab but `live` is the paper book. `live` only reads the live path, which ships in dry-run and off. Not a tested edge; the help tab says so. |
 | Flies | `/flies` | session, summary, forest, timeline, positions, history, books, opening range, attempts, decisions, gates vs control, live vs paper, selector, regime cuts, intraday agent, completion, performance, analysis, costs, advisor, help | Retired; ships off. |
 
 The simple view shows a shorter tab list per page (`ModuleNavDecl.simple`); the detail view shows all.
@@ -901,6 +901,29 @@ counted on their own line. Pinned by `server/test/meic-live-gap.test.ts`. The **
 (B10, below) closes the tab. Its gap is against the same paper arm but over every session live was
 working, so it also counts the entries live missed; each card says which sessions it counts.
 
+**The ladder's `live` tab** (`pages/Ladder/LadderLive.tsx` over `GET /api/ladder/live` →
+`readers/ladderLive.ts` and `GET /api/ladder/live/status` → `services/ladderLiveBridge.ts`) is the live
+path's readout and nothing else: no control, no POST, no arm, disarm, halt or config. Arming stays the
+`/live-ladder-start` command. The frame's badge on this tab is `LIVE` only when the module's status says
+`live.dry_run` is exactly false, `DRY-RUN` otherwise and `MODE ?` when the status cannot be read; every
+other tab keeps the `PAPER` badge, and the loop pill follows the tab (the live loop's own last tick).
+Top to bottom: a sentence naming the mode, tiles (mode, ready, armed today, halt flag, held submissions,
+orphans, the masked account, the last tick); the nine gates, each with its reason and what a failure
+stops (all gates in `live_loop --status`, bridged and memoised 10 s: the page decides none of them, and a
+status it cannot read is neither ready nor not ready); the last tick's checks (the positions cross-check
+against the ledger, declared splits and their problems, what is stopping a fund's buys) and the standing
+dry-run intents; then, from `live_trades.db`, the open live lots (cost, target, age and the 18-day flag,
+the sell resting at the broker, the buy's fee and where it came from), the sold lots in the trade table
+standard (entry + exit = gross, fees, settlement and slippage each their own column, net last, with a
+`fees from` column: `modeled` is the schedule's and `broker` the broker's own rows; the totals chip
+covers every sold lot and the rows the newest 200), the orders (working first, then the 50 most recent
+ended), and the decision journal (alerts, refusals, blocked buys, splits, dry-run intents), newest first.
+The ledger is absent on a machine that never ran the live loop, and then the tab says so and shows only
+the gates and checks; a ledger that cannot be read says that. Accounts pass a masking step in the reader
+whatever the ledger holds. Pinned by `server/test/ladder-live-reader.test.ts`, `ladder-live-bridge.test.ts`
+(the last test runs the module's own `--status`), `ladder-live-no-write.test.ts` and
+`web/test/ladderLive.test.tsx`.
+
 **The Live page's `today` tab** (`pages/Live/LiveTodayPage.tsx` over `GET /api/live/today` →
 `readers/liveToday.ts`) opens `/live`. It is a mosaic: a large card
 (the suite's net and its parts, armed, the halt flag, needs a person, and what to do today; a click on
@@ -908,18 +931,25 @@ it opens Live → positions) and a card per live loop with the simple view's fie
 worst case, mark, net, loss breaker, working when any is). A loop's card opens the shared lightbox
 (`?loop=`): *orders*, the loop's positions today as chains from its own live read
 (`pages/Live/LiveTodayOrders.tsx`: MEIC's `/api/live/meic` open rows and today's resolved rows; bwb's
-live payload and its history for the session; entry, a stopped side or the add-on, then how it ended
+live payload and its history for the session; the ladder's `/api/ladder/live`, each held lot with the
+sell resting at the broker, then the lots sold today; entry, a stopped side or the add-on, then how it ended
 or "now"), and *detail*, every field the old table's detail view carried plus what on the loop needs a
 person. A losing loop's card has a red edge, a tripped breaker or failed read a red border. The hand
 trades are a card of their own beside the loops (never in the total) with their orders card below; a
 retired loop folds to one line. Header badge: `2 armed · HALTED`. It **composes** the
 per-loop readers (`fliesLive`/`flies`, `readMeicLive`, `readBwb`/`readBwbHistory` in live mode,
-`liveBooks`' bwb read for absent-vs-failed) and adds only each loop's own `daily_loss_tripped` and
+`liveBooks`' bwb read for absent-vs-failed, `readLadderLive` for the ladder) and adds only each loop's own `daily_loss_tripped` and
 flies' `overdue_settlement` queries, mirrored and named. Attention: orphaned orders, held
 submissions, a tripped breaker, overdue settlement, failing broker contact, an unreadable ledger;
 "no limit" is never shown as a clear breaker. The suite total sums **only today's realised net**
 (resolved today, gross − fees − settlement, broker fills): any loop's failed read makes it n/r, and
-the worst case and the mark are each loop's own measure, shown per loop, never added. `/live/today`
+the worst case and the mark are each loop's own measure, shown per loop, never added. **The ladder is a
+loop here** (arm file `state/ladder-live-arm.json`, ledger `live_trades.db`, its card links to its `live`
+tab) with three honest differences: shares have no stop, so its worst case is the whole cost of what is
+open; its breaker is a drawdown on the open lots' mark that stops new buys, not a daily-loss limit, so
+the card says "no limit" and the module's own gates sit on its tab; and its live ledger keeps no mark on
+a held lot, so its mark is n/r while it holds one and the suite's open-at-mark total is n/r with it.
+Its card is folded to one line while `modules.ladder.enabled` is off and it holds nothing. `/live/today`
 is this tab now, not an alias for flies. Pinned by `server/test/live-today.test.ts`.
 **The hand row** (`readers/liveHand.ts`, `pages/Live/HandToday.tsx`) sits under the loops:
 today's 0DTE trades placed by hand on the names manage leaves to the loops, which no loop manages,

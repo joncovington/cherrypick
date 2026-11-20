@@ -224,6 +224,17 @@ alone):
   "not scored yet"; only a dropped artifact gets a warning chip. The apply banner compares like with
   like — what is queued for the next session, and whether THIS session's artifact landed — with the
   failure count on the collapsed head; keep the signal on the head.
+- **The ladder's Live tab reads the live path and nothing else.** It shows `live_loop --status` through
+  `services/ladderLiveBridge.ts` (the gates, mode, arm, halt flag, held submissions and the last tick's
+  checks are the module's own; no gate is re-derived) and `live_trades.db` through `readers/ladderLive.ts`
+  (open and sold lots, orders, the journal). It has no write path of any kind: the bridge's one verb is
+  `--status`, the store opens read only, both routes are GETs, and the page has no control
+  (`ladder-live-no-write.test.ts`). Arming is the `/live-ladder-start` command. A status it cannot read is
+  neither ready nor not ready; the badge says `LIVE` only on an explicit `live.dry_run: false`. The live
+  ledger is absent on most machines and that is an empty state, not an error. Every account is masked in
+  the reader whatever the ledger holds. The suite-wide Live page also lists the ladder as a loop
+  (`readLadderToday`, files and SQLite only): its worst case is the cost of the open lots, it states no
+  daily-loss limit, and its mark is n/r because the live ledger keeps none.
 - **Where a module classifies its own data, ask it — don't re-derive.** `services/screenBridge.ts`
   reads earnings screening metrics via `python -m cherrypick.earnings.screen_report --json`, memoised
   ~2 min; `services/verdictBridge.ts` reads the strategy verdict (`strategy_report --json`) the

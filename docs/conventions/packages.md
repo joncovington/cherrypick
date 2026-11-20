@@ -92,7 +92,8 @@ what it may write. The package's own CLAUDE.md holds the detail.
   dry-run it journals what it would send and sends nothing. Real orders need `live.dry_run: false`
   and every gate, re-checked on each placement. Its live lots and alarms are announced by the
   orchestrator's trade notifier, never by the package; its orders by `live-fill-alerts`. Only `ldr.` client ids are its own: it never touches
-  another module's or a hand order. Reads the keyring for the designated account and the broker
+  another module's or a hand order. The console shows it on the ladder's Live tab and the suite-wide Live
+  page, read only: `--status` and `live_trades.db`, with no way to arm, halt or place from there. Reads the keyring for the designated account and the broker
   session; the account is shown masked.
 - **packages/bwb** — **Retired 2026-11-08; off by default; may be reinstated** (the owner switched
   entries off; the module goes off once flat; reinstating means `modules.bwb.enabled` and the arms'

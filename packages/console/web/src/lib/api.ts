@@ -9,6 +9,8 @@ import type {
   ContangoHistory,
   ContangoPayload,
   LadderHistory,
+  LadderLivePayload,
+  LadderLiveStatus,
   LadderPayload,
   LadderStatus,
   LadderSummary,
@@ -1376,6 +1378,26 @@ export function useLadderHistory(filter: { arm: string | null; from: string | nu
     queryFn: () => getJson<LadderHistory>(`/api/ladder/history?${params.toString()}`),
     refetchInterval: 60_000,
     placeholderData: (prev) => prev,
+  });
+}
+
+/** The ladder's live ledger (`live_trades.db`): open and sold lots, orders, the journal. Read only. */
+export function useLadderLive() {
+  return useQuery<LadderLivePayload>({
+    queryKey: ["ladder-live"],
+    queryFn: () => getJson<LadderLivePayload>("/api/ladder/live"),
+    staleTime: 10_000,
+    refetchInterval: 15_000,
+  });
+}
+
+/** The module's own live readiness (`live_loop --status`): the gates, the mode, the arm, the last checks. */
+export function useLadderLiveStatus() {
+  return useQuery<LadderLiveStatus>({
+    queryKey: ["ladder-live-status"],
+    queryFn: () => getJson<LadderLiveStatus>("/api/ladder/live/status"),
+    staleTime: 10_000,
+    refetchInterval: 15_000,
   });
 }
 
