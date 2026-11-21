@@ -138,7 +138,10 @@ alone):
     (`/api/automations/automation/entries`, `readers/automationEntries.ts`) are the automations
     package's `cli entries --name`, with the pinned run's `reasons` (from that reading, so withheld
     with it) passed as `--run-reasons` so the run is cut by the same steps; the `entries` tab
-    (`/api/automations/entries`) is `cli entries` for every automation.
+    (`/api/automations/entries`) is `cli entries` for every automation. Each group as a unit
+    (`/api/automations/groups/read`, `readers/automationGroupsRead.ts`) is the package's `cli
+    groups-read`, its lines put in the performance page's shape; Groups' group view and the
+    performance and costs pages' by-group rows read it.
   - **The Builder's form reads the module's schema and "Today, live"; neither writes.** The Builder
     is Automations' `builder` tab (`/builder` redirects there; `g u` is its tab chord,
     `navLinks.TAB_SHORTCUTS`). The form's choices are `cli builder-schema`

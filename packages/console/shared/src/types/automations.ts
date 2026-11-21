@@ -894,3 +894,51 @@ export interface AutomationEntries {
   causes: EntryCauseRow[];
   days: EntryDay[];
 }
+
+/** A pair of members' net per session, correlated two ways (`core.portfolio`). */
+export interface GroupPair {
+  a: string;
+  b: string;
+  /** Every session inside both spans, one that closed nothing counted as zero: do they lose together. */
+  zero_filled: number | null;
+  zero_filled_periods: number;
+  /** Only sessions both closed something: when both trade, do they move together. */
+  similarity: number | null;
+  similarity_periods: number;
+  thin: boolean;
+}
+
+/** One group read as a unit (`automations cli groups-read`). */
+export interface AutomationsGroupUnit {
+  name: string;
+  enabled: boolean;
+  allocation: number | null;
+  max_risk: number | null;
+  shares: Record<string, number>;
+  members: string[];
+  /** Its members' closed trades stacked as sized, in the performance page's line. */
+  line: AutomationsLine;
+  /** Net and drawdown as shares of the allocation; null without one. */
+  against_allocation: { net: number | null; drawdown: number | null } | null;
+  /** The most risk held at once (session grain, an upper bound) and its share of the cap. */
+  risk: { peak: number; session: string; cap: number | null; of_cap: number | null } | null;
+  member_risk: Array<{ name: string; share: number | null; peak: number | null; session: string | null; limit: number | null; of_limit: number | null }>;
+  /** Sessions missed with the group's cap or a member's share as the last reason. */
+  refused: { cap: number; share: number; unknown: number; latest: Array<{ session: string; automation: string; by: "cap" | "share" | "unknown" }> };
+  together: {
+    pairs: GroupPair[];
+    effective_members: number | null;
+    members_counted: string[];
+    shared_periods: number;
+    thin: boolean;
+    drawdown: { combined: number; sum_of_arms: number; benefit: number | null };
+    min_periods: number;
+  } | null;
+}
+
+/** `GET /api/automations/groups/read`: every group as a unit, and the automations in none as one line. */
+export interface AutomationsGroupsRead {
+  groups: AutomationsGroupUnit[];
+  ungrouped: { members: string[]; line: AutomationsLine };
+  error: string | null;
+}

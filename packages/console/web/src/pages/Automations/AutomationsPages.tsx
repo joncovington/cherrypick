@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import type { AutomationGroupsResult, AutomationsHistoryRow, AutomationsLine, AutomationsPayload, AutomationsPerformance, AutomationsPosition } from "@console/shared";
+import type { AutomationGroupsResult, AutomationsGroupsRead, AutomationsHistoryRow, AutomationsLine, AutomationsPayload, AutomationsPerformance, AutomationsPosition } from "@console/shared";
 import { Card, DataCard, PnlCell } from "../../components/DataTable";
 import { TradeTotalsChip, tradeMoneyColumns } from "../../components/TradeMoney";
 import { HistoryTable } from "../../components/table/HistoryTable";
@@ -16,10 +16,11 @@ import { MeasurementBreaks } from "../../components/MeasurementBreaks";
 import { ListViewContext, ViewSwitch, useViewChoice } from "../../components/ViewSwitch";
 import { StatusLine } from "../../components/summary/ModuleSummary";
 import { GuideLink } from "../../components/GuideLink";
-import { useAutomationGroups, useAutomationsHistory } from "../../lib/api";
+import { useAutomationGroups, useAutomationsHistory, useGroupUnits } from "../../lib/api";
 import { fmtCash, fmtMoney, fmtNum } from "../../lib/format";
 import { TradeCard, TradeCards } from "../Live/TradeCard";
 import { automationHref, closedModel, dailyCurve, gateWords, openModel, shapeWords, todayCounts } from "./automationsModels";
+import { ByToggle, groupHref, groupRows, useBy, type By } from "./GroupUnit";
 
 /**
  * automations' pages (packages/automations): research item 75's arms in paper. An arm is one configured
@@ -327,25 +328,38 @@ export function AutomationsDecisions() {
 
 const COMBINED = "all arms";
 
-function perfRows(perf: AutomationsPerformance | undefined): Array<[string, AutomationsLine]> {
-  return perf === undefined ? [] : [...Object.entries(perf.arms), [COMBINED, perf.combined]];
+function perfRows(perf: AutomationsPerformance | undefined, by: By, units: AutomationsGroupsRead | undefined): Array<[string, AutomationsLine]> {
+  if (perf === undefined) return [];
+  const each = by === "group" ? groupRows(units) : Object.entries(perf.arms);
+  return [...each, [COMBINED, perf.combined]];
+}
+
+/** A row's name: an automation's links to its page, a group's to its view in Groups. */
+function RowName({ name, by }: { name: string; by: By }) {
+  if (name === COMBINED) return <>{name}</>;
+  return <Link to={by === "group" ? groupHref(name) : automationHref(name)}>{name}</Link>;
 }
 
 const tone = (v: number): "pos" | "neg" | "dim" => (v > 0 ? "pos" : v < 0 ? "neg" : "dim");
 
 export function AutomationsPerformancePage({ perf }: { perf: AutomationsPerformance | undefined }) {
-  const rows = perfRows(perf);
+  const [by, setBy] = useBy();
+  const units = useGroupUnits();
+  const rows = perfRows(perf, by, units.data);
+  const each = rows.filter(([name]) => name !== COMBINED);
   const combined = perf?.combined;
+  const word = by === "group" ? "group" : "arm";
   const series =
     perf === undefined
       ? []
       : [
           { label: COMBINED, color: SERIES_COLORS[0], points: dailyCurve(perf.combined) },
-          ...Object.entries(perf.arms).map(([arm, line], i) => ({ label: arm, color: SERIES_COLORS[(i + 1) % SERIES_COLORS.length], points: dailyCurve(line) })),
+          ...each.map(([name, line], i) => ({ label: name, color: SERIES_COLORS[(i + 1) % SERIES_COLORS.length], points: dailyCurve(line) })),
         ];
   if (perf !== undefined && !perf.dbPresent) return absentCard();
   return (
     <div className="pf-layout">
+      <ByToggle by={by} onChange={setBy} />
       <Section concept="stand" tag="all arms" question="What have the arms earned together, and how far did that fall?">
         <FliesTile title="net P&L" value={combined === undefined ? null : fmtMoney(combined.net)} tone={combined === undefined ? "dim" : tone(combined.net)} foot="net at the suite's slippage model, every arm stacked as sized" />
         <FliesTile title="drawdown" value={combined === undefined ? null : combined.trades === 0 ? "—" : fmtMoney(-combined.drawdown)} tone={combined !== undefined && combined.drawdown > 0 ? "neg" : "dim"} foot="largest peak-to-trough fall of the running net, trades in exit order" />
@@ -353,9 +367,9 @@ export function AutomationsPerformancePage({ perf }: { perf: AutomationsPerforma
         <FliesTile title="net at stress fills" value={combined === undefined ? null : fmtMoney(combined.netStress)} tone="dim" foot="context: fills halfway from the mid to the natural fill" />
         <FliesTile title="net at mid fills" value={combined === undefined ? null : fmtMoney(combined.netMid)} tone="dim" foot="context: fills at the mid, before the slippage model" />
       </Section>
-      <Section concept="hist" tag="running net" question="How has each arm's net run, trade by trade?">
+      <Section concept="hist" tag="running net" question={`How has each ${word}'s net run, trade by trade?`}>
         <Card
-          title="running net by arm"
+          title={`running net by ${word}`}
           collapseKey="automations-perf-curve"
           className="lv-12"
           help={oneNote(
@@ -367,12 +381,12 @@ export function AutomationsPerformancePage({ perf }: { perf: AutomationsPerforma
           {series.every((s) => s.points.length === 0) ? <p className="muted">no structure has closed yet</p> : <TimeLineChart series={series} height={260} yFormat={(v) => fmtMoney(v)} />}
         </Card>
       </Section>
-      <Section concept="income" tag="by arm" question="Which arms carried it, and which fell furthest?">
+      <Section concept="income" tag={`by ${word}`} question={`Which ${word}s carried it, and which fell furthest?`}>
         <DataCard
-          title="net and drawdown by arm"
+          title={`net and drawdown by ${word}`}
           className="lv-12"
-          headers={["arm", "trades", "wins", "mean net", "worst trade", "net (verdict)", "net at stress", "net at mid", "drawdown"]}
-          loading={perf === undefined}
+          headers={[word, "trades", "wins", "mean net", "worst trade", "net (verdict)", "net at stress", "net at mid", "drawdown"]}
+          loading={perf === undefined || (by === "group" && units.data === undefined)}
           rowCount={rows.length}
           numFrom={1}
           empty="no arm has closed a trade yet"
@@ -384,7 +398,9 @@ export function AutomationsPerformancePage({ perf }: { perf: AutomationsPerforma
         >
           {rows.map(([arm, l]) => (
             <tr key={arm} style={arm === COMBINED ? { fontWeight: 600 } : undefined}>
-              <td>{arm === COMBINED ? arm : <Link to={automationHref(arm)}>{arm}</Link>}</td>
+              <td>
+                <RowName name={arm} by={by} />
+              </td>
               <td>{l.trades}</td>
               <td>{l.wins}</td>
               <td>{l.mean === null ? "—" : fmtMoney(l.mean)}</td>
@@ -404,21 +420,25 @@ export function AutomationsPerformancePage({ perf }: { perf: AutomationsPerforma
 }
 
 export function AutomationsCosts({ perf }: { perf: AutomationsPerformance | undefined }) {
-  const rows = perfRows(perf);
+  const [by, setBy] = useBy();
+  const units = useGroupUnits();
+  const rows = perfRows(perf, by, units.data);
+  const word = by === "group" ? "group" : "arm";
   const c = perf?.combined;
   return (
     <div className="pf-layout">
+      <ByToggle by={by} onChange={setBy} />
       <Section concept="risk" tag="costs" question="What did trading these arms cost?">
         <FliesTile title="fees" value={c === undefined ? null : fmtMoney(c.fees)} tone="dim" foot="trading fees, the open and the close of every leg" />
         <FliesTile title="settlement" value={c === undefined ? null : fmtMoney(c.settlement)} tone="dim" foot="the cash-settlement charge on a structure held to the posted close" />
         <FliesTile title="slippage" value={c === undefined ? null : fmtMoney(c.slippage)} tone="dim" foot="the fraction of the quoted spread given up at the fills, charged as a cost" />
       </Section>
-      <Section concept="hist" tag="every arm" question="Does each arm's money add up?">
+      <Section concept="hist" tag={`every ${word}`} question={`Does each ${word}'s money add up?`}>
         <DataCard
-          title="costs by arm"
+          title={`costs by ${word}`}
           className="lv-12"
-          headers={["arm", "trades", "gross", "fees", "settlement", "slippage", "net"]}
-          loading={perf === undefined}
+          headers={[word, "trades", "gross", "fees", "settlement", "slippage", "net"]}
+          loading={perf === undefined || (by === "group" && units.data === undefined)}
           rowCount={rows.length}
           numFrom={1}
           empty="no structure has closed yet"
@@ -430,7 +450,9 @@ export function AutomationsCosts({ perf }: { perf: AutomationsPerformance | unde
         >
           {rows.map(([arm, l]) => (
             <tr key={arm} style={arm === COMBINED ? { fontWeight: 600 } : undefined}>
-              <td>{arm === COMBINED ? arm : <Link to={automationHref(arm)}>{arm}</Link>}</td>
+              <td>
+                <RowName name={arm} by={by} />
+              </td>
               <td>{l.trades}</td>
               <td>{fmtCash(l.gross)}</td>
               <td>{fmtMoney(-l.fees)}</td>

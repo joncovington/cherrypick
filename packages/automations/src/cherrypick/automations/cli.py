@@ -7,6 +7,9 @@
     arms       the arms the config resolves to (shipped, with this machine's changes laid over)
     groups-view   every group (switch, start, budget, shares) and every automation by group, each with
                its own switch (the console's Groups page)
+    groups-read   every group as one unit: its members' line stacked, net and drawdown against its
+               allocation, the most risk held at once against its cap (and each member's against its
+               share), the entries the cap or a share refused, and how its members move together
     groups-check  a change to the groups (JSON on stdin: groups, members) checked as the loop loads
                it: its problems, the groups block a save would write and the automations it moves.
                Writes nothing
@@ -112,6 +115,21 @@ def cmd_groups_view(args) -> int:
     from . import groupedit
 
     return _print({"ok": True, **groupedit.view(config_mod.load_config(args.config))})
+
+
+def cmd_groups_read(args) -> int:
+    """Every group as one unit (`groupread.read`), from the config and the ledger read-only."""
+    from . import db, groupread
+
+    config = config_mod.load_config(args.config)
+    arms = config_mod.load_arms(config)
+    if Path(db.resolve_path(args.db)).exists():
+        conn = db.connect_ro(args.db)
+        positions = [dict(r) for r in conn.execute("SELECT * FROM ensemble_positions")]
+        register = db.entries(conn)
+    else:
+        positions, register = [], []
+    return _print({"ok": True, **groupread.read(arms, config_mod.groups(config), positions, register)})
 
 
 def cmd_groups_check(args) -> int:
@@ -352,6 +370,7 @@ def main(argv=None) -> int:
     sub.add_parser("groups").set_defaults(fn=cmd_groups)
     sub.add_parser("groups-view").set_defaults(fn=cmd_groups_view)
     sub.add_parser("groups-check").set_defaults(fn=cmd_groups_check)
+    sub.add_parser("groups-read").set_defaults(fn=cmd_groups_read)
     sub.add_parser("reference-check").set_defaults(fn=cmd_reference_check)
     p = sub.add_parser("entries")
     p.add_argument("--name")

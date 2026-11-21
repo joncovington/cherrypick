@@ -41,6 +41,7 @@ import type {
   AutomationEntries,
   AutomationReading,
   AutomationsEntries,
+  AutomationsGroupsRead,
   BuilderSchemaResult,
   BuilderPayoff,
   BuilderStrategyResult,
@@ -1648,6 +1649,16 @@ export function useBuilderRunCard(name: string, run: string) {
 }
 
 /** Each arm's closed trades, net and drawdown, and the arms stacked. */
+/** Every automation group read as one unit (the automations package's `groups-read`). */
+export function useGroupUnits() {
+  return useQuery<AutomationsGroupsRead>({
+    queryKey: ["automations-group-units"],
+    queryFn: () => getJson<AutomationsGroupsRead>("/api/automations/groups/read"),
+    staleTime: 30_000,
+    refetchInterval: 120_000,
+  });
+}
+
 /** Every automation's entry funnel from the session register (the automations package's). */
 export function useAutomationsEntries() {
   return useQuery<AutomationsEntries>({
