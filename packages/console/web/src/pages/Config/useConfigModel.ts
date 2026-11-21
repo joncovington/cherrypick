@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { ConfigModelPayload, ConfigSavePayload, ConfigTargetId, LockStatusPayload } from "@console/shared";
-import { getCsrf } from "../../lib/api";
+import { csrfFetch } from "../../lib/api";
 import { FEATURES_KEY } from "../../lib/useFeatures";
 
 async function getJson<T>(url: string): Promise<T> {
@@ -23,12 +23,13 @@ export class ConfigError extends Error {
 /**
  * Like `mutateJson`, but it keeps the server's explanation. A guarded pointer, a stale file and a
  * validation error need different words on screen, and the shared helper throws away the body that
- * distinguishes them. One request either way — a write that failed must not be quietly retried.
+ * distinguishes them. One request either way — a write that failed must not be quietly retried (a stale
+ * CSRF token is the one exception, `csrfFetch`: the server refused it before any route ran).
  */
 async function postConfig<T>(url: string, body: unknown): Promise<T> {
-  const res = await fetch(url, {
+  const res = await csrfFetch(url, {
     method: "POST",
-    headers: { "content-type": "application/json", "x-csrf-token": await getCsrf() },
+    headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   });
   if (!res.ok) {

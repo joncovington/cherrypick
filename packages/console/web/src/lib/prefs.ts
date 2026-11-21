@@ -1,5 +1,5 @@
 import { useEffect, useSyncExternalStore } from "react";
-import { getCsrf } from "./api";
+import { csrfFetch } from "./api";
 
 /**
  * The console's own display preferences.
@@ -87,9 +87,9 @@ export function writePref(key: string, value: unknown): Promise<void> {
 
 async function postPref(key: string, value: unknown): Promise<void> {
   try {
-    const res = await fetch("/api/config/prefs", {
+    const res = await csrfFetch("/api/config/prefs", {
       method: "POST",
-      headers: { "content-type": "application/json", "x-csrf-token": await getCsrf() },
+      headers: { "content-type": "application/json" },
       body: JSON.stringify({ key, value }),
     });
     if (res.ok) {
