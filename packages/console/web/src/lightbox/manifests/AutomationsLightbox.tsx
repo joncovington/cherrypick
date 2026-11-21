@@ -11,6 +11,7 @@ import {
   AutomationsToday,
 } from "../../pages/Automations/AutomationsPages";
 import { AutomationsGroupsPage } from "../../pages/Automations/AutomationsGroups";
+import { AutomationsEntriesPage } from "../../pages/Automations/AutomationEntries";
 import { BuilderPage } from "../../pages/Builder/BuilderPage";
 import { ModuleFrame } from "../ModuleFrame";
 import { AUTOMATIONS_SLIDES, type AutomationsSlideId } from "../navGroups";
@@ -37,6 +38,7 @@ export function AutomationsLightbox({ slide }: { slide: string }) {
     { id: "positions", label: LABEL.positions, render: () => <AutomationsPositions data={data} /> },
     { id: "history", label: LABEL.history, render: () => <AutomationsHistory data={data} /> },
     { id: "decisions", label: LABEL.decisions, render: () => <AutomationsDecisions /> },
+    { id: "entries", label: LABEL.entries, render: () => <AutomationsEntriesPage /> },
     { id: "performance", label: LABEL.performance, render: () => <AutomationsPerformancePage perf={perf.data} /> },
     { id: "costs", label: LABEL.costs, render: () => <AutomationsCosts perf={perf.data} /> },
     { id: "guide", label: LABEL.guide, render: () => <AutomationsHelp /> },

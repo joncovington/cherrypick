@@ -10,6 +10,10 @@
     groups-check  a change to the groups (JSON on stdin: groups, members) checked as the loop loads
                it: its problems, the groups block a save would write and the automations it moves.
                Writes nothing
+    entries    each automation's entry funnel from the session register: the sessions it was due, how
+               many reached each step of the decision and the causes of the ones that stopped there.
+               With --name, one automation's, the run's beside it (--run-reasons: a Builder run's
+               summary reasons as JSON) and its latest register rows
     replay     run a replay record file again and say where the decisions differ
     reference-check  the Builder's pin of one Builder run as an automation's backtest reference (JSON on
                stdin: name, run; run null to unpin) checked: its problems and the references block a
@@ -136,6 +140,33 @@ def cmd_reference_check(args) -> int:
     except json.JSONDecodeError as exc:
         return _print({"ok": False, "error": f"request is not valid JSON: {exc}"})
     return _print(references.check(config_mod.load_config(args.config), req))
+
+
+def _register(db_path: str | None) -> list[dict]:
+    """Every register row, or none when the ledger does not exist yet. Read-only."""
+    from . import db
+
+    if not Path(db.resolve_path(db_path)).exists():
+        return []
+    return db.entries(db.connect_ro(db_path))
+
+
+def cmd_entries(args) -> int:
+    from . import entries
+
+    rows = _register(args.db)
+    if args.name:
+        try:
+            run = json.loads(args.run_reasons) if args.run_reasons else None
+        except json.JSONDecodeError as exc:
+            return _print({"ok": False, "error": f"--run-reasons is not valid JSON: {exc}"})
+        if run is not None and not isinstance(run, dict):
+            return _print({"ok": False, "error": "--run-reasons must be an object of reason: sessions"})
+        return _print({"ok": True, **entries.one(args.name, rows, run)})
+    arms = config_mod.load_arms(config_mod.load_config(args.config))
+    return _print(
+        {"ok": True, "steps": [k for k, _ in entries.STEPS], "automations": entries.view(arms, rows)}
+    )
 
 
 def cmd_replay(args) -> int:
@@ -322,6 +353,10 @@ def main(argv=None) -> int:
     sub.add_parser("groups-view").set_defaults(fn=cmd_groups_view)
     sub.add_parser("groups-check").set_defaults(fn=cmd_groups_check)
     sub.add_parser("reference-check").set_defaults(fn=cmd_reference_check)
+    p = sub.add_parser("entries")
+    p.add_argument("--name")
+    p.add_argument("--run-reasons", dest="run_reasons")
+    p.set_defaults(fn=cmd_entries)
     p = sub.add_parser("replay")
     p.add_argument("file")
     p.set_defaults(fn=cmd_replay)

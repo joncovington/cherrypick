@@ -406,7 +406,8 @@ drawdown over the run's own length (resamples cut as runs grow, floor 400, the c
 quarters, a quarter counting only with 10 or more sessions traded. `read automation-reference --name
 --id` reduces one Builder run to the automation's backtest reference (`automationref.py`, pure), which
 the automation page sets paper against: the 10th to 90th percentile of a trade's net (the usual range
-is the 10th to 90th), the entry rate and each missed reason's share of the sessions, each exit kind's
+is the 10th to 90th), each last reason's count (`reasons`, a short run's too, which the automations
+module's entry funnel cuts into steps), the entry rate and each missed reason's share of the sessions, each exit kind's
 share, the 10th, 50th and 90th percentile of the running net over the next 20 trades (the stationary
 block bootstrap at the kill criteria's mean block, seeded), and the sample a reading needs, computed
 (`core.stats.sessions_needed`, the run's mean as the edge); under 30 trades it is `insufficient`.

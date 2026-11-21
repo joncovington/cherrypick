@@ -65,6 +65,8 @@ def test_entry_rate_and_misses_are_shares_of_the_runs_sessions():
     assert ref["sessions"] == 50
     assert ref["entry_rate"] == 0.8
     assert ref["missed"] == {"vix_max": 0.16, "no_quote": 0.04}
+    # The raw counts too, which the automations module cuts into its entry funnel.
+    assert ref["reasons"] == {"entered": 40, "vix_max": 8, "no_quote": 2}
 
 
 def test_exit_mix_is_each_kinds_share_of_the_trades():
@@ -98,6 +100,7 @@ def test_too_few_trades_is_no_reference():
     assert ref["insufficient"] is True
     assert ref["trades"] == automationref.MIN_TRADES - 1
     assert "percentiles" not in ref and "band" not in ref
+    assert "reasons" in ref  # a short run still says how often it entered
 
 
 def test_read_finds_the_named_run_and_marks_it_licensed(tmp_path, monkeypatch):

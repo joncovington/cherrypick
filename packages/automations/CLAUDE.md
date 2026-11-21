@@ -55,6 +55,17 @@ label or replay (`tests/test_references.py`). `check` refuses a pin to an automa
 exist or a run not named for it; the orchestrator confirms the run exists and writes the block. `cli
 builder` lists each automation's pinned run as `reference`.
 
+**Entries** (`entries.py`, pure; `cli entries [--name N --run-reasons JSON]`). The session register
+cut into the steps of `engine.decide` in its order: `data` (an input not there: the feed, the loop's
+record, a store a backtest reads), `trigger`, `limits` (the limits, the expiry and the event skips),
+`gates` (market gates), `structure` (strikes, pricing, and gates the engine runs after the legs),
+`size`; a reason no step names counts under `due`. Each step's `reached` is the due sessions that
+got to it and `stopped` those whose last try ended there, by cause; `most_lost` the step that lost
+the most (the earlier on a tie). A session counts where its last tick stopped, not the furthest any
+tick got. A Builder run's `summary.reasons` are the driver's last reasons in the same words, so
+`--run-reasons` cuts the run by the same steps and `causes` sets the two side by side. Read-only;
+no ledger reads as no sessions.
+
 **The Builder's check** (`drafts.py`, `cli draft`, JSON on stdin). By name alone it returns the automation as an editor starts from it (the shipped entry with this machine's changes laid over it, before groups stamp anything). With an `automation`, it lays the edit over the config and resolves every automation again (`config.load_arms`), so a save is refused for exactly what would stop the loop, and returns the entry to write: off (`enabled: false`), named by its key, and with its `register` label kept as stored, never taken from the editor (a copy under a new name carries none, so its blocks read `not_backtested`). It writes nothing; the orchestrator's config editor writes the entry (`automationedit`).
 
 **Sizing** (`sizing.py`). A size is a count, a risk budget (`max_risk`), or a percent of an allocation

@@ -12245,6 +12245,78 @@ svg.vol-curve text {
   border-color: var(--accent);
   color: var(--text);
 }
+/* One automation's entries: each step of the decision with the share of due sessions that reached it,
+   paper in the warn colour as on the band chart, the pinned run in the accent. */
+.ae-funnel {
+  display: grid;
+  gap: 0.45rem;
+  font-size: 0.86rem;
+}
+.ae-funnel-row {
+  display: grid;
+  grid-template-columns: minmax(8rem, 13rem) 1fr 1fr;
+  gap: 0.4rem 0.9rem;
+  align-items: center;
+}
+.ae-funnel-head {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+.ae-funnel-end {
+  border-top: 1px solid var(--border);
+  padding-top: 0.45rem;
+  font-weight: 600;
+}
+.ae-funnel-label {
+  color: var(--text);
+}
+.ae-funnel-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+.ae-funnel-num {
+  flex: none;
+  min-width: 4.6rem;
+  font-family: var(--num-face);
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+.ae-bar {
+  position: relative;
+  flex: 1;
+  min-width: 2rem;
+  height: 0.7rem;
+  border-radius: 2px;
+  background: var(--chart-grid);
+}
+.ae-bar-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 2px;
+}
+.ae-bar-fill.is-paper {
+  background: var(--warn);
+}
+.ae-bar-fill.is-run {
+  background: color-mix(in srgb, var(--accent) 70%, transparent);
+}
+.ae-off {
+  margin-left: 0.4rem;
+}
+@media (max-width: 640px) {
+  .ae-funnel-row {
+    grid-template-columns: 1fr 1fr;
+    gap: 0.2rem 0.6rem;
+  }
+  .ae-funnel-label {
+    grid-column: 1 / -1;
+  }
+  .ae-funnel-head > :first-child {
+    display: none;
+  }
+}
 .grp-cell {
   display: inline-flex;
   flex-wrap: wrap;
