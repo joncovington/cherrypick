@@ -129,6 +129,8 @@ describe("the three levels", () => {
     expect(out).toContain("what happens");
     expect(out).toContain('aria-label="iron-condor-1345 share percent"');
     expect(out).toContain("+ Add automations");
+    // The add button sits under the members, not in the card head.
+    expect(out.indexOf("+ Add automations")).toBeGreaterThan(out.indexOf("</table>"));
     expect(out).toContain('href="/automations/groups?group=ensemble&amp;automation=iron-condor-1345"');
     expect(out).toContain('href="/automations/automation/iron-condor-1345"');
   });
