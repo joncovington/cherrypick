@@ -10374,6 +10374,19 @@ holding, worst on high-momentum names), the 10-23 income confirmation (no tested
   `study`. Results are derived from licensed data, so they stay under
   `~/.cherrypick/data/backtest/results/research/item101/` and this plan records the verdict without
   figures.
+- **Context runs on names the universe leaves out:** `packages/backtest/scripts/wheel_context_item101.py`
+  (`plan --symbols SYM[,SYM]`, then `study --symbols SYM[,SYM]`) runs the same arms, calls, costs,
+  earnings rule, half-day rule and point-in-time spread check on names the verdict calls `tradable`
+  that listed too late for the coverage floor, from each name's first session with a stored monthly
+  chain (or the entry start, whichever is later). It loads the declared script and edits nothing in
+  it. It bypasses the universe's complete-session floor and nothing else: the per-year coverage floor
+  on rows still applies. It applies no `RULE`, no Holm, no half-rule and no holdout, so it is
+  **context, not judged**: it writes `extra-<SYMS>.json` (per-name rows per arm against `hold`, the
+  stuck-share counts, the per-name `m45-40` less `m45-40-tp50`, and the report calendar's holes, a
+  hole reading unknown and entering nothing) and `extra-<SYMS>-path_requests.json` and
+  `extra-<SYMS>-earnings_dates.json`, and never `results.json`, `smoke.json`, `path_requests.json`,
+  `universe.json` or `earnings_dates.json`. A fund has no report rule. Any date split in it is
+  reported as context. A name in a context run is not in the declared universe and no verdict reads it.
 - **Decides:**
   - **A pass:** the passing arm's put and its calls are a candidate for a paper arm, declared on its
     own forward block before it trades; nothing is built from this item.
