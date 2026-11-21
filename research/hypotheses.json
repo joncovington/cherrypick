@@ -4610,7 +4610,7 @@
       "id": 97,
       "study": "item97",
       "title": "A 30-minute breakdown below the prior session's low, sold as a same-day SPX call spread",
-      "status": "declared",
+      "status": "failed",
       "legacy": false,
       "setup": "indicator-rule",
       "side": "bearish",
@@ -4649,6 +4649,7 @@
       "results": [
         "{home}/data/backtest/results/research/item97/results.json"
       ],
+      "outcome": "fail: breakdown-call-spread fails the capital and tail bars in the design part, so the holdout is not read; it passes the delta bar and beats its placebo, so the break carries something, but not enough over the bill on its buying power; nothing is built",
       "retest": null,
       "retest_note": "A pass is followed by an automation with its own forward block, not a retest; the store is the vendor's, so a retest needs the licence.",
       "retests": []
