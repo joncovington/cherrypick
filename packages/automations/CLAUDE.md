@@ -66,6 +66,8 @@ tick got. A Builder run's `summary.reasons` are the driver's last reasons in the
 `--run-reasons` cuts the run by the same steps and `causes` sets the two side by side. Read-only;
 no ledger reads as no sessions.
 
+**The sessions ahead** (`ahead.py`, pure; `cli ahead --name N [--start]`). The automation's dated rules for `core.ahead`: its weekdays, its `skip_events` labels and its exits' `avoid_events` (on the session before), answered by its own event calendar, so a label with no dates there reads unknown as it does at entry; its filter gates in the Builder's words (`words.GATES`). Only an avoided event's eve keeps a record: a skipped day holds no trade. The record is the automation's per-session nets from `core.compare` over the era. Reads only.
+
 **Groups as a unit** (`groupread.py`, pure; `cli groups-read`). Each group's members' closed trades
 stacked (`analytics`' line with its running net), the net and drawdown as shares of its
 `allocation`, the most `capital` open at once against its `max_risk` and each member's against its

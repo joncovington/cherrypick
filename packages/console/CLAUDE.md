@@ -160,6 +160,9 @@ alone):
     page also reads it against its backtest (`/api/arm/reading`, `readers/armReading.ts`,
     `components/armpage/ArmBacktest.tsx`): the backtest package's `read arm-reading`, passed
     through, its figures withheld while `backtestResultsOn` is false (the matching run still named).
+    A MEIC arm's page and an automation's page show the sessions ahead (`/api/ahead/:module?arm=`,
+    `readers/ahead.ts`, `components/armpage/SessionsAhead.tsx`): the module's own `cli ahead`
+    (`core.ahead`), passed through; the page words and computes nothing.
   - **The shared costs tab** (`components/costs/SharedCosts.tsx`; earnings and ladder) renders
     `core.metrics.money` from the performance read, per arm and the module's own line: it sums
     nothing. Ladder and weeklyput are in `PERFORMANCE_MODULE_SCHEMA`, so the shared performance and

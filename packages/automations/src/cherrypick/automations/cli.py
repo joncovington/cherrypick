@@ -18,6 +18,8 @@
                With --name, one automation's, the run's beside it (--run-reasons: a Builder run's
                summary reasons as JSON) and its latest register rows
     replay     run a replay record file again and say where the decisions differ
+    ahead      one automation's next sessions (--name): what its weekdays, event skips and event exits
+               do there, its filter gates in words, and its record on each kind of day (`core.ahead`)
     reference-check  the Builder's pin of one Builder run as an automation's backtest reference (JSON on
                stdin: name, run; run null to unpin) checked: its problems and the references block a
                save would write. Writes nothing
@@ -184,6 +186,36 @@ def cmd_entries(args) -> int:
     arms = config_mod.load_arms(config_mod.load_config(args.config))
     return _print(
         {"ok": True, "steps": [k for k, _ in entries.STEPS], "automations": entries.view(arms, rows)}
+    )
+
+
+def cmd_ahead(args) -> int:
+    """One automation's next sessions (`ahead.ahead`), with its per-session nets over the module's
+    current measurement era (`core.compare`) for its record on each kind of day. Read only."""
+    from datetime import date
+
+    from cherrypick.core import compare
+    from cherrypick.core.clock import now_et
+
+    from . import ahead, events
+
+    config = config_mod.load_config(args.config)
+    arms = config_mod.load_arms(config)
+    if args.name not in arms:
+        return _print({"ok": False, "error": f"no automation named {args.name!r}"})
+    start = date.fromisoformat(args.start) if args.start else now_et().date()
+    calendar = events.load_calendar((config.get("events") or {}).get("path"))
+    comp = compare.module_comparison("automations", session=start.isoformat(), experiments={})
+    row = next((a for a in comp.get("arms") or [] if a.get("arm") == args.name), None)
+    nets = [(s, n) for s, n in (row or {}).get("session_nets") or []]
+    return _print(
+        {
+            "ok": True,
+            "module": "automations",
+            "arm": args.name,
+            "era_start": (comp.get("era") or {}).get("start"),
+            **ahead.ahead(arms[args.name], calendar, start, nets),
+        }
     )
 
 
@@ -372,6 +404,10 @@ def main(argv=None) -> int:
     sub.add_parser("groups-check").set_defaults(fn=cmd_groups_check)
     sub.add_parser("groups-read").set_defaults(fn=cmd_groups_read)
     sub.add_parser("reference-check").set_defaults(fn=cmd_reference_check)
+    p = sub.add_parser("ahead")
+    p.add_argument("--name", required=True)
+    p.add_argument("--start", help="ISO date; default today (ET)")
+    p.set_defaults(fn=cmd_ahead)
     p = sub.add_parser("entries")
     p.add_argument("--name")
     p.add_argument("--run-reasons", dest="run_reasons")

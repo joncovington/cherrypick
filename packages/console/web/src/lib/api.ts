@@ -40,7 +40,9 @@ import type {
   BuilderReferenceResult,
   AutomationEntries,
   AutomationReading,
+  AheadModule,
   ArmBacktestReading,
+  SessionsAhead,
   AutomationsEntries,
   ChangesModule,
   ModuleChanges,
@@ -1659,6 +1661,16 @@ export function useArmReading(module: "meic", arm: string) {
     queryFn: () => getJson<ArmBacktestReading>(`/api/arm/reading?module=${module}&arm=${encodeURIComponent(arm)}`),
     staleTime: 60_000,
     refetchInterval: 300_000,
+  });
+}
+
+/** One arm's next sessions and what its dated gates do there (`core.ahead`). */
+export function useSessionsAhead(module: AheadModule, arm: string) {
+  return useQuery<SessionsAhead>({
+    queryKey: ["sessions-ahead", module, arm],
+    queryFn: () => getJson<SessionsAhead>(`/api/ahead/${module}?arm=${encodeURIComponent(arm)}`),
+    staleTime: 300_000,
+    refetchInterval: 900_000,
   });
 }
 
