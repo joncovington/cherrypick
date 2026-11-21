@@ -168,6 +168,7 @@ export function PerformanceSlide({
   pairs: showPairs = true,
   armCards = true,
   reference = "control",
+  armLink,
 }: {
   module: PerformanceModuleId;
   mode?: TradingMode;
@@ -179,6 +180,8 @@ export function PerformanceSlide({
   /** The arm a narrowed slide draws beside the picked one: what it is read against (calendars' Friday
    *  arms against `friday:control`); null draws none (the picked arm is a control). */
   reference?: string | null;
+  /** Where an arm's card leads, for a module whose arms have pages and no arms table to open them from. */
+  armLink?: (arm: string) => string;
   /** The page's arm picker (flies, MEIC): narrows the arm cards, pairs and exit reasons to that arm.
    *  The cumulative chart keeps `control` beside it as the reference. null is every arm. */
   arm?: string | null;
@@ -288,6 +291,11 @@ export function PerformanceSlide({
                 help={armHelp(underpoweredByBase.get(g.tag) === true)}
                 flag={underpoweredByBase.get(g.tag) === true ? "underpowered" : undefined}
               >
+                {armLink && arm === null && (
+                  <Link className="pf-armlink" to={armLink(g.tag)}>
+                    its page ›
+                  </Link>
+                )}
                 <MetricTiles reading={g.reading} peakRisk={g.peakRisk} />
                 <TradeNetHistogram nets={g.tradeNets} />
               </Card>

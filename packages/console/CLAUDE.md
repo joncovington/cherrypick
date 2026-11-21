@@ -152,10 +152,11 @@ alone):
   - **A MEIC arm's page** (`/meic/arm/<name>`, framed as the arms tab, `pages/Meic/MeicArmPage.tsx`)
     composes MEIC's own tabs with the arm fixed (changes slice, `PerformanceSlide`, attempts, costs,
     regime cuts, analysis, history), so it reads nothing of its own. The header's arm picker moves
-    between arms' pages there. Calendars and contango use the shared
+    between arms' pages there. Calendars, contango, ladder and earnings (under its performance tab) use the shared
     `components/armpage/ModuleArmPage.tsx` (`/<module>/arm/<name>`): changes slice, the performance
     slide narrowed to the arm with `reference` the arm its changes row is read against (none for a
-    control), and analysis; their performance tabs pass `armCards={false}`.
+    control), and analysis. Calendars', contango's and ladder's performance tabs pass
+    `armCards={false}`; earnings keeps its cards, each linking to its page (`armLink`).
   - **The shared costs tab** (`components/costs/SharedCosts.tsx`; earnings and ladder) renders
     `core.metrics.money` from the performance read, per arm and the module's own line: it sums
     nothing. Ladder and weeklyput are in `PERFORMANCE_MODULE_SCHEMA`, so the shared performance and

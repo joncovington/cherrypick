@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
+import { armHref } from "../../components/armpage/ModuleArmPage";
 import {
   LADDER_HOSPITAL_DAYS,
   type LadderArmDecl,
@@ -370,7 +372,7 @@ export function LadderArms({
           {decl.map((a) => (
             <tr key={a.arm} className={a.enabled === false ? "muted" : undefined}>
               <td>
-                {a.arm}
+                <Link to={armHref("ladder", a.arm)}>{a.arm}</Link>
                 {a.enabled === false ? " (off)" : ""}
               </td>
               <td>{a.entry ?? status?.arms[a.arm]?.entry ?? "—"}</td>
