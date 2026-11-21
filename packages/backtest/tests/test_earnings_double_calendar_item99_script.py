@@ -187,6 +187,7 @@ class FakeBars:
 
 
 def test_one_window_places_its_strikes_at_k_em_and_prices_the_exit():
+    pytest.importorskip("cherrypick.earnings.scanner")
     d = m.trade_dates(EVENT)
     bars = FakeBars()
     st, why = m.setup(bars, "ABC", d)
@@ -200,6 +201,7 @@ def test_one_window_places_its_strikes_at_k_em_and_prices_the_exit():
 
 
 def test_a_leg_unquoted_at_ten_takes_the_next_bar_then_the_adverse_close():
+    pytest.importorskip("cherrypick.earnings.scanner")
     d = m.trade_dates(EVENT)
     st, _ = m.setup(FakeBars(), "ABC", d)
     em = st["em"]["expected_move_dollars"]
@@ -211,6 +213,7 @@ def test_a_leg_unquoted_at_ten_takes_the_next_bar_then_the_adverse_close():
 
 
 def test_a_strike_the_spread_limit_removes_drops_the_arm():
+    pytest.importorskip("cherrypick.earnings.scanner")
     d = m.trade_dates(EVENT)
     st, _ = m.setup(FakeBars(), "ABC", d)
     st = {**st, "listed": {"C": [], "P": st["listed"]["P"]}}
