@@ -156,6 +156,11 @@ const HERE = { exits: "exit reasons", breaks: "measurement breaks" } as const;
  * an advised arm is ahead of its base, how far positions swung. The exit-reason tally and the
  * measurement breaks are lightboxes from the cumulative card (`?perf=`).
  */
+/** The record's question: one arm's when the slide is narrowed to it (an arm's page, the picker). */
+export function recordQuestion(arm: string | null): string {
+  return arm === null ? "How has each arm done?" : `How has ${arm} done?`;
+}
+
 export function PerformanceSlide({
   module,
   mode = "paper",
@@ -180,7 +185,7 @@ export function PerformanceSlide({
   if (isLoading || data === undefined) {
     return (
       <div className="pf-layout">
-        <Section concept="stand" tag="the record" question="How has each arm done?">
+        <Section concept="stand" tag="the record" question={recordQuestion(arm)}>
           <Card title="performance">
             <span className="skeleton skeleton-text" style={{ width: "50%" }} />
           </Card>
@@ -192,7 +197,7 @@ export function PerformanceSlide({
   if (!data.ok) {
     return (
       <div className="pf-layout">
-        <Section concept="stand" tag="the record" question="How has each arm done?">
+        <Section concept="stand" tag="the record" question={recordQuestion(arm)}>
           <Card title="performance" isError>
             <p className="muted">{data.error ?? "calibration reading unavailable"}</p>
           </Card>
@@ -253,7 +258,7 @@ export function PerformanceSlide({
   return (
     <div className="pf-layout">
       {shown.length === 0 ? (
-        <Section concept="stand" tag="the record" question="How has each arm done?">
+        <Section concept="stand" tag="the record" question={recordQuestion(arm)}>
           <Card title="performance" updatedAt={dataUpdatedAt}>
             <p className="muted">
               {arm !== null && data.groups.length > 0 ? `no closed trades for ${arm} in this window` : "no closed trades in this window yet"}
@@ -264,7 +269,7 @@ export function PerformanceSlide({
       ) : (
         <>
           {armCards && (
-          <Section concept="stand" tag="the record" question="How has each arm done?">
+          <Section concept="stand" tag="the record" question={recordQuestion(arm)}>
             {shown.map((g) => (
               <Card
                 key={g.tag}

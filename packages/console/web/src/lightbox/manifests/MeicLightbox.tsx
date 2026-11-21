@@ -1,6 +1,8 @@
 import { ChangesSlide } from "../../components/changes/ChangesSlide";
 import { AnalysisSlide } from "../../components/analysis/AnalysisSlide";
 import { useEffect, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import { MeicArmPage, meicArmHref } from "../../pages/Meic/MeicArmPage";
 import { ModuleCosts } from "../../components/costs/ModuleCosts";
 import { useQuery } from "@tanstack/react-query";
 import type { TradingMode } from "@console/shared";
@@ -91,6 +93,9 @@ export function MeicLightbox({ slide }: { slide: string }) {
   const [profile, setProfile] = useState<string | null>(null);
   const [era, setEra] = useState<string | null>(null);
   const [day, setDay] = useState<string | null>(null);
+  // `/meic/arm/<name>`: the arms tab is that arm's page.
+  const armPage = useParams()["name"] ?? null;
+  const navigate = useNavigate();
 
   const scope = useQuery<MeicScopeData>({
     queryKey: ["meic-scope", mode, era],
@@ -193,7 +198,16 @@ export function MeicLightbox({ slide }: { slide: string }) {
         />
       ),
     },
-    { id: "arms", label: MEIC_LABEL.arms, render: () => <MeicArmCards mode={mode} scope={scopeArgs} attemptsScope={attemptsScope} /> },
+    {
+      id: "arms",
+      label: MEIC_LABEL.arms,
+      render: () =>
+        armPage !== null ? (
+          <MeicArmPage name={armPage} mode={mode} era={era} resolvedEra={resolvedEra} symbol={symbol} day={day} reasons={reasons} />
+        ) : (
+          <MeicArmCards mode={mode} scope={scopeArgs} attemptsScope={attemptsScope} />
+        ),
+    },
     {
       id: "forest",
       label: MEIC_LABEL.forest,
@@ -394,7 +408,14 @@ export function MeicLightbox({ slide }: { slide: string }) {
             </select>
           )}
           <ScopeSelect label="symbol" value={symbol} options={scope.data?.symbols} onChange={setSymbol} allLabel="all symbols" />
-          <ArmSelect module="meic" label="arm" value={profile} options={scope.data?.arms} onChange={setProfile} />
+          <ArmSelect
+            module="meic"
+            label="arm"
+            value={armPage ?? profile}
+            options={scope.data?.arms}
+            // On an arm's page the picker moves between arms' pages; elsewhere it narrows the tab.
+            onChange={(v) => (armPage !== null ? navigate(v === null ? "/meic/arms" : meicArmHref(v)) : setProfile(v))}
+          />
           <EraSelect value={era} eras={scope.data?.eras} currentEra={scope.data?.currentEra} onChange={setEra} />
           {l?.ivRank != null && <span className="chip">IV rank {fmtIvr(l.ivRank)}</span>}
           {l?.underlyingPrice != null && <span className="chip">{l.underlyingPrice.toFixed(2)}</span>}
