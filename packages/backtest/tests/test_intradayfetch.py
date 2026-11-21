@@ -302,3 +302,32 @@ def test_the_same_window_with_two_ranges_is_refused_not_fetched_with_the_first(t
     # the same range twice is one request
     keys, ranges = ix.read_request_file(_write(tmp_path, [_item(strike_range=50), _item(strike_range=50)]))
     assert len(keys) == 1 and list(ranges.values()) == [50]
+
+
+class Refusing:
+    """Refuses each root in `reasons` with its reason, answers the rest."""
+
+    def __init__(self, reasons):
+        self.reasons = dict(reasons)
+
+    def chain_window(self, root, day, expiration, start, end, *, interval="5m", strike_range=None):
+        if root in self.reasons:
+            raise VendorRefusal(self.reasons[root], "refused")
+        return _rows()
+
+
+def test_a_fixed_refusal_repeated_is_settled_and_a_first_or_passing_one_is_not(tmp_path):
+    # The full set's near-spx-2: four SPXW windows the vendor drops (stream_removed) every time. The
+    # repeat pass found them refused again; that is the vendor's fixed answer, not a failed fetch.
+    s = _settings(tmp_path)
+    reqs = [_key("SPXW"), _key("MSFT")]
+    reasons = {"SPXW": "stream_removed", "MSFT": "vendor_error"}
+    first = ix.fetch_windows(s, Refusing(reasons), reqs, log=lambda m: None)
+    assert (first["refused"], first["settled"]) == (2, 0)  # a first refusal is never settled
+    again = ix.fetch_windows(s, Refusing(reasons), reqs, log=lambda m: None)
+    assert (again["refused"], again["settled"]) == (2, 1)  # vendor_error may pass: not settled
+    # A fixed reason that differs from the one recorded before is not the same answer.
+    changed = ix.fetch_windows(
+        s, Refusing({"SPXW": "permission_denied", "MSFT": "vendor_error"}), reqs, log=lambda m: None
+    )
+    assert changed["settled"] == 0

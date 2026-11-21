@@ -518,7 +518,8 @@ report, the previous close's figure, so a reading at D's close uses nothing publ
 chain at the bars of a window of one session (`ThetaDataClient.chain_window`: quote, delta, implied
 volatility and the underlying's price per contract), from a `{requests: [{symbol, session, expiration,
 start, end, interval?}]}` file as `fetch-chains` reads. Its own store, `intraday_chains.db`, in the
-marked licensed directory; resumable, a refusal recorded and retried, `--stop-by` bounds a run, so the
+marked licensed directory; resumable, a refusal recorded and retried (one refused again with the same
+fixed reason counted `settled`, as the path fetch counts it), `--stop-by` bounds a run, so the
 research queue runs it. The coverage pilot that decides item 31's basis is `packages/backtest/scripts/earnings_item31.py`
 (`plan`, `pilot`); it reads presence and counts, never a price.
 
