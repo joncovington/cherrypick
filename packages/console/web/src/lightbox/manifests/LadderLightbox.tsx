@@ -3,7 +3,8 @@ import { ModuleArmPage } from "../../components/armpage/ModuleArmPage";
 import { useParams } from "react-router-dom";
 import { SharedCosts } from "../../components/costs/SharedCosts";
 import { PerformanceSlide } from "../../components/performance/PerformanceSlide";
-import { useLadder, useLadderLive, useLadderLiveStatus, useLadderStatus, useLadderSummary } from "../../lib/api";
+import { useLadder, useLadderEquity, useLadderLive, useLadderLiveStatus, useLadderStatus, useLadderSummary } from "../../lib/api";
+import { LadderEquityCard, equityOrder } from "../../pages/Ladder/LadderEquityCard";
 import { PaperLiveBadge } from "../../components/shell/PaperLiveBadge";
 import { LoopPill } from "../../components/ScopeBar";
 import { LadderLive, LiveModeBadge } from "../../pages/Ladder/LadderLive";
@@ -29,6 +30,7 @@ export function LadderLightbox({ slide }: { slide: string }) {
   const { data, isLoading } = useLadder();
   const status = useLadderStatus();
   const summary = useLadderSummary();
+  const equity = useLadderEquity();
   const live = useLadderLive();
   const liveStatus = useLadderLiveStatus();
   // The pill follows the tab: the live tab shows the LIVE loop's last tick (its own ledger), never the paper loop's.
@@ -53,7 +55,18 @@ export function LadderLightbox({ slide }: { slide: string }) {
         ),
     },
     { id: "decisions", label: LABEL.decisions, render: () => <LadderDecisions /> },
-    { id: "performance", label: LABEL.performance, render: () => <PerformanceSlide module="ladder" pairs={false} armCards={false} /> },
+    {
+      id: "performance",
+      label: LABEL.performance,
+      render: () => (
+        <>
+          <div className="pf-layout">
+            <LadderEquityCard equity={equity.data} order={equityOrder(data?.arms, equity.data)} />
+          </div>
+          <PerformanceSlide module="ladder" pairs={false} armCards={false} />
+        </>
+      ),
+    },
     { id: "costs", label: LABEL.costs, render: () => <SharedCosts module="ladder" /> },
     { id: "changes", label: LABEL.changes, render: () => <ChangesSlide module="ladder" /> },
     { id: "guide", label: LABEL.guide, render: () => <LadderHelp status={status.data} /> },

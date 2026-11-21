@@ -31,7 +31,7 @@ A page the suite has switched off is not shown (see *What is off is not shown* b
 | BWB | `/bwb` | today, positions, history, decisions, arms, entry vol, live vs paper, performance, analysis, advisor, help | Retired; ships off. |
 | Earnings | `/earnings` | today, positions, history, decisions, screening, strategies, advisor | Active; paper only. |
 | Automations | `/automations` | today, groups, positions, history, decisions, performance, costs, help (8 tabs) | Paper only. The automations are whatever the ledger names; the Builder writes them, and `groups` (every group › one group › one automation, staged and reviewed) switches, budgets and groups them. |
-| Ladder | `/ladder` | today, live, open lots, history, arms, decisions, help (7 tabs) | Experimental. Every tab but `live` is the paper book. `live` only reads the live path, which ships in dry-run and off. Not a tested edge; the help tab says so. |
+| Ladder | `/ladder` | today, live, open lots, history, arms, decisions, performance, costs, changes, help (10 tabs) | Experimental. Every tab but `live` is the paper book. `live` only reads the live path, which ships in dry-run and off. Not a tested edge; the help tab says so. |
 | Experiments | `/experiments` | experiments | The comparison page for the paper-only experiments and the retired modules below. |
 | PMCC | `/pmcc` | today, by arm, positions, tracker, history, decisions, arms, performance, analysis, costs, advisor, help | Retired; ships off. |
 | Calendars | `/calendars` | today, plan, positions, history, decisions, arms, policies, performance, analysis, advisor, help | Experimental; paper only. |
@@ -900,6 +900,16 @@ live's favour; paired totals are the sums of their rows, and paper condors on da
 counted on their own line. Pinned by `server/test/meic-live-gap.test.ts`. The **execution by week** card
 (B10, below) closes the tab. Its gap is against the same paper arm but over every session live was
 working, so it also counts the entries live missed; each card says which sessions it counts.
+
+**The ladder's `performance` tab** opens with **realized and marked, by session**
+(`pages/Ladder/LadderEquityCard.tsx` over `GET /api/ladder/equity` → `services/ladderBridge.ts` →
+`ladder equity`), above the shared performance slide. One panel per arm on one shared scale: realized
+net dashed, marked (realized plus the open lots at what a sale at the session's last bid would net,
+fees included) solid, the gap between them shaded by sign. The shared slide's cumulative line is
+closed lots only, which under a no-stop rule only climbs; this card is where the held lots show. The
+figures are the module's (`analytics.equity`); the page scales them and computes no money. A session
+with no bid for an open lot breaks the solid line, never carries a price forward. Paper only: the live
+ledger keeps no marks. Pinned by `server/test/ladder-bridge.test.ts` and `web/test/ladderEquity.test.tsx`.
 
 **The ladder's `live` tab** (`pages/Ladder/LadderLive.tsx` over `GET /api/ladder/live` →
 `readers/ladderLive.ts` and `GET /api/ladder/live/status` → `services/ladderLiveBridge.ts`) is the live

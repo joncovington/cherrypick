@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { normaliseStatus, normaliseSummary, readLadderStatus, readLadderSummary, setLadderCaller } from "../src/services/ladderBridge.js";
+import { normaliseEquity, normaliseStatus, normaliseSummary, readLadderEquity, readLadderStatus, readLadderSummary, setLadderCaller } from "../src/services/ladderBridge.js";
 
 /**
  * The bridge is the one place the module's snake_case becomes camelCase. The shapes below are what
@@ -67,5 +67,42 @@ describe("ladderBridge reads", () => {
     expect((await readLadderStatus("a.db")).ok).toBe(true);
     expect((await readLadderSummary("a.db")).arms["chain"]!.lots).toBe(8);
     expect(seen).toEqual(["a.db:status", "a.db:summary"]);
+  });
+});
+
+/** What `cherrypick.ladder.cli equity` prints (analytics.equity), a gap session included. */
+const EQUITY = {
+  ok: true,
+  arms: {
+    chain: [
+      { session: "2026-11-19", realized: 262.99, unrealized: -62.17, marked: 200.82, open_lots: 2, open_cost: 1937.21, unmarked: 0 },
+      { session: "2026-11-20", realized: 300.19, unrealized: null, marked: null, open_lots: 6, open_cost: 5861.39, unmarked: 1 },
+    ],
+  },
+  breaks: [],
+};
+
+describe("ladder equity", () => {
+  it("keeps a session with no mark as null, never zero", () => {
+    const [a, b] = normaliseEquity(EQUITY).arms["chain"]!;
+    expect(a).toEqual({ session: "2026-11-19", realised: 262.99, unrealised: -62.17, marked: 200.82, openLots: 2, openCost: 1937.21, unmarked: 0 });
+    expect(b).toMatchObject({ realised: 300.19, unrealised: null, marked: null, openLots: 6, unmarked: 1 });
+  });
+
+  it("asks the module's equity verb and folds a failure to not ok", async () => {
+    const seen: string[] = [];
+    setLadderCaller(async (db, verb) => {
+      seen.push(`${db}:${verb}`);
+      return { ok: true, json: EQUITY, error: null };
+    });
+    expect((await readLadderEquity("a.db")).arms["chain"]).toHaveLength(2);
+    expect(seen).toEqual(["a.db:equity"]);
+    setLadderCaller(async () => ({ ok: false, json: null, error: "ladder read unavailable" }));
+    expect(await readLadderEquity("a.db")).toEqual({ ok: false, error: "ladder read unavailable", arms: {} });
+  });
+
+  it("refuses a point without a session rather than drawing it", async () => {
+    setLadderCaller(async () => ({ ok: true, json: { arms: { chain: [{ realized: 1 }] } }, error: null }));
+    expect((await readLadderEquity("a.db")).ok).toBe(false);
   });
 });

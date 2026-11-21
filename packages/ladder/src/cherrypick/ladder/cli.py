@@ -3,6 +3,7 @@
     status     today's reference closes, each arm's next buy level, open lots
     lots       every lot with its money laid out to add up (--arm, --open, --closed)
     summary    each arm's forward read: lots, net, holds, what is still open
+    equity     each arm by session: realized net, and realized plus open lots marked at the bid
 
 The paper loop's own argv (`python -m cherrypick.ladder.paper_loop --once|--interval|--status`) is
 what the orchestrator drives. Keep these JSON shapes stable: the console will read them.
@@ -51,6 +52,13 @@ def cmd_summary(args) -> int:
     return _print({"ok": True, **analytics.summary(conn, args.arm), "breaks": db.measurement_breaks(conn)})
 
 
+def cmd_equity(args) -> int:
+    from cherrypick.ladder import analytics, db
+
+    conn = db.connect_ro(args.db)
+    return _print({"ok": True, **analytics.equity(conn, args.arm), "breaks": db.measurement_breaks(conn)})
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="ladder", description="cherrypick-ladder read side")
     ap.add_argument("--config")
@@ -67,6 +75,9 @@ def main(argv=None) -> int:
     p = sub.add_parser("summary")
     p.add_argument("--arm")
     p.set_defaults(fn=cmd_summary)
+    p = sub.add_parser("equity")
+    p.add_argument("--arm")
+    p.set_defaults(fn=cmd_equity)
     args = ap.parse_args(argv)
     return args.fn(args)
 

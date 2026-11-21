@@ -8,6 +8,7 @@ import type {
   ContangoMetrics,
   ContangoHistory,
   ContangoPayload,
+  LadderEquity,
   LadderHistory,
   LadderLivePayload,
   LadderLiveStatus,
@@ -1376,6 +1377,16 @@ export function useLadderSummary() {
     queryFn: () => getJson<LadderSummary>("/api/ladder/summary"),
     staleTime: 20_000,
     refetchInterval: 30_000,
+  });
+}
+
+/** Each arm by session (`ladder equity`): realised, and realised plus open lots at the bid. */
+export function useLadderEquity() {
+  return useQuery<LadderEquity>({
+    queryKey: ["ladder-equity"],
+    queryFn: () => getJson<LadderEquity>("/api/ladder/equity"),
+    staleTime: 30_000,
+    refetchInterval: 60_000,
   });
 }
 

@@ -30,7 +30,7 @@ Config: the machine's copy is `~/.cherrypick/config/ladder.json`. Without it, th
 python -m cherrypick.ladder.paper_loop --once          # one tick
 python -m cherrypick.ladder.paper_loop --interval 60   # the resident loop, until session_end
 python -m cherrypick.ladder.paper_loop --status        # one JSON health object
-python run.py status | lots [--arm A] [--open|--closed] | summary [--arm A]
+python run.py status | lots [--arm A] [--open|--closed] | summary [--arm A] | equity [--arm A]
 python -m cherrypick.ladder.live_loop --status         # the live gates, the arm, dry-run or live
 python -m cherrypick.ladder.live_loop --once           # one live tick; sends nothing while live.dry_run is true
 python -m pytest

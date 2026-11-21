@@ -1,13 +1,15 @@
-import type { LadderArmRule, LadderArmSummary, LadderFund, LadderStatus, LadderSummary } from "@console/shared";
+import type { LadderArmRule, LadderArmSummary, LadderEquity, LadderEquityPoint, LadderFund, LadderStatus, LadderSummary } from "@console/shared";
 import { spawnModuleCliAsync } from "./moduleCli.js";
 
 /**
- * The two ladder answers this package must not compute for itself, asked of the module's own
+ * The three ladder answers this package must not compute for itself, asked of the module's own
  * read-only CLI (`python -m cherrypick.ladder.cli`):
  *
  * - `status`: each fund's previous close and each arm's next buy level. Which close is the reference
  *   and how a chain anchors on its last lot are the module's `rules.py`; a copy here would drift.
  * - `summary`: each arm's lots, realised net, open lots at the bid and the group's 18-day counts.
+ * - `equity`: each arm by session, realised and marked at the session's last bid. The mark is the
+ *   net a sale at that bid would book, by the module's own `rules.money`, so the fees are its too.
  *
  * `readers/ladder.ts` reads the ledger directly for the lots. Each failure folds to
  * `{ ok: false, error }`, so the page says the module's read is unavailable instead of drawing an
@@ -69,7 +71,29 @@ export function normaliseSummary(j: Json): Omit<LadderSummary, "ok" | "error"> {
   return { arms: Object.fromEntries(Object.entries(obj(j["arms"])).map(([arm, a]) => [arm, armSummary(obj(a))])) };
 }
 
-type Verb = "status" | "summary";
+function equityPoint(p: Json): LadderEquityPoint {
+  const session = str(p["session"]);
+  if (session === null) throw new Error("an equity point without a session");
+  return {
+    session,
+    realised: num(p["realized"]) ?? 0,
+    unrealised: num(p["unrealized"]),
+    marked: num(p["marked"]),
+    openLots: num(p["open_lots"]) ?? 0,
+    openCost: num(p["open_cost"]) ?? 0,
+    unmarked: num(p["unmarked"]) ?? 0,
+  };
+}
+
+export function normaliseEquity(j: Json): Omit<LadderEquity, "ok" | "error"> {
+  return {
+    arms: Object.fromEntries(
+      Object.entries(obj(j["arms"])).map(([arm, pts]) => [arm, (Array.isArray(pts) ? pts : []).map((p) => equityPoint(obj(p)))]),
+    ),
+  };
+}
+
+type Verb = "status" | "summary" | "equity";
 type Caller = (dbPath: string, verb: Verb) => Promise<{ ok: boolean; json: Json | null; error: string | null }>;
 
 const realCaller: Caller = (dbPath, verb) => spawnModuleCliAsync(["-m", "cherrypick.ladder.cli", "--db", dbPath, verb], UNAVAILABLE);
@@ -102,4 +126,8 @@ export function readLadderStatus(dbPath: string): Promise<LadderStatus> {
 
 export function readLadderSummary(dbPath: string): Promise<LadderSummary> {
   return ask<LadderSummary>(dbPath, "summary", normaliseSummary, { arms: {} });
+}
+
+export function readLadderEquity(dbPath: string): Promise<LadderEquity> {
+  return ask<LadderEquity>(dbPath, "equity", normaliseEquity, { arms: {} });
 }

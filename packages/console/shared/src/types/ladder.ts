@@ -140,3 +140,26 @@ export interface LadderSummary {
   error: string | null;
   arms: Record<string, LadderArmSummary>;
 }
+
+/** One session of one arm in `ladder equity`. */
+export interface LadderEquityPoint {
+  session: string;
+  /** Cumulative net of the lots sold by this session's close. */
+  realised: number;
+  /** What the lots open at the close would net if sold at the session's last bid, both fills' fees
+   *  included; null where an open lot's fund had no bid that session (a gap, never a carried price). */
+  unrealised: number | null;
+  /** Realised plus unrealised; null with it. */
+  marked: number | null;
+  openLots: number;
+  openCost: number;
+  /** Open lots with no bid this session. */
+  unmarked: number;
+}
+
+/** `ladder equity`: each arm's book by session, paper only (the live ledger keeps no marks). */
+export interface LadderEquity {
+  ok: boolean;
+  error: string | null;
+  arms: Record<string, LadderEquityPoint[]>;
+}
