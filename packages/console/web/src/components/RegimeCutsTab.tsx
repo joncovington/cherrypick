@@ -331,7 +331,44 @@ function dimensionHelp(cuts: RegimeCuts, dim: string): CardHelpContent {
   };
 }
 
-function DimensionCard({ cuts, dim, lb }: { cuts: RegimeCuts; dim: string; lb: OpenParam }) {
+/** The arms a dimension can be read for, and the ones it cannot yet (underpowered), each with what the
+ *  writer says it still needs. Selection only: the writer decides `underpowered` and the count. */
+export function splitByPower(cuts: RegimeCuts, dim: string): { strong: RegimeCuts["arms"]; weak: Array<{ arm: string; needed: number | null }> } {
+  const strong = cuts.arms.filter((b) => b.dimensions[dim] !== undefined && !b.dimensions[dim]!.underpowered);
+  const weak = cuts.arms
+    .filter((b) => b.dimensions[dim]?.underpowered === true)
+    .map((b) => ({ arm: b.arm, needed: b.dimensions[dim]!.sessionsNeeded }));
+  return { strong, weak };
+}
+
+/** "a 12 more, b too few so far": a dimension's underpowered arms and the sessions each still needs. */
+export function weakWords(weak: Array<{ arm: string; needed: number | null }>): string {
+  return weak.map((w) => `${w.arm} ${w.needed == null ? "too few so far" : `${String(w.needed)} more`}`).join(", ");
+}
+
+/** The cuts no arm can be read on yet, one line each, in one card: a table of underpowered cells says
+ *  more than its sessions can. */
+function UnreadableCard({ cuts, dims }: { cuts: RegimeCuts; dims: string[] }) {
+  return (
+    <Card title="not readable yet" className="lv-12" collapseKey={`regime-${cuts.module}-unreadable`} flag="underpowered">
+      <p className="muted" style={{ marginTop: 0 }}>
+        These cuts have too few sessions for any arm to read; each says how many more it needs.
+      </p>
+      <ul className="regime-weak">
+        {dims.map((dim) => (
+          <li key={dim}>
+            <b>by {dim}</b>, sessions still needed: {weakWords(splitByPower(cuts, dim).weak)}
+          </li>
+        ))}
+      </ul>
+    </Card>
+  );
+}
+
+function DimensionCard({ cuts: all, dim, lb }: { cuts: RegimeCuts; dim: string; lb: OpenParam }) {
+  // Only the arms this dimension can be read for get rows; the rest are one line beneath.
+  const { strong, weak } = splitByPower(all, dim);
+  const cuts = { ...all, arms: strong.length > 0 ? strong : all.arms };
   const columns = bucketColumns(cuts.arms, dim);
   const under = cuts.arms.some((b) => b.dimensions[dim]?.underpowered === true);
   return (
@@ -390,6 +427,9 @@ function DimensionCard({ cuts, dim, lb }: { cuts: RegimeCuts; dim: string; lb: O
           </tbody>
         </table>
       </div>
+      {weak.length > 0 && strong.length > 0 && (
+        <p className="muted regime-weak-line">Not readable yet here, sessions still needed: {weakWords(weak)}.</p>
+      )}
       {pairedRows(cuts, dim).length > 0 && (
         <div className="pf-mores">
           <BoxOpen lb={lb} id={pairedBoxId(dim)}>
@@ -687,9 +727,14 @@ export function RegimeCutsTab({ module, arm = null }: { module: RegimeCutsModule
       </Section>
       {cuts.dimensions.length > 0 && (
         <Section concept="edge" tag="by regime" question="Does the edge depend on the regime?">
-          {cuts.dimensions.map((dim) => (
-            <DimensionCard key={dim} cuts={cuts} dim={dim} lb={lb} />
-          ))}
+          {cuts.dimensions
+            .filter((dim) => splitByPower(cuts, dim).strong.length > 0)
+            .map((dim) => (
+              <DimensionCard key={dim} cuts={cuts} dim={dim} lb={lb} />
+            ))}
+          {cuts.dimensions.some((dim) => splitByPower(cuts, dim).strong.length === 0) && (
+            <UnreadableCard cuts={cuts} dims={cuts.dimensions.filter((dim) => splitByPower(cuts, dim).strong.length === 0)} />
+          )}
         </Section>
       )}
       {cuts.crossTabs.length > 0 && (

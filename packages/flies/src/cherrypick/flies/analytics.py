@@ -639,6 +639,9 @@ def regime_coverage(conn, start=None, end=None, symbol=None, arm=None) -> dict:
             # made on a few days. `daily_scale` says how severe the collapse is, not whether the
             # session count binds -- it always does.
             "underpowered": tagged > 0 and sessions < MIN_EFFECTIVE_N,
+            # How many more sessions before the dimension can be read: what a page says in place of
+            # an underpowered table (0 once it can, None with nothing tagged).
+            "sessions_needed": max(0, MIN_EFFECTIVE_N - sessions) if tagged > 0 else None,
         }
     return out
 

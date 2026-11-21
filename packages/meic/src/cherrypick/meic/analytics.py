@@ -388,6 +388,9 @@ def regime_coverage(conn, start=None, end=None, symbol=None, era=CURRENT_ERA, ar
             # still a threshold cut on two days — `daily_scale` says how severe the collapse is, not
             # whether it happened. Every dimension in this table is bounded by the session count.
             "underpowered": tagged > 0 and sessions < MIN_EFFECTIVE_N,
+            # How many more sessions before the dimension can be read: what a page says in place of
+            # an underpowered table (0 once it can, None with nothing tagged).
+            "sessions_needed": max(0, MIN_EFFECTIVE_N - sessions) if tagged > 0 else None,
         }
     return out
 
