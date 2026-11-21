@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { armHref } from "../../components/armpage/ModuleArmPage";
+import { Link } from "react-router-dom";
 import type { ContangoHistoryRow, ContangoMetrics, ContangoPayload, ContangoSessionRow, DatedValue } from "@console/shared";
 import { Card, DataCard, PnlCell, fmtNum, sortRows, useSort } from "../../components/DataTable";
 import { ArmSelect } from "../../components/ArmSelect";
@@ -278,7 +280,7 @@ export function ContangoArms({ data, metrics }: { data: ContangoPayload | undefi
           const s = armState.get(arm);
           return (
             <tr key={arm}>
-              <td>{arm}</td>
+              <td>{s !== undefined ? <Link to={armHref("contango", arm)}>{arm}</Link> : arm}</td>
               <td>{m.reading.days}</td>
               <td>{pct(m.reading.cagr)}</td>
               <td>{pct(m.reading.totalReturn)}</td>
@@ -346,7 +348,7 @@ export function ContangoPerformance({ data, metrics }: { data: ContangoPayload |
             <p className="integrity-warn">{metrics.error}</p>
           </Card>
         </Section>
-        <PerformanceSlide module="contango" pairs={false} />
+        <PerformanceSlide module="contango" pairs={false} armCards={false} />
       </div>
     );
   }
@@ -405,7 +407,7 @@ export function ContangoPerformance({ data, metrics }: { data: ContangoPayload |
         <StressTable series={named} windows={windows} kind="nav" />
       </Card>
       </Section>
-      <PerformanceSlide module="contango" pairs={false} />
+      <PerformanceSlide module="contango" pairs={false} armCards={false} />
     </div>
   );
 }

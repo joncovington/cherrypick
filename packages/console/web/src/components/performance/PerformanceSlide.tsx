@@ -167,6 +167,7 @@ export function PerformanceSlide({
   arm = null,
   pairs: showPairs = true,
   armCards = true,
+  reference = "control",
 }: {
   module: PerformanceModuleId;
   mode?: TradingMode;
@@ -175,6 +176,9 @@ export function PerformanceSlide({
   /** False where the module compares its arms in one table of its own (MEIC): the per-arm cards are
    *  not drawn, and the cumulative chart stays. */
   armCards?: boolean;
+  /** The arm a narrowed slide draws beside the picked one: what it is read against (calendars' Friday
+   *  arms against `friday:control`); null draws none (the picked arm is a control). */
+  reference?: string | null;
   /** The page's arm picker (flies, MEIC): narrows the arm cards, pairs and exit reasons to that arm.
    *  The cumulative chart keeps `control` beside it as the reference. null is every arm. */
   arm?: string | null;
@@ -216,7 +220,7 @@ export function PerformanceSlide({
   // The arm picker, applied to what was read. Control stays on the cumulative chart as the line the
   // picked arm is read against; it is drawn there only, not given a card of its own.
   const shown = data.groups.filter((g) => matchesArm(g.tag, arm));
-  const control = arm !== null && arm !== "control" ? groupByTag.get("control") : undefined;
+  const control = arm !== null && reference !== null && arm !== reference ? groupByTag.get(reference) : undefined;
   const charted = control !== undefined ? [...shown, control] : shown;
 
   const exitRows = Array.isArray(data.exitReasons) ? data.exitReasons.filter((r) => matchesArm(r.tag, arm)) : [];
@@ -268,6 +272,11 @@ export function PerformanceSlide({
         </Section>
       ) : (
         <>
+          {!armCards && arm === null && (
+            <p className="muted pf-pointer">
+              Each arm&apos;s card is on its own page, opened from the arm&apos;s name where the arms are listed.
+            </p>
+          )}
           {armCards && (
           <Section concept="stand" tag="the record" question={recordQuestion(arm)}>
             {shown.map((g) => (

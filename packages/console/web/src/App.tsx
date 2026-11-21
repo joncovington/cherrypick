@@ -81,6 +81,9 @@ export default function App() {
         <Route path="automations/automation/:name" element={<ModuleRoute forced={{ module: "automations", slide: "groups" }} />} />
         {/* One MEIC arm's page (`/meic/arm/<name>`), framed as MEIC › arms. */}
         <Route path="meic/arm/:name" element={<ModuleRoute forced={{ module: "meic", slide: "arms" }} />} />
+        {/* One arm's page in a module on the shared slides, framed as its arms tab. */}
+        <Route path="calendars/arm/:name" element={<ModuleRoute forced={{ module: "calendars", slide: "arms" }} />} />
+        <Route path="contango/arm/:name" element={<ModuleRoute forced={{ module: "contango", slide: "arms" }} />} />
         <Route path=":module" element={<ModuleRoute />} />
         <Route path=":module/:slide" element={<ModuleRoute />} />
         {/* Catch-all. Without it an unmatched path renders NOTHING — a blank screen that reads as

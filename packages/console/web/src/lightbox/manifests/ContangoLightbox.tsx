@@ -1,4 +1,6 @@
 import { ChangesSlide } from "../../components/changes/ChangesSlide";
+import { ModuleArmPage } from "../../components/armpage/ModuleArmPage";
+import { useParams } from "react-router-dom";
 import { AnalysisSlide } from "../../components/analysis/AnalysisSlide";
 import { useContango, useContangoMetrics } from "../../lib/api";
 import { PaperLiveBadge } from "../../components/shell/PaperLiveBadge";
@@ -29,6 +31,8 @@ const LABEL = Object.fromEntries(CONTANGO_SLIDES.map((s) => [s.id, s.label])) as
  * once a session, inside its window, so an idle loop pill outside it is the design.
  */
 export function ContangoLightbox({ slide }: { slide: string }) {
+  // `/<module>/arm/<name>`: the arms tab is that arm's page.
+  const armPage = useParams()["name"] ?? null;
   const { data, isLoading } = useContango();
   const metrics = useContangoMetrics();
   const iteration = data?.lastIteration ?? null;
@@ -41,12 +45,15 @@ export function ContangoLightbox({ slide }: { slide: string }) {
     {
       id: "arms",
       label: LABEL.arms,
-      render: () => (
-        <>
-          <ContangoArms data={data} metrics={metrics.data} />
-          <BookArmGuide module="contango" />
-        </>
-      ),
+      render: () =>
+        armPage !== null ? (
+          <ModuleArmPage module="contango" name={armPage} />
+        ) : (
+          <>
+            <ContangoArms data={data} metrics={metrics.data} />
+            <BookArmGuide module="contango" />
+          </>
+        ),
     },
     { id: "performance", label: LABEL.performance, render: () => <ContangoPerformance data={data} metrics={metrics.data} /> },
     { id: "analysis", label: LABEL.analysis, render: () => <AnalysisSlide module="contango" /> },

@@ -13,7 +13,12 @@ import { useKeyboardNav } from "../../lib/useKeyboardNav";
 
 /** A page that lives under a tab without being one marks that tab on the rail: one automation's page
  *  (`/automations/automation/<name>`) is reached from, and framed as, Automations' groups tab. */
-const UNDER_TAB: Partial<Record<string, Record<string, string>>> = { automations: { automation: "groups" }, meic: { arm: "arms" } };
+const UNDER_TAB: Partial<Record<string, Record<string, string>>> = {
+  automations: { automation: "groups" },
+  meic: { arm: "arms" },
+  calendars: { arm: "arms" },
+  contango: { arm: "arms" },
+};
 
 export function railSlide(module: string, seg: string): string {
   return UNDER_TAB[module]?.[seg] ?? seg;

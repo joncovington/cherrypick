@@ -152,7 +152,10 @@ alone):
   - **A MEIC arm's page** (`/meic/arm/<name>`, framed as the arms tab, `pages/Meic/MeicArmPage.tsx`)
     composes MEIC's own tabs with the arm fixed (changes slice, `PerformanceSlide`, attempts, costs,
     regime cuts, analysis, history), so it reads nothing of its own. The header's arm picker moves
-    between arms' pages there.
+    between arms' pages there. Calendars and contango use the shared
+    `components/armpage/ModuleArmPage.tsx` (`/<module>/arm/<name>`): changes slice, the performance
+    slide narrowed to the arm with `reference` the arm its changes row is read against (none for a
+    control), and analysis; their performance tabs pass `armCards={false}`.
   - **The Builder's form reads the module's schema and "Today, live"; neither writes.** The Builder
     is Automations' `builder` tab (`/builder` redirects there; `g u` is its tab chord,
     `navLinks.TAB_SHORTCUTS`). The form's choices are `cli builder-schema`
