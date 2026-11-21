@@ -4704,6 +4704,58 @@
       "retest": null,
       "retest_note": "A pass is followed by an automation with its own forward block, not a retest; the store is the vendor's, so a retest needs the licence.",
       "retests": []
+    },
+    {
+      "id": 99,
+      "study": "item99",
+      "title": "A double calendar across an earnings report, its strikes a declared share of the report's expected move",
+      "status": "declared",
+      "legacy": false,
+      "setup": "earnings-premium",
+      "side": "neutral",
+      "structure": "calendar",
+      "window": "earnings",
+      "measure": "net per trade in dollars and per dollar of debit: one-lot double calendars, short the module's front expiry (first on or after the reaction date) and long the same strikes in the module's back month (nearest standard monthly at least 21 days after the front), the call at the listed strike nearest spot + k x EM and the put nearest spot - k x EM (EM the earnings module's event-method expected move from the intraday store's quote-computed volatilities), both strikes quoted in both expiries with each leg's spread at most 10% of mid and within 0.25 x EM of target; in at the entry session's 15:40 ET five-minute bar, out at the reaction session's 10:00 bar, each at mid less 0.125 of the leg's spread, core.fees per leg each way; arms k050, k075, k100; paired with the same arm on item 31's no-report control session at the same bars",
+      "expected": "a positive mean net after costs at the reaction morning's 10:00 bar, above the paired no-report control, at some declared strike distance",
+      "sample": "item 31's events (Dolt stated-timing reports on the 158 names the liquidity verdict called tradable on 2026-10-30, hindsight) extended to reports whose reaction session is on or before 2026-11-20; early-close entry sessions left out; one run cut at 2024-01-01 (design before) and 2026-07-15 (holdout 2024-01-01..2026-07-14, confirmation after, read by no earlier study); < 150 design or < 100 holdout trades per arm = no verdict; a year under 80% of its planned requests complete with the 15:40 and 10:00 bars is reported, not judged",
+      "rule": "RULE: the kit's three bars per arm (capital: net less the 3-month bill on the debit over the hold, one-sided t >= 2.4; tail 10,000 draws seed 99, the sample's own trades a year; delta not applicable, entry delta reported). EVENT_RULE: return per dollar of debit less the control's, clustered by entry session, one-sided t >= 2.4, positive in each design time-half (2022-07-01) and name-half, at 1.5x fees and half the spread with the slippage cap lifted, and with the best 5 removed; then holdout mean and paired difference > 0; then confirmation mean net > 0 (no t bar). Holm across the three arms. A pass needs RULE and EVENT_RULE in all three parts",
+      "mechanism": "the report weekly's implied volatility holds the whole event in a few days, so once the report is out it loses more value than a monthly holding the same event over more days; strikes a share of the event's own expected move either side of spot keep the position's peak where the stock is likely to land",
+      "rivals": [
+        {
+          "explanation": "ordinary calendar decay, not the report",
+          "check": "paired control: the same arm on the same name four weeks from any report, at the same bars"
+        },
+        {
+          "explanation": "the back month falls with the front, so the long gives back what the short earned",
+          "check": "the reported back-month IV change from entry to the exit bar; the paired test nets it"
+        },
+        {
+          "explanation": "costs take the spread on four single-name legs across two expiries",
+          "check": "verdict fill at the suite's slippage, a 10% spread limit, above zero at 1.5x fees and half the spread, natural fill reported"
+        },
+        {
+          "explanation": "a strike distance picked after the fact",
+          "check": "three declared arms under Holm; k 0.25 and 1.25 reported as neighbours, never re-chosen; a confirmation window no study has read"
+        },
+        {
+          "explanation": "a few quiet reports carry it",
+          "check": "above zero with the best five removed, in both time-halves and both name-halves"
+        }
+      ],
+      "pointer": "research/edge-hypotheses-plan.md#99-a-double-calendar-across-an-earnings-report-its-strikes-a-declared-share-of-the-reports-expected-move",
+      "scripts": [
+        "packages/backtest/scripts/earnings_double_calendar_item99.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_earnings_double_calendar_item99_script.py"
+      ],
+      "results": [
+        "{home}/data/backtest/results/research/item99/results.json"
+      ],
+      "outcome": null,
+      "retest": null,
+      "retest_note": "A retest of the time-spread family across reports (items 52, 86, 87 and the retired double_calendar paper book) with the strike distance, the module's own expiries and its trading times as the new variables; it reads the vendor's intraday chains, so a retest needs the licence.",
+      "retests": []
     }
   ],
   "rule_changes": []
