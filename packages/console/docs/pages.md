@@ -17,7 +17,7 @@ A page the suite has switched off is not shown (see *What is off is not shown* b
 | GEX | `/gex` | gex, iv skew | Dealer gamma by strike for the recorded day, and the IV skew. Reads the market; trades nothing. |
 | GEX panel | `/gexpanel` | panel | Experimental, SPX only: a walls panel on the recorded data. |
 | Screeners | `/screeners` | two groups, eight tabs. Screens: earnings, earnings record, signal board, skate. Income lists: puts & calls, credit spreads, time spreads, fair value | The suite's own screens and income lists. The Dolt-backed tabs show a set-up card, not a blank, without Dolt. |
-| Compare | `/compare` | arms, risk, calendar, portfolio, slices, signals | Every arm side by side, and signals studied on the underlying. Left off the rail in the simple view. |
+| Compare | `/compare` | scorecard, arms, risk, calendar, portfolio, slices, signals | Every arm and automation scored, every arm side by side, and signals studied on the underlying. The scorecard is the orchestrator's `scorecard` (`/api/compare/scorecard`, `readers/scorecard.ts`), passed through. Left off the rail in the simple view. |
 | Backtest | `/backtest` | studies, queue, runs, data | Research studies and the queue. Fails closed: hidden unless the suite says the backtest feature is on (licensed data). Left off the rail in the simple view. |
 | Advisor | `/advisor` | advisor | The advisor's experiments roll-up. Paused. Left off the rail in the simple view. |
 | System | `/system` | health, supervisor, data, environment, logs | The suite's own health, read-only. Left off the rail in the simple view. |

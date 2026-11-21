@@ -4,7 +4,27 @@ Three pages look across the suite rather than at one module: Compare at `/compar
 
 ## Compare (`/compare`)
 
-Compare puts every arm of every module beside its own control, from one reader, so the numbers are measured the same way everywhere. Its tabs are `arms`, `risk`, `calendar`, `portfolio` and `signals`. Another, `slices`, appears only while licensed results may be shown (see Backtest below).
+Compare puts every arm of every module beside its own control, from one reader, so the numbers are measured the same way everywhere. Its tabs are `scorecard`, `arms`, `risk`, `calendar`, `portfolio` and `signals`. Another, `slices`, appears only while licensed results may be shown (see Backtest below).
+
+### The scorecard
+
+Compare opens on the scorecard: one row per arm and automation in the suite's enabled modules. Each row shows:
+
+- **Research:** the register's verdict for the study it carries forward.
+- **vs backtest:** its forward check, collecting until its declared sample, then confirm, drift or kill. While licensed results are hidden, a state set against a licensed backtest reads withheld.
+- **vs control:** the reading against the arm it is measured beside, as the module's `changes` tab gives it.
+- **Sample:** how far it has come: the forward check's count against its minimum, or the sessions the control reading still needs.
+- **Net and drawdown:** paper's, over the module's current era.
+
+A row that needs a look says why, and those rows come first. The reason is the first of these that holds, worst first:
+
+1. its forward check reads kill;
+2. its forward check reads drift;
+3. a decision against its control is due;
+4. its session net is below zero beyond chance over ten sessions or more;
+5. its study failed and it still runs.
+
+Each row links to the arm's or automation's own page where it has one. A box above the table narrows it to the rows that need a look.
 
 ### What you see
 

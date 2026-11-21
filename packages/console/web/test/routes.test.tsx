@@ -238,7 +238,7 @@ describe("the suite surfaces are on the frame", () => {
     ["/reports/external", "Reports / external"],
     ["/reports/external/demo", "Reports / external"], // a report's own tab: data-driven, inside the same frame
     ["/reports", "Reports / morning"],
-    ["/compare", "Compare / arms"],
+    ["/compare", "Compare / scorecard"],
     ["/compare/arms?scope=all", "Compare / arms"],
     ["/advisor", "Advisor / advisor"],
     ["/system", "System / health"],

@@ -42,6 +42,7 @@ import type {
   AutomationReading,
   AheadModule,
   ArmBacktestReading,
+  Scorecard,
   SessionsAhead,
   AutomationsEntries,
   ChangesModule,
@@ -1671,6 +1672,16 @@ export function useSessionsAhead(module: AheadModule, arm: string) {
     queryFn: () => getJson<SessionsAhead>(`/api/ahead/${module}?arm=${encodeURIComponent(arm)}`),
     staleTime: 300_000,
     refetchInterval: 900_000,
+  });
+}
+
+/** Compare's scorecard: every arm and automation, and why it needs a look (the orchestrator's `scorecard`). */
+export function useScorecard() {
+  return useQuery<Scorecard>({
+    queryKey: ["compare-scorecard"],
+    queryFn: () => getJson<Scorecard>("/api/compare/scorecard"),
+    staleTime: 120_000,
+    refetchInterval: 300_000,
   });
 }
 

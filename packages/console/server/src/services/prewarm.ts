@@ -28,6 +28,7 @@ export const PREWARM_URLS = [
   "/api/desk",
   "/api/bwb/vol",
   "/api/compare?scope=era",
+  "/api/compare/scorecard",
   // Not a bridge: its first read after a restart counts every pmcc mark (see readers/pmcc.ts).
   "/api/pmcc",
 ] as const;

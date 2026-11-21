@@ -12213,6 +12213,26 @@ svg.vol-curve text {
   height: 3px;
   background: var(--warn);
 }
+/* Compare's scorecard: a row that needs a look stands out; its words wrap. */
+.scorecard-table tr.sc-look td:first-child {
+  box-shadow: inset 3px 0 0 var(--warn);
+}
+.scorecard-table td.sc-words {
+  white-space: normal;
+  max-width: 16rem;
+}
+.scorecard-table td.sc-arm {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  max-width: 15rem;
+}
+.scorecard-table .sc-module {
+  font-size: 11px;
+}
+.scorecard-table td.sc-wrap {
+  white-space: normal;
+  max-width: 13rem;
+}
 /* An arm's sessions ahead: a dated gate's day stands out, a closed market day sits under its session. */
 .ahead-table td {
   vertical-align: top;
