@@ -132,7 +132,13 @@ alone):
     state. Every on/off is the one sliding switch (`Toggle.tsx`); a retired automation's is locked
     (`LockedSwitch`). A group that has run shows its budget read-only until "Change from next
     session": the module dates the change (`budget_changes`) and gives the suggested allocation
-    (`budgets.suggested`). Paper only: nothing here places an order. One automation's own page
+    (`budgets.suggested`). Beside it, "From the backtest" (`/api/automations/groups/budget`,
+    `readers/groupBudget.ts`) passes through the backtest package's `read group-budget` over the
+    pinned runs of the members not retired: a max risk and shares, each with a Use button that only
+    stages the value; until every member has a pinned run it names those without one, and a reading
+    over a licensed run is withheld while licensed results are hidden. Allocation, max risk, the
+    read-only budget and Share % each carry a ? (`FieldTip`, `GROUP_TIPS`). Paper only: nothing
+    here places an order. One automation's own page
     (`/automations/automation/<name>`, framed as the groups tab) shows its rule, its switches' state,
     its record and its decisions, each filtered to its name from the module's own endpoints (in the
     automations ledger an arm is the automation's name), and writes one thing at its foot: retired

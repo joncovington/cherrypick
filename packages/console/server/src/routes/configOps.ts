@@ -5,6 +5,7 @@ import { readLockStatus } from "../services/liveLock.js";
 import { backtestResultsOn, getFeatures, invalidateFeatures } from "../services/featuresBridge.js";
 import { invalidateAutomationsBuilder } from "../services/automationsBuilderBridge.js";
 import { invalidateAutomationGroups } from "../services/automationsGroupsBridge.js";
+import { readGroupBudgetFor } from "../readers/groupBudget.js";
 import { getPrefs, setPref } from "../store/consoleDb.js";
 
 /**
@@ -311,6 +312,14 @@ export function registerConfigRoutes(app: FastifyInstance, config: ConsoleConfig
     if (result === null) return reply;
     const { ok: _ok, ...view } = result;
     return view;
+  });
+
+  /** A group's budget from its members' pinned backtest runs (`readers/groupBudget.ts`): a suggestion
+   *  beside the max risk and shares, read only. */
+  app.get("/api/automations/groups/budget", async (req, reply) => {
+    const group = String(((req.query ?? {}) as Record<string, unknown>)["group"] ?? "");
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,46}$/.test(group)) return reply.code(400).send({ error: "group: a group's name" });
+    return readGroupBudgetFor(group);
   });
 
   type GroupsBody = { groups: Record<string, unknown>; members: Record<string, string | null>; switches: Record<string, boolean> };

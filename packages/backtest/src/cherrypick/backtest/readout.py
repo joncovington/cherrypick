@@ -436,6 +436,31 @@ def automation_reading(name: str, run: str, declared: int | None = None) -> dict
     return {"ok": False, "error": f"no Builder run {run!r} for {name}"}
 
 
+def group_budget(pairs: str) -> dict:
+    """A group's budget from its members' pinned Builder runs (`groupbudget.read`). `pairs` is
+    `automation=run,automation=run`: each run must be one of that automation's own Builder results."""
+    from . import groupbudget
+
+    members = []
+    for pair in [p for p in (pairs or "").split(",") if p]:
+        name, _, run = pair.partition("=")
+        if not AUTOMATION_NAME.match(name) or not run.startswith(f"builder-{name}-"):
+            return {"ok": False, "error": f"not an automation and its own run: {pair!r}"}
+        docs, _unreadable = _builder_docs(name)
+        found = next(((d, lic) for d, lic in docs if d.get("name") == run), None)
+        if found is None:
+            return {"ok": False, "error": f"no Builder run {run!r} for {name}"}
+        doc, licensed = found
+        trades = [t for t in doc.get("trades") or [] if isinstance(t, dict) and t.get("arm") == name]
+        members.append(
+            {"name": name, "run": run, "trades": trades, "span": doc.get("sessions"), "licensed": licensed}
+        )
+    try:
+        return groupbudget.read(members)
+    except (KeyError, TypeError, ValueError) as exc:
+        return {"ok": False, "error": f"the runs could not be read: {exc}"}
+
+
 def signal_study(name: str) -> dict:
     """One signal study's whole result, or a refusal naming why."""
     if not SIGNAL_NAME.match(name or ""):

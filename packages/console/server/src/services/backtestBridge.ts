@@ -51,7 +51,8 @@ export type BacktestRequest =
   | { kind: "trades"; id: string; arm: string }
   | { kind: "path"; id: string; arm: string; session: string; position: string }
   | { kind: "summaries"; ids: string[] }
-  | { kind: "reading"; name: string; run: string; declared: number | null };
+  | { kind: "reading"; name: string; run: string; declared: number | null }
+  | { kind: "groupBudget"; pairs: string[] };
 
 function spawnRequest(req: BacktestRequest): Promise<SpawnedJson> {
   if (req.kind === "overview") {
@@ -66,6 +67,9 @@ function spawnRequest(req: BacktestRequest): Promise<SpawnedJson> {
   }
   if (req.kind === "summaries") {
     return spawnModuleCliAsync(["-m", "cherrypick.backtest", "read", "summaries", "--ids", req.ids.join(",")], UNAVAILABLE);
+  }
+  if (req.kind === "groupBudget") {
+    return spawnModuleCliAsync(["-m", "cherrypick.backtest", "read", "group-budget", "--ids", req.pairs.join(",")], UNAVAILABLE, [0, 1]);
   }
   if (req.kind === "reading") {
     const args = ["-m", "cherrypick.backtest", "read", "automation-reading", "--name", req.name, "--id", req.run];
@@ -113,7 +117,9 @@ function memo(req: BacktestRequest, now: number): Promise<SpawnedJson> {
             ? `summaries|${req.ids.join(",")}`
             : req.kind === "reading"
               ? `reading|${req.name}|${req.run}|${String(req.declared ?? "")}`
-              : `run|${req.id}|${String(req.capital ?? "")}|${String(req.riskPct ?? "")}|${req.riskUnit ?? ""}|${String(req.ddPct ?? "")}`;
+              : req.kind === "groupBudget"
+                ? `groupBudget|${req.pairs.join(",")}`
+                : `run|${req.id}|${String(req.capital ?? "")}|${String(req.riskPct ?? "")}|${req.riskUnit ?? ""}|${String(req.ddPct ?? "")}`;
   const hit = cache.get(key);
   if (hit !== undefined && now - hit.at < TTL_MS) return hit.value;
   // Expired entries go when anything is read, so the map holds at most a window's worth of ids.
@@ -151,6 +157,11 @@ export async function readAutomationReading(
   now = Date.now(),
 ): Promise<BridgedResult<Record<string, unknown>>> {
   return shape<Record<string, unknown>>(await memo({ kind: "reading", name, run, declared }, now), (j) => j);
+}
+
+/** A group's budget from its members' pinned Builder runs (`read group-budget`), each pair `automation=run`. */
+export async function readGroupBudget(pairs: string[], now = Date.now()): Promise<BridgedResult<Record<string, unknown>>> {
+  return shape<Record<string, unknown>>(await memo({ kind: "groupBudget", pairs }, now), (j) => j);
 }
 
 export async function readBacktestRun(

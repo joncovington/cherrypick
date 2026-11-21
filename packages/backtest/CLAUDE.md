@@ -418,6 +418,13 @@ ledger): each trade's place in the usual range and its percentile among the run'
 running net's place in the band at its own count (the band drawn 20 trades past the record), the
 sample (`--declared`, the forward rule's `min_obs`, else computed) and both entry rates. Its state
 is `no_reference`, `no_trades`, `too_few` (under 5 trades) or the running net's place.
+`read group-budget --ids a=run,b=run` reads a group's budget from its members' pinned Builder runs
+(`groupbudget.py`, pure): over the sessions every run covers, the most the members held at once
+(each trade's `risk` from its entry session through its exit session) rounded up to $50 as a max
+risk that would have refused nothing the runs entered; each member's own most at once as a percent
+of it, scaled to fit 100 when their peaks fell on different sessions, with the sessions each would
+have been cut; the worst fall of their net by exit session in dollars; and the runs and their
+spans. One licensed run makes it licensed. A suggestion only: nothing applies it.
 `read arm-reading --module meic --name ARM` sets a module arm's paper record against its backtest
 (`armref.py`): the stored run arm whose spec matches the paper arm's current one in every key but the
 arm's own name (a study names its arms for the study), the one with the most sessions where several
