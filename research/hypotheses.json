@@ -4815,6 +4815,64 @@
       "retest": null,
       "retest_note": null,
       "retests": []
+    },
+    {
+      "id": 102,
+      "study": "item102",
+      "title": "The ladder's stuck lots: a ratio call spread that lowers the price the lot needs, opened for about no debit",
+      "status": "declared",
+      "legacy": false,
+      "setup": "dip-buy",
+      "side": "bullish",
+      "structure": "ratio-call-spread",
+      "window": "multi-day",
+      "measure": "per hospital lot (an item 26 once-3 lot of 100 shares still open 18 days after its buy), the arm's whole-lot net less holding the same lot to its +4% target, in dollars per 100 shares; arms: repair-atm (long call nearest the close, two short calls at the highest strike the net debit bound allows) and repair-cost (two short calls nearest the lot's cost, the long call at the lowest strike the bound allows), one unit a lot 35 to 60 days out nearest 45, long call at the ask and short calls at the bid, net debit at most $0.05 a share; item 76's breakeven covered call and item 27's decay exit reported beside",
+      "expected": "a positive mean paired difference after the three contracts' crossing costs, from two short calls paying for one long call and lowering the price the lot needs",
+      "sample": "SOXL and TQQQ lots from one ladder run 2016-05-02..the last session both names' bars hold when plan runs, each lot in the part holding its buy session (design before 2025-01-01, holdout from it, counting only after a design pass); < 30 design hospital lots = no verdict, < 10 in the holdout = no verdict",
+      "rule": "RULE (kit capital bar on the paired difference, t 2, tail bar not applicable under the bootstrap's 100-trade floor, delta off) and EXTRA_RULE: per arm design mean paired difference > 0 with one-sided t >= 2, one lot one observation, Holm across 2 at 0.05; positive in each design half (2020-09-01) and on each name; positive with option fees at 1.5x and every option $0.05 worse; then holdout mean > 0",
+      "mechanism": "premium: two short calls, sold richer than the long call is bought, pay for one long call nearer the money, so the lot's gain starts at the long strike; against it, the structure gives up gains above the short strike and crosses three contracts",
+      "rivals": [
+        {
+          "explanation": "a bull market lifting every stuck lot",
+          "check": "each arm paired with hold on the same lot, whose drift is in both"
+        },
+        {
+          "explanation": "costs read too kindly",
+          "check": "verdict at the bid for sells and the ask for buys; a 1.5x-fee, $0.05-a-leg stress must stay positive; mid reported only"
+        },
+        {
+          "explanation": "one volatility regime",
+          "check": "design holds 2018, 2020 and 2022's falls; both time-halves must agree"
+        },
+        {
+          "explanation": "one name",
+          "check": "positive on each of SOXL and TQQQ"
+        },
+        {
+          "explanation": "a structure that is only less exposure",
+          "check": "rebound given up, hospital days and lots ending under cost reported for every arm; both halves must agree"
+        },
+        {
+          "explanation": "two arms, one lucky",
+          "check": "Holm across the two"
+        },
+        {
+          "explanation": "waiting made the difference",
+          "check": "a waiting lot is the baseline's lot and sells where hold does; waits and skipped sessions counted per arm"
+        }
+      ],
+      "pointer": "research/edge-hypotheses-plan.md#102-the-ladders-stuck-lots-a-ratio-call-spread-that-lowers-the-price-the-lot-needs-opened-for-about-no-debit",
+      "scripts": [
+        "packages/backtest/scripts/ladder_repair_item102.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_ladder_repair_item102_script.py"
+      ],
+      "results": [],
+      "outcome": null,
+      "retest": null,
+      "retest_note": null,
+      "retests": []
     }
   ],
   "rule_changes": []
