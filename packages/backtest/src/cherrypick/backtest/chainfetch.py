@@ -121,11 +121,13 @@ def _reason(detail: str | None) -> str | None:
 
 def prior_refusals(conn: sqlite3.Connection, table: str, keys: list[tuple]) -> dict[tuple, str]:
     """The reason each of `keys` was last refused with, for the keys refused before this run.
-    `table` is `eod_chain_requests` (keys symbol, session, expiration) or `eod_chain_paths` (symbol,
-    expiration, start, through)."""
+    `table` is `eod_chain_requests` (keys symbol, session, expiration), `eod_chain_paths` (symbol,
+    expiration, start, through) or `intraday_chain_requests` (symbol, session, expiration, start,
+    end, interval: `intradayfetch`'s ledger)."""
     cols = {
         "eod_chain_requests": "symbol, session, expiration",
         "eod_chain_paths": "symbol, expiration, start, through",
+        "intraday_chain_requests": 'symbol, session, expiration, start, "end", interval',
     }[table]
     want = set(keys)
     return {

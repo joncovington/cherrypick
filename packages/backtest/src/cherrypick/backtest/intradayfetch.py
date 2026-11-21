@@ -26,6 +26,11 @@ session was taken by another login) stops the run instead of marking every remai
 A request is written whole or not at all, in one transaction. Only the rows inside the requested
 window are kept.
 
+**Settled refusals** count as `chainfetch`'s do: a request refused again with the same fixed reason
+it was refused with before (`chainfetch.SETTLED`, e.g. `stream_removed`) is counted `settled`, so
+the research queue passes a repeat pass with nothing left the vendor will serve instead of failing
+it and holding every row after it.
+
 Which requests the client should send, and what a complete one is (the pilot's coverage test), are
 the study's: `packages/backtest/scripts/earnings_item31.py`. This module records what the vendor answered and
 nothing more.
@@ -43,7 +48,7 @@ from typing import Any
 from cherrypick.core import progress as core_progress
 
 from . import fullset, paths
-from .chainfetch import vendor_root
+from .chainfetch import prior_refusals, settled, vendor_root
 from .vendor import FATAL, VendorRefusal
 
 DB_NAME = "intraday_chains.db"
@@ -220,6 +225,7 @@ def fetch_windows(
         todo = [k for k in requests if k not in done]
         if limit is not None:
             todo = todo[:limit]
+        prior = prior_refusals(conn, "intraday_chain_requests", todo)
         report: dict[str, Any] = {
             "asked": len(requests),
             "already": len(requests) - len([k for k in requests if k not in done]),
@@ -227,6 +233,7 @@ def fetch_windows(
             "complete": 0,
             "empty": 0,
             "refused": 0,
+            "settled": 0,
             "rows": 0,
             "stopped": False,
         }
@@ -279,6 +286,7 @@ def fetch_windows(
                             with conn:
                                 _record(conn, key, REFUSED, 0, 0, f"{refusal.reason}: {refusal.detail}"[:300])
                             report["refused"] += 1
+                            report["settled"] += settled(refusal, key, prior)
                         if refusal.reason in FATAL:
                             report["aborted"] = f"{refusal.reason}: {refusal.detail}"[:300]
                             for other in running:
