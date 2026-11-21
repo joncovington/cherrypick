@@ -29,8 +29,8 @@ next trading session as its start (or keeps a later one), so a paper record neve
 day. An automation with a forward rule keeps the start its rule reads from, and `check` says so.
 
 `check` lays a proposal over the config and loads it as the loop would (`config.load_arms`), so every rule
-the loop applies (a group no automation belongs to, a share for an outsider, shares over 100, a share of
-nothing) is refused here by the same code. Writes nothing.
+the loop applies (a group no automation belongs to switched on, a share for an outsider, shares over 100,
+a share of nothing) is refused here by the same code. Writes nothing.
 """
 
 from __future__ import annotations
@@ -127,6 +127,8 @@ def view(config: dict, today: date | None = None) -> dict:
             ungrouped.append(row)
             continue
         groups.setdefault(g, {"name": g, **_group_row(spec, today), "members": []})["members"].append(row)
+    for g, spec in switches.items():  # a group kept with no automation yet: listed, off
+        groups.setdefault(g, {"name": g, **_group_row(spec, today), "members": []})
     for row in groups.values():
         row["suggested"] = budgets.suggested({m["name"]: own[m["name"]] for m in row["members"]})
     return {
@@ -196,7 +198,8 @@ def check(config: dict, proposal: dict, today: date | None = None) -> dict:
 
     Returns {"ok": True, "problems", "block": the `groups` block to write, "moves": {automation: group or
     null}, "switches": {automation: {"enabled", "start"?}}, "notes", "after": the view as it would be}.
-    `block` keeps the file's notes (`_`-prefixed keys) and drops a group left with no members. A group or an
+    `block` keeps the file's notes (`_`-prefixed keys) and every group the proposal gives, one with no
+    members included (it must be off); a group the proposal leaves out is deleted. A group or an
     automation switched on gets the next session as its start (or keeps a later one). With problems,
     nothing in it is to be written."""
     if not isinstance(proposal, dict):
@@ -250,7 +253,7 @@ def check(config: dict, proposal: dict, today: date | None = None) -> dict:
     current = config_mod.groups(config, today)
     raw = config.get("groups") if isinstance(config.get("groups"), dict) else {}
     block: dict = {k: v for k, v in raw.items() if k.startswith("_")}
-    for g in sorted(used):
+    for g in sorted(set(specs) | used):
         kept = raw.get(g) if isinstance(raw.get(g), dict) else {}
         spec = {**{k: v for k, v in kept.items() if k.startswith("_")}, **specs[g]}
         if g in current and has_run(current[g], today):
