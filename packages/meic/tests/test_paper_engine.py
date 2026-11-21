@@ -241,6 +241,17 @@ def test_entry_window_binds_for_ladder_profiles_without_stagger_entries():
     assert reason == "outside_entry_window"
 
 
+def test_a_half_day_takes_no_entries_whatever_else_clears():
+    """2026-11-21 rule: half days are not tradeable. 2026-11-27 closes at 13:00; the day before
+    Thanksgiving is an ordinary session."""
+    params = _params({**CONSERVATIVE, **WIDEST_FIRST})
+    snap = _base_snapshot(date="2026-11-27", expiration="2026-11-27")
+    assert paper.evaluate_entry(snap, params, []) == (False, "half_day_no_entries", None)
+    ordinary = _base_snapshot(date="2026-11-25", expiration="2026-11-25")
+    assert paper.evaluate_entry(ordinary, params, [])[1] != "half_day_no_entries"
+    assert paper._ATTEMPT_OUTCOMES["half_day_no_entries"] == "window_blocked"
+
+
 def test_entry_window_end_binds_too():
     entered, reason, _ = paper.evaluate_entry(
         _base_snapshot(now_et="14:45"), _window_params(CONSERVATIVE), []

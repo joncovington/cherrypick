@@ -24,9 +24,6 @@ def date_gates(params: dict, base: dict) -> list[dict]:
     bs = params.get("fomc_blackout_start", "13:30")
     be = params.get("fomc_blackout_end", "14:30")
     close_fomc = base.get("fomc_blackout_start", "13:30")
-    window_end = params.get("entry_window_end", "14:30")
-    eod = base.get("physical_settlement_force_close_time", "15:30")
-    settle = base.get("expiration_settlement_time", "16:00")
     return [
         {
             "label": "FOMC",
@@ -55,10 +52,7 @@ def date_gates(params: dict, base: dict) -> list[dict]:
         {
             "label": "EarlyClose",
             "name": "Half day",
-            "effect": (
-                "The market closes at 13:00. MEIC does not move its times for it: entries to "
-                f"{window_end}, closes from {eod}, settlement at {settle}."
-            ),
+            "effect": "The market closes at 13:00. No new entries: half days are not traded.",
             "depends_on": None,
         },
     ]
