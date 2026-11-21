@@ -7,9 +7,9 @@ import random
 from pathlib import Path
 
 import pytest
+from cherrypick.core import signals
 
 from cherrypick.backtest.study import rule as kit_rule
-from cherrypick.core import signals
 
 _spec = importlib.util.spec_from_file_location(
     "breakdown_call_spread_item97",
