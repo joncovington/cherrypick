@@ -268,9 +268,10 @@ export type LadderSlideId = (typeof LADDER_SLIDES)[number]["id"];
  * automations' tabs: item 75's arms in paper. `summary` (today) is each arm's session and the gate that
  * blocked any that did not enter; `positions` the open structures as the orders that opened them;
  * `history` the closed ones in the trade table standard; `performance` each arm's net and drawdown,
- * and the arms stacked; `costs` keeps fees, settlement and slippage apart. The arms are whatever the
- * ledger names, so no tab is one per arm. No advisor, regime or analysis tab: the module declares no
- * advice bounds and keeps no daily series.
+ * and the arms stacked; `analysis` the shared strategy analysis (streaks, drawdown episodes, capital,
+ * durability and the reshuffle stress test) per automation; `costs` keeps fees, settlement and slippage
+ * apart. The arms are whatever the ledger names, so no tab is one per arm. No advisor or regime tab: the
+ * module declares no advice bounds and keeps no daily series.
  */
 export const AUTOMATIONS_SLIDES = [
   { id: "summary", label: "today" },
@@ -284,6 +285,7 @@ export const AUTOMATIONS_SLIDES = [
   // How often each automation enters, and where the sessions it did not enter stopped.
   { id: "entries", label: "entries" },
   { id: "performance", label: "performance" },
+  { id: "analysis", label: "analysis" },
   { id: "costs", label: "costs" },
   { id: "guide", label: "help" },
 ] as const satisfies readonly NavSlide[];
@@ -610,7 +612,7 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
       { label: "set up", ids: ["builder", "groups"] },
       { label: "tables", ids: ["positions", "history"] },
       { label: "evidence", ids: ["decisions", "entries"] },
-      { label: "study", ids: ["performance", "costs"] },
+      { label: "study", ids: ["performance", "analysis", "costs"] },
       { label: "help", ids: ["guide"] },
     ],
     legacy: { session: "summary" },

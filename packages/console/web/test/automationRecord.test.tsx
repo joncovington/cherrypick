@@ -89,6 +89,7 @@ describe("one automation's page", () => {
     expect(decisions).toBeGreaterThan(entries);
     expect(out).toContain('href="#automation-record"');
     expect(out).toContain('href="#automation-entries"');
+    expect(out).toContain('href="/automations/analysis?an-arm=iron-condor-1345"');
     expect(out).toContain("off · its group");
     expect(out).toContain('href="/automations/groups?group=ensemble&amp;automation=iron-condor-1345"');
     expect(out).toContain('href="/automations/builder?automation=iron-condor-1345"');

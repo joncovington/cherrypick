@@ -186,6 +186,11 @@ export function AutomationRecordPage({ name }: { name: string }) {
         <FliesTile title="open now" value={String(open)} tone="dim" foot="held to the posted close or to its exit" />
         <OpenTable positions={positions} loading={book.isLoading} />
         <ClosedStructures arm={name} />
+        <p className="muted lv-12">
+          <Link to={`/automations/analysis?an-arm=${encodeURIComponent(name)}`}>
+            Its streaks, drawdown episodes, capital and stress test in Analysis ›
+          </Link>
+        </p>
       </Section>
       <EntriesSection name={name} />
       <Section id="automation-decisions" concept="add" tag="decisions" question="What did it decide this session, and why?">

@@ -38,6 +38,7 @@ function fakeConfig(dataEpochDate: string | null): ConsoleConfig {
       curveDir: dir("curve"),
       bwbDir: dir("bwb"),
       contangoDir: dir("contango"),
+      automationsDir: dir("automations"),
       gexDir: "",
       reviewDir: "",
       manageDir: "",
@@ -76,6 +77,19 @@ describe("readModuleAnalysis", () => {
     await readModuleAnalysis(config, "flies", "current", "paper");
     await readModuleAnalysis(config, "flies", "current", "live");
     expect(seen).toEqual([path.join(config.paths.fliesDir, "paper_trades.db"), path.join(config.paths.fliesDir, "live_trades.db")]);
+  });
+
+  it("reads the automations ledger as ensemble_trade, each automation its own arm", async () => {
+    const seen: Array<[string, string, string | null]> = [];
+    setAnalysisCaller((db, schema, _start, _end, _era, module) => {
+      seen.push([db, schema, module ?? null]);
+      return OK;
+    });
+    const config = fakeConfig(null);
+    await readModuleAnalysis(config, "automations");
+    expect(seen).toEqual([[path.join(config.paths.automationsDir, "paper_trades.db"), "ensemble_trade", "automations"]]);
+    // Paper only: it has no live ledger, so a live read is refused.
+    expect((await readModuleAnalysis(config, "automations", "current", "live")).ok).toBe(false);
   });
 
   it("passes the arms through by tag", async () => {

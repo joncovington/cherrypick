@@ -21,7 +21,7 @@ function fakeConfig(dataEpochDate: string | null): ConsoleConfig {
     paths: {
       cherrypick: home, streamCacheDb: "", watchdogLast: "", orchestratorConfig, consoleData: "",
       meicDir: dir("meic"), fliesDir: dir("flies"), earningsDir: dir("earnings"), calendarsDir: dir("calendars"),
-      pmccDir: dir("pmcc"), curveDir: dir("curve"), bwbDir: dir("bwb"), contangoDir: dir("contango"),
+      pmccDir: dir("pmcc"), curveDir: dir("curve"), bwbDir: dir("bwb"), contangoDir: dir("contango"), automationsDir: dir("automations"),
       gexDir: "", reviewDir: "", manageDir: "", overviewDir: "", advisorDir: "", adviceDir: "", meicRiskConfig: "",
       fliesConfig: "", pmccConfigCandidates: [], calendarsConfigCandidates: [], curveConfigCandidates: [],
     },

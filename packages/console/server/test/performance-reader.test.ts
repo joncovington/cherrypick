@@ -44,6 +44,7 @@ function fakeConfig(dataEpochDate: string | null): ConsoleConfig {
       curveDir: path.join(data, "curve"),
       bwbDir: path.join(data, "bwb"),
       contangoDir: path.join(data, "contango"),
+      automationsDir: path.join(data, "automations"),
       gexDir: "",
       reviewDir: "",
       manageDir: "",
@@ -100,6 +101,7 @@ describe("performance db path resolution", () => {
     expect(MODULE_SCHEMA.curve).toBe("curve_vx");
     expect(MODULE_SCHEMA.bwb).toBe("bwb_132");
     expect(MODULE_SCHEMA.contango).toBe("contango_etf");
+    expect(MODULE_SCHEMA.automations).toBe("ensemble_trade");
   });
 });
 

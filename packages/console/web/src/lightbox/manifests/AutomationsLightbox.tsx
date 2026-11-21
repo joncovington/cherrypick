@@ -1,3 +1,4 @@
+import { AnalysisSlide } from "../../components/analysis/AnalysisSlide";
 import { useAutomations, useAutomationsPerformance } from "../../lib/api";
 import { PaperLiveBadge } from "../../components/shell/PaperLiveBadge";
 import { LoopPill } from "../../components/ScopeBar";
@@ -40,6 +41,7 @@ export function AutomationsLightbox({ slide }: { slide: string }) {
     { id: "decisions", label: LABEL.decisions, render: () => <AutomationsDecisions /> },
     { id: "entries", label: LABEL.entries, render: () => <AutomationsEntriesPage /> },
     { id: "performance", label: LABEL.performance, render: () => <AutomationsPerformancePage perf={perf.data} /> },
+    { id: "analysis", label: LABEL.analysis, render: () => <AnalysisSlide module="automations" /> },
     { id: "costs", label: LABEL.costs, render: () => <AutomationsCosts perf={perf.data} /> },
     { id: "guide", label: LABEL.guide, render: () => <AutomationsHelp /> },
   ];
