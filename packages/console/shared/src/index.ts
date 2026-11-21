@@ -45,6 +45,7 @@ export * from "./types/bwbEvidence.js";
 export * from "./types/dataEvidence.js";
 export * from "./types/compare.js";
 export * from "./types/changes.js";
+export * from "./types/ahead.js";
 export * from "./types/manage.js";
 export * from "./types/armStatus.js";
 export * from "./types/summary.js";

@@ -86,7 +86,10 @@ describe("one automation's page", () => {
     expect(record).toBeGreaterThan(out.indexOf('id="automation-working"'));
     const entries = out.indexOf('id="automation-entries"');
     expect(entries).toBeGreaterThan(record);
-    expect(decisions).toBeGreaterThan(entries);
+    const ahead = out.indexOf('id="automation-ahead"');
+    expect(ahead).toBeGreaterThan(entries);
+    expect(decisions).toBeGreaterThan(ahead);
+    expect(out).toContain('href="#automation-ahead"');
     expect(out).toContain('href="#automation-record"');
     expect(out).toContain('href="#automation-entries"');
     expect(out).toContain('href="/automations/analysis?an-arm=iron-condor-1345"');

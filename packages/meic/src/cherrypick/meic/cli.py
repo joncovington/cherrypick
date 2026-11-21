@@ -10,6 +10,8 @@ Subcommands (all read-only):
     gate-blocks        per-stream block reasons for one session
     settlement-audit   does the ledger reproduce the settlement convention it claims?
     gex-gate           what the negative-GEX entry gate refused, on the book's own rows
+    ahead              one arm's next sessions: what its dated gates do there, and its record on
+                       each kind of day (`core.ahead`)
 
 This module was the last in the suite without a CLI, which is why two of the verbs above name
 questions that had been asked repeatedly and never run: `settlement-audit` (asked on five separate
@@ -182,6 +184,35 @@ def cmd_gex_gate(args) -> int:
         )
 
 
+def cmd_ahead(args) -> int:
+    """The arm's next sessions (`ahead.ahead`), with its per-session nets over the module's current
+    measurement era (`core.compare`) for the record on each kind of day. Config and ledger read only."""
+    from datetime import date
+
+    from cherrypick.core import compare
+
+    from cherrypick.meic import ahead, paper
+
+    profiles = paper.load_profiles()
+    if args.arm not in paper.all_profile_names(profiles):
+        return _emit({"ok": False, "error": f"meic has no running arm {args.arm!r}"})
+    base = paper.load_base_config()
+    params = paper._merged_params(base, profiles[args.arm])
+    start = date.fromisoformat(args.start) if args.start else paper._now_et().date()
+    comp = compare.module_comparison("meic", session=start.isoformat(), experiments={})
+    row = next((a for a in comp.get("arms") or [] if a.get("arm") == args.arm), None)
+    nets = [(s, n) for s, n in (row or {}).get("session_nets") or []]
+    return _emit(
+        {
+            "ok": True,
+            "module": "meic",
+            "arm": args.arm,
+            "era_start": (comp.get("era") or {}).get("start"),
+            **ahead.ahead(params, base, start, nets),
+        }
+    )
+
+
 def _add_scope(parser, *, symbol=True) -> None:
     parser.add_argument("--start", help="ISO date, inclusive")
     parser.add_argument("--end", help="ISO date, inclusive")
@@ -237,6 +268,11 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("gex-gate", help="what the negative-GEX entry gate refused")
     _add_scope(p)
     p.set_defaults(func=cmd_gex_gate)
+
+    p = sub.add_parser("ahead", help="one arm's next sessions and what its dated gates do there")
+    p.add_argument("--arm", required=True)
+    p.add_argument("--start", help="ISO date; default today (ET)")
+    p.set_defaults(func=cmd_ahead)
 
     return ap
 

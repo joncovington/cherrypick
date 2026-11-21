@@ -12213,6 +12213,27 @@ svg.vol-curve text {
   height: 3px;
   background: var(--warn);
 }
+/* An arm's sessions ahead: a dated gate's day stands out, a closed market day sits under its session. */
+.ahead-table td {
+  vertical-align: top;
+}
+.ahead-table td:last-child {
+  white-space: normal;
+}
+.ahead-table tr.ahead-hit td:first-child {
+  box-shadow: inset 3px 0 0 var(--warn);
+}
+.ahead-closed {
+  font-size: 0.78rem;
+}
+.ahead-values {
+  margin: 0;
+  padding-left: 1.1rem;
+  font-size: 0.88rem;
+}
+.ahead-values li + li {
+  margin-top: 0.45rem;
+}
 /* One automation's page: a row of links to its sections. */
 .ar-jump {
   display: flex;

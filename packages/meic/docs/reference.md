@@ -51,6 +51,7 @@ python run.py stops [--sessions]             # the stop_trigger_ratio curve, or 
 python run.py gate-blocks --date 2026-08-25  # per-stream block reasons for one session
 python run.py settlement-audit               # does the ledger reproduce its own convention?
 python run.py gex-gate                       # what the negative-GEX gate refused
+python run.py ahead --arm control            # the next sessions: what its dated gates do there
 ```
 
 - `run.py headline` is what the console's `server/test/meic-mirror.test.ts` checks `readers/meic.ts`

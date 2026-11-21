@@ -4,6 +4,7 @@ import { AnalysisSlide } from "../../components/analysis/AnalysisSlide";
 import { AttemptsTab } from "../../components/AttemptsTab";
 import { ChangesSection } from "../../components/changes/ChangesSlide";
 import { ArmBacktestSection } from "../../components/armpage/ArmBacktest";
+import { SessionsAheadSection } from "../../components/armpage/SessionsAhead";
 import { ModuleCosts } from "../../components/costs/ModuleCosts";
 import { PerformanceSlide } from "../../components/performance/PerformanceSlide";
 import { RegimeCutsTab } from "../../components/RegimeCutsTab";
@@ -15,7 +16,7 @@ import { MeicBreakdowns } from "./MeicDeepCards";
  * order every arm page uses. Against control first (its rows from the changes reader, read per trade
  * over MEIC's current measurement era), then what it did (its performance card and running net with
  * control beside it, its exit reasons and breaks), today (its attempts; the `?arm=` view on the arms
- * tab keeps the payoff at expiry), its costs, its regime cuts, its analysis and its history. Every
+ * tab keeps the payoff at expiry), the sessions ahead (`core.ahead`), its costs, its regime cuts, its analysis and its history. Every
  * section is the tab it comes from with the arm fixed, so a figure here is the tab's figure; the header's
  * mode and era still apply, the arm picker does not.
  */
@@ -26,6 +27,7 @@ export const MEIC_ARM_JUMPS = [
   { id: "meic-arm-record", label: "What it did" },
   { id: "meic-arm-breakdowns", label: "Breakdowns" },
   { id: "meic-arm-today", label: "Today" },
+  { id: "meic-arm-ahead", label: "Sessions ahead" },
   { id: "meic-arm-costs", label: "Costs" },
   { id: "meic-arm-regime", label: "Regime cuts" },
   { id: "meic-arm-analysis", label: "Analysis" },
@@ -90,6 +92,9 @@ export function MeicArmPage({
       </div>
       <div id="meic-arm-today">
         <AttemptsTab module="meic" mode={mode} date={day} scope={{ arm: name, symbol, era: resolvedEra }} />
+      </div>
+      <div id="meic-arm-ahead">
+        <SessionsAheadSection module="meic" arm={name} />
       </div>
       <div id="meic-arm-costs">
         <ModuleCosts module="meic" mode={mode} era={era} arm={name} />
