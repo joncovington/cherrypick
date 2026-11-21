@@ -65,6 +65,14 @@ def test_runs_that_share_no_session_suggest_nothing_and_say_why():
     assert out["why"] == "the runs share no session" and "max_risk" not in out
 
 
+def test_a_member_that_held_nothing_gets_no_share_and_is_named():
+    span = ["2026-11-02", "2026-11-04"]
+    a = _m("a", [_t("a", "2026-11-02", "2026-11-02", 400, 0)], span)
+    b = _m("b", [], span)  # its run entered nothing
+    out = groupbudget.read([a, b])
+    assert out["shares"] == {"a": 100.0} and out["unshared"] == ["b"]
+
+
 def test_one_licensed_run_makes_the_reading_licensed():
     a = _m("a", [_t("a", "2026-11-02", "2026-11-02", 100, 0)], licensed=True)
     assert groupbudget.read([a])["licensed"] is True

@@ -256,6 +256,8 @@ export interface GroupBudgetFromBacktest {
     max_risk?: number;
     shares?: Record<string, number>;
     scaled?: boolean;
+    /** Members that held nothing in their runs: no share, the group's cap alone. */
+    unshared?: string[];
     cut?: Record<string, number>;
     drawdown?: number;
     licensed: boolean;

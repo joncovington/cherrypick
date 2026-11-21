@@ -480,10 +480,17 @@ function FromBacktest({ name, spec, onChange }: { name: string; spec: GroupSpec;
           {cut.length > 0 && ` At these shares ${cut.map(([n, c]) => `${n} would have been cut on ${c} session${c === 1 ? "" : "s"}`).join(", ")}.`}
         </p>
       )}
+      {(r.unshared ?? []).length > 0 && (
+        <p className="muted">
+          No share for {(r.unshared ?? []).join(", ")}: {(r.unshared ?? []).length === 1 ? "it" : "they"} held nothing in {(r.unshared ?? []).length === 1 ? "its run" : "their runs"}, so only the
+          group&apos;s cap applies.
+        </p>
+      )}
       {r.drawdown !== undefined && <p className="muted">Its worst fall over those sessions: {money(r.drawdown)}, what an allocation would have had to absorb.</p>}
       <p className="muted">
-        Runs: {(r.members ?? []).map((m) => `${m.name} ${m.run.slice(-10)}`).join(", ")}
-        {r.licensed ? " (built on licensed data)" : ""}.
+        Runs: {(r.members ?? []).map((m) => `${m.name} ${m.run.slice(-10)} (${m.trades} trade${m.trades === 1 ? "" : "s"})`).join(", ")}
+        {r.licensed ? ", built on licensed data" : ""}.
+        {(r.members ?? []).some((m) => m.trades < 20) && " Fewer than 20 trades in a run is a thin read: treat these figures as a starting point."}
       </p>
     </div>
   );

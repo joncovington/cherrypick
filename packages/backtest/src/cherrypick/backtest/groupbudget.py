@@ -17,7 +17,8 @@ cap reads), its entry `session`, its `exit_session` and its net at the verdict f
 - **Each member's share** is its own most at once as a percent of that max risk, rounded up to a tenth. If
   the shares add to more than 100 the members' peaks fell on different sessions and they competed for the
   room: each is scaled down to fit and `cut` counts, per member, the sessions its own risk would have gone
-  over its scaled slice.
+  over its scaled slice. A member that held nothing in its run gets no share (a share of 0 is no share:
+  the config refuses it) and is listed in `unshared`; it answers to the group's cap alone.
 - **Drawdown** is the largest peak-to-trough fall of the members' net added by exit session, in dollars:
   what an allocation would have had to absorb.
 
@@ -100,12 +101,12 @@ def read(members: Sequence[Mapping]) -> dict:
         return {"ok": True, "why": "the runs held no risk", "overlap": [first, last], **base}
     max_risk = math.ceil(peak / ROUND) * ROUND
     own = {n: max(r.values()) for n, r in each.items()}
-    raw = {n: math.ceil(own[n] / max_risk * 1000) / 10 for n in own}
+    raw = {n: math.ceil(own[n] / max_risk * 1000) / 10 for n in own if own[n] > 0}
     total = sum(raw.values())
     scaled = total > 100 + 1e-9
     shares = {n: (math.floor(v * 100 / total * 10) / 10 if scaled else v) for n, v in raw.items()}
     cut = (
-        {n: sum(1 for d in days if each[n][d] > max_risk * shares[n] / 100 + 1e-9) for n in each}
+        {n: sum(1 for d in days if each[n][d] > max_risk * shares[n] / 100 + 1e-9) for n in shares}
         if scaled
         else {}
     )
@@ -128,6 +129,7 @@ def read(members: Sequence[Mapping]) -> dict:
         "max_risk": max_risk,
         "shares": shares,
         "scaled": scaled,
+        "unshared": sorted(n for n in own if own[n] <= 0),
         "cut": {n: c for n, c in cut.items() if c},
         "drawdown": round(worst, 2),
         **base,
