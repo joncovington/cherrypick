@@ -12,6 +12,8 @@ the problems that would stop the loop. It returns the entry to write, which is a
 - **without a register label it did not have**: `register` records what a study judged, so it is kept as
   stored and never taken from the editor (a copy of a backtested automation under a new name is not
   backtested);
+- **retired as it was**: `retired` is set and cleared on the automation's own page (`retire`), so
+  it is kept as stored and never taken from the editor; a save never reinstates one;
 - named by its key (`name` is the key it is saved under).
 
 Nothing here writes. The orchestrator's config editor writes the entry (`automationedit`), after running
@@ -68,9 +70,12 @@ def draft(config: dict, name: str, automation: dict, today: date) -> dict:
     if not isinstance(automation, dict):
         return {"ok": True, "name": name, "problems": ["automation: an object"]}
     current = editable(config, name)
-    entry = _written({k: copy.deepcopy(v) for k, v in automation.items() if k not in ("name", "register")})
-    if current is not None and "register" in current:
-        entry["register"] = copy.deepcopy(current["register"])
+    entry = _written(
+        {k: copy.deepcopy(v) for k, v in automation.items() if k not in ("name", "register", "retired")}
+    )
+    for kept in ("register", "retired"):
+        if current is not None and kept in current:
+            entry[kept] = copy.deepcopy(current[kept])
     entry["enabled"] = False
     overrides = {**config_mod.arm_overrides(config), name: entry}
     try:
@@ -89,6 +94,37 @@ def draft(config: dict, name: str, automation: dict, today: date) -> dict:
         "view": enrolment.builder_view(arms[name], suggestion),
         "new": current is None,
     }
+
+
+def retire(config: dict, name: str, retired: bool, today: date) -> dict:
+    """`{"ok", "name", "problems", "entry", "notes"}`: the keys to write to retire `name` (`retired` the
+    date, `enabled` false) or reinstate it (`retired` false, `enabled` false: reinstating never switches
+    one on). Checked by loading every automation with the change, as the loop would. Writes nothing."""
+    if not isinstance(name, str) or not isinstance(retired, bool):
+        return {"ok": True, "name": name, "problems": ["request: a name and retired true or false"]}
+    current = editable(config, name)
+    if current is None:
+        return {"ok": True, "name": name, "problems": [f"{name}: no such automation"]}
+    was = bool(current.get("retired"))
+    if was == retired:
+        return {
+            "ok": True,
+            "name": name,
+            "problems": [f"{name}: already {'retired' if was else 'not retired'}"],
+        }
+    entry = {"retired": today.isoformat() if retired else False, "enabled": False}
+    overrides = config_mod.arm_overrides(config)
+    trial = {**overrides, name: {**(overrides.get(name) or {}), **entry}}
+    try:
+        config_mod.load_arms(_with(config, trial))
+    except ValueError as exc:
+        return {"ok": True, "name": name, "problems": str(exc).split("; ")}
+    notes = (
+        [f"{name} is off from now; what it holds is still managed to its exits"]
+        if retired
+        else [f"{name} stays off: switch it on in its group to trade, from the next session"]
+    )
+    return {"ok": True, "name": name, "problems": [], "entry": entry, "notes": notes}
 
 
 def leg_conversion(config: dict) -> dict:

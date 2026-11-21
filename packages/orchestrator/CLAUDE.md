@@ -348,7 +348,11 @@ filename; override with `paper.sla_state_prefix`.
   check returned (replaced, or added at the document root, pointer `""`), each moved automation's
   `group`, and each switched automation's `enabled` and the `start` the check gave it (each key set,
   added to its entry, or a new entry), all in one `apply_raw_save`; a switch carrying any other key is
-  refused. `automation_reference` (`referenceedit.py`) is the Builder's pin of one of an
+  refused. `automation_retire` (`retireedit.py`) is an automation's page retiring or reinstating it:
+  the module's `cli retire-check`, then only that automation's `retired` (the date, or false) and
+  `enabled` (false either way: reinstating never switches one on), each set, added to its entry, or a
+  new entry, in one `apply_raw_save`; an entry with any other key, `enabled` true, or the other way
+  round is refused. `automation_reference` (`referenceedit.py`) is the Builder's pin of one of an
   automation's own Builder runs as its backtest reference: the module's `cli reference-check`, then
   `backtest read automation-runs` to confirm the run exists (unpinning skips it), then the
   `references` block the check returned (replaced, or added at the document root), nothing else.

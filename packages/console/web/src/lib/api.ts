@@ -25,6 +25,7 @@ import type {
   AutomationGroupsResult,
   GroupsChange,
   GroupsCheckResult,
+  AutomationRetireResult,
   GroupsEditView,
   BuilderBacktestResult,
   BuilderDraftResult,
@@ -1490,6 +1491,12 @@ export function groupsSave(
   change: GroupsChange,
 ): Promise<{ ok: boolean; error?: string; problems?: string[]; moved?: string[]; switched?: string[]; backup?: string | null }> {
   return builderPost("/api/automations/groups/save", change);
+}
+
+/** Retire (`retired` true) or reinstate one automation through the config editor, after the module's own
+ *  check. Either way it is off afterwards: reinstating never switches one on. */
+export function automationRetire(name: string, retired: boolean): Promise<AutomationRetireResult> {
+  return builderPost<AutomationRetireResult>("/api/automations/retire", { name, retired });
 }
 
 /** The module's check of one automation; by name alone, the automation as the editor starts from it. */
