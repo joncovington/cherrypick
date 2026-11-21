@@ -12373,6 +12373,12 @@ svg.vol-curve text {
   margin: 0;
   font-size: 0.85rem;
 }
+/* An experiment's id, beneath the arm's name it belongs to. */
+.pf-expid {
+  margin: 0 0 0.4rem;
+  font-family: var(--num-face);
+  font-size: 0.72rem;
+}
 .past-arms {
   margin: 0;
   font-size: 0.88rem;

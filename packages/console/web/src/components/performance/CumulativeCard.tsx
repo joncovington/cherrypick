@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { displayName } from "../../lib/armTag";
 import {
   createChart,
   createSeriesMarkers,
@@ -81,7 +82,7 @@ export function CumulativeCard({ groups, breaks }: { groups: ModulePerformanceGr
         line = chart.addSeries(LineSeries, {
           color: resolveColor(ARM_COLORS[i % ARM_COLORS.length]!),
           lineWidth: 1,
-          title: g.tag,
+          title: displayName(g.tag, groups.map((x) => x.tag)),
           priceLineVisible: false,
         });
         series.set(g.tag, line);

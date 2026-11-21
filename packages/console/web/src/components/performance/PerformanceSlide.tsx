@@ -3,7 +3,7 @@ import { Card, SortTh, sortRows, useSort } from "../DataTable";
 import { fmtMoney, fmtPct } from "../../lib/format";
 import type { ExitReasonRow, TradingMode } from "@console/shared";
 import { useModulePerformance, type PerformanceModuleId } from "../../lib/api";
-import { matchesArm } from "../../lib/armTag";
+import { displayName, experimentOfTag, matchesArm } from "../../lib/armTag";
 import { HelpSection, HelpWarn, type CardHelpContent } from "../CardHelp";
 import { Section } from "../Section";
 import { useOpenParam } from "../../pages/Backtest/CardLightbox";
@@ -285,7 +285,7 @@ export function PerformanceSlide({
             {shown.map((g) => (
               <Card
                 key={g.tag}
-                title={g.tag}
+                title={displayName(g.tag, shown.map((x) => x.tag))}
                 collapseKey={`performance-${module}-${g.tag}`}
                 updatedAt={dataUpdatedAt}
                 help={armHelp(underpoweredByBase.get(g.tag) === true)}
@@ -296,6 +296,7 @@ export function PerformanceSlide({
                     its page ›
                   </Link>
                 )}
+                {experimentOfTag(g.tag) && <p className="muted pf-expid">{experimentOfTag(g.tag)}</p>}
                 <MetricTiles reading={g.reading} peakRisk={g.peakRisk} />
                 <TradeNetHistogram nets={g.tradeNets} />
               </Card>

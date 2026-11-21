@@ -44,7 +44,18 @@ describe("the simple and detail views", () => {
     const slides = NAV_DECL.meic.slides;
     expect(viewSlides("meic", slides, "detail").map((s) => s.id)).toEqual(slides.map((s) => s.id));
     // Tab order: the tables sit right after today's tabs (2026-10-18), so positions comes before performance.
-    expect(viewSlides("meic", slides, "simple").map((s) => s.id)).toEqual(["summary", "arms", "positions", "performance", "guide"]);
+    expect(viewSlides("meic", slides, "simple").map((s) => s.id)).toEqual(["summary", "arms", "forest", "positions", "history", "changes", "guide"]);
+  });
+
+  it("gives every live module the same short simple view: today, arms, positions, history, changes, help, and one of its own", () => {
+    const common = ["summary", "positions", "history", "changes", "guide"];
+    const arms = new Set(["arms", "groups"]);
+    for (const m of ["meic", "earnings", "calendars", "contango", "weeklyput", "ladder", "automations"] as const) {
+      const simple = (NAV_DECL[m].simple ?? []) as readonly string[];
+      for (const id of common) expect(simple, `${m} lacks ${id}`).toContain(id);
+      const own = simple.filter((id) => !common.includes(id) && !arms.has(id));
+      expect(own.length, `${m}'s own tabs: ${own.join(", ")}`).toBeLessThanOrEqual(1);
+    }
   });
 
   it("keeps the tab the reader is on, even when the simple view leaves it out", () => {
