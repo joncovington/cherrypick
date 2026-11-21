@@ -12349,6 +12349,12 @@ svg.vol-curve text {
   margin: 0;
   font-size: 0.85rem;
 }
+/* An arm's card on a performance tab, leading to its page. */
+.pf-armlink {
+  display: inline-block;
+  margin: 0 0 0.5rem;
+  font-size: 0.82rem;
+}
 @media (max-width: 640px) {
   .ae-funnel-row {
     grid-template-columns: 1fr 1fr;

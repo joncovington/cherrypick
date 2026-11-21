@@ -84,6 +84,9 @@ export default function App() {
         {/* One arm's page in a module on the shared slides, framed as its arms tab. */}
         <Route path="calendars/arm/:name" element={<ModuleRoute forced={{ module: "calendars", slide: "arms" }} />} />
         <Route path="contango/arm/:name" element={<ModuleRoute forced={{ module: "contango", slide: "arms" }} />} />
+        <Route path="ladder/arm/:name" element={<ModuleRoute forced={{ module: "ladder", slide: "arms" }} />} />
+        {/* Earnings has no arms tab: its arms' pages sit under performance. */}
+        <Route path="earnings/arm/:name" element={<ModuleRoute forced={{ module: "earnings", slide: "performance" }} />} />
         <Route path=":module" element={<ModuleRoute />} />
         <Route path=":module/:slide" element={<ModuleRoute />} />
         {/* Catch-all. Without it an unmatched path renders NOTHING — a blank screen that reads as

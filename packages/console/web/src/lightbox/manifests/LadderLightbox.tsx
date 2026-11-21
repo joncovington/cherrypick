@@ -1,4 +1,6 @@
 import { ChangesSlide } from "../../components/changes/ChangesSlide";
+import { ModuleArmPage } from "../../components/armpage/ModuleArmPage";
+import { useParams } from "react-router-dom";
 import { SharedCosts } from "../../components/costs/SharedCosts";
 import { PerformanceSlide } from "../../components/performance/PerformanceSlide";
 import { useLadder, useLadderLive, useLadderLiveStatus, useLadderStatus, useLadderSummary } from "../../lib/api";
@@ -22,6 +24,8 @@ const LIVE_WITHIN_SECONDS = 300;
  * loop pill overnight is the design.
  */
 export function LadderLightbox({ slide }: { slide: string }) {
+  // `/<module>/arm/<name>`: the arm's own page.
+  const armPage = useParams()["name"] ?? null;
   const { data, isLoading } = useLadder();
   const status = useLadderStatus();
   const summary = useLadderSummary();
@@ -38,9 +42,18 @@ export function LadderLightbox({ slide }: { slide: string }) {
     { id: "live", label: LABEL.live, render: () => <LadderLive live={live.data} status={liveStatus.data} /> },
     { id: "positions", label: LABEL.positions, render: () => <LadderPositions data={data} /> },
     { id: "history", label: LABEL.history, render: () => <LadderHistory data={data} /> },
-    { id: "arms", label: LABEL.arms, render: () => <LadderArms summary={summary.data} status={status.data} decl={data?.arms} /> },
+    {
+      id: "arms",
+      label: LABEL.arms,
+      render: () =>
+        armPage !== null ? (
+          <ModuleArmPage module="ladder" name={armPage} />
+        ) : (
+          <LadderArms summary={summary.data} status={status.data} decl={data?.arms} />
+        ),
+    },
     { id: "decisions", label: LABEL.decisions, render: () => <LadderDecisions /> },
-    { id: "performance", label: LABEL.performance, render: () => <PerformanceSlide module="ladder" pairs={false} /> },
+    { id: "performance", label: LABEL.performance, render: () => <PerformanceSlide module="ladder" pairs={false} armCards={false} /> },
     { id: "costs", label: LABEL.costs, render: () => <SharedCosts module="ladder" /> },
     { id: "changes", label: LABEL.changes, render: () => <ChangesSlide module="ladder" /> },
     { id: "guide", label: LABEL.guide, render: () => <LadderHelp status={status.data} /> },

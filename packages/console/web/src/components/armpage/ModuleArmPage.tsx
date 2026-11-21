@@ -32,6 +32,14 @@ export function isControl(name: string, rows: ChangeRow[] | undefined): boolean 
   return rows.some((r) => r.against === name) && !rows.some((r) => r.arm === name);
 }
 
+/** What a base's page says: the arms read against it by name (a module's control, or the strategy an
+ *  advisor experiment shadows), or that it is the control before the changes read lands. */
+export function baseWords(name: string, rows: ChangeRow[] | undefined): string {
+  const against = (rows ?? []).filter((r) => r.against === name).map((r) => r.name);
+  if (against.length === 0) return "This is the control: the module's other arms are read against it.";
+  return `Read against it: ${against.join(", ")}. It has no row of its own.`;
+}
+
 /** The arm drawn beside `name` on its page: what its own row is read against (`control` until the
  *  changes read lands), none for a control. */
 export function referenceFor(name: string, rows: ChangeRow[] | undefined): string | null {
@@ -39,7 +47,16 @@ export function referenceFor(name: string, rows: ChangeRow[] | undefined): strin
   return rows?.find((r) => r.arm === name && r.kind !== "declared")?.against ?? "control";
 }
 
-export function ModuleArmPage({ module, name }: { module: ArmPageModule; name: string }) {
+export function ModuleArmPage({
+  module,
+  name,
+  back = { to: `/${module}/arms`, label: "arms" },
+}: {
+  module: ArmPageModule;
+  name: string;
+  /** Where the crumbs lead back to: the arms tab, or the tab that lists the arms where there is none. */
+  back?: { to: string; label: string };
+}) {
   const changes = useModuleChanges(module);
   const rows = changes.data?.rows;
   const control = isControl(name, rows);
@@ -48,7 +65,7 @@ export function ModuleArmPage({ module, name }: { module: ArmPageModule; name: s
   return (
     <div className="pf-layout arm-page">
       <nav className="grp-crumbs" aria-label="Where you are">
-        <Link to={`/${module}/arms`}>arms</Link>
+        <Link to={back.to}>{back.label}</Link>
         {" / "}
         <b>{name}</b>
       </nav>
@@ -61,7 +78,7 @@ export function ModuleArmPage({ module, name }: { module: ArmPageModule; name: s
       </nav>
       <div id="arm-control">
         {control ? (
-          <p className="muted">This is the control: every other arm is read against it.</p>
+          <p className="muted">{baseWords(name, rows)}</p>
         ) : (
           <ChangesSection module={module} arm={name} />
         )}

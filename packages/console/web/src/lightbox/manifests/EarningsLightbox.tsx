@@ -1,4 +1,6 @@
 import { ChangesSlide } from "../../components/changes/ChangesSlide";
+import { ModuleArmPage, armHref } from "../../components/armpage/ModuleArmPage";
+import { useParams } from "react-router-dom";
 import { EarningsHelp } from "../../pages/Earnings/EarningsHelp";
 import { SharedCosts } from "../../components/costs/SharedCosts";
 import { PerformanceSlide } from "../../components/performance/PerformanceSlide";
@@ -97,6 +99,8 @@ function EraScope({ era, onChange }: { era: string | null; onChange: (v: string 
  * 2026-10-23: `strategies` is the verdict board, `screening` holds the forward scan and the funnel).
  */
 export function EarningsLightbox({ slide }: { slide: string }) {
+  // `/<module>/arm/<name>`: the arm's own page.
+  const armPage = useParams()["name"] ?? null;
   // Paper only since v0.12.0: earnings places no live order, so the page has no mode toggle.
   const mode: TradingMode = "paper";
   const [era, setEra] = useState<string | null>(null);
@@ -216,8 +220,17 @@ export function EarningsLightbox({ slide }: { slide: string }) {
       ),
     },
     { id: "advisor", label: EARNINGS_LABEL.advisor, render: () => <AdvisorSlide module="earnings" /> },
-    { id: "performance", label: EARNINGS_LABEL.performance, render: () => <PerformanceSlide module="earnings" pairs={false} /> },
-    { id: "costs", label: EARNINGS_LABEL.costs, render: () => <SharedCosts module="earnings" /> },
+    {
+      id: "performance",
+      label: EARNINGS_LABEL.performance,
+      render: () =>
+        armPage !== null ? (
+          <ModuleArmPage module="earnings" name={armPage} back={{ to: "/earnings/performance", label: "performance" }} />
+        ) : (
+          <PerformanceSlide module="earnings" pairs={false} armLink={(arm) => armHref("earnings", arm)} />
+        ),
+    },
+    { id: "costs", label: EARNINGS_LABEL.costs, render: () => <SharedCosts module="earnings" armLink={(arm) => armHref("earnings", arm)} /> },
     { id: "changes", label: EARNINGS_LABEL.changes, render: () => <ChangesSlide module="earnings" /> },
     { id: "guide", label: EARNINGS_LABEL.guide, render: () => <EarningsHelp /> },
     {

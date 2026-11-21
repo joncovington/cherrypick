@@ -18,6 +18,8 @@ const UNDER_TAB: Partial<Record<string, Record<string, string>>> = {
   meic: { arm: "arms" },
   calendars: { arm: "arms" },
   contango: { arm: "arms" },
+  ladder: { arm: "arms" },
+  earnings: { arm: "performance" },
 };
 
 export function railSlide(module: string, seg: string): string {
