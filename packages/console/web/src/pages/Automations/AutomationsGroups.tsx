@@ -757,31 +757,9 @@ function GroupPage({ view, draft, edit, paper, group, after }: { view: GroupsEdi
                   Switch all on
                 </button>
               )}
-              {!none && (
-                <button type="button" className="btn" aria-expanded={adding} onClick={() => setAdding(!adding)}>
-                  + Add automations
-                </button>
-              )}
             </span>
           }
         >
-          {adding && !none && (
-            <div className="grp-add" role="group" aria-label="Add automations">
-              <span className="builder-lbl">add to {group}</span>
-              {others.length === 0 ? (
-                <span className="muted">Every automation is in this group.</span>
-              ) : (
-                others.map((r) => (
-                  <label key={r.m.name} className="grp-add-row">
-                    <input type="checkbox" checked={false} onChange={() => move(r.m.name, group)} />
-                    <span className="num">{r.m.name}</span>
-                    <span className="muted">{r.now ?? "no group"}</span>
-                    <Verdict v={r.m.verdict} />
-                  </label>
-                ))
-              )}
-            </div>
-          )}
           {inGroup.length === 0 ? (
             <p className="muted">No members yet. The group is kept, off; add an automation to be able to switch it on.</p>
           ) : (
@@ -903,6 +881,30 @@ function GroupPage({ view, draft, edit, paper, group, after }: { view: GroupsEdi
                   )}
                 </tbody>
               </table>
+            </div>
+          )}
+          {!none && (
+            <div className="grp-add-bar">
+              <button type="button" className="btn" aria-expanded={adding} onClick={() => setAdding(!adding)}>
+                {adding ? "Done adding" : "+ Add automations"}
+              </button>
+            </div>
+          )}
+          {adding && !none && (
+            <div className="grp-add" role="group" aria-label="Add automations">
+              <span className="builder-lbl">add to {group}</span>
+              {others.length === 0 ? (
+                <span className="muted">Every automation is in this group.</span>
+              ) : (
+                others.map((r) => (
+                  <label key={r.m.name} className="grp-add-row">
+                    <input type="checkbox" checked={false} onChange={() => move(r.m.name, group)} />
+                    <span className="num">{r.m.name}</span>
+                    <span className="muted">{r.now ?? "no group"}</span>
+                    <Verdict v={r.m.verdict} />
+                  </label>
+                ))
+              )}
             </div>
           )}
           {budget && <p className="muted grp-hint">Shares: {shareTotal} of 100 percent given. A member without one has no slice of its own, only the group's cap.</p>}
