@@ -3,7 +3,7 @@ import { renderToString } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { GroupsEditMember, GroupsEditView } from "@console/shared";
-import { changeItems, changeToSend, FieldTip, GROUP_TIPS, GroupsFlow, impact, outcomeWords, placement, removeFromGroup, emptyGroups, startDraft, stateWords } from "../src/pages/Automations/AutomationsGroups";
+import { changeItems, changeToSend, FieldTip, GROUP_TIPS, GroupsFlow, impact, moveTo, outcomeWords, placement, removeFromGroup, emptyGroups, startDraft, stateWords } from "../src/pages/Automations/AutomationsGroups";
 import { RetiredSection, retiredWords } from "../src/pages/Automations/RetiredSection";
 import { AUTOMATIONS_SLIDES } from "../src/lightbox/navGroups";
 
@@ -248,6 +248,7 @@ describe("removing an automation from its group", () => {
     expect(after.members).toEqual({ "iron-condor-1345": null });
     expect(after.switches).toEqual({ "iron-condor-1345": false });
     expect(changeItems(VIEW, after).map((c) => [c.where, c.what, c.becomes])).toEqual([
+      ["ensemble", "shares", "none"],
       ["iron-condor-1345", "group", "no group"],
       ["iron-condor-1345", "its own switch", "off"],
     ]);
@@ -258,6 +259,29 @@ describe("removing an automation from its group", () => {
     const d = startDraft(view);
     const r = placement(view, d).find((x) => x.m.name === "iron-fly-1000")!;
     expect(removeFromGroup(d, r).switches).toEqual({});
+  });
+});
+
+describe("a share leaves with its automation", () => {
+  const shared: GroupsEditView = { ...VIEW, groups: [{ ...VIEW.groups[0]!, allocation: 5000, shares: { "iron-condor-1345": 40, "put-spread-1300": 30 } }] };
+
+  it("is dropped from the group it leaves, as its own line in the save bar", () => {
+    const d = startDraft(shared);
+    const after = moveTo(d, "iron-condor-1345", "ensemble", "ensemble", null);
+    expect(after.groups.ensemble!.shares).toEqual({ "put-spread-1300": 30 });
+    expect(changeItems(shared, after).map((c) => c.what)).toEqual(["shares", "group"]);
+  });
+
+  it("goes when removed, and the last share takes the key with it", () => {
+    const one: GroupsEditView = { ...shared, groups: [{ ...shared.groups[0]!, shares: { "iron-condor-1345": 40 } }] };
+    const d = startDraft(one);
+    const r = placement(one, d).find((x) => x.m.name === "iron-condor-1345")!;
+    expect(removeFromGroup(d, r).groups.ensemble!.shares).toBeUndefined();
+  });
+
+  it("is left alone when the automation stays where it is", () => {
+    const d = startDraft(shared);
+    expect(moveTo(d, "iron-condor-1345", "ensemble", "ensemble", "ensemble")).toEqual(d);
   });
 });
 

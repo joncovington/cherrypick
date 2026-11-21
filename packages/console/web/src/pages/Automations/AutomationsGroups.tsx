@@ -186,10 +186,26 @@ export function changeToSend(view: GroupsEditView, draft: GroupsChange): GroupsC
  *  one keeps its switch as it is. */
 export function removeFromGroup(draft: GroupsChange, r: Placed): GroupsChange {
   return {
-    ...draft,
+    ...dropShare(draft, r.m.name, r.now),
     members: r.was === null ? withoutKey(draft.members, r.m.name) : { ...draft.members, [r.m.name]: null },
     switches: r.m.retired || !r.m.enabled ? withoutKey(draft.switches, r.m.name) : { ...draft.switches, [r.m.name]: false },
   };
+}
+
+/** The draft with automation `name` placed in group `to` (null for none), from the group `from` it is in
+ *  under the draft, and its share of `from` dropped: a share is a member's, so it leaves with it (the
+ *  module drops it from the group's dated budgets too). The drop is its own line in the save bar. */
+export function moveTo(draft: GroupsChange, name: string, original: string | null, from: string | null, to: string | null): GroupsChange {
+  const d = from === to ? draft : dropShare(draft, name, from);
+  return { ...d, members: to === original ? withoutKey(d.members, name) : { ...d.members, [name]: to } };
+}
+
+function dropShare(draft: GroupsChange, name: string, from: string | null): GroupsChange {
+  const spec = from === null ? undefined : draft.groups[from];
+  if (from === null || spec?.shares === undefined || !(name in spec.shares)) return draft;
+  const next: GroupSpec = { ...spec, shares: withoutKey(spec.shares, name) };
+  if (Object.keys(next.shares!).length === 0) delete next.shares;
+  return { ...draft, groups: { ...draft.groups, [from]: next } };
 }
 
 /** The groups the draft leaves with no automation, and those of them switched on: a group with no
@@ -711,8 +727,8 @@ function GroupPage({ view, draft, edit, paper, group, after }: { view: GroupsEdi
   const budget = spec !== undefined && (spec.allocation !== undefined || spec.max_risk !== undefined);
   const shareTotal = Object.values(spec?.shares ?? {}).reduce((a, b) => a + b, 0);
   const move = (name: string, to: string | null) => {
-    const original = rows.find((r) => r.m.name === name)?.was ?? null;
-    edit({ ...draft, members: to === original ? withoutKey(draft.members, name) : { ...draft.members, [name]: to } });
+    const r = rows.find((x) => x.m.name === name);
+    edit(moveTo(draft, name, r?.was ?? null, r?.now ?? null, to));
   };
   const flip = (r: Placed, on: boolean) => edit({ ...draft, switches: on === r.m.enabled ? withoutKey(draft.switches, r.m.name) : { ...draft.switches, [r.m.name]: on } });
   const keep = (r: Placed) => edit({ ...draft, members: withoutKey(draft.members, r.m.name), switches: withoutKey(draft.switches, r.m.name) });
@@ -987,7 +1003,7 @@ function AutomationPage({ view, draft, edit, paper, group, name }: { view: Group
                 value={g ?? NONE}
                 onChange={(e) => {
                   const to = e.currentTarget.value === NONE ? null : e.currentTarget.value;
-                  edit({ ...draft, members: to === r.was ? withoutKey(draft.members, name) : { ...draft.members, [name]: to } });
+                  edit(moveTo(draft, name, r.was, r.now, to));
                 }}
               >
                 <option value={NONE}>no group</option>
