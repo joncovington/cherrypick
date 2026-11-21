@@ -553,6 +553,12 @@ def cmd_read(args) -> int:
         out = readout.automation_reading(args.name or "", args.id or "", args.declared)
         _emit(out)
         return 0 if out.get("ok") else 1
+    if args.what == "declared":
+        from . import declared
+
+        out = declared.declared(args.name)
+        _emit(out)
+        return 0
     if args.what in ("idea-searches", "idea-search"):
         from . import ideafiles
 
@@ -813,6 +819,7 @@ def main(argv: list[str] | None = None) -> int:
             "overview", "run", "trades", "path", "stores", "summaries", "signals", "signal",
             "automation-runs", "automation-run", "automation-reference", "automation-reading", "fullset",
             "portfolio-sources", "idea-searches", "idea-search", "settings-grids", "settings-grid",
+            "declared",
         ),
     )  # fmt: skip
     rd.add_argument("--ids", default=None, help="with `summaries`: run ids, comma separated")
@@ -821,7 +828,7 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="with `signal`: the signal study's name; with `automation-runs`, `automation-run`, "
         "`automation-reference`, `automation-reading`, `idea-searches`, `idea-search`, `settings-grids` "
-        "or `settings-grid`: the automation",
+        "or `settings-grid`: the automation; with `declared`, only that automation's",
     )
     rd.add_argument(
         "--id",

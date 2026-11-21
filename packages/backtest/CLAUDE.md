@@ -418,6 +418,10 @@ ledger): each trade's place in the usual range and its percentile among the run'
 running net's place in the band at its own count (the band drawn 20 trades past the record), the
 sample (`--declared`, the forward rule's `min_obs`, else computed) and both entry rates. Its state
 is `no_reference`, `no_trades`, `too_few` (under 5 trades) or the running net's place.
+`read declared [--name A]` lists every declared idea and setting (`declared.py`): its automation,
+result, title and measure from its drafted row, and its one held-out read (verdict and interval) or
+none yet, `licensed` as its result is. `core.changes` reads one waiting on its test as `waiting` and
+one tested as `closed`.
 `read portfolio-sources` lists
 every Builder run and every `research/<item>/study*.json` whose arms carry engine trades, for
 Compare's portfolio tab (any file under `results/` is listed as licensed).
