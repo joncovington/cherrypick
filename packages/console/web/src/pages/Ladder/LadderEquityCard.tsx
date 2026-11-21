@@ -15,8 +15,13 @@ import { fmtMoney } from "../../lib/format";
  * the one that says what the arm is worth, and the shaded gap between them is the open lots.
  */
 
-const W = 360;
-const H = 150;
+export interface Size {
+  w: number;
+  h: number;
+}
+/** A panel in the every-arm grid, and the one panel drawn when an arm is picked. */
+export const SMALL: Size = { w: 360, h: 150 };
+export const WIDE: Size = { w: 760, h: 220 };
 const M = { l: 50, r: 70, t: 10, b: 20 };
 const DOTS_UP_TO = 12; // markers on every session while a panel has this few
 
@@ -65,7 +70,8 @@ export interface Geometry {
   over: string[];
 }
 
-export function geometry(points: LadderEquityPoint[], d: Domain): Geometry {
+export function geometry(points: LadderEquityPoint[], d: Domain, size: Size = SMALL): Geometry {
+  const { w: W, h: H } = size;
   const n = points.length;
   const x = (i: number): number => (n === 1 ? (M.l + W - M.r) / 2 : M.l + (i * (W - M.l - M.r)) / (n - 1));
   const y = (v: number): number => M.t + (1 - (v - d.lo) / (d.hi - d.lo)) * (H - M.t - M.b);
@@ -117,7 +123,7 @@ function readout(p: LadderEquityPoint): string[] {
 
 /** Where to hand `HoverReadout` its x: right of the crosshair on the left half, left of it on the
  *  right half, so the box never sits over the end labels. Its box is 5.8px a character plus 12. */
-export function readoutAnchor(x: number, lines: string[]): number {
+export function readoutAnchor(x: number, lines: string[], W: number = SMALL.w): number {
   if (x < (M.l + W - M.r) / 2) return x;
   const bw = Math.max(...lines.map((l) => l.length)) * 5.8 + 12;
   return x - bw - 24;
@@ -131,9 +137,10 @@ function endLabels(yMarked: number | null, yReal: number): { m: number | null; r
   return yMarked <= yReal ? { m: mid - 6, r: mid + 6 } : { m: mid + 6, r: mid - 6 };
 }
 
-export function EquityPanel({ arm, points, domain }: { arm: string; points: LadderEquityPoint[]; domain: Domain }) {
+export function EquityPanel({ arm, points, domain, size = SMALL }: { arm: string; points: LadderEquityPoint[]; domain: Domain; size?: Size }) {
   const [hover, setHover] = useState<number | null>(null);
-  const g = geometry(points, domain);
+  const { w: W, h: H } = size;
+  const g = geometry(points, domain, size);
   const last = points[points.length - 1]!;
   const lastI = points.length - 1;
   const lab = endLabels(last.marked === null ? null : g.y(last.marked), g.y(last.realised));
@@ -207,7 +214,7 @@ export function EquityPanel({ arm, points, domain }: { arm: string; points: Ladd
           <>
             <line x1={g.x(hover)} x2={g.x(hover)} y1={M.t} y2={H - M.b} className="ldr-eq-cross" />
             <HoverReadout
-              x={readoutAnchor(g.x(hover), readout(points[hover]!))}
+              x={readoutAnchor(g.x(hover), readout(points[hover]!), W)}
               width={W}
               lines={readout(points[hover]!)}
               lineColor={(i) => (i === 0 ? "var(--text)" : "var(--text-muted)")}
@@ -227,8 +234,10 @@ export function equityOrder(decl: Array<{ arm: string }> | undefined, equity: La
   return names;
 }
 
-export function LadderEquityCard({ equity, order }: { equity: LadderEquity | undefined; order: string[] }) {
-  const arms = equity?.ok ? order.filter((a) => (equity.arms[a]?.length ?? 0) > 0) : [];
+/** The card. `arm` is the header's picker: null draws every arm on one shared scale, an arm draws
+ *  that arm alone, wide, on its own scale. */
+export function LadderEquityCard({ equity, order, arm = null }: { equity: LadderEquity | undefined; order: string[]; arm?: string | null }) {
+  const arms = equity?.ok ? order.filter((a) => (arm === null || a === arm) && (equity.arms[a]?.length ?? 0) > 0) : [];
   const domain = sharedDomain(Object.fromEntries(arms.map((a) => [a, equity!.arms[a]!])));
   const gaps = arms.reduce((n, a) => n + equity!.arms[a]!.filter((p) => p.marked === null).length, 0);
   return (
@@ -254,8 +263,9 @@ export function LadderEquityCard({ equity, order }: { equity: LadderEquity | und
                 they are under water, green where they are ahead. The latest session is marked at its latest tick, so it moves while the session runs.
               </p>
               <p>
-                Each arm keeps its own book, so the panels are alternatives side by side, never added together. They share one scale. A session where an
-                open lot&apos;s fund had no bid breaks the solid line: no price is carried forward.
+                Each arm keeps its own book, so the panels are alternatives side by side, never added together. They share one scale. The arm picker in
+                the header draws one arm alone, on its own scale. A session where an open lot&apos;s fund had no bid breaks the solid line: no price is
+                carried forward.
               </p>
             </HelpSection>
             <HelpSection title="Paper only">
@@ -270,7 +280,7 @@ export function LadderEquityCard({ equity, order }: { equity: LadderEquity | und
       ) : !equity.ok ? (
         <p className="muted">{equity.error ?? "the ladder's read is unavailable"}</p>
       ) : arms.length === 0 ? (
-        <p className="muted">no lot has been bought yet</p>
+        <p className="muted">{arm === null ? "no lot has been bought yet" : `${arm} has not bought a lot yet`}</p>
       ) : (
         <>
           <div className="ldr-eq-legend" aria-hidden="true">
@@ -287,11 +297,17 @@ export function LadderEquityCard({ equity, order }: { equity: LadderEquity | und
               <i className="ldr-eq-key ldr-eq-key-over" /> open lots ahead
             </span>
           </div>
-          <div className="ldr-eq-grid-wrap">
-            {arms.map((a) => (
-              <EquityPanel key={a} arm={a} points={equity.arms[a]!} domain={domain} />
-            ))}
-          </div>
+          {arm === null ? (
+            <div className="ldr-eq-grid-wrap">
+              {arms.map((a) => (
+                <EquityPanel key={a} arm={a} points={equity.arms[a]!} domain={domain} />
+              ))}
+            </div>
+          ) : (
+            <div className="ldr-eq-single">
+              <EquityPanel key={arm} arm={arm} points={equity.arms[arm]!} domain={domain} size={WIDE} />
+            </div>
+          )}
           {gaps > 0 && <p className="muted">{gaps === 1 ? "One session has" : `${String(gaps)} arm-sessions have`} no mark: the solid line breaks there.</p>}
         </>
       )}

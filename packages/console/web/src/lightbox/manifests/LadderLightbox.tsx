@@ -6,7 +6,8 @@ import { PerformanceSlide } from "../../components/performance/PerformanceSlide"
 import { useLadder, useLadderEquity, useLadderLive, useLadderLiveStatus, useLadderStatus, useLadderSummary } from "../../lib/api";
 import { LadderEquityCard, equityOrder } from "../../pages/Ladder/LadderEquityCard";
 import { PaperLiveBadge } from "../../components/shell/PaperLiveBadge";
-import { LoopPill } from "../../components/ScopeBar";
+import { useEffect, useState } from "react";
+import { LoopPill, ScopeSelect } from "../../components/ScopeBar";
 import { LadderLive, LiveModeBadge } from "../../pages/Ladder/LadderLive";
 import { LadderArms, LadderDecisions, LadderHelp, LadderHistory, LadderPositions, LadderToday } from "../../pages/Ladder/LadderPages";
 import { ModuleFrame } from "../ModuleFrame";
@@ -31,6 +32,13 @@ export function LadderLightbox({ slide }: { slide: string }) {
   const status = useLadderStatus();
   const summary = useLadderSummary();
   const equity = useLadderEquity();
+  // The performance tab's arm picker: null (the default) is every arm. It narrows the realized-and-marked
+  // card and the shared slide beneath it; no other ladder tab takes an arm, so it shows on this tab only.
+  const [arm, setArm] = useState<string | null>(null);
+  const armOptions = equityOrder(data?.arms, equity.data);
+  useEffect(() => {
+    if (arm !== null && data !== undefined && equity.data !== undefined && !armOptions.includes(arm)) setArm(null);
+  }, [arm, armOptions, data, equity.data]);
   const live = useLadderLive();
   const liveStatus = useLadderLiveStatus();
   // The pill follows the tab: the live tab shows the LIVE loop's last tick (its own ledger), never the paper loop's.
@@ -61,9 +69,9 @@ export function LadderLightbox({ slide }: { slide: string }) {
       render: () => (
         <>
           <div className="pf-layout">
-            <LadderEquityCard equity={equity.data} order={equityOrder(data?.arms, equity.data)} />
+            <LadderEquityCard equity={equity.data} order={armOptions} arm={arm} />
           </div>
-          <PerformanceSlide module="ladder" pairs={false} armCards={false} />
+          <PerformanceSlide module="ladder" pairs={false} armCards={false} arm={arm} />
         </>
       ),
     },
@@ -76,7 +84,13 @@ export function LadderLightbox({ slide }: { slide: string }) {
     <ModuleFrame
       module="ladder"
       slide={slide}
-      slides={slides}      badge={slide === "live" ? <LiveModeBadge status={liveStatus.data} /> : <PaperLiveBadge mode="paper" />}
+      slides={slides}
+      headerControls={
+        slide === "performance" && armPage === null ? (
+          <ScopeSelect label="arm" value={arm} options={armOptions} onChange={setArm} allLabel="all arms" />
+        ) : undefined
+      }
+      badge={slide === "live" ? <LiveModeBadge status={liveStatus.data} /> : <PaperLiveBadge mode="paper" />}
       loopPill={
         <LoopPill
           state={pillSource === undefined ? undefined : loopState}

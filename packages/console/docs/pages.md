@@ -909,7 +909,10 @@ fees included) solid, the gap between them shaded by sign. The shared slide's cu
 closed lots only, which under a no-stop rule only climbs; this card is where the held lots show. The
 figures are the module's (`analytics.equity`); the page scales them and computes no money. A session
 with no bid for an open lot breaks the solid line, never carries a price forward. Paper only: the live
-ledger keeps no marks. Pinned by `server/test/ladder-bridge.test.ts` and `web/test/ladderEquity.test.tsx`.
+ledger keeps no marks. The tab's header carries an arm picker (`ScopeSelect`, default all arms, shown
+on this tab only since no other ladder tab takes an arm): a picked arm is drawn alone, wide, on its
+own scale, and the shared slide is narrowed to it through its `arm` prop. Pinned by
+`server/test/ladder-bridge.test.ts` and `web/test/ladderEquity.test.tsx`.
 
 **The ladder's `live` tab** (`pages/Ladder/LadderLive.tsx` over `GET /api/ladder/live` →
 `readers/ladderLive.ts` and `GET /api/ladder/live/status` → `services/ladderLiveBridge.ts`) is the live
