@@ -497,7 +497,38 @@ def regime_cuts(
         min_effective_n=MIN_EFFECTIVE_N,
     )
     doc["era"]["key"] = era
-    return doc
+    return _rc.stamp_today(doc, regime_reading(conn, session))
+
+
+def regime_reading(conn, session: str) -> dict | None:
+    """The session's last market-regime reading per symbol, from `iteration_regime` (one row per
+    loop tick and symbol): `{"at": its tick, "symbols": {SYMBOL: {dimension: bucket}}}`, the market
+    dimensions only, gex re-derived from its sign flag as `_bucket_expr` does for an entry. None
+    when the session has no reading (the table absent, or no tick that day)."""
+    import sqlite3
+
+    from cherrypick.meic import regime as _regime
+
+    try:
+        rows = conn.execute(
+            "SELECT r.* FROM iteration_regime r JOIN ("
+            "  SELECT symbol, MAX(id) AS id FROM iteration_regime WHERE loop_date = ? GROUP BY symbol"
+            ") last ON r.id = last.id ORDER BY r.symbol",
+            (session,),
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return None
+    if not rows:
+        return None
+    symbols, at = {}, None
+    for r in rows:
+        row = dict(r)
+        buckets = {d: row.get(f"{d}_bucket") for d in _regime.MARKET_DIMENSIONS}
+        if row.get("gex_positive") is not None:
+            buckets["gex"] = _regime.gex_bucket_from_sign(row["gex_positive"], row.get("gex_value"))
+        symbols[row["symbol"]] = buckets
+        at = max(at or "", str(row.get("loop_time") or ""))
+    return {"at": at or None, "symbols": symbols}
 
 
 # --------------------------------------------------------------------------- exit detail

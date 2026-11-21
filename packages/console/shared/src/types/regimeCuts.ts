@@ -118,6 +118,32 @@ export interface RegimeBreak {
   reason: string | null;
 }
 
+/** Why an arm's cell in today's bucket is not read: no reading of the dimension that session, no cut of it,
+ *  a degenerate or underpowered dimension, no trade of the arm's in that bucket, or a thin cell. */
+export type RegimeTodayWhy = "no_reading" | "no_cut" | "degenerate" | "underpowered" | "no_trades" | "thin";
+
+/** An arm's record in the bucket the session's last reading fell in, per dimension (core.regimecuts.stamp_today).
+ *  Figures only where the writer gave them; `readable` only where the cut can carry them. */
+export interface RegimeTodayCell {
+  bucket: string | null;
+  readable: boolean;
+  why: RegimeTodayWhy | null;
+  sessions: number | null;
+  trades: number | null;
+  netPnl: number | null;
+  avgPnl: number | null;
+  winRate: number | null;
+  thin: boolean | null;
+  fragile: boolean | null;
+}
+
+/** The conditions of the session cut: its last market-regime reading, per symbol and for the cut's scope. */
+export interface RegimeToday {
+  session: string | null;
+  at: string | null;
+  buckets: Record<string, string | null>;
+}
+
 export interface RegimeArm {
   arm: string;
   eraStart: string | null;
@@ -133,6 +159,8 @@ export interface RegimeArm {
    *  the module rewrites the file nightly. */
   thin: boolean | null;
   dimensions: Record<string, RegimeDimension>;
+  /** Per dimension, its record in the session's bucket; null on an artifact written before 2026-11-21. */
+  today: Record<string, RegimeTodayCell> | null;
 }
 
 export interface RegimeCrossCell {
@@ -189,6 +217,8 @@ export interface RegimeCuts {
   /** The prior snapshots the cells' `history` was read over (oldest first); null when the writer
    *  did not stamp history (a stdout re-cut, or an artifact written before 2026-09-28). */
   history: { window: number | null; sessions: string[] } | null;
+  /** The session's last market-regime reading; null on an artifact written before 2026-11-21. */
+  today: RegimeToday | null;
 }
 
 export type RegimeCutsPayload =

@@ -70,7 +70,10 @@ python run.py ahead --arm control            # the next sessions: what its dated
   Nightly at `paper.regime_cuts_at`; the console slide and the advisor's deep pack read it without
   recomputing. It carries the core robustness stamps (`fragile`, `paired`, `history`, `multiplicity`)
   via `by_regime(..., with_sessions=True)`; per-session totals are **net of fees**, and
-  `test_regime_cuts.py` pins that they add up to each cell's net.
+  `test_regime_cuts.py` pins that they add up to each cell's net. It also stamps the session's
+  conditions (`core.regimecuts.stamp_today`): the last `iteration_regime` tick of the session per
+  symbol (`analytics.regime_reading`, market dimensions only, gex re-derived from its sign flag as
+  an entry's is), and each arm's cell in those buckets.
 - **Quote-history replay:** `python -m cherrypick.meic.replay run --date D --out LEDGER --arms a,b
   [--history-db H] [--settle-price P]` (its own entry point because it writes a scratch ledger) runs
   `paper.process_symbol` tick by tick over a recorded SPX session, the recorder's or any file in its

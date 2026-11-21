@@ -564,6 +564,100 @@ export function EraCard({ cuts, stale }: { cuts: RegimeCuts; stale: { artifactSe
  * cross-tab. The document-level stamps (era, multiplicity) are the writer's for the whole cut and
  * are left as they are; the tab says so when an arm is picked.
  */
+const TODAY_HELP: CardHelpContent = {
+  title: "Today's conditions",
+  body: (
+    <>
+      <HelpSection title="Which reading">
+        <p>
+          The last market-regime reading of the session the cut was written for, taken from the loop&apos;s own ticks after the close. Each dimension
+          names the bucket the market sat in. A dimension that describes the chosen condor rather than the market has no bucket before an entry,
+          so it is not listed.
+        </p>
+      </HelpSection>
+      <HelpSection title="The arm in that bucket">
+        <p>
+          The arm&apos;s net, sessions and mean trade in that bucket over the era, as the cut below holds them. They show only where the cut can
+          carry a regime claim: a dimension with too few sessions, one where every session falls in one bucket, and a bucket with too few sessions
+          of its own are named with the reason and no figure.
+        </p>
+      </HelpSection>
+    </>
+  ),
+};
+
+const TODAY_WHY_WORDS: Record<string, string> = {
+  no_reading: "no reading of it that session",
+  no_cut: "this cut does not hold it",
+  degenerate: "every session falls in one bucket, so there is nothing to set it against",
+  underpowered: "too few sessions for a regime claim yet",
+  no_trades: "the arm has no trade in this bucket",
+  thin: "too few sessions in this bucket to read",
+};
+
+export function TodayConditionsCard({ cuts, arm }: { cuts: RegimeCuts; arm: string }) {
+  const today = cuts.today ?? null;
+  const row = cuts.arms.find((a) => a.arm === arm);
+  if (today === null || row === undefined || (row.today ?? null) === null) return null;
+  const at = today.at !== null && today.at.length >= 16 ? today.at.slice(11, 16) : null;
+  const cells = row.today ?? {};
+  const dims = Object.keys(cells);
+  return (
+    <Card title="today's conditions" className="lv-12" collapseKey={`regime-${cuts.module}-today`} help={TODAY_HELP}>
+      <p className="muted" style={{ marginTop: 0 }}>
+        The market at {today.session ?? "the session"}&apos;s last reading{at !== null ? ` (${at} ET)` : ""}, and how {arm} has done in each bucket.
+      </p>
+      {dims.length === 0 ? (
+        <p className="muted">That session has no reading.</p>
+      ) : (
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>dimension</th>
+              <th>bucket</th>
+              <th>net</th>
+              <th>sessions</th>
+              <th>per trade</th>
+            </tr>
+          </thead>
+          <tbody>
+            {dims.map((d) => {
+              const c = cells[d]!;
+              return (
+                <tr key={d}>
+                  <td>{d}</td>
+                  <td>{c.bucket ?? "—"}</td>
+                  {c.readable ? (
+                    <>
+                      <td>
+                        <PnlCell v={c.netPnl} />
+                      </td>
+                      <td>
+                        {c.sessions ?? "—"}
+                        {c.fragile === true && (
+                          <>
+                            {" "}
+                            <span className="chip chip-warn">fragile</span>
+                          </>
+                        )}
+                      </td>
+                      <td>{fmtMoney(c.avgPnl)}</td>
+                    </>
+                  ) : (
+                    <td colSpan={3} className="muted" style={{ whiteSpace: "normal" }}>
+                      {TODAY_WHY_WORDS[c.why ?? ""] ?? "not read"}
+                    </td>
+                  )}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
+    </Card>
+  );
+}
+
 export function cutsForArm(cuts: RegimeCuts, arm: string | null): RegimeCuts {
   if (arm === null) return cuts;
   return {
@@ -725,6 +819,11 @@ export function RegimeCutsTab({ module, arm = null }: { module: RegimeCutsModule
         </Card>
         <EraCard cuts={cuts} stale={stale} />
       </Section>
+      {arm !== null && (cuts.today ?? null) !== null && cuts.arms.some((a) => a.arm === arm && (a.today ?? null) !== null) && (
+        <Section concept="room" tag="today's conditions" question={`How has ${arm} done in conditions like the session's?`}>
+          <TodayConditionsCard cuts={cuts} arm={arm} />
+        </Section>
+      )}
       {cuts.dimensions.length > 0 && (
         <Section concept="edge" tag="by regime" question="Does the edge depend on the regime?">
           {cuts.dimensions

@@ -165,3 +165,53 @@ def test_regime_cuts_stamps_robustness_and_paired_from_the_ledger(ledger):
     assert doc["multiplicity"]["intervals"] >= 1
     assert "session_nets" not in json.dumps(doc)
     conn.close()
+
+
+def _tick(conn, day, time, symbol="SPX", **cols):
+    row = {"loop_date": day, "loop_time": time, "symbol": symbol, "created_at": "x", **cols}
+    conn.execute(
+        f"INSERT INTO iteration_regime ({', '.join(row)}) VALUES ({', '.join('?' * len(row))})",
+        list(row.values()),
+    )
+
+
+def test_the_cut_stamps_the_sessions_last_reading_and_each_arms_record_in_it(ledger):
+    conn = sqlite3.connect(ledger)
+    _tick(conn, DAY, f"{DAY} 10:00", gex_bucket="clustered", trend_bucket="up_from_open")
+    _tick(conn, DAY, f"{DAY} 15:59", gex_bucket="clustered", trend_bucket="flat")
+    _tick(conn, "2026-09-17", "2026-09-17 15:59", gex_bucket="diffuse", trend_bucket="down")
+    conn.commit()
+    conn.row_factory = sqlite3.Row
+    reading = analytics.regime_reading(conn, DAY)
+    assert reading["at"] == f"{DAY} 15:59"
+    assert reading["symbols"]["SPX"]["trend"] == "flat"  # the session's last tick, not its first
+    doc = analytics.regime_cuts(conn, session=DAY, generated_at="t")
+    assert doc["today"]["buckets"]["trend"] == "flat"
+    control = {a["arm"]: a for a in doc["arms"]}["control"]
+    assert control["today"]["trend"]["bucket"] == "flat"
+    # Three sessions cannot carry a regime claim: the bucket is named, its figures are not given.
+    assert control["dimensions"]["trend"]["underpowered"] is True
+    assert (control["today"]["trend"]["readable"], control["today"]["trend"]["why"]) == (
+        False,
+        "underpowered",
+    )
+    assert "net_pnl" not in control["today"]["trend"]
+    assert analytics.regime_reading(conn, "2026-01-02") is None
+    conn.close()
+
+
+def test_a_tick_with_a_sign_flag_rederives_gex_as_an_entry_does(ledger):
+    conn = sqlite3.connect(ledger)
+    _tick(conn, DAY, f"{DAY} 15:59", gex_bucket="unknown", gex_positive=1, gex_value=0.03)
+    _tick(conn, DAY, f"{DAY} 15:59", symbol="XSP", gex_bucket="unknown", gex_positive=0, gex_value=0.0001)
+    conn.commit()
+    conn.row_factory = sqlite3.Row
+    got = analytics.regime_reading(conn, DAY)["symbols"]
+    assert got["SPX"]["gex"] == "deep_positive" and got["XSP"]["gex"] == "near_flip"
+    conn.close()
+
+
+def test_a_ledger_without_the_table_has_no_reading(tmp_path):
+    conn = sqlite3.connect(str(tmp_path / "bare.db"))
+    assert analytics.regime_reading(conn, DAY) is None
+    conn.close()
