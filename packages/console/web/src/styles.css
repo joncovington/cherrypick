@@ -12313,6 +12313,29 @@ svg.vol-curve text {
 .grp-thin {
   margin-left: 0.4rem;
 }
+/* A module's changes: each change's name, its hypothesis or measure, and its id beneath. */
+.chg-name {
+  font-weight: 600;
+}
+.chg-desc {
+  max-width: 46rem;
+  font-size: 0.8rem;
+  white-space: normal;
+}
+.chg-how {
+  max-width: 14rem;
+  white-space: normal;
+  word-break: break-word;
+}
+.chg-id {
+  font-family: var(--num-face);
+  font-size: 0.75rem;
+}
+/* Where the performance tab points to the changes tab for its advised arms. */
+.pf-pointer {
+  margin: 0;
+  font-size: 0.85rem;
+}
 @media (max-width: 640px) {
   .ae-funnel-row {
     grid-template-columns: 1fr 1fr;

@@ -142,6 +142,11 @@ alone):
     (`/api/automations/groups/read`, `readers/automationGroupsRead.ts`) is the package's `cli
     groups-read`, its lines put in the performance page's shape; Groups' group view and the
     performance and costs pages' by-group rows read it.
+  - **A module's `changes` tab reads `core.changes`** (`/api/changes/:module`, `readers/changes.ts`,
+    the shared `components/changes/ChangesSlide.tsx`): every change under test with core's reading;
+    for automations the backtest's declared items go to core as `--declares`, a licensed one left out
+    while `backtestResultsOn` is false. MEIC, calendars and contango pass `pairs={false}` to the
+    shared performance slide, which then points to the tab instead of drawing the advised pairs.
   - **The Builder's form reads the module's schema and "Today, live"; neither writes.** The Builder
     is Automations' `builder` tab (`/builder` redirects there; `g u` is its tab chord,
     `navLinks.TAB_SHORTCUTS`). The form's choices are `cli builder-schema`

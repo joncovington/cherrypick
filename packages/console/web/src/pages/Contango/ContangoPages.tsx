@@ -346,7 +346,7 @@ export function ContangoPerformance({ data, metrics }: { data: ContangoPayload |
             <p className="integrity-warn">{metrics.error}</p>
           </Card>
         </Section>
-        <PerformanceSlide module="contango" />
+        <PerformanceSlide module="contango" pairs={false} />
       </div>
     );
   }
@@ -405,7 +405,7 @@ export function ContangoPerformance({ data, metrics }: { data: ContangoPayload |
         <StressTable series={named} windows={windows} kind="nav" />
       </Card>
       </Section>
-      <PerformanceSlide module="contango" />
+      <PerformanceSlide module="contango" pairs={false} />
     </div>
   );
 }

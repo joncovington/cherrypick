@@ -1,3 +1,4 @@
+import { ChangesSlide } from "../../components/changes/ChangesSlide";
 import { useWeeklyput, useWeeklyputCycles, useWeeklyputHistory, useWeeklyputStatus, useWeeklyputSummary } from "../../lib/api";
 import { PaperLiveBadge } from "../../components/shell/PaperLiveBadge";
 import { LoopPill } from "../../components/ScopeBar";
@@ -41,6 +42,7 @@ export function WeeklyputLightbox({ slide }: { slide: string }) {
     { id: "decisions", label: LABEL.decisions, render: () => <WeeklyputDecisions /> },
     { id: "performance", label: LABEL.performance, render: () => <WeeklyputPerformance summary={summary.data} cycles={cycles.data} /> },
     { id: "costs", label: LABEL.costs, render: () => <WeeklyputCosts summary={summary.data} history={costs.data?.rows} /> },
+    { id: "changes", label: LABEL.changes, render: () => <ChangesSlide module="weeklyput" /> },
     { id: "guide", label: LABEL.guide, render: () => <WeeklyputHelp status={status.data} /> },
   ];
 

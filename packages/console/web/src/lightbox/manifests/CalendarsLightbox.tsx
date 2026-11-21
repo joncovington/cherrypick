@@ -1,3 +1,4 @@
+import { ChangesSlide } from "../../components/changes/ChangesSlide";
 import { AnalysisSlide } from "../../components/analysis/AnalysisSlide";
 import { useCalendars, useCalendarsPolicies } from "../../lib/api";
 import { PaperLiveBadge } from "../../components/shell/PaperLiveBadge";
@@ -108,9 +109,10 @@ export function CalendarsLightbox({ slide }: { slide: string }) {
       ),
     },
     { id: "policies", label: CALENDARS_LABEL.policies, render: () => <PoliciesTab /> },
-    { id: "performance", label: CALENDARS_LABEL.performance, render: () => <PerformanceSlide module="calendars" /> },
+    { id: "performance", label: CALENDARS_LABEL.performance, render: () => <PerformanceSlide module="calendars" pairs={false} /> },
     { id: "analysis", label: CALENDARS_LABEL.analysis, render: () => <AnalysisSlide module="calendars" /> },
     { id: "advisor", label: CALENDARS_LABEL.advisor, render: () => <AdvisorSlide module="calendars" /> },
+    { id: "changes", label: CALENDARS_LABEL.changes, render: () => <ChangesSlide module="calendars" /> },
     {
       id: "positions",
       label: CALENDARS_LABEL.positions,

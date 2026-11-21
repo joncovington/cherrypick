@@ -13,6 +13,7 @@ import { TradeShape } from "../Builder/TradeShape";
 import { ClosedStructures, OpenTable } from "./AutomationsPages";
 import { WorkingSection } from "./AutomationWorking";
 import { EntriesSection } from "./AutomationEntries";
+import { ChangesSection } from "../../components/changes/ChangesSlide";
 
 /**
  * One automation's page (`/automations/automation/<name>`): everything about one automation in one
@@ -118,6 +119,7 @@ const JUMPS = [
   { id: "automation-working", label: "Is it working?" },
   { id: "automation-record", label: "What it did" },
   { id: "automation-entries", label: "Entries" },
+  { id: "automation-changes", label: "Changes" },
   { id: "automation-decisions", label: "Decisions" },
 ] as const;
 
@@ -193,6 +195,7 @@ export function AutomationRecordPage({ name }: { name: string }) {
         </p>
       </Section>
       <EntriesSection name={name} />
+      <ChangesSection module="automations" arm={name} id="automation-changes" />
       <Section id="automation-decisions" concept="add" tag="decisions" question="What did it decide this session, and why?">
         <DecisionsCard module="automations" arm={name} />
       </Section>

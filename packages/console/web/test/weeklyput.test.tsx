@@ -268,7 +268,7 @@ describe("weeklyput's models", () => {
 
 describe("weeklyput's place in the console", () => {
   it("has a tab for each page the spec names", () => {
-    expect(WEEKLYPUT_SLIDES.map((s) => s.id)).toEqual(["summary", "cycles", "positions", "history", "decisions", "performance", "costs", "guide"]);
+    expect(WEEKLYPUT_SLIDES.map((s) => s.id)).toEqual(["summary", "cycles", "positions", "history", "decisions", "performance", "costs", "changes", "guide"]);
   });
 
   it("is hidden when the suite says its module is off, shown when unknown", () => {

@@ -41,6 +41,8 @@ import type {
   AutomationEntries,
   AutomationReading,
   AutomationsEntries,
+  ChangesModule,
+  ModuleChanges,
   AutomationsGroupsRead,
   BuilderSchemaResult,
   BuilderPayoff,
@@ -1649,6 +1651,16 @@ export function useBuilderRunCard(name: string, run: string) {
 }
 
 /** Each arm's closed trades, net and drawdown, and the arms stacked. */
+/** Every modification under test in one module (`core.changes`). */
+export function useModuleChanges(module: ChangesModule) {
+  return useQuery<ModuleChanges>({
+    queryKey: ["changes", module],
+    queryFn: () => getJson<ModuleChanges>(`/api/changes/${module}`),
+    staleTime: 60_000,
+    refetchInterval: 300_000,
+  });
+}
+
 /** Every automation group read as one unit (the automations package's `groups-read`). */
 export function useGroupUnits() {
   return useQuery<AutomationsGroupsRead>({

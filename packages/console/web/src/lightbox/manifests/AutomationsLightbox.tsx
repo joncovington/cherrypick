@@ -1,3 +1,4 @@
+import { ChangesSlide } from "../../components/changes/ChangesSlide";
 import { AnalysisSlide } from "../../components/analysis/AnalysisSlide";
 import { useAutomations, useAutomationsPerformance } from "../../lib/api";
 import { PaperLiveBadge } from "../../components/shell/PaperLiveBadge";
@@ -43,6 +44,7 @@ export function AutomationsLightbox({ slide }: { slide: string }) {
     { id: "performance", label: LABEL.performance, render: () => <AutomationsPerformancePage perf={perf.data} /> },
     { id: "analysis", label: LABEL.analysis, render: () => <AnalysisSlide module="automations" /> },
     { id: "costs", label: LABEL.costs, render: () => <AutomationsCosts perf={perf.data} /> },
+    { id: "changes", label: LABEL.changes, render: () => <ChangesSlide module="automations" /> },
     { id: "guide", label: LABEL.guide, render: () => <AutomationsHelp /> },
   ];
 
