@@ -78,4 +78,21 @@ describe("ladder equity panels", () => {
     const bad: LadderEquity = { ok: false, error: "ladder read unavailable — boom", arms: {} };
     expect(html(<LadderEquityCard equity={bad} order={[]} />)).toContain("ladder read unavailable — boom");
   });
+
+  it("draws every arm by default and one arm alone, wide and on its own scale, when one is picked", () => {
+    const eq: LadderEquity = {
+      ok: true,
+      error: null,
+      arms: { chain: [pt("2026-11-19", 0, -40), pt("2026-11-20", 300.19, -279.14)], once: [pt("2026-11-19", 0, 5), pt("2026-11-20", 20, 30)] },
+    };
+    const all = html(<LadderEquityCard equity={eq} order={["chain", "once"]} />);
+    expect(all).toContain('data-arm="chain"');
+    expect(all).toContain('data-arm="once"');
+    const one = html(<LadderEquityCard equity={eq} order={["chain", "once"]} arm="once" />);
+    expect(one).not.toContain('data-arm="chain"');
+    expect(one).toContain('data-arm="once"');
+    expect(one).toContain('viewBox="0 0 760 220"');
+    expect(one).not.toContain("−$200"); // chain's loss no longer sets the scale
+    expect(html(<LadderEquityCard equity={eq} order={["chain", "once", "new"]} arm="new" />)).toContain("new has not bought a lot yet");
+  });
 });
