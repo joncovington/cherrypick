@@ -553,6 +553,12 @@ def cmd_read(args) -> int:
         out = readout.automation_reading(args.name or "", args.id or "", args.declared)
         _emit(out)
         return 0 if out.get("ok") else 1
+    if args.what == "arm-reading":
+        from . import armref
+
+        out = armref.arm_reading(args.module or "meic", args.name or "")
+        _emit(out)
+        return 0 if out.get("ok") else 1
     if args.what == "declared":
         from . import declared
 
@@ -819,7 +825,7 @@ def main(argv: list[str] | None = None) -> int:
             "overview", "run", "trades", "path", "stores", "summaries", "signals", "signal",
             "automation-runs", "automation-run", "automation-reference", "automation-reading", "fullset",
             "portfolio-sources", "idea-searches", "idea-search", "settings-grids", "settings-grid",
-            "declared",
+            "declared", "arm-reading",
         ),
     )  # fmt: skip
     rd.add_argument("--ids", default=None, help="with `summaries`: run ids, comma separated")
@@ -828,7 +834,8 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="with `signal`: the signal study's name; with `automation-runs`, `automation-run`, "
         "`automation-reference`, `automation-reading`, `idea-searches`, `idea-search`, `settings-grids` "
-        "or `settings-grid`: the automation; with `declared`, only that automation's",
+        "or `settings-grid`: the automation; with `declared`, only that automation's; with `arm-reading`, "
+        "the module's paper arm",
     )
     rd.add_argument(
         "--id",
@@ -844,6 +851,11 @@ def main(argv: list[str] | None = None) -> int:
         help="with `automation-reading`: the sample the automation's forward rule declares (`min_obs`)",
     )
     rd.add_argument("--session", default=None, help="with `path`: the trade's session (YYYY-MM-DD)")
+    rd.add_argument(
+        "--module",
+        default=None,
+        help="with `arm-reading`: the module whose paper arm `--name` is (meic, the default)",
+    )
     rd.add_argument("--position", default=None, help="with `path`: the trade's position id")
     rd.add_argument(
         "--capital",

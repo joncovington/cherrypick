@@ -942,3 +942,33 @@ export interface AutomationsGroupsRead {
   ungrouped: { members: string[]; line: AutomationsLine };
   error: string | null;
 }
+
+/** A stored run arm whose settings are a module arm's. */
+export interface ArmRunMatch {
+  run: string;
+  /** What the study called the arm: a match is by settings, never by name. */
+  run_arm: string;
+  window: string;
+  first: string | null;
+  last: string | null;
+  sessions: number;
+}
+
+/**
+ * `GET /api/arm/reading?module=&arm=`: a module arm's paper record per session against the stored run
+ * whose arm has its settings (`backtest read arm-reading`). `matches` empty: no run has tried them.
+ * `withheld`: the run read the vendor's store and licensed results are hidden now.
+ */
+export interface ArmBacktestReading {
+  module: string;
+  arm: string;
+  unit: "session";
+  matches: ArmRunMatch[];
+  chosen: ArmRunMatch | null;
+  /** Where the paper record starts: the module's current measurement era. */
+  paper_from: string | null;
+  withheld: boolean;
+  error: string | null;
+  reading: NonNullable<AutomationReading["reading"]> | null;
+}
+

@@ -418,6 +418,13 @@ ledger): each trade's place in the usual range and its percentile among the run'
 running net's place in the band at its own count (the band drawn 20 trades past the record), the
 sample (`--declared`, the forward rule's `min_obs`, else computed) and both entry rates. Its state
 is `no_reference`, `no_trades`, `too_few` (under 5 trades) or the running net's place.
+`read arm-reading --module meic --name ARM` sets a module arm's paper record against its backtest
+(`armref.py`): the stored run arm whose spec matches the paper arm's current one in every key but the
+arm's own name (a study names its arms for the study), the one with the most sessions where several
+do, and none where no run has tried those settings, with no stand-in. Both sides are read per
+session, since a module arm can enter many times a session: the run's from `session_results`,
+paper's from `core.compare` over the module's current measurement era. Then `automationref.reading`.
+MEIC only (flies is retired). Every module run read the vendor's store, so the reply is `licensed`.
 `read declared [--name A]` lists every declared idea and setting (`declared.py`): its automation,
 result, title and measure from its drafted row, and its one held-out read (verdict and interval) or
 none yet, `licensed` as its result is. `core.changes` reads one waiting on its test as `waiting` and

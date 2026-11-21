@@ -3,6 +3,7 @@ import type { TradingMode } from "@console/shared";
 import { AnalysisSlide } from "../../components/analysis/AnalysisSlide";
 import { AttemptsTab } from "../../components/AttemptsTab";
 import { ChangesSection } from "../../components/changes/ChangesSlide";
+import { ArmBacktestSection } from "../../components/armpage/ArmBacktest";
 import { ModuleCosts } from "../../components/costs/ModuleCosts";
 import { PerformanceSlide } from "../../components/performance/PerformanceSlide";
 import { RegimeCutsTab } from "../../components/RegimeCutsTab";
@@ -20,6 +21,7 @@ import { MeicHistoryTable } from "./MeicTables";
 
 export const MEIC_ARM_JUMPS = [
   { id: "meic-arm-control", label: "Against control" },
+  { id: "meic-arm-backtest", label: "Against its backtest" },
   { id: "meic-arm-record", label: "What it did" },
   { id: "meic-arm-today", label: "Today" },
   { id: "meic-arm-costs", label: "Costs" },
@@ -74,6 +76,9 @@ export function MeicArmPage({
         ) : (
           <ChangesSection module="meic" arm={name} />
         )}
+      </div>
+      <div id="meic-arm-backtest">
+        <ArmBacktestSection module="meic" arm={name} />
       </div>
       <div id="meic-arm-record">
         <PerformanceSlide module="meic" mode={mode} arm={name} pairs={false} />
