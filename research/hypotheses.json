@@ -4605,6 +4605,53 @@
       "retest": null,
       "retests": [],
       "outcome": "provisional pass (no split, two years): all hours beat paper hours for session on most funds, carried by the commodity, gold-miner and China funds; TQQQ, the one fund tastytrade trades overnight, shows no gain, so the proposal is to keep paper's hours"
+    },
+    {
+      "id": 97,
+      "study": "item97",
+      "title": "A 30-minute breakdown below the prior session's low, sold as a same-day SPX call spread",
+      "status": "declared",
+      "legacy": false,
+      "setup": "indicator-rule",
+      "side": "bearish",
+      "structure": "options",
+      "window": "0dte",
+      "measure": "the vendor's SPX one-minute store, every stored trading day 2022-05-16 to 2026-11-20; 30-minute bars from the one-minute samples; the first close below the previous session's lowest close by 0.03% more (re-armed by a close back above), with the close below its value three bars back and below the 20-bar EMA, on a bar ending by 15:00 ET; a same-day call spread sold at that bar's end, short nearest 0.30 delta, long $15 higher, one contract, held to settlement, replayed by the automation driver (paper's engine, fills, fees and settlement); no filters, no event skips",
+      "expected": "the arm's net clears the bill on its buying power and its own financed delta at t 2.0, and beats the same spread sold at a random time on a random session",
+      "sample": "one run cut at 2025-07-01 (design before, holdout from); < 150 design trades = no verdict, < 60 holdout likewise",
+      "rule": "RULE: the kit's three bars on the arm's trades (capital t >= 2.0 over the 3-month bill on the wing less the credit; tail 10,000 draws seed 97, the sample's own trades a year; delta: the net less the entry delta from the store's leg deltas financed to the settlement, t >= 2.0); CONTROL_RULE: the arm's trades against its placebo's per-session means (20 draws seed 97 on every session of the part, the same spread at a minute drawn from the arm's own entry minutes in that part), Welch design difference > 0 at one-sided t >= 2.0 and > 0 in each design half (2024-01-01), then the holdout difference > 0 after a design pass; a pass needs RULE and CONTROL_RULE",
+      "mechanism": "a break below the previous session's low marks sellers in control for the rest of the session, so a call spread sold on the break expires worthless more often than its premium prices",
+      "rivals": [
+        {
+          "explanation": "the time of day, since same-day decay differs by hour",
+          "check": "the placebo draws its minute from the arm's own entry minutes"
+        },
+        {
+          "explanation": "the structure, whatever the trigger",
+          "check": "the placebo keeps the spread and its exit"
+        },
+        {
+          "explanation": "the sample's drift against or for a bearish spread",
+          "check": "the delta bar against the spread's own financed delta; every year reported"
+        },
+        {
+          "explanation": "the source's selection from a very large list of backtests",
+          "check": "only the raw rule is judged, on a fixed split against a placebo; the sessions before the source's window reported apart"
+        }
+      ],
+      "pointer": "research/edge-hypotheses-plan.md#97-a-30-minute-breakdown-below-the-prior-sessions-low-sold-as-a-same-day-spx-call-spread",
+      "scripts": [
+        "packages/backtest/scripts/breakdown_call_spread_item97.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_breakdown_call_spread_item97_script.py"
+      ],
+      "results": [
+        "{home}/data/backtest/results/research/item97/results.json"
+      ],
+      "retest": null,
+      "retest_note": "A pass is followed by an automation with its own forward block, not a retest; the store is the vendor's, so a retest needs the licence.",
+      "retests": []
     }
   ],
   "rule_changes": []

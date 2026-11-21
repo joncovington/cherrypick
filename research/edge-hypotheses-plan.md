@@ -9627,6 +9627,93 @@ nothing was measured. tastytrade lets TQQQ trade overnight and not SOXL, so the 
   - **A pass (provisional):** a proposal for an overnight paper arm on TQQQ, to check forward.
   - **A fail or no verdict:** the ladder keeps paper's hours.
 
+### 97. A 30-minute breakdown below the prior session's low, sold as a same-day SPX call spread
+
+Declared 2026-11-20, before any outcome of it is computed. The rule comes from a product video that
+mined published trading videos for signal rules and ran each through its own backtester at many
+widths and bar sizes, with no split and no control. This rule was the top of one channel's list
+when sorted by return on drawdown, then shown again with three filters added after its results
+were seen. Only the raw rule is declared here; the three filters are not part of it. The
+source is not named here, and nothing of its data is. It is an **`indicator-rule`** item, as 83,
+88, 89 and 90 are; the nearest failures are 90 (two published signal entries on SPX 0DTE) and 4
+(an intraday trend side).
+
+- **Question:** does selling a same-day SPX call spread when a 30-minute bar breaks below the
+  previous session's low earn after costs, and does it beat the same spread sold at a random time
+  on a random session?
+- **The rule as stated:** on 30-minute bars, the close crosses below the previous session's low by
+  0.03% more, while the 3-bar rate of change is below zero and the close is below the 20-bar EMA; no
+  entry after 15:00 ET. Sell a same-day call spread, the short near 0.30 delta, the long $15
+  higher, one contract, no profit target. **As read here (`SIGNAL`, `STRUCTURE`):**
+  - **Bars:** 30-minute bars from 09:30 cut by `core.signals.from_trail` from the store's one-minute
+    samples. The sample at minute m closes the minute ending at m, so a bar closes on the sample at
+    its end (the 09:30 bar on 10:00's).
+  - **The cross:** the level is the lowest close of the previous session's one-minute samples times
+    (1 - 0.0003). It fires on the first bar of the session that closes below it, a session starting
+    armed as core's session kinds do; a close back above re-arms it. A cross that fails the rate of
+    change or the EMA is spent, as core's `only_when` spends one. The previous session must be the
+    trading day before, else the session takes no entry.
+  - **ROC and EMA:** the close against the close three bars back, and `core.indicators.ema(20)` on
+    the closes, both across sessions. At a session's first cross the three bars before it all closed
+    above the level, so the rate of change is below zero by construction, and the EMA binds only when
+    sessions before the previous one sat lower. Most firings are therefore the break alone.
+  - **Entry:** the firing bar's end minute, entered there (`arm_at`, a one-minute time entry);
+    the latest bar ends at 15:00.
+- **The replay (`cmd_study` in the script):** the signal is a pure function in the script
+  (`firing_minute`), since core's signal language has no rate of change and no margin on a
+  prior-session break. The spread is an automation replayed by `cherrypick.automations.driver`, the
+  engine paper runs, so strikes, fills, fees and settlement are paper's arithmetic (verdict fill: the
+  suite's slippage model; fees from core). Held to settlement, one trade a session.
+  - **Data:** the vendor's SPX one-minute store, `SPX-60s.db`, every stored exchange trading day from
+    2022-05-16 to 2026-11-20. The store must stay licensed through the run (the script refuses
+    otherwise).
+  - **Strikes:** the 0.30-delta short is the listed call nearest that delta at the entry minute (the
+    store's delta); the long is exactly $15 above, or no trade.
+- **What the source leaves unsaid, fixed here:** no exit before settlement; no event skips and no
+  day-change or gap filters (the source added those after seeing the results); every weekday.
+- **Windows:** one run, cut at **2025-07-01** (design before, holdout from). The holdout part is read
+  only after a design pass.
+- **The rule, two literals in the script; the arm passes only on both:**
+  - **`RULE`, the three bars** (`cherrypick.backtest.study.rule`) on the arm's trades: capital, the
+    net less the 3-month bill on its buying power (the wing less the credit) over one day, one-sided
+    t ≥ 2.0; tail, 10,000 draws, seed 97, the sample's own trades a year; delta, the net less the
+    spread's entry delta (from the store's leg deltas) financed on the same capital to the settlement
+    price, t ≥ 2.0. Fewer than 150 design trades is no verdict, fewer than 60 in the holdout likewise.
+  - **`CONTROL_RULE`, against chance:** the arm's trades against its placebo's per-session means
+    (Welch, normal tail). The placebo sells the same spread at a fixed minute drawn from the arm's own
+    entry minutes in the same part, 20 draws on **every session of the part**, seed 97, never only
+    the sessions the signal fired on. Design: the mean difference above zero at one-sided t ≥ 2.0 and
+    above zero in each design half (split 2024-01-01); then, after a design pass, the holdout
+    difference above zero. Floors as `RULE`'s.
+- **Reported, never judged:** every year; the source's own window (2023-01-01 on) at the verdict fill
+  and at the mid; the sessions before it; exits by kind; fees and slippage; sessions, firings and
+  entries; each session's skip reason; entry minutes by part; the placebo's own summary.
+- **Rival explanations, each with its check:**
+  - *It is the time of day (0DTE decay differs by hour):* the placebo draws its minute from the arm's
+    own entry minutes.
+  - *It is the structure, whatever the trigger:* the placebo keeps the spread and its exit.
+  - *It is the sample's drift (a bearish spread in a rising market loses, a falling year flatters
+    it):* the delta bar against the spread's own financed delta, and every year reported.
+  - *It is the source's selection (the best of a very large list):* only the raw rule is judged, on
+    a split fixed here, against a placebo; the pre-2023 sessions sit outside the source's window and
+    are reported apart.
+- **Declared limits:** one-minute samples, so the previous session's low is its lowest one-minute
+  close, not its true low, and a bar's high and low are its minutes' closes; the store has no 09:30
+  print, so the first bar opens on 09:31; a 0.30-delta strike reads the store's delta; the placebo's
+  Welch t treats sessions as independent; no filters or event skips, so a verdict is on the raw rule,
+  not on the source's filtered version.
+- **Data and results:** `packages/backtest/scripts/breakdown_call_spread_item97.py`, queued with
+  `run.py queue-chain` (`item97/smoke`, then `item97/study`). Results stay under
+  `~/.cherrypick/data/backtest/results/research/item97/`, and this plan records the verdict without
+  figures.
+- **Decides:**
+  - **A pass:** propose it as an automation in its own group, off, with a `forward` block declared
+    before it trades.
+  - **A fail or no verdict:** the raw breakdown rule does not earn on SPX 0DTE after costs, or does
+    no better than the same spread at a random time. Nothing is built; the record stays under
+    `indicator-rule`, and the source's filtered version is not tested (its filters were chosen on its
+    own results).
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:
