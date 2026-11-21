@@ -12355,6 +12355,38 @@ svg.vol-curve text {
   margin: 0 0 0.5rem;
   font-size: 0.82rem;
 }
+/* Things that cannot support a decision yet, said in one line. */
+.regime-weak {
+  margin: 0;
+  padding-left: 1.1rem;
+  font-size: 0.86rem;
+}
+.regime-weak li {
+  margin: 0.15rem 0;
+}
+.regime-weak-line {
+  margin: 0.5rem 0 0;
+  font-size: 0.82rem;
+}
+.ts-oneday {
+  align-self: center;
+  margin: 0;
+  font-size: 0.85rem;
+}
+.past-arms {
+  margin: 0;
+  font-size: 0.88rem;
+}
+.past-arms,
+.past-arms-cards {
+  grid-column: 1 / -1;
+}
+.past-arms-cards > summary {
+  white-space: nowrap;
+  cursor: pointer;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
 @media (max-width: 640px) {
   .ae-funnel-row {
     grid-template-columns: 1fr 1fr;

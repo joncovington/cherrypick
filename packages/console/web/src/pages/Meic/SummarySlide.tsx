@@ -29,7 +29,7 @@
  * applied to pixels.
  */
 import { useState, type ReactNode } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { useMeicSummary } from "../../lib/api";
 import type { MeicSummarySlice } from "@console/shared";
 import type { TradingMode } from "@console/shared";
@@ -365,6 +365,11 @@ function Evaluations({ s }: { s: MeicSummarySlice }) {
  * into invisibility, and volume has its own honest row in the entry-time card.
  * ------------------------------------------------------------------------- */
 
+/** The window is one session: its by-wing, by-delta and by-weekday splits say nothing yet. */
+export function oneDay(s: Pick<MeicSummarySlice, "window">): boolean {
+  return s.window.from !== null && s.window.from === s.window.to;
+}
+
 function ByWeekday({ s, windowLabel }: { s: MeicSummarySlice; windowLabel: string }) {
   const [face, , setFace] = useFace("breakdown:by weekday", PER_FACES);
   const rows = s.weekday;
@@ -658,19 +663,37 @@ export function MeicSummary({ mode, scope, day, onDayStep, canStepDay, today }: 
         <ReturnOnRiskGauge s={s} />
         <WinRateArcs s={s} />
       </div>
-      <div className="ts-row ts-row-3">
-        <BySide s={s} />
-        <SignalBreakdown title="by wing width" rows={s.wing} windowLabel={s.window.label} />
-        <SignalBreakdown title="by short-call delta" rows={s.delta} windowLabel={s.window.label} />
-      </div>
+      {oneDay(s) ? (
+        // One session's split by wing, delta or weekday is one day's noise (and one weekday): those read
+        // over the whole era, on the sessions tab and each arm's page.
+        <div className="ts-row">
+          <BySide s={s} />
+          <p className="muted ts-oneday">
+            By wing width, short-call delta and weekday read over the whole era, on the <Link to="/meic/sessions">sessions</Link> tab and
+            each arm&apos;s page; widen the window above to see them here.
+          </p>
+        </div>
+      ) : (
+        <div className="ts-row ts-row-3">
+          <BySide s={s} />
+          <SignalBreakdown title="by wing width" rows={s.wing} windowLabel={s.window.label} />
+          <SignalBreakdown title="by short-call delta" rows={s.delta} windowLabel={s.window.label} />
+        </div>
+      )}
       <div className="ts-row ts-row-2">
         <Evaluations s={s} />
         <ByArm s={s} />
       </div>
-      <div className="ts-row ts-row-2">
-        <ByEntryTime s={s} />
-        <ByWeekday s={s} windowLabel={s.window.label} />
-      </div>
+      {oneDay(s) ? (
+        <div className="ts-row">
+          <ByEntryTime s={s} />
+        </div>
+      ) : (
+        <div className="ts-row ts-row-2">
+          <ByEntryTime s={s} />
+          <ByWeekday s={s} windowLabel={s.window.label} />
+        </div>
+      )}
       {/* Entries is full width UNDER the signal blocks — the window's entries are a long row of
           data that a third of a grid cell would cramp. */}
       <div className="ts-row">

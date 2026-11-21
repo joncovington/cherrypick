@@ -598,6 +598,8 @@ def test_underpowered_is_keyed_on_sessions_not_rows(conn):
     dim = analytics.regime_coverage(conn)["dimensions"]["vol_realized"]
     assert dim["tagged"] == 500 and dim["effective_n"] == 500
     assert dim["underpowered"] is True  # 1 session, despite 500 rows
+    # And says how many more sessions it needs before it can be read.
+    assert dim["sessions_needed"] == analytics.MIN_EFFECTIVE_N - 1
 
 
 def test_underpowered_clears_once_enough_sessions_accumulate(conn):
@@ -607,6 +609,7 @@ def test_underpowered_clears_once_enough_sessions_accumulate(conn):
     dim = analytics.regime_coverage(conn)["dimensions"]["vol_realized"]
     assert dim["sessions"] == analytics.MIN_EFFECTIVE_N
     assert dim["underpowered"] is False
+    assert dim["sessions_needed"] == 0
 
 
 def test_by_regime_reports_sessions_per_bucket(conn):

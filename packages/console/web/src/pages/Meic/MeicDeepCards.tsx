@@ -120,6 +120,20 @@ const NLV_HELP: CardHelpContent = {
   ),
 };
 
+/** The era's breakdowns (delta, wing, symbol, weekday, entry hour), narrowed to `profile` when given:
+ *  what an arm's page shows in place of a single day's split. */
+export function MeicBreakdowns({ mode, symbol, profile, era }: { mode: TradingMode; symbol: string | null; profile: string | null; era: string | null }) {
+  const { data, isLoading } = useDeep(mode, symbol, profile, era);
+  return (
+    <Section concept="edge" tag="breakdowns" question="Where does its net come from, over the era?">
+      <BreakdownCard title="By short-call delta" rows={data?.byDelta} loading={isLoading} className="lv-4" />
+      <BreakdownCard title="By wing width" rows={data?.byWing} loading={isLoading} className="lv-4" />
+      <BreakdownCard title="By weekday" rows={data?.byWeekday} loading={isLoading} className="lv-4" />
+      <BreakdownCard title="By entry hour (ET) — * is off-session" rows={data?.byHour} loading={isLoading} className="lv-12" />
+    </Section>
+  );
+}
+
 export function MeicDeepCards({
   mode,
   symbol = null,

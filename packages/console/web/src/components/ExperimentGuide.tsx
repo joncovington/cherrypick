@@ -262,19 +262,30 @@ export function ExperimentGuideView({ url, mode, intro }: { url: string; mode: T
         </Section>
       )}
 
-      {finished.length > 0 && (
-        <Section concept="hist" tag="not running" question={`Which ${unit}s have stopped, and why?`}>
-          {finished.map((e) => (
-            <EntryCard key={e.name} entry={e} unit={unit} />
-          ))}
-        </Section>
-      )}
-
-      {gone.length > 0 && (
-        <Section concept="edge" tag="gone" question={`Which ${unit}s are in the book but gone from the config?`}>
-          {gone.map((e) => (
-            <EntryCard key={e.name} entry={e} unit={unit} />
-          ))}
+      {finished.length + gone.length > 0 && (
+        // Past arms are history, not decisions: one line names them, and their cards open on request.
+        <Section concept="hist" tag={`past ${unit}s`} question={`Which ${unit}s are no longer running?`}>
+          <p className="muted past-arms lv-12">
+            {finished.length > 0 && (
+              <>
+                Stopped: {finished.map((e, i) => (
+                  <span key={e.name} title={e.summary ?? undefined}>
+                    {i > 0 ? ", " : ""}
+                    {e.name}
+                    {e.retiredOn ? ` (${e.retiredOn})` : ""}
+                  </span>
+                ))}
+                .{" "}
+              </>
+            )}
+            {gone.length > 0 && <>Gone from the config, still in the book: {gone.map((e) => e.name).join(", ")}.</>}
+          </p>
+          <details className="past-arms-cards lv-12">
+            <summary>show their cards</summary>
+            {[...finished, ...gone].map((e) => (
+              <EntryCard key={e.name} entry={e} unit={unit} />
+            ))}
+          </details>
         </Section>
       )}
     </div>

@@ -169,6 +169,7 @@ function dimension(v: unknown): RegimeDimension {
     dailyScale: o["daily_scale"] === true,
     degenerate: o["degenerate"] === true,
     underpowered: o["underpowered"] === true,
+    sessionsNeeded: num(o["sessions_needed"]),
     buckets: Array.isArray(o["buckets"]) ? o["buckets"].map(cell) : [],
     paired: Array.isArray(o["paired"]) ? o["paired"].map(pair) : [],
   };

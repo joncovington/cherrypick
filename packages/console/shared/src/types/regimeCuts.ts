@@ -103,6 +103,9 @@ export interface RegimeDimension {
   dailyScale: boolean;
   degenerate: boolean;
   underpowered: boolean;
+  /** The writer's count of sessions still needed before the dimension can be read; null where it does
+   *  not say (an older artifact, or nothing tagged). */
+  sessionsNeeded: number | null;
   buckets: RegimeCell[];
   /** Same-day bucket comparisons, in the writer's order -- [] on artifacts written before 2026-09-28. */
   paired: RegimePair[];

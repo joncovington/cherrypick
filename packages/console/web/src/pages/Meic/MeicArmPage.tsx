@@ -8,6 +8,7 @@ import { ModuleCosts } from "../../components/costs/ModuleCosts";
 import { PerformanceSlide } from "../../components/performance/PerformanceSlide";
 import { RegimeCutsTab } from "../../components/RegimeCutsTab";
 import { MeicHistoryTable } from "./MeicTables";
+import { MeicBreakdowns } from "./MeicDeepCards";
 
 /**
  * One MEIC arm's page (`/meic/arm/<name>`, framed as the arms tab): the arm's whole record in the
@@ -23,6 +24,7 @@ export const MEIC_ARM_JUMPS = [
   { id: "meic-arm-control", label: "Against control" },
   { id: "meic-arm-backtest", label: "Against its backtest" },
   { id: "meic-arm-record", label: "What it did" },
+  { id: "meic-arm-breakdowns", label: "Breakdowns" },
   { id: "meic-arm-today", label: "Today" },
   { id: "meic-arm-costs", label: "Costs" },
   { id: "meic-arm-regime", label: "Regime cuts" },
@@ -82,6 +84,9 @@ export function MeicArmPage({
       </div>
       <div id="meic-arm-record">
         <PerformanceSlide module="meic" mode={mode} arm={name} pairs={false} />
+      </div>
+      <div id="meic-arm-breakdowns" className="pf-layout">
+        <MeicBreakdowns mode={mode} symbol={symbol} profile={name} era={resolvedEra} />
       </div>
       <div id="meic-arm-today">
         <AttemptsTab module="meic" mode={mode} date={day} scope={{ arm: name, symbol, era: resolvedEra }} />
