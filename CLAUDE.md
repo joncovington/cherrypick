@@ -42,7 +42,9 @@ Packages: `packages/orchestrator`, `packages/meic`, `packages/earnings`, `packag
   after the automations module's check). The
   Automations › Groups tab writes the automation groups (each group's switch, start, allocation, cap
   and shares, which group each automation is in, and each automation's own switch, switched on from
-  the next session), through the same editor after the automations module's own check. Paper only.
+  the next session; once a group has run, a budget change is dated from the next session), through
+  the same editor after the automations module's own check. An automation's page retires or
+  reinstates it (its `retired` and `enabled` false, nothing else) the same way. Paper only.
 - **backtest**: the licence outranks everything. Vendor data and anything derived from it stay under
   `~/.cherrypick`, never in this repo, a PR, an issue or a published artifact.
 

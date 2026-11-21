@@ -167,7 +167,16 @@ export interface AutomationGroup {
 /** What lets an automation enter, or the one thing that stops it (`automations.groupedit`): `on` (its own
  *  switch on, its group on or none, its start come), `waiting` (all but the start, which is `from`),
  *  `off_group` (its own switch on, its group off), `off_own` (its own switch off). */
-export type AutomationState = "on" | "waiting" | "off_group" | "off_own";
+/** Why an automation does or does not enter: `retired` outranks every switch (it is reinstated on its own
+ *  page, then still off until switched on). */
+export type AutomationState = "on" | "waiting" | "off_group" | "off_own" | "retired";
+
+/** An automation's generic shape from its rule alone (`sketch.sketch`): the payoff at expiry as [at, value]
+ *  points in nominal units (never dollars), spot 0, and whether the spacing is to scale. */
+export interface AutomationShape {
+  curve: Array<[number, number]>;
+  exact: boolean;
+}
 
 /** One automation on the Groups pages: its OWN switch beside the state it is in, its own start, its
  *  research verdict, its underlying, whether it ships with the module and whether it has a forward rule. */
@@ -182,6 +191,24 @@ export interface GroupsEditMember {
   symbol: string | null;
   shipped: boolean;
   forward: boolean;
+  /** The date it was retired, or null. Absent from an older module. */
+  retired?: string | null;
+  /** Its shape, for the icon beside its name; null with no legs. Absent from an older module. */
+  shape?: AutomationShape | null;
+}
+
+/** A group's budget: the allocation, the cap, each member's share. */
+export interface GroupBudget {
+  allocation?: number;
+  max_risk?: number;
+  shares?: Record<string, number>;
+}
+
+/** A group's suggested allocation (`budgets.suggested`): the most its members not retired can have at risk
+ *  at once, from their own sizes and strikes; null when one has no bound, each member with why. */
+export interface GroupSuggestion {
+  allocation: number | null;
+  members: Array<{ name: string; risk: number | null; why: string | null }>;
 }
 
 /** A group's spec as the module's `groups` block holds it (`config.groups`). */
@@ -194,9 +221,31 @@ export interface GroupSpec {
   shares?: Record<string, number>;
 }
 
+/** A group on the Groups pages: its spec with the budget its NEXT session carries (what a change starts
+ *  from), the budget today, a change waiting on a date, whether a change is dated (the group has run: a
+ *  change then starts at the next session and never rewrites the budget it ran on), and the suggestion. */
 export interface GroupsEditGroup extends GroupSpec {
   name: string;
   members: GroupsEditMember[];
+  /** Absent from an older module. */
+  budget?: {
+    today: GroupBudget;
+    pending: (GroupBudget & { from: string }) | null;
+    dated: boolean;
+    history: Array<GroupBudget & { from: string | null }>;
+  };
+  suggested?: GroupSuggestion;
+}
+
+/** `POST /api/automations/retire`: the save of a retire or a reinstate. */
+export interface AutomationRetireResult {
+  ok: boolean;
+  name?: string;
+  /** The date it was retired, or false once reinstated. */
+  retired?: string | false;
+  notes?: string[];
+  error?: string;
+  problems?: string[];
 }
 
 /** `GET /api/automations/groups/edit`: every group and every automation in none (`cli groups-view`). */
@@ -918,8 +967,9 @@ export interface AutomationsGroupUnit {
   members: string[];
   /** Its members' closed trades stacked as sized, in the performance page's line. */
   line: AutomationsLine;
-  /** Net and drawdown as shares of the allocation; null without one. */
-  against_allocation: { net: number | null; drawdown: number | null } | null;
+  /** Net and drawdown as shares of the allocation each trade's session carried, added (never compounded);
+   *  `since` the first session counted, `changes` the dates the budget changed. Null without one. */
+  against_allocation: { net: number | null; drawdown: number | null; since?: string | null; changes?: string[] } | null;
   /** The most risk held at once (session grain, an upper bound) and its share of the cap. */
   risk: { peak: number; session: string; cap: number | null; of_cap: number | null } | null;
   member_risk: Array<{ name: string; share: number | null; peak: number | null; session: string | null; limit: number | null; of_limit: number | null }>;

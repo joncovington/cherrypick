@@ -67,21 +67,23 @@ def _fmt(points: float) -> str:
     return f"+{s}" if v > 0 else f"−{s}"
 
 
-def _shift(rule: dict) -> tuple[float, str, bool]:
+def _shift(rule: dict, unit: float = UNIT) -> tuple[float, str, bool]:
     """(position shift, label suffix, in points) for a price rule's `points` or `pct`."""
     if rule.get("pct") is not None:
         pct = float(rule["pct"])
-        return pct * UNIT, f" {pct:+g}%", False
+        return pct * unit, f" {pct:+g}%", False
     pts = float(rule.get("points") or 0.0)
     return pts, "" if pts == 0 else f" {_fmt(pts)}", True
 
 
-def _place(rule: dict, right: str, placed: dict[str, dict]) -> dict:
-    """{at, label, exact} for one leg's strike rule against the legs placed before it."""
+def _place(rule: dict, right: str, placed: dict[str, dict], unit: float = UNIT) -> dict:
+    """{at, label, exact} for one leg's strike rule against the legs placed before it. `unit` is the
+    drawing's unit (`UNIT`); `legs_at` places at another to see what does not depend on it."""
+    UNIT = unit  # noqa: N806 -- the drawing unit, for this placement only
     kind = rule.get("rule")
     sign = 1.0 if right == "C" else -1.0
     if kind == "spot":
-        at, suffix, exact = _shift(rule)
+        at, suffix, exact = _shift(rule, unit)
         return {"at": at, "label": _fmt(at) if exact else f"spot{suffix}", "exact": exact}
     if kind in ("from_leg", "same_as"):
         ref = placed.get(rule.get("leg", ""))
@@ -89,7 +91,7 @@ def _place(rule: dict, right: str, placed: dict[str, dict]) -> dict:
             return {"at": 0.0, "label": "?", "exact": False}
         if kind == "same_as":
             return dict(ref)
-        d, suffix, exact = _shift(rule)
+        d, suffix, exact = _shift(rule, unit)
         at = ref["at"] + d
         if ref["exact"] and exact:
             return {"at": at, "label": _fmt(at), "exact": True}
@@ -115,16 +117,28 @@ def _place(rule: dict, right: str, placed: dict[str, dict]) -> dict:
         n = float(rule.get("sd") or 0)
         return {"at": n * UNIT, "label": f"{n:+g} SD", "exact": False}
     if kind in ("prev_close", "open", "entry_level"):
-        d, suffix, _ = _shift(rule)
         name = {"prev_close": "prev close", "open": "open", "entry_level": "entry"}[kind]
+        d, suffix, _ = _shift(rule, unit)
         return {"at": d, "label": f"{name}{suffix}", "exact": False}
     if kind == "opening_range":
         level = rule.get("level", "mid")
-        d, suffix, _ = _shift(rule)
+        d, suffix, _ = _shift(rule, unit)
         base = {"high": UNIT / 2, "low": -UNIT / 2}.get(level, 0.0)
         return {"at": base + d, "label": f"OR {level}{suffix}", "exact": False}
     # A GEX pick: the strike itself, near the spot.
     return {"at": 0.0, "label": "GEX pick", "exact": False}
+
+
+def legs_at(arm: dict, unit: float = UNIT) -> list[Leg]:
+    """The structure's legs placed as `sketch` places them, at drawing unit `unit` (spot 0)."""
+    placed: dict[str, dict] = {}
+    out: list[Leg] = []
+    for spec in arms_mod.internal_legs(arm):
+        p = _place(spec.get("strike") or {}, spec["right"], placed, unit)
+        placed[spec["name"]] = p
+        far = spec.get("expiry") == "far"
+        out.append(Leg(spec["name"], spec["right"], spec["side"], p["at"], expiry="far" if far else None))
+    return out
 
 
 def sketch(arm: dict) -> dict:

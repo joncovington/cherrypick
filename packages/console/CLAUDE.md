@@ -120,17 +120,25 @@ alone):
   - **Automations › Groups writes the groups and the switches by the same path**
     (`/api/automations/groups/edit`, `/check`, `/save`; configcli `automation_groups*`,
     `orchestrator.groupedit`). Three levels (every group, `?group=`, `?group=&automation=`), each
-    change staged and written only from Review. The route sends the groups that will have members
+    change staged in the save bar along the bottom and written only from it. The route sends the groups that will have members
     (each spec whole), the automations that move and the automations whose own switch flips (true or
     false), nothing else; the module (`cli groups-check`) loads the change as the paper loop would and
     returns the `groups` block, the moves and the switches with the start it gave each one switched on
     (the next session, so a paper record never begins mid-day), which are all the orchestrator
-    writes. Each automation's state (`on`, `waiting`, `off_group`, `off_own`) is the module's
-    (`cli groups-view`), and Review's "what it does to trading" lays the module's after-view beside the
-    view now; the page derives no state. Paper only: nothing here places an order. One automation's
-    own page (`/automations/automation/<name>`, framed as the groups tab) reads only: its rule, its
-    switches' state, its record and its decisions, each filtered to its name from the module's own
-    endpoints (in the automations ledger an arm is the automation's name). Its "Is it working?"
+    writes. Each automation's state (`on`, `waiting`, `off_group`, `off_own`, `retired`) and its
+    shape (the icon at the start of its row, `sketch.sketch`'s curve) are the module's (`cli
+    groups-view`); while anything is staged the page asks `cli groups-check` and every row says what
+    its after-view says, and the save bar lists who starts and who stops by it; the page derives no
+    state. Every on/off is the one sliding switch (`Toggle.tsx`); a retired automation's is locked
+    (`LockedSwitch`). A group that has run shows its budget read-only until "Change from next
+    session": the module dates the change (`budget_changes`) and gives the suggested allocation
+    (`budgets.suggested`). Paper only: nothing here places an order. One automation's own page
+    (`/automations/automation/<name>`, framed as the groups tab) shows its rule, its switches' state,
+    its record and its decisions, each filtered to its name from the module's own endpoints (in the
+    automations ledger an arm is the automation's name), and writes one thing at its foot: retired
+    (`RetiredSection.tsx`, `POST /api/automations/retire`, configcli `automation_retire`,
+    `orchestrator.retireedit`), behind a confirm strip; the reason is "backtest failed" in words,
+    never a research item's number. Its "Is it working?"
     (`/api/automations/automation/reading`, `readers/automationReading.ts`) passes through the
     backtest package's `read automation-reading` for the pinned run, with the forward rule's
     `min_obs` as the declared sample; the page only scales the figures onto a strip and a chart. A

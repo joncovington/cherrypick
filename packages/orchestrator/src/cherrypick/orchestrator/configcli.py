@@ -136,6 +136,12 @@ def handle(req: dict[str, Any]) -> dict[str, Any]:
         # The Groups page's save: that check, then the groups block and the moved automations' `group`
         # it returned, written through the same raw-save path as every config save.
         return groupedit.save(cfg, req, groupedit.run_module_check)
+    if op == "automation_retire":
+        # An automation's page retires or reinstates it: the module's check, then the two keys it
+        # returned (`retired`, `enabled` false) in that automation's entry, through the raw-save path.
+        from . import retireedit
+
+        return retireedit.save(cfg, req, retireedit.run_module_check)
     if op == "automation_reference":
         # The Builder's pin of one Builder run as an automation's backtest reference: the module's check,
         # the backtest package's word that the run exists, then the `references` block it returned.

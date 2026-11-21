@@ -11,7 +11,18 @@ returns, the `groups` block whole, each moved automation's `group` and each swit
 **State.** An automation enters on its days only when three things hold: its own switch is on, its group
 (if it has one) is on, and its start has come (its own, or its group's when later: `config.apply_groups`).
 `view` names, for each automation, the one that does not hold: `off_own`, `off_group`, `waiting` (with the
-date), or `on`. An automation in no group answers to its own switch alone.
+date), or `on`. An automation in no group answers to its own switch alone. A retired automation
+(`arms` docstring: `retired`) is `retired` whatever its switches say, and `check` refuses to switch it on:
+it is reinstated on its own page (`cli retire-check`), and stays off until switched on after that.
+
+**Its shape.** Each automation carries the curve of its generic shape (`sketch.sketch`), drawn from its
+rule alone, so a page can show the trade beside its name without a session.
+
+**A group's budget.** `view` gives each group the budget its next session carries, the budget today,
+any change waiting on a date, and the suggestion `budgets.suggested` makes from its members. Once a group
+has run (its start has come), `check` never rewrites the budget it ran on: a different budget becomes a
+dated change (`budget_changes`) from the next session, replacing one already waiting, and the same budget
+as today's drops a waiting one. A group that has not run yet takes the budget as given.
 
 **Switching on starts at the next session.** An automation or a group switched on by a change is given the
 next trading session as its start (or keeps a later one), so a paper record never begins in the middle of a
@@ -32,15 +43,28 @@ from cherrypick.core import calendar as cal
 from cherrypick.core import signallib
 
 from . import arms as arms_mod
+from . import budgets
 from . import config as config_mod
+from . import sketch as sketch_mod
 
-#: The keys a group's spec may carry from the page (`config.GROUP_KEYS`).
-SPEC_KEYS = config_mod.GROUP_KEYS
-STATES = ("on", "waiting", "off_group", "off_own")
+#: The keys a group's spec may carry from the page: the file's, less the dated changes this module writes.
+SPEC_KEYS = config_mod.GROUP_KEYS - {"budget_changes"}
+STATES = ("on", "waiting", "off_group", "off_own", "retired")
 
 
 def today_et() -> date:
     return datetime.now(ZoneInfo("America/New_York")).date()
+
+
+def has_run(spec: dict, today: date) -> bool:
+    """Whether a group (a `config.groups` row) has begun: switched on with no start, or its start come.
+    From then on its budget changes only on a date."""
+    start = spec.get("start")
+    return bool(spec.get("enabled")) and start is None or (start is not None and start <= today.isoformat())
+
+
+def _budget_of(spec: dict) -> dict:
+    return {k: spec[k] for k in config_mod.BUDGET_KEYS if k in spec}
 
 
 def next_session(today: date) -> date:
@@ -57,6 +81,8 @@ def _own_arms(config: dict) -> dict[str, dict]:
 
 
 def _state(own: dict, effective: dict, group_on: bool, today: date) -> tuple[str, str | None]:
+    if own.get("retired"):
+        return "retired", None
     if not own.get("enabled", True):
         return "off_own", None
     if own.get("group") is not None and not group_on:
@@ -75,7 +101,7 @@ def view(config: dict, today: date | None = None) -> dict:
     today = today or today_et()
     own = _own_arms(config)
     effective = config_mod.load_arms(config)
-    switches = config_mod.groups(config)
+    switches = config_mod.groups(config, today)
     groups: dict[str, dict] = {}
     ungrouped = []
     counts = dict.fromkeys(STATES, 0)
@@ -94,11 +120,15 @@ def view(config: dict, today: date | None = None) -> dict:
             "symbol": arm.get("symbol"),
             "shipped": name in arms_mod.ARMS,
             "forward": arm.get("forward") is not None,
+            "retired": arm.get("retired") or None,
+            "shape": _shape(arm),
         }
         if g is None:
             ungrouped.append(row)
             continue
-        groups.setdefault(g, {"name": g, **spec, "members": []})["members"].append(row)
+        groups.setdefault(g, {"name": g, **_group_row(spec, today), "members": []})["members"].append(row)
+    for row in groups.values():
+        row["suggested"] = budgets.suggested({m["name"]: own[m["name"]] for m in row["members"]})
     return {
         "today": today.isoformat(),
         "next_session": next_session(today).isoformat(),
@@ -108,8 +138,54 @@ def view(config: dict, today: date | None = None) -> dict:
     }
 
 
+def _shape(arm: dict) -> dict | None:
+    """The generic shape's curve and whether it is to scale, for a small drawing; None when it has no legs."""
+    try:
+        s = sketch_mod.sketch(arm)
+    except (KeyError, ValueError, TypeError):
+        return None
+    return {"curve": s["curve"], "exact": s["exact"]} if s["curve"] else None
+
+
+def _group_row(spec: dict, today: date) -> dict:
+    """A group as the page edits it: its switch and start, the budget its next session carries (what a
+    change starts from), and `budget`: {"today", "pending" (a change waiting on a date, or None), "dated"
+    (whether a change is dated: the group has run), "history"}."""
+    first = next_session(today).isoformat()
+    row = {k: v for k, v in spec.items() if k not in ("budget_history", *config_mod.BUDGET_KEYS)}
+    row.update(config_mod.budget_at(spec, first))
+    later = [b for b in config_mod.history(spec) if b["from"] is not None and b["from"] > today.isoformat()]
+    row["budget"] = {
+        "today": _budget_of(spec),
+        "pending": later[-1] if later else None,
+        "dated": has_run(spec, today),
+        "history": config_mod.history(spec) if "budget_history" in spec else [],
+    }
+    return row
+
+
 def _group_name(v) -> bool:
     return isinstance(v, str) and v.strip() == v != "" and not v.startswith("_")
+
+
+def _dated(g: str, spec: dict, kept: dict, current: dict, first: str, notes: list[str]) -> dict:
+    """A group that has run: the budget it began with and the changes before `first` kept as they are, and
+    the page's budget, when it differs from what `first` would carry, as a change from `first` (module
+    docstring)."""
+    want = config_mod._budget(f"groups.{g}", spec)
+    out = {k: v for k, v in spec.items() if k not in config_mod.BUDGET_KEYS}
+    out.update({k: kept[k] for k in config_mod.BUDGET_KEYS if k in kept})
+    changes = [b for b in config_mod.history(current)[1:] if b["from"] < first]
+    if want != config_mod.budget_at(
+        {"budget_history": [{"from": None, **_budget_of(kept)}, *changes]}, first
+    ):
+        changes.append({"from": first, **want})
+        notes.append(
+            f"{g}'s budget changes from {first}, the next session; it ran on the one before until then"
+        )
+    if changes:
+        out["budget_changes"] = changes
+    return out
 
 
 def check(config: dict, proposal: dict, today: date | None = None) -> dict:
@@ -145,6 +221,8 @@ def check(config: dict, proposal: dict, today: date | None = None) -> dict:
             problems.append(f"switches.{name}: no such automation")
         elif not isinstance(on, bool):
             problems.append(f"switches.{name}: true or false")
+        elif on and own[name].get("retired"):
+            problems.append(f"switches.{name}: retired; reinstate it on its own page first")
     placed = {n: (moves[n] if n in moves else a.get("group")) for n, a in own.items()}
     used = {g for g in placed.values() if g is not None}
     for g in sorted(used - set(specs)):
@@ -169,12 +247,14 @@ def check(config: dict, proposal: dict, today: date | None = None) -> dict:
         }
 
     notes: list[str] = []
-    current = config_mod.groups(config)
+    current = config_mod.groups(config, today)
     raw = config.get("groups") if isinstance(config.get("groups"), dict) else {}
     block: dict = {k: v for k, v in raw.items() if k.startswith("_")}
     for g in sorted(used):
         kept = raw.get(g) if isinstance(raw.get(g), dict) else {}
         spec = {**{k: v for k, v in kept.items() if k.startswith("_")}, **specs[g]}
+        if g in current and has_run(current[g], today):
+            spec = _dated(g, spec, kept, current[g], first, notes)
         was_on = current.get(g, {"enabled": g in {a.get("group") for a in own.values()}})["enabled"]
         if spec.get("enabled") is True and not was_on and str(spec.get("start") or "") < first:
             spec["start"] = first

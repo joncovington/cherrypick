@@ -69,9 +69,29 @@ no ledger reads as no sessions.
 
 **The sessions ahead** (`ahead.py`, pure; `cli ahead --name N [--start]`). The automation's dated rules for `core.ahead`: its weekdays, its `skip_events` labels and its exits' `avoid_events` (on the session before), answered by its own event calendar, so a label with no dates there reads unknown as it does at entry; its filter gates in the Builder's words (`words.GATES`). Only an avoided event's eve keeps a record: a skipped day holds no trade. The record is the automation's per-session nets from `core.compare` over the era. Reads only.
 
+**Retired** (`arms`: `retired`, `drafts.retire`, `cli retire-check`). An automation's `retired` is false
+or the date it was retired. A retired automation is off whatever `enabled` says (`arms.load_arms`), its
+state is `retired` (`groupedit`), the Groups check refuses to switch it on, and a Builder save keeps
+`retired` as stored. `drafts.retire` gives the keys to write: retiring sets the date and `enabled`
+false, reinstating sets false and leaves `enabled` false, so it trades only once switched on.
+What it holds is still managed to its exits.
+
+**A group's budget** (`config.groups`, `budgets.py`). A budget is `allocation`, `max_risk` and
+`shares`. Once a group has run (switched on with no start, or its start come), the Groups check
+(`groupedit.check`) never rewrites the budget it ran on: a different one is a dated change in
+`budget_changes` (`[{"from": session, **budget}]`, the budget whole, dates rising) from the next
+session, replacing one already waiting; the same budget as today's drops a waiting one.
+`config.groups(config, today)` gives each group the budget it carries that day, so the loop sizes and
+caps on the right one. `budgets.suggested` is a group's suggested allocation: the most its members not
+retired can have at risk at once (a `max_risk` size times `max_open`, or the structure's widest
+outcome before premium times contracts times `max_open`, counted only when it does not depend on
+where a delta or percent leg lands: `sketch.legs_at` at two drawing units must agree), None with why
+when one member has no bound. The groups view carries it, each member's `shape` and each group's
+`budget` (today, a change waiting, whether a change is dated).
+
 **Groups as a unit** (`groupread.py`, pure; `cli groups-read`). Each group's members' closed trades
-stacked (`analytics`' line with its running net), the net and drawdown as shares of its
-`allocation`, the most `capital` open at once against its `max_risk` and each member's against its
+stacked (`analytics`' line with its running net), the net and drawdown as shares of the
+allocation each trade's session carried (`config.budget_at`), added, never compounded, the most `capital` open at once against its `max_risk` and each member's against its
 share (a position counts from its entry session through its exit session, so the figure is an upper
 bound at a session's grain), the sessions missed with `group_risk` by which cap bound (the one with
 less room in the check's own reading), and `core.portfolio` over the members' net per session. The

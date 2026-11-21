@@ -12,6 +12,9 @@ that defaulted silently would change what is measured):
                   research register's verdict on it, a label read from the register, never from a
                   result file; `blocks` records each block as the study ran it (`enrolment`)
     start         ISO date: the first session paper may enter it (`enrolment.joins`)
+    retired       false, or the ISO date it was retired: a retired automation is off whatever its
+                  `enabled` says (`load_arms`), and a group or a switch never turns it on; reinstating it
+                  (false) leaves it off until it is switched on
     forward       the forward-check rule its paper record is read by (`enrolment` docstring)
     expiry        {"kind": "dte"|"market_days"|"calendar", "days": N, "tolerance": D}
                   {"kind": "at_least", "days": N}: the nearest listed expiry N or more calendar days out
@@ -130,6 +133,7 @@ TOP_KEYS = {
     "limits",
     "exit",
     "note",
+    "retired",
 }
 VERDICTS = ("passed", "failed", "no_verdict")
 #: The most contracts one leg may hold per structure, either way (a 1-2-1 fly's middle is 2).
@@ -705,6 +709,9 @@ def validate(arm: dict) -> list[str]:
     g = arm.get("group")
     if g is not None and not (isinstance(g, str) and g.strip() == g != ""):
         p.append(f"{name}.group: a name, or null for none")
+    retired = arm.get("retired", False)
+    if retired is not False and not enrolment._iso(retired):
+        p.append(f"{name}.retired: false, or the ISO date it was retired")
     reg = arm.get("register")
     if reg is not None and not (
         isinstance(reg, dict)
@@ -900,4 +907,7 @@ def load_arms(overrides: dict | None = None) -> dict[str, dict]:
     problems = [x for a in arms.values() for x in validate(a)]
     if problems:
         raise ValueError("; ".join(problems))
+    for a in arms.values():
+        if a.get("retired"):
+            a["enabled"] = False  # retired is off, whatever `enabled` says
     return arms

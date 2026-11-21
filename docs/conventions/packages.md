@@ -139,7 +139,9 @@ what it may write. The package's own CLAUDE.md holds the detail.
   alone, which nothing the automation trades reads).
   The Automations › Groups tab adds one more: the automation groups (switch, start, allocation, cap,
   shares, membership) and each automation's own switch, written after the automations module's
-  check; a switch turned on starts at the next session (the module sets it). Paper only.
+  check; a switch turned on starts at the next session (the module sets it), and once a group has
+  run a budget change is dated from the next session. An automation's page adds the last: retiring
+  or reinstating it (`retired` and `enabled` false), after the module's check. Paper only.
 - **packages/review** — the cross-module end-of-day review: one versioned fact set per session, read
   via `cherrypick.core.ledgers` (the single home for per-schema net/risk rules), written only to its own
   store. No credentials, no network, no AI — the narrative is written outside by a scheduled agent.
