@@ -243,7 +243,12 @@ def test_the_shipped_config_resolves_to_the_eight_arms_with_the_four_item_75_fai
     )
     arms = config_mod.load_arms(config)
     assert len(arms) == 8
-    assert set(config_mod.enabled(arms)) =={"iron-condor-1345", "put-spread-1300", "long-put-1030", "gld-call-spread-1dte"}
+    assert set(config_mod.enabled(arms)) == {
+        "iron-condor-1345",
+        "put-spread-1300",
+        "long-put-1030",
+        "gld-call-spread-1dte",
+    }
     assert set(config_mod.symbols(config, arms)) == {"SPX", "GLD"}
 
 
