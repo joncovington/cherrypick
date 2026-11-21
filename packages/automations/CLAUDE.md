@@ -83,6 +83,8 @@ What it holds is still managed to its exits.
 (`groupedit.check`) never rewrites the budget it ran on: a different one is a dated change in
 `budget_changes` (`[{"from": session, **budget}]`, the budget whole, dates rising) from the next
 session, replacing one already waiting; the same budget as today's drops a waiting one.
+An automation moved out of a group takes its share with it: `check` drops it from that group's
+budget, today's and every dated change alike, since the loop refuses a share of an outsider.
 `config.groups(config, today)` gives each group the budget it carries that day, so the loop sizes and
 caps on the right one. `budgets.suggested` is a group's suggested allocation: the most its members not
 retired can have at risk at once (a `max_risk` size times `max_open`, or the structure's widest

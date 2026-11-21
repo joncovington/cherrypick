@@ -24,6 +24,11 @@ has run (its start has come), `check` never rewrites the budget it ran on: a dif
 dated change (`budget_changes`) from the next session, replacing one already waiting, and the same budget
 as today's drops a waiting one. A group that has not run yet takes the budget as given.
 
+**A share leaves with its automation.** A share is a member's slice, and the loop refuses one for an
+automation outside the group, so an automation moved out of a group takes its share with it: `check`
+drops it from that group's budget, today's, every dated change and one waiting alike (membership is the
+config's now, so the group's record no longer reads that automation either), and says so.
+
 **Switching on starts at the next session.** An automation or a group switched on by a change is given the
 next trading session as its start (or keeps a later one), so a paper record never begins in the middle of a
 day. An automation with a forward rule keeps the start its rule reads from, and `check` says so.
@@ -170,6 +175,41 @@ def _group_name(v) -> bool:
     return isinstance(v, str) and v.strip() == v != "" and not v.startswith("_")
 
 
+def _without_shares(budget: dict, names: set[str]) -> dict:
+    """`budget` (a spec, a dated change or a `config.groups` row) with the shares of `names` dropped, and
+    `shares` dropped whole when none is left."""
+    shares = budget.get("shares")
+    if not isinstance(shares, dict) or not names & set(shares):
+        return budget
+    out = {**budget, "shares": {m: v for m, v in shares.items() if m not in names}}
+    if not any(not str(m).startswith("_") for m in out["shares"]):
+        del out["shares"]
+    return out
+
+
+def _leaving(g: str, kept: dict, current: dict | None, names: set[str]) -> tuple[dict, dict | None]:
+    """The file's spec and the loaded row of group `g` with the shares of `names`, its leavers, dropped
+    from the budget it began with and from every dated change."""
+    if not names:
+        return kept, current
+    kept = _without_shares(kept, names)
+    if isinstance(kept.get("budget_changes"), list):
+        kept = {
+            **kept,
+            "budget_changes": [
+                _without_shares(c, names) if isinstance(c, dict) else c for c in kept["budget_changes"]
+            ],
+        }
+    if current is not None:
+        current = _without_shares(current, names)
+        if "budget_history" in current:
+            current = {
+                **current,
+                "budget_history": [_without_shares(b, names) for b in current["budget_history"]],
+            }
+    return kept, current
+
+
 def _dated(g: str, spec: dict, kept: dict, current: dict, first: str, notes: list[str]) -> dict:
     """A group that has run: the budget it began with and the changes before `first` kept as they are, and
     the page's budget, when it differs from what `first` would carry, as a change from `first` (module
@@ -255,9 +295,19 @@ def check(config: dict, proposal: dict, today: date | None = None) -> dict:
     block: dict = {k: v for k, v in raw.items() if k.startswith("_")}
     for g in sorted(set(specs) | used):
         kept = raw.get(g) if isinstance(raw.get(g), dict) else {}
-        spec = {**{k: v for k, v in kept.items() if k.startswith("_")}, **specs[g]}
-        if g in current and has_run(current[g], today):
-            spec = _dated(g, spec, kept, current[g], first, notes)
+        leavers = {n for n, a in own.items() if a.get("group") == g and placed[n] != g}
+        held = {
+            m
+            for b in [kept, *(kept.get("budget_changes") or [])]
+            if isinstance(b, dict) and isinstance(b.get("shares"), dict)
+            for m in b["shares"]
+        }
+        for n in sorted(leavers & held):
+            notes.append(f"{n}'s share of {g} goes with it: a share is a member's")
+        kept, row = _leaving(g, kept, current.get(g), leavers)
+        spec = {**{k: v for k, v in kept.items() if k.startswith("_")}, **_without_shares(specs[g], leavers)}
+        if row is not None and has_run(row, today):
+            spec = _dated(g, spec, kept, row, first, notes)
         was_on = current.get(g, {"enabled": g in {a.get("group") for a in own.values()}})["enabled"]
         if spec.get("enabled") is True and not was_on and str(spec.get("start") or "") < first:
             spec["start"] = first
