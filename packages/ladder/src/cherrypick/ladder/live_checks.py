@@ -28,6 +28,9 @@ shares in it. Ours only: the account may hold the same fund by hand, so
   `live.splits` entry restates;
 - a positions read that fails is unreadable: every fund's new buys stop.
 
+**Settled cash** is not here: the rule is shared, `cherrypick.core.live.cash.settled_cash`, and
+`live_tick.check_cash` hands it the broker's figures and the ledger's unsettled sales.
+
 Resting sells are never touched by any of it.
 """
 

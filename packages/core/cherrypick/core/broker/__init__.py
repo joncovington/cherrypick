@@ -681,6 +681,28 @@ async def positions(account: Any, session: Any) -> list[dict]:
     return out
 
 
+#: The balance figures `cash_funds` returns, each a float. tastytrade names no "settled cash":
+#: `cash_available_to_withdraw` is the nearest, since an unsettled sale's proceeds cannot be withdrawn.
+CASH_FIELDS = ("cash_balance", "cash_available_to_withdraw", "equity_buying_power", "pending_cash")
+
+
+async def cash_funds(account: Any, session: Any) -> dict:
+    """Whether the account trades on margin or cash, and its cash figures (`CASH_FIELDS`). GET-only.
+
+    A cash account (an IRA is one) must not buy with an unsettled sale's proceeds and sell before
+    they settle (a good-faith violation), and the broker's buying power is not settled cash
+    (tastytrade says so), so a caller that buys in one needs these. A figure that is missing or not a
+    number raises: a caller must treat funds it cannot read as unknown, never as zero or as plenty."""
+    balances = await account.get_balances(session)
+    out: dict = {"margin_or_cash": getattr(account, "margin_or_cash", None)}
+    for name in CASH_FIELDS:
+        value = getattr(balances, name, None)
+        if value is None:
+            raise ValueError(f"balance {name!r} is missing")
+        out[name] = float(value)
+    return out
+
+
 def opens_position(spec: dict) -> bool:
     """Whether an order spec opens anything: any leg whose action is "... to open" (the human action
     strings `build_order` maps). Openings are what a halt, a kill verdict or an unarmed day refuse;

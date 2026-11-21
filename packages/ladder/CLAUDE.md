@@ -122,7 +122,7 @@ import (`orders.py` may import the one pure id reader). The `live` block in the 
 - **The tick (`live_loop --once`)**, in this order: the dead-man's switch (an arm record dated another
   day is removed before any broker read); the gates that block everything (any unmet and nothing is
   read, no adapter built); the orphan sweep; the splits; the reconcile; then, only inside
-  `session_start` to `disarm_at` and armed, the positions cross-check, the plan inputs, `orders.plan`
+  `session_start` to `disarm_at` and armed, the positions cross-check, settled cash, the plan inputs, `orders.plan`
   and the executor. Unarmed, or outside those hours, it stops after the reconcile.
   - **Splits** have no feed. The suite's split data is not fit for a live tick (Dolt's split table is
     refreshed by hand and holds splits the prices never made and misses real ones; the public history
@@ -149,6 +149,18 @@ import (`orders.py` may import the one pure id reader). The `live` block in the 
     touched. Each stop is an `alert` journal row, and `--status` shows the last tick's reason under
     `checks`, with the dry-run orders it would send. A fill or sell landing between the reconcile and
     the positions read shows as a one-tick mismatch.
+  - **Settled cash**, after the positions cross-check, in dry-run too. In a cash account (an IRA is
+    one), a buy paid with an unsettled sale's proceeds and sold before they settle is a good-faith
+    violation, and the ladder often sells within a day. So in a cash account new buys may spend only
+    what `cherrypick.core.live.cash.settled_cash` allows: the smaller of the broker's withdrawable cash
+    and its equity buying power (the broker names no settled-cash figure, and its buying power is not
+    settled cash), less the ledger's own sales in this session, which settle next business day
+    (`live_db.unsettled_proceeds`, every arm). That may count a sale twice, on purpose. Buys kept
+    resting count against the limit first; a new buy it cannot pay for is a `blocked` row
+    (`settled_cash_short`) and waits. A margin account has no limit. An unreadable read, or an account
+    neither margin nor cash, is an `alert` row and every fund stops as for an unreadable positions read
+    (its resting buys cancelled). A short limit cancels nothing, and no sell is touched by either.
+    `--status` shows the figures under `checks.cash`.
   - **Reconcile first.** It reads the broker's word on every order the ledger holds open and adopts any
     `ldr.` order the ledger lacks (a crash between a place and its ledger row), so a fill the ledger
     has not seen reaches the planner as a lot, not as a resting buy it would cancel or re-place. A
@@ -217,6 +229,8 @@ import (`orders.py` may import the one pure id reader). The `live` block in the 
     given and the reference close and prices every order at the restated terms. The live tick restates
     the ledger itself and passes no factor for lots. A fund in `block_buys` (the positions
     cross-check) takes no new buy and loses its resting buys; its sells are planned as ever.
+    `cash_limit` (settled cash, None in a margin account) caps what new buys spend, after the buys
+    kept resting.
   - Client ids carry the order's terms, so the same state plans the same ids and the broker's working
     list alone says what is resting. A sell the broker ended unfilled is re-placed with a retry suffix,
     three times at most.
