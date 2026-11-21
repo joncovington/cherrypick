@@ -52,4 +52,14 @@ if (Get-Command pnpm -ErrorAction SilentlyContinue) {
     Write-Host "==> packages/console skipped -- install pnpm (npm install -g pnpm) to build the console UI"
 }
 
+# The repo's own git hooks (tools/hooks): the pre-commit check keeps a home directory and this
+# machine's user name out of a commit. One setting covers every worktree of the clone.
+if (Get-Command git -ErrorAction SilentlyContinue) {
+    git -C "$root" rev-parse --git-dir *> $null
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "==> git hooks (core.hooksPath tools/hooks)"
+        git -C "$root" config core.hooksPath tools/hooks
+    }
+}
+
 Write-Host "==> done"

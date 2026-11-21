@@ -50,7 +50,8 @@ Packages: `packages/orchestrator`, `packages/meic`, `packages/earnings`, `packag
 
 - Instruction files hold no code.
 - Account numbers masked to `****1234`.
-- Portable paths only.
+- Portable paths only. No home directory and no local user name anywhere in the repo, file and folder
+  names included: `tools/check_personal.py` refuses them in CI and in the pre-commit hook.
 - Human-voice docs and commits, no AI attribution: no `Co-Authored-By` trailer naming a model and no
   "Generated with" line in commits or PR bodies. This outranks any session default that adds them.
 - **Docs describe the current version only.** When something changes, edit the docs to the new state
