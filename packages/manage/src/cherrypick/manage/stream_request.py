@@ -7,6 +7,8 @@ Writes ``~/.cherrypick/state/stream_requests/manage.json`` from an evaluation (2
   carries greeks too) and keeps NO chain for any of them. A name the account holds is not a symbol
   this package trades, so it never goes in ``symbols``, which would have the producer maintain a
   chain and an ATM window for every one.
+- The call at each wheel cycle's cost strike (``attention.cost_call``) goes in ``legs`` too, so its bid
+  is read from the cache between snapshots.
 - No ``symbols``, ``leg_sources`` or windows. The legs come from the evaluation, which is rewritten at
   every run, so a closed position ages out at the next one.
 
@@ -22,6 +24,8 @@ from pathlib import Path
 
 from cherrypick.core import streamrequests as _sr
 from cherrypick.core.streamcache import occ_to_streamer_symbol
+
+from cherrypick.manage import costcall as _costcall
 
 _MODULE = "manage"
 _log = logging.getLogger("manage")
@@ -56,6 +60,9 @@ def held_symbols(result: dict, instance: str | None = None) -> list[str]:
                         out.add(streamer)
                 elif symbol:
                     out.add(symbol)
+        # The call at each wheel cycle's cost strike (`costcall.py`): not held, but quoted here so its bid
+        # is the cache's rather than the snapshot's.
+        out.update(_costcall.legs((account.get("attention") or {}).get("cost_call")))
         # The 0DTE legs held by hand (`zerodte.py`, 2026-11-03): the ruleset leaves them out of the
         # trades, but the console marks them between runs too. The loops' own legs are theirs to declare.
         for leg in (account.get("zero_dte") or {}).get("open_legs") or []:

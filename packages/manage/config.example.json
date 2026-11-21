@@ -302,7 +302,15 @@
     "_comment": "Needs a look: a short option out of the money by near_pct of its strike or less, in the money, or likely to be exercised early (a call's time value under the dividend going ex before expiry, or any short's under near_zero_extrinsic); and every leg with expiring_days or fewer left. A reading, not a rule: it fires nothing. The orchestrator posts a name the first time it appears in a day.",
     "near_pct": 0.03,
     "near_zero_extrinsic": 0.05,
-    "expiring_days": 7
+    "expiring_days": 7,
+    "cost_call": {
+      "_comment": "The cost-strike call: a wheel cycle holding assigned shares with no call written is listed when the lowest listed call at or above its effective cost (the wheel basis) bids min_bid_pct of the stock's price or more, on the earliest standard monthly dte_min to dte_max days out, else up to fallback_max. A public webinar's rule of thumb, shown and never placed; a missing quote reads 'no quote', never 'does not pay'. The snapshot reads monthlies 30 to 60 days out, so fallback_max stops there.",
+      "enabled": true,
+      "min_bid_pct": 0.02,
+      "dte_min": 30,
+      "dte_max": 45,
+      "fallback_max": 60
+    }
   },
   "early": {
     "_comment": "Marks taken between the open (09:30) and verdicts_from (New York) are the opening scramble: the evaluation is marked early, surfaces show prices, P&L and needs-a-look but hold the verdicts back, and the orchestrator does not post the list.",

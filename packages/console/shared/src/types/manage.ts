@@ -1125,11 +1125,49 @@ export interface ManageAttentionItem extends ManageAttentionLeg {
   why: string;
 }
 
+/**
+ * One wheel cycle holding assigned shares with no call written, and the call at its cost strike
+ * (packages/manage `costcall.py`). `status` is "pays" (the bid is at least `minBidPct` of the stock's
+ * price), "below" (quoted, under the bar) or "no quote", which `why` explains; a missing quote is never
+ * "below". `bid` is per share; `credit` is the whole position's (bid x 100 x contracts).
+ */
+export interface ManageCostCallRow {
+  underlying: string;
+  shares: number;
+  contracts: number;
+  effectiveCost: number;
+  spot: number | null;
+  minBidPct: number;
+  expiration: string | null;
+  dte: number | null;
+  /** "standard" (the 30-45 day monthly) or "fallback" (the nearest monthly up to 60 days). */
+  window: string | null;
+  strike: number | null;
+  bid: number | null;
+  ask: number | null;
+  /** The bid as a share of the stock's price. */
+  bidPct: number | null;
+  credit: number | null;
+  /** "stream cache" or "snapshot chain". */
+  source: string | null;
+  status: "pays" | "below" | "no quote";
+  why: string | null;
+}
+
+export interface ManageCostCall {
+  enabled: boolean;
+  minBidPct: number;
+  rows: ManageCostCallRow[];
+  takenAt: string | null;
+}
+
 export interface ManageAttention {
   nearPct: number | null;
   expiringDays: number | null;
   items: ManageAttentionItem[];
   expiring: ManageAttentionLeg[];
+  /** The cost-strike call per wheel cycle holding shares with no call written; absent before it. */
+  costCall?: ManageCostCall | null;
 }
 
 /** The ledger's windows, counted back from the session by the closing day. */

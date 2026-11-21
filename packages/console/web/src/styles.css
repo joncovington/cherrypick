@@ -8069,6 +8069,14 @@ select.text-input {
   color: var(--verdict-fail);
 }
 
+.att-chip.is-dim {
+  color: var(--text-muted);
+}
+
+.att-chip.is-ok {
+  color: var(--pos);
+}
+
 .att-chip.is-bad {
   color: var(--neg);
 }

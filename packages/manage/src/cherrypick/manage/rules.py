@@ -347,7 +347,17 @@ DEFAULT_RULES: dict[str, Any] = {
     # its strike or less, in the money, or likely to be exercised early (a call's time value under the
     # dividend going ex before expiry, or any short's under `near_zero_extrinsic`); and every leg with
     # `expiring_days` or fewer left. A reading, not a rule: it fires nothing.
-    "attention": {"near_pct": 0.03, "near_zero_extrinsic": 0.05, "expiring_days": 7},
+    "attention": {
+        "near_pct": 0.03,
+        "near_zero_extrinsic": 0.05,
+        "expiring_days": 7,
+        # The cost-strike call (costcall.py): a wheel cycle holding assigned shares with no call
+        # written is listed when the call at its effective cost bids `min_bid_pct` of the stock's
+        # price or more, on the earliest standard monthly `dte_min`-`dte_max` days out, else up to
+        # `fallback_max`. A public webinar's rule of thumb (resting a sell order for about 2%); shown,
+        # never placed. The snapshot reads monthlies 30-60 days out, so `fallback_max` stops there.
+        "cost_call": {"enabled": True, "min_bid_pct": 0.02, "dte_min": 30, "dte_max": 45, "fallback_max": 60},
+    },
     # Marks taken between the open and `verdicts_from` (New York) are the opening scramble: the
     # evaluation says `early`, surfaces show prices, P&L and needs-a-look and hold the verdicts back,
     # and the orchestrator does not post the list (user, 2026-11-04).

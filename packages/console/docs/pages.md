@@ -1117,7 +1117,11 @@ ruleset's days. The level is manage's, never worked out from the distance beside
 beside the one it would get marked as a wheel, with *Not a wheel* and *Wheel it*; the puts no row shows
 sit in a `no intent yet` card (`pages/Live/IntentChoice.tsx`). A choice is only staged, as the whole
 `positions` object of manage.json; it is saved on Config › Position rules (`pages/Config/IntentsCard.tsx`),
-which lists every name's intent. On this tab a card with nothing to show is left out, and so is a
+which lists every name's intent. A `cost-strike calls` card (`CostCallCard`) sits beside them: manage's
+`attention.cost_call` rows, one per cycle holding assigned shares with no call written, each with the call's
+strike, expiry, bid, the bid as a share of the price, the whole-position credit and whose quote it is. A bid
+at the ruleset's bar reads `bids 2.3%`, one under it `below`, and a missing quote `no quote` with why, never
+`below`. Nothing is placed. On this tab a card with nothing to show is left out, and so is a
 section whose cards all are (`web/test/wheelIntents.test.tsx`).
 
 **Live -> wheel's ledger** (`pages/Live/LedgerDesk.tsx`) sits above the cycles: manage's

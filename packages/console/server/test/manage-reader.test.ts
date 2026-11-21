@@ -207,6 +207,37 @@ describe("readManage", () => {
     expect(readManage(config).accounts[0]!.attention).toBeNull();
   });
 
+  it("passes the cost-strike call through, and reads a status manage did not write as no quote", () => {
+    const doc = evalDoc("2026-11-21");
+    const [account] = doc["accounts"] as Array<Record<string, unknown>>;
+    const row = {
+      underlying: "AAA", shares: 100, contracts: 1, effective_cost: 49.06, spot: 49.0, min_bid_pct: 0.02,
+      expiration: "2026-11-20", dte: 38, window: "standard", strike: 50.0, symbol: ".AAA261120C50", bid: 1.2, ask: 1.3,
+      bid_pct: 0.0245, credit: 120.0, source: "stream cache", status: "pays", pays: true, why: "the call bids 1.20",
+    };
+    account!["attention"] = {
+      near_pct: 0.03,
+      expiring_days: 7,
+      items: [],
+      expiring: [],
+      cost_call: {
+        enabled: true,
+        min_bid_pct: 0.02,
+        taken_at: "2026-11-21T10:00:00-0500",
+        rows: [row, { ...row, underlying: "BBB", status: "mystery", bid: null, bid_pct: null, credit: null }],
+      },
+    };
+    fs.writeFileSync(path.join(tmp, "manage", "eval-2026-11-21.json"), JSON.stringify(doc));
+    const c = readManage(config).accounts[0]!.attention!.costCall!;
+    expect(c).toMatchObject({ enabled: true, minBidPct: 0.02, takenAt: "2026-11-21T10:00:00-0500" });
+    expect(c.rows[0]).toMatchObject({ underlying: "AAA", effectiveCost: 49.06, strike: 50, bid: 1.2, bidPct: 0.0245, credit: 120, status: "pays" });
+    expect(c.rows[1]).toMatchObject({ underlying: "BBB", status: "no quote", bid: null, credit: null });
+    // An evaluation from before it carries none.
+    account!["attention"] = { near_pct: 0.03, expiring_days: 7, items: [], expiring: [] };
+    fs.writeFileSync(path.join(tmp, "manage", "eval-2026-11-21.json"), JSON.stringify(doc));
+    expect(readManage(config).accounts[0]!.attention!.costCall).toBeNull();
+  });
+
   it("passes manage's pre-open flag through, and none on an evaluation without it", () => {
     const doc = { ...evalDoc("2026-10-21"), pre_open: { taken_at: "07:17", expiring_unpriced: ["SPCX"] } };
     fs.writeFileSync(path.join(tmp, "manage", "eval-2026-10-21.json"), JSON.stringify(doc));

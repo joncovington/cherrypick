@@ -673,6 +673,13 @@ def manage_settings(cfg: dict[str, Any]) -> dict[str, Any]:
         # The quoted expiries the snapshot reads past each covered call, PMCC short and short put
         # (managesnap.roll_out_chains), and the cap on the broker reads that costs.
         "roll_out": {k: _int_or(ro.get(k), v) for k, v in ROLL_OUT_DEFAULTS.items()},
+        # The standard monthlies the snapshot reads for a share-holding name with no call written (the
+        # cost-strike reading, managesnap.cost_call_chains), and the cap on the broker reads that
+        # costs. `max_calls` 0 reads nothing.
+        "cost_call": {
+            k: _int_or((mg.get("cost_call") if isinstance(mg.get("cost_call"), dict) else {}).get(k), v)
+            for k, v in COST_CALL_DEFAULTS.items()
+        },
         # The minute re-mark between full runs (`manage-marks`, packages/manage `remark`): the day's
         # snapshot moved to the stream cache's quotes, no broker call. From 2026-11-04 it starts at the
         # open (09:36) and takes a full snapshot instead on its first minute of the day and on the
@@ -707,6 +714,11 @@ def manage_settings(cfg: dict[str, Any]) -> dict[str, Any]:
 # than this are not rolled yet and get none; `max_calls` and `max_seconds`: the most broker reads the
 # step may make, and how long it may take, before the rest are recorded as skipped.
 ROLL_OUT_DEFAULTS = {"expiries": 5, "max_days": 60, "max_short_days": 60, "max_calls": 30, "max_seconds": 300}
+
+
+# `max_calls` and `max_seconds`: the most broker reads the cost-strike step may make, and how long it
+# may take, before the rest are recorded as skipped.
+COST_CALL_DEFAULTS = {"max_calls": 12, "max_seconds": 120}
 
 
 def _int_or(value: Any, default: int) -> int:
