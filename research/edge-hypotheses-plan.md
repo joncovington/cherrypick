@@ -9819,6 +9819,165 @@ whether this template is worth an automation.
   - **A fail or no verdict:** the template does not earn on SPX 0DTE after costs, or its filters pick
     no better days than they skip. Nothing is built; the record stays under `entry-filter`.
 
+### 99. A double calendar across an earnings report, its strikes a declared share of the report's expected move
+
+Declared 2026-11-20, before any of its trades is priced and before any of its chains is fetched. Source:
+the user, after reading the retired `double_calendar` paper book's rows. That book sold the front
+expiry's call and put at the strikes nearest spot ± the full expected move (0.85 × the front straddle
+then) and bought them in a monthly at least 21 days later. Every exit was on the natural side, the rows
+before 2026-10-23 carry the double-charged exit slippage, and three closed on their entry tick. So its
+loss says little about the structure. Wide strikes also earn least when the stock does not move, and
+closer strikes were never tried. `hypotheses --similar` names items 86 and 87 (an at-the-money earnings
+calendar with a far back month, and the same with a lean), both failed. Item 52 is the nearest relative:
+its arms B1 and B2 held a report weekly against the next monthly at the reaction close and failed.
+Neither is a double calendar: B1's longs sit inside its shorts and B2's are wings outside them. Items
+31, 47 and 54 and the expected-move fly found single-name report premium close to fair at mid. This is
+said as a retest of the time-spread family across reports. What is new is the strike distance, the
+module's own expiries, and fills at the times the module trades.
+
+- **Question:** does a double calendar entered at the module's 15:40 bar the session before a report,
+  short the front expiry and long the module's back month at the same two strikes, earn after costs
+  when closed at 10:00 on the reaction morning? Does it earn more than the same position four weeks from
+  any report? And at what strike distance, as a share of the report's own expected move?
+- **Where the edge would live:** the **term structure around an event**. The front expiry's implied
+  volatility holds the whole event in a few days. Once the report is out, the front loses more value
+  than a back month holding the same event over more days. **What would falsify it:** the mean net at
+  or below zero after costs at every distance; or a positive mean the no-report control earns as well;
+  or the back month's implied volatility falling far enough to give back the front's loss.
+- **Events:** item 31's list, timing, entry and reaction sessions, imported from its script so the two
+  cannot drift. That is Dolt `earnings_calendar` rows with a stated timing, on the 158 names the
+  liquidity verdict called tradable on 2026-10-30 (a hindsight label, B11), from 2020-01-22.
+  - **Extended:** item 31's `build_events` is run over the same calendar for the names in item 31's
+    event list, for reports after item 31's last (2026-07-14) whose reaction session is on or before
+    2026-11-20.
+  - **Early closes:** an entry session that closes at 13:00 is left out (no 15:40 bar), counted.
+- **Expiries, the module's own rule:** item 31's `front_expiry` (the first listed expiry on or after
+  the reaction date) and `back_expiry` (the module's `select_back_expiration`: the nearest standard
+  monthly at least 21 days after the front, else the nearest expiry that far).
+- **The expected move (`EM`):** the earnings module's own definition, `scanner.resolve_expected_move`
+  with the event method. Its inputs are the front's at-the-money call and put mids at the entry bar and
+  both expiries' at-the-money implied volatilities. The straddle fallback is recorded when the split is
+  invalid. Volatilities and the underlying come from the intraday store, computed from the quotes on the
+  vendor's current tier (`chaindelta.computed_greeks`, the parity forward for the underlying).
+- **The trade (`SPEC`):** one contract per leg.
+  - **Strikes:** the call strike is the listed strike nearest spot + k × EM, and the put strike the
+    listed strike nearest spot − k × EM.
+    - **Quotes:** both strikes must be quoted in both expiries at the entry bar, each leg's spread at
+      most **10%** of its mid.
+    - **Drops:** a strike more than 0.25 × EM from its target, or not on its own side of spot, drops the
+      event from that arm as `strike_off_target`, counted. Five of the paper book's 37 rows landed
+      lopsided this way.
+  - **Entry:** the 15:40 ET bar of the entry session, at mid less the suite's slippage
+    (`fees.slippage_dollars`, an eighth of each leg's spread) per leg, and per-leg fees from
+    `cherrypick.core.fees`.
+  - **Exit (judged):** the reaction session's 10:00 ET bar, at mid less the same slippage, with the
+    closing fees.
+    - **Unquoted legs:** a leg with no two-sided quote at 10:00 takes the next bar that has one, up to
+      10:30. After that, the trade is closed adversely under item 52's rule (a short bought back at
+      intrinsic plus its entry spread, a long sold at the larger of zero and intrinsic less its entry
+      spread), counted.
+- **Arms (Holm across them):** `k050`, `k075` and `k100`, at k = 0.5, 0.75 and 1.0. The paired
+  test's session-bootstrap p is Holm-adjusted across the three arms at 5%. The t bar of 2.4 is above
+  Holm's strictest step for three arms (one-sided p 0.017), so it carries the capital bar.
+- **The control:** item 31's `control_for` (the same weekday four weeks earlier, then later, then five
+  weeks earlier, with no report from three sessions before it through its front expiry).
+  - **Pricing:** the same arm on that session's front and back expiries, at the same multiple of that
+    session's EM, in at 15:40 and out at 10:00 the next session.
+  - **Pairing:** paired per event. An event whose control cannot be priced leaves the paired test and
+    is counted.
+- **Windows:** one run, cut in three:
+  - **design:** entries before 2024-01-01;
+  - **holdout:** 2024-01-01 to 2026-07-14, read only after a design pass;
+  - **confirmation:** reports after 2026-07-14, the extension above, which no study has read. It is
+    read only after a holdout pass.
+
+  `RULE`'s split is 2024-01-01, over the trades entered before 2026-07-15. The confirmation part is
+  read by `EVENT_RULE` alone, because the kit's floor would leave it no verdict. Time-halves are split
+  at 2022-07-01, and name-halves by `name_half`.
+- **The rule, two literals in the script; a pass needs both:**
+  - **`RULE`, the three bars** (`cherrypick.backtest.study.rule`), one row per trade:
+    - **Capital:** the net less the 3-month bill on the debit over the hold, one-sided t ≥ 2.4.
+    - **Tail:** 10,000 draws, seed 99, a year being the sample's own trades a year.
+    - **Delta:** not applicable. The strikes sit either side of spot by the same multiple; the entry
+      delta is reported.
+    - **Floors:** fewer than 150 design trades in an arm is no verdict, and fewer than 100 holdout
+      trades likewise.
+  - **`EVENT_RULE`:** on return per dollar of debit, the trade less its control, clustered by entry
+    session, one-sided t ≥ 2.4 with the Holm-adjusted p under 0.05.
+    - **Design:** the mean must be positive in each design time-half and name-half, at the stress (fees
+      1.5×, half the spread, the 15%-of-mid slippage cap lifted, as item 52) and with the best five
+      trades removed.
+    - **Holdout, after a design pass:** the mean and the paired difference both positive.
+    - **Confirmation, after a holdout pass:** the mean net positive at the verdict fill. No t bar: the
+      window holds about one and a half report seasons. It can stop a pass but cannot make one.
+- **Coverage floor:** before judging, the study writes, per year, the share of planned requests the
+  store answers `complete` with their required bar (15:40 at entry, 10:00 on the reaction session).
+  The years are entry years, events and controls together. A year under 80% is reported, not judged:
+  its trades leave every judged part.
+- **Minimum detectable effect:** the plan step computes `planned_mde` from item 52's B1 design trades,
+  using the paired return (net less the control's, over the debit), and this item's planned design
+  events. It is written to the local plan file before the study runs. A no-verdict result then reads "no edge larger than X".
+- **Reported, never judged:**
+  - the net by the realised move in EM units (under 0.5, 0.5 to 1, over 1), the measure that read the
+    paper book;
+  - k = 0.25 and k = 1.25 as the distance's neighbours (`neighbourhood`), a plateau or a lone peak;
+  - other exits: the reaction session's 09:45 bar (the paper book's), its 15:55 bar, and the next
+    session's 15:55 bar;
+  - the natural fill (shorts at the ask and longs at the bid, both ways), the worst case beside the
+    verdict, and mid fills;
+  - the call calendar and the put calendar on their own;
+  - the paper book's own strikes (k = 1 on 0.85 × the front straddle);
+  - the back month's implied-volatility change from entry to the exit bar;
+  - each year, each name-half, and skips by reason.
+- **Rival explanations, each with its check:**
+  - *Ordinary calendar decay, not the report:* the paired control.
+  - *The back month falls with the front:* its reported implied-volatility change, and the paired
+    test, which nets it.
+  - *Costs on four single-name legs:* the verdict fill, the 10% spread limit, the stress a pass must
+    survive, and the natural fill reported.
+  - *A distance picked after the fact:* three declared arms under Holm, the neighbours reported and
+    never re-chosen, and a confirmation window no study has read.
+  - *A few quiet reports carry it:* the best five removed, both time-halves and both name-halves.
+- **Declared limits (B11):**
+  - **Universe:** the hindsight universe; there is no history of the liquidity verdict to rebuild it
+    as it stood.
+  - **Bars:** five-minute bars, so the fill is the bar's quote.
+  - **Greeks:** implied volatilities and deltas are computed from quotes, and the underlying is the
+    parity forward.
+  - **Assignment:** early assignment is not modelled (the judged exit is before the front expires).
+  - **Management:** none is modelled (the module's profit target, stop and leg stop); a pass is
+    checked on paper with them.
+  - **Confirmation window:** about one and a half seasons.
+- **Expected, recorded before the run:** a fail. Items 52 and 86 and the paper book all lost with
+  these structures or on these names. The open question is whether closer strikes and fills at the
+  module's own times change it.
+- **Data:** item 31's intraday chain store (`intraday_chains.db`), fetched through
+  `fetch-intraday-chains` at item 31's 5-minute interval, under the vendor's current tier (quotes
+  only, two workers or fewer).
+  - **Windows:** item 31's request windows, both expiries, strikes within 30 either side of the
+    money:
+    - 15:35 to 15:50 on the entry session, for every event and every control;
+    - 09:40 to 15:55 on the reaction session (`later_window`, so it ends earlier on a short day), for
+      every event and every control;
+    - the same window on the session after the reaction, for events only (the next-session reading).
+  - **What is fetched:** the plan step writes the request file, newest events first; the fetch skips
+    what the store already answers. Its first 200 requests also go to a sample file, which the
+    `fetch-sample` row fetches. The smoke reads that sample and times the fetch before the full fetch
+    runs.
+- **Script and results:** `packages/backtest/scripts/earnings_double_calendar_item99.py plan|study`, queued with
+  `run.py queue-chain` (`item99/plan`, `fetch-sample`, `smoke`, `fetch`, `study`). The chain runs
+  behind the full-set fetch. Results stay under
+  `~/.cherrypick/data/backtest/results/research/item99/`, and this plan records the verdict without
+  figures.
+- **Decides:**
+  - **An arm passes all three parts:** propose returning `double_calendar` to the earnings
+    `strat_test` books at a declared boundary. It would carry the passing k, the event expected move,
+    mid exits, the 10% spread limit and the strike check above, with a `forward` block declared before
+    it trades.
+  - **Every arm fails or no verdict:** double calendars across a report are closed at every strike
+    distance tested, at the module's own times. The time-spread family stays closed for single-name
+    earnings, and the work on defined-risk short vol turns to single-expiry structures.
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:
