@@ -10198,6 +10198,174 @@ this is not a retest of either: the structure is new.
     lots, with its forward check declared before it trades; the lot size is the user's call.
   - **A fail or no verdict:** the module keeps counting the hospital and opens no options, as after item 76.
 
+### 101. The wheel as a public webinar teaches it, against owning the same shares: a put, then cost-strike calls, never rolled
+
+Declared 2026-11-21, before any outcome of it is computed. The recipe is a public options webinar's
+(the source is not named here): sell a cash-secured put, and if it is assigned, sell calls only at or
+above what the shares effectively cost, never roll, and start again after a call-away. Our studies so
+far tested the parts of it on their own: the 10-19 short-put sweep (30 DTE worse than 45-60, edge
+beyond the delta-equivalent stock about nothing), the covered-call delta study (the overlay loses to
+holding, worst on high-momentum names), the 10-23 income confirmation (no tested put edge), item 25
+(the put's expiry and management, which left the calls out on purpose) and item 76 (the cost-strike
+`breakeven` call rule failed on the ladder's stuck lots). Nobody has run the cycle as one thing.
+`cherrypick hypotheses --similar` finds no look-alike on these tags; the nearest failures are 25, 70,
+76 and 92, and this one **retests their parts together, said out loud**.
+
+- **Question:** does the wheel, run as the webinar teaches it, beat simply owning the same 100 shares
+  over the same days, after costs?
+- **Where the edge would live:** in **premium**, the variance premium on the put and then on the call,
+  and in being paid to wait for a price. Against it, and the prior is low: the put is delta-equivalent
+  stock and its premium has measured about the drift it gives away; the call caps the rebound that is
+  a stuck position's way out (items 76 and the covered-call study); a call "only at or above cost" is
+  worth little exactly when the shares are furthest under it, so the wheel's worst stretches are the
+  ones it earns least in; and on a strong stock a held share simply keeps what the wheel caps. A pass
+  would be a surprise. What this item adds to the parts is the **whole cycle**: the idle days, the
+  waits for a bid, and how long shares sit stuck.
+- **Look-alikes retested:** 25 (no verdict), 70 and 76 (failed), 92 (failed), the 10-19 sweep, the
+  covered-call delta study and the 10-23 confirmation. A failure here says the cycle adds nothing to
+  its parts; it does not re-read them.
+- **The arms,** each one position at a time per name, one contract (100 shares):
+  - **`vendor`:** the webinar's stated recipe. A cash-secured put at 40 delta on the standard monthly
+    21 to 45 calendar days out nearest 30 (the earlier on a tie), held to expiry, never closed early.
+  - **`vendor-stop`:** the same, and the open put is bought back when the stock's close is at or under
+    85% of its close on the day the put was sold; the next put is sold once the close is back at or
+    above the close it was bought back on, then under the entry rules below.
+  - **`ours`:** a cash-secured put at 16 delta on the standard monthly 45 to 60 days out, bought back
+    at half the credit, as the short-put list's `m45-tp50` and item 25 do.
+  - **The calls,** the same in every arm: after an assignment, each session with no call open, one
+    call at the lowest listed strike at or above the **effective cost** (the assignment strike less
+    every premium banked since, per share: the assigned put's credit and each call's, at the fill, gross
+    of fees), on the standard monthly nearest the 30 to 45 day band (the monthly 15 to 66 days out whose
+    distance from the band is least; the later on a tie). **If that call's bid is under 1% of the
+    stock's close, no call is sold and the next session looks again**, counted as waiting ("wait rather
+    than lock in a loss"). Held to expiry, never rolled and never bought back: a close at or over the
+    strike calls the shares away at it, else the call expires and the next is sold the next session.
+  - **After a call-away or a put that ended, the next put is sold the next session.** A put closed at
+    half credit or bought back by the stop does the same (the stop's own re-entry rule above).
+- **The entry rules, for every sale (put or call):**
+  - **Earnings:** no put or call whose span, from the sale through its expiry, holds a report; a name
+    whose report date is unknown is not clear (the quarter around the span must show
+    in the calendar, item 25's reading: no gap over 120 days between the reports either side, and the
+    last report under 80 days old when the next is not listed). **Funds are exempt.** Dates are Dolt's
+    earnings calendar, read once by `plan` and cached. Dolt's calendar holds no report for a few
+    dozen trading days; the hole is left as it is, so the quarter reads unknown and nothing is
+    entered there (Nasdaq's public calendar answers with a 403 and is not worked around). Dolt's
+    calendar starts in 2020, so a stock's first entry is the first session its previous report is on
+    file; funds start with the window.
+  - **Half days are not tradeable:** no new put or call on a session that closes at 13:00 ET.
+  - **A split** between the sale and its expiry: not sold. Shares held through a split scale with it,
+    their basis and banked premium restated; a call waits for the first session after the ex-date.
+  - **Spread:** the standard monthly's at-the-money spread (the wider of the call and the put at the
+    strike nearest the parity forward) at most 7.5% of its mid, the liquidity label's own bar, read
+    on the sale's session; and the leg itself under `core.legbars`' spread bar (10% of mid or a
+    nickel). The label's open-interest and volume bars need stores this study does not read.
+- **The baseline, `hold`:** 100 shares bought at the close of the session the arm's first put is sold
+  and held over the same days, dividends in. **Capital-matched:** every row below puts both sides on
+  100 shares at the row's start close; the wheel's cash earns the 3-month bill while it holds cash
+  (before an assignment, and after a call-away), and the shares earn nothing but the stock. **Reported
+  beside, unjudged:** the delta-equivalent stock comparison (the wheel's net less a stock position the
+  size of each leg's entry delta over the leg's days, the rest in the bill).
+- **Rows tile each name's timeline.** A row runs from the end of the previous cycle (an expired,
+  closed or stopped put, a call-away, or the arm's first put) to the end of this one, so it holds the
+  idle days that precede its put. Its wheel net is every cash flow in it (premiums, fees, slippage,
+  settlement, shares at strike, dividends while the shares are held), a position open at the run's end
+  marked at its working buy-back and the close; its `hold` is the same 100 shares from the row's start
+  to its end. The row's difference is wheel plus the bill on its cash days, less hold. The hold is
+  re-based at each row's start (100 shares at the then price), so the wheel's 100 shares and the
+  hold's are the same size after a split, and a name's sum of rows is its whole-timeline difference
+  to the extent the rows' returns are.
+- **Costs:** every option fill at mid conceding a quarter of the bid-ask, capped at 15% of the mid
+  (the suite's slippage cap); `cherrypick.core.fees` for the broker's option fees and the share fees;
+  **$5 for each assignment and each ITM expiry** (the put's assignment and the call's call-away);
+  the shares come in at the strike with no further charge but the schedule's, and the hold pays a
+  0.05% share slippage and the schedule's fee once on its first purchase (the same 0.05% the
+  ladder studies use). **Assignment is read at the expiry close; early assignment is not modelled and
+  neither is the dividend a call forfeits, so every result is an upper bound for the wheel.**
+- **The universe:** the names the liquidity verdict (`technicals liquidity`) calls `tradable` (and the
+  funds that pass the same test), minus leveraged funds, whose chains our store holds on enough
+  sessions: about 90% of the sessions from 2016-03-01 to 2026-10-16 complete (2,400 of them), and in each year from 2016 on two-sided
+  quotes on at least 60% of rows and 15 strikes a chain (`storequality.meets`, the quality report of
+  2026-11-14). `plan` records the names it takes and why it leaves each other out
+  (`universe.json`). It took **30: 23 stocks and 7 funds** (SPY, QQQ, IWM, GLD, SLV, SMH, TLT). The
+  label is today's, so it is hindsight and survivorship in the names; it is declared here and read
+  with the point-in-time spread check above. Funds are judged with the stocks, and funds and stocks
+  are reported apart.
+- **Data:** the vendor's end-of-day chains, which the ThetaData licence (Value tier, which serves
+  quotes and no greeks) lets us fetch while it allows new work, and which our store already holds for
+  most of these names daily from 2016. Deltas are Black-76 from each leg's mid and the chain's parity
+  forward (the bill rate and the dividends live in the forward), calendar days, never the vendor's.
+  Dolt's chains are not used: they are not daily before 2025 and carry no weeklies. Every standard
+  monthly from March 2016 to the run's end, each name's path from 66 days before it, is requested;
+  the fetch skips what the store holds. Names and years the store holds too little of are dropped by
+  the coverage floor below, not filled in. Share prices, splits and dividends are the technicals
+  history's raw bars. The replay reads the chain store only through its own requests file.
+- **Windows and splits, fixed here before any run.** One run over every session from 2016-03-01
+  (entries to 2026-10-16, positions to 2026-10-28, a position still open then marked). The kit's
+  `RULE` cuts it at **2023-10-01**: design before, holdout from; a row belongs to the part holding the
+  week of its put's session, and a week is wholly one part (both cuts fall on a Sunday-Monday edge).
+  The design is read in two time-halves at **2020-06-01**. **The holdout is read only after a design
+  pass.** A name-year whose chains cover under 80% of its sessions (any monthly 21 to 60 days out) is
+  reported, not judged: its rows are dropped and counted.
+- **The unit:** each arm's rows (above) pooled to one **return per week** of their put sessions, the
+  difference over the capital of the rows pooled (the kit's tail bar needs 100 or more rows, which
+  months of a pooled sample cannot give, and a row has the names' correlation inside it). The weeks'
+  difference already carries the bill, so the capital bar's own bill term is nil, and the delta bar
+  is not applicable: the baseline is the delta comparison.
+- **Measured and reported per name (never judged by itself):** each arm's whole-cycle net less
+  `hold`'s as % of the name's mean capital a year, idle days in; the sign count across names; and the
+  **stuck-share counts**: assignments, how many were called away, how many shares are still held at
+  the end, how many cycles held shares more than 90 days (and the days beyond 90), the mean days held,
+  the sessions spent waiting for a bid, and the stop's count.
+- **The rule (`RULE`, with `HALF_RULE`), per arm:**
+  - **Design (before 2023-10-01):** the weeks' mean difference above zero with a one-sided t of 2.4 or
+    more (above Holm's first bar for three arms, about 2.1, so one bar serves the Holm across the
+    three judged arms), the kit's tail bar (the 99th-percentile drawdown over a year of weeks
+    smaller than a year's mean), at least 150 design weeks, and **positive in each design time-half
+    (cut 2020-06-01) and each name-half** (`core.robustness.name_half`).
+  - **Holdout, read only after a design pass:** the weeks' mean difference above zero, the tail bar
+    on every week read, at least 52 holdout weeks.
+  - An arm that fails any design part is a fail and its holdout is not read.
+- **Reported, never judged:** per name and arm the measure above; funds and stocks apart; each year;
+  the design and the holdout apart; the delta-equivalent comparison; the difference at mid (the
+  slippage added back); the rows below the coverage floor; skips by reason (earnings, unknown
+  report, half day, split, spread, no chain, no expiry, waiting for a bid).
+- **Minimum detectable effect (B12):** the design holds about 300 weekly rows, and a weekly return
+  sd near its own spread sets the smallest mean difference detectable at t 2.4; the run records the
+  design's measured standard error, so a fail reads "no difference larger than that", not "no edge".
+- **Rival explanations, each with its check:**
+  - *A bull market:* the baseline owns the shares, so the market's drift is in both sides; the
+    design's time-halves must agree, and the years are reported.
+  - *The wheel's cash earning the bill:* the capital is matched and the wheel's cash is credited
+    exactly the bill, so cash itself is not an edge.
+  - *Premium bought with stuck shares:* the stuck counts and days are reported for every arm, and the
+    waiting sessions beside them.
+  - *A few names:* the sign count across names and both name-halves; funds and stocks apart.
+  - *The label's hindsight:* declared; the point-in-time spread check and the liquidity of the store's
+    own quotes (two-sided floor) stand in for it; a pass reads as an upper bound.
+  - *Fills and fees:* the verdict is at the concession above; mid is reported beside it.
+  - *Three arms, one lucky:* t 2.4 against Holm's 2.1.
+  - *Early assignment and the forfeited dividend:* not modelled, so a pass is read as an upper bound
+    for the wheel.
+- **Declared limits (B11):** end-of-day quotes only, so a sale is at a close and assignment at an
+  expiry close; early assignment, ex-dividend assignment of an ITM call and pin risk are not
+  modelled; the call strike must be listed and two-sided; Black-76 deltas, not the vendor's; the
+  stop is read once a day at the close; a put or call with no usable quote the day it is wanted waits
+  the next session and is counted; stocks have no entries before Dolt's report calendar reaches them
+  and the calendar's holes read unknown, so the stocks' sample is thinner and later than the funds'; a
+  position open at the run's end is marked at its working buy-back, never settled; the weekly
+  pooling keeps the names' overlapping rows as they are, so the t is still too kind to the sample's
+  dependence, which the 2.4 bar and the two halves are there to cover.
+- **Data and results:** `packages/backtest/scripts/wheel_cycle_item101.py`, queued with
+  `run.py queue-chain --script` as `item101/plan`, `fetch-sample`, `smoke`, `fetch-chains` and
+  `study`. Results are derived from licensed data, so they stay under
+  `~/.cherrypick/data/backtest/results/research/item101/` and this plan records the verdict without
+  figures.
+- **Decides:**
+  - **A pass:** the passing arm's put and its calls are a candidate for a paper arm, declared on its
+    own forward block before it trades; nothing is built from this item.
+  - **A fail or no verdict:** the wheel is not worth running over its parts. The webinar's cost-strike
+    call rule joins item 76 as a rule that does not earn, and the wheel gets no arm or module.
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:

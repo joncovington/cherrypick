@@ -4873,6 +4873,66 @@
       "retest": null,
       "retest_note": null,
       "retests": []
+    },
+    {
+      "id": 101,
+      "study": "item101",
+      "title": "The wheel as a public webinar teaches it, against owning the same shares: a put, then cost-strike calls, never rolled",
+      "status": "declared",
+      "legacy": false,
+      "setup": "wheel-cycle",
+      "side": "bullish",
+      "structure": "wheel",
+      "window": "multi-day",
+      "measure": "per week of put sessions, the wheel's whole-cycle net (put premium, assignment at the strike, cost-strike calls on the standard monthly nearest 30-45 days, call-away, fees, slippage, settlement, dividends while the shares are held) plus the 3-month bill on its cash days, less 100 shares held over the same days, as a return on the capital both hold, every name pooled; judged arms vendor (40-delta put on the monthly 21-45 days out nearest 30, held), vendor-stop (the same bought back at 85% of the entry close, re-entered at the exit close), itm1 (the lowest listed strike above the entry close, same monthly, held), m45-40 (40 delta on the monthly 45-60 days out, held) and m45-40-tp50 (the same bought back at half the credit); ours (16 delta, 45-60 days, half credit) reported beside; the vendor's end-of-day chains for the liquidity verdict's tradable names (stocks and funds) our store covers, 2016-03-01 to 2026-10-28; per-name % of capital a year, the stuck-share counts and m45-40 less m45-40-tp50 per name reported",
+      "expected": "an arm's weekly return on capital exceeds holding the same shares, after costs, at t 2.4, in both design time-halves and both name-halves",
+      "sample": "one run cut at 2023-10-01 (design before, holdout from; design halves cut 2020-06-01); a week belongs to the part holding its put's session; < 150 design weeks or < 52 holdout weeks = no verdict; a name-year under 80% chain coverage is reported, not judged; stocks enter only where Dolt's report calendar shows the quarter",
+      "rule": "RULE: per arm, the kit's capital and tail bars on the pooled weekly difference from holding (bill inside the difference; delta not applicable), t >= 2.4 (above Holm's first bar for five arms), tail 10,000 draws seed 101, the sample's own weeks a year; HALF_RULE: the design mean positive in each time-half (2020-06-01) and each name-half; then the holdout mean > 0 and the tail bar after a design pass of both; an arm that fails a design part is a fail with its holdout unread",
+      "mechanism": "premium: the put and then the call are sold above the realised variance they carry, and the shares are bought at a strike under the market with the call capped at what they cost; against it, the put is delta-equivalent stock paid about its drift, a call at cost caps the rebound and bids least when the shares are furthest under it, so the cycle stalls where it earns least",
+      "rivals": [
+        {
+          "explanation": "a rising market lifts the shares the baseline owns and the wheel caps",
+          "check": "the baseline owns the same shares on the same capital; both design time-halves must agree; years reported"
+        },
+        {
+          "explanation": "the wheel's idle cash earning the bill",
+          "check": "capital matched, the wheel's cash credited exactly the bill so cash itself is no edge"
+        },
+        {
+          "explanation": "premium bought with stuck shares",
+          "check": "assignments, cycles over 90 days, days beyond 90, shares still held at the end and waiting sessions reported per arm and name"
+        },
+        {
+          "explanation": "a few names or one asset class",
+          "check": "both name-halves; funds and stocks reported apart; sign count across names"
+        },
+        {
+          "explanation": "the liquidity label's hindsight in the universe",
+          "check": "declared; a point-in-time at-the-money spread bar at each sale; a pass is an upper bound"
+        },
+        {
+          "explanation": "fills, fees and early assignment",
+          "check": "the verdict is at a quarter of the spread conceded with core fees and $5 settlements; mid reported beside; early assignment not modelled, so a pass is an upper bound"
+        },
+        {
+          "explanation": "five arms, one lucky",
+          "check": "t 2.4 against Holm's bar for five"
+        }
+      ],
+      "pointer": "research/edge-hypotheses-plan.md#101-the-wheel-as-a-public-webinar-teaches-it-against-owning-the-same-shares-a-put-then-cost-strike-calls-never-rolled",
+      "scripts": [
+        "packages/backtest/scripts/wheel_cycle_item101.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_wheel_cycle_item101_script.py"
+      ],
+      "results": [
+        "{home}/data/backtest/results/research/item101/results.json"
+      ],
+      "outcome": null,
+      "retest": null,
+      "retest_note": "A pass is followed by a paper arm with its own forward block, not a retest; the chains are the vendor's, so a retest reads them only while the licence allows new work.",
+      "retests": []
     }
   ],
   "rule_changes": []
