@@ -147,6 +147,8 @@ alone):
     for automations the backtest's declared items go to core as `--declares`, a licensed one left out
     while `backtestResultsOn` is false. MEIC, calendars and contango pass `pairs={false}` to the
     shared performance slide, which then points to the tab instead of drawing the advised pairs.
+    MEIC also passes `armCards={false}`: its arms are compared in its own arm comparison table,
+    whose `vs control` column is that module's changes rows by arm tag.
   - **The Builder's form reads the module's schema and "Today, live"; neither writes.** The Builder
     is Automations' `builder` tab (`/builder` redirects there; `g u` is its tab chord,
     `navLinks.TAB_SHORTCUTS`). The form's choices are `cli builder-schema`

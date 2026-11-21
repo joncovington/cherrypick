@@ -48,7 +48,7 @@ export const READING_WORDS: Record<ChangeReading, string> = {
   waiting: "waiting on its test",
   closed: "closed",
 };
-const READING_CHIP: Record<ChangeReading, string> = {
+export const READING_CHIP: Record<ChangeReading, string> = {
   ready: "chip chip-ok",
   leaning: "chip chip-info",
   too_early: "chip",

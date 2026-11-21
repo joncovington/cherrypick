@@ -161,11 +161,15 @@ export function PerformanceSlide({
   mode = "paper",
   arm = null,
   pairs: showPairs = true,
+  armCards = true,
 }: {
   module: PerformanceModuleId;
   mode?: TradingMode;
   /** False where the module has a `changes` tab: the advised arms are read there, and this says so. */
   pairs?: boolean;
+  /** False where the module compares its arms in one table of its own (MEIC): the per-arm cards are
+   *  not drawn, and the cumulative chart stays. */
+  armCards?: boolean;
   /** The page's arm picker (flies, MEIC): narrows the arm cards, pairs and exit reasons to that arm.
    *  The cumulative chart keeps `control` beside it as the reference. null is every arm. */
   arm?: string | null;
@@ -259,6 +263,7 @@ export function PerformanceSlide({
         </Section>
       ) : (
         <>
+          {armCards && (
           <Section concept="stand" tag="the record" question="How has each arm done?">
             {shown.map((g) => (
               <Card
@@ -274,6 +279,7 @@ export function PerformanceSlide({
               </Card>
             ))}
           </Section>
+          )}
 
           <Section concept="hist" tag="over time" question="How did it get here?">
             <Card
