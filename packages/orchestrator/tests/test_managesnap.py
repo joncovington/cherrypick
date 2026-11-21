@@ -40,6 +40,7 @@ def _fake(monkeypatch, answers):
     # Nor the real home's stream cache.
     monkeypatch.setattr(managesnap, "_cached_greeks", lambda syms: {})
     monkeypatch.setattr(managesnap, "_cached_listing", lambda name: [])
+    monkeypatch.setattr(managesnap.streamcache, "cache_path", lambda config=None: Path("no-such-cache.db"))
     monkeypatch.setattr(cfgmod, "enabled_modules", lambda cfg: {"meic": {"path": "."}})
     monkeypatch.setattr(cfgmod, "module_root", lambda mcfg, name: ".")
     monkeypatch.setattr(cfgmod, "broker_tool", lambda mcfg, name: ["-m", "cherrypick.meic.tt"])
@@ -55,7 +56,7 @@ def test_the_snapshot_carries_each_underlyings_trade_history(monkeypatch):
         },
     )
     snap = managesnap.build({})
-    assert snap["snapshot_version"] == 19
+    assert snap["snapshot_version"] == 20
     # v18: the Cboe SPX/VIX history, null with a reason where the files are missing
     assert snap["spot_vol_history"] is not None or snap["spot_vol_history_error"]
     # v16: the loops' published order ids, read from the (isolated, empty) state folder
@@ -1130,3 +1131,108 @@ def test_the_minute_overlay_reads_fresh_cached_quotes_for_what_the_stored_snapsh
     assert out["max_age_seconds"] == 60.0
     stale = _cache(tmp_path / "stale.db", {"XYZ": (1, 2, 1.5, now - 600)})
     assert managesnap.marks_overlay("2026-11-02", now_iso="t", cache_path=stale) is None, "nothing fresh"
+
+
+# --------------------------------------------------------------------------- the cost-strike call (v20)
+COST_HELD = {
+    "ok": True,
+    "broker_module": "meic",
+    "accounts": [
+        {
+            "account": "****1234",
+            "underlyings": [
+                {"underlying": "AAA", "legs": [_leg("AAA", None, 100, None, None)]},
+                # Shares with a call written, shares short of a round lot, and a naked option: none read.
+                {
+                    "underlying": "BBB",
+                    "legs": [
+                        _leg("BBB", None, 200, None, None),
+                        _leg("BBB   261120C00060000", "C", -1, "2026-11-20", 60.0),
+                    ],
+                },
+                {"underlying": "CCC", "legs": [_leg("CCC", None, 50, None, None)]},
+                {"underlying": "DDD", "legs": [_leg("DDD   261120P00016000", "P", -1, "2026-11-20", 16.0)]},
+            ],
+        }
+    ],
+}
+COST_LISTED = ["2026-10-30", "2026-11-13", "2026-11-20", "2026-11-27", "2026-12-18", "2027-01-15"]
+
+
+def _cost_chain(argv):
+    name = argv[argv.index("--symbol") + 1]
+    if "--expiration" not in argv:
+        return {"ok": True, "chain": {e: [] for e in COST_LISTED}}
+    exp = argv[argv.index("--expiration") + 1]
+    rows = [
+        {"symbol": f"{name:<6}{exp[2:4]}{exp[5:7]}{exp[8:10]}{right}00050000", "option_type": right,
+         "strike_price": 50.0, "bid": 1.0, "ask": 1.2, "mid": 1.1}
+        for right in ("C", "P")
+    ]  # fmt: skip
+    return {"ok": True, "quotes_complete": True, "chain": {exp: rows}}
+
+
+def _cost_build(monkeypatch, cfg=None):
+    calls = _fake(
+        monkeypatch,
+        {
+            "get_market_overview": {"ok": True, "metrics": [{"symbol": "AAA", "last": 50.0}]},
+            "get_transactions": {"ok": True, "transactions": {}},
+            "get_option_chain": _cost_chain,
+        },
+    )
+    monkeypatch.setattr(managesnap.positions_mod, "run", lambda cfg: COST_HELD)
+    monkeypatch.setattr(managesnap.clock, "today_iso", lambda: "2026-10-20")
+    return managesnap.build(cfg or {}), calls
+
+
+def test_a_cost_strike_chain_is_read_for_shares_with_no_call_written(monkeypatch):
+    assert [h["underlying"] for h in managesnap.cost_call_names(COST_HELD, set())] == ["AAA"]
+    snap, calls = _cost_build(monkeypatch)
+    cc = snap["cost_call"]
+    assert snap["snapshot_version"] == 20 and cc["window_strikes"] == managesnap.ROLL_STRIKES
+    assert list(cc["names"]) == ["AAA"] and cc["names"]["AAA"]["instance"] == "main"
+    # Only the standard monthlies 30-60 days out of 2026-10-20: November's and December's third Fridays.
+    # The weeklies, the monthly 9 days out and the one 87 days out are not read.
+    assert sorted(cc["names"]["AAA"]["chains"]) == ["2026-11-20", "2026-12-18"]
+    reads = [
+        argv[argv.index("--expiration") + 1] for argv, _ in calls if "AAA" in argv and "--expiration" in argv
+    ]
+    assert sorted(reads) == ["2026-11-20", "2026-12-18"]
+    # Calls only, with the bid the broker quoted.
+    (option,) = cc["names"]["AAA"]["chains"]["2026-11-20"]["options"]
+    assert option["right"] == "C" and option["bid"] == 1.0 and option["strike"] == 50.0
+    assert cc["skipped"] == []
+
+
+def test_the_cost_strike_step_is_capped_and_says_what_it_cut(monkeypatch):
+    snap, _ = _cost_build(monkeypatch, {"manage": {"cost_call": {"max_calls": 2}}})
+    # One listing read and one chain read, then the cap.
+    assert list(snap["cost_call"]["names"]["AAA"]["chains"]) == ["2026-11-20"]
+    assert snap["cost_call"]["skipped"][0]["expiration"] == "2026-12-18"
+    off, _ = _cost_build(monkeypatch, {"manage": {"cost_call": {"max_calls": 0}}})
+    assert off["cost_call"]["names"]["AAA"]["chains"] == {} and off["cost_call"]["skipped"]
+
+
+def test_the_minute_overlay_reads_the_cost_strike_calls_from_the_producer_that_quotes_the_account(tmp_path):
+    import time
+
+    now = time.time()
+    snapshot = {
+        "stream_instances": [],
+        "metrics": {},
+        "positions": {"accounts": []},
+        "cost_call": {
+            "names": {
+                "AAA": {
+                    "instance": "main",
+                    "chains": {"2026-11-20": {"options": [{"symbol": "AAA   261120C00050000"}]}},
+                }
+            }
+        },
+    }
+    assert managesnap.overlay_symbols(snapshot) == [".AAA261120C50"]
+    cache = _cache(
+        tmp_path / "cache.db", {".AAA261120C50": (1.0, 1.2, 1.1, now - 3), ".AAA261120C55": (1, 2, 1.5, now)}
+    )
+    assert list(managesnap.cache_quotes(snapshot, cache)) == [".AAA261120C50"]

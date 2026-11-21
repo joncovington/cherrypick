@@ -18,7 +18,7 @@ import { CardLightbox, LightboxFrame, useOpenParam, type LightboxTab } from "../
 import { Tile } from "../Flies/PerformanceTab";
 import { Cells, HeadRow, useColumns, type Column } from "../../components/columns";
 import { fmtCash, fmtMoney, fmtPrice } from "../../lib/format";
-import { ExpiringCard, NearStrikeCard, contractKey, distanceWords, scoped, type RowExtra } from "./AttentionCard";
+import { CostCallCard, ExpiringCard, NearStrikeCard, contractKey, costCallRows, distanceWords, scoped, type RowExtra } from "./AttentionCard";
 import { IntentChip, NoIntentCard, candidateFor, candidateKey } from "./IntentChoice";
 import { PayoffStrip } from "./PayoffCard";
 import { LedgerDesk } from "./LedgerDesk";
@@ -697,7 +697,8 @@ export function WheelCards({ a: evaluated }: { a: ManageAccount }) {
   };
   // A card with nothing to show is left out, and a section whose cards are all left out goes too
   // (2026-11-12).
-  const showLook = (look?.items.length ?? 0) + (look?.expiring.length ?? 0) > 0 || cands.some((c) => !onRows.has(candidateKey(c)));
+  const costCalls = a.attention ? costCallRows(a.attention, scope).length : 0;
+  const showLook = (look?.items.length ?? 0) + (look?.expiring.length ?? 0) + costCalls > 0 || cands.some((c) => !onRows.has(candidateKey(c)));
   const ledger = a.ledger ?? null;
   // A ledger with no name in it has nothing to show, whatever its note says (no history read, say).
   const showLedger = ledger !== null && (ledger.names?.length ?? 0) > 0;
@@ -711,6 +712,7 @@ export function WheelCards({ a: evaluated }: { a: ManageAccount }) {
               <>
                 <NearStrikeCard a={a.attention} scope={scope} held={holding?.symbols ?? null} hideEmpty extra={chip} />
                 <ExpiringCard a={a.attention} scope={scope} held={holding?.symbols ?? null} hideEmpty extra={chip} />
+                <CostCallCard a={a.attention} scope={scope} hideEmpty />
               </>
             ) : null}
             {cands.some((c) => !onRows.has(candidateKey(c))) ? <NoIntentCard cands={cands} shown={onRows} /> : null}

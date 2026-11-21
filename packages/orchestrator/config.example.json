@@ -677,6 +677,11 @@
       "max_calls": 30,
       "max_seconds": 300
     },
+    "_cost_call_note": "The standard monthlies 30 to 60 days out the snapshot reads for each name holding shares and no short call, quoted 40 strikes either side of its price, for manage's cost-strike call reading (attention.cost_call). One read per monthly per name (plus one listing per name when the stream cache does not hold it); 'max_calls' and 'max_seconds' cap the step, 'max_calls' 0 turns it off, and what they cut is recorded in the snapshot, never fatal.",
+    "cost_call": {
+      "max_calls": 12,
+      "max_seconds": 120
+    },
     "_marks_note": "Between the full runs, the `manage-marks` job moves the day's stored snapshot to the stream cache's quotes every 'interval_seconds' (at least 30) from 'start' to 'end' ET and evaluates it again (packages/manage `remark`): legs and spots re-priced, nothing else re-read. No broker call; it posts only a needs-a-look name not yet posted today ('attention_notify'). On whenever manage is; 'enabled': false turns it off alone. Its first minute of the day, and the minute after a fill the account-alerts service heard since the stored snapshot (once the fill is 30 s old, so a multi-leg order lands whole), take a full snapshot instead (`managerefresh.py`); until 10:00 the evaluation is marked early and the list is not posted.",
     "marks": {
       "enabled": true,

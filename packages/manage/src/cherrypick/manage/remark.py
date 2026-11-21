@@ -5,6 +5,7 @@ every 30 minutes. Between them the prices move and little else does, and the str
 quotes every held leg and underlying (`stream_request`). So once a minute the orchestrator reads those
 quotes into an **overlay** (`manage-marks`), and this moves the day's stored snapshot to it:
 
+- each call the snapshot read for the cost-strike reading (`cost_call`) gets the overlay's fresh quote;
 - each held leg the overlay quotes is re-priced at that quote by `core.legmarks.apply_mark`, the same
   arithmetic the full snapshot priced it with; a leg the overlay does not quote keeps the snapshot's
   mark, its age and source as they were;
@@ -40,6 +41,18 @@ def wanted(snapshot: dict) -> list[str]:
     """Every streamer symbol a re-mark of `snapshot` can use: its legs and its quoted underlyings."""
     out = {streamer_symbol(leg["symbol"]) for leg in _legs(snapshot) if leg.get("symbol")}
     out |= {str(s) for s in snapshot.get("metrics") or {}}
+    out |= set(cost_call_symbols(snapshot))
+    return sorted(out)
+
+
+def cost_call_symbols(snapshot: dict) -> list[str]:
+    """The streamer symbols of every call the snapshot read for the cost-strike reading (`costcall.py`)."""
+    out: set[str] = set()
+    for entry in ((snapshot.get("cost_call") or {}).get("names") or {}).values():
+        for chain in (entry.get("chains") or {}).values():
+            for option in (chain or {}).get("options") or []:
+                if option.get("symbol"):
+                    out.add(streamer_symbol(option["symbol"]))
     return sorted(out)
 
 
@@ -100,6 +113,10 @@ def apply(snapshot: dict, overlay: dict) -> dict:
             metric["last"] = quote["mid"]
             metric["last_source"] = "stream_cache"
             spots += 1
+    # The cost-strike reading's calls: the cache's fresh bids over the chain the snapshot read.
+    if out.get("cost_call"):
+        fresh = {s: quotes[s] for s in cost_call_symbols(out) if s in quotes}
+        out["cost_call"]["quotes"] = fresh
     out["remark"] = {
         "at": overlay.get("at"),
         "base_generated_at": snapshot.get("generated_at"),

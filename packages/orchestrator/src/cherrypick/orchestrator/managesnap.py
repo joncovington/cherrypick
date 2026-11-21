@@ -135,6 +135,15 @@ account (on a login flagged `manage`) reads its own three from its own login by 
 `accounts_history[<account_key>]`, so manage judges every account on its own history and never on
 another's. A snapshot without the two fields is read as before: the designated account, or the only
 one, owns the top-level history.
+
+Version 20 carries `cost_call`: for each name holding shares and no short call, every standard
+monthly 30-60 days out with its calls quoted 40 strikes either side of the name's price
+(`cost_call_chains`; the listing from the streamer's cache where it holds the name, the broker's
+otherwise), and `quotes`, the stream cache's fresh quote for each call read. manage's cost-strike
+reading (`attention.cost_call`) picks the expiry and the strike from it; the minute re-mark replaces
+`quotes` with the cache's newer ones. The step is capped (`manage.cost_call`: `max_calls`,
+`max_seconds`) and what the cap cuts is in `skipped`; a failed read is recorded on its name, never
+fatal. A snapshot without the field has no cost-strike reading.
 """
 
 from __future__ import annotations
@@ -145,7 +154,7 @@ import time
 from datetime import date, timedelta
 from typing import Any
 
-from cherrypick.core import clock, streamcache
+from cherrypick.core import calendar, clock, streamcache
 from cherrypick.core import execution as _execution
 from cherrypick.core.db import connect_ro
 
@@ -154,7 +163,7 @@ from . import doctor
 from . import positions as positions_mod
 from .util import first_json
 
-SNAPSHOT_VERSION = 19
+SNAPSHOT_VERSION = 20
 # Greeks move far more slowly than a bid; the cache's are used up to this old, the feed's otherwise.
 GREEKS_MAX_AGE_SECONDS = 900.0
 # Monday reads Friday's afternoon reading; anything older is a stale book of quotes.
@@ -172,6 +181,9 @@ VOLATILITY_INDEX = "VIX"
 HEDGE_ROOT = "XSP"
 HEDGE_DTE = (30, 60)
 HEDGE_PREFER_MIN_DTE = 45
+# The standard monthlies read for the cost-strike call: the widest window manage's `attention.cost_call`
+# may use (its fallback stops at the far end).
+COST_CALL_DTE = (30, 60)
 # XSP lists 1-point strikes near the money; 60 a side reaches past the 15-delta strike at 45 days.
 HEDGE_STRIKES = 60
 # Strikes either side of spot a short strangle's expiry is quoted at: an untested short rolls toward
@@ -777,6 +789,106 @@ def roll_out_chains(
     return out
 
 
+def cost_call_names(positions: dict[str, Any], instances: set[str]) -> list[dict[str, Any]]:
+    """The names a cost-strike call is read for, by name: each holding a round lot of shares and no
+    short call (a name with one written is not waiting for its next leg), with the producer instance
+    that quotes its account. A name two accounts hold is read once, for the first."""
+    out: dict[str, dict[str, Any]] = {}
+    for account in positions.get("accounts") or []:
+        for u in account.get("underlyings") or []:
+            name = str(u.get("underlying") or "").upper()
+            legs = [leg for leg in u.get("legs") or [] if _qty(leg)]
+            shares = sum(_qty(leg) for leg in legs if leg.get("right") not in ("C", "P"))
+            short_calls = [leg for leg in legs if leg.get("right") == "C" and _qty(leg) < 0]
+            if name and shares >= 100 and not short_calls and name not in out:
+                out[name] = {"underlying": name, "instance": _account_instance(account, instances)}
+    return [out[k] for k in sorted(out)]
+
+
+def cost_call_chains(
+    cfg: dict[str, Any],
+    positions: dict[str, Any],
+    metrics: dict[str, dict],
+    session: date,
+    prefer: str | None,
+    settings: dict[str, int],
+    instances: list[str] | None = None,
+) -> dict[str, Any]:
+    """For each `cost_call_names` name, every standard monthly COST_CALL_DTE days out, its calls quoted
+    ROLL_STRIKES strikes either side of the name's price, for manage's cost-strike reading
+    (`costcall.py`). The listing comes from the streamer where it holds the name, else the broker; one
+    read per monthly, at most `max_calls` in `max_seconds`, what that cuts in `skipped`. A failed read is
+    recorded on its name, never fatal. `quotes` is the stream cache's fresh quote for each call read."""
+    lo, hi = COST_CALL_DTE
+    out: dict[str, Any] = {
+        "taken_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        "dte": [lo, hi],
+        # Strikes each side of the price a chain was read (`_chain_slice`): a chain full on the low side
+        # may have cut off the strike a cost below it wants.
+        "window_strikes": ROLL_STRIKES,
+        "max_calls": int(settings["max_calls"]),
+        "calls": 0,
+        "names": {},
+        "skipped": [],
+        "quotes": {},
+    }
+    started = time.monotonic()
+
+    def budget_left() -> str | None:
+        if out["calls"] >= int(settings["max_calls"]):
+            return f"over the cap of {settings['max_calls']} broker reads"
+        if time.monotonic() - started > float(settings["max_seconds"]):
+            return f"over the {settings['max_seconds']}s the step may take"
+        return None
+
+    instances = list(instances or [])
+    for held in cost_call_names(positions, set(instances)):
+        name = held["underlying"]
+        entry: dict[str, Any] = {"instance": held["instance"], "chains": {}, "error": None}
+        out["names"][name] = entry
+        spot = (metrics.get(name) or {}).get("last")
+        if not spot:
+            entry["error"] = f"no {name} price to centre the chain on"
+            continue
+        listed = _cached_listing(name)
+        if not listed:
+            why = budget_left()
+            if why:
+                out["skipped"].append({"underlying": name, "what": "listing", "why": why})
+                entry["error"] = why
+                continue
+            out["calls"] += 1
+            listed, entry["error"] = _broker_listing(cfg, prefer, name)
+        wanted = []
+        for exp in listed:
+            try:
+                day = date.fromisoformat(exp)
+            except ValueError:
+                continue
+            if lo <= (day - session).days <= hi and calendar.is_monthly_expiry(day):
+                wanted.append(exp)
+        if not wanted and not entry["error"]:
+            entry["error"] = f"no standard monthly {lo}-{hi} days out is listed"
+        for expiry in wanted:
+            why = budget_left()
+            if why:
+                out["skipped"].append({"underlying": name, "expiration": expiry, "why": why})
+                continue
+            out["calls"] += 1
+            options, complete, error = _chain_slice(cfg, prefer, name, expiry, float(spot))
+            mine = [o for o in options if o["right"] == "C"]
+            entry["chains"][expiry] = {
+                "quotes_complete": complete,
+                "options": mine,
+                "error": error or (None if mine else f"no quoted {name} calls for {expiry}"),
+            }
+    try:
+        out["quotes"] = cache_quotes({"stream_instances": list(instances), "cost_call": out})
+    except Exception as exc:  # noqa: BLE001 -- an unreadable cache is no quotes; the chains still carry bids
+        out["quotes_error"] = f"{type(exc).__name__}: {exc}"[:200]
+    return out
+
+
 def income_dir():
     from cherrypick.core import home
 
@@ -1143,6 +1255,19 @@ def build(cfg: dict[str, Any]) -> dict[str, Any]:
         if ok
         else None
     )
+    cost_call = (
+        cost_call_chains(
+            cfg,
+            positions,
+            metrics,
+            date.fromisoformat(session),
+            prefer,
+            cfgmod.manage_settings(cfg)["cost_call"],
+            cfgmod.streamer_instances(cfg),
+        )
+        if ok
+        else None
+    )
     bands, bands_error = skate_bands(date.fromisoformat(session), symbols)
     underlying, underlying_error = underlying_history(
         date.fromisoformat(session), positions, _merged_history(history, others)
@@ -1176,6 +1301,7 @@ def build(cfg: dict[str, Any]) -> dict[str, Any]:
         "working_orders_error": orders_error,
         "roll_chains": chains,
         "roll_out_chains": roll_out,
+        "cost_call": cost_call,
         "income": income_reading(date.fromisoformat(session)),
         "time_spreads": time_spreads_reading(date.fromisoformat(session)),
         "skate_bands": bands,
@@ -1223,22 +1349,23 @@ def overlay_routes(snapshot: dict[str, Any]) -> dict[str, list[str]]:
                 if leg.get("symbol"):
                     s = str(leg["symbol"])
                     routes.setdefault(which, set()).add(streamcache.occ_to_streamer_symbol(s) or s.strip())
+    # The calls read for manage's cost-strike reading, from the cache of the producer that quotes the
+    # account holding the name (manage's `remark.cost_call_symbols`, which this must not import).
+    for entry in ((snapshot.get("cost_call") or {}).get("names") or {}).values():
+        which = entry.get("instance") or "main"
+        for chain in (entry.get("chains") or {}).values():
+            for option in (chain or {}).get("options") or []:
+                if option.get("symbol"):
+                    s = str(option["symbol"])
+                    routes.setdefault(which, set()).add(streamcache.occ_to_streamer_symbol(s) or s.strip())
     return {k: sorted(v) for k, v in routes.items()}
 
 
-def marks_overlay(session: str, *, now_iso: str, cache_path=None) -> dict[str, Any] | None:
-    """The stream cache's fresh quotes for what the session's stored snapshot holds, as manage's
-    `remark` reads them, or None when there is no snapshot yet today or the cache quotes none of it
-    (before the open, after the close, or with the streamer down). A file read and a cache read: no
-    broker call. The freshness bound is the full snapshot's own (`positions.REPORT_QUOTE_MAX_AGE_SECONDS`),
-    so a re-marked leg is never older than a full snapshot would allow."""
-    path = stored_snapshot_path(session)
-    if not path.exists():
-        return None
-    snapshot = json.loads(path.read_text(encoding="utf-8"))
+def cache_quotes(snapshot: dict[str, Any], cache_path=None) -> dict[str, Any]:
+    """The stream cache's fresh quotes for every symbol `overlay_routes` names for `snapshot`, keyed by
+    streamer symbol. Each producer's cache serves the symbols it quotes; main's is the shared cache (or
+    `cache_path`, the seam tests use). A cache that is missing contributes nothing."""
     quotes: dict[str, Any] = {}
-    # Each producer's cache for the symbols it serves (`overlay_routes`); main's is the shared cache
-    # (or `cache_path`, the seam tests use). A cache that is missing contributes nothing.
     for which, symbols in overlay_routes(snapshot).items():
         cache = (
             (cache_path or streamcache.cache_path())
@@ -1256,6 +1383,20 @@ def marks_overlay(session: str, *, now_iso: str, cache_path=None) -> dict[str, A
             conn.close()
         for symbol, quote in got.items():
             quotes.setdefault(symbol, quote)
+    return quotes
+
+
+def marks_overlay(session: str, *, now_iso: str, cache_path=None) -> dict[str, Any] | None:
+    """The stream cache's fresh quotes for what the session's stored snapshot holds, as manage's
+    `remark` reads them, or None when there is no snapshot yet today or the cache quotes none of it
+    (before the open, after the close, or with the streamer down). A file read and a cache read: no
+    broker call. The freshness bound is the full snapshot's own (`positions.REPORT_QUOTE_MAX_AGE_SECONDS`),
+    so a re-marked leg is never older than a full snapshot would allow."""
+    path = stored_snapshot_path(session)
+    if not path.exists():
+        return None
+    snapshot = json.loads(path.read_text(encoding="utf-8"))
+    quotes = cache_quotes(snapshot, cache_path)
     if not quotes:
         return None
     return {

@@ -10,7 +10,7 @@ position at a time, with the rules re-derived each time.
 
 **It is advice, and read-only.** It evaluates a snapshot file and writes only into
 `~/.cherrypick/data/manage`, plus its own stream request (`stream_request.py`): the newest
-evaluation's held legs, their underlyings and the benchmark as quote-only `legs`, never `symbols`, so
+evaluation's held legs, their underlyings, the benchmark and each cost-strike call (`costcall.py`) as quote-only `legs`, never `symbols`, so
 the console can mark them live between runs. A re-run of a past session does not rewrite it. It has
 no broker credentials and no network: the snapshot is taken by
 the orchestrator's `manage` verb (`orchestrator/managesnap.py`: positions and balances, market metrics, trade history

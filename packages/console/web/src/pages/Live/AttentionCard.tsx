@@ -1,7 +1,8 @@
 import type { ReactNode } from "react";
-import type { ManageAttention, ManageAttentionItem, ManageAttentionLeg } from "@console/shared";
+import type { ManageAttention, ManageAttentionItem, ManageAttentionLeg, ManageCostCallRow } from "@console/shared";
 import { Card } from "../../components/DataTable";
 import { HelpSection } from "../../components/CardHelp";
+import { fmtCash } from "../../lib/format";
 
 /**
  * Live → wheel's "needs a look" (2026-11-04, laid out as two cards 2026-11-06): manage's `attention`
@@ -206,6 +207,96 @@ export function ExpiringCard({
               </li>
             );
           })}
+        </ul>
+      )}
+    </Card>
+  );
+}
+
+/** Manage's cost-strike rows kept to `scope` (names); null keeps all; none for an evaluation without them. */
+export function costCallRows(a: ManageAttention, scope: string[] | null = null): ManageCostCallRow[] {
+  const rows = a.costCall?.enabled ? a.costCall.rows : [];
+  return rows.filter((r) => scope === null || scope.includes(r.underlying));
+}
+
+const COST_CHIP: Record<ManageCostCallRow["status"], string> = {
+  pays: "att-chip is-ok",
+  below: "att-chip is-dim",
+  "no quote": "att-chip is-dim",
+};
+
+/** "2026-12-18 50C · 38d": the expiry and strike the cost-strike call is read at. */
+function callWords(r: ManageCostCallRow): string {
+  if (r.expiration === null || r.strike === null) return "no call";
+  return `${r.expiration} ${r.strike}C${r.dte === null ? "" : ` · ${r.dte}d`}${r.window === "fallback" ? " (nearest monthly)" : ""}`;
+}
+
+/**
+ * The call at each wheel cycle's cost strike (2026-11-21): a cycle holding assigned shares with no call
+ * written, and whether the lowest listed call at or above what the shares cost bids the ruleset's share
+ * of the stock's price (a public webinar's "rest a sell order for about 2%"). Manage decides; this draws
+ * it and places nothing. A name with no quote says "no quote" and why, never "doesn't pay".
+ */
+export function CostCallCard({
+  a,
+  scope = null,
+  hideEmpty = false,
+}: {
+  a: ManageAttention;
+  scope?: string[] | null;
+  hideEmpty?: boolean;
+}) {
+  const rows = costCallRows(a, scope);
+  if (rows.length === 0 && hideEmpty) return null;
+  const bar = a.costCall?.minBidPct ?? null;
+  return (
+    <Card
+      title="cost-strike calls"
+      className="wh-half"
+      help={{
+        title: "Cost-strike call",
+        body: (
+          <>
+            <HelpSection title="What it shows">
+              <p>
+                For each cycle holding shares an assignment delivered, with no call written: the lowest listed call at or above what the
+                shares have cost (the wheel basis), on the standard monthly 30 to 45 days out, else the nearest monthly up to 60. It is
+                flagged when that call's bid is at least {pct(bar, 0)} of the stock's price: what a resting sell order there would collect.
+              </p>
+            </HelpSection>
+            <HelpSection title="What it does not do">
+              <p>
+                Nothing is placed. A bid under the bar is shown quietly; a call with no quote says so and why, which is not the same as not
+                paying.
+              </p>
+            </HelpSection>
+          </>
+        ),
+      }}
+    >
+      {rows.length === 0 ? (
+        <p className="muted">no wheel cycle holds assigned shares without a call written</p>
+      ) : (
+        <ul className="lk-list">
+          {rows.map((r) => (
+            <li key={r.underlying} className="lk-li" title={r.why ?? undefined}>
+              <div className="lk-li-top">
+                <span className="lk-leg">
+                  {r.underlying} · {r.shares} sh · cost {r.effectiveCost.toFixed(2)}
+                </span>
+                <span className={COST_CHIP[r.status]}>{r.status === "pays" ? `bids ${pct(r.bidPct)}` : r.status}</span>
+              </div>
+              <span className="lk-sub">
+                {callWords(r)}
+                {r.bid === null
+                  ? ""
+                  : ` · bid ${r.bid.toFixed(2)} on ${r.spot === null ? "—" : r.spot.toFixed(2)} = ${pct(r.bidPct)} (bar ${pct(r.minBidPct, 0)})`}
+                {r.credit === null ? "" : ` · ${fmtCash(r.credit)} for ${r.contracts} contract${r.contracts === 1 ? "" : "s"}`}
+                {r.source === null ? "" : ` · ${r.source}`}
+              </span>
+              {r.status === "no quote" && r.why ? <span className="lk-sub">{r.why}</span> : null}
+            </li>
+          ))}
         </ul>
       )}
     </Card>

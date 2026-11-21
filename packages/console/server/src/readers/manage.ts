@@ -62,6 +62,8 @@ import type {
   ManageLedgerWindow,
   ManageAttention,
   ManageAttentionLeg,
+  ManageCostCall,
+  ManageCostCallRow,
   ManagePayoff,
   ManagePayoffName,
   ManageLimits,
@@ -1442,6 +1444,44 @@ function attention(v: unknown): ManageAttention | null {
       return { ...attentionLeg(raw), level: str(x["level"]) ?? "?", why: str(x["why"]) ?? "" };
     }),
     expiring: arr(a["expiring"]).map(attentionLeg),
+    costCall: costCall(a["cost_call"]),
+  };
+}
+
+const COST_CALL_STATUS: readonly ManageCostCallRow["status"][] = ["pays", "below", "no quote"];
+
+/** The cost-strike call reading, passed through; null when the evaluation carries none. A status
+ *  manage did not write reads as "no quote": a row is never shown as under the bar on a guess. */
+function costCall(v: unknown): ManageCostCall | null {
+  if (v === null || v === undefined) return null;
+  const c = rec(v);
+  return {
+    enabled: c["enabled"] === true,
+    minBidPct: num(c["min_bid_pct"]) ?? 0,
+    takenAt: str(c["taken_at"]),
+    rows: arr(c["rows"]).map((raw) => {
+      const r = rec(raw);
+      const status = COST_CALL_STATUS.find((s) => s === r["status"]) ?? "no quote";
+      return {
+        underlying: str(r["underlying"]) ?? "?",
+        shares: num(r["shares"]) ?? 0,
+        contracts: num(r["contracts"]) ?? 0,
+        effectiveCost: num(r["effective_cost"]) ?? 0,
+        spot: num(r["spot"]),
+        minBidPct: num(r["min_bid_pct"]) ?? 0,
+        expiration: str(r["expiration"]),
+        dte: num(r["dte"]),
+        window: str(r["window"]),
+        strike: num(r["strike"]),
+        bid: num(r["bid"]),
+        ask: num(r["ask"]),
+        bidPct: num(r["bid_pct"]),
+        credit: num(r["credit"]),
+        source: str(r["source"]),
+        status,
+        why: str(r["why"]),
+      };
+    }),
   };
 }
 

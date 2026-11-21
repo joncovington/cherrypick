@@ -28,6 +28,7 @@ from cherrypick.core import calendar as _calendar
 from cherrypick.manage import attention as _attention
 from cherrypick.manage import candidates as _candidates
 from cherrypick.manage import chains as _chains
+from cherrypick.manage import costcall as _costcall
 from cherrypick.manage import deltaideas as _deltaideas
 from cherrypick.manage import explain as _explain
 from cherrypick.manage import hedge as _hedge
@@ -3175,6 +3176,10 @@ def evaluate(
         )
         # Every short option held against its strike, and what expires soon (`attention.py`).
         attention = _attention.reading(account.get("underlyings"), metrics, session, rules)
+        # One more reason beside them: a wheel cycle's cost-strike call bidding enough to rest an order on.
+        attention["cost_call"] = _costcall.reading(
+            wheel_view.get("cycles"), metrics, snapshot.get("cost_call"), session, rules
+        )
         # Each held name's P&L across its price, at expiry and on dates before it (`payoff.py`).
         payoff = _payoff.reading(trades, metrics, snapshot, session, rules)
         # Your limits beside the book, and the day's loss against its alert (`limits.py`).

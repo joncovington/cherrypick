@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { renderToString } from "react-dom/server";
-import type { ManageAttention, ManageAttentionItem } from "@console/shared";
-import { ExpiringCard, NearStrikeCard, distanceWords, levelLabel, meterFill } from "../src/pages/Live/AttentionCard";
+import type { ManageAttention, ManageAttentionItem, ManageCostCallRow } from "@console/shared";
+import { CostCallCard, ExpiringCard, NearStrikeCard, costCallRows, distanceWords, levelLabel, meterFill } from "../src/pages/Live/AttentionCard";
 
 /**
  * Live → wheel's "needs a look" draws manage's `attention` and decides nothing: the level and the why
@@ -109,5 +109,59 @@ describe("needs a look", () => {
     expect(out).toContain("nothing: every short option is further than 3% from its strike");
     expect(out).toContain("expiring in 7 days");
     expect(out).toContain("AAA −1 2026-11-06 45P · 2d 8.0%");
+  });
+});
+
+function costRow(over: Partial<ManageCostCallRow> = {}): ManageCostCallRow {
+  return {
+    underlying: "AAA",
+    shares: 100,
+    contracts: 1,
+    effectiveCost: 49.06,
+    spot: 49,
+    minBidPct: 0.02,
+    expiration: "2026-11-20",
+    dte: 38,
+    window: "standard",
+    strike: 50,
+    bid: 1.2,
+    ask: 1.3,
+    bidPct: 1.2 / 49,
+    credit: 120,
+    source: "stream cache",
+    status: "pays",
+    why: "the 2026-11-20 50 call bids 1.20, 2.4% of 49.00 (at or over the 2% bar)",
+    ...over,
+  };
+}
+
+function costCard(rows: ManageCostCallRow[], scope: string[] | null = null, enabled = true): string {
+  const a = attention({ costCall: { enabled, minBidPct: 0.02, rows, takenAt: null } });
+  return text(renderToString(<CostCallCard a={a} scope={scope} />));
+}
+
+describe("the cost-strike call", () => {
+  it("flags a call that bids the bar, with its strike, expiry, bid and bid as a share of the price", () => {
+    const out = costCard([costRow()]);
+    expect(out).toContain("AAA · 100 sh · cost 49.06 bids 2.4%");
+    expect(out).toContain("2026-11-20 50C · 38d · bid 1.20 on 49.00 = 2.4% (bar 2%) · +$120.00 for 1 contract · stream cache");
+  });
+
+  it("shows a bid under the bar quietly, and a missing quote as no quote with why, never as under the bar", () => {
+    const out = costCard([
+      costRow({ underlying: "BBB", status: "below", bid: 0.4, bidPct: 0.0082, credit: 40 }),
+      costRow({ underlying: "CCC", status: "no quote", bid: null, bidPct: null, credit: null, source: null, why: "no bid for the 2026-11-20 50C" }),
+    ]);
+    expect(out).toContain("BBB · 100 sh · cost 49.06 below");
+    expect(out).toContain("CCC · 100 sh · cost 49.06 no quote");
+    expect(out).toContain("no bid for the 2026-11-20 50C");
+    expect(out).not.toMatch(/CCC[^]*(doesn't pay|does not pay|below)/);
+  });
+
+  it("names a nearest-monthly fallback, keeps to the wheel's names, and says plainly when there is nothing", () => {
+    expect(costCard([costRow({ window: "fallback", dte: 54 })])).toContain("· 54d (nearest monthly)");
+    expect(costCard([costRow({ underlying: "ZZZ" })], ["AAA"])).toContain("no wheel cycle holds assigned shares without a call written");
+    expect(costCallRows(attention({ costCall: { enabled: false, minBidPct: 0.02, rows: [costRow()], takenAt: null } }))).toEqual([]);
+    expect(costCallRows(attention())).toEqual([]);
   });
 });

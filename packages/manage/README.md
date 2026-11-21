@@ -727,6 +727,23 @@ index), `in the money`, or `near` (within `attention.near_pct`, 3%), worst first
 A reading, not a rule: it fires nothing. The orchestrator posts each listed name once a session
 (`managealert.py`), from the full runs and the minute re-marks; the console draws it on Live -> wheel.
 
+**The cost-strike call** is one more reason beside them (`costcall.py`, `attention.cost_call`). For each
+running, reconciled cycle that holds assigned shares with no call written, it takes the lowest listed
+call at or above the cycle's effective cost (the wheel basis: the assignment strike less the premiums
+banked, with the cycle's fees and dividends in it, per share), on the earliest standard monthly
+`dte_min` to `dte_max` days out (30 to 45), else the earliest up to `fallback_max` (60), and flags the
+cycle when that call's bid is at least `min_bid_pct` (2%) of the stock's price. It is a public webinar's
+rule of thumb, resting a sell order on that call for about 2% of the price; this shows the case and
+places nothing. Each row carries the strike, expiry, bid, the bid as a share of the price and the
+whole-position credit, and is `pays`, `below` (quoted, under the bar) or `no quote` with why (no chain
+read, no listed strike at or above the cost, a chain read that stops short of the cost, no bid): a
+missing quote is never read as under the bar. The snapshot (v20 `cost_call`) carries every standard
+monthly 30 to 60 days out for each name holding shares and no short call, its calls quoted 40 strikes
+either side of the price, so the expiry and strike come from it; the bid is the stream cache's where it
+holds a fresh one (the call is declared as a `leg` in `stream_requests/manage.json` and the minute
+re-mark reads it), else the chain's. It does not post; the orchestrator's needs-a-look post is the
+shorts' alone.
+
 ## Your limits
 
 `limits.py` sets each of the book's measures beside a limit from the ruleset's `limits`
