@@ -7,7 +7,7 @@ import { BuilderForm, type OpenSections, type Preset, type Spec, type Strategy }
 import { Coverage } from "./builderTips";
 import { Marked } from "./sentence";
 import { automationWords } from "./specWords";
-import { Shape, usePayoff } from "./TradeShape";
+import { ShapeZoom, usePayoff } from "./TradeShape";
 import { ExploreRunsList, RunCardPanel } from "./BuilderRunCard";
 import { GridsPanel } from "./BuilderGrid";
 import { IdeasPanel } from "./BuilderIdeas";
@@ -563,7 +563,7 @@ export function Workspace({
         </div>
         {sketch && (
           <div className="b-sum-shape" aria-label="The trade's shape">
-            <Shape s={sketch} />
+            <ShapeZoom s={sketch} />
           </div>
         )}
       </section>

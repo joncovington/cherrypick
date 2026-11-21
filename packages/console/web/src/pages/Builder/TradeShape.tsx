@@ -1,4 +1,4 @@
-import { useEffect, useId, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import type { BuilderPayoff, BuilderSketch } from "@console/shared";
 import { builderPayoff } from "../../lib/api";
 import { fmtCash } from "../../lib/format";
@@ -168,7 +168,28 @@ export function markers(s: BuilderSketch): Array<{ at: number; text: string; sol
     }));
 }
 
-export function Shape({ s }: { s: BuilderSketch }) {
+/**
+ * The shape at a glance, opened large on a click: a native modal dialog that Esc, a click anywhere on
+ * it or its close button shuts, focus going back to the button. The caption sits in the large view only.
+ */
+export function ShapeZoom({ s }: { s: BuilderSketch }) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  return (
+    <>
+      <button type="button" className="tshape-zoom" aria-label="Expand the trade's shape" title="Click to expand" onClick={() => dialog.current?.showModal()}>
+        <Shape s={s} note={false} />
+      </button>
+      <dialog ref={dialog} className="tshape-dialog" aria-label="The trade's shape" onClick={() => dialog.current?.close()}>
+        <button type="button" className="guide-img-close" aria-label="Close">
+          ×
+        </button>
+        <Shape s={s} />
+      </dialog>
+    </>
+  );
+}
+
+export function Shape({ s, note = true }: { s: BuilderSketch; note?: boolean }) {
   const g = shapeGeometry(s.curve);
   const zero = g.y(0);
   const id = useId().replace(/:/g, "");
@@ -222,12 +243,14 @@ export function Shape({ s }: { s: BuilderSketch }) {
           );
         })}
       </svg>
-      <figcaption className="muted tshape-note">
-        {s.exact
-          ? "Drawn from the rule: each leg at its distance from the spot. Not to scale in dollars."
-          : "Drawn from the rule: a leg placed by delta or a multiple sits where it reads, so the order is true and the spacing is not. Not to scale in dollars."}
-        {s.modeled && " At the near expiry, with the far leg's time value by a model: the peak is the model's, never a bound."}
-      </figcaption>
+      {note && (
+        <figcaption className="muted tshape-note">
+          {s.exact
+            ? "Drawn from the rule: each leg at its distance from the spot. Not to scale in dollars."
+            : "Drawn from the rule: a leg placed by delta or a multiple sits where it reads, so the order is true and the spacing is not. Not to scale in dollars."}
+          {s.modeled && " At the near expiry, with the far leg's time value by a model: the peak is the model's, never a bound."}
+        </figcaption>
+      )}
     </figure>
   );
 }
