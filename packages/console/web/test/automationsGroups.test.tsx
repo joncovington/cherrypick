@@ -3,7 +3,7 @@ import { renderToString } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { GroupsEditMember, GroupsEditView } from "@console/shared";
-import { changeItems, changeToSend, GroupsFlow, impact, outcomeWords, placement, startDraft, stateWords } from "../src/pages/Automations/AutomationsGroups";
+import { changeItems, changeToSend, FieldTip, GROUP_TIPS, GroupsFlow, impact, outcomeWords, placement, startDraft, stateWords } from "../src/pages/Automations/AutomationsGroups";
 import { RetiredSection, retiredWords } from "../src/pages/Automations/RetiredSection";
 import { AUTOMATIONS_SLIDES } from "../src/lightbox/navGroups";
 
@@ -212,5 +212,21 @@ describe("the retired switch at the foot of an automation's page", () => {
     expect(out).toContain('role="switch" aria-checked="true" aria-label="iron-fly-1000: retired"');
     expect(out).toContain("It is off and stays off until you reinstate it.");
     expect(out).not.toMatch(/item \d/);
+  });
+});
+
+describe("the budget's help and its backtest suggestion", () => {
+  it("puts a ? beside allocation, max risk and share, each explaining itself", () => {
+    const out = html(<GroupsFlow view={VIEW} />, "/automations/groups?group=ensemble");
+    expect(out).toContain('aria-label="What is the allocation?"');
+    expect(out).toContain('aria-label="What is the max risk?"');
+    expect(out).toContain('aria-label="What is a share?"');
+    for (const tip of Object.values(GROUP_TIPS)) expect(tip.length).toBeGreaterThan(60);
+    expect(html(<FieldTip id="share" label="What is a share?" />)).toContain('aria-expanded="false"');
+  });
+
+  it("asks the members' backtests for the max risk and shares", () => {
+    const view: GroupsEditView = { ...VIEW, groups: [{ ...VIEW.groups[0]!, budget: { today: {}, pending: null, dated: false, history: [] } }] };
+    expect(html(<GroupsFlow view={view} />, "/automations/groups?group=ensemble")).toContain("Reading the members&#x27; backtests…");
   });
 });

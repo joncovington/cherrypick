@@ -26,6 +26,7 @@ import type {
   GroupsChange,
   GroupsCheckResult,
   AutomationRetireResult,
+  GroupBudgetFromBacktest,
   GroupsEditView,
   BuilderBacktestResult,
   BuilderDraftResult,
@@ -1477,6 +1478,16 @@ export function useGroupsEdit() {
     queryKey: ["automations-groups-edit"],
     queryFn: () => getJson<GroupsEditView>("/api/automations/groups/edit"),
     staleTime: 30_000,
+  });
+}
+
+/** A group's budget from its members' pinned backtest runs; null until asked for a group. */
+export function useGroupBudget(group: string | null) {
+  return useQuery<GroupBudgetFromBacktest>({
+    queryKey: ["automations-group-budget", group],
+    queryFn: () => getJson<GroupBudgetFromBacktest>(`/api/automations/groups/budget?group=${encodeURIComponent(group ?? "")}`),
+    enabled: group !== null,
+    staleTime: 60_000,
   });
 }
 

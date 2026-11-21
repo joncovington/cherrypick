@@ -12806,6 +12806,42 @@ svg.vol-curve text {
 .grp-pending {
   color: var(--accent);
 }
+.grp-tipwrap {
+  position: relative;
+  display: inline-flex;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+.grp-tip-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 20;
+  width: min(320px, 80vw);
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-raised);
+  color: var(--text);
+  font-size: 0.8rem;
+  font-weight: 400;
+  line-height: 1.45;
+  letter-spacing: normal;
+  text-transform: none;
+  white-space: normal;
+  box-shadow: 0 6px 18px rgb(0 0 0 / 0.35);
+}
+.grp-tip-pop.is-left {
+  left: auto;
+  right: 0;
+}
+.grp-from-bt {
+  display: grid;
+  gap: 4px;
+}
+.grp-from-bt p {
+  margin: 0;
+}
 .grp-suggest {
   display: flex;
   flex-wrap: wrap;

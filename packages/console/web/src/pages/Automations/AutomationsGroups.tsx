@@ -6,7 +6,7 @@ import { Card } from "../../components/DataTable";
 import { HelpSection, type CardHelpContent } from "../../components/CardHelp";
 import { Section } from "../../components/Section";
 import { FliesTile } from "../Flies/FliesSession";
-import { groupsCheck, groupsSave, useAutomations, useAutomationsPerformance, useGroupsEdit } from "../../lib/api";
+import { groupsCheck, groupsSave, useAutomations, useAutomationsPerformance, useGroupBudget, useGroupsEdit } from "../../lib/api";
 import { fmtMoney } from "../../lib/format";
 import { AutomationRecordPage } from "./AutomationRecord";
 import { automationHref } from "./automationsModels";
@@ -404,6 +404,91 @@ function GroupsIndex({ view, draft, edit, paper }: { view: GroupsEditView; draft
 // Level 2: one group
 // ---------------------------------------------------------------------------------------------------
 
+/** What each budget field means, behind the ? beside it. */
+export const GROUP_TIPS: Record<"allocation" | "max_risk" | "share" | "budget", string> = {
+  allocation:
+    "The group's money. It is what the group's % net and % drawdown are read against, and the pot an automation sized as a percent of its allocation sizes from. It changes no trade of an automation with a fixed size.",
+  max_risk:
+    "The most all the group's automations together may have at risk at once: each open trade's maximum loss, added up. An entry that would go over is cut to the contracts that fit, or refused when not one fits.",
+  share:
+    "One automation's slice of the group's max risk and allocation, at most 100 percent across the group. It caps that automation's own risk at once, and is the money it sizes from if it is sized by percent. Without one, it has only the group's cap, shared first come, first served.",
+  budget:
+    "The allocation, max risk and shares together. Once the group has run they are read-only, so its record keeps the budget each session ran on: a change starts at the next session.",
+};
+
+/** A ? beside a field that opens what it means; `left` opens it leftwards, for a column near the right edge. */
+export function FieldTip({ id, label, left = false }: { id: keyof typeof GROUP_TIPS; label: string; left?: boolean }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <span className="grp-tipwrap">
+      <button type="button" className={open ? "wiz-q is-open" : "wiz-q"} aria-label={label} aria-expanded={open} onClick={() => setOpen(!open)}>
+        ?
+      </button>
+      {open && (
+        <span className={left ? "grp-tip-pop is-left" : "grp-tip-pop"} role="note">
+          {GROUP_TIPS[id]}
+        </span>
+      )}
+    </span>
+  );
+}
+
+/** The group's budget as its members' pinned backtests read it: a suggestion for the max risk and the
+ *  shares, and the worst fall an allocation would have had to absorb. The backtest package's reading,
+ *  shown; nothing is applied until a Use button is pressed. */
+function FromBacktest({ name, spec, onChange }: { name: string; spec: GroupSpec; onChange: (next: GroupSpec) => void }) {
+  const q = useGroupBudget(name);
+  const d = q.data;
+  const head = <b>From the backtest:</b>;
+  if (q.isLoading) return <p className="muted grp-hint">Reading the members' backtests…</p>;
+  if (q.error || !d) return <p className="muted grp-hint">{head} could not be read{q.error ? `: ${String(q.error)}` : "."}</p>;
+  if (d.error !== null) return <p className="muted grp-hint">{head} could not be read: {d.error}</p>;
+  if (d.missing.length > 0)
+    return (
+      <p className="muted grp-hint grp-suggest">
+        {head} not yet. {d.missing.join(", ")} {d.missing.length === 1 ? "has" : "have"} no pinned backtest run; pin one on each automation's Builder page.
+      </p>
+    );
+  if (d.withheld) return <p className="muted grp-hint">{head} withheld while results built on licensed data are hidden.</p>;
+  const r = d.reading;
+  if (r === null) return null;
+  if (r.max_risk === undefined || r.shares === undefined) return <p className="muted grp-hint">{head} none: {r.why ?? "no figure"}.</p>;
+  const shares = r.shares;
+  const cut = Object.entries(r.cut ?? {});
+  return (
+    <div className="grp-hint grp-from-bt">
+      <p className="muted grp-suggest">
+        {head} max risk {money(r.max_risk)}, the most its members held at once over {r.sessions} sessions ({r.overlap?.[0]} to {r.overlap?.[1]}), so it would have refused nothing
+        they entered.
+        {spec.max_risk !== r.max_risk && (
+          <button type="button" className="btn" onClick={() => onChange({ ...spec, max_risk: r.max_risk! })}>
+            Use {money(r.max_risk)}
+          </button>
+        )}
+      </p>
+      <p className="muted grp-suggest">
+        Shares, each one's own most at once as a percent of {money(r.max_risk)}: {Object.entries(shares).map(([n, v]) => `${n} ${v}%`).join(", ")}.
+        {JSON.stringify(spec.shares ?? {}) !== JSON.stringify(shares) && (
+          <button type="button" className="btn" onClick={() => onChange({ ...spec, max_risk: spec.max_risk ?? r.max_risk!, shares })}>
+            Use these shares
+          </button>
+        )}
+      </p>
+      {r.scaled && (
+        <p className="grp-warn">
+          Their peaks fell on different sessions, so the shares are scaled to fit 100 percent.
+          {cut.length > 0 && ` At these shares ${cut.map(([n, c]) => `${n} would have been cut on ${c} session${c === 1 ? "" : "s"}`).join(", ")}.`}
+        </p>
+      )}
+      {r.drawdown !== undefined && <p className="muted">Its worst fall over those sessions: {money(r.drawdown)}, what an allocation would have had to absorb.</p>}
+      <p className="muted">
+        Runs: {(r.members ?? []).map((m) => `${m.name} ${m.run.slice(-10)}`).join(", ")}
+        {r.licensed ? " (built on licensed data)" : ""}.
+      </p>
+    </div>
+  );
+}
+
 function budgetWords(b: { allocation?: number; max_risk?: number; shares?: Record<string, number> } | undefined): string {
   if (b === undefined || (b.allocation === undefined && b.max_risk === undefined)) return "no budget";
   const parts = [b.allocation !== undefined ? `allocation ${money(b.allocation)}` : null, b.max_risk !== undefined ? `max risk ${money(b.max_risk)}` : null];
@@ -477,7 +562,10 @@ function GroupControls({
         </div>
         {readOnly ? (
           <div className="builder-f grp-budget-ro">
-            <span className="builder-lbl">budget</span>
+            <span className="builder-lbl">
+              budget
+              <FieldTip id="budget" label="What is the budget?" />
+            </span>
             <span className="num">{budgetWords(info?.budget?.today)}</span>
             {pending !== null ? (
               <span className="grp-hint grp-pending">
@@ -493,9 +581,10 @@ function GroupControls({
         ) : (
           (["allocation", "max_risk"] as const).map((k) => (
             <div className="builder-f" key={k}>
-              <label className="builder-lbl" htmlFor={`grp-${name}-${k}`}>
-                {k === "allocation" ? "allocation" : "max risk"}
-              </label>
+              <span className="builder-lbl">
+                <label htmlFor={`grp-${name}-${k}`}>{k === "allocation" ? "allocation" : "max risk"}</label>
+                <FieldTip id={k} label={k === "allocation" ? "What is the allocation?" : "What is the max risk?"} />
+              </span>
               <input
                 key={`${k}-${String(spec[k] ?? "")}`}
                 id={`grp-${name}-${k}`}
@@ -531,6 +620,7 @@ function GroupControls({
           )}
         </p>
       )}
+      {info !== undefined && <FromBacktest name={name} spec={spec} onChange={onChange} />}
     </div>
   );
 }
@@ -635,7 +725,12 @@ function GroupPage({ view, draft, edit, paper, group, after }: { view: GroupsEdi
                     <th>its own switch</th>
                     <th>what happens</th>
                     <th>research verdict</th>
-                    {!none && <th>share %</th>}
+                    {!none && (
+                      <th>
+                        share %
+                        <FieldTip id="share" label="What is a share?" left />
+                      </th>
+                    )}
                     <th className="num">open</th>
                     <th className="num">net, all</th>
                     <th>move to</th>

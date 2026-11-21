@@ -237,6 +237,32 @@ export interface GroupsEditGroup extends GroupSpec {
   suggested?: GroupSuggestion;
 }
 
+/** `GET /api/automations/groups/budget?group=`: a group's budget read from its members' pinned backtest
+ *  runs (`groupbudget.read`): the max risk that would have refused nothing the runs entered, each
+ *  member's share of it (scaled to fit when their peaks fell on different sessions, with the sessions each
+ *  would have been cut), and the group's worst fall in dollars. Null until every member not retired has a
+ *  pinned run (`missing` names the rest), or withheld while a licensed run's results are hidden. */
+export interface GroupBudgetFromBacktest {
+  group: string;
+  pinned: Record<string, string>;
+  missing: string[];
+  withheld: boolean;
+  error: string | null;
+  reading: {
+    ok: boolean;
+    why?: string;
+    overlap?: [string, string];
+    sessions?: number;
+    max_risk?: number;
+    shares?: Record<string, number>;
+    scaled?: boolean;
+    cut?: Record<string, number>;
+    drawdown?: number;
+    licensed: boolean;
+    members: Array<{ name: string; run: string; first: string | null; last: string | null; trades: number; peak?: number }>;
+  } | null;
+}
+
 /** `POST /api/automations/retire`: the save of a retire or a reinstate. */
 export interface AutomationRetireResult {
   ok: boolean;

@@ -553,6 +553,10 @@ def cmd_read(args) -> int:
         out = readout.automation_reading(args.name or "", args.id or "", args.declared)
         _emit(out)
         return 0 if out.get("ok") else 1
+    if args.what == "group-budget":
+        out = readout.group_budget(args.ids or "")
+        _emit(out)
+        return 0 if out.get("ok") else 1
     if args.what == "arm-reading":
         from . import armref
 
@@ -825,10 +829,15 @@ def main(argv: list[str] | None = None) -> int:
             "overview", "run", "trades", "path", "stores", "summaries", "signals", "signal",
             "automation-runs", "automation-run", "automation-reference", "automation-reading", "fullset",
             "portfolio-sources", "idea-searches", "idea-search", "settings-grids", "settings-grid",
-            "declared", "arm-reading",
+            "declared", "arm-reading", "group-budget",
         ),
     )  # fmt: skip
-    rd.add_argument("--ids", default=None, help="with `summaries`: run ids, comma separated")
+    rd.add_argument(
+        "--ids",
+        default=None,
+        help="with `summaries`: run ids, comma separated; with `group-budget`: automation=run pairs, "
+        "comma separated",
+    )
     rd.add_argument(
         "--name",
         default=None,
