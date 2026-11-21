@@ -238,21 +238,30 @@ def budget(group: str, spec: dict, member: str, members: list[str]) -> dict | No
 
 def apply_groups(arms: dict[str, dict], config: dict) -> dict[str, dict]:
     """Each arm whose group is switched off, switched off with it: no new entries, while what it holds
-    is still managed and settled. A group the config names but no arm belongs to is refused, so a
-    misspelt group never leaves its arms trading; so is a share for an arm outside the group. Each member
+    is still managed and settled. A group no arm belongs to may be kept, switched off (one being set up),
+    and is refused switched on; it is refused too while an arm names a group the block does not, the
+    misspelling that would leave that arm trading: `"ensembel": off` beside arms in `ensemble`. So is a
+    share for an arm outside the group. Each member
     of a group with an allocation or cap carries its `budget` (`budget`), which `sizing` reads; an
     `allocation_pct` size with neither its own allocation nor a group's is refused."""
     switches = groups(config)
     known = {a.get("group") for a in arms.values()}
-    unknown = sorted(set(switches) - known)
-    if unknown:
-        raise ValueError(f"groups.{unknown[0]}: no arm belongs to this group")
+    empty = sorted(set(switches) - known)
+    for g in empty:
+        if switches[g]["enabled"]:
+            raise ValueError(f"groups.{g}: no automation belongs to this group, so it cannot be on")
+    unnamed = sorted(g for g in known if g is not None and g not in switches)
+    if empty and unnamed:
+        raise ValueError(
+            f"groups.{empty[0]}: no automation belongs to this group, and automations name {unnamed[0]!r},"
+            " which the groups block does not: a misspelling?"
+        )
     members: dict[str, list[str]] = {}
     for name, arm in arms.items():
         if arm.get("group") is not None:
             members.setdefault(arm["group"], []).append(name)
     for g, spec in switches.items():
-        outside = sorted(set(spec.get("shares", {})) - set(members[g]))
+        outside = sorted(set(spec.get("shares", {})) - set(members.get(g, [])))
         if outside:
             raise ValueError(f"groups.{g}.shares.{outside[0]}: not a member of this group")
     out = {}

@@ -23,7 +23,9 @@ path. A new kind of filter is one function in `gates.REGISTRY`, a new strike rul
 **Automation groups.** An arm names its `group`, a set of like automations switched as one through the
 config's `groups` block (`{"ensemble": {"enabled": false}}`). `config.load_arms` switches off every arm
 of a group that is off, so none of them enters; what they hold is still managed and settled, because a
-position carries its own exits. A group the config names but no arm belongs to is refused. The shipped
+position carries its own exits. A group no arm belongs to is kept only switched off (one being set up),
+and is refused while some arm names a group the block does not: that is the misspelling
+(`"ensembel": off` beside arms in `ensemble`) which would leave those arms trading. The shipped
 eight are the `ensemble` group, and each carries its research `register` label, item 75's verdict
 (`passed`, `failed`, `no_verdict`), written from the register and checked against its forward list
 (`tests/test_groups.py`), never read from a result file. The loop's `--status` shows each group with its

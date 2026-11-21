@@ -146,6 +146,11 @@ export function changeItems(view: GroupsEditView, draft: GroupsChange): ChangeIt
     if (a.max_risk !== b.max_risk) out.push({ key: `mr-${name}`, where: name, what: "max risk", was: money(a.max_risk), becomes: money(b.max_risk), undo: (d) => restore(d, "max_risk") });
     if (JSON.stringify(a.shares ?? {}) !== JSON.stringify(b.shares ?? {})) out.push({ key: `sh-${name}`, where: name, what: "shares", was: shareWords(a.shares), becomes: shareWords(b.shares), undo: (d) => restore(d, "shares") });
   }
+  for (const g of view.groups) {
+    if (g.name in draft.groups) continue;
+    const spec = startDraft(view).groups[g.name]!;
+    out.push({ key: `del-${g.name}`, where: g.name, what: "group", was: "kept", becomes: "deleted", undo: (d) => ({ ...d, groups: { ...d.groups, [g.name]: spec } }) });
+  }
   for (const r of placement(view, draft)) {
     const n = r.m.name;
     if (r.was !== r.now) out.push({ key: `mv-${n}`, where: n, what: "group", was: r.was ?? "no group", becomes: r.now ?? "no group", undo: (d) => ({ ...d, members: withoutKey(d.members, n) }) });
@@ -159,12 +164,13 @@ function shareWords(s: Record<string, number> | undefined): string {
   return e.length === 0 ? "none" : e.map(([k, v]) => `${k} ${v}%`).join(", ");
 }
 
-/** The change to send: the specs of the groups that will have members, the moves and the switches. */
+/** The change to send: every group the draft keeps (one with no automation included: it must be off), the
+ *  moves and the switches. A saved group the draft no longer holds is deleted by the save. */
 export function changeToSend(view: GroupsEditView, draft: GroupsChange): GroupsChange {
   const rows = placement(view, draft);
   const used = new Set(rows.map((r) => r.now).filter((g): g is string => g !== null));
-  const groups: Record<string, GroupSpec> = {};
-  for (const g of used) groups[g] = draft.groups[g] ?? { enabled: false };
+  const groups: Record<string, GroupSpec> = { ...draft.groups };
+  for (const g of used) if (!(g in groups)) groups[g] = { enabled: false };
   const members: Record<string, string | null> = {};
   const switches: Record<string, boolean> = {};
   for (const r of rows) {
@@ -186,16 +192,15 @@ export function removeFromGroup(draft: GroupsChange, r: Placed): GroupsChange {
   };
 }
 
-/** The groups the draft leaves with no automation: `added`, new ones never saved (a group exists only while
- *  one belongs to it, so a save would write nothing for them), and `dropped`, saved ones a save would
- *  delete because their last member left. */
-export function emptyGroups(view: GroupsEditView, draft: GroupsChange): { added: string[]; dropped: string[] } {
+/** The groups the draft leaves with no automation, and those of them switched on: a group with no
+ *  automation is kept, but only off (the module refuses one on), so `on` holds the save until it is off
+ *  or has a member. */
+export function emptyGroups(view: GroupsEditView, draft: GroupsChange): { empty: string[]; on: string[] } {
   const used = new Set(placement(view, draft).map((r) => r.now));
-  const saved = new Set(view.groups.map((g) => g.name));
   const empty = Object.keys(draft.groups)
     .filter((g) => !used.has(g))
     .sort();
-  return { added: empty.filter((g) => !saved.has(g)), dropped: empty.filter((g) => saved.has(g)) };
+  return { empty, on: empty.filter((g) => draft.groups[g]!.enabled) };
 }
 
 /** What a change does to trading: who starts and who stops, from the view now and the module's after. */
@@ -332,12 +337,15 @@ function GroupsIndex({ view, draft, edit, paper }: { view: GroupsEditView; draft
           {spec === undefined ? (
             <span className="muted">—</span>
           ) : (
-            <Toggle
-              on={spec.enabled}
-              label={`${name}: group switch`}
-              pending={was !== undefined && was.enabled !== spec.enabled}
-              onChange={(on) => edit({ ...draft, groups: { ...draft.groups, [name!]: { ...spec, enabled: on } } })}
-            />
+            <span title={members.length === 0 && !spec.enabled ? "Add an automation to it first: a group with none cannot be on." : undefined}>
+              <Toggle
+                on={spec.enabled}
+                label={`${name}: group switch`}
+                pending={was !== undefined && was.enabled !== spec.enabled}
+                disabled={members.length === 0 && !spec.enabled}
+                onChange={(on) => edit({ ...draft, groups: { ...draft.groups, [name!]: { ...spec, enabled: on } } })}
+              />
+            </span>
           )}
         </td>
         <td className="num">{members.length}</td>
@@ -355,6 +363,11 @@ function GroupsIndex({ view, draft, edit, paper }: { view: GroupsEditView; draft
         <td className="num">{open}</td>
         <td className="num">{nets.length ? fmtMoney(nets.reduce((a, b) => a + b, 0)) : "—"}</td>
         <td className="grp-actions">
+          {spec !== undefined && members.length === 0 && (
+            <button type="button" className="btn" aria-label={`Delete ${name}`} onClick={() => edit({ ...draft, groups: withoutKey(draft.groups, name!) })}>
+              Delete group
+            </button>
+          )}
           <Link className="btn" to={`/automations/groups?group=${encodeURIComponent(key)}`}>
             Open ›
           </Link>
@@ -414,9 +427,9 @@ function GroupsIndex({ view, draft, edit, paper }: { view: GroupsEditView; draft
                 setNewName("");
               }}
             >
-              + New group (off)
+              + New group
             </button>
-            <span className="muted">Open it to add its automations; a group is kept only while one belongs to it.</span>
+            <span className="muted">A new group is saved off. Open it to add its automations; it can be switched on once one is in it.</span>
           </div>
         </Card>
       </Section>
@@ -532,6 +545,7 @@ function GroupControls({
   spec,
   was,
   info,
+  empty = false,
   nextSession,
   onChange,
 }: {
@@ -539,6 +553,8 @@ function GroupControls({
   spec: GroupSpec;
   was: GroupSpec | undefined;
   info: GroupsEditGroup | undefined;
+  /** It has no automation under the draft: it cannot be switched on. */
+  empty?: boolean;
   nextSession: string;
   onChange: (next: GroupSpec) => void;
 }) {
@@ -562,9 +578,20 @@ function GroupControls({
     <div className="grp-controls-wrap">
       <div className="grp-head-row">
         <span className="builder-lbl">group</span>
-        <Toggle on={spec.enabled} label={`${name}: group switch`} big pending={was !== undefined && was.enabled !== spec.enabled} onChange={(on) => onChange({ ...spec, enabled: on })} />
+        <Toggle
+          on={spec.enabled}
+          label={`${name}: group switch`}
+          big
+          pending={was !== undefined && was.enabled !== spec.enabled}
+          disabled={empty && !spec.enabled}
+          onChange={(on) => onChange({ ...spec, enabled: on })}
+        />
         <span className="muted grp-hint">
-          {spec.enabled
+          {empty
+            ? spec.enabled
+              ? "No automation is left in it, so it cannot stay on: switch it off, or keep one in it."
+              : "No automation in it yet: it can be switched on once one is added."
+            : spec.enabled
             ? switchingOn
               ? `On from ${spec.start && spec.start > nextSession ? spec.start : nextSession}: switching on starts at the next session, never mid-day.`
               : "On: its switched-on automations trade."
@@ -705,7 +732,15 @@ function GroupPage({ view, draft, edit, paper, group, after }: { view: GroupsEdi
       {spec !== undefined && (
         <Section concept="room" tag="the group" question={`Is ${group} on, from when, and with what budget?`}>
           <Card title={`group ${group}`} collapseKey={`automations-group-${group}`} className="lv-12" help={HELP}>
-            <GroupControls name={group} spec={spec} was={was} info={info} nextSession={view.next_session} onChange={(s) => edit({ ...draft, groups: { ...draft.groups, [group]: s } })} />
+            <GroupControls
+              name={group}
+              spec={spec}
+              was={was}
+              info={info}
+              empty={!rows.some((r) => r.now === group)}
+              nextSession={view.next_session}
+              onChange={(s) => edit({ ...draft, groups: { ...draft.groups, [group]: s } })}
+            />
           </Card>
         </Section>
       )}
@@ -748,7 +783,7 @@ function GroupPage({ view, draft, edit, paper, group, after }: { view: GroupsEdi
             </div>
           )}
           {inGroup.length === 0 ? (
-            <p className="muted">No members yet: add one, or the group is dropped when saved.</p>
+            <p className="muted">No members yet. The group is kept, off; add an automation to be able to switch it on.</p>
           ) : (
             <div className="table-scroll">
               <table className="data-table grp-table">
@@ -1027,7 +1062,7 @@ function SaveBar({
   const moved = check?.after ? impact(view, check.after) : null;
   const failedStarting = moved?.starts.filter((m) => m.verdict === "failed") ?? [];
   const empty = emptyGroups(view, draft);
-  const ready = items.length > 0 && empty.added.length === 0 && check !== null && check.ok && problems.length === 0;
+  const ready = items.length > 0 && empty.on.length === 0 && check !== null && check.ok && problems.length === 0;
   const save = async () => {
     setBusy(true);
     const r = await groupsSave(changeToSend(view, draft));
@@ -1077,15 +1112,10 @@ function SaveBar({
           Save
         </button>
       </div>
-      {empty.added.length > 0 && (
+      {empty.on.length > 0 && (
         <p className="grp-warn">
-          {empty.added.join(", ")} {empty.added.length === 1 ? "has" : "have"} no automations yet. A group is kept only while one belongs to it, so open{" "}
-          {empty.added.length === 1 ? "it" : "each"} and add an automation before saving.
-        </p>
-      )}
-      {empty.dropped.length > 0 && (
-        <p className="grp-warn">
-          Saving deletes {empty.dropped.join(", ")}: no automation is left in {empty.dropped.length === 1 ? "it" : "them"}.
+          {empty.on.join(", ")} {empty.on.length === 1 ? "has" : "have"} no automations, so {empty.on.length === 1 ? "it" : "they"} cannot be on: switch{" "}
+          {empty.on.length === 1 ? "it" : "them"} off, or add an automation, before saving.
         </p>
       )}
       {(open || problems.length > 0 || outcome.kind === "error") && (

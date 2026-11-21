@@ -54,7 +54,7 @@ def test_a_group_switched_off_switches_its_automations_off():
 @pytest.mark.parametrize(
     ("groups", "match"),
     [
-        ({"ensembel": {"enabled": False}}, "no arm belongs"),
+        ({"ensembel": {"enabled": False}}, "a misspelling"),
         ({"ensemble": {"enabled": "no"}}, "true or false"),
         ({"ensemble": {"enabled": False, "until": "x"}}, "unknown key"),
         ({"ensemble": False}, "an object"),

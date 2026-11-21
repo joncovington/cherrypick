@@ -260,16 +260,28 @@ describe("removing an automation from its group", () => {
 });
 
 describe("a group with no automation", () => {
-  it("a new one cannot be saved until an automation is added, and the bar says why", () => {
+  it("is saved, off, and sent with the change", () => {
     const d = startDraft(VIEW);
     const draft = { ...d, groups: { ...d.groups, testing: { enabled: false } } };
-    expect(emptyGroups(VIEW, draft)).toEqual({ added: ["testing"], dropped: [] });
-    expect(emptyGroups(VIEW, { ...draft, members: { "par-a1-fly-1000": "testing" } })).toEqual({ added: [], dropped: [] });
+    expect(emptyGroups(VIEW, draft)).toEqual({ empty: ["testing"], on: [] });
+    expect(changeToSend(VIEW, draft).groups["testing"]).toEqual({ enabled: false });
   });
 
-  it("a saved one left empty is named as deleted on save", () => {
+  it("cannot be on: the save holds until it is off or has a member", () => {
     const d = startDraft(VIEW);
-    const out = { ...d, members: { "iron-condor-1345": null, "iron-fly-1000": null } };
-    expect(emptyGroups(VIEW, out)).toEqual({ added: [], dropped: ["ensemble"] });
+    const on = { ...d, groups: { ...d.groups, testing: { enabled: true } } };
+    expect(emptyGroups(VIEW, on).on).toEqual(["testing"]);
+    expect(emptyGroups(VIEW, { ...on, members: { "par-a1-fly-1000": "testing" } }).on).toEqual([]);
+  });
+
+  it("its switch cannot be turned on, and it can be deleted", () => {
+    const view: GroupsEditView = { ...VIEW, groups: [...VIEW.groups, { name: "testing", enabled: false, members: [] }] };
+    const out = html(<GroupsFlow view={view} />);
+    expect(out).toMatch(/aria-label="testing: group switch"[^>]*disabled=""/);
+    expect(out).toContain('aria-label="Delete testing"');
+    const d = startDraft(view);
+    const gone = { ...d, groups: { ensemble: d.groups["ensemble"]! } };
+    expect(changeItems(view, gone).map((c) => [c.where, c.becomes])).toEqual([["testing", "deleted"]]);
+    expect(changeToSend(view, gone).groups).not.toHaveProperty("testing");
   });
 });
