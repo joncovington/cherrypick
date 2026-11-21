@@ -37,8 +37,8 @@ or *book*; those spellings keep working.)
 
 Because each arm changes one lever against a shared control, you can measure the isolated effect of a
 single idea rather than confounding several at once. **A base install runs only the `control` arm in
-MEIC, earnings and calendars**; flies, bwb, curve and PMCC are retired and ship with every arm off (see their status lines),
-contango runs its two arms, weeklyput its one, `unhedged`, automations its eight, and ladder its three (`chain`, `once`, `decay`). Any further arms are your own machine's configuration under
+MEIC and earnings**; flies, bwb, curve, PMCC, calendars and contango are retired and ship with every arm off (see their status lines),
+weeklyput runs its one, `unhedged`, automations four of its eight (the four item 75 failed ship off), and ladder its three (`chain`, `once`, `decay`). Any further arms are your own machine's configuration under
 `~/.cherrypick/config/` (MEIC's in `meic.risk.json`). BWB, calendars and curve also build comparison
 books into the module (bwb's add-on triggers, calendars' `path`, curve's `noflip` and `near`); their shipped examples switch
 each one off with `enabled: false`, and you switch one on in your own config. With Claude Code
@@ -101,7 +101,8 @@ suite once collected $4.00 of credit against $4.96 of fees.
   manufactured credit survives real trading costs. See [packages/flies](packages/flies). It is built so a
   *negative* result is usable: floors are measured after fees, and a book-level floor always carries the
   price band over which it actually holds.
-- **Calendars** — ⚠️ **EXPERIMENTAL, off by default.** Weekly SPY double calendars (SPX before
+- **Calendars** — **Retired 2026-11-21, off by default** (research item 38 failed every arm at real
+  quotes). Weekly SPY double calendars (SPX before
   2026-08-15) entered every Monday at the expected-move strikes (shorts
   expiring Friday, longs the following Monday), built as a forward *exit-parameter experiment*: a
   mechanical control book, a permissive path book recording every tick, and a read-side replay that
@@ -120,7 +121,8 @@ suite once collected $4.00 of credit against $4.96 of fees.
   in entry gate, exit rule or short delta; the daily regime
   classification is recorded every session as the module's second product. Paper-only and
   credential-free. See [packages/curve](packages/curve).
-- **Contango** — ⚠️ **EXPERIMENTAL, off by default.** The same VIX/VIX3M signal held in shares:
+- **Contango** — **Retired 2026-11-21, off by default** (research item 39 failed every arm). The
+  same VIX/VIX3M signal held in shares:
   SVXY in contango, T-bills (SHV) otherwise, one decision ten minutes before the close. Two arms
   differ only in where they get out (0.97 or 1.0). Replayed from 2018, the switch earns less than
   holding SVXY outright for about 20 points less drawdown, and the paper run measures whether that
@@ -131,7 +133,7 @@ suite once collected $4.00 of credit against $4.96 of fees.
   close-of-session fill tracks the study's replay (item 69). Paper-only and credential-free. See
   [packages/weeklyput](packages/weeklyput).
 - **Ensemble** — ⚠️ **EXPERIMENTAL, off by default.** Research item 75's eight SPX and GLD short-dated option arms
-  in paper: an arm is configuration (an arm added in config trades with no code change), and one
+  in paper, the four it failed shipped off: an arm is configuration (an arm added in config trades with no code change), and one
   deterministic decision serves both the backtest and the paper loop. Paper-only and credential-free: a
   position is a ledger row, never an order. See [packages/automations](packages/automations).
 - **Ladder** — ⚠️ **EXPERIMENTAL, off by default.** A share dip ladder on leveraged index funds (TQQQ

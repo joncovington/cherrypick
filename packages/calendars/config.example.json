@@ -52,11 +52,13 @@
   "books": {
     "control": {
       "_summary": "Sells every leg in the Friday exit window: no stops, targets or weekend hold.",
-      "enabled": true
+      "_retired": "2026-11-21",
+      "enabled": false
     },
-    "_base_install_note": "A base install runs only `control`. The engine's other built-in arms run unless a config switches them off, so the example lists each one with enabled:false. Turn one on (or define your own) in ~/.cherrypick/config/calendars.json.",
+    "_base_install_note": "Retired 2026-11-21 (research item 38 failed every arm): every built-in arm runs unless a config switches it off, so the example lists each one with enabled:false. Turn one on (or define your own) in ~/.cherrypick/config/calendars.json.",
     "path": {
       "_summary": "Never closes: the shorts run to Friday's settlement while every tick's mark is recorded, the path the exit-policy replay reads.",
+      "_retired": "2026-11-21",
       "enabled": false
     }
   },

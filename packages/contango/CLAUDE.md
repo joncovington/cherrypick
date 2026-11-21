@@ -1,5 +1,10 @@
 # cherrypick-contango
 
+**Retired 2026-11-21; off by default.** Research item 39, the module's own rule on real daily prices,
+failed every arm: each gate cut the drawdown but gave up more return than its floor allows, mostly to
+switching costs. Both arms are off in the example config. To reinstate: set `modules.contango.enabled`
+to true in the suite config and `enabled` to true on the arm or arms you want in `contango.json`.
+
 The VIX term-structure switch, held in shares: SVXY (−0.5× short VIX futures) while VIX/VIX3M
 says contango, SHV (T-bills) while it doesn't. One decision per session, ten minutes before the
 close, off the shared stream cache. **Paper-only, credential-free, no live path** (posture: root
@@ -10,8 +15,7 @@ file). Ledger: `~/.cherrypick/data/contango/paper_trades.db`.
 Curve sold VXX call spreads on the same signal and is retired: costs took about half of
 each credit, the market is about ten contracts deep, and research item 37 found
 every curve arm failed after costs at real quotes. Holding the fund instead costs a few basis points a
-side at any size this suite could run, so this module is the surviving expression of the thesis,
-without the option costs.
+side at any size this suite could run, so this module tested the thesis without the option costs.
 
 ## The arms (one variable each)
 

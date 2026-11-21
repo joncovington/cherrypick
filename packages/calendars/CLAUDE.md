@@ -1,5 +1,11 @@
 # cherrypick-calendars
 
+**Retired 2026-11-21; off by default.** Research item 38, the module's own rule at real quotes, failed
+every arm. Both books, the Friday entry and `advice` are off in the example config; positions opened
+before the switch run to their own exits. To reinstate: set `modules.calendars.enabled` to true in the
+suite config and `enabled` to true on the book or books you want in `calendars.json` (and
+`friday_entry.enabled` for the Friday regime), then restart `calendars-paper`.
+
 This module's old word `book` is the root's `arm`; the column is still `dc_positions.book`.
 
 Weekly SPY double calendars, a paper-only forward exit-parameter experiment (posture: root file).

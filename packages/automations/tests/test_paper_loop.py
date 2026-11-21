@@ -237,12 +237,13 @@ def test_the_spot_is_recorded_a_minute_at_a_time(tmp_path):
     assert [m for m, _ in db.trail(w.conn, "SPX", DAY)] == [585, 586]
 
 
-def test_the_shipped_config_resolves_to_the_eight_arms():
+def test_the_shipped_config_resolves_to_the_eight_arms_with_the_four_item_75_failed_off():
     config = config_mod.load_config(
         str(__import__("pathlib").Path(__file__).resolve().parents[1] / "config.example.json")
     )
     arms = config_mod.load_arms(config)
-    assert len(config_mod.enabled(arms)) == 8
+    assert len(arms) == 8
+    assert set(config_mod.enabled(arms)) =={"iron-condor-1345", "put-spread-1300", "long-put-1030", "gld-call-spread-1dte"}
     assert set(config_mod.symbols(config, arms)) == {"SPX", "GLD"}
 
 

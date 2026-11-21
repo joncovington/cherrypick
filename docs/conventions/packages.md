@@ -23,7 +23,11 @@ what it may write. The package's own CLAUDE.md holds the detail.
   narrow, per-day-armed live pilot (one arm, one symbol, a worst-case buying-power cap) whose arm
   commands refuse while the module is off. Floors are
   measured after fees, and a book-level floor always carries the price band over which it holds.
-- **packages/calendars** — weekly SPY double calendars; **paper-only, credential-free**, a pure
+- **packages/calendars** — weekly SPY double calendars. **Retired 2026-11-21; off by default; may be
+  reinstated** (`modules.calendars.enabled`, the books' `enabled` and `friday_entry.enabled`) after
+  research item 38 failed every arm at real quotes: both books, the Friday entry and `advice` ship
+  off, nothing new opens, and the positions already open run to their own exits; the module goes off
+  once flat. Was **paper-only, credential-free**, a pure
   stream-cache consumer (chains via the streamer's `expirations` field). An exit-parameter experiment:
   `control` closes at Friday's bell, `path` holds to expiry recording a mark path, and a read-side
   replay (`exit_policies.py`) is validated to the cent against the real books every run. Holiday weeks
@@ -53,7 +57,9 @@ what it may write. The package's own CLAUDE.md holds the detail.
   traded or not. Early assignment and VXX reverse splits are measured, never modelled (an upper
   bound). `regime-history` is a signal-separation benchmark, never suite P&L. No live path.
 - **packages/contango** — the same VIX/VIX3M signal held in shares: SVXY in contango, SHV
-  (T-bills) otherwise, one decision ten minutes before the close; **paper-only, credential-free**,
+  (T-bills) otherwise, one decision ten minutes before the close. **Retired 2026-11-21; off by
+  default; may be reinstated** (`modules.contango.enabled` and the arms' `enabled`) after research
+  item 39 failed every arm: both arms ship off and no decision is taken. Was **paper-only, credential-free**,
   a stream-cache consumer with fund distributions read from the local technicals store. Arms
   `control` (out at 0.97) and `flipexit` (out at 1.0) differ only in thresholds. Nothing fills
   after the decision window. Validated against `scripts/contango_replay.py`, which runs the loop's
@@ -66,7 +72,8 @@ what it may write. The package's own CLAUDE.md holds the detail.
   last trade. Early assignment of the ETF puts is measured, never modelled (an upper bound). Off by
   default in the example. No live path.
 - **packages/automations** — ⚠️ EXPERIMENTAL. A rules engine for short-dated option arms, declared as
-  research item 75 (eight SPX and GLD arms from a third-party portfolio). An arm is configuration;
+  research item 75 (eight SPX and GLD arms from a third-party portfolio; the four item 75 failed ship
+  off: `iron-fly-1000`, `iron-fly-1dte-1330`, `gld-call-spread-20d`, `orb-put-spread`). An arm is configuration;
   `engine.decide` is one pure decision over a `Snapshot`, called by the backtest driver
   (`packages/backtest/scripts/ensemble_item75.py`) and by its paper loop, which takes any arm
   `arms.load_arms` returns. **Paper-only, credential-free, no live path**: a position is a row in
