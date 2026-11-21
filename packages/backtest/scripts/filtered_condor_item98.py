@@ -1,4 +1,4 @@
-"""Item 98: a published SPX 0DTE condor, $60 out with $15 wings at 10:30, kept to a filtered day and out at 75%.
+"""Item 98: a published SPX 0DTE condor, $60 out with $15 wings at 10:30, on a filtered day, out at 75%.
 
 The declaration is research/edge-hypotheses-plan.md section 98; this script runs it. Results are
 derived from licensed data and stay under the backtest results directory, never the repo.
@@ -38,8 +38,6 @@ from cherrypick.backtest.study import rule as kit_rule
 #: The correction log: one entry per fix to this replay, oldest first (orchestrator/studyversion.py).
 REPLAY_CORRECTIONS = ()
 
-SPLIT = "2025-07-01"
-
 #: The kit's three bars, on `ic60`'s trades, over one run cut at the split.
 RULE = {
     "t_bar": 2.0,
@@ -47,14 +45,14 @@ RULE = {
     "holdout_min_n": 50,
     "tail": {"per_year": "sample", "resamples": 10000, "seed": 98},
     "delta": True,
-    "splits": [SPLIT],
+    "splits": ["2025-07-01"],
 }
 
 #: The filters against the days they skip, fixed by the declaration before any run.
 FILTER_RULE = {
     "t_bar": 2.0,
     "halves": "2023-10-01",
-    "split": SPLIT,
+    "split": "2025-07-01",
     "min_n": 100,
     "holdout_min_n": 50,
 }
@@ -62,6 +60,7 @@ FILTER_RULE = {
 #: The window: the vendor's SPX one-minute store, through the last session stored with its deltas.
 WINDOW = {"symbol": "SPX", "store": "SPX-60s.db", "from": "2022-05-16", "through": "2026-11-13"}
 
+SPLIT = RULE["splits"][0]
 SMOKE_SESSIONS = 10
 JUDGED = "ic60"
 
@@ -71,14 +70,24 @@ _SAME_DAY = {"kind": "dte", "days": 0, "tolerance": 0}
 
 def _legs(points: float, wing: float) -> list[dict]:
     return [
-        {"name": "short_put", "right": "P", "side": -1, "strike": {"rule": "spot", "points": -points, "match": "nearest"}},
+        {
+            "name": "short_put",
+            "right": "P",
+            "side": -1,
+            "strike": {"rule": "spot", "points": -points, "match": "nearest"},
+        },
         {
             "name": "long_put",
             "right": "P",
             "side": 1,
             "strike": {"rule": "from_leg", "leg": "short_put", "points": -wing, "match": "exact"},
         },
-        {"name": "short_call", "right": "C", "side": -1, "strike": {"rule": "spot", "points": points, "match": "nearest"}},
+        {
+            "name": "short_call",
+            "right": "C",
+            "side": -1,
+            "strike": {"rule": "spot", "points": points, "match": "nearest"},
+        },
         {
             "name": "long_call",
             "right": "C",
@@ -253,8 +262,10 @@ def reported(rows: list[dict]) -> dict:
         exits[r["exit"]] = exits.get(r["exit"], 0) + 1
     return {
         "years": {y: describe(v) for y, v in sorted(years.items())},
-        "design": {"verdict_fill": describe([r for r in rows if r["date"] < SPLIT]),
-                   "mid_fill": describe([r for r in rows if r["date"] < SPLIT], "net_mid")},
+        "design": {
+            "verdict_fill": describe([r for r in rows if r["date"] < SPLIT]),
+            "mid_fill": describe([r for r in rows if r["date"] < SPLIT], "net_mid"),
+        },
         "exits": exits,
         "costs": {
             "fees": round(sum(r["fees"] for r in rows), 2),
@@ -388,14 +399,22 @@ def cmd_study(args) -> int:
         "rule": RULE,
         "filter_rule": FILTER_RULE,
         "arms_spec": ARMS,
-        "window": {**WINDOW, "sessions": [sessions[0], sessions[-1]] if sessions else None, "splits": RULE["splits"]},
+        "window": {
+            **WINDOW,
+            "sessions": [sessions[0], sessions[-1]] if sessions else None,
+            "splits": RULE["splits"],
+        },
         "arms": bars["arms"],
         "bars": bars,
         "filter": filt,
         "verdict": verdict,
         "reported": {
             **{
-                n: {**reported(rows[n]), "missing_delta": missing_delta[n], "reasons": dict(book.why.get(n, {}))}
+                n: {
+                    **reported(rows[n]),
+                    "missing_delta": missing_delta[n],
+                    "reasons": dict(book.why.get(n, {})),
+                }
                 for n in ARMS
             },
             "skipped_days": describe(skip),
