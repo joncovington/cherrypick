@@ -528,7 +528,7 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
   },
   meic: {
     slides: MEIC_SLIDES,
-    simple: ["summary", "arms", "performance", "positions", "guide"],
+    simple: ["summary", "arms", "forest", "positions", "history", "changes", "guide"],
     groups: [
       { label: "today", ids: ["summary", "arms", "forest", "attempts"] },
       { label: "tables", ids: ["positions", "history", "sessions"] },
@@ -552,7 +552,7 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
   },
   earnings: {
     slides: EARNINGS_SLIDES,
-    simple: ["summary", "strategies", "positions"],
+    simple: ["summary", "strategies", "positions", "history", "changes", "guide"],
     groups: [
       { label: "today", ids: ["summary"] },
       { label: "tables", ids: ["positions", "history"] },
@@ -584,7 +584,7 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
   },
   contango: {
     slides: CONTANGO_SLIDES,
-    simple: ["summary", "regime", "performance", "positions", "guide"],
+    simple: ["summary", "regime", "arms", "positions", "history", "changes", "guide"],
     groups: [
       { label: "today", ids: ["summary", "regime"] },
       { label: "tables", ids: ["positions", "history"] },
@@ -596,7 +596,7 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
   },
   weeklyput: {
     slides: WEEKLYPUT_SLIDES,
-    simple: ["summary", "cycles", "performance", "positions", "guide"],
+    simple: ["summary", "cycles", "positions", "history", "changes", "guide"],
     groups: [
       { label: "today", ids: ["summary"] },
       { label: "tables", ids: ["cycles", "positions", "history"] },
@@ -608,7 +608,7 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
   },
   ladder: {
     slides: LADDER_SLIDES,
-    simple: ["summary", "live", "positions", "history", "arms", "guide"],
+    simple: ["summary", "live", "arms", "positions", "history", "changes", "guide"],
     groups: [
       { label: "today", ids: ["summary", "live"] },
       { label: "tables", ids: ["positions", "history"] },
@@ -620,7 +620,7 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
   },
   automations: {
     slides: AUTOMATIONS_SLIDES,
-    simple: ["summary", "builder", "groups", "performance", "positions", "guide"],
+    simple: ["summary", "builder", "groups", "positions", "history", "changes", "guide"],
     groups: [
       { label: "today", ids: ["summary"] },
       { label: "set up", ids: ["builder", "groups"] },
@@ -633,7 +633,7 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
   },
   calendars: {
     slides: CALENDARS_SLIDES,
-    simple: ["summary", "plan", "performance", "positions", "guide"],
+    simple: ["summary", "plan", "arms", "positions", "history", "changes", "guide"],
     groups: [
       { label: "today", ids: ["summary", "plan"] },
       { label: "tables", ids: ["positions", "history"] },

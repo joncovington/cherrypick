@@ -19,7 +19,7 @@ import { BoxOpen, FliesBoxHost, type FliesBox } from "../../pages/Flies/FliesBox
 import { ArmRegime } from "./ArmRegime";
 import { fmtMoney, fmtNum, fmtPct } from "../../lib/format";
 import { useModuleAnalysis, type PerformanceModuleId } from "../../lib/api";
-import { matchesArm } from "../../lib/armTag";
+import { armOfTag, displayName, experimentOfTag, matchesArm } from "../../lib/armTag";
 import { Tile } from "../performance/Tile";
 import { TileGrid } from "../performance/TileGrid";
 
@@ -630,7 +630,8 @@ export function ArmCard({
   return (
     <div className="an-arm">
       <div className="an-arm-head">
-        <h2 className="an-arm-name">{tag}</h2>
+        <h2 className="an-arm-name">{armOfTag(tag)}</h2>
+        {experimentOfTag(tag) && <span className="muted pf-expid">{experimentOfTag(tag)}</span>}
         {a.window !== undefined && <WindowLine w={a.window} />}
       </div>
 
@@ -785,7 +786,7 @@ export function ArmPicker({
               <tr key={g.tag}>
                 <td>
                   <button type="button" className="chip" aria-pressed={g.tag === picked} onClick={() => onPick(g.tag)} title={`Show ${g.tag}'s analysis`}>
-                    {g.tag}
+                    {displayName(g.tag, groups.map((x) => x.tag))}
                   </button>
                 </td>
                 <td className="num">{String(a.stress.sessions)}</td>
