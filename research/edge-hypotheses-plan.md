@@ -9714,6 +9714,97 @@ source is not named here, and nothing of its data is. It is an **`indicator-rule
     `indicator-rule`, and the source's filtered version is not tested (its filters were chosen on its
     own results).
 
+### 98. A published SPX 0DTE condor: $60 out with $15 wings at 10:30, kept to a filtered day and out at 75%
+
+Declared 2026-11-20, before any outcome of it is computed. The rule comes from a community bot
+template posted 2026-11-19, built and tuned on another backtester. The source is not named here,
+and nothing of its data is. Its own backtest is 91 trades, and every setting was chosen on them:
+the VIX band, the two move filters, the credit floor, the two event skips (the best of seven
+combinations tried), no stop (the best of four) and the 75% target (the best of five, chosen
+because it closed one losing day before a late reversal). The source says itself that the result
+needs testing out of sample. It is an **`entry-filter`** item. `--similar` names nothing rejected;
+item 90's `adx-condor` sold a same-day condor on the same store with another trigger. The suite's
+new `open_change_pct` gate (#1346) builds the one filter the engine lacked, so the verdict also says
+whether this template is worth an automation.
+
+- **Question:** does the condor as stated earn after costs on SPX same-day options, and do its filters
+  pick better days than the ones they skip?
+- **The rule as stated (`ic60`):** every weekday at 10:30 ET, sell a same-day SPX iron condor, the
+  shorts about 60 points either side of spot (the listed strike nearest), $15 wings, one contract.
+  - **Enter only when:** VIX is 17 to 30; SPX is no more than 1% above the previous close; SPX is
+    between 1.25% below and level with today's open; the credit is at least 6% of the risk (reward
+    to risk at the mid).
+  - **Skip:** the last trading day of the month and the manufacturing PMI day.
+  - **Exit:** at 75% of the credit, else held to settlement; no stop.
+- **The replay (`ARMS`, `cmd_study` in the script):** three automations replayed by
+  `cherrypick.automations.driver`, the engine paper runs, so entries, gates, fills, fees and
+  settlement are paper's arithmetic (verdict fill: the suite's slippage model; fees from core).
+  - **`ic60`:** the rule as stated. The only arm judged.
+  - **`ic60-every-day`:** the same structure, credit floor and exit on every session, with no
+    market filter and no event skip. Its trades on the sessions `ic60` did not enter are the
+    skipped days.
+  - **`ic60-hold`:** `ic60` held to settlement. Reported only, the source's own comparison.
+  - **Data:** the vendor's SPX one-minute store, `SPX-60s.db`, every stored exchange trading day from
+    2022-05-16 to 2026-11-13, the last session stored with its deltas. The store must stay licensed
+    through the run (the script refuses otherwise).
+  - **Readings:** VIX is the store's at the entry minute; the previous close is the store's; the open
+    is the first spot at or after 09:30, which on this store is the 09:31 sample, as paper takes it;
+    the event days are the automations calendar's (`MonthEnd`, `PMI-Mfg`).
+- **What the source leaves unsaid, fixed here:** a long leg exactly 15 points from its short or no
+  trade; one trade a session; its open is its own platform's opening print, ours the 09:31 sample
+  (item 75's parity run found the two a few points apart on most days).
+- **Windows:** one run, cut at **2025-07-01** (design before, holdout from). The holdout part is read only
+  after a design pass. The source's window is not stated and its trades include 2025, so no part of
+  ours can be assumed outside its tuning: the split guards our own reading, and a pass is checked
+  forward before anything trades.
+- **Counted before declaring, from spot, the open, the previous close, VIX and the calendar only (no
+  option price, no outcome):** the sessions the market filters and event skips keep, on each side of
+  the candidate splits (counts in the local `item98/counts.md`). Those counts set the split and the
+  floors: at 2025-07-01 the usual 150 design trades would leave too few, and the credit floor, which
+  reads option prices and was not counted, can only cut them further. The floors are 100 design
+  trades (the kit's least for its tail bar) and 50 in the holdout.
+- **The rule, two literals in the script; a pass needs both:**
+  - **`RULE`, the three bars** (`cherrypick.backtest.study.rule`) on `ic60`'s trades, one a session:
+    capital, the net less the 3-month bill on its buying power (the widest wing less the credit) over
+    one day, one-sided t ≥ 2.0; tail, 10,000 draws, seed 98, the sample's own trades a year; delta,
+    the net less the structure's entry delta (from the store's leg deltas) financed on the same
+    capital to the settlement price, t ≥ 2.0. Fewer than 100 design trades is no verdict, fewer than
+    50 in the holdout likewise.
+  - **`FILTER_RULE`, the filters against the days they skip:** `ic60`'s trades against
+    `ic60-every-day`'s trades on the sessions `ic60` did not enter (Welch, normal tail). Design: the
+    mean difference above zero at one-sided t ≥ 2.0 and above zero in each design half (split
+    2023-10-01); then, after a design pass, the holdout difference above zero. Floors as `RULE`'s, on
+    `ic60`'s trades.
+- **Reported, never judged:** per arm, every year; the design part at the verdict fill and at the mid
+  (the source's basis); exits by kind; fees and slippage; each session's last reason (a filter, an
+  event, the credit floor, no quote); the skipped days' own summary; `ic60-hold` beside `ic60`.
+- **Rival explanations, each with its check:**
+  - *It is the structure, whatever the day:* `FILTER_RULE` against the same structure on the days
+    the filters skip.
+  - *It is the source's tuning on its own trades:* only the stated rule is judged, on our store and
+    fills, cut at a declared split, and a pass goes forward before it trades.
+  - *It is the one avoided loss:* the hold arm reported beside it; the verdict reads the stated
+    target over every session, not one day.
+  - *It is the sample's drift:* the delta bar against the structure's own financed delta, and every
+    year reported.
+  - *It is mid fills:* the verdict reads the suite's slippage; the mid is reported beside it.
+- **Declared limits:** one-minute samples (a target touched inside a minute is seen at its close);
+  no 09:30 print, so the open is the 09:31 sample; the store's VIX at the minute; the event calendar's
+  rule days for PMI (the first trading day of the month); the Welch t treats sessions as
+  independent; no stop, as stated, so a single day can lose the whole width less the credit.
+- **Expected, recorded before the run:** a fail. A condor this far out collects little, a 75% target
+  gives up the tail of each winner, and seven settings chosen on 91 trades rarely survive a new
+  sample.
+- **Data and results:** `packages/backtest/scripts/filtered_condor_item98.py`, queued with
+  `run.py queue-chain` (`item98/smoke`, then `item98/study`). Results stay under
+  `~/.cherrypick/data/backtest/results/research/item98/`, and this plan records the verdict without
+  figures.
+- **Decides:**
+  - **A pass:** propose it as an automation in its own group, off, with a `forward` block declared
+    before it trades.
+  - **A fail or no verdict:** the template does not earn on SPX 0DTE after costs, or its filters pick
+    no better days than they skip. Nothing is built; the record stays under `entry-filter`.
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:

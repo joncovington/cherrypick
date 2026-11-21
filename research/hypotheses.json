@@ -4652,6 +4652,58 @@
       "retest": null,
       "retest_note": "A pass is followed by an automation with its own forward block, not a retest; the store is the vendor's, so a retest needs the licence.",
       "retests": []
+    },
+    {
+      "id": 98,
+      "study": "item98",
+      "title": "A published SPX 0DTE condor: $60 out with $15 wings at 10:30, kept to a filtered day and out at 75%",
+      "status": "declared",
+      "legacy": false,
+      "setup": "entry-filter",
+      "side": "neutral",
+      "structure": "options",
+      "window": "0dte",
+      "measure": "the vendor's SPX one-minute store, every stored trading day 2022-05-16 to 2026-11-13, replayed by the automation driver (paper's engine, fills, fees and settlement); ic60: at 10:30 ET a same-day condor, shorts nearest spot -/+ 60 points, $15 wings, one contract, entered only with VIX 17-30, SPX at most +1% from the previous close and -1.25% to 0% from today's open, reward to risk at least 6%, skipping MonthEnd and PMI-Mfg; out at 75% of the credit, else settled; no stop",
+      "expected": "ic60's net clears the bill on its buying power and its own financed delta at t 2.0, and its filtered days beat the same condor on the days the filters skip",
+      "sample": "one run cut at 2025-07-01 (design before, holdout from); < 100 design trades = no verdict, < 50 holdout likewise",
+      "rule": "RULE: the kit's three bars on ic60's trades (capital t >= 2.0 over the 3-month bill on the widest wing less the credit; tail 10,000 draws seed 98, the sample's own trades a year; delta: the net less the entry delta from the store's leg deltas financed to the settlement, t >= 2.0); FILTER_RULE: ic60's trades against ic60-every-day's (same structure, credit floor and exit, no market filter or event skip) on the sessions ic60 did not enter, Welch design difference > 0 at one-sided t >= 2.0 and > 0 in each design half (2023-10-01), then the holdout difference > 0 after a design pass; a pass needs RULE and FILTER_RULE",
+      "mechanism": "a calm-to-soft first hour with VIX moderate marks a session that stays inside a $60 band into the close, so a condor sold then expires worthless more often than its premium prices, and taking 75% early sidesteps late reversals",
+      "rivals": [
+        {
+          "explanation": "the structure, whatever the day",
+          "check": "FILTER_RULE against the same condor on the sessions the filters skip"
+        },
+        {
+          "explanation": "the source's tuning on its own 91 trades",
+          "check": "only the stated rule is judged, on our store and fills, cut at a declared split; a pass goes forward before it trades"
+        },
+        {
+          "explanation": "one avoided loss behind the 75% target",
+          "check": "the hold-to-settlement arm reported beside it; the verdict reads every session"
+        },
+        {
+          "explanation": "the sample's drift",
+          "check": "the delta bar against the structure's own financed delta; every year reported"
+        },
+        {
+          "explanation": "mid fills",
+          "check": "the verdict reads the suite's slippage model; the mid reported beside it"
+        }
+      ],
+      "pointer": "research/edge-hypotheses-plan.md#98-a-published-spx-0dte-condor-60-out-with-15-wings-at-1030-kept-to-a-filtered-day-and-out-at-75",
+      "scripts": [
+        "packages/backtest/scripts/filtered_condor_item98.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_filtered_condor_item98_script.py"
+      ],
+      "results": [
+        "{home}/data/backtest/results/research/item98/results.json"
+      ],
+      "outcome": null,
+      "retest": null,
+      "retest_note": "A pass is followed by an automation with its own forward block, not a retest; the store is the vendor's, so a retest needs the licence.",
+      "retests": []
     }
   ],
   "rule_changes": []
