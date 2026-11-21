@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { COMPARE_SCOPES, isCompareScope, type ComparePayload } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
 import { readCompare } from "../services/compareBridge.js";
+import { readScorecard } from "../readers/scorecard.js";
 
 /**
  * `GET /api/compare?scope=era|all` — every arm beside its control (`services/compareBridge.ts`).
@@ -19,4 +20,6 @@ export function registerCompareRoutes(app: FastifyInstance, config: ConsoleConfi
     const payload: ComparePayload = await readCompare(config, raw);
     return payload;
   });
+  // One row per arm and automation in the suite, and why it needs a look (`readers/scorecard.ts`).
+  app.get("/api/compare/scorecard", async () => readScorecard());
 }

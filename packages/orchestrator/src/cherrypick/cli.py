@@ -2485,9 +2485,9 @@ def cmd_draft_verdict(args) -> None:
         sys.exit(1)
 
 
-def cmd_forward_checks(cfg) -> None:
-    """#1080: each passing item's paper arm against its backtest (collecting, confirm, drift or kill).
-    Reads the module ledgers through core.ledgers and the local result files; writes nothing."""
+def _forward_check_rows(cfg) -> list[dict]:
+    """Every forward check (`forwardcheck.run`): the module ledgers through core.ledgers and the local
+    result files. Writes nothing."""
     import sqlite3
 
     from cherrypick.core import home as core_home
@@ -2525,7 +2525,42 @@ def cmd_forward_checks(cfg) -> None:
         licence_ended=ended,
         enrolled_rows=forwardcheck.enrolled(statuses),
     )
-    _emit({"ok": True, "checks": out})
+    return out
+
+
+def cmd_forward_checks(cfg) -> None:
+    """#1080: each passing item's paper arm against its backtest (collecting, confirm, drift or kill).
+    Reads the module ledgers through core.ledgers and the local result files; writes nothing."""
+    _emit({"ok": True, "checks": _forward_check_rows(cfg)})
+
+
+def cmd_scorecard(cfg) -> None:
+    """One row per arm and automation in the suite (`orchestrator/scorecard.py`): its research
+    verdict, its vs-backtest and vs-control readings, its sample, net and drawdown, and the reason it
+    needs a look. Every enabled module's comparison over its current era (`core.compare`), the forward
+    checks, the register, and the automations module's members (`cli groups-view`). A forward state
+    against a licensed reference is withheld while licensed results are hidden. Writes nothing."""
+    from cherrypick.core import compare
+
+    from cherrypick.orchestrator import groupedit, scorecard
+
+    on = [m for m in compare.MODULE_SCHEMAS if m in set(cfgmod.enabled_modules(cfg))]
+    experiments = compare.experiments_index()
+    comparisons = [compare.module_comparison(m, experiments=experiments) for m in on]
+    members: list[dict] = []
+    if "automations" in on:
+        view = groupedit.run_module_view(cfg, {}) or {}
+        for g in view.get("groups") or []:
+            members += list(g.get("members") or [])
+        members += list(view.get("ungrouped") or [])
+    out = scorecard.build(
+        comparisons,
+        _forward_check_rows(cfg),
+        hypotheses.load(),
+        members,
+        is_licensed=_licensed_while_closed(),
+    )
+    _emit({"ok": True, "modules": on, **out})
 
 
 def _licensed_while_closed():
@@ -2958,6 +2993,7 @@ def build_parser() -> argparse.ArgumentParser:
             "study-times",
             "draft-verdict",
             "forward-checks",
+            "scorecard",
             "study-report",
             "retests",
             "run-earnings-entry",
@@ -3438,6 +3474,7 @@ def main() -> None:
         "study-times": cmd_study_times,
         "draft-verdict": lambda: cmd_draft_verdict(args),
         "forward-checks": lambda: cmd_forward_checks(cfg),
+        "scorecard": lambda: cmd_scorecard(cfg),
         "study-report": lambda: cmd_study_report(args),
         "retests": lambda: cmd_retests(args),
         "notify-trades": lambda: cmd_notify_trades(cfg, dry_run=args.dry_run),

@@ -1,4 +1,5 @@
 import { ComparePage } from "../../pages/Compare/ComparePage";
+import { ScorecardTab } from "../../pages/Compare/ScorecardTab";
 import { RiskTab } from "../../pages/Compare/RiskTab";
 import { CalendarTab } from "../../pages/Compare/CalendarTab";
 import { PortfolioTab } from "../../pages/Compare/PortfolioTab";
@@ -15,6 +16,8 @@ import type { SlideDef } from "../types";
  * carries across.
  */
 export const slides: SlideDef[] = [
+  // #1359 step 18: every arm and automation in one table, and why each needs a look (the orchestrator's scorecard).
+  { id: "scorecard", label: "scorecard", render: () => <ScorecardTab /> },
   { id: "arms", label: "arms", render: () => <ComparePage /> },
   { id: "risk", label: "risk", render: () => <RiskTab /> },
   { id: "calendar", label: "calendar", render: () => <CalendarTab /> },
@@ -43,7 +46,7 @@ export function CompareLightbox({ slide }: { slide: string }) {
             className="chip"
             title="arms: python -m cherrypick.core.compare (core.ledgers rows, core.stats figures); risk: python -m cherrypick.core.analysis"
           >
-            {slide === "risk" ? "source: core.analysis" : slide === "calendar" ? "source: core.metrics" : slide === "portfolio" ? "source: core.portfolio" : slide === "signals" ? "source: backtest signalstudy" : "source: core.compare"}
+            {slide === "risk" ? "source: core.analysis" : slide === "calendar" ? "source: core.metrics" : slide === "portfolio" ? "source: core.portfolio" : slide === "signals" ? "source: backtest signalstudy" : slide === "scorecard" ? "source: orchestrator scorecard" : "source: core.compare"}
           </span>
           {moded && <ModeToggle mode={mode} onChange={setMode} />}
         </>

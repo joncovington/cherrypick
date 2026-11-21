@@ -407,6 +407,9 @@ export const REPORTS_SLIDES = [
  * the open arm are query parameters.
  */
 export const COMPARE_SLIDES = [
+  // #1359 step 18: every arm and automation in one table, its readings and why it needs a look, from
+  // the orchestrator's scorecard. First, so Compare opens on it.
+  { id: "scorecard", label: "scorecard" },
   { id: "arms", label: "arms" },
   // Every arm's risk shape over its own window, from core.analysis (packages/core/docs/module-map.md).
   { id: "risk", label: "risk" },
