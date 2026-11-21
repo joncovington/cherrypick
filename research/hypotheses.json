@@ -4757,6 +4757,64 @@
       "retest": null,
       "retest_note": "A retest of the time-spread family across reports (items 52, 86, 87 and the retired double_calendar paper book) with the strike distance, the module's own expiries and its trading times as the new variables; it reads the vendor's intraday chains, so a retest needs the licence.",
       "retests": []
+    },
+    {
+      "id": 100,
+      "study": "item100",
+      "title": "Open price gaps on the index funds: filled more often than any level the same distance away?",
+      "status": "declared",
+      "legacy": false,
+      "setup": "gap-fill",
+      "side": "signal",
+      "structure": "none",
+      "window": "multi-day",
+      "measure": "QQQ, SPY, IWM and DIA daily bars at traded prices in the technicals history store, 2011-01-03 to 2026-11-20; a gap session is a low above the prior high (or a high below the prior low) by at least 0.1%, filled when any of the next 20 sessions trades to that prior edge; its distance is the log distance from the close to the edge over the trailing 20-day volatility; its baseline is the share of the same fund's non-gap sessions in the same part whose 20-session excursion in the same direction reached that distance; excess_fill is the events' mean of filled less baseline",
+      "expected": "gap edges are reached at least five points more often than levels as far away in volatility units, with t 2 and in both design halves",
+      "sample": "one run cut at 2022-01-01 (design before, holdout from); < 400 design events = no verdict, < 150 holdout events = provisional",
+      "rule": "FORECAST_RULE: design excess_fill >= 0.05 with one-sided t >= 2 from a stationary block bootstrap over trading dates (mean block 20 sessions, 10,000 draws, seed 100, every fund's row on a drawn date, events and baseline alike), positive in each design half (2016-07-01); holdout, read after a design pass, excess_fill > 0 on a baseline from holdout sessions alone",
+      "mechanism": "the sessions a gap skipped left orders unfilled at those prices, which pull price back to the edge",
+      "rivals": [
+        {
+          "explanation": "gaps are close to price",
+          "check": "the baseline is matched on distance in volatility units"
+        },
+        {
+          "explanation": "gaps come in volatile spells",
+          "check": "each session's own trailing 20-day volatility"
+        },
+        {
+          "explanation": "upward drift",
+          "check": "the baseline keeps the event's direction"
+        },
+        {
+          "explanation": "the big move, not the gap",
+          "check": "a same-move baseline reported (non-gap sessions moving at least one sigma the same way)"
+        },
+        {
+          "explanation": "one regime",
+          "check": "positive in both design halves; holdout read apart"
+        },
+        {
+          "explanation": "one fund",
+          "check": "each fund reported"
+        },
+        {
+          "explanation": "dividends make down gaps",
+          "check": "reported without ex-dividend sessions"
+        }
+      ],
+      "pointer": "research/edge-hypotheses-plan.md#100-open-price-gaps-on-the-index-funds-filled-more-often-than-any-level-the-same-distance-away",
+      "scripts": [
+        "packages/backtest/scripts/gap_fill_item100.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_gap_fill_item100_script.py"
+      ],
+      "results": [],
+      "outcome": null,
+      "retest": null,
+      "retest_note": null,
+      "retests": []
     }
   ],
   "rule_changes": []

@@ -9978,6 +9978,93 @@ module's own expiries, and fills at the times the module trades.
     distance tested, at the module's own times. The time-spread family stays closed for single-name
     earnings, and the work on defined-risk short vol turns to single-expiry structures.
 
+### 100. Open price gaps on the index funds: filled more often than any level the same distance away?
+
+Declared 2026-11-21, before any outcome of it is computed. The claim comes from a community chart
+post: "gaps do get backfilled more than not", used to call the Nasdaq's remaining April gap the
+likely floor for the coming week. Gap edges are already drawn as levels by
+`cherrypick.technicals.levels` (`GapEdge`, reproduced from the vendor's charts), with no test behind
+them. `cherrypick hypotheses --similar` names no look-alike. It is a **`gap-fill`** item, and the
+nearest failures are 12 (GEX levels) and 80 (a level read from the prior day's profile).
+
+- **Question:** does price trade back to an open gap's edge within 20 sessions more often than it
+  reaches a level the same number of volatility units away, in the same direction, from a session
+  with no gap?
+- **This is a forecast, not a trade.** A pass says gap edges carry information about where price
+  goes; it trades nothing, so the three bars do not apply, and the rule is a forecast rule
+  (`FORECAST_RULE` in the script). Any use of it (a level that gates or places an entry) is a later
+  item, declared on the three bars before it runs.
+- **Why a plain fill rate says nothing:** most gaps are small and close to price, and price wanders,
+  so most levels near price are reached sooner or later. The raw share of gaps filled is high
+  whether or not gaps matter. The question is whether a gap's edge is reached more often than any
+  other level as close.
+- **Mechanism:** the claim is that the sessions a gap skipped left orders unfilled at those prices,
+  which pull price back. The rival is that a gap's edge is one more level near price and gets hit
+  exactly as often as its distance and the fund's volatility say.
+- **Data:** daily bars (high, low, close, at traded prices, not adjusted) for QQQ, SPY, IWM and DIA
+  in the technicals history store (`history.db`), every stored session from 2011-01-03 through
+  2026-11-20, read once and pinned by its fingerprint (sessions per fund and a hash of the dates).
+  Nothing is fetched. The poster's chart is the Nasdaq Composite, whose stored history starts in
+  2021. QQQ is its traded stand-in, and the other three show whether any effect is the Nasdaq's
+  alone.
+- **The events:** session t of a fund is an **up gap** when its low is above the prior session's
+  high by at least 0.1% (`min_gap`), and a **down gap** when its high is below the prior low by at
+  least 0.1%. The edge is the prior session's high (up) or low (down). It is **filled** when any of
+  the next 20 sessions (`horizon`) trades to it: a low at or under the edge after an up gap, a high
+  at or over it after a down gap.
+- **The distance:** z = ln(close_t ÷ edge) for an up gap (ln(edge ÷ close_t) for a down gap), over
+  σ_t, the standard deviation of the 20 daily log close-to-close returns ending at t. Everything is
+  known at t's close.
+- **The baseline:** every session of the same fund in the same part that is not a gap session.
+  For each one, the furthest the next 20 sessions went below its close (for up gaps) or above it (for
+  down gaps), in units of its own σ. An event's baseline is the share of those sessions whose
+  excursion reached the event's z. The statistic, `excess_fill`, is the events' mean of
+  (filled − baseline), pooled over the four funds and both directions.
+- **Rows dropped:** a session without 20 prior returns or 20 sessions after it, or with a calendar
+  hole of more than five days anywhere in that span. The last 20 sessions have no horizon, so this
+  week's gaps are not in the sample.
+- **Windows:** one run, cut at **2022-01-01** (design before, holdout from). The holdout part is
+  read only after a design pass. Its baseline is drawn from holdout sessions alone.
+- **The rule (`FORECAST_RULE`):**
+  - **Design:** `excess_fill` at least 0.05 (five points; less is real but too small to place a
+    level by), with a one-sided t of 2 or more. Its standard error comes from a stationary block
+    bootstrap over trading dates (mean block 20 sessions, 10,000 draws, seed 100), every fund's row
+    on a drawn date coming with it, events and baseline sessions alike. It must also be positive in
+    each design half (split 2016-07-01). Fewer than 400 design events is no verdict.
+  - **Holdout:** `excess_fill` above zero. Fewer than 150 holdout events makes a pass provisional.
+- **Minimum detectable effect:** about 1,100 design events, many on the same days across the four
+  funds and overlapping within 20 sessions. A standard error near 0.025 is assumed, so the design
+  detects about five points at the t bar, matching the floor. The run reports the measured standard
+  error. A fail reads "no excess of about that size", not "no effect".
+- **Reported, never judged:** horizons of 5 and 60 sessions; minimum gaps of 0.25% and 0.5%; each
+  fund; up and down gaps apart; a same-move baseline (non-gap sessions whose own move was at least
+  one σ in the gap's direction, so the gap is set against a strong day without a gap); without gaps
+  on ex-dividend sessions; the raw fill rate and the mean baseline beside the excess; events by year.
+- **Rival explanations, each with its check:**
+  - *Gaps are close to price:* the baseline is matched on distance in σ units.
+  - *Gaps come in volatile spells:* σ is each session's own trailing 20-day figure.
+  - *Price drifts up, so levels below are reached less often:* the baseline keeps the event's
+    direction.
+  - *It is the big move, not the gap:* the same-move baseline is reported.
+  - *It is one regime:* both design halves must agree, and the holdout is read apart.
+  - *It is one fund:* each fund is reported.
+  - *Dividends make down gaps:* reported without ex-dividend sessions.
+- **Declared limits:** daily bars only, so a fill is any touch of the edge within a session, not a
+  close through it. Prices are as traded, so an ex-dividend drop counts as a move. The study measures
+  a gap from the session it forms. A gap that has sat open for months and is then approached (the
+  post's case) is a narrower question, not asked here. The four funds are strongly correlated, so
+  they are not four samples. That is why the bootstrap draws dates, not rows.
+- **Data and results:** `packages/backtest/scripts/gap_fill_item100.py study`, queued with
+  `run.py queue-chain` as `item100/study`. The bars are personal-use public data, and results stay
+  under `~/.cherrypick/data/backtest/results/research/item100/`. This plan records the verdict
+  without figures, as for every item.
+- **Decides:**
+  - **A pass:** gap edges are information about where price goes. They stay in the technicals
+    levels, and a later item, declared on the three bars, can test one as an entry or a target.
+  - **A fail or no verdict:** a gap's edge is reached as often as any level that far away, and
+    "the gap will fill" adds nothing to distance and volatility. Gap edges stay on the charts as
+    drawn levels with no claim attached. A proposal to drop them from `levels` is a separate change.
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:
