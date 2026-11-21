@@ -45,6 +45,8 @@ function fakeConfig(dataEpochDate: string | null): ConsoleConfig {
       bwbDir: path.join(data, "bwb"),
       contangoDir: path.join(data, "contango"),
       automationsDir: path.join(data, "automations"),
+      weeklyputDir: path.join(data, "weeklyput"),
+      ladderDir: path.join(data, "ladder"),
       gexDir: "",
       reviewDir: "",
       manageDir: "",
@@ -102,10 +104,23 @@ describe("performance db path resolution", () => {
     expect(MODULE_SCHEMA.bwb).toBe("bwb_132");
     expect(MODULE_SCHEMA.contango).toBe("contango_etf");
     expect(MODULE_SCHEMA.automations).toBe("ensemble_trade");
+    expect(MODULE_SCHEMA.weeklyput).toBe("weeklyput_put");
+    expect(MODULE_SCHEMA.ladder).toBe("ladder_lot");
   });
 });
 
 describe("readModulePerformance", () => {
+  it("passes each group's money and the module's through, for a costs tab that sums nothing", async () => {
+    const money = { trades: 3, unrecorded: 0, gross: 20, fees: 6, settlement: 0, slippage: 1.5, net: 12.5, slippage_inside_fill: false };
+    setMetricsCaller(() => ({
+      ...READING,
+      metrics: { ...READING.metrics, groups: { control: { ...READING.metrics.groups.control, money } }, money },
+    }));
+    const out = await readModulePerformance(fakeConfig(null), "curve", "ALL");
+    expect(out.groups[0]?.money).toEqual(money);
+    expect(out.money).toEqual(money);
+  });
+
   it("passes the reading through, tagged by profile", async () => {
     setMetricsCaller(() => READING);
     const out = await readModulePerformance(fakeConfig(null), "curve", "ALL");

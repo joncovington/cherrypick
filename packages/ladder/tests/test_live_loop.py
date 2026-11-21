@@ -204,6 +204,8 @@ def test_once_with_the_gates_unmet_reads_nothing_and_builds_no_broker(capsys, su
 
     built = []
     monkeypatch.setattr(live_tick, "BrokerAdapter", lambda config: built.append(config))
+    # A trading day, whatever day the test runs: on a weekend the tick stops at the calendar first.
+    monkeypatch.setattr(live_tick._cal, "is_trading_day", lambda _day: True)
     code, out = run(capsys, "--once")  # the example as shipped: live.enabled is false
     result = json.loads(out)
     assert code == 0 and built == []

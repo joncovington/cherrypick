@@ -177,8 +177,11 @@ export const EARNINGS_SLIDES = [
   { id: "decisions", label: "decisions" },
   { id: "screening", label: "screening" },
   { id: "strategies", label: "strategies" },
-  { id: "advisor", label: "advisor" },
+  { id: "performance", label: "performance" },
+  { id: "costs", label: "costs" },
   { id: "changes", label: "changes" },
+  { id: "advisor", label: "advisor" },
+  { id: "guide", label: "help" },
 ] as const satisfies readonly NavSlide[];
 
 export type EarningsSlideId = (typeof EARNINGS_SLIDES)[number]["id"];
@@ -241,6 +244,7 @@ export const WEEKLYPUT_SLIDES = [
   { id: "history", label: "history" },
   { id: "decisions", label: "decisions" },
   { id: "performance", label: "performance" },
+  { id: "analysis", label: "analysis" },
   { id: "costs", label: "costs" },
   { id: "changes", label: "changes" },
   { id: "guide", label: "help" },
@@ -253,8 +257,8 @@ export type WeeklyputSlideId = (typeof WEEKLYPUT_SLIDES)[number]["id"];
  * previous close and every arm's next buy level; `live` the live loop's gates, mode and own ledger
  * (read only; the other tabs are the paper book); `positions` the lots held, the old ones flagged as
  * the group's "hospital"; `history` the sold lots as the trades they were; `arms` each arm's lots,
- * net and open lots in the group's terms. No advisor, regime, performance or costs tab: the module
- * declares no advice bounds, keeps no daily series, and its costs are one column of the history.
+ * net and open lots in the group's terms; `performance` and `costs` the shared reads of its sold lots.
+ * No advisor or regime tab: the module declares no advice bounds and keeps no daily series.
  */
 export const LADDER_SLIDES = [
   { id: "summary", label: "today" },
@@ -263,6 +267,8 @@ export const LADDER_SLIDES = [
   { id: "history", label: "history" },
   { id: "arms", label: "arms" },
   { id: "decisions", label: "decisions" },
+  { id: "performance", label: "performance" },
+  { id: "costs", label: "costs" },
   { id: "changes", label: "changes" },
   { id: "guide", label: "help" },
 ] as const satisfies readonly NavSlide[];
@@ -551,7 +557,8 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
       { label: "today", ids: ["summary"] },
       { label: "tables", ids: ["positions", "history"] },
       { label: "evidence", ids: ["decisions", "screening"] },
-      { label: "study", ids: ["strategies", "changes", "advisor"] },
+      { label: "study", ids: ["strategies", "performance", "costs", "changes", "advisor"] },
+      { label: "help", ids: ["guide"] },
     ],
     legacy: {
       session: "summary",
@@ -559,7 +566,6 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
       overview: "summary",
       detail: "strategies",
       trades: "history",
-      performance: "strategies",
       analysis: "strategies",
       upcoming: "screening",
     },
@@ -595,7 +601,7 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
       { label: "today", ids: ["summary"] },
       { label: "tables", ids: ["cycles", "positions", "history"] },
       { label: "evidence", ids: ["decisions"] },
-      { label: "study", ids: ["performance", "costs", "changes"] },
+      { label: "study", ids: ["performance", "analysis", "costs", "changes"] },
       { label: "help", ids: ["guide"] },
     ],
     legacy: { session: "summary" },
@@ -606,7 +612,8 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
     groups: [
       { label: "today", ids: ["summary", "live"] },
       { label: "tables", ids: ["positions", "history"] },
-      { label: "evidence", ids: ["arms", "decisions", "changes"] },
+      { label: "evidence", ids: ["arms", "decisions"] },
+      { label: "study", ids: ["performance", "costs", "changes"] },
       { label: "help", ids: ["guide"] },
     ],
     legacy: { session: "summary" },

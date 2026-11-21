@@ -198,7 +198,7 @@ describe("ladder's models", () => {
 
 describe("ladder's place in the console", () => {
   it("has a tab for each page the spec names", () => {
-    expect(LADDER_SLIDES.map((s) => s.id)).toEqual(["summary", "live", "positions", "history", "arms", "decisions", "changes", "guide"]);
+    expect(LADDER_SLIDES.map((s) => s.id)).toEqual(["summary", "live", "positions", "history", "arms", "decisions", "performance", "costs", "changes", "guide"]);
   });
 
   it("is hidden when the suite says its module is off, shown when unknown", () => {
