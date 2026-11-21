@@ -2088,7 +2088,8 @@ export function readMeicSummary(
     //    × multiplier × quantity, ROUNDED PER ROW as _capital rounds it, a missing credit reading
     //    as zero exactly as `net_credit or 0.0` does there — summed over the same rows the hero's
     //    money sums, so the ratio's two sides are one population. A row that cannot support the
-    //    formula drops from the DENOMINATOR, never silently from the ratio; its count rides out
+    //    formula (no wing width, or a credit at or above the width, where _capital returns None)
+    //    drops from the DENOMINATOR, never silently from the ratio; its count rides out
     //    as "coverage" so a partial denominator is visible ("9/10"). The numerator is the
     //    window's UNROUNDED net — the fact set's own division divides the unrounded sum while its
     //    displayed net is the rounded key — pinned to the artifact by
@@ -2096,7 +2097,9 @@ export function readMeicSummary(
     //    trade cannot lose more than its capital — with the unclamped value kept for the label.
     const capRow = db
       .prepare<string[], Record<string, unknown>>(
-        `SELECT COALESCE(SUM(ROUND((wing_width - COALESCE(net_credit, 0.0)) * ${mult}, 2)), 0.0) AS cap,
+        `SELECT COALESCE(SUM(CASE WHEN wing_width IS NOT NULL
+                                   AND (wing_width - COALESCE(net_credit, 0.0)) * ${mult} > 0
+                              THEN ROUND((wing_width - COALESCE(net_credit, 0.0)) * ${mult}, 2) END), 0.0) AS cap,
                 COUNT(*) AS n,
                 SUM(CASE WHEN wing_width IS NOT NULL
                           AND (wing_width - COALESCE(net_credit, 0.0)) * ${mult} > 0
