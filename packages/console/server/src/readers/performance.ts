@@ -57,6 +57,7 @@ const MODULE_DIR_KEY = {
   curve: "curveDir",
   bwb: "bwbDir",
   contango: "contangoDir",
+  automations: "automationsDir",
 } as const satisfies Record<PerformanceModuleId, keyof ConsoleConfig["paths"]>;
 
 export function performanceDbPath(config: ConsoleConfig, module: PerformanceModuleId): string {
