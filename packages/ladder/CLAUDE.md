@@ -72,8 +72,9 @@ chain is read. A fund removed from the config stays requested until its last lot
 ## Layout
 
 `rules.py` (levels, targets, size, money, pure), `provider.py` (read-only cache views), `db.py`
-(ledger), `paper_loop.py` (the tick), `stream_request.py`, `analytics.py` (the forward read),
-`cli.py` (status, lots, summary), `live_gates.py`, `live_loop.py` and `credentials.py` (the live gates,
+(ledger), `paper_loop.py` (the tick), `stream_request.py`, `analytics.py` (the forward read,
+and `equity`: each arm by session, realized and marked at the session's last bid), `cli.py` (status,
+lots, summary, equity), `live_gates.py`, `live_loop.py` and `credentials.py` (the live gates,
 the arm and the commands; none imports anything that trades), `orders.py` (the pure order planner and
 the executor over an injected broker), `live_db.py` (the live ledger), `live_tick.py` (the broker
 adapter, the reconcile and the tick: the only module that imports the broker seam), `live_checks.py` (pure: the

@@ -11774,6 +11774,111 @@ svg.vol-curve text {
   stroke: var(--neg);
   stroke-width: 1;
 }
+
+/* The ladder's realized-and-marked panels (LadderEquityCard.tsx): one per arm, one shared scale.
+   Marked is the headline (accent, solid); realized recedes (muted, dashed, like the Builder's gross
+   line); the gap is the open lots, tinted by sign. */
+.ldr-eq-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1.1rem;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin: 0 0 0.5rem;
+}
+.ldr-eq-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.ldr-eq-key {
+  display: inline-block;
+  width: 18px;
+  height: 0;
+  border-top: 2px solid var(--accent);
+}
+.ldr-eq-key-realised {
+  border-top: 2px dashed var(--text-muted);
+}
+.ldr-eq-key-under,
+.ldr-eq-key-over {
+  height: 10px;
+  border: 0;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--neg) 28%, transparent);
+}
+.ldr-eq-key-over {
+  background: color-mix(in srgb, var(--pos) 22%, transparent);
+}
+.ldr-eq-grid-wrap {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
+  gap: 0.75rem 1rem;
+}
+.ldr-eq-panel {
+  margin: 0;
+  min-width: 0;
+}
+.ldr-eq-title {
+  font-family: var(--num-face);
+  font-size: 0.8rem;
+  color: var(--text);
+  margin-bottom: 0.15rem;
+}
+.ldr-eq-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+.ldr-eq-grid {
+  stroke: var(--chart-grid-mid);
+  stroke-width: 1;
+}
+.ldr-eq-zero,
+.ldr-eq-cross {
+  stroke: var(--chart-grid-strong);
+  stroke-width: 1;
+}
+.ldr-eq-tick {
+  font-family: var(--num-face);
+  font-size: 9.5px;
+  fill: var(--text-muted);
+}
+.ldr-eq-under {
+  fill: color-mix(in srgb, var(--neg) 28%, transparent);
+}
+.ldr-eq-over {
+  fill: color-mix(in srgb, var(--pos) 22%, transparent);
+}
+.ldr-eq-realised {
+  stroke: var(--text-muted);
+  stroke-width: 1.5;
+  stroke-dasharray: 4 3;
+}
+.ldr-eq-marked {
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+.ldr-eq-dot {
+  fill: var(--accent);
+  stroke: var(--surface);
+  stroke-width: 2;
+}
+.ldr-eq-dot-realised {
+  fill: var(--surface);
+  stroke: var(--text-muted);
+  stroke-width: 1.5;
+}
+.ldr-eq-end {
+  font-family: var(--num-face);
+  font-size: 9.5px;
+  fill: var(--text);
+}
+.ldr-eq-end-muted {
+  fill: var(--text-muted);
+}
 .builder-skips {
   display: grid;
   gap: 0.5rem;
