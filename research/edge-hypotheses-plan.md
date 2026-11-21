@@ -9706,6 +9706,20 @@ source is not named here, and nothing of its data is. It is an **`indicator-rule
   `run.py queue-chain` (`item97/smoke`, then `item97/study`). Results stay under
   `~/.cherrypick/data/backtest/results/research/item97/`, and this plan records the verdict without
   figures.
+- **Result (2026-11-20): fail.** One run over the whole store, cut at 2025-07-01.
+  - **`RULE` fails the design part** on the capital bar (positive, its t short of 2.0) and on the
+    tail bar (a bad year's drawdown is not earned back within a year). The delta bar passes. The
+    holdout is not read.
+  - **`CONTROL_RULE` passes:** the arm beats the same spread sold at its own entry minutes on every
+    session, in the design part, in each half and in the holdout. The break carries something over
+    selling afternoon call spreads at random, but not enough to clear the bill on the spread's
+    buying power with room for its tail.
+  - **Reported:** the arm is positive in every year, and over the source's own window the replay
+    comes close to the source's raw result, so the gap between the source and this verdict is the
+    bars, not the replay.
+  - Every figure is in `~/.cherrypick/data/backtest/results/research/item97/results.json`.
+- **What this decides:** the fail branch. Nothing is built, and the source's filtered version is not
+  tested.
 - **Decides:**
   - **A pass:** propose it as an automation in its own group, off, with a `forward` block declared
     before it trades.
