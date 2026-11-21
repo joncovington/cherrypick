@@ -185,6 +185,26 @@ describe("readRegimeCuts", () => {
     expect(out.cuts.crossTabs[0]!.arms[0]!.cells[0]!.thin).toBe(false);
   });
 
+  it("passes today's conditions through as the writer stamped them, and none on an older artifact", () => {
+    const doc = minimal() as Record<string, unknown> & { arms: Array<Record<string, unknown>> };
+    doc["today"] = { session: "2026-09-18", at: "2026-09-18 16:04:00-04:00", symbols: { SPX: { gex: "diffuse" } }, buckets: { gex: "diffuse" } };
+    // readable:false beside figures -- a thin cell as the writer stamps it, passed through, never re-read.
+    doc.arms[0] = { ...doc.arms[0], today: { gex: { bucket: "diffuse", readable: false, why: "thin", sessions: 1, net_pnl: 12.5 }, trend: { bucket: "up", readable: false, why: "bogus" } } };
+    write("flies", "regime_cuts.json", doc);
+    const out = readRegimeCuts(config, "flies");
+    expect(out.status).toBe("ok");
+    if (out.status !== "ok") return;
+    expect(out.cuts.today).toEqual({ session: "2026-09-18", at: "2026-09-18 16:04:00-04:00", buckets: { gex: "diffuse" } });
+    const t = out.cuts.arms[0]!.today!;
+    expect(t["gex"]).toMatchObject({ bucket: "diffuse", readable: false, why: "thin", sessions: 1, netPnl: 12.5 });
+    expect(t["trend"]!.why).toBeNull(); // an unknown reason is not passed on as one
+    write("flies", "regime_cuts.json", minimal());
+    const older = readRegimeCuts(config, "flies");
+    if (older.status !== "ok") throw new Error("expected ok");
+    expect(older.cuts.today).toBeNull();
+    expect(older.cuts.arms[0]!.today).toBeNull();
+  });
+
   it("passes an arm's thin through, and never invents the writer's thresholds", () => {
     // `thin: false` on a 1-session arm is impossible from the writer -- there so a reader that
     // re-derived `sessions < thinBelowSessions` would flip it. And an artifact publishing no

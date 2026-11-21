@@ -522,6 +522,71 @@ def dated_sessions(directory: Path | str) -> list[str]:
     return sorted(m.group(1) for n in names if (m := _DATED_RE.match(n)))
 
 
+# --------------------------------------------------------------------------- today's conditions
+#: The cell fields an arm's reading in today's bucket carries.
+_TODAY_KEYS = ("sessions", "trades", "net_pnl", "avg_pnl", "win_rate", "thin", "fragile")
+
+
+def today_buckets(reading: dict | None, symbol: str | None) -> dict[str, str | None]:
+    """Each dimension's bucket for the document's scope from a writer's `reading`
+    (`{"symbols": {SYMBOL: {dimension: bucket}}}`): the one symbol's for a single-symbol cut, and for a
+    pooled cut the bucket every symbol agrees on, None where they differ or a symbol has none."""
+    per = (reading or {}).get("symbols") or {}
+    if symbol and symbol.upper() != "ALL":
+        per = {k: v for k, v in per.items() if k.upper() == symbol.upper()}
+    if not per:
+        return {}
+    dims = sorted({d for v in per.values() for d in v})
+    out: dict[str, str | None] = {}
+    for d in dims:
+        seen = {v.get(d) for v in per.values()}
+        out[d] = seen.pop() if len(seen) == 1 else None
+    return out
+
+
+def _today_cell(dim_doc: dict | None, bucket: str | None) -> dict:
+    """One arm's reading in today's bucket of one dimension, with why it cannot be read where so."""
+    if bucket is None or bucket in _UNREAD_BUCKETS:
+        return {"bucket": bucket, "readable": False, "why": "no_reading"}
+    if not dim_doc:
+        return {"bucket": bucket, "readable": False, "why": "no_cut"}
+    if dim_doc.get("degenerate"):
+        return {"bucket": bucket, "readable": False, "why": "degenerate"}
+    if dim_doc.get("underpowered"):
+        return {"bucket": bucket, "readable": False, "why": "underpowered"}
+    cell = next((b for b in dim_doc.get("buckets") or [] if b.get("bucket") == bucket), None)
+    if cell is None:
+        return {"bucket": bucket, "readable": False, "why": "no_trades"}
+    fields = {k: cell.get(k) for k in _TODAY_KEYS}
+    if cell.get("thin"):
+        return {"bucket": bucket, "readable": False, "why": "thin", **fields}
+    return {"bucket": bucket, "readable": True, "why": None, **fields}
+
+
+def stamp_today(doc: dict, reading: dict | None) -> dict:
+    """Stamp the conditions of the session cut, and each arm's record in them (2026-11-21).
+
+    `reading` is the writer's own last reading of the session's market regime:
+    `{"at": ISO, "symbols": {SYMBOL: {dimension: bucket}}}`, or None when it has none. The document
+    gains `today` (`session`, `at`, the per-symbol buckets and the scope's `buckets`), and each arm
+    `today`: per dimension, its cell in that bucket (sessions, trades, net, mean, win rate, thin,
+    fragile), `readable` only where the dimension is neither underpowered nor degenerate and the cell
+    is not thin, with `why` naming the reason otherwise. A dimension the reading lacks is left out.
+    Only market dimensions are read: one that is a property of the chosen structure has no bucket
+    before an entry. Additive keys: no `CUT_VERSION` bump."""
+    buckets = today_buckets(reading, doc.get("symbol"))
+    doc["today"] = {
+        "session": doc.get("session"),
+        "at": (reading or {}).get("at"),
+        "symbols": dict((reading or {}).get("symbols") or {}),
+        "buckets": buckets,
+    }
+    for arm in doc.get("arms") or []:
+        dims = arm.get("dimensions") or {}
+        arm["today"] = {d: _today_cell(dims.get(d), b) for d, b in buckets.items()}
+    return doc
+
+
 def write_artifact(directory: Path | str, doc: dict) -> dict:
     """Write the dated file always, and the latest copy only when `doc["session"]` is at or after
     the session already there -- a retroactive run lands beside a newer cut, never over it.
@@ -566,6 +631,8 @@ __all__ = [
     "session_totals",
     "sign_test_p",
     "stamp_history",
+    "stamp_today",
+    "today_buckets",
     "write_artifact",
     "write_json_atomic",
 ]

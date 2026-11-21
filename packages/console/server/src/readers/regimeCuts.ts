@@ -13,6 +13,9 @@ import type {
   RegimeDimension,
   RegimeMultiplicity,
   RegimePair,
+  RegimeToday,
+  RegimeTodayCell,
+  RegimeTodayWhy,
   RegimeRobustness,
 } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
@@ -175,6 +178,40 @@ function dimension(v: unknown): RegimeDimension {
   };
 }
 
+const TODAY_WHY: readonly RegimeTodayWhy[] = ["no_reading", "no_cut", "degenerate", "underpowered", "no_trades", "thin"];
+
+function todayCell(v: unknown): RegimeTodayCell {
+  const o = obj(v);
+  const why = str(o["why"]);
+  return {
+    bucket: str(o["bucket"]),
+    readable: o["readable"] === true,
+    why: why !== null && (TODAY_WHY as readonly string[]).includes(why) ? (why as RegimeTodayWhy) : null,
+    sessions: num(o["sessions"]),
+    trades: num(o["trades"]),
+    netPnl: num(o["net_pnl"]),
+    avgPnl: num(o["avg_pnl"]),
+    winRate: num(o["win_rate"]),
+    thin: bool(o["thin"]),
+    fragile: bool(o["fragile"]),
+  };
+}
+
+function armToday(v: unknown): Record<string, RegimeTodayCell> | null {
+  if (v === null || typeof v !== "object" || Array.isArray(v)) return null;
+  const out: Record<string, RegimeTodayCell> = {};
+  for (const [k, c] of Object.entries(v as Record<string, unknown>)) out[k] = todayCell(c);
+  return out;
+}
+
+function docToday(v: unknown): RegimeToday | null {
+  if (v === null || typeof v !== "object" || Array.isArray(v)) return null;
+  const o = obj(v);
+  const buckets: Record<string, string | null> = {};
+  for (const [k, b] of Object.entries(obj(o["buckets"]))) buckets[k] = str(b);
+  return { session: str(o["session"]), at: str(o["at"]), buckets };
+}
+
 function arm(v: unknown): RegimeArm {
   const o = obj(v);
   const dims = obj(o["dimensions"]);
@@ -192,6 +229,7 @@ function arm(v: unknown): RegimeArm {
     completionRate: num(o["completion_rate"]),
     thin: typeof o["thin"] === "boolean" ? o["thin"] : null,
     dimensions,
+    today: armToday(o["today"]),
   };
 }
 
@@ -262,6 +300,7 @@ export function shapeRegimeCuts(raw: Record<string, unknown>): RegimeCuts {
     dimensions,
     multiplicity: multiplicity(raw["multiplicity"]),
     history: docHistory(raw["history"]),
+    today: docToday(raw["today"]),
   };
 }
 
