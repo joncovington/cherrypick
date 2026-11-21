@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import { Card, SortTh, sortRows, useSort } from "../DataTable";
 import { fmtMoney, fmtPct } from "../../lib/format";
 import type { ExitReasonRow, TradingMode } from "@console/shared";
@@ -159,9 +160,12 @@ export function PerformanceSlide({
   module,
   mode = "paper",
   arm = null,
+  pairs: showPairs = true,
 }: {
   module: PerformanceModuleId;
   mode?: TradingMode;
+  /** False where the module has a `changes` tab: the advised arms are read there, and this says so. */
+  pairs?: boolean;
   /** The page's arm picker (flies, MEIC): narrows the arm cards, pairs and exit reasons to that arm.
    *  The cumulative chart keeps `control` beside it as the reference. null is every arm. */
   arm?: string | null;
@@ -295,7 +299,13 @@ export function PerformanceSlide({
         </>
       )}
 
-      {pairs.length > 0 && (
+      {pairs.length > 0 && !showPairs && (
+        <p className="muted pf-pointer">
+          Advised arms are compared with their bases on the <Link to={`/${module}/changes`}>changes</Link> tab, over the module&apos;s current
+          measurement era; experiments from earlier eras keep their verdicts on the <Link to={`/${module}/advisor`}>advisor</Link> tab.
+        </p>
+      )}
+      {pairs.length > 0 && showPairs && (
         <Section concept="edge" tag="advised arms" question="Is the advised arm ahead of its base?">
           {pairs.map(({ p, advisedGroup, baseGroup }) => (
             <PairedABCard key={p.advised} pair={p} advisedGroup={advisedGroup} baseGroup={baseGroup} />

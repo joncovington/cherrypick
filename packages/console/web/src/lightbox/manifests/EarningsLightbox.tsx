@@ -1,3 +1,4 @@
+import { ChangesSlide } from "../../components/changes/ChangesSlide";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { TradingMode } from "@console/shared";
@@ -212,6 +213,7 @@ export function EarningsLightbox({ slide }: { slide: string }) {
       ),
     },
     { id: "advisor", label: EARNINGS_LABEL.advisor, render: () => <AdvisorSlide module="earnings" /> },
+    { id: "changes", label: EARNINGS_LABEL.changes, render: () => <ChangesSlide module="earnings" /> },
     {
       id: "positions",
       label: EARNINGS_LABEL.positions,
