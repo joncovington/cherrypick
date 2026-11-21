@@ -66,6 +66,14 @@ tick got. A Builder run's `summary.reasons` are the driver's last reasons in the
 `--run-reasons` cuts the run by the same steps and `causes` sets the two side by side. Read-only;
 no ledger reads as no sessions.
 
+**Groups as a unit** (`groupread.py`, pure; `cli groups-read`). Each group's members' closed trades
+stacked (`analytics`' line with its running net), the net and drawdown as shares of its
+`allocation`, the most `capital` open at once against its `max_risk` and each member's against its
+share (a position counts from its entry session through its exit session, so the figure is an upper
+bound at a session's grain), the sessions missed with `group_risk` by which cap bound (the one with
+less room in the check's own reading), and `core.portfolio` over the members' net per session. The
+automations in no group are one line beside them. Membership is the config's now. Read-only.
+
 **The Builder's check** (`drafts.py`, `cli draft`, JSON on stdin). By name alone it returns the automation as an editor starts from it (the shipped entry with this machine's changes laid over it, before groups stamp anything). With an `automation`, it lays the edit over the config and resolves every automation again (`config.load_arms`), so a save is refused for exactly what would stop the loop, and returns the entry to write: off (`enabled: false`), named by its key, and with its `register` label kept as stored, never taken from the editor (a copy under a new name carries none, so its blocks read `not_backtested`). It writes nothing; the orchestrator's config editor writes the entry (`automationedit`).
 
 **Sizing** (`sizing.py`). A size is a count, a risk budget (`max_risk`), or a percent of an allocation

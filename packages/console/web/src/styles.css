@@ -12305,6 +12305,14 @@ svg.vol-curve text {
 .ae-off {
   margin-left: 0.4rem;
 }
+/* Automations' performance and costs: rows by automation or by group, above the sections. */
+.grp-by {
+  display: flex;
+  justify-content: flex-start;
+}
+.grp-thin {
+  margin-left: 0.4rem;
+}
 @media (max-width: 640px) {
   .ae-funnel-row {
     grid-template-columns: 1fr 1fr;

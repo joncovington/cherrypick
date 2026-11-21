@@ -10,6 +10,7 @@ import { groupsCheck, groupsSave, useAutomations, useAutomationsPerformance, use
 import { fmtMoney } from "../../lib/format";
 import { AutomationRecordPage } from "./AutomationRecord";
 import { automationHref } from "./automationsModels";
+import { GroupUnitSection } from "./GroupUnit";
 
 /**
  * Automations › Groups, a drill-down: every group (`?` none), one group (`?group=`), one automation
@@ -600,6 +601,7 @@ function GroupPage({ view, draft, edit, paper, group }: { view: GroupsEditView; 
           {budget && <p className="muted grp-hint">Shares: {shareTotal} of 100 percent given. A member without one has no slice of its own, only the group's cap.</p>}
         </Card>
       </Section>
+      {!none && <GroupUnitSection group={group} />}
     </>
   );
 }
