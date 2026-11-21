@@ -275,7 +275,7 @@ export function MeicLightbox({ slide }: { slide: string }) {
       label: MEIC_LABEL.performance,
       render: () => (
         <>
-          <PerformanceSlide module="meic" mode={mode} arm={profile} pairs={false} />
+          <PerformanceSlide module="meic" mode={mode} arm={profile} pairs={false} armCards={false} />
           <MeicPerformanceTab mode={mode} symbol={symbol} profile={profile} era={resolvedEra} />
         </>
       ),

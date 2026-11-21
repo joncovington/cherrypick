@@ -12331,6 +12331,19 @@ svg.vol-curve text {
   font-family: var(--num-face);
   font-size: 0.75rem;
 }
+/* MEIC's arm comparison: each arm's gap against control and its reading, on one line. */
+.mp-arms td:first-child {
+  max-width: 15rem;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.mp-vs {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.15rem;
+  white-space: nowrap;
+}
 /* Where the performance tab points to the changes tab for its advised arms. */
 .pf-pointer {
   margin: 0;

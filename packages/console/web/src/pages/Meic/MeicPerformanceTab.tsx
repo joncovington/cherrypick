@@ -1,6 +1,9 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import type { TradingMode } from "@console/shared";
+import type { ChangeRow, TradingMode } from "@console/shared";
+import { READING_CHIP, gapWords, readingWords } from "../../components/changes/ChangesSlide";
+import { useModuleChanges } from "../../lib/api";
 import { Card, PnlCell, SortTh, fmtMoney, fmtNum, fmtPct, sortRows, useSort } from "../../components/DataTable";
 import { HelpSection, HelpWarn, type CardHelpContent } from "../../components/CardHelp";
 import { SeriesLegend, SERIES_COLORS } from "../../components/Charts";
@@ -82,14 +85,44 @@ const ARM_SORTS = {
 const ARMS_HELP: CardHelpContent = {
   title: "Arm comparison",
   body: (
-    <HelpSection title="Every arm">
-      <p>
-        Every arm, ranked by net: the variance test&apos;s payoff. A header click re-ranks, and a third click returns to the server&apos;s order. Max
-        DD sorts by the drawdown&apos;s size, deepest first.
-      </p>
-    </HelpSection>
+    <>
+      <HelpSection title="Every arm">
+        <p>
+          Every arm, ranked by net: the variance test&apos;s payoff. A header click re-ranks, and a third click returns to the server&apos;s order.
+          Max DD sorts by the drawdown&apos;s size, deepest first. An arm&apos;s name opens it.
+        </p>
+      </HelpSection>
+      <HelpSection title="Against control">
+        <p>
+          The arm&apos;s net less control&apos;s, paired session by session and per trade, with its 95% interval and its reading, from the changes tab.
+          It is read over MEIC&apos;s current measurement era, which can be shorter than the scope above; an arm with no paired session in that era
+          reads a dash.
+        </p>
+      </HelpSection>
+    </>
   ),
 };
+
+/** An arm's line from the changes reader, keyed by its tag. */
+export function vsControlByArm(rows: ChangeRow[] | undefined): Map<string, ChangeRow> {
+  return new Map((rows ?? []).filter((r) => r.kind !== "declared").map((r) => [r.arm, r]));
+}
+
+export function VsControl({ row, arm }: { row: ChangeRow | undefined; arm: string }) {
+  if (arm === "control") return <span className="muted">—</span>;
+  if (row === undefined || row.gap === null) return <span className="muted">—</span>;
+  const perTrade = row.basis === "per_trade" && row.gap.per_trade !== null;
+  const v = perTrade ? row.gap.per_trade : row.gap.per_session;
+  // The interval is on the changes tab and in the title; the cell keeps the gap and its reading.
+  return (
+    <span className="mp-vs" title={`${gapWords(row)} — see the changes tab`}>
+      <span className={v !== null && v > 0 ? "pnl-pos" : v !== null && v < 0 ? "pnl-neg" : undefined}>
+        {v === null ? "—" : `${fmtMoney(v)}/${perTrade ? "trade" : "session"}`}
+      </span>
+      <span className={READING_CHIP[row.reading]}>{readingWords(row)}</span>
+    </span>
+  );
+}
 
 /* Cumulative NET, not "equity on a $100k base": the base is a display constant, not a bankroll these
    arms trade (an arm can take hundreds of one-lot entries in a session, a sampling stream rather than
@@ -239,6 +272,8 @@ export function MeicPerformanceTab({
 
   // The server ranks the arms by net; a header click re-ranks, and a third click returns to that.
   const armSort = useSort();
+  const changes = useModuleChanges("meic");
+  const vsByArm = vsControlByArm(changes.data?.rows);
   const risk = data?.risk;
   const equity = data?.equity ?? [];
   const periods = data?.periods ?? [];
@@ -269,7 +304,7 @@ export function MeicPerformanceTab({
 
         <Card title="arm comparison" className="lv-12" collapseKey="meic-perf-arms" updatedAt={dataUpdatedAt} help={ARMS_HELP}>
           <div className="table-scroll">
-            <table className="data-table num-from-1">
+            <table className="data-table num-from-1 mp-arms">
               <thead>
                 <tr>
                   <SortTh label="arm" k="arm" sort={armSort} />
@@ -282,23 +317,26 @@ export function MeicPerformanceTab({
                   <SortTh label="expectancy" k="expectancy" sort={armSort} />
                   <SortTh label="PF" k="pf" sort={armSort} />
                   <SortTh label="max DD" k="dd" sort={armSort} title="sorts by the drawdown's size: deepest first" />
+                  <th title="this era, from the changes tab">vs control</th>
                 </tr>
               </thead>
               <tbody>
                 {isLoading ? (
                   <tr>
-                    <td colSpan={10}>{skeleton()}</td>
+                    <td colSpan={11}>{skeleton()}</td>
                   </tr>
                 ) : data?.arms.length === 0 ? (
                   <tr>
-                    <td colSpan={10} className="muted">
+                    <td colSpan={11} className="muted">
                       no arm-tagged trades (this ledger has no arm column)
                     </td>
                   </tr>
                 ) : (
                   sortRows(data?.arms ?? [], armSort, ARM_SORTS).map((p) => (
                     <tr key={p.arm}>
-                      <td>{p.arm}</td>
+                      <td>
+                        <Link to={`/meic/arms?arm=${encodeURIComponent(p.arm)}`}>{p.arm}</Link>
+                      </td>
                       <td>{p.trades}</td>
                       <td className="muted">{p.sessions}</td>
                       <td>{fmtMoney(p.grossPnl)}</td>
@@ -310,6 +348,9 @@ export function MeicPerformanceTab({
                       <td>{p.expectancy !== null ? fmtMoney(p.expectancy) : "—"}</td>
                       <td>{p.profitFactor !== null ? p.profitFactor.toFixed(2) : "—"}</td>
                       <td className="pnl-neg">{fmtMoney(-p.maxDrawdown)}</td>
+                      <td>
+                        <VsControl row={vsByArm.get(p.arm)} arm={p.arm} />
+                      </td>
                     </tr>
                   ))
                 )}
