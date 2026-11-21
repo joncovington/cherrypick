@@ -28,11 +28,13 @@
   "arms": {
     "control": {
       "_summary": "SVXY while VIX/VIX3M is below 0.97, T-bills (SHV) once it reaches 0.97.",
-      "enabled": true
+      "_retired": "2026-11-21",
+      "enabled": false
     },
     "flipexit": {
       "_summary": "In below 0.97 like control, but out only once VIX/VIX3M reaches 1.0.",
-      "enabled": true,
+      "_retired": "2026-11-21",
+      "enabled": false,
       "exit_at_or_above": 1.0
     }
   }
