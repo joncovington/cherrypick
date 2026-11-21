@@ -38,7 +38,7 @@ function fakeConfig(dataEpochDate: string | null): ConsoleConfig {
       curveDir: dir("curve"),
       bwbDir: dir("bwb"),
       contangoDir: dir("contango"),
-      automationsDir: dir("automations"),
+      automationsDir: dir("automations"), weeklyputDir: dir("weeklyput"), ladderDir: dir("ladder"),
       gexDir: "",
       reviewDir: "",
       manageDir: "",

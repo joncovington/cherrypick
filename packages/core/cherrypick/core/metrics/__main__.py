@@ -18,7 +18,9 @@ flag, applies no era filter.
 Output: {"ok": true, "schema": ..., "n_records": N,
          "groups": {tag: {"reading": <calibration_reading>,
                            "session_nets": [[session, net], ...],
-                           "trade_nets": [net, ...]}}}
+                           "trade_nets": [net, ...],
+                           "money": {trades, unrecorded, gross, fees, settlement, slippage, net,
+                                     slippage_inside_fill}}}}
 where `tag` is the record's profile, or `<profile>@<experiment_id>` for an advised row stamped
 with the experiment it ran under (see cmd_read).
 
@@ -42,7 +44,7 @@ import sys
 from cherrypick.core import ledgers
 from cherrypick.core.profiles import group_by_tag
 
-from . import calibration_reading, session_nets_dated
+from . import calibration_reading, money, session_nets_dated
 
 
 def _records(args) -> tuple[list[dict] | None, dict | None]:
@@ -90,10 +92,20 @@ def cmd_read(args) -> dict:
             "session_nets": [list(pair) for pair in session_nets_dated(group)],
             # An unrecorded net (n/r) is no trade's result; the reading's `unscored` counts it.
             "trade_nets": [round(r["net_pnl"], 2) for r in group if r.get("net_pnl") is not None],
+            # The group's money laid out to add up: the costs tab's rows (`money`).
+            "money": money(group),
         }
 
     groups = group_by_tag(records, tag_key="group_tag", summarize=summarize)
-    return {"ok": True, "schema": args.schema, "era": era, "n_records": len(records), "groups": groups}
+    return {
+        "ok": True,
+        "schema": args.schema,
+        "era": era,
+        "n_records": len(records),
+        "groups": groups,
+        # Every group together, so a costs tab totals nothing itself.
+        "money": money(records),
+    }
 
 
 #: What a `trades` row carries: the record's own fields, renamed nowhere.

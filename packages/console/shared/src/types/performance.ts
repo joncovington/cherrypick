@@ -17,13 +17,31 @@ export const PERFORMANCE_MODULE_SCHEMA = {
   bwb: "bwb_132",
   contango: "contango_etf",
   automations: "ensemble_trade",
+  weeklyput: "weeklyput_put",
+  ladder: "ladder_lot",
 } as const;
 
 export type PerformanceModuleId = keyof typeof PERFORMANCE_MODULE_SCHEMA;
 
+/** A group's money laid out to add up (`core.metrics.money`): gross - fees - settlement - slippage = net
+ *  over the trades that record every part; `unrecorded` are left out of the sums, never zeroed.
+ *  `slippage` is null where the module concedes it inside the fill (MEIC, flies). */
+export interface GroupMoney {
+  trades: number;
+  unrecorded: number;
+  gross: number;
+  fees: number;
+  settlement: number;
+  slippage: number | null;
+  net: number;
+  slippage_inside_fill: boolean;
+}
+
 export interface ModulePerformanceGroup {
   tag: string;
   reading: Record<string, unknown>;
+  /** Absent from an older core. */
+  money?: GroupMoney;
   sessionNets: Array<[string, number]>;
   tradeNets: number[];
   /**
@@ -132,6 +150,8 @@ export interface ModulePerformanceResult {
   era: { key: "current" | "ALL"; from: string | null; note: string | null; moduleEra: string | null };
   nRecords: number;
   groups: ModulePerformanceGroup[];
+  /** Every group together (`core.metrics.money`), so a costs tab totals nothing itself. */
+  money?: GroupMoney | null;
   /** Realized exit reasons per tag, or `{unavailable}` for a module with no single exit-reason
    * concept (flies) -- `readers/exitReasons.ts`, read directly (a query, not `metricsBridge`). */
   exitReasons: ExitReasonRow[] | { unavailable: string };

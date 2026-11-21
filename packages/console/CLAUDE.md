@@ -156,6 +156,10 @@ alone):
     `components/armpage/ModuleArmPage.tsx` (`/<module>/arm/<name>`): changes slice, the performance
     slide narrowed to the arm with `reference` the arm its changes row is read against (none for a
     control), and analysis; their performance tabs pass `armCards={false}`.
+  - **The shared costs tab** (`components/costs/SharedCosts.tsx`; earnings and ladder) renders
+    `core.metrics.money` from the performance read, per arm and the module's own line: it sums
+    nothing. Ladder and weeklyput are in `PERFORMANCE_MODULE_SCHEMA`, so the shared performance and
+    analysis slides, Compare and the P&L calendar read them too.
   - **The Builder's form reads the module's schema and "Today, live"; neither writes.** The Builder
     is Automations' `builder` tab (`/builder` redirects there; `g u` is its tab chord,
     `navLinks.TAB_SHORTCUTS`). The form's choices are `cli builder-schema`

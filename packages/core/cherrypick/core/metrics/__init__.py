@@ -305,6 +305,39 @@ def session_nets_dated(records: Sequence[Mapping]) -> list[tuple[str, float]]:
     return [(s, round(by_session[s], 2)) for s in sorted(by_session)]
 
 
+def money(records: Sequence[Mapping]) -> dict:
+    """A group's money in the suite's layout (`docs/conventions/money-layout.md`): gross, then fees,
+    settlement and slippage each in its own column, then net, so that gross - fees - settlement -
+    slippage = net over the trades that record every part. Read from `core.ledgers`' split of each
+    record's total cost, never recomputed.
+
+    - `trades`: records with a net; `unrecorded`: those whose total cost was never recorded (their
+      fees are n/r, never a zero), left out of every sum here so the columns still add up.
+    - `slippage_inside_fill`: True where the module concedes slippage inside the fill price
+      (MEIC, flies): it is in gross there, and `slippage` is None rather than a zero cost."""
+    rows = [r for r in records if r.get("net_pnl") is not None]
+    whole = [r for r in rows if r.get("fees") is not None and r.get("gross_pnl") is not None]
+    inside = any(r.get("slippage_basis") == "in_gross" for r in rows)
+
+    def total(key: str) -> float:
+        return round(sum(float(r.get(key) or 0.0) for r in whole), 2)
+
+    return {
+        "trades": len(rows),
+        "unrecorded": len(rows) - len(whole),
+        "gross": total("gross_pnl"),
+        "fees": total("fees"),
+        "settlement": total("settlement"),
+        "slippage": None
+        if inside
+        else round(
+            sum(float(r.get("slippage") or 0.0) for r in whole if r.get("slippage_basis") == "cost"), 2
+        ),
+        "net": total("net_pnl"),
+        "slippage_inside_fill": inside,
+    }
+
+
 def worst_session(records: Sequence[Mapping]) -> dict | None:
     """The single worst session: {"session", "net"}. None when no record carries a session."""
     by_session: dict[str, float] = {}

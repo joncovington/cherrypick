@@ -58,6 +58,8 @@ const MODULE_DIR_KEY = {
   bwb: "bwbDir",
   contango: "contangoDir",
   automations: "automationsDir",
+  weeklyput: "weeklyputDir",
+  ladder: "ladderDir",
 } as const satisfies Record<PerformanceModuleId, keyof ConsoleConfig["paths"]>;
 
 export function performanceDbPath(config: ConsoleConfig, module: PerformanceModuleId): string {
@@ -175,6 +177,7 @@ export async function readModulePerformance(
     reading: g.reading,
     sessionNets: g.session_nets,
     tradeNets: g.trade_nets,
+    ...(g.money ? { money: g.money } : {}),
   }));
   // Flies has no per-trade capital, so `return_on_capital` is always empty for it; return on peak
   // risk stands in, per group, over the same window the reading covers.
@@ -192,6 +195,7 @@ export async function readModulePerformance(
     era: { key: era, from: start, note: suite.note, moduleEra },
     nRecords: res.metrics.n_records,
     groups,
+    money: res.metrics.money,
     exitReasons: exits.exitReasons,
     heldBack: exits.heldBack,
     // Advised books are paper-only by construction: a live book shadows no experiment.

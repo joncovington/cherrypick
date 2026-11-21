@@ -1,4 +1,7 @@
 import { ChangesSlide } from "../../components/changes/ChangesSlide";
+import { EarningsHelp } from "../../pages/Earnings/EarningsHelp";
+import { SharedCosts } from "../../components/costs/SharedCosts";
+import { PerformanceSlide } from "../../components/performance/PerformanceSlide";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { TradingMode } from "@console/shared";
@@ -213,7 +216,10 @@ export function EarningsLightbox({ slide }: { slide: string }) {
       ),
     },
     { id: "advisor", label: EARNINGS_LABEL.advisor, render: () => <AdvisorSlide module="earnings" /> },
+    { id: "performance", label: EARNINGS_LABEL.performance, render: () => <PerformanceSlide module="earnings" pairs={false} /> },
+    { id: "costs", label: EARNINGS_LABEL.costs, render: () => <SharedCosts module="earnings" /> },
     { id: "changes", label: EARNINGS_LABEL.changes, render: () => <ChangesSlide module="earnings" /> },
+    { id: "guide", label: EARNINGS_LABEL.guide, render: () => <EarningsHelp /> },
     {
       id: "positions",
       label: EARNINGS_LABEL.positions,

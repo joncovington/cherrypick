@@ -1,4 +1,6 @@
 import { ChangesSlide } from "../../components/changes/ChangesSlide";
+import { SharedCosts } from "../../components/costs/SharedCosts";
+import { PerformanceSlide } from "../../components/performance/PerformanceSlide";
 import { useLadder, useLadderLive, useLadderLiveStatus, useLadderStatus, useLadderSummary } from "../../lib/api";
 import { PaperLiveBadge } from "../../components/shell/PaperLiveBadge";
 import { LoopPill } from "../../components/ScopeBar";
@@ -38,6 +40,8 @@ export function LadderLightbox({ slide }: { slide: string }) {
     { id: "history", label: LABEL.history, render: () => <LadderHistory data={data} /> },
     { id: "arms", label: LABEL.arms, render: () => <LadderArms summary={summary.data} status={status.data} decl={data?.arms} /> },
     { id: "decisions", label: LABEL.decisions, render: () => <LadderDecisions /> },
+    { id: "performance", label: LABEL.performance, render: () => <PerformanceSlide module="ladder" pairs={false} /> },
+    { id: "costs", label: LABEL.costs, render: () => <SharedCosts module="ladder" /> },
     { id: "changes", label: LABEL.changes, render: () => <ChangesSlide module="ladder" /> },
     { id: "guide", label: LABEL.guide, render: () => <LadderHelp status={status.data} /> },
   ];

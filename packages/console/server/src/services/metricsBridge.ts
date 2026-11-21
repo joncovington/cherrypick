@@ -1,4 +1,4 @@
-import type { PnlTrade } from "@console/shared";
+import type { GroupMoney, PnlTrade } from "@console/shared";
 import { spawnModuleCli, spawnModuleCliAsync, type SpawnedJson } from "./moduleCli.js";
 
 /**
@@ -24,12 +24,15 @@ export interface ModuleMetricsGroup {
   session_nets: Array<[string, number]>;
   /** Raw per-trade net P&L, in the same row order the schema's reader returned them. */
   trade_nets: number[];
+  /** The group's money laid out to add up (`core.metrics.money`); absent from an older core. */
+  money?: GroupMoney;
 }
 
 export interface ModuleMetrics {
   schema: string;
   n_records: number;
   groups: Record<string, ModuleMetricsGroup>;
+  money: GroupMoney | null;
 }
 
 export interface ModuleMetricsResult {
@@ -86,6 +89,7 @@ function shape(res: SpawnedJson, schema: string): ModuleMetricsResult {
       schema: typeof res.json["schema"] === "string" ? (res.json["schema"] as string) : schema,
       n_records: typeof res.json["n_records"] === "number" ? (res.json["n_records"] as number) : 0,
       groups: (res.json["groups"] ?? {}) as Record<string, ModuleMetricsGroup>,
+      money: (res.json["money"] ?? null) as GroupMoney | null,
     },
     error: null,
   };
