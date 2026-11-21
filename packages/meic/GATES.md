@@ -12,7 +12,7 @@ the suite-wide [documentation index](../../docs/README.md).
 
 An entry is rejected at the first gate that blocks it. The numbering below is a catalogue, not the
 deterministic engine's order: paper and the live loop check gates in `paper.evaluate_entry`'s order
-(0DTE, IV rank, VIX, VIX1D ratio, ATR, GEX, entry window, spacing and caps, late-entry bias, event
+(0DTE, half day, IV rank, VIX, VIX1D ratio, ATR, GEX, entry window, spacing and caps, late-entry bias, event
 days, then per candidate: overlap, OTM floors, credit floors, the buying-power cap), and the first
 refusal is the recorded reason.
 
@@ -136,6 +136,15 @@ regime-coverage read has enough tagged, non-degenerate sessions to say more.
 - **Rationale**: Strategy assumes same-day theta/gamma; multi-day spreads break stop management, force-close timing, credit floors
 - **IC Impact**: Blocks entry with reason `no_0dte_expiration`
 - **ORB Impact**: Blocks entry
+
+### 9b. Half-Day Gate (Hard Stop)
+- **Trigger**: the session is an NYSE early close (13:00 ET: the day after Thanksgiving, Christmas Eve and
+  the like), from `cherrypick.core.calendar.is_early_close`
+- **Effect**: Reject every new entry for the session
+- **Config**: None (a rule: half days are not traded)
+- **Rationale**: none of MEIC's own times (the entry window, the closes, settlement) move for a 13:00
+  close, so a session cut three hours short is not traded at all
+- **IC Impact**: Blocks entry with reason `half_day_no_entries`
 
 ### 10. Quarterly Expiry Gate
 - **Trigger**: On OPEX (quarterly expiration) day: (a) session is `open_volatile`; or (b) the session's intraday range (high − low) as a fraction of price exceeds `quarterly_expiry_max_intraday_range_pct` (0.005) — entries halt for the rest of the session (`quarterly_intraday_range_exceeded`); allowed entries apply the tighter `quarterly_expiry_min_call_otm_pct` (0.67%)

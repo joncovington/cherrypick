@@ -817,6 +817,12 @@ def evaluate_entry(
     if snapshot.get("dte", 0) != 0:
         return False, "no_0dte_expiration", None
 
+    # Half days (2026-11-27): no new entries on an NYSE early close. The market closes at 13:00 and
+    # none of MEIC's own times (the entry window, the closes, settlement) move for it, so a session
+    # cut three hours short is not traded at all. Paper and live alike: live calls this function.
+    if _is_event_day(snapshot.get("date"), _cal.is_early_close):
+        return False, "half_day_no_entries", None
+
     # IV rank floor
     iv_rank = snapshot.get("iv_rank")
     if iv_rank is None or iv_rank < params["min_iv_rank"]:
@@ -1890,6 +1896,7 @@ _ATTEMPT_OUTCOMES = {
     "outside_entry_window": "window_blocked",
     "late_entry_bias_wait": "window_blocked",
     "fomc_blackout": "window_blocked",
+    "half_day_no_entries": "window_blocked",
     "daily_target_reached": "window_blocked",
     "max_concurrent_ics_reached": "window_blocked",
     "max_open_bp_reached": "window_blocked",

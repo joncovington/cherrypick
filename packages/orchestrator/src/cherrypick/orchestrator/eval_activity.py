@@ -65,6 +65,8 @@ _BENIGN_REASON = frozenset(
         "triple_witching_no_new_entries",
         "quarterly_intraday_range_exceeded",
         "fomc_blackout",
+        # Half days (2026-11-27): no entries on an NYSE early close, by rule.
+        "half_day_no_entries",
         "fomc_post_blackout_insufficient_premium",
         # The stabilization gate (#728) and its random-skip placebo: opt-in arms waiting for flat
         # five-minute bars. Either can dominate a choppy day by design.
