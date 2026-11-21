@@ -135,14 +135,33 @@ export async function getCsrf(): Promise<string> {
   return token;
 }
 
+/** The server's words when it refuses a token (`security.ts`). */
+export const CSRF_REFUSED = "missing or invalid csrf token";
+
+/**
+ * A write with the page's CSRF token. The server makes a new token each time it starts, so a page left
+ * open across a console restart holds a stale one and every write from it is refused. On that refusal,
+ * and only that one, the token is fetched again and the request sent once more. That retry is safe: the
+ * server refuses a bad token in its request hook, before any route runs, so the first request wrote
+ * nothing. Any other answer, a failure included, is returned as it came.
+ */
+export async function csrfFetch(url: string, init: RequestInit = {}): Promise<Response> {
+  const send = async () => fetch(url, { ...init, headers: { ...(init.headers as Record<string, string> | undefined), "x-csrf-token": await getCsrf() } });
+  const res = await send();
+  if (res.status !== 403) return res;
+  const body = (await res
+    .clone()
+    .json()
+    .catch(() => ({}))) as { error?: unknown };
+  if (body.error !== CSRF_REFUSED) return res;
+  csrfToken = null;
+  return send();
+}
+
 export async function mutateJson<T>(url: string, method: "POST" | "DELETE", body?: unknown): Promise<T> {
-  const token = await getCsrf();
-  const res = await fetch(url, {
+  const res = await csrfFetch(url, {
     method,
-    headers: {
-      "x-csrf-token": token,
-      ...(body !== undefined ? { "content-type": "application/json" } : {}),
-    },
+    headers: body !== undefined ? { "content-type": "application/json" } : {},
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
   if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
@@ -1456,10 +1475,9 @@ export function useAutomationsBuilder() {
 
 /** A Builder POST whose refusal body (an error, the module's problems) is the answer, not a throw. */
 async function builderPost<T extends { ok: boolean; error?: string }>(url: string, body: unknown): Promise<T> {
-  const token = await getCsrf();
-  const res = await fetch(url, {
+  const res = await csrfFetch(url, {
     method: "POST",
-    headers: { "x-csrf-token": token, "content-type": "application/json" },
+    headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   });
   let json: Record<string, unknown> = {};

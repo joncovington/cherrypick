@@ -3,7 +3,7 @@ import { renderToString } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { GroupsEditMember, GroupsEditView } from "@console/shared";
-import { changeItems, changeToSend, FieldTip, GROUP_TIPS, GroupsFlow, impact, outcomeWords, placement, startDraft, stateWords } from "../src/pages/Automations/AutomationsGroups";
+import { changeItems, changeToSend, FieldTip, GROUP_TIPS, GroupsFlow, impact, outcomeWords, placement, removeFromGroup, emptyGroups, startDraft, stateWords } from "../src/pages/Automations/AutomationsGroups";
 import { RetiredSection, retiredWords } from "../src/pages/Automations/RetiredSection";
 import { AUTOMATIONS_SLIDES } from "../src/lightbox/navGroups";
 
@@ -228,5 +228,48 @@ describe("the budget's help and its backtest suggestion", () => {
   it("asks the members' backtests for the max risk and shares", () => {
     const view: GroupsEditView = { ...VIEW, groups: [{ ...VIEW.groups[0]!, budget: { today: {}, pending: null, dated: false, history: [] } }] };
     expect(html(<GroupsFlow view={view} />, "/automations/groups?group=ensemble")).toContain("Reading the members&#x27; backtests…");
+  });
+});
+
+describe("removing an automation from its group", () => {
+  it("each member has Remove and no move-to menu", () => {
+    const out = html(<GroupsFlow view={VIEW} />, "/automations/groups?group=ensemble");
+    expect(out).toContain('aria-label="Remove iron-condor-1345 from ensemble"');
+    expect(out).not.toContain('aria-label="Move iron-condor-1345"');
+    expect(out).not.toContain(">move to<");
+  });
+
+  it("takes it out and switches it off, so it does not trade on its own", () => {
+    const d = startDraft(VIEW);
+    const r = placement(VIEW, d).find((x) => x.m.name === "iron-condor-1345")!;
+    const after = removeFromGroup(d, r);
+    expect(after.members).toEqual({ "iron-condor-1345": null });
+    expect(after.switches).toEqual({ "iron-condor-1345": false });
+    expect(changeItems(VIEW, after).map((c) => [c.where, c.what, c.becomes])).toEqual([
+      ["iron-condor-1345", "group", "no group"],
+      ["iron-condor-1345", "its own switch", "off"],
+    ]);
+  });
+
+  it("leaves a retired or switched-off one's switch alone", () => {
+    const view: GroupsEditView = { ...VIEW, groups: [{ ...VIEW.groups[0]!, members: [m("iron-fly-1000", { enabled: false, state: "retired", retired: "2026-11-21" })] }] };
+    const d = startDraft(view);
+    const r = placement(view, d).find((x) => x.m.name === "iron-fly-1000")!;
+    expect(removeFromGroup(d, r).switches).toEqual({});
+  });
+});
+
+describe("a group with no automation", () => {
+  it("a new one cannot be saved until an automation is added, and the bar says why", () => {
+    const d = startDraft(VIEW);
+    const draft = { ...d, groups: { ...d.groups, testing: { enabled: false } } };
+    expect(emptyGroups(VIEW, draft)).toEqual({ added: ["testing"], dropped: [] });
+    expect(emptyGroups(VIEW, { ...draft, members: { "par-a1-fly-1000": "testing" } })).toEqual({ added: [], dropped: [] });
+  });
+
+  it("a saved one left empty is named as deleted on save", () => {
+    const d = startDraft(VIEW);
+    const out = { ...d, members: { "iron-condor-1345": null, "iron-fly-1000": null } };
+    expect(emptyGroups(VIEW, out)).toEqual({ added: [], dropped: ["ensemble"] });
   });
 });

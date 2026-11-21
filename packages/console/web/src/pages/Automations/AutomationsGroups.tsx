@@ -174,6 +174,30 @@ export function changeToSend(view: GroupsEditView, draft: GroupsChange): GroupsC
   return { groups, members, switches };
 }
 
+/** The draft with automation `r` out of its group and its own switch off with it: in no group an automation
+ *  answers to its own switch alone, so one switched on would otherwise start trading by itself at the next
+ *  session. Both wait in the save bar, where its switch can be turned back on. A retired or already-off
+ *  one keeps its switch as it is. */
+export function removeFromGroup(draft: GroupsChange, r: Placed): GroupsChange {
+  return {
+    ...draft,
+    members: r.was === null ? withoutKey(draft.members, r.m.name) : { ...draft.members, [r.m.name]: null },
+    switches: r.m.retired || !r.m.enabled ? withoutKey(draft.switches, r.m.name) : { ...draft.switches, [r.m.name]: false },
+  };
+}
+
+/** The groups the draft leaves with no automation: `added`, new ones never saved (a group exists only while
+ *  one belongs to it, so a save would write nothing for them), and `dropped`, saved ones a save would
+ *  delete because their last member left. */
+export function emptyGroups(view: GroupsEditView, draft: GroupsChange): { added: string[]; dropped: string[] } {
+  const used = new Set(placement(view, draft).map((r) => r.now));
+  const saved = new Set(view.groups.map((g) => g.name));
+  const empty = Object.keys(draft.groups)
+    .filter((g) => !used.has(g))
+    .sort();
+  return { added: empty.filter((g) => !saved.has(g)), dropped: empty.filter((g) => saved.has(g)) };
+}
+
 /** What a change does to trading: who starts and who stops, from the view now and the module's after. */
 export function impact(view: GroupsEditView, after: GroupsEditView): { starts: GroupsEditMember[]; stops: GroupsEditMember[] } {
   const live = (s: AutomationState) => s === "on" || s === "waiting";
@@ -646,7 +670,9 @@ function GroupPage({ view, draft, edit, paper, group, after }: { view: GroupsEdi
   const none = group === NONE;
   const target: string | null = none ? null : group;
   const rows = placement(view, draft);
-  const inGroup = rows.filter((r) => r.now === target);
+  // A member staged to leave stays listed, marked, until the save, so Keep can bring it back.
+  const leaving = (r: Placed) => !none && r.was === target && r.now === null;
+  const inGroup = rows.filter((r) => r.now === target || leaving(r));
   const members = inGroup.filter((r) => !r.m.retired);
   const retiredRows = inGroup.filter((r) => r.m.retired);
   const others = rows.filter((r) => r.now !== target);
@@ -662,6 +688,8 @@ function GroupPage({ view, draft, edit, paper, group, after }: { view: GroupsEdi
     edit({ ...draft, members: to === original ? withoutKey(draft.members, name) : { ...draft.members, [name]: to } });
   };
   const flip = (r: Placed, on: boolean) => edit({ ...draft, switches: on === r.m.enabled ? withoutKey(draft.switches, r.m.name) : { ...draft.switches, [r.m.name]: on } });
+  const keep = (r: Placed) => edit({ ...draft, members: withoutKey(draft.members, r.m.name), switches: withoutKey(draft.switches, r.m.name) });
+  const remove = (r: Placed) => edit(removeFromGroup(draft, r));
   const share = (name: string, pct: number | undefined) => {
     const s = draft.groups[group]!;
     const shares = { ...(s.shares ?? {}) };
@@ -740,7 +768,6 @@ function GroupPage({ view, draft, edit, paper, group, after }: { view: GroupsEdi
                     )}
                     <th className="num">open</th>
                     <th className="num">net, all</th>
-                    <th>move to</th>
                     <th></th>
                   </tr>
                 </thead>
@@ -752,7 +779,7 @@ function GroupPage({ view, draft, edit, paper, group, after }: { view: GroupsEdi
                     const fold =
                       i === members.length && retiredRows.length > 0 ? (
                         <tr key="retired-fold" className="grp-fold">
-                          <td colSpan={none ? 10 : 11}>
+                          <td colSpan={none ? 9 : 10}>
                             <button type="button" className="grp-fold-btn" aria-expanded={showRetired} onClick={() => setShowRetired(!showRetired)}>
                               {showRetired ? "▾" : "▸"} Retired ({retiredRows.length})
                             </button>
@@ -768,7 +795,7 @@ function GroupPage({ view, draft, edit, paper, group, after }: { view: GroupsEdi
                           <Link to={automationHref(r.m.name)} className="num">
                             {r.m.name}
                           </Link>
-                          {r.was !== r.now && <span className="chip chip-info grp-moved">moved here</span>}
+                          {leaving(r) ? <span className="chip chip-warn grp-moved">leaving</span> : r.was !== r.now && <span className="chip chip-info grp-moved">moved here</span>}
                         </td>
                         <td>{r.m.symbol ?? "—"}</td>
                         <td>
@@ -811,20 +838,20 @@ function GroupPage({ view, draft, edit, paper, group, after }: { view: GroupsEdi
                         )}
                         <td className="num">{paper.open[r.m.name] ?? 0}</td>
                         <td className="num">{fmtMoney(paper.net[r.m.name] ?? null)}</td>
-                        <td>
-                          <select className="builder-input" aria-label={`Move ${r.m.name}`} value={r.now ?? NONE} onChange={(e) => move(r.m.name, e.currentTarget.value === NONE ? null : e.currentTarget.value)}>
-                            <option value={NONE}>no group</option>
-                            {groupNames.map((g) => (
-                              <option key={g} value={g}>
-                                {g}
-                              </option>
-                            ))}
-                          </select>
-                        </td>
-                        <td>
+                        <td className="grp-actions">
                           <Link className="btn" to={`/automations/groups?group=${encodeURIComponent(group)}&automation=${encodeURIComponent(r.m.name)}`}>
                             Open ›
                           </Link>
+                          {!none && r.now === target && (
+                            <button type="button" className="btn" title="Take it out of this group. Its own switch goes off with it, so it does not start trading on its own." aria-label={`Remove ${r.m.name} from ${group}`} onClick={() => remove(r)}>
+                              Remove
+                            </button>
+                          )}
+                          {leaving(r) && (
+                            <button type="button" className="btn" aria-label={`Keep ${r.m.name} in ${group}`} onClick={() => keep(r)}>
+                              Keep
+                            </button>
+                          )}
                         </td>
                       </tr>
                     );
@@ -832,7 +859,7 @@ function GroupPage({ view, draft, edit, paper, group, after }: { view: GroupsEdi
                   })}
                   {!showRetired && retiredRows.length > 0 && (
                     <tr className="grp-fold">
-                      <td colSpan={none ? 10 : 11}>
+                      <td colSpan={none ? 9 : 10}>
                         <button type="button" className="grp-fold-btn" aria-expanded={false} onClick={() => setShowRetired(true)}>
                           ▸ Retired ({retiredRows.length})
                         </button>
@@ -999,7 +1026,8 @@ function SaveBar({
   const problems = check?.problems ?? [];
   const moved = check?.after ? impact(view, check.after) : null;
   const failedStarting = moved?.starts.filter((m) => m.verdict === "failed") ?? [];
-  const ready = items.length > 0 && check !== null && check.ok && problems.length === 0;
+  const empty = emptyGroups(view, draft);
+  const ready = items.length > 0 && empty.added.length === 0 && check !== null && check.ok && problems.length === 0;
   const save = async () => {
     setBusy(true);
     const r = await groupsSave(changeToSend(view, draft));
@@ -1049,6 +1077,17 @@ function SaveBar({
           Save
         </button>
       </div>
+      {empty.added.length > 0 && (
+        <p className="grp-warn">
+          {empty.added.join(", ")} {empty.added.length === 1 ? "has" : "have"} no automations yet. A group is kept only while one belongs to it, so open{" "}
+          {empty.added.length === 1 ? "it" : "each"} and add an automation before saving.
+        </p>
+      )}
+      {empty.dropped.length > 0 && (
+        <p className="grp-warn">
+          Saving deletes {empty.dropped.join(", ")}: no automation is left in {empty.dropped.length === 1 ? "it" : "them"}.
+        </p>
+      )}
       {(open || problems.length > 0 || outcome.kind === "error") && (
         <div className="grp-bar-details">
           {problems.length > 0 && (
