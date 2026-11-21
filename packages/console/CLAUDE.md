@@ -156,7 +156,10 @@ alone):
     `components/armpage/ModuleArmPage.tsx` (`/<module>/arm/<name>`): changes slice, the performance
     slide narrowed to the arm with `reference` the arm its changes row is read against (none for a
     control), and analysis. Calendars', contango's and ladder's performance tabs pass
-    `armCards={false}`; earnings keeps its cards, each linking to its page (`armLink`).
+    `armCards={false}`; earnings keeps its cards, each linking to its page (`armLink`). A MEIC arm's
+    page also reads it against its backtest (`/api/arm/reading`, `readers/armReading.ts`,
+    `components/armpage/ArmBacktest.tsx`): the backtest package's `read arm-reading`, passed
+    through, its figures withheld while `backtestResultsOn` is false (the matching run still named).
   - **The shared costs tab** (`components/costs/SharedCosts.tsx`; earnings and ladder) renders
     `core.metrics.money` from the performance read, per arm and the module's own line: it sums
     nothing. Ladder and weeklyput are in `PERFORMANCE_MODULE_SCHEMA`, so the shared performance and

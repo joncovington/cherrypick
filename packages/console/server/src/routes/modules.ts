@@ -85,6 +85,7 @@ import { getFeatures } from "../services/featuresBridge.js";
 import { readAutomationReadingFor } from "../readers/automationReading.js";
 import { readAutomationEntriesFor, readAutomationsEntries } from "../readers/automationEntries.js";
 import { readGroupUnits } from "../readers/automationGroupsRead.js";
+import { readArmReading } from "../readers/armReading.js";
 import { readSystemPanel } from "../services/suite.js";
 import { suiteEra } from "../readers/db.js";
 
@@ -531,6 +532,15 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
   app.get("/api/automations/entries", async () => readAutomationsEntries());
   // Every group as one unit (the automations package computes it).
   app.get("/api/automations/groups/read", async () => readGroupUnits());
+  // A module arm against the stored run whose arm has its settings (the backtest package computes it).
+  app.get("/api/arm/reading", async (req, reply) => {
+    const q = (req.query ?? {}) as Record<string, unknown>;
+    const module = String(q["module"] ?? "");
+    const arm = String(q["arm"] ?? "");
+    if (module !== "meic") return reply.code(404).send({ error: "module: only meic's arms have replay runs" });
+    if (!/^[A-Za-z0-9][A-Za-z0-9:_.-]{0,79}$/.test(arm)) return reply.code(400).send({ error: "arm: an arm's name" });
+    return readArmReading(module, arm);
+  });
   app.get("/api/automations/automation/entries", async (req, reply) => {
     const name = String(((req.query ?? {}) as Record<string, unknown>)["name"] ?? "");
     if (!/^[a-z0-9][a-z0-9-]{1,47}$/.test(name)) return reply.code(400).send({ error: "name: an automation's name" });

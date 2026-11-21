@@ -40,6 +40,7 @@ import type {
   BuilderReferenceResult,
   AutomationEntries,
   AutomationReading,
+  ArmBacktestReading,
   AutomationsEntries,
   ChangesModule,
   ModuleChanges,
@@ -1651,6 +1652,16 @@ export function useBuilderRunCard(name: string, run: string) {
 }
 
 /** Each arm's closed trades, net and drawdown, and the arms stacked. */
+/** A module arm against the stored run whose arm has its settings (`backtest read arm-reading`). */
+export function useArmReading(module: "meic", arm: string) {
+  return useQuery<ArmBacktestReading>({
+    queryKey: ["arm-reading", module, arm],
+    queryFn: () => getJson<ArmBacktestReading>(`/api/arm/reading?module=${module}&arm=${encodeURIComponent(arm)}`),
+    staleTime: 60_000,
+    refetchInterval: 300_000,
+  });
+}
+
 /** Every modification under test in one module (`core.changes`). */
 export function useModuleChanges(module: ChangesModule) {
   return useQuery<ModuleChanges>({

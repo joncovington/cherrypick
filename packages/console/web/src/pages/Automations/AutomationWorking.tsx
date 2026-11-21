@@ -49,7 +49,7 @@ const HELP: CardHelpContent = {
   ),
 };
 
-const STATE_WORDS: Record<string, string> = {
+export const STATE_WORDS: Record<string, string> = {
   inside: "on track",
   below: "below its band",
   above: "above its band",
@@ -57,7 +57,7 @@ const STATE_WORDS: Record<string, string> = {
   no_trades: "no trades yet",
   no_reference: "no reference",
 };
-const PLACE_CHIP: Record<ReadingPlace, string> = { inside: "chip chip-ok", below: "chip chip-warn", above: "chip chip-info" };
+export const PLACE_CHIP: Record<ReadingPlace, string> = { inside: "chip chip-ok", below: "chip chip-warn", above: "chip chip-info" };
 const pct = (v: number | null | undefined): string => (v === null || v === undefined ? "—" : `${String(Math.round(v * 100))}%`);
 
 /** Where `v` sits on [lo, hi], as a percent of the width (clamped). */
@@ -71,7 +71,7 @@ export function stripDomain(p10: number, p90: number, nets: number[]): [number, 
   return [Math.min(p10 - pad, ...nets), Math.max(p90 + pad, ...nets)];
 }
 
-function Strip({ p, rows }: { p: Record<string, number>; rows: { net: number; place: ReadingPlace }[] }) {
+export function Strip({ p, rows }: { p: Record<string, number>; rows: { net: number; place: ReadingPlace }[] }) {
   const p10 = p["p10"] ?? 0;
   const p90 = p["p90"] ?? 0;
   const [lo, hi] = stripDomain(p10, p90, rows.map((r) => r.net));
@@ -121,7 +121,7 @@ export function bandChart(band: ReferenceBandPoint[], running: number[], w = 600
   };
 }
 
-function BandChart({ band, running }: { band: ReferenceBandPoint[]; running: number[] }) {
+export function BandChart({ band, running, unit = "trades" }: { band: ReferenceBandPoint[]; running: number[]; unit?: string }) {
   const c = bandChart(band, running);
   return (
     <svg viewBox="0 0 600 220" className="ar-band" role="img" aria-label="Paper's running net against the run's band of paths">
@@ -138,7 +138,7 @@ function BandChart({ band, running }: { band: ReferenceBandPoint[]; running: num
         0
       </text>
       <text x="584" y="214" textAnchor="end" className="ar-band-label">
-        {c.K} trades
+        {c.K} {unit}
       </text>
     </svg>
   );
