@@ -10065,6 +10065,139 @@ nearest failures are 12 (GEX levels) and 80 (a level read from the prior day's p
     "the gap will fill" adds nothing to distance and volatility. Gap edges stay on the charts as
     drawn levels with no claim attached. A proposal to drop them from `levels` is a separate change.
 
+### 102. The ladder's stuck lots: a ratio call spread that lowers the price the lot needs, opened for about no debit
+
+Declared 2026-11-21, before any option quote for it is read: the smoke run on the plan printed counts of
+lots and waits only, no net, difference or verdict. **Item 76's sibling**, same lots, same hospital, same
+baseline, with a ratio call spread in place of item 76's covered call. `cherrypick hypotheses --similar`
+names no look-alike (the nearest rows are 76, which failed, and 29, which failed on crossing costs), so
+this is not a retest of either: the structure is new.
+
+- **Question:** once a ladder lot has been open 18 days, does a stock repair, a ratio call spread opened for
+  about no net debit (buy one call, sell two calls at a higher strike), get the lot out better than holding
+  it for its +4% target, after costs?
+- **What the repair is:** the lot's 100 shares, one long call at K1 and two short calls at K2 above it. One
+  short call is covered by the shares. Past K2 the shares are called away at K2 and the other short call
+  meets the long one, a vertical that pays K2 - K1, so the lot ends at 2 x K2 - K1 a share whatever the
+  close. Between the strikes the long call's intrinsic is cash on top of the shares. The two short calls
+  fund the long one, so the structure costs about nothing to open. It lowers the price the lot must reach
+  to break even, because the long call earns from K1 on, at the price of every gain above K2.
+- **Where the edge would live:** in **premium**, not a signal. The short calls are sold richer than the long
+  call is bought (the skew of a leveraged fund's calls, the wider the further out), so two of them pay for
+  one nearer the money, and the lot's gain starts at K1 instead of at its cost. Against that: it caps the
+  sharp rebound that is a stuck lot's way out, and item 76 found the covered call, one contract crossing
+  one spread, no better than holding. **This structure crosses three contracts** (the long call's ask and
+  the two short calls' bids, a fourth and fifth fee on every leg), and item 29 found that crossing costs
+  decide this kind of question, so the cost of getting in and out is the first thing it has to beat.
+- **Names, lots, hospital, expiry, baseline:** item 76's, copied. SOXL and TQQQ; item 26's `once` at a cap
+  of 3 lots a name, 100 shares a lot, a lot at 93% of the previous close, filled on daily bars, 0.05% a side
+  on shares; every arm judges the same lots. The hospital is the first close 18 or more calendar days after
+  the buy at which the lot is still open. The expiry is 35 to 60 calendar days out nearest 45 (the earlier
+  on a tie). The baseline is `hold`, the lot with no options, exited as item 26 exits it.
+  **Reported beside, unjudged:** item 76's `breakeven` covered call and item 27's `decay`, on the same lots.
+- **The repair, per unit** (one unit a lot, opened at the hospital close and again at each expiry that does
+  not end the lot, held to its expiry, never closed early). Strikes are read among calls quoted on both
+  sides at the sale's close C and the lot's cost P a share. The net debit is ask(K1) - 2 x bid(K2), a
+  share, and `max_debit` is **$0.05 a share** (a credit qualifies):
+  - **`repair-atm`:** K1 the strike nearest C (the lower on a tie); K2 the **highest** strike above K1 whose
+    bid is above zero and whose net debit is at most `max_debit`. Past that strike the two short calls no
+    longer pay for the long one.
+  - **`repair-cost`:** K2 the strike nearest P among those over C (the lower on a tie), its bid above zero;
+    K1 the **lowest** strike under K2 whose net debit is at most `max_debit`.
+  - **Why highest and lowest, not the opposite ends.** The request was the lowest K2 and the highest K1
+    that keep the net inside the bound. Those picks sit at the other end of the bound: the net improves as
+    K2 falls toward K1 and as K1 rises toward K2, so they choose the narrowest spread beside the money,
+    opened for a large credit, which is a different structure and not the one "opened for about zero" names.
+    The picks above are the ones that spend the whole bound, so the net is the smallest the bound allows.
+    This is the refinement the declaration makes, written here before any quote is read.
+  - None qualifies, or no chain for the session, and the lot waits for the next session, counted. While it
+    waits the lot holds no option and is the baseline's lot: it sells where `hold` sells it, if that falls
+    in the wait.
+- **At each expiry,** at the close S:
+  - **S at or over K2:** the lot ends, the shares going at K2 (0.05% on them) and the vertical settled at
+    its intrinsic, K2 - K1.
+  - **S under K2:** the shares stay. The long call's intrinsic (S - K1 between the strikes, nothing under
+    K1) is cash banked on the lot, the short calls expire. Then the lot ends, sold at the close, if S plus
+    the cash banked on the lot (every unit's net credit or debit at the natural fills, and the intrinsic
+    settled, gross of fees) reaches 104% of P; otherwise a new unit is opened at that close. This holds under
+    K1 as well, where the options expire and the unit is reopened unless the sale test is met.
+  - The expiry falls on a non-session, a split, the window's end: item 76's rules. An expiry that is not a
+    session ends at the last session before it; a split ex-date inside a unit's life closes it at the
+    session before (shorts at the ask, the long call at the bid) and the next unit is opened on the
+    ex-date session on the post-split chain; a unit open at the window's last session is closed there the
+    same way, and the lot's shares marked at that close with no exit cost, as item 26 marks.
+- **Measured,** per hospital lot: the arm's whole-lot net (shares, options, fees, settlement) less `hold`'s,
+  in dollars per 100 shares. Reported beside: hospital days and capital-days against `hold`'s, the net
+  credit banked, how many lots end under their cost (the shares called away with every credit banked still
+  short of cost), the rebound given up (lots where `hold` sold above the strike that ended the arm), the
+  waits and skipped sessions, the worst lot, and the lots' ends by kind.
+- **Costs:** the verdict is at the natural, the long call at its ask and each short call at its bid; the
+  mid is reported only. Fees are the suite's tastytrade schedule (`cherrypick.core.fees`): $1.00 a
+  contract to open, the exchange and regulatory fees on every contract, no commission to close, and the
+  settlement fee ($5) for each distinct in-the-money option symbol at an expiry (two above K2, one between
+  the strikes, none under K1). Shares pay item 26's 0.05% a side.
+- **One run, one split.** The study replays the ladder once, 2016-05-02 to the last session both names'
+  bars hold when `plan` runs (recorded in the plan file), each lot followed to its end or the window's. A
+  lot belongs to the part holding its **buy session**:
+  - **Design:** lots bought before **2025-01-01**.
+  - **Holdout:** lots bought from 2025-01-01, counting only after a design pass.
+  - Item 76 ran its holdout as a second ladder started on 2025-01-02. One run keeps a lot open across the
+    seam open; the lots in both windows are otherwise the same.
+- **The rule (`RULE` and `EXTRA_RULE` in the script),** per judged arm, the paired difference being one
+  observation per lot:
+  - **Design:** the kit's capital bar on the paired difference (the difference less the bill on the lot's
+    cost over the days the arm holds that capital beyond or short of `hold`): mean above zero with a
+    one-sided t of 2 or more; fewer than **30** hospital lots in the design part is no verdict.
+  - Also positive in each time-half of the design part (lots bought before and from **2020-09-01**, item 76's
+    midpoint, fixed) and on each name; still positive with option fees at 1.5x and every option sold $0.05
+    under the bid and bought $0.05 over the ask (the stress reprices the natural's path and does not re-pick
+    strikes); and **Holm across the two judged arms** at 0.05 on the design's one-sided p.
+  - **Holdout:** the mean paired difference above zero; fewer than **10** lots is no verdict.
+  - **The tail bar is declared not applicable,** and the delta bar off. The tail bar bootstraps drawdown
+    and needs 100 trades (`killcriteria.MIN_EVIDENCE`); the planned sample is about 60 lots, so it could
+    never judge, and a rule that cannot pass says nothing. The worst lot of each arm and of `hold` is
+    reported instead. The delta bar is off because the baseline holds the same shares: their delta is in
+    both sides of the pair, and the options' own delta is what the pairing tests.
+  - A pass needs every check; the result file carries the kit's verdict block (`verdict` per arm).
+- **Rival explanations, each with its check:**
+  - *A bull market lifting every stuck lot:* each arm is paired with `hold` on the same lot, whose drift is
+    in both.
+  - *Costs read too kindly:* the verdict is at the natural, with a 1.5x-fee, $0.05-a-leg stress that must
+    still be positive; the mid is reported only.
+  - *One volatility regime:* the design holds 2018, 2020 and 2022's falls; both halves must agree.
+  - *One name:* positive on SOXL and on TQQQ.
+  - *A structure that is only less exposure:* a repair sells upside, so it wins when the stock keeps
+    falling and loses when it rebounds. The rebound given up, the hospital days and the lots ending under
+    cost are reported for every arm, and the halves must agree.
+  - *Two arms, one lucky:* Holm across the two.
+  - *Waiting made the difference:* a lot with no qualifying strike is the baseline's lot while it waits;
+    the waits and skipped sessions are counted per arm.
+- **Minimum detectable effect (B12):** from the design part's own spread of paired differences, recorded in
+  the local result before the holdout is read.
+- **Declared limits (B11):** end-of-day quotes only, so a unit is opened at the close and settled at the
+  expiry's close. Early assignment is not modelled: a short call in the money before its expiry, as the
+  stock goes ex-dividend, is the real risk of the second short call (these funds pay small distributions,
+  ignored). Past K2 that second short call is uncovered until it meets the long call, so the position's
+  worst case is bounded only because both are held to the same expiry; the buying power an uncovered short
+  call needs is not charged beyond the bill on the lot's capital. A lot open at the window's end is
+  marked. How many lots wait, and how long, is reported per arm. The two names are two stocks, and the
+  tradable list is a hindsight pick (item 26's).
+- **Data:** ThetaData end-of-day chains for SOXL and TQQQ, read through `Inputs` from the paths the plan
+  step writes. **Item 76's stored chains, with other studies' on the same names, already hold most of the
+  requested sessions,** and a stored session holds the whole chain the vendor listed, so strikes up to a
+  deep lot's cost are there wherever the vendor listed them. The plan requests what they do not cover (the
+  sessions a wait moves a sale to, and the lots item 76's separate holdout ladder did not open); the fetch
+  skips every session the store already holds. A request outside the plan is refused and counted as no
+  chain. Results are derived from licensed data and stay under
+  `~/.cherrypick/data/backtest/results/research/item102/`; this plan records the verdict without figures.
+- **Run:** `packages/backtest/scripts/ladder_repair_item102.py`, queued with `run.py queue-chain` as
+  `item102/plan`, `fetch-sample`, `smoke`, `fetch-chains` and `study`; progress is reported overall and per
+  name through `cherrypick.core.progress`.
+- **Decides:**
+  - **A pass:** the passing arm becomes a hospital arm in the `ladder` module, paper first, at 100-share
+    lots, with its forward check declared before it trades; the lot size is the user's call.
+  - **A fail or no verdict:** the module keeps counting the hospital and opens no options, as after item 76.
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:
