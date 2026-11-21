@@ -36,6 +36,12 @@ beyond the latest release.
   ledger (`live_trades.db`) up to date with what filled, and while armed plans the live arm's orders.
   `live.dry_run` is true as shipped: it journals the orders it would send and sends none. `live.enabled`,
   `live.gate0_confirmed` and `live.dry_run` are guarded from the Config page. Issue #1337.
+- **In a cash account the ladder buys only with settled cash.** An IRA is a cash account, and a buy
+  paid with an unsettled sale's proceeds and sold before they settle is a good-faith violation. Each
+  tick reads the account's withdrawable cash and equity buying power and takes off the ladder's own
+  sales of the day; a buy that does not fit waits (`settled_cash_short`), and a read that fails stops
+  new buys. A margin account is not limited. The rule is shared (`cherrypick.core.live.cash`), so any
+  live path can use it.
 - **The ladder's console page has a Live tab.** It shows the live loop's nine gates with the module's
   own reason for each, whether it is in dry-run or live, whether it is armed today, the halt flag, held
   submissions and orphans, the last tick's positions check and the standing dry-run intents, and, once the

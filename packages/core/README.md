@@ -42,7 +42,8 @@ cherrypick/core/
   gex/             gamma-exposure engine
   impliedvar/      model-free implied variance (Cboe's VIX arithmetic, any expiration)
   ledgerstore/     ledger mechanics calendars and pmcc share
-  live/            the per-day arm record and dead-man's switch a live loop runs under
+  live/            the per-day arm record and dead-man's switch a live loop runs under; `cash`: what
+                   new purchases may spend in a cash account (settled cash)
   livepositions/   broker positions against the live ledgers; the cross-loop opposite-leg rule
   looplock/        single-instance guards for the suite's loops
   marketprofile/   one session's Market Profile: TPO rows, POC, value area, IB (derived, never recorded)

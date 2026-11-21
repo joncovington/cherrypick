@@ -239,3 +239,14 @@ def lot(conn, position_id: str) -> dict | None:
 
 def bought_in_session(conn, arm: str, symbol: str, session: str) -> int:
     return _paper.bought_in_session(conn, arm, symbol, session)
+
+
+def unsettled_proceeds(conn, session: str) -> float:
+    """The live lots' sale proceeds that have not settled by `session`: every lot sold in it (stock
+    settles the next business day). Every arm, since the account's cash is one pool."""
+    row = conn.execute(
+        "SELECT COALESCE(SUM(quantity * sell_price), 0) FROM ladder_positions "
+        "WHERE status = 'closed' AND sell_price IS NOT NULL AND sell_session >= ?",
+        (session,),
+    ).fetchone()
+    return float(row[0] or 0.0)

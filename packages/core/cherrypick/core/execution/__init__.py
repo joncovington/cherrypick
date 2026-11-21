@@ -618,6 +618,16 @@ class Broker:
             self._reset()
             return None
 
+    def cash_funds(self) -> dict | None:
+        """The account's margin-or-cash kind and cash figures (`core.broker.cash_funds`), or None when
+        they could not be read. Fails closed like `positions`: None is unknown, never no cash."""
+        try:
+            self._ensure()
+            return self.run(_broker.cash_funds(self._account, self._session))
+        except Exception:  # noqa: BLE001 -- fail-closed, see docstring
+            self._reset()
+            return None
+
     def history(self, trade_date: str, symbol: str | None = None) -> tuple[list[dict] | None, str | None]:
         """Real broker transactions for one session (the fee-reconciliation source of truth).
         Fails closed: any error returns `(None, reason)`, which a caller treats as "try again

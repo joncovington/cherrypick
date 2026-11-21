@@ -264,6 +264,7 @@ def plan(
     splits: dict[str, float] | None = None,
     ended_ids: Iterable[str] = (),
     block_buys: dict[str, str] | None = None,
+    cash_limit: float | None = None,
 ) -> Plan:
     """What to place, cancel and keep. Pure: no clock, no broker, no ledger.
 
@@ -272,7 +273,9 @@ def plan(
     bought this session, sold or not; `marks` is each fund's bid; `anchors` is `chain`'s last lot
     bought per fund; `ended_ids` are client ids the broker ended unfilled today. `block_buys` maps a
     fund to why it may take no new buy (the positions cross-check): its resting buys are cancelled and
-    none placed, and its sells are untouched."""
+    none placed, and its sells are untouched. `cash_limit` is the settled cash new buys may spend
+    (`cherrypick.core.live.cash`; None in a margin account): the buys kept resting count against it
+    first, and a new buy it cannot pay for waits (`settled_cash_short`). Resting buys stay."""
     out = Plan(armed=armed)
     if not armed:
         out.buys_blocked.append("unarmed")
@@ -382,12 +385,15 @@ def plan(
     for lot in held:
         occ.add(lot["symbol"], lot["shares"], lot["cost"])
     seen: set[str] = set()
+    cash_left = None if cash_limit is None else float(cash_limit)
     for w, p in resting:
         eid = str(w["external_identifier"])
         occ.add(p["symbol"], p["shares"], p["price"])
         if (eid in want and eid not in seen) or p["symbol"] in no_ref:
             seen.add(eid)
             out.actions.append(_keep(w, p["symbol"], "buy", "resting"))
+            if cash_left is not None:
+                cash_left -= float(p["shares"]) * float(p["price"])
         else:
             out.actions.append(
                 _cancel(w, p["symbol"], "buy", "blocked" if p["symbol"] in blocked else "not_wanted")
@@ -402,6 +408,14 @@ def plan(
         if refused:  # a cancel is still pending on the book; the place waits for the next run
             out.buys_blocked.append(f"{d['symbol']}: waiting_for_cancel ({refused})")
             continue
+        cost = d["shares"] * d["level"]
+        if cash_left is not None:
+            if cost > cash_left + 1e-9:
+                out.buys_blocked.append(
+                    f"{d['symbol']}: settled_cash_short (needs {cost:.2f}, settled {max(cash_left, 0.0):.2f})"
+                )
+                continue
+            cash_left -= cost
         occ.add(d["symbol"], d["shares"], d["level"])
         out.actions.append(
             Action(

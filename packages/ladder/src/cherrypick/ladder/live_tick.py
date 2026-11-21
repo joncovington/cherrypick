@@ -53,6 +53,7 @@ from cherrypick.core import logs as _logs
 from cherrypick.core import looplock
 from cherrypick.core import redact as _redact
 from cherrypick.core.clock import ET, hhmm_to_min, minute_of_day, now_et, now_iso
+from cherrypick.core.live import cash as _cash
 
 from cherrypick.ladder import live_checks, live_db, live_gates, live_loop, orders, paper_loop, provider, rules
 
@@ -596,6 +597,18 @@ def check_positions(conn, broker, funds: list[str]) -> dict:
     return live_checks.cross_check(ledger, rows, funds)
 
 
+def check_cash(conn, broker, session: str) -> dict:
+    """What new buys may spend: the broker's cash figures and the ledger's unsettled sales
+    (`cherrypick.core.live.cash`). Read only. A read that raises, or a broker with no cash read, is
+    unreadable, and new buys wait."""
+    try:
+        read = getattr(broker, "cash_funds", None)
+        funds = read() if read else None
+    except Exception:  # noqa: BLE001
+        funds = None
+    return _cash.settled_cash(funds, live_db.unsettled_proceeds(conn, session))
+
+
 # --------------------------------------------------------------------------- plan inputs
 def plan_inputs(conn, config: dict, rule: dict, *, when: datetime, cache_path: str) -> dict:
     live = live_gates.live_block(config)
@@ -785,8 +798,22 @@ def _cycle(conn, broker, config, rule, *, when, cache_path, account, armed, halt
         "blocked": check["blocked"],
         "funds": check["funds"],
     }
+    cash = check_cash(conn, broker, day)
+    summary["cash"] = cash
+    if not cash["readable"]:
+        note("alert", "-", f"{cash['reason']}; no new buys")
+        block.update({f: "cash_unreadable" for f in funds if f not in block})
     inputs = plan_inputs(conn, config, rule, when=when, cache_path=cache_path)
-    the_plan = orders.plan(live, rule, when=when, armed=armed, halted=halted, block_buys=block, **inputs)
+    the_plan = orders.plan(
+        live,
+        rule,
+        when=when,
+        armed=armed,
+        halted=halted,
+        block_buys=block,
+        cash_limit=cash["limit"],
+        **inputs,
+    )
     for alert in the_plan.alerts:
         note("alert", str(alert.get("symbol", "-")), f"{alert['kind']} {alert.get('lot', '')}".strip(), alert)
     for text in the_plan.buys_blocked:
@@ -799,6 +826,7 @@ def _cycle(conn, broker, config, rule, *, when, cache_path, account, armed, halt
             "at": now_iso(),
             "date": day,
             "positions": summary["positions"],
+            "cash": cash,
             "splits": {
                 "declared": [s.__dict__ for s in live_checks.parse_splits(live)[0]],
                 "problems": split["problems"],

@@ -56,8 +56,15 @@ class FakeBroker:
         self.extra: list[dict] = []  # positions the ladder did not make (options, hand-held shares)
         self.positions_error = False
         self.positions_calls = 0
+        # The account's cash read (`cash_funds`): margin unless a test makes it a cash account.
+        self.funds: dict | None = {"margin_or_cash": "Margin", "cash_balance": 50_000.0,
+                                   "cash_available_to_withdraw": 50_000.0, "equity_buying_power": 50_000.0,
+                                   "pending_cash": 0.0}  # fmt: skip
 
     # --- what the tick calls
+    def cash_funds(self):
+        return None if self.funds is None else dict(self.funds)
+
     def positions(self):
         self.positions_calls += 1
         if self.positions_error:
@@ -448,6 +455,65 @@ def test_a_halted_day_cancels_the_resting_buy_and_still_places_a_sell(world):
     assert world.broker.placed("buy") == [] and len(world.broker.placed("sell")) == 1
 
 
+# --------------------------------------------------------------------------- settled cash
+def cash_account(w, withdraw, bp=50_000.0):
+    w.broker.funds = {"margin_or_cash": "Cash", "cash_balance": 50_000.0,
+                      "cash_available_to_withdraw": withdraw, "equity_buying_power": bp,
+                      "pending_cash": 0.0}  # fmt: skip
+
+
+def test_a_cash_account_places_a_buy_its_settled_cash_covers(world):
+    cash_account(world, 930.0)  # the lot is 10 x 93.00
+    out = tick(world, live_config(), "09:00")
+    assert world.broker.placed() == [BUY1]
+    assert out["cash"]["kind"] == "cash" and out["cash"]["limit"] == 930.0
+
+
+def test_a_cash_account_holds_a_buy_its_settled_cash_cannot_cover(world):
+    cash_account(world, 929.99)
+    tick(world, live_config(), "09:00")
+    assert world.broker.placed() == []
+    [row] = [r for r in decisions(world, "blocked") if "settled_cash_short" in r["reason"]]
+    assert row["symbol"] == "TQQQ" and "needs 930.00" in row["reason"]
+
+
+def test_the_smaller_of_withdrawable_and_buying_power_is_the_limit(world):
+    cash_account(world, 50_000.0, bp=500.0)
+    tick(world, live_config(), "09:00")
+    assert world.broker.placed() == []
+
+
+def test_a_margin_account_is_not_held_to_settled_cash(world):
+    world.broker.funds = {**world.broker.funds, "cash_available_to_withdraw": 0.0}
+    tick(world, live_config(), "09:00")
+    assert world.broker.placed() == [BUY1]
+
+
+def test_unreadable_cash_holds_new_buys_and_never_a_sell(world):
+    cfg = live_config()
+    tick(world, cfg, "09:00")
+    world.broker.fill(world.broker.order_id_of("ldr.b"), 93.0)
+    world.broker.funds = None
+    world.broker.calls.clear()
+    out = tick(world, cfg, "09:01")
+    assert world.broker.placed("buy") == [] and len(world.broker.placed("sell")) == 1
+    assert out["cash"]["readable"] is False
+    assert any(r["reason"].startswith("cash_unreadable") for r in decisions(world, "alert"))
+
+
+def test_a_sale_today_is_unsettled_until_the_next_session(world):
+    cfg = live_config()
+    tick(world, cfg, "09:00")
+    world.broker.fill(world.broker.order_id_of("ldr.b"), 93.0)
+    tick(world, cfg, "09:01")
+    world.broker.fill(world.broker.order_id_of("ldr.s"), 96.72)
+    tick(world, cfg, "09:02")
+    cash_account(world, 2_000.0)
+    today = live_tick.check_cash(world.conn, world.broker, DAY)
+    assert today["unsettled_proceeds"] == 967.2 and today["limit"] == 1_032.8
+    assert live_tick.check_cash(world.conn, world.broker, "2026-11-24")["unsettled_proceeds"] == 0.0
+
+
 # --------------------------------------------------------------------------- disarm_at
 def test_at_disarm_at_the_buys_are_cancelled_while_armed_then_the_loop_disarms(world, monkeypatch):
     cfg = live_config()
@@ -630,6 +696,10 @@ def adapter(world, monkeypatch):
     async def positions(account, session):
         return []
 
+    async def cash_funds(account, session):
+        return {"margin_or_cash": "Margin", "cash_balance": 0.0, "cash_available_to_withdraw": 0.0,
+                "equity_buying_power": 0.0, "pending_cash": 0.0}  # fmt: skip
+
     def ensure(self):
         self._account, self._session, self._resolved_for = "acct", "sess", ACCOUNT
 
@@ -637,6 +707,7 @@ def adapter(world, monkeypatch):
     monkeypatch.setattr(core_broker, "orders_today", orders_today)
     monkeypatch.setattr(core_broker, "working_orders", working_orders)
     monkeypatch.setattr(core_broker, "positions", positions)
+    monkeypatch.setattr(core_broker, "cash_funds", cash_funds)
     monkeypatch.setattr(core_broker, "build_order", lambda spec: spec)
     monkeypatch.setattr(live_tick.BrokerAdapter, "_ensure", ensure)
     sdk.place_order = place_order
