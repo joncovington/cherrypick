@@ -52,7 +52,7 @@ def test_the_groups_line_stacks_its_members_and_reads_against_its_allocation():
     assert g["members"] == ["a", "b"]
     assert (g["line"]["trades"], g["line"]["net"], g["line"]["drawdown"]) == (2, -200.0, 500.0)
     assert g["line"]["curve"] == [{"x": "2026-11-02", "y": 300.0}, {"x": "2026-11-03", "y": -200.0}]
-    assert g["against_allocation"] == {"net": -0.02, "drawdown": 0.05}
+    assert g["against_allocation"] == {"net": -0.02, "drawdown": 0.05, "since": "2026-11-02", "changes": []}
 
 
 def test_the_automations_in_no_group_are_one_line_beside_the_groups():

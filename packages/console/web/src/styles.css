@@ -12586,6 +12586,294 @@ svg.vol-curve text {
 .grp-hint {
   font-size: 0.78rem;
 }
+
+/* The automations pages' switch (Toggle.tsx): the word in its track, green when on (the suite's liveness
+   green, never a P&L's), grey for a switch that is not good news when on (retired). A staged change wears
+   a dot on its corner until saved. */
+.tgl {
+  --tgl-w: 64px;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  width: var(--tgl-w);
+  height: 26px;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid var(--chart-grid-strong);
+  background: var(--track);
+  color: var(--text-muted);
+  font: 600 0.68rem var(--num-face);
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+.tgl-word {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0 9px;
+}
+.tgl-knob {
+  position: absolute;
+  left: 3px;
+  top: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--text);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.35);
+  transition: left 0.15s;
+}
+.tgl[aria-checked="true"] {
+  background: var(--live);
+  border-color: var(--live);
+  color: var(--canvas);
+}
+.tgl[aria-checked="true"] .tgl-word {
+  justify-content: flex-start;
+}
+.tgl[aria-checked="true"] .tgl-knob {
+  left: calc(var(--tgl-w) - 23px);
+}
+.tgl.tgl-grey[aria-checked="true"] {
+  background: var(--text-dim);
+  border-color: var(--text-dim);
+  color: var(--canvas);
+}
+.tgl-big {
+  --tgl-w: 78px;
+  height: 30px;
+  font-size: 0.76rem;
+}
+.tgl-big .tgl-knob {
+  width: 22px;
+  height: 22px;
+}
+.tgl-big[aria-checked="true"] .tgl-knob {
+  left: calc(var(--tgl-w) - 27px);
+}
+.tgl.is-pending::after {
+  content: "";
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--surface);
+}
+.tgl:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.tgl:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.tgl-locked {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 26px;
+  border-radius: 999px;
+  border: 1px dashed var(--chart-grid-strong);
+  color: var(--text-dim);
+  font: 600 0.6rem var(--num-face);
+  letter-spacing: 0.06em;
+}
+@media (prefers-reduced-motion: reduce) {
+  .tgl-knob {
+    transition: none;
+  }
+}
+
+/* An automation's shape (ShapeIcon.tsx): its payoff at expiry, profit tinted above the zero line and loss below. */
+.shape-icon {
+  display: block;
+  width: 44px;
+  height: 24px;
+  border-radius: 4px;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+}
+.shape-icon.is-empty {
+  display: inline-block;
+}
+.shape-icon .shape-zero {
+  stroke: var(--chart-grid-strong);
+  stroke-width: 1;
+  stroke-dasharray: 2 2;
+}
+.shape-icon .shape-gain {
+  fill: color-mix(in srgb, var(--pos) 26%, transparent);
+}
+.shape-icon .shape-loss {
+  fill: color-mix(in srgb, var(--neg) 24%, transparent);
+}
+.shape-icon .shape-line {
+  fill: none;
+  stroke: var(--text);
+  stroke-width: 1.6;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.grp-table td.grp-shape {
+  width: 52px;
+  padding-right: 0;
+}
+.grp-table tr.grp-dim .shape-icon {
+  opacity: 0.55;
+}
+.grp-table tr.grp-retired td {
+  color: var(--text-muted);
+}
+.grp-table tr.grp-retired .shape-icon {
+  opacity: 0.4;
+  filter: grayscale(1);
+}
+
+/* What happens to an automation, in words, with its dot. */
+.grp-out {
+  white-space: nowrap;
+}
+.grp-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  border-radius: 50%;
+  vertical-align: 1px;
+  background: var(--text-dim);
+}
+.grp-out.is-trades .grp-dot {
+  background: var(--live);
+}
+.grp-out.is-held .grp-dot {
+  background: var(--warn);
+}
+.grp-out.is-held,
+.grp-out.is-off,
+.grp-out.is-retired {
+  color: var(--text-muted);
+}
+.grp-out.is-retired .grp-dot {
+  width: 7px;
+  height: 7px;
+  background: transparent;
+  border: 1.5px solid var(--text-dim);
+}
+.grp-why {
+  font-size: 0.8rem;
+}
+.grp-fold td {
+  background: var(--surface-sunken);
+  padding: 4px 10px;
+}
+.grp-fold-btn {
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+  font: 600 0.78rem inherit;
+  letter-spacing: 0.03em;
+  padding: 4px 0;
+  cursor: pointer;
+}
+.grp-controls-wrap {
+  display: grid;
+  gap: 12px;
+}
+.grp-head-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+}
+.grp-budget-ro {
+  gap: 4px;
+  grid-column: span 2;
+}
+.grp-budget-ro .btn {
+  justify-self: start;
+  align-self: flex-start;
+}
+.grp-pending {
+  color: var(--accent);
+}
+.grp-suggest {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+
+/* The save bar: one line while changes wait, the module's check in it, details on request. */
+.grp-bar-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  width: 100%;
+}
+.grp-bar-check {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+.grp-bar-details {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+  margin-top: 8px;
+}
+
+/* The foot of an automation's page: retired. */
+.ret-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+}
+.ret-state.is-retired {
+  color: var(--text-muted);
+}
+.ret-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent);
+  background: color-mix(in srgb, var(--warn) 10%, var(--surface));
+}
+.ret-confirm > span {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+.ret-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 8px 18px;
+  margin: 14px 0 0;
+}
+.ret-facts div {
+  display: grid;
+  gap: 2px;
+}
+.ret-facts dt {
+  font-size: 0.72rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.ret-facts dd {
+  margin: 0;
+  font-size: 0.86rem;
+}
 .grp-staged td {
   background: color-mix(in srgb, var(--accent) 8%, transparent);
 }

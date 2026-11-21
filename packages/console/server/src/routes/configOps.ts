@@ -477,6 +477,33 @@ export function registerConfigRoutes(app: FastifyInstance, config: ConsoleConfig
     return { ok: true, name, run };
   });
 
+  /**
+   * An automation's page retires or reinstates it, through the orchestrator's editor like every config write
+   * here (configcli `automation_retire`, `orchestrator.retireedit`): the module's check, then that
+   * automation's `retired` (the date, or false) and `enabled` (false either way: reinstating never
+   * switches one on), nothing else. Paper only; what a retired automation holds is still managed.
+   */
+  app.post("/api/automations/retire", async (req, reply) => {
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const name = body["name"];
+    const retired = body["retired"];
+    if (typeof name !== "string" || !AUTOMATION_NAME.test(name)) return reply.code(400).send({ error: "name: an automation's name" });
+    if (typeof retired !== "boolean") return reply.code(400).send({ error: "retired: true or false" });
+    const result = await callConfigCli({ op: "automation_retire", name, retired });
+    if (!result.ok) {
+      const problems = (result as unknown as Record<string, unknown>)["problems"];
+      return reply.code(statusForCode(result.code)).send({
+        error: result.error,
+        code: result.code,
+        ...(Array.isArray(problems) ? { problems } : {}),
+      });
+    }
+    invalidateAutomationGroups();
+    invalidateAutomationsBuilder();
+    app.log.info(`automation ${retired ? "retired" : "reinstated"} from the console: ${name}`);
+    return { ok: true, name, retired: result["retired"] ?? retired, notes: result["notes"] ?? [], backup: result["backup"] ?? null };
+  });
+
   app.get("/api/automations/builder/runs", async (req, reply) => {
     const name = String(((req.query ?? {}) as Record<string, unknown>)["name"] ?? "");
     if (name === "" || name.length > 48) return reply.code(400).send({ error: "name (up to 48 characters) required" });

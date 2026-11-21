@@ -15,12 +15,14 @@ import { WorkingSection } from "./AutomationWorking";
 import { EntriesSection } from "./AutomationEntries";
 import { ChangesSection } from "../../components/changes/ChangesSlide";
 import { SessionsAheadSection } from "../../components/armpage/SessionsAhead";
+import { RetiredSection } from "./RetiredSection";
 
 /**
  * One automation's page (`/automations/automation/<name>`): everything about one automation in one
  * place, in the order every arm page follows: what it does, whether it is working against its pinned
- * backtest reference, then what it has done, then what it decided. It reads only. Its switches and its group are changed in Groups (the drill-in this page
- * links to, where changes are staged and reviewed), and its rule in the Builder.
+ * backtest reference, then what it has done, then what it decided, and at its foot whether it is retired.
+ * Its one write is that last switch (`RetiredSection`); its switches and its group are changed in Groups (the
+ * drill-in this page links to, where changes are staged and saved), and its rule in the Builder.
  *
  * In the automations ledger an arm is the automation's name, so its record is the module's own rows
  * filtered to that name, read through the same endpoints as the module's tabs.
@@ -33,7 +35,7 @@ const HELP: CardHelpContent = {
       <HelpSection title="What this page is">
         <p>
           Everything about one automation: its rule in plain words, whether it is switched on, what it has done on paper and what it decided
-          this session. Change its switches in Groups and its rule in the Builder; this page reads only.
+          this session. Change its switches in Groups and its rule in the Builder; the one change made here is retiring it, at the foot of the page.
         </p>
       </HelpSection>
       <HelpSection title="A forward read">
@@ -45,8 +47,8 @@ const HELP: CardHelpContent = {
 
 const VERDICT_WORDS: Record<string, string> = { passed: "passed", failed: "failed", no_verdict: "no verdict" };
 const VERDICT_CHIP: Record<string, string> = { passed: "chip chip-ok", failed: "chip chip-warn", no_verdict: "chip" };
-const STATE_WORDS: Record<string, string> = { on: "on", waiting: "waiting on its start", off_group: "off · its group", off_own: "off · its own switch" };
-const STATE_CHIP: Record<string, string> = { on: "chip chip-ok", waiting: "chip chip-info", off_group: "chip chip-warn", off_own: "chip" };
+const STATE_WORDS: Record<string, string> = { on: "on", waiting: "waiting on its start", off_group: "off · its group", off_own: "off · its own switch", retired: "retired" };
+const STATE_CHIP: Record<string, string> = { on: "chip chip-ok", waiting: "chip chip-info", off_group: "chip chip-warn", off_own: "chip", retired: "chip" };
 
 /** The automation and the group it is in, from the module's groups view; undefined when no automation has that name. */
 export function findAutomation(view: GroupsEditView, name: string): { m: GroupsEditMember; group: string | null } | undefined {
@@ -123,6 +125,7 @@ const JUMPS = [
   { id: "automation-ahead", label: "Sessions ahead" },
   { id: "automation-changes", label: "Changes" },
   { id: "automation-decisions", label: "Decisions" },
+  { id: "automation-retired", label: "Retired" },
 ] as const;
 
 export function AutomationRecordPage({ name }: { name: string }) {
@@ -202,6 +205,7 @@ export function AutomationRecordPage({ name }: { name: string }) {
       <Section id="automation-decisions" concept="add" tag="decisions" question="What did it decide this session, and why?">
         <DecisionsCard module="automations" arm={name} />
       </Section>
+      <RetiredSection m={m} open={open} />
     </div>
   );
 }

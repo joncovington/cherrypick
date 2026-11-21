@@ -23,7 +23,9 @@
     reference-check  the Builder's pin of one Builder run as an automation's backtest reference (JSON on
                stdin: name, run; run null to unpin) checked: its problems and the references block a
                save would write. Writes nothing
-    builder    every automation block by block, each block's backtest label, its start, forward rule,
+    retire-check  retire or reinstate one automation (JSON on stdin: name, retired true|false) checked:
+               its problems and the keys a save would write (retired, enabled false). Writes nothing
+    builder   every automation block by block, each block's backtest label, its start, forward rule,
                backtest suggestion and pinned reference run (the console's Builder page). Config and the
                registry's cache only
     draft      the Builder's check of one edited automation (JSON on stdin: name, automation): its
@@ -146,6 +148,25 @@ def cmd_groups_check(args) -> int:
     except json.JSONDecodeError as exc:
         return _print({"ok": False, "error": f"request is not valid JSON: {exc}"})
     return _print(groupedit.check(config_mod.load_config(args.config), req))
+
+
+def cmd_retire_check(args) -> int:
+    """Retire or reinstate one automation (JSON on stdin: {name, retired: true|false}): the keys a save would
+    write (`drafts.retire`). Writes nothing."""
+    import sys
+
+    from cherrypick.core.clock import now_et
+
+    from . import drafts
+
+    try:
+        req = json.loads(sys.stdin.read() or "{}")
+    except json.JSONDecodeError as exc:
+        return _print({"ok": False, "error": f"request is not valid JSON: {exc}"})
+    if not isinstance(req, dict):
+        return _print({"ok": False, "error": "request: an object with name and retired"})
+    config = config_mod.load_config(args.config)
+    return _print(drafts.retire(config, req.get("name"), req.get("retired"), now_et().date()))
 
 
 def cmd_reference_check(args) -> int:
@@ -404,6 +425,7 @@ def main(argv=None) -> int:
     sub.add_parser("groups-check").set_defaults(fn=cmd_groups_check)
     sub.add_parser("groups-read").set_defaults(fn=cmd_groups_read)
     sub.add_parser("reference-check").set_defaults(fn=cmd_reference_check)
+    sub.add_parser("retire-check").set_defaults(fn=cmd_retire_check)
     p = sub.add_parser("ahead")
     p.add_argument("--name", required=True)
     p.add_argument("--start", help="ISO date; default today (ET)")

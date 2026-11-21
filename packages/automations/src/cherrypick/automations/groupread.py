@@ -6,8 +6,12 @@ closely its members' results move together. Pure over the ledger's rows and the 
   running net after each one (`curve`), so the console's performance and costs pages can show a group as
   they show an automation. Membership is the config's now: an automation moved between groups takes its
   history with it.
-- **Against its allocation**: the net and the drawdown as a share of the group's `allocation`, None
-  without one.
+- **Against its allocation**: the net and the drawdown as a share of the allocation, each trade's net
+  read against the allocation the group carried on the session it closed (`config.budget_at`) and the
+  shares added, never compounded (sizes are fixed). With one allocation throughout this is the net over
+  it; a dated change (`budget_changes`) moves the denominator from its session on and never restates
+  the sessions before it. A trade closed on a session with no allocation is not counted, and `since`
+  says where the counted ones begin. None when no session carried one.
 - **Risk at once** is each position's `capital` (its maximum loss at the mid, the measure the cap reads),
   summed over the positions open on a session: from the session it entered through the session it
   closed, or still open. The peak is read at the sessions something entered, where the sum can rise. A
@@ -29,6 +33,7 @@ from collections.abc import Mapping
 from cherrypick.core import portfolio as core_portfolio
 
 from . import analytics
+from . import config as config_mod
 
 NO_GROUP = None
 
@@ -77,6 +82,33 @@ def bound_by(detail: str | None) -> str:
 
 def _share(v: float | None, of: float | None) -> float | None:
     return round(v / of, 4) if v is not None and of else None
+
+
+def against_allocation(rows: list[dict], spec: Mapping) -> dict | None:
+    """{net, drawdown, since, changes}: the closed trades' nets as shares of the allocation each one's
+    exit session carried, added in exit order, and the largest peak-to-trough fall of that sum (module
+    docstring). None when no counted trade's session carried an allocation and the group has none."""
+    ordered = sorted(rows, key=lambda r: (r["exit_session"] or "", r["entry_session"], r["arm"]))
+    run = peak = 0.0
+    worst = 0.0
+    since = None
+    for r in ordered:
+        alloc = config_mod.budget_at(spec, str(r["exit_session"] or "")).get("allocation")
+        if not alloc:
+            continue
+        since = since or r["exit_session"]
+        run += float(r["net_pnl"]) / alloc
+        peak = max(peak, run)
+        worst = max(worst, peak - run)
+    dated = len(config_mod.history(spec)) > 1
+    if since is None and not spec.get("allocation"):
+        return None
+    return {
+        "net": round(run, 4),
+        "drawdown": round(worst, 4),
+        "since": since,
+        "changes": [b["from"] for b in config_mod.history(spec) if b["from"]] if dated else [],
+    }
 
 
 def _together(closed: list[dict], members: list[str]) -> dict | None:
@@ -156,9 +188,7 @@ def read(
                 "shares": shares,
                 "members": members,
                 "line": ln,
-                "against_allocation": None
-                if not alloc
-                else {"net": _share(ln["net"], alloc), "drawdown": _share(ln["drawdown"], alloc)},
+                "against_allocation": against_allocation([r for r in closed if r["arm"] in mine], spec),
                 "risk": None if risk is None else {**risk, "cap": cap, "of_cap": _share(risk["peak"], cap)},
                 "member_risk": member_risk,
                 "refused": {**refused, "latest": latest},

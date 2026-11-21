@@ -3,7 +3,8 @@ import { renderToString } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { GroupsEditMember, GroupsEditView } from "@console/shared";
-import { changeItems, changeToSend, GroupsFlow, impact, placement, startDraft, stateWords } from "../src/pages/Automations/AutomationsGroups";
+import { changeItems, changeToSend, GroupsFlow, impact, outcomeWords, placement, startDraft, stateWords } from "../src/pages/Automations/AutomationsGroups";
+import { RetiredSection, retiredWords } from "../src/pages/Automations/RetiredSection";
 import { AUTOMATIONS_SLIDES } from "../src/lightbox/navGroups";
 
 const html = (el: React.ReactElement, url = "/automations/groups") =>
@@ -29,7 +30,7 @@ const m = (name: string, over: Partial<GroupsEditMember> = {}): GroupsEditMember
 const VIEW: GroupsEditView = {
   today: "2026-11-18",
   next_session: "2026-11-19",
-  counts: { on: 0, waiting: 0, off_group: 2, off_own: 1 },
+  counts: { on: 0, waiting: 0, off_group: 2, off_own: 1, retired: 0 },
   groups: [
     {
       name: "ensemble",
@@ -110,9 +111,11 @@ describe("the three levels", () => {
     expect(out).toContain("off by its group");
     expect(out).toContain('href="/automations/groups?group=ensemble"');
     expect(out).toContain('href="/automations/groups?group=_none"');
-    expect(out).toContain(">Switch on</button>");
-    expect(out).toContain("0 changes staged");
-    expect(out).toMatch(/<button type="button" class="btn btn-primary" disabled="">Review changes ›<\/button>/);
+    // The group's switch is a toggle in its row: no separate Switch on button, and nothing staged to save.
+    expect(out).toContain('role="switch" aria-checked="false" aria-label="ensemble: group switch"');
+    expect(out).not.toContain(">Switch on</button>");
+    expect(out).toContain("it waits here until you save");
+    expect(out).not.toContain(">Save</button>");
   });
 
   it("one group: its switch and budget, each member's own switch and the state it is in", () => {
@@ -121,7 +124,9 @@ describe("the three levels", () => {
     expect(out).toContain(">groups</a> / <b>ensemble</b></nav>");
     expect(out).toContain('aria-label="ensemble: group switch"');
     expect(out).toContain('aria-label="iron-condor-1345: its own switch"');
-    expect(out).toContain('<span class="chip chip-warn">off · its group</span>');
+    expect(out).toContain('role="switch" aria-checked="true" aria-label="iron-condor-1345: its own switch"');
+    expect(out).toContain("Held: its group is off");
+    expect(out).toContain("what happens");
     expect(out).toContain('aria-label="iron-condor-1345 share percent"');
     expect(out).toContain("+ Add automations");
     expect(out).toContain('href="/automations/groups?group=ensemble&amp;automation=iron-condor-1345"');
@@ -137,7 +142,75 @@ describe("the three levels", () => {
     expect(out).not.toContain("What does it place, and when?");
   });
 
+  it("a retired member: locked, folded at the foot, its reason in words and a link to why", () => {
+    const view: GroupsEditView = {
+      ...VIEW,
+      groups: [{ ...VIEW.groups[0]!, members: [m("iron-condor-1345"), m("iron-fly-1000", { verdict: "failed", enabled: false, state: "retired", retired: "2026-11-21" })] }],
+    };
+    const out = html(<GroupsFlow view={view} />, "/automations/groups?group=ensemble");
+    expect(out).toContain("Retired (1)");
+    expect(out).toContain('<span class="tgl-locked"');
+    expect(out).not.toContain('aria-label="iron-fly-1000: its own switch"');
+    expect(out).toContain("Retired: backtest failed");
+    expect(out).toContain('href="/automations/automation/iron-fly-1000#automation-retired"');
+    // The fold sits after the members still in play.
+    expect(out.indexOf("iron-condor-1345")).toBeLessThan(out.indexOf("Retired (1)"));
+  });
+
+  it("a group that has run: its budget read-only, with the suggestion and what is waiting", () => {
+    const view: GroupsEditView = {
+      ...VIEW,
+      groups: [
+        {
+          ...VIEW.groups[0]!,
+          enabled: true,
+          allocation: 12000,
+          budget: { today: { allocation: 10000 }, pending: { from: "2026-11-19", allocation: 12000 }, dated: true, history: [] },
+          suggested: { allocation: 9300, members: [{ name: "iron-condor-1345", risk: 9300, why: null }] },
+        },
+      ],
+    };
+    const out = html(<GroupsFlow view={view} />, "/automations/groups?group=ensemble");
+    expect(out).toContain("allocation $10,000");
+    expect(out).toContain("Changes to allocation $12,000 from 2026-11-19.");
+    expect(out).toContain(">Change from next session</button>");
+    expect(out).not.toContain('id="grp-ensemble-allocation"');
+    expect(out).toContain("Suggested allocation $9,300");
+  });
+
+  it("a group that has not run edits its budget, and says when no allocation can be suggested", () => {
+    const view: GroupsEditView = {
+      ...VIEW,
+      groups: [{ ...VIEW.groups[0]!, budget: { today: {}, pending: null, dated: false, history: [] }, suggested: { allocation: null, members: [{ name: "iron-fly-1000", risk: null, why: "a wing is placed by delta or percent" }] } }],
+    };
+    const out = html(<GroupsFlow view={view} />, "/automations/groups?group=ensemble");
+    expect(out).toContain('id="grp-ensemble-allocation"');
+    expect(out).toContain("No suggested allocation: iron-fly-1000 (a wing is placed by delta or percent).");
+  });
+
   it("is a tab of the automations module", () => {
     expect(AUTOMATIONS_SLIDES.map((s) => s.id)).toContain("groups");
+  });
+});
+
+describe("what happens, in words", () => {
+  it("names each state as the row says it", () => {
+    expect(outcomeWords({ state: "on", from: null, verdict: null }).words).toBe("Trades");
+    expect(outcomeWords({ state: "waiting", from: "2026-11-23", verdict: null }).words).toBe("Trades from 2026-11-23");
+    expect(outcomeWords({ state: "off_group", from: null, verdict: null }).words).toBe("Held: its group is off");
+    expect(outcomeWords({ state: "off_own", from: null, verdict: null }).words).toBe("Off by its own switch");
+    expect(outcomeWords({ state: "retired", from: null, verdict: "failed" }).words).toBe("Retired: backtest failed");
+    expect(outcomeWords({ state: "retired", from: null, verdict: "passed" }).words).toBe("Retired");
+  });
+});
+
+describe("the retired switch at the foot of an automation's page", () => {
+  it("says it plainly and never names a research item", () => {
+    expect(retiredWords({ retired: "2026-11-21", verdict: "failed" })).toBe("Retired 11-21: backtest failed.");
+    expect(retiredWords({ retired: null, verdict: "failed" })).toMatch(/^Not retired\. Its backtest failed/);
+    const out = html(<RetiredSection m={m("iron-fly-1000", { retired: "2026-11-21", verdict: "failed", state: "retired" })} open={0} />);
+    expect(out).toContain('role="switch" aria-checked="true" aria-label="iron-fly-1000: retired"');
+    expect(out).toContain("It is off and stays off until you reinstate it.");
+    expect(out).not.toMatch(/item \d/);
   });
 });

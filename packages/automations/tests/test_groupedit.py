@@ -34,7 +34,7 @@ def test_a_group_not_named_in_the_file_shows_on_as_the_loop_reads_it():
 
 
 def test_a_valid_change_returns_the_block_and_the_moves_to_write():
-    cfg = {"groups": {"_note": "kept", "ensemble": {"enabled": True, "_why": "kept too"}}}
+    cfg = {"groups": {"_note": "kept", "ensemble": {"enabled": False, "_why": "kept too"}}}  # not yet run
     r = groupedit.check(
         cfg,
         {
@@ -147,7 +147,7 @@ def test_each_automation_is_named_with_the_one_thing_that_stops_it():
         "2026-11-20",
     )
     assert rows["gld-call-spread-20d"]["state"] == "on"
-    assert v["counts"] == {"on": 1, "waiting": 1, "off_group": 5, "off_own": 1}
+    assert v["counts"] == {"on": 1, "waiting": 1, "off_group": 5, "off_own": 1, "retired": 0}
 
 
 def test_a_group_switched_on_starts_at_the_next_session():

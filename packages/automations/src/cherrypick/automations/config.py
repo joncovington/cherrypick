@@ -22,6 +22,8 @@ from __future__ import annotations
 
 import os
 import pathlib
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
 
 from cherrypick.core import config as _cfg
 from cherrypick.core import home as _home
@@ -89,22 +91,101 @@ def load_arms(config: dict, *, library: dict | None = None) -> dict[str, dict]:
     return apply_groups(arms_mod.load_arms(overrides), config)
 
 
-GROUP_KEYS = {"enabled", "allocation", "max_risk", "shares", "start"}
+#: The keys a group may carry in the file. `budget_changes` is written by the Groups page's save alone.
+GROUP_KEYS = {"enabled", "allocation", "max_risk", "shares", "start", "budget_changes"}
+#: A group's budget: what `budget` hands `sizing`, and what a dated change replaces whole.
+BUDGET_KEYS = ("allocation", "max_risk", "shares")
 
 
 def _dollars(v) -> bool:
     return isinstance(v, (int, float)) and not isinstance(v, bool) and v > 0
 
 
-def groups(config: dict) -> dict[str, dict]:
-    """The `groups` block, `_`-prefixed notes dropped. A group not named is on, with no budget.
+def today_et() -> date:
+    return datetime.now(ZoneInfo("America/New_York")).date()
+
+
+def _budget(where: str, spec: dict) -> dict:
+    """The budget keys of `spec` (a group, or one of its dated changes), checked."""
+    row: dict = {}
+    for k in ("allocation", "max_risk"):
+        if k in spec:
+            if not _dollars(spec[k]):
+                raise ValueError(f"{where}.{k}: dollars, more than 0")
+            row[k] = float(spec[k])
+    if "shares" in spec:
+        raw_shares = spec["shares"]
+        shares = (
+            {m: v for m, v in raw_shares.items() if not str(m).startswith("_")}
+            if isinstance(raw_shares, dict)
+            else {}
+        )
+        if not shares:
+            raise ValueError(f"{where}.shares: an object of {{member: percent}}")
+        for m, v in shares.items():
+            if not (_dollars(v) and v <= 100):
+                raise ValueError(f"{where}.shares.{m}: a percent, more than 0 and at most 100")
+        total = sum(shares.values())
+        if total > 100 + 1e-9:
+            raise ValueError(f"{where}.shares: {total:g} percent in all, more than 100")
+        if not ("allocation" in row or "max_risk" in row):
+            raise ValueError(f"{where}.shares: a share of nothing (no allocation or max_risk)")
+        row["shares"] = {m: float(v) for m, v in shares.items()}
+    return row
+
+
+def _changes(where: str, raw) -> list[dict]:
+    """A group's `budget_changes`: [{"from": session, **budget}], each a whole budget, dates rising."""
+    if not isinstance(raw, list):
+        raise ValueError(f"{where}: a list of {{from, allocation?, max_risk?, shares?}}")
+    out, last = [], ""
+    for i, c in enumerate(raw):
+        at = f"{where}[{i}]"
+        if not isinstance(c, dict):
+            raise ValueError(f"{at}: an object with from")
+        extra = {k for k in c if not k.startswith("_")} - {"from", *BUDGET_KEYS}
+        if extra:
+            raise ValueError(f"{at}: unknown key {sorted(extra)[0]!r}")
+        if not enrolment._iso(c.get("from")):
+            raise ValueError(f"{at}.from: an ISO date, YYYY-MM-DD")
+        if c["from"] <= last:
+            raise ValueError(f"{at}.from: after the change before it")
+        last = c["from"]
+        out.append({"from": c["from"], **_budget(at, c)})
+    return out
+
+
+def history(row: dict) -> list[dict]:
+    """A group's budgets in date order: [{"from": None, **first}, {"from": session, **change}, ...]. The
+    first is the one the group has carried since it began; a group that never changed has that one alone."""
+    return row.get("budget_history") or [{"from": None, **{k: row[k] for k in BUDGET_KEYS if k in row}}]
+
+
+def budget_at(row: dict, day: str) -> dict:
+    """The budget a group (a `groups` row) carries on session `day`: the latest change from on or before it,
+    else the first."""
+    out = {}
+    for b in history(row):
+        if b["from"] is None or b["from"] <= day:
+            out = {k: v for k, v in b.items() if k != "from"}
+    return out
+
+
+def groups(config: dict, today: date | None = None) -> dict[str, dict]:
+    """The `groups` block, `_`-prefixed notes dropped, each group with the budget it carries `today`
+    (Eastern, unless given). A group not named is on, with no budget.
 
     {group: {"enabled": bool,
              "allocation": dollars,      the group's capital; an `allocation_pct` size reads its share
              "max_risk": dollars,        a cap on the group's open risk at once
-             "shares": {member: pct}}}   each member's slice of both (at most 100 in all); a member
+             "shares": {member: pct},    each member's slice of both (at most 100 in all); a member
                                          not listed has no slice of its own, only the group's cap
-    """
+             "budget_history": [...]}}   the budget from each date (`history`), when it has changed
+
+    A budget changes on a date (`budget_changes`, each `{"from": session, **budget}`, the budget whole), so
+    a change made while a group trades starts at a session boundary and the group's record can be read
+    against the budget each session carried (`groupread`)."""
+    day = (today or today_et()).isoformat()
     raw = config.get("groups") or {}
     if not isinstance(raw, dict):
         raise ValueError("groups: an object of {group: {enabled: true|false}}")
@@ -124,29 +205,17 @@ def groups(config: dict) -> dict[str, dict]:
             if not enrolment._iso(spec["start"]):
                 raise ValueError(f"groups.{name}.start: an ISO date, YYYY-MM-DD")
             row["start"] = spec["start"]
-        for k in ("allocation", "max_risk"):
-            if k in spec:
-                if not _dollars(spec[k]):
-                    raise ValueError(f"groups.{name}.{k}: dollars, more than 0")
-                row[k] = float(spec[k])
-        if "shares" in spec:
-            raw_shares = spec["shares"]
-            shares = (
-                {m: v for m, v in raw_shares.items() if not str(m).startswith("_")}
-                if isinstance(raw_shares, dict)
-                else {}
-            )
-            if not shares:
-                raise ValueError(f"groups.{name}.shares: an object of {{member: percent}}")
-            for m, v in shares.items():
-                if not (_dollars(v) and v <= 100):
-                    raise ValueError(f"groups.{name}.shares.{m}: a percent, more than 0 and at most 100")
-            total = sum(shares.values())
-            if total > 100 + 1e-9:
-                raise ValueError(f"groups.{name}.shares: {total:g} percent in all, more than 100")
-            if not ("allocation" in row or "max_risk" in row):
-                raise ValueError(f"groups.{name}.shares: a share of nothing (no allocation or max_risk)")
-            row["shares"] = {m: float(v) for m, v in shares.items()}
+        first = _budget(f"groups.{name}", spec)
+        changes = (
+            _changes(f"groups.{name}.budget_changes", spec["budget_changes"])
+            if "budget_changes" in spec
+            else []
+        )
+        if changes:
+            row["budget_history"] = [{"from": None, **first}, *changes]
+            row.update(budget_at(row, day))
+        else:
+            row.update(first)
         out[name] = row
     return out
 

@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
-import type { AutomationState, GroupSpec, GroupsChange, GroupsCheckResult, GroupsEditMember, GroupsEditView } from "@console/shared";
+import type { AutomationState, GroupSpec, GroupsChange, GroupsCheckResult, GroupsEditGroup, GroupsEditMember, GroupsEditView } from "@console/shared";
 import { Card } from "../../components/DataTable";
 import { HelpSection, type CardHelpContent } from "../../components/CardHelp";
 import { Section } from "../../components/Section";
@@ -11,19 +11,24 @@ import { fmtMoney } from "../../lib/format";
 import { AutomationRecordPage } from "./AutomationRecord";
 import { automationHref } from "./automationsModels";
 import { GroupUnitSection } from "./GroupUnit";
+import { ShapeIcon } from "./ShapeIcon";
+import { LockedSwitch, Toggle } from "./Toggle";
 
 /**
  * Automations › Groups, a drill-down: every group (`?` none), one group (`?group=`), one automation
  * (`?group=&automation=`). Each level reads, adds and switches what it shows; every change is staged in
- * the bar along the bottom, carried as you drill in and out, and written only from Review.
+ * the save bar along the bottom, carried as you drill in and out, and written only from there.
  *
- * Everything shown comes from the module (`cli groups-view`): each automation's own switch, its start
- * and the STATE it is in (`on`, `waiting` on its start, `off_group`, `off_own`), which the page shows and
- * never derives. Review asks the module's check (`cli groups-check`, the same load the paper loop runs),
- * which also returns the view as it would be after the change, so "what it does to trading" is the
- * module's answer laid beside the view now. Saving goes through the orchestrator's config editor, which
- * writes only what that check returned. A switch turned on starts at the next session (the module sets
- * it), so a paper record never begins mid-day. The module is paper only: nothing here places an order.
+ * Everything shown comes from the module (`cli groups-view`): each automation's own switch, its start, its
+ * shape and the STATE it is in (`on`, `waiting` on its start, `off_group`, `off_own`, `retired`), which the
+ * page shows in words and never derives. While anything is staged the page asks the module's check (`cli
+ * groups-check`, the same load the paper loop runs), which returns the view as it would be after the
+ * change: a staged row's words are that answer, and the save bar lists who starts and who stops by it.
+ * Saving goes through the orchestrator's config editor, which writes only what that check returned. A
+ * switch turned on starts at the next session (the module sets it), so a paper record never begins mid-day.
+ * A retired automation's switch is locked here: it is reinstated on its own page. Once a group has run, its
+ * budget is read-only until "Change from next session": the module dates the change, so the sessions
+ * before keep the budget they ran on. The module is paper only: nothing here places an order.
  */
 
 const NONE = "_none";
@@ -35,12 +40,27 @@ export function stateWords(state: AutomationState, from: string | null): string 
   if (state === "on") return "on";
   if (state === "waiting") return `from ${from ?? "its start"}`;
   if (state === "off_group") return "off · its group";
+  if (state === "retired") return "retired";
   return "off · its own switch";
 }
 
-function StateChip({ m }: { m: Pick<GroupsEditMember, "state" | "from"> }) {
-  const cls = m.state === "on" ? "chip chip-ok" : m.state === "waiting" ? "chip chip-info" : m.state === "off_group" ? "chip chip-warn" : "chip";
-  return <span className={cls}>{stateWords(m.state, m.from)}</span>;
+/** What happens to an automation, in words, from the module's state and verdict. */
+export function outcomeWords(m: Pick<GroupsEditMember, "state" | "from" | "verdict">): { cls: string; words: string } {
+  if (m.state === "on") return { cls: "trades", words: "Trades" };
+  if (m.state === "waiting") return { cls: "trades", words: `Trades from ${m.from ?? "its start"}` };
+  if (m.state === "off_group") return { cls: "held", words: "Held: its group is off" };
+  if (m.state === "retired") return { cls: "retired", words: m.verdict === "failed" ? "Retired: backtest failed" : "Retired" };
+  return { cls: "off", words: "Off by its own switch" };
+}
+
+function Outcome({ m }: { m: Pick<GroupsEditMember, "state" | "from" | "verdict"> }) {
+  const o = outcomeWords(m);
+  return (
+    <span className={`grp-out is-${o.cls}`}>
+      <span className="grp-dot" aria-hidden="true" />
+      {o.words}
+    </span>
+  );
 }
 
 function Verdict({ v }: { v: string | null }) {
@@ -192,10 +212,21 @@ const HELP: CardHelpContent = {
           once. A share gives one member its own slice of both, at most 100 percent in all, and needs an allocation or a max risk.
         </p>
       </HelpSection>
+      <HelpSection title="A budget once a group has run">
+        <p>
+          Once a group has run, its budget is read-only: "Change from next session" makes the change start at the next session, and the
+          sessions before keep the budget they ran on, so its record reads each trade against the budget its session carried. The suggested
+          allocation is the most its members can have at risk at once, from their own sizes and strikes.
+        </p>
+      </HelpSection>
+      <HelpSection title="Retired">
+        <p>A retired automation's switch is locked here. Reinstate it at the foot of its own page; it then stays off until you switch it on.</p>
+      </HelpSection>
       <HelpSection title="Saving">
         <p>
-          Changes wait in the bar along the bottom. Review lists them, shows what they do to trading by the automations module's own check,
-          and saves them together to the automations config, with a backup. Paper only: nothing here places an order.
+          Changes wait in the bar along the bottom with a blue dot on each switch you moved. The bar says what they do to trading by the
+          automations module's own check, and Save writes them together to the automations config, with a backup. Paper only: nothing here
+          places an order.
         </p>
       </HelpSection>
     </>
@@ -229,14 +260,9 @@ function Crumbs({ group, automation }: { group?: string; automation?: string }) 
   );
 }
 
-function OwnSwitch({ name, on, staged, onChange }: { name: string; on: boolean; staged: boolean; onChange: (on: boolean) => void }) {
-  return (
-    <label className="grp-switch">
-      <input type="checkbox" role="switch" checked={on} aria-label={`${name}: its own switch`} onChange={(e) => onChange(e.currentTarget.checked)} />
-      <span>{on ? "on" : "off"}</span>
-      {staged && <span className="chip chip-info">staged</span>}
-    </label>
-  );
+function OwnSwitch({ m, on, staged, onChange }: { m: GroupsEditMember; on: boolean; staged: boolean; onChange: (on: boolean) => void }) {
+  if (m.retired) return <LockedSwitch />;
+  return <Toggle on={on} label={`${m.name}: its own switch`} pending={staged} onChange={onChange} />;
 }
 
 type Paper = { trades: Record<string, number>; net: Record<string, number | null>; open: Record<string, number> };
@@ -282,10 +308,12 @@ function GroupsIndex({ view, draft, edit, paper }: { view: GroupsEditView; draft
           {spec === undefined ? (
             <span className="muted">—</span>
           ) : (
-            <span className="grp-cell">
-              <span className={spec.enabled ? "chip chip-ok" : "chip chip-warn"}>{spec.enabled ? "on" : "off"}</span>
-              {was !== undefined && was.enabled !== spec.enabled && <span className="chip chip-info">staged</span>}
-            </span>
+            <Toggle
+              on={spec.enabled}
+              label={`${name}: group switch`}
+              pending={was !== undefined && was.enabled !== spec.enabled}
+              onChange={(on) => edit({ ...draft, groups: { ...draft.groups, [name!]: { ...spec, enabled: on } } })}
+            />
           )}
         </td>
         <td className="num">{members.length}</td>
@@ -303,11 +331,6 @@ function GroupsIndex({ view, draft, edit, paper }: { view: GroupsEditView; draft
         <td className="num">{open}</td>
         <td className="num">{nets.length ? fmtMoney(nets.reduce((a, b) => a + b, 0)) : "—"}</td>
         <td className="grp-actions">
-          {spec !== undefined && (
-            <button type="button" className="btn" onClick={() => edit({ ...draft, groups: { ...draft.groups, [name!]: { ...spec, enabled: !spec.enabled } } })}>
-              {spec.enabled ? "Switch off" : "Switch on"}
-            </button>
-          )}
           <Link className="btn" to={`/automations/groups?group=${encodeURIComponent(key)}`}>
             Open ›
           </Link>
@@ -321,7 +344,12 @@ function GroupsIndex({ view, draft, edit, paper }: { view: GroupsEditView; draft
         <FliesTile title="on" value={String(view.counts.on)} tone="dim" foot="its group on, its own switch on, its start come" />
         <FliesTile title="waiting on a start" value={String(view.counts.waiting)} tone="dim" foot="switched on, joining at their start" />
         <FliesTile title="off by its group" value={String(view.counts.off_group)} tone="dim" foot="its own switch on, its group off" />
-        <FliesTile title="off by its own switch" value={String(view.counts.off_own)} tone="dim" foot="a Builder save is off until switched on" />
+        <FliesTile
+          title="off by its own switch"
+          value={String(view.counts.off_own)}
+          tone="dim"
+          foot={`a Builder save is off until switched on${view.counts.retired ? ` · ${view.counts.retired} more retired, locked off` : ""}`}
+        />
       </Section>
       <Section concept="room" tag="the sets" question="Which sets are switched on, and how is each doing?">
         <Card title="groups" collapseKey="automations-groups-index" className="lv-12" help={HELP}>
@@ -376,7 +404,29 @@ function GroupsIndex({ view, draft, edit, paper }: { view: GroupsEditView; draft
 // Level 2: one group
 // ---------------------------------------------------------------------------------------------------
 
-function GroupControls({ name, spec, was, nextSession, onChange }: { name: string; spec: GroupSpec; was: GroupSpec | undefined; nextSession: string; onChange: (next: GroupSpec) => void }) {
+function budgetWords(b: { allocation?: number; max_risk?: number; shares?: Record<string, number> } | undefined): string {
+  if (b === undefined || (b.allocation === undefined && b.max_risk === undefined)) return "no budget";
+  const parts = [b.allocation !== undefined ? `allocation ${money(b.allocation)}` : null, b.max_risk !== undefined ? `max risk ${money(b.max_risk)}` : null];
+  const shares = Object.keys(b.shares ?? {}).length;
+  return parts.filter(Boolean).join(" · ") + (shares ? ` · ${shares} share${shares === 1 ? "" : "s"}` : "");
+}
+
+function GroupControls({
+  name,
+  spec,
+  was,
+  info,
+  nextSession,
+  onChange,
+}: {
+  name: string;
+  spec: GroupSpec;
+  was: GroupSpec | undefined;
+  info: GroupsEditGroup | undefined;
+  nextSession: string;
+  onChange: (next: GroupSpec) => void;
+}) {
+  const [unlocked, setUnlocked] = useState(false);
   const set = (key: "allocation" | "max_risk", text: string) => {
     const v = numberOrUndefined(text);
     const next: GroupSpec = { ...spec };
@@ -386,67 +436,124 @@ function GroupControls({ name, spec, was, nextSession, onChange }: { name: strin
     onChange(next);
   };
   const switchingOn = spec.enabled && was !== undefined && !was.enabled;
+  const dated = info?.budget?.dated === true;
+  const pending = info?.budget?.pending ?? null;
+  const budgetMoved = was !== undefined && (was.allocation !== spec.allocation || was.max_risk !== spec.max_risk || JSON.stringify(was.shares ?? {}) !== JSON.stringify(spec.shares ?? {}));
+  const readOnly = dated && !unlocked && !budgetMoved;
+  const suggested = info?.suggested;
+  const unknown = (suggested?.members ?? []).filter((m) => m.risk === null);
   return (
-    <div className="builder-grid grp-controls">
-      <div className="builder-f">
-        <span className="builder-lbl">group switch</span>
-        <label className="grp-switch">
-          <input type="checkbox" role="switch" checked={spec.enabled} aria-label={`${name}: group switch`} onChange={(e) => onChange({ ...spec, enabled: e.currentTarget.checked })} />
-          <span>{spec.enabled ? (switchingOn ? `on from ${spec.start && spec.start > nextSession ? spec.start : nextSession}` : "on") : "off"}</span>
-          {was !== undefined && was.enabled !== spec.enabled && <span className="chip chip-info">staged</span>}
-        </label>
-        <span className="muted grp-hint">{spec.enabled ? "Switching on starts at the next session, never mid-day." : "Off: nothing enters; what is held is still managed."}</span>
+    <div className="grp-controls-wrap">
+      <div className="grp-head-row">
+        <span className="builder-lbl">group</span>
+        <Toggle on={spec.enabled} label={`${name}: group switch`} big pending={was !== undefined && was.enabled !== spec.enabled} onChange={(on) => onChange({ ...spec, enabled: on })} />
+        <span className="muted grp-hint">
+          {spec.enabled
+            ? switchingOn
+              ? `On from ${spec.start && spec.start > nextSession ? spec.start : nextSession}: switching on starts at the next session, never mid-day.`
+              : "On: its switched-on automations trade."
+            : "Off: nothing in this group enters. What it holds is still managed."}
+        </span>
       </div>
-      <div className="builder-f">
-        <label className="builder-lbl" htmlFor={`grp-${name}-start`}>
-          start
-        </label>
-        <input
-          id={`grp-${name}-start`}
-          className="builder-input"
-          type="date"
-          value={spec.start ?? ""}
-          onChange={(e) => {
-            const v = e.currentTarget.value;
-            const next = { ...spec };
-            if (v === "") delete next.start;
-            else next.start = v;
-            onChange(next);
-          }}
-        />
-        <span className="muted grp-hint">First session; blank: none.</span>
-      </div>
-      {(["allocation", "max_risk"] as const).map((k) => (
-        <div className="builder-f" key={k}>
-          <label className="builder-lbl" htmlFor={`grp-${name}-${k}`}>
-            {k === "allocation" ? "allocation" : "max risk"}
+      <div className="builder-grid grp-controls">
+        <div className="builder-f">
+          <label className="builder-lbl" htmlFor={`grp-${name}-start`}>
+            start
           </label>
           <input
-            key={`${k}-${String(spec[k] ?? "")}`}
-            id={`grp-${name}-${k}`}
+            id={`grp-${name}-start`}
             className="builder-input"
-            type="number"
-            inputMode="decimal"
-            step="any"
-            min={0}
-            placeholder="none"
-            defaultValue={spec[k] ?? ""}
-            onBlur={(e) => set(k, e.currentTarget.value)}
+            type="date"
+            value={spec.start ?? ""}
+            onChange={(e) => {
+              const v = e.currentTarget.value;
+              const next = { ...spec };
+              if (v === "") delete next.start;
+              else next.start = v;
+              onChange(next);
+            }}
           />
-          <span className="muted grp-hint">Dollars, above 0; blank: none.</span>
+          <span className="muted grp-hint">First session; blank: none.</span>
         </div>
-      ))}
+        {readOnly ? (
+          <div className="builder-f grp-budget-ro">
+            <span className="builder-lbl">budget</span>
+            <span className="num">{budgetWords(info?.budget?.today)}</span>
+            {pending !== null ? (
+              <span className="grp-hint grp-pending">
+                Changes to {budgetWords(pending)} from {pending.from}.
+              </span>
+            ) : (
+              <span className="muted grp-hint">Read-only while it runs, so its record keeps the budget each session ran on.</span>
+            )}
+            <button type="button" className="btn" onClick={() => setUnlocked(true)}>
+              Change from next session
+            </button>
+          </div>
+        ) : (
+          (["allocation", "max_risk"] as const).map((k) => (
+            <div className="builder-f" key={k}>
+              <label className="builder-lbl" htmlFor={`grp-${name}-${k}`}>
+                {k === "allocation" ? "allocation" : "max risk"}
+              </label>
+              <input
+                key={`${k}-${String(spec[k] ?? "")}`}
+                id={`grp-${name}-${k}`}
+                className="builder-input"
+                type="number"
+                inputMode="decimal"
+                step="any"
+                min={0}
+                placeholder="none"
+                defaultValue={spec[k] ?? ""}
+                onBlur={(e) => set(k, e.currentTarget.value)}
+              />
+              <span className="muted grp-hint">{dated ? `Dollars; starts ${nextSession}, the next session.` : "Dollars, above 0; blank: none."}</span>
+            </div>
+          ))
+        )}
+      </div>
+      {suggested !== undefined && (
+        <p className="muted grp-hint grp-suggest">
+          {suggested.allocation !== null ? (
+            <>
+              Suggested allocation {money(suggested.allocation)}: the most its {suggested.members.length} member{suggested.members.length === 1 ? "" : "s"} can have at risk at once, from their own sizes and strikes.{" "}
+              {spec.allocation !== suggested.allocation && !readOnly && (
+                <button type="button" className="btn" onClick={() => onChange({ ...spec, allocation: suggested.allocation! })}>
+                  Use {money(suggested.allocation)}
+                </button>
+              )}
+            </>
+          ) : unknown.length > 0 ? (
+            `No suggested allocation: ${unknown.map((m) => `${m.name} (${m.why ?? "no bound"})`).join(", ")}.`
+          ) : (
+            "No suggested allocation: no member to count."
+          )}
+        </p>
+      )}
     </div>
   );
 }
 
-function GroupPage({ view, draft, edit, paper, group }: { view: GroupsEditView; draft: GroupsChange; edit: (d: GroupsChange) => void; paper: Paper; group: string }) {
+/** Each automation as the module's check says it would be after the staged change; empty with none staged. */
+type After = Map<string, GroupsEditMember>;
+
+function afterMap(check: GroupsCheckResult | null): After {
+  const a = check?.after;
+  return new Map(a ? [...a.groups.flatMap((g) => g.members), ...a.ungrouped].map((m) => [m.name, m]) : []);
+}
+
+function GroupPage({ view, draft, edit, paper, group, after }: { view: GroupsEditView; draft: GroupsChange; edit: (d: GroupsChange) => void; paper: Paper; group: string; after: After }) {
   const [adding, setAdding] = useState(false);
+  const [showRetired, setShowRetired] = useState(true);
   const none = group === NONE;
   const target: string | null = none ? null : group;
   const rows = placement(view, draft);
-  const members = rows.filter((r) => r.now === target);
+  const inGroup = rows.filter((r) => r.now === target);
+  const members = inGroup.filter((r) => !r.m.retired);
+  const retiredRows = inGroup.filter((r) => r.m.retired);
   const others = rows.filter((r) => r.now !== target);
+  const info = none ? undefined : view.groups.find((g) => g.name === group);
   const spec = none ? undefined : draft.groups[group];
   const was = none ? undefined : startDraft(view).groups[group];
   const groupNames = Object.keys(draft.groups).sort();
@@ -473,7 +580,7 @@ function GroupPage({ view, draft, edit, paper, group }: { view: GroupsEditView; 
       {spec !== undefined && (
         <Section concept="room" tag="the group" question={`Is ${group} on, from when, and with what budget?`}>
           <Card title={`group ${group}`} collapseKey={`automations-group-${group}`} className="lv-12" help={HELP}>
-            <GroupControls name={group} spec={spec} was={was} nextSession={view.next_session} onChange={(s) => edit({ ...draft, groups: { ...draft.groups, [group]: s } })} />
+            <GroupControls name={group} spec={spec} was={was} info={info} nextSession={view.next_session} onChange={(s) => edit({ ...draft, groups: { ...draft.groups, [group]: s } })} />
           </Card>
         </Section>
       )}
@@ -515,17 +622,18 @@ function GroupPage({ view, draft, edit, paper, group }: { view: GroupsEditView; 
               )}
             </div>
           )}
-          {members.length === 0 ? (
+          {inGroup.length === 0 ? (
             <p className="muted">No members yet: add one, or the group is dropped when saved.</p>
           ) : (
             <div className="table-scroll">
               <table className="data-table grp-table">
                 <thead>
                   <tr>
+                    <th aria-label="shape"></th>
                     <th>automation</th>
                     <th>underlying</th>
                     <th>its own switch</th>
-                    <th>so it is</th>
+                    <th>what happens</th>
                     <th>research verdict</th>
                     {!none && <th>share %</th>}
                     <th className="num">open</th>
@@ -535,10 +643,25 @@ function GroupPage({ view, draft, edit, paper, group }: { view: GroupsEditView; 
                   </tr>
                 </thead>
                 <tbody>
-                  {members.map((r) => {
+                  {[...members, ...(showRetired ? retiredRows : [])].map((r, i) => {
                     const staged = r.was !== r.now || r.on !== r.m.enabled;
-                    return (
-                      <tr key={r.m.name} className={staged ? "grp-staged" : undefined}>
+                    // With anything staged, every row says what the module's check says it would be.
+                    const shown = after.get(r.m.name) ?? r.m;
+                    const fold =
+                      i === members.length && retiredRows.length > 0 ? (
+                        <tr key="retired-fold" className="grp-fold">
+                          <td colSpan={none ? 10 : 11}>
+                            <button type="button" className="grp-fold-btn" aria-expanded={showRetired} onClick={() => setShowRetired(!showRetired)}>
+                              {showRetired ? "▾" : "▸"} Retired ({retiredRows.length})
+                            </button>
+                          </td>
+                        </tr>
+                      ) : null;
+                    const row = (
+                      <tr key={r.m.name} className={[staged ? "grp-staged" : "", r.m.retired ? "grp-retired" : "", shown.state === "on" || shown.state === "waiting" ? "" : "grp-dim"].filter(Boolean).join(" ") || undefined}>
+                        <td className="grp-shape">
+                          <ShapeIcon shape={r.m.shape} label={r.m.name} />
+                        </td>
                         <td>
                           <Link to={automationHref(r.m.name)} className="num">
                             {r.m.name}
@@ -547,9 +670,19 @@ function GroupPage({ view, draft, edit, paper, group }: { view: GroupsEditView; 
                         </td>
                         <td>{r.m.symbol ?? "—"}</td>
                         <td>
-                          <OwnSwitch name={r.m.name} on={r.on} staged={r.on !== r.m.enabled} onChange={(on) => flip(r, on)} />
+                          <OwnSwitch m={r.m} on={r.on} staged={r.on !== r.m.enabled} onChange={(on) => flip(r, on)} />
                         </td>
-                        <td>{staged ? <span className="chip chip-info">see Review</span> : <StateChip m={r.m} />}</td>
+                        <td>
+                          {staged && !after.has(r.m.name) ? <span className="muted">Asking the module…</span> : <Outcome m={shown} />}
+                          {r.m.retired && (
+                            <>
+                              {" "}
+                              <Link className="grp-why" to={`${automationHref(r.m.name)}#automation-retired`}>
+                                why ›
+                              </Link>
+                            </>
+                          )}
+                        </td>
                         <td>
                           <Verdict v={r.m.verdict} />
                         </td>
@@ -593,7 +726,17 @@ function GroupPage({ view, draft, edit, paper, group }: { view: GroupsEditView; 
                         </td>
                       </tr>
                     );
+                    return fold ? [fold, row] : row;
                   })}
+                  {!showRetired && retiredRows.length > 0 && (
+                    <tr className="grp-fold">
+                      <td colSpan={none ? 10 : 11}>
+                        <button type="button" className="grp-fold-btn" aria-expanded={false} onClick={() => setShowRetired(true)}>
+                          ▸ Retired ({retiredRows.length})
+                        </button>
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
@@ -648,10 +791,16 @@ function AutomationPage({ view, draft, edit, paper, group, name }: { view: Group
                 </>
               )}
             </Check>
-            <Check ok={r.on}>
+            <Check ok={r.on && !r.m.retired}>
               <span className="grp-cell">
-                Its own switch
-                <OwnSwitch name={name} on={r.on} staged={r.on !== r.m.enabled} onChange={(on) => edit({ ...draft, switches: on === r.m.enabled ? withoutKey(draft.switches, name) : { ...draft.switches, [name]: on } })} />
+                {r.m.retired ? (
+                  <>
+                    Retired: <Link to={`${automationHref(name)}#automation-retired`}>reinstate it on its own page</Link> to switch it on
+                  </>
+                ) : (
+                  "Its own switch"
+                )}
+                <OwnSwitch m={r.m} on={r.on} staged={r.on !== r.m.enabled} onChange={(on) => edit({ ...draft, switches: on === r.m.enabled ? withoutKey(draft.switches, name) : { ...draft.switches, [name]: on } })} />
               </span>
             </Check>
             <Check ok={startCome} wait={!startCome}>
@@ -706,82 +855,101 @@ function AutomationPage({ view, draft, edit, paper, group, name }: { view: Group
 // The staged-changes bar and Review
 // ---------------------------------------------------------------------------------------------------
 
-type Outcome = { kind: "idle" } | { kind: "saved"; text: string } | { kind: "error"; text: string; problems?: string[] };
+type Saved = { kind: "idle" } | { kind: "saved"; text: string } | { kind: "error"; text: string; problems?: string[] };
 
-function Review({ view, draft, edit, onClose, onSaved }: { view: GroupsEditView; draft: GroupsChange; edit: (d: GroupsChange) => void; onClose: () => void; onSaved: (text: string) => void }) {
-  const items = changeItems(view, draft);
-  const [check, setCheck] = useState<GroupsCheckResult | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [outcome, setOutcome] = useState<Outcome>({ kind: "idle" });
+/** The module's check of the staged change, asked again a moment after each edit; null while it is asked. */
+function useLiveCheck(view: GroupsEditView, draft: GroupsChange, staged: boolean): GroupsCheckResult | null {
   const send = JSON.stringify(changeToSend(view, draft));
+  const [check, setCheck] = useState<{ send: string; r: GroupsCheckResult } | null>(null);
   useEffect(() => {
+    if (!staged) return;
     let live = true;
-    setCheck(null);
-    void groupsCheck(JSON.parse(send) as GroupsChange).then((r) => live && setCheck(r));
+    const t = setTimeout(() => {
+      void groupsCheck(JSON.parse(send) as GroupsChange).then((r) => live && setCheck({ send, r }));
+    }, 300);
     return () => {
       live = false;
+      clearTimeout(t);
     };
-  }, [send]);
+  }, [send, staged]);
+  return staged && check?.send === send ? check.r : null;
+}
+
+function SaveBar({
+  view,
+  draft,
+  edit,
+  check,
+  saved,
+  onSaved,
+}: {
+  view: GroupsEditView;
+  draft: GroupsChange;
+  edit: (d: GroupsChange) => void;
+  check: GroupsCheckResult | null;
+  saved: string | null;
+  onSaved: (text: string) => void;
+}) {
+  const items = changeItems(view, draft);
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [outcome, setOutcome] = useState<Saved>({ kind: "idle" });
   const problems = check?.problems ?? [];
-  const after = check?.after ?? null;
-  const moved = after ? impact(view, after) : null;
+  const moved = check?.after ? impact(view, check.after) : null;
   const failedStarting = moved?.starts.filter((m) => m.verdict === "failed") ?? [];
+  const ready = items.length > 0 && check !== null && check.ok && problems.length === 0;
   const save = async () => {
     setBusy(true);
-    const r = await groupsSave(JSON.parse(send) as GroupsChange);
+    const r = await groupsSave(changeToSend(view, draft));
     setBusy(false);
     if (!r.ok) setOutcome({ kind: "error", text: r.problems?.length ? "Not saved as it stands:" : (r.error ?? "the save failed"), problems: r.problems });
-    else onSaved(`Saved ${items.length} change${items.length === 1 ? "" : "s"}; the previous file is backed up. The paper loop reads it on its next tick.`);
+    else {
+      setOutcome({ kind: "idle" });
+      onSaved(`Saved ${items.length} change${items.length === 1 ? "" : "s"}; the previous file is backed up. Changes start at the next session.`);
+    }
   };
+  if (items.length === 0) {
+    return (
+      <div className="grp-bar" role="status">
+        <span className="grp-bar-text">{saved ?? "Flip a switch or change a budget: it waits here until you save."}</span>
+      </div>
+    );
+  }
   return (
-    <div className="grp-review-back" role="presentation">
-      <section className="grp-review" role="dialog" aria-modal="true" aria-labelledby="grp-review-title">
-        <header className="grp-review-head">
-          <h2 id="grp-review-title">
-            Review {items.length} change{items.length === 1 ? "" : "s"} to the groups
-          </h2>
-          <span className="chip chip-ok">PAPER</span>
-          <button type="button" className="btn grp-close" aria-label="Close" onClick={onClose}>
-            ✕
-          </button>
-        </header>
-        <div className="grp-review-body">
-          <p className="muted">Each change, what it was and what it becomes, then what it does to trading by the automations module's own check. Save writes them all at once, with a backup.</p>
-          <span className="builder-lbl">the changes</span>
-          <div className="table-scroll">
-            <table className="data-table grp-table">
-              <thead>
-                <tr>
-                  <th>where</th>
-                  <th>what</th>
-                  <th>was</th>
-                  <th>becomes</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((c) => (
-                  <tr key={c.key}>
-                    <td className="grp-where">{c.where}</td>
-                    <td>{c.what}</td>
-                    <td className="muted grp-was">{c.was}</td>
-                    <td>{c.becomes}</td>
-                    <td>
-                      <button type="button" className="btn" onClick={() => edit(c.undo(draft))}>
-                        Undo
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <span className="builder-lbl">what it does to trading</span>
-          {check === null ? (
-            <p className="muted">Asking the automations module…</p>
-          ) : !check.ok ? (
-            <p className="error">{check.error ?? "the check failed"}</p>
-          ) : problems.length > 0 ? (
+    <div className="grp-bar is-staged" role="region" aria-label="Unsaved changes">
+      <div className="grp-bar-row">
+        <b>
+          {items.length} unsaved change{items.length === 1 ? "" : "s"}
+        </b>
+        <span className="grp-bar-text">
+          {items
+            .slice(0, 3)
+            .map((c) => `${c.where} ${c.what} ${c.becomes}`)
+            .join(" · ") + (items.length > 3 ? ` · and ${items.length - 3} more` : "")}
+        </span>
+        <span className="grp-spacer" />
+        <span className="grp-bar-check">
+          {check === null
+            ? "Asking the automations module…"
+            : !check.ok
+              ? (check.error ?? "the check failed")
+              : problems.length > 0
+                ? `${problems.length} problem${problems.length === 1 ? "" : "s"}: not saved as it stands`
+                : `${moved?.starts.length ?? 0} start · ${moved?.stops.length ?? 0} stop`}
+        </span>
+        <button type="button" className="btn" aria-expanded={open} onClick={() => setOpen(!open)}>
+          {open ? "Hide details" : "Details"}
+        </button>
+        <button type="button" className="btn" onClick={() => edit(startDraft(view))}>
+          Undo all
+        </button>
+        <button type="button" className="btn btn-primary" disabled={busy || !ready} onClick={() => void save()}>
+          Save
+        </button>
+      </div>
+      {(open || problems.length > 0 || outcome.kind === "error") && (
+        <div className="grp-bar-details">
+          {problems.length > 0 && (
             <div className="error" role="alert">
               Not saved as it stands:
               <ul>
@@ -790,24 +958,53 @@ function Review({ view, draft, edit, onClose, onSaved }: { view: GroupsEditView;
                 ))}
               </ul>
             </div>
-          ) : (
+          )}
+          {open && (
             <>
-              <div className="grp-impact">
-                <FliesTile title="start" value={String(moved?.starts.length ?? 0)} tone={moved && moved.starts.length > 0 ? "pos" : "dim"} foot={moved?.starts.map((m) => m.name).join(", ") || "none"} />
-                <FliesTile title="stop" value={String(moved?.stops.length ?? 0)} tone="dim" foot={moved?.stops.map((m) => m.name).join(", ") || "nothing that trades now stops"} />
+              <div className="table-scroll">
+                <table className="data-table grp-table">
+                  <thead>
+                    <tr>
+                      <th>where</th>
+                      <th>what</th>
+                      <th>was</th>
+                      <th>becomes</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {items.map((c) => (
+                      <tr key={c.key}>
+                        <td className="grp-where">{c.where}</td>
+                        <td>{c.what}</td>
+                        <td className="muted grp-was">{c.was}</td>
+                        <td>{c.becomes}</td>
+                        <td>
+                          <button type="button" className="btn" onClick={() => edit(c.undo(draft))}>
+                            Undo
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-              {(check.notes ?? []).map((n) => (
+              {moved && (
+                <p className="muted">
+                  Starts: {moved.starts.map((m) => m.name).join(", ") || "none"}. Stops: {moved.stops.map((m) => m.name).join(", ") || "nothing that trades now stops"}.
+                </p>
+              )}
+              {(check?.notes ?? []).map((n) => (
                 <p key={n} className="muted">
                   {n}
                 </p>
               ))}
-              {failedStarting.length > 0 && (
-                <p className="grp-warn">
-                  {failedStarting.length} of those starting failed their research ({failedStarting.map((m) => m.name).join(", ")}). They would trade on paper as a forward read; switch them off if that is not meant.
-                </p>
-              )}
-              <span className="chip chip-ok grp-ok">the module&apos;s check: no problems</span>
             </>
+          )}
+          {failedStarting.length > 0 && (
+            <p className="grp-warn">
+              {failedStarting.length} of those starting failed their backtest ({failedStarting.map((m) => m.name).join(", ")}). They would trade on paper as a forward read; switch them off if that is not meant.
+            </p>
           )}
           {outcome.kind === "error" && (
             <div className="error" role="alert">
@@ -822,44 +1019,7 @@ function Review({ view, draft, edit, onClose, onSaved }: { view: GroupsEditView;
             </div>
           )}
         </div>
-        <footer className="grp-review-foot">
-          <button type="button" className="btn" onClick={onClose}>
-            Back to editing
-          </button>
-          <span className="grp-spacer" />
-          <button type="button" className="btn" onClick={() => edit(startDraft(view))}>
-            Discard all
-          </button>
-          <button type="button" className="btn btn-primary" disabled={busy || items.length === 0 || check === null || !check.ok || problems.length > 0} onClick={() => void save()}>
-            Save {items.length} change{items.length === 1 ? "" : "s"}
-          </button>
-        </footer>
-      </section>
-    </div>
-  );
-}
-
-function StagedBar({ items, onDiscard, onReview, saved }: { items: ChangeItem[]; onDiscard: () => void; onReview: () => void; saved: string | null }) {
-  return (
-    <div className={items.length ? "grp-bar is-staged" : "grp-bar"} role="status">
-      <span className={items.length ? "chip chip-info" : "chip"}>
-        {items.length} change{items.length === 1 ? "" : "s"} staged
-      </span>
-      <span className="grp-bar-text">
-        {items.length
-          ? items
-              .slice(0, 3)
-              .map((c) => `${c.where} ${c.what} ${c.becomes}`)
-              .join(" · ") + (items.length > 3 ? ` · and ${items.length - 3} more` : "")
-          : (saved ?? "Changes made on any level wait here.")}
-      </span>
-      <span className="grp-spacer" />
-      <button type="button" className="btn" disabled={!items.length} onClick={onDiscard}>
-        Discard
-      </button>
-      <button type="button" className="btn btn-primary" disabled={!items.length} onClick={onReview}>
-        Review changes ›
-      </button>
+      )}
     </div>
   );
 }
@@ -873,7 +1033,6 @@ export function GroupsFlow({ view, onSaved }: { view: GroupsEditView; onSaved?: 
   const group = params.get("group") ?? undefined;
   const automation = params.get("automation") ?? undefined;
   const [draft, setDraft] = useState<GroupsChange>(() => startDraft(view));
-  const [reviewing, setReviewing] = useState(false);
   const [saved, setSaved] = useState<string | null>(null);
   const paper = usePaper();
   useEffect(() => setDraft(startDraft(view)), [view]);
@@ -882,24 +1041,22 @@ export function GroupsFlow({ view, onSaved }: { view: GroupsEditView; onSaved?: 
     setSaved(null);
   };
   const items = changeItems(view, draft);
+  const check = useLiveCheck(view, draft, items.length > 0);
   const props = { view, draft, edit, paper };
   return (
     <div className="pf-layout grp-flow">
-      {group === undefined ? <GroupsIndex {...props} /> : automation === undefined ? <GroupPage {...props} group={group} /> : <AutomationPage {...props} group={group} name={automation} />}
-      <StagedBar items={items} saved={saved} onDiscard={() => edit(startDraft(view))} onReview={() => setReviewing(true)} />
-      {reviewing && (
-        <Review
-          view={view}
-          draft={draft}
-          edit={edit}
-          onClose={() => setReviewing(false)}
-          onSaved={(text) => {
-            setReviewing(false);
-            setSaved(text);
-            onSaved?.();
-          }}
-        />
-      )}
+      {group === undefined ? <GroupsIndex {...props} /> : automation === undefined ? <GroupPage {...props} group={group} after={afterMap(check)} /> : <AutomationPage {...props} group={group} name={automation} />}
+      <SaveBar
+        view={view}
+        draft={draft}
+        edit={edit}
+        check={check}
+        saved={saved}
+        onSaved={(text) => {
+          setSaved(text);
+          onSaved?.();
+        }}
+      />
     </div>
   );
 }
