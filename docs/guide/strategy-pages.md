@@ -19,6 +19,8 @@ Open a module and the rail on the left lists its tabs, grouped under today, tabl
 | `changes` | Every change under test, one row each: an arm against its control, an advisor experiment against its base, or an idea or setting declared from the Builder. Each shows the gap per trade with its interval, a reading (ready, leaning, too early, waiting on its test, closed) and the sessions still to a decision. |
 | `help` | The module's rule in words. |
 
+Calendars and contango give each arm its own page, `/<module>/arm/<name>`, opened from the arm's name on the `arms` tab. It reads, in order: against control (its row from `changes`), what it did (its card of figures and per-trade spread, and its running net beside the arm it is read against, so a Friday arm beside `friday:control`), and its analysis. A control's page says it is the control. Their `performance` tabs keep the combined chart and point to these pages for each arm's card.
+
 Two controls sit in the page header of most modules. The simple and detail switch at the top right chooses between a shorter and a full set of tabs, where a module has made that choice. Paper and Live, where a module has both, switch the ledger being read.
 
 Here is the MEIC `today` tab as a worked example.

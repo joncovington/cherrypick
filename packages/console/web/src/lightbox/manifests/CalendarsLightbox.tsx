@@ -1,4 +1,6 @@
 import { ChangesSlide } from "../../components/changes/ChangesSlide";
+import { ModuleArmPage } from "../../components/armpage/ModuleArmPage";
+import { useParams } from "react-router-dom";
 import { AnalysisSlide } from "../../components/analysis/AnalysisSlide";
 import { useCalendars, useCalendarsPolicies } from "../../lib/api";
 import { PaperLiveBadge } from "../../components/shell/PaperLiveBadge";
@@ -36,6 +38,8 @@ const CALENDARS_LABEL = Object.fromEntries(CALENDARS_SLIDES.map((s) => [s.id, s.
  * nothing on the surface opens an overlay. No mode toggle -- structural: no live loop, no live store.
  */
 export function CalendarsLightbox({ slide }: { slide: string }) {
+  // `/<module>/arm/<name>`: the arms tab is that arm's page.
+  const armPage = useParams()["name"] ?? null;
   const { data, isLoading, isError, dataUpdatedAt } = useCalendars();
   const { data: policies } = useCalendarsPolicies();
   const loopState =
@@ -97,19 +101,22 @@ export function CalendarsLightbox({ slide }: { slide: string }) {
     {
       id: "arms",
       label: CALENDARS_LABEL.arms,
-      render: () => (
-        <>
-          <div className="pf-layout">
-            <Section concept="edge" tag="the arms" question="How did each arm do?">
-              <BookComparison data={data} updatedAt={dataUpdatedAt} />
-            </Section>
-          </div>
-          <BookArmGuide module="calendars" />
-        </>
-      ),
+      render: () =>
+        armPage !== null ? (
+          <ModuleArmPage module="calendars" name={armPage} />
+        ) : (
+          <>
+            <div className="pf-layout">
+              <Section concept="edge" tag="the arms" question="How did each arm do?">
+                <BookComparison data={data} updatedAt={dataUpdatedAt} />
+              </Section>
+            </div>
+            <BookArmGuide module="calendars" />
+          </>
+        ),
     },
     { id: "policies", label: CALENDARS_LABEL.policies, render: () => <PoliciesTab /> },
-    { id: "performance", label: CALENDARS_LABEL.performance, render: () => <PerformanceSlide module="calendars" pairs={false} /> },
+    { id: "performance", label: CALENDARS_LABEL.performance, render: () => <PerformanceSlide module="calendars" pairs={false} armCards={false} /> },
     { id: "analysis", label: CALENDARS_LABEL.analysis, render: () => <AnalysisSlide module="calendars" /> },
     { id: "advisor", label: CALENDARS_LABEL.advisor, render: () => <AdvisorSlide module="calendars" /> },
     { id: "changes", label: CALENDARS_LABEL.changes, render: () => <ChangesSlide module="calendars" /> },

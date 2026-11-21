@@ -1,4 +1,6 @@
 import type { CalendarsPayload, CalendarsPosition } from "@console/shared";
+import { Link } from "react-router-dom";
+import { armHref } from "../../components/armpage/ModuleArmPage";
 import { Card, DataCard, fmtMoney, fmtNum, fmtPct, PnlCell, sortRows, useSort } from "../../components/DataTable";
 import { HelpSection, type CardHelpContent } from "../../components/CardHelp";
 import type { SortOption } from "../../components/FilterSort";
@@ -403,7 +405,9 @@ export function BookComparison({ data, updatedAt }: { data: CalendarsPayload | u
       {arms.map((b) => (
         <tr key={`${b.arm}-${b.structure}`}>
           <td>
-            <span className="mono">{b.arm}</span>
+            <Link className="mono" to={armHref("calendars", b.arm)}>
+              {b.arm}
+            </Link>
           </td>
           <td>
             <span className="mono">{b.structure}</span>
