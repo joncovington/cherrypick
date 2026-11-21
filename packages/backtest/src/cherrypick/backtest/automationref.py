@@ -6,8 +6,9 @@ The automation page sets each paper trade and the paper running net against this
 - **The usual range of a trade's net**: the 10th, 25th, 50th, 75th and 90th percentiles of the run's
   per-trade net at the verdict kind (the suite's slippage model, as paper's P&L is). The usual range is
   the 10th to 90th, so one trade in five falls outside it by chance.
-- **How often it entered**: the share of the run's sessions whose last reason was `entered`, and each
-  other reason's share, from the driver's own per-session reasons.
+- **How often it entered**: each last reason's count (`reasons`, short runs included), the share of
+  the run's sessions whose last reason was `entered`, and each other reason's share, from the driver's
+  own per-session reasons.
 - **How its trades ended**: each exit kind's share of the trades.
 - **The band of running-net paths** over the next `horizon` trades: the 10th, 50th and 90th percentile
   of the running net after k resampled trades, k = 1..horizon. The resampling is the suite's stationary
@@ -111,6 +112,7 @@ def reference(
         "generated_at": doc.get("generated_at"),
         "trades": len(trades),
         "sessions": sessions,
+        "reasons": reasons,
     }
     if len(trades) < MIN_TRADES:
         return {**head, "insufficient": True, "min_trades": MIN_TRADES}

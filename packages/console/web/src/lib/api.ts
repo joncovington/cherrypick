@@ -38,7 +38,9 @@ import type {
   IdeaSearches,
   BuilderSaveResult,
   BuilderReferenceResult,
+  AutomationEntries,
   AutomationReading,
+  AutomationsEntries,
   BuilderSchemaResult,
   BuilderPayoff,
   BuilderStrategyResult,
@@ -1646,6 +1648,26 @@ export function useBuilderRunCard(name: string, run: string) {
 }
 
 /** Each arm's closed trades, net and drawdown, and the arms stacked. */
+/** Every automation's entry funnel from the session register (the automations package's). */
+export function useAutomationsEntries() {
+  return useQuery<AutomationsEntries>({
+    queryKey: ["automations-entries"],
+    queryFn: () => getJson<AutomationsEntries>("/api/automations/entries"),
+    staleTime: 30_000,
+    refetchInterval: 120_000,
+  });
+}
+
+/** One automation's entry funnel, and its pinned run's through the same steps beside it. */
+export function useAutomationEntries(name: string) {
+  return useQuery<AutomationEntries>({
+    queryKey: ["automation-entries", name],
+    queryFn: () => getJson<AutomationEntries>(`/api/automations/automation/entries?name=${encodeURIComponent(name)}`),
+    staleTime: 30_000,
+    refetchInterval: 120_000,
+  });
+}
+
 /** One automation's paper record against its pinned Builder run (the backtest package's reading). */
 export function useAutomationReading(name: string) {
   return useQuery<AutomationReading>({

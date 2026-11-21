@@ -753,6 +753,8 @@ export interface AutomationReference {
   last: string | null;
   trades: number;
   sessions: number | null;
+  /** Each last reason's count over the run's sessions (`entered` among them). */
+  reasons?: Record<string, number>;
   insufficient: boolean;
   min_trades?: number;
   mean?: number;
@@ -805,4 +807,90 @@ export interface AutomationReading {
     };
     sample?: { needed: number | null; basis: "declared" | "computed" | null; have: number };
   } | null;
+}
+
+/** A step of the automation's decision, in the order the engine takes them (`automations.entries`). */
+export type EntryStep = "due" | "data" | "trigger" | "limits" | "gates" | "structure" | "size";
+
+export interface EntryCause {
+  reason: string;
+  count: number;
+  share: number | null;
+}
+
+/** One step: the sessions that reached it, those whose last try stopped there by cause, and those past it. */
+export interface EntryFunnelStep {
+  step: EntryStep;
+  label: string;
+  reached: number;
+  reached_share: number | null;
+  stopped: number;
+  /** The sessions past it: the last step's is what entered. */
+  passed: number;
+  passed_share: number | null;
+  causes: EntryCause[];
+}
+
+/** The sessions an automation was due, decided ones only; `pending` its windows still open. */
+export interface EntryFunnel {
+  due: number;
+  pending: number;
+  entered: number;
+  missed: number;
+  rate: number | null;
+  steps: EntryFunnelStep[];
+  /** The step that lost the most sessions (the earlier on a tie); null when none did. */
+  most_lost: { step: EntryStep; label: string; stopped: number; share: number | null } | null;
+}
+
+/** `GET /api/automations/entries`: every automation's paper funnel (`automations cli entries`). */
+export interface AutomationsEntriesRow {
+  name: string;
+  group: string | null;
+  symbol: string | null;
+  enabled: boolean;
+  /** False for one the register names that the config no longer does. */
+  configured: boolean;
+  first: string | null;
+  last: string | null;
+  funnel: EntryFunnel;
+}
+
+export interface AutomationsEntries {
+  automations: AutomationsEntriesRow[];
+  error: string | null;
+}
+
+/** One cause beside the pinned run's: its share of paper's due sessions and of the run's. */
+export interface EntryCauseRow {
+  reason: string;
+  step: EntryStep;
+  paper: number | null;
+  run: number | null;
+}
+
+export interface EntryDay {
+  session: string;
+  outcome: "entered" | "missed" | "pending";
+  reason: string | null;
+  step: EntryStep | null;
+}
+
+/**
+ * `GET /api/automations/automation/entries?name=`: one automation's funnel from its session register,
+ * and its pinned run's through the same steps beside it (both computed by the automations package).
+ * `run` is null with nothing pinned or the run withheld (licensed while licensed results are hidden).
+ */
+export interface AutomationEntries {
+  name: string;
+  pinned: string | null;
+  withheld: boolean;
+  error: string | null;
+  reference: { run: string; licensed: boolean; first: string | null; last: string | null; sessions: number | null } | null;
+  first: string | null;
+  last: string | null;
+  paper: EntryFunnel | null;
+  run: EntryFunnel | null;
+  causes: EntryCauseRow[];
+  days: EntryDay[];
 }

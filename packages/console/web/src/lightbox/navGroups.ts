@@ -281,6 +281,8 @@ export const AUTOMATIONS_SLIDES = [
   { id: "positions", label: "positions" },
   { id: "history", label: "history" },
   { id: "decisions", label: "decisions" },
+  // How often each automation enters, and where the sessions it did not enter stopped.
+  { id: "entries", label: "entries" },
   { id: "performance", label: "performance" },
   { id: "costs", label: "costs" },
   { id: "guide", label: "help" },
@@ -607,7 +609,7 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
       { label: "today", ids: ["summary"] },
       { label: "set up", ids: ["builder", "groups"] },
       { label: "tables", ids: ["positions", "history"] },
-      { label: "evidence", ids: ["decisions"] },
+      { label: "evidence", ids: ["decisions", "entries"] },
       { label: "study", ids: ["performance", "costs"] },
       { label: "help", ids: ["guide"] },
     ],

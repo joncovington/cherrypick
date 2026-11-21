@@ -134,7 +134,11 @@ alone):
     (`/api/automations/automation/reading`, `readers/automationReading.ts`) passes through the
     backtest package's `read automation-reading` for the pinned run, with the forward rule's
     `min_obs` as the declared sample; the page only scales the figures onto a strip and a chart. A
-    licensed run's figures are withheld while `backtestResultsOn` is false.
+    licensed run's figures are withheld while `backtestResultsOn` is false. Its entries
+    (`/api/automations/automation/entries`, `readers/automationEntries.ts`) are the automations
+    package's `cli entries --name`, with the pinned run's `reasons` (from that reading, so withheld
+    with it) passed as `--run-reasons` so the run is cut by the same steps; the `entries` tab
+    (`/api/automations/entries`) is `cli entries` for every automation.
   - **The Builder's form reads the module's schema and "Today, live"; neither writes.** The Builder
     is Automations' `builder` tab (`/builder` redirects there; `g u` is its tab chord,
     `navLinks.TAB_SHORTCUTS`). The form's choices are `cli builder-schema`
