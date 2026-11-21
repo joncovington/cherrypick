@@ -18,8 +18,11 @@ Held to expiry, never rolled: a close at or over the strike calls the shares awa
 expires and the next one is sold the next session. After a call-away or an expired put the next put
 is sold the next session. `vendor` sells the put at 40 delta on the monthly 21-45 days out nearest
 30; `vendor-stop` is the same and buys the put back when the stock's close is 15% under the entry
-close, selling a new put once the close is back at the exit close; `ours` sells the put at 16 delta
-on the monthly 45-60 days out and buys it back at half its credit.
+close, selling a new put once the close is back at the exit close; `itm1` sells, on the same monthly,
+the lowest listed put strike above the entry close (one strike in the money), held to expiry;
+`m45-40` is the 40-delta put on the monthly 45-60 days out held to expiry and `m45-40-tp50` the same
+bought back at half its credit. `ours` (16 delta, 45-60
+days, bought back at half its credit) is run and reported beside, never judged.
 
 **Rows tile each name's timeline.** A row runs from the end of the previous cycle (the first row from
 the arm's first put) to the end of this one, so it holds the idle days before its put. Its wheel
@@ -67,7 +70,7 @@ REPLAY_CORRECTIONS = ()
 #: a return on the capital both sides hold. The difference already carries the bill (the wheel's cash
 #: earns it), so a row's buying power is 0 and the capital bar's own bill term is nil. The delta bar
 #: is not applicable: holding the shares is the delta comparison. 2.4 sits above Holm's first
-#: threshold for three arms (about 2.13).
+#: threshold for five judged arms (about 2.33).
 RULE = {
     "t_bar": 2.4,
     "min_n": 150,
@@ -90,6 +93,9 @@ SPEC = {
     "arms": {
         "vendor": {"delta": 0.40, "dte": (21, 45), "target": 30, "manage": "hold"},
         "vendor-stop": {"delta": 0.40, "dte": (21, 45), "target": 30, "manage": "stop", "stop": 0.15},
+        "itm1": {"strike": "itm1", "dte": (21, 45), "target": 30, "manage": "hold"},
+        "m45-40": {"delta": 0.40, "dte": (45, 60), "target": None, "manage": "hold"},
+        "m45-40-tp50": {"delta": 0.40, "dte": (45, 60), "target": None, "manage": "tp50"},
         "ours": {"delta": 0.16, "dte": (45, 60), "target": None, "manage": "tp50"},
     },
     "call": {"band": (30, 45), "reach": (15, 66), "min_bid_pct_of_spot": 0.01},
@@ -104,6 +110,9 @@ SPEC = {
     "lead_days": 66,
 }
 ARMS = tuple(SPEC["arms"])
+#: The judged arms (Holm across five); `ours` is run and reported beside, never judged.
+JUDGED = ("vendor", "vendor-stop", "itm1", "m45-40", "m45-40-tp50")
+REPORTED_ARMS = tuple(a for a in ARMS if a not in JUDGED)
 #: Funds are exempt from the report rule and judged with the stocks; reported apart.
 FUNDS = frozenset(
     {
@@ -261,6 +270,14 @@ def cost_strike(chain: Chain, cost: float) -> dict | None:
     for k in sorted(chain.by["C"]):
         if k >= cost - EPS and legbars.two_sided(chain.by["C"][k]):
             return chain.by["C"][k]
+    return None
+
+
+def itm_strike(chain: Chain, close: float) -> dict | None:
+    """The lowest listed put strike above `close` that carries a two-sided quote: one strike in the money."""
+    for k in sorted(chain.by["P"]):
+        if k > close + EPS and legbars.two_sided(chain.by["P"][k]):
+            return chain.by["P"][k]
     return None
 
 
@@ -425,7 +442,10 @@ def run_arm(nd: NameData, arm: str, rate, tick=None) -> dict:
         if not atm_spread_ok(ch):
             stats["atm_spread"] += 1
             return
-        q = ch.nearest("P", spec["delta"])
+        if spec.get("strike") == "itm1":
+            q = itm_strike(ch, nd.close(d))
+        else:
+            q = ch.nearest("P", spec["delta"])
         if q is None:
             stats["no_strike"] += 1
             return
@@ -768,6 +788,24 @@ def report_beside(by_arm: dict[str, list[dict]], tables: dict) -> dict:
     return out
 
 
+def expire_vs_tp50(tables: dict) -> dict:
+    """Context, never judged: per name, `m45-40`'s measure less `m45-40-tp50`'s (% of capital a year),
+    the user's question of letting the 40-delta put expire against buying it back at half its credit."""
+    per = {}
+    for sym, arms in tables.items():
+        a, b = arms.get("m45-40", {}), arms.get("m45-40-tp50", {})
+        if a.get("rows") and b.get("rows"):
+            per[sym] = a["diff_pct_per_year"] - b["diff_pct_per_year"]
+    vals = list(per.values())
+    return {
+        "per_name": per,
+        "names": len(vals),
+        "mean": statistics.fmean(vals) if vals else None,
+        "median": statistics.median(vals) if vals else None,
+        "names_expire_ahead": sum(1 for v in vals if v > 0),
+    }
+
+
 # ------------------------------------------------------------------------------------------------
 # The stores and the commands.
 
@@ -962,10 +1000,11 @@ def study(inputs: Inputs, conn, hist, names: list[str], reports: dict, rep) -> d
             results[sym][arm] = res
         nd._chains.clear()
     by_arm = {a: [r for s in results for r in results[s][a]["rows"]] for a in ARMS}
-    block = judge(by_arm)
+    block = judge({a: by_arm[a] for a in JUDGED})
     tables = name_table(results)
     block["per_name"] = tables
     block["reported"] = report_beside(by_arm, tables)
+    block["expire_vs_half_credit"] = expire_vs_tp50(tables)
     block["coverage"] = cover
     block["rows_below_coverage_floor"] = {k: v for k, v in dropped.items() if v}
     return block

@@ -35,7 +35,12 @@ def test_the_declaration_is_what_the_plan_states():
     assert m.RULE["splits"] == ["2023-10-01"] and m.RULE["delta"] is False and m.RULE["t_bar"] == 2.4
     assert (m.RULE["min_n"], m.RULE["holdout_min_n"]) == (150, 52) and m.RULE["tail"]["seed"] == 101
     assert m.HALF_RULE == {"time_split": "2020-06-01", "name_halves": True}
-    assert m.ARMS == ("vendor", "vendor-stop", "ours")
+    assert m.ARMS == ("vendor", "vendor-stop", "itm1", "m45-40", "m45-40-tp50", "ours")
+    assert m.JUDGED == ("vendor", "vendor-stop", "itm1", "m45-40", "m45-40-tp50")
+    assert m.REPORTED_ARMS == ("ours",)
+    assert m.SPEC["arms"]["m45-40-tp50"] == {"delta": 0.40, "dte": (45, 60), "target": None, "manage": "tp50"}
+    assert m.SPEC["arms"]["itm1"] == {"strike": "itm1", "dte": (21, 45), "target": 30, "manage": "hold"}
+    assert m.SPEC["arms"]["m45-40"] == {"delta": 0.40, "dte": (45, 60), "target": None, "manage": "hold"}
     arms = m.SPEC["arms"]
     assert (arms["vendor"]["delta"], arms["vendor"]["dte"], arms["vendor"]["target"]) == (0.40, (21, 45), 30)
     assert arms["vendor-stop"]["stop"] == 0.15 and arms["vendor-stop"]["delta"] == 0.40
@@ -259,6 +264,21 @@ def test_the_ours_arm_closes_the_put_at_half_its_credit(monkeypatch):
     assert first["how"] == "tp50" and first["wheel"] > 0
 
 
+def test_the_itm1_put_is_the_lowest_listed_strike_above_the_close_held_to_expiry(monkeypatch):
+    monkeypatch.setitem(m.SPEC, "entry_start", "2025-01-02")
+    ch = _chain(date(2025, 2, 3), date(2025, 3, 21), 100.4)
+    assert m.itm_strike(ch, 100.4)["strike"] == 101.0
+    assert m.itm_strike(ch, 100.0)["strike"] == 101.0  # a strike at the close is not above it
+    closes = _path([(date(2025, 1, 2), 100.0)], date(2025, 6, 30))
+    nd, res = _arm(closes, "itm1")
+    # An in-the-money put is assigned on a flat market, and never bought back early.
+    assert res["stats"]["assigned"] >= 1 and res["stats"].get("tp50", 0) == 0
+    _tiles(res)
+    # 40 delta held to expiry on the 45-60 day monthly: the same entries as the plan states.
+    _, long = _arm(closes, "m45-40")
+    assert long["stats"].get("tp50", 0) == 0 and long["stats"]["puts"] >= 1
+
+
 def test_a_half_day_takes_no_entry(monkeypatch):
     monkeypatch.setitem(m.SPEC, "entry_start", "2025-11-28")
     early = date(2025, 11, 28)
@@ -368,7 +388,7 @@ def test_a_design_pass_that_is_negative_in_one_half_fails_and_the_holdout_stays_
 
 
 def test_too_few_design_weeks_is_no_verdict():
-    block = m.judge({a: _rows(0.01, first=date(2022, 1, 3), weeks=60) for a in m.ARMS})
+    block = m.judge({a: _rows(0.01, first=date(2022, 1, 3), weeks=60) for a in m.JUDGED})
     assert set(block["verdict"].values()) == {ck.NO_VERDICT}
     assert kit_rule.zero_trade_arms(block) == []
 
@@ -377,6 +397,22 @@ def test_the_halves_split_design_rows_by_date_and_by_name():
     h = m.halves(_rows(0.01))
     assert set(h["rows"]) == {"time_before", "time_from", "name_0", "name_1"} and h["ok"] is True
     assert h["rows"]["time_before"] + h["rows"]["time_from"] == h["rows"]["name_0"] + h["rows"]["name_1"]
+
+
+def test_the_expire_against_half_credit_context_is_the_per_name_difference_of_the_two_arms():
+    tables = {
+        "A": {
+            "m45-40": {"rows": 3, "diff_pct_per_year": 2.0},
+            "m45-40-tp50": {"rows": 4, "diff_pct_per_year": 0.5},
+        },
+        "B": {
+            "m45-40": {"rows": 3, "diff_pct_per_year": -1.0},
+            "m45-40-tp50": {"rows": 4, "diff_pct_per_year": 0.5},
+        },
+        "C": {"m45-40": {"rows": 0}},
+    }
+    out = m.expire_vs_tp50(tables)
+    assert out["per_name"] == {"A": 1.5, "B": -1.5} and out["names_expire_ahead"] == 1 and out["names"] == 2
 
 
 def test_the_name_table_counts_stuck_shares_and_the_measure_in_percent_of_capital_a_year():

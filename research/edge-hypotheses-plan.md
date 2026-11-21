@@ -10220,7 +10220,11 @@ holding, worst on high-momentum names), the 10-23 income confirmation (no tested
   worth little exactly when the shares are furthest under it, so the wheel's worst stretches are the
   ones it earns least in; and on a strong stock a held share simply keeps what the wheel caps. A pass
   would be a surprise. What this item adds to the parts is the **whole cycle**: the idle days, the
-  waits for a bid, and how long shares sit stuck.
+  waits for a bid, and how long shares sit stuck. **The 40-delta put and how it ends:** the 10-19
+  sweep found the 40-delta put on the 45-60 day monthly, held to expiry, at -0.84% a year against the
+  delta-equivalent stock, and the same put closed at half its credit at +0.03; the half-credit cells
+  are the least trustworthy of that sweep, which is one reason to test the choice again on this data,
+  with both endings as judged arms and their paired difference reported.
 - **Look-alikes retested:** 25 (no verdict), 70 and 76 (failed), 92 (failed), the 10-19 sweep, the
   covered-call delta study and the 10-23 confirmation. A failure here says the cycle adds nothing to
   its parts; it does not re-read them.
@@ -10230,8 +10234,16 @@ holding, worst on high-momentum names), the 10-23 income confirmation (no tested
   - **`vendor-stop`:** the same, and the open put is bought back when the stock's close is at or under
     85% of its close on the day the put was sold; the next put is sold once the close is back at or
     above the close it was bought back on, then under the entry rules below.
-  - **`ours`:** a cash-secured put at 16 delta on the standard monthly 45 to 60 days out, bought back
-    at half the credit, as the short-put list's `m45-tp50` and item 25 do.
+  - **`itm1`:** the user's preference for a put a little in the money. On the same monthly as `vendor`,
+    the lowest listed strike above the close of the day it is sold (one strike in the money), with a
+    two-sided quote, held to expiry or assignment.
+  - **`m45-40`:** a cash-secured put at 40 delta on the standard monthly 45 to 60 days out, held to
+    expiry or assignment.
+  - **`m45-40-tp50`:** the same put bought back at half its credit; the next put is sold the next
+    session under the entry rules. With `m45-40` it asks whether to let the put expire or close it.
+  - **`ours` (reported beside, never judged):** a cash-secured put at 16 delta on the monthly 45 to 60
+    days out, bought back at half the credit, as the short-put list's `m45-tp50` and item 25 do.
+  - **Judged: `vendor`, `vendor-stop`, `itm1`, `m45-40`, `m45-40-tp50`**, Holm across the five.
   - **The calls,** the same in every arm: after an assignment, each session with no call open, one
     call at the lowest listed strike at or above the **effective cost** (the assignment strike less
     every premium banked since, per share: the assigned put's credit and each call's, at the fill, gross
@@ -10318,14 +10330,16 @@ holding, worst on high-momentum names), the 10-23 income confirmation (no tested
   the sessions spent waiting for a bid, and the stop's count.
 - **The rule (`RULE`, with `HALF_RULE`), per arm:**
   - **Design (before 2023-10-01):** the weeks' mean difference above zero with a one-sided t of 2.4 or
-    more (above Holm's first bar for three arms, about 2.1, so one bar serves the Holm across the
-    three judged arms), the kit's tail bar (the 99th-percentile drawdown over a year of weeks
+    more (above Holm's first bar for five arms, about 2.33, so one bar serves the Holm across the
+    five judged arms), the kit's tail bar (the 99th-percentile drawdown over a year of weeks
     smaller than a year's mean), at least 150 design weeks, and **positive in each design time-half
     (cut 2020-06-01) and each name-half** (`core.robustness.name_half`).
   - **Holdout, read only after a design pass:** the weeks' mean difference above zero, the tail bar
     on every week read, at least 52 holdout weeks.
   - An arm that fails any design part is a fail and its holdout is not read.
-- **Reported, never judged:** per name and arm the measure above; funds and stocks apart; each year;
+- **Reported, never judged:** the `ours` arm in full; per name, `m45-40`'s measure less
+  `m45-40-tp50`'s (let the put expire or close it at half credit), with its mean, median and the
+  count of names where expiring is ahead; per name and arm the measure above; funds and stocks apart; each year;
   the design and the holdout apart; the delta-equivalent comparison; the difference at mid (the
   slippage added back); the rows below the coverage floor; skips by reason (earnings, unknown
   report, half day, split, spread, no chain, no expiry, waiting for a bid).
@@ -10343,7 +10357,7 @@ holding, worst on high-momentum names), the 10-23 income confirmation (no tested
   - *The label's hindsight:* declared; the point-in-time spread check and the liquidity of the store's
     own quotes (two-sided floor) stand in for it; a pass reads as an upper bound.
   - *Fills and fees:* the verdict is at the concession above; mid is reported beside it.
-  - *Three arms, one lucky:* t 2.4 against Holm's 2.1.
+  - *Five arms, one lucky:* t 2.4 against Holm's 2.33.
   - *Early assignment and the forfeited dividend:* not modelled, so a pass is read as an upper bound
     for the wheel.
 - **Declared limits (B11):** end-of-day quotes only, so a sale is at a close and assignment at an
