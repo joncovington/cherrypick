@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { meicArmHref } from "./MeicArmPage";
 import { Link } from "react-router-dom";
 import type { TradingMode } from "@console/shared";
 import { AttemptTimeline, useAttempts, type ArmRailEntry, type AttemptsScope } from "../../components/Attempts";
@@ -193,6 +194,9 @@ function ArmDialog({
                 entered {t.entered} · stopped {t.stopped} · open {t.open}
               </span>
               {t.otherScale ? <span className="chip chip-warn">sampling arm: another scale</span> : null}
+              <Link className="chip" to={meicArmHref(t.arm)}>
+                its page ›
+              </Link>
             </>
           }
           tabs={tabs}

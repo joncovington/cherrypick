@@ -149,6 +149,10 @@ alone):
     shared performance slide, which then points to the tab instead of drawing the advised pairs.
     MEIC also passes `armCards={false}`: its arms are compared in its own arm comparison table,
     whose `vs control` column is that module's changes rows by arm tag.
+  - **A MEIC arm's page** (`/meic/arm/<name>`, framed as the arms tab, `pages/Meic/MeicArmPage.tsx`)
+    composes MEIC's own tabs with the arm fixed (changes slice, `PerformanceSlide`, attempts, costs,
+    regime cuts, analysis, history), so it reads nothing of its own. The header's arm picker moves
+    between arms' pages there.
   - **The Builder's form reads the module's schema and "Today, live"; neither writes.** The Builder
     is Automations' `builder` tab (`/builder` redirects there; `g u` is its tab chord,
     `navLinks.TAB_SHORTCUTS`). The form's choices are `cli builder-schema`

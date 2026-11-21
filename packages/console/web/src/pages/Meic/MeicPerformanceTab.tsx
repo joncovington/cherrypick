@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import type { ChangeRow, TradingMode } from "@console/shared";
 import { READING_CHIP, gapWords, readingWords } from "../../components/changes/ChangesSlide";
 import { useModuleChanges } from "../../lib/api";
+import { meicArmHref } from "./MeicArmPage";
 import { Card, PnlCell, SortTh, fmtMoney, fmtNum, fmtPct, sortRows, useSort } from "../../components/DataTable";
 import { HelpSection, HelpWarn, type CardHelpContent } from "../../components/CardHelp";
 import { SeriesLegend, SERIES_COLORS } from "../../components/Charts";
@@ -335,7 +336,7 @@ export function MeicPerformanceTab({
                   sortRows(data?.arms ?? [], armSort, ARM_SORTS).map((p) => (
                     <tr key={p.arm}>
                       <td>
-                        <Link to={`/meic/arms?arm=${encodeURIComponent(p.arm)}`}>{p.arm}</Link>
+                        <Link to={meicArmHref(p.arm)}>{p.arm}</Link>
                       </td>
                       <td>{p.trades}</td>
                       <td className="muted">{p.sessions}</td>
