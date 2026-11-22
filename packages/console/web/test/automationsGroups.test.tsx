@@ -3,7 +3,7 @@ import { renderToString } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { GroupsEditMember, GroupsEditView } from "@console/shared";
-import { changeItems, changeToSend, FieldTip, GROUP_TIPS, GroupsFlow, impact, moveTo, outcomeWords, placement, removeFromGroup, emptyGroups, startDraft, stateWords } from "../src/pages/Automations/AutomationsGroups";
+import { addable, changeItems, changeToSend, FieldTip, GROUP_TIPS, GroupsFlow, impact, moveTo, outcomeWords, placement, removeFromGroup, emptyGroups, startDraft, stateWords } from "../src/pages/Automations/AutomationsGroups";
 import { RetiredSection, retiredWords } from "../src/pages/Automations/RetiredSection";
 import { AUTOMATIONS_SLIDES } from "../src/lightbox/navGroups";
 
@@ -259,6 +259,17 @@ describe("removing an automation from its group", () => {
     const d = startDraft(view);
     const r = placement(view, d).find((x) => x.m.name === "iron-fly-1000")!;
     expect(removeFromGroup(d, r).switches).toEqual({});
+  });
+});
+
+describe("the add list", () => {
+  it("offers the automations placed elsewhere, never a retired one", () => {
+    const view: GroupsEditView = {
+      ...VIEW,
+      ungrouped: [m("iron-fly-1000", { enabled: false, state: "retired", retired: "2026-11-21" }), m("orb-put-spread", { state: "off_own", enabled: false })],
+    };
+    const rows = placement(view, startDraft(view));
+    expect(addable(rows, "ensemble").map((r) => r.m.name)).toEqual(["orb-put-spread"]);
   });
 });
 

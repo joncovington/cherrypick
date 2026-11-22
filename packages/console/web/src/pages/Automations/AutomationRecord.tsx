@@ -12,9 +12,11 @@ import { blockWords } from "../Builder/specWords";
 import { TradeShape } from "../Builder/TradeShape";
 import { ClosedStructures, OpenTable } from "./AutomationsPages";
 import { WorkingSection } from "./AutomationWorking";
+import { DidCards } from "./AutomationDid";
 import { EntriesSection } from "./AutomationEntries";
 import { ChangesSection } from "../../components/changes/ChangesSlide";
 import { SessionsAheadSection } from "../../components/armpage/SessionsAhead";
+import { ConditionsSection } from "./AutomationConditions";
 import { RetiredSection } from "./RetiredSection";
 
 /**
@@ -123,6 +125,7 @@ const JUMPS = [
   { id: "automation-record", label: "What it did" },
   { id: "automation-entries", label: "Entries" },
   { id: "automation-ahead", label: "Sessions ahead" },
+  { id: "automation-conditions", label: "Today's conditions" },
   { id: "automation-changes", label: "Changes" },
   { id: "automation-decisions", label: "Decisions" },
   { id: "automation-retired", label: "Retired" },
@@ -191,6 +194,7 @@ export function AutomationRecordPage({ name }: { name: string }) {
         <FliesTile title="drawdown" value={line === undefined || line.trades === 0 ? "—" : fmtMoney(-line.drawdown)} tone={line !== undefined && line.drawdown > 0 ? "neg" : "dim"} foot="largest peak-to-trough fall of the running net" />
         <FliesTile title="closed trades" value={String(line?.trades ?? 0)} tone="dim" foot={line === undefined || line.trades === 0 ? "none closed yet" : `${String(line.wins)} with a net above zero`} />
         <FliesTile title="open now" value={String(open)} tone="dim" foot="held to the posted close or to its exit" />
+        <DidCards name={name} line={line} />
         <OpenTable positions={positions} loading={book.isLoading} />
         <ClosedStructures arm={name} />
         <p className="muted lv-12">
@@ -201,6 +205,7 @@ export function AutomationRecordPage({ name }: { name: string }) {
       </Section>
       <EntriesSection name={name} />
       <SessionsAheadSection module="automations" arm={name} id="automation-ahead" />
+      <ConditionsSection name={name} />
       <ChangesSection module="automations" arm={name} id="automation-changes" />
       <Section id="automation-decisions" concept="add" tag="decisions" question="What did it decide this session, and why?">
         <DecisionsCard module="automations" arm={name} />

@@ -55,10 +55,10 @@ describe("the groups view", () => {
 
 describe("the groups check and save", () => {
   it("checks a change and writes nothing", async () => {
-    fakeBridge({ ok: true, problems: [], moves: { "gld-call-spread-1dte": "gold" }, block: {} });
+    fakeBridge({ ok: true, problems: [], moves: { "gld-call-spread-1dte": "gold" }, block: {}, cautions: ["its record moves with it"] });
     const res = await post("/api/automations/groups/check", CHANGE);
     expect(seen).toEqual([{ op: "automation_groups_check", ...CHANGE }]);
-    expect(res.json()).toEqual({ ok: true, problems: [], moves: { "gld-call-spread-1dte": "gold" }, switches: {}, notes: [], after: null });
+    expect(res.json()).toEqual({ ok: true, problems: [], moves: { "gld-call-spread-1dte": "gold" }, switches: {}, notes: [], cautions: ["its record moves with it"], after: null });
   });
 
   it("saves only the groups, the moves and the switches, never a start from the page", async () => {

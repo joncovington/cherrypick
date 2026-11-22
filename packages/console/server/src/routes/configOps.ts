@@ -353,6 +353,7 @@ export function registerConfigRoutes(app: FastifyInstance, config: ConsoleConfig
       moves: result["moves"] ?? {},
       switches: result["switches"] ?? {},
       notes: result["notes"] ?? [],
+      cautions: result["cautions"] ?? [],
       after: result["after"] ?? null,
     };
   });

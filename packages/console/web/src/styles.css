@@ -12275,6 +12275,16 @@ svg.vol-curve text {
   stroke-width: 1.5;
   stroke-dasharray: 4 4;
 }
+.ar-band-ahead {
+  fill: color-mix(in srgb, var(--chart-special) 14%, transparent);
+  stroke: var(--chart-special);
+  stroke-width: 1;
+  stroke-dasharray: 4 4;
+}
+.ar-key-ahead {
+  background: color-mix(in srgb, var(--chart-special) 18%, transparent);
+  border: 1px dashed var(--chart-special);
+}
 .ar-band-paper {
   fill: none;
   stroke: var(--warn);
@@ -12935,6 +12945,10 @@ svg.vol-curve text {
   background: var(--surface-sunken);
   max-height: 16rem;
   overflow-y: auto;
+}
+.grp-cautions {
+  margin: 0.4rem 0 0;
+  list-style: none;
 }
 .grp-add-bar {
   margin: 0.6rem 0;

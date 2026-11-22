@@ -34,6 +34,17 @@ def fake_notifier():
 
 
 @pytest.fixture(autouse=True)
+def isolated_verdicts(tmp_path, monkeypatch):
+    """Point the local verdict store at a temp file, so `hypotheses.load` in a test never lays this
+    machine's recorded verdicts over the register and a queue test never records one into it."""
+    from cherrypick.orchestrator import verdictstore
+
+    target = tmp_path / "research-verdicts.json"
+    monkeypatch.setattr(verdictstore, "path", lambda: target)
+    return target
+
+
+@pytest.fixture(autouse=True)
 def isolated_state(request, tmp_path, monkeypatch):
     """Point every test's state writes at a temp dir instead of the developer's `~/.cherrypick/state`.
 

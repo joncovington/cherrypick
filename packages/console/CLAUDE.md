@@ -128,8 +128,9 @@ alone):
     writes. Each automation's state (`on`, `waiting`, `off_group`, `off_own`, `retired`) and its
     shape (the icon at the start of its row, `sketch.sketch`'s curve) are the module's (`cli
     groups-view`); while anything is staged the page asks `cli groups-check` and every row says what
-    its after-view says, and the save bar lists who starts and who stops by it; the page derives no
-    state. Every on/off is the one sliding switch (`Toggle.tsx`); a retired automation's is locked
+    its after-view says, and the save bar lists who starts and who stops by it and shows the check's
+    `cautions` for each move as they are; the page derives no state. The add list leaves out a retired
+    automation. Every on/off is the one sliding switch (`Toggle.tsx`); a retired automation's is locked
     (`LockedSwitch`). A group that has run shows its budget read-only until "Change from next
     session": the module dates the change (`budget_changes`) and gives the suggested allocation
     (`budgets.suggested`). Beside it, "From the backtest" (`/api/automations/groups/budget`,
@@ -147,8 +148,13 @@ alone):
     never a research item's number. Its "Is it working?"
     (`/api/automations/automation/reading`, `readers/automationReading.ts`) passes through the
     backtest package's `read automation-reading` for the pinned run, with the forward rule's
-    `min_obs` as the declared sample; the page only scales the figures onto a strip and a chart. A
-    licensed run's figures are withheld while `backtestResultsOn` is false. Its entries
+    `min_obs` as the declared sample; the page only scales the figures onto a strip and a chart. The
+    same read's `exits` and `ahead` are "What it did"'s exits table and the chart's road ahead
+    (`AutomationDid.tsx`); its premium card is the automation's own line of the performance read. A
+    licensed run's figures are withheld while `backtestResultsOn` is false. The `backtest` tab ("vs
+    backtest", `/api/automations/readings`, `readers/automationReadings.ts`) is every pin's reading
+    in one `read automation-readings`, cut to a row, withheld the same way; its chip
+    (`ReadingChip`) sits on each automation's row in Groups too. Its entries
     (`/api/automations/automation/entries`, `readers/automationEntries.ts`) are the automations
     package's `cli entries --name`, with the pinned run's `reasons` (from that reading, so withheld
     with it) passed as `--run-reasons` so the run is cut by the same steps; the `entries` tab
@@ -176,7 +182,11 @@ alone):
     through, its figures withheld while `backtestResultsOn` is false (the matching run still named).
     A MEIC arm's page and an automation's page show the sessions ahead (`/api/ahead/:module?arm=`,
     `readers/ahead.ts`, `components/armpage/SessionsAhead.tsx`): the module's own `cli ahead`
-    (`core.ahead`), passed through; the page words and computes nothing.
+    (`core.ahead`), passed through; the page words and computes nothing. Both show today's
+    conditions with the one card (`TodayConditionsCard`): MEIC's from its regime cuts, an
+    automation's from `/api/automations/automation/conditions` (`readers/automationConditions.ts`,
+    the automations package's `cli conditions`, put in the regime cuts' shape by
+    `shapeRegimeCuts`; `pages/Automations/AutomationConditions.tsx` words each underlying's label).
   - **The shared costs tab** (`components/costs/SharedCosts.tsx`; earnings and ladder) renders
     `core.metrics.money` from the performance read, per arm and the module's own line: it sums
     nothing. Ladder and weeklyput are in `PERFORMANCE_MODULE_SCHEMA`, so the shared performance and

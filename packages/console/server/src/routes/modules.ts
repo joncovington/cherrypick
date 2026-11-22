@@ -83,7 +83,9 @@ import { buildGexPanel } from "../services/gexPanel.js";
 import { readLogTail } from "../readers/logs.js";
 import { getFeatures } from "../services/featuresBridge.js";
 import { readAutomationReadingFor } from "../readers/automationReading.js";
+import { readAllAutomationReadings } from "../readers/automationReadings.js";
 import { readAutomationEntriesFor, readAutomationsEntries } from "../readers/automationEntries.js";
+import { readAutomationConditionsFor } from "../readers/automationConditions.js";
 import { readGroupUnits } from "../readers/automationGroupsRead.js";
 import { readArmReading } from "../readers/armReading.js";
 import { readSystemPanel } from "../services/suite.js";
@@ -530,6 +532,8 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
     if (!/^[a-z0-9][a-z0-9-]{1,47}$/.test(name)) return reply.code(400).send({ error: "name: an automation's name" });
     return readAutomationReadingFor(name);
   });
+  // Every automation's reading against its pinned run, one row each (the backtest package computes them).
+  app.get("/api/automations/readings", async () => readAllAutomationReadings());
   // How often each automation enters and where the rest stopped (the automations package computes it).
   app.get("/api/automations/entries", async () => readAutomationsEntries());
   // Every group as one unit (the automations package computes it).
@@ -547,6 +551,12 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
     const name = String(((req.query ?? {}) as Record<string, unknown>)["name"] ?? "");
     if (!/^[a-z0-9][a-z0-9-]{1,47}$/.test(name)) return reply.code(400).send({ error: "name: an automation's name" });
     return readAutomationEntriesFor(name);
+  });
+  // One automation's record in today's market conditions (the automations package cuts it, core stamps it).
+  app.get("/api/automations/automation/conditions", async (req, reply) => {
+    const name = String(((req.query ?? {}) as Record<string, unknown>)["name"] ?? "");
+    if (!/^[a-z0-9][a-z0-9-]{1,47}$/.test(name)) return reply.code(400).send({ error: "name: an automation's name" });
+    return readAutomationConditionsFor(name);
   });
   app.get("/api/curve/history", async (req) => {
     const q = (req.query ?? {}) as Record<string, unknown>;
