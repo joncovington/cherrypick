@@ -10500,6 +10500,87 @@ levels) and 93 (Market Profile forecasts).
     the drawdown has run and how far it has bounced, at least at a size this history can see. No
     module reads futures positioning.
 
+### 106. E-mini open interest and the pace of an index drawdown: does a rising week come before a faster fall, and a falling week before a slower one?
+
+Declared 2026-11-21, before any outcome of it is computed. It reframes item 105 at the user's ask:
+not whether falling open interest marks the low, but whether the week's change in open interest
+goes with how fast the drawdown goes on. That covers two claims: rising open interest (new positions
+pressing the move) accelerates the fall, and falling open interest (positions closing) slows it. They
+are one relationship read at its two ends, so one slope is judged and each end is reported apart.
+**Already seen:** item 105's reported cuts, read before this declaration, put weeks after open
+interest had fallen 3% from its drawdown peak ahead of weaker 20- and 63-session returns than the
+drawdown's other weeks. That is a different predictor (a fall from a peak, not a week's change) and no
+controls, but it leans against the slowing claim, and this item is declared knowing it. It is a
+**`positioning`** item; the nearest are 105 and 12 (GEX levels).
+
+- **Question:** among weekly reports taken in an S&P 500 drawdown, does a larger week-on-week rise in
+  E-mini open interest go with a deeper further fall over the next 20 sessions, with VIX, the prior
+  five sessions' return and the drawdown's depth held fixed?
+- **This is a forecast, not a trade.** A pass says the week's open interest change carries
+  information about the pace of the fall that volatility and recent price do not; it trades
+  nothing, so the three bars do not apply, and the rule is `FORECAST_RULE` in the script.
+- **Data:** the CFTC reports item 105's `fetch` step keeps (E-mini 13874A, 1,067 weekly reports
+  2006-06-13 to 2026-11-17); Cboe's daily SPX and VIX closes from `scripts/fetch_market_files.py`.
+  Pinned by a fingerprint. The script loads item 105's for its parsing, roll calendar and SPX reader.
+- **The rows:** a report in a drawdown (item 105's: from 7% under the prior 252-session high close
+  until under 3%), outside the roll window (13 days before a quarterly expiry), whose prior report is
+  at most 10 days earlier and in the same quarterly cycle, so a change never spans an expiry or a
+  roll swell. 169 design rows and 100 holdout rows, counted before any outcome was read.
+- **The predictor:** `doi`, the week's change in open interest (this report over the prior one, less
+  one). Its design spread: a standard deviation of about 3.9%, a median of +1.4% (open interest builds
+  through a cycle), terciles cut at +0.55% and +2.37%.
+- **The outcome:** `fall`, the lowest SPX close in the 20 sessions after the reference session (the
+  first session after the Friday release) over the reference close, less one, in percent, and zero
+  when no close is lower. Nothing is read before the report was public.
+- **Controls:** VIX at the as-of close, the SPX return over the five sessions to it, and the
+  drawdown's depth then: rising open interest could merely travel with high volatility or a falling
+  week.
+- **The statistic:** `oi_slope`, the coefficient on `doi` in an ordinary least squares fit of `fall`
+  on `doi` and the three controls, each standardized by its design mean and standard deviation. It is
+  in percent of price per one standard deviation of the week's change. The claim predicts it is
+  negative (more open interest, a deeper further fall).
+- **Windows:** one run, cut at **2019-01-01** (design before, holdout from). The holdout is read only
+  after a design pass, with the design scaling.
+- **The rule (`FORECAST_RULE`):**
+  - **Design:** `oi_slope` at most −0.5 (one standard deviation more open interest growth goes with
+    at least half a point more further fall) with t at most −2. Its standard error comes from a
+    stationary block bootstrap over the drawdown weeks in order (mean block 13 weeks, 10,000 draws,
+    seed 106), refitting each draw. Fewer than 80 design rows, or a singular fit, is no verdict.
+  - **Holdout:** `oi_slope` below zero. Fewer than 40 holdout rows makes a pass provisional.
+- **Minimum detectable effect:** 169 overlapping weekly rows in about ten drawdowns. A standard error
+  near 0.35 is assumed, so the design detects about 0.7 points per standard deviation at the t bar.
+  The run reports the measured one.
+- **Reported, never judged:**
+  - **The time profile,** at 5, 10, 20, 40 and 63 sessions: the slope for further fall and for the
+    forward return (a reversal shows as a positive return), and by tercile of the week's change the
+    mean further fall, the mean return, each end less the middle, and the mean number of sessions
+    until the next low (0 when none is lower). This is where the timing of any slowing or reversal
+    is read, as context; only the 20-session slope is judged.
+  - The fit without controls; the forward return's slope at 20 sessions; drawdowns entered at 5% and
+    10%; every week, not only drawdown weeks; the same-week correlation between the change and the
+    week's SPX return (what moves together, as against what comes next); rows by year.
+- **Rival explanations, each with its check:**
+  - *Volatility drives both:* VIX is a control.
+  - *Open interest rises in falling weeks, and falls continue:* the prior five sessions' return is a
+    control, and the same-week correlation is reported.
+  - *Deep drawdowns behave differently:* depth is a control.
+  - *The roll:* no change spans an expiry or uses a roll-window report.
+  - *Look-ahead from the release lag:* price from the session after publication.
+  - *Overlapping outcomes:* the bootstrap draws blocks of weeks.
+  - *One crisis:* the holdout is read apart, and rows by year are reported.
+- **Declared limits:** weekly positions, published three days late. A linear slope can miss an
+  effect at one end only; the terciles show each end. 2008 holds a large share of the design rows.
+- **Data and results:** `packages/backtest/scripts/futures_oi_pace_item106.py study`, queued with
+  `run.py queue-chain` as `item106/study`. Results stay under
+  `~/.cherrypick/data/backtest/results/research/item106/`; this plan records the verdict without
+  figures.
+- **Decides:**
+  - **A pass:** the week's open interest change is information about the pace of a drawdown beyond
+    volatility and recent price. A later item, declared on the three bars, can test it as a sizing
+    or timing input for a dip-buying entry.
+  - **A fail or no verdict:** open interest changes say nothing about the pace of a fall that VIX
+    and the recent move do not, and no module reads futures positioning.
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:
