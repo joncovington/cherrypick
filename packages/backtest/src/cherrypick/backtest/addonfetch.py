@@ -35,7 +35,7 @@ from typing import Any
 
 from cherrypick.core import progress as core_progress
 
-from . import paths
+from . import chainfetch, paths
 from .vendor import FATAL, VendorRefusal
 
 DB_NAME = "addon_weeklies.db"
@@ -72,6 +72,7 @@ def connect(settings: dict) -> sqlite3.Connection:
     """The add-on weeklies store, created inside the marked vendor directory."""
     paths.ensure_vendor_dir(settings)
     conn = sqlite3.connect(db_path(settings), timeout=300)
+    chainfetch.prefer_wal(conn)
     conn.executescript(SCHEMA)
     return conn
 
