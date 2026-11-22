@@ -47,6 +47,8 @@ export function readingChip(r: AutomationReadingRow): { cls: string; words: stri
   if (r.pinned === null) return { cls: "chip", words: "no reference" };
   if (r.withheld) return { cls: "chip", words: "licensed, hidden" };
   if (r.state === null) return { cls: "chip", words: "reading…" };
+  // Pinned, but under the thirty trades a reference needs: not the same as no pin at all.
+  if (r.state === "no_reference") return { cls: "chip", words: "run too short" };
   const cls = r.state === "inside" || r.state === "below" || r.state === "above" ? PLACE_CHIP[r.state] : "chip";
   return { cls, words: STATE_WORDS[r.state] ?? r.state };
 }

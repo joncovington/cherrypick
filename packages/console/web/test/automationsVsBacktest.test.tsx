@@ -42,6 +42,7 @@ describe("automations against their backtests", () => {
     expect(readingChip({ ...READ, state: "inside" }).words).toBe("on track");
     expect(readingChip({ ...READ, state: "too_few" })).toEqual({ cls: "chip", words: "too few to read" });
     expect(readingChip(BASE).words).toBe("no reference");
+    expect(readingChip({ ...READ, state: "no_reference" }).words).toBe("run too short");
     expect(readingChip({ ...READ, withheld: true, state: null }).words).toBe("licensed, hidden");
     expect(readingChip({ ...READ, error: "no Builder run" }).words).toBe("reading failed");
   });
