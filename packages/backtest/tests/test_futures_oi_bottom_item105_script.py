@@ -72,6 +72,18 @@ def test_only_the_emini_rows_are_parsed_and_dates_come_from_yymmdd():
     ]
 
 
+def test_reports_come_from_the_manifests_files_only(tmp_path):
+    import json
+
+    (tmp_path / "fin_fut_txt_2006_2016.json").write_text(json.dumps([{"d": "2016-12-27", "oi": 1}]))
+    (tmp_path / "fut_fin_txt_2017.json").write_text(json.dumps([{"d": "2017-01-03", "oi": 2}]))
+    (tmp_path / "manifest.json").write_text(
+        json.dumps({"files": {"fin_fut_txt_2006_2016.zip": {}, "fut_fin_txt_2017.zip": {}}})
+    )
+    (tmp_path / "manifest.version.json").write_text(json.dumps({"script": "x", "version": 1}))  # the queue's
+    assert [r["d"] for r in m.load_reports(tmp_path)] == ["2016-12-27", "2017-01-03"]
+
+
 def test_a_later_file_wins_a_date_both_hold():
     a = [{"d": "2016-12-27", "oi": 1}, {"d": "2016-12-20", "oi": 1}]
     b = [{"d": "2016-12-27", "oi": 2}]
