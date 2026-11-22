@@ -43,11 +43,13 @@ def sessions_between(a: str, b: str) -> list[str]:
 
 
 def test_the_shipped_values_are_the_declared_ones():
+    pytest.importorskip("cherrypick.manage")
     got = m.shipped()
     assert got["spread_risk"] == 0.35 and got["theta"] == 0.003 and got["risk_pct"] == 0.02
 
 
 def test_a_moved_manage_value_is_refused():
+    pytest.importorskip("cherrypick.manage")
     rules = copy.deepcopy(m.manage_rules())
     rules["portfolio"]["theta"]["max_pct_nlv"] = 0.004
     with pytest.raises(SystemExit, match="theta"):
@@ -110,7 +112,7 @@ def test_a_condor_whose_credit_falls_under_the_band_is_skipped():
 
 
 def test_the_exit_rule_stops_first_then_targets_then_times_out():
-    r = m.shipped()
+    r = m.DECLARED
     assert m.exit_rule(100.0, 300.0, 200.0, 40, r) == "stop"
     assert m.exit_rule(100.0, 300.0, 50.0, 40, r) == "target"
     assert m.exit_rule(100.0, 300.0, 120.0, 21, r) == "time"
@@ -123,7 +125,8 @@ def test_the_exit_rule_stops_first_then_targets_then_times_out():
 
 
 def test_a_quiet_path_takes_its_target_and_books_the_costs():
-    s = [x for x in sessions_between("2024-06-04", EXPIRY)]
+    pytest.importorskip("cherrypick.manage")
+    s = sessions_between("2024-06-04", EXPIRY)
     path = [(x, chain(100.0, x)) for x in s]
     betas = {"beta": {x: 1.0 for x in s}, "beta3y": {x: 1.0 for x in s}}
     t = m.trade("SPY", EXPIRY, path, betas, m.shipped())
@@ -177,7 +180,7 @@ def cand(sym: str, entry: str, exit_: str, *, max_loss=300.0, net=50.0, stress=-
 
 def test_the_spread_risk_cap_admits_until_the_book_would_cross_it():
     cands = [cand(s, "2024-06-04", "2024-06-21") for s in ("AAA", "BBB", "CCC", "DDD", "EEE")]
-    r = m.shipped()
+    r = m.DECLARED
     free = m.book(copy.deepcopy(cands), {}, r)
     capped = m.book(copy.deepcopy(cands), {"spread_risk": 0.25}, r)
     # 2% of $100,000 is six contracts of $300, $1,800 held each: five trades (9%) fit under 25%,
@@ -189,14 +192,14 @@ def test_the_spread_risk_cap_admits_until_the_book_would_cross_it():
 
 def test_the_stress_cap_refuses_a_trade_that_would_lose_too_much():
     cands = [cand(s, "2024-06-04", "2024-06-21", stress=-1500.0) for s in ("AAA", "BBB")]
-    out = m.book(cands, {"stress": 0.10}, m.shipped())
+    out = m.book(cands, {"stress": 0.10}, m.DECLARED)
     # Six contracts lose $9,000 at the shock: one trade fits under $10,000, two do not.
     assert len(out["taken"]) == 1
 
 
 def test_net_liq_ends_at_the_start_plus_every_trade_net():
     cands = [cand("AAA", "2024-06-04", "2024-06-21"), cand("BBB", "2024-06-24", "2024-07-12")]
-    out = m.book(cands, {}, m.shipped())
+    out = m.book(cands, {}, m.DECLARED)
     last = out["daily"][max(out["daily"])]["nlv"]
     assert last == pytest.approx(m.SPEC["start_nlv"] + sum(t["net"] for t in out["taken"]))
 

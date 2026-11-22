@@ -121,6 +121,15 @@ CHAIN = (
 )
 
 
+#: manage's shipped values as the declaration names them; `shipped()` refuses to run if manage's differ.
+DECLARED = {
+    "spread_risk": 0.35, "theta": 0.003, "front_dte": 2, "stress": 0.20, "stress_move": -0.20,
+    "stress_iv": 0.10, "volexp": 0.10, "volexp_move": -0.05, "volexp_iv": 0.10, "expiry": 0.20,
+    "earnings": 0.10, "risk_pct": 0.02, "capture": 0.50, "stop_multiple": 1.0, "stop_fallback": 0.50,
+    "exit_dte": 21,
+}  # fmt: skip
+
+
 def manage_rules() -> dict:
     from cherrypick.manage import rules
 
@@ -150,13 +159,7 @@ def shipped(rules: dict | None = None) -> dict:
         "stop_fallback": c["stop"]["fallback_max_loss_fraction"],
         "exit_dte": c["time_exit"]["dte"],
     }
-    declared = {
-        "spread_risk": 0.35, "theta": 0.003, "front_dte": 2, "stress": 0.20, "stress_move": -0.20,
-        "stress_iv": 0.10, "volexp": 0.10, "volexp_move": -0.05, "volexp_iv": 0.10, "expiry": 0.20,
-        "earnings": 0.10, "risk_pct": 0.02, "capture": 0.50, "stop_multiple": 1.0, "stop_fallback": 0.50,
-        "exit_dte": 21,
-    }  # fmt: skip
-    moved = {k: (declared[k], got[k]) for k in declared if not math.isclose(float(got[k]), declared[k])}
+    moved = {k: (DECLARED[k], got[k]) for k in DECLARED if not math.isclose(float(got[k]), DECLARED[k])}
     if moved:
         raise SystemExit(f"manage's shipped values differ from item 109's declaration: {moved}")
     return got
