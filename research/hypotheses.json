@@ -4933,6 +4933,60 @@
       "retest": null,
       "retest_note": "A pass is followed by a paper arm with its own forward block, not a retest; the chains are the vendor's, so a retest reads them only while the licence allows new work.",
       "retests": []
+    },
+    {
+      "id": 103,
+      "study": "item103",
+      "title": "A diagonal on TQQQ and SOXL: a year-long call, with 45-day calls sold against it only while VIX is above VIX3M",
+      "status": "declared",
+      "legacy": false,
+      "setup": "term-structure",
+      "side": "bullish",
+      "structure": "diagonal",
+      "window": "multi-day",
+      "measure": "per name and week (Friday to Friday), the diagonal's change in value in dollars on one contract (cash flows with costs plus both legs' marks at the mid), on the long's debit as capital; the long a 0.80-delta call on the listed standard monthly nearest 360 days (240-540), closed 45 days out; the short one call at a time, 35-60 days out nearest 45 and expiring before the long closes, sold at a close where VIX is above VIX3M and held to expiry; arms inv30 and inv20 (0.30 and 0.20 delta) judged; all30, all20 (ungated) and the long alone reported; paired difference = arm week less the long alone's",
+      "expected": "a positive weekly paired difference after costs, from calls sold when short-dated vol on these funds sits far above long-dated, and a diagonal that clears the kit's bars",
+      "sample": "SOXL and TQQQ, one run from 2020-01-02 (the current tier's first session; a month whose probe lists no year-long expiry has no long) to the last session both names' bars hold when listing runs; design weeks ending before 2024-01-01, holdout from it, counting only after a design pass; < 150 design or < 80 holdout weeks, < 10 gated calls sold in the design, or a year under the coverage floor (two-sided 0.80, 25 strikes) = no verdict",
+      "rule": "RULE: the kit's capital, tail and delta bars on the diagonal's weekly net (t 2, min_n 150, holdout 80, tail per_year sample, 10,000 resamples, seed 103, split 2024-01-01) and EXTRA_RULE: design mean weekly paired difference > 0 with one-sided t >= 2, Holm across 2 at 0.05, positive in each half (2022-01-01), on each name and at 1.5x fees and slippage; holdout: the kit's bars and a positive mean paired difference",
+      "mechanism": "term-structure premium: after a crash the leveraged funds' near-month calls are priced far above the year-long call and above what the funds realise once the panic passes, so a call sold then is the richest on the board against a long that costs less vol; against it, inverted curves come at lows and a sold call caps the fast rebound the long is held for",
+      "rivals": [
+        {
+          "explanation": "a bull market flattering the long call",
+          "check": "the paired difference holds the long fixed; the kit's delta bar charges the diagonal's direction"
+        },
+        {
+          "explanation": "the gate marks lows and the calls are run over in the rebound",
+          "check": "both design halves (2020's crash and 2022's bear apart) and both names must hold"
+        },
+        {
+          "explanation": "any sold call would do, the gate adds nothing",
+          "check": "the ungated all30 and all20 reported beside, gated less ungated with them"
+        },
+        {
+          "explanation": "costs read too kindly",
+          "check": "a 1.5x fees-and-slippage stress must stay positive"
+        },
+        {
+          "explanation": "two arms, one lucky",
+          "check": "Holm across the two"
+        },
+        {
+          "explanation": "one name",
+          "check": "positive on SOXL and on TQQQ"
+        }
+      ],
+      "pointer": "research/edge-hypotheses-plan.md#103-a-diagonal-on-tqqq-and-soxl-a-year-long-call-with-45-day-calls-sold-against-it-only-while-vix-is-above-vix3m",
+      "scripts": [
+        "packages/backtest/scripts/leaps_diagonal_item103.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_leaps_diagonal_item103_script.py"
+      ],
+      "results": [],
+      "outcome": null,
+      "retest": null,
+      "retest_note": "A retest of item 76 (calls sold against SOXL and TQQQ share lots, failed) with one change: the call is sold only while VIX is above VIX3M, against a long call. A pass is followed by a paper arm with its forward block, not a yearly retest; the chains are the vendor's, so a retest reads them only while the licence allows.",
+      "retests": []
     }
   ],
   "rule_changes": []

@@ -10393,6 +10393,140 @@ holding, worst on high-momentum names), the 10-23 income confirmation (no tested
   - **A fail or no verdict:** the wheel is not worth running over its parts. The webinar's cost-strike
     call rule joins item 76 as a rule that does not earn, and the wheel gets no arm or module.
 
+### 103. A diagonal on TQQQ and SOXL: a year-long call, with 45-day calls sold against it only while VIX is above VIX3M
+
+*Source: the user, 2026-11-21, the day after SOXL fell 32% and TQQQ 16% in one session. After a review of
+LEAPS on the two funds, they asked whether to "sell calls against the leaps call along the way". The broker's
+close that day priced the near-month calls well above the year-long ones (TQQQ about 87% against about 75%,
+SOXL about 190% against about 127%). So the question here is whether selling calls only while the vol curve
+is inverted pays. The user chose the whole diagonal over the sold call alone, so the long's own cost is in
+the measure, and VIX above VIX3M as the condition. **Look-alikes, said out loud.** Item 76 sold 35-60-day
+calls against SOXL and TQQQ share lots with no condition and failed. This item is **a retest of 76 with one
+change**: the call is sold only while the curve is inverted, against a long call instead of the shares.
+Item 71 failed a LEAPS call held alone as leverage, and item 5 failed pmcc's dynamic short delta. Item 36
+holds the same shape (`hold-30d-monthly`) under pmcc's management on other funds and has no verdict.
+**Seen before declaring:** the broker's quotes of 2026-11-20 (public, not the vendor's), the public Cboe
+VIX/VIX3M files, and the chain store's counts of TQQQ and SOXL expiries (no year-long expiry is stored
+for either). No option price for this study has been read.*
+
+- **Question:** for a long year-long call on a leveraged fund, does selling a 45-day call against it, only
+  at closes where VIX is above VIX3M, add to the position after costs? And is the diagonal worth holding
+  on the kit's three bars?
+- **Where the edge would live:** **term-structure premium.** After a crash, short-dated implied vol on these
+  funds runs far above long-dated, and well above what they usually realise once the panic passes. A call
+  sold then is the richest one on the board, against a long that costs less vol. Against that, inverted
+  curves come at lows, and a leveraged fund's rebound from a low is fast: a call sold into a V caps the gain
+  the long call was bought for. That rebound is what item 76 found the covered call gives up.
+- **Names and window:** SOXL and TQQQ, one contract each. **One run from 2020-01-02**, the first session the
+  vendor's current tier serves, to the last session both names' bars hold when `listing` runs. A month whose
+  first-session probe lists no year-long expiry is a month with no long, counted. So if the tier does not
+  answer 2020, the run starts at the first month it does. That is a rule, fixed here, not a choice after
+  looking.
+- **The long, every arm the same:**
+  - One call on the listed standard monthly 240 to 540 calendar days out nearest 360 (the earlier on a
+    tie). It is drawn from the monthlies the vendor listed on the first session of the month (one-session
+    probes, as item 36 probes). Weeklies are never probed: none is listed that far out.
+  - The strike whose delta is nearest **0.80**, the higher strike on a tie, among calls passing the width
+    bar.
+  - Bought at the mid plus the suite's slippage. Closed the same way on the first session 45 or fewer days
+    before its expiry; an unquoted close is retried next session; a call reaching expiry settles at
+    intrinsic with the $5 event.
+  - The next long is bought the session after a close.
+  - A long open on a split ex-date (TQQQ 2021-01-21, 2022-01-13 and 2025-11-20; SOXL 2021-03-02) is dropped
+    there unbooked, for every arm, and its weeks left out. The next is bought at that session's close, on
+    the new basis.
+- **The short, one at a time:**
+  - On the listed expiry 35 to 60 days out nearest 45 (the earlier on a tie) that falls at least 46 days
+    before the long's expiry, so it always expires before the long closes.
+  - The out-of-the-money strike, above the long's, whose delta is nearest the arm's target (the lower
+    strike on a tie), among calls passing the width bar.
+  - Sold at the mid less slippage, at a close with no short open and, for a gated arm, that close's VIX
+    above its VIX3M. A close with either file missing sells nothing, counted.
+  - Held to its expiry's session. Under the strike it expires. At or over it, it is bought back at the mid
+    plus slippage, or settled at intrinsic with the $5 event when unquoted.
+  - No stop, no roll, no early close: the condition is the only rule.
+- **The width bar:** a quote counts for picking a strike when it is two-sided and its ask less its bid is
+  at most the larger of 15% of the mid and $0.06. A held leg is marked on any two-sided quote.
+- **The arms:**
+  - **Judged:** `inv30` and `inv20`, gated shorts at 0.30 and 0.20 delta.
+  - **Reported beside, never judged:** `all30` and `all20`, the same shorts sold at every close with none
+    open (item 76's rule on a long call, so the gate's own effect reads as gated less ungated); and `long`,
+    the long call alone.
+  - Deltas are the kit's Black-76 at r = 0 off each leg's mid and its chain's parity forward.
+- **Measured,** per name and week (Friday close to Friday close, the last session of each ISO week): the
+  position's change in value in dollars on one contract, cash flows with costs plus both legs' marks at the
+  mid.
+  - A week counts when a long was held at the previous Friday, every held leg was quoted at both Fridays and
+    neither Friday's long is a dropped one. Every other week is counted (flat, unpriced, dropped, no
+    delta), never zero.
+  - Capital is the long's debit at entry. The paired difference is the arm's week less `long`'s on the same
+    name and week. The long is the same in both, so the difference is the short calls' own effect.
+- **Costs:** fills at the mid with the suite's slippage (`fees.slippage_dollars`, an eighth of each leg's
+  bid-ask). Fees are the suite's tastytrade schedule (`cherrypick.core.fees`): $1.00 a contract to open, the
+  exchange and regulatory fees on every contract, none to close; $5 for each in-the-money settlement. The
+  stress is fees and slippage at 1.5x.
+- **One run, one split:** weeks ending before **2024-01-01** are the design, from it the holdout. The
+  holdout counts only after a design pass.
+- **The rule (`RULE` and `EXTRA_RULE` in the script),** per judged arm:
+  - **The kit's three bars on the diagonal's weekly net,** each week one observation (t of 2 or more, at
+    least **150** design weeks and **80** holdout weeks):
+    - capital: the net less the bill on the long's debit;
+    - tail: the 99th-percentile one-year drawdown, from the bootstrap of the weeks, under one year of mean
+      net (`per_year` from the sample, 10,000 resamples, seed 103);
+    - delta: the net less the previous Friday's net delta on 100 shares, financed on the same capital at
+      the bill. Spot stands in for the forward, a small error over one week.
+  - **The paired test in the design part:**
+    - the mean weekly paired difference above zero with a one-sided t of 2 or more, Holm across the two
+      judged arms at 0.05;
+    - positive in each half (weeks before and from **2022-01-01**);
+    - positive on each name;
+    - positive at the 1.5x stress.
+  - **Floors:** at least **10** gated short calls sold in the design, the two names together; fewer is no
+    verdict. The coverage floor (`storequality.meets`) is a two-sided share of at least 0.80 and at least
+    25 strikes a chain, per name and year of the window. A year under it makes every arm no verdict, said so.
+  - **Holdout:** the kit's three bars pass on the holdout weeks (the tail bar on every week read so far),
+    and the mean paired difference is above zero.
+  - A pass needs every check. The result file carries the kit's verdict block (`verdict` per arm).
+- **Rival explanations, each with its check:**
+  - *A bull market flatters the long call:* the paired difference holds the long fixed, so its drift is on
+    both sides. The kit's delta bar charges the diagonal's own direction.
+  - *The gate only marks lows, and the calls are run over in the rebound:* that is the test itself. The
+    halves (2020's crash and 2022's bear are in different ones) and the per-name check must both hold.
+  - *Any sold call would do, the gate adds nothing:* `all30` and `all20` are reported beside, the gated
+    less ungated difference with them.
+  - *Costs:* the 1.5x stress must stay positive; costs in their own place in each net.
+  - *Two arms, one lucky:* Holm across the two.
+  - *One name:* positive on SOXL and on TQQQ.
+- **Minimum detectable effect (B12):** from the design part's own spread of weekly paired differences,
+  recorded in the local result before the holdout is read. Inverted closes are about one session in ten
+  and cluster after selloffs. So the gated arms may sell few calls, and the 10-call floor may leave both
+  with no verdict. A no verdict then reads "no edge larger than" the recorded effect.
+- **Declared limits (B11):**
+  - End-of-day quotes only: every trade at a close.
+  - Early assignment is not modelled. These funds pay small distributions, and a short call in the money
+    before one is the real risk; it is ignored, as item 76 ignores it.
+  - The 0.80 call at a leveraged fund's vol is a debit of thousands of dollars on these names. That is the
+    user's sizing question, not the measure's: the result is per contract and per dollar of debit.
+  - Two names, chosen by the user, both 3x funds. The result says nothing about unlevered funds.
+  - A dropped split cycle costs its weeks to every arm alike.
+  - The window holds one tier's history, so the design is about four years.
+- **Data:** ThetaData end-of-day chains for SOXL and TQQQ, read through `Inputs`. The listing probes come
+  from the script's `listing` step and the paths from its `plan` step. The near-month shorts are mostly
+  already stored (items 29, 76 and 102), and the fetch skips what the store holds. The year-long longs are
+  new: the plan requests each skeleton long through its close. Fetched on the current tier (quotes only,
+  no greeks, at most 2 concurrent requests). Expiries come from item 29's listing file. VIX and VIX3M come
+  from Cboe's public daily files (`cherrypick.overview.files`); the bill comes from Treasury's 3-month
+  curve. Results are derived from licensed data and stay under
+  `~/.cherrypick/data/backtest/results/research/item103/`; this plan records the verdict without figures.
+- **Run:** `packages/backtest/scripts/leaps_diagonal_item103.py`, queued with `run.py queue-chain` as
+  `item103/listing`, `fetch-listing`, `plan`, `fetch-sample`, `smoke`, `fetch-chains` and `study`. Progress
+  is reported overall and per name through `cherrypick.core.progress`.
+- **Decides:**
+  - **A pass:** the passing arm is a candidate rule for selling calls against a long call on these funds,
+    declared with its forward check before any paper arm trades. Nothing is built from this item.
+  - **A fail or no verdict:** no calls are sold against a LEAPS on these funds, inverted curve or not. The
+    condition joins item 76's unconditional rule as one that does not earn.
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:
