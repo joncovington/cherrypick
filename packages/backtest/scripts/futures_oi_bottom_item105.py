@@ -509,11 +509,15 @@ def cmd_fetch(args) -> int:
     return 1 if manifest["failed"] else 0
 
 
-def load_reports() -> list[dict]:
+def load_reports(d: Path | None = None) -> list[dict]:
+    """The reports of the files the fetch's manifest names, in its order (the 2006-2016 file, then
+    each year), and nothing else in the folder: the research queue writes its version stamp
+    (`manifest.version.json`) beside the manifest."""
+    d = d or cot_dir()
+    manifest = json.loads((d / "manifest.json").read_text(encoding="utf-8"))
     parts = [
-        json.loads(p.read_text(encoding="utf-8"))
-        for p in sorted(cot_dir().glob("*.json"))
-        if p.name != "manifest.json"
+        json.loads((d / (name.removesuffix(".zip") + ".json")).read_text(encoding="utf-8"))
+        for name in manifest["files"]
     ]
     return merge_reports(parts)
 
