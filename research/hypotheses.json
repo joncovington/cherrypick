@@ -4987,6 +4987,61 @@
       "retest": null,
       "retest_note": "A retest of item 76 (calls sold against SOXL and TQQQ share lots, failed) with one change: the call is sold only while VIX is above VIX3M, against a long call. A pass is followed by a paper arm with its forward block, not a yearly retest; the chains are the vendor's, so a retest reads them only while the licence allows.",
       "retests": []
+    },
+    {
+      "id": 104,
+      "study": "item104",
+      "title": "A video's \"turbo\" on TQQQ and SOXL: a put spread paying for a year-long call, entered on its checklist",
+      "status": "declared",
+      "legacy": false,
+      "setup": "entry-filter",
+      "side": "bullish",
+      "structure": "super-bull",
+      "window": "multi-day",
+      "measure": "per name and week (Friday to Friday), the position's change in value in dollars on one unit (cash flows with costs plus every leg's mark at the mid), on its maximum loss as capital; all legs on the year-long monthly nearest 360 days: spread = short 0.15-delta put, long 0.10 put under it, long 0.50 call, short 0.30 call; convex = the same without the short call; held to 45 days before expiry; gates: partial (close 30% under its 200-session average and 0.25-delta put-call skew above its prior year's 90th percentile), full (those plus 20-session realised vol under its year's median and under the 45-day at-the-money implied vol); four arms judged, the ungated two reported",
+      "expected": "a positive weekly net over the bill on maximum loss and over the financed delta, from downside skew paying for upside after forced selling, timed by the checklist",
+      "sample": "SOXL and TQQQ, one run from 2020-01-02 to the last session both names' bars hold when listing runs (item 103's window and listing); design weeks ending before 2024-01-01, holdout from it, counting only after a design pass; < 100 design or < 50 holdout weeks, < 8 positions opened in the design, or a year under the coverage floor (two-sided 0.80, 25 strikes) = no verdict",
+      "rule": "RULE: the kit's capital, tail and delta bars on the weekly net (t 2, min_n 100, holdout 50, tail per_year sample, 10,000 resamples, seed 104, split 2024-01-01) and EXTRA_RULE: Holm across 4 at 0.05 on the design capital bar's p; mean net less the bill positive in each design half (2022-01-01), on each name and at 1.5x fees and slippage; then the holdout on the kit's bars",
+      "mechanism": "skew and timing: after forced selling the leveraged funds' downside options are priced far above their upside, so a put spread sold then pays for a year-long call cheaply, and the checklist marks when the selling is spent; against it, the put is rich because a 3x fund can lose most of its value, and item 74 found the family losing to its own delta",
+      "rivals": [
+        {
+          "explanation": "any long-delta structure looks good after a crash that recovers",
+          "check": "the kit's delta bar charges the position's own delta financed on the same capital"
+        },
+        {
+          "explanation": "the checklist only picks dates; any entry would do",
+          "check": "the ungated spread-any and convex-any reported beside"
+        },
+        {
+          "explanation": "the skew sold is rich for a reason",
+          "check": "the tail bar reads the drawdown of a 3x fund's fall through the short put spread"
+        },
+        {
+          "explanation": "costs on four legs",
+          "check": "a 1.5x fees-and-slippage stress must stay positive"
+        },
+        {
+          "explanation": "four arms, one lucky",
+          "check": "Holm across the four"
+        },
+        {
+          "explanation": "one name or one regime",
+          "check": "positive on both names and in both design halves"
+        }
+      ],
+      "pointer": "research/edge-hypotheses-plan.md#104-a-videos-turbo-on-tqqq-and-soxl-a-put-spread-paying-for-a-year-long-call-entered-on-its-checklist",
+      "scripts": [
+        "packages/backtest/scripts/soxl_turbo_item104.py",
+        "packages/backtest/scripts/leaps_diagonal_item103.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_soxl_turbo_item104_script.py"
+      ],
+      "results": [],
+      "outcome": null,
+      "retest": null,
+      "retest_note": "Not a retest of item 74 (year-long, 3x funds, checklist-timed), with 74's fail as the prior. A pass is followed by a forward check before any paper arm, not a yearly retest; the chains are the vendor's, so a retest reads them only while the licence allows.",
+      "retests": []
     }
   ],
   "rule_changes": []

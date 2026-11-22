@@ -10527,6 +10527,116 @@ for either). No option price for this study has been read.*
   - **A fail or no verdict:** no calls are sold against a LEAPS on these funds, inverted curve or not. The
     condition joins item 76's unconditional rule as one that does not earn.
 
+### 104. A video's "turbo" on TQQQ and SOXL: a put spread paying for a year-long call, entered on its checklist
+
+*Source: a public video the user shared on 2026-11-21, the day after SOXL fell 32%. The presenter, a former
+market maker, teaches a leveraged-fund LEAPS trade: sell the rich downside (a put, or a put credit spread
+in an account that cannot borrow) to pay for a year-long call or call spread. He enters on a green-light
+checklist and adds as it clears. The video gives no exact strikes or exits: those sit behind his paid
+service, so this declaration fixes its own and says so. The transcript was read in scratch and deleted
+after this was written. **Look-alikes, said out loud.** Item 74 (the super bull: a put spread financing a
+call, 35-52 days out, on stocks) failed against the financed delta. Item 71 failed the year-long call
+alone. Item 64 failed defined-risk bullish structures on large caps. **This item is not a retest of
+74:** the expiry is year-long, the names are 3x funds, and the entry is timed by a checklist. The
+structure and the funds are the same family, and 74's fail is the prior. **Seen before declaring:** the
+broker's 2026-11-20 quotes on SOXL's January 2028 chain (public, not the vendor's). There the 0.25-delta
+put and call carried about the same implied vol, not the 40-point skew the video cites; that tenor may not
+be the one he reads. No vendor price has been read.*
+
+- **Question:** on TQQQ and SOXL, does a defined-risk "turbo", a put spread financing a year-long call or
+  call spread, earn on its capital after costs and beyond its own delta when opened on the video's
+  checklist?
+- **Where the edge would live:** **skew and a timing signal.** The claim: after forced selling, downside
+  options are the most expensive thing on the board and upside the cheapest. So selling the first to buy the
+  second buys upside cheaply, and the checklist marks when the forced selling is spent. Against it, a rich
+  put is rich for a reason when a 3x fund can lose most of its value, and item 74 found the same family
+  losing to its own delta.
+- **Names and window:** item 103's: SOXL and TQQQ, one run from 2020-01-02 to the last session both names'
+  bars hold when `listing` runs; the month-by-month listing rule and the split drops are 103's. The skew
+  item needs 126 prior readings, so no gated arm can open before about mid-2020.
+- **The structure,** all legs on item 103's year-long monthly (nearest 360 days, 240-540), strikes by delta
+  among quotes passing item 103's width bar, the nearer the money on a tie. Deltas are the kit's Black-76 at
+  r = 0 off the chain's parity forward.
+  - **`spread`** (his conservative version): sell the out-of-the-money put nearest 0.15 delta, buy the put
+    under it nearest 0.10, buy the call above the short put nearest 0.50, sell the out-of-the-money call
+    above that nearest 0.30.
+  - **`convex`** (his "full convexity" version): the same put spread and the 0.50 call, no short call.
+  - His uncovered short put is not tested: it needs cash or margin far beyond the account this suite
+    serves, and an account that cannot borrow trades the put spread.
+  - Opened at the entry close at each leg's mid with the suite's slippage. Closed the same way on the first
+    session 45 or fewer days before expiry; an unquoted leg is retried the next session, and at expiry
+    each leg settles at intrinsic with the $5 event. No stop and no profit target: his exits are not
+    public. One position a name at a time; the next may open the session after a close.
+  - **Capital** is the maximum loss at entry: the put spread's width less the net credit (plus the net
+    debit).
+- **The checklist,** read at each close on the fund's split-adjusted closes and its chains:
+  1. **`rv`:** the 20-session realised vol under its median over the last 252 sessions.
+  2. **`rv_iv`:** that realised vol under the at-the-money implied vol (call and put averaged, at the strike
+     nearest the forward) of the expiry 35-60 days out nearest 45.
+  3. **`stretch`:** the close at least **30%** under its 200-session average. His figure for the index was
+     far larger; 30% is this declaration's.
+  4. **`skew`:** on the year-long monthly, the 0.25-delta put's implied vol less the 0.25-delta call's,
+     above the 90th percentile of its readings over the previous 252 sessions (at least 126 of them).
+  - His fifth item, "leverage unwound", is a judgement with no series behind it and is left out, said here.
+  - A close where any item a gate needs cannot be read opens nothing, counted.
+- **The arms:**
+  - **Judged:** `spread-partial`, `convex-partial` (gate: stretch and skew, the two he had when he
+    entered), `spread-full`, `convex-full` (all four items).
+  - **Reported beside, never judged:** `spread-any`, `convex-any`, opened whenever flat. Gated less ungated
+    is the checklist's own effect, reported.
+- **Measured,** per name and week (Friday to Friday): the position's change in value in dollars on one
+  unit, cash flows with costs plus every leg's mark at the mid. Weeks are counted as item 103 counts them.
+  The kit's delta bar finances the previous Friday's net delta on 100 shares.
+- **Costs:** item 103's (the suite's slippage on each leg, `cherrypick.core.fees`, $5 an in-the-money
+  settlement). The stress is fees and slippage at 1.5x.
+- **One run, one split:** weeks ending before **2024-01-01** are the design, from it the holdout. The
+  holdout counts only after a design pass.
+- **The rule (`RULE` and `EXTRA_RULE` in the script),** per judged arm:
+  - **The kit's three bars on the weekly net:** capital (the net less the bill on the maximum loss), tail
+    (the 99th-percentile one-year drawdown under a year of mean net; per_year from the sample, 10,000
+    resamples, seed 104) and delta. t of 2 or more; at least **100** design weeks and **50** holdout weeks.
+  - **Also, in the design:** the mean net less the bill above zero in each half (weeks before and from
+    **2022-01-01**), on each name, and at the 1.5x stress. **Holm across the four judged arms** at 0.05 on
+    the capital bar's one-sided p.
+  - **Floors:** at least **8** positions opened in the design, the two names together; fewer is no verdict.
+    Item 103's coverage floor (two-sided 0.80, 25 strikes) per name and year.
+  - **Holdout:** the kit's three bars on the holdout weeks (the tail bar on every week read so far).
+  - A pass needs every check. The result file carries the kit's verdict block.
+- **Rival explanations, each with its check:**
+  - *Any long-delta structure looks good after a crash that recovers:* the kit's delta bar charges the
+    position's own delta, financed on the same capital.
+  - *The checklist only picks dates; any entry would do:* the ungated arms are reported beside.
+  - *The skew it sells is rich for a reason:* the tail bar reads the drawdown a 3x fund's fall gives a short
+    put spread.
+  - *Costs on four legs:* the 1.5x stress must stay positive.
+  - *Four arms, one lucky:* Holm across the four.
+  - *One name, one regime:* both names and both halves.
+- **Minimum detectable effect (B12):** from the design weeks' own spread, recorded in the local result
+  before the holdout is read. With few gated entries in four years, a no verdict for too few positions is
+  the likely outcome, said here first.
+- **Declared limits (B11):**
+  - End-of-day quotes only.
+  - Early assignment of the short put is not modelled.
+  - The strikes, the 30% stretch and the skew's tenor are this declaration's readings of a video that
+    states none of them exactly.
+  - One unit risks the put spread's width. On these funds that is several hundred dollars to over a
+    thousand, above the user's per-trade cap; the measure is per unit and per dollar of maximum loss.
+  - Two 3x funds, chosen by the user.
+- **Data:** item 103's listing probes; this plan's paths are every session's year-long monthly (the
+  structure and the skew) through its 45-day close, and every session's 45-day expiry while it is read.
+  Fetched on the current tier, quotes only, the fetch skipping what item 103 and the store already hold.
+  Split-adjusted closes and splits come from history.db, the bill from Treasury's 3-month curve. Results
+  are derived from licensed data and stay under `~/.cherrypick/data/backtest/results/research/item104/`;
+  this plan records the verdict without figures.
+- **Run:** `packages/backtest/scripts/soxl_turbo_item104.py` (it loads item 103's script for the listing,
+  quotes, costs and weekly rows), queued with `run.py queue-chain` as `item104/listing`, `fetch-listing`,
+  `plan`, `fetch-sample`, `smoke`, `fetch-chains` and `study`, with progress overall and per name.
+- **Decides:**
+  - **A pass:** the passing arm is a candidate trade idea for these funds, sized to the account, with its
+    forward check declared before any paper arm. Nothing is built from this item.
+  - **A fail or no verdict:** the video's turbo, as these rules read it, does not earn on these funds. It
+    joins item 74's super bull and is not proposed as a trade idea.
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:
