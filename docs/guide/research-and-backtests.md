@@ -29,20 +29,27 @@ no screenshot of it.
 `research/edge-hypotheses-plan.md` is the register of research items: each idea stated as the edge it would
 need, what would show it wrong, the test, and the verdict. Each item is a numbered heading. Many concern
 the retired modules. `research/hypotheses.json` holds the same items in a form a program can check, one row
-per item with its status, its rule and a pointer to its section. The register holds no licensed figures: a
-row names a verdict and the local path of a result file, never a number from the data.
+per item with its status, its rule and a pointer to its section. The register holds no licensed figures and
+no new verdicts: it records what each study declared.
 
-When a queued study finishes, its notice names each arm's verdict and the command that records it:
+A study's verdict is recorded on this machine only, in `data/research/verdicts.json` under the home, never in
+the repo. When a queued study's `study` row finishes with the study kit's verdict block (computed from the
+declared rule), the queue records it there itself: the status (passed when an arm passed, no verdict when no
+arm was judged, else failed), an outcome line of words (each arm and its verdict), the result file and the
+queue task. Its finish notice names the verdict and says it was recorded. A study is recorded once; a re-run
+never rewrites it. Every reader of the register (the `hypotheses` command, the Studies board, the scorecard,
+the retests) lays the recorded verdict over the declared row; the register check reads the repo file alone.
+
+A study the queue could not record (an older result without the kit's block, or one that finished before the
+queue recorded verdicts) is recorded by hand:
 
 ```
-python tools/record_verdict.py item90 --dry-run   # the edit, printed
-python tools/record_verdict.py item90             # the edit, a branch, a commit and a docs PR
+python tools/record_verdict.py item90 --dry-run   # what would be recorded, printed
+python tools/record_verdict.py item90             # record it
+python tools/record_verdict.py item90 --status failed --outcome "fail: ..., by the declared rule"
 ```
 
-It sets the row's status and an outcome line of words (each arm and its verdict, by the declared rule),
-checks the register, and opens the PR from a fresh worktree. It records only a result that carries the
-study kit's verdict block, which is computed from the declared rule; an older study's row stays a hand
-edit. The plan section's Result paragraph is written by hand.
+The last form is for a result without the kit's block: read the declared rule, and write words only.
 
 Check the register with:
 

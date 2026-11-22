@@ -5,8 +5,10 @@ read, and what it found. These files are records, not documentation of the softw
 wording a test was declared in, because a declaration changed after the fact is no longer a test.
 
 Results computed from licensed vendor data are not here: they stay under `~/.cherrypick` (see
-[packages/backtest/CLAUDE.md](../packages/backtest/CLAUDE.md)). A file here records a verdict and the local
-path of the result file, never a licensed figure.
+[packages/backtest/CLAUDE.md](../packages/backtest/CLAUDE.md)). Nor are new verdicts: a finished study's
+verdict is recorded on this machine (`data/research/verdicts.json` under the home), by the research queue
+when its study row finishes, and laid over the register's declared row wherever the register is read. The
+verdicts already in these files stay as written, never with a licensed figure.
 
 | File | What it is |
 |---|---|
