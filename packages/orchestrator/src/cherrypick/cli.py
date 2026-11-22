@@ -2349,8 +2349,9 @@ def _plan_on_main() -> str:
 
 def cmd_hypotheses(cfg, args) -> None:
     """B7: check the register, list rule changes due a re-read, and (--similar) rejected look-alikes."""
+    # The check reads the repo file alone; everything after it sees the verdicts recorded here.
+    problems = hypotheses.check(hypotheses.load(local=False))
     reg = hypotheses.load()
-    problems = hypotheses.check(reg)
     tasks = _queue_rows()
     studies = {r["study"] for r in tasks} | _study_folders()
     problems += [

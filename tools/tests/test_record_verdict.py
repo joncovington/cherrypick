@@ -1,4 +1,4 @@
-"""tools/record_verdict.py: a finished study's register row from the kit's verdict block, words only."""
+"""tools/record_verdict.py: a finished study's verdict recorded on this machine by hand, never in the repo."""
 
 from __future__ import annotations
 
@@ -13,70 +13,72 @@ spec = importlib.util.spec_from_file_location("record_verdict", TOOL)
 rv = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(rv)
 
-RULE = {"t_bar": 2.0, "min_n": 150, "holdout_min_n": 60, "tail": {}, "delta": True, "splits": ["2025-07-01"]}
+RULE = {"t_bar": 2.0, "min_n": 150}
 
 
-def doc(**verdicts):
-    arms = {a: {"n": 300, "parts": [], "verdict": w} for a, w in verdicts.items()}
-    return {"rule": RULE, "arms": arms, "verdict": dict(verdicts), "reported": {"x": {"mean": 1.5}}}
+@pytest.fixture
+def setup(tmp_path, monkeypatch):
+    from cherrypick.core import home
+    from cherrypick.orchestrator import hypotheses, researchqueue, verdictstore
+
+    monkeypatch.setattr(home, "home", lambda: tmp_path)
+    store = tmp_path / "verdicts.json"
+    monkeypatch.setattr(verdictstore, "path", lambda: store)
+    reg = tmp_path / "hypotheses.json"
+    rows = [
+        {"id": 89, "study": "item89", "status": "failed", "outcome": "fail: kept", "results": []},
+        {"id": 90, "study": "item90", "status": "declared", "outcome": None, "results": []},
+    ]
+    reg.write_text(json.dumps({"hypotheses": rows}), encoding="utf-8")
+    monkeypatch.setattr(hypotheses, "register_path", lambda root=None: reg)
+    result = tmp_path / "data" / "item90" / "results.json"
+    result.parent.mkdir(parents=True)
+    # The register lists no result: the finished study row's output is found through the queue.
+    monkeypatch.setattr(
+        researchqueue,
+        "rows",
+        lambda path=None, study=None, limit=200: [
+            {
+                "study": "item90",
+                "step": "smoke",
+                "status": "done",
+                "output": str(result.with_name("smoke.json")),
+            },
+            {"study": "item90", "step": "study", "status": "done", "output": str(result)},
+        ],
+    )
+    return {"store": store, "result": result, "reg": reg}
 
 
-def test_the_status_follows_the_arms_words():
-    assert rv.status_of({"a": "fail", "b": "fail"}) == "failed"
-    assert rv.status_of({"a": "fail", "b": "pass"}) == "passed"
-    assert rv.status_of({"a": "no verdict", "b": "not read"}) == "no_verdict"
-    assert rv.status_of({"a": "no verdict", "b": "fail"}) == "failed"
+def test_a_kit_result_found_through_the_queue_is_recorded_locally(setup, capsys):
+    arms = {"a": {"n": 300, "parts": [], "verdict": "fail"}}
+    setup["result"].write_text(
+        json.dumps({"rule": RULE, "arms": arms, "verdict": {"a": "fail"}}), encoding="utf-8"
+    )
+    before = setup["reg"].read_text(encoding="utf-8")
+    assert rv.main(["item90", "--dry-run"]) == 0
+    assert not setup["store"].exists()
+    assert rv.main(["item90"]) == 0
+    rec = json.loads(setup["store"].read_text(encoding="utf-8"))["studies"]["item90"]
+    assert (
+        rec["status"] == "failed"
+        and rec["results"] == ["{home}/data/item90/results.json"]
+        and rec["by"] == "by hand"
+    )
+    assert setup["reg"].read_text(encoding="utf-8") == before, "the register in the repo is untouched"
+    assert rv.main(["item90"]) == 1
+    assert "recorded already" in capsys.readouterr().err
 
 
-def test_the_outcome_is_words_only():
-    out = rv.outcome_of(rv.kit_verdicts(doc(**{"orb-put-spread": "fail", "adx-condor": "fail"})))
-    assert out.startswith("fail: orb-put-spread fail; adx-condor fail")
-    assert not any(c.isdigit() for c in out), "no figure reaches the repo"
+def test_a_result_without_the_kits_block_needs_the_status_and_outcome_by_hand(setup, capsys):
+    setup["result"].write_text(json.dumps({"verdict": {"a": "fail"}}), encoding="utf-8")
+    assert rv.main(["item90"]) == 1
+    assert "record it by hand" in capsys.readouterr().err
+    assert rv.main(["item90", "--status", "failed"]) == 1
+    assert rv.main(["item90", "--status", "failed", "--outcome", "fail: a fail, by the declared rule"]) == 0
+    assert json.loads(setup["store"].read_text(encoding="utf-8"))["studies"]["item90"]["status"] == "failed"
 
 
-@pytest.mark.parametrize(
-    ("bad", "why"),
-    [
-        ({"verdict": {"a": "pass"}}, "no study-kit rule"),
-        ({**doc(a="pass"), "rule": {"t_bar": 2.0, "min_n": 80, "holdout": True}}, "no study-kit rule"),
-        ({**doc(a="pass"), "arms": {"a": {"verdict": "pass"}}}, "no study-kit arms"),
-        ({**doc(a="pass", b="fail"), "verdict": {"a": "pass"}}, "does not name each arm"),
-    ],
-)
-def test_a_result_without_the_kits_block_is_refused(bad, why):
-    with pytest.raises(rv.Refused, match=why):
-        rv.kit_verdicts(bad)
-
-
-REG = """{
-  "hypotheses": [
-    {
-      "id": 89,
-      "study": "item89",
-      "status": "failed",
-      "outcome": "fail: kept",
-      "retests": []
-    },
-    {
-      "id": 90,
-      "study": "item90",
-      "status": "declared",
-      "rule": {"nested": {"a": 1}},
-      "outcome": null,
-      "retests": []
-    }
-  ]
-}
-"""
-
-
-def test_the_edit_sets_two_fields_of_its_own_row_and_keeps_the_rest():
-    new = rv.edit(REG, "item90", {"a": "fail"})
-    assert json.loads(new)["hypotheses"][0] == json.loads(REG)["hypotheses"][0]
-    row = json.loads(new)["hypotheses"][1]
-    assert row["status"] == "failed" and row["outcome"].startswith("fail: a fail")
-    assert new.replace(row["outcome"], "X").count("\n") == REG.count("\n")  # formatting kept, line for line
-    with pytest.raises(rv.Refused, match="recorded already"):
-        rv.edit(REG, "item89", {"a": "fail"})
-    with pytest.raises(rv.Refused, match="no register row"):
-        rv.edit(REG, "item91", {"a": "fail"})
+def test_a_study_the_register_already_records_is_refused(setup, capsys):
+    assert rv.main(["item89"]) == 1
+    assert "already records item89" in capsys.readouterr().err

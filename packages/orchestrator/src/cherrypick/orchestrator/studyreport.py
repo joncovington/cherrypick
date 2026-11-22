@@ -740,8 +740,8 @@ def advice(study: dict, own: list[dict], verdicts: list[dict], steps: list[str])
     if words and not study.get("outcome") and study.get("status") in ("declared", "running"):
         add(
             "register",
-            "Record the outcome in research/hypotheses.json: the result files have verdicts and the register"
-            " row still says declared.",
+            "Record the outcome on this machine (python tools/record_verdict.py with the study): the result"
+            " files have verdicts and the study is still declared.",
             "a verdict is written but not recorded",
         )
     return out
