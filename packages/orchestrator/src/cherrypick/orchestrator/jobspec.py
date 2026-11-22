@@ -80,6 +80,8 @@ CATCHUP_MINUTES = {
     # The day's further runs (`manage.also_at`) are refreshes: a missed one is overtaken by the next,
     # so it catches up for an hour and no more.
     "manage-eval-also": 60,
+    # Sunday's run reads Friday's quotes all evening; a late one is the same reading.
+    "manage-eval-sunday": 4 * 60,
     # The time-spread scan quotes the front week: an hour late is still that session's scan.
     "manage-time-spreads": 60,
     # The market files: the evening fetch is good until the pack builds at 08:30, and the pre-pack
@@ -283,6 +285,7 @@ NOTIFIES_OWN_FAILURE = frozenset(
         "review-provisional",  # "Suite review (...) failed"
         "review-final",
         "manage-eval",  # "Position evaluation failed"
+        "manage-eval-sunday",  # the same verb, so the same post
         "reconcile",  # its scheduled run pushes every non-FLAT verdict; the exit code is the verdict
     }
 )
@@ -537,6 +540,9 @@ class JobSpec:
     window_end: str | None = None
     window_invert: bool = False  # fire only OUTSIDE the window (flies off-session tick)
     trading_days_only: bool = False
+    # Days of the ET week the job may run on (Monday 0 .. Sunday 6); empty is every day. With
+    # `trading_days_only` both must pass.
+    weekdays: tuple[int, ...] = ()
     catchup_minutes: int = 0
     silence_file: str | None = None
     silence_seconds: int = 0
@@ -606,6 +612,10 @@ class JobSpec:
                 _hhmm(str(s.at_et))
         if self.kind in (KIND_DAILY, KIND_MONTHLY):
             _hhmm(str(self.at_et or ""))
+        if self.weekdays and (
+            len(set(self.weekdays)) != len(self.weekdays) or not all(0 <= int(d) <= 6 for d in self.weekdays)
+        ):
+            raise ValueError(f"{self.id}: weekdays must be distinct days 0 (Monday) .. 6 (Sunday)")
         if self.kind == KIND_MONTHLY and not 1 <= int(self.day_of_month) <= 28:
             raise ValueError(f"{self.id}: day_of_month must be 1..28 so it exists in every month")
         if bool(self.window_start) != bool(self.window_end):
@@ -647,6 +657,8 @@ class JobSpec:
             base += f", {len(self.steps)} steps in order"
         if self.trading_days_only:
             base += ", trading days"
+        if self.weekdays:
+            base += ", " + ", ".join(WEEKDAY_NAMES[d] for d in sorted(self.weekdays))
         if self.quiet_interval_seconds:
             hours = f" {self.active_start}-{self.active_end} ET" if self.active_start else ""
             base += f", every {self.quiet_interval_seconds}s outside trading-day{hours}"
@@ -654,6 +666,9 @@ class JobSpec:
 
 
 # --------------------------------------------------------------------------- pure schedule math
+WEEKDAY_NAMES = ("Mondays", "Tuesdays", "Wednesdays", "Thursdays", "Fridays", "Saturdays", "Sundays")
+
+
 def _hhmm(value: str) -> tuple[int, int]:
     hh, mm = value.split(":")
     h, m = int(hh), int(mm)
@@ -708,6 +723,8 @@ def _gates_pass(spec: JobSpec, now: datetime, holidays: set[str] | None) -> tupl
         return False, spec.enabled_reason or "disabled"
     if spec.trading_days_only and not timeutil.is_trading_day(now, holidays):
         return False, "not a trading day"
+    if spec.weekdays and now.weekday() not in spec.weekdays:
+        return False, "not one of its days"
     if not in_window(spec, now):
         return False, "outside window"
     return True, ""
@@ -2206,6 +2223,24 @@ def derive_jobs(
             trading_days_only=True,
             enabled=mg["enabled"],
             enabled_reason="" if mg["enabled"] else "disabled in config (manage)",
+        ),
+    )
+    # --- manage-eval-sunday: the same run once a week after the futures open. A job of its own,
+    # since its day gate differs from the trading-day one (`manage.sunday_at`, null for off).
+    sunday_on = mg["enabled"] and mg["sunday_at"] is not None
+    add(
+        "manage-eval-sunday",
+        lambda: JobSpec(
+            id="manage-eval-sunday",
+            argv=_run_py(pythonw, launcher, "manage"),
+            kind=KIND_DAILY,
+            at_et=mg["sunday_at"] or "18:15",
+            catchup_minutes=CATCHUP_MINUTES["manage-eval-sunday"],
+            weekdays=(6,),
+            enabled=sunday_on,
+            enabled_reason=""
+            if sunday_on
+            else ("disabled in config (manage)" if not mg["enabled"] else "manage.sunday_at is null"),
         ),
     )
     # --- manage-time-spreads: the time-spread scanner. Read-only REST

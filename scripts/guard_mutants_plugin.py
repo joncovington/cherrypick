@@ -317,6 +317,18 @@ def _em_reads_entry_close():
     return patched
 
 
+def _gates_ignore_weekdays():
+    """The real `_gates_pass`, except a job's `weekdays` is never read: a Sunday-only job runs every day."""
+    import dataclasses
+
+    original = importlib.import_module("cherrypick.orchestrator.jobspec")._gates_pass
+
+    def patched(spec, now, holidays):
+        return original(dataclasses.replace(spec, weekdays=()), now, holidays)
+
+    return patched
+
+
 def _dispersion_moves_together():
     """The real `dispersion`'s shock, except every name moves the same way by beta, as the stress line
     does: the perfect correlation under which a hedge across names can never lose on both sides."""
@@ -369,6 +381,7 @@ REPLACEMENTS = {
     "every_mode_offered": lambda: _every_mode_offered,
     "identity": lambda: _identity,
     "dispersion_moves_together": _dispersion_moves_together,
+    "gates_ignore_weekdays": _gates_ignore_weekdays,
     "gate_sees_ahead": lambda: _gate_sees_ahead,
     "replay_overwrites": lambda: _replay_overwrites,
     "always_filled": lambda: _always_filled,
@@ -717,6 +730,15 @@ MUTANTS: tuple[Mutant, ...] = (
         module="cherrypick.manage.portfolio",
         attr="_cash_on",
         replacement="always_false",
+    ),
+    Mutant(
+        id="jobspec-weekdays",
+        breaks="a job's weekdays gate is never read, so the Sunday manage run fires every day",
+        package="orchestrator",
+        tests=("tests/test_jobspec.py::test_manage_runs_once_more_on_sunday_evening_after_the_futures_open",),
+        module="cherrypick.orchestrator.jobspec",
+        attr="_gates_pass",
+        replacement="gates_ignore_weekdays",
     ),
     Mutant(
         id="manage-dispersion-apart",
