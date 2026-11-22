@@ -304,6 +304,8 @@ export interface GroupsCheckResult {
   moves?: Record<string, string | null>;
   switches?: Record<string, { enabled: boolean; start?: string }>;
   notes?: string[];
+  /** What each move carries beyond the move, in the module's words: shown beside the save, as they are. */
+  cautions?: string[];
   after?: GroupsEditView | null;
 }
 

@@ -31,7 +31,13 @@ config's now, so the group's record no longer reads that automation either), and
 
 **Switching on starts at the next session.** An automation or a group switched on by a change is given the
 next trading session as its start (or keeps a later one), so a paper record never begins in the middle of a
-day. An automation with a forward rule keeps the start its rule reads from, and `check` says so.
+day. So is an automation a move sets trading (out of a group that is off, into one that is on). An
+automation with a forward rule keeps the start its rule reads from, and `check` says so.
+
+**What a move carries.** `check` gives each move its `cautions`, which a page shows beside the save: the
+automation's record goes with it (a group is read over its members now, past sessions included), any
+position it holds counts against its new group's cap from the save, and a new group with a budget was not
+sized for it (no share there, only the cap; the suggested allocation it would carry).
 
 `check` lays a proposal over the config and loads it as the loop would (`config.load_arms`), so every rule
 the loop applies (a group no automation belongs to switched on, a share for an outsider, shares over 100,
@@ -328,6 +334,25 @@ def check(config: dict, proposal: dict, today: date | None = None) -> dict:
                 notes.append(f"{n} switches on from {first}, the next session")
         switched[n] = entry
 
+    for n, g in sorted(moved.items(), key=lambda x: x[0]):
+        a = own[n]
+        old = a.get("group")
+        if a.get("retired") or n in switched or not a.get("enabled", True):
+            continue
+        was_trading = old is None or current.get(old, {"enabled": True})["enabled"]
+        spec = block.get(g) if g is not None else None
+        # The block as written, read before it is checked: a bad one is the load's problem below.
+        joins = g is None or (
+            isinstance(spec, dict) and spec.get("enabled") is True and str(spec.get("start") or "") < first
+        )
+        if was_trading or not joins:
+            continue
+        if a.get("forward") is not None:
+            notes.append(f"{n} keeps its start {a.get('start')}: its forward rule reads from it")
+        elif str(a.get("start") or "") < first:
+            switched[n] = {"enabled": True, "start": first}
+            notes.append(f"{n} trades in {g or 'no group'} from {first}, the next session")
+
     trial = copy.deepcopy(config)
     trial["groups"] = block
     key = next((k for k in config_mod.REGISTRY_KEYS if isinstance(trial.get(k), dict)), "automations")
@@ -350,6 +375,8 @@ def check(config: dict, proposal: dict, today: date | None = None) -> dict:
             "notes": [],
             "after": None,
         }
+    after = view(trial, today)
+    after_groups = config_mod.groups(trial, today)
     return {
         "ok": True,
         "problems": [],
@@ -357,5 +384,34 @@ def check(config: dict, proposal: dict, today: date | None = None) -> dict:
         "moves": moved,
         "switches": switched,
         "notes": notes,
-        "after": view(trial, today),
+        "cautions": _cautions(own, moved, after_groups, after),
+        "after": after,
     }
+
+
+def _money(v: float) -> str:
+    return f"${v:,.0f}"
+
+
+def _cautions(own: dict, moved: dict, after_groups: dict, after: dict) -> list[str]:
+    """What each move carries beyond the move (module docstring), in words a page shows as they are."""
+    suggested = {r["name"]: (r.get("suggested") or {}).get("allocation") for r in after["groups"]}
+    out = []
+    for n, g in sorted(moved.items(), key=lambda x: x[0]):
+        old = own[n].get("group")
+        out.append(
+            f"{n}'s record moves with it: {old or 'no group'} and {g or 'no group'} are read over their"
+            " members now, so both groups' figures change, past sessions included"
+        )
+        if g is None:
+            continue
+        spec = after_groups[g]
+        if "max_risk" in spec:
+            out.append(f"Any position {n} holds counts against {g}'s cap from the save")
+        if "allocation" in spec or "max_risk" in spec:
+            total = suggested.get(g)
+            out.append(
+                f"{g}'s budget was not sized for {n}: it has no share there, only the group's cap"
+                + (f"; the suggested allocation becomes {_money(total)}" if total is not None else "")
+            )
+    return out
