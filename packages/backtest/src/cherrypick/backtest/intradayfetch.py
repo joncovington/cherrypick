@@ -48,7 +48,7 @@ from typing import Any
 from cherrypick.core import progress as core_progress
 
 from . import fullset, paths
-from .chainfetch import prior_refusals, settled, vendor_root
+from .chainfetch import prefer_wal, prior_refusals, settled, vendor_root
 from .vendor import FATAL, VendorRefusal
 
 DB_NAME = "intraday_chains.db"
@@ -98,6 +98,7 @@ def connect(settings: dict, store: str = DB_NAME) -> sqlite3.Connection:
     """The intraday chain store, created inside the marked vendor directory."""
     paths.ensure_vendor_dir(settings)
     conn = sqlite3.connect(db_path(settings, store), timeout=300)
+    prefer_wal(conn)
     conn.executescript(SCHEMA)
     return conn
 

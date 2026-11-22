@@ -520,7 +520,9 @@ volatility and the underlying's price per contract), from a `{requests: [{symbol
 start, end, interval?}]}` file as `fetch-chains` reads. Its own store, `intraday_chains.db`, in the
 marked licensed directory; resumable, a refusal recorded and retried (one refused again with the same
 fixed reason counted `settled`, as the path fetch counts it), `--stop-by` bounds a run, so the
-research queue runs it. The coverage pilot that decides item 31's basis is `packages/backtest/scripts/earnings_item31.py`
+research queue runs it. It, the end-of-day chain store and the add-on store open in WAL
+(`chainfetch.prefer_wal`), so the inventory job's count of a large store never holds a fetch's write;
+a store busy at connect keeps its mode for that run and switches on the next quiet one. The coverage pilot that decides item 31's basis is `packages/backtest/scripts/earnings_item31.py`
 (`plan`, `pilot`); it reads presence and counts, never a price.
 
 A request may also carry `strike_range` (a positive whole number of strikes either side of the money; item
