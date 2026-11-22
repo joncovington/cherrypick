@@ -6,7 +6,8 @@ import { Card } from "../../components/DataTable";
 import { HelpSection, type CardHelpContent } from "../../components/CardHelp";
 import { Section } from "../../components/Section";
 import { FliesTile } from "../Flies/FliesSession";
-import { groupsCheck, groupsSave, useAutomations, useAutomationsPerformance, useGroupBudget, useGroupsEdit } from "../../lib/api";
+import { groupsCheck, groupsSave, useAutomations, useAutomationsPerformance, useAutomationsReadings, useGroupBudget, useGroupsEdit } from "../../lib/api";
+import { ReadingChip } from "./AutomationsVsBacktest";
 import { fmtMoney } from "../../lib/format";
 import { AutomationRecordPage } from "./AutomationRecord";
 import { automationHref } from "./automationsModels";
@@ -710,6 +711,8 @@ function afterMap(check: GroupsCheckResult | null): After {
 function GroupPage({ view, draft, edit, paper, group, after }: { view: GroupsEditView; draft: GroupsChange; edit: (d: GroupsChange) => void; paper: Paper; group: string; after: After }) {
   const [adding, setAdding] = useState(false);
   const [showRetired, setShowRetired] = useState(true);
+  const readings = useAutomationsReadings();
+  const readingOf = (name: string) => readings.data?.automations.find((a) => a.name === name);
   const none = group === NONE;
   const target: string | null = none ? null : group;
   const rows = placement(view, draft);
@@ -789,6 +792,7 @@ function GroupPage({ view, draft, edit, paper, group, after }: { view: GroupsEdi
                     <th>its own switch</th>
                     <th>what happens</th>
                     <th>research verdict</th>
+                    <th>vs backtest</th>
                     {!none && (
                       <th>
                         share %
@@ -808,7 +812,7 @@ function GroupPage({ view, draft, edit, paper, group, after }: { view: GroupsEdi
                     const fold =
                       i === members.length && retiredRows.length > 0 ? (
                         <tr key="retired-fold" className="grp-fold">
-                          <td colSpan={none ? 9 : 10}>
+                          <td colSpan={none ? 10 : 11}>
                             <button type="button" className="grp-fold-btn" aria-expanded={showRetired} onClick={() => setShowRetired(!showRetired)}>
                               {showRetired ? "▾" : "▸"} Retired ({retiredRows.length})
                             </button>
@@ -843,6 +847,9 @@ function GroupPage({ view, draft, edit, paper, group, after }: { view: GroupsEdi
                         </td>
                         <td>
                           <Verdict v={r.m.verdict} />
+                        </td>
+                        <td>
+                          <ReadingChip row={readingOf(r.m.name)} />
                         </td>
                         {!none && (
                           <td>
@@ -888,7 +895,7 @@ function GroupPage({ view, draft, edit, paper, group, after }: { view: GroupsEdi
                   })}
                   {!showRetired && retiredRows.length > 0 && (
                     <tr className="grp-fold">
-                      <td colSpan={none ? 9 : 10}>
+                      <td colSpan={none ? 10 : 11}>
                         <button type="button" className="grp-fold-btn" aria-expanded={false} onClick={() => setShowRetired(true)}>
                           ▸ Retired ({retiredRows.length})
                         </button>

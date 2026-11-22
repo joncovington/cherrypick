@@ -421,6 +421,9 @@ by the engine's exit kind (trades, share, net) beside the run's share of each ki
 the road ahead (`ahead`): the run's band of the next 20 trades started from paper's running net now,
 empty before the first trade. Its state
 is `no_reference`, `no_trades`, `too_few` (under 5 trades) or the running net's place.
+`read automation-readings --ids a=run[:declared],...` is every pinned automation's reading in one
+read, each cut to a row (state, licensed, paper's trades, place counts, net, mean and entry rate, the
+sample, the run's trades, mean and entry rate); a pair that cannot be read carries its own `error`.
 `read group-budget --ids a=run,b=run` reads a group's budget from its members' pinned Builder runs
 (`groupbudget.py`, pure): over the sessions every run covers, the most the members held at once
 (each trade's `risk` from its entry session through its exit session) rounded up to $50 as a max
