@@ -1,4 +1,5 @@
 import type { MeasurementBreak, TradeMoney, TradeTotals } from "./modules.js";
+import type { RegimeCuts } from "./regimeCuts.js";
 
 /**
  * automations' read surface (packages/automations): research item 75's arms in paper. An arm is one
@@ -1061,5 +1062,28 @@ export interface ArmBacktestReading {
   withheld: boolean;
   error: string | null;
   reading: NonNullable<AutomationReading["reading"]> | null;
+}
+
+/** One underlying's daily-bar market label for today (`core.marketregime`), or why it has none. */
+export interface ConditionsLabel {
+  trend?: string | null;
+  vol?: string | null;
+  atr_percentile?: number | null;
+  /** The last daily bar the label reads; today's own bar is never read. */
+  through?: string | null;
+  status?: "unmeasured";
+  reason?: string | null;
+}
+
+/**
+ * `GET /api/automations/automation/conditions?name=`: the automation's closed trades cut by each entry
+ * session's daily-bar trend and volatility, assembled and stamped by `core.regimecuts`, with today's
+ * label set against each cut (`cli conditions`). `labels` is each underlying's label for today.
+ */
+export interface AutomationConditions {
+  name: string;
+  error: string | null;
+  cuts: RegimeCuts | null;
+  labels: Record<string, ConditionsLabel>;
 }
 

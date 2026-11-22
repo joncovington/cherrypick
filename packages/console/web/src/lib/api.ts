@@ -42,6 +42,7 @@ import type {
   BuilderSaveResult,
   BuilderReferenceResult,
   AutomationEntries,
+  AutomationConditions,
   AutomationReading,
   AheadModule,
   ArmBacktestReading,
@@ -1759,6 +1760,15 @@ export function useAutomationsEntries() {
     queryFn: () => getJson<AutomationsEntries>("/api/automations/entries"),
     staleTime: 30_000,
     refetchInterval: 120_000,
+  });
+}
+
+/** One automation's record in today's market conditions (each underlying's daily-bar trend and volatility). */
+export function useAutomationConditions(name: string) {
+  return useQuery<AutomationConditions>({
+    queryKey: ["automation-conditions", name],
+    queryFn: () => getJson<AutomationConditions>(`/api/automations/automation/conditions?name=${encodeURIComponent(name)}`),
+    staleTime: 300_000,
   });
 }
 

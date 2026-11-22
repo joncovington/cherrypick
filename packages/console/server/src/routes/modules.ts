@@ -84,6 +84,7 @@ import { readLogTail } from "../readers/logs.js";
 import { getFeatures } from "../services/featuresBridge.js";
 import { readAutomationReadingFor } from "../readers/automationReading.js";
 import { readAutomationEntriesFor, readAutomationsEntries } from "../readers/automationEntries.js";
+import { readAutomationConditionsFor } from "../readers/automationConditions.js";
 import { readGroupUnits } from "../readers/automationGroupsRead.js";
 import { readArmReading } from "../readers/armReading.js";
 import { readSystemPanel } from "../services/suite.js";
@@ -547,6 +548,12 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
     const name = String(((req.query ?? {}) as Record<string, unknown>)["name"] ?? "");
     if (!/^[a-z0-9][a-z0-9-]{1,47}$/.test(name)) return reply.code(400).send({ error: "name: an automation's name" });
     return readAutomationEntriesFor(name);
+  });
+  // One automation's record in today's market conditions (the automations package cuts it, core stamps it).
+  app.get("/api/automations/automation/conditions", async (req, reply) => {
+    const name = String(((req.query ?? {}) as Record<string, unknown>)["name"] ?? "");
+    if (!/^[a-z0-9][a-z0-9-]{1,47}$/.test(name)) return reply.code(400).send({ error: "name: an automation's name" });
+    return readAutomationConditionsFor(name);
   });
   app.get("/api/curve/history", async (req) => {
     const q = (req.query ?? {}) as Record<string, unknown>;

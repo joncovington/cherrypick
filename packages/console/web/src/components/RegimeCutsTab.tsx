@@ -591,11 +591,30 @@ const TODAY_WHY_WORDS: Record<string, string> = {
   no_cut: "this cut does not hold it",
   degenerate: "every session falls in one bucket, so there is nothing to set it against",
   underpowered: "too few sessions for a regime claim yet",
-  no_trades: "the arm has no trade in this bucket",
+  no_trades: "no trade in this bucket yet",
   thin: "too few sessions in this bucket to read",
 };
 
-export function TodayConditionsCard({ cuts, arm }: { cuts: RegimeCuts; arm: string }) {
+/**
+ * One arm's record in the buckets the market sits in today. `lead`, `help`, `dimWords` and `none` let a
+ * writer whose reading is not the loop's own ticks (automations: each underlying's daily bars) say what
+ * its reading is; MEIC's page passes none of them.
+ */
+export function TodayConditionsCard({
+  cuts,
+  arm,
+  lead,
+  help = TODAY_HELP,
+  dimWords = {},
+  none = "That session has no reading.",
+}: {
+  cuts: RegimeCuts;
+  arm: string;
+  lead?: ReactNode;
+  help?: CardHelpContent;
+  dimWords?: Record<string, string>;
+  none?: ReactNode;
+}) {
   const today = cuts.today ?? null;
   const row = cuts.arms.find((a) => a.arm === arm);
   if (today === null || row === undefined || (row.today ?? null) === null) return null;
@@ -603,12 +622,16 @@ export function TodayConditionsCard({ cuts, arm }: { cuts: RegimeCuts; arm: stri
   const cells = row.today ?? {};
   const dims = Object.keys(cells);
   return (
-    <Card title="today's conditions" className="lv-12" collapseKey={`regime-${cuts.module}-today`} help={TODAY_HELP}>
+    <Card title="today's conditions" className="lv-12" collapseKey={`regime-${cuts.module}-today`} help={help}>
       <p className="muted" style={{ marginTop: 0 }}>
-        The market at {today.session ?? "the session"}&apos;s last reading{at !== null ? ` (${at} ET)` : ""}, and how {arm} has done in each bucket.
+        {lead ?? (
+          <>
+            The market at {today.session ?? "the session"}&apos;s last reading{at !== null ? ` (${at} ET)` : ""}, and how {arm} has done in each bucket.
+          </>
+        )}
       </p>
       {dims.length === 0 ? (
-        <p className="muted">That session has no reading.</p>
+        <p className="muted">{none}</p>
       ) : (
         <table className="data-table">
           <thead>
@@ -625,7 +648,7 @@ export function TodayConditionsCard({ cuts, arm }: { cuts: RegimeCuts; arm: stri
               const c = cells[d]!;
               return (
                 <tr key={d}>
-                  <td>{d}</td>
+                  <td>{dimWords[d] ?? d}</td>
                   <td>{c.bucket ?? "—"}</td>
                   {c.readable ? (
                     <>

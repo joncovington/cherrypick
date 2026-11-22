@@ -178,7 +178,11 @@ alone):
     through, its figures withheld while `backtestResultsOn` is false (the matching run still named).
     A MEIC arm's page and an automation's page show the sessions ahead (`/api/ahead/:module?arm=`,
     `readers/ahead.ts`, `components/armpage/SessionsAhead.tsx`): the module's own `cli ahead`
-    (`core.ahead`), passed through; the page words and computes nothing.
+    (`core.ahead`), passed through; the page words and computes nothing. Both show today's
+    conditions with the one card (`TodayConditionsCard`): MEIC's from its regime cuts, an
+    automation's from `/api/automations/automation/conditions` (`readers/automationConditions.ts`,
+    the automations package's `cli conditions`, put in the regime cuts' shape by
+    `shapeRegimeCuts`; `pages/Automations/AutomationConditions.tsx` words each underlying's label).
   - **The shared costs tab** (`components/costs/SharedCosts.tsx`; earnings and ladder) renders
     `core.metrics.money` from the performance read, per arm and the module's own line: it sums
     nothing. Ladder and weeklyput are in `PERFORMANCE_MODULE_SCHEMA`, so the shared performance and
