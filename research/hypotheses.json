@@ -4933,6 +4933,60 @@
       "retest": null,
       "retest_note": "A pass is followed by a paper arm with its own forward block, not a retest; the chains are the vendor's, so a retest reads them only while the licence allows new work.",
       "retests": []
+    },
+    {
+      "id": 105,
+      "study": "item105",
+      "title": "Falling E-mini futures open interest in an index drawdown: is the low in?",
+      "status": "declared",
+      "legacy": false,
+      "setup": "positioning",
+      "side": "signal",
+      "structure": "none",
+      "window": "multi-day",
+      "measure": "CFTC Traders in Financial Futures, E-mini S&P 500 (13874A), weekly as-of reports 2006-06-13 to 2026-11-17, against Cboe daily SPX closes read at the first session after each Friday release; a report is in a drawdown from 7% under the prior 252-session high close until under 3%; reports within 13 days before a quarterly expiry are left out; oi_fall is open interest 3% under its peak in the same drawdown and quarterly cycle, lev_short_fall the leveraged funds' net short share 3 points under its net-short peak in the same drawdown; held is no close in the next 63 sessions under the drawdown's low so far; excess_held is the signal weeks' mean of held less the share held by non-signal drawdown weeks of the same age (to 5 reports or past) and bounce (under 2%, 2-5%, 5%+)",
+      "expected": "the low so far stands at least ten points more often after a signal week than after a matched drawdown week, with t 2.24",
+      "sample": "one run cut at 2019-01-01 (design before, holdout from); < 15 design signal weeks or signal weeks in < 4 episodes = no verdict, < 8 holdout signal weeks = provisional",
+      "rule": "FORECAST_RULE, each signal on its own: design excess_held >= 0.10 with one-sided t >= 2.24 (Bonferroni over two signals) from a stationary block bootstrap over drawdown weeks (mean block 13, 10,000 draws, seed 105); holdout, read after a design pass, excess_held > 0 on a baseline from holdout weeks alone",
+      "mechanism": "forced and voluntary closing in a selloff exhausts the selling, and the low is in once it is done",
+      "rivals": [
+        {
+          "explanation": "the roll calendar moves open interest",
+          "check": "roll-window reports left out, the peak reset at each expiry; the naive reading reported"
+        },
+        {
+          "explanation": "the signal fires late, when lows are already in",
+          "check": "baseline matched on the drawdown's age"
+        },
+        {
+          "explanation": "price has already bounced",
+          "check": "baseline matched on the bounce from the low so far"
+        },
+        {
+          "explanation": "one crisis",
+          "check": "episode floor, signal weeks by episode, holdout read apart"
+        },
+        {
+          "explanation": "look-ahead from the release lag",
+          "check": "price read from the session after publication"
+        },
+        {
+          "explanation": "two tries at one idea",
+          "check": "Bonferroni t bar over the two signals"
+        }
+      ],
+      "pointer": "research/edge-hypotheses-plan.md#105-falling-e-mini-futures-open-interest-in-an-index-drawdown-is-the-low-in",
+      "scripts": [
+        "packages/backtest/scripts/futures_oi_bottom_item105.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_futures_oi_bottom_item105_script.py"
+      ],
+      "results": [],
+      "outcome": null,
+      "retest": null,
+      "retest_note": null,
+      "retests": []
     }
   ],
   "rule_changes": []

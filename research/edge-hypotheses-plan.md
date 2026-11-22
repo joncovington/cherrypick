@@ -10393,6 +10393,113 @@ holding, worst on high-momentum names), the 10-23 income confirmation (no tested
   - **A fail or no verdict:** the wheel is not worth running over its parts. The webinar's cost-strike
     call rule joins item 76 as a rule that does not earn, and the wheel gets no arm or module.
 
+### 105. Falling E-mini futures open interest in an index drawdown: is the low in?
+
+Declared 2026-11-21, before any outcome of it is computed. The claim comes from a community post
+during the November drawdown: while open interest in the index futures keeps rising, shorts are
+still being added; when it falls, longs have capitulated and the bottom is in. As written it
+miscounts, because every open contract has one long and one short, so rising open interest adds
+both sides. The coherent version is the old futures rule: a fall in price with falling open interest
+is positions closing, and a move losing its fuel. This item tests that version, and a second reading
+closer to the post's story: the leveraged funds' net short shrinking. `cherrypick hypotheses
+--similar` names no look-alike. It is a **`positioning`** item, and the nearest failures are 12 (GEX
+levels) and 93 (Market Profile forecasts).
+
+- **Question:** in an S&P 500 drawdown, is the drawdown's lowest close so far more likely to stand
+  for the next 63 sessions after a week in which E-mini open interest has fallen from its peak (or the
+  leveraged funds' net short share has fallen from its peak) than after the drawdown's other weeks,
+  matched on how long the drawdown has run and how far price has bounced?
+- **This is a forecast, not a trade.** A pass says the positioning reading carries information about
+  whether the low is in; it trades nothing, so the three bars do not apply, and the rule is a forecast
+  rule (`FORECAST_RULE` in the script). Any use of it (a gate on a dip-buying entry) is a later item,
+  declared on the three bars before it runs.
+- **Why a plain hit rate says nothing:** most drawdowns end, and a signal that can only fire some
+  weeks into one, after open interest has had time to peak, fires closer to the low than a week drawn
+  at random. The baseline is the drawdown's other weeks at the same age and the same bounce.
+- **Mechanism:** forced and voluntary closing (margin calls, de-leveraging, shorts covering) exhausts
+  the selling, and the market finds a floor once it is done. The rival is that open interest moves
+  with the roll calendar, hedging demand and volatility, and says nothing about the low that the
+  drawdown's own age and bounce do not.
+- **Data:** the CFTC's weekly Traders in Financial Futures report, futures only, E-mini S&P 500
+  (contract code 13874A): as-of Tuesday open interest summed over all contract months, and the
+  leveraged funds' long and short positions. Reports from 2006-06-13 (the report's first) through
+  2026-11-17, 1,067 of them, fetched by the script's `fetch` step from the CFTC's public history
+  files. Price is Cboe's daily SPX close, kept by `scripts/fetch_market_files.py`. Both are read once
+  and pinned by a fingerprint (report and session counts and a hash of their dates). The big S&P
+  contract (138741) is left out: it is a small and shrinking share of the open interest.
+- **Release lag:** a report reads positions as of Tuesday and is published that Friday afternoon.
+  Price is taken at the **reference session**, the first session after the Friday release, so nothing
+  is used before it was public.
+- **The drawdown:** a report is in a drawdown from the first one whose as-of close is at least 7%
+  under the highest close of the prior 252 sessions, until the first one less than 3% under it. Each
+  such run is an episode; a report's age is its count of reports into the episode. Reports outside a
+  drawdown are not rows.
+- **The roll:** the aggregate open interest swells in the two reports before each quarterly expiry
+  (third Friday of March, June, September, December), when both contracts are open, and steps down
+  at expiry as the old contract settles. A report within 13 days before its quarter's expiry is in
+  the **roll window**: it is not a row, never signals and never sets a peak. Open interest's peak is
+  taken within one quarterly cycle, so a lower reading after an expiry is never a fall.
+- **The two signals (each judged):**
+  - **`oi_fall`:** open interest at least 3% under its highest reading in the same episode and the
+    same quarterly cycle.
+  - **`lev_short_fall`:** the leveraged funds' net short share of open interest ((short − long) ÷
+    open interest) at least 3 points under its highest reading in the same episode, that peak being a
+    net short.
+  The thresholds were set from counts alone, with no outcome read: at 5% for open interest the
+  design part held 7 signal weeks in 2 episodes, sure to be no verdict. At 3% the design part has 28
+  `oi_fall` weeks in 5 episodes and 115 `lev_short_fall` weeks in 8; the holdout has 24 in 4 and 45
+  in 3.
+- **The outcome:** `held` is whether no SPX close in the 63 sessions after the reference session is
+  under the episode's lowest close from its high through the reference session.
+- **The baseline:** the episode weeks of the same part that do not signal, in the same cell: age up
+  to 5 reports or past it, and the bounce (the reference close over the low so far) under 2%, 2% to
+  5%, or 5% and over. The statistic, `excess_held`, is the signal weeks' mean of (held − its cell's
+  share held). A signal week whose cell has no baseline week is left out.
+- **Windows:** one run, cut at **2019-01-01** (design before, holdout from). The holdout part is read
+  only after a design pass. Its baseline is drawn from holdout weeks alone.
+- **The rule (`FORECAST_RULE`), each signal on its own:**
+  - **Design:** `excess_held` at least 0.10, with a one-sided t of at least 2.24 (2 at one test,
+    Bonferroni over the two signals). Its standard error comes from a stationary block bootstrap over
+    the drawdown weeks in order (mean block 13 weeks, 10,000 draws, seed 105), signal and baseline
+    weeks drawn together. Fewer than 15 design signal weeks, or signal weeks in fewer than 4 episodes,
+    is no verdict.
+  - **Holdout:** `excess_held` above zero. Fewer than 8 holdout signal weeks makes a pass provisional.
+- **Minimum detectable effect:** the sample is small. About 28 `oi_fall` weeks in 5 episodes,
+  heavily overlapping, give a standard error assumed near 0.18, so the design detects an excess of
+  about 40 points at the t bar; the 10-point floor will not bind. The run reports the measured
+  standard error. A fail reads "no effect that large", and with this few drawdowns that is the most
+  any answer can say. 2008 holds most of the design part's `lev_short_fall` weeks.
+- **Reported, never judged:** thresholds of 2% and 5% for each signal; drawdowns entered at 5% and
+  10%; horizons of 20 and 126 sessions; the outcome read as no later close under the reference close;
+  the mean 20- and 63-session return after signal weeks and after the other drawdown weeks; the first
+  signal date in each episode; open interest with no roll handling (no roll window, no cycle reset), to
+  show what the naive reading does; weeks and signal weeks by episode.
+- **Rival explanations, each with its check:**
+  - *The roll calendar moves open interest:* the roll window is left out and the peak resets at each
+    expiry; the naive reading is reported beside it.
+  - *The signal fires late, when lows are already in:* the baseline is matched on the drawdown's age.
+  - *Price has already bounced:* the baseline is matched on the bounce from the low so far.
+  - *It is one crisis:* the episode floor, signal weeks by episode, and the holdout read apart.
+  - *Look-ahead from the release lag:* price is read only from the session after publication.
+  - *Two tries at one idea:* the t bar is Bonferroni over the two signals.
+- **Declared limits:** weekly positions, published three days late, so a turn inside a week is not
+  seen. Open interest counts contracts, not dollars. The leveraged funds category mixes hedge funds
+  and CTAs and is the CFTC's classification, not ours. Twenty years hold about 17 drawdowns of 7% or
+  more, so neither part can show a modest effect. Overlapping 63-session outcomes are why the
+  bootstrap draws blocks of weeks.
+- **Data and results:** `packages/backtest/scripts/futures_oi_bottom_item105.py fetch` then `study`,
+  queued with `run.py queue-chain` as `item105/fetch` and `item105/study`. The data is public and
+  personal use, and the fetched files and results stay under
+  `~/.cherrypick/data/backtest/results/research/item105/`. This plan records the verdict without
+  figures, as for every item.
+- **Decides:**
+  - **A pass:** the positioning reading is information about whether a drawdown's low is in. A later
+    item, declared on the three bars, can test it as a gate on a dip-buying entry (the ladder's or a
+    put sale's).
+  - **A fail or no verdict:** "open interest falling means the bottom is in" adds nothing to how long
+    the drawdown has run and how far it has bounced, at least at a size this history can see. No
+    module reads futures positioning.
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:
