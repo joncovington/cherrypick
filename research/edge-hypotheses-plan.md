@@ -10581,6 +10581,53 @@ controls, but it leans against the slowing claim, and this item is declared know
   - **A fail or no verdict:** open interest changes say nothing about the pace of a fall that VIX
     and the recent move do not, and no module reads futures positioning.
 
+### 107. Forward only: a week of rising E-mini open interest in an index drawdown, and the next five sessions' fall
+
+Declared 2026-11-21, with no row of it in existence: it reads only CFTC reports as of 2026-11-24 or
+later. Item 106 judged the week's open interest change against the next 20 sessions' further fall and
+failed. Its reported time profile put the 5-session slope at about −0.88 points per standard
+deviation in its design (2006–2018) and −0.87 in its holdout (2019 on), with bootstrap t near −2.3
+and −2.1, both read after the design failed and the holdout was opened at the user's ask. That makes
+five sessions a horizon picked after the fact, out of five. With the whole history used, the only
+test left is forward. It is a **`positioning`** item, after 105 and 106.
+
+- **Question:** among weekly reports taken in an S&P 500 drawdown from 2026-11-24 on, does a larger
+  week-on-week rise in E-mini open interest go with a deeper further fall over the next five
+  sessions, with VIX, the prior five sessions' return and the drawdown's depth held fixed?
+- **This is a forecast, not a trade.** A pass says the relationship item 106 showed after the fact
+  holds on data nobody had seen. It trades nothing. Any use (a sizing or pacing input to a dip-buying
+  entry) is a later item, declared on the three bars.
+- **Rows, outcome and fit:** item 106's, unchanged but for the horizon (5 sessions). The drawdown,
+  the roll window and the cycle check are item 105's and 106's. Rows are built over the whole history,
+  so a drawdown already under way on 2026-11-24 is in its right state, and kept from that date on.
+  The features are standardized on **item 106's design values, frozen in the rule** (open interest
+  change: mean 1.97%, standard deviation 3.91%), so the slope is in the same units as the one seen.
+- **Data:** item 105's CFTC files (the current year fetched again on every run) and Cboe's SPX history,
+  fetched by this item's own step into its results folder (the routine market-files fetch does not
+  keep SPX). Cboe's VIX from `scripts/fetch_market_files.py`. All public, personal use.
+- **The rule (`FORECAST_RULE`):** no verdict until **40 forward rows** have accumulated. Then
+  `oi_slope_5` at most −0.5 with t at most −2, its standard error from a stationary block bootstrap
+  over the forward rows in order (mean block 4 weeks, 10,000 draws, seed 107). A five-session outcome
+  overlaps little from week to week, so the block is shorter than item 106's. There is no split: every
+  forward row is out of sample.
+- **How long:** 2006–2026 held about 13 usable drawdown weeks a year on average, and none in many
+  years. Forty rows may take three years or more, or come quickly in a long bear market. The run
+  writes the count each time.
+- **Rival explanations:** item 106's (volatility, the prior week's move and depth as controls; the
+  roll; the release lag). The one this item adds a check for is *the horizon was chosen after the
+  fact*: only data from after the declaration is read.
+- **Declared limits:** forty weekly rows is a small sample, and they may come from one or two
+  drawdowns. A pass from a single episode should be read with that in mind.
+- **Data and results:** `packages/backtest/scripts/futures_oi_week_item107.py fetch` then `study`,
+  queued with `run.py queue-chain` whenever a fresh read is wanted. Results stay under
+  `~/.cherrypick/data/backtest/results/research/item107/`; this plan records the verdict without
+  figures.
+- **Decides:**
+  - **A pass:** a week of rising open interest is information about the next week of a selloff. A
+    later item can test it as an input to a dip-buying entry's sizing or timing, on the three bars.
+  - **A fail:** the 5-session pattern was an artifact of looking at five horizons, and no module
+    reads futures positioning.
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:

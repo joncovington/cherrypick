@@ -5041,6 +5041,52 @@
       "retest": null,
       "retest_note": null,
       "retests": []
+    },
+    {
+      "id": 107,
+      "study": "item107",
+      "title": "Forward only: a week of rising E-mini open interest in an index drawdown, and the next five sessions' fall",
+      "status": "declared",
+      "legacy": false,
+      "setup": "positioning",
+      "side": "signal",
+      "structure": "none",
+      "window": "multi-day",
+      "measure": "item 106's rows and fit at a 5-session horizon, CFTC reports as of 2026-11-24 or later only, built over the whole history so drawdown state is right; features standardized on item 106's design values frozen in the rule; oi_slope_5 is the open interest change's coefficient on the 5-session further fall",
+      "expected": "one standard deviation more open interest growth goes with at least half a point more further fall over five sessions, t at most -2, on forward data",
+      "sample": "forward rows only, no split; < 40 rows = no verdict",
+      "rule": "FORECAST_RULE: once 40 forward rows exist, oi_slope_5 <= -0.5 with t <= -2 from a stationary block bootstrap over the forward rows (mean block 4, 10,000 draws, seed 107)",
+      "mechanism": "new positions pressing a selloff carry it about one more week",
+      "rivals": [
+        {
+          "explanation": "the horizon was chosen after the fact",
+          "check": "only reports after the declaration are read"
+        },
+        {
+          "explanation": "volatility, the prior week's move or depth drive both",
+          "check": "controls, as item 106"
+        },
+        {
+          "explanation": "the roll",
+          "check": "no change spans an expiry or uses a roll-window report"
+        },
+        {
+          "explanation": "look-ahead from the release lag",
+          "check": "price from the session after publication"
+        }
+      ],
+      "pointer": "research/edge-hypotheses-plan.md#107-forward-only-a-week-of-rising-e-mini-open-interest-in-an-index-drawdown-and-the-next-five-sessions-fall",
+      "scripts": [
+        "packages/backtest/scripts/futures_oi_week_item107.py"
+      ],
+      "tests": [
+        "packages/backtest/tests/test_futures_oi_week_item107_script.py"
+      ],
+      "results": [],
+      "outcome": null,
+      "retest": null,
+      "retest_note": null,
+      "retests": []
     }
   ],
   "rule_changes": []
