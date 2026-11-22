@@ -209,6 +209,12 @@ function dropShare(draft: GroupsChange, name: string, from: string | null): Grou
   return { ...draft, groups: { ...draft.groups, [from]: next } };
 }
 
+/** What a group's add list offers: every automation placed elsewhere, less the retired, which stay off
+ *  wherever they sit. */
+export function addable(rows: Placed[], target: string | null): Placed[] {
+  return rows.filter((r) => r.now !== target && !r.m.retired);
+}
+
 /** The groups the draft leaves with no automation, and those of them switched on: a group with no
  *  automation is kept, but only off (the module refuses one on), so `on` holds the save until it is off
  *  or has a member. */
@@ -721,7 +727,7 @@ function GroupPage({ view, draft, edit, paper, group, after }: { view: GroupsEdi
   const inGroup = rows.filter((r) => r.now === target || leaving(r));
   const members = inGroup.filter((r) => !r.m.retired);
   const retiredRows = inGroup.filter((r) => r.m.retired);
-  const others = rows.filter((r) => r.now !== target);
+  const others = addable(rows, target);
   const info = none ? undefined : view.groups.find((g) => g.name === group);
   const spec = none ? undefined : draft.groups[group];
   const was = none ? undefined : startDraft(view).groups[group];
@@ -917,7 +923,7 @@ function GroupPage({ view, draft, edit, paper, group, after }: { view: GroupsEdi
             <div className="grp-add" role="group" aria-label="Add automations">
               <span className="builder-lbl">add to {group}</span>
               {others.length === 0 ? (
-                <span className="muted">Every automation is in this group.</span>
+                <span className="muted">Every automation not retired is in this group.</span>
               ) : (
                 others.map((r) => (
                   <label key={r.m.name} className="grp-add-row">
@@ -1137,6 +1143,13 @@ function SaveBar({
           Save
         </button>
       </div>
+      {(check?.cautions ?? []).length > 0 && problems.length === 0 && (
+        <ul className="grp-warn grp-cautions" aria-label="What the moves carry">
+          {check!.cautions!.map((c) => (
+            <li key={c}>{c}.</li>
+          ))}
+        </ul>
+      )}
       {empty.on.length > 0 && (
         <p className="grp-warn">
           {empty.on.join(", ")} {empty.on.length === 1 ? "has" : "have"} no automations, so {empty.on.length === 1 ? "it" : "they"} cannot be on: switch{" "}

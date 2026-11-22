@@ -128,8 +128,9 @@ alone):
     writes. Each automation's state (`on`, `waiting`, `off_group`, `off_own`, `retired`) and its
     shape (the icon at the start of its row, `sketch.sketch`'s curve) are the module's (`cli
     groups-view`); while anything is staged the page asks `cli groups-check` and every row says what
-    its after-view says, and the save bar lists who starts and who stops by it; the page derives no
-    state. Every on/off is the one sliding switch (`Toggle.tsx`); a retired automation's is locked
+    its after-view says, and the save bar lists who starts and who stops by it and shows the check's
+    `cautions` for each move as they are; the page derives no state. The add list leaves out a retired
+    automation. Every on/off is the one sliding switch (`Toggle.tsx`); a retired automation's is locked
     (`LockedSwitch`). A group that has run shows its budget read-only until "Change from next
     session": the module dates the change (`budget_changes`) and gives the suggested allocation
     (`budgets.suggested`). Beside it, "From the backtest" (`/api/automations/groups/budget`,
