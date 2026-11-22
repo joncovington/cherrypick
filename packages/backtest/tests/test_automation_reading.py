@@ -190,3 +190,26 @@ def test_read_sets_the_ledger_against_the_named_run(tmp_path, monkeypatch):
     assert out["ok"] is True and out["licensed"] is False and out["run"] == RUN
     assert out["paper"]["trades"] == 2 and out["sample"]["basis"] == "declared"
     assert readout.automation_reading(NAME, "builder-mine-2601010000")["ok"] is False
+
+
+def test_every_pinned_reading_in_one_read_each_cut_to_its_row(tmp_path, monkeypatch):
+    own = tmp_path / "own"
+    own.mkdir()
+    monkeypatch.setattr(paths, "automations_dir", lambda licensed: tmp_path / "lic" if licensed else own)
+    (own / f"{RUN}.json").write_text(json.dumps(_doc(RUN_NETS)), encoding="utf-8")
+    db = tmp_path / "paper_trades.db"
+    _ledger(db)
+    monkeypatch.setenv("AUTOMATIONS_DB_PATH", str(db))
+    out = readout.automation_readings(f"{NAME}={RUN}:40,other=builder-other-2601010000")
+    mine = out["readings"][NAME]
+    assert out["ok"] is True and mine["ok"] is True and mine["licensed"] is False
+    assert mine["state"] == "too_few" and mine["paper"]["trades"] == 2 and mine["paper"]["net"] == -18.0
+    assert mine["sample"] == {"needed": 40, "basis": "declared", "have": 2}
+    assert mine["reference"]["trades"] == 100 and mine["reference"]["entry_rate"] == 0.8
+    # A row only: no trade list, no band.
+    assert "rows" not in mine["paper"] and "band" not in mine["reference"]
+    # One run gone leaves the others read.
+    assert out["readings"]["other"]["ok"] is False and "no Builder run" in out["readings"]["other"]["error"]
+    assert readout.automation_readings(f"{NAME}=builder-other-2601010000")["ok"] is False
+    assert readout.automation_readings(f"{NAME}={RUN}:forty")["ok"] is False
+    assert readout.automation_readings("") == {"ok": True, "readings": {}}

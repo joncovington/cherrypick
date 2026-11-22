@@ -900,6 +900,33 @@ export interface AutomationReading {
   } | null;
 }
 
+/** One automation's reading, cut to a row of the vs-backtest tab (`backtest read automation-readings`). */
+export interface AutomationReadingRow {
+  name: string;
+  group: string | null;
+  /** The pinned run, or none: nothing to set paper against. */
+  pinned: string | null;
+  /** The pinned run is licensed and licensed results are not shown now. */
+  withheld: boolean;
+  error: string | null;
+  state: NonNullable<AutomationReading["reading"]>["state"] | null;
+  paper: {
+    trades: number;
+    counts: Record<ReadingPlace, number> | null;
+    net: number | null;
+    mean: number | null;
+    entry_rate: number | null;
+  } | null;
+  sample: { needed: number | null; basis: "declared" | "computed" | null; have: number } | null;
+  reference: { trades: number; mean: number | null; entry_rate: number | null; min_trades: number | null } | null;
+}
+
+/** `GET /api/automations/readings`: every automation with its reading against its pinned run, in the Builder's order. */
+export interface AutomationsReadings {
+  automations: AutomationReadingRow[];
+  error: string | null;
+}
+
 /** A step of the automation's decision, in the order the engine takes them (`automations.entries`). */
 export type EntryStep = "due" | "data" | "trigger" | "limits" | "gates" | "structure" | "size";
 

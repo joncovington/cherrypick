@@ -150,7 +150,10 @@ alone):
     `min_obs` as the declared sample; the page only scales the figures onto a strip and a chart. The
     same read's `exits` and `ahead` are "What it did"'s exits table and the chart's road ahead
     (`AutomationDid.tsx`); its premium card is the automation's own line of the performance read. A
-    licensed run's figures are withheld while `backtestResultsOn` is false. Its entries
+    licensed run's figures are withheld while `backtestResultsOn` is false. The `backtest` tab ("vs
+    backtest", `/api/automations/readings`, `readers/automationReadings.ts`) is every pin's reading
+    in one `read automation-readings`, cut to a row, withheld the same way; its chip
+    (`ReadingChip`) sits on each automation's row in Groups too. Its entries
     (`/api/automations/automation/entries`, `readers/automationEntries.ts`) are the automations
     package's `cli entries --name`, with the pinned run's `reasons` (from that reading, so withheld
     with it) passed as `--run-reasons` so the run is cut by the same steps; the `entries` tab

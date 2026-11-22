@@ -44,6 +44,7 @@ import type {
   AutomationEntries,
   AutomationConditions,
   AutomationReading,
+  AutomationsReadings,
   AheadModule,
   ArmBacktestReading,
   Scorecard,
@@ -1787,6 +1788,16 @@ export function useAutomationReading(name: string) {
   return useQuery<AutomationReading>({
     queryKey: ["automation-reading", name],
     queryFn: () => getJson<AutomationReading>(`/api/automations/automation/reading?name=${encodeURIComponent(name)}`),
+    staleTime: 30_000,
+    refetchInterval: 120_000,
+  });
+}
+
+/** Every automation's reading against its pinned run, one row each (the vs-backtest tab, Groups' chips). */
+export function useAutomationsReadings() {
+  return useQuery<AutomationsReadings>({
+    queryKey: ["automations-readings"],
+    queryFn: () => getJson<AutomationsReadings>("/api/automations/readings"),
     staleTime: 30_000,
     refetchInterval: 120_000,
   });
