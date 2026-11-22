@@ -591,7 +591,7 @@ const TODAY_WHY_WORDS: Record<string, string> = {
   no_cut: "this cut does not hold it",
   degenerate: "every session falls in one bucket, so there is nothing to set it against",
   underpowered: "too few sessions for a regime claim yet",
-  no_trades: "the arm has no trade in this bucket",
+  no_trades: "no trade in this bucket yet",
   thin: "too few sessions in this bucket to read",
 };
 

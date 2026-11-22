@@ -65,6 +65,8 @@ describe("today's conditions on an automation's page", () => {
     expect(out).toContain("downtrend");
     expect(out).toContain("-$50.00");
     expect(out).toContain("every session falls in one bucket");
+    const none = { ...DATA, cuts: { ...CUTS, arms: [{ arm: "mine", today: { trend: { bucket: "range", readable: false, why: "no_trades" } } }] } as unknown as RegimeCuts };
+    expect(html(<ConditionsBody name="mine" data={none} />)).toContain("no trade in this bucket yet");
     expect(out).not.toContain("last reading");
   });
 
