@@ -42,7 +42,3 @@ def test_earlier_items_legacy_and_retired_rows_are_not_asked(tmp_path):
     assert hy.rule_missing(_reg(77, rel), root=tmp_path) == []
     assert hy.rule_missing(_reg(78, rel, legacy=True), root=tmp_path) == []
     assert hy.rule_missing(_reg(78, rel, status="retired"), root=tmp_path) == []
-
-
-def test_the_repo_register_lists_nothing_today():
-    assert hy.rule_missing(hy.load()) == []

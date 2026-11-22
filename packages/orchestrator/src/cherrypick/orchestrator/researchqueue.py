@@ -83,13 +83,13 @@ now, and on a change it stops and leaves the rest of the chain to the next inter
 
 **A finished study records its own verdict** (`record_verdict`). When an `itemNN` study's `study*` row
 finishes with the study kit's verdict block (and, where the register row names its result, wrote that
-file), the verdict is recorded on this machine through `verdictstore`, never in the repo, and the finish
-notice says so; a study already recorded, or a result without the kit's block, is named and left alone.
-It never fails the row.
+file), the verdict goes into the study's row of the register on this machine, with its drafted Result
+paragraph, through `verdictstore`, and the finish notice says so; a study already recorded, or a result
+without the kit's block, is named and left alone. It never fails the row.
 
 Deterministic, no AI. This module reads and writes its own table and log files and, through
-`verdictstore`, the local verdict record; it drives the fetches and scripts by subprocess -- it imports
-no other package.
+`verdictstore`, the register on this machine; it drives the fetches and scripts by subprocess -- it
+imports no other package.
 """
 
 from __future__ import annotations
@@ -585,17 +585,18 @@ def verdict_words(doc: dict | None) -> str | None:
 
 
 def record_verdict(row: dict, doc: dict | None) -> str:
-    """Record a finished study row's verdict on this machine (`verdictstore`), and say what happened in
-    words for the finish notice. Only a `study*` step of an `itemNN` study records (a smoke, plan or
-    context row writes a verdict block too, and is not the result); where the register lists a result
-    file, only that file. Never raises: a study left unrecorded is named, and the queue goes on."""
+    """Record a finished study row's verdict in the register on this machine (`verdictstore`), with its
+    Result paragraph, and say what happened in words for the finish notice. Only a `study*` step of an
+    `itemNN` study records (a smoke, plan or context row writes a verdict block too, and is not the
+    result); where the register lists a result file, only that file. Never raises: a study left
+    unrecorded is named, and the queue goes on."""
     from . import hypotheses, verdictstore
 
     study, step = str(row.get("study") or ""), str(row.get("step") or "")
     if not verdictstore.ITEM_STUDY.match(study) or not step.startswith("study"):
         return "not a register study's result: not recorded"
     try:
-        reg = hypotheses.load(local=False)
+        reg = hypotheses.load()
         entry = next((h for h in reg.get("hypotheses", []) if h.get("study") == study), None)
         if entry is None:
             return f"no register row for {study}: not recorded"
@@ -607,7 +608,9 @@ def record_verdict(row: dict, doc: dict | None) -> str:
         ]
         if listed and out.resolve() not in {p.resolve() for p in listed}:
             return f"{out.name} is not the result {study}'s row names: not recorded"
-        rec = verdictstore.record_finished(study, out, doc, task=row["id"])
+        rec = verdictstore.record_finished(
+            study, out, doc, item=int(entry["id"]), by=f"queue task {row['id']}"
+        )
     except verdictstore.Refused as exc:
         return f"not recorded: {exc}"
     except (OSError, ValueError, KeyError) as exc:

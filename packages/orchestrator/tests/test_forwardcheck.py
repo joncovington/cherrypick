@@ -6,7 +6,6 @@ from __future__ import annotations
 import pytest
 
 from cherrypick.orchestrator import forwardcheck as fc
-from cherrypick.orchestrator import hypotheses as hy
 
 SPEC = {
     "module": "weeklyput",
@@ -131,9 +130,3 @@ def test_a_row_may_judge_several_arms_one_block_each():
     assert fc.problems([a, b]) == []
     assert any("different arm" in p for p in fc.problems([a, a]))
     assert any(p.startswith("forward[1]") for p in fc.problems([a, {**b, "min_obs": 0}]))
-
-
-def test_the_repo_registers_forward_checks_are_sound():
-    for row in hy.load()["hypotheses"]:
-        if "forward" in row:
-            assert fc.problems(row["forward"]) == [], row["id"]

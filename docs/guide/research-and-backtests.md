@@ -26,19 +26,23 @@ no screenshot of it.
 
 ## The research register
 
-`research/edge-hypotheses-plan.md` is the register of research items: each idea stated as the edge it would
-need, what would show it wrong, the test, and the verdict. Each item is a numbered heading. Many concern
-the retired modules. `research/hypotheses.json` holds the same items in a form a program can check, one row
-per item with its status, its rule and a pointer to its section. The register holds no licensed figures and
-no new verdicts: it records what each study declared.
+`research/edge-hypotheses-plan.md` holds each research item's declaration: the idea stated as the edge it
+would need, what would show it wrong, and the test. Each item is a numbered heading. Many concern the
+retired modules.
 
-A study's verdict is recorded on this machine only, in `data/research/verdicts.json` under the home, never in
-the repo. When a queued study's `study` row finishes with the study kit's verdict block (computed from the
-declared rule), the queue records it there itself: the status (passed when an arm passed, no verdict when no
-arm was judged, else failed), an outcome line of words (each arm and its verdict), the result file and the
-queue task. Its finish notice names the verdict and says it was recorded. A study is recorded once; a re-run
-never rewrites it. Every reader of the register (the `hypotheses` command, the Studies board, the scorecard,
-the retests) lays the recorded verdict over the declared row; the register check reads the repo file alone.
+The register and the results live on your machine only, never in the repo, under the home's
+`data/research/`:
+
+- `hypotheses.json`, the register: one row per item with its declared parts, its rule, its status, its
+  outcome in words and a pointer to its plan section. Every reader (the `hypotheses` command, the Studies
+  board, the scorecard, the retests) reads it there; a home without one reads as an empty register.
+- `results/itemNN.md`, each item's Result paragraph: what the study found and what that decides.
+
+When a queued study's `study` row finishes with the study kit's verdict block (computed from the declared
+rule), the queue records it itself: the row's status (passed when an arm passed, no verdict when no arm was
+judged, else failed), an outcome line of words (each arm and its verdict), the result file, when and by
+which task, and the Result paragraph drafted from the block. Its finish notice names the verdict and says it
+was recorded. A study is recorded once; a re-run never rewrites it.
 
 A study the queue could not record (an older result without the kit's block, or one that finished before the
 queue recorded verdicts) is recorded by hand:

@@ -27,11 +27,6 @@ NEW = {
 }
 
 
-def test_the_repo_register_is_sound():
-    # Driven off the file itself: every row, every pointer, as checked in.
-    assert hy.check(hy.load()) == []
-
-
 def test_a_new_row_must_state_its_parts_and_rivals():
     reg = {"hypotheses": [NEW]}
     assert hy.check(reg) == []
@@ -224,12 +219,18 @@ def test_board_shows_a_verdict_the_queue_wrote_before_the_register_lists_it():
 
 
 def test_similar_lists_only_rejected_matches_on_stated_tags():
-    reg = hy.load()
+    reg = {
+        "hypotheses": [
+            {"id": 6, "study": "item6", "status": "failed", "setup": "down-day", "structure": "put-bwb"},
+            {"id": 7, "study": "item7", "status": "failed", "setup": "down-day", "structure": "condor"},
+            {"id": 18, "study": "item18", "status": "declared", "setup": "reversion", "structure": "put-bwb"},
+        ]
+    }
     hits = hy.similar(reg, {"setup": "down-day", "structure": "put-bwb"})
     assert [r["study"] for r in hits] == ["item6"]
     assert hy.similar(reg, {}) == []
     # A declared (not rejected) look-alike is not listed.
-    assert hy.similar(reg, {"setup": "reversion"}) == []  # item 18, declared
+    assert hy.similar(reg, {"setup": "reversion"}) == []
 
 
 def test_rule_changes_are_due_a_reread_after_100_trades():
@@ -280,13 +281,19 @@ def test_retest_plan_fills_the_year_and_skips_recorded_ones():
     assert plan["needs_recipe"] == ["item2"] and plan["already_recorded"] == ["item4"]
 
 
-def test_home_fills_a_real_path_and_the_repo_recipes_name_tracked_scripts(tmp_path, monkeypatch):
+def test_home_fills_a_real_path(tmp_path, monkeypatch):
     monkeypatch.setenv("CHERRYPICK_HOME", str(tmp_path))
-    plan = hy.retest_plan(hy.load(), 2026)
-    studies = {r["study"]: r for r in plan["queue"]}
-    assert {"item1", "item5"} <= set(studies)
-    out = studies["item1"]["output"]
-    assert out.startswith(tmp_path.as_posix()) and out.endswith("item1-retest-2026.json")
-    assert "~" not in " ".join(studies["item1"]["args"]["args"])
-    for r in plan["queue"]:
-        assert (hy.repo_root() / r["args"]["path"]).is_file()
+    recipe = {
+        "kind": "script",
+        "args": {
+            "path": "scripts/pead_history.py",
+            "args": ["--out", "{home}/data/research/x-{year}.json"],
+        },
+        "output": "{home}/data/research/item1-retest-{year}.json",
+    }
+    plan = hy.retest_plan(
+        {"hypotheses": [{**NEW, "id": 1, "study": "item1", "status": "failed", "retest": recipe}]}, 2026
+    )
+    [row] = plan["queue"]
+    assert row["output"].startswith(tmp_path.as_posix()) and row["output"].endswith("item1-retest-2026.json")
+    assert "{home}" not in " ".join(row["args"]["args"])

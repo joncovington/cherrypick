@@ -40,7 +40,8 @@ to understand *how* a part of the suite works or *why* it's built the way it is.
 
 The research register and the studies behind it are in [`research/`](../research/README.md), not here.
 They are records: each one states a test as it was declared before any data was read, along with its result.
-`cherrypick hypotheses` reads the register, [`research/hypotheses.json`](../research/hypotheses.json).
+`cherrypick hypotheses` reads the register, which lives on your machine (`data/research/hypotheses.json` under
+the home), with each item's Result paragraph beside it.
 
 These docs describe only the current version. Plans that have landed, superseded designs and dated
 history were removed in November 2026; the tag `archive/docs-2026-11` keeps them as they stood.

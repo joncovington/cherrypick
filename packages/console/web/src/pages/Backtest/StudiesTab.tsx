@@ -110,7 +110,7 @@ export function BacktestStudiesTab() {
         ) : null}
         {b.unregistered.length > 0 ? (
           <p className="pnl-neg" style={{ margin: "0 0 8px" }}>
-            Ran with no register row: {b.unregistered.join(", ")}. Add each to <code>research/hypotheses.json</code>.
+            Ran with no register row: {b.unregistered.join(", ")}. Add each to the register on this machine, <code>data/research/hypotheses.json</code>.
           </p>
         ) : null}
         {b.rows.length === 0 ? <p className="muted">The register has no rows.</p> : <StudyCards board={b} />}
@@ -130,7 +130,7 @@ export function BacktestStudiesTab() {
           <>
             <HelpSection title="One card per register item">
               <p>
-                One card per item in the hypothesis register (<code>research/hypotheses.json</code>). A verdict is the word the study wrote in
+                One card per item in the hypothesis register (<code>data/research/hypotheses.json</code>, kept on this machine). A verdict is the word the study wrote in
                 its result file; the files stay on this machine.
               </p>
             </HelpSection>

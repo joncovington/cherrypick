@@ -14,7 +14,7 @@ when that run was; the driver checks the licence again before it reads a license
 **Declare and the held-out test** are the backtest package's (`backtest ideas declare|holdout`): a
 surviving, testable idea's register row is drafted into its result, and a declared idea's one held-out
 test is read and logged there. Neither writes a config or the register itself; the row is added to
-`research/hypotheses.json` by hand.
+the register on this machine (`data/research/hypotheses.json` under the home) by hand.
 """
 
 from __future__ import annotations

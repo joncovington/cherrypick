@@ -34,14 +34,33 @@ def fake_notifier():
 
 
 @pytest.fixture(autouse=True)
-def isolated_verdicts(tmp_path, monkeypatch):
-    """Point the local verdict store at a temp file, so `hypotheses.load` in a test never lays this
-    machine's recorded verdicts over the register and a queue test never records one into it."""
-    from cherrypick.orchestrator import verdictstore
+def isolated_register(tmp_path, monkeypatch):
+    """Point the register and its Result files at an empty temp folder, so no test reads this machine's
+    register (it lives in the home, not the repo) and no queue test records a verdict into it. A test
+    that needs rows writes them with the `register_rows` fixture."""
+    from cherrypick.orchestrator import hypotheses
 
-    target = tmp_path / "research-verdicts.json"
-    monkeypatch.setattr(verdictstore, "path", lambda: target)
-    return target
+    folder = tmp_path / "research-register"
+    monkeypatch.setattr(hypotheses, "research_dir", lambda: folder)
+    return folder
+
+
+@pytest.fixture
+def register_rows(isolated_register):
+    """Write a register of `rows` into the test's register folder, with `results` {study: text} as its
+    Result files."""
+    import json
+
+    def write(rows, rule_changes=(), results=None):
+        isolated_register.mkdir(parents=True, exist_ok=True)
+        (isolated_register / "hypotheses.json").write_text(
+            json.dumps({"hypotheses": list(rows), "rule_changes": list(rule_changes)}), encoding="utf-8"
+        )
+        for study, text in (results or {}).items():
+            (isolated_register / "results").mkdir(exist_ok=True)
+            (isolated_register / "results" / f"{study}.md").write_text(text, encoding="utf-8")
+
+    return write
 
 
 @pytest.fixture(autouse=True)

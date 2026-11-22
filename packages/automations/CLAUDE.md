@@ -27,8 +27,8 @@ position carries its own exits. A group no arm belongs to is kept only switched 
 and is refused while some arm names a group the block does not: that is the misspelling
 (`"ensembel": off` beside arms in `ensemble`) which would leave those arms trading. The shipped
 eight are the `ensemble` group, and each carries its research `register` label, item 75's verdict
-(`passed`, `failed`, `no_verdict`), written from the register and checked against its forward list
-(`tests/test_groups.py`), never read from a result file. The loop's `--status` shows each group with its
+(`passed`, `failed`, `no_verdict`), written from the register (which lives on the machine that ran the
+studies) and pinned by `tests/test_groups.py`, never read from a result file. The loop's `--status` shows each group with its
 arms and verdicts. The four item 75 failed (`iron-fly-1000`, `iron-fly-1dte-1330`,
 `gld-call-spread-20d`, `orb-put-spread`) are off in the example config.
 

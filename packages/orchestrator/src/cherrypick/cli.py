@@ -2336,28 +2336,19 @@ def _git_show(rel: str) -> str:
     return res.stdout if res.returncode == 0 else ""
 
 
-def _register_on_main() -> dict:
-    try:
-        return json.loads(_git_show("research/hypotheses.json") or "{}")
-    except ValueError:
-        return {}
-
-
 def _plan_on_main() -> str:
     return _git_show("research/edge-hypotheses-plan.md")
 
 
 def cmd_hypotheses(cfg, args) -> None:
     """B7: check the register, list rule changes due a re-read, and (--similar) rejected look-alikes."""
-    # The check reads the repo file alone; everything after it sees the verdicts recorded here.
-    problems = hypotheses.check(hypotheses.load(local=False))
     reg = hypotheses.load()
+    problems = hypotheses.check(reg)
     tasks = _queue_rows()
     studies = {r["study"] for r in tasks} | _study_folders()
     problems += [
         f"study {s} (queue or result folder): no register row" for s in hypotheses.unregistered(reg, studies)
     ]
-    main_reg = _register_on_main()
     local_plan = hypotheses.repo_root() / "research" / "edge-hypotheses-plan.md"
     plan = _plan_on_main() + "\n" + _read_text(local_plan)
     out = {
@@ -2372,8 +2363,9 @@ def cmd_hypotheses(cfg, args) -> None:
         "forward_unread": hypotheses.forward_unread(reg),
         # How many passes chance alone would give at the usual per-item bar (#1079); reported only.
         "false_passes": hypotheses.false_passes(reg, alpha=hypotheses.FALSE_PASS_ALPHA)["overall"],
-        # The next free item number here and on origin/main as last fetched: fetch before declaring.
-        "next_id": hypotheses.next_id(reg, main_reg, plan_md=plan),
+        # The next free item number in the register and the plan here and on origin/main as last
+        # fetched: fetch before declaring.
+        "next_id": hypotheses.next_id(reg, plan_md=plan),
     }
     if args.similar:
         proposal = json.loads(args.similar)
@@ -2381,7 +2373,7 @@ def cmd_hypotheses(cfg, args) -> None:
             {k: r.get(k) for k in ("id", "study", "title", "pointer")}
             for r in hypotheses.similar(reg, proposal)
         ]
-        out["taken"] = hypotheses.taken(proposal, reg, main_reg)
+        out["taken"] = hypotheses.taken(proposal, reg)
         if out["taken"]:
             out["ok"] = False
     _emit(out)

@@ -5,7 +5,8 @@ A study's rows ran for about a tenth of the time between its first row queued an
 written and merged, a row queued again, a verdict recorded. This read puts dates on them, so a
 process change can be judged before and after it lands. Times only: no study figure is read.
 
-Per register row (an `itemN` study), from the register's own git history and the research queue:
+Per register row (an `itemN` study), from the register's git history (from when it was in the repo), its
+rows' own stamps since it moved to the home, and the research queue:
 
 - `declared`: the first commit that added the item's `### N.` heading to the plan (the register
   began after many items were declared), else the first register commit that holds the row;
@@ -14,7 +15,7 @@ Per register row (an `itemN` study), from the register's own git history and the
 - `fetched`: its last fetch row finished `done`;
 - `studied`: its last `study*` row finished `done`;
 - `recorded`: the first register commit where the row's status turned to a verdict (none for a row
-  backfilled with its verdict already in place).
+  backfilled with its verdict already in place), else the row's `recorded_at`.
 
 And the queue's own split for the study's rows: hours waiting (created to started), running, and
 failed until queued again (a failed or stopped row's finish to the next row of the same step's
@@ -163,6 +164,10 @@ def report(
         d = dict(dates.get(rid, {}))
         if (plan_dates or {}).get(rid):
             d["declared"] = when(plan_dates[rid])
+        # The register's git history ends where it moved to the home: a verdict recorded since carries
+        # its own stamp.
+        if "recorded" not in d and row.get("recorded_at"):
+            d["recorded"] = when(row["recorded_at"])
         scripts = row.get("scripts") or []
         items.append(study_stages(row, d, script_dates.get(scripts[0]) if scripts else None, tasks))
     medians = {}

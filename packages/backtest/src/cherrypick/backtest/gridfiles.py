@@ -6,7 +6,7 @@ and the one held-out test. Which run a grid replays, and its split, are the idea
   (`paths.automations_dir`): licensed when that run or its store was. They hold every setting's trades
   over the whole span; a read here serves the rows and never the trades.
 - **Declare** (`declare`) drafts a surviving, testable setting's register row into its result, the split
-  already fixed. The row is added to `research/hypotheses.json` by hand, with its mechanism.
+  already fixed. The row is added to the register on this machine by hand, with its mechanism.
 - **The held-out test** (`holdout`) reads the stored trades of the base and one declared setting on the
   sessions from the split, once: a second test of the same setting is refused, and every use is logged
   on the result (`held_out_uses`).

@@ -8,7 +8,7 @@ makes from one, Declare and the one held-out test.
   (`paths.automations_dir`): under `results/` when that run read the vendor's store (licensed, purged
   with it), beside it otherwise. Never into the repo.
 - **Declare** (`declare`) writes a surviving, testable idea's register row draft into its result, the
-  split already fixed. The row is added to `research/hypotheses.json` by hand, with its mechanism.
+  split already fixed. The row is added to the register on this machine by hand, with its mechanism.
 - **The held-out test** (`holdout`) reads the run's later sessions for one declared idea, once: a
   second test of the same idea is refused, and every use is logged on the result (`held_out_uses`),
   so a reader sees how many ideas have spent that part.
