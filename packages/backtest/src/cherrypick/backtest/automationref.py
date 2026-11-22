@@ -169,8 +169,8 @@ def reading(
     resamples: int = RESAMPLES,
     seed: int = SEED,
 ) -> dict:
-    """Automation `name`'s paper record (`paper`: its closed trades in close order, each with `session` and
-    `net`) set against its pinned Builder run `doc`.
+    """Automation `name`'s paper record (`paper`: its closed trades in close order, each with `session`,
+    `net` and `exit`, the engine's exit kind) set against its pinned Builder run `doc`.
 
     - Each trade's place against the run's usual range (10th to 90th percentile of a trade's net) and its
       percentile among the run's trades.
@@ -180,6 +180,12 @@ def reading(
       computed one, with how many trades paper has.
     - Paper's entry rate from the session register (`entries`: entered and missed arm-days; pending ones
       are not counted), beside the run's.
+    - How paper's trades ended (`exits`, `exit_mix`): each exit kind's trades, share and net beside the
+      run's share of the same kind. The paper loop records the engine's own `exit_kind`, so both sides
+      speak one vocabulary.
+    - The road ahead (`ahead`): the run's band of the next `AHEAD` trades' running net, started from
+      paper's running net now, so a fall to its lower edge reads as normal and one below it does not.
+      Empty before the first trade, where the band from zero already is the road ahead.
     - `state`: `no_reference` (the run has too few trades), `no_trades`, `too_few` (under `MIN_PAPER`),
       else the running net's place: `inside`, `below` or `above` the band.
     """
@@ -211,6 +217,20 @@ def reading(
             }
         )
     counts = {k: sum(1 for r in rows if r["place"] == k) for k in ("below", "inside", "above")}
+    nets = [_net(t) for t in ordered([t for t in doc.get("trades") or [] if t.get("arm", name) == name])]
+    ahead = (
+        [
+            {
+                "k": n + b["k"],
+                "p10": round(total + b["p10"], 2),
+                "p50": round(total + b["p50"], 2),
+                "p90": round(total + b["p90"], 2),
+            }
+            for b in band(nets, ref["sessions"], horizon=AHEAD, resamples=resamples, seed=seed)
+        ]
+        if n
+        else []
+    )
     at = ref["band"][n - 1] if n else None
     running_place = place(total, at["p10"], at["p90"]) if at else None
     state = "no_trades" if n == 0 else "too_few" if n < MIN_PAPER else running_place
@@ -227,6 +247,8 @@ def reading(
             "running_place": running_place,
             "band_at": at,
             "entry": paper_entry,
+            "exits": exit_mix(paper, ref.get("exits") or {}),
+            "ahead": ahead,
         },
         "sample": {
             "needed": needed,
@@ -238,6 +260,27 @@ def reading(
             "have": n,
         },
     }
+
+
+def exit_mix(paper: list[dict], run_exits: dict[str, float]) -> list[dict]:
+    """How paper's trades ended, by exit kind: trades, share of paper's trades, their net, and the run's
+    share of the same kind (0 where the run never ended that way). Every kind either side has is a row,
+    the run's commonest first; a paper trade with no recorded kind is `unknown`."""
+    n = len(paper)
+    by: dict[str, list[float]] = {}
+    for t in paper:
+        by.setdefault(str(t.get("exit") or "unknown"), []).append(float(t.get("net") or 0.0))
+    kinds = sorted(set(by) | set(run_exits), key=lambda k: (-run_exits.get(k, 0.0), -len(by.get(k, [])), k))
+    return [
+        {
+            "kind": k,
+            "trades": len(by.get(k, [])),
+            "share": round(len(by.get(k, [])) / n, 4) if n else None,
+            "net": round(sum(by.get(k, [])), 2),
+            "run_share": run_exits.get(k, 0.0),
+        }
+        for k in kinds
+    ]
 
 
 def paper_record(db_path: str, name: str) -> tuple[list[dict], dict[str, int]]:
@@ -255,7 +298,9 @@ def paper_record(db_path: str, name: str) -> tuple[list[dict], dict[str, int]]:
     try:
         rows = [r for r in core_ledgers.READERS["ensemble_trade"](conn) if r.get("arm") == name]
         rows.sort(key=lambda r: (str(r.get("session") or ""), str(r.get("exit_time") or "")))
-        paper = [{"session": r.get("session"), "net": r.get("net_pnl")} for r in rows]
+        paper = [
+            {"session": r.get("session"), "net": r.get("net_pnl"), "exit": r.get("outcome")} for r in rows
+        ]
         try:
             counts = dict(
                 conn.execute(

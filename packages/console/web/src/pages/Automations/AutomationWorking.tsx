@@ -39,6 +39,13 @@ const HELP: CardHelpContent = {
           is where paper's running net sits in the band at its own trade count: inside, below or above. Under five trades it says too few.
         </p>
       </HelpSection>
+      <HelpSection title="The road ahead">
+        <p>
+          The dashed band starts at paper's running net today and spans the next twenty trades: eight in ten of the run's resampled paths of
+          that length, moved up or down to where paper stands now. A fall to its lower edge is what the run expects now and then; a fall below
+          it is not.
+        </p>
+      </HelpSection>
       <HelpSection title="The sample">
         <p>
           How many trades a reading needs: the number the automation's forward rule declares, or, without one, the count the run's own spread
@@ -98,17 +105,24 @@ export function Strip({ p, rows }: { p: Record<string, number>; rows: { net: num
   );
 }
 
-/** The run's band of running-net paths, its middle path, and paper's running net, in one SVG. */
-export function bandChart(band: ReferenceBandPoint[], running: number[], w = 600, h = 220) {
-  const K = band.length;
-  const ys = [0, ...band.flatMap((b) => [b.p10, b.p90]), ...running];
+/** The run's band of running-net paths, its middle path, paper's running net and, when given, the road
+ *  ahead (the band of the next trades started from paper's running net now), in one SVG. */
+export function bandChart(band: ReferenceBandPoint[], running: number[], w = 600, h = 220, ahead: ReferenceBandPoint[] = []) {
+  const K = Math.max(band.length, ...ahead.map((a) => a.k));
+  const ys = [0, ...band.flatMap((b) => [b.p10, b.p90]), ...ahead.flatMap((a) => [a.p10, a.p90]), ...running];
   const lo = Math.min(...ys);
   const hi = Math.max(...ys);
   const x = (k: number) => 40 + (k / Math.max(K, 1)) * (w - 56);
   const y = (v: number) => (hi === lo ? h / 2 : 12 + (1 - (v - lo) / (hi - lo)) * (h - 40));
   const upper = [`${x(0)},${y(0)}`, ...band.map((b) => `${x(b.k)},${y(b.p90)}`)];
   const lower = [...band.map((b) => `${x(b.k)},${y(b.p10)}`).reverse(), `${x(0)},${y(0)}`];
+  const now = running.length ? `${x(running.length)},${y(running[running.length - 1] ?? 0)}` : null;
+  const road =
+    now === null || ahead.length === 0
+      ? null
+      : [now, ...ahead.map((a) => `${x(a.k)},${y(a.p90)}`), ...[...ahead].reverse().map((a) => `${x(a.k)},${y(a.p10)}`)].join(" ");
   return {
+    ahead: road,
     band: [...upper, ...lower].join(" "),
     middle: [`${x(0)},${y(0)}`, ...band.map((b) => `${x(b.k)},${y(b.p50)}`)].join(" "),
     paper: [`${x(0)},${y(0)}`, ...running.map((v, i) => `${x(i + 1)},${y(v)}`)].join(" "),
@@ -121,13 +135,14 @@ export function bandChart(band: ReferenceBandPoint[], running: number[], w = 600
   };
 }
 
-export function BandChart({ band, running, unit = "trades" }: { band: ReferenceBandPoint[]; running: number[]; unit?: string }) {
-  const c = bandChart(band, running);
+export function BandChart({ band, running, unit = "trades", ahead = [] }: { band: ReferenceBandPoint[]; running: number[]; unit?: string; ahead?: ReferenceBandPoint[] }) {
+  const c = bandChart(band, running, 600, 220, ahead);
   return (
     <svg viewBox="0 0 600 220" className="ar-band" role="img" aria-label="Paper's running net against the run's band of paths">
       <line x1="40" x2="584" y1={c.zero} y2={c.zero} className="ar-band-zero" />
       <polygon points={c.band} className="ar-band-area" />
       <polyline points={c.middle} className="ar-band-mid" />
+      {c.ahead !== null && <polygon points={c.ahead} className="ar-band-ahead" />}
       {c.today !== null && <line x1={c.today} x2={c.today} y1="8" y2="200" className="ar-band-today" />}
       {running.length > 0 && <polyline points={c.paper} className="ar-band-paper" />}
       {c.last && <circle cx={c.last.x} cy={c.last.y} r="4" className="ar-band-dot" />}
@@ -257,7 +272,7 @@ export function WorkingBody({ name, data }: { name: string; data: AutomationRead
       )}
       {ref.band && (
         <Card title="running net against the run's paths" collapseKey="automations-automation-band" className="lv-8" help={HELP}>
-          <BandChart band={ref.band} running={rows.map((x) => x.running)} />
+          <BandChart band={ref.band} running={rows.map((x) => x.running)} ahead={paper.ahead ?? []} />
           <p className="ar-legend">
             <span className="ar-legend-item">
               <span className="ar-key ar-key-band" />8 in 10 of the run's paths
@@ -270,7 +285,14 @@ export function WorkingBody({ name, data }: { name: string; data: AutomationRead
               <span className="ar-key ar-key-paper" />
               paper
             </span>
-            <span>past the dotted line, where the next trades should land</span>
+            {(paper.ahead ?? []).length > 0 ? (
+              <span className="ar-legend-item">
+                <span className="ar-key ar-key-ahead" />
+                from today, where the next {(paper.ahead ?? []).length} trades should land: a fall to its lower edge is normal, below it is not
+              </span>
+            ) : (
+              <span>past the dotted line, where the next trades should land</span>
+            )}
           </p>
         </Card>
       )}
