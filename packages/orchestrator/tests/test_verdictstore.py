@@ -3,6 +3,10 @@ once, and the overlay every register reader sees. Synthetic results only."""
 
 from __future__ import annotations
 
+import os
+import sys
+from pathlib import Path
+
 import pytest
 
 from cherrypick.orchestrator import hypotheses
@@ -69,6 +73,28 @@ def test_a_result_outside_the_home_is_refused(tmp_path):
     assert vs.home_path(home / "data" / "r.json", home) == "{home}/data/r.json"
     with pytest.raises(vs.Refused, match="not under the home"):
         vs.home_path(tmp_path / "r.json", home)
+
+
+def _link_dir(link: Path, target: Path) -> None:
+    """A directory link: a symlink, else on Windows a junction (which needs no privilege)."""
+    try:
+        os.symlink(target, link, target_is_directory=True)
+    except OSError:
+        if sys.platform != "win32":
+            raise
+        import _winapi
+
+        _winapi.CreateJunction(str(target), str(link))
+
+
+def test_a_result_through_a_linked_data_folder_is_still_under_the_home(tmp_path):
+    # This machine's `data/backtest` is a junction to another drive: the path is read as written.
+    home, elsewhere = tmp_path / "home", tmp_path / "other-drive" / "backtest"
+    (home / "data").mkdir(parents=True)
+    elsewhere.mkdir(parents=True)
+    _link_dir(home / "data" / "backtest", elsewhere)
+    result = home / "data" / "backtest" / "results" / "item90" / "results.json"
+    assert vs.home_path(result, home) == "{home}/data/backtest/results/item90/results.json"
 
 
 def test_the_overlay_sets_declared_rows_only_and_keeps_the_repos_verdicts():

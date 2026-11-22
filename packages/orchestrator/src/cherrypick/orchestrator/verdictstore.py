@@ -21,6 +21,7 @@ re-run never rewrites a verdict silently.
 from __future__ import annotations
 
 import json
+import os
 import re
 from datetime import datetime
 from pathlib import Path
@@ -87,9 +88,11 @@ def outcome_of(verdicts: dict[str, str]) -> str:
 
 def home_path(p: Path | str, home: Path | None = None) -> str:
     """`p` as a `{home}/...` path; `Refused` when it is not under the home."""
-    base = (home or core_home.home()).resolve()
+    # Compared as written, never through a link: a home's data folder may be a junction to another drive
+    # (`data/backtest` here), and a resolved path would no longer sit under the home it is read from.
+    base = Path(os.path.abspath(home or core_home.home()))
     try:
-        rel = Path(p).expanduser().resolve().relative_to(base)
+        rel = Path(os.path.abspath(Path(p).expanduser())).relative_to(base)
     except ValueError as exc:
         raise Refused(f"the result {p} is not under the home") from exc
     return RESULT_PREFIX + rel.as_posix()
