@@ -664,6 +664,8 @@
     "enabled": false,
     "at": "10:00",
     "also_at": [],
+    "_sunday_note": "One more run each Sunday at 'sunday_at' (ET), after the futures open at 18:00: the `manage-eval-sunday` job, so the week starts with Monday's list already read. Equity and option quotes are still Friday's; it adds the weekend's days and any assignment or transfer posted since. null turns it off.",
+    "sunday_at": "18:15",
     "notify": true,
     "_attention_note": "Needs a look: after every full run and every minute re-mark, post the names whose short options manage lists as near their strike, in the money or likely exercised early (its `attention` block; thresholds in manage's ruleset) -- each name once a session, all its legs in one post.",
     "attention_notify": true,

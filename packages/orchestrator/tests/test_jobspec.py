@@ -390,6 +390,7 @@ def test_derive_full_suite_job_table():
         "morning-factpack",
         "morning-narrative",
         "manage-eval",
+        "manage-eval-sunday",
         "manage-marks",
         "manage-time-spreads",
         "advisor-deep",
@@ -740,6 +741,37 @@ def test_manage_eval_off_by_default_and_runs_at_ten_on_trading_days_when_on():
     assert job.argv[-1] == "manage"
 
 
+def test_manage_runs_once_more_on_sunday_evening_after_the_futures_open():
+    """`manage-eval-sunday`: 18:15 ET on Sundays only (not a trading day, so no trading-day gate),
+    the same `manage` verb, off with manage and off alone when `sunday_at` is null."""
+    off = {j.id: j for j in derive(suite_cfg())[0]}["manage-eval-sunday"]
+    assert not off.enabled and "disabled in config (manage)" in off.enabled_reason
+    cfg = suite_cfg()
+    cfg["manage"] = {"enabled": True}
+    job = {j.id: j for j in derive(cfg)[0]}["manage-eval-sunday"]
+    assert job.enabled and job.at_et == "18:15" and job.weekdays == (6,) and not job.trading_days_only
+    assert job.argv[-1] == "manage" and "Sundays" in job.describe()
+    assert jobspec.notifies_own_failure("manage-eval-sunday")
+    # 2026-11-22 is a Sunday: due after 18:15, and never on the Saturday or Monday at that time.
+    fire, _, patch = jobspec.should_start(job, {}, et(2026, 11, 22, 18, 20))
+    assert fire and patch["last_fire_day"] == "2026-11-22"
+    for day in (21, 23):
+        fire, reason, _ = jobspec.should_start(job, {}, et(2026, 11, day, 18, 20))
+        assert not fire and reason == "not one of its days"
+    cfg["manage"] = {"enabled": True, "sunday_at": "19:00"}
+    assert {j.id: j for j in derive(cfg)[0]}["manage-eval-sunday"].at_et == "19:00"
+    cfg["manage"] = {"enabled": True, "sunday_at": None}
+    alone = {j.id: j for j in derive(cfg)[0]}["manage-eval-sunday"]
+    assert not alone.enabled and "sunday_at" in alone.enabled_reason
+
+
+def test_weekdays_must_be_real_distinct_days():
+    with pytest.raises(ValueError, match="weekdays"):
+        jobspec.JobSpec(id="x", argv=("a",), kind=jobspec.KIND_DAILY, at_et="10:00", weekdays=(7,))
+    with pytest.raises(ValueError, match="weekdays"):
+        jobspec.JobSpec(id="x", argv=("a",), kind=jobspec.KIND_DAILY, at_et="10:00", weekdays=(6, 6))
+
+
 def test_the_time_spread_scan_follows_manage_and_has_its_own_switch():
     """On whenever manage is, at 10:30 ET on trading days, running the `time-spreads` verb; off with
     manage, and off alone by `manage.time_spreads.enabled`."""
@@ -762,7 +794,7 @@ def test_manage_also_at_adds_one_time_to_the_one_job():
     cfg = suite_cfg()
     cfg["manage"] = {"enabled": True, "also_at": ["16:35", "12:30", "10:00"]}
     jobs = {j.id: j for j in derive(cfg)[0] if j.id.startswith("manage-eval")}
-    assert sorted(jobs) == ["manage-eval"]
+    assert sorted(jobs) == ["manage-eval", "manage-eval-sunday"]  # Sunday's is its own gate, not a slot
     job = jobs["manage-eval"]
     assert job.times_et == ("10:00", "12:30", "16:35") and job.at_et == "10:00"
     assert job.trading_days_only and job.enabled and job.argv[-1] == "manage"

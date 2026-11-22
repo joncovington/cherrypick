@@ -658,6 +658,11 @@ def manage_settings(cfg: dict[str, Any]) -> dict[str, Any]:
         # Further runs the same day (ET), more times of the same `manage-eval` job. Each rewrites the day's
         # evaluation, so the console shows the latest; one after the close leaves the day's final word.
         "also_at": sorted({str(t) for t in (mg.get("also_at") or [])} - {mg.get("at", "10:00")}),
+        # ET, Sundays: one evaluation after the futures open (18:00 ET), the `manage-eval-sunday` job,
+        # so the week starts with Monday's list already read. Equity and option quotes are still
+        # Friday's then; what it adds is the weekend's calendar days and any assignment or transfer
+        # posted since. Null turns it off.
+        "sunday_at": None if mg.get("sunday_at", "18:15") is None else str(mg.get("sunday_at", "18:15")),
         # Every run posts the trades needing action (or that none does): the notification is the
         # Discord list a person reads at those times, not an alarm.
         "notify": bool(mg.get("notify", True)),
