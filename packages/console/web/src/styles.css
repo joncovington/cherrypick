@@ -8991,6 +8991,7 @@ select.text-input {
   .pf-tiles-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .pf-tiles-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .pf-tiles-6 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .pf-tiles-8 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 .pf-graph-small {
   width: 100%;

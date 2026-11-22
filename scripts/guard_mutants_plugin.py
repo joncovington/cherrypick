@@ -317,6 +317,31 @@ def _em_reads_entry_close():
     return patched
 
 
+def _dispersion_moves_together():
+    """The real `dispersion`'s shock, except every name moves the same way by beta, as the stress line
+    does: the perfect correlation under which a hedge across names can never lose on both sides."""
+    portfolio = importlib.import_module("cherrypick.manage.portfolio")
+
+    def patched(rows, rate, cfg, net_liq):
+        ivs = [r["iv_index"] for r in rows if r["legs"] and r.get("iv_index")]
+        move = (
+            float(cfg["sigmas"])
+            * (sum(ivs) / len(ivs) if ivs else 0.0)
+            * (float(cfg["horizon_days"]) / 365.0) ** 0.5
+        )
+        pnl = min(portfolio.book_pnl(rows, 1.0, rate, m)[0] for m in (move, -move))
+        return {
+            "sigmas": float(cfg["sigmas"]),
+            "horizon_days": float(cfg["horizon_days"]),
+            "pnl": round(pnl, 2),
+            "pct_net_liq": round(pnl / net_liq, 4) if net_liq else None,
+            "names": [],
+            "left_out": [],
+        }
+
+    return patched
+
+
 REPLACEMENTS = {
     "always_true": lambda: _always_true,
     "whole_day": lambda: _whole_day,
@@ -343,6 +368,7 @@ REPLACEMENTS = {
     "shadow_acts": lambda: _shadow_acts,
     "every_mode_offered": lambda: _every_mode_offered,
     "identity": lambda: _identity,
+    "dispersion_moves_together": _dispersion_moves_together,
     "gate_sees_ahead": lambda: _gate_sees_ahead,
     "replay_overwrites": lambda: _replay_overwrites,
     "always_filled": lambda: _always_filled,
@@ -691,6 +717,17 @@ MUTANTS: tuple[Mutant, ...] = (
         module="cherrypick.manage.portfolio",
         attr="_cash_on",
         replacement="always_false",
+    ),
+    Mutant(
+        id="manage-dispersion-apart",
+        breaks="the dispersion line moves every name together by beta, so a hedge across names never loses",
+        package="manage",
+        tests=(
+            "tests/test_portfolio.py::test_dispersion_reads_the_loss_a_cross_name_hedge_hides_from_the_stress_line",
+        ),
+        module="cherrypick.manage.portfolio",
+        attr="dispersion",
+        replacement="dispersion_moves_together",
     ),
     Mutant(
         id="marketprofile-value-area",

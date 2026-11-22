@@ -306,6 +306,87 @@ def test_vol_expansion_raises_iv_beyond_the_stress_line():
     assert _read(trades)["vol_expansion"]["pnl"] < flat < 0
 
 
+def test_leverage_states_the_delta_and_its_band_as_multiples_of_the_account():
+    # 100 SPY shares at 500 on $10,000 is five times the account; the band's edges in the same units.
+    r = _read([_trade("SPY", 500.0, [_leg(100)])])
+    assert r["leverage"] == pytest.approx(5.0)
+    d = r["bands"]["delta"]
+    assert d["leverage"] == r["leverage"]
+    assert d["leverage_low"] == pytest.approx(d["low"] * 500.0 / 10000.0, abs=1e-3)
+    assert d["leverage_high"] == pytest.approx(d["high"] * 500.0 / 10000.0, abs=1e-3)
+    fired = next(g for g in r["guidance"] if g["rule"] == "portfolio.delta")
+    assert "+5.00x the account" in fired["reason"]
+    short = _read([_trade("SPY", 500.0, [_leg(-20)])])
+    assert short["leverage"] == pytest.approx(-1.0)
+    assert portfolio.leverage(10.0, 500.0, None) is None and portfolio.leverage(None, 500.0, 1e4) is None
+
+
+def _iv_metrics(**names):
+    out = _metrics()
+    for sym, iv in names.items():
+        out[sym] = {"beta": "1.0", "corr_spy_3month": "0.9", "iv_index": None if iv is None else str(iv)}
+    return out
+
+
+def test_dispersion_reads_the_loss_a_cross_name_hedge_hides_from_the_stress_line():
+    # A bullish short put on one name against a bearish short call on another: by beta the two move
+    # together and cancel, so the stress line barely moves. Moved apart, each loses on its own side.
+    trades = [
+        _trade("XYZ", 50.0, [_leg(-5, "P", 50.0, iv=0.40)]),
+        _trade("ABC", 50.0, [_leg(-5, "C", 50.0, iv=0.40)]),
+    ]
+    r = _read(trades, _iv_metrics(XYZ=0.40, ABC=0.40))
+    x = r["dispersion"]
+    assert {n["underlying"]: n["side"] for n in x["names"]} == {"XYZ": "down", "ABC": "up"}
+    assert all(n["pnl"] < 0 for n in x["names"]) and x["left_out"] == []
+    assert x["names"][0]["move_pct"] == pytest.approx(2 * 0.40 * math.sqrt(1 / 365), abs=1e-4)
+    worst_beta = min(s["pnl"] for s in r["stress"])
+    assert x["pnl"] < worst_beta  # worse than SPY -10%, a move ten times the size
+    assert r["bands"]["dispersion"]["inside"] is False
+    (g,) = [g for g in r["guidance"] if g["rule"] == "portfolio.dispersion"]
+    assert {d["underlying"] for d in g["drivers"]} == {"XYZ", "ABC"}
+    assert "2 sigma" in g["reason"] and "one day" in g["reason"] and "stop hedging" in g["reason"]
+    # Both names bullish: no hedge to break, and the reason does not claim one.
+    bull = [
+        _trade("XYZ", 50.0, [_leg(-5, "P", 50.0, iv=0.40)]),
+        _trade("ABC", 50.0, [_leg(-5, "P", 50.0, iv=0.40)]),
+    ]
+    (g,) = [
+        g
+        for g in _read(bull, _iv_metrics(XYZ=0.4, ABC=0.4))["guidance"]
+        if g["rule"] == "portfolio.dispersion"
+    ]
+    assert "leans one way" in g["reason"] and "hedging" not in g["reason"]
+
+
+def test_a_long_gamma_book_gains_either_way_and_stays_inside_dispersion():
+    straddle = [_trade("XYZ", 50.0, [_leg(5, "P", 50.0, iv=0.40), _leg(5, "C", 50.0, iv=0.40)])]
+    r = _read(straddle, _iv_metrics(XYZ=0.40))
+    assert r["dispersion"]["pnl"] > 0 and r["bands"]["dispersion"]["inside"] is True
+    assert "portfolio.dispersion" not in _rules_fired(r)
+
+
+def test_dispersion_falls_back_to_the_legs_iv_and_names_what_it_cannot_read():
+    trades = [
+        _trade("XYZ", 50.0, [_leg(-1, "P", 50.0, iv=0.30), _leg(-1, "C", 55.0, iv=0.50)]),
+        _trade("STK", 20.0, [_leg(100)]),  # shares, and no IV index to move them by
+    ]
+    r = _read(trades, _iv_metrics(XYZ=None, STK=None))
+    (n,) = r["dispersion"]["names"]
+    assert n["iv_source"] == "legs" and n["iv"] == pytest.approx(0.40)
+    assert r["dispersion"]["left_out"] == ["STK"]
+
+
+def test_dispersion_can_be_switched_off():
+    trades = [
+        _trade("XYZ", 50.0, [_leg(-5, "P", 50.0, iv=0.40)]),
+        _trade("ABC", 50.0, [_leg(-5, "C", 50.0, iv=0.40)]),
+    ]
+    rules = copy.deepcopy(RULES)
+    rules["portfolio"]["dispersion"]["enabled"] = False
+    assert "portfolio.dispersion" not in _rules_fired(_read(trades, _iv_metrics(XYZ=0.4, ABC=0.4), rules))
+
+
 def test_concentration_fires_and_a_position_can_be_excused():
     trades = [_trade(s, 50.0, [_leg(q)]) for s, q in (("XYZ", 300), ("ABC", 100), ("DEF", 100), ("GHI", 100))]
     metrics = _metrics(XYZ=(1.0, 0.9), ABC=(1.0, 0.9), DEF=(1.0, 0.9), GHI=(1.0, 0.9))

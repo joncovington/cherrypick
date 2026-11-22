@@ -250,7 +250,20 @@ export function DirectionCard({ p, live = null }: { p: ManagePortfolio; live?: M
       >
         <div className="pf-tiles">
           <Tile label={`per 1% ${p.benchmark ?? "SPY"} move`} value={fmtCash(p.bwdDollarsPer1pct)} />
+          <Tile
+            label="times the account"
+            value={timesAccount(p.leverage)}
+            title={`beta-weighted delta × ${p.benchmark ?? "SPY"} price ÷ net liq: 1.00× moves like an account held all in ${p.benchmark ?? "SPY"}${
+              band && band.leverageLow != null && band.leverageHigh != null
+                ? ` · the band is ${timesAccount(band.leverageLow)} to ${timesAccount(band.leverageHigh)}`
+                : ""
+            }`}
+          />
           <Tile label="band" value={band ? `${signed(band.low, places)} to ${signed(band.high, places)}` : "—"} />
+          <Tile
+            label="band, times the account"
+            value={band && band.leverageLow != null && band.leverageHigh != null ? `${timesAccount(band.leverageLow)} to ${timesAccount(band.leverageHigh)}` : "—"}
+          />
         </div>
         {liveLine ? <p className="muted pf-caption">{liveLine}</p> : null}
         {first && p.hedges ? (
@@ -272,6 +285,37 @@ export function DirectionCard({ p, live = null }: { p: ManagePortfolio; live?: M
       </BoxButtons>
     </Card>
   );
+}
+
+/** Every name moved against its own position at once, by its own implied move: the loss a hedge
+ *  across names hides from the beta-scaled shocks. Its hover names the worst three. */
+function DispersionTile({ p }: { p: ManagePortfolio }) {
+  const x = p.dispersion;
+  const worst = (x?.names ?? []).filter((n) => (n.pnl ?? 0) < 0).slice(0, 3);
+  const how =
+    x && x.sigmas !== null && x.horizonDays !== null
+      ? `each name moved ${x.sigmas} sigma of its own implied move over ${x.horizonDays === 1 ? "one day" : `${x.horizonDays} days`}, whichever way hurts it, all at once; IV and time held still`
+      : "";
+  return (
+    <Tile
+      label="names apart"
+      value={fmtCash(x?.pnl ?? null)}
+      tone={x?.pnl == null ? "dim" : x.pnl >= 0 ? "pos" : "neg"}
+      title={
+        x
+          ? `${pctOf(x.pctNetLiq, 1)} of net liq; ${how}${
+              worst.length ? ` · worst: ${worst.map((n) => `${n.underlying} ${n.side ?? ""} ${fmtCash(n.pnl)}`).join(", ")}` : ""
+            }${x.leftOut.length ? ` · left out (no IV): ${x.leftOut.join(", ")}` : ""}`
+          : "not read on this evaluation"
+      }
+    />
+  );
+}
+
+/** A multiple of the account, signed: "+1.23×". */
+function timesAccount(v: number | null | undefined): string {
+  // `undefined` too: a page state written before the figure existed carries no key at all.
+  return v == null || !Number.isFinite(v) ? "—" : `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(2)}×`;
 }
 
 /**
@@ -299,6 +343,7 @@ export function StressCard({ p }: { p: ManagePortfolio }) {
     },
     {
       key: "em",
+      detailOnly: true,
       node: (
         <Tile
           key="em"
@@ -308,7 +353,24 @@ export function StressCard({ p }: { p: ManagePortfolio }) {
         />
       ),
     },
-    // The detail view's pair, so the tiles stay even: four in simple, six in detail.
+    // The detail view's rest, so the tiles stay even: four in simple, eight in detail.
+    {
+      key: "volexp",
+      detailOnly: true,
+      node: (
+        <Tile
+          key="volexp"
+          label="vol expansion"
+          value={fmtCash(p.volExpansion?.pnl ?? null)}
+          tone={p.volExpansion?.pnl == null ? "dim" : p.volExpansion.pnl >= 0 ? "pos" : "neg"}
+          title={
+            p.volExpansion && p.volExpansion.move !== null && p.volExpansion.ivShift !== null
+              ? `${p.benchmark ?? "SPY"} ${(p.volExpansion.move * 100).toFixed(0)}% with IVs up ${(p.volExpansion.ivShift * 100).toFixed(0)} points (term-weighted), time held still: ${pctOf(p.volExpansion.pctNetLiq, 1)} of net liq`
+              : "not read on this evaluation"
+          }
+        />
+      ),
+    },
     {
       key: "realised",
       detailOnly: true,
@@ -332,8 +394,9 @@ export function StressCard({ p }: { p: ManagePortfolio }) {
         }`}
       />
     )),
+    <DispersionTile key="dispersion" p={p} />,
     ...framing.map((f) => f.node),
-  ].slice(0, 6);
+  ].slice(0, 8);
   return (
     <Card title="if the market moves" className="pf-cq" help={STRESS_HELP}>
       <div className="pf-stress">
@@ -476,6 +539,7 @@ const GUIDANCE_TOPIC: Record<string, string> = {
   "portfolio.earnings_exposure": "earnings",
   "portfolio.expiry_concentration": "one expiry",
   "portfolio.vol_expansion": "vol expansion",
+  "portfolio.dispersion": "names apart",
 };
 
 function guidanceTopic(rule: string): string {
@@ -497,6 +561,8 @@ function driverFigure(f: ManageGuidanceFigure, benchmark: string | null): string
       return `${pctOf(f.value, 0)} of theta past the expiring legs`;
     case "vega_30":
       return f.value === null ? "—" : `${fmtCash(f.value)}/vol pt`;
+    case "pnl":
+      return f.value === null ? "—" : fmtCash(f.value);
   }
 }
 
@@ -773,6 +839,12 @@ export function directionHelp(p: ManagePortfolio): CardHelpContent {
             Amber comes only from manage's own in/out flag, never from where the needle sits.
           </p>
         </HelpSection>
+        <HelpSection title="Times the account">
+          <p>
+            The same delta as a multiple of the account: beta-weighted delta times the {p.benchmark ?? "SPY"} price, over net liq. +1.00× moves like an account
+            held all in {p.benchmark ?? "SPY"}, at any account size, so a 1% move is about 1% of net liq. The band is stated the same way beside it.
+          </p>
+        </HelpSection>
         <HelpSection title="Ideas">
           <p>
             What drives delta, and the rolls that move it either way without closing anything: a time spread's short about to expire rolled to
@@ -795,6 +867,12 @@ export const STRESS_HELP: CardHelpContent = {
     <>
       <HelpSection title="The shocks">
         <p>The whole book repriced with the benchmark down and up, each name moved by its beta, its IV and time held still. A model, not a forecast.</p>
+      </HelpSection>
+      <HelpSection title="Names apart">
+        <p>
+          The shocks move every name together, so a bullish trade on one name and a bearish one on another always cancel there. Here each name moves against its own
+          position at once, by its own implied move: what the book loses on the day names stop moving together. A deliberate worst case; hover it for the worst names.
+        </p>
       </HelpSection>
       <HelpSection title="Break-even move">
         <p>The move in a day at which a day's theta is gone (short gamma), or that the book needs to earn its theta back (long gamma). Hover it for the implied and realised moves.</p>

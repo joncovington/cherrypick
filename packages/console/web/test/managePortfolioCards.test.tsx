@@ -918,19 +918,24 @@ describe("the portfolio tab, simple and detail", () => {
   it("keeps the vega and realised tiles to detail, shows the matrix in both, and the broker check in neither", () => {
     const simple = inView("simple", both);
     const detail = inView("detail", both);
-    for (const hidden of ["vega (30-day weighted)", "realised move (30-day)"]) {
+    for (const hidden of ["vega (30-day weighted)", "realised move (30-day)", "implied 1-day move", "vol expansion"]) {
       expect(simple).not.toContain(hidden);
       expect(detail).toContain(hidden);
     }
+    // Names moved apart sits beside the beta shocks in both views; an evaluation without it shows a dash.
+    for (const html of [simple, detail]) expect(html).toContain("names apart");
+    // An evaluation from before the leverage figure says nothing, never NaN.
+    expect(simple).toContain("times the account");
+    expect(simple).not.toContain("NaN");
     for (const html of [simple, detail]) {
       expect(html).toContain("risk matrix");
       // A lightbox's, opened from where the delta comes from.
       expect(html).not.toContain("delta, broker&#x27;s greeks");
       expect(html).not.toContain("Traditional IRA");
     }
-    // The tiles stay even: four in simple, six in detail.
+    // The tiles stay even: four in simple, eight in detail.
     expect(simple).toContain("pf-tiles-4");
-    expect(detail).toContain("pf-tiles-6");
+    expect(detail).toContain("pf-tiles-8");
   });
 
   it("draws the fits and the waiting trades as cards, no table, in both views", () => {
