@@ -109,7 +109,7 @@ def record(
     if not outcome or re.search(r"\d+\.\d|\$", outcome):
         raise Refused("the outcome is words only: no figures")
     target = hypotheses.register_path()
-    reg = hypotheses.load(target)
+    reg = hypotheses.load()  # imports a row the plan declared but the register does not hold yet
     row = next((r for r in reg.get("hypotheses", []) if r.get("study") == study), None)
     if row is None:
         raise Refused(f"no register row for {study}")

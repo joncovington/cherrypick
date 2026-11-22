@@ -39,6 +39,10 @@ idea for the guardrails that live in every CLAUDE.md:
  12. No drift between the AI insight's real tool policy and the docs that describe it. This is the
      only rule here guarding a *security* claim, which is why it exists: three files stated the agent
      "can't reach the network" while `WebSearch` was granted by default.
+ 13. No research register in the repo. The register lives on the machine that runs the studies
+     (`data/research/hypotheses.json` under the home); a new study's row is declared in its plan
+     section's `register-row` block, which that register imports. A session on older code still writes
+     `research/hypotheses.json`, and a PR carrying it would split the register in two.
 
 Run: python tools/check_docs.py
 Exits non-zero on any finding, printing `path:line: message` so it reads like a linter.
@@ -697,10 +701,26 @@ def check(paths: list[Path]) -> list[str]:
     return findings
 
 
+#: Rule 13: the register's old place in the repo. It lives under the home now.
+REGISTER_IN_REPO = "research/hypotheses.json"
+REGISTER_FINDING = (
+    f"{REGISTER_IN_REPO}:0: the research register is not kept in the repo -- declare a new study's row "
+    "in its plan section's `register-row` block (research/edge-hypotheses-plan.md); the register on "
+    "the machine that runs the studies imports it"
+)
+
+
+def _check_register_not_in_repo(tracked: list[Path]) -> list[str]:
+    return (
+        [REGISTER_FINDING] if any(p.relative_to(ROOT).as_posix() == REGISTER_IN_REPO for p in tracked) else []
+    )
+
+
 def main() -> int:
     tracked = tracked_files()
     findings = (
-        check(tracked)
+        _check_register_not_in_repo(tracked)
+        + check(tracked)
         + _check_cli_coverage()
         + _check_ports()
         + _check_dead_config_keys(tracked)

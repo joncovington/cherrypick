@@ -38,6 +38,11 @@ The register and the results live on your machine only, never in the repo, under
   board, the scorecard, the retests) reads it there; a home without one reads as an empty register.
 - `results/itemNN.md`, each item's Result paragraph: what the study found and what that decides.
 
+A new study is declared in one PR: its plan section, with its register row in a fenced `register-row`
+block inside it (`tools/study_new.py` prints one to fill). The register imports that row the first time
+it is read after the PR lands, and never changes a row it already holds. A commit that puts
+`research/hypotheses.json` back in the repo is refused, by CI and by the pre-commit hook.
+
 When a queued study's `study` row finishes with the study kit's verdict block (computed from the declared
 rule), the queue records it itself: the row's status (passed when an arm passed, no verdict when no arm was
 judged, else failed), an outcome line of words (each arm and its verdict), the result file, when and by

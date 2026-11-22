@@ -17,13 +17,16 @@ script carries everything the process now asks of a study, empty where the decla
   which counts its sessions overall and per symbol, so the queue shows how far a long run has got,
   its rate and ETA.
 
-It writes code only. The declaration (the plan section and the register row) is written by hand, as
-before; this tool never touches either, and never reads licensed data.
+It writes code only, then prints the plan section's `register-row` block with the study's script and
+test filled in (`register_block`). The declaration fills the block's fields and the plan section, by
+hand, in one PR; the register on the machine that runs the study imports the row from that block. This
+tool touches neither, and never reads licensed data.
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import sys
 from pathlib import Path
@@ -225,13 +228,40 @@ def write(item: str, name: str, *, repo: Path = REPO) -> list[Path]:
     return [script, test]
 
 
+def register_block(paths: list[Path]) -> str:
+    """The plan section's `register-row` block for the study, its scripts and tests filled and every
+    declared field empty: the declaration fills them. The register on the machine that runs the
+    study imports it (`hypotheses.plan_rows`)."""
+    row = {
+        "title": "",
+        "legacy": False,
+        "setup": "",
+        "side": "",
+        "structure": "",
+        "window": "",
+        "measure": "",
+        "expected": "",
+        "sample": "",
+        "rule": "",
+        "mechanism": "",
+        "rivals": [{"explanation": "", "check": ""}],
+        "scripts": [paths[0].as_posix()],
+        "tests": [paths[1].as_posix()],
+        "results": [],
+    }
+    return "```register-row\n" + json.dumps(row, indent=2) + "\n```"
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("item", help="the study, itemNN (take NN from `cherrypick hypotheses`' next_id)")
     ap.add_argument("name", help="what it studies, snake_case (dividend_spread)")
     args = ap.parse_args(argv)
-    for p in write(args.item, args.name):
+    paths = write(args.item, args.name)
+    for p in paths:
         print(p.as_posix())
+    print("\nThe plan section's register row, to fill and put in the section:\n")
+    print(register_block(paths))
     return 0
 
 
