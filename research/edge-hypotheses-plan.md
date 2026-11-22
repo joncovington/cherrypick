@@ -10023,6 +10023,277 @@ test left is forward. It is a **`positioning`** item, after 105 and 106.
   - **A fail:** the 5-session pattern was an artifact of looking at five horizons, and no module
     reads futures positioning.
 
+### 108. Credit spreads held across an earnings report: do they lose more of their risk than the same rule's spreads that are not?
+
+Declared 2026-11-22, before any outcome of it is computed. manage's `portfolio.earnings_exposure`
+caps what the trades spanning a report can lose, together, at 10% of net liq. The figure is ours
+(manage README, "The account as one book"), and a literature pass on 2026-11-22 found no test of it.
+What it did find leans one way: options price a report as a large, time-varying risk (Dubinsky,
+Johannes, Kaeck and Seeger, Rev. Financial Studies 2019), and straddles bought just before a report
+have earned on average, which puts a short-premium trade spanning one on the losing side. Item 47
+(failed) sold the report alone, a strangle opened just before and closed the next day. This item asks
+the question the cap rests on, about the income trades the book actually holds: 45-day credit spreads
+that happen to have a report inside them. `cherrypick hypotheses --similar` names the rejected
+earnings items 31, 47, 52, 66, 67, 86, 87 and 99. Each traded the report itself; none asked what a
+report costs a spread opened for its own reasons. It is an **`earnings-premium`** item.
+
+- **Question:** among one income rule's single-name credit trades, entered on the same schedule,
+  do those with an earnings report before their nearest short expires lose more, as net P&L over max
+  loss, than those without one, on the same names?
+- **This tests a cap, not a trade.** A pass says a report inside a spread's life costs it measurably,
+  so a cap on that exposure has evidence behind it (`tested`), and the evidence argues for a tighter
+  one rather than a looser one. Whether the rule earns at all is not asked. The three bars do not
+  apply.
+- **The trades:** item 109's candidate stream (below), single names only, every candidate taken. No
+  book and no caps, one lot each, entered from 2020-02-01. "Spans a report" is fixed at entry: a
+  report date in Dolt's earnings calendar falls after the entry session (or on it, after the close)
+  and on or before the nearest short's expiry. This is manage's own test (`portfolio.ladder`'s
+  earnings column). The calendar is read as it stands now, so a date announced after the entry counts
+  as if it were known; a quarterly report's date is rarely a surprise six weeks out.
+- **The outcome:** each trade's net P&L after costs (core's commission and fee schedule, filled at
+  mid less the declared slippage) over its max loss at entry, managed by manage's shipped credit rules
+  (below).
+- **The statistic:** `excess_loss`, the spanning trades' mean outcome less the non-spanning trades'
+  mean, each name's difference weighted by its spanning count. A name with no trade in either group
+  is left out. Its standard error comes from a stationary block bootstrap over entry months in order
+  (mean block 3 months, 10,000 draws, seed 108). All of a month's trades are drawn together, since
+  trades entered the same month share one market.
+- **Windows:** the earnings calendar (Dolt) starts 2020-01-22, so the trades enter from 2020-02-01.
+  One run, cut at **2023-07-01** (design before, holdout from). The holdout is read only after a
+  design pass.
+- **The rule (`RULE`):**
+  - **Design:** `excess_loss` at most −0.03 (three points of max loss worse) with t at most −2.
+    Fewer than 150 spanning trades, or spanning trades on fewer than 10 names, is no verdict.
+  - **Holdout:** `excess_loss` below zero. Fewer than 100 spanning trades makes a pass provisional.
+- **Minimum detectable effect:** 23 names, 12 cycles a year and roughly half of 45-day lives
+  spanning a quarterly report give about 400 spanning trades in the design part. With outcomes
+  spread about 0.4 of max loss and the monthly clustering, the standard error is assumed near 0.03,
+  so the design detects about six points at the t bar. The run reports the measured standard error.
+- **Reported, never judged:** the share of each group losing half or more of its max loss; the worst
+  5% of each group's outcomes (expected shortfall); the difference by days from entry to the report
+  (under 14, 14 to 28, over 28); the same with the stop off; the difference by calendar quarter; each
+  group's entry quote spread; and a book reading of the 10% cap itself on item 109's book from 2020
+  (item 109's `earnings10` arm).
+- **Rival explanations, each with its check:**
+  - *Spanning names are different names:* differences are taken within each name.
+  - *Report season is a market regime:* months are drawn whole in the bootstrap, and the difference
+    by calendar quarter is reported.
+  - *A report widens the entry quote, so costs differ:* costs are in the outcome, and the entry
+    spread of each group is reported.
+  - *The stop fires on the gap and locks the loss:* the same rule with the stop off is reported.
+- **Declared limits:** daily closes only, so a report's gap is seen at the next end-of-day quote. The
+  names are those whose chains we hold, not a sample of all optionable stocks. A 45-day spread's
+  report risk is a small share of its life, so a modest effect may be under what this sample sees.
+- **Data and results:** `packages/backtest/scripts/earnings_span_item108.py study` reads item 109's
+  candidates and report dates, queued after item 109's study row. Licensed: results stay under
+  `~/.cherrypick/data/backtest/results/research/item108/`, and this plan records the verdict without
+  figures.
+- **Decides:**
+  - **A pass:** `portfolio.earnings_exposure` is graded `tested`, and a tighter cap, or leaving
+    spanning trades out of the income candidates, is proposed as a change on its own.
+  - **A fail or no verdict:** a report inside a 45-day spread costs nothing this history can see.
+    The cap stays `ours` as a concentration limit, and nothing is loosened on this evidence alone.
+
+```register-row
+{
+  "title": "Credit spreads held across an earnings report: do they lose more of their risk than the same rule's spreads that are not?",
+  "legacy": false,
+  "setup": "earnings-premium",
+  "side": "neutral",
+  "structure": "iron-condor",
+  "window": "monthly",
+  "measure": "item 109's single-name candidate condors entered from 2020-02-01, one lot each, net after costs over max loss at entry, spanning a report (Dolt calendar, after the entry and on or before the expiry) against not, within each name",
+  "expected": "spanning trades lose at least three points of max loss more than the same names' other trades",
+  "sample": "one run cut at 2023-07-01; < 150 design spanning trades or < 10 names = no verdict; < 100 holdout spanning trades = provisional",
+  "rule": "RULE: design excess_loss <= -0.03 with t <= -2, standard error from a stationary block bootstrap over entry months (mean block 3, 10,000 draws, seed 108); holdout, read only after a design pass, excess_loss < 0",
+  "mechanism": "options underprice a report's gap on average, so a short-premium spread spanning one pays for it",
+  "rivals": [
+    {
+      "explanation": "spanning names are different names",
+      "check": "differences within each name"
+    },
+    {
+      "explanation": "report season is a market regime",
+      "check": "months drawn whole; by quarter reported"
+    },
+    {
+      "explanation": "a report widens the entry quote",
+      "check": "costs in the outcome; entry spread reported"
+    },
+    {
+      "explanation": "the stop locks the gap's loss",
+      "check": "stop off reported"
+    }
+  ],
+  "scripts": [
+    "packages/backtest/scripts/earnings_span_item108.py"
+  ],
+  "tests": [
+    "packages/backtest/tests/test_earnings_span_item108_script.py"
+  ],
+  "retest": null,
+  "retest_note": null
+}
+```
+
+### 109. The book's caps on one income rule's trades: does each cut the tail more than it cuts the size?
+
+Declared 2026-11-22, before any outcome of it is computed. manage reads the whole account against
+caps: theta per day as a share of net liq (`portfolio.theta`, 0.3% shipped), the spreads' max loss
+(`portfolio.buying_power`'s `spread_risk`, 35%), a fall with vol up (`portfolio.stress`, SPY −20% and
+IVs +10 points losing at most 20%), a vol spike (`portfolio.vol_expansion`, SPY −5% and IVs +10 losing
+at most 10%) and one expiry (`portfolio.expiry_concentration`, 20%). Each is graded `practice` or
+`ours`. The 2026-11-22 literature pass found no published test of any of them, only support for the
+ideas behind some (manage README's outside-evidence column). This item tests them on our own chain
+history. `cherrypick hypotheses --similar` names no rejected look-alike. The nearest rows, 77, 84 and
+85, judged single rules under the three bars, never a book's caps. It is a **`portfolio-caps`** item.
+
+- **Question:** run one income rule as a book, admitting each candidate only while the book stays
+  inside a cap. Is the book's tail, per dollar it holds at risk, smaller than the uncapped book's?
+- **Why per dollar at risk:** any cap shrinks a book, and a smaller book loses less. That is the
+  size choice, which a smaller per-trade risk would make just as well. A cap earns its place only if
+  it holds less risk when the tail is coming, or sheds the trades the tail hits. The buying-power
+  caps limit size alone and are expected to fail this test: their reading is the calibration table
+  below, which says what each cap would have cost and spared.
+- **The candidate stream:** the underlyings in `eod_chains.db` with at least 90% of the standard
+  monthlies from 2016-02 through 2019-12 stored on every session 45 to 20 days out. Leveraged funds
+  and the cash-settled indexes are left out. The bar was set from coverage counts alone, with no price
+  read: on 2026-11-22 it keeps six funds (SPY, QQQ, IWM, GLD, TLT, SLV) and 23 stocks. A kept name's
+  cycle with a gap offers nothing that cycle. On the first stored
+  session at or under 45 calendar days to each standard monthly (none if that session is under 38
+  days), each underlying offers one **iron condor**: shorts at the listed strikes nearest 0.20 delta
+  each side (Black-76 at r = 0 off each mid and the chain's parity forward, the study kit's `Chain`),
+  and both wings one width, the listed width bringing the credit at mid nearest a third of it (the
+  user's 2:1 standard), searched from 1% to 10% of spot. If that credit is under 15% or over 45% of
+  the width, the underlying offers nothing that cycle. The floor is below the 2:1 standard on purpose:
+  on a sample of entry chains (structure only, no exit or P&L read), many 20-delta stock condors fell
+  short of a quarter of their width even at the narrowest listed width, and a floor at a quarter
+  dropped a large share of them (the counts are in the item's local results folder). This item asks
+  about caps, which want a full stream. A name with a report inside the condor's life still offers
+  it, as manage's rules allow.
+- **Management:** manage's shipped credit rules (`DEFAULT_RULES` on the declaration date, imported
+  from `cherrypick.manage.rules`, never copied): take profit at half the credit, the stop at a loss of
+  one credit, and out at 21 days, on daily closes. Fills at mid less the declared slippage, with costs
+  from core.
+- **The book:** net liq starts at $100,000 and is marked daily at mid. Each trade is sized to manage's
+  per-trade risk (`risk.max_risk_pct`, 2% of net liq at entry, whole contracts). A session's
+  candidates are admitted richest first (credit over width, ties by symbol), each only if the book
+  with it stays inside the arm's cap. A trade is never closed to make room: caps gate entries only, as
+  manage's do.
+- **The cap figures are manage's own:** the stress and vol-expansion P&L from
+  `cherrypick.manage.portfolio.book_pnl` (term-weighted, as `portfolio.stress` and
+  `portfolio.vol_expansion` call it), theta from its `leg_greeks`, and every cap's value from
+  `cherrypick.manage.rules.DEFAULT_RULES`, imported, never copied. The script refuses to run if any
+  shipped value differs from this declaration. Two inputs are the study's, since history has no
+  broker: each name's beta is its OLS beta to SPY over the 252 daily returns before the session, on
+  the suite's stored daily closes, a fall over 45% in one day taken as a split and left out (the live
+  rule reads the broker's); and each leg's IV comes from its own mid, carried from the last session
+  that quoted it.
+- **The arms (each judged against `none`):**
+  - `none`: no book cap, only the per-trade size;
+  - `bp25`, `bp35`, `bp50`: the spreads' max loss at most 25%, 35% or 50% of net liq;
+  - `theta3`, `theta5`: theta (without legs 2 days or less from expiry, as manage reads it) at most
+    0.3% or 0.5% of net liq a day;
+  - `stress20`: SPY −20% (each name by beta) with IVs +10 points term-weighted, losing at most 20%;
+  - `volexp10`: SPY −5% with IVs +10 points, losing at most 10%;
+  - `expiry20`: one expiry's trades able to lose at most 20%;
+  - `all`: every cap above at its shipped value together (`bp35`, `theta3`, `stress20`, `volexp10`,
+    `expiry20`).
+- **The statistic:** `tail_ratio`, the arm's expected shortfall at 5% of weekly (last session to last
+  session) net-liq returns over its mean spread risk as a share of net liq, divided by the same for `none`. Its
+  standard error comes from a stationary block bootstrap over weeks in order (mean block 4 weeks,
+  10,000 draws, seed 109), both books drawn on the same weeks.
+- **Windows:** one run from 2016-01-04, cut at **2021-01-01** (design before, holdout from). The design
+  part holds the February 2018 volatility crash, the late-2018 fall and March 2020. The holdout holds
+  2022 and April 2025.
+- **The rule (`RULE`), each arm against `none`, Holm across the nine arms:**
+  - **Design:** `tail_ratio` at most 0.80, with log `tail_ratio` under zero at Holm-adjusted t of at
+    least 2. An arm whose tail passes still fails if its mean weekly return per dollar at risk is
+    below `none`'s at t ≤ −2: a cap that sheds the tail by shedding the return is not a tail control.
+  - **Holdout:** `tail_ratio` below 1.
+  - An arm with fewer than 100 trades in a part, or whose cap refused an entry on fewer than three
+    sessions in it (a cap that does not bind is the uncapped book), is no verdict for that part, with
+    the counts reported.
+- **Minimum detectable effect:** about 260 design weeks put 13 in the 5% tail, and most come from two
+  episodes, so the standard error of a log tail ratio is assumed near 0.12. The design detects a cut
+  of about a fifth, which is the 0.80 floor. The run reports the measured standard error. A fail reads
+  "no cut that large", and with this few crises that is the most any answer can say.
+- **Reported, never judged (the calibration table):** for each arm and part, net return, worst
+  drawdown and its length, worst week, expected shortfall, mean and peak spread risk, the share of
+  sessions the cap bound, and each named episode's drawdown (2018-02, 2018-Q4, 2020-03, 2022, 2025-04).
+  Also: `none` scaled down to each arm's mean spread risk, so a cap is set beside plain smaller
+  sizing; `none` and `all` admitting in symbol order; `stress20`, `volexp10` and `all` on a 756-return
+  (three-year) beta; and an earnings arm (`earnings10`, the 10% cap, from 2020 against `none` from
+  2020), read for item 108.
+- **Rival explanations, each with its check:**
+  - *A cap only shrinks the book:* the ratio is per dollar at risk, and scaled-down `none` is
+    reported beside it.
+  - *One crisis decides it:* episode drawdowns are reported apart, and the holdout is read on its own
+    crises.
+  - *The order of admission picks the trades:* the order is fixed before the run; symbol order is
+    reported in its place.
+  - *Our beta is not the broker's:* reported on the name's three-year beta in its place.
+- **Declared limits:** 2008 is not in our chains, so the worst crash the caps are meant for is
+  missing; the declared episodes are smaller ones. Daily closes miss intraday gaps. One rule's
+  condors stand in for a book of mixed trades; a book of calendars or diagonals carries vega the
+  other way, and is not tested. The universe is our stored names, picked by coverage. A pass is
+  evidence about these caps on this kind of book, not a calibrated number for every account.
+- **Data and results:** `packages/backtest/scripts/book_caps_item109.py plan` (coverage, the chain
+  paths, the report dates from Dolt), a `smoke` on four names through 2016, a fetch of any session
+  still missing from 2021 on (the subscription serves end-of-day chains from then; older gaps stay
+  gaps), then `study`, queued with `run.py queue-chain`. The study writes every candidate per contract
+  (`candidates.json`, item 108's input). Licensed: results stay under
+  `~/.cherrypick/data/backtest/results/research/item109/`, and this plan records the verdict without
+  figures.
+- **Decides:**
+  - **A pass for an arm:** that cap does more than size the book. Its rule is graded `tested`, and
+    its number can be set from the calibration table as a change on its own.
+  - **A fail or no verdict:** the cap is a size choice, not a tail control. It stays `ours` or
+    `practice`. The calibration table says what each level would have cost and spared, which is what
+    a size choice should be made from.
+
+```register-row
+{
+  "title": "The book's caps on one income rule's trades: does each cut the tail more than it cuts the size?",
+  "legacy": false,
+  "setup": "portfolio-caps",
+  "side": "neutral",
+  "structure": "iron-condor",
+  "window": "monthly",
+  "measure": "one 45-day 20-delta condor rule on 29 stored names run as a $100,000 book at 2% risk a trade, each arm admitting only inside its cap (spread risk 25/35/50%, theta 0.3/0.5%, stress 20%, vol expansion 10%, one expiry 20%, all shipped caps); weekly net-liq returns",
+  "expected": "a cap cuts the 5% expected shortfall per dollar at risk by at least a fifth against the uncapped book",
+  "sample": "one run 2016-01 to 2026-11 cut at 2021-01-01; < 100 trades in a part or a cap binding on < 3 sessions = no verdict for that part",
+  "rule": "RULE: per arm against none, Holm across nine arms: design tail_ratio <= 0.80 with log ratio t >= 2 (stationary block bootstrap over weeks, mean block 4, 10,000 draws, seed 109), and return per dollar at risk not below none's at t <= -2; holdout, read only after a design pass, tail_ratio < 1",
+  "mechanism": "a cap that reads the book's greeks or scenarios holds less risk when the tail is coming than a cap on size alone",
+  "rivals": [
+    {
+      "explanation": "a cap only shrinks the book",
+      "check": "per dollar at risk; scaled none reported"
+    },
+    {
+      "explanation": "one crisis decides it",
+      "check": "episodes reported apart; holdout on its own crises"
+    },
+    {
+      "explanation": "the admission order picks the trades",
+      "check": "symbol order reported"
+    },
+    {
+      "explanation": "our beta is not the broker's",
+      "check": "three-year beta reported"
+    }
+  ],
+  "scripts": [
+    "packages/backtest/scripts/book_caps_item109.py"
+  ],
+  "tests": [
+    "packages/backtest/tests/test_book_caps_item109_script.py"
+  ],
+  "retest": null,
+  "retest_note": null
+}
+```
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:
