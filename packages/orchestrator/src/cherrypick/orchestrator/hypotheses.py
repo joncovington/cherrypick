@@ -1,19 +1,20 @@
 """`cherrypick hypotheses` — the hypothesis register and its yearly re-test (B7, B14).
 
-`research/hypotheses.json` holds one row per hypothesis: its four parts (what is measured, the expected
-outcome as a number, the window and sample, the pass-or-fail rule), the mechanism, the rival
-explanations with the check that rules each out, its status and a pointer to the plan section.
-Never figures: licensed results stay under `~/.cherrypick`, so the register can live in the repo. A
-study's verdict is recorded on this machine (`verdictstore`), never in the repo, and `load` lays it over
-the declared row; `load(local=False)` is the repo file, which `check` reads.
+The register lives on this machine only, never in the repo: `data/research/hypotheses.json` under the
+home (`register_path`), one row per hypothesis: its four parts (what is measured, the expected outcome
+as a number, the window and sample, the pass-or-fail rule), the mechanism, the rival explanations with
+the check that rules each out, its status, its outcome and a pointer to its declaration, a section of
+the repo's plan (`research/edge-hypotheses-plan.md`). Each item's Result paragraph is
+`data/research/results/<study>.md` beside it (`results_path`). A home with no register reads as an
+empty one. A study's verdict is written into its row by `verdictstore`.
 
-- `check`: every row is well formed, and every pointer names a heading that exists. Rows from item 18
-  on must fill every field, and one with a verdict names its result files; legacy rows (1-17) point
-  to the prose that holds theirs. On this machine the command also lists queue studies with no row
-  (`unregistered`). A row and its plan section agree on whether the verdict is recorded: a verdict
+- `check`: every row is well formed, and every pointer names a heading that exists in the repo plan.
+  Rows from item 18 on must fill every field, and one with a verdict names its result files; legacy
+  rows (1-17) point to the prose that holds theirs. The command also lists queue studies with no row
+  (`unregistered`). A row and its Result file agree on whether the verdict is recorded: a verdict
   status with a Result that still says "not yet run" is a problem, and so is a declared row whose
-  Result is written (`result_state`, #1067). On this machine it also lists `awaiting_verdict`:
-  declared rows whose result file is written, so a verdict waits to be recorded.
+  Result is written (`result_state`, #1067). It also lists `awaiting_verdict`: declared rows whose
+  result file is written, so a verdict waits to be recorded.
 - `similar`: before a new hypothesis is declared, the rejected rows with the same setup, side,
   structure and window, so a retest is a choice the declaration says out loud.
 - `rereads`: every logged rule change, and whether it has had its first `REREAD_AFTER` trades and is
@@ -23,8 +24,8 @@ the declared row; `load(local=False)` is the repo file, which `check` reads.
   declaration), its research-queue rows (fetch, design, holdout, keyed by `study`) and its `results`,
   that is the whole study in one place. Scripts may be shared (items 60-62 run one); a result file
   may not: two rows listing one file is a problem.
-- `next_id`: the next free item number across every register given (this checkout's and
-  `origin/main`'s) and the plan's own `### N.` headings, so two sessions do not declare one number.
+- `next_id`: the next free item number across the register and the plan's own `### N.` headings (this
+  checkout's and `origin/main`'s), so two sessions do not declare one number.
   `taken` names the ids and studies a proposal would reuse.
 - `retests --year Y`: B14. Every declared, passed or failed row re-run unchanged on year Y, as
   research-queue rows `<study>/retest-<Y>`. A row with no recipe is listed as needing one. A
@@ -71,19 +72,25 @@ def notes_paths(result: Path) -> list[Path]:
     return paths
 
 
-def register_path(root: Path | None = None) -> Path:
-    return (root or repo_root()) / "research" / "hypotheses.json"
+def research_dir() -> Path:
+    return core_home.data_dir("research")
 
 
-def load(path: Path | None = None, *, local: bool = True) -> dict:
-    """The register, with each `declared` row's verdict as recorded on this machine laid over it
-    (`verdictstore.overlay`). `local=False` is the repo file alone: what the register check reads."""
-    reg = json.loads((path or register_path()).read_text(encoding="utf-8"))
-    if not local:
-        return reg
-    from . import verdictstore
+def register_path() -> Path:
+    return research_dir() / "hypotheses.json"
 
-    return verdictstore.overlay(reg, verdictstore.read())
+
+def results_path(study: str) -> Path:
+    """The study's Result paragraph on this machine."""
+    return research_dir() / "results" / f"{study}.md"
+
+
+def load(path: Path | None = None) -> dict:
+    """The register on this machine; an empty one where there is none yet."""
+    target = path or register_path()
+    if not target.exists():
+        return {"hypotheses": [], "rule_changes": []}
+    return json.loads(target.read_text(encoding="utf-8"))
 
 
 def _anchor(heading: str) -> str:
@@ -173,7 +180,7 @@ def check(reg: dict, *, root: Path | None = None) -> list[str]:
         if frag not in docs[file]:
             problems.append(f"{tag}: pointer {pointer} names no heading")
         elif not row.get("legacy"):
-            problems += _result_problems(row, tag, result_state(texts[file], frag))
+            problems += _result_problems(row, tag, result_state(_result_text(row)))
         recipe = row.get("retest")
         if recipe is not None and not (
             isinstance(recipe, dict) and recipe.get("kind") and isinstance(recipe.get("args"), dict)
@@ -191,31 +198,31 @@ RESULT_LINE = "- **Result"
 PENDING = "not yet run"
 
 
-def result_state(md: str, frag: str) -> str | None:
-    """Whether the plan section under heading `frag` records its result: "pending" when its first
-    `- **Result` line says not yet run, "recorded" when it says anything else, None when the section
-    has no such line or no heading matches (a legacy layout, which this does not judge)."""
-    heads = list(HEADING.finditer(md))
-    for i, m in enumerate(heads):
-        if _anchor(m.group(2)) != frag:
-            continue
-        level = len(m.group(1))
-        end = next((n.start() for n in heads[i + 1 :] if len(n.group(1)) <= level), len(md))
-        for line in md[m.end() : end].splitlines():
-            if line.startswith(RESULT_LINE):
-                return "pending" if PENDING in line else "recorded"
+def _result_text(row: dict) -> str | None:
+    try:
+        return results_path(str(row.get("study"))).read_text(encoding="utf-8")
+    except OSError:
         return None
+
+
+def result_state(md: str | None) -> str | None:
+    """Whether a study's Result file records its result: "pending" when its first `- **Result` line
+    says not yet run, "recorded" when it says anything else, None when there is no file or no such
+    line (which this does not judge)."""
+    for line in (md or "").splitlines():
+        if line.startswith(RESULT_LINE):
+            return "pending" if PENDING in line else "recorded"
     return None
 
 
 def _result_problems(row: dict, tag: str, state: str | None) -> list[str]:
-    """The register and its plan section must agree on whether the verdict is recorded (#1067): a
-    verdict row whose Result still says not yet run, or a declared row whose Result is written."""
+    """A row and its Result file must agree on whether the verdict is recorded (#1067): a verdict row
+    whose Result still says not yet run, or a declared row whose Result is written."""
     status = row.get("status")
     if status in VERDICTS and state == "pending":
-        return [f"{tag}: status {status} but its plan Result still says {PENDING}"]
+        return [f"{tag}: status {status} but its Result still says {PENDING}"]
     if status == "declared" and state == "recorded":
-        return [f"{tag}: its plan Result is recorded but its status is still declared"]
+        return [f"{tag}: its Result is recorded but its status is still declared"]
     return []
 
 
@@ -707,7 +714,7 @@ def forward_plan(
 def forward_unread(reg: dict, *, home=None) -> list[dict]:
     """Forward retest results written but not yet recorded: a passed row with a recipe whose study's
     result folder holds `forward-<YYYY-MM>.json` for a month its `retests` does not name. Listed
-    by `cherrypick hypotheses`; the reading goes into the register by a docs PR, as every verdict."""
+    by `cherrypick hypotheses`; the reading goes into the row's `retests` by hand."""
     from . import studychain
 
     out = []

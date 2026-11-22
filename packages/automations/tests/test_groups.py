@@ -5,26 +5,19 @@ refused."""
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 import pytest
 
 from cherrypick.automations import arms, stream_request
 from cherrypick.automations import config as config_mod
 
-REPO = Path(__file__).resolve().parents[3]
-
 
 def test_the_shipped_eight_are_the_ensemble_group_with_item_75s_verdicts():
     assert {a["group"] for a in arms.ARMS.values()} == {"ensemble"}
     assert all(a["register"]["item"] == 75 for a in arms.ARMS.values())
-    # The register's passing arms are the ones it reads forward; the labels agree with it.
-    reg = json.loads((REPO / "research/hypotheses.json").read_text(encoding="utf-8"))
-    rows = reg if isinstance(reg, list) else next(v for v in reg.values() if isinstance(v, list))
-    row = next(r for r in rows if r.get("id") == 75)
-    forward = {f["arm"] for f in row["forward"]}
+    # Item 75's passing arms (its register row, on the machine that ran it, reads these two forward).
     passed = {n for n, a in arms.ARMS.items() if a["register"]["verdict"] == "passed"}
-    assert passed == forward == {"iron-condor-1345", "long-put-1030"}
+    assert passed == {"iron-condor-1345", "long-put-1030"}
     assert {n for n, a in arms.ARMS.items() if a["register"]["verdict"] == "no_verdict"} == {
         "put-spread-1300",
         "gld-call-spread-1dte",

@@ -164,7 +164,7 @@ export function GridView({
         <details key={r.id} className="builder-idea-declaration">
           <summary>Register row draft · {r.setting}</summary>
           <p className="muted">
-            Add it to research/hypotheses.json with its id, study slug and mechanism. It carries no figures, only the setting, the
+            Add it to the register on this machine (data/research/hypotheses.json) with its id, study slug and mechanism. It carries no figures, only the setting, the
             split and the rule.
           </p>
           <pre>{JSON.stringify(r.declaration, null, 2)}</pre>

@@ -525,7 +525,7 @@ calendar fact known before the open, so it keeps the rule above.
 
 **Slice report (B5).** `slices` runs `core.slices` over an arm's trades with this
 package's entry context: mean R per cell, n, interval, cells under 30 greyed. In-sample description
-only; a cell is never a gate, and a good one is declared in `research/hypotheses.json` and tested.
+only; a cell is never a gate, and a good one is declared in the research register and tested.
 It also cuts by weekday and event day. Those are whole-day cuts, so each ranked
 cell carries a `placebo`: its per-session mean against random sets of as many sessions
 (`core.stats.day_placebo`), where `beaten_by` near 0.5 is what chance gives. A whole-day cell is

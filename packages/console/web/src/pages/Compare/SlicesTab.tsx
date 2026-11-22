@@ -139,7 +139,7 @@ export function PlainEnglish({ r }: { r: SliceReport }) {
       </p>
       <p className="muted">
         <strong>How to use it.</strong> This only describes trades that already happened, and the more groups you look at the
-        more likely one looks good by luck. A difference here gets written down as a hypothesis (research/hypotheses.json) and
+        more likely one looks good by luck. A difference here gets written down as a hypothesis (in the research register) and
         tested on data this report never saw before anything changes. The ranges are also a little narrower than they should
         be, because trades on the same day move together.
         {a.greyedCells > 0
@@ -221,7 +221,7 @@ export function SlicesTab() {
   return (
     <>
       <p className="muted">
-        A description of the trades given, never a gate: a cell that looks good is declared in research/hypotheses.json and tested
+        A description of the trades given, never a gate: a cell that looks good is declared in the research register and tested
         on held-out data, corrected for the cells looked at.
       </p>
       <label>

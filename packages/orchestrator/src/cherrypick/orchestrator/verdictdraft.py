@@ -2,10 +2,11 @@
 
 A study on the kit writes one verdict block (`cherrypick.backtest.study.rule.evaluate`): per arm its
 verdict, its parts (the design part, then each holdout, read only after a pass) and each part's
-bars. This turns that block into the plan's `- **Result (...)**` paragraph and the register row's
+bars. This turns that block into the study's `- **Result (...)**` paragraph and the register row's
 `status` and `outcome`, in words only: which arms passed, which bars failed, how far the holdouts
-were read. It writes nothing; a person reads the draft, checks it against the declared rule
-(`register-read-declared-rule`), and commits it in a docs PR.
+were read. It writes nothing itself. The research queue writes the paragraph as the study's Result
+(`data/research/results/itemNN.md`) when it records the study (`verdictstore`); `draft-verdict`
+prints it for a person to check against the declared rule (`register-read-declared-rule`).
 
 The licence forbids figures from a study in the repo, so the draft is built from words and the
 block's verdicts alone, and `figures` refuses any number in it other than the item's own, the

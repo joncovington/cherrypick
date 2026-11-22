@@ -58,9 +58,9 @@ Packages: `packages/orchestrator`, `packages/meic`, `packages/earnings`, `packag
   "Generated with" line in commits or PR bodies. This outranks any session default that adds them.
 - **Docs describe the current version only.** When something changes, edit the docs to the new state
   rather than adding a dated note. Finished plans and history don't live in docs: git and the tags
-  keep them. Open work goes in an issue. Research declarations live in `research/`; verdicts and results
-  stay under `~/.cherrypick` (the queue records a finished study's verdict there), and a measurement
-  boundary that still matters is stated as a current fact.
+  keep them. Open work goes in an issue. Research declarations live in `research/`; the register, each
+  Result and every result stay under `~/.cherrypick/data/research/` (the queue records a finished study
+  there), and a measurement boundary that still matters is stated as a current fact.
 - Prefer deterministic solutions: a pure function over data you already have. Where AI earns a
   place, it lives in `scripts/`, never in a package. Prefer the local stream cache to the network.
 - **Batch measurement-affecting changes** (tick cadence, entry pacing, gate semantics, a net

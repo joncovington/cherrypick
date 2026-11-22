@@ -1,26 +1,23 @@
-"""Study verdicts, recorded on this machine only (`data/research/verdicts.json` under the home).
+"""Recording a finished study's verdict in the register, on this machine (`hypotheses.register_path`).
 
-The register (`research/hypotheses.json`) holds what each study declared. Its verdict is recorded here,
-never in the repo: backtest results stay local. When a study's queue row finishes, the queue records
-its verdict here (`record_finished`); `tools/record_verdict.py` records one by hand. `overlay` lays the
-recorded verdicts over the register's `declared` rows, and `hypotheses.load` applies it, so every reader
-(the `hypotheses` command, the Studies board, the scorecard, the retests) sees the recorded status. The
-register check reads the repo file alone.
+The register and each study's Result paragraph live under the home, never in the repo. When a study's
+queue row finishes, the queue records its verdict (`record_finished`); `tools/record_verdict.py` records
+one by hand. A record sets the study's `declared` row's `status`, `outcome`, `results` (where the row
+lists none), `recorded_at` and `recorded_by`, and writes its Result paragraph
+(`hypotheses.results_path`) where there is none yet.
 
 A study's verdict comes from the study kit's block in its result (`cherrypick.backtest.study.rule`): a
 `rule` of the kit's keys and, per arm, its `n`, `parts` and `verdict`, which the kit computes from the
 declared rule itself. An older script's verdict field can apply a check its declaration does not, so a
 result without the kit's block is refused here and recorded by hand with its status and outcome.
 
-Each record holds the status (`passed` when an arm passed, `no_verdict` when no arm was judged, else
-`failed`), an outcome in words (each arm and its word, never a figure), the result file as a `{home}/`
-path, when it was recorded and by what. A study is recorded once: a second record is refused, so a
-re-run never rewrites a verdict silently.
+The status is `passed` when an arm passed, `no_verdict` when no arm was judged, else `failed`; the
+outcome is words (each arm and its word, never a figure); the result file is a `{home}/` path. A study
+is recorded once: a row that is not `declared` is refused, so a re-run never rewrites a verdict.
 """
 
 from __future__ import annotations
 
-import json
 import os
 import re
 from datetime import datetime
@@ -36,24 +33,11 @@ STATUSES = ("passed", "failed", "no_verdict")
 ITEM_STUDY = re.compile(r"^item\d+$")
 RESULT_PREFIX = "{home}/"
 ET = ZoneInfo("America/New_York")
+HEAD = {"passed": "pass", "failed": "fail", "no_verdict": "no verdict"}
 
 
 class Refused(ValueError):
     """The study cannot be recorded this way."""
-
-
-def path() -> Path:
-    return core_home.data_dir("research") / "verdicts.json"
-
-
-def read(p: Path | None = None) -> dict[str, dict]:
-    """Every recorded verdict by study; empty when none is recorded or the file cannot be read."""
-    try:
-        doc = json.loads((p or path()).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
-    studies = doc.get("studies") if isinstance(doc, dict) else None
-    return {k: v for k, v in (studies or {}).items() if isinstance(v, dict) and v.get("status") in STATUSES}
 
 
 def kit_verdicts(doc: dict) -> dict[str, str]:
@@ -80,10 +64,8 @@ def status_of(verdicts: dict[str, str]) -> str:
 
 
 def outcome_of(verdicts: dict[str, str]) -> str:
-    status = status_of(verdicts)
-    head = {"passed": "pass", "failed": "fail", "no_verdict": "no verdict"}[status]
     arms = "; ".join(f"{a} {w}" for a, w in verdicts.items())
-    return f"{head}: {arms}, by the declared rule"
+    return f"{HEAD[status_of(verdicts)]}: {arms}, by the declared rule"
 
 
 def home_path(p: Path | str, home: Path | None = None) -> str:
@@ -98,6 +80,11 @@ def home_path(p: Path | str, home: Path | None = None) -> str:
     return RESULT_PREFIX + rel.as_posix()
 
 
+def plain_paragraph(status: str, outcome: str, day: str) -> str:
+    """A Result paragraph for a hand record: the verdict word, then the outcome as given."""
+    return f"- **Result ({day}): {HEAD[status]}.**\n  {outcome}."
+
+
 def record(
     study: str,
     status: str,
@@ -105,11 +92,14 @@ def record(
     result: str,
     *,
     by: str,
-    p: Path | None = None,
+    paragraph: str | None = None,
     now: datetime | None = None,
 ) -> dict:
-    """Write one study's verdict. Refuses a study already recorded, a status that is not a verdict, and
-    a result that is not a `{home}/` path."""
+    """Write one study's verdict into its register row, and its Result paragraph where it has none.
+    Refuses a study that is not a `declared` row, a status that is not a verdict, an outcome with a
+    figure, and a result that is not a `{home}/` path."""
+    from . import hypotheses
+
     if not ITEM_STUDY.match(study or ""):
         raise Refused(f"{study!r} is not a study slug like item90")
     if status not in STATUSES:
@@ -117,56 +107,53 @@ def record(
     if not (isinstance(result, str) and result.startswith(RESULT_PREFIX) and result.endswith(".json")):
         raise Refused(f"the result must be a {RESULT_PREFIX}....json path")
     if not outcome or re.search(r"\d+\.\d|\$", outcome):
-        # Words only: a figure from a study never goes into a record that is read back as text.
         raise Refused("the outcome is words only: no figures")
-    target = p or path()
-    try:
-        doc = json.loads(target.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        doc = {}
-    studies = doc.get("studies") if isinstance(doc.get("studies"), dict) else {}
-    if study in studies:
-        raise Refused(f"{study} is recorded already ({studies[study].get('status')})")
-    entry = {
+    target = hypotheses.register_path()
+    reg = hypotheses.load(target)
+    row = next((r for r in reg.get("hypotheses", []) if r.get("study") == study), None)
+    if row is None:
+        raise Refused(f"no register row for {study}")
+    if row.get("status") != "declared":
+        raise Refused(f"{study} is recorded already ({row.get('status')})")
+    at = now or datetime.now(ET)
+    row["status"] = status
+    row["outcome"] = outcome
+    row["results"] = row.get("results") or [result]
+    row["recorded_at"] = at.isoformat(timespec="seconds")
+    row["recorded_by"] = by
+    write_json_atomic(target, reg, default=None)
+    rpath = hypotheses.results_path(study)
+    wrote = None
+    if not rpath.exists():
+        text = paragraph or plain_paragraph(status, outcome, at.date().isoformat())
+        rpath.parent.mkdir(parents=True, exist_ok=True)
+        rpath.write_text(text.rstrip() + "\n", encoding="utf-8")
+        wrote = str(rpath)
+    return {
+        "study": study,
         "status": status,
         "outcome": outcome,
-        "results": [result],
-        "recorded_at": (now or datetime.now(ET)).isoformat(timespec="seconds"),
-        "by": by,
+        "results": row["results"],
+        "result_md": wrote,
     }
-    studies[study] = entry
-    write_json_atomic(target, {"_note": __doc__.splitlines()[0], "studies": dict(sorted(studies.items()))})
-    return {"study": study, **entry}
 
 
-def record_finished(
-    study: str, output: str | Path, doc: dict | None, *, task: int, p: Path | None = None
-) -> dict:
-    """The queue's record of a finished study row: its kit verdict from `doc`, the row's output as the
-    result. `Refused` when the study is not an item, the row wrote no kit verdict, or it is recorded."""
+def record_finished(study: str, output: str | Path, doc: dict | None, *, item: int, by: str) -> dict:
+    """The record of a finished study's kit result: its verdict from `doc`, `output` as the result, and
+    the kit's drafted Result paragraph (`verdictdraft`). `Refused` when the study is not an item, the
+    result carries no kit verdict, or it is recorded already."""
+    from . import verdictdraft
+
     if not ITEM_STUDY.match(study or ""):
         raise Refused(f"{study} is not a register study")
     if not isinstance(doc, dict):
         raise Refused("the row wrote no result")
     verdicts = kit_verdicts(doc)
-    return record(
-        study, status_of(verdicts), outcome_of(verdicts), home_path(output), by=f"queue task {task}", p=p
-    )
-
-
-def overlay(reg: dict, recorded: dict[str, dict]) -> dict:
-    """The register with each `declared` row that has a recorded verdict given its status, outcome and,
-    where it lists none, its result. A row the repo already records keeps the repo's verdict."""
-    rows = []
-    for row in reg.get("hypotheses", []):
-        rec = recorded.get(str(row.get("study")))
-        if rec is not None and row.get("status") == "declared":
-            row = {
-                **row,
-                "status": rec["status"],
-                "outcome": rec.get("outcome"),
-                "results": row.get("results") or list(rec.get("results") or []),
-                "recorded": "local",
-            }
-        rows.append(row)
-    return {**reg, "hypotheses": rows}
+    result = home_path(output)
+    day = datetime.now(ET).date().isoformat()
+    where = "~/.cherrypick/" + result.removeprefix(RESULT_PREFIX).rsplit("/", 1)[0] + "/"
+    try:
+        drafted = verdictdraft.draft(item, doc, day=day, provisional=False, results_dir=where)["paragraph"]
+    except (KeyError, TypeError, ValueError):
+        drafted = None
+    return record(study, status_of(verdicts), outcome_of(verdicts), result, by=by, paragraph=drafted)

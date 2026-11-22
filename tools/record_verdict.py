@@ -1,4 +1,4 @@
-"""Record a finished study's verdict on this machine, by hand (`cherrypick.orchestrator.verdictstore`).
+"""Record a finished study's verdict in the register on this machine, by hand (`verdictstore`).
 
     python tools/record_verdict.py item90 --dry-run    # what would be recorded, printed
     python tools/record_verdict.py item90              # record it
@@ -6,13 +6,14 @@
 
 The research queue records a study itself when its `study` row finishes; this is for a study it could
 not record (a result without the study kit's verdict block) and for one that finished before it did.
-Verdicts are recorded under the home, never in the repo: the register (`research/hypotheses.json`) keeps
-the declaration, and every reader lays the recorded verdict over it.
+The register and each study's Result paragraph live under the home (`data/research/`), never in the
+repo.
 
 The study's register row must still read `declared`. Its result is the row's first `results` path, else
-the newest finished `study*` queue row's output, else `--result`. With the kit's block the status and
-outcome come from it (`verdictstore.status_of`, `outcome_of`); without it, `--status` and `--outcome`
-(words only, read the declared rule, never a figure) are required.
+the newest finished `study*` queue row's output, else `--result`. With the kit's block the status,
+outcome and Result paragraph come from it (`verdictstore.record_finished`); without it, `--status` and
+`--outcome` (words only, read the declared rule, never a figure) are required, and the Result paragraph
+is the verdict word and that outcome. An existing Result paragraph is kept.
 """
 
 from __future__ import annotations
@@ -49,8 +50,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if not verdictstore.ITEM_STUDY.match(a.study):
             raise verdictstore.Refused(f"{a.study!r} is not a study slug like item90")
-        reg = hypotheses.load(local=False)
-        row = next((h for h in reg["hypotheses"] if h.get("study") == a.study), None)
+        row = next((h for h in hypotheses.load()["hypotheses"] if h.get("study") == a.study), None)
         if row is None:
             raise verdictstore.Refused(f"no register row for {a.study}")
         if row.get("status") != "declared":
@@ -62,16 +62,15 @@ def main(argv: list[str] | None = None) -> int:
         if result is None or not result.is_file():
             raise verdictstore.Refused(f"no result file found for {a.study}: name it with --result")
         doc = json.loads(result.read_text(encoding="utf-8"))
-        if a.status or a.outcome:
-            if not (a.status and a.outcome):
-                raise verdictstore.Refused("a hand record gives both --status and --outcome")
-            status, outcome = a.status, a.outcome
-        else:
+        kit = not (a.status or a.outcome)
+        if kit:
             verdicts = verdictstore.kit_verdicts(doc)
             status, outcome = verdictstore.status_of(verdicts), verdictstore.outcome_of(verdicts)
+        elif not (a.status and a.outcome):
+            raise verdictstore.Refused("a hand record gives both --status and --outcome")
+        else:
+            status, outcome = a.status, a.outcome
         rel = verdictstore.home_path(result)
-        if a.study in verdictstore.read():
-            raise verdictstore.Refused(f"{a.study} is recorded already")
     except (verdictstore.Refused, OSError, json.JSONDecodeError) as exc:
         print(f"refused: {exc}", file=sys.stderr)
         return 1
@@ -79,11 +78,14 @@ def main(argv: list[str] | None = None) -> int:
     if a.dry_run:
         return 0
     try:
-        verdictstore.record(a.study, status, outcome, rel, by="by hand")
+        if kit:
+            rec = verdictstore.record_finished(a.study, result, doc, item=int(row["id"]), by="by hand")
+        else:
+            rec = verdictstore.record(a.study, status, outcome, rel, by="by hand")
     except verdictstore.Refused as exc:
         print(f"refused: {exc}", file=sys.stderr)
         return 1
-    print(f"recorded in {verdictstore.path()}")
+    print(f"recorded in {hypotheses.register_path()}" + (f"; Result paragraph {rec['result_md']}" if rec["result_md"] else ""))
     return 0
 
 

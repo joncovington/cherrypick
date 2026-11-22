@@ -5,15 +5,15 @@ read, and what it found. These files are records, not documentation of the softw
 wording a test was declared in, because a declaration changed after the fact is no longer a test.
 
 Results computed from licensed vendor data are not here: they stay under `~/.cherrypick` (see
-[packages/backtest/CLAUDE.md](../packages/backtest/CLAUDE.md)). Nor are new verdicts: a finished study's
-verdict is recorded on this machine (`data/research/verdicts.json` under the home), by the research queue
-when its study row finishes, and laid over the register's declared row wherever the register is read. The
-verdicts already in these files stay as written, never with a licensed figure.
+[packages/backtest/CLAUDE.md](../packages/backtest/CLAUDE.md)). Nor is the register or any Result: the
+register (`data/research/hypotheses.json`, one row per item with its status, outcome, rule and pointer) and
+each item's Result paragraph (`data/research/results/itemNN.md`) live on the machine that ran the studies,
+under the home. The research queue records a finished study there itself. `cherrypick hypotheses` checks the
+register, and the console's Backtest studies board reads it.
 
 | File | What it is |
 |---|---|
-| [edge-hypotheses-plan.md](edge-hypotheses-plan.md) | The register of research items: each idea stated as the edge it would need, what would falsify it, the declared test, and the verdict. |
-| [hypotheses.json](hypotheses.json) | The register in machine-readable form, one row per item with its status, rule and pointer. `cherrypick hypotheses` checks it, and the console's Backtest studies board reads it. |
+| [edge-hypotheses-plan.md](edge-hypotheses-plan.md) | Each research item's declaration: the idea stated as the edge it would need, what would falsify it, and the declared test. Its Result is kept on the machine, as above. |
 | [history-studies-2026-10.md](history-studies-2026-10.md), [-b](history-studies-2026-10-b.md), [-c](history-studies-2026-10-c.md) | Questions answered from history rather than by waiting: each one modelled, with a pass test declared before the run. |
 | [flow-signal-plan.md](flow-signal-plan.md) | Large options orders as a signal: the declared test (research item 32). It failed. |
 | [signal-log-plan.md](signal-log-plan.md) | The chart setups' historical study, scored against a matched random baseline. No setup was profitable after costs and better than random. |

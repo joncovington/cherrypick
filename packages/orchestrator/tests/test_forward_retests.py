@@ -95,9 +95,3 @@ def test_the_monthly_job_ships_off_and_runs_the_forward_plan_when_on():
         jobs, _ = jobspec.derive_jobs(cfg, pythonw="pythonw", launcher="run.py", now=now, pipelines=False)
         job = next(j for j in jobs if j.id == "research-retests")
         assert job.enabled is enabled and job.argv[-3:] == ("retests", "--forward", "--apply")
-
-
-def test_the_repo_registers_forward_recipes_are_sound():
-    assert [p for p in hy.check(hy.load()) if "retest_forward" in p] == []
-    planned = hy.forward_plan(hy.load(), date(2026, 12, 2))
-    assert "item57" in planned["chains"]
