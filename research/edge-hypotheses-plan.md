@@ -10094,6 +10094,48 @@ report costs a spread opened for its own reasons. It is an **`earnings-premium`*
   - **A fail or no verdict:** a report inside a 45-day spread costs nothing this history can see.
     The cap stays `ours` as a concentration limit, and nothing is loosened on this evidence alone.
 
+```register-row
+{
+  "title": "Credit spreads held across an earnings report: do they lose more of their risk than the same rule's spreads that are not?",
+  "legacy": false,
+  "setup": "earnings-premium",
+  "side": "neutral",
+  "structure": "iron-condor",
+  "window": "monthly",
+  "measure": "item 109's single-name candidate condors entered from 2020-02-01, one lot each, net after costs over max loss at entry, spanning a report (Dolt calendar, after the entry and on or before the expiry) against not, within each name",
+  "expected": "spanning trades lose at least three points of max loss more than the same names' other trades",
+  "sample": "one run cut at 2023-07-01; < 150 design spanning trades or < 10 names = no verdict; < 100 holdout spanning trades = provisional",
+  "rule": "RULE: design excess_loss <= -0.03 with t <= -2, standard error from a stationary block bootstrap over entry months (mean block 3, 10,000 draws, seed 108); holdout, read only after a design pass, excess_loss < 0",
+  "mechanism": "options underprice a report's gap on average, so a short-premium spread spanning one pays for it",
+  "rivals": [
+    {
+      "explanation": "spanning names are different names",
+      "check": "differences within each name"
+    },
+    {
+      "explanation": "report season is a market regime",
+      "check": "months drawn whole; by quarter reported"
+    },
+    {
+      "explanation": "a report widens the entry quote",
+      "check": "costs in the outcome; entry spread reported"
+    },
+    {
+      "explanation": "the stop locks the gap's loss",
+      "check": "stop off reported"
+    }
+  ],
+  "scripts": [
+    "packages/backtest/scripts/earnings_span_item108.py"
+  ],
+  "tests": [
+    "packages/backtest/tests/test_earnings_span_item108_script.py"
+  ],
+  "retest": null,
+  "retest_note": null
+}
+```
+
 ### 109. The book's caps on one income rule's trades: does each cut the tail more than it cuts the size?
 
 Declared 2026-11-22, before any outcome of it is computed. manage reads the whole account against
@@ -10209,6 +10251,48 @@ history. `cherrypick hypotheses --similar` names no rejected look-alike. The nea
   - **A fail or no verdict:** the cap is a size choice, not a tail control. It stays `ours` or
     `practice`. The calibration table says what each level would have cost and spared, which is what
     a size choice should be made from.
+
+```register-row
+{
+  "title": "The book's caps on one income rule's trades: does each cut the tail more than it cuts the size?",
+  "legacy": false,
+  "setup": "portfolio-caps",
+  "side": "neutral",
+  "structure": "iron-condor",
+  "window": "monthly",
+  "measure": "one 45-day 20-delta condor rule on 29 stored names run as a $100,000 book at 2% risk a trade, each arm admitting only inside its cap (spread risk 25/35/50%, theta 0.3/0.5%, stress 20%, vol expansion 10%, one expiry 20%, all shipped caps); weekly net-liq returns",
+  "expected": "a cap cuts the 5% expected shortfall per dollar at risk by at least a fifth against the uncapped book",
+  "sample": "one run 2016-01 to 2026-11 cut at 2021-01-01; < 100 trades in a part or a cap binding on < 3 sessions = no verdict for that part",
+  "rule": "RULE: per arm against none, Holm across nine arms: design tail_ratio <= 0.80 with log ratio t >= 2 (stationary block bootstrap over weeks, mean block 4, 10,000 draws, seed 109), and return per dollar at risk not below none's at t <= -2; holdout, read only after a design pass, tail_ratio < 1",
+  "mechanism": "a cap that reads the book's greeks or scenarios holds less risk when the tail is coming than a cap on size alone",
+  "rivals": [
+    {
+      "explanation": "a cap only shrinks the book",
+      "check": "per dollar at risk; scaled none reported"
+    },
+    {
+      "explanation": "one crisis decides it",
+      "check": "episodes reported apart; holdout on its own crises"
+    },
+    {
+      "explanation": "the admission order picks the trades",
+      "check": "symbol order reported"
+    },
+    {
+      "explanation": "our beta is not the broker's",
+      "check": "three-year beta reported"
+    }
+  ],
+  "scripts": [
+    "packages/backtest/scripts/book_caps_item109.py"
+  ],
+  "tests": [
+    "packages/backtest/tests/test_book_caps_item109_script.py"
+  ],
+  "retest": null,
+  "retest_note": null
+}
+```
 
 ## Not worth revisiting
 
