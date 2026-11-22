@@ -414,12 +414,17 @@ Beside the trades, each evaluation reads the whole account as one book (`portfol
 
 - **beta-weighted delta (BWD)** in SPY shares, and what a 1% SPY move does to it. The beta is the
   broker's own, so the figure can be checked against the broker's screen;
+- **leverage**: the BWD as a multiple of the account, BWD x SPY price / net liq. 1.0x moves like an
+  account held all in SPY, at any account size; the delta band is stated in the same units;
 - **theta** in dollars per calendar day and as a share of net liq;
 - **the break-even move**: the SPY move that wipes out a day's theta, beside the move SPY's implied
   volatility expects that day;
 - **vega**, raw and weighted to a 30-day equivalent;
 - **buying power used** and the account's kind (margin or cash);
 - **a stress line**: the book repriced at SPY −10% and +5%, each name moved by its beta;
+- **dispersion**: every name moved against its own position at once by two sigma of its own one-day
+  implied move, not by beta. The stress line and the vol expansion move every name with SPY, so
+  trades on different names always hedge each other there; this reads the day they don't;
 - **each underlying's share** of the book's theta and BWD;
 - **beta doubts**: names whose broker beta disagrees in sign with its own three-month correlation,
   which happens on a few names, so their BWD may be misstated;
@@ -453,7 +458,7 @@ theta.
 
 The bands are retail heuristics. None has published out-of-sample evidence, so each is graded
 practice where retail education states it and ours where the figure is our own (the earnings and
-expiry caps, the vol-expansion shock, the cash-account limits). Each fires REVIEW and names
+expiry caps, the vol-expansion and dispersion shocks, the cash-account limits). Each fires REVIEW and names
 what drives it:
 
 | Rule | Default | Source | Outside evidence |
@@ -465,6 +470,7 @@ what drives it:
 | `portfolio.buying_power` | on margin (or an account of unknown kind), buying power used over a cap set by VIX: 25% under 15, 30% under 20, 35% under 30, 40% under 40, 50% above. On a cash account or IRA, any of three: buying power used over 80% in total; short puts at their strikes plus shares held over 65% of net liq (`stock_exposure`); the buying power everything else holds over 35% (`spread_risk`). The reason names each part over | margin: retail options education (more room when premium is rich). Cash: ours. A cash account holds a short put's full strike and a spread's max loss, and neither grows when the market moves, so its buying power is already the worst case and the VIX table, written for margin, is several times stricter there | None. Fully collateralised index put-writing (Cboe PUT, 1986 on) matched the S&P's return with about two thirds of its volatility, a −33% worst drawdown against −51%: put notional is stock exposure, an allocation choice. Single names are less diversified than that index |
 | `portfolio.stress` | cash account or IRA only: SPY −20% (each name by beta) with IVs up 10 points, term-weighted, losing over 20% of net liq; the drivers are the names longest beta-weighted delta | ours: with the VIX table gone, a fall with vol up is the real ceiling | None |
 | `portfolio.vol_expansion` | SPY −5% with IVs up 10 points (term-weighted, time held still) losing over 10% of net liq; the drivers are the names shortest 30-day vega | ours: a spike moves price and vol together, and the stress line holds IV still | None. Vol is easy to forecast and hard to profit from, but the expansion half cannot be timed, so this bounds it rather than predicting it |
+| `portfolio.dispersion` | every name moved 2 sigma of its own one-day implied move (its IV index, else its legs' mean IV) against its position at once, IV and time held still, losing over 10% of net liq; the drivers are the names that lose | ours: the beta-scaled lines are perfect correlation, under which a bullish trade on one name and a bearish one on another can never lose together | None. A deliberate worst case: names do not all move against the book on one day, so it bounds the hedge and forecasts nothing |
 
 Each band is written into the reading with the figure's place in it (`bands`), so the console draws
 the band manage used and never works one out itself.

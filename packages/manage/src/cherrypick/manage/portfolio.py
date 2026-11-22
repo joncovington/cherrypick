@@ -9,7 +9,8 @@ display will differ a little (it models American exercise and dividends). What i
 
 - **Beta-weighted delta (BWD)**, in shares of the benchmark: sum of quantity x multiplier x delta x
   beta x spot / benchmark spot. The beta is the BROKER's, the one its own BWD uses, so the two can be
-  set side by side.
+  set side by side. Also stated as **leverage**, a multiple of the account: BWD x benchmark spot /
+  net liq, so 1.0 moves like an account held all in the benchmark, whatever its size.
 - **Theta**, in dollars per calendar day (the broker's convention) and as a share of net liq. Stated
   twice: the whole book, and without the option legs `front_dte` days or less from expiry. The band,
   the concentration rule and the candidates read the second: a leg about to expire can carry nearly
@@ -23,6 +24,9 @@ display will differ a little (it models American exercise and dividends). What i
   IV with time held still.
 - **A vol expansion**: the same repricing with every IV raised as well (term-weighted, as the risk
   matrix is), since a spike moves both at once and a short-premium book loses on each.
+- **Dispersion**: every name moved against its own position at once by its own implied move, not by
+  beta. The two lines above are perfect correlation, under which trades on different names hedge
+  each other; this one reads the day they don't.
 
 A leg the model cannot price (unpriced, no IV, past expiry) is left out and NAMED; an underlying with
 no beta has no BWD and is named. Neither is ever counted as zero. A leg expiring today is taken at its
@@ -149,15 +153,30 @@ def book_pnl(
                 left_out.append(r["underlying"])
             continue
         moved = r["spot"] * (1.0 + r["beta"] * float(move))
-        for leg in r["legs"]:
-            shift = vol_shift
-            if term_weighted and vol_shift and (leg.get("dte") or 0) > 0:
-                shift = vol_shift * math.sqrt(30.0 / leg["dte"])
-            now = _leg_value(leg, r["spot"], rate)
-            then = _leg_value(leg, moved, rate, shift, years_ahead)
-            if now is not None and then is not None:
-                total += then - now
+        total += name_pnl(r, moved, rate, vol_shift, years_ahead, term_weighted)
     return total, left_out
+
+
+def name_pnl(
+    r: dict[str, Any],
+    moved: float,
+    rate: float,
+    vol_shift: float = 0.0,
+    years_ahead: float = 0.0,
+    term_weighted: bool = False,
+) -> float:
+    """One underlying's modelled P&L against today's model value with its spot at `moved`, as
+    `book_pnl` takes it. A leg the model cannot price is left out on both sides."""
+    total = 0.0
+    for leg in r["legs"]:
+        shift = vol_shift
+        if term_weighted and vol_shift and (leg.get("dte") or 0) > 0:
+            shift = vol_shift * math.sqrt(30.0 / leg["dte"])
+        now = _leg_value(leg, r["spot"], rate)
+        then = _leg_value(leg, moved, rate, shift, years_ahead)
+        if now is not None and then is not None:
+            total += then - now
+    return total
 
 
 # --------------------------------------------------------------------------- the book
@@ -327,6 +346,7 @@ def reading(
                 "beta": beta,
                 "corr_spy_3month": corr,
                 "beta_doubt": _beta_doubt(beta, corr, cfg["beta_doubt"]),
+                "iv_index": _f(m.get("iv_index")),
                 "delta": 0.0,
                 "gamma": 0.0,
                 "theta": 0.0,
@@ -412,6 +432,7 @@ def reading(
         "net_liq": net_liq,
         "bwd": _round(bwd),
         "bwd_dollars_per_1pct": _round(bwd * bench_spot * 0.01) if bwd is not None and bench_spot else None,
+        "leverage": leverage(bwd, bench_spot, net_liq),
         "theta": _round(theta),
         "theta_pct_net_liq": _round(theta / net_liq, 5) if net_liq else None,
         "front_dte": front_dte,
@@ -430,6 +451,7 @@ def reading(
         "secured": secured(trades),
         "stress": _stress(rows, bench_spot, rate, cfg["stress"]["shocks"], net_liq),
         "vol_expansion": _vol_expansion(rows, bench_spot, rate, cfg["vol_expansion"], net_liq),
+        "dispersion": dispersion(rows, rate, cfg["dispersion"], net_liq),
         "beta_doubts": [
             {"underlying": u["underlying"], "reason": u["beta_doubt"], "bwd_share": u["bwd_share"]}
             for u in underlyings
@@ -712,6 +734,7 @@ def bands(r: dict[str, Any], cfg: dict[str, Any]) -> dict[str, Any]:
     delta = delta_band(r, cfg["delta"])
     lo_pct, hi_pct = float(cfg["theta"]["min_pct_nlv"]), float(cfg["theta"]["max_pct_nlv"])
     pct, bwd = r["theta_ex_front_pct_net_liq"], r["bwd"]
+    spot, net_liq = r["benchmark_spot"], r["net_liq"]
     return {
         "delta": {
             "low": _round(delta[0]) if delta else None,
@@ -719,6 +742,10 @@ def bands(r: dict[str, Any], cfg: dict[str, Any]) -> dict[str, Any]:
             "basis": delta_band_basis(r, cfg["delta"]),
             "value": bwd,
             "inside": (delta[0] <= bwd <= delta[1]) if delta and bwd is not None else None,
+            # The same band and reading as multiples of the account (`leverage`).
+            "leverage": r.get("leverage"),
+            "leverage_low": leverage(delta[0], spot, net_liq) if delta else None,
+            "leverage_high": leverage(delta[1], spot, net_liq) if delta else None,
         },
         "theta": {
             "low": lo_pct,
@@ -731,6 +758,7 @@ def bands(r: dict[str, Any], cfg: dict[str, Any]) -> dict[str, Any]:
         },
         "buying_power": _bp_band(r, cfg["buying_power"]),
         "vol_expansion": _vol_band(r, cfg["vol_expansion"]),
+        "dispersion": _dispersion_band(r, cfg["dispersion"]),
     }
 
 
@@ -889,6 +917,13 @@ def cash_bands(
     }
 
 
+def _dispersion_band(r: dict[str, Any], cfg: dict[str, Any]) -> dict[str, Any]:
+    """The dispersion loss against its cap, both as signed shares of net liq: a gain is inside."""
+    cap = -float(cfg["max_loss_pct_nlv"])
+    value = (r.get("dispersion") or {}).get("pct_net_liq")
+    return {"low": cap, "high": None, "value": value, "inside": (value >= cap) if value is not None else None}
+
+
 def _vol_band(r: dict[str, Any], cfg: dict[str, Any]) -> dict[str, Any]:
     """The vol-expansion loss against its cap, both as signed shares of net liq: a gain is inside."""
     cap = -float(cfg["max_loss_pct_nlv"])
@@ -944,6 +979,70 @@ def _vol_expansion(
         "iv_shift": shift,
         "pnl": round(total, 2),
         "pct_net_liq": round(total / net_liq, 4) if net_liq else None,
+        "left_out": left_out,
+    }
+
+
+def leverage(bwd: float | None, bench_spot: float | None, net_liq: float | None) -> float | None:
+    """Beta-weighted delta as a multiple of the account: the benchmark shares it holds against the
+    benchmark shares net liq would buy (bwd x benchmark spot / net liq). 1.0 moves like an account
+    all in the benchmark; signed, so a short book reads negative. None without all three."""
+    if bwd is None or not bench_spot or not net_liq:
+        return None
+    return round(bwd * bench_spot / net_liq, 3)
+
+
+def dispersion(
+    rows: list[dict[str, Any]],
+    rate: float,
+    cfg: dict[str, Any],
+    net_liq: float | None,
+) -> dict[str, Any]:
+    """Every name moved against its own position at once, each by `sigmas` of its own implied move
+    over `horizon_days` (calendar days, theta's footing), IV and time held still.
+
+    The stress line and the vol expansion move every name by beta x one benchmark move, which is
+    perfect correlation: a bullish trade on one name and a bearish one on another cancel there and
+    can never lose together. Here each name takes whichever way (up or down) costs it more, so a
+    book hedged across names reads what it loses when the names stop moving together. A name gaining
+    both ways (long gamma) keeps its smaller gain. No beta is needed, so a name without one is read.
+
+    The move is the name's own `iv_index` (the snapshot's market metrics), else the mean IV of its
+    option legs (`iv_source: "legs"`); a name with neither, or no spot, is NAMED in `left_out`."""
+    sigmas, days = float(cfg["sigmas"]), float(cfg["horizon_days"])
+    names: list[dict[str, Any]] = []
+    left_out: list[str] = []
+    for r in rows:
+        if not r["legs"]:
+            continue
+        iv, source = r.get("iv_index"), "iv_index"
+        if not iv:
+            ivs = [float(x["iv"]) for x in r["legs"] if x.get("right") in ("C", "P") and x.get("iv")]
+            iv, source = (sum(ivs) / len(ivs), "legs") if ivs else (None, None)
+        if not iv or not r["spot"]:
+            left_out.append(r["underlying"])
+            continue
+        move = sigmas * iv * math.sqrt(days / 365.0)
+        up = name_pnl(r, r["spot"] * (1.0 + move), rate)
+        down = name_pnl(r, r["spot"] * (1.0 - move), rate)
+        names.append(
+            {
+                "underlying": r["underlying"],
+                "iv": round(iv, 4),
+                "iv_source": source,
+                "move_pct": round(move, 4),
+                "side": "up" if up < down else "down",
+                "pnl": round(min(up, down), 2),
+            }
+        )
+    names.sort(key=lambda n: n["pnl"])
+    total = sum(n["pnl"] for n in names)
+    return {
+        "sigmas": sigmas,
+        "horizon_days": days,
+        "pnl": round(total, 2),
+        "pct_net_liq": round(total / net_liq, 4) if net_liq else None,
+        "names": names,
         "left_out": left_out,
     }
 
@@ -1063,12 +1162,13 @@ def guidance(r: dict[str, Any], rules: dict[str, Any]) -> list[dict[str, Any]]:
             side = 1.0 if r["bwd"] > hi else -1.0
             shown, _ = _apart(r["bwd"], hi if side > 0 else lo, 1, "+f")
             places = len(shown.partition(".")[2])
+            lev = f", {r['leverage']:+.2f}x the account" if r.get("leverage") is not None else ""
             fired.append(
                 _fire(
                     "portfolio.delta",
                     dc["evidence"],
                     f"beta-weighted delta {shown} {r['benchmark']} shares "
-                    f"(${r['bwd_dollars_per_1pct']:+,.0f} per 1% move) is outside "
+                    f"(${r['bwd_dollars_per_1pct']:+,.0f} per 1% move{lev}) is outside "
                     f"{lo:+.{places}f} to {hi:+.{places}f}"
                     f"{partial}",
                     _drivers(r, "bwd", side),
@@ -1157,6 +1257,31 @@ def guidance(r: dict[str, Any], rules: dict[str, Any]) -> list[dict[str, Any]]:
                 f"${-x['pnl']:,.0f}, {shown} of net liq, over the {bound} cap: the book is short the vol "
                 f"a spike brings{short}",
                 _drivers(r, "vega_30", -1.0),
+            )
+        )
+
+    db = (r.get("bands") or {}).get("dispersion") or {}
+    if not off("portfolio.dispersion") and db.get("inside") is False:
+        x = r["dispersion"]
+        shown, bound = _apart(-db["value"], -db["low"], 0, "%")
+        short = f" (partial: {', '.join(x['left_out'])} not read)" if x["left_out"] else partial
+        sig = f"{x['sigmas']:g}"
+        days = "one day" if x["horizon_days"] == 1 else f"{x['horizon_days']:g} days"
+        losers = [n for n in x["names"] if n["pnl"] < 0]
+        # Only a book whose losers lose on opposite sides is hedged across names; one leaning one way
+        # is just each name's own move, larger than beta x SPY's on a high-vol name.
+        why = (
+            "trades on different names stop hedging each other when the names stop moving together"
+            if len({n["side"] for n in losers}) > 1
+            else "every losing name leans one way, each moved by its own volatility rather than by beta"
+        )
+        fired.append(
+            _fire(
+                "portfolio.dispersion",
+                cfg["dispersion"]["evidence"],
+                f"every name moved {sig} sigma of its own implied move over {days} against its position at "
+                f"once would lose ${-x['pnl']:,.0f}, {shown} of net liq, over the {bound} cap: {why}{short}",
+                [{"underlying": n["underlying"], "pnl": n["pnl"]} for n in losers],
             )
         )
 

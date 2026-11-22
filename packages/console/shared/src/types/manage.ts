@@ -595,7 +595,7 @@ export interface ManageBand {
  * What a guidance driver's figure measures, so the page states it in its own unit: `bwd` in benchmark
  * shares, `theta` in dollars a day, and the two shares of the book as fractions (0.30 = 30%).
  */
-export type ManageDriverKind = "bwd" | "theta" | "bwd_share" | "theta_share" | "vega_30";
+export type ManageDriverKind = "bwd" | "theta" | "bwd_share" | "theta_share" | "vega_30" | "pnl";
 
 export interface ManageGuidanceFigure {
   kind: ManageDriverKind;
@@ -751,6 +751,9 @@ export interface ManagePortfolio {
   netLiq: number | null;
   bwd: number | null;
   bwdDollarsPer1pct: number | null;
+  /** Beta-weighted delta as a multiple of the account (bwd x benchmark spot / net liq), signed: 1.0
+   *  moves like an account all in the benchmark. Null on an evaluation from before it existed. */
+  leverage: number | null;
   theta: number | null;
   thetaPctNetLiq: number | null;
   /** Theta without the option legs `frontDte` days or less from expiry: what the band, concentration
@@ -765,8 +768,23 @@ export interface ManagePortfolio {
   buyingPowerUsed: number | null;
   buyingPowerUsedPct: number | null;
   stress: Array<{ shock: number; pnl: number | null; pctNetLiq: number | null; leftOut: string[] }>;
+  /** The book repriced at a benchmark move with IVs up (time held still); null before it was read. */
+  volExpansion: { move: number | null; ivShift: number | null; pnl: number | null; pctNetLiq: number | null } | null;
+  /** Every name moved against its own position at once by `sigmas` of its own implied move over
+   *  `horizonDays`, not by beta; `names` worst first. Null on an evaluation from before it existed. */
+  dispersion: {
+    sigmas: number | null;
+    horizonDays: number | null;
+    pnl: number | null;
+    pctNetLiq: number | null;
+    names: Array<{ underlying: string; movePct: number | null; side: "up" | "down" | null; pnl: number | null }>;
+    leftOut: string[];
+  } | null;
   bands: {
-    delta: ManageBand & { basis: string | null };
+    /** `leverage*`: the band and its reading as multiples of the account, null before they existed. */
+    delta: ManageBand & { basis: string | null; leverage: number | null; leverageLow: number | null; leverageHigh: number | null };
+    /** The dispersion loss against its cap, as signed shares of net liq; null before it existed. */
+    dispersion: ManageBand | null;
     theta: ManageBand;
     /** Buying power used against its cap: set by VIX on margin (`basis` "vix"), a flat total on a cash
      *  account or IRA (`basis` "cash"); null on an evaluation from before it existed. `basis` is null

@@ -388,6 +388,7 @@ describe("readManage", () => {
       account_type: { margin_or_cash: "Cash", type_name: "Traditional IRA" },
       bwd: 5.85,
       bwd_dollars_per_1pct: 44.63,
+      leverage: 0.313,
       theta: 43.68,
       theta_pct_net_liq: 0.00306,
       front_dte: 2,
@@ -400,8 +401,26 @@ describe("readManage", () => {
       buying_power_used: 7622.5,
       buying_power_used_pct: 0.534,
       stress: [{ shock: -0.1, pnl: -1569.16, pct_net_liq: -0.1099, left_out: ["ABC"] }],
+      dispersion: {
+        sigmas: 2,
+        horizon_days: 1,
+        pnl: -812.4,
+        pct_net_liq: -0.0569,
+        names: [{ underlying: "META", iv: 0.56, iv_source: "iv_index", move_pct: 0.0586, side: "down", pnl: -400.1 }],
+        left_out: ["ABC"],
+      },
       bands: {
-        delta: { low: -21.84, high: 32.76, basis: "theta", value: 5.85, inside: true },
+        delta: {
+          low: -21.84,
+          high: 32.76,
+          basis: "theta",
+          value: 5.85,
+          inside: true,
+          leverage: 0.313,
+          leverage_low: -1.168,
+          leverage_high: 1.752,
+        },
+        dispersion: { low: -0.1, high: null, value: -0.0569, inside: true },
         theta: { low: 0.001, high: 0.003, value: 0.00306, inside: false },
         buying_power: { low: 0, high: 0.3, value: 0.534, vix: 19.99, inside: false },
       },
@@ -508,7 +527,27 @@ describe("readManage", () => {
     expect(p.bwd).toBe(5.85);
     expect([p.theta, p.thetaExFront, p.frontDte]).toEqual([43.68, 40.1, 2]);
     expect(p.accountKind).toEqual({ marginOrCash: "Cash", typeName: "Traditional IRA" });
-    expect(p.bands?.delta).toEqual({ low: -21.84, high: 32.76, basis: "theta", value: 5.85, inside: true });
+    expect(p.bands?.delta).toEqual({
+      low: -21.84,
+      high: 32.76,
+      basis: "theta",
+      value: 5.85,
+      inside: true,
+      leverage: 0.313,
+      leverageLow: -1.168,
+      leverageHigh: 1.752,
+    });
+    expect(p.leverage).toBe(0.313);
+    expect(p.dispersion).toEqual({
+      sigmas: 2,
+      horizonDays: 1,
+      pnl: -812.4,
+      pctNetLiq: -0.0569,
+      names: [{ underlying: "META", movePct: 0.0586, side: "down", pnl: -400.1 }],
+      leftOut: ["ABC"],
+    });
+    expect(p.bands?.dispersion).toEqual({ low: -0.1, high: null, value: -0.0569, inside: true });
+    expect(p.volExpansion).toBeNull(); // not in this evaluation
     expect(p.bands?.theta.inside).toBe(false);
     expect(p.breakeven).toEqual({ kind: "short_gamma", points: 15.22, pct: 0.01994 });
     expect(p.guidance[0]!.drivers).toEqual([{ underlying: "GOOGL", figures: [{ kind: "theta", value: 9.06 }] }]);

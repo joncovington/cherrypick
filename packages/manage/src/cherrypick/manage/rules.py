@@ -441,6 +441,18 @@ DEFAULT_RULES: dict[str, Any] = {
             "max_loss_pct_nlv": 0.10,
             "evidence": "ours",
         },
+        # Every name moved against its own position at once by `sigmas` of its own implied move over
+        # `horizon_days` (IV and time held still). The stress line and the vol expansion move names
+        # by beta x one benchmark move, so trades on different names always hedge each other there;
+        # this reads the day they stop moving together. Over `max_loss_pct_nlv` of net liq is a
+        # REVIEW. The shock and the cap are ours (2026-11-22), with no published evidence.
+        "dispersion": {
+            "enabled": True,
+            "sigmas": 2.0,
+            "horizon_days": 1,
+            "max_loss_pct_nlv": 0.10,
+            "evidence": "ours",
+        },
         # Buying power used against a ceiling. On margin it rises with VIX: [VIX under, cap], the last
         # bound null for "anything above". The common retail table (more room when premium is rich),
         # written for margin, where a short put holds a fraction of its notional and the hold grows as
@@ -710,6 +722,7 @@ RULE_IDS = (
     "portfolio.earnings_exposure",
     "portfolio.expiry_concentration",
     "portfolio.vol_expansion",
+    "portfolio.dispersion",
 )
 
 

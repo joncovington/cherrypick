@@ -901,8 +901,9 @@ const DRIVER_FIGURES: Record<string, readonly ManageDriverKind[]> = {
   "portfolio.delta": ["bwd"],
   "portfolio.concentration": ["bwd_share", "theta_share"],
   "portfolio.vol_expansion": ["vega_30"],
+  "portfolio.dispersion": ["pnl"],
 };
-const DRIVER_KINDS: readonly ManageDriverKind[] = ["bwd", "theta", "bwd_share", "theta_share", "vega_30"];
+const DRIVER_KINDS: readonly ManageDriverKind[] = ["bwd", "theta", "bwd_share", "theta_share", "vega_30", "pnl"];
 
 /** One driver row with its figures by kind. A rule this reader does not know keeps every figure it
  *  recognises; a key it does not know is dropped rather than shown in a guessed unit. */
@@ -911,7 +912,7 @@ function drivers(rule: string | null, row: Record<string, unknown>): ManageGuida
   return { underlying: str(row["underlying"]) ?? "?", figures: kinds.map((kind) => ({ kind, value: num(row[kind]) })) };
 }
 
-const PORTFOLIO_RULES = ["theta", "delta", "breakeven", "buying_power", "concentration", "vol_expansion"] as const;
+const PORTFOLIO_RULES = ["theta", "delta", "breakeven", "buying_power", "concentration", "vol_expansion", "dispersion"] as const;
 
 /** The range of confidences the evaluation's own ruleset gives the portfolio rules; null when the
  *  evaluation embeds no ruleset (the caption then names no number rather than a stale one). */
@@ -962,6 +963,7 @@ function portfolio(v: unknown, rules: Record<string, unknown>, lev: Leveraged = 
     netLiq: num(p["net_liq"]),
     bwd: num(p["bwd"]),
     bwdDollarsPer1pct: num(p["bwd_dollars_per_1pct"]),
+    leverage: num(p["leverage"]),
     theta: num(p["theta"]),
     thetaPctNetLiq: num(p["theta_pct_net_liq"]),
     thetaExFront: num(p["theta_ex_front"]),
@@ -980,9 +982,39 @@ function portfolio(v: unknown, rules: Record<string, unknown>, lev: Leveraged = 
       const s = rec(raw);
       return { shock: num(s["shock"]) ?? 0, pnl: num(s["pnl"]), pctNetLiq: num(s["pct_net_liq"]), leftOut: strs(s["left_out"]) };
     }),
+    volExpansion: p["vol_expansion"]
+      ? (() => {
+          const x = rec(p["vol_expansion"]);
+          return { move: num(x["move"]), ivShift: num(x["iv_shift"]), pnl: num(x["pnl"]), pctNetLiq: num(x["pct_net_liq"]) };
+        })()
+      : null,
+    dispersion: p["dispersion"]
+      ? (() => {
+          const x = rec(p["dispersion"]);
+          return {
+            sigmas: num(x["sigmas"]),
+            horizonDays: num(x["horizon_days"]),
+            pnl: num(x["pnl"]),
+            pctNetLiq: num(x["pct_net_liq"]),
+            names: arr(x["names"]).map((raw) => {
+              const n = rec(raw);
+              const side = n["side"] === "up" || n["side"] === "down" ? n["side"] : null;
+              return { underlying: str(n["underlying"]) ?? "?", movePct: num(n["move_pct"]), side, pnl: num(n["pnl"]) };
+            }),
+            leftOut: strs(x["left_out"]),
+          };
+        })()
+      : null,
     bands: Object.keys(bands).length
       ? {
-          delta: { ...band(bands["delta"]), basis: str(rec(bands["delta"])["basis"]) },
+          delta: {
+            ...band(bands["delta"]),
+            basis: str(rec(bands["delta"])["basis"]),
+            leverage: num(rec(bands["delta"])["leverage"]),
+            leverageLow: num(rec(bands["delta"])["leverage_low"]),
+            leverageHigh: num(rec(bands["delta"])["leverage_high"]),
+          },
+          dispersion: bands["dispersion"] ? band(bands["dispersion"]) : null,
           theta: band(bands["theta"]),
           buyingPower: bands["buying_power"]
             ? {
