@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-TOOL = Path(__file__).resolve().parents[1] / "record_verdict.py"
+TOOL = Path(__file__).resolve().parents[3] / "tools" / "record_verdict.py"
 spec = importlib.util.spec_from_file_location("record_verdict", TOOL)
 rv = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(rv)
