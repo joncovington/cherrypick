@@ -19,6 +19,7 @@ RULE = {"t_bar": 2.0, "min_n": 150}
 @pytest.fixture
 def setup(tmp_path, monkeypatch):
     from cherrypick.core import home
+
     from cherrypick.orchestrator import hypotheses, researchqueue, verdictstore
 
     monkeypatch.setattr(home, "home", lambda: tmp_path)
