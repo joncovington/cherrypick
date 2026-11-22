@@ -85,7 +85,10 @@ def main(argv: list[str] | None = None) -> int:
     except verdictstore.Refused as exc:
         print(f"refused: {exc}", file=sys.stderr)
         return 1
-    print(f"recorded in {hypotheses.register_path()}" + (f"; Result paragraph {rec['result_md']}" if rec["result_md"] else ""))
+    print(
+        f"recorded in {hypotheses.register_path()}"
+        + (f"; Result paragraph {rec['result_md']}" if rec["result_md"] else "")
+    )
     return 0
 
 

@@ -42,18 +42,23 @@ Every declaration from here on carries these lines, written before any look. Dec
 written are not re-judged. The arithmetic is `cherrypick.core.robustness`
 (`docs/trading-book-review-plan.md (tag archive/docs-2026-11)` B12, B13, B9).
 
-- **A register row** in the register on this machine (`data/research/hypotheses.json` under the home,
-  B7), added with the declaration: the four parts, the mechanism, the rival explanations each with the
-  check that rules it out, and a pointer here. Run `cherrypick hypotheses --similar '{"setup": ...,
-  "structure": ...}'` first; a rejected look-alike is named in the declaration, so a retest is said out
-  loud. `cherrypick hypotheses` fails on a malformed row. Take the item number from its `next_id` (the
-  register and this plan's headings here and on `origin/main` as last fetched), after a `git fetch`, and
-  put `id` and `study` in the `--similar` proposal: it fails when either is taken. The row names its
-  `scripts` and `tests` (repo paths that exist), which with the pointer, the queue rows keyed by `study`
-  and `results` make the study chain the console shows step by step. A `retest` recipe (the research
-  queue's kind and args) lets B14 re-run it. When the result lands, the research queue records it: the
-  row's status changes, `results` names the files as `{home}/...` paths, `outcome` says the decision in
-  words, and the Result paragraph is written to `data/research/results/itemNN.md`.
+- **A register row**, declared in the section itself as one fenced `register-row` block (a JSON object;
+  `tools/study_new.py` prints one with the study's script and test filled in): the four parts, the
+  mechanism, the rival explanations each with the check that rules it out, the tags, `scripts` and
+  `tests`, and any `retest` recipe. The section's number is its `id`, `itemN` its `study`, its heading
+  its `pointer`, and its status `declared`; a block never carries `status`, `outcome` or anything else
+  the machine records. The register on the machine that runs the studies
+  (`data/research/hypotheses.json` under the home, B7) imports the row the first time it is read, and
+  never changes a row it already holds; `research/hypotheses.json` in the repo is refused by CI and the
+  pre-commit hook. Run `cherrypick hypotheses --similar '{"setup": ..., "structure": ...}'` first; a
+  rejected look-alike is named in the declaration, so a retest is said out loud. `cherrypick hypotheses`
+  fails on a malformed row or block. Take the item number from its `next_id` (the register and this
+  plan's headings here and on `origin/main` as last fetched), after a `git fetch`, and put `id` and
+  `study` in the `--similar` proposal: it fails when either is taken. The row's `scripts` and `tests`
+  (repo paths that exist), with the pointer, the queue rows keyed by `study` and `results`, make the
+  study chain the console shows step by step. When the result lands, the research queue records it in
+  the register: the row's status changes, `results` names the files as `{home}/...` paths, `outcome`
+  says the decision in words, and the Result paragraph is written to `data/research/results/itemNN.md`.
 - **Windows as split dates on one run:** the study replays the whole history once, and the
   declaration names the split dates its verdict reads (one design/holdout date, or several folds),
   each trade counted in the part holding its entry session. The holdout part counts only after a

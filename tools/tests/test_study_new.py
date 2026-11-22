@@ -4,6 +4,7 @@ CHAIN, as literals the suite reads without importing; nothing existing is overwr
 from __future__ import annotations
 
 import ast
+import json
 import sys
 from pathlib import Path
 
@@ -76,6 +77,17 @@ def test_the_study_reports_its_progress(repo):
     assert "trades(inputs, conn, rep)" in calls
     doc = ast.get_docstring(_function(tree, "trades")) or ""
     assert "rep.split(" in doc and "key=symbol" in doc, "trades says to count overall and per symbol"
+
+
+def test_it_prints_the_plan_sections_register_row_with_its_files(repo):
+    paths = sn.write("item78", "dividend_spread", repo=repo)
+    block = sn.register_block(paths)
+    assert block.startswith("```register-row\n") and block.endswith("\n```")
+    row = json.loads(block.removeprefix("```register-row\n").removesuffix("\n```"))
+    assert row["scripts"] == ["packages/backtest/scripts/dividend_spread_item78.py"]
+    assert row["tests"] == ["packages/backtest/tests/test_dividend_spread_item78_script.py"]
+    # Only declaration fields: what the machine records (status, outcome) is never in the block.
+    assert not {"status", "outcome", "recorded_at", "id", "study"} & set(row)
 
 
 def test_nothing_is_overwritten(repo):

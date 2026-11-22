@@ -443,3 +443,18 @@ def test_tool_policy_rule_allows_the_network_claim_once_websearch_is_denied(tmp_
 def test_the_repo_itself_is_clean():
     """The check every push runs. Kept last so a failure above points at the rule, not the repo."""
     assert cd.check(cd.tracked_files()) == []
+
+
+# --- rule 13: the research register is not kept in the repo
+
+
+def test_the_research_register_in_the_repo_is_a_finding():
+    # A session on older code writes research/hypotheses.json; a PR carrying it would split the register.
+    there = [ROOT / "README.md", ROOT / cd.REGISTER_IN_REPO]
+    [finding] = cd._check_register_not_in_repo(there)
+    assert finding.startswith("research/hypotheses.json:0:") and "register-row" in finding
+    assert cd._check_register_not_in_repo([ROOT / "README.md"]) == []
+
+
+def test_the_repo_carries_no_research_register():
+    assert cd._check_register_not_in_repo(cd.tracked_files()) == []

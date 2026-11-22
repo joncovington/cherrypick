@@ -3,6 +3,15 @@
 # name into the repo (or an account fact: the same gate CI runs). The name is read from the machine
 # at run time, so only a local check can see it. Installed by scripts/dev-install.{ps1,sh}
 # (git config core.hooksPath tools/hooks), which covers every worktree of the clone.
+#
+# Also refuse the research register in the repo (check_docs rule 13): it lives under the home, and a
+# new study's row is declared in its plan section's `register-row` block.
+if git diff --cached --name-only --diff-filter=ACMR | grep -qx 'research/hypotheses.json'; then
+    echo "pre-commit: research/hypotheses.json is not kept in the repo. Declare the study's row in its" >&2
+    echo "plan section's register-row block (research/edge-hypotheses-plan.md); the register under the" >&2
+    echo "home imports it. Unstage it with: git rm --cached research/hypotheses.json" >&2
+    exit 1
+fi
 if command -v python >/dev/null 2>&1; then
     PY=python
 else

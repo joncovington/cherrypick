@@ -8,6 +8,10 @@ the repo's plan (`research/edge-hypotheses-plan.md`). Each item's Result paragra
 `data/research/results/<study>.md` beside it (`results_path`). A home with no register reads as an
 empty one. A study's verdict is written into its row by `verdictstore`.
 
+A new study's row is declared in its plan section, as one fenced `register-row` block (`plan_rows`),
+and `load` imports each declared row the register does not hold yet, so declaring a study is one PR and
+no row is copied by hand. The repo never holds the register itself (`tools/check_docs.py` rule 13).
+
 - `check`: every row is well formed, and every pointer names a heading that exists in the repo plan.
   Rows from item 18 on must fill every field, and one with a verdict names its result files; legacy
   rows (1-17) point to the prose that holds theirs. The command also lists queue studies with no row
@@ -39,6 +43,7 @@ import re
 from pathlib import Path
 
 from cherrypick.core import home as core_home
+from cherrypick.core.jsonio import write_json_atomic
 
 from .researchqueue import SCRIPT_DIRS, repo_root
 
@@ -85,12 +90,90 @@ def results_path(study: str) -> Path:
     return research_dir() / "results" / f"{study}.md"
 
 
+PLAN = "research/edge-hypotheses-plan.md"
+#: A plan section's register row: a fenced block with this info string, holding one JSON object.
+ROW_FENCE = re.compile(r"^```register-row[ \t]*\n(.*?)^```[ \t]*$", re.M | re.S)
+#: Recorded on this machine, never declared: a block carrying one is refused.
+LOCAL_KEYS = ("status", "outcome", "recorded_at", "recorded_by", "retests")
+
+
+def plan_path() -> Path:
+    return repo_root() / PLAN
+
+
+def plan_rows(md: str) -> tuple[list[dict], list[str]]:
+    """The register rows the plan declares, one per `### N.` section that carries a `register-row`
+    block, and the problems with any block. A row's `id` is its section's number and its `study`
+    `itemN`, filled where the block leaves them out; its `pointer` is the section's heading; its
+    status is `declared`, its outcome none. A block that is not one JSON object, names another id or
+    study, or carries a field only this machine records (`LOCAL_KEYS`) is a problem, never a row."""
+    rows, problems = [], []
+    heads = list(re.finditer(r"^### ((\d+)\..*)$", md, re.M))
+    for i, h in enumerate(heads):
+        end = heads[i + 1].start() if i + 1 < len(heads) else len(md)
+        nxt = re.search(r"^#{1,2} ", md[h.end() : end], re.M)
+        section = md[h.end() : h.end() + nxt.start()] if nxt else md[h.end() : end]
+        blocks = ROW_FENCE.findall(section)
+        if not blocks:
+            continue
+        rid, tag = int(h.group(2)), f"plan section {h.group(2)}"
+        if len(blocks) > 1:
+            problems.append(f"{tag}: one register-row block per section")
+            continue
+        try:
+            row = json.loads(blocks[0])
+        except ValueError as exc:
+            problems.append(f"{tag}: its register-row block is not JSON ({exc})")
+            continue
+        if not isinstance(row, dict):
+            problems.append(f"{tag}: its register-row block is one JSON object")
+            continue
+        local = [k for k in LOCAL_KEYS if k in row]
+        if local:
+            problems.append(f"{tag}: {', '.join(local)} are recorded on the machine, never declared")
+            continue
+        if row.get("id", rid) != rid or row.get("study", f"item{rid}") != f"item{rid}":
+            problems.append(f"{tag}: its register-row names id {row.get('id')}, study {row.get('study')}")
+            continue
+        rows.append(
+            {
+                "id": rid,
+                "study": f"item{rid}",
+                **row,
+                "status": "declared",
+                "outcome": None,
+                "pointer": row.get("pointer") or f"{PLAN}#{_anchor(h.group(1))}",
+            }
+        )
+    return rows, problems
+
+
 def load(path: Path | None = None) -> dict:
-    """The register on this machine; an empty one where there is none yet."""
+    """The register on this machine; an empty one where there is none yet.
+
+    The register itself (no `path`) first imports each row the repo plan declares that it does not
+    hold yet (`plan_rows`, matched on id and study), saves it, and returns it, so a study declared by
+    a plan PR is in the register as soon as anything reads it. A row it holds is never changed from
+    the plan: its verdict and outcome are this machine's."""
     target = path or register_path()
-    if not target.exists():
-        return {"hypotheses": [], "rule_changes": []}
-    return json.loads(target.read_text(encoding="utf-8"))
+    reg = (
+        json.loads(target.read_text(encoding="utf-8"))
+        if target.exists()
+        else {"hypotheses": [], "rule_changes": []}
+    )
+    if path is not None:
+        return reg
+    try:
+        declared, _problems = plan_rows(plan_path().read_text(encoding="utf-8"))
+    except OSError:
+        return reg
+    ids = {r.get("id") for r in reg.get("hypotheses", [])}
+    studies = {r.get("study") for r in reg.get("hypotheses", [])}
+    new = [r for r in declared if r["id"] not in ids and r["study"] not in studies]
+    if new:
+        reg["hypotheses"] = sorted([*reg.get("hypotheses", []), *new], key=lambda r: r.get("id") or 0)
+        write_json_atomic(target, reg, default=None)
+    return reg
 
 
 def _anchor(heading: str) -> str:
@@ -103,9 +186,13 @@ def anchors(md: str) -> set[str]:
 
 
 def check(reg: dict, *, root: Path | None = None) -> list[str]:
-    """Problems with the register; empty means it is sound."""
+    """Problems with the register, and with any register-row block in the plan; empty means sound."""
     root = root or repo_root()
     problems, seen_ids, seen_studies = [], set(), set()
+    try:
+        problems += plan_rows((root / PLAN).read_text(encoding="utf-8"))[1]
+    except OSError:
+        pass
     owners: dict[str, int] = {}
     docs: dict[str, set[str]] = {}
     texts: dict[str, str] = {}

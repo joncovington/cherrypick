@@ -42,6 +42,9 @@ def isolated_register(tmp_path, monkeypatch):
 
     folder = tmp_path / "research-register"
     monkeypatch.setattr(hypotheses, "research_dir", lambda: folder)
+    # Nor does `load` import rows from the repo plan's register-row blocks: a test that wants that
+    # points `plan_path` at a plan of its own.
+    monkeypatch.setattr(hypotheses, "plan_path", lambda: tmp_path / "no-plan.md")
     return folder
 
 
