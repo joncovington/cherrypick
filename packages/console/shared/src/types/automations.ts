@@ -847,6 +847,15 @@ export interface AutomationReference {
 
 export type ReadingPlace = "below" | "inside" | "above";
 
+/** One exit kind: paper's trades that ended so, their share and net, and the run's share of the kind. */
+export interface ReadingExit {
+  kind: string;
+  trades: number;
+  share: number | null;
+  net: number;
+  run_share: number;
+}
+
 /** One paper trade against the reference. */
 export interface ReadingRow {
   i: number;
@@ -881,6 +890,10 @@ export interface AutomationReading {
       running_place?: ReadingPlace | null;
       band_at?: ReferenceBandPoint | null;
       entry: { entered: number; missed: number; rate: number | null };
+      /** How paper's trades ended, each exit kind beside the run's share of it (the run's commonest first). */
+      exits?: ReadingExit[];
+      /** The run's band of the next trades, started from paper's running net now; empty before a trade. */
+      ahead?: ReferenceBandPoint[];
     };
     sample?: { needed: number | null; basis: "declared" | "computed" | null; have: number };
   } | null;

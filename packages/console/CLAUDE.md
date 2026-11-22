@@ -147,7 +147,9 @@ alone):
     never a research item's number. Its "Is it working?"
     (`/api/automations/automation/reading`, `readers/automationReading.ts`) passes through the
     backtest package's `read automation-reading` for the pinned run, with the forward rule's
-    `min_obs` as the declared sample; the page only scales the figures onto a strip and a chart. A
+    `min_obs` as the declared sample; the page only scales the figures onto a strip and a chart. The
+    same read's `exits` and `ahead` are "What it did"'s exits table and the chart's road ahead
+    (`AutomationDid.tsx`); its premium card is the automation's own line of the performance read. A
     licensed run's figures are withheld while `backtestResultsOn` is false. Its entries
     (`/api/automations/automation/entries`, `readers/automationEntries.ts`) are the automations
     package's `cli entries --name`, with the pinned run's `reasons` (from that reading, so withheld

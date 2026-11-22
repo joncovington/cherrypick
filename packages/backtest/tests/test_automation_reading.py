@@ -76,6 +76,42 @@ def test_the_band_reaches_past_the_paper_record():
     assert r["paper"]["band_at"]["k"] == 30
 
 
+def test_the_road_ahead_starts_from_papers_running_net_now():
+    paper = _paper(10, 10, 10, 10, 10)
+    r = automationref.reading(_doc(RUN_NETS), NAME, paper, resamples=200)
+    ahead = r["paper"]["ahead"]
+    assert [a["k"] for a in ahead] == list(range(6, 6 + automationref.AHEAD))
+    # The same band from zero, moved up by paper's running net of 50.
+    zero = automationref.band(
+        RUN_NETS, r["reference"]["sessions"], horizon=automationref.AHEAD, resamples=200
+    )
+    assert [a["p50"] for a in ahead] == [round(50 + b["p50"], 2) for b in zero]
+    assert all(a["p10"] <= a["p50"] <= a["p90"] for a in ahead)
+    assert automationref.reading(_doc(RUN_NETS), NAME, [], resamples=50)["paper"]["ahead"] == []
+
+
+def test_papers_exits_sit_beside_the_runs_share_of_each_kind():
+    doc = _doc(RUN_NETS)
+    for t in doc["trades"][:25]:
+        t["exit_kind"] = "stop"
+    paper = [
+        {"session": "2026-11-10", "net": 20.0, "exit": "settlement"},
+        {"session": "2026-11-11", "net": -40.0, "exit": "stop"},
+        {"session": "2026-11-12", "net": 15.0, "exit": "settlement"},
+        {"session": "2026-11-13", "net": 5.0, "exit": "profit_target"},
+        {"session": "2026-11-14", "net": 1.0, "exit": None},
+    ]
+    rows = automationref.reading(doc, NAME, paper, resamples=50)["paper"]["exits"]
+    assert [r["kind"] for r in rows] == ["settlement", "stop", "profit_target", "unknown"]
+    assert rows[0] == {"kind": "settlement", "trades": 2, "share": 0.4, "net": 35.0, "run_share": 0.75}
+    assert rows[1] == {"kind": "stop", "trades": 1, "share": 0.2, "net": -40.0, "run_share": 0.25}
+    # A kind the run never had reads 0 there; the rows' trades add up to paper's.
+    assert rows[2]["run_share"] == 0.0 and sum(r["trades"] for r in rows) == len(paper)
+    assert automationref.exit_mix([], {"settlement": 1.0}) == [
+        {"kind": "settlement", "trades": 0, "share": None, "net": 0.0, "run_share": 1.0}
+    ]
+
+
 def test_the_declared_sample_wins_over_the_computed_one():
     up = [30.0, -10.0] * 50
     declared = automationref.reading(_doc(up), NAME, _paper(1), declared=40, resamples=100)
@@ -105,17 +141,17 @@ def _ledger(path) -> None:
         "slippage REAL, net_pnl REAL, exit_reason TEXT, exit_session TEXT, entry_session TEXT, status TEXT, "
         "entry_time TEXT, exit_time TEXT, entry_spot REAL, exit_spot REAL)"
     )
-    for pid, arm, net, day, status in [
-        ("a", NAME, 12.0, "2026-11-11", "closed"),
-        ("b", NAME, -30.0, "2026-11-10", "closed"),
-        ("c", "other", 99.0, "2026-11-10", "closed"),
-        ("d", NAME, None, None, "open"),
+    for pid, arm, net, day, status, reason in [
+        ("a", NAME, 12.0, "2026-11-11", "closed", "settlement"),
+        ("b", NAME, -30.0, "2026-11-10", "closed", "stop"),
+        ("c", "other", 99.0, "2026-11-10", "closed", "settlement"),
+        ("d", NAME, None, None, "open", None),
     ]:
         conn.execute(
             "INSERT INTO ensemble_positions (position_id, arm, symbol, quantity, net_pnl, gross_pnl, fees, "
-            "settlement, slippage, exit_session, entry_session, status) "
-            "VALUES (?, ?, 'SPX', 1, ?, ?, 0, 0, 0, ?, ?, ?)",
-            (pid, arm, net, net, day, day, status),
+            "settlement, slippage, exit_session, entry_session, status, exit_reason) "
+            "VALUES (?, ?, 'SPX', 1, ?, ?, 0, 0, 0, ?, ?, ?, ?)",
+            (pid, arm, net, net, day, day, status, reason),
         )
     conn.execute("CREATE TABLE ensemble_entries (arm TEXT, symbol TEXT, entry_session TEXT, outcome TEXT)")
     for arm, outcome in [
@@ -134,7 +170,10 @@ def test_the_paper_record_is_this_automations_closed_trades_in_close_order(tmp_p
     db = tmp_path / "paper_trades.db"
     _ledger(db)
     paper, entries = automationref.paper_record(str(db), NAME)
-    assert paper == [{"session": "2026-11-10", "net": -30.0}, {"session": "2026-11-11", "net": 12.0}]
+    assert paper == [
+        {"session": "2026-11-10", "net": -30.0, "exit": "stop"},
+        {"session": "2026-11-11", "net": 12.0, "exit": "settlement"},
+    ]
     assert entries == {"entered": 2, "missed": 1, "pending": 1}
     assert automationref.paper_record(str(tmp_path / "none.db"), NAME) == ([], {})
 
