@@ -42,7 +42,9 @@ import type {
   BuilderSaveResult,
   BuilderReferenceResult,
   AutomationEntries,
+  AutomationConditions,
   AutomationReading,
+  AutomationsReadings,
   AheadModule,
   ArmBacktestReading,
   Scorecard,
@@ -1762,6 +1764,15 @@ export function useAutomationsEntries() {
   });
 }
 
+/** One automation's record in today's market conditions (each underlying's daily-bar trend and volatility). */
+export function useAutomationConditions(name: string) {
+  return useQuery<AutomationConditions>({
+    queryKey: ["automation-conditions", name],
+    queryFn: () => getJson<AutomationConditions>(`/api/automations/automation/conditions?name=${encodeURIComponent(name)}`),
+    staleTime: 300_000,
+  });
+}
+
 /** One automation's entry funnel, and its pinned run's through the same steps beside it. */
 export function useAutomationEntries(name: string) {
   return useQuery<AutomationEntries>({
@@ -1777,6 +1788,16 @@ export function useAutomationReading(name: string) {
   return useQuery<AutomationReading>({
     queryKey: ["automation-reading", name],
     queryFn: () => getJson<AutomationReading>(`/api/automations/automation/reading?name=${encodeURIComponent(name)}`),
+    staleTime: 30_000,
+    refetchInterval: 120_000,
+  });
+}
+
+/** Every automation's reading against its pinned run, one row each (the vs-backtest tab, Groups' chips). */
+export function useAutomationsReadings() {
+  return useQuery<AutomationsReadings>({
+    queryKey: ["automations-readings"],
+    queryFn: () => getJson<AutomationsReadings>("/api/automations/readings"),
     staleTime: 30_000,
     refetchInterval: 120_000,
   });

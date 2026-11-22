@@ -16,11 +16,19 @@ export function automationHref(name: string): string {
 const money = (v: number | null): string =>
   v === null ? "—" : `$${Math.abs(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
+/** The engine's exit kinds (`engine.exit_due`, `settle_position`) in words. */
 const HOW: Record<string, string> = {
   touch: "closed on a spot touch",
+  event: "closed ahead of an event",
+  stop: "closed at its stop",
+  trailing_stop: "closed at its trailing stop",
   profit_target: "closed at its profit target",
+  delta: "closed on its delta exit",
+  signal: "closed on its exit signal",
+  dte: "closed on its days-left exit",
   time: "closed on the time exit",
   settlement: "held to the posted close",
+  unknown: "not recorded",
 };
 
 export function howEnded(reason: string | null): string {

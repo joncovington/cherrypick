@@ -3,7 +3,9 @@
 `research/hypotheses.json` holds one row per hypothesis: its four parts (what is measured, the expected
 outcome as a number, the window and sample, the pass-or-fail rule), the mechanism, the rival
 explanations with the check that rules each out, its status and a pointer to the plan section.
-Never figures: licensed results stay under `~/.cherrypick`, so the register can live in the repo.
+Never figures: licensed results stay under `~/.cherrypick`, so the register can live in the repo. A
+study's verdict is recorded on this machine (`verdictstore`), never in the repo, and `load` lays it over
+the declared row; `load(local=False)` is the repo file, which `check` reads.
 
 - `check`: every row is well formed, and every pointer names a heading that exists. Rows from item 18
   on must fill every field, and one with a verdict names its result files; legacy rows (1-17) point
@@ -73,8 +75,15 @@ def register_path(root: Path | None = None) -> Path:
     return (root or repo_root()) / "research" / "hypotheses.json"
 
 
-def load(path: Path | None = None) -> dict:
-    return json.loads((path or register_path()).read_text(encoding="utf-8"))
+def load(path: Path | None = None, *, local: bool = True) -> dict:
+    """The register, with each `declared` row's verdict as recorded on this machine laid over it
+    (`verdictstore.overlay`). `local=False` is the repo file alone: what the register check reads."""
+    reg = json.loads((path or register_path()).read_text(encoding="utf-8"))
+    if not local:
+        return reg
+    from . import verdictstore
+
+    return verdictstore.overlay(reg, verdictstore.read())
 
 
 def _anchor(heading: str) -> str:

@@ -6,7 +6,8 @@ import { Card } from "../../components/DataTable";
 import { HelpSection, type CardHelpContent } from "../../components/CardHelp";
 import { Section } from "../../components/Section";
 import { FliesTile } from "../Flies/FliesSession";
-import { groupsCheck, groupsSave, useAutomations, useAutomationsPerformance, useGroupBudget, useGroupsEdit } from "../../lib/api";
+import { groupsCheck, groupsSave, useAutomations, useAutomationsPerformance, useAutomationsReadings, useGroupBudget, useGroupsEdit } from "../../lib/api";
+import { ReadingChip } from "./AutomationsVsBacktest";
 import { fmtMoney } from "../../lib/format";
 import { AutomationRecordPage } from "./AutomationRecord";
 import { automationHref } from "./automationsModels";
@@ -206,6 +207,12 @@ function dropShare(draft: GroupsChange, name: string, from: string | null): Grou
   const next: GroupSpec = { ...spec, shares: withoutKey(spec.shares, name) };
   if (Object.keys(next.shares!).length === 0) delete next.shares;
   return { ...draft, groups: { ...draft.groups, [from]: next } };
+}
+
+/** What a group's add list offers: every automation placed elsewhere, less the retired, which stay off
+ *  wherever they sit. */
+export function addable(rows: Placed[], target: string | null): Placed[] {
+  return rows.filter((r) => r.now !== target && !r.m.retired);
 }
 
 /** The groups the draft leaves with no automation, and those of them switched on: a group with no
@@ -710,6 +717,8 @@ function afterMap(check: GroupsCheckResult | null): After {
 function GroupPage({ view, draft, edit, paper, group, after }: { view: GroupsEditView; draft: GroupsChange; edit: (d: GroupsChange) => void; paper: Paper; group: string; after: After }) {
   const [adding, setAdding] = useState(false);
   const [showRetired, setShowRetired] = useState(true);
+  const readings = useAutomationsReadings();
+  const readingOf = (name: string) => readings.data?.automations.find((a) => a.name === name);
   const none = group === NONE;
   const target: string | null = none ? null : group;
   const rows = placement(view, draft);
@@ -718,7 +727,7 @@ function GroupPage({ view, draft, edit, paper, group, after }: { view: GroupsEdi
   const inGroup = rows.filter((r) => r.now === target || leaving(r));
   const members = inGroup.filter((r) => !r.m.retired);
   const retiredRows = inGroup.filter((r) => r.m.retired);
-  const others = rows.filter((r) => r.now !== target);
+  const others = addable(rows, target);
   const info = none ? undefined : view.groups.find((g) => g.name === group);
   const spec = none ? undefined : draft.groups[group];
   const was = none ? undefined : startDraft(view).groups[group];
@@ -789,6 +798,7 @@ function GroupPage({ view, draft, edit, paper, group, after }: { view: GroupsEdi
                     <th>its own switch</th>
                     <th>what happens</th>
                     <th>research verdict</th>
+                    <th>vs backtest</th>
                     {!none && (
                       <th>
                         share %
@@ -808,7 +818,7 @@ function GroupPage({ view, draft, edit, paper, group, after }: { view: GroupsEdi
                     const fold =
                       i === members.length && retiredRows.length > 0 ? (
                         <tr key="retired-fold" className="grp-fold">
-                          <td colSpan={none ? 9 : 10}>
+                          <td colSpan={none ? 10 : 11}>
                             <button type="button" className="grp-fold-btn" aria-expanded={showRetired} onClick={() => setShowRetired(!showRetired)}>
                               {showRetired ? "▾" : "▸"} Retired ({retiredRows.length})
                             </button>
@@ -843,6 +853,9 @@ function GroupPage({ view, draft, edit, paper, group, after }: { view: GroupsEdi
                         </td>
                         <td>
                           <Verdict v={r.m.verdict} />
+                        </td>
+                        <td>
+                          <ReadingChip row={readingOf(r.m.name)} />
                         </td>
                         {!none && (
                           <td>
@@ -888,7 +901,7 @@ function GroupPage({ view, draft, edit, paper, group, after }: { view: GroupsEdi
                   })}
                   {!showRetired && retiredRows.length > 0 && (
                     <tr className="grp-fold">
-                      <td colSpan={none ? 9 : 10}>
+                      <td colSpan={none ? 10 : 11}>
                         <button type="button" className="grp-fold-btn" aria-expanded={false} onClick={() => setShowRetired(true)}>
                           ▸ Retired ({retiredRows.length})
                         </button>
@@ -910,7 +923,7 @@ function GroupPage({ view, draft, edit, paper, group, after }: { view: GroupsEdi
             <div className="grp-add" role="group" aria-label="Add automations">
               <span className="builder-lbl">add to {group}</span>
               {others.length === 0 ? (
-                <span className="muted">Every automation is in this group.</span>
+                <span className="muted">Every automation not retired is in this group.</span>
               ) : (
                 others.map((r) => (
                   <label key={r.m.name} className="grp-add-row">
@@ -1130,6 +1143,13 @@ function SaveBar({
           Save
         </button>
       </div>
+      {(check?.cautions ?? []).length > 0 && problems.length === 0 && (
+        <ul className="grp-warn grp-cautions" aria-label="What the moves carry">
+          {check!.cautions!.map((c) => (
+            <li key={c}>{c}.</li>
+          ))}
+        </ul>
+      )}
       {empty.on.length > 0 && (
         <p className="grp-warn">
           {empty.on.join(", ")} {empty.on.length === 1 ? "has" : "have"} no automations, so {empty.on.length === 1 ? "it" : "they"} cannot be on: switch{" "}

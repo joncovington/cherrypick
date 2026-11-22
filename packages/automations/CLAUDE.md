@@ -71,6 +71,8 @@ no ledger reads as no sessions.
 
 **The sessions ahead** (`ahead.py`, pure; `cli ahead --name N [--start]`). The automation's dated rules for `core.ahead`: its weekdays, its `skip_events` labels and its exits' `avoid_events` (on the session before), answered by its own event calendar, so a label with no dates there reads unknown as it does at entry; its filter gates in the Builder's words (`words.GATES`). Only an avoided event's eve keeps a record: a skipped day holds no trade. The record is the automation's per-session nets from `core.compare` over the era. Reads only.
 
+**Today's conditions** (`conditions.py`, pure; `cli conditions --name N [--session]`). The ledger records no regime at entry, so each closed trade's entry session is labelled here, each time, by its underlying's daily-bar trend and volatility (`core.marketregime` over the stream cache's `daily_bars`, each session from the bars before it; today from every bar before today). The trades over the `core.compare` era are cut by those labels and `core.regimecuts` assembles the document (`thin`, `fragile`, `underpowered` at `core.metrics.MIN_EFFECTIVE_N` sessions, `degenerate`) and stamps today's label against each cut (`stamp_today`). A trade whose session has no label is `untagged`; an underlying with too few bars says why under `today.labels`. Context, not a forecast. Reads only.
+
 **Retired** (`arms`: `retired`, `drafts.retire`, `cli retire-check`). An automation's `retired` is false
 or the date it was retired. A retired automation is off whatever `enabled` says (`arms.load_arms`), its
 state is `retired` (`groupedit`), the Groups check refuses to switch it on, and a Builder save keeps
@@ -85,6 +87,9 @@ What it holds is still managed to its exits.
 session, replacing one already waiting; the same budget as today's drops a waiting one.
 An automation moved out of a group takes its share with it: `check` drops it from that group's
 budget, today's and every dated change alike, since the loop refuses a share of an outsider.
+A move that sets an automation trading (from a group that is off into one that runs) starts it at
+the next session, as switching on does. `check` also returns each move's `cautions`: its record goes
+with it, its positions count against the new group's cap, and a budget not sized for it.
 `config.groups(config, today)` gives each group the budget it carries that day, so the loop sizes and
 caps on the right one. `budgets.suggested` is a group's suggested allocation: the most its members not
 retired can have at risk at once (a `max_risk` size times `max_open`, or the structure's widest

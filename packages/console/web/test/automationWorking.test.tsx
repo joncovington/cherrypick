@@ -106,5 +106,28 @@ describe("Is it working?", () => {
     expect(c.K).toBe(25);
     expect(c.lo).toBe(Math.min(-60, ...BAND.map((b) => b.p10)));
     expect(c.today).not.toBeNull();
+    expect(c.ahead).toBeNull();
+  });
+
+  it("draws the road ahead from paper's point today, inside the chart's domain", () => {
+    const ahead = [
+      { k: 3, p10: -300, p50: -40, p90: 20 },
+      { k: 4, p10: -320, p50: -30, p90: 400 },
+    ];
+    const c = bandChart(BAND.slice(0, 4), [-60, -50], 600, 220, ahead);
+    expect(c.ahead?.split(" ")[0]).toBe(`${String(c.last?.x)},${String(c.last?.y)}`);
+    expect(c.lo).toBe(-320);
+    expect(c.hi).toBe(400);
+    // Its far edge reaches the chart's last trade: the domain runs to the cone's last k.
+    expect(bandChart(BAND.slice(0, 2), [-60], 600, 220, ahead).K).toBe(4);
+  });
+
+  it("names the road ahead in the legend only when the reading has one", () => {
+    const ahead = Array.from({ length: 20 }, (_, i) => ({ k: 6 + i, p10: 15 - 10 * (i + 1), p50: 15 + 4 * (i + 1), p90: 15 + 10 * (i + 1) }));
+    const withAhead = { ...FULL.reading!, paper: { ...FULL.reading!.paper, ahead } };
+    const out = html(<WorkingBody name="mine" data={{ ...FULL, reading: withAhead }} />);
+    expect(out).toContain("ar-band-ahead");
+    expect(out).toContain("from today, where the next 20 trades should land");
+    expect(html(<WorkingBody name="mine" data={FULL} />)).not.toContain("ar-band-ahead");
   });
 });

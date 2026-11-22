@@ -20,6 +20,9 @@
     replay     run a replay record file again and say where the decisions differ
     ahead      one automation's next sessions (--name): what its weekdays, event skips and event exits
                do there, its filter gates in words, and its record on each kind of day (`core.ahead`)
+    conditions one automation's record by today's market (--name): its closed trades cut by each entry
+               session's daily-bar trend and volatility (`core.marketregime`, from the stream cache),
+               assembled and stamped by `core.regimecuts`, today's label set against each cut
     reference-check  the Builder's pin of one Builder run as an automation's backtest reference (JSON on
                stdin: name, run; run null to unpin) checked: its problems and the references block a
                save would write. Writes nothing
@@ -240,6 +243,47 @@ def cmd_ahead(args) -> int:
     )
 
 
+def cmd_conditions(args) -> int:
+    """One automation's record in today's market conditions (`conditions.cut`). Reads the automations
+    ledger and the stream cache, both read-only; derives every label, stores none."""
+    from cherrypick.core import compare, streamcache
+    from cherrypick.core import ledgers as core_ledgers
+    from cherrypick.core.clock import now_et, now_iso
+
+    from . import conditions, db
+
+    arms = config_mod.load_arms(config_mod.load_config(args.config))
+    if args.name not in arms:
+        return _print({"ok": False, "error": f"no automation named {args.name!r}"})
+    session = args.session or now_et().date().isoformat()
+    comp = compare.module_comparison("automations", session=session, experiments={})
+    era_start = (comp.get("era") or {}).get("start")
+    trades: list[dict] = []
+    if Path(db.resolve_path(args.db)).exists():
+        conn = db.connect_ro(args.db)
+        try:
+            trades = [r for r in core_ledgers.READERS["ensemble_trade"](conn) if r.get("arm") == args.name]
+        finally:
+            conn.close()
+    symbol = arms[args.name].get("symbol")
+    symbols = sorted(
+        {str(t["symbol"]) for t in trades if t.get("symbol")} | ({str(symbol)} if symbol else set())
+    )
+    by_symbol: dict[str, dict] = {}
+    today: dict[str, dict] = {}
+    cache = streamcache.cache_path()
+    sc = streamcache.connect_ro(cache) if Path(cache).exists() else None
+    try:
+        for s in symbols:
+            bars = streamcache.daily_bars(sc, s, through=session) if sc is not None else []
+            by_symbol[s], today[s] = conditions.labels(bars, session)
+    finally:
+        if sc is not None:
+            sc.close()
+    doc = conditions.cut(args.name, symbol, trades, by_symbol, today, session, era_start, now_iso())
+    return _print({"ok": True, **doc})
+
+
 def cmd_replay(args) -> int:
     from . import events, record
 
@@ -430,6 +474,10 @@ def main(argv=None) -> int:
     p.add_argument("--name", required=True)
     p.add_argument("--start", help="ISO date; default today (ET)")
     p.set_defaults(fn=cmd_ahead)
+    p = sub.add_parser("conditions")
+    p.add_argument("--name", required=True)
+    p.add_argument("--session", help="ISO date; default today (ET)")
+    p.set_defaults(fn=cmd_conditions)
     p = sub.add_parser("entries")
     p.add_argument("--name")
     p.add_argument("--run-reasons", dest="run_reasons")

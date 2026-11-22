@@ -1,4 +1,5 @@
 import type { MeasurementBreak, TradeMoney, TradeTotals } from "./modules.js";
+import type { RegimeCuts } from "./regimeCuts.js";
 
 /**
  * automations' read surface (packages/automations): research item 75's arms in paper. An arm is one
@@ -303,6 +304,8 @@ export interface GroupsCheckResult {
   moves?: Record<string, string | null>;
   switches?: Record<string, { enabled: boolean; start?: string }>;
   notes?: string[];
+  /** What each move carries beyond the move, in the module's words: shown beside the save, as they are. */
+  cautions?: string[];
   after?: GroupsEditView | null;
 }
 
@@ -847,6 +850,15 @@ export interface AutomationReference {
 
 export type ReadingPlace = "below" | "inside" | "above";
 
+/** One exit kind: paper's trades that ended so, their share and net, and the run's share of the kind. */
+export interface ReadingExit {
+  kind: string;
+  trades: number;
+  share: number | null;
+  net: number;
+  run_share: number;
+}
+
 /** One paper trade against the reference. */
 export interface ReadingRow {
   i: number;
@@ -881,9 +893,40 @@ export interface AutomationReading {
       running_place?: ReadingPlace | null;
       band_at?: ReferenceBandPoint | null;
       entry: { entered: number; missed: number; rate: number | null };
+      /** How paper's trades ended, each exit kind beside the run's share of it (the run's commonest first). */
+      exits?: ReadingExit[];
+      /** The run's band of the next trades, started from paper's running net now; empty before a trade. */
+      ahead?: ReferenceBandPoint[];
     };
     sample?: { needed: number | null; basis: "declared" | "computed" | null; have: number };
   } | null;
+}
+
+/** One automation's reading, cut to a row of the vs-backtest tab (`backtest read automation-readings`). */
+export interface AutomationReadingRow {
+  name: string;
+  group: string | null;
+  /** The pinned run, or none: nothing to set paper against. */
+  pinned: string | null;
+  /** The pinned run is licensed and licensed results are not shown now. */
+  withheld: boolean;
+  error: string | null;
+  state: NonNullable<AutomationReading["reading"]>["state"] | null;
+  paper: {
+    trades: number;
+    counts: Record<ReadingPlace, number> | null;
+    net: number | null;
+    mean: number | null;
+    entry_rate: number | null;
+  } | null;
+  sample: { needed: number | null; basis: "declared" | "computed" | null; have: number } | null;
+  reference: { trades: number; mean: number | null; entry_rate: number | null; min_trades: number | null } | null;
+}
+
+/** `GET /api/automations/readings`: every automation with its reading against its pinned run, in the Builder's order. */
+export interface AutomationsReadings {
+  automations: AutomationReadingRow[];
+  error: string | null;
 }
 
 /** A step of the automation's decision, in the order the engine takes them (`automations.entries`). */
@@ -1048,5 +1091,28 @@ export interface ArmBacktestReading {
   withheld: boolean;
   error: string | null;
   reading: NonNullable<AutomationReading["reading"]> | null;
+}
+
+/** One underlying's daily-bar market label for today (`core.marketregime`), or why it has none. */
+export interface ConditionsLabel {
+  trend?: string | null;
+  vol?: string | null;
+  atr_percentile?: number | null;
+  /** The last daily bar the label reads; today's own bar is never read. */
+  through?: string | null;
+  status?: "unmeasured";
+  reason?: string | null;
+}
+
+/**
+ * `GET /api/automations/automation/conditions?name=`: the automation's closed trades cut by each entry
+ * session's daily-bar trend and volatility, assembled and stamped by `core.regimecuts`, with today's
+ * label set against each cut (`cli conditions`). `labels` is each underlying's label for today.
+ */
+export interface AutomationConditions {
+  name: string;
+  error: string | null;
+  cuts: RegimeCuts | null;
+  labels: Record<string, ConditionsLabel>;
 }
 

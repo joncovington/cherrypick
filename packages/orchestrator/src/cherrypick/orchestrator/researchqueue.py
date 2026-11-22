@@ -81,8 +81,15 @@ rows for as long as any is ready, so a merge mid-chain never reached it (#825's 
 `dataset`). Before each row it compares the source of the modules it had loaded with what is on disk
 now, and on a change it stops and leaves the rest of the chain to the next interval's fresh process.
 
-Deterministic, no AI. This module reads and writes only its own table and log files, and drives the
-fetches and scripts by subprocess -- it imports no other package.
+**A finished study records its own verdict** (`record_verdict`). When an `itemNN` study's `study*` row
+finishes with the study kit's verdict block (and, where the register row names its result, wrote that
+file), the verdict is recorded on this machine through `verdictstore`, never in the repo, and the finish
+notice says so; a study already recorded, or a result without the kit's block, is named and left alone.
+It never fails the row.
+
+Deterministic, no AI. This module reads and writes its own table and log files and, through
+`verdictstore`, the local verdict record; it drives the fetches and scripts by subprocess -- it imports
+no other package.
 """
 
 from __future__ import annotations
@@ -575,6 +582,37 @@ def verdict_words(doc: dict | None) -> str | None:
     if not isinstance(v, dict) or not v or not all(isinstance(w, str) for w in v.values()):
         return None
     return ", ".join(f"{a} {w}" for a, w in v.items())
+
+
+def record_verdict(row: dict, doc: dict | None) -> str:
+    """Record a finished study row's verdict on this machine (`verdictstore`), and say what happened in
+    words for the finish notice. Only a `study*` step of an `itemNN` study records (a smoke, plan or
+    context row writes a verdict block too, and is not the result); where the register lists a result
+    file, only that file. Never raises: a study left unrecorded is named, and the queue goes on."""
+    from . import hypotheses, verdictstore
+
+    study, step = str(row.get("study") or ""), str(row.get("step") or "")
+    if not verdictstore.ITEM_STUDY.match(study) or not step.startswith("study"):
+        return "not a register study's result: not recorded"
+    try:
+        reg = hypotheses.load(local=False)
+        entry = next((h for h in reg.get("hypotheses", []) if h.get("study") == study), None)
+        if entry is None:
+            return f"no register row for {study}: not recorded"
+        if entry.get("status") != "declared":
+            return f"the register already records {study} ({entry.get('status')}): not recorded"
+        out = Path(str(row.get("output"))).expanduser()
+        listed = [
+            _home.home() / p.removeprefix(verdictstore.RESULT_PREFIX) for p in entry.get("results") or []
+        ]
+        if listed and out.resolve() not in {p.resolve() for p in listed}:
+            return f"{out.name} is not the result {study}'s row names: not recorded"
+        rec = verdictstore.record_finished(study, out, doc, task=row["id"])
+    except verdictstore.Refused as exc:
+        return f"not recorded: {exc}"
+    except (OSError, ValueError, KeyError) as exc:
+        return f"not recorded ({type(exc).__name__}: {exc})"
+    return f"recorded on this machine as {rec['status'].replace('_', ' ')}"
 
 
 def zero_trade_arms(doc: dict | None) -> list[str]:
@@ -1113,10 +1151,11 @@ def run_next(
         elif status in ("done", "stopped"):
             where = result.get("output") or result.get("input") or str(log)
             said = f"{_summary(report) or 'finished'}; {where}"
-            words = verdict_words(output_doc(pick)) if status == "done" and pick["kind"] == "script" else None
+            doc = output_doc(pick) if status == "done" and pick["kind"] == "script" else None
+            words = verdict_words(doc)
             if words:
-                # A study that wrote a verdict: name it, and the one command that records it.
-                said += f"; verdict: {words}; record it with python tools/record_verdict.py {pick['study']}"
+                # A study that wrote a verdict: name it, and record it on this machine (never the repo).
+                said += f"; verdict: {words}; {record_verdict(pick, doc)}"
             if warning:
                 notify("WARNING", f"Research task {status} with gaps: {title}", f"{warning}; {said}")
             else:

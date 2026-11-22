@@ -416,8 +416,14 @@ run (`automationref.reading`, pure; the closed trades through `core.ledgers`' `e
 reader and the session register's entered and missed days, both read-only from the automations
 ledger): each trade's place in the usual range and its percentile among the run's trades, the
 running net's place in the band at its own count (the band drawn 20 trades past the record), the
-sample (`--declared`, the forward rule's `min_obs`, else computed) and both entry rates. Its state
+sample (`--declared`, the forward rule's `min_obs`, else computed), both entry rates, paper's exits
+by the engine's exit kind (trades, share, net) beside the run's share of each kind (`exits`), and
+the road ahead (`ahead`): the run's band of the next 20 trades started from paper's running net now,
+empty before the first trade. Its state
 is `no_reference`, `no_trades`, `too_few` (under 5 trades) or the running net's place.
+`read automation-readings --ids a=run[:declared],...` is every pinned automation's reading in one
+read, each cut to a row (state, licensed, paper's trades, place counts, net, mean and entry rate, the
+sample, the run's trades, mean and entry rate); a pair that cannot be read carries its own `error`.
 `read group-budget --ids a=run,b=run` reads a group's budget from its members' pinned Builder runs
 (`groupbudget.py`, pure): over the sessions every run covers, the most the members held at once
 (each trade's `risk` from its entry session through its exit session) rounded up to $50 as a max

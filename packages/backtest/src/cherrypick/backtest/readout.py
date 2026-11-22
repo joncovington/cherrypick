@@ -436,6 +436,49 @@ def automation_reading(name: str, run: str, declared: int | None = None) -> dict
     return {"ok": False, "error": f"no Builder run {run!r} for {name}"}
 
 
+def automation_readings(pairs: str) -> dict:
+    """Every pinned automation's reading in one read, for the automations' vs-backtest tab.
+
+    `pairs` is `name=run` or `name=run:declared`, comma-separated, each run one of that automation's own
+    Builder runs. Each answer is `automation_reading`'s, cut to what a row shows: the state, whether the
+    run is licensed, paper's trades, place counts, mean and entry rate, the sample, and the run's mean,
+    entry rate and trades. A pair that cannot be read carries its own `error`; the others still read."""
+    out: dict[str, dict] = {}
+    for pair in [p for p in (pairs or "").split(",") if p]:
+        name, _, rest = pair.partition("=")
+        run, _, declared = rest.partition(":")
+        if not AUTOMATION_NAME.match(name) or not run.startswith(f"builder-{name}-"):
+            return {"ok": False, "error": f"not an automation and its own run: {pair!r}"}
+        if declared and not declared.isdigit():
+            return {"ok": False, "error": f"a declared sample is a whole number: {pair!r}"}
+        r = automation_reading(name, run, int(declared) if declared else None)
+        if not r.get("ok"):
+            out[name] = {"ok": False, "run": run, "error": r.get("error")}
+            continue
+        ref, paper = r.get("reference") or {}, r.get("paper") or {}
+        out[name] = {
+            "ok": True,
+            "run": run,
+            "licensed": r.get("licensed"),
+            "state": r.get("state"),
+            "paper": {
+                "trades": paper.get("trades"),
+                "counts": paper.get("counts"),
+                "net": paper.get("net"),
+                "mean": paper.get("mean"),
+                "entry_rate": (paper.get("entry") or {}).get("rate"),
+            },
+            "sample": r.get("sample"),
+            "reference": {
+                "trades": ref.get("trades"),
+                "mean": ref.get("mean"),
+                "entry_rate": ref.get("entry_rate"),
+                "min_trades": ref.get("min_trades"),
+            },
+        }
+    return {"ok": True, "readings": out}
+
+
 def group_budget(pairs: str) -> dict:
     """A group's budget from its members' pinned Builder runs (`groupbudget.read`). `pairs` is
     `automation=run,automation=run`: each run must be one of that automation's own Builder results."""

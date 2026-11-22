@@ -831,4 +831,97 @@ def test_the_finish_notice_carries_the_verdict(files, tmp_path, monkeypatch):
     rq.run_next(path=db, now=lambda: _at("2026-10-24T20:00"), is_trading_day=_weekday,
                 spawn=lambda argv, **kw: _Proc(0, "{}"), licence=lambda: None,
                 notify=lambda level, title, msg: sent.append(msg))  # fmt: skip
-    assert "verdict: arm-a fail; record it with python tools/record_verdict.py item90" in sent[-1]
+    assert "verdict: arm-a fail;" in sent[-1]
+
+
+KIT = {
+    "rule": {"t_bar": 2.0, "min_n": 30},
+    "arms": {
+        "arm-a": {"n": 40, "parts": {}, "verdict": "fail"},
+        "arm-b": {"n": 40, "parts": {}, "verdict": "pass"},
+    },
+    "verdict": {"arm-a": "fail", "arm-b": "pass"},
+}
+
+
+def _register(tmp_path, monkeypatch, results=None, status="declared"):
+    from cherrypick.orchestrator import hypotheses
+
+    reg = tmp_path / "hypotheses.json"
+    row = {"id": 90, "study": "item90", "status": status, "outcome": None, "results": results or []}
+    reg.write_text(json.dumps({"hypotheses": [row]}), encoding="utf-8")
+    monkeypatch.setattr(hypotheses, "register_path", lambda root=None: reg)
+
+
+def _finish(files, tmp_path, monkeypatch, step, out, doc=KIT):
+    monkeypatch.setattr(rq, "session_held", lambda state_dir=None: False)
+    monkeypatch.setattr(rq, "log_dir", lambda: tmp_path / "logs")
+    monkeypatch.setattr(rq, "repo_root", lambda: files["root"])
+    monkeypatch.setattr(rq, "git_tracked", _tracked)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(doc), encoding="utf-8")
+    db = tmp_path / "q.db"
+    rq.add("item90", "script", {"path": "scripts/study.py"}, step=step, output=str(out), path=db,
+           root=files["root"], tracked=_tracked)  # fmt: skip
+    sent = []
+    rq.run_next(path=db, now=lambda: _at("2026-10-24T20:00"), is_trading_day=_weekday,
+                spawn=lambda argv, **kw: _Proc(0, "{}"), licence=lambda: None,
+                notify=lambda level, title, msg: sent.append(msg))  # fmt: skip
+    return sent[-1]
+
+
+def test_a_finished_study_is_recorded_on_this_machine_once(files, tmp_path, monkeypatch, isolated_verdicts):
+    from cherrypick.core import home as core_home
+
+    from cherrypick.orchestrator import hypotheses, verdictstore
+
+    monkeypatch.setattr(core_home, "home", lambda: tmp_path)
+    _register(tmp_path, monkeypatch)
+    out = tmp_path / "data" / "item90" / "results.json"
+    said = _finish(files, tmp_path, monkeypatch, "study", out)
+    assert "verdict: arm-a fail, arm-b pass; recorded on this machine as passed" in said
+    rec = verdictstore.read()["item90"]
+    assert rec["status"] == "passed" and rec["results"] == ["{home}/data/item90/results.json"]
+    assert rec["outcome"] == "pass: arm-a fail; arm-b pass, by the declared rule" and rec["by"].startswith(
+        "queue task"
+    )
+    # Every reader sees it; the repo register (the check's input) does not change.
+    assert hypotheses.load()["hypotheses"][0]["status"] == "passed"
+    assert hypotheses.load(local=False)["hypotheses"][0]["status"] == "declared"
+    # A re-run never rewrites a recorded verdict.
+    again = _finish(
+        files, tmp_path, monkeypatch, "study", out, {**KIT, "verdict": {"arm-a": "fail", "arm-b": "fail"}}
+    )
+    assert "not recorded: item90 is recorded already (passed)" in again
+    assert verdictstore.read()["item90"]["status"] == "passed"
+
+
+def test_only_the_studys_result_is_recorded(files, tmp_path, monkeypatch, isolated_verdicts):
+    from cherrypick.core import home as core_home
+
+    from cherrypick.orchestrator import verdictstore
+
+    monkeypatch.setattr(core_home, "home", lambda: tmp_path)
+    # A smoke run writes a verdict block too, and is not the result.
+    _register(tmp_path, monkeypatch)
+    said = _finish(files, tmp_path, monkeypatch, "smoke", tmp_path / "data" / "item90" / "smoke.json")
+    assert "not a register study's result: not recorded" in said
+    # Where the row names its result, only that file records.
+    _register(tmp_path, monkeypatch, results=["{home}/data/item90/results.json"])
+    said = _finish(files, tmp_path, monkeypatch, "study", tmp_path / "data" / "item90" / "other.json")
+    assert "is not the result item90's row names: not recorded" in said
+    # A result without the study kit's block stays a hand record.
+    said = _finish(
+        files,
+        tmp_path,
+        monkeypatch,
+        "study",
+        tmp_path / "data" / "item90" / "results.json",
+        {"verdict": {"a": "fail"}},
+    )
+    assert "not recorded: the result carries no study-kit rule" in said
+    # The register already records it: nothing written.
+    _register(tmp_path, monkeypatch, status="failed")
+    said = _finish(files, tmp_path, monkeypatch, "study", tmp_path / "data" / "item90" / "results.json")
+    assert "the register already records item90 (failed): not recorded" in said
+    assert verdictstore.read() == {}

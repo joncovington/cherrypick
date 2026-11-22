@@ -295,6 +295,8 @@ export const AUTOMATIONS_SLIDES = [
   { id: "decisions", label: "decisions" },
   // How often each automation enters, and where the sessions it did not enter stopped.
   { id: "entries", label: "entries" },
+  // Every automation's paper record against its pinned Builder run, one row each.
+  { id: "backtest", label: "vs backtest" },
   { id: "performance", label: "performance" },
   { id: "analysis", label: "analysis" },
   { id: "costs", label: "costs" },
@@ -628,7 +630,7 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
       { label: "today", ids: ["summary"] },
       { label: "set up", ids: ["builder", "groups"] },
       { label: "tables", ids: ["positions", "history"] },
-      { label: "evidence", ids: ["decisions", "entries"] },
+      { label: "evidence", ids: ["decisions", "entries", "backtest"] },
       { label: "study", ids: ["performance", "analysis", "costs", "changes"] },
       { label: "help", ids: ["guide"] },
     ],
