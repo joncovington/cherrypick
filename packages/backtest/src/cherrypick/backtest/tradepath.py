@@ -21,6 +21,7 @@ from pathlib import Path
 from cherrypick.core import clock as _clock
 from cherrypick.core import db as core_db
 from cherrypick.core import quotehistory
+from cherrypick.core.db import connect_ro
 
 from . import paths, store
 from . import settings as _settings
@@ -146,7 +147,7 @@ def _store_for(report: dict) -> Path:
 def _vix(db: Path, day: str) -> list[tuple[float, float]]:
     if not db.exists():
         return []
-    conn = sqlite3.connect(f"file:{db.as_posix()}?mode=ro", uri=True)
+    conn = connect_ro(db, row_factory=None)
     try:
         have = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
         if "market_regime_history" not in have:
@@ -177,7 +178,7 @@ def for_trade(run_id: str, arm: str, session: str, position_id: str) -> dict:
     ledger = runs / run_id / f"{session}.db"
     if not session.replace("-", "").isdigit() or not ledger.exists():
         return {"ok": False, "error": f"run {run_id} kept no ledger for {session!r}"}
-    conn = sqlite3.connect(f"file:{ledger.as_posix()}?mode=ro", uri=True)
+    conn = connect_ro(ledger, row_factory=None)
     try:
         arm_col = core_db.arm_column(conn, "ic_trades")  # `risk_profile` in an older ledger
         trades = _row(

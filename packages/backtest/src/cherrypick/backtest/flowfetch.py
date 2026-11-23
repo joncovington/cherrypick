@@ -31,6 +31,7 @@ from cherrypick.core import calendar as _cal
 from cherrypick.core import progress as core_progress
 
 from . import flow, paths
+from .storeopen import open_store
 from .vendor import FATAL, VendorRefusal
 
 DDL = (
@@ -54,13 +55,7 @@ def db_path(settings: dict) -> Path:
 
 def connect(settings: dict) -> sqlite3.Connection:
     paths.ensure_vendor_dir(settings)
-    conn = sqlite3.connect(db_path(settings))
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    for stmt in DDL:
-        conn.execute(stmt)
-    conn.commit()
-    return conn
+    return open_store(db_path(settings), *DDL, row_factory=sqlite3.Row)
 
 
 def status(conn: sqlite3.Connection, symbol: str, session: str) -> str | None:

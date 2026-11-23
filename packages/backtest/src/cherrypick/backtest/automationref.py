@@ -30,6 +30,7 @@ import random
 from typing import Any
 
 from cherrypick.core import killcriteria, stats
+from cherrypick.core.db import connect_ro
 
 from .automationcards import _net, ordered
 
@@ -293,7 +294,7 @@ def paper_record(db_path: str, name: str) -> tuple[list[dict], dict[str, int]]:
 
     if not Path(db_path).exists():
         return [], {}
-    conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    conn = connect_ro(db_path, row_factory=None)
     conn.row_factory = sqlite3.Row
     try:
         rows = [r for r in core_ledgers.READERS["ensemble_trade"](conn) if r.get("arm") == name]

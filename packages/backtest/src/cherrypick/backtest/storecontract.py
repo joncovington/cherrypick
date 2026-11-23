@@ -20,6 +20,8 @@ import json
 import sqlite3
 from pathlib import Path
 
+from cherrypick.core.db import connect_ro
+
 from . import chainfetch, intradayfetch, oifetch
 
 CONTRACT_PATH = Path(__file__).with_name("store_contract.json")
@@ -51,7 +53,7 @@ def ddl_columns(ddl: str) -> dict[str, list[list[str]]]:
 
 def read_store(path: Path) -> dict:
     """One store on disk: its tables' columns and each coded column's distinct values."""
-    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    conn = connect_ro(path, row_factory=None)
     try:
         cols = columns_of(conn)
         out = {}

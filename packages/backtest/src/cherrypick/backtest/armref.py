@@ -26,6 +26,8 @@ import json
 import sqlite3
 from typing import Any
 
+from cherrypick.core.db import connect_ro
+
 from . import automationref, paths, runner
 
 #: The modules whose paper arms can be matched to replay runs, and each one's paper cadence. Flies is retired.
@@ -146,11 +148,7 @@ def arm_reading(
     keys = paper_keys(module, config)
     if arm not in keys:
         return {"ok": False, "error": f"{module} declares no arm {arm!r}"}
-    conn = (
-        sqlite3.connect(f"file:{paths.results_db()}?mode=ro", uri=True)
-        if paths.results_db().exists()
-        else None
-    )
+    conn = connect_ro(paths.results_db(), row_factory=None) if paths.results_db().exists() else None
     if conn is None:
         return {
             "ok": True,
