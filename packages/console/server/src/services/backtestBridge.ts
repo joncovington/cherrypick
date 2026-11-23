@@ -10,6 +10,7 @@ import type {
   StudyRunSummaries,
 } from "@console/shared";
 import { spawnModuleCliAsync, type SpawnedJson } from "./moduleCli.js";
+import { obj as rec } from "../readers/db.js";
 
 /**
  * The Backtest page's two reads of `packages/backtest` (`python -m cherrypick.backtest read`):
@@ -227,10 +228,6 @@ function num(v: unknown): number | null {
 
 function str(v: unknown): string | null {
   return typeof v === "string" && v !== "" ? v : null;
-}
-
-function rec(v: unknown): Record<string, unknown> {
-  return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
 }
 
 /** One run in brief as the package wrote it; a path keeps only its finite numbers. */

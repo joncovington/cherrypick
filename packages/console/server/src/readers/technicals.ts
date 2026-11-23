@@ -7,7 +7,6 @@
  * waiting to drift. Fields are read defensively and null is never coerced to zero.
  */
 
-import fs from "node:fs";
 import path from "node:path";
 import type {
   SetupRead,
@@ -24,25 +23,13 @@ import type {
   TechnicalsWatchlistRow,
 } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
-import { num, str } from "./db.js";
+import { num, str, obj as rec, readJsonObject as readJson } from "./db.js";
 
 /** A symbol is a file name here: only the characters tickers use, so no request can leave the dir. */
 const SYMBOL = /^[A-Z0-9][A-Z0-9.-]{0,11}$/;
 
-function rec(v: unknown): Record<string, unknown> {
-  return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
-}
-
 function list(v: unknown): unknown[] {
   return Array.isArray(v) ? v : [];
-}
-
-function readJson(file: string): Record<string, unknown> | null {
-  try {
-    return rec(JSON.parse(fs.readFileSync(file, "utf-8")));
-  } catch {
-    return null;
-  }
 }
 
 function chartsDir(config: ConsoleConfig): string {

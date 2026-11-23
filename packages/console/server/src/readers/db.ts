@@ -274,6 +274,16 @@ export function obj(v: unknown): Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
 }
 
+/** A JSON file as an object: `{}` when the file holds anything but an object, null when it is missing or
+ *  unreadable. `readJson` returns the parse as it came; most readers want it narrowed the way `obj` does. */
+export function readJsonObject(p: string): Record<string, unknown> | null {
+  try {
+    return obj(JSON.parse(fs.readFileSync(p, "utf-8")));
+  } catch {
+    return null;
+  }
+}
+
 /** `num`, but also parsing numeric STRINGS.
  *
  * A deliberately separate export rather than a loosening of `num`. Broker and watchlist payloads

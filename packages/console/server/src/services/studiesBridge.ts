@@ -13,6 +13,7 @@ import type {
   StudyVersion,
 } from "@console/shared";
 import { spawnModuleCliAsync, type SpawnedJson } from "./moduleCli.js";
+import { obj as rec } from "../readers/db.js";
 
 /**
  * The Backtest page's studies board (`python -m cherrypick.cli hypotheses-board`; the orchestrator's
@@ -41,10 +42,6 @@ let cached: { at: number; value: Promise<SpawnedJson> } | null = null;
 /** Drop the memoised response. Tests only. */
 export function resetStudiesCache(): void {
   cached = null;
-}
-
-function rec(v: unknown): Record<string, unknown> {
-  return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
 }
 
 function s(v: unknown): string | null {

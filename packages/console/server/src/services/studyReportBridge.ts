@@ -16,6 +16,7 @@ import type {
   StudyTally,
 } from "@console/shared";
 import { spawnModuleCliAsync, type SpawnedJson } from "./moduleCli.js";
+import { obj as rec } from "../readers/db.js";
 
 /**
  * One study read as a report, and the studies active since a date (`python -m cherrypick.cli
@@ -60,10 +61,6 @@ function memo(req: StudyReportRequest, now: number): Promise<SpawnedJson> {
   const value = caller(req);
   cache.set(key, { at: now, value });
   return value;
-}
-
-function rec(v: unknown): Record<string, unknown> {
-  return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
 }
 
 function s(v: unknown): string | null {

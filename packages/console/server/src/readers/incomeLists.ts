@@ -20,24 +20,13 @@ import type {
   IncomeListRow,
 } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
-import { num, str } from "./db.js";
+import { num, str, obj as rec, readJsonObject as readJson } from "./db.js";
+import { readEvalDoc } from "./evalDoc.js";
 
 export const INCOME_LISTS: readonly IncomeList[] = ["short-puts", "covered-calls"];
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const EARNINGS: readonly IncomeEarnings[] = ["in-trade", "clear", "unknown", "none"];
 const EX_DIVIDEND: readonly IncomeExDividend[] = ["in-trade", "after", "past", "unknown"];
-
-function rec(v: unknown): Record<string, unknown> {
-  return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
-}
-
-function readJson(file: string): Record<string, unknown> | null {
-  try {
-    return rec(JSON.parse(fs.readFileSync(file, "utf-8")));
-  } catch {
-    return null;
-  }
-}
 
 function bool(v: unknown): boolean | null {
   return typeof v === "boolean" ? v : null;
@@ -121,7 +110,7 @@ function toRow(v: unknown): IncomeListRow | null {
  *  a fit is manage's, and this only looks it up. */
 function screenFit(config: ConsoleConfig, day: string) {
   const dir = config.paths.manageDir;
-  const doc = dir ? readJson(path.join(dir, `eval-${day}.json`)) : null;
+  const doc = dir ? readEvalDoc(dir, day) : null;
   const acct = rec(Array.isArray(doc?.["accounts"]) ? (doc!["accounts"] as unknown[])[0] : null);
   const cands = rec(rec(acct["portfolio"])["candidates"]);
   if (!("screen_fit" in cands)) return null;

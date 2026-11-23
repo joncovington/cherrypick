@@ -1,6 +1,7 @@
 import type { Scorecard, ScorecardRow } from "@console/shared";
 import { AsyncMemo } from "../services/asyncMemo.js";
 import { spawnModuleCliAsync, type SpawnedJson } from "../services/moduleCli.js";
+import { obj as rec } from "./db.js";
 
 /**
  * Compare's scorecard (`python -m cherrypick.cli scorecard`): one row per arm and automation in the
@@ -27,8 +28,6 @@ export function setScorecardCaller(fn?: Caller): void {
 }
 
 const list = <T>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : []);
-const rec = (v: unknown): Record<string, unknown> => (v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
-
 export async function readScorecard(now: number = Date.now()): Promise<Scorecard> {
   const empty: Scorecard = { rows: [], eras: {}, looks: [], counts: {}, min_sessions: null, modules: [], error: null };
   const res = await memo.get("scorecard", TTL_MS, now, () => caller());

@@ -11,14 +11,10 @@ import fs from "node:fs";
 import path from "node:path";
 import type { SignalBoardMethod, SignalBoardPayload, SignalBoardRow, SignalMethod, SignalTag } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
-import { num, str } from "./db.js";
+import { num, str, obj as rec } from "./db.js";
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const METHODS = new Set<SignalMethod>(["stage", "rotation", "fundamentals", "fvp", "scan", "revision"]);
-
-function rec(v: unknown): Record<string, unknown> {
-  return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
-}
 
 export function signalBoardDir(config: ConsoleConfig): string {
   return path.join(config.paths.technicalsDir, "board");
