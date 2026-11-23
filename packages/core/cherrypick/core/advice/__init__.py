@@ -325,6 +325,12 @@ def advised_books(decision: dict[str, Any] | None) -> list[dict[str, Any]]:
     return [e for e in entries if isinstance(e, dict) and e.get("params")]
 
 
+def advised_entries(decision: dict[str, Any] | None) -> dict[str, dict[str, Any]]:
+    """`{tag: experiment entry}` for every experiment the decision opens an arm for, in artifact
+    order -- keyed by tag because planning, freezing and stamping all look the arm up by it."""
+    return {e["tag"]: e for e in advised_books(decision) if e.get("tag")}
+
+
 def _legacy_base(decision: dict[str, Any]) -> str:
     """The base arm a pre-`experiments` decision names, under whichever spelling wrote it.
 

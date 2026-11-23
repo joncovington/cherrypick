@@ -17,7 +17,7 @@ name and nothing else, and folding them together would invent a coupling the str
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
 try:
     from zoneinfo import ZoneInfo
@@ -92,3 +92,34 @@ def hhmm_to_min(value: str, default: int) -> int:
         return int(hours) * 60 + int(minutes)
     except (TypeError, ValueError, AttributeError):
         return default
+
+
+def minutes_since(ts: str | None, when: datetime) -> float | None:
+    """Minutes from the ISO stamp `ts` to `when`, or None when `ts` is empty or unparseable. A stamp
+    with no offset is read as ET, the way every persisted timestamp here is written."""
+    if not ts:
+        return None
+    try:
+        then = datetime.fromisoformat(ts)
+    except ValueError:
+        return None
+    if then.tzinfo is None:
+        then = then.replace(tzinfo=ET)
+    return (when - then).total_seconds() / 60.0
+
+
+def close_min(day: date) -> int:
+    """The regular close of `day` as minutes-of-day: 16:00, or the early close's own time."""
+    from cherrypick.core import calendar as _calendar  # calendar imports nothing from here
+
+    return hhmm_to_min(_calendar.session_close_hhmm(day), 16 * 60)
+
+
+def decision_window(day: date, params: dict | None, defaults: dict[str, int]) -> tuple[int, int]:
+    """(first, last) minute of day in which a session's decision may be taken: it opens
+    `decision_minutes_before_close` before the close and stays open `decision_window_minutes`.
+    `defaults` names both keys and supplies each module's own values; only those keys are read
+    from `params`, so a stray config key cannot move the window."""
+    p = {**defaults, **{k: v for k, v in (params or {}).items() if k in defaults}}
+    start = close_min(day) - int(p["decision_minutes_before_close"])
+    return start, start + int(p["decision_window_minutes"])

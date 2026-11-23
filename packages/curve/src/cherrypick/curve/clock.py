@@ -16,7 +16,7 @@ selector trap, the standing suite lesson): a computed date the cache does not ho
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date
 
 from cherrypick.core import calendar as _cal
 from cherrypick.core.clock import ET, hhmm_to_min, minute_of_day, now_et, now_iso, today_iso  # noqa: F401
@@ -32,21 +32,13 @@ def _dte_params(params: dict | None) -> dict:
     return {**DTE_DEFAULTS, **{k: v for k, v in (params or {}).items() if k in DTE_DEFAULTS}}
 
 
-def _third_friday(year: int, month: int) -> date:
-    d = date(year, month, 1)
-    first_friday = d + timedelta(days=(4 - d.weekday()) % 7)
-    return first_friday + timedelta(weeks=2)
-
-
 def monthly_expirations(today: date, months_ahead: int = 4) -> list[date]:
     """The next `months_ahead` monthly-cycle expirations (third Friday, holiday-shifted back to
     Thursday) strictly after `today`."""
     out: list[date] = []
     year, month = today.year, today.month
     for _ in range(months_ahead + 1):
-        exp = _third_friday(year, month)
-        while not _cal.is_trading_day(exp):
-            exp -= timedelta(days=1)
+        exp = _cal.monthly_expiry(year, month)
         if exp > today:
             out.append(exp)
         month += 1

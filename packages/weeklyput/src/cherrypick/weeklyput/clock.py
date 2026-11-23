@@ -21,7 +21,16 @@ from __future__ import annotations
 from datetime import date, timedelta
 
 from cherrypick.core import calendar as _cal
-from cherrypick.core.clock import ET, hhmm_to_min, minute_of_day, now_et, now_iso, today_iso  # noqa: F401
+from cherrypick.core import clock as _clock
+from cherrypick.core.clock import (  # noqa: F401
+    ET,
+    close_min,
+    hhmm_to_min,
+    minute_of_day,
+    now_et,
+    now_iso,
+    today_iso,
+)
 
 TENOR_DAYS = 7
 
@@ -31,10 +40,7 @@ WINDOW_DEFAULTS = {
 }
 
 
-def monthly_expiry(year: int, month: int) -> date:
-    """The standard monthly: the third Friday, or the trading day before it when that is a holiday."""
-    d = _cal.nth_weekday(year, month, 4, 3)
-    return d if _cal.is_trading_day(d) else _cal.previous_trading_day(d)
+monthly_expiry = _cal.monthly_expiry  # the third Friday, or the trading day before it on a holiday
 
 
 def is_monthly(expiry: date) -> bool:
@@ -117,15 +123,9 @@ def years_to(session: date, expiry: date) -> float:
     return (expiry - session).days / 365.0
 
 
-def close_min(day: date) -> int:
-    return hhmm_to_min(_cal.session_close_hhmm(day), 16 * 60)
-
-
 def decision_window(day: date, params: dict | None = None) -> tuple[int, int]:
     """(first, last) minute of day in which an entry may be taken. The study entered at the entry
     session's end-of-day quotes; the paper arm enters in the last minutes before the close, 15:45 to
     15:55 by default (12:45 to 12:55 on an early close). A tick inside the window that cannot act
     retries on the next tick; a window that closes unacted records a miss, never a late fill."""
-    p = {**WINDOW_DEFAULTS, **{k: v for k, v in (params or {}).items() if k in WINDOW_DEFAULTS}}
-    start = close_min(day) - int(p["decision_minutes_before_close"])
-    return start, start + int(p["decision_window_minutes"])
+    return _clock.decision_window(day, params, WINDOW_DEFAULTS)

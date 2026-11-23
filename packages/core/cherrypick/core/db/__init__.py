@@ -9,6 +9,7 @@ plumbing only — pure stdlib, no ORM. Table **schemas stay in the consumers**; 
 from __future__ import annotations
 
 import os
+import re
 import sqlite3
 from collections.abc import Iterable, Sequence
 from typing import Any
@@ -67,6 +68,23 @@ def connect_ro(path: Any, *, row_factory: Any = sqlite3.Row) -> sqlite3.Connecti
     if row_factory is not None:
         conn.row_factory = row_factory
     return conn
+
+
+def overdue_legs(conn: sqlite3.Connection, prefix: str, day: str) -> list[dict]:
+    """Open legs of a still-open position whose expiration is before `day`: the rows a paper loop
+    settles late after a missed session. `prefix` names the module's tables (`<prefix>_legs`,
+    `<prefix>_positions`); it is checked before it is spliced into the SQL."""
+    if not re.fullmatch(r"[a-z][a-z0-9_]*", prefix):
+        raise ValueError(f"not a table prefix: {prefix!r}")
+    return [
+        dict(r)
+        for r in conn.execute(
+            f"SELECT l.position_id, l.leg_role, l.expiration FROM {prefix}_legs l "
+            f"JOIN {prefix}_positions p ON p.position_id = l.position_id "
+            "WHERE l.status = 'open' AND l.expiration < ? AND p.status != 'closed'",
+            (day,),
+        )
+    ]
 
 
 def columns(conn: sqlite3.Connection, table: str) -> list[str]:
