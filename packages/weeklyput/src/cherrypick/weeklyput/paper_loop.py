@@ -32,6 +32,7 @@ from cherrypick.core import config as _cfg
 from cherrypick.core import home as _home
 from cherrypick.core import logs as _logs
 from cherrypick.core import looplock
+from cherrypick.core.clock import minutes_since as _minutes_since
 
 from cherrypick.weeklyput import cli as climod
 from cherrypick.weeklyput import clock, db, engine, provider, stream_request
@@ -180,16 +181,6 @@ def run_settle(conn, *, day: str, symbol: str, price: float) -> dict:
 
 
 # --------------------------------------------------------------------------- mark
-def _minutes_since(ts: str | None, when: datetime) -> float | None:
-    if not ts:
-        return None
-    try:
-        then = datetime.fromisoformat(ts)
-    except ValueError:
-        return None
-    if then.tzinfo is None:
-        then = then.replace(tzinfo=clock.ET)
-    return (when - then).total_seconds() / 60.0
 
 
 def run_marks(config: dict, conn, *, cache_path: str, when: datetime, force: bool) -> int:

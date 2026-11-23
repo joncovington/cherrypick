@@ -26,6 +26,7 @@ from datetime import datetime
 from cherrypick.core import advice as _core_advice
 from cherrypick.core import calendar as _cal
 from cherrypick.core import config as _cfg
+from cherrypick.core import db as _core_db
 from cherrypick.core import home as _home
 from cherrypick.core import logs as _logs
 from cherrypick.core import looplock
@@ -119,10 +120,7 @@ def session_books(config: dict, today: str) -> tuple[list[str], dict[str, dict]]
     return arms, advised
 
 
-def advised_entries(decision: dict | None) -> dict[str, dict]:
-    """`{tag: experiment entry}` for every experiment the decision opens a arm for, in artifact
-    order -- keyed by tag because planning, freezing and stamping all look the arm up by it."""
-    return {e["tag"]: e for e in _core_advice.advised_books(decision) if e.get("tag")}
+advised_entries = _core_advice.advised_entries
 
 
 # --------------------------------------------------------------------------- the tick
@@ -195,15 +193,7 @@ def run_once(
 
 
 def _overdue_legs(conn, day: str) -> list[dict]:
-    return [
-        dict(r)
-        for r in conn.execute(
-            "SELECT l.position_id, l.leg_role, l.expiration FROM bwb_legs l "
-            "JOIN bwb_positions p ON p.position_id = l.position_id "
-            "WHERE l.status = 'open' AND l.expiration < ? AND p.status != 'closed'",
-            (day,),
-        )
-    ]
+    return _core_db.overdue_legs(conn, "bwb", day)
 
 
 def _unsettled_today(conn, day: str) -> bool:

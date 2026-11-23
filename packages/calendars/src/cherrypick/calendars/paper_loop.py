@@ -31,8 +31,10 @@ import time
 from datetime import datetime
 
 from cherrypick.core import advice as _core_advice
+from cherrypick.core import cadence as _cadence
 from cherrypick.core import calendar as _cal
 from cherrypick.core import config as _cfg
+from cherrypick.core import db as _core_db
 from cherrypick.core import home as _home
 from cherrypick.core import logs as _logs
 from cherrypick.core import looplock
@@ -126,31 +128,14 @@ def _note_cadence_change(conn, interval_seconds: int) -> None:
     """Journal a tick-cadence change as a measurement break: the mark path's resolution decides how
     precisely the read-side exit derivation can replay a trigger, so pre/post-change derivations
     are not comparable. Keyed off a small state file so the row is written exactly once."""
-    try:
-        state_path = os.path.join(_paper_data_dir(), "tick_cadence.json")
-        prev = None
-        try:
-            with open(state_path, encoding="utf-8") as fh:
-                prev = int(json.load(fh).get("seconds"))
-        except (OSError, ValueError, TypeError):
-            pass
-        if prev == interval_seconds:
-            return
-        day = clock.today_iso()
-        if prev is not None:
-            db.record_measurement_break(
-                conn,
-                break_date=day,
-                key="tick_cadence",
-                old_value=str(prev),
-                new_value=str(interval_seconds),
-                note="mark-path resolution changed; exit derivations not comparable across this date",
-            )
-            _log(f"tick cadence changed {prev}s -> {interval_seconds}s — journaled as a measurement break")
-        with open(state_path, "w", encoding="utf-8") as fh:
-            json.dump({"seconds": interval_seconds, "since": day}, fh)
-    except Exception as exc:  # noqa: BLE001 — never let telemetry break the loop
-        _log(f"cadence-change journaling failed (non-fatal): {type(exc).__name__}: {exc}")
+    _cadence.note_change(
+        conn,
+        interval_seconds,
+        data_dir=_paper_data_dir(),
+        record_break=db.record_measurement_break,
+        note="mark-path resolution changed; exit derivations not comparable across this date",
+        log=_log,
+    )
 
 
 # --------------------------------------------------------------------------- advised arm
@@ -197,11 +182,7 @@ def session_books(config: dict, today: str) -> tuple[list[str], dict[str, dict]]
     return arms, advised
 
 
-def advised_entries(decision: dict | None) -> dict[str, dict]:
-    """`{tag: experiment entry}` for every experiment the decision opens a arm for, in artifact
-    order. Keyed by tag because the tag is what every later step (planning, freezing, stamping)
-    looks the arm up by."""
-    return {e["tag"]: e for e in _core_advice.advised_books(decision) if e.get("tag")}
+advised_entries = _core_advice.advised_entries
 
 
 # --------------------------------------------------------------------------- the tick
@@ -316,15 +297,7 @@ def run_once(
 
 
 def _overdue_legs(conn, day: str) -> list[dict]:
-    return [
-        dict(r)
-        for r in conn.execute(
-            "SELECT l.position_id, l.leg_role, l.expiration FROM dc_legs l "
-            "JOIN dc_positions p ON p.position_id = l.position_id "
-            "WHERE l.status = 'open' AND l.expiration < ? AND p.status != 'closed'",
-            (day,),
-        )
-    ]
+    return _core_db.overdue_legs(conn, "dc", day)
 
 
 def _unsettled_today(conn, day: str) -> bool:

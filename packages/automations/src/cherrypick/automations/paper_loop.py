@@ -34,7 +34,8 @@ from cherrypick.core import calendar as _cal
 from cherrypick.core import home as _home
 from cherrypick.core import logs as _logs
 from cherrypick.core import looplock
-from cherrypick.core.clock import ET, minute_of_day, now_et, now_iso
+from cherrypick.core.clock import minute_of_day, now_et, now_iso
+from cherrypick.core.clock import minutes_since as _minutes_since
 
 from . import config as config_mod
 from . import db, engine, enrolment, events, feed, paper, provider, record, stream_request
@@ -224,18 +225,6 @@ def mark_value(pos: dict, rows: list[dict]) -> float:
     entry = Entry.from_dict(json.loads(pos["entry_json"]))
     total = sum(g.side * (q["bid"] + q["ask"]) / 2.0 for g, q in zip(entry.legs, rows, strict=True))
     return round(total * MULT * entry.quantity, 2)
-
-
-def _minutes_since(ts: str | None, when: datetime) -> float | None:
-    if not ts:
-        return None
-    try:
-        then = datetime.fromisoformat(ts)
-    except ValueError:
-        return None
-    if then.tzinfo is None:
-        then = then.replace(tzinfo=ET)
-    return (when - then).total_seconds() / 60.0
 
 
 def run_positions(
