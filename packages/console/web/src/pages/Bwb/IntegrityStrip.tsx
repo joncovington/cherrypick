@@ -1,6 +1,6 @@
 import type { BwbPayload } from "@console/shared";
-import { Card, fmtPct } from "../../components/DataTable";
-import { MeasurementBreaks } from "../../components/MeasurementBreaks";
+import { Card } from "../../components/DataTable";
+import { CoverageLine, IntegrityAlerts } from "../../components/IntegrityParts";
 
 /**
  * Everything that bounds how far this page's numbers can be trusted, above them rather than
@@ -27,13 +27,7 @@ export function IntegrityStrip({ data, updatedAt }: { data: BwbPayload | undefin
             {triggerCoverage === undefined || triggerCoverage.ticks === 0 ? (
               <p className="muted">no trigger ticks recorded on this session yet</p>
             ) : (
-              <p>
-                {triggerCoverage.ticks.toLocaleString()} ticks ·{" "}
-                <span className={triggerCoverage.refused > 0 ? "integrity-warn" : ""}>
-                  {triggerCoverage.refused.toLocaleString()} unmeasured (
-                  {fmtPct(triggerCoverage.refusalShare === null ? null : triggerCoverage.refusalShare * 100, 1)})
-                </span>
-              </p>
+              <CoverageLine count={triggerCoverage.ticks} noun="ticks" refused={triggerCoverage.refused} share={triggerCoverage.refusalShare} refusedLabel="unmeasured" />
             )}
             {triggerCoverage !== undefined && triggerCoverage.totalFailure && (
               <p className="integrity-warn">
@@ -69,13 +63,7 @@ export function IntegrityStrip({ data, updatedAt }: { data: BwbPayload | undefin
             {markCoverage === undefined || markCoverage.marks === 0 ? (
               <p className="muted">no marks on this session</p>
             ) : (
-              <p>
-                {markCoverage.marks.toLocaleString()} marks ·{" "}
-                <span className={markCoverage.refused > 0 ? "integrity-warn" : ""}>
-                  {markCoverage.refused.toLocaleString()} refused (
-                  {fmtPct(markCoverage.refusalShare === null ? null : markCoverage.refusalShare * 100, 1)})
-                </span>
-              </p>
+              <CoverageLine count={markCoverage.marks} noun="marks" refused={markCoverage.refused} share={markCoverage.refusalShare} />
             )}
             <p className="integrity-note">
               A refused mark is still a row: a stalled feed and a quiet market must never look identical.
@@ -83,18 +71,7 @@ export function IntegrityStrip({ data, updatedAt }: { data: BwbPayload | undefin
           </section>
         </div>
 
-        {(drift.length > 0 || breaks.length > 0) && (
-          <div className="integrity-integrity-alerts">
-            {drift.length > 0 && (
-              <p className="integrity-err">
-                <strong>Schema drift.</strong> The ledger holds {drift.length} column
-                {drift.length === 1 ? "" : "s"} this console build does not know ({drift.join(", ")}). The module's
-                writer has moved on -- this page may be reading a narrower story than it is recording.
-              </p>
-            )}
-            <MeasurementBreaks breaks={breaks} />
-          </div>
-        )}
+        <IntegrityAlerts drift={drift} breaks={breaks} />
       </div>
     </Card>
   );

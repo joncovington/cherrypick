@@ -1,6 +1,6 @@
 import type { CurvePayload } from "@console/shared";
 import { Card, fmtPct } from "../../components/DataTable";
-import { MeasurementBreaks } from "../../components/MeasurementBreaks";
+import { CoverageLine, IntegrityAlerts } from "../../components/IntegrityParts";
 
 /**
  * Everything that bounds how far this page's net can be trusted, above the net rather than beneath
@@ -67,13 +67,7 @@ export function IntegrityStrip({ data, updatedAt }: { data: CurvePayload | undef
               <p className="muted">no marks on this session</p>
             ) : (
               <>
-                <p>
-                  {coverage.marks.toLocaleString()} marks ·{" "}
-                  <span className={coverage.refused > 0 ? "integrity-warn" : ""}>
-                    {coverage.refused.toLocaleString()} refused (
-                    {fmtPct(coverage.refusalShare === null ? null : coverage.refusalShare * 100, 1)})
-                  </span>
-                </p>
+                <CoverageLine count={coverage.marks} noun="marks" refused={coverage.refused} share={coverage.refusalShare} />
                 {coverage.refusals.length > 0 && (
                   <ul className="integrity-plain-list">
                     {coverage.refusals.slice(0, 4).map((r) => (
@@ -91,18 +85,7 @@ export function IntegrityStrip({ data, updatedAt }: { data: CurvePayload | undef
           </section>
         </div>
 
-        {(drift.length > 0 || breaks.length > 0) && (
-          <div className="integrity-integrity-alerts">
-            {drift.length > 0 && (
-              <p className="integrity-err">
-                <strong>Schema drift.</strong> The ledger holds {drift.length} column
-                {drift.length === 1 ? "" : "s"} this console build does not know ({drift.join(", ")}). The module's
-                writer has moved on -- this page may be reading a narrower story than it is recording.
-              </p>
-            )}
-            <MeasurementBreaks breaks={breaks} />
-          </div>
-        )}
+        <IntegrityAlerts drift={drift} breaks={breaks} />
       </div>
     </Card>
   );

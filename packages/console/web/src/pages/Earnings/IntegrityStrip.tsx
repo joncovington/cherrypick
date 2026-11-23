@@ -1,6 +1,7 @@
 import type { EarningsPayload } from "@console/shared";
 import { Card } from "../../components/DataTable";
 import { MeasurementBreaks } from "../../components/MeasurementBreaks";
+import { SchemaDriftNote } from "../../components/IntegrityParts";
 
 /**
  * What bounds how far this page's numbers can be trusted — above them rather than beneath, the
@@ -43,13 +44,7 @@ export function IntegrityStrip({ data, updatedAt }: { data: EarningsPayload | un
             )}
           </div>
         )}
-        {drift.length > 0 && (
-          <p className="integrity-err">
-            <strong>Schema drift.</strong> The ledger holds {drift.length} column
-            {drift.length === 1 ? "" : "s"} this console build does not know ({drift.join(", ")}). The module's
-            writer has moved on — this page may be reading a narrower story than it is recording.
-          </p>
-        )}
+        <SchemaDriftNote drift={drift} />
         <MeasurementBreaks breaks={breaks} />
         {detail.size > 0 && breaks.length > 0 && (
           <ul className="integrity-plain-list">
