@@ -1236,3 +1236,18 @@ def test_the_minute_overlay_reads_the_cost_strike_calls_from_the_producer_that_q
         tmp_path / "cache.db", {".AAA261120C50": (1.0, 1.2, 1.1, now - 3), ".AAA261120C55": (1, 2, 1.5, now)}
     )
     assert list(managesnap.cache_quotes(snapshot, cache)) == [".AAA261120C50"]
+
+
+def test_newest_dated_picks_the_latest_file_on_or_before_the_session(tmp_path):
+    names = ("2026-10-15.json", "2026-10-17.json", "2026-10-20.json", "2026-10-17.trial.json", "notes.json")
+    for name in names:
+        (tmp_path / name).write_text("{}", encoding="utf-8")
+    day, path = managesnap.newest_dated(tmp_path, date(2026, 10, 19))
+    assert day == date(2026, 10, 17) and path.name == "2026-10-17.json"
+    assert managesnap.newest_dated(tmp_path, date(2026, 10, 20))[0] == date(2026, 10, 20)
+
+
+def test_newest_dated_is_none_for_nothing_on_or_before_or_no_folder(tmp_path):
+    (tmp_path / "2026-10-20.json").write_text("{}", encoding="utf-8")
+    assert managesnap.newest_dated(tmp_path, date(2026, 10, 19)) is None
+    assert managesnap.newest_dated(tmp_path / "none", date(2026, 10, 19)) is None

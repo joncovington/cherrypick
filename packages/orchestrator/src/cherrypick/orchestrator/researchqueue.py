@@ -105,16 +105,15 @@ from collections.abc import Callable, Iterable
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
-from zoneinfo import ZoneInfo
 
 from cherrypick.core import home as _home
 from cherrypick.core import procs as _procs
 from cherrypick.core import progress as _progress
+from cherrypick.core.clock import ET
 
 from . import vendorlicence
 from .util import CREATE_NO_WINDOW, pid_alive
 
-ET = ZoneInfo("America/New_York")
 DB_NAME = "research_queue.db"
 # The nightly backtest-fetch (18:45 ET, trading days) and its run: no ThetaData task starts inside it.
 BLACKOUT = ("18:30", "20:30")

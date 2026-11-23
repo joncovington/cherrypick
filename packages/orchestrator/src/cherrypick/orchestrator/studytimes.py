@@ -29,9 +29,9 @@ from __future__ import annotations
 import statistics
 from collections.abc import Iterable
 from datetime import UTC, datetime
-from zoneinfo import ZoneInfo
 
-ET = ZoneInfo("America/New_York")
+from cherrypick.core.clock import ET
+
 VERDICTS = ("passed", "failed", "no_verdict")
 STAGES = ("declared", "script", "queued", "fetched", "studied", "recorded")
 #: The spans reported between stages, each (name, from, to).

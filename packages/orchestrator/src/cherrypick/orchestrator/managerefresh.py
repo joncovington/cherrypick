@@ -15,10 +15,11 @@ snapshot it asks for is `managesnap`'s read-only reads, the same as the schedule
 
 from __future__ import annotations
 
-import json
 import sqlite3
 from datetime import datetime
 from pathlib import Path
+
+from .util import read_json
 
 FILL_SETTLE_SECONDS = 30
 
@@ -34,10 +35,7 @@ def _when(stamp: object) -> datetime | None:
 
 
 def _read(path: Path) -> dict:
-    try:
-        doc = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return {}
+    doc = read_json(path)
     return doc if isinstance(doc, dict) else {}
 
 

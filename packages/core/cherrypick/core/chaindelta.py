@@ -26,11 +26,10 @@ import math
 from collections.abc import Iterable, Mapping
 from datetime import datetime, time
 from typing import Any
-from zoneinfo import ZoneInfo
 
 from cherrypick.core import bs
+from cherrypick.core.clock import ET
 
-ET = ZoneInfo("America/New_York")
 YEAR_SECONDS = 365.0 * 86400.0
 #: Below this the model's delta is a step function and means nothing; such a chain is refused.
 MIN_YEARS = 60.0 / YEAR_SECONDS

@@ -80,3 +80,18 @@ def test_rth_bounds_follow_dst():
     assert summer_close - summer_open == 6.5 * 3600
     assert datetime.fromtimestamp(summer_open, timezone.utc).hour == 13  # 09:30 EDT
     assert datetime.fromtimestamp(winter_open, timezone.utc).hour == 14  # 09:30 EST
+
+
+def test_no_module_re_derives_the_eastern_zone():
+    """`ZoneInfo` caches by key, so an identity check cannot see a re-derived zone. A module that builds
+    its own is the shape that lets a difference appear unchosen (and it lacks the no-tzdata fallback),
+    so the source is scanned instead."""
+    from pathlib import Path
+
+    core = Path(clock.__file__).resolve().parent.parent
+    offenders = [
+        str(f.relative_to(core))
+        for f in core.rglob("*.py")
+        if f.parent.name != "clock" and 'ZoneInfo("America/New_York")' in f.read_text(encoding="utf-8")
+    ]
+    assert offenders == []

@@ -33,13 +33,11 @@ from __future__ import annotations
 
 import datetime as _dt
 import statistics
-from zoneinfo import ZoneInfo
 
 from cherrypick.core import marketregime as _mr
 from cherrypick.core import metrics as _metrics
 from cherrypick.core import streamcache as _sc
-
-ET = ZoneInfo("America/New_York")
+from cherrypick.core.clock import ET
 
 OPEN_MIN = 9 * 60 + 30
 ENTRY_MIN = 10 * 60

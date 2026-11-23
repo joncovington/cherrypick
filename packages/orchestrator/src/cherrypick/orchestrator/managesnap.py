@@ -161,7 +161,7 @@ from cherrypick.core.db import connect_ro
 from . import config as cfgmod
 from . import doctor
 from . import positions as positions_mod
-from .util import first_json
+from .util import first_json, read_json
 
 SNAPSHOT_VERSION = 20
 # Greeks move far more slowly than a bid; the cache's are used up to this old, the feed's otherwise.
@@ -889,6 +889,21 @@ def cost_call_chains(
     return out
 
 
+def newest_dated(folder, session: date) -> tuple[date, Any] | None:
+    """The newest `YYYY-MM-DD.json` in `folder` dated on or before `session`, as (day, path), or None
+    when there is none. Files that do not parse as a date (a `.trial` run) are never picked. Each
+    caller applies its own age limit and words its own error."""
+    days = []
+    for f in folder.glob("????-??-??.json") if folder.is_dir() else []:
+        try:
+            d = date.fromisoformat(f.stem)
+        except ValueError:
+            continue
+        if d <= session:
+            days.append((d, f))
+    return max(days) if days else None
+
+
 def income_dir():
     from cherrypick.core import home
 
@@ -899,17 +914,10 @@ def income_reading(session: date, folder=None) -> dict[str, Any]:
     """The newest income reading on or before `session` and at most INCOME_MAX_AGE_DAYS old, with
     `error` saying why there is none. A `.trial` file is a test run and is never read."""
     folder = income_dir() if folder is None else folder
-    days = []
-    for f in folder.glob("????-??-??.json") if folder.is_dir() else []:
-        try:
-            d = date.fromisoformat(f.stem)
-        except ValueError:
-            continue
-        if d <= session:
-            days.append((d, f))
-    if not days:
+    newest = newest_dated(folder, session)
+    if newest is None:
         return {"error": "no income reading yet (fetch_screener_greeks.py income, 14:45 ET)"}
-    day, path = max(days)
+    day, path = newest
     if (session - day).days > INCOME_MAX_AGE_DAYS:
         return {"error": f"the newest income reading is from {day.isoformat()}, too old to size from"}
     try:
@@ -1009,17 +1017,10 @@ def skate_bands(session: date, symbols: list[str], folder=None) -> tuple[dict[st
     from cherrypick.core import calendar as cal
 
     folder = skate_dir() if folder is None else folder
-    days = []
-    for f in folder.glob("????-??-??.json") if folder.is_dir() else []:
-        try:
-            d = date.fromisoformat(f.stem)
-        except ValueError:
-            continue
-        if d <= session:
-            days.append((d, f))
-    if not days:
+    newest = newest_dated(folder, session)
+    if newest is None:
         return None, "no skate band file yet (python -m cherrypick.technicals skate, 06:45 ET)"
-    day, path = max(days)
+    day, path = newest
     behind = cal.trading_days_between(day, session)
     if behind > SKATE_MAX_SESSIONS:
         return None, (
@@ -1181,20 +1182,10 @@ def earnings_times(session: date, folder=None) -> dict[str, dict[str, tuple[str,
     or Yahoo's where Nasdaq did not answer; 'nasdaq' for a file without it); empty when there is none
     or it cannot be read."""
     folder = earnings_times_dir() if folder is None else folder
-    days = []
-    for f in folder.glob("????-??-??.json") if folder.is_dir() else []:
-        try:
-            d = date.fromisoformat(f.stem)
-        except ValueError:
-            continue
-        if d <= session and (session - d).days <= EARNINGS_TIMES_MAX_AGE_DAYS:
-            days.append((d, f))
-    if not days:
+    newest = newest_dated(folder, session)
+    if newest is None or (session - newest[0]).days > EARNINGS_TIMES_MAX_AGE_DAYS:
         return {}
-    try:
-        doc = json.loads(max(days)[1].read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
+    doc = read_json(newest[1])
     sources = doc.get("sources") or {}
     out: dict[str, dict[str, tuple[str, str]]] = {}
     for day, symbols in (doc.get("dates") or {}).items():

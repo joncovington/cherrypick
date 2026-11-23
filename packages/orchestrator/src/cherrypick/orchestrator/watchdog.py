@@ -914,10 +914,7 @@ def _streamer_churn_finding(label: str, status: dict[str, Any]) -> Finding | Non
     if not isinstance(count, (int, float)):
         return None
     now = datetime.now(timezone.utc).timestamp()
-    try:
-        state = json.loads(_streamer_churn_state_path().read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        state = {}
+    state = util.read_json(_streamer_churn_state_path())
     prev = state.get(label) or {}
     finding = None
     prev_count, prev_at = prev.get("count"), prev.get("at")
@@ -1781,10 +1778,7 @@ def _check_recording_coverage(cfg: dict[str, Any], now_et: datetime) -> list[Fin
         return []
     session = _last_judgeable_session(now_et)
     path = _coverage_state_path()
-    try:
-        cache = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
-    except (OSError, ValueError):
-        cache = {}
+    cache = util.read_json(path)
     verdict = cache.get(session)
     if verdict is None:
         try:

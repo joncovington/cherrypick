@@ -17,9 +17,9 @@ from __future__ import annotations
 import os
 from datetime import datetime
 from typing import Any
-from zoneinfo import ZoneInfo
 
-ET = ZoneInfo("America/New_York")
+from cherrypick.core.clock import ET
+
 _UX_KEY = r"SOFTWARE\Microsoft\WindowsUpdate\UX\Settings"
 _MARGIN_MIN = 30  # past the latest job's start: it has to finish too
 # Overnight maintenance that a restart only delays: each catches up in its window or the next night.
