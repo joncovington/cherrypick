@@ -38,7 +38,7 @@ import urllib.request
 from datetime import UTC, date, datetime
 from pathlib import Path
 
-from cherrypick.core import progress
+from cherrypick.core import jsonio, progress
 from cherrypick.fundamentals import paths
 
 PAUSE_S = 0.25  # four requests a second, under SEC's ten
@@ -170,9 +170,7 @@ def run(names: list[str], force: bool = False, log=print, rep=None) -> dict:
 
 def _save(path: Path, state: dict) -> None:
     """Write the state whole or not at all: a kill mid-write must never leave half a file."""
-    tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(json.dumps(state, indent=1), encoding="utf-8")
-    os.replace(tmp, path)
+    jsonio.write_json_atomic(path, state, indent=1, default=None)
 
 
 def main(argv: list[str] | None = None) -> int:
