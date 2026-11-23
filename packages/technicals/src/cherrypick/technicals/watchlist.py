@@ -31,10 +31,11 @@ slippage, so it is never called one.
 
 from __future__ import annotations
 
-import json
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+from cherrypick.core.jsonio import write_json_atomic
 
 from . import setup_read, symbols, tradable, trend
 
@@ -193,7 +194,4 @@ def write(directory: Path, all_rows: list[dict], session: str | None, label_day:
         "rows": all_rows,
     }
     p = directory / FILE
-    p.parent.mkdir(parents=True, exist_ok=True)
-    tmp = p.with_name(f"{p.name}.tmp")
-    tmp.write_text(json.dumps(doc, separators=(",", ":")), encoding="utf-8")
-    tmp.replace(p)
+    write_json_atomic(p, doc, indent=None, default=None, separators=(",", ":"))

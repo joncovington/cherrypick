@@ -13,6 +13,7 @@ was.
 from __future__ import annotations
 
 from cherrypick.core.config import first_present as _first_present
+from cherrypick.core.jsonio import write_text_atomic
 
 from cherrypick.review import facts as _facts
 from cherrypick.review import paths as _paths
@@ -291,8 +292,5 @@ def render(session: str, window: int = _trends.DEFAULT_WINDOW) -> str:
 
 def write(session: str, window: int = _trends.DEFAULT_WINDOW):
     target = _paths.render_path(session)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    tmp = target.with_suffix(".md.tmp")
-    tmp.write_text(render(session, window), encoding="utf-8")
-    tmp.replace(target)
+    write_text_atomic(target, render(session, window))
     return target

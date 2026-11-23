@@ -241,6 +241,9 @@ def test_the_build_drops_a_listed_fund_and_judges_the_rest(tmp_path):
     )
     result = skate.build(cfg={"history_from": "2000-01-01"}, db=db, out_dir=tmp_path / "out")
     assert result["ok"] and result["universe"] == 3
+    raw = (tmp_path / "out" / f"{DAY.isoformat()}.json").read_bytes()
+    assert raw == json.dumps(json.loads(raw), separators=(",", ":")).encode("utf-8")  # compact
+    assert [p.name for p in (tmp_path / "out").iterdir() if p.name.endswith(".tmp")] == []
     doc = json.loads((tmp_path / "out" / f"{DAY.isoformat()}.json").read_text(encoding="utf-8"))
     assert doc["skipped"] == {"leveraged, inverse or volatility fund": ["TQQQ"]}
     assert set(doc["names"]) == {"SPY", "XYZ"}

@@ -8,6 +8,8 @@ practice pre-open.
 
 from __future__ import annotations
 
+from cherrypick.core.jsonio import write_text_atomic
+
 from . import facts as _facts
 from . import paths as _paths
 
@@ -401,8 +403,5 @@ def write(session: str) -> str | None:
     if text is None:
         return None
     path = _paths.render_path(session)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".md.tmp")
-    tmp.write_text(text, encoding="utf-8")
-    tmp.replace(path)
+    write_text_atomic(path, text)
     return str(path)
