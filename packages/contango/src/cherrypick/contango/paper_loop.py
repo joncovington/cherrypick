@@ -20,16 +20,13 @@ from __future__ import annotations
 
 import argparse
 import json
-import logging
 import os
 import time
 from datetime import datetime
 
 from cherrypick.core import calendar as _cal
 from cherrypick.core import config as _cfg
-from cherrypick.core import home as _home
-from cherrypick.core import logs as _logs
-from cherrypick.core import looplock
+from cherrypick.core import paperloop as _paperloop
 
 from cherrypick.contango import cli as climod
 from cherrypick.contango import clock, db, engine, provider, regime, stream_request
@@ -37,16 +34,16 @@ from cherrypick.contango import clock, db, engine, provider, regime, stream_requ
 RTH_OPEN_MIN = 9 * 60 + 30
 DONE = ("hold", "switch", "missed")
 
-_logger = logging.getLogger("contango_paper_loop")
+_loop = _paperloop.PaperLoop("contango", lambda: _paper_data_dir())
+_logger = _loop.logger
 
 
 def log_file():
-    return _home.logs_dir("contango") / "contango_paper.log"
+    return _loop.log_file()
 
 
 def _log(message: str) -> None:
-    _logs.configure(_logger, log_file())
-    _logger.info(message)
+    _loop.log(message)
 
 
 def _paper_data_dir() -> str:
@@ -54,19 +51,19 @@ def _paper_data_dir() -> str:
 
 
 def _loop_lock_path() -> str:
-    return os.path.join(_paper_data_dir(), "paper_loop.lock")
+    return _loop.lock_path()
 
 
 def _acquire_loop_lock(stale_seconds: int = 180) -> bool:
-    return looplock.acquire(_loop_lock_path(), stale_seconds, alive=looplock.pid_alive)
+    return _loop.acquire(stale_seconds)
 
 
 def _release_loop_lock() -> None:
-    looplock.release(_loop_lock_path())
+    _loop.release()
 
 
 def _beat() -> None:
-    _home.beat("contango")
+    _loop.beat()
 
 
 # --------------------------------------------------------------------------- arms
@@ -503,32 +500,31 @@ def main(argv=None) -> int:
         return 0
     if not (args.once or args.interval):
         ap.error("choose one of --once, --interval, --status")
-    if not _acquire_loop_lock():
-        print(json.dumps({"ok": True, "skipped": "another paper loop is already running"}))
-        return 0
-    try:
-        if args.once:
-            result = run_once(
+    if args.once:
+        return _paperloop.run_once_locked(
+            lambda: run_once(
                 config, conn, cache_path=cache_path, technicals_path=technicals_path, force=args.force
-            )
-            print(json.dumps(result, indent=2, default=str))
-            return 0
-        _log(f"loop starting, interval {args.interval}s, cache {cache_path}")
-        while True:
-            now = clock.now_et()
-            if not args.force and clock.minute_of_day(now) >= clock.close_min(now.date()):
-                break
-            try:
-                run_once(
-                    config, conn, cache_path=cache_path, technicals_path=technicals_path, force=args.force
-                )
-            except Exception as exc:  # noqa: BLE001
-                _log(f"iteration error (continuing): {type(exc).__name__}: {exc}")
-            time.sleep(args.interval)
-        _log("session closed")
-        return 0
-    finally:
-        _release_loop_lock()
+            ),
+            acquire=_acquire_loop_lock,
+            release=_release_loop_lock,
+        )
+
+    def _tick() -> None:
+        run_once(config, conn, cache_path=cache_path, technicals_path=technicals_path, force=args.force)
+
+    def _keep_going() -> bool:
+        now = clock.now_et()
+        return args.force or clock.minute_of_day(now) < clock.close_min(now.date())
+
+    return _paperloop.run_resident(
+        args.interval,
+        tick=_tick,
+        keep_going=_keep_going,
+        acquire=_acquire_loop_lock,
+        release=_release_loop_lock,
+        log=_log,
+        cache_path=cache_path,
+    )
 
 
 if __name__ == "__main__":

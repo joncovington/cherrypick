@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import logging
 import os
 import time
 from datetime import datetime
@@ -31,9 +30,8 @@ from cherrypick.core import calendar as _cal
 from cherrypick.core import config as _cfg
 from cherrypick.core import db as _core_db
 from cherrypick.core import home as _home
-from cherrypick.core import logs as _logs
 from cherrypick.core import looplock
-from cherrypick.core import streamcache as _streamcache
+from cherrypick.core import paperloop as _paperloop
 
 from cherrypick.curve import book as bookmod
 from cherrypick.curve import cli as climod
@@ -43,20 +41,20 @@ RTH_OPEN_MIN = 9 * 60 + 30
 RTH_CLOSE_MIN = 16 * 60
 DEFAULT_SETTLE_MIN = 16 * 60 + 20
 
-_logger = logging.getLogger("curve_paper_loop")
+_loop = _paperloop.PaperLoop("curve", lambda: _paper_data_dir())
+_logger = _loop.logger
 
 
 def stream_cache_path(config: dict) -> str:
-    return str(_streamcache.cache_path(config))
+    return _loop.stream_cache_path(config)
 
 
 def log_file():
-    return _home.logs_dir("curve") / "curve_paper.log"
+    return _loop.log_file()
 
 
 def _log(message: str) -> None:
-    _logs.configure(_logger, log_file())
-    _logger.info(message)
+    _loop.log(message)
 
 
 def in_session(now_min: int) -> bool:
@@ -76,18 +74,18 @@ def _paper_data_dir() -> str:
 
 
 def _loop_lock_path() -> str:
-    return os.path.join(_paper_data_dir(), "paper_loop.lock")
+    return _loop.lock_path()
 
 
 _pid_alive = looplock.pid_alive  # noqa: F401
 
 
 def _acquire_loop_lock(stale_seconds: int = 180) -> bool:
-    return looplock.acquire(_loop_lock_path(), stale_seconds, alive=_pid_alive)
+    return _loop.acquire(stale_seconds, alive=_pid_alive)
 
 
 def _release_loop_lock() -> None:
-    looplock.release(_loop_lock_path())
+    _loop.release()
 
 
 # --------------------------------------------------------------------------- the regime tick
@@ -744,7 +742,7 @@ def run_status(config: dict, conn, *, cache_path: str) -> dict:
 
 
 def _beat() -> None:
-    _home.beat("curve")
+    _loop.beat()
 
 
 def main(argv=None) -> int:
@@ -780,39 +778,30 @@ def main(argv=None) -> int:
         )
         return 0
     if args.interval:
-        if not _acquire_loop_lock():
-            print(json.dumps({"ok": True, "skipped": "another paper loop is already running"}))
-            return 0
-        try:
-            _log(f"loop starting, interval {args.interval}s, cache {cache_path}")
+
+        def _after_start() -> None:
             drift = db.stale_writer_columns(conn)
             if drift:
                 _log(
                     f"WARNING: {len(drift)} ledger column(s) this checkout will never write — {', '.join(drift)}."
                 )
-            while args.force or in_session(clock.minute_of_day(clock.now_et())):
-                try:
-                    run_once(config, conn, cache_path=cache_path, force=args.force)
-                except Exception as exc:  # noqa: BLE001
-                    _log(f"iteration error (continuing): {type(exc).__name__}: {exc}")
-                time.sleep(args.interval)
-            _log("session closed")
-            return 0
-        finally:
-            _release_loop_lock()
+
+        return _paperloop.run_resident(
+            args.interval,
+            tick=lambda: run_once(config, conn, cache_path=cache_path, force=args.force),
+            keep_going=lambda: args.force or in_session(clock.minute_of_day(clock.now_et())),
+            acquire=_acquire_loop_lock,
+            release=_release_loop_lock,
+            log=_log,
+            cache_path=cache_path,
+            after_start=_after_start,
+        )
     if args.once:
-        if not _acquire_loop_lock():
-            print(json.dumps({"ok": True, "skipped": "another paper loop is already running"}))
-            return 0
-        try:
-            print(
-                json.dumps(
-                    run_once(config, conn, cache_path=cache_path, force=args.force), indent=2, default=str
-                )
-            )
-            return 0
-        finally:
-            _release_loop_lock()
+        return _paperloop.run_once_locked(
+            lambda: run_once(config, conn, cache_path=cache_path, force=args.force),
+            acquire=_acquire_loop_lock,
+            release=_release_loop_lock,
+        )
 
     ap.error("choose one of --once, --interval, --settle, --status")
     return 2
