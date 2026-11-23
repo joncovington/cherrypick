@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from cherrypick.core import bs
+
 from cherrypick.backtest.study import chains as chains_mod
 from cherrypick.backtest.study.chains import Chain
-from cherrypick.core import bs
 
 STRIKES = [float(k) for k in range(90, 111)]
 
