@@ -49,12 +49,10 @@ import json
 import re
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
 from cherrypick.core import calendar as _calendar
 from cherrypick.core import home as _home
-
-ET = ZoneInfo("America/New_York")
+from cherrypick.core.clock import ET
 
 # Release name -> (label, standard ET time when the source gives none, major).
 # FRED gives dates only, so its releases carry their standing schedule time. "Major" is the set

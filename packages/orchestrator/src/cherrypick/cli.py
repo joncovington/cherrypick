@@ -2441,9 +2441,9 @@ def cmd_draft_verdict(args) -> None:
     """#1074: draft a kit study's Result paragraph and register outcome from its verdict block.
     Prints the draft; writes nothing. Refuses a draft that would carry a study figure."""
     from datetime import datetime
-    from zoneinfo import ZoneInfo
 
     from cherrypick.core import home as core_home
+    from cherrypick.core.clock import ET
 
     from cherrypick.orchestrator import verdictdraft
 
@@ -2470,7 +2470,7 @@ def cmd_draft_verdict(args) -> None:
             }
         )
         sys.exit(2)
-    day = datetime.now(ZoneInfo("America/New_York")).date().isoformat()
+    day = datetime.now(ET).date().isoformat()
     where = "~/" + source.parent.relative_to(core_home.home().parent).as_posix() + "/"
     out = verdictdraft.draft(row["id"], block, day=day, provisional=args.provisional, results_dir=where)
     _emit({"ok": not out["figures"], "study": args.study, **out})
@@ -2710,7 +2710,8 @@ def cmd_retests(args) -> None:
 
     if args.forward:
         from datetime import datetime
-        from zoneinfo import ZoneInfo
+
+        from cherrypick.core.clock import ET
 
         from cherrypick.orchestrator import studychain, vendorlicence
 
@@ -2722,7 +2723,7 @@ def cmd_retests(args) -> None:
         lic = vendorlicence.status()
         plan = hypotheses.forward_plan(
             hypotheses.load(),
-            datetime.now(ZoneInfo("America/New_York")).date(),
+            datetime.now(ET).date(),
             queued=names,
             licence_ended=vendorlicence.ended(lic),
         )
@@ -2774,11 +2775,11 @@ def cmd_sent(args) -> None:
     --date, else the last --days. --stale names the inputs that changed after a post went out;
     --verify asks Discord whether each message still exists. --json for the raw records."""
     from datetime import UTC, datetime, timedelta
-    from zoneinfo import ZoneInfo
+
+    from cherrypick.core.clock import ET as et
 
     from cherrypick.notify import notifier
 
-    et = ZoneInfo("America/New_York")
     since = None
     if not args.date:
         since = (datetime.now(UTC) - timedelta(days=args.days)).isoformat()

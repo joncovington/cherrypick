@@ -61,9 +61,8 @@ import datetime as _dt
 import math
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from zoneinfo import ZoneInfo
 
-ET = ZoneInfo("America/New_York")
+from cherrypick.core.clock import ET
 
 SESSION_OPEN_MIN = 9 * 60 + 30
 SESSION_CLOSE_MIN = 16 * 60

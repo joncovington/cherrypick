@@ -24,7 +24,7 @@ from cherrypick.core.auth import ACCOUNT_NUMBER, SHARED_SERVICE, CredentialError
 
 from . import config as cfgmod
 from .reconcile import _tt  # module tt.py invocation (doctor._run + first_json), reused
-from .util import mask_account
+from .util import mask_account, read_json
 
 PAPER_ONLY_REFUSAL = "{module} is paper-only since v0.12.0; it needs no trading account."
 
@@ -229,10 +229,7 @@ def set_login_account(cfg: dict[str, Any], module: str, login: str, selector: st
         return {"ok": False, "error": str(exc)}
     if login not in cfgmod.broker_login_names(cfg)[1:]:
         return {"ok": False, "error": f"login {login!r} is not in broker.logins"}
-    try:
-        doc = json.loads(_home.config_path(module).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        doc = {}
+    doc = read_json(_home.config_path(module))
     if login not in (doc.get("live_accounts") or {}):
         return {"ok": False, "error": f"{module}'s config has no live_accounts.{login} entry"}
     name, _mcfg, root, tool = _first_broker_module(cfg)

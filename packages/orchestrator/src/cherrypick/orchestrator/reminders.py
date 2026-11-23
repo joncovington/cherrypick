@@ -37,14 +37,13 @@ from collections.abc import Callable
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
-from zoneinfo import ZoneInfo
 
 from cherrypick.core import home as _home
+from cherrypick.core.clock import ET
 
 from . import config as cfgmod
 from .util import CREATE_NO_WINDOW, first_json
 
-ET = ZoneInfo("America/New_York")
 DB_NAME = "reminders.db"
 STATUSES = ("pending", "open", "done", "cancelled")
 LIVE = ("pending", "open")

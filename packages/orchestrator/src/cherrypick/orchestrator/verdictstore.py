@@ -22,9 +22,9 @@ import os
 import re
 from datetime import datetime
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
 from cherrypick.core import home as core_home
+from cherrypick.core.clock import ET
 from cherrypick.core.jsonio import write_json_atomic
 
 KIT_KEYS = {"t_bar", "min_n", "holdout_min_n", "tail", "delta", "splits"}
@@ -32,7 +32,7 @@ UNJUDGED = {"no verdict", "not read"}
 STATUSES = ("passed", "failed", "no_verdict")
 ITEM_STUDY = re.compile(r"^item\d+$")
 RESULT_PREFIX = "{home}/"
-ET = ZoneInfo("America/New_York")
+
 HEAD = {"passed": "pass", "failed": "fail", "no_verdict": "no verdict"}
 
 

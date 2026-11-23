@@ -27,16 +27,15 @@ from collections import defaultdict
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
-from zoneinfo import ZoneInfo
 
 from cherrypick.core import home as core_home
 from cherrypick.core import killcriteria as _kill
 from cherrypick.core import ledgers
+from cherrypick.core.clock import ET
 
 from . import config as cfgmod
 from .util import CREATE_NO_WINDOW
 
-ET = ZoneInfo("America/New_York")
 MODULES = ("meic", "bwb")
 SCHEMA = {"meic": "meic_ic", "bwb": "bwb_132"}
 MEIC_MIRROR = "live-shadow"

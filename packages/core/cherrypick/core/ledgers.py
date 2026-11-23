@@ -147,11 +147,9 @@ and say how much is not (`capital_unknown`).
 from __future__ import annotations
 
 from datetime import date, datetime
-from zoneinfo import ZoneInfo
 
 from cherrypick.core import db as core_db
-
-_ET = ZoneInfo("America/New_York")
+from cherrypick.core.clock import ET as _ET
 
 # Read-only connection, shared suite-wide. core.db.connect_ro percent-escapes the path, so
 # '?'/'#'/'%' in a directory name cannot silently change the URI's meaning.

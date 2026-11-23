@@ -142,9 +142,7 @@ def _resub_clock_gate() -> bool:
     index is frozen overnight by design). Holidays cost one idempotent resubscribe per symbol per
     rate-limit interval, visible in the log and harmless."""
     try:
-        from zoneinfo import ZoneInfo
-
-        now_et = datetime.now(UTC).astimezone(ZoneInfo("America/New_York"))
+        now_et = datetime.now(UTC).astimezone(_ET)
     except Exception:  # noqa: BLE001 — a tz failure must not take down the poll loop
         return False
     if now_et.weekday() >= 5:
