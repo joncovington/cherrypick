@@ -101,7 +101,7 @@ close):
   single-stock replays on their own Cboe vol index;
 - an entry's long: the pick comes from the producer's own listing (`streamcache.stream_expirations`,
   via `provider.listed_expirations`), standard monthlies first, because only they list deep strikes
-  (`scripts/pmcc_leap_probe.py`). Refusals: `no_leap_listed` (nothing in the band),
+  (`scripts/archive/pmcc_leap_probe.py`). Refusals: `no_leap_listed` (nothing in the band),
   `no_listing` (no listing cached), `no_short_delta` (no greeks for the short), `entry_pacing`;
 - a symbol before its `symbol_from` date is neither entered nor subscribed for entry
   (`engine.entry_symbols`), so new symbols join one market day at a time.

@@ -299,7 +299,7 @@ show it.
 
 Declared before it runs, as the earlier history studies were.
 
-- **Step 0, on rows we already have** (`scripts/time_spread_step0.py`, ran before this was built out):
+- **Step 0, on rows we already have** (`scripts/archive/time_spread_step0.py`, ran before this was built out):
   if coverage means anything, the retired paper calendars should have lost mainly at low coverage.
   Inputs are all recorded at entry (the Dolt chains do not list most of those trades' expiries):
   front ATM IV is the short legs' `entry_iv`, back ATM IV is front ÷ (1 − `term_structure`), spot is
