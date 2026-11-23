@@ -49,6 +49,38 @@ function artifact(key: string, label: string, at: string | null, ok: boolean | n
   return { key, label, at, ageSeconds: ageOf(at), ok, detail };
 }
 
+/** The nightly backup's file name (`orchestrator.backup.LATEST`). */
+export const BACKUP_LATEST = "cherrypick-backup.zip";
+
+/**
+ * Where the nightly backup is written: `backup.dest` from the suite's config.json, else
+ * `<home>/backups`. Mirrors `orchestrator.config.backup_settings`: `~` and environment variables
+ * are expanded as Python's `expanduser` and `expandvars` do (an unset variable stays as written),
+ * and a relative path is left relative. Pinned against the module in `system-backup-dest.test.ts`.
+ */
+export function resolveBackupDest(
+  suite: Record<string, unknown> | null,
+  home: string,
+  env: NodeJS.ProcessEnv = process.env,
+  userHome: string = os.homedir(),
+): string {
+  const block = suite?.["backup"];
+  const dest = block !== null && typeof block === "object" ? (block as Record<string, unknown>)["dest"] : undefined;
+  if (typeof dest !== "string" || dest === "") return path.join(home, "backups");
+  let p = dest;
+  if (p === "~" || p.startsWith("~/") || p.startsWith("~\\")) p = userHome + p.slice(1);
+  const lookup = (name: string): string | undefined => {
+    if (env[name] !== undefined) return env[name];
+    if (process.platform !== "win32") return undefined;
+    const key = Object.keys(env).find((k) => k.toLowerCase() === name.toLowerCase());
+    return key === undefined ? undefined : env[key];
+  };
+  const replace = (match: string, name: string): string => lookup(name) ?? match;
+  p = p.replace(/\$\{([^}]+)\}/g, replace).replace(/\$([A-Za-z0-9_]+)/g, replace);
+  if (process.platform === "win32") p = p.replace(/%([^%]+)%/g, replace);
+  return p;
+}
+
 function readArtifacts(config: ConsoleConfig): SystemArtifact[] {
   const home = config.paths.cherrypick;
   const st = (n: string) => path.join(home, "state", n);
@@ -122,15 +154,30 @@ function readArtifacts(config: ConsoleConfig): SystemArtifact[] {
   const gexBeat = path.join(home, "data", "gex", "recorder.heartbeat");
   out.push(artifact("gex", "GEX recorder heartbeat", mtimeIso(gexBeat), null, null));
 
-  const backup = path.join(home, "backups", "cherrypick-backup.zip");
+  const suiteConfig = readJson(config.paths.orchestratorConfig);
+  const backupDir = resolveBackupDest(suiteConfig, home);
+  const backup = path.join(backupDir, BACKUP_LATEST);
   let backupSize: number | null = null;
   try {
     backupSize = fs.statSync(backup).size;
   } catch {
     backupSize = null;
   }
+  // A configured folder the console cannot open (a drive that is not mounted, say) is said so: it is
+  // not the same as a night that never wrote a file.
+  const backupDirReadable = fs.existsSync(backupDir);
   out.push(
-    artifact("backup", "Nightly backup", mtimeIso(backup), backupSize === null ? false : null, backupSize !== null ? `${(backupSize / 1e6).toFixed(0)} MB` : "no backup file"),
+    artifact(
+      "backup",
+      "Nightly backup",
+      mtimeIso(backup),
+      backupSize === null ? false : null,
+      backupSize !== null
+        ? `${(backupSize / 1e6).toFixed(0)} MB`
+        : backupDirReadable
+          ? "no backup file"
+          : `backup folder ${backupDir} is not readable`,
+    ),
   );
 
   const guards = readJson(st("guard-mutants.last.json"));
