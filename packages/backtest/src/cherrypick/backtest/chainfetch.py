@@ -33,7 +33,6 @@ from __future__ import annotations
 import json
 import sqlite3
 import time
-from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
@@ -43,6 +42,7 @@ from cherrypick.core import progress as core_progress
 from cherrypick.core.db import connect_ro
 
 from . import paths
+from .fetchpool import ABORT, OK, run_pool
 from .storeopen import WAL_SWITCH_WAIT_MS, open_store, prefer_wal  # noqa: F401  (re-exported)
 from .vendor import FATAL, VendorRefusal
 
@@ -211,61 +211,45 @@ def fetch_chains(
         rep.split(
             "requests", (k[0] for k in requests), unit="chains", done=(k[0] for k in requests if k in done)
         )
-        pending = iter(todo)
-        with ThreadPoolExecutor(max(1, workers)) as ex:
-            running = {}
 
-            def submit_next() -> bool:
-                if stop is not None and stop():
-                    report["stopped"] = True
-                    return False
-                key = next(pending, None)
-                if key is None:
-                    return False
-                running[ex.submit(client.eod_chain, vendor_root(key[0]), key[1], key[2])] = key
-                return True
+        def submit(ex, key):
+            return ex.submit(client.eod_chain, vendor_root(key[0]), key[1], key[2])
 
-            for _ in range(max(1, workers)):
-                if not submit_next():
-                    break
-            while running:
-                finished, _ = wait(running, return_when=FIRST_COMPLETED)
-                for fut in finished:
-                    key = running.pop(fut)
-                    try:
-                        rows = fut.result()
-                    except VendorRefusal as refusal:
-                        if refusal.reason == NO_DATA:
-                            write_chain(conn, key, [])
-                            report["empty"] += 1
-                        else:
-                            with conn:
-                                _record(conn, key, REFUSED, 0, f"{refusal.reason}: {refusal.detail}"[:300])
-                            report["refused"] += 1
-                            report["settled"] += settled(refusal, key, prior)
-                        if refusal.reason in FATAL:
-                            report["aborted"] = f"{refusal.reason}: {refusal.detail}"[:300]
-                            for other in running:
-                                other.cancel()
-                            running.clear()
-                            break
-                    except Exception as exc:  # noqa: BLE001 -- one request's failure is that request's
-                        with conn:
-                            _record(conn, key, REFUSED, 0, f"{type(exc).__name__}: {exc}"[:300])
-                        report["refused"] += 1
-                    else:
-                        n = write_chain(conn, key, rows)
-                        report["complete" if n else "empty"] += 1
-                        report["rows"] += n
-                    rep.advance("requests", current=f"{key[0]} {key[1]}", key=key[0])
-                    if not report.get("aborted"):
-                        submit_next()
-                done_n = report["complete"] + report["empty"] + report["refused"]
-                if done_n and done_n % 500 == 0:
-                    rate = done_n / max(1e-9, time.monotonic() - started)
-                    log(f"chains {done_n}/{len(todo)} ({rate:.2f}/s), {report['refused']} refused")
-                if report.get("aborted"):
-                    break
+        def after_batch() -> None:
+            done_n = report["complete"] + report["empty"] + report["refused"]
+            if done_n and done_n % 500 == 0:
+                rate = done_n / max(1e-9, time.monotonic() - started)
+                log(f"chains {done_n}/{len(todo)} ({rate:.2f}/s), {report['refused']} refused")
+
+        def handle(key, fut):
+            try:
+                rows = fut.result()
+            except VendorRefusal as refusal:
+                if refusal.reason == NO_DATA:
+                    write_chain(conn, key, [])
+                    report["empty"] += 1
+                else:
+                    with conn:
+                        _record(conn, key, REFUSED, 0, f"{refusal.reason}: {refusal.detail}"[:300])
+                    report["refused"] += 1
+                    report["settled"] += settled(refusal, key, prior)
+                if refusal.reason in FATAL:
+                    report["aborted"] = f"{refusal.reason}: {refusal.detail}"[:300]
+                    return ABORT
+            except Exception as exc:  # noqa: BLE001 -- one request's failure is that request's
+                with conn:
+                    _record(conn, key, REFUSED, 0, f"{type(exc).__name__}: {exc}"[:300])
+                report["refused"] += 1
+            else:
+                n = write_chain(conn, key, rows)
+                report["complete" if n else "empty"] += 1
+                report["rows"] += n
+            rep.advance("requests", current=f"{key[0]} {key[1]}", key=key[0])
+            return OK
+
+        report["stopped"] = run_pool(
+            todo, submit, handle, workers=workers, stop=stop, after_batch=after_batch
+        )
         report["seconds"] = round(time.monotonic() - started, 1)
         if report.get("stopped"):
             rep.note("stopped: resumes from here on the next run")
@@ -496,77 +480,64 @@ def fetch_paths(
             if not waiting.get(key):
                 settle(key)
 
-        pending, logged = iter(order), 0
-        with ThreadPoolExecutor(max(1, workers)) as ex:
-            running = {}
+        logged = 0
 
-            def submit_next() -> bool:
-                if stop is not None and stop():
-                    report["stopped"] = True
-                    return False
-                day_key = next(pending, None)
-                if day_key is None:
-                    return False
-                sym, day = day_key
-                running[ex.submit(client.eod_chain_day, vendor_root(sym), day)] = day_key
-                report["days"]["asked"] += 1
-                return True
+        def submit(ex, day_key):
+            sym, day = day_key
+            fut = ex.submit(client.eod_chain_day, vendor_root(sym), day)
+            report["days"]["asked"] += 1
+            return fut
 
-            for _ in range(max(1, workers)):
-                if not submit_next():
-                    break
-            while running:
-                finished, _ = wait(running, return_when=FIRST_COMPLETED)
-                for fut in finished:
-                    sym, day = day_key = running.pop(fut)
-                    try:
-                        answer = fut.result()
-                    except VendorRefusal as refusal:
-                        if refusal.reason == NO_DATA:
-                            with conn:
-                                _record_day(conn, day_key, EMPTY, [], 0, None)
-                            report["days"]["no_data"] += 1
-                            result = {k: (NODATA, 0) for k in paths_on[day_key]}
-                        else:
-                            detail = f"{refusal.reason}: {refusal.detail}"[:300]
-                            with conn:
-                                _record_day(conn, day_key, REFUSED, [], 0, detail)
-                            report["days"]["refused"] += 1
-                            result = {k: (REFUSED, detail) for k in paths_on[day_key]}
-                        if refusal.reason in FATAL:
-                            report["aborted"] = f"{refusal.reason}: {refusal.detail}"[:300]
-                            for other in running:
-                                other.cancel()
-                            running.clear()
-                            break
-                    except Exception as exc:  # noqa: BLE001 -- one day's failure is that day's
-                        detail = f"{type(exc).__name__}: {exc}"[:300]
-                        with conn:
-                            _record_day(conn, day_key, REFUSED, [], 0, detail)
-                        report["days"]["refused"] += 1
-                        result = {k: (REFUSED, detail) for k in paths_on[day_key]}
-                    else:
-                        kept = write_day(conn, sym, day, answer, wanted[day_key])
-                        report["days"]["answered"] += 1
-                        result = {
-                            k: (ANSWERED, kept[k[1]]) if k[1] in kept else (ABSENT, 0)
-                            for k in paths_on[day_key]
-                        }
-                    for key, got in result.items():
-                        outcome[key][day] = got
-                        waiting[key] -= 1
-                        if not waiting[key]:
-                            settle(key)
-                    if not report.get("aborted"):
-                        submit_next()
-                n = report["days"]["asked"]
-                if n and n % 100 == 0 and n != logged:
-                    logged = n
-                    rate = n / max(1e-9, time.monotonic() - started)
-                    log(f"days {n}/{len(order)} ({rate:.2f}/s); paths {report['complete'] + report['empty']}"
-                        f" stored, {report['refused']} refused")  # fmt: skip
-                if report.get("aborted"):
-                    break
+        def after_batch() -> None:
+            nonlocal logged
+            n = report["days"]["asked"]
+            if n and n % 100 == 0 and n != logged:
+                logged = n
+                rate = n / max(1e-9, time.monotonic() - started)
+                log(f"days {n}/{len(order)} ({rate:.2f}/s); paths {report['complete'] + report['empty']}"
+                    f" stored, {report['refused']} refused")  # fmt: skip
+
+        def handle(key, fut):
+            sym, day = day_key = key
+            try:
+                answer = fut.result()
+            except VendorRefusal as refusal:
+                if refusal.reason == NO_DATA:
+                    with conn:
+                        _record_day(conn, day_key, EMPTY, [], 0, None)
+                    report["days"]["no_data"] += 1
+                    result = {k: (NODATA, 0) for k in paths_on[day_key]}
+                else:
+                    detail = f"{refusal.reason}: {refusal.detail}"[:300]
+                    with conn:
+                        _record_day(conn, day_key, REFUSED, [], 0, detail)
+                    report["days"]["refused"] += 1
+                    result = {k: (REFUSED, detail) for k in paths_on[day_key]}
+                if refusal.reason in FATAL:
+                    report["aborted"] = f"{refusal.reason}: {refusal.detail}"[:300]
+                    return ABORT
+            except Exception as exc:  # noqa: BLE001 -- one day's failure is that day's
+                detail = f"{type(exc).__name__}: {exc}"[:300]
+                with conn:
+                    _record_day(conn, day_key, REFUSED, [], 0, detail)
+                report["days"]["refused"] += 1
+                result = {k: (REFUSED, detail) for k in paths_on[day_key]}
+            else:
+                kept = write_day(conn, sym, day, answer, wanted[day_key])
+                report["days"]["answered"] += 1
+                result = {
+                    k: (ANSWERED, kept[k[1]]) if k[1] in kept else (ABSENT, 0) for k in paths_on[day_key]
+                }
+            for key, got in result.items():
+                outcome[key][day] = got
+                waiting[key] -= 1
+                if not waiting[key]:
+                    settle(key)
+            return OK
+
+        report["stopped"] = run_pool(
+            order, submit, handle, workers=workers, stop=stop, after_batch=after_batch
+        )
         report["seconds"] = round(time.monotonic() - started, 1)
         if report.get("stopped"):
             rep.note("stopped: resumes from here on the next run")

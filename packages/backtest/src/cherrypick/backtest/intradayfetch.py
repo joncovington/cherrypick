@@ -41,7 +41,6 @@ from __future__ import annotations
 import json
 import sqlite3
 import time
-from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from pathlib import Path
 from typing import Any
 
@@ -50,6 +49,7 @@ from cherrypick.core.db import connect_ro
 
 from . import fullset, paths
 from .chainfetch import prior_refusals, settled, vendor_root
+from .fetchpool import ABORT, OK, run_pool
 from .storeopen import open_store
 from .vendor import FATAL, VendorRefusal
 
@@ -242,74 +242,49 @@ def fetch_windows(
         rep.split(
             "requests", (k[0] for k in requests), unit="windows", done=(k[0] for k in requests if k in done)
         )
-        pending = iter(todo)
-        with ThreadPoolExecutor(max(1, workers)) as ex:
-            running = {}
 
-            def submit_next() -> bool:
-                if stop is not None and stop():
-                    report["stopped"] = True
-                    return False
-                key = next(pending, None)
-                if key is None:
-                    return False
-                sym, day, exp, start, end, interval = key
-                extra = {"strike_range": strike_ranges[key]} if key in strike_ranges else {}
-                running[
-                    ex.submit(
-                        client.chain_window,
-                        vendor_root(sym),
-                        day,
-                        exp,
-                        start,
-                        end,
-                        interval=interval,
-                        **extra,
-                    )
-                ] = key
-                return True
+        def submit(ex, key):
+            sym, day, exp, start, end, interval = key
+            extra = {"strike_range": strike_ranges[key]} if key in strike_ranges else {}
+            return ex.submit(
+                client.chain_window, vendor_root(sym), day, exp, start, end, interval=interval, **extra
+            )
 
-            for _ in range(max(1, workers)):
-                if not submit_next():
-                    break
-            while running:
-                finished, _ = wait(running, return_when=FIRST_COMPLETED)
-                for fut in finished:
-                    key = running.pop(fut)
-                    try:
-                        rows = fut.result()
-                    except VendorRefusal as refusal:
-                        if refusal.reason == NO_DATA:
-                            write_window(conn, key, [])
-                            report["empty"] += 1
-                        else:
-                            with conn:
-                                _record(conn, key, REFUSED, 0, 0, f"{refusal.reason}: {refusal.detail}"[:300])
-                            report["refused"] += 1
-                            report["settled"] += settled(refusal, key, prior)
-                        if refusal.reason in FATAL:
-                            report["aborted"] = f"{refusal.reason}: {refusal.detail}"[:300]
-                            for other in running:
-                                other.cancel()
-                            running.clear()
-                            break
-                    except Exception as exc:  # noqa: BLE001 -- one request's failure is that request's
-                        with conn:
-                            _record(conn, key, REFUSED, 0, 0, f"{type(exc).__name__}: {exc}"[:300])
-                        report["refused"] += 1
-                    else:
-                        n = write_window(conn, key, rows)
-                        report["complete" if n else "empty"] += 1
-                        report["rows"] += n
-                    rep.advance("requests", current=f"{key[0]} {key[1]}", key=key[0])
-                    if not report.get("aborted"):
-                        submit_next()
-                done_n = report["complete"] + report["empty"] + report["refused"]
-                if done_n and done_n % 100 == 0:
-                    rate = done_n / max(1e-9, time.monotonic() - started)
-                    log(f"intraday {done_n}/{len(todo)} ({rate:.2f}/s), {report['refused']} refused")
-                if report.get("aborted"):
-                    break
+        def after_batch() -> None:
+            done_n = report["complete"] + report["empty"] + report["refused"]
+            if done_n and done_n % 100 == 0:
+                rate = done_n / max(1e-9, time.monotonic() - started)
+                log(f"intraday {done_n}/{len(todo)} ({rate:.2f}/s), {report['refused']} refused")
+
+        def handle(key, fut):
+            try:
+                rows = fut.result()
+            except VendorRefusal as refusal:
+                if refusal.reason == NO_DATA:
+                    write_window(conn, key, [])
+                    report["empty"] += 1
+                else:
+                    with conn:
+                        _record(conn, key, REFUSED, 0, 0, f"{refusal.reason}: {refusal.detail}"[:300])
+                    report["refused"] += 1
+                    report["settled"] += settled(refusal, key, prior)
+                if refusal.reason in FATAL:
+                    report["aborted"] = f"{refusal.reason}: {refusal.detail}"[:300]
+                    return ABORT
+            except Exception as exc:  # noqa: BLE001 -- one request's failure is that request's
+                with conn:
+                    _record(conn, key, REFUSED, 0, 0, f"{type(exc).__name__}: {exc}"[:300])
+                report["refused"] += 1
+            else:
+                n = write_window(conn, key, rows)
+                report["complete" if n else "empty"] += 1
+                report["rows"] += n
+            rep.advance("requests", current=f"{key[0]} {key[1]}", key=key[0])
+            return OK
+
+        report["stopped"] = run_pool(
+            todo, submit, handle, workers=workers, stop=stop, after_batch=after_batch
+        )
         report["seconds"] = round(time.monotonic() - started, 1)
         if report.get("stopped"):
             rep.note("stopped: resumes from here on the next run")
