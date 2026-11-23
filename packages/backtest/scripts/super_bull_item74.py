@@ -67,6 +67,7 @@ from cherrypick.core import stats as core_stats
 
 from cherrypick.backtest import paths
 from cherrypick.backtest import settings as _settings
+from cherrypick.backtest.study.inputs import Inputs
 
 _ITEM59 = Path(__file__).resolve().parent / "iwm_condor_item59.py"
 
@@ -349,24 +350,16 @@ def run_trade(
 
 
 # --------------------------------------------------------------------------- the store
-def load_chain(db: sqlite3.Connection, symbol: str, session: str, expiry: str):
-    rows = db.execute(
-        "SELECT strike, right, bid, ask FROM eod_chain_quotes "
-        "WHERE symbol = ? AND session = ? AND expiration = ?",
-        (symbol, session, expiry),
-    ).fetchall()
-    return ic.Chain(rows, session, expiry) if rows else None
+def load_chain(inputs: Inputs, db: sqlite3.Connection, symbol: str, session: str, expiry: str):
+    """One session's chain of a requested path (`Undeclared` for one the requests file lacks, and for a
+    session outside its dates), or None when the store holds none. The kit's Chain, which reads as
+    item 59's does."""
+    return inputs.chain(db, symbol, session, expiry)
 
 
-def sessions_for(db: sqlite3.Connection, symbol: str, expiry: str) -> list[str]:
-    return [
-        s
-        for (s,) in db.execute(
-            "SELECT DISTINCT session FROM eod_chain_quotes "
-            "WHERE symbol = ? AND expiration = ? ORDER BY session",
-            (symbol, expiry),
-        )
-    ]
+def sessions_for(inputs: Inputs, db: sqlite3.Connection, symbol: str, expiry: str) -> list[str]:
+    """The stored sessions of a requested path, inside its requested dates, in order."""
+    return inputs.sessions(db, symbol, expiry)
 
 
 def rate_reader(lookup=None):
@@ -388,9 +381,10 @@ def rate_reader(lookup=None):
     return rate
 
 
-def trades(db, start: str, end: str, rate, rep=None) -> tuple[list, dict]:
+def trades(inputs: Inputs, db, start: str, end: str, rate, rep=None) -> tuple[list, dict]:
     """Every (name, front expiry) cycle in the window, all four arms and their `hold` twins. `rep` is a
-    progress Reporter, when the caller keeps one."""
+    progress Reporter, when the caller keeps one. Chains come only through `inputs`; a front whose
+    entries all fall outside the window reads nothing."""
     rows, skips = [], {a: Counter() for a in ARMS}
     exps = monthlies(date(2015, 12, 1), LAST_FRONT + timedelta(days=40))
     if rep is not None:
@@ -402,15 +396,20 @@ def trades(db, start: str, end: str, rate, rep=None) -> tuple[list, dict]:
             if f > LAST_FRONT:
                 continue
             fs, bs_ = f.isoformat(), b.isoformat()
-            sess = sessions_for(db, symbol, fs)
+            sess = None  # read on the first entry the window takes
             for tag, (dte, band) in ENTRIES.items():
                 planned = (f - timedelta(days=dte)).isoformat()
                 if not (start <= planned <= end):
                     continue
+                if sess is None:
+                    sess = sessions_for(inputs, db, symbol, fs)
                 arms = [f"A{tag}", f"B{tag}"]
                 s0 = ic.entry_session(sess, fs, dte, band)
                 entry = (
-                    {"F": load_chain(db, symbol, s0, fs), "B": load_chain(db, symbol, s0, bs_)}
+                    {
+                        "F": load_chain(inputs, db, symbol, s0, fs),
+                        "B": load_chain(inputs, db, symbol, s0, bs_),
+                    }
                     if s0
                     else None
                 )
@@ -419,7 +418,13 @@ def trades(db, start: str, end: str, rate, rep=None) -> tuple[list, dict]:
                         skips[a]["no entry chain"] += 1
                     continue
                 path = [
-                    (s, {"F": load_chain(db, symbol, s, fs), "B": load_chain(db, symbol, s, bs_)})
+                    (
+                        s,
+                        {
+                            "F": load_chain(inputs, db, symbol, s, fs),
+                            "B": load_chain(inputs, db, symbol, s, bs_),
+                        },
+                    )
                     for s in sess
                     if s > s0
                 ]
@@ -638,8 +643,10 @@ def main(argv: list[str] | None = None) -> int:
     cfg = _settings.load()
     vendor = paths.ensure_vendor_dir(cfg)
     db = sqlite3.connect(f"file:{vendor / 'eod_chains.db'}?mode=ro", uri=True)
+    inputs = Inputs(base / "requests-paths.json")
     with core_progress.Reporter("super_bull_item74-study") as rep:
-        rows, skips = trades(db, args.start, args.end, rate_reader(), rep)
+        rows, skips = trades(inputs, db, args.start, args.end, rate_reader(), rep)
+    read = inputs.fingerprint(db)
     tests = score(rows, skips, args.start, args.end)
     judge(tests)
     out = {
@@ -647,6 +654,7 @@ def main(argv: list[str] | None = None) -> int:
         "item": 74,
         "window": [args.start, args.end],
         "allow_holdout": args.allow_holdout,
+        "inputs": read,
         "verdicts": {a: tests[a].get("verdict") for a in ARMS},
         "tests": tests,
         "reported": reported(rows, args.start, args.end),

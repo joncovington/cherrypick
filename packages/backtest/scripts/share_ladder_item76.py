@@ -60,6 +60,8 @@ from cherrypick.core import fees as core_fees
 from cherrypick.core import progress as core_progress
 from cherrypick.core import stats as core_stats
 
+from cherrypick.backtest.study.inputs import Inputs
+
 HERE = Path(__file__).resolve().parent
 
 
@@ -713,13 +715,36 @@ def load_plan() -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def make_chain_at(inputs: Inputs, conn, sym: str):
+    """chain_at(session, expiry) -> {(strike, "C"/"P"): (bid, ask)}, empty when the store holds none, read
+    through `Inputs`: a path the plan did not request raises `Undeclared`, and a session outside its dates
+    is not read. The same chain item 29's reader returns, kept per (session, expiry)."""
+    cache: dict = {}
+
+    def chain_at(session: str, expiry: str) -> dict:
+        key = (session, expiry)
+        if key not in cache:
+            ch = inputs.chain(conn, sym, session, expiry)
+            cache[key] = (
+                {}
+                if ch is None
+                else {
+                    (k, right): (q["bid"], q["ask"]) for right in ("C", "P") for k, q in ch.by[right].items()
+                }
+            )
+        return cache[key]
+
+    return chain_at
+
+
 def cmd_study(args) -> int:
     names = [n for n in NAMES if not args.names or n in set(args.names.split(","))]
     plan = load_plan()
     windows = {"design": tuple(plan["design"]), "holdout": tuple(plan["holdout"])}
     expiries = s29.load_expiries()
     rate_at = s29._rates()
-    conn, make = s29._chains()
+    inputs = Inputs(_out_dir() / "path_requests.json")
+    conn, _ = s29._chains()  # item 29's read-only connection; its own per-symbol reader is not used
     result: dict = {"windows": {}, "lots": {}, "plan": plan}
     per: dict = {w: {a: [] for a in ARMS + REPORTED} for w in windows}
     try:
@@ -727,7 +752,7 @@ def cmd_study(args) -> int:
             rep.split("windows", [sym for sym in names for _ in windows], unit="symbol-windows")
             for sym in names:
                 bars, split_dates = load_bars(sym)
-                chain_at = make(sym)
+                chain_at = make_chain_at(inputs, conn, sym)
                 for wname, window in windows.items():
                     rows, n = run_window(sym, bars, expiries[sym], split_dates, window, chain_at, rate_at)
                     for a, rs in rows.items():
@@ -735,6 +760,7 @@ def cmd_study(args) -> int:
                     result["lots"].setdefault(wname, {})[sym] = n
                     rep.advance("windows", key=sym, current=f"{wname} {sym}")
                     print(wname, sym, n, flush=True)
+        result["inputs"] = inputs.fingerprint(conn)
     finally:
         conn.close()
     for wname, window in windows.items():

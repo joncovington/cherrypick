@@ -84,6 +84,8 @@ from cherrypick.core import calendar as cal
 from cherrypick.core import legbars, progress
 from cherrypick.core import stats as core_stats
 
+from cherrypick.backtest.study.inputs import Inputs
+
 _spec = importlib.util.spec_from_file_location(
     "pcr", Path(__file__).resolve().parents[3] / "scripts" / "premium_cycle_replay.py"
 )
@@ -565,7 +567,7 @@ def entry_expiries(day: date) -> list[date]:
     return [e for e in ex if is_monthly(e) and any(in_range(d, e) for d in days)]
 
 
-def path_requests(have: set[tuple[str, str]], screens: dict) -> list[dict]:
+def path_requests(screens: dict) -> list[dict]:
     out, seen = [], set()
     for wname, w in screens.items():
         run_end = WINDOWS[wname][2]
@@ -573,7 +575,7 @@ def path_requests(have: set[tuple[str, str]], screens: dict) -> list[dict]:
             for e in entry_expiries(date.fromisoformat(d)):
                 for sym in s["list"]:
                     key = (sym, e.isoformat())
-                    if key in have or key in seen:
+                    if key in seen:
                         continue
                     seen.add(key)
                     out.append(
@@ -596,9 +598,7 @@ def _screens() -> dict:
 
 def cmd_requests(args) -> int:
     screens = _screens()
-    vend = _store()
-    have = {(s, e) for s, e in vend.execute("SELECT symbol, expiration FROM eod_chain_paths")}
-    reqs = path_requests(have, screens)
+    reqs = path_requests(screens)
     d = _out_dir()
     (d / "screen.json").write_text(json.dumps(screens, default=str), encoding="utf-8")
     out = Path(args.out) if args.out else d / "path_requests.json"
@@ -608,15 +608,25 @@ def cmd_requests(args) -> int:
     return 0
 
 
-def load_chains(vend, sym: str, w0: date, run_end: date) -> dict:
-    chains: dict = defaultdict(lambda: defaultdict(list))
-    for day, exp, k, right, bid, ask in vend.execute(
-        "SELECT session, expiration, strike, right, bid, ask FROM eod_chain_quotes WHERE symbol = ? "
-        "AND session BETWEEN ? AND ? AND bid IS NOT NULL AND ask IS NOT NULL",
-        (sym, (w0 - timedelta(days=7)).isoformat(), run_end.isoformat()),
-    ):
-        chains[day][exp].append([k, right[0], bid, ask])
-    return {d: dict(v) for d, v in chains.items()}
+def load_chains(inputs: Inputs, vend, sym: str, w0: date, run_end: date) -> dict:
+    """The declared paths' two-sided quotes for `sym`: session -> expiration -> [[strike, "C"|"P", bid,
+    ask]]. Only sessions a declared path covers are read, and only inside the run's dates."""
+    lo, hi = (w0 - timedelta(days=7)).isoformat(), run_end.isoformat()
+    chains: dict = defaultdict(dict)
+    for exp in sorted({e for s, e in inputs.windows if s == sym}):
+        for day in inputs.sessions(vend, sym, exp):
+            if not lo <= day <= hi:
+                continue
+            chain = inputs.chain(vend, sym, day, exp)
+            rows = [
+                [k, right, q["bid"], q["ask"]]
+                for right in ("C", "P")
+                for k, q in (chain.by[right].items() if chain else ())
+                if q["bid"] is not None and q["ask"] is not None
+            ]
+            if rows:
+                chains[day][exp] = rows
+    return dict(chains)
 
 
 def cmd_study(args) -> int:
@@ -625,6 +635,7 @@ def cmd_study(args) -> int:
         raise SystemExit(f"no screen at {path}: run `dividend_put_item70.py requests` first")
     screens = json.loads(path.read_text(encoding="utf-8"))
     history, vend = _history(), _store()
+    inputs = Inputs(_out_dir() / "path_requests.json")
     result: dict = {"windows": {}}
 
     def window_names(wname: str) -> tuple[dict[str, set], list[str]]:
@@ -646,7 +657,7 @@ def cmd_study(args) -> int:
              "traded": dict.fromkeys(ARMS, 0), "names": {}}  # fmt: skip
         for sym in names:
             closes, splits, divs = history(sym)
-            nd = NameData(sym, load_chains(vend, sym, w0, end), closes, splits, divs, listed[sym])
+            nd = NameData(sym, load_chains(inputs, vend, sym, w0, end), closes, splits, divs, listed[sym])
             for day in (d for d in nd.days if w0 <= d <= w1):
                 key = month_screen_day(day).isoformat()
                 t = sw["days"].get(key, {}).get("rows", {}).get(sym, {}).get("target")
@@ -670,6 +681,7 @@ def cmd_study(args) -> int:
             rep.advance("names", key=sym, current=f"{wname} {sym}")
         result["windows"][wname] = w
     rep.finish("done")
+    result["inputs"] = inputs.fingerprint(vend)
     result["verdict"] = judge(result["windows"]["design"], result["windows"]["holdout"])
     out = Path(args.json) if args.json else _out_dir() / "results.json"
     out.write_text(json.dumps(result, default=str), encoding="utf-8")

@@ -559,3 +559,45 @@ def test_bars_from_divides_out_a_split_and_keeps_the_raw_basis_in_f():
     assert (bars[0].c, bars[0].f) == (50.0, 2.0) and (bars[1].c, bars[1].f) == (50.0, 1.0)
     assert bars[0].c * bars[0].f == 100.0  # the day's own close, the chain's strike basis
     assert s76.bars_from(raw, [])[0].c == 100.0
+
+
+# ---- the chain store is read only through the study's requests file (#1439) ----
+
+
+def _declared_store(tmp_path):
+    import json
+    import sqlite3
+
+    from cherrypick.backtest import chainfetch
+    from cherrypick.backtest.study.inputs import Inputs
+
+    conn = sqlite3.connect(":memory:")
+    conn.executescript(chainfetch.SCHEMA)
+    for s in ("2022-02-01", "2022-02-02", "2022-03-01"):
+        conn.executemany(
+            "INSERT INTO eod_chain_quotes (symbol, session, expiration, strike, right, bid, ask) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            [
+                ("SOXL", s, "2022-03-18", 10.0, "CALL", 1.0, 1.2),
+                ("SOXL", s, "2022-03-18", 10.0, "PUT", 0.5, 0.7),
+            ],
+        )
+    p = tmp_path / "path_requests.json"
+    req = {"symbol": "SOXL", "expiration": "2022-03-18", "start": "2022-02-01", "through": "2022-02-28"}
+    p.write_text(json.dumps({"requests": [req]}), encoding="utf-8")
+    return Inputs(p), conn
+
+
+def test_the_chain_is_read_through_the_requests_file(tmp_path):
+    from cherrypick.backtest.study.inputs import Undeclared
+
+    inputs, conn = _declared_store(tmp_path)
+    chain_at = s76.make_chain_at(inputs, conn, "SOXL")
+    assert chain_at("2022-02-01", "2022-03-18") == {(10.0, "C"): (1.0, 1.2), (10.0, "P"): (0.5, 0.7)}
+    assert chain_at("2022-02-05", "2022-03-18") == {}  # declared, nothing stored
+    with pytest.raises(Undeclared):
+        chain_at("2022-03-01", "2022-03-18")  # stored by another study's fetch, outside the dates
+    with pytest.raises(Undeclared):
+        chain_at("2022-02-01", "2022-04-15")  # an expiry never requested
+    with pytest.raises(Undeclared):
+        s76.make_chain_at(inputs, conn, "TQQQ")("2022-02-01", "2022-03-18")
