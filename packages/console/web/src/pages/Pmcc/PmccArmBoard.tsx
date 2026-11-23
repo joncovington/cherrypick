@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQueries } from "@tanstack/react-query";
 import type { PmccBridged, PmccOpenPosition, PmccTracker } from "@console/shared";
-import { usePmcc, usePmccTracker } from "../../lib/api";
+import { usePmcc, usePmccTracker, getJson } from "../../lib/api";
 import { fmtCash, fmtMoney } from "../../lib/format";
 import { CardLightbox, LightboxFrame, useOpenParam, type LightboxTab } from "../Backtest/CardLightbox";
 
@@ -297,9 +297,7 @@ function AllArmsTab({ positions }: { positions: PmccOpenPosition[] }) {
     queries: positions.map((p) => ({
       queryKey: ["pmcc-tracker", p.positionId],
       queryFn: async () => {
-        const res = await fetch(`/api/pmcc/tracker?position=${encodeURIComponent(p.positionId)}`);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return (await res.json()) as PmccBridged<PmccTracker>;
+        return getJson<PmccBridged<PmccTracker>>(`/api/pmcc/tracker?position=${encodeURIComponent(p.positionId)}`);
       },
       refetchInterval: 30_000,
     })),

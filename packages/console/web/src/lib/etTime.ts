@@ -96,3 +96,34 @@ export function etClock(ts: string | null, fallback = "—"): string {
     hour12: false,
   });
 }
+
+const ET_DAY = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "America/New_York",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+
+// The three time fields toLocaleTimeString defaults to; a DateTimeFormat with none of them prints the date.
+const ET_TIME_OF_DAY = new Intl.DateTimeFormat("en-US", {
+  timeZone: "America/New_York",
+  hour12: false,
+  hour: "numeric",
+  minute: "2-digit",
+  second: "2-digit",
+});
+
+/** Today's date in New York, `2026-10-20`: the suite's session calendar, whatever the viewer's timezone. */
+export function etToday(now: Date = new Date()): string {
+  return ET_DAY.format(now);
+}
+
+/** An instant's ET time of day with seconds, `14:32:05`: a freshness stamp. */
+export function etTimeOfDay(ms: number): string {
+  return ET_TIME_OF_DAY.format(new Date(ms));
+}
+
+/** The `HH:MM` of an ISO-style timestamp, read as written and not zoned. A dash when there is none. */
+export function hhmmOf(ts: string | null): string {
+  return ts !== null && ts.length >= 16 ? ts.slice(11, 16) : "—";
+}

@@ -7,6 +7,7 @@ import { FliesTile } from "../Flies/FliesSession";
 import { useAutomationEntries, useAutomationsEntries } from "../../lib/api";
 import { runLabel } from "../Builder/BuilderRunCard";
 import { automationHref } from "./automationsModels";
+import { fmtFrac } from "../../lib/format";
 
 /**
  * How often an automation enters, and where the sessions it did not enter stopped. Every figure is the
@@ -53,8 +54,6 @@ const HELP: CardHelpContent = {
   ),
 };
 
-const pct = (v: number | null | undefined): string => (v === null || v === undefined ? "—" : `${String(Math.round(v * 100))}%`);
-
 /** A reason in words: its kind before the colon, underscores as spaces. */
 export function reasonWords(reason: string): string {
   const [head, ...rest] = reason.split(":");
@@ -91,13 +90,13 @@ function FunnelRow({ label, count, share, runShare, run, end }: { label: string;
       <span role="cell" className="ae-funnel-cell">
         <Bar share={share} kind="paper" />
         <span className="ae-funnel-num">
-          {count} · {pct(share)}
+          {count} · {fmtFrac(share, 0)}
         </span>
       </span>
       {run && (
         <span role="cell" className="ae-funnel-cell">
           <Bar share={runShare} kind="run" />
-          <span className="ae-funnel-num">{pct(runShare)}</span>
+          <span className="ae-funnel-num">{fmtFrac(runShare, 0)}</span>
         </span>
       )}
     </div>
@@ -163,7 +162,7 @@ export function EntriesBody({ name, data }: { name: string; data: AutomationEntr
     <>
       <FliesTile
         title="entry rate"
-        value={run ? `${pct(paper.rate)} vs ${pct(run.rate)}` : pct(paper.rate)}
+        value={run ? `${fmtFrac(paper.rate, 0)} vs ${fmtFrac(run.rate, 0)}` : fmtFrac(paper.rate, 0)}
         tone="dim"
         foot={`entered ${String(paper.entered)} of ${String(paper.due)} sessions due${run ? "; the run's share of its sessions beside it" : ""}`}
         help={HELP}
@@ -178,7 +177,7 @@ export function EntriesBody({ name, data }: { name: string; data: AutomationEntr
         title="most lost at"
         value={loss === null ? "none" : STEP_WORDS[loss.step]}
         tone={loss === null ? "pos" : "dim"}
-        foot={loss === null ? "every due session entered" : `${String(loss.stopped)} sessions stopped there, ${pct(loss.share)} of those due`}
+        foot={loss === null ? "every due session entered" : `${String(loss.stopped)} sessions stopped there, ${fmtFrac(loss.share, 0)} of those due`}
       />
       {data.withheld && (
         <FliesTile title="the run" value="withheld" tone="dim" foot="its pinned run is licensed, and licensed results are not shown now" />
@@ -206,8 +205,8 @@ export function EntriesBody({ name, data }: { name: string; data: AutomationEntr
           <tr key={c.reason}>
             <td>{reasonWords(c.reason)}</td>
             <td>{STEP_WORDS[c.step]}</td>
-            <td>{pct(c.paper)}</td>
-            {run && <td>{pct(c.run)}</td>}
+            <td>{fmtFrac(c.paper, 0)}</td>
+            {run && <td>{fmtFrac(c.run, 0)}</td>}
           </tr>
         ))}
       </DataCard>
@@ -283,7 +282,7 @@ export function EntriesTable({ data }: { data: AutomationsEntries | undefined })
           <td>{r.first ? `${r.first} to ${r.last ?? "?"}` : "—"}</td>
           <td>{r.funnel.due}</td>
           <td>{r.funnel.entered}</td>
-          <td>{pct(r.funnel.rate)}</td>
+          <td>{fmtFrac(r.funnel.rate, 0)}</td>
           {steps.map((s) => (
             <td key={s}>{stopped(r.funnel, s) || "—"}</td>
           ))}

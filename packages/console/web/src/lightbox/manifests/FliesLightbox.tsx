@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { ModuleCosts } from "../../components/costs/ModuleCosts";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { useFlies, useFliesMeta, fliesQuery, type FliesFilter } from "../../lib/api";
+import { useFlies, useFliesMeta, fliesQuery, type FliesFilter, getJson } from "../../lib/api";
 import { useMode } from "../../lib/useMode";
 import { ModeToggle } from "../../components/ModeToggle";
 import { PaperLiveBadge } from "../../components/shell/PaperLiveBadge";
@@ -76,9 +76,7 @@ function useFliesAnalytics(mode: TradingMode, filter: FliesFilter) {
   return useQuery<FliesAnalytics>({
     queryKey: ["flies-analytics", mode, filter],
     queryFn: async () => {
-      const res = await fetch(`/api/flies/analytics?${fliesQuery(mode, filter)}`);
-      if (!res.ok) throw new Error(`flies analytics: HTTP ${res.status}`);
-      return (await res.json()) as FliesAnalytics;
+      return getJson<FliesAnalytics>(`/api/flies/analytics?${fliesQuery(mode, filter)}`);
     },
     refetchInterval: 30_000,
   });

@@ -5,7 +5,7 @@ import { Card } from "../../components/DataTable";
 import { DivergingBars } from "../../components/grid/DivergingBars";
 import { useColumns } from "../../components/columns";
 import { TileGrid } from "../../components/performance/TileGrid";
-import { fmtCash, fmtMoney } from "../../lib/format";
+import { fmtCash, fmtMoney, fmtFrac } from "../../lib/format";
 import { Tile } from "../Flies/PerformanceTab";
 import { limitChip, limitText, limitValue } from "./LimitsCard";
 import { RiskGraph } from "./ScenarioCards";
@@ -26,10 +26,6 @@ import { GuideLink } from "../../components/GuideLink";
  */
 
 /** A fraction as a percentage, `0.31%`. */
-function pctOf(v: number | null, digits = 2): string {
-  return v === null ? "—" : `${(v * 100).toFixed(digits)}%`;
-}
-
 function signed(v: number | null, digits = 1): string {
   return v === null ? "—" : `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(digits)}`;
 }
@@ -208,7 +204,7 @@ export function IncomeParentCard({ p, premium, live = null }: { p: ManagePortfol
             </div>
             <p className="muted pf-caption">
               {ratio === null ? "—" : `${(ratio * 100).toFixed(0)}%`} of the {fmtMoney(target.dollars)} per day target (
-              {pctOf(target.pctNlv)} of net liq)
+              {fmtFrac(target.pctNlv, 2)} of net liq)
             </p>
           </>
         ) : null}
@@ -216,7 +212,7 @@ export function IncomeParentCard({ p, premium, live = null }: { p: ManagePortfol
           {p.thetaExFront !== null && p.frontDte !== null
             ? `${fmtMoney(p.thetaExFront)} per day without legs ${p.frontDte} days or less from expiry`
             : `${fmtMoney(p.theta)} per day`}{" "}
-          · band {pctOf(band?.low ?? null, places)}–{pctOf(band?.high ?? null, places)}
+          · band {fmtFrac(band?.low ?? null, places)}–{fmtFrac(band?.high ?? null, places)}
         </p>
         {liveLine ? <p className="muted pf-caption">{liveLine}</p> : null}
       </DialBeside>
@@ -303,7 +299,7 @@ function DispersionTile({ p }: { p: ManagePortfolio }) {
       tone={x?.pnl == null ? "dim" : x.pnl >= 0 ? "pos" : "neg"}
       title={
         x
-          ? `${pctOf(x.pctNetLiq, 1)} of net liq; ${how}${
+          ? `${fmtFrac(x.pctNetLiq, 1)} of net liq; ${how}${
               worst.length ? ` · worst: ${worst.map((n) => `${n.underlying} ${n.side ?? ""} ${fmtCash(n.pnl)}`).join(", ")}` : ""
             }${x.leftOut.length ? ` · left out (no IV): ${x.leftOut.join(", ")}` : ""}`
           : "not read on this evaluation"
@@ -332,10 +328,10 @@ export function StressCard({ p }: { p: ManagePortfolio }) {
         <Tile
           key="be"
           label="break-even move"
-          value={be && be.pct !== null ? pctOf(be.pct) : "—"}
+          value={be && be.pct !== null ? fmtFrac(be.pct, 2) : "—"}
           title={
             be && be.pct !== null
-              ? `${be.kind === "short_gamma" ? `a ${pctOf(be.pct)} move in a day wipes out a day's theta` : `the book needs a ${pctOf(be.pct)} move in a day to earn back its theta`} · implied one-day move ${pctOf(p.expectedMovePct)}${realised !== null ? ` · realised (30-day) ${pctOf(realised)}` : ""}`
+              ? `${be.kind === "short_gamma" ? `a ${fmtFrac(be.pct, 2)} move in a day wipes out a day's theta` : `the book needs a ${fmtFrac(be.pct, 2)} move in a day to earn back its theta`} · implied one-day move ${fmtFrac(p.expectedMovePct, 2)}${realised !== null ? ` · realised (30-day) ${fmtFrac(realised, 2)}` : ""}`
               : "theta and gamma do not oppose each other, so there is no break-even move"
           }
         />
@@ -365,7 +361,7 @@ export function StressCard({ p }: { p: ManagePortfolio }) {
           tone={p.volExpansion?.pnl == null ? "dim" : p.volExpansion.pnl >= 0 ? "pos" : "neg"}
           title={
             p.volExpansion && p.volExpansion.move !== null && p.volExpansion.ivShift !== null
-              ? `${p.benchmark ?? "SPY"} ${(p.volExpansion.move * 100).toFixed(0)}% with IVs up ${(p.volExpansion.ivShift * 100).toFixed(0)} points (term-weighted), time held still: ${pctOf(p.volExpansion.pctNetLiq, 1)} of net liq`
+              ? `${p.benchmark ?? "SPY"} ${(p.volExpansion.move * 100).toFixed(0)}% with IVs up ${(p.volExpansion.ivShift * 100).toFixed(0)} points (term-weighted), time held still: ${fmtFrac(p.volExpansion.pctNetLiq, 1)} of net liq`
               : "not read on this evaluation"
           }
         />
@@ -374,7 +370,7 @@ export function StressCard({ p }: { p: ManagePortfolio }) {
     {
       key: "realised",
       detailOnly: true,
-      node: <Tile key="realised" label="realised move (30-day)" value={pctOf(realised)} title={`${p.benchmark ?? "SPY"}'s realised daily move over 30 days, beside the implied`} />,
+      node: <Tile key="realised" label="realised move (30-day)" value={fmtFrac(realised, 2)} title={`${p.benchmark ?? "SPY"}'s realised daily move over 30 days, beside the implied`} />,
     },
     {
       key: "vega",
@@ -389,7 +385,7 @@ export function StressCard({ p }: { p: ManagePortfolio }) {
         label={`${p.benchmark ?? "SPY"} ${s.shock > 0 ? "+" : "−"}${Math.abs(s.shock * 100).toFixed(0)}%`}
         value={fmtCash(s.pnl)}
         tone={s.pnl === null ? "dim" : s.pnl >= 0 ? "pos" : "neg"}
-        title={`${pctOf(s.pctNetLiq, 1)} of net liq; each name moved by its beta, IV and time held still${
+        title={`${fmtFrac(s.pctNetLiq, 1)} of net liq; each name moved by its beta, IV and time held still${
           s.leftOut.length ? `; left out (no beta): ${s.leftOut.join(", ")}` : ""
         }`}
       />
@@ -422,7 +418,7 @@ export function ContributionBars({ p, figure, limit = CONTRIBUTION_ROWS }: { p: 
   const rows = sorted.slice(0, cut).map((u) => ({
     label: u.betaDoubt && figure === "bwd" ? `${u.underlying} ⚠` : u.underlying,
     value: u[figure],
-    title: `${u.underlying}: beta ${u.beta === null ? "—" : u.beta.toFixed(2)} · ${pctOf(figure === "bwd" ? u.bwdShare : u.thetaShare, 0)} of the book's gross ${
+    title: `${u.underlying}: beta ${u.beta === null ? "—" : u.beta.toFixed(2)} · ${fmtFrac(figure === "bwd" ? u.bwdShare : u.thetaShare, 0)} of the book's gross ${
       figure === "bwd" ? "delta" : "theta without the legs about to expire"
     }${u.betaDoubt ? ` · ${u.betaDoubt}` : ""}`,
   }));
@@ -555,10 +551,10 @@ function driverFigure(f: ManageGuidanceFigure, benchmark: string | null): string
     case "theta":
       return f.value === null ? "—" : `${fmtCash(f.value)}/day`;
     case "bwd_share":
-      return `${pctOf(f.value, 0)} of delta`;
+      return `${fmtFrac(f.value, 0)} of delta`;
     case "theta_share":
       // The band's theta: without the legs about to expire, so it is not the theta card's share.
-      return `${pctOf(f.value, 0)} of theta past the expiring legs`;
+      return `${fmtFrac(f.value, 0)} of theta past the expiring legs`;
     case "vega_30":
       return f.value === null ? "—" : `${fmtCash(f.value)}/vol pt`;
     case "pnl":

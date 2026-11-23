@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { LiveTodayPayload, SuiteFeatures } from "@console/shared";
 import { liveLoopsInUse, type LiveInUse } from "./visibility";
+import { getJson } from "./api";
 
 /**
  * Every live loop's day (`GET /api/live/today`), the Live page's `today` tab and its badge.
@@ -15,9 +16,7 @@ function useLiveTodayQuery(enabled: boolean) {
   return useQuery<LiveTodayPayload>({
     queryKey: LIVE_TODAY_KEY,
     queryFn: async () => {
-      const res = await fetch("/api/live/today");
-      if (!res.ok) throw new Error(`live today: HTTP ${res.status}`);
-      return (await res.json()) as LiveTodayPayload;
+      return getJson<LiveTodayPayload>("/api/live/today");
     },
     refetchInterval: 15_000,
     enabled,

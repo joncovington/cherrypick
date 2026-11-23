@@ -6,7 +6,7 @@ import { profileLevels } from "../../pages/GexPanel/profileLevels";
 import { sessionProfiles, untestedBars, untestedCandidates } from "../../pages/Intraday/profileOverlay";
 import { untestedPocs } from "../../lib/marketProfile";
 import { useCandles } from "../../lib/useCandles";
-import { useProfileBars } from "../../lib/api";
+import { useProfileBars, getJson } from "../../lib/api";
 import { asOfIsToday, formatAsOf } from "./GexLightbox";
 import { GexOiNote } from "../../components/GexOiNote";
 import { ModuleFrame } from "../ModuleFrame";
@@ -147,9 +147,7 @@ function useGexPanel() {
   return useQuery<GexPanelPayload>({
     queryKey: ["gex-panel"],
     queryFn: async () => {
-      const res = await fetch("/api/gex/panel");
-      if (!res.ok) throw new Error(`gex panel: HTTP ${res.status}`);
-      return (await res.json()) as GexPanelPayload;
+      return getJson<GexPanelPayload>("/api/gex/panel");
     },
     refetchInterval: 15_000,
   });

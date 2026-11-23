@@ -5,7 +5,7 @@ import { HelpSection, type CardHelpContent } from "../../components/CardHelp";
 import { Section } from "../../components/Section";
 import { FliesTile } from "../Flies/FliesSession";
 import { useAutomationReading } from "../../lib/api";
-import { fmtMoney } from "../../lib/format";
+import { fmtMoney, fmtFrac } from "../../lib/format";
 import { runLabel } from "../Builder/BuilderRunCard";
 
 /**
@@ -65,8 +65,6 @@ export const STATE_WORDS: Record<string, string> = {
   no_reference: "no reference",
 };
 export const PLACE_CHIP: Record<ReadingPlace, string> = { inside: "chip chip-ok", below: "chip chip-warn", above: "chip chip-info" };
-const pct = (v: number | null | undefined): string => (v === null || v === undefined ? "—" : `${String(Math.round(v * 100))}%`);
-
 /** Where `v` sits on [lo, hi], as a percent of the width (clamped). */
 export function at(v: number, lo: number, hi: number): number {
   return hi === lo ? 50 : Math.max(0, Math.min(100, ((v - lo) / (hi - lo)) * 100));
@@ -238,7 +236,7 @@ export function WorkingBody({ name, data }: { name: string; data: AutomationRead
       />
       <FliesTile
         title="entry rate"
-        value={`${pct(paper.entry.rate)} vs ${pct(ref.entry_rate)}`}
+        value={`${fmtFrac(paper.entry.rate, 0)} vs ${fmtFrac(ref.entry_rate, 0)}`}
         tone="dim"
         foot={`paper entered ${String(paper.entry.entered)} of ${String(paper.entry.entered + paper.entry.missed)} days due; the run's share of its sessions`}
       />

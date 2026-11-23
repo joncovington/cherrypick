@@ -69,6 +69,17 @@ export function fmtPct(v: number | null, digits = 0): string {
   return v === null ? "—" : `${v.toFixed(digits)}%`;
 }
 
+/** A plain number with thousands separators and fixed decimals: `1,234.50`. No currency sign: for a figure that
+ *  is not a cash flow (a price level, a dollar-denominated stat in a table whose header carries the unit). */
+export function fmtGrouped(v: number | null | undefined, digits = 2): string {
+  return v === null || v === undefined ? "—" : v.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits });
+}
+
+/** A 0-1 fraction shown as a percentage: `0.452` at one digit is `45.2%`. A null or an undefined is a dash. */
+export function fmtFrac(v: number | null | undefined, digits = 0): string {
+  return v === null || v === undefined ? "—" : `${(v * 100).toFixed(digits)}%`;
+}
+
 /** A signed percentage: `+1.20%` / `-1.20%`, for a change against a reference. */
 export function fmtPctSigned(v: number | null, digits = 2): string {
   if (v === null) return "—";

@@ -11,6 +11,7 @@ import { BoxOpenButton, PanelChoice, ScreenerCard, ScreenerLayout, SessionSelect
 import { Section } from "../../components/Section";
 import { GuideLink } from "../../components/GuideLink";
 import { chartHref } from "../Chart/chartRoute";
+import { fmtFrac, fmtGrouped } from "../../lib/format";
 
 /**
  * Our own credit-spread list (2026-10-24): the chart setups' fresh entries as spreads on the 30-45 day
@@ -44,14 +45,6 @@ const SETUP_LABEL: Record<string, string> = {
   "breakout-short": "breakdown",
 };
 
-function money(v: number | null): string {
-  return v === null ? "—" : v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
-function pct(v: number | null, digits = 1): string {
-  return v === null ? "—" : `${(v * 100).toFixed(digits)}%`;
-}
-
 function shortDate(iso: string | null): string {
   if (iso === null || iso === "") return "—";
   return new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
@@ -59,7 +52,7 @@ function shortDate(iso: string | null): string {
 
 /** Per share at the working price, signed cash flow: a credit `cr`, a price under zero a debit `db`. */
 function credit(v: number): string {
-  return `${money(Math.abs(v))} ${v < 0 ? "db" : "cr"}`;
+  return `${fmtGrouped(Math.abs(v))} ${v < 0 ? "db" : "cr"}`;
 }
 
 /** Whole contract: a per-share figure × 100. */
@@ -107,7 +100,7 @@ export function SetupBody({ r }: { r: CreditSpreadRow }) {
       <tbody>
         <tr>
           <td title={r.signals.map((s) => `${SETUP_LABEL[s.setup] ?? s.setup}: entered on the ${s.date} close`).join("\n")}>{setupsText(r)}</td>
-          <td className="num">{money(r.spot)}</td>
+          <td className="num">{fmtGrouped(r.spot)}</td>
           <td className="muted">{fairText(r.fair).replace(/^vs fair /, "")}</td>
           <td className={ex === null ? "muted" : undefined}>{ex ?? "—"}</td>
         </tr>
@@ -143,7 +136,7 @@ export function WidthsBody({ r }: { r: CreditSpreadRow }) {
             const picked = p !== null && r.pick !== null && p.long === r.pick.long;
             return (
               <tr key={`${w.unit}-${w.size}`}>
-                <td title={w.unit === "move" && r.move !== null ? `The listed long nearest ${w.size} × the 1-SD move (${money(r.move)}) beyond the short` : undefined}>
+                <td title={w.unit === "move" && r.move !== null ? `The listed long nearest ${w.size} × the 1-SD move (${fmtGrouped(r.move)}) beyond the short` : undefined}>
                   {label}
                   {picked ? (
                     <>
@@ -165,12 +158,12 @@ export function WidthsBody({ r }: { r: CreditSpreadRow }) {
                       {right}
                     </td>
                     <td className="num">{p.longDelta.toFixed(2)}</td>
-                    <td className="num">{money(p.width)}</td>
+                    <td className="num">{fmtGrouped(p.width)}</td>
                     <td className="num">{credit(p.credit)}</td>
                     <td className="num">{credit(p.creditMid)}</td>
-                    <td className="num">{pct(p.creditWidth)}</td>
+                    <td className="num">{fmtFrac(p.creditWidth, 1)}</td>
                     <td className="num">{contract(p.maxLoss)}</td>
-                    <td className="num">{pct(p.creditMaxLoss)}</td>
+                    <td className="num">{fmtFrac(p.creditMaxLoss, 1)}</td>
                     <LiquidCell p={p} />
                   </>
                 )}
@@ -278,7 +271,7 @@ export function creditModel(
     key: boxId(r),
     symbol: r.symbol,
     symbolHref: chartHref(r.symbol, "1d"),
-    spot: money(r.spot),
+    spot: fmtGrouped(r.spot),
     shape: `${r.spread === "put" ? "bull put" : "bear call"} ${r.short.strike}${long === null ? "" : `/${long}`}${right} · ${r.dte} d · ${dayMonth(r.expiry)}${
       // A name signalling both sides says so here, not as a chip: two chips stacked made the row two lines.
       r.conflict ? " · both sides" : ""
@@ -320,8 +313,8 @@ export function creditModel(
       p === null
         ? near === null
           ? "no width to size"
-          : `nearest ${near.label} · credit ${pct(near.price.creditWidth, 0)} of the width`
-        : `max loss ${contract(p.maxLoss)}${p.creditWidth === null ? "" : ` · credit ${pct(p.creditWidth, 0)} of the width`}`,
+          : `nearest ${near.label} · credit ${fmtFrac(near.price.creditWidth, 0)} of the width`
+        : `max loss ${contract(p.maxLoss)}${p.creditWidth === null ? "" : ` · credit ${fmtFrac(p.creditWidth, 0)} of the width`}`,
     open: { date: "proposed", price: p === null ? "—" : credit(p.credit) },
     legs: [
       {

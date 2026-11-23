@@ -14,6 +14,7 @@ import { useHoverX } from "../../components/chart/useHoverX";
 import type { MeicScope } from "./MeicTables";
 import { CHART_GRID, CHART_GRID_STRONG } from "../../components/Charts";
 import { extendFlat, visibleYRange } from "../../components/chart/payoffWindow";
+import { getJson } from "../../lib/api";
 
 /**
  * MEIC's profit forest: expiry payoff for each arm's open book.
@@ -86,9 +87,7 @@ export function useMeicForest(mode: TradingMode, scope: MeicScope, forestSymbol:
   return useQuery<MeicForest>({
     queryKey: ["meic-forest", mode, scope, forestSymbol],
     queryFn: async () => {
-      const res = await fetch(`/api/meic/forest?${meicForestQuery(mode, scope, forestSymbol)}`);
-      if (!res.ok) throw new Error(`meic forest: HTTP ${res.status}`);
-      return (await res.json()) as MeicForest;
+      return getJson<MeicForest>(`/api/meic/forest?${meicForestQuery(mode, scope, forestSymbol)}`);
     },
     refetchInterval: 30_000,
   });

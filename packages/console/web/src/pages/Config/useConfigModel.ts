@@ -1,13 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { ConfigModelPayload, ConfigSavePayload, ConfigTargetId, LockStatusPayload } from "@console/shared";
-import { csrfFetch } from "../../lib/api";
+import { csrfFetch, getJson } from "../../lib/api";
 import { FEATURES_KEY } from "../../lib/useFeatures";
-
-async function getJson<T>(url: string): Promise<T> {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
-  return (await res.json()) as T;
-}
 
 /** An error carrying what the server said about WHY, so the UI can be specific instead of "failed". */
 export class ConfigError extends Error {

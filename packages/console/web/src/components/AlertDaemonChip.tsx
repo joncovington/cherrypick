@@ -1,5 +1,6 @@
 import type { AlertDaemonHealth } from "@console/shared";
 import { useQuery } from "@tanstack/react-query";
+import { getJson } from "../lib/api";
 
 /**
  * The flies order-alert daemon's health, on the Live page's header (2026-10-16; it sat on the
@@ -10,9 +11,7 @@ export function useAlertDaemon() {
   return useQuery<AlertDaemonHealth | null>({
     queryKey: ["system", "alert-daemon"],
     queryFn: async () => {
-      const res = await fetch("/api/system");
-      if (!res.ok) throw new Error(`system: HTTP ${res.status}`);
-      return ((await res.json()) as { alertDaemon: AlertDaemonHealth | null }).alertDaemon;
+      return (await getJson<{ alertDaemon: AlertDaemonHealth | null }>("/api/system")).alertDaemon;
     },
     refetchInterval: 60_000,
   });

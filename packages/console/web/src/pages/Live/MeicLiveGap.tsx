@@ -5,6 +5,7 @@ import { HelpSection, HelpWarn, type CardHelpContent } from "../../components/Ca
 import { fmtMoney } from "../../lib/format";
 import { BoxButton, BoxButtons } from "./portfolioBoxContext";
 import { GuideLink } from "../../components/GuideLink";
+import { getJson } from "../../lib/api";
 
 /**
  * MEIC live against paper: each live condor beside its paper
@@ -18,9 +19,7 @@ export function useMeicLiveGap() {
   return useQuery<MeicLiveGapPayload>({
     queryKey: ["live-meic-gap"],
     queryFn: async () => {
-      const res = await fetch("/api/live/meic/gap");
-      if (!res.ok) throw new Error(`meic live gap: HTTP ${res.status}`);
-      return (await res.json()) as MeicLiveGapPayload;
+      return getJson<MeicLiveGapPayload>("/api/live/meic/gap");
     },
     refetchInterval: 60_000,
   });

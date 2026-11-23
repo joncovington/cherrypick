@@ -5,9 +5,10 @@ import { FilterGroup, SortSection, sortRows, useSortChoice, type SortOption } fr
 import { Pager, usePage } from "../../components/ScopeBar";
 import { useListView, useViewChoice } from "../../components/ViewSwitch";
 import { useValuation } from "../../lib/api";
+import { fmtFrac, fmtGrouped } from "../../lib/format";
 import { BoxOpenButton, ScreenerCard, ScreenerLayout, SessionSelect, SymbolSearch, Tabs, useParamState, useScreenerBoxes, type ScreenerBox } from "./ScreenerParts";
 import { Section } from "../../components/Section";
-import { Dial, ValuationDetail, flagText, money, needsGrowth, pct, stateLabel, stretch, stretchText, type DetailSection } from "./ValuationDetail";
+import { Dial, ValuationDetail, flagText, needsGrowth, stateLabel, stretch, stretchText, type DetailSection } from "./ValuationDetail";
 import { GuideLink } from "../../components/GuideLink";
 import { chartHref } from "../Chart/chartRoute";
 
@@ -132,7 +133,7 @@ function ValueRow({ r, onOpen }: { r: ValuationRow; onOpen: () => void }) {
         <Badges r={r} />
       </span>
       <span className="vr-px">
-        {r.spot === null ? DASH : `$${money(r.spot)}`} <span className="muted">· fair {r.fairValue === null ? DASH : `$${money(r.fairValue)}`}</span>
+        {r.spot === null ? DASH : `$${fmtGrouped(r.spot)}`} <span className="muted">· fair {r.fairValue === null ? DASH : `$${fmtGrouped(r.fairValue)}`}</span>
       </span>
       <span className={r.state === "valued" && r.reach !== "beyond history" ? "vr-reach muted" : "vr-reach"} title={r.state === "valued" && r.reach ? REACH_TITLE[r.reach] : (r.reason ?? undefined)}>
         {reachText(r)}
@@ -157,9 +158,9 @@ function ValueCard({ r, onOpen }: { r: ValuationRow; onOpen: () => void }) {
             <Link className="pos-card-sym module-link" to={chartHref(r.symbol, "1d")} title={`Open ${r.symbol}'s chart`}>
               {r.symbol}
             </Link>
-            {r.spot === null ? null : <span className="pos-card-spot">{money(r.spot)}</span>}
+            {r.spot === null ? null : <span className="pos-card-spot">{fmtGrouped(r.spot)}</span>}
           </span>
-          <span className="pos-card-shape">fair value {r.fairValue === null ? DASH : `$${money(r.fairValue)}`}</span>
+          <span className="pos-card-shape">fair value {r.fairValue === null ? DASH : `$${fmtGrouped(r.fairValue)}`}</span>
         </span>
         <span className="pos-card-chips">
           <Badges r={r} />
@@ -293,7 +294,7 @@ export function valueHelp(universe: string | null | undefined, terminal: number 
         <HelpSection title="How the value is made">
           <p>
             Five forecast years from the company's last five fiscal years (growth from the analysts' next-year sales where there is one, faded
-            to {pct(terminal ?? 0.02, 0)}), discounted at a cost of capital from the stock's beta, with a perpetuity after. The names are the
+            to {fmtFrac(terminal ?? 0.02, 0)}), discounted at a cost of capital from the stock's beta, with a perpetuity after. The names are the
             security list's optionable names that the liquidity verdict calls options-tradable{universe ? ` (${universe})` : ""}. Statements
             are Dolt's annual rows, counted 45 days after the fiscal year ends; the broker's beta and market cap ride along as a cross-check
             and decide nothing.
@@ -334,7 +335,7 @@ export function ValuationTab() {
   const boxes: ScreenerBox[] = sorted.map((r) => ({
     id: r.symbol,
     kicker: "fair value ›",
-    title: r.state === "valued" && r.fairValue !== null ? `${r.symbol} · fair value $${money(r.fairValue)}` : `${r.symbol} · no fair value`,
+    title: r.state === "valued" && r.fairValue !== null ? `${r.symbol} · fair value $${fmtGrouped(r.fairValue)}` : `${r.symbol} · no fair value`,
     tabs: r.state === "valued" ? TABS.map((t) => ({ id: t, label: TAB_LABEL[t] })) : [{ id: "overview", label: "overview" }],
     body: (tab) => <ValuationDetail r={r} rule={data?.rule} section={r.state === "valued" ? (tab as DetailSection) : undefined} />,
   }));

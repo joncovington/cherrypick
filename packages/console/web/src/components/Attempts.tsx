@@ -25,6 +25,7 @@ import { AXIS_MUTED } from "./Charts";
 // reading them with one rule silently slides a whole session sideways.
 import { etClock, etMinuteOfDay, parseSuiteTs } from "../lib/etTime";
 import { OUTCOMES } from "./chart/tokens";
+import { getJson } from "../lib/api";
 
 /**
  * The entry-attempts surfaces: the arm rail and the attempt timeline.
@@ -133,9 +134,7 @@ export function useAttempts(
   return useQuery<AttemptsPayload>({
     queryKey: ["attempts", module, mode, date, scope.arm, scope.symbol, scope.era],
     queryFn: async () => {
-      const res = await fetch(`/api/${module}/attempts?${attemptsQuery(mode, date, scope)}`);
-      if (!res.ok) throw new Error(`attempts: HTTP ${res.status}`);
-      return (await res.json()) as AttemptsPayload;
+      return getJson<AttemptsPayload>(`/api/${module}/attempts?${attemptsQuery(mode, date, scope)}`);
     },
     refetchInterval: 20_000,
   });

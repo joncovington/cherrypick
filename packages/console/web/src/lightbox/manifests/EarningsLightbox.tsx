@@ -7,7 +7,7 @@ import { PerformanceSlide } from "../../components/performance/PerformanceSlide"
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { TradingMode } from "@console/shared";
-import { useEarnings } from "../../lib/api";
+import { useEarnings, getJson } from "../../lib/api";
 import { IntegrityStrip } from "../../pages/Earnings/IntegrityStrip";
 import { PaperLiveBadge } from "../../components/shell/PaperLiveBadge";
 import { DataCard, fmtMoney, fmtNum } from "../../components/DataTable";
@@ -52,9 +52,7 @@ function useUpcoming() {
   return useQuery<UpcomingPayload>({
     queryKey: ["earnings-upcoming"],
     queryFn: async () => {
-      const res = await fetch("/api/earnings/upcoming");
-      if (!res.ok) throw new Error(`upcoming: HTTP ${res.status}`);
-      return (await res.json()) as UpcomingPayload;
+      return getJson<UpcomingPayload>("/api/earnings/upcoming");
     },
     refetchInterval: 60_000,
   });
@@ -70,9 +68,7 @@ function useEarningsAnalytics(mode: TradingMode, era: string | null) {
   return useQuery<EarningsAnalytics>({
     queryKey: ["earnings-analytics", mode, era],
     queryFn: async () => {
-      const res = await fetch(`/api/earnings/analytics?mode=${mode}${era !== null ? `&era=${era}` : ""}`);
-      if (!res.ok) throw new Error(`earnings analytics: HTTP ${res.status}`);
-      return (await res.json()) as EarningsAnalytics;
+      return getJson<EarningsAnalytics>(`/api/earnings/analytics?mode=${mode}${era !== null ? `&era=${era}` : ""}`);
     },
     refetchInterval: 60_000,
   });

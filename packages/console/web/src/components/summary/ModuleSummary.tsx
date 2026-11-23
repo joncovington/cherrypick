@@ -23,6 +23,7 @@ import { Section } from "../Section";
 import { etToday } from "../table/DateRange";
 import { Gauge, NetHero, RangeToolbar, TsCard, TsEmpty, WinRateArcs, fmtUsd, fmtUsdPlain, sessionLabel, useFace, useSummaryRange } from "./kit";
 import { GuideLink } from "../GuideLink";
+import { getJson } from "../../lib/api";
 
 /**
  * A module's simplified-view summary: the MEIC summary's pattern over `/api/summary/:module`.
@@ -51,9 +52,7 @@ export function useModuleSummary(module: string, mode: TradingMode, range: strin
   return useQuery<ModuleSummarySlice>({
     queryKey: ["module-summary", module, mode, range, day, scope?.arm ?? null, scope?.symbol ?? null, scope?.era ?? null],
     queryFn: async () => {
-      const res = await fetch(`/api/summary/${module}?${params.toString()}`);
-      if (!res.ok) throw new Error(`summary: HTTP ${res.status}`);
-      return (await res.json()) as ModuleSummarySlice;
+      return getJson<ModuleSummarySlice>(`/api/summary/${module}?${params.toString()}`);
     },
     refetchInterval: 60_000,
     placeholderData: (prev) => prev,

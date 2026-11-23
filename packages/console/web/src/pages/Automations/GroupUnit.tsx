@@ -9,7 +9,7 @@ import { HelpSection, type CardHelpContent } from "../../components/CardHelp";
 import { Section } from "../../components/Section";
 import { FliesTile } from "../Flies/FliesSession";
 import { useGroupUnits } from "../../lib/api";
-import { fmtMoney } from "../../lib/format";
+import { fmtMoney, fmtFrac } from "../../lib/format";
 import { automationHref } from "./automationsModels";
 
 /**
@@ -60,8 +60,6 @@ const HELP: CardHelpContent = {
   ),
 };
 
-const pct = (v: number | null | undefined): string =>
-  v === null || v === undefined ? "—" : `${(v * 100).toFixed(1)}%`;
 const corr = (v: number | null): string => (v === null ? "—" : v.toFixed(2));
 
 export function GroupUnitBody({ g }: { g: AutomationsGroupUnit }) {
@@ -75,7 +73,7 @@ export function GroupUnitBody({ g }: { g: AutomationsGroupUnit }) {
         tone={l.net > 0 ? "pos" : l.net < 0 ? "neg" : "dim"}
         foot={
           g.allocation
-            ? `${pct(g.against_allocation?.net)} of its ${fmtMoney(g.allocation)} allocation`
+            ? `${fmtFrac(g.against_allocation?.net, 1)} of its ${fmtMoney(g.allocation)} allocation`
             : "no allocation set"
         }
         help={HELP}
@@ -86,7 +84,7 @@ export function GroupUnitBody({ g }: { g: AutomationsGroupUnit }) {
         tone={l.drawdown > 0 ? "neg" : "dim"}
         foot={
           g.allocation
-            ? `${pct(g.against_allocation?.drawdown)} of its allocation`
+            ? `${fmtFrac(g.against_allocation?.drawdown, 1)} of its allocation`
             : "largest fall of the members' running net"
         }
       />
@@ -104,7 +102,7 @@ export function GroupUnitBody({ g }: { g: AutomationsGroupUnit }) {
           g.risk === null
             ? "nothing held yet"
             : g.max_risk
-              ? `${pct(g.risk.of_cap)} of its ${fmtMoney(g.max_risk)} cap, on ${g.risk.session}`
+              ? `${fmtFrac(g.risk.of_cap, 1)} of its ${fmtMoney(g.max_risk)} cap, on ${g.risk.session}`
               : `on ${g.risk.session}; no cap set`
         }
       />
@@ -141,7 +139,7 @@ export function GroupUnitBody({ g }: { g: AutomationsGroupUnit }) {
                 {fmtMoney(-t.drawdown.combined)} together against{" "}
                 {fmtMoney(-t.drawdown.sum_of_arms)} for its members apart
                 {t.drawdown.benefit !== null &&
-                  `, ${pct(t.drawdown.benefit)} less`}
+                  `, ${fmtFrac(t.drawdown.benefit, 1)} less`}
               </dd>
               <dt>sessions</dt>
               <dd>
@@ -204,7 +202,7 @@ export function GroupUnitBody({ g }: { g: AutomationsGroupUnit }) {
             >
               {m.limit === null
                 ? "—"
-                : `${fmtMoney(m.limit)} · ${pct(m.of_limit)}`}
+                : `${fmtMoney(m.limit)} · ${fmtFrac(m.of_limit, 1)}`}
             </td>
           </tr>
         ))}

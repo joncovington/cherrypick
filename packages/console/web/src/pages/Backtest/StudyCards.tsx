@@ -28,6 +28,7 @@ import { BtRows, type BtRow } from "./BtRows";
 import { useListView } from "../../components/ViewSwitch";
 import { TaskDetail, ago, etMs, etNowMs, queuePollMs, resultLine, stamp } from "./QueueTab";
 import { VERDICT_STATUSES, resultLabel, statusWord, studyHref, verdictChip } from "./studyIndex";
+import { getJson } from "../../lib/api";
 
 /**
  * The studies tab as a mosaic (2026-11-03): one tile per hypothesis-register item, the study running
@@ -263,9 +264,7 @@ export function useRunSummaries(ids: string[]) {
     enabled: ids.length > 0 && open,
     staleTime: 5 * 60_000,
     queryFn: async () => {
-      const res = await fetch(`/api/backtest/summaries?ids=${encodeURIComponent(q)}`);
-      if (!res.ok) throw new Error(`summaries: HTTP ${String(res.status)}`);
-      return (await res.json()) as BridgedResult<StudyRunSummaries>;
+      return getJson<BridgedResult<StudyRunSummaries>>(`/api/backtest/summaries?ids=${encodeURIComponent(q)}`);
     },
   });
 }

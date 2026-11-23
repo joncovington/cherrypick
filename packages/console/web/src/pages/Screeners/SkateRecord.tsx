@@ -6,6 +6,7 @@ import { useSkateRecord } from "../../lib/api";
 import { ScreenerCard } from "./ScreenerParts";
 import { Section } from "../../components/Section";
 import { GuideLink } from "../../components/GuideLink";
+import { fmtFrac } from "../../lib/format";
 
 /**
  * The skate screen's forward record on the Skate tab. `technicals.skate_record`
@@ -28,10 +29,6 @@ const BANDS: { id: SkateBand; label: string }[] = [
   { id: "fixed", label: "fixed" },
   { id: "byExpiry", label: "by expiry" },
 ];
-
-function pct(v: number | null): string {
-  return v === null ? DASH : `${(v * 100).toFixed(1)}%`;
-}
 
 function count(v: number | null): string {
   return v === null ? DASH : v.toLocaleString("en-US");
@@ -111,7 +108,7 @@ function groupTiles(prefix: string, g: SkateRecordGroup | null, need: number | n
   return (
     <>
       <RecordTile label={`${prefix} · n`} value={count(g?.n ?? null)} />
-      <RecordTile label={`${prefix} · skated`} value={pct(g?.rate ?? null)} sub={`vs ${pct(g?.implied ?? null)} implied`} />
+      <RecordTile label={`${prefix} · skated`} value={fmtFrac(g?.rate ?? null, 1)} sub={`vs ${fmtFrac(g?.implied ?? null, 1)} implied`} />
       <RecordTile label={`${prefix} · z`} value={zText(g?.z ?? null)} z={g?.z ?? null} need={need} />
     </>
   );

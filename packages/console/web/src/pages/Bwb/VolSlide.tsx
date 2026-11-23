@@ -7,6 +7,7 @@ import { Section } from "../../components/Section";
 import { fmtMoney, fmtNum } from "../../lib/format";
 import { useOpenParam } from "../Backtest/CardLightbox";
 import { BoxOpen, FliesBoxHost, type FliesBox } from "../Flies/FliesBoxes";
+import { getJson } from "../../lib/api";
 
 /**
  * bwb's entry vol evidence, every number the module's (`/api/bwb/vol`, bridged):
@@ -190,9 +191,7 @@ export function BwbVolSlide() {
   const { data, isLoading, dataUpdatedAt } = useQuery<BwbVolEvidence>({
     queryKey: ["bridged", "bwb-vol"],
     queryFn: async () => {
-      const res = await fetch("/api/bwb/vol");
-      if (!res.ok) throw new Error(`bwb vol: HTTP ${String(res.status)}`);
-      return (await res.json()) as BwbVolEvidence;
+      return getJson<BwbVolEvidence>("/api/bwb/vol");
     },
     refetchInterval: 120_000,
   });

@@ -17,7 +17,7 @@ import { HelpSection, HelpWarn, type CardHelpContent } from "../CardHelp";
 import { useOpenParam } from "../../pages/Backtest/CardLightbox";
 import { BoxOpen, FliesBoxHost, type FliesBox } from "../../pages/Flies/FliesBoxes";
 import { ArmRegime } from "./ArmRegime";
-import { fmtMoney, fmtNum, fmtPct } from "../../lib/format";
+import { fmtMoney, fmtNum, fmtFrac } from "../../lib/format";
 import { useModuleAnalysis, type PerformanceModuleId } from "../../lib/api";
 import { armOfTag, displayName, experimentOfTag, matchesArm } from "../../lib/armTag";
 import { Tile } from "../performance/Tile";
@@ -69,10 +69,6 @@ export function WindowLine({ w }: { w: ArmWindow }) {
 }
 
 /** A fraction from core (0.31) as a percent (31.0%). */
-function pct(v: number | null): string {
-  return fmtPct(v === null ? null : v * 100, 1);
-}
-
 /**
  * Capital, two ways (core.analysis.capital): the risk the arm was observed to carry at once, and the
  * allocation a person declared for it. Six tiles, so the row never comes out ragged.
@@ -103,7 +99,7 @@ export function CapitalTiles({ c }: { c: CapitalReading }) {
         />
         <Tile
           label="net / largest peak"
-          value={pct(c.return_on_peak_risk)}
+          value={fmtFrac(c.return_on_peak_risk, 1)}
           tone={tone(c.return_on_peak_risk)}
           afterFees
           title={
@@ -113,7 +109,7 @@ export function CapitalTiles({ c }: { c: CapitalReading }) {
         />
         <Tile
           label="max drawdown / peak risk"
-          value={pct(c.max_drawdown_over_peak_risk)}
+          value={fmtFrac(c.max_drawdown_over_peak_risk, 1)}
           tone={lossTone(c.max_drawdown_over_peak_risk)}
           title="the session max drawdown as a share of the most the arm had at risk at once"
         />
@@ -129,7 +125,7 @@ export function CapitalTiles({ c }: { c: CapitalReading }) {
         />
         <Tile
           label="return on allocation"
-          value={pct(a.return)}
+          value={fmtFrac(a.return, 1)}
           tone={tone(a.return)}
           n={declared ? a.covered : null}
           nUnit="sessions"
@@ -196,7 +192,7 @@ export function ExecutionTable({ e }: { e: ExecutionReading }) {
                 </td>
                 <td>{r.extra === 0 ? "—" : fmtMoney(r.extra)}</td>
                 <td className={`pnl-${r.net >= 0 ? "pos" : "neg"}`}>{fmtMoney(r.net)}</td>
-                <td>{r.multiple === 1 ? "—" : pct(r.change)}</td>
+                <td>{r.multiple === 1 ? "—" : fmtFrac(r.change, 1)}</td>
               </tr>
             ))}
           </tbody>
@@ -255,7 +251,7 @@ function BucketRows({ t, head, minSessions }: { t: BucketTable; head: string; mi
               <td>{String(r.trades)}</td>
               <td>{String(r.sessions)}</td>
               <td className={r.thin ? undefined : `pnl-${r.net >= 0 ? "pos" : "neg"}`}>{fmtMoney(r.net)}</td>
-              <td>{pct(r.win_rate)}</td>
+              <td>{fmtFrac(r.win_rate, 1)}</td>
               <td>{fmtMoney(r.avg_net)}</td>
               <td>{fmtMoney(r.best)}</td>
               <td>{fmtMoney(r.worst)}</td>
@@ -297,7 +293,7 @@ function HeldRows({ t }: { t: BucketTable & { min_sessions: number } }) {
                 )}
               </td>
               <td>{String(r.trades)}</td>
-              <td>{pct(r.win_rate)}</td>
+              <td>{fmtFrac(r.win_rate, 1)}</td>
               <td>{fmtMoney(r.avg_net)}</td>
               <td className={r.thin ? undefined : `pnl-${r.net >= 0 ? "pos" : "neg"}`}>{fmtMoney(r.net)}</td>
             </tr>

@@ -1,5 +1,6 @@
 import { useSearchParams } from "react-router-dom";
 import { DateRangePicker } from "./DatePicker";
+import { etToday } from "../../lib/etTime";
 
 /**
  * A history table's date range, kept in the page address (`?from=YYYY-MM-DD&to=YYYY-MM-DD`) so a
@@ -34,16 +35,7 @@ export function useUrlDateRange(): {
   return { from: read("from"), to: read("to"), setRange };
 }
 
-/** Today's date in New York -- the suite's session calendar, whatever the viewer's timezone. */
-export function etToday(now: Date = new Date()): string {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/New_York",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(now);
-  return parts;
-}
+export { etToday };
 
 function shift(iso: string, days: number): string {
   const d = new Date(`${iso}T12:00:00Z`);

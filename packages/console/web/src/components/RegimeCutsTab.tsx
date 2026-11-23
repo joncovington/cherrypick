@@ -16,6 +16,7 @@ import { FilterGroup, FilterSortButton, FilterSortPanel, FilterSummary } from ".
 import { Section } from "./Section";
 import { useOpenParam } from "../pages/Backtest/CardLightbox";
 import { BoxOpen, FliesBoxHost, type FliesBox, type OpenParam } from "../pages/Flies/FliesBoxes";
+import { fmtFrac } from "../lib/format";
 
 /**
  * The regime-cuts slide (2026-09-19): the module's own nightly artifact, one table per regime
@@ -33,20 +34,16 @@ const WRITE_COMMAND: Record<RegimeCutsModule, string> = {
   meic: "python -m cherrypick.meic.regime_cuts --write",
 };
 
-function pct(v: number | null): string {
-  return v === null ? "—" : `${(v * 100).toFixed(0)}%`;
-}
-
 /** completion% when the module has the concept, else win%; then net; then sessions. */
 function cellText(c: RegimeCell | RegimeCrossCell): string {
-  const rate = c.completionRate !== null ? pct(c.completionRate) : pct(c.winRate);
+  const rate = c.completionRate !== null ? fmtFrac(c.completionRate, 0) : fmtFrac(c.winRate, 0);
   return `${rate} · ${c.netPnl === null ? "—" : fmtMoney(c.netPnl)} · ${c.sessions}s`;
 }
 
 function cellTitle(c: RegimeCell | RegimeCrossCell): string {
   const parts = [`${c.trades} trades`, `${c.sessions} sessions`];
   if (c.completed !== null) parts.push(`${c.completed} completed`);
-  if (c.winRate !== null) parts.push(`win ${pct(c.winRate)}`);
+  if (c.winRate !== null) parts.push(`win ${fmtFrac(c.winRate, 0)}`);
   if (c.avgPnl !== null) parts.push(`avg ${fmtMoney(c.avgPnl)}`);
   if (c.thin) parts.push("thin: fewer sessions than the writer's floor");
   return parts.join(" · ");
@@ -70,12 +67,12 @@ function FragileMark({ c }: { c: RegimeCell | RegimeCrossCell }) {
   const parts = ["Fragile, stamped by the module"];
   if (r !== null) {
     if (r.largestSessionShare !== null)
-      parts.push(`largest session ${fmtMoney(r.largestSessionNet)} is ${pct(r.largestSessionShare)} of the cell's absolute flow`);
+      parts.push(`largest session ${fmtMoney(r.largestSessionNet)} is ${fmtFrac(r.largestSessionShare, 0)} of the cell's absolute flow`);
     if (r.signFlipsDroppingOne !== null)
       parts.push(`dropping one session flips the sign in ${r.signFlipsDroppingOne} case${r.signFlipsDroppingOne === 1 ? "" : "s"}`);
     if (r.netInterval !== null)
       parts.push(
-        `${r.intervalLevel === null ? "" : `${pct(r.intervalLevel)} `}interval ${fmtMoney(r.netInterval[0])} to ${fmtMoney(r.netInterval[1])}`,
+        `${r.intervalLevel === null ? "" : `${fmtFrac(r.intervalLevel, 0)} `}interval ${fmtMoney(r.netInterval[0])} to ${fmtMoney(r.netInterval[1])}`,
       );
   }
   return (
@@ -183,7 +180,7 @@ export function CrossTabGrid({ tab }: { tab: RegimeCrossTab }) {
                           title={cellTitle(c)}
                         >
                           <span>{c.sessions}s</span>
-                          {c.thin ? <ThinMark /> : rate !== null && <span>{pct(rate)}</span>}
+                          {c.thin ? <ThinMark /> : rate !== null && <span>{fmtFrac(rate, 0)}</span>}
                           <StampMarks c={c} />
                         </div>
                       );
@@ -546,7 +543,7 @@ export function EraCard({ cuts, stale }: { cuts: RegimeCuts; stale: { artifactSe
               <td>{b.eraStart ?? "—"}</td>
               <td>{b.sessions}</td>
               <td>{b.trades}</td>
-              <td>{b.completionRate !== null ? pct(b.completionRate) : pct(b.winRate)}</td>
+              <td>{b.completionRate !== null ? fmtFrac(b.completionRate, 0) : fmtFrac(b.winRate, 0)}</td>
               <td>
                 <PnlCell v={b.netPnl} />
               </td>

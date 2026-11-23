@@ -11,6 +11,7 @@ import { FilterGroup } from "../../components/FilterSort";
 import { Section } from "../../components/Section";
 import { useFilterPanel } from "../useFilterPanel";
 import { attention, collapsedArms, moduleAnchor, shownArms, splitModules, type Flag } from "./summary";
+import { fmtFrac, fmtGrouped } from "../../lib/format";
 
 /**
  * The suite review. Renders the fact set and computes nothing.
@@ -31,21 +32,12 @@ import { attention, collapsedArms, moduleAnchor, shownArms, splitModules, type F
  *   trend is not dressed to look like a result.
  */
 
-function money(v: number | null | undefined): string {
-  if (v === null || v === undefined) return "—";
-  return v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
 function compactMoney(v: number | null | undefined): string {
   if (v === null || v === undefined) return "—";
   const sign = v < 0 ? "−" : "";
   const abs = Math.abs(v);
   if (abs >= 1000) return `${sign}$${(abs / 1000).toFixed(1)}k`;
   return `${sign}$${abs.toFixed(0)}`;
-}
-
-function pct(v: number | null | undefined): string {
-  return v === null || v === undefined ? "—" : `${(v * 100).toFixed(1)}%`;
 }
 
 function count(v: number | null | undefined): string {
@@ -63,7 +55,7 @@ function rowNote(m: ReviewModule): ReactNode {
   if (m.expected !== null || m.observed !== null) {
     parts.push(
       <span key="eo">
-        {money(m.expected)} <span className="muted">exp</span> → {money(m.observed)} <span className="muted">obs</span>
+        {fmtGrouped(m.expected)} <span className="muted">exp</span> → {fmtGrouped(m.observed)} <span className="muted">obs</span>
       </span>,
     );
   }
@@ -107,8 +99,8 @@ function ArmsTable({ m }: { m: ReviewModule }) {
                 <td className="rv-share arm-bar-cell">
                   <SignedBar value={a.net} maxAbs={peak} compact />
                 </td>
-                <td className={pnlClass(a.net)}>{money(a.net)}</td>
-                <td className={`rv-ret ${pnlClass(a.onMaxRisk)}`}>{pct(a.onMaxRisk)}</td>
+                <td className={pnlClass(a.net)}>{fmtGrouped(a.net)}</td>
+                <td className={`rv-ret ${pnlClass(a.onMaxRisk)}`}>{fmtFrac(a.onMaxRisk, 1)}</td>
                 <td>{count(a.closed)}</td>
                 <td>{count(a.wins)}</td>
               </tr>
@@ -143,14 +135,14 @@ function ModuleDetail({ m }: { m: ReviewModule }) {
           <span className="muted">nothing to compare this session</span>
         ) : (
           <>
-            {money(m.expected)} <span className="muted">expected</span> → {money(m.observed)} <span className="muted">observed</span>
+            {fmtGrouped(m.expected)} <span className="muted">expected</span> → {fmtGrouped(m.observed)} <span className="muted">observed</span>
             {m.expected === null && <span className="muted"> (no model recorded)</span>}
           </>
         )}
       </p>
       {m.carriedPositions > 0 && (
         <p className="review-caveat">
-          <span className="dot status-warn" /> {m.carriedPositions} position(s) carried overnight, {money(m.carriedCapital)} at risk
+          <span className="dot status-warn" /> {m.carriedPositions} position(s) carried overnight, {fmtGrouped(m.carriedCapital)} at risk
           {m.carriedCapitalUnknown > 0 ? ` (+${String(m.carriedCapitalUnknown)} of unknown capital)` : ""} — no realised P&amp;L until they
           settle.
         </p>
@@ -173,9 +165,9 @@ function ModuleRows({ m, open, onToggle }: { m: ReviewModule; open: boolean; onT
         </td>
         {m.ok ? (
           <>
-            <td className={pnlClass(m.net)}>{money(m.net)}</td>
-            <td className={`rv-ret ${pnlClass(m.onMaxRisk)}`}>{pct(m.onMaxRisk)}</td>
-            <td className="rv-car muted">{money(m.capitalAtRisk)}</td>
+            <td className={pnlClass(m.net)}>{fmtGrouped(m.net)}</td>
+            <td className={`rv-ret ${pnlClass(m.onMaxRisk)}`}>{fmtFrac(m.onMaxRisk, 1)}</td>
+            <td className="rv-car muted">{fmtGrouped(m.capitalAtRisk)}</td>
             <td>{count(m.closed)}</td>
             <td>
               {count(m.wins)} / {count(m.closed - m.wins)}

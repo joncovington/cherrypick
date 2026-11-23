@@ -7,7 +7,7 @@ import { DivergingBars } from "../../components/grid/DivergingBars";
 import { Card } from "../../components/DataTable";
 import { HelpSection, HelpWarn, type CardHelpContent } from "../../components/CardHelp";
 import { fmtMoney } from "../../lib/format";
-import { fliesQuery, useOpeningRange, type FliesFilter } from "../../lib/api";
+import { fliesQuery, useOpeningRange, type FliesFilter, getJson } from "../../lib/api";
 import { ForestCard } from "./ForestCard";
 import { SpotPathCard } from "./SpotPathCard";
 import { FliesLayout, TabLink } from "./FliesFilter";
@@ -56,9 +56,7 @@ export function useSessionAnalytics(mode: TradingMode, filter: FliesFilter, enab
     queryKey: ["flies-analytics", mode, filter],
     enabled,
     queryFn: async () => {
-      const res = await fetch(`/api/flies/analytics?${fliesQuery(mode, filter)}`);
-      if (!res.ok) throw new Error(`flies analytics: HTTP ${res.status}`);
-      return (await res.json()) as SessionAnalytics;
+      return getJson<SessionAnalytics>(`/api/flies/analytics?${fliesQuery(mode, filter)}`);
     },
     refetchInterval: 30_000,
   });
@@ -174,9 +172,7 @@ function useLiveSession(session: string | null) {
     queryKey: ["live-flies", session],
     enabled: session !== null,
     queryFn: async () => {
-      const res = await fetch(`/api/live/flies?session=${encodeURIComponent(session ?? "")}`);
-      if (!res.ok) throw new Error(`live: HTTP ${res.status}`);
-      return (await res.json()) as LiveFliesPayload;
+      return getJson<LiveFliesPayload>(`/api/live/flies?session=${encodeURIComponent(session ?? "")}`);
     },
     refetchInterval: 30_000,
   });

@@ -2,6 +2,7 @@ import type { CSSProperties, ReactNode } from "react";
 import type { ValuationModel, ValuationPayload, ValuationRow } from "@console/shared";
 import { AXIS_FONT, CHART_GRID, CHART_GRID_STRONG, niceTicks } from "../../components/Charts";
 import { useMeasure } from "../../lib/useMeasure";
+import { fmtFrac, fmtGrouped } from "../../lib/format";
 
 /**
  * What opens beneath a fair-value row (2026-10-28, the user's choice of what to show): a sentence on
@@ -74,14 +75,6 @@ const REASON_TEXT: Record<string, string> = {
 export function reasonText(reason: string | null): string {
   if (reason === null) return "The model has no value for it.";
   return REASON_TEXT[reason] ?? `${reason.replace(/_/g, " ")}.`;
-}
-
-export function money(v: number | null): string {
-  return v === null ? DASH : v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
-export function pct(v: number | null, digits = 1): string {
-  return v === null ? DASH : `${(v * 100).toFixed(digits)}%`;
 }
 
 export function signedPct(v: number | null): string {
@@ -236,18 +229,18 @@ export function RangeBar({ low, base, high, price }: { low: number; base: number
       <circle cx={X(low)} cy={y} r={6} fill="var(--text-muted)" stroke="var(--surface)" strokeWidth={2} />
       <circle cx={X(high)} cy={y} r={6} fill="var(--text-muted)" stroke="var(--surface)" strokeWidth={2} />
       <text x={X(low) + 4} y={y + 22} textAnchor="end" {...AXIS_FONT} fontSize={11}>
-        Low ${money(low)}
+        Low ${fmtGrouped(low)}
       </text>
       <text x={X(high) - 4} y={y + 22} textAnchor="start" {...AXIS_FONT} fontSize={11}>
-        High ${money(high)}
+        High ${fmtGrouped(high)}
       </text>
       <circle cx={X(base)} cy={y} r={8} fill="var(--accent)" stroke="var(--surface)" strokeWidth={2} />
       <text x={X(base)} y={y - 16} textAnchor="middle" {...AXIS_FONT} fontSize={12} fill="var(--text)" fontWeight={700}>
-        Base ${money(base)}
+        Base ${fmtGrouped(base)}
       </text>
       <line x1={X(price)} y1={y - 12} x2={X(price)} y2={y + 12} stroke="var(--text)" strokeWidth={2.5} />
       <text x={X(price)} y={y + 44} textAnchor="middle" {...AXIS_FONT} fontSize={11} fill="var(--text)">
-        Price ${money(price)}
+        Price ${fmtGrouped(price)}
       </text>
     </svg>
     </div>
@@ -280,7 +273,7 @@ export function ForecastBars({ r }: { r: ValuationRow }) {
         Y1 growth: {first}
       </text>
       <text x={ml + bw * 1 + (bw * (f.length - 1)) / 2} y={12} textAnchor="middle" {...AXIS_FONT}>
-        fades to the long run ({pct(r.terminalGrowth, 1)})
+        fades to the long run ({fmtFrac(r.terminalGrowth, 1)})
       </text>
       <path d={`M ${ml + bw + 6} 20 V 16 H ${w - mr - 6} V 20`} fill="none" stroke={CHART_GRID_STRONG} />
       {ticks.map((v) => (
@@ -300,7 +293,7 @@ export function ForecastBars({ r }: { r: ValuationRow }) {
         return (
           <g key={y.year}>
             <rect x={x} y={top0} width={bwid} height={hgt} rx={3} fill="var(--accent)">
-              <title>{`Year ${y.year}: free cash flow ${big(y.fcf)} · revenue ${big(y.revenue)} (${signedPct(y.growth)}) · operating margin ${pct(y.ebitMargin)}`}</title>
+              <title>{`Year ${y.year}: free cash flow ${big(y.fcf)} · revenue ${big(y.revenue)} (${signedPct(y.growth)}) · operating margin ${fmtFrac(y.ebitMargin, 1)}`}</title>
             </rect>
             {labelled && (
               <text x={x + bwid / 2} y={(y.fcf >= 0 ? top0 : top0 + hgt + 12) - 5} textAnchor="middle" {...AXIS_FONT} fontSize={11} fill="var(--text)">
@@ -337,13 +330,13 @@ function signedBig(v: number): string {
 export function headline(r: ValuationRow): string {
   const vs = valueVsPrice(r);
   if (vs === null || r.fairValue === null || r.spot === null) return "";
-  const where = `The model's value ($${money(r.fairValue)}) is ${Math.abs(vs * 100).toFixed(0)}% ${vs >= 0 ? "above" : "below"} today's price ($${money(r.spot)}).`;
+  const where = `The model's value ($${fmtGrouped(r.fairValue)}) is ${Math.abs(vs * 100).toFixed(0)}% ${vs >= 0 ? "above" : "below"} today's price ($${fmtGrouped(r.spot)}).`;
   // The builder's reach decides; the gap only where an older file has none.
   if (r.reach === "below value" || (r.reach === null && vs >= 0)) return `${where} The price asks for nothing the business has not already done.`;
   const margin =
     r.impliedMargin === null
       ? "no operating margin under 100% of revenue gets there"
-      : `it would need a long-run operating margin of ${pct(r.impliedMargin)} (the model uses ${pct(r.ebitMargin)}; its best in five years was ${pct(r.bestMargin)})`;
+      : `it would need a long-run operating margin of ${fmtFrac(r.impliedMargin, 1)} (the model uses ${fmtFrac(r.ebitMargin, 1)}; its best in five years was ${fmtFrac(r.bestMargin, 1)})`;
   const growth = r.impliedGrowth === null ? "" : `, or year-one revenue growth of ${needsGrowth(r)} (its best was ${signedPct(r.bestGrowth)})`;
   return `${where} To match the price, ${margin}${growth}, everything else held.`;
 }
@@ -397,8 +390,8 @@ export function ValuationDetail({ r, rule, section }: { r: ValuationRow; rule?: 
             {s === null
               ? "no margin record to measure against"
               : s <= 1
-                ? `inside its record: the price needs ${pct(r.impliedMargin)} against a best of ${pct(r.bestMargin)}`
-                : `beyond its record: the price needs ${r.impliedMargin === null ? "more than any margin" : pct(r.impliedMargin)} against a best of ${pct(r.bestMargin)}`}
+                ? `inside its record: the price needs ${fmtFrac(r.impliedMargin, 1)} against a best of ${fmtFrac(r.bestMargin, 1)}`
+                : `beyond its record: the price needs ${r.impliedMargin === null ? "more than any margin" : fmtFrac(r.impliedMargin, 1)} against a best of ${fmtFrac(r.bestMargin, 1)}`}
           </div>
         </Card>
         <Card title="Model value vs price">
@@ -424,7 +417,7 @@ export function ValuationDetail({ r, rule, section }: { r: ValuationRow; rule?: 
           <div style={{ fontSize: 15, fontWeight: 700 }}>{r.consensusUsed ? "Analyst consensus, then history" : "Company history"}</div>
           <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
             Year-one revenue growth {signedPct(r.growthY1)} from {r.consensusUsed ? "the current-year revenue consensus" : "the five-year growth"}, faded to{" "}
-            {pct(r.terminalGrowth)} by year ten. Operating margin {pct(r.ebitMargin)}: the median of the last five years. Statements through{" "}
+            {fmtFrac(r.terminalGrowth, 1)} by year ten. Operating margin {fmtFrac(r.ebitMargin, 1)}: the median of the last five years. Statements through{" "}
             {r.fiscalYearEnd ?? DASH}.
           </div>
         </Card>
@@ -465,7 +458,7 @@ export function ValuationDetail({ r, rule, section }: { r: ValuationRow; rule?: 
                 <Line label="Cash" value={signedBig(b.cash)} tone="pos" />
                 <Line label="Debt" value={signedBig(-b.debt)} tone={b.debt > 0 ? "neg" : undefined} />
                 <Line label="= Equity value" value={big(b.equity)} strong />
-                <Line label={`÷ ${count(b.shares)} shares`} value={`$${money(r.fairValue)}/share`} strong />
+                <Line label={`÷ ${count(b.shares)} shares`} value={`$${fmtGrouped(r.fairValue)}/share`} strong />
               </tbody>
             </table>
           )}
@@ -473,15 +466,15 @@ export function ValuationDetail({ r, rule, section }: { r: ValuationRow; rule?: 
         <Card title="Key assumptions">
           <table className="data-table" style={{ width: "100%" }}>
             <tbody>
-              <Line label="Discount rate (WACC)" value={pct(r.wacc, 2)} />
-              <Line label="Long-run growth after year 10" value={pct(r.terminalGrowth, 2)} />
-              <Line label="Share of value from after year 10" value={pct(r.terminalShare)} />
+              <Line label="Discount rate (WACC)" value={fmtFrac(r.wacc, 2)} />
+              <Line label="Long-run growth after year 10" value={fmtFrac(r.terminalGrowth, 2)} />
+              <Line label="Share of value from after year 10" value={fmtFrac(r.terminalShare, 1)} />
               <Line
                 label="Beta (ours · broker's)"
                 value={`${r.beta === null ? DASH : r.beta.toFixed(2)}${r.betaBroker !== null ? ` · broker ${r.betaBroker.toFixed(2)}` : ""}`}
               />
-              {rule ? <Line label={`Risk-free rate${rule.riskFreeSource ? ` (${rule.riskFreeSource})` : ""}`} value={pct(rule.riskFree, 2)} /> : null}
-              {rule ? <Line label="Equity risk premium" value={pct(rule.equityPremium, 1)} /> : null}
+              {rule ? <Line label={`Risk-free rate${rule.riskFreeSource ? ` (${rule.riskFreeSource})` : ""}`} value={fmtFrac(rule.riskFree, 2)} /> : null}
+              {rule ? <Line label="Equity risk premium" value={fmtFrac(rule.equityPremium, 1)} /> : null}
               <Line label="EV / EBITDA" value={r.impliedEvEbitda === null ? DASH : `${r.impliedEvEbitda.toFixed(1)}×`} />
               <Line label="Market cap" value={big(r.marketCap)} />
               <Line label="Price as of" value={r.spotDate ?? DASH} />
@@ -565,36 +558,36 @@ function Advanced({ r, m }: { r: ValuationRow; m: ValuationModel }) {
             </thead>
             <tbody>
               <Row3 label={`Revenue, fiscal year to ${m.data.fiscalYearEnd ?? DASH}`} value={big(base?.revenue ?? null)} source={sourceText(s["revenue"], filed)} />
-              <Row3 label="Operating income (EBIT)" value={pct(base?.ebitMargin ?? null) + " of revenue"} source={sourceText(s["ebit"], filed)} />
-              <Row3 label="Depreciation and amortisation" value={pct(base?.daPct ?? null) + " of revenue"} source={sourceText(s["da"], filed)} />
-              <Row3 label="Capital spending" value={pct(base?.capexPct ?? null) + " of revenue"} source={sourceText(s["capex"], filed)} />
+              <Row3 label="Operating income (EBIT)" value={fmtFrac(base?.ebitMargin ?? null, 1) + " of revenue"} source={sourceText(s["ebit"], filed)} />
+              <Row3 label="Depreciation and amortisation" value={fmtFrac(base?.daPct ?? null, 1) + " of revenue"} source={sourceText(s["da"], filed)} />
+              <Row3 label="Capital spending" value={fmtFrac(base?.capexPct ?? null, 1) + " of revenue"} source={sourceText(s["capex"], filed)} />
               <Row3 label="Interest expense" value={c.coverage === null ? "none" : `coverage ${c.coverage.toFixed(1)}×`} source={sourceText(s["interest"], filed)} />
               <Row3 label="Cash and marketable securities" value={b ? big(b.cash) : DASH} source={sourceText(s["cash"], filed)} />
               <Row3 label="Debt" value={b ? big(b.debt) : DASH} source={sourceText(s["debt"], filed)} />
               <Row3 label="Basic shares" value={b ? count(b.basicShares) : DASH} source={sourceText(s["shares"], filed)} />
               <Row3 label="Year 1 revenue growth" value={signedPct(f[0]?.growth ?? null)} source={consText(0)} />
               <Row3 label="Year 2 revenue growth" value={signedPct(f[1]?.growth ?? null)} source={consText(1)} />
-              <Row3 label="Years 3–10 revenue growth" value={`fades to ${pct(r.terminalGrowth, 1)}`} source="A straight line from the last consensus year to the long-run rate in year 10" />
-              <Row3 label="Long-run operating margin" value={pct(d.ebitMargin)} source={`Median of the last ${d.historyYears ?? 5} fiscal years`} />
-              <Row3 label="Long-run D&A" value={pct(d.daPct) + " of revenue"} source={`Median of the last ${d.historyYears ?? 5} fiscal years`} />
-              <Row3 label="Long-run capital spending" value={pct(d.capexPct) + " of revenue"} source={`Median of the last ${d.historyYears ?? 5} fiscal years`} />
+              <Row3 label="Years 3–10 revenue growth" value={`fades to ${fmtFrac(r.terminalGrowth, 1)}`} source="A straight line from the last consensus year to the long-run rate in year 10" />
+              <Row3 label="Long-run operating margin" value={fmtFrac(d.ebitMargin, 1)} source={`Median of the last ${d.historyYears ?? 5} fiscal years`} />
+              <Row3 label="Long-run D&A" value={fmtFrac(d.daPct, 1) + " of revenue"} source={`Median of the last ${d.historyYears ?? 5} fiscal years`} />
+              <Row3 label="Long-run capital spending" value={fmtFrac(d.capexPct, 1) + " of revenue"} source={`Median of the last ${d.historyYears ?? 5} fiscal years`} />
               <Row3
                 label="Working capital"
-                value={pct(d.wcPct) + " of revenue"}
+                value={fmtFrac(d.wcPct, 1) + " of revenue"}
                 source={d.wcIsLevel ? "Median level of the last five years, from the balance sheet (floored at zero)" : "Median yearly investment of the last five years (no balance-sheet level)"}
               />
-              <Row3 label="Tax rate" value={pct(d.taxRate)} source="Median effective rate of the last five years, loss years excluded, bounded 10–35%" />
-              <Row3 label="Growth after year 10" value={pct(r.terminalGrowth, 2)} source="Declared long-run rate (below the 10-year Treasury)" />
-              <Row3 label="Return on capital after year 10" value={pct(m.terminal.roic, 2)} source="Equal to the discount rate (stable growth, Damodaran): growth adds no value after year 10" />
-              <Row3 label="Risk-free rate" value={pct(c.rf, 2)} source={c.rfSource ?? DASH} />
-              <Row3 label="Equity risk premium" value={pct(c.erp, 2)} source={c.erpMonth ? `Damodaran implied ERP, ${c.erpMonth}` : "fallback (no Damodaran file)"} />
+              <Row3 label="Tax rate" value={fmtFrac(d.taxRate, 1)} source="Median effective rate of the last five years, loss years excluded, bounded 10–35%" />
+              <Row3 label="Growth after year 10" value={fmtFrac(r.terminalGrowth, 2)} source="Declared long-run rate (below the 10-year Treasury)" />
+              <Row3 label="Return on capital after year 10" value={fmtFrac(m.terminal.roic, 2)} source="Equal to the discount rate (stable growth, Damodaran): growth adds no value after year 10" />
+              <Row3 label="Risk-free rate" value={fmtFrac(c.rf, 2)} source={c.rfSource ?? DASH} />
+              <Row3 label="Equity risk premium" value={fmtFrac(c.erp, 2)} source={c.erpMonth ? `Damodaran implied ERP, ${c.erpMonth}` : "fallback (no Damodaran file)"} />
               <Row3 label="Beta" value={c.beta === null ? DASH : c.beta.toFixed(2)} source={`5 years of weekly total returns vs SPY, raw ${c.betaRaw?.toFixed(2) ?? DASH}, Blume-adjusted (0.67 × raw + 0.33)`} />
               <Row3
                 label="Pre-tax cost of debt"
-                value={pct(c.kdPreTax, 2)}
-                source={`Risk-free + ${pct(c.spread, 2)} for a ${c.rating ?? DASH} synthetic rating from interest coverage (Damodaran's table, ${c.ratingsAsOf ?? DASH})`}
+                value={fmtFrac(c.kdPreTax, 2)}
+                source={`Risk-free + ${fmtFrac(c.spread, 2)} for a ${c.rating ?? DASH} synthetic rating from interest coverage (Damodaran's table, ${c.ratingsAsOf ?? DASH})`}
               />
-              <Row3 label="Tax on interest" value={pct(c.marginalTax, 0)} source="US marginal rate" />
+              <Row3 label="Tax on interest" value={fmtFrac(c.marginalTax, 0)} source="US marginal rate" />
             </tbody>
           </table>
         </Card>
@@ -602,11 +595,11 @@ function Advanced({ r, m }: { r: ValuationRow; m: ValuationModel }) {
         <Card title="Discount rate (WACC) build">
           <table className="data-table" style={{ width: "100%" }}>
             <tbody>
-              <Row3 label="Cost of equity" value={pct(c.ke, 2)} source={`${pct(c.rf, 2)} + ${c.beta?.toFixed(2) ?? DASH} × ${pct(c.erp, 2)}`} />
-              <Row3 label="After-tax cost of debt" value={pct(c.kdAfterTax, 2)} source={`${pct(c.kdPreTax, 2)} × (1 − ${pct(c.marginalTax, 0)})`} />
-              <Row3 label="Equity weight" value={pct(c.equityWeight)} source="Market value: price × basic shares" />
-              <Row3 label="Debt weight" value={pct(c.debtWeight)} source="Book debt and finance leases" />
-              <Row3 label="WACC" value={pct(c.wacc, 2)} source="Equity weight × cost of equity + debt weight × after-tax cost of debt" />
+              <Row3 label="Cost of equity" value={fmtFrac(c.ke, 2)} source={`${fmtFrac(c.rf, 2)} + ${c.beta?.toFixed(2) ?? DASH} × ${fmtFrac(c.erp, 2)}`} />
+              <Row3 label="After-tax cost of debt" value={fmtFrac(c.kdAfterTax, 2)} source={`${fmtFrac(c.kdPreTax, 2)} × (1 − ${fmtFrac(c.marginalTax, 0)})`} />
+              <Row3 label="Equity weight" value={fmtFrac(c.equityWeight, 1)} source="Market value: price × basic shares" />
+              <Row3 label="Debt weight" value={fmtFrac(c.debtWeight, 1)} source="Book debt and finance leases" />
+              <Row3 label="WACC" value={fmtFrac(c.wacc, 2)} source="Equity weight × cost of equity + debt weight × after-tax cost of debt" />
             </tbody>
           </table>
         </Card>
@@ -657,7 +650,7 @@ function Advanced({ r, m }: { r: ValuationRow; m: ValuationModel }) {
                       </td>
                     ))}
                     <td className="num" style={{ fontFamily: "var(--num-face)" }}>
-                      {label === "= Free cash flow" ? big(m.terminal.fcf) : label === "Growth" ? pct(r.terminalGrowth, 1) : ""}
+                      {label === "= Free cash flow" ? big(m.terminal.fcf) : label === "Growth" ? fmtFrac(r.terminalGrowth, 1) : ""}
                     </td>
                   </tr>
                 ))}
@@ -665,7 +658,7 @@ function Advanced({ r, m }: { r: ValuationRow; m: ValuationModel }) {
             </table>
           </div>
           <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
-            Year 11 reinvests {pct(m.terminal.reinvestmentRate)} of its after-tax operating profit to grow at {pct(r.terminalGrowth, 1)};
+            Year 11 reinvests {fmtFrac(m.terminal.reinvestmentRate, 1)} of its after-tax operating profit to grow at {fmtFrac(r.terminalGrowth, 1)};
             the value after year 10 is {big(m.terminal.value)}, {big(b?.pvTerminal ?? null)} today.
           </div>
         </Card>
@@ -701,11 +694,11 @@ function Advanced({ r, m }: { r: ValuationRow; m: ValuationModel }) {
                 <tr key={y.end}>
                   <td>{y.end}</td>
                   <td className="num">{big(y.revenue)}</td>
-                  <td className="num">{pct(y.ebitMargin)}</td>
-                  <td className="num">{pct(y.daPct)}</td>
-                  <td className="num">{pct(y.capexPct)}</td>
-                  <td className="num">{pct(y.wcPct)}</td>
-                  <td className="num">{pct(y.taxRate)}</td>
+                  <td className="num">{fmtFrac(y.ebitMargin, 1)}</td>
+                  <td className="num">{fmtFrac(y.daPct, 1)}</td>
+                  <td className="num">{fmtFrac(y.capexPct, 1)}</td>
+                  <td className="num">{fmtFrac(y.wcPct, 1)}</td>
+                  <td className="num">{fmtFrac(y.taxRate, 1)}</td>
                 </tr>
               ))}
             </tbody>

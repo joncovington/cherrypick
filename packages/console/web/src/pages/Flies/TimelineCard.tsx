@@ -4,7 +4,7 @@ import { Card, fmtMoney } from "../../components/DataTable";
 import { HelpSection, type CardHelpContent } from "../../components/CardHelp";
 import { FliesLayout } from "./FliesFilter";
 import { Section } from "../../components/Section";
-import { fliesQuery, type FliesFilter } from "../../lib/api";
+import { fliesQuery, type FliesFilter, getJson } from "../../lib/api";
 import { ARM_COLORS, SPOT_COLOR } from "../../components/chart/tokens";
 import { niceTicks } from "../../components/chart/scales";
 import { minuteOf, hhmm } from "../../components/chart/time";
@@ -34,9 +34,7 @@ export function useTimeline(mode: TradingMode, filter: FliesFilter) {
   return useQuery<Timeline>({
     queryKey: ["flies-timeline", mode, filter.date, filter.symbol, filter.era],
     queryFn: async () => {
-      const res = await fetch(`/api/flies/timeline?${fliesQuery(mode, { arm: null, date: filter.date, symbol: filter.symbol, era: filter.era })}`);
-      if (!res.ok) throw new Error(`timeline: HTTP ${res.status}`);
-      return (await res.json()) as Timeline;
+      return getJson<Timeline>(`/api/flies/timeline?${fliesQuery(mode, { arm: null, date: filter.date, symbol: filter.symbol, era: filter.era })}`);
     },
     refetchInterval: 30_000,
   });

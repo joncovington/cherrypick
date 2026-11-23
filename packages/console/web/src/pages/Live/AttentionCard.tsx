@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import type { ManageAttention, ManageAttentionItem, ManageAttentionLeg, ManageCostCallRow } from "@console/shared";
 import { Card } from "../../components/DataTable";
 import { HelpSection } from "../../components/CardHelp";
-import { fmtCash } from "../../lib/format";
+import { fmtCash, fmtFrac } from "../../lib/format";
 
 /**
  * Live → wheel's "needs a look" (2026-11-04, laid out as two cards 2026-11-06): manage's `attention`
@@ -24,14 +24,10 @@ const LEVEL_CLASS: Record<string, string> = {
   near: "att-chip is-warn",
 };
 
-function pct(v: number | null, digits = 1): string {
-  return v === null ? "—" : `${(v * 100).toFixed(digits)}%`;
-}
-
 /** The distance in words: "1.2% away", or ITM at or through the strike. */
 export function distanceWords(distance: number | null): string {
   if (distance === null) return "no price";
-  return distance <= 0 ? "ITM" : `${pct(distance)} away`;
+  return distance <= 0 ? "ITM" : `${fmtFrac(distance, 1)} away`;
 }
 
 /** How full the meter is: 100% at or through the strike, 0% at the alert distance. */
@@ -75,7 +71,7 @@ function Row({ i, nearPct, extra }: { i: ManageAttentionItem; nearPct: number | 
         </span>
         <span className={LEVEL_CLASS[i.level] ?? "att-chip"}>{levelLabel(i.level)}</span>
       </div>
-      <div className="att-meter" role="img" aria-label={`${pct(i.distance)} from the strike`}>
+      <div className="att-meter" role="img" aria-label={`${fmtFrac(i.distance, 1)} from the strike`}>
         <span className={i.level === "near" ? "att-fill is-warn" : "att-fill is-bad"} style={{ width: `${fill}%` }} />
       </div>
       <span className="lk-sub">
@@ -115,7 +111,7 @@ export function NearStrikeCard({
           <>
             <HelpSection title="Which shorts">
               <p>
-                A short{of} within {pct(a.nearPct, 0)} of its strike, breached (in the money), or likely exercised early. Worst first, as
+                A short{of} within {fmtFrac(a.nearPct, 0)} of its strike, breached (in the money), or likely exercised early. Worst first, as
                 manage orders them.
               </p>
             </HelpSection>
@@ -128,7 +124,7 @@ export function NearStrikeCard({
     >
       {a.items.length === 0 ? (
         <p className="muted">
-          nothing: every short option{of} is further than {pct(a.nearPct, 0)} from its strike
+          nothing: every short option{of} is further than {fmtFrac(a.nearPct, 0)} from its strike
         </p>
       ) : (
         <ul className="lk-list">
@@ -187,7 +183,7 @@ export function ExpiringCard({
             );
             const away = (
               <span className="muted sm" title="from the strike; negative is in the money">
-                {e.distance === null ? "—" : `${e.distance < 0 ? "−" : ""}${pct(Math.abs(e.distance))}`}
+                {e.distance === null ? "—" : `${e.distance < 0 ? "−" : ""}${fmtFrac(Math.abs(e.distance), 1)}`}
               </span>
             );
             const more = extra?.(e);
@@ -261,7 +257,7 @@ export function CostCallCard({
               <p>
                 For each cycle holding shares an assignment delivered, with no call written: the lowest listed call at or above what the
                 shares have cost (the wheel basis), on the standard monthly 30 to 45 days out, else the nearest monthly up to 60. It is
-                flagged when that call's bid is at least {pct(bar, 0)} of the stock's price: what a resting sell order there would collect.
+                flagged when that call's bid is at least {fmtFrac(bar, 0)} of the stock's price: what a resting sell order there would collect.
               </p>
             </HelpSection>
             <HelpSection title="What it does not do">
@@ -284,13 +280,13 @@ export function CostCallCard({
                 <span className="lk-leg">
                   {r.underlying} · {r.shares} sh · cost {r.effectiveCost.toFixed(2)}
                 </span>
-                <span className={COST_CHIP[r.status]}>{r.status === "pays" ? `bids ${pct(r.bidPct)}` : r.status}</span>
+                <span className={COST_CHIP[r.status]}>{r.status === "pays" ? `bids ${fmtFrac(r.bidPct, 1)}` : r.status}</span>
               </div>
               <span className="lk-sub">
                 {callWords(r)}
                 {r.bid === null
                   ? ""
-                  : ` · bid ${r.bid.toFixed(2)} on ${r.spot === null ? "—" : r.spot.toFixed(2)} = ${pct(r.bidPct)} (bar ${pct(r.minBidPct, 0)})`}
+                  : ` · bid ${r.bid.toFixed(2)} on ${r.spot === null ? "—" : r.spot.toFixed(2)} = ${fmtFrac(r.bidPct, 1)} (bar ${fmtFrac(r.minBidPct, 0)})`}
                 {r.credit === null ? "" : ` · ${fmtCash(r.credit)} for ${r.contracts} contract${r.contracts === 1 ? "" : "s"}`}
                 {r.source === null ? "" : ` · ${r.source}`}
               </span>

@@ -4,6 +4,7 @@ import { Card } from "./DataTable";
 import { HelpSection, type CardHelpContent } from "./CardHelp";
 import { Section } from "./Section";
 import { GuideLink } from "./GuideLink";
+import { getJson } from "../lib/api";
 
 /**
  * What each experiment arm (flies) or risk profile (MEIC) is, and why it isn't one of the others.
@@ -19,9 +20,7 @@ function useGuide(url: string, mode: TradingMode) {
   return useQuery<ExperimentGuide>({
     queryKey: ["experiment-guide", url, mode],
     queryFn: async () => {
-      const res = await fetch(`${url}?mode=${mode}`);
-      if (!res.ok) throw new Error(`HTTP ${String(res.status)}`);
-      return (await res.json()) as ExperimentGuide;
+      return getJson<ExperimentGuide>(`${url}?mode=${mode}`);
     },
     // Config and ledger history — it changes when someone edits an arm, not on a timer.
     staleTime: 60_000,

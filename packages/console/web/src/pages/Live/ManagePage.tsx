@@ -7,7 +7,7 @@ import { Card } from "../../components/DataTable";
 import { HelpSection, type CardHelpContent } from "../../components/CardHelp";
 import { Cells, HeadRow, useColumns, type Column } from "../../components/columns";
 import { TileGrid, tileCount } from "../../components/performance/TileGrid";
-import { useOverview } from "../../lib/api";
+import { useOverview, getJson } from "../../lib/api";
 import { parseSuiteTs } from "../../lib/etTime";
 import { fmtCash, fmtMoney } from "../../lib/format";
 import { Tile } from "../Flies/PerformanceTab";
@@ -41,9 +41,7 @@ export function useManage(session: string | undefined) {
   return useQuery<ManagePayload>({
     queryKey: ["manage", session ?? "latest"],
     queryFn: async () => {
-      const res = await fetch(`/api/manage${session ? `?session=${session}` : ""}`);
-      if (!res.ok) throw new Error(`manage: HTTP ${res.status}`);
-      return (await res.json()) as ManagePayload;
+      return getJson<ManagePayload>(`/api/manage${session ? `?session=${session}` : ""}`);
     },
     // Manage re-evaluates every 30 minutes, 10:00-16:35 ET; a minute's poll sees each run and keeps
     // the snapshot's age current, and polling harder would only re-read the same file.

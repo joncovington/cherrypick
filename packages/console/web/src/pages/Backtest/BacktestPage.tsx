@@ -18,6 +18,7 @@ import { fmtCash, fmtCount, fmtNum } from "../../lib/format";
 import { RunCards } from "./RunCards";
 import { studyHref } from "./studyIndex";
 import { GuideLink } from "../../components/GuideLink";
+import { getJson } from "../../lib/api";
 
 /**
  * The Backtest page (2026-10-17): `packages/backtest`'s replays over licensed vendor history, read
@@ -154,9 +155,7 @@ export function useRun(id: string | null, { capital, risk = null, unit = null, d
       if (unit !== null) params.set("unit", unit);
       if (dd !== null) params.set("dd", String(dd));
       const q = params.size === 0 ? "" : `?${params.toString()}`;
-      const res = await fetch(`/api/backtest/runs/${encodeURIComponent(id ?? "")}${q}`);
-      if (!res.ok) throw new Error(`run ${id ?? ""}: HTTP ${String(res.status)}`);
-      return (await res.json()) as BridgedResult<BacktestRunReport>;
+      return getJson<BridgedResult<BacktestRunReport>>(`/api/backtest/runs/${encodeURIComponent(id ?? "")}${q}`);
     },
     // A run's report is written once and never changes.
     staleTime: Infinity,

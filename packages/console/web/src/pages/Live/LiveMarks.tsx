@@ -1,8 +1,9 @@
 import { createContext, useContext } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { ManageLiveAccount, ManageLivePayload, ManageLiveTrade } from "@console/shared";
-import { fmtCash, fmtMoney } from "../../lib/format";
+import { fmtCash, fmtMoney, fmtFrac } from "../../lib/format";
 import { ageText, tone } from "./manageParts";
+import { getJson } from "../../lib/api";
 
 /**
  * Live marks (2026-10-22): the newest evaluation re-priced from the stream cache every few seconds
@@ -14,9 +15,7 @@ export function useManageLive(enabled: boolean) {
   return useQuery<ManageLivePayload>({
     queryKey: ["manage-live"],
     queryFn: async () => {
-      const res = await fetch("/api/manage/live");
-      if (!res.ok) throw new Error(`manage live: HTTP ${res.status}`);
-      return (await res.json()) as ManageLivePayload;
+      return getJson<ManageLivePayload>("/api/manage/live");
     },
     enabled,
     // The streamer writes quotes as they tick; five seconds is live to the eye and cheap to read.
@@ -38,10 +37,6 @@ export function useLiveMarks(): LiveMarks | null {
 
 export function liveMarks(payload: ManageLivePayload | undefined): LiveMarks | null {
   return payload ? { payload, trades: new Map(payload.trades.map((t) => [t.tradeId, t])) } : null;
-}
-
-function pct(v: number | null): string {
-  return v === null ? "—" : `${(v * 100).toFixed(0)}%`;
 }
 
 /** Why a trade has no live figure, for its hover. */
@@ -85,7 +80,7 @@ export function LiveCaptureCell({ id }: { id: string }) {
   }
   return (
     <td className={tone(t.capture)} style={{ textAlign: "right" }}>
-      {pct(t.capture)}
+      {fmtFrac(t.capture, 0)}
       {t.atTakeProfit ? (
         <>
           {" "}

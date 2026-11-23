@@ -2,7 +2,7 @@ import { useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { useListView } from "../../components/ViewSwitch";
 import type { ManageCandidate, ManageDeltaIdea, ManageHedgeSuggestion, ManageHedges, TimeSpreadStructure } from "@console/shared";
-import { fmtCash, fmtMoney } from "../../lib/format";
+import { fmtCash, fmtMoney, fmtFrac } from "../../lib/format";
 import { shapeOrder } from "../../lib/legShape";
 import { tone } from "./manageParts";
 
@@ -228,10 +228,6 @@ const KIND: Record<string, string> = {
   covered_call: "covered call",
 };
 
-function pct(v: number | null, digits = 0): string {
-  return v === null ? "—" : `${(v * 100).toFixed(digits)}%`;
-}
-
 /** An income candidate at the size manage fitted (`units`), against the per-trade cap in dollars. */
 export function candidateModel(
   c: ManageCandidate,
@@ -278,7 +274,7 @@ export function candidateModel(
       // costs as a share of the credit. A known earnings date is after expiry (or the trade was dropped),
       // so only an unknown one is said.
       o
-        ? `odds ${pct(o.pLoss)} / ${pct(o.pMaxLoss)} · b/e ${o.breakEven ?? "—"} · cost ${pct(o.entryCostShare)}`
+        ? `odds ${fmtFrac(o.pLoss, 0)} / ${fmtFrac(o.pMaxLoss, 0)} · b/e ${o.breakEven ?? "—"} · cost ${fmtFrac(o.entryCostShare, 0)}`
         : c.earningsUnknown
           ? "earnings date unknown: check before sending"
           : "re-quote before sending",
@@ -324,7 +320,7 @@ export function timeSpreadModel(s: TimeSpreadStructure, capDollars: number | nul
       `flat at the front's expiry ${fmtCash(s.pnlFlat === null ? null : s.pnlFlat * n)}`,
     ],
     foot: [
-      `front IV ${pct(s.frontIv)} · back ${pct(s.backIv)}${s.bpAfterPct !== null ? ` · buying power after ${pct(s.bpAfterPct)}` : ""}`,
+      `front IV ${fmtFrac(s.frontIv, 0)} · back ${fmtFrac(s.backIv, 0)}${s.bpAfterPct !== null ? ` · buying power after ${fmtFrac(s.bpAfterPct, 0)}` : ""}`,
       s.earningsDate ? `earnings ${s.earningsDate}` : s.rollBy ? `roll by ${s.rollBy}` : "no earnings date inside its life",
     ],
     faded: !(s.units !== null && s.units > 0),
@@ -429,10 +425,10 @@ export function hedgeModel(s: ManageHedgeSuggestion, h: ManageHedges): TradeCard
       quote: quote(l.bid, l.ask, l.delta),
     })),
     after: a
-      ? [`after: delta ${signed(a.bwd)} SPY sh`, `theta ${fmtMoney(a.theta)} per day`, `buying power ${pct(a.buyingPowerUsedPct)}`]
+      ? [`after: delta ${signed(a.bwd)} SPY sh`, `theta ${fmtMoney(a.theta)} per day`, `buying power ${fmtFrac(a.buyingPowerUsedPct, 0)}`]
       : ["no after-figures"],
     foot: [
-      `break-even after ${pct(a?.breakevenPct ?? null, 2)}`,
+      `break-even after ${fmtFrac(a?.breakevenPct ?? null, 2)}`,
       s.pastCap ? "past the buying-power cap: offered anyway, because a debit spread only lowers the book's worst case" : "nothing is placed",
     ],
   };

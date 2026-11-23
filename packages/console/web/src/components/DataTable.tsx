@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from "react";
+import { etTimeOfDay } from "../lib/etTime";
 
 // The formatters live in lib/format.ts now -- nothing should import a TABLE component to render a
 // number. Re-exported here so the 35 existing call sites keep working unchanged.
@@ -28,7 +29,7 @@ export function SkeletonRows({ n, cols }: { n: number; cols: number }) {
 /** "14:32:05" in ET — the per-card freshness stamp. */
 export function asOfLabel(updatedAt: number | undefined): string | null {
   if (updatedAt === undefined || updatedAt === 0) return null;
-  return new Date(updatedAt).toLocaleTimeString("en-US", { timeZone: "America/New_York", hour12: false });
+  return etTimeOfDay(updatedAt);
 }
 
 export type SortDir = "asc" | "desc";

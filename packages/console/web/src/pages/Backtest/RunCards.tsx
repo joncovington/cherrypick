@@ -6,9 +6,10 @@ import { EquityUnderwater } from "../../components/EquityUnderwater";
 import { Tile } from "../../components/performance/Tile";
 import { TileGrid } from "../../components/performance/TileGrid";
 import { signTone } from "../../lib/bridged";
-import { fmtCash, fmtCount, fmtNum } from "../../lib/format";
+import { fmtCash, fmtCount, fmtNum, fmtFrac } from "../../lib/format";
 import { Insights, ScorecardTable } from "./Scorecard";
 import { TradeLog } from "./TradeLog";
+import { getJson } from "../../lib/api";
 
 /**
  * A run's cards (`packages/backtest` `cards.py`, 2026-10-26): the path an arm took, its drawdowns,
@@ -39,10 +40,6 @@ function compact(v: number): string {
 }
 
 /** A fraction as a percentage, `4.2%`. */
-function pct(v: number | null | undefined, digits = 1): string {
-  return v === null || v === undefined ? "—" : `${(v * 100).toFixed(digits)}%`;
-}
-
 function tone(v: number | null | undefined): "pos" | "neg" | "dim" | undefined {
   if (v === null || v === undefined) return "dim";
   return v > 0 ? "pos" : v < 0 ? "neg" : undefined;
@@ -152,16 +149,16 @@ function AccountTileRow({ a }: { a: NonNullable<BacktestArmCards["account"]> }) 
     <TileGrid count={6}>
       <Tile label="account" value={dollars(a.capital)} title="starting capital; fixed lots, never compounded" />
       <Tile label="ending" value={dollars(a.ending)} tone={tone(a.ending - a.capital)} />
-      <Tile label="return" value={pct(a.return)} tone={tone(a.return)} afterFees />
+      <Tile label="return" value={fmtFrac(a.return, 1)} tone={tone(a.return)} afterFees />
       <Tile
         label="annual return"
-        value={pct(a.annual_return)}
+        value={fmtFrac(a.annual_return, 1)}
         tone={tone(a.annual_return)}
         title="simple: return / years spanned, no compounding"
         n={a.years}
         nUnit="years"
       />
-      <Tile label="max drawdown" value={pct(a.max_drawdown)} tone={a.max_drawdown > 0 ? "neg" : undefined} title="as a share of peak equity" />
+      <Tile label="max drawdown" value={fmtFrac(a.max_drawdown, 1)} tone={a.max_drawdown > 0 ? "neg" : undefined} title="as a share of peak equity" />
       <Tile
         label="return / drawdown"
         value={fmtNum(a.return_to_drawdown)}
@@ -207,10 +204,10 @@ export function CompoundedLens({ c }: { c: BacktestArmCards }) {
       <TileGrid count={6}>
         <Tile label="start" value={dollars(k.start)} title={`risk ${String(k.risk_pct)}% of equity per session`} />
         <Tile label="ending (whole)" value={dollars(w.ending)} tone={tone(w.ending - k.start)} afterFees />
-        <Tile label="CAGR (whole)" value={pct(w.cagr)} tone={tone(w.cagr)} n={k.years} nUnit="years" title="compounded annual growth at whole contracts" />
+        <Tile label="CAGR (whole)" value={fmtFrac(w.cagr, 1)} tone={tone(w.cagr)} n={k.years} nUnit="years" title="compounded annual growth at whole contracts" />
         <Tile
           label="max drawdown (whole)"
-          value={pct(w.max_drawdown_pct)}
+          value={fmtFrac(w.max_drawdown_pct, 1)}
           tone={w.max_drawdown_pct > 0 ? "neg" : undefined}
           title={`${dollars(w.max_drawdown)} from the peak`}
         />
@@ -221,9 +218,9 @@ export function CompoundedLens({ c }: { c: BacktestArmCards }) {
         />
         <Tile
           label="CAGR (fractional)"
-          value={pct(f.cagr)}
+          value={fmtFrac(f.cagr, 1)}
           tone={tone(f.cagr)}
-          title={`the upper bound: ending ${dollars(f.ending)}, max drawdown ${pct(f.max_drawdown_pct)}`}
+          title={`the upper bound: ending ${dollars(f.ending)}, max drawdown ${fmtFrac(f.max_drawdown_pct, 1)}`}
         />
       </TileGrid>
       {(w.sessions_rounded_to_none > 0 || k.sessions_unsized > 0) && (
@@ -336,9 +333,7 @@ function useCurrentAccounts(): CurrentAccount[] {
   const { data } = useQuery<ManagePayload>({
     queryKey: ["manage", "current-accounts"],
     queryFn: async () => {
-      const res = await fetch("/api/manage");
-      if (!res.ok) throw new Error(`manage: HTTP ${String(res.status)}`);
-      return (await res.json()) as ManagePayload;
+      return getJson<ManagePayload>("/api/manage");
     },
     staleTime: 5 * 60_000,
   });
@@ -469,8 +464,8 @@ export function healthSentence(h: BacktestHealthCheck): string {
         : `Not carried by a few days: without its best ${h.k} sessions the rest still average ${fmtCash(h.rest_mean)} a session.`;
     case "win_rate":
       return h.flag
-        ? `Only ${pct(h.value)} of sessions win (under ${pct(h.bar, 0)}): long losing runs are normal for it.`
-        : `${pct(h.value)} of sessions win.`;
+        ? `Only ${fmtFrac(h.value, 1)} of sessions win (under ${fmtFrac(h.bar, 0)}): long losing runs are normal for it.`
+        : `${fmtFrac(h.value, 1)} of sessions win.`;
     case "losing_run":
       return `Longest losing run: ${fmtCount(h.value)} sessions${h.flag ? ` (${fmtCount(h.bar)} or more)` : ""}.`;
     case "drawdown_length":
@@ -478,7 +473,7 @@ export function healthSentence(h: BacktestHealthCheck): string {
     case "edge_trend":
       return h.flag ? "The edge is decaying: the run's second half earns less than its first, beyond noise." : `Edge trend: ${h.value}.`;
     case "fee_drag":
-      return h.flag ? `Fees take ${pct(h.value)} of the premium collected (${pct(h.bar, 0)} or more).` : `Fees take ${pct(h.value)} of the premium.`;
+      return h.flag ? `Fees take ${fmtFrac(h.value, 1)} of the premium collected (${fmtFrac(h.bar, 0)} or more).` : `Fees take ${fmtFrac(h.value, 1)} of the premium.`;
   }
 }
 
@@ -510,7 +505,7 @@ function SessionTiles({ c }: { c: BacktestArmCards }) {
     <TileGrid count={6}>
       <Tile label="net" value={fmtCash(net)} tone={tone(net)} afterFees n={c.equity.length} nUnit="sessions" />
       <Tile label="max drawdown" value={fmtCash(c.max_drawdown === 0 ? 0 : -c.max_drawdown)} tone={c.max_drawdown > 0 ? "neg" : undefined} />
-      <Tile label="winning sessions" value={pct(s.win_rate)} n={s.count} nUnit="traded" title="sessions with no trade are neither" />
+      <Tile label="winning sessions" value={fmtFrac(s.win_rate, 1)} n={s.count} nUnit="traded" title="sessions with no trade are neither" />
       <Tile
         label="avg win / avg loss"
         value={`${fmtCash(s.avg_win)} / ${fmtCash(s.avg_loss)}`}
@@ -541,10 +536,10 @@ function PremiumTiles({ c }: { c: BacktestArmCards }) {
         value={fmtCash(p.fees === 0 ? 0 : -p.fees)}
         title={p.fees_not_recorded ? `settlement apart; ${String(p.fees_not_recorded)} trades without recorded fees` : "settlement apart"}
       />
-      <Tile label="fee drag" value={pct(p.fee_drag)} title="trading fees / premium collected" />
+      <Tile label="fee drag" value={fmtFrac(p.fee_drag, 1)} title="trading fees / premium collected" />
       <Tile
         label="capture rate"
-        value={pct(p.capture_rate)}
+        value={fmtFrac(p.capture_rate, 1)}
         tone={tone(p.capture_rate)}
         n={p.capture_n}
         afterFees
@@ -559,7 +554,7 @@ function TradeTiles({ c }: { c: BacktestArmCards }) {
   return (
     <TileGrid count={6}>
       <Tile label="trades" value={fmtCount(t.count)} title={t.not_recorded ? `${String(t.not_recorded)} more with no recorded net` : undefined} />
-      <Tile label="winning trades" value={pct(t.win_rate)} n={t.count} />
+      <Tile label="winning trades" value={fmtFrac(t.win_rate, 1)} n={t.count} />
       <Tile label="avg winner" value={fmtCash(t.avg_win)} tone={tone(t.avg_win)} />
       <Tile label="avg loser" value={fmtCash(t.avg_loss)} tone={tone(t.avg_loss)} />
       <Tile label="payoff ratio" value={fmtNum(t.payoff_ratio)} title="avg winner / avg loser" />
@@ -603,7 +598,7 @@ function DrawdownTable({ c }: { c: BacktestArmCards }) {
           {c.drawdowns.map((d) => (
             <tr key={`${d.peak ?? "start"}-${d.trough}`}>
               <td className="num pnl-neg">{fmtCash(-d.depth)}</td>
-              <td className="num">{pct(d.depth_pct)}</td>
+              <td className="num">{fmtFrac(d.depth_pct, 1)}</td>
               <td>{d.peak ?? "start"}</td>
               <td>{d.trough}</td>
               <td className="num">{fmtCount(d.sessions_to_trough)}</td>
@@ -683,8 +678,8 @@ function ExitTable({ c }: { c: BacktestArmCards }) {
             <tr key={e.outcome}>
               <td>{e.outcome}</td>
               <td>{fmtCount(e.count)}</td>
-              <td>{pct(e.share)}</td>
-              <td>{pct(e.win_rate)}</td>
+              <td>{fmtFrac(e.share, 1)}</td>
+              <td>{fmtFrac(e.win_rate, 1)}</td>
               <td className={signTone(e.avg_net)}>{fmtCash(e.avg_net)}</td>
               <td className={signTone(e.total_net)}>{fmtCash(e.total_net)}</td>
             </tr>

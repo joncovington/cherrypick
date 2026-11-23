@@ -1,6 +1,6 @@
 import { Fragment } from "react";
 import type { TimeSpreadStructure } from "@console/shared";
-import { fmtCash } from "../lib/format";
+import { fmtCash, fmtFrac } from "../lib/format";
 
 /**
  * The time-spread scanner's structures, for the Screeners tab and
@@ -12,10 +12,6 @@ import { fmtCash } from "../lib/format";
 
 export function per(v: number | null): string {
   return v === null ? "—" : `${v.toFixed(2)} db`;
-}
-
-export function pct(v: number | null): string {
-  return v === null ? "—" : `${Math.round(v * 100)}%`;
 }
 
 function px(v: number | null): string {
@@ -58,7 +54,7 @@ export function TimeSpreadTable({ rows, sized = false }: { rows: TimeSpreadStruc
                 {r.label} <span className="muted">({r.direction})</span>
               </td>
               <td>
-                {pct(r.frontIv)} / {pct(r.backIv)} <span className="muted">×{r.ratio?.toFixed(2) ?? "—"}</span>
+                {fmtFrac(r.frontIv, 0)} / {fmtFrac(r.backIv, 0)} <span className="muted">×{r.ratio?.toFixed(2) ?? "—"}</span>
               </td>
               <td>
                 {per(r.debitMid)} / {per(r.debitNatural)}
@@ -81,9 +77,9 @@ export function TimeSpreadTable({ rows, sized = false }: { rows: TimeSpreadStruc
               <td colSpan={sized ? 7 : 6} className="muted">
                 breakeven {bandText(r.breakeven)} · price stop (close if it closes beyond) {bandText(r.priceStop)} · take profit{" "}
                 {per(r.takeProfit).replace(" db", " cr")} · value stop {per(r.valueStop).replace(" db", " cr")} · roll by {r.rollBy ?? "—"}
-                {r.gap !== null && r.debitShareOfGap !== null ? ` · ${pct(r.debitShareOfGap)} of the ${r.gap} gap` : ""}
+                {r.gap !== null && r.debitShareOfGap !== null ? ` · ${fmtFrac(r.debitShareOfGap, 0)} of the ${r.gap} gap` : ""}
                 {` · max loss ${fmtCash(r.maxLoss === null ? null : -r.maxLoss)}`}
-                {sized && r.bpAfterPct !== null ? ` · buying power after ${pct(r.bpAfterPct)}` : ""}
+                {sized && r.bpAfterPct !== null ? ` · buying power after ${fmtFrac(r.bpAfterPct, 0)}` : ""}
               </td>
             </tr>
           </Fragment>

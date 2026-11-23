@@ -1,7 +1,8 @@
 import { useState } from "react";
+import { etTimeOfDay } from "../../lib/etTime";
 import { useQuery } from "@tanstack/react-query";
 import type { GexPayload } from "@console/shared";
-import { useGex, useGexIntegrity } from "../../lib/api";
+import { useGex, useGexIntegrity, getJson } from "../../lib/api";
 import { Card, fmtNum } from "../../components/DataTable";
 import { HelpSection, type CardHelpContent } from "../../components/CardHelp";
 import { FilterGroup } from "../../components/FilterSort";
@@ -73,9 +74,7 @@ function useGexProfile(symbol: string, enabled: boolean) {
   return useQuery<GexProfilePayload>({
     queryKey: ["gex-profile", symbol],
     queryFn: async () => {
-      const res = await fetch(`/api/gex/profile/${symbol}`);
-      if (!res.ok) throw new Error(`gex profile: HTTP ${res.status}`);
-      return (await res.json()) as GexProfilePayload;
+      return getJson<GexProfilePayload>(`/api/gex/profile/${symbol}`);
     },
     refetchInterval: 15_000,
     enabled,
@@ -86,9 +85,7 @@ function useGexSymbols() {
   return useQuery<{ symbols: string[] }>({
     queryKey: ["gex-symbols"],
     queryFn: async () => {
-      const res = await fetch("/api/gex/symbols");
-      if (!res.ok) throw new Error("gex symbols failed");
-      return (await res.json()) as { symbols: string[] };
+      return getJson<{ symbols: string[] }>("/api/gex/symbols");
     },
     staleTime: 300_000,
   });
@@ -131,7 +128,7 @@ function Metric({
 function fmtEt(iso: string): string {
   const t = Date.parse(iso);
   if (Number.isNaN(t)) return iso;
-  return new Date(t).toLocaleTimeString("en-US", { timeZone: "America/New_York", hour12: false });
+  return etTimeOfDay(t);
 }
 
 function fmtGex(v: number | null): string {

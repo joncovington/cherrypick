@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { hhmmOf } from "../../lib/etTime";
 import type { LiveFliesPayload, LiveOnRisk, LivePerformance, LivePeriod, LivePosition } from "@console/shared";
 import { Card } from "../../components/DataTable";
 import { HelpSection, HelpWarn, type CardHelpContent } from "../../components/CardHelp";
@@ -24,6 +25,7 @@ import { structureLegs } from "../Flies/structure";
 import { BoxButton, BoxButtons } from "./portfolioBoxContext";
 import { TradeCards, type TradeCardModel } from "./TradeCard";
 import { GuideLink } from "../../components/GuideLink";
+import { getJson } from "../../lib/api";
 
 const ACTIVITY_PAGE_SIZES = [10, 25, 50, 100] as const;
 
@@ -38,9 +40,7 @@ export function useLiveFlies() {
   return useQuery<LiveFliesPayload>({
     queryKey: ["live-flies"],
     queryFn: async () => {
-      const res = await fetch("/api/live/flies");
-      if (!res.ok) throw new Error(`live: HTTP ${res.status}`);
-      return (await res.json()) as LiveFliesPayload;
+      return getJson<LiveFliesPayload>("/api/live/flies");
     },
     refetchInterval: 15_000,
   });
@@ -230,9 +230,6 @@ export function PerformanceBox({ perf, tab }: { perf: LivePerformance; tab: stri
   );
 }
 
-function hhmmOf(ts: string | null): string {
-  return ts !== null && ts.length >= 16 ? ts.slice(11, 16) : "—";
-}
 
 function fillState(p: LivePosition): string {
   if (p.status === "settled") return "settled";
