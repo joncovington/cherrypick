@@ -18,6 +18,8 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
+from cherrypick.core.db import connect_ro
+
 from . import fullset, paths
 
 #: One entry per store file in the vendor directory. `built_by`: the command or committed script that
@@ -222,7 +224,7 @@ def _shape(path: Path) -> dict[str, Any]:
     """Tables with rows and the span of their first date-like column, and for a request ledger each
     symbol's span (`symbols`). Counts only."""
     out: dict[str, Any] = {"tables": {}}
-    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    conn = connect_ro(path, row_factory=None)
     try:
         for (t,) in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name"):
             cols = [r[1] for r in conn.execute(f'PRAGMA table_info("{t}")')]

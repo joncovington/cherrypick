@@ -46,9 +46,11 @@ from pathlib import Path
 from typing import Any
 
 from cherrypick.core import progress as core_progress
+from cherrypick.core.db import connect_ro
 
 from . import fullset, paths
-from .chainfetch import prefer_wal, prior_refusals, settled, vendor_root
+from .chainfetch import prior_refusals, settled, vendor_root
+from .storeopen import open_store
 from .vendor import FATAL, VendorRefusal
 
 DB_NAME = "intraday_chains.db"
@@ -97,10 +99,7 @@ def request_store(path: Path) -> str:
 def connect(settings: dict, store: str = DB_NAME) -> sqlite3.Connection:
     """The intraday chain store, created inside the marked vendor directory."""
     paths.ensure_vendor_dir(settings)
-    conn = sqlite3.connect(db_path(settings, store), timeout=300)
-    prefer_wal(conn)
-    conn.executescript(SCHEMA)
-    return conn
+    return open_store(db_path(settings, store), SCHEMA)
 
 
 def _hhmm(text: str) -> str:
@@ -325,7 +324,7 @@ def status(settings: dict) -> dict[str, Any]:
     path = db_path(settings)
     if not path.exists():
         return {"store": None}
-    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    conn = connect_ro(path, row_factory=None)
     try:
         by = dict(
             conn.execute("SELECT status, COUNT(*) FROM intraday_chain_requests GROUP BY status").fetchall()

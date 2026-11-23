@@ -13,6 +13,8 @@ import json
 import sqlite3
 from pathlib import Path
 
+from cherrypick.core.db import connect_ro
+
 from . import fullset, paths
 
 STUDY = "fullset"
@@ -32,7 +34,7 @@ def _rows(path: Path, sql: str) -> list[tuple]:
     """A read-only query of a store; nothing when it is absent or not yet that shape."""
     if not path.exists():
         return []
-    conn = sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True)
+    conn = connect_ro(path, row_factory=None)
     try:
         return conn.execute(sql).fetchall()
     except sqlite3.Error:

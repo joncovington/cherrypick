@@ -34,8 +34,10 @@ from pathlib import Path
 from typing import Any
 
 from cherrypick.core import progress as core_progress
+from cherrypick.core.db import connect_ro
 
-from . import chainfetch, paths
+from . import paths
+from .storeopen import open_store
 from .vendor import FATAL, VendorRefusal
 
 DB_NAME = "addon_weeklies.db"
@@ -71,10 +73,7 @@ def db_path(settings: dict) -> Path:
 def connect(settings: dict) -> sqlite3.Connection:
     """The add-on weeklies store, created inside the marked vendor directory."""
     paths.ensure_vendor_dir(settings)
-    conn = sqlite3.connect(db_path(settings), timeout=300)
-    chainfetch.prefer_wal(conn)
-    conn.executescript(SCHEMA)
-    return conn
+    return open_store(db_path(settings), SCHEMA)
 
 
 def read_requests(path: Path) -> list[Span]:
@@ -234,7 +233,7 @@ def status(settings: dict) -> dict[str, Any]:
     path = db_path(settings)
     if not path.exists():
         return {"store": None}
-    conn = sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True)
+    conn = connect_ro(path, row_factory=None)
     try:
         span = conn.execute(
             "SELECT COUNT(DISTINCT expiration), COUNT(DISTINCT day), COUNT(*) FROM q"

@@ -27,6 +27,7 @@ from pathlib import Path
 from cherrypick.core import progress as core_progress
 
 from . import paths
+from .storeopen import open_store
 from .vendor import FATAL, VendorRefusal
 
 MAX_DAYS = 100
@@ -49,13 +50,7 @@ def db_path(settings: dict) -> Path:
 
 def connect(settings: dict) -> sqlite3.Connection:
     paths.ensure_vendor_dir(settings)
-    conn = sqlite3.connect(db_path(settings))
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    for stmt in DDL:
-        conn.execute(stmt)
-    conn.commit()
-    return conn
+    return open_store(db_path(settings), *DDL, row_factory=sqlite3.Row)
 
 
 def status(conn, symbol: str, session: str) -> str | None:

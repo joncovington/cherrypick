@@ -21,6 +21,8 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
+from cherrypick.core.db import connect_ro
+
 #: Per store: the quotes table, the request tables with their symbol column, and extra null checks.
 STORES = {
     "eod_chains.db": {
@@ -84,7 +86,7 @@ def outcomes(conn: sqlite3.Connection, table: str) -> dict[str, dict[str, int]]:
 def report(path: Path, store: str) -> dict:
     """One store's report, read-only."""
     spec = STORES[store]
-    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    conn = connect_ro(path, row_factory=None)
     try:
         tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         doc: dict = {"store": store}

@@ -76,6 +76,7 @@ from cherrypick.core import ledgers as core_ledgers
 from cherrypick.core import looplock
 from cherrypick.core import procs as core_procs
 from cherrypick.core import progress as core_progress
+from cherrypick.core.db import connect_ro
 
 from . import paths, results, stats, store
 
@@ -362,7 +363,7 @@ def _replay(day: str, out: Path, arms: list[str], history_db: Path, settle: floa
 
 def _ledger_rows(path: Path, schema: str = SCHEMA) -> list[dict]:
     """A replayed session's closed rows, through the schema's one reader."""
-    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    conn = connect_ro(path, row_factory=None)
     conn.row_factory = sqlite3.Row
     try:
         return core_ledgers.READERS[schema](conn)

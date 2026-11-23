@@ -40,8 +40,10 @@ from typing import Any
 
 from cherrypick.core import calendar as cal
 from cherrypick.core import progress as core_progress
+from cherrypick.core.db import connect_ro
 
 from . import paths
+from .storeopen import WAL_SWITCH_WAIT_MS, open_store, prefer_wal  # noqa: F401  (re-exported)
 from .vendor import FATAL, VendorRefusal
 
 DB_NAME = "eod_chains.db"
@@ -77,36 +79,10 @@ def db_path(settings: dict) -> Path:
     return paths.vendor_dir(settings) / DB_NAME
 
 
-#: How long `prefer_wal` waits for the file to be free before leaving its journal mode as it is.
-WAL_SWITCH_WAIT_MS = 1000
-
-
-def prefer_wal(conn: sqlite3.Connection, wait_ms: int = WAL_SWITCH_WAIT_MS) -> str:
-    """Put a fetch store in WAL, where a reader and the writer stop blocking each other, and return
-    the mode it is in. Without it, the inventory job's full count of a large store held the file
-    for longer than a writer's 300 s wait, and the fetch died on its next write (the full set's
-    near-spx-2, 2026-11-21). The switch needs the file to itself for a moment, so a busy file keeps
-    its mode for this run after `wait_ms`, rather than holding the fetch back; the mode is stored in
-    the file, so the first connect that finds it quiet switches it for good."""
-    (busy,) = conn.execute("PRAGMA busy_timeout").fetchone()
-    conn.execute(f"PRAGMA busy_timeout = {int(wait_ms)}")
-    try:
-        return str(conn.execute("PRAGMA journal_mode=WAL").fetchone()[0])
-    except sqlite3.OperationalError:
-        return str(conn.execute("PRAGMA journal_mode").fetchone()[0])
-    finally:
-        conn.execute(f"PRAGMA busy_timeout = {int(busy)}")
-
-
 def connect(settings: dict) -> sqlite3.Connection:
     """The chain store, created inside the marked vendor directory."""
     paths.ensure_vendor_dir(settings)
-    # another study reading the store, or a second fetch writing it, holds the lock for a moment;
-    # sqlite's 5 s default ended a 1,500-path run mid-write (2026-10-23)
-    conn = sqlite3.connect(db_path(settings), timeout=300)
-    prefer_wal(conn)
-    conn.executescript(SCHEMA)
-    return conn
+    return open_store(db_path(settings), SCHEMA)
 
 
 def vendor_root(symbol: str) -> str:
@@ -620,7 +596,7 @@ def progress(
     path = db_path(settings)
     if not path.exists() or not wanted:
         return out
-    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    conn = connect_ro(path, row_factory=None)
     try:
         recent, last = 0, None
         for sym, sess, exp, st, at in conn.execute(
@@ -651,7 +627,7 @@ def status(settings: dict) -> dict[str, Any]:
     path = db_path(settings)
     if not path.exists():
         return {"store": None}
-    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    conn = connect_ro(path, row_factory=None)
     try:
         by = dict(conn.execute("SELECT status, COUNT(*) FROM eod_chain_requests GROUP BY status").fetchall())
         span = conn.execute(

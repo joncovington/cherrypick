@@ -21,6 +21,7 @@ import sqlite3
 from pathlib import Path
 
 from . import paths
+from .storeopen import open_store
 
 #: The recorder's tables, verbatim in structure (column names, order, types, keys).
 RECORDER_DDL = (
@@ -127,13 +128,7 @@ def db_path(settings: dict, symbol: str, cadence: float | None = None) -> Path:
 def connect(settings: dict, symbol: str, cadence: float | None = None) -> sqlite3.Connection:
     """Open (creating, with its marker directory) the dataset's store for writing."""
     paths.ensure_vendor_dir(settings)
-    conn = sqlite3.connect(db_path(settings, symbol, cadence))
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    for stmt in RECORDER_DDL + VENDOR_DDL:
-        conn.execute(stmt)
-    conn.commit()
-    return conn
+    return open_store(db_path(settings, symbol, cadence), *RECORDER_DDL, *VENDOR_DDL, row_factory=sqlite3.Row)
 
 
 def session_status(conn: sqlite3.Connection, symbol: str, day: str) -> str | None:

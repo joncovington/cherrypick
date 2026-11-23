@@ -23,6 +23,8 @@ import sqlite3
 from collections import Counter
 from pathlib import Path
 
+from cherrypick.core.db import connect_ro
+
 from . import licensing, paths, results, store
 
 RUNS_LISTED = 50
@@ -34,7 +36,7 @@ RUN_ID = re.compile(r"^[0-9]{8}-[0-9]{6}-[0-9a-f]{6}$")
 
 
 def _ro(path: Path) -> sqlite3.Connection:
-    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    conn = connect_ro(path, row_factory=None)
     conn.row_factory = sqlite3.Row
     return conn
 

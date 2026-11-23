@@ -35,6 +35,7 @@ from pathlib import Path
 from cherrypick.core import ledgers as core_ledgers
 from cherrypick.core import metrics as core_metrics
 from cherrypick.core import robustness
+from cherrypick.core.db import connect_ro
 
 from . import paths, scorecard, stats
 
@@ -580,7 +581,7 @@ def arm_settings(specs: dict[str, dict | None], base: str = SETTINGS_BASE) -> di
 
 
 def _ro(path: Path) -> sqlite3.Connection:
-    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    conn = connect_ro(path, row_factory=None)
     conn.row_factory = sqlite3.Row
     return conn
 

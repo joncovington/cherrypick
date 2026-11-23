@@ -31,11 +31,12 @@ pure; `packages/backtest/scripts/meic_gate_oracle.py` runs the replay and reads 
 from __future__ import annotations
 
 import math
-import sqlite3
 import statistics
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
+
+from cherrypick.core.db import connect_ro
 
 OPEN = "open"
 NO = "no"
@@ -235,7 +236,7 @@ def read_session(db: Path, arms: Iterable[str]) -> tuple[dict[str, float], list[
     """(arm -> net, `-open`'s fills, `<arm>`'s ticks) for one session ledger, for `arms` = (base,
     open). Net is `pnl - fees` over closed trades, as `core.ledgers` reads `meic_ic`."""
     base, opened = arms
-    conn = sqlite3.connect(f"file:{db.as_posix()}?mode=ro", uri=True)
+    conn = connect_ro(db, row_factory=None)
     try:
         net: dict[str, float] = {}
         trade_net: dict[str, float] = {}
