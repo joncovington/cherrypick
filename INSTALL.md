@@ -163,6 +163,8 @@ there, never overwrite your configuration, and are how you add Dolt or Claude Co
 | `-SkipDolt` / `--skip-dolt` | Do not offer the Dolt setup. Earnings, technicals and four Screeners tabs stay off; `doctor` warns. |
 | `-SkipBootstrap` / `--skip-bootstrap` | Do not build the income lists' universe at the end of the install (`run.py bootstrap`); it builds that evening instead. |
 | `-ConfigHistory` / `--config-history` | Keep a git history of your settings without being asked (add `-ConfigRemote <url>` / `--config-remote <url>` to push it to a private repository you own). |
+| `-Upgrade` / `--upgrade` | What `upgrade` passes: an install over an existing home, without the questions only a first install needs (Dolt, the broker login, the first lists). You do not need it by hand. |
+| `-WithDesk` / `--with-desk` | Accepted and ignored. |
 | `-NoStart` / `--no-start` | Install only. Start later with `.venv/bin/python packages/orchestrator/run.py install` (`.venv\Scripts\python` on Windows). |
 
 **The supervisor runs the interpreter that ran `install`** — the installer's `.venv`. Run your own
@@ -207,7 +209,7 @@ python packages/orchestrator/run.py report        # paper P&L once data has accu
 ```
 
 Modules are switched on and off on the console's **Config** page, or under `modules.<name>.enabled`
-in `~/.cherrypick/config.json`. Calendars and contango are EXPERIMENTAL, and flies, bwb, PMCC and curve are retired; all ship switched off.
+in `~/.cherrypick/config.json`. Flies, bwb, PMCC, curve, calendars and contango are retired; all ship switched off.
 Push notifications are off by default too: alerts go only to the suite's log until you add
 `desktop`, `discord`, `slack` or `telegram` to the `notify` channel lists (the console's own on-screen
 toasts need no setting).
@@ -368,11 +370,11 @@ your keyring.
 ## Updating to a new release
 
 The console tells you when one is out: the version chip at the right end of its status bar, on every
-page, turns amber and reads "v0.11.2 · v0.12.0 available", linking to the new release's notes. It
+page, turns amber and shows the newer version, linking to the new release's notes. It
 asks GitHub at most every six hours; to turn that off, set `"update_check": false` in
 `~/.cherrypick/config/console.json`.
 
-**From v0.12.0 on, run the upgrade script** from the installed folder, on a quiet evening after the
+**Run the upgrade script** from the installed folder, on a quiet evening after the
 close: `upgrade.cmd` on Windows, `./upgrade.sh` elsewhere (or `/cherrypick-upgrade` in Claude Code).
 It shows the new release's notes and asks, backs up (`run.py backup`), fetches the release (a git
 checkout fetches the tag; a ZIP install unzips into a new folder next to the old one), stops the suite,
@@ -382,20 +384,8 @@ a live loop is armed or a live position is open, and outside the quiet window af
 pre-upgrade backup back. `--to v0.13.0` names a release; `--dry-run` checks everything and changes
 nothing. [docs/guide/upgrading.md](docs/guide/upgrading.md) has the whole page.
 
-**From v0.11.x to v0.12.0 the move is manual,** because v0.11 has no upgrade script. Stop the suite
-(`uninstall.cmd` / `./uninstall.sh`; history and settings are kept), run `run.py backup`, get the new
-release and run the installer again. With the ZIP, unzip the new release into a new folder (or over
-the old one). With git, from the checkout:
-
-```bash
-git fetch --tags origin
-git checkout "$(git describe --tags --abbrev=0 --exclude "*-*" origin/main)"
-```
-
-In PowerShell the second line is `git checkout (git describe --tags --abbrev=0 --exclude "*-*" origin/main)`.
-
-Read that release's notes on the [Releases page](https://github.com/joncovington/cherrypick/releases)
-first: they say what changed and anything you need to do.
+The release's notes are on the [Releases page](https://github.com/joncovington/cherrypick/releases):
+they say what changed and anything you need to do.
 
 ## For developers
 

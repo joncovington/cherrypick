@@ -224,9 +224,9 @@ Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 
 ### Updating to a new version
 
-From v0.12.0 on, double-click **`upgrade.cmd`** (Windows) or run **`./upgrade.sh`** (Mac) on a quiet
+Double-click **`upgrade.cmd`** (Windows) or run **`./upgrade.sh`** (Mac) on a quiet
 evening after the close: it shows what is new, asks, and does the rest, and `--rollback` undoes it
-([the upgrading guide](docs/guide/upgrading.md)). Moving from v0.11 is the one manual update:
+([the upgrading guide](docs/guide/upgrading.md)). If you cannot use it, update by hand:
 
 1. Stop cherrypick: double-click **`uninstall.cmd`** (Windows) or run **`./uninstall.sh`** (Mac). Your
    history and settings are kept.

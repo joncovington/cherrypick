@@ -111,8 +111,8 @@ run side by side so you can compare them fairly. (The same word is used for some
 ### How do I try an arm of my own?
 
 Add it to the module's config file beside the control, changing one setting at a time, and compare
-the two on Compare. Most modules read their config each minute. Calendars runs continuously, so
-restart its job after the edit. [Experimenting with arms](experimenting-with-arms.md) walks through
+the two on Compare. Most modules read their config each minute. A module that runs continuously
+reads it at start, so restart its job after the edit. [Experimenting with arms](experimenting-with-arms.md) walks through
 it.
 
 ### What does "provisional" mean on a result?

@@ -79,18 +79,6 @@ the suite recorded after the upgrade is not in the live home any more. It is in 
 
 The old folder of a ZIP upgrade stays until you delete it; the rollback needs it.
 
-## Moving from v0.11 to v0.12 by hand
-
-v0.11 has no upgrade script, so this one move is manual. From v0.12.0 on, `upgrade` does it.
-
-1. Stop the suite (`uninstall.cmd` or `./uninstall.sh`; settings and history are kept).
-2. Run `backup` and note where it wrote (`python packages/orchestrator/run.py backup`).
-3. Get v0.12.0 from the [releases page](https://github.com/joncovington/cherrypick/releases): unzip it
-   into a new folder, or in a git checkout run `git fetch --tags origin` and `git checkout v0.12.0`.
-4. Read the v0.12.0 notes in the changelog on that page for anything you have to do.
-5. Run the installer in the new folder (`install.cmd` or `./install.sh`). It keeps your settings, finds
-   your broker login and starts the suite.
-
 ## What a release carries
 
 Each release publishes a small manifest with its notes: what a person upgrading should know, steps to do

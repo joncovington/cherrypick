@@ -1,10 +1,10 @@
 # cherrypick-calendars
 
-> **EXPERIMENTAL, and off by default.** This module ships `enabled: false` in the orchestrator's
-> `config.example.json`, so a fresh install does not run it. To turn it on, use the **Modules &
-> symbols** section of the console's Config page, or set `modules.calendars.enabled` to `true` in
-> `~/.cherrypick/config.json`. It is paper-only either way, and a base install runs only the
-> `control` book (see below).
+> **Retired 2026-11-21; off by default.** The module ships switched off and stays in the tree so it
+> can be reinstated. Research item 38 tested its rule at real quotes, and every arm failed. To reinstate,
+> set `modules.calendars.enabled` to `true` in the **Modules & symbols** section of the console's Config
+> page or in `~/.cherrypick/config.json`, then turn on the books you want in `calendars.json`. It is
+> paper-only either way.
 
 Weekly SPY double calendars, paper-only, built as a **forward exit-parameter experiment**.
 

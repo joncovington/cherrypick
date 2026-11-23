@@ -1,6 +1,6 @@
 # cherrypick-pmcc
 
-**Retired; off by default.** The module ships switched off and stays in the tree so it can be reinstated.
+**Retired 2026-11-08; off by default.** The module ships switched off and stays in the tree so it can be reinstated.
 An install retired it with `defaults.wind_down`, which stops entries and closes what is open; the module goes
 off once flat. To reinstate: set `modules.pmcc.enabled` to true in the suite config (the
 **Modules & symbols** section of the console's Config page, or `~/.cherrypick/config.json`), `enabled` to

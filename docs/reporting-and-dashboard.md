@@ -36,12 +36,10 @@ TypeScript port read `fly_books`.
 readings — sample, sessions, win rate, net of cost, and the threshold checks against a declared rule.
 Every tag is reported on its own.
 
-**The champion/challenger comparison was retired 2026-08-20**, and with it
-`core.profiles.recommend_champion` and the console's `/champions` page. It named one tag the live
-champion, judged every other tag against it, and emitted an advisory promote/retain verdict.
-Deciding whether a variant earned anything is `packages/advisor`'s job now, through its experiments,
-so there is ONE mechanism rather than two answering the same question from different evidence and
-different thresholds. `compare_profiles`, `qualify_readings` and `QUALIFICATION_RULE` all stayed —
+**There is no champion/challenger comparison.** No tag is named the live champion, and nothing emits a
+promote/retain verdict from tag readings. Deciding whether a variant earned anything is
+`packages/advisor`'s job, through its experiments, so there is ONE mechanism rather than two answering
+the same question from different evidence and different thresholds. `compare_profiles`, `qualify_readings` and `QUALIFICATION_RULE` all stayed —
 the advisor reads through exactly that chain.
 
 (This is the second model retired from that surface. The original fixed-ladder "promote to the next
@@ -72,8 +70,8 @@ cite, so they can never disagree for the same day.
 
 ## The suite review (`packages/review`)
 
-One versioned fact set per session across every module, plus the renders of it. This
-replaced the six per-module and suite report families on 2026-08-13.
+One versioned fact set per session across every module, plus the renders of it. It is the
+only report family: there are no per-module or suite reports beside it.
 
 | File | Content |
 |---|---|
@@ -178,15 +176,12 @@ is down; its log is `logs/console/console.log`.
 
 The EOD reports above are surfaced in-page, rendered as markdown from an allowlisted set of files.
 
-**What this replaced, on 2026-08-12.** A static `dashboard.html` regenerated on every watchdog tick,
-a served version of the same page on 8787 with broker-touching cards and module-dashboard iframes,
-and each module's own dashboard (MEIC 5050/5051, flies 5052, GEX 5055, scout 5057). All deleted;
-`pre-console-only` is the tag that still has them. Two consequences worth knowing:
+**The console is the only dashboard.** There is no static `dashboard.html`, no served copy of it on 8787
+and no per-module dashboard. Two consequences worth knowing:
 
-- The watchdog no longer renders anything on its tick, which takes that work off the reliability path
+- The watchdog renders nothing on its tick, which takes that work off the reliability path
   for good.
-- The served page's **live ops card** was not ported as a page, because it was broker-touching; its
-  parts are now spread out: the halt flag is the Config page's headline control and shows on
+- There is no **live ops card**, because it would touch the broker; its parts are spread out: the halt flag is the Config page's headline control and shows on
   Live → today, each live loop has its own Live tab (hidden while its live switch is off), and
   `cherrypick reconcile` still runs on demand and as its daily job.
 

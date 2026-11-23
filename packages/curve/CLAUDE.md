@@ -1,6 +1,6 @@
 # cherrypick-curve
 
-**Retired; off by default.** To reinstate: set `modules.curve.enabled` to true in the suite config and
+**Retired 2026-11-01; off by default.** To reinstate: set `modules.curve.enabled` to true in the suite config and
 `enabled` to true on the arm or arms you want (`control`, `noflip`, `near`) in `curve.json`; `advice.enabled`
 is separate and stays off. Every arm and `advice` are off in the example config.
 
@@ -18,7 +18,7 @@ Suite-wide context: the root [documentation index](../../docs/README.md).
   becomes **`min_net_credit_to_max_loss` 0.10**; `max_wing_spread_abs` 0.05 -> **0.25**; arm **`near`**
   added. Before it is the $1 structure (one control trade), never pooled with what follows.
 - **2026-10-15**: arm `hook` retired (it never traded). Its block stays in the config with `enabled` false,
-  never deleted: an absent built-in arm used to run by default.
+  never deleted: an absent built-in arm would run by default.
 - **2026-10-30**: an arm the config does not declare stays off, `control` excepted
   (`engine.DEFAULT_ENABLED`); the loop warns once, naming any such arm. A `near` row from an install that
   never declared the arm before this date is control's trade under another name, and should be read that
