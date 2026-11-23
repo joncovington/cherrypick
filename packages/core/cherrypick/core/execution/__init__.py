@@ -555,17 +555,30 @@ class Broker:
             self._reset()
             return {"ok": False, "order_id": order_id, "error": f"{type(exc).__name__}: {exc}"}
 
-    def rest_quotes(self, *, options=(), indices=(), timeout_seconds: float = 10.0) -> dict:
+    def rest_quotes(
+        self,
+        *,
+        options=(),
+        indices=(),
+        timeout_seconds: float = 10.0,
+        max_age_seconds: float = _broker.REST_QUOTE_MAX_AGE_SECONDS,
+    ) -> dict:
         """`core.broker.rest_quotes` on this adapter's session: the price path that does not go
         through DXLink, for managing a position when the stream is down. Fails closed to empty maps
         on any error or after `timeout_seconds`, which the caller treats as "no price" -- never as
-        a reason to reuse an older one."""
+        a reason to reuse an older one. `max_age_seconds` stays at the default for anything that
+        manages a position; only a by-hand price check (`core.quotes` off-hours) widens it."""
         empty = {"options": {}, "indices": {}}
         try:
             self._ensure()
             return self.run(
                 asyncio.wait_for(
-                    _broker.rest_quotes(self._session, options=list(options), indices=list(indices)),
+                    _broker.rest_quotes(
+                        self._session,
+                        options=list(options),
+                        indices=list(indices),
+                        max_age_seconds=max_age_seconds,
+                    ),
                     timeout_seconds,
                 )
             )

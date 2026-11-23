@@ -18,6 +18,12 @@ Off-hours the producer replays its last quotes, so `age_seconds` and `updated_at
 was written, not when the market printed it. A weekend snapshot is the last close; the caller
 says so.
 
+**The REST fallback.** Off-hours DXLink sends no quote for an option leg the producer has not
+already cached, so a weekend grid used to come back all missing. Given `rest`, an option the cache
+never filled is asked of the broker's REST snapshot (`core.broker.rest_quotes`) instead, at any age.
+Such a row has `source: "rest"`, no greeks, and the broker's own `updated_at`; every cache row has
+`source: "stream"`. An underlying is never asked there: the cache already replays one.
+
 The main instance is accepted but is not the default: a request there adds to the shared
 subscription budget every module draws on.
 """
@@ -153,11 +159,49 @@ def _rows(syms: list[str], quotes: dict, greeks: dict, trades: dict, now: float,
             "last": streamcache.to_float(t.get("last")),
             "updated_at": updated,
             "age_seconds": round(now - updated, 1) if updated is not None else None,
+            "source": "stream",
         }
         if streamcache.is_option_symbol(s):
             row.update({k: g.get(k) for k in ("delta", "gamma", "theta", "vega", "iv")})
             row["occ"] = streamcache.streamer_to_occ_symbol(s)
             row["usable"], row["reason"] = judge(bid, ask, **filt)
+        out[s] = row
+    return out
+
+
+def _rest_rows(missing: list[str], rest: Callable[[list[str]], dict], now: float, **filt) -> dict[str, dict]:
+    """Rows from the REST snapshot for the option legs in `missing`, keyed by streamer symbol.
+    `rest` takes OCC symbols and returns `{occ: {bid, ask, mid, age_seconds}}`; a leg it leaves out
+    stays missing."""
+    by_occ = {streamcache.streamer_to_occ_symbol(s): s for s in missing if streamcache.is_option_symbol(s)}
+    by_occ.pop("", None)
+    if not by_occ:
+        return {}
+    got = rest(list(by_occ)) or {}
+    out: dict[str, dict] = {}
+    for occ, q in got.items():
+        s = by_occ.get(occ)
+        if s is None:
+            continue
+        bid, ask = streamcache.to_float(q.get("bid")), streamcache.to_float(q.get("ask"))
+        age = streamcache.to_float(q.get("age_seconds"))
+        row: dict = {
+            "bid": bid,
+            "ask": ask,
+            "mid": streamcache.to_float(q.get("mid")),
+            "width": round(ask - bid, 4) if bid is not None and ask is not None else None,
+            "last": None,
+            "updated_at": round(now - age, 1) if age is not None else None,
+            "age_seconds": age,
+            "source": "rest",
+            "delta": None,
+            "gamma": None,
+            "theta": None,
+            "vega": None,
+            "iv": None,
+            "occ": occ,
+        }
+        row["usable"], row["reason"] = judge(bid, ask, **filt)
         out[s] = row
     return out
 
@@ -173,13 +217,16 @@ def snapshot(
     max_spread_abs: float = MAX_SPREAD_ABS,
     clock: Callable[[], float] = time.time,
     sleep: Callable[[float], None] = time.sleep,
+    rest: Callable[[list[str]], dict] | None = None,
 ) -> dict:
     """Request `symbols` from `instance`, wait up to `wait_seconds` for every one, and return
     `{instance, requested, missing, rows, request_file, request_removed}`.
 
     A symbol the cache never filled is listed in `missing` and has no row; the call never raises for
-    one. The request file is named for this process, so two sessions never remove each other's, and
-    is removed on the way out (raise or not) unless `keep_request`."""
+    one. With `rest`, an option leg still missing at the deadline is asked of the REST snapshot
+    first (see the package docstring) and is missing only if that has no quote either. The request
+    file is named for this process, so two sessions never remove each other's, and is removed on the
+    way out (raise or not) unless `keep_request`."""
     syms = list(dict.fromkeys(to_streamer(s) for s in symbols))
     if not syms:
         raise ValueError("no symbols")
@@ -205,15 +252,11 @@ def snapshot(
                 removed = True
             except OSError:
                 removed = False
-    rows = _rows(
-        [s for s in syms if s not in missing],
-        quotes,
-        greeks,
-        trades,
-        now,
-        max_frac=max_spread_frac,
-        max_abs=max_spread_abs,
-    )
+    filt = {"max_frac": max_spread_frac, "max_abs": max_spread_abs}
+    rows = _rows([s for s in syms if s not in missing], quotes, greeks, trades, now, **filt)
+    if rest is not None and missing:
+        rows.update(_rest_rows(missing, rest, now, **filt))
+        missing = [s for s in missing if s not in rows]
     return {
         "instance": instance,
         "cache": str(db_path),

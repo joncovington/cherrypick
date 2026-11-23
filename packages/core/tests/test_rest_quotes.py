@@ -109,3 +109,18 @@ def test_adapter_rest_quotes_fail_closed_when_the_call_hangs(monkeypatch):
     monkeypatch.setattr(_broker, "rest_quotes", hang)
     adapter = _adapter(monkeypatch)
     assert adapter.rest_quotes(options=[P], timeout_seconds=0.05) == {"options": {}, "indices": {}}
+
+
+def test_adapter_keeps_the_60s_age_unless_a_caller_widens_it(monkeypatch):
+    """Position management keeps the default; only `core.quotes` off-hours passes an infinite age."""
+    seen = []
+
+    async def record(session, **kw):
+        seen.append(kw["max_age_seconds"])
+        return {"options": {}, "indices": {}}
+
+    monkeypatch.setattr(_broker, "rest_quotes", record)
+    adapter = _adapter(monkeypatch)
+    adapter.rest_quotes(options=[P])
+    adapter.rest_quotes(options=[P], max_age_seconds=float("inf"))
+    assert seen == [_broker.REST_QUOTE_MAX_AGE_SECONDS, float("inf")]

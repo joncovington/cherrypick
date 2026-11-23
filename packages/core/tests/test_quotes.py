@@ -140,3 +140,92 @@ def test_keep_leaves_the_request_for_the_caller():
     out = quotes.snapshot(["SPY"], clock=_Clock(), sleep=lambda _s: None, keep_request=True)
     assert out["missing"] == [] and not out["request_removed"]
     assert len(list(sr.requests_dir("margin").glob("adhoc-quotes-*.json"))) == 1
+
+
+def test_a_leg_the_cache_never_fills_comes_from_rest_and_says_so():
+    """A weekend: the cache replays the underlying but never fills the options (2026-11-22)."""
+    _fill("margin", [("KO", 96.81, 97.86), (".KO270115P95", 2.40, 2.70)])
+    asked = []
+
+    def rest(occs):
+        asked.append(sorted(occs))
+        return {
+            "KO    270219P00095000": {"bid": 3.45, "ask": 3.65, "mid": 3.55, "age_seconds": 64_800.0},
+            "KO    999999P00001000": {"bid": 1.0, "ask": 1.1, "mid": 1.05, "age_seconds": 1.0},
+        }
+
+    out = quotes.snapshot(
+        ["KO", ".KO270115P95", ".KO270219P95", ".KO270219P90"],
+        clock=_Clock(),
+        sleep=lambda _s: None,
+        wait_seconds=0,
+        rest=rest,
+    )
+    # Only the unfilled options were asked, never the underlying or a filled leg.
+    assert asked == [["KO    270219P00090000", "KO    270219P00095000"]]
+    row = out["rows"][".KO270219P95"]
+    assert row["source"] == "rest" and row["mid"] == 3.55 and row["age_seconds"] == 64_800.0
+    assert row["delta"] is None and row["iv"] is None and row["usable"] is True
+    assert row["occ"] == "KO    270219P00095000"
+    assert out["rows"][".KO270115P95"]["source"] == "stream"
+    assert out["rows"]["KO"]["source"] == "stream"
+    # REST had nothing for the 90: still missing. A symbol nobody asked for is ignored.
+    assert out["missing"] == [".KO270219P90"]
+    assert set(out["rows"]) == {"KO", ".KO270115P95", ".KO270219P95"}
+
+
+def test_rest_rows_go_through_the_same_quote_filter():
+    def rest(occs):
+        return {occs[0]: {"bid": 0.0, "ask": 0.40, "mid": 0.20, "age_seconds": 5.0}}
+
+    out = quotes.snapshot([".KO270219P80"], clock=_Clock(), sleep=lambda _s: None, wait_seconds=0, rest=rest)
+    row = out["rows"][".KO270219P80"]
+    assert (row["usable"], row["reason"]) == (False, "zero_bid")
+
+
+def test_no_rest_and_a_full_cache_never_call_it():
+    out = quotes.snapshot([".KO270219P90"], clock=_Clock(), sleep=lambda _s: None, wait_seconds=0)
+    assert out["missing"] == [".KO270219P90"] and out["rows"] == {}
+
+    def rest(_occs):
+        raise AssertionError("asked REST with nothing missing")
+
+    _fill("margin", [(".KO270219P90", 1.68, 1.99)])
+    out = quotes.snapshot([".KO270219P90"], clock=_Clock(), sleep=lambda _s: None, wait_seconds=0, rest=rest)
+    assert out["rows"][".KO270219P90"]["source"] == "stream"
+
+
+def test_cli_waits_less_outside_regular_hours():
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    from cherrypick.core.quotes import __main__ as cli
+
+    ET = ZoneInfo("America/New_York")
+
+    assert cli.default_wait(datetime(2026, 11, 22, 12, 0, tzinfo=ET)) == cli.OFF_HOURS_WAIT_SECONDS  # Sunday
+    assert cli.default_wait(datetime(2026, 11, 23, 12, 0, tzinfo=ET)) == quotes.DEFAULT_WAIT_SECONDS
+
+
+def test_the_table_marks_a_rest_row():
+    from cherrypick.core.quotes import __main__ as cli
+
+    row = {
+        "bid": 3.45,
+        "ask": 3.65,
+        "mid": 3.55,
+        "width": 0.2,
+        "delta": None,
+        "iv": None,
+        "age_seconds": 64_800.0,
+        "reason": "",
+        "usable": True,
+        "source": "rest",
+        "last": None,
+    }
+    text = cli.table({"instance": "margin", "requested": 1, "missing": [], "rows": {".KO270219P95": row}})
+    header, line = text.splitlines()[1:]
+    assert line.endswith("rest")
+    # The blank delta and iv keep their columns: the age lines up under its header.
+    assert len(line.split("  rest")[0]) == len(header.split("  note")[0])
+    assert "0.20      -      -" in line
