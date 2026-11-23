@@ -28,7 +28,6 @@ from __future__ import annotations
 import json
 import sqlite3
 import time
-from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
@@ -37,6 +36,7 @@ from cherrypick.core import progress as core_progress
 from cherrypick.core.db import connect_ro
 
 from . import paths
+from .fetchpool import ABORT, OK, run_pool
 from .storeopen import open_store
 from .vendor import FATAL, VendorRefusal
 
@@ -180,48 +180,29 @@ def fetch_spans(
         }
         rep = core_progress.Reporter("backtest-fetch-addon-weeklies")
         rep.split("requests", ["SPXW"] * len(spans), unit="spans", done=["SPXW"] * report["already"])
-        pending = iter(todo)
-        with ThreadPoolExecutor(max(1, workers)) as ex:
-            running = {}
 
-            def submit_next() -> bool:
-                if stop is not None and stop():
-                    report["stopped"] = True
-                    return False
-                span = next(pending, None)
-                if span is None:
-                    return False
-                running[ex.submit(_vendor_span, client, span)] = span
-                return True
+        def submit(ex, span):
+            return ex.submit(_vendor_span, client, span)
 
-            for _ in range(max(1, workers)):
-                if not submit_next():
-                    break
-            while running:
-                finished, _ = wait(running, return_when=FIRST_COMPLETED)
-                for fut in finished:
-                    span = running.pop(fut)
-                    try:
-                        rows = fut.result()
-                    except VendorRefusal as refusal:
-                        _record_refusal(conn, span, refusal)
-                        report["refused"] += 1
-                        log(f"{span[0]} {span[1]}..{span[2]}: refused ({refusal.reason})")
-                        if refusal.reason in FATAL:
-                            report["aborted"] = f"{refusal.reason}: {refusal.detail}"[:300]
-                            for other in running:
-                                other.cancel()
-                            running.clear()
-                            break
-                    else:
-                        report["rows"] += write_span(conn, span, rows)
-                        report["complete"] += 1
-                        log(f"{span[0]} {span[1]}..{span[2]}: {len(rows)} rows")
-                    rep.advance("requests", current=f"{span[0]} {span[1]}", key="SPXW")
-                    if not report.get("aborted"):
-                        submit_next()
-                if report.get("aborted"):
-                    break
+        def handle(key, fut):
+            span = key
+            try:
+                rows = fut.result()
+            except VendorRefusal as refusal:
+                _record_refusal(conn, span, refusal)
+                report["refused"] += 1
+                log(f"{span[0]} {span[1]}..{span[2]}: refused ({refusal.reason})")
+                if refusal.reason in FATAL:
+                    report["aborted"] = f"{refusal.reason}: {refusal.detail}"[:300]
+                    return ABORT
+            else:
+                report["rows"] += write_span(conn, span, rows)
+                report["complete"] += 1
+                log(f"{span[0]} {span[1]}..{span[2]}: {len(rows)} rows")
+            rep.advance("requests", current=f"{span[0]} {span[1]}", key="SPXW")
+            return OK
+
+        report["stopped"] = run_pool(todo, submit, handle, workers=workers, stop=stop)
         rep.finish("failed" if report.get("aborted") else "done")
         return report
     finally:

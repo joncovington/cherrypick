@@ -23,7 +23,6 @@ from __future__ import annotations
 import json
 import sqlite3
 import time
-from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from datetime import UTC, date, datetime
 from pathlib import Path
 
@@ -31,6 +30,7 @@ from cherrypick.core import calendar as _cal
 from cherrypick.core import progress as core_progress
 
 from . import flow, paths
+from .fetchpool import DRAIN, OK, run_pool
 from .storeopen import open_store
 from .vendor import FATAL, VendorRefusal
 
@@ -226,54 +226,40 @@ def fetch_plan(
                 todo.append((session, sym))
         rep = core_progress.Reporter("backtest-fetch-flow")
         rep.split("days", (sym for _, sym in plan), unit="symbol-days", done=skipped)
-        pending = iter(todo)
-        with ThreadPoolExecutor(max(1, workers)) as ex:
-            running = {}
+        fatal = None
 
-            def submit_next() -> bool:
-                nonlocal stopped
-                if stop is not None and stop():
-                    stopped = True
-                    return False
-                key = next(pending, None)
-                if key is None:
-                    return False
-                running[ex.submit(_vendor_day, client, key[1], key[0])] = key
-                return True
+        def submit(ex, key):
+            return ex.submit(_vendor_day, client, key[1], key[0])
 
-            for _ in range(max(1, workers)):
-                if not submit_next():
-                    break
-            fatal = None
-            while running:
-                finished, _ = wait(running, return_when=FIRST_COMPLETED)
-                for fut in finished:
-                    session, sym = running.pop(fut)
-                    try:
-                        prints, before, after, took = fut.result()
-                    except VendorRefusal as refusal:
-                        if refusal.reason in FATAL:
-                            fatal = fatal or refusal
-                            continue
-                        record_refusal(conn, sym, session, refusal)
-                        counts["refused"] += 1
-                        log(f"{sym} {session}: refused ({refusal.reason})")
-                    else:
-                        rec = build_day(prints, before, after)
-                        write_day(conn, sym, session, rec, took)
-                        counts[rec["status"]] += 1
-                        seconds.append(took)
-                        n, kept = rec["orders"], len(rec["kept"])
-                        log(f"{sym} {session}: {rec['status']}, {n} orders, {kept} kept, {took:.1f}s")
-                    rep.advance("days", current=f"{sym} {session}", key=sym)
-                    if fatal is None:
-                        submit_next()
-            if fatal is not None:
-                log(f"stopping: {fatal}")
-                rep.note(f"stopping: {fatal}")
-                rep.finish("failed")
-                raise fatal
-            rep.finish("done")
+        def handle(key, fut):
+            nonlocal fatal
+            session, sym = key
+            try:
+                prints, before, after, took = fut.result()
+            except VendorRefusal as refusal:
+                if refusal.reason in FATAL:
+                    fatal = fatal or refusal
+                    return DRAIN
+                record_refusal(conn, sym, session, refusal)
+                counts["refused"] += 1
+                log(f"{sym} {session}: refused ({refusal.reason})")
+            else:
+                rec = build_day(prints, before, after)
+                write_day(conn, sym, session, rec, took)
+                counts[rec["status"]] += 1
+                seconds.append(took)
+                n, kept = rec["orders"], len(rec["kept"])
+                log(f"{sym} {session}: {rec['status']}, {n} orders, {kept} kept, {took:.1f}s")
+            rep.advance("days", current=f"{sym} {session}", key=sym)
+            return OK
+
+        stopped = run_pool(todo, submit, handle, workers=workers, stop=stop)
+        if fatal is not None:
+            log(f"stopping: {fatal}")
+            rep.note(f"stopping: {fatal}")
+            rep.finish("failed")
+            raise fatal
+        rep.finish("done")
     finally:
         conn.close()
     return {
