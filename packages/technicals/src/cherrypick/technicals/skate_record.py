@@ -32,6 +32,8 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
+from cherrypick.core import jsonio
+
 from . import paths, skate, store
 
 SCHEMA = """
@@ -297,7 +299,5 @@ def run(
         },
     }
     out = (db or record_db()).with_name("record.json")
-    tmp = out.with_suffix(".tmp")
-    tmp.write_text(json.dumps(reading, indent=1), encoding="utf-8")
-    tmp.replace(out)
+    jsonio.write_json_atomic(out, reading, indent=1, default=None)
     return {"ok": True, **reading}

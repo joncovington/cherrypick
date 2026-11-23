@@ -34,7 +34,7 @@ import urllib.parse
 import urllib.request
 from datetime import UTC, date, datetime
 
-from cherrypick.core import progress
+from cherrypick.core import jsonio, progress
 from cherrypick.technicals import earnings_calendar, fundamentals, paths, symbols
 
 PAUSE_S = 0.5
@@ -127,10 +127,7 @@ def main(argv=None) -> int:
             failed.append(f"{sym}: {type(exc).__name__}: {str(exc)[:100]}")
     rep.finish("done")
     out = {"fetched_at": datetime.now(UTC).isoformat(), "names": dict(sorted(have.items())), "failed": failed}
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f"{path.name}.tmp")
-    tmp.write_text(json.dumps(out, indent=1), encoding="utf-8")
-    tmp.replace(path)
+    jsonio.write_json_atomic(path, out, indent=1, default=None)
     report = {
         "ok": not failed,
         "asked": len(todo),

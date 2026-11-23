@@ -32,6 +32,7 @@ from pathlib import Path
 
 from cherrypick.core import calendar as cal
 from cherrypick.core import fees as _fees
+from cherrypick.core import jsonio
 
 from . import earnings_calendar, paths
 from . import land as _land
@@ -306,9 +307,4 @@ def out_path() -> Path:
 
 
 def write(result: dict) -> Path:
-    path = out_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f"{path.name}.tmp")
-    tmp.write_text(json.dumps(result, indent=1), encoding="utf-8")
-    tmp.replace(path)
-    return path
+    return jsonio.write_json_atomic(out_path(), result, indent=1, default=None)

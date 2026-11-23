@@ -57,6 +57,7 @@ from datetime import date, timedelta
 from pathlib import Path
 
 from cherrypick.core import calendar as cal
+from cherrypick.core import jsonio
 
 from . import compass, paths, securities
 from . import land as _land
@@ -528,12 +529,8 @@ def out_dir() -> Path:
 
 def write(result: dict) -> Path:
     folder = out_dir()
-    folder.mkdir(parents=True, exist_ok=True)
     path = folder / f"{result['session']}.json"
-    tmp = path.with_name(f"{path.name}.tmp")
-    tmp.write_text(json.dumps(result, indent=1), encoding="utf-8")
-    tmp.replace(path)  # write-then-rename: the console never reads half a file
-    return path
+    return jsonio.write_json_atomic(path, result, indent=1, default=None)
 
 
 def summary(result: dict) -> dict:
