@@ -21,7 +21,7 @@ from typing import Any
 
 from cherrypick.core import jsonio as _jsonio
 
-Key =tuple[str, str, str, float]
+Key = tuple[str, str, str, float]
 
 
 def parse_occ(symbol: str) -> tuple[str, str, str, float] | None:
