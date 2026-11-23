@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { hhmmOf } from "../../lib/etTime";
 import { useSearchParams } from "react-router-dom";
 import type { LiveMeicOpenRow, LiveMeicPayload } from "@console/shared";
 import { Card, DataCard, PnlCell, fmtMoney } from "../../components/DataTable";
@@ -43,9 +44,6 @@ export function useLiveMeic(login: string | null = null) {
 
 const LIVE_HISTORY_COLUMNS = HISTORY_COLUMNS.filter((c) => c.id !== "slip");
 
-function hhmmOf(ts: string | null): string {
-  return ts !== null && ts.length >= 16 ? ts.slice(11, 16) : "—";
-}
 
 function sides(r: LiveMeicOpenRow): string {
   if (r.working) return "—";

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { etTimeOfDay } from "../../lib/etTime";
 import { useQuery } from "@tanstack/react-query";
 import type { GexPayload } from "@console/shared";
 import { useGex, useGexIntegrity, getJson } from "../../lib/api";
@@ -127,7 +128,7 @@ function Metric({
 function fmtEt(iso: string): string {
   const t = Date.parse(iso);
   if (Number.isNaN(t)) return iso;
-  return new Date(t).toLocaleTimeString("en-US", { timeZone: "America/New_York", hour12: false });
+  return etTimeOfDay(t);
 }
 
 function fmtGex(v: number | null): string {

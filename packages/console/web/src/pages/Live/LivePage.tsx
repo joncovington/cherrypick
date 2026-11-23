@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { hhmmOf } from "../../lib/etTime";
 import type { LiveFliesPayload, LiveOnRisk, LivePerformance, LivePeriod, LivePosition } from "@console/shared";
 import { Card } from "../../components/DataTable";
 import { HelpSection, HelpWarn, type CardHelpContent } from "../../components/CardHelp";
@@ -229,9 +230,6 @@ export function PerformanceBox({ perf, tab }: { perf: LivePerformance; tab: stri
   );
 }
 
-function hhmmOf(ts: string | null): string {
-  return ts !== null && ts.length >= 16 ? ts.slice(11, 16) : "—";
-}
 
 function fillState(p: LivePosition): string {
   if (p.status === "settled") return "settled";
