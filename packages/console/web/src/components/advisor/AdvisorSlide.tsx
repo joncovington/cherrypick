@@ -7,6 +7,7 @@ import type {
   AdvisorModulePayload,
   AdvisorSessionCell,
 } from "@console/shared";
+import { getJson } from "../../lib/api";
 import { PairTable } from "../../pages/Advisor/AdvisorPage";
 import { Card } from "../DataTable";
 import { Section } from "../Section";
@@ -32,11 +33,10 @@ export function useAdvisorModule(module: string) {
   return useQuery<AdvisorModulePayload>({
     queryKey: ["advisor-module", module],
     queryFn: async () => {
-      const res = await fetch(`/api/advisor/module/${encodeURIComponent(module)}`);
-      if (!res.ok) throw new Error(`advisor module: HTTP ${res.status}`);
+      const raw = await getJson<unknown>(`/api/advisor/module/${encodeURIComponent(module)}`);
       // Normalised at the boundary: a freshly built page can meet the previous build's API until
       // the supervisor restarts the server (`lib/advisorShape.ts`).
-      return normalizeModulePayload(await res.json());
+      return normalizeModulePayload(raw);
     },
     refetchInterval: 60_000,
   });

@@ -16,6 +16,7 @@ import type { Box } from "./PortfolioBox";
 import { Section } from "../../components/Section";
 import { TradeCards, type TradeCardModel } from "./TradeCard";
 import { GuideLink } from "../../components/GuideLink";
+import { getJson } from "../../lib/api";
 
 /**
  * MEIC's live loop, read-only (2026-10-15): the flies Live tab's arming strip and trade tables, cut
@@ -34,9 +35,7 @@ export function useLiveMeic(login: string | null = null) {
   return useQuery<LiveMeicPayload>({
     queryKey: ["live-meic", extra ?? "main"],
     queryFn: async () => {
-      const res = await fetch(extra ? `/api/live/meic?login=${encodeURIComponent(extra)}` : "/api/live/meic");
-      if (!res.ok) throw new Error(`live meic: HTTP ${res.status}`);
-      return (await res.json()) as LiveMeicPayload;
+      return getJson<LiveMeicPayload>(extra ? `/api/live/meic?login=${encodeURIComponent(extra)}` : "/api/live/meic");
     },
     refetchInterval: 15_000,
   });

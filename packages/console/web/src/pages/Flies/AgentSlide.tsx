@@ -35,6 +35,7 @@ import { fmtCash, fmtPct, fmtPrice } from "../../lib/format";
 import { Tile } from "./PerformanceTab";
 import { Tile as CountTile } from "../../components/performance/Tile";
 import { useTimeline } from "./TimelineCard";
+import { getJson } from "../../lib/api";
 
 /**
  * The intraday agent (packages/flies/docs/intraday-agent.md): what it decided today, how its
@@ -54,9 +55,7 @@ function useAgent(session: string | null) {
   return useQuery<FliesAgentPayload>({
     queryKey: ["flies-agent", session],
     queryFn: async () => {
-      const res = await fetch(`/api/flies/agent${session !== null ? `?session=${session}` : ""}`);
-      if (!res.ok) throw new Error(`flies agent: HTTP ${res.status}`);
-      return (await res.json()) as FliesAgentPayload;
+      return getJson<FliesAgentPayload>(`/api/flies/agent${session !== null ? `?session=${session}` : ""}`);
     },
     refetchInterval: 30_000,
   });
@@ -290,9 +289,7 @@ function PackBody({ session, check }: { session: string; check: AgentCheck }) {
   const pack = useQuery<FliesAgentPack>({
     queryKey: ["flies-agent-pack", session, check.index],
     queryFn: async () => {
-      const res = await fetch(`/api/flies/agent/pack?session=${session}&index=${String(check.index)}`);
-      if (!res.ok) throw new Error(`pack: HTTP ${res.status}`);
-      return (await res.json()) as FliesAgentPack;
+      return getJson<FliesAgentPack>(`/api/flies/agent/pack?session=${session}&index=${String(check.index)}`);
     },
     staleTime: Infinity,
   });

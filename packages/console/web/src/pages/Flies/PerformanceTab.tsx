@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { LiveVsPaper, TradingMode } from "@console/shared";
-import { fliesQuery, type FliesFilter } from "../../lib/api";
+import { fliesQuery, getJson, type FliesFilter } from "../../lib/api";
 import { Card, fmtMoney } from "../../components/DataTable";
 import { HelpSection, HelpWarn, type CardHelpContent } from "../../components/CardHelp";
 import { useOpenParam } from "../Backtest/CardLightbox";
@@ -84,11 +84,9 @@ function usePerformance(mode: TradingMode, granularity: string, filter: FliesFil
   return useQuery<Performance>({
     queryKey: ["flies-performance", mode, granularity, filter.arm, filter.symbol, filter.era],
     queryFn: async () => {
-      const res = await fetch(
+      return getJson<Performance>(
         `/api/flies/performance?${fliesQuery(mode, { ...filter, date: null })}&granularity=${granularity}`,
       );
-      if (!res.ok) throw new Error(`performance: HTTP ${res.status}`);
-      return (await res.json()) as Performance;
     },
     refetchInterval: 60_000,
   });

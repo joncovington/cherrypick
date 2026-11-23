@@ -5,6 +5,7 @@ import { Card, DataCard, PnlCell } from "../../components/DataTable";
 import { HelpSection, type CardHelpContent } from "../../components/CardHelp";
 import { Section } from "../../components/Section";
 import { CalendarHeatmap } from "../../components/CalendarHeatmap";
+import { getJson } from "../../lib/api";
 
 interface BreakdownRow {
   bucket: string;
@@ -32,9 +33,7 @@ function useDeep(mode: TradingMode, symbol: string | null, profile: string | nul
   return useQuery<DeepAnalytics>({
     queryKey: ["meic-deep", mode, symbol, profile, era],
     queryFn: async () => {
-      const res = await fetch(`/api/meic/deep?${params.toString()}`);
-      if (!res.ok) throw new Error(`meic deep: HTTP ${res.status}`);
-      return (await res.json()) as DeepAnalytics;
+      return getJson<DeepAnalytics>(`/api/meic/deep?${params.toString()}`);
     },
     refetchInterval: 60_000,
   });

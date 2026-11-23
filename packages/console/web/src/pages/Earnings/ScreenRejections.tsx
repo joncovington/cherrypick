@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import type { TradingMode } from "@console/shared";
 import { Card, SortTh, sortRows, useSort } from "../../components/DataTable";
+import { getJson } from "../../lib/api";
 
 /**
  * Why the screen rejected what it rejected — and, more usefully, which threshold is worth moving.
@@ -39,9 +40,7 @@ function useScreenMetrics(mode: TradingMode, era: string | null) {
   return useQuery<ScreenPayload>({
     queryKey: ["earnings-screen", mode, era],
     queryFn: async () => {
-      const res = await fetch(`/api/earnings/screen?mode=${mode}${era !== null ? `&era=${era}` : ""}`);
-      if (!res.ok) throw new Error(`HTTP ${String(res.status)}`);
-      return (await res.json()) as ScreenPayload;
+      return getJson<ScreenPayload>(`/api/earnings/screen?mode=${mode}${era !== null ? `&era=${era}` : ""}`);
     },
     // Classifying the whole scan history is a subprocess; the answer moves only when a scan runs.
     staleTime: 120_000,

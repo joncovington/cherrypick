@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import type { ManageBand, ManageBandsHistoryPayload, ManageBandsSession } from "@console/shared";
 import { Card } from "../../components/DataTable";
+import { getJson } from "../../lib/api";
 
 /**
  * The bands over time: each stored evaluation's delta, theta and buying-power reading against the
@@ -12,9 +13,7 @@ export function useManageBands() {
   return useQuery<ManageBandsHistoryPayload>({
     queryKey: ["manage", "bands"],
     queryFn: async () => {
-      const res = await fetch("/api/manage/bands");
-      if (!res.ok) throw new Error(`manage bands: HTTP ${res.status}`);
-      return (await res.json()) as ManageBandsHistoryPayload;
+      return getJson<ManageBandsHistoryPayload>("/api/manage/bands");
     },
     // A new point lands at most every 30 minutes, and only the session's last run is stored.
     refetchInterval: 5 * 60_000,

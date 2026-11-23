@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import type { BridgedResult } from "@console/shared";
+import { getJson } from "./api";
 
 /**
  * One bridged read: a module's own JSON through a server bridge (`BridgedResult`). A failed read
@@ -18,9 +19,7 @@ export function useBridged<T>(
     queryKey: ["bridged", ...key],
     enabled,
     queryFn: async () => {
-      const res = await fetch(url);
-      if (!res.ok) throw new Error(`${url}: HTTP ${String(res.status)}`);
-      return (await res.json()) as BridgedResult<T>;
+      return getJson<BridgedResult<T>>(url);
     },
     refetchInterval: typeof refetchMs === "number" ? refetchMs : (query) => refetchMs(query.state.data),
   });

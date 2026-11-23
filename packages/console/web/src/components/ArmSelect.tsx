@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import type { ArmModule, RetiredArmsPayload } from "@console/shared";
 import { ScopeSelect } from "./ScopeBar";
 import { useBoolPref, writePref } from "../lib/prefs";
+import { getJson } from "../lib/api";
 
 /** The console pref behind the "retired" toggle: one switch for every arm filter, kept on the server. */
 export const SHOW_RETIRED_ARMS_PREF = "showRetiredArms";
@@ -26,9 +27,7 @@ function useRetiredArms() {
   return useQuery<RetiredArmsPayload>({
     queryKey: ["arms-retired"],
     queryFn: async () => {
-      const res = await fetch("/api/arms/retired");
-      if (!res.ok) throw new Error(`retired arms: HTTP ${res.status}`);
-      return (await res.json()) as RetiredArmsPayload;
+      return getJson<RetiredArmsPayload>("/api/arms/retired");
     },
     staleTime: 5 * 60_000,
   });

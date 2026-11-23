@@ -7,6 +7,7 @@ import { useAttempts, attemptsQuery, NO_ATTEMPTS_SCOPE, type AttemptsScope } fro
 import { HelpSection, HelpWarn, type CardHelpContent } from "./CardHelp";
 import { Card } from "./DataTable";
 import { FilterGroup, FilterSortButton, FilterSortPanel, FilterSummary, FilterSwitch, SortSection, sortRows, useSortChoice, type SortOption } from "./FilterSort";
+import { getJson } from "../lib/api";
 
 /**
  * The strike-occupancy map: which contracts each arm holds, and on which side.
@@ -53,9 +54,7 @@ function useOccupancy(
   return useQuery<{ tradeDate: string | null; legs: OccupancyLeg[] }>({
     queryKey: ["occupancy", module, mode, date, scope.arm, scope.symbol, scope.era],
     queryFn: async () => {
-      const res = await fetch(`/api/${module}/occupancy?${attemptsQuery(mode, date, scope)}`);
-      if (!res.ok) throw new Error(`occupancy: HTTP ${res.status}`);
-      return (await res.json()) as { tradeDate: string | null; legs: OccupancyLeg[] };
+      return getJson<{ tradeDate: string | null; legs: OccupancyLeg[] }>(`/api/${module}/occupancy?${attemptsQuery(mode, date, scope)}`);
     },
     refetchInterval: 30_000,
   });

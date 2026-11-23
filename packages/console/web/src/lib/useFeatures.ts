@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import type { SuiteFeatures } from "@console/shared";
+import { getJson } from "./api";
 
 /**
  * What the suite has turned on (`GET /api/features`, the orchestrator's `configcli features`).
@@ -14,9 +15,7 @@ function useFeaturesQuery() {
   return useQuery<SuiteFeatures>({
     queryKey: FEATURES_KEY,
     queryFn: async () => {
-      const res = await fetch("/api/features");
-      if (!res.ok) throw new Error(`/api/features: HTTP ${res.status}`);
-      return (await res.json()) as SuiteFeatures;
+      return getJson<SuiteFeatures>("/api/features");
     },
     refetchInterval: 15_000,
     staleTime: 10_000,

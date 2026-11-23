@@ -9,6 +9,7 @@ import { signTone } from "../../lib/bridged";
 import { fmtCash, fmtCount, fmtNum } from "../../lib/format";
 import { Insights, ScorecardTable } from "./Scorecard";
 import { TradeLog } from "./TradeLog";
+import { getJson } from "../../lib/api";
 
 /**
  * A run's cards (`packages/backtest` `cards.py`, 2026-10-26): the path an arm took, its drawdowns,
@@ -336,9 +337,7 @@ function useCurrentAccounts(): CurrentAccount[] {
   const { data } = useQuery<ManagePayload>({
     queryKey: ["manage", "current-accounts"],
     queryFn: async () => {
-      const res = await fetch("/api/manage");
-      if (!res.ok) throw new Error(`manage: HTTP ${String(res.status)}`);
-      return (await res.json()) as ManagePayload;
+      return getJson<ManagePayload>("/api/manage");
     },
     staleTime: 5 * 60_000,
   });

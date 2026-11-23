@@ -6,6 +6,7 @@ import { DataCard, PnlCell } from "../../components/DataTable";
 import { DivergingBars } from "../../components/grid/DivergingBars";
 import { GridCard, StatTile } from "../../components/grid/GridCard";
 import { fmtMoney, fmtPct } from "../../lib/format";
+import { getJson } from "../../lib/api";
 
 /**
  * earnings' strategies page (2026-10-23): the verdict board. One question per arm -- is there an
@@ -26,9 +27,7 @@ export function useVerdict(era: string | null, flagged: boolean) {
       const q = new URLSearchParams();
       if (era !== null) q.set("era", era);
       if (flagged) q.set("flagged", "1");
-      const res = await fetch(`/api/earnings/verdict?${q.toString()}`);
-      if (!res.ok) throw new Error(`earnings verdict: HTTP ${res.status}`);
-      return (await res.json()) as VerdictResult;
+      return getJson<VerdictResult>(`/api/earnings/verdict?${q.toString()}`);
     },
     refetchInterval: 120_000,
   });

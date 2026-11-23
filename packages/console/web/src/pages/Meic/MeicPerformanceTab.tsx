@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import type { ChangeRow, TradingMode } from "@console/shared";
 import { READING_CHIP, gapWords, readingWords } from "../../components/changes/ChangesSlide";
-import { useModuleChanges } from "../../lib/api";
+import { useModuleChanges, getJson } from "../../lib/api";
 import { meicArmHref } from "./MeicArmPage";
 import { Card, PnlCell, SortTh, fmtMoney, fmtNum, fmtPct, sortRows, useSort } from "../../components/DataTable";
 import { HelpSection, HelpWarn, type CardHelpContent } from "../../components/CardHelp";
@@ -263,9 +263,7 @@ export function MeicPerformanceTab({
   const { data, isLoading, dataUpdatedAt } = useQuery<Performance>({
     queryKey: ["meic-performance", mode, granularity, symbol, profile, era],
     queryFn: async () => {
-      const res = await fetch(`/api/meic/performance?${params.toString()}`);
-      if (!res.ok) throw new Error(`meic performance: HTTP ${res.status}`);
-      return (await res.json()) as Performance;
+      return getJson<Performance>(`/api/meic/performance?${params.toString()}`);
     },
     refetchInterval: 60_000,
   });

@@ -6,7 +6,7 @@ import { MeicArmPage, meicArmHref } from "../../pages/Meic/MeicArmPage";
 import { ModuleCosts } from "../../components/costs/ModuleCosts";
 import { useQuery } from "@tanstack/react-query";
 import type { TradingMode } from "@console/shared";
-import { useMeic } from "../../lib/api";
+import { useMeic, getJson } from "../../lib/api";
 import { useMode } from "../../lib/useMode";
 import { ModeToggle } from "../../components/ModeToggle";
 import { PaperLiveBadge } from "../../components/shell/PaperLiveBadge";
@@ -73,9 +73,7 @@ function useMeicAnalytics(mode: TradingMode, symbol: string | null, profile: str
   return useQuery<MeicAnalytics>({
     queryKey: ["meic-analytics", mode, symbol, profile, era],
     queryFn: async () => {
-      const res = await fetch(`/api/meic/analytics?${scopeQuery(mode, symbol, profile, era)}`);
-      if (!res.ok) throw new Error(`meic analytics: HTTP ${res.status}`);
-      return (await res.json()) as MeicAnalytics;
+      return getJson<MeicAnalytics>(`/api/meic/analytics?${scopeQuery(mode, symbol, profile, era)}`);
     },
     refetchInterval: 30_000,
   });

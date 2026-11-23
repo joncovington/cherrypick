@@ -7,6 +7,7 @@ import { HelpSection, type CardHelpContent } from "../../components/CardHelp";
 import { Section } from "../../components/Section";
 import { useOpenParam } from "../Backtest/CardLightbox";
 import { BoxOpen, FliesBoxHost, type FliesBox } from "../Flies/FliesBoxes";
+import { getJson } from "../../lib/api";
 
 /**
  * System › data, the two reads of `cherrypick.core` (`services/dataEvidenceBridge.ts`):
@@ -166,9 +167,7 @@ function ImpliedVarCard() {
   const { data, isLoading, dataUpdatedAt } = useQuery<ImpliedVarEvidence>({
     queryKey: ["bridged", "impliedvar"],
     queryFn: async () => {
-      const res = await fetch("/api/system/impliedvar");
-      if (!res.ok) throw new Error(`impliedvar: HTTP ${String(res.status)}`);
-      return (await res.json()) as ImpliedVarEvidence;
+      return getJson<ImpliedVarEvidence>("/api/system/impliedvar");
     },
     refetchInterval: 120_000,
   });

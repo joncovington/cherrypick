@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import type { TradingMode } from "@console/shared";
 import { useQuote } from "../../lib/useQuote";
 import { fmtMoney } from "../../components/DataTable";
-import { fliesQuery, type FliesFilter } from "../../lib/api";
+import { fliesQuery, type FliesFilter, getJson } from "../../lib/api";
 import { AXIS_MUTED } from "../../components/Charts";
 import { ARM_COLORS, SPOT_COLOR } from "../../components/chart/tokens";
 import { niceTicks } from "../../components/chart/scales";
@@ -67,9 +67,7 @@ function useForest(mode: TradingMode, filter: FliesFilter) {
   return useQuery<Forest>({
     queryKey: ["flies-forest", mode, filter],
     queryFn: async () => {
-      const res = await fetch(`/api/flies/forest?${fliesQuery(mode, filter)}`);
-      if (!res.ok) throw new Error(`forest: HTTP ${res.status}`);
-      return (await res.json()) as Forest;
+      return getJson<Forest>(`/api/flies/forest?${fliesQuery(mode, filter)}`);
     },
     refetchInterval: 30_000,
   });

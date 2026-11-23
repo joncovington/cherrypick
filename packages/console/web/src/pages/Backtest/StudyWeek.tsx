@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import type { BridgedResult, StudyDigest } from "@console/shared";
+import { getJson } from "../../lib/api";
 
 /**
  * The studies tab's This week (`?group=week`, orchestrator `study-report --since`): every study with
@@ -22,9 +23,7 @@ export function useStudyDigest(since: string | null) {
     refetchInterval: 300_000,
     queryFn: async () => {
       const url = `/api/backtest/studies/digest?since=${since ?? ""}`;
-      const res = await fetch(url);
-      if (!res.ok) throw new Error(`${url}: HTTP ${String(res.status)}`);
-      return (await res.json()) as BridgedResult<StudyDigest>;
+      return getJson<BridgedResult<StudyDigest>>(url);
     },
   });
 }

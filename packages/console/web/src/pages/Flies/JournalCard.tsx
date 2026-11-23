@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { TradingMode } from "@console/shared";
-import { fliesQuery, type FliesFilter } from "../../lib/api";
+import { fliesQuery, type FliesFilter, getJson } from "../../lib/api";
 import { timeTicks } from "../../components/chart/scales";
 import { minuteOf, hhmm } from "../../components/chart/time";
 import { HoverReadout } from "../../components/chart/Tooltip";
@@ -55,9 +55,7 @@ function useJournal(mode: TradingMode, filter: FliesFilter) {
   return useQuery<{ date: string | null; rows: JournalRow[] }>({
     queryKey: ["flies-journal", mode, filter],
     queryFn: async () => {
-      const res = await fetch(`/api/flies/journal?${fliesQuery(mode, filter)}`);
-      if (!res.ok) throw new Error(`journal: HTTP ${res.status}`);
-      return (await res.json()) as { date: string | null; rows: JournalRow[] };
+      return getJson<{ date: string | null; rows: JournalRow[] }>(`/api/flies/journal?${fliesQuery(mode, filter)}`);
     },
     refetchInterval: 30_000,
   });

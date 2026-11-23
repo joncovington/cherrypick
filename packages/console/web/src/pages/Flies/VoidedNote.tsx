@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import type { TradingMode } from "@console/shared";
 import { fmtMoney } from "../../components/DataTable";
-import { fliesQuery, type FliesFilter } from "../../lib/api";
+import { fliesQuery, type FliesFilter, getJson } from "../../lib/api";
 
 interface VoidedRows {
   total: number;
@@ -26,9 +26,7 @@ export function VoidedNote({ mode, filter }: { mode: TradingMode; filter: FliesF
   const { data } = useQuery<VoidedRows>({
     queryKey: ["flies-voided", mode, filter.date, filter.symbol, filter.era, filter.arm],
     queryFn: async () => {
-      const res = await fetch(`/api/flies/voided?${fliesQuery(mode, filter)}`);
-      if (!res.ok) throw new Error(`voided: HTTP ${res.status}`);
-      return (await res.json()) as VoidedRows;
+      return getJson<VoidedRows>(`/api/flies/voided?${fliesQuery(mode, filter)}`);
     },
     refetchInterval: 300_000,
   });

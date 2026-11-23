@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { TradingMode } from "@console/shared";
-import { useFliesTradeLog, fliesQuery, type FliesFilter, type FliesTradeLogRow } from "../../lib/api";
+import { useFliesTradeLog, fliesQuery, type FliesFilter, type FliesTradeLogRow, getJson } from "../../lib/api";
 import { useColumnLayout, type ColumnDef } from "../../components/table/columns";
 import { ColumnsMenu } from "../../components/table/ColumnsMenu";
 import { DateRangeBar, useUrlDateRange } from "../../components/table/DateRange";
@@ -69,9 +69,7 @@ function useHistory(mode: TradingMode, filter: FliesFilter, from: string | null,
       const range = new URLSearchParams();
       if (from !== null) range.set("from", from);
       if (to !== null) range.set("to", to);
-      const res = await fetch(`/api/flies/history?${fliesQuery(mode, { ...filter, date: null })}&${range.toString()}`);
-      if (!res.ok) throw new Error(`history: HTTP ${res.status}`);
-      return (await res.json()) as History;
+      return getJson<History>(`/api/flies/history?${fliesQuery(mode, { ...filter, date: null })}&${range.toString()}`);
     },
     refetchInterval: 60_000,
   });

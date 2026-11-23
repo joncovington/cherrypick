@@ -24,6 +24,7 @@ import { structureLegs } from "../Flies/structure";
 import { BoxButton, BoxButtons } from "./portfolioBoxContext";
 import { TradeCards, type TradeCardModel } from "./TradeCard";
 import { GuideLink } from "../../components/GuideLink";
+import { getJson } from "../../lib/api";
 
 const ACTIVITY_PAGE_SIZES = [10, 25, 50, 100] as const;
 
@@ -38,9 +39,7 @@ export function useLiveFlies() {
   return useQuery<LiveFliesPayload>({
     queryKey: ["live-flies"],
     queryFn: async () => {
-      const res = await fetch("/api/live/flies");
-      if (!res.ok) throw new Error(`live: HTTP ${res.status}`);
-      return (await res.json()) as LiveFliesPayload;
+      return getJson<LiveFliesPayload>("/api/live/flies");
     },
     refetchInterval: 15_000,
   });

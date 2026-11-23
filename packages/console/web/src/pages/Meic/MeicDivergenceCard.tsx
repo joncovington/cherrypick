@@ -3,6 +3,7 @@ import type { MeicDivergence, TradingMode } from "@console/shared";
 import { DataCard, fmtPct, sortRows, useSort } from "../../components/DataTable";
 import { HelpSection, type CardHelpContent } from "../../components/CardHelp";
 import { sessionQuery } from "../../components/Attempts";
+import { getJson } from "../../lib/api";
 
 /**
  * Profile divergence: how often MEIC's arms reached DIFFERENT entry decisions on the same tick.
@@ -51,9 +52,7 @@ export function MeicDivergenceCard({
   const { data, isLoading, dataUpdatedAt } = useQuery<MeicDivergence>({
     queryKey: ["meic-divergence", mode, date, era],
     queryFn: async () => {
-      const res = await fetch(`/api/meic/divergence?${sessionQuery(mode, date, era)}`);
-      if (!res.ok) throw new Error(`divergence: HTTP ${res.status}`);
-      return (await res.json()) as MeicDivergence;
+      return getJson<MeicDivergence>(`/api/meic/divergence?${sessionQuery(mode, date, era)}`);
     },
     refetchInterval: 60_000,
   });

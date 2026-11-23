@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import type { ManageLiveAccount, ManageLivePayload, ManageLiveTrade } from "@console/shared";
 import { fmtCash, fmtMoney } from "../../lib/format";
 import { ageText, tone } from "./manageParts";
+import { getJson } from "../../lib/api";
 
 /**
  * Live marks (2026-10-22): the newest evaluation re-priced from the stream cache every few seconds
@@ -14,9 +15,7 @@ export function useManageLive(enabled: boolean) {
   return useQuery<ManageLivePayload>({
     queryKey: ["manage-live"],
     queryFn: async () => {
-      const res = await fetch("/api/manage/live");
-      if (!res.ok) throw new Error(`manage live: HTTP ${res.status}`);
-      return (await res.json()) as ManageLivePayload;
+      return getJson<ManageLivePayload>("/api/manage/live");
     },
     enabled,
     // The streamer writes quotes as they tick; five seconds is live to the eye and cheap to read.
