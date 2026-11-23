@@ -1,6 +1,6 @@
 # Strategy pages
 
-Each trading module has its own page in the console: `/meic`, `/earnings`, `/calendars`, `/contango`, `/weeklyput`, `/ladder` and `/automations`. The `/experiments` page sits above them with one card per paper experiment. Four retired modules, `/flies`, `/bwb`, `/pmcc` and `/curve`, ship switched off.
+Each trading module has its own page in the console: `/meic`, `/earnings`, `/weeklyput`, `/ladder` and `/automations`. The `/experiments` page sits above them with one card per paper experiment. Six retired modules, `/flies`, `/bwb`, `/pmcc`, `/curve`, `/calendars` and `/contango`, ship switched off.
 
 ## What you see
 
@@ -69,11 +69,11 @@ Defined-risk trades around earnings announcements, **paper-only from v0.12.0**: 
 
 ## Calendars (`/calendars`)
 
-A weekly SPY double calendar, paper-only and experimental. Tabs: `summary` ("today"), `plan`, `positions`, `history`, `decisions`, `arms`, `policies`, `performance`, `analysis`, `changes`, `advisor` and `guide` ("help"). `plan` is this week's plan and what the entry window did. `policies` replays each candidate exit rule over the recorded price path, so you can see which exit rule would have been worth anything without running it as an arm.
+A weekly SPY double calendar, paper-only. Retired 2026-11-21 and off by default. Tabs: `summary` ("today"), `plan`, `positions`, `history`, `decisions`, `arms`, `policies`, `performance`, `analysis`, `changes`, `advisor` and `guide` ("help"). `plan` is this week's plan and what the entry window did. `policies` replays each candidate exit rule over the recorded price path, so you can see which exit rule would have been worth anything without running it as an arm.
 
 ## Contango (`/contango`)
 
-Holds a short-volatility fund while the VIX to VIX3M ratio says contango, and T-bills when it does not, deciding once a session ten minutes before the close. Paper-only and experimental. Its arms differ only in where they get out. Tabs: `summary` ("today"), `regime`, `positions`, `history`, `decisions`, `arms`, `performance`, `analysis`, `costs`, `changes` and `guide` ("help").
+Holds a short-volatility fund while the VIX to VIX3M ratio says contango, and T-bills when it does not, deciding once a session ten minutes before the close. Paper-only. Retired 2026-11-21 and off by default. Its arms differ only in where they get out. Tabs: `summary` ("today"), `regime`, `positions`, `history`, `decisions`, `arms`, `performance`, `analysis`, `costs`, `changes` and `guide` ("help").
 
 ![Contango regime tab: the VIX to VIX3M ratio chart with its two thresholds, and a table of what each arm did on each reading](../images/contango-regime.png)
 
@@ -173,5 +173,7 @@ Each is off by default, and its page leaves the rail while it is off. Its code a
 - `/bwb`: Retired 2026-11-08; off by default.
 - `/pmcc`: Retired 2026-11-08; off by default.
 - `/curve`: Retired 2026-11-01; off by default.
+- `/calendars`: Retired 2026-11-21; off by default.
+- `/contango`: Retired 2026-11-21; off by default.
 
 To bring one back, turn its module on in Config; see [system-and-config.md](system-and-config.md). Flies and bwb have live paths, so reinstating them is a deliberate decision that you should read the module's own README before making.

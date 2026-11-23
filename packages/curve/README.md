@@ -1,6 +1,6 @@
 # cherrypick-curve
 
-**Retired; off by default.** The module ships switched off and stays in the tree so it can be reinstated.
+**Retired 2026-11-01; off by default.** The module ships switched off and stays in the tree so it can be reinstated.
 Research item 37 (research/edge-hypotheses-plan.md) tested its rule at real quotes, and every arm failed
 after costs. To reinstate: set `modules.curve.enabled` to true in the suite config (the **Modules & symbols**
 section of the console's Config page, or `~/.cherrypick/config.json`) and `enabled` to true on the arm or

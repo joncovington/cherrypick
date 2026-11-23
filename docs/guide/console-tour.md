@@ -81,7 +81,7 @@ bare address opens its first tab.
 ### The experimental chip
 
 A small `experimental` chip beside a page's name means it is a paper-only design still being shaped:
-the paper pages under Experiments (such as Calendars and Contango) and the GEX panel carry it. It never
+the paper pages under Experiments (such as Weeklyput and Ladder) and the GEX panel carry it. It never
 places an order, and its results are a reason to look, not a reason to trust.
 
 ## What to do

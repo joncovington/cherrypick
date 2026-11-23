@@ -3,8 +3,8 @@
 **What this covers:** a suite-level overview of what each trading strategy actually does, so you
 can decide which one(s) fit your goals before diving into an individual module's own docs. The suite
 ships these strategy modules: MEIC, and Earnings (paper-only), which are on in a fresh install
-(Earnings only where Dolt is set up); Calendars, Contango, Weeklyput, Automations and Ladder, which are
-**EXPERIMENTAL and off by default**; and Flies, BWB, PMCC and Curve, which are **retired and off by default** (kept so each can be reinstated) — plus the GEX engine the console renders. MEIC, Earnings and Flies get a full
+(Earnings only where Dolt is set up); Weeklyput, Automations and Ladder, which are
+**EXPERIMENTAL and off by default**; and Flies, BWB, PMCC, Curve, Calendars and Contango, which are **retired and off by default** (kept so each can be reinstated) — plus the GEX engine the console renders. MEIC, Earnings and Flies get a full
 section below; the others a short one. Each module's own docs (linked) are the source of truth for its
 internals.
 
@@ -14,10 +14,10 @@ internals.
 | Earnings | defined-risk earnings plays, held overnight | on with the `dolt` capability | none: paper-only since v0.12.0 |
 | Flies | 0DTE net-credit butterflies | **off** (retired 2026-10-19) | per-day armed pilot (refuses while the module is off) |
 | BWB | ~7 DTE SPX put broken-wing butterflies, laddered daily | **off** (retired 2026-11-08) | per-day armed pilot (refuses while the module is off) |
-| Calendars | weekly SPY double calendars | **off** (experimental) | none |
+| Calendars | weekly SPY double calendars | **off** (retired 2026-11-21) | none |
 | PMCC | deep-ITM calls with a weekly short call (the shield arms) | **off** (retired 2026-11-08) | none |
 | Curve | VXX call credit spreads, regime-gated | **off** (retired 2026-11-01) | none |
-| Contango | SVXY/SHV switch on VIX/VIX3M | **off** (experimental) | none |
+| Contango | SVXY/SHV switch on VIX/VIX3M | **off** (retired 2026-11-21) | none |
 | Weeklyput | index 10-delta put, 7 days, weekly expiries | **off** (experimental) | none |
 | Automations | eight short-dated SPX and GLD option arms | **off** (experimental) | none |
 | Ladder | dip-bought lots of a leveraged index fund, each sold at +4% | **off** (experimental) | none |
@@ -126,7 +126,7 @@ worst-case margin cap, a cost-derived credit floor, no closing orders.
 
 → Depth: [`bwb/README.md`](../packages/bwb/README.md), [`bwb/CLAUDE.md`](../packages/bwb/CLAUDE.md).
 
-## Calendars — weekly double calendars (EXPERIMENTAL, off by default)
+## Calendars — weekly double calendars (retired 2026-11-21, off by default)
 
 Weekly SPY double calendars (SPX until 2026-08-15) entered each Monday at the expected-move strikes,
 shorts expiring Friday and longs the following Monday. An exit-parameter experiment: `control` closes
@@ -158,13 +158,13 @@ splits are measured, never modelled. Paper-only and credential-free.
 
 → Depth: [`curve/README.md`](../packages/curve/README.md), [`curve/CLAUDE.md`](../packages/curve/CLAUDE.md).
 
-## Contango — the same signal, held in shares (EXPERIMENTAL, off by default)
+## Contango — the same signal, held in shares (retired 2026-11-21, off by default)
 
 Holds SVXY while VIX/VIX3M is in contango and SHV (T-bills) while it isn't, deciding once a session
 ten minutes before the close. Its arms (`control` out at 0.97, `flipexit` out at 1.0) differ only in
 thresholds. It exists because curve's option costs take about half of each credit. Replayed from
-2018, the switch earned less than holding SVXY for about 20 points less drawdown, and the paper run
-measures whether that trade holds after real switching costs. Paper-only and credential-free.
+2018, the switch earned less than holding SVXY for about 20 points less drawdown, and research item 39
+found each gate gave up more return than its floor allows, mostly to switching costs. Paper-only and credential-free.
 
 → Depth: [`contango/README.md`](../packages/contango/README.md), [`contango/CLAUDE.md`](../packages/contango/CLAUDE.md).
 

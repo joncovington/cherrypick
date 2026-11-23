@@ -26,6 +26,12 @@ beyond the latest release.
 
 ### What's new
 
+- **Calendars and contango are retired.** Research item 38 (calendars) and item 39 (contango) failed every
+  arm at real quotes and prices. Both modules ship off, with a retired date on each arm; calendars'
+  open positions run to their own exits and the module goes off once flat. The same change switched off
+  the four automations item 75 failed (`iron-fly-1000`, `iron-fly-1dte-1330`, `gld-call-spread-20d` and
+  `orb-put-spread`); the two that passed and the two with no verdict stay on. The docs, the Help page
+  and the install guide now say so.
 - **A filter on the move since the open.** The Builder's "Move since the open" (`open_change_pct`) reads
   the price against today's open, in percent, beside the opening gap and the move since the previous
   close.

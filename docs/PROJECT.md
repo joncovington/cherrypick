@@ -30,12 +30,12 @@ in parallel and compare which entry rules actually add edge — see
 |---|---|---|
 | **MEIC** | 0DTE **multiple-entry iron condors** on index products (SPX in the shipped example). Strike selection scaled to volatility, credit floors and OTM buffers, regime gates (VIX, VIX1D, ATR, dealer gamma / GEX), per-side stops. | On |
 | **Earnings** | **Defined-risk earnings plays** (iron fly, double calendar, iron condor, ATM calendar, directional credit spread, broken-wing butterfly), held overnight around a company's report. Paper-only. Needs [Dolt](#optional-extras). | On if Dolt is set up |
-| **Flies** | 0DTE **net-credit butterflies** on SPX/XSP: whether the manufactured credit survives real costs, arm by arm. Built so a negative answer is a usable result. | Off (retired 2026-10-19) |
-| **BWB** | A daily-laddered SPX **put broken-wing butterfly**, ~7 DTE, held to expiry; its arms differ only in whether and when a reversal-triggered add-on fires. | Off (retired 2026-11-08) |
-| **Calendars** | Weekly **SPY double calendars**, an exit-parameter experiment. **EXPERIMENTAL.** | Off |
+| **Flies** | 0DTE **net-credit butterflies** on SPX/XSP: whether the manufactured credit survives real costs, arm by arm. Built so a negative answer is a usable result. | Off. **Retired 2026-10-19.** |
+| **BWB** | A daily-laddered SPX **put broken-wing butterfly**, ~7 DTE, held to expiry; its arms differ only in whether and when a reversal-triggered add-on fires. | Off. **Retired 2026-11-08.** |
+| **Calendars** | Weekly **SPY double calendars**, an exit-parameter experiment. **Retired 2026-11-21.** | Off |
 | **PMCC** | **Deep-ITM calls** held with a weekly short call against them, on index ETFs and a few stocks. **Retired 2026-11-08.** | Off |
 | **Curve** | **VXX call credit spreads** gated by a daily VIX/VIX3M regime read. **Retired 2026-11-01.** | Off |
-| **Contango** | The same VIX/VIX3M signal held in shares: SVXY in contango, T-bills (SHV) otherwise. **EXPERIMENTAL.** | Off |
+| **Contango** | The same VIX/VIX3M signal held in shares: SVXY in contango, T-bills (SHV) otherwise. **Retired 2026-11-21.** | Off |
 | **Weeklyput** | The index put nearest 10 delta (SPX, SPY, QQQ, IWM), sold a week before each non-monthly weekly expiry and held to its close, unhedged. **EXPERIMENTAL.** | Off |
 | **Automations** | Eight short-dated SPX and GLD option arms (0DTE and 1DTE flies, condor and spreads, an opening-range put spread, a long put, GLD call spreads), each a configured variant of one decision function. **EXPERIMENTAL.** | Off |
 | **Ladder** | A leveraged index fund (TQQQ first) bought in lots 7% down and each lot sold on its own at +4%, no stop. Its rule failed research item 26; paper watches it at real quotes. **EXPERIMENTAL.** | Off |

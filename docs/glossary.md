@@ -28,7 +28,6 @@ Quote/Greeks/Trade/Summary events in `stream_cache.db`.
 
 **Fact set** — `packages/review`'s daily artifact (`data/review/eod-<day>.json`): one versioned,
 deterministic record of what every module did that session, and the only thing any read surface reads.
-Replaced the per-module EOD reports, the suite digest and its AI synthesis on 2026-08-13.
 
 **Provisional / final** — A session's fact set is provisional at the close (the 0DTE modules are
 complete, earnings is still carrying overnight) and final the next morning once earnings has settled.

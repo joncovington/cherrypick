@@ -1,7 +1,9 @@
 # cherrypick-contango
 
-> **EXPERIMENTAL, paper-only, and off by default.** To run it, set `modules.contango.enabled` to
-> `true` in `~/.cherrypick/config.json`, and the supervisor ticks it through the session.
+> **Retired 2026-11-21; off by default.** The module ships switched off and stays in the tree so it
+> can be reinstated. Research item 39 tested its rule on real daily prices, and every arm failed. To
+> reinstate, set `modules.contango.enabled` to `true` in `~/.cherrypick/config.json` and turn on the arms
+> you want in `contango.json`. It is paper-only either way.
 
 contango holds SVXY while VIX/VIX3M is in contango and SHV (T-bills) while it isn't. It decides
 once a session, ten minutes before the close. Its two arms differ only in where they get out:

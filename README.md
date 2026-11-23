@@ -171,8 +171,8 @@ with an *experimental* chip.
 - **The console** (`packages/console`, `127.0.0.1:5070`) — the suite's one read surface: every engine's
   read models plus interactive screening, the watchlist, and a strategy builder in one app. Read-only over
   every other package's data, and kept running by the supervisor rather than started by hand. A module or
-  feature that is switched off, or needs a capability this machine lacks, is hidden. It replaced the
-  suite dashboard and every per-module dashboard on 2026-08-12.
+  feature that is switched off, or needs a capability this machine lacks, is hidden. It is the
+  one dashboard: there is no suite or per-module dashboard beside it.
 - **Your own reports (optional)** — write a small script that saves a JSON report under `~/.cherrypick`,
   list it in `config.json`, and the console draws it under Reports > external (optionally posting a text
   card to Discord). Nothing is shipped or run until you add one: see
@@ -239,7 +239,7 @@ read them.
 |---|---|
 | [packages/orchestrator](packages/orchestrator) | The supervisor, watchdog, notifications, and the read side (report / calibrate / EOD). Drives the engines by subprocess. |
 | [packages/core](packages/core) | The shared `cherrypick.core` library — calendar, fees, profiles, GEX math, broker, auth. Install it first. |
-| [packages/meic](packages/meic) · [packages/earnings](packages/earnings) · [packages/flies](packages/flies) · [packages/calendars](packages/calendars) · [packages/pmcc](packages/pmcc) · [packages/curve](packages/curve) · [packages/contango](packages/contango) · [packages/weeklyput](packages/weeklyput) · [packages/bwb](packages/bwb) | The strategy engines. MEIC runs by default; earnings is paper-only and needs the optional Dolt data; calendars, contango and weeklyput are EXPERIMENTAL, paper-only and off by default; flies, bwb, pmcc and curve are retired and ship off (kept so each can be reinstated; flies and bwb keep their narrow live paths behind the same gates, and refuse to arm while off). |
+| [packages/meic](packages/meic) · [packages/earnings](packages/earnings) · [packages/flies](packages/flies) · [packages/calendars](packages/calendars) · [packages/pmcc](packages/pmcc) · [packages/curve](packages/curve) · [packages/contango](packages/contango) · [packages/weeklyput](packages/weeklyput) · [packages/bwb](packages/bwb) | The strategy engines. MEIC runs by default; earnings is paper-only and needs the optional Dolt data; weeklyput is EXPERIMENTAL, paper-only and off by default; flies, bwb, pmcc, curve, calendars and contango are retired and ship off (kept so each can be reinstated; flies and bwb keep their narrow live paths behind the same gates, and refuse to arm while off). |
 | [packages/streamer](packages/streamer) | The single market-data producer. Everything else reads the cache it writes; nothing else writes it. |
 | [packages/gex](packages/gex) | The GEX engine and spot-trail recorder; the console renders it. |
 | [packages/console](packages/console) | The unified web console (`127.0.0.1:5070`) — every module's read models plus research and screening, in one app. Read-only. |
@@ -426,7 +426,7 @@ ones. Paper and live ledgers are separate files, never queryable through one con
 - **Paper by default.** Every engine ships with live trading off, and the orchestrator that schedules
   them never places, cancels, or closes an order itself. Opening a module's live gate is on you — and
   once open, that module's loop trades within its own limits without asking again.
-- **Experimental and retired modules are off.** Calendars, contango, weeklyput, automations and ladder (experimental) and flies, bwb, PMCC and curve (retired) ship switched off.
+- **Experimental and retired modules are off.** Weeklyput, automations and ladder (experimental) and flies, bwb, PMCC, curve, calendars and contango (retired) ship switched off.
 - **Your data stays yours.** Trades and credentials live on your machine (credentials in your operating
   system's secure keyring — never in a plain file).
 - **Set-and-forget.** Once installed, it runs on a schedule and recovers from common hiccups by itself.

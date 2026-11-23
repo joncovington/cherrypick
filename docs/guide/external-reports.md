@@ -238,6 +238,6 @@ of file as one you write yourself.
 | The tab says **invalid** | Run `python run.py external-check <file>`; it lists every reason. Fix the script, run it again. |
 | The report is **stale** | The script has not run, or has failed. `python run.py status` shows the `external-<id>` job and its last run; its log is in `~/.cherrypick/logs/`. A stale badge is the console telling you the job is not keeping up. |
 | The job is listed **off** | The reason is in `python run.py status` and in `python run.py doctor`: a script outside the home, a malformed id or time, a bad `post`, or `enabled: false`. |
-| `doctor` warns about a `quikoptions` block | That integration was removed in v0.12.0 and the block is ignored. Delete it. |
+| `doctor` warns about a `quikoptions` block | That integration no longer exists and the block is ignored. Delete it. |
 | Nothing posted to Discord | The webhook you chose is not stored (`python run.py secrets-status`), the report was invalid, or this `as_of` was already posted. |
 | A new file does not appear | The file must be `data/external/<id>.json` directly in that folder and end in `.json`. The page refreshes every minute. |

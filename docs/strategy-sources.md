@@ -103,12 +103,12 @@ that blocks entries only.
 
 ### Origin commits — an in-suite lineage, not an external one
 
-- **2026-08-22** — a "1-3-2 put condor" is floated as a fourth book for `packages/ratios`.
+- **2026-08-22** — a "1-3-2 put condor" is floated as a fourth book for a ratios module.
 - **`22ec497d` (2026-08-23) — "add bwb and curve modules."** bwb absorbs and supersedes the float.
   Per [`packages/bwb/CLAUDE.md`](../packages/bwb/CLAUDE.md), what survived of the
   condor is exactly three things: the 1-3-2 shape, the add-on as a plain matched vertical (which
   keeps the combined position defined-risk by construction), and the reversal-not-falling-knife entry
-  philosophy. It shipped with the four books already the experiment's design; `ratios` kept jade
+  philosophy. It shipped with the four books already the experiment's design; the ratios idea kept jade
   lizard / backratio / LT112.
 - **`95208d52`** adds the live plumbing (credentials, broker seam, a separate live ledger); the
   narrow live path lands 2026-09-18 and is journaled as its own measurement boundary.

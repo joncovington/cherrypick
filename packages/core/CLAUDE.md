@@ -72,5 +72,4 @@ Install, lint and test commands are in [README.md](README.md#develop).
 ## Guardrails
 
 `auth` and `broker` are where account numbers and credentials flow, and every package imports this
-one, so a slip here surfaces everywhere: mask account numbers to `****1234` in logs, docs and commit
-messages without exception.
+one, so a slip here surfaces everywhere.

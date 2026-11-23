@@ -9,12 +9,11 @@ The console only draws what the file says.
 This page records what each indicator is for, why the four setups are paired the way they are, and
 the decisions taken while building them.
 
-## Why the arrows changed
+## Why the chart draws setups, not arrows
 
-The chart used to put an arrow on every session where one of the vendor's six scan rules matched
-(`signals.py`). Those rules describe a pattern. They have no exit and no position behind them, so an
-up arrow never had a matching "this is where it ended". The scan matches are still computed, still
-feed the morning report and are still listed under the chart. They are no longer drawn on it.
+The vendor's six scan rules (`signals.py`) match on a session without drawing an arrow there. Those rules describe a pattern. They have no exit and no position behind them, so an
+up arrow would never have a matching "this is where it ended". The scan matches are computed, feed
+the morning report and are listed under the chart. They are not drawn on it.
 
 The setups replace them because an arrow is only useful if it comes with its other half. Each entry
 is paired with the exit its own rule gives, and a position that hasn't exited is reported as open.
@@ -626,7 +625,7 @@ Nothing passes. The full results are in `round7-20261016-154042.json` in the stu
 **What round 7 says:**
 - **A bullish bearing is not an edge on its own.** Strong bull earned +0.08 R over random in
   2011-18 (t 2.1) and −0.03 R in 2019-26. The halves disagree.
-- **Buying the pullback used to work and stopped.** It earned +0.24 R per entry over random in
+- **Buying the pullback worked in the first half and not the second.** It earned +0.24 R per entry over random in
   2011-18 and lost to random in 2019-26 (t −2.2). The calendar-time edge over the whole period is
   nil.
 - **The bearish states are the one consistent read.** Strong bear and rally names lag random by

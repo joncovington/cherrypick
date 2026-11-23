@@ -31,7 +31,7 @@ rewritten.
 | 2026-10-15 | `delta` and `wall` arms retired (`enabled` false, never a deleted block: an absent built-in arm runs by default); their open rows are managed and settled from the ledger |
 | 2026-10-24 | live kill criteria (`live.kill`) |
 
-The ledger column `book` became `arm` on 2026-09-23.
+The ledger column is `arm`.
 
 ## The base structure (every book, identical)
 

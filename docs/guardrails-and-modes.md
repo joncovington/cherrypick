@@ -28,8 +28,7 @@ Paper and live books are strictly separated: separate SQLite files. Even a paper
 ### The four live-order paths, and what actually gates each
 
 Know all four before opening any of them. **They do not share one gate**, and "gated behind
-`enable_live_trading`" — which earlier versions of this page said — is true of only one (MEIC).
-Earnings had a fifth, hand-placed path; it was removed in v0.12.0 and earnings is paper-only:
+`enable_live_trading`" is true of only one (MEIC). Earnings is paper-only and has no live path:
 
 | Path | Code | What gates it |
 |---|---|---|
@@ -123,7 +122,7 @@ the stdlib + the OS shell — no MCP, no HTTP client, no AI tooling — so it ha
 **34-hour silent stall** (2026-07-01, from an external streamer dependency) is why this rule exists. The
 modules' loop decisions depend only on their local tools + their instructions, for the same reason.
 
-- **No AI runs inside any suite package**, which is stronger than the fencing this used to describe.
+- **No AI runs inside any suite package.**
   The AI touchpoints are all scripts, outside every package: `scripts/eod_narrative.py` and
   `scripts/morning_narrative.py` (the narratives, over review's fact set and overview's fact pack),
   `scripts/advisor_checkpoint.py` (the advisor's post-close `deep` run, plus any intraday slots a

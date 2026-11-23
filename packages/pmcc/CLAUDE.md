@@ -1,6 +1,6 @@
 # cherrypick-pmcc
 
-**Retired; off by default.** To reinstate: set `modules.pmcc.enabled` to true in the suite config,
+**Retired 2026-11-08; off by default.** To reinstate: set `modules.pmcc.enabled` to true in the suite config,
 `enabled` to true on the `shield`, `shield_hold` and `shield_guard` arms in `pmcc.json`, and
 `defaults.wind_down` (which stops entries and closes what is open) to false or remove it.
 

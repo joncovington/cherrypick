@@ -208,9 +208,8 @@ file's directory.
   yet, so the horizon falls forward to whatever chain is still streaming — another expiry — and filing
   that under today would feed the overview's pre-open levels and the advisor's "open" walls the wrong
   chain. `record_regimes` writes nothing off-hours, and every reader (`core.regime`, overview's levels,
-  the advisor's snapshot and walls) filters on read as well, the expired-chain rule's posture. Rows
-  recorded off-hours before 2026-09-30 were removed with `repair-history --apply`; the command alone
-  only reports, and copies the DB first when it applies.
+  the advisor's snapshot and walls) filters on read as well, the expired-chain rule's posture. `repair-history --apply`
+  removes rows recorded off-hours; the command alone only reports, and copies the DB first when it applies.
 - **Leftover strikes are not summed.** A strike the producer's window re-centred away from keeps its
   last greeks forever; `core.gex.LEFTOVER_ROW_SECONDS` (re-exported by `provider`) drops rows that far
   behind their chain's newest. Flies' snapshot uses the same constant (snapshots before 2026-10-06 did not) and the

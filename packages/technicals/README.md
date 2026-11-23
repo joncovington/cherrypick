@@ -19,7 +19,7 @@ the `score-*` commands. The daily path needs no vendor data. `check-vendor` and 
 that collector is off by default and runs only with `market_report.collector` on and
 `market_report.vendor_dashboard_url` and `market_report.vendor_edition_title` set.
 
-The captures stopped on 2026-10-23, so the nightly check on the adjustment is now `check-adjust`:
+The nightly check on the adjustment is `check-adjust`:
 our adjusted closes against Yahoo's (fetched each evening by `scripts/fetch_yahoo_adjusted.py`),
 flagging any step in the ratio of the two -- a split, spin-off or dividend one side lacks.
 
