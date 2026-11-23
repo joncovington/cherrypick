@@ -4,8 +4,9 @@ import Database from "better-sqlite3";
 import type { ManageLiveAccount, ManageLivePayload, ManageLiveTrade } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
 import { accountName } from "./accountName.js";
-import { num } from "./db.js";
+import { num, obj as rec } from "./db.js";
 import { listSessions } from "./manage.js";
+import { readEvalDoc } from "./evalDoc.js";
 
 /**
  * The newest manage evaluation re-marked from the stream cache (2026-10-22), so Live → positions and
@@ -57,10 +58,6 @@ export function sessionClosed(config: ConsoleConfig, now: number): boolean {
 }
 
 type Rec = Record<string, unknown>;
-
-function rec(v: unknown): Rec {
-  return v && typeof v === "object" && !Array.isArray(v) ? (v as Rec) : {};
-}
 
 function arr(v: unknown): unknown[] {
   return Array.isArray(v) ? v : [];
@@ -267,10 +264,8 @@ export function readManageLive(
   const maxAge = closed ? CLOSED_MAX_AGE_S : MAX_AGE_S;
   const empty: ManageLivePayload = { session, oldestQuoteAt: null, maxAgeSeconds: maxAge, closedMarks: closed, trades: [], accounts: [], spots: {}, marks: {} };
   if (session === null) return empty;
-  let doc: Rec;
-  try {
-    doc = rec(JSON.parse(fs.readFileSync(path.join(config.paths.manageDir, `eval-${session}.json`), "utf-8")));
-  } catch {
+  const doc = readEvalDoc(config.paths.manageDir, session);
+  if (doc === null) {
     return empty;
   }
   const accounts = arr(doc["accounts"]).map(rec);

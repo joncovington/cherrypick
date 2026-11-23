@@ -10,6 +10,7 @@ import type {
   SliceReports,
 } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
+import { obj as rec } from "./db.js";
 
 /**
  * B5's slice reports: the JSON files `python -m cherrypick.technicals slices` writes under
@@ -17,9 +18,6 @@ import type { ConsoleConfig } from "../config.js";
  * Backtest gate at the route, because a report may be built from a licensed replay.
  */
 
-function rec(v: unknown): Record<string, unknown> {
-  return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
-}
 const num = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
 
 function toPlacebo(v: unknown): SlicePlacebo | null {

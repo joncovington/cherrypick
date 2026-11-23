@@ -19,7 +19,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { ConsoleConfig } from "../config.js";
-import { num, suiteEra } from "./db.js";
+import { num, suiteEra, obj as rec } from "./db.js";
 
 export interface ReviewArm {
   arm: string;
@@ -101,10 +101,6 @@ export interface ReviewPayload {
      *  series. A session with no readable module is ABSENT, never a zero day. */
     suiteDaily: Array<{ session: string; net: number; closed: number }>;
   };
-}
-
-function rec(v: unknown): Record<string, unknown> {
-  return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
 }
 
 function readFacts(dir: string, session: string): Record<string, unknown> | null {

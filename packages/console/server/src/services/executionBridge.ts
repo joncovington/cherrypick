@@ -7,6 +7,7 @@ import type {
   ExecutionWindow,
 } from "@console/shared";
 import { spawnModuleCliAsync, type SpawnedJson } from "./moduleCli.js";
+import { obj as rec } from "../readers/db.js";
 
 /**
  * The execution record (B10; a card on each live arm's Live tab, MEIC's today): `python -m cherrypick.cli execution --json`, the orchestrator's
@@ -33,9 +34,6 @@ export function resetExecutionCache(): void {
   cached = null;
 }
 
-function rec(v: unknown): Record<string, unknown> {
-  return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
-}
 const s = (v: unknown): string | null => (typeof v === "string" && v !== "" ? v : null);
 const n = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
 

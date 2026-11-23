@@ -255,17 +255,18 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
     const f = parseFliesFilter(req.query);
     return readEntryAttempts(config, "pmcc", "paper", f.date ?? resolvePmccSession(config));
   });
-  // The collapsed decision journal (readers/decisions.ts) -- curve/pmcc/bwb all write it, none had
-  // a console reader before this. No date param on purpose: each module's own persistentTop/"now"
-  // card always means "this session", matching entry-attempts-today beside it.
-  app.get("/api/curve/decisions", async () => readDecisions(config, "curve", null));
+  // The collapsed decision journal (readers/decisions.ts), one route per paper module (bwb's, below,
+  // takes a mode). No date param on purpose: each module's own persistentTop/"now" card always means
+  // "this session", matching entry-attempts-today beside it.
+  for (const module of ["curve", "pmcc", "contango", "weeklyput", "ladder", "automations"] as const) {
+    app.get(`/api/${module}/decisions`, async () => readDecisions(config, module, null));
+  }
   // Same paper-only, no-date-param-means-today shape as pmcc's own attempts route above, and the
   // same resolveCurveSession fallback rather than readEntryAttempts' own MAX(trade_date) guess.
   app.get("/api/curve/attempts", async (req) => {
     const f = parseFliesFilter(req.query);
     return readEntryAttempts(config, "curve", "paper", f.date ?? resolveCurveSession(config));
   });
-  app.get("/api/pmcc/decisions", async () => readDecisions(config, "pmcc", null));
   app.get("/api/bwb/decisions", async (req) => readDecisions(config, "bwb", null, parseMode(req.query)));
   app.get("/api/meic/loop", async (req) =>
     readMeicLoopStatus(config, parseMode(req.query), parseMeicScope(req.query)),
@@ -276,6 +277,13 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
     const scope = parseMeicScope(req.query);
     return readMeicPerformance(config, parseMode(req.query), gran, scope.symbol, scope.profile, scope.era);
   });
+  /** An automation's name from `?name=`, or null when it is not one. */
+  function automationName(query: unknown): string | null {
+    const name = String(((query ?? {}) as Record<string, unknown>)["name"] ?? "");
+    return /^[a-z0-9][a-z0-9-]{1,47}$/.test(name) ? name : null;
+  }
+  const BAD_AUTOMATION_NAME = { error: "name: an automation's name" };
+  const BAD_SESSION = { error: "session must be YYYY-MM-DD" };
   /** null = the latest artifact; a date = that session's dated file; false = malformed. */
   function parseRegimeSession(query: unknown): string | null | false {
     const q = (query ?? {}) as Record<string, unknown>;
@@ -383,14 +391,14 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
   // it is a market fact, the same for every module whose entry window opens at 10:00, so no `mode`.
   app.get("/api/flies/opening-range", async (req, reply) => {
     const session = parseRegimeSession(req.query);
-    if (session === false) return reply.code(400).send({ error: "session must be YYYY-MM-DD" });
+    if (session === false) return reply.code(400).send(BAD_SESSION);
     return readOpeningRange(config, session);
   });
   // The regime-cuts artifact (2026-09-19), paper-only by construction (the writer cuts the paper
   // ledger), so no `mode`. `?session=` reads a dated artifact instead of the latest.
   app.get("/api/flies/regime-cuts", async (req, reply) => {
     const session = parseRegimeSession(req.query);
-    if (session === false) return reply.code(400).send({ error: "session must be YYYY-MM-DD" });
+    if (session === false) return reply.code(400).send(BAD_SESSION);
     return readRegimeCuts(config, "flies", session);
   });
   // The intraday agent's page. Paper-only by construction: the agent's paper arm, its record and the
@@ -413,7 +421,7 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
   });
   app.get("/api/meic/regime-cuts", async (req, reply) => {
     const session = parseRegimeSession(req.query);
-    if (session === false) return reply.code(400).send({ error: "session must be YYYY-MM-DD" });
+    if (session === false) return reply.code(400).send(BAD_SESSION);
     return readRegimeCuts(config, "meic", session);
   });
   // PMCC. No `mode` on any of these: the module has no live loop and no live store, so a mode
@@ -477,7 +485,6 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
     const arm = typeof q["arm"] === "string" && q["arm"] !== "" && q["arm"].length <= 40 ? q["arm"] : null;
     return readContangoHistory(config, { arm, range: parseDateRange(q) });
   });
-  app.get("/api/contango/decisions", async () => readDecisions(config, "contango", null));
   // contango's arms, buy-and-hold and expected path (`contango metrics`, core.metrics.nav).
   app.get("/api/contango/metrics", async () =>
     readContangoMetrics(path.join(config.paths.contangoDir, "paper_trades.db")),
@@ -491,7 +498,6 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
     const symbol = typeof q["symbol"] === "string" && /^[A-Z]{1,5}$/.test(q["symbol"]) ? q["symbol"] : null;
     return readWeeklyputHistory(config, { arm, symbol, range: parseDateRange(q) });
   });
-  app.get("/api/weeklyput/decisions", async () => readDecisions(config, "weeklyput", null));
   // ladder (paper). The lots held, the sold lots, and the module's own next buy levels and per-arm
   // summary and its book by session (`status`, `summary`, `equity`): the page never re-derives them.
   // Read-only; no order path.
@@ -505,7 +511,6 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
   app.get("/api/ladder/status", async () => readLadderStatus(ladderDbPath(config)));
   app.get("/api/ladder/summary", async () => readLadderSummary(ladderDbPath(config)));
   app.get("/api/ladder/equity", async () => readLadderEquity(ladderDbPath(config)));
-  app.get("/api/ladder/decisions", async () => readDecisions(config, "ladder", null));
   // The ladder's live view: `live_trades.db` (absent on most machines) and the module's own `live_loop
   // --status`. Two GETs and no verb: arming is `/live-ladder-start`, never a route here.
   app.get("/api/ladder/live", async () => readLadderLive(config));
@@ -522,14 +527,13 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
     return readAutomationsHistory(config, { arm, range: parseDateRange(q) });
   });
   app.get("/api/automations/performance", async () => readAutomationsPerformance(config));
-  app.get("/api/automations/decisions", async () => readDecisions(config, "automations", null));
   app.get("/api/automations/groups", async () => readAutomationGroups());
   app.get("/api/automations/builder", async () => readAutomationsBuilder());
   app.get("/api/automations/builder/schema", async () => readBuilderSchema());
   // One automation's paper record set against its pinned Builder run (the backtest package computes it).
   app.get("/api/automations/automation/reading", async (req, reply) => {
-    const name = String(((req.query ?? {}) as Record<string, unknown>)["name"] ?? "");
-    if (!/^[a-z0-9][a-z0-9-]{1,47}$/.test(name)) return reply.code(400).send({ error: "name: an automation's name" });
+    const name = automationName(req.query);
+    if (name === null) return reply.code(400).send(BAD_AUTOMATION_NAME);
     return readAutomationReadingFor(name);
   });
   // Every automation's reading against its pinned run, one row each (the backtest package computes them).
@@ -548,14 +552,14 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
     return readArmReading(module, arm);
   });
   app.get("/api/automations/automation/entries", async (req, reply) => {
-    const name = String(((req.query ?? {}) as Record<string, unknown>)["name"] ?? "");
-    if (!/^[a-z0-9][a-z0-9-]{1,47}$/.test(name)) return reply.code(400).send({ error: "name: an automation's name" });
+    const name = automationName(req.query);
+    if (name === null) return reply.code(400).send(BAD_AUTOMATION_NAME);
     return readAutomationEntriesFor(name);
   });
   // One automation's record in today's market conditions (the automations package cuts it, core stamps it).
   app.get("/api/automations/automation/conditions", async (req, reply) => {
-    const name = String(((req.query ?? {}) as Record<string, unknown>)["name"] ?? "");
-    if (!/^[a-z0-9][a-z0-9-]{1,47}$/.test(name)) return reply.code(400).send({ error: "name: an automation's name" });
+    const name = automationName(req.query);
+    if (name === null) return reply.code(400).send(BAD_AUTOMATION_NAME);
     return readAutomationConditionsFor(name);
   });
   app.get("/api/curve/history", async (req) => {

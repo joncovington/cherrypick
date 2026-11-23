@@ -7,6 +7,7 @@ import type {
   ResearchTaskStatus,
 } from "@console/shared";
 import { spawnModuleCliAsync, type SpawnedJson } from "./moduleCli.js";
+import { obj as rec } from "../readers/db.js";
 
 /**
  * The Backtest page's read of the research queue (`python -m cherrypick.cli queue-list`; the
@@ -35,10 +36,6 @@ let cached: { at: number; value: Promise<SpawnedJson> } | null = null;
 /** Drop the memoised response. Tests only. */
 export function resetResearchQueueCache(): void {
   cached = null;
-}
-
-function rec(v: unknown): Record<string, unknown> {
-  return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
 }
 
 function s(v: unknown): string | null {

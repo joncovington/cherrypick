@@ -30,15 +30,11 @@ import type {
   EarningsTradeLeg,
 } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
-import { num, str } from "./db.js";
+import { num, str, obj as rec } from "./db.js";
 import { marketReportDir } from "./marketReport.js";
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const EDGES = new Set<EarningsEdge>(["sb", "bn", "bp", "bi", "mx", "br", "bd", "brn", "sbe"]);
-
-function rec(v: unknown): Record<string, unknown> {
-  return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
-}
 
 function bool(v: unknown): boolean | null {
   return typeof v === "boolean" ? v : null;

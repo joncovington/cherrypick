@@ -1,9 +1,9 @@
-import fs from "node:fs";
-import path from "node:path";
 import type { LiveTodayHand, LiveTodayHandLeg, LiveTodayHandOrder } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
 import { accountName } from "./accountName.js";
+import { readEvalDoc } from "./evalDoc.js";
 import { listSessions } from "./manage.js";
+import { obj as rec } from "./db.js";
 
 /**
  * The Live page's `today` tab's hand row (2026-11-03): today's 0DTE trades placed by hand, from
@@ -19,10 +19,6 @@ import { listSessions } from "./manage.js";
  */
 
 type Rec = Record<string, unknown>;
-
-function rec(v: unknown): Rec {
-  return v && typeof v === "object" && !Array.isArray(v) ? (v as Rec) : {};
-}
 
 function arr(v: unknown): unknown[] {
   return Array.isArray(v) ? v : [];
@@ -99,10 +95,8 @@ function leg(v: unknown): LiveTodayHandLeg {
 export function readLiveHandAll(config: ConsoleConfig, session: string): LiveTodayHand[] {
   const first = readLiveHand(config, session);
   if (first.status === "none") return [first];
-  let doc: Rec;
-  try {
-    doc = rec(JSON.parse(fs.readFileSync(path.join(config.paths.manageDir, `eval-${session}.json`), "utf-8")));
-  } catch {
+  const doc = readEvalDoc(config.paths.manageDir, session);
+  if (doc === null) {
     return [first];
   }
   const withViews = arr(doc["accounts"]).map(rec).filter((a) => a["zero_dte"] !== null && a["zero_dte"] !== undefined);
@@ -115,10 +109,8 @@ export function readLiveHand(config: ConsoleConfig, session: string, only?: Rec)
     const last = sessions[sessions.length - 1];
     return empty("none", last === undefined ? "no position evaluation on this machine" : `no position evaluation today yet (newest ${last})`);
   }
-  let doc: Rec;
-  try {
-    doc = rec(JSON.parse(fs.readFileSync(path.join(config.paths.manageDir, `eval-${session}.json`), "utf-8")));
-  } catch {
+  const doc = readEvalDoc(config.paths.manageDir, session);
+  if (doc === null) {
     return empty("unread", `eval-${session}.json is unreadable`);
   }
   // The first account with a view (the designated one, or the only one), or `only`; each account on

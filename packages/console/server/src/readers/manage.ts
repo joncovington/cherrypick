@@ -71,12 +71,9 @@ import type {
 import { LEDGER_WINDOWS } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
 import { accountName } from "./accountName.js";
-import { num, readJson } from "./db.js";
+import { num, readJson, obj as rec } from "./db.js";
+import { evalFile, evalStamp, parseEvalDoc, readEvalDoc } from "./evalDoc.js";
 import { manageTimeSpreads } from "./timeSpreads.js";
-
-function rec(v: unknown): Record<string, unknown> {
-  return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
-}
 
 function arr(v: unknown): unknown[] {
   return Array.isArray(v) ? v : [];
@@ -1661,30 +1658,51 @@ function leveragedFor(config: ConsoleConfig, session: string): Leveraged {
  * that day's evaluation stated them. Sessions before the reading carried bands are left out, and an
  * unreadable file is skipped rather than drawn as a gap at zero.
  */
-export function readManageBandsHistory(config: ConsoleConfig): ManageBandsHistoryPayload {
-  const byAccount = new Map<string, ManageBandsSession[]>();
-  for (const session of listSessions(config)) {
-    let doc: Record<string, unknown>;
-    try {
-      doc = rec(JSON.parse(fs.readFileSync(path.join(config.paths.manageDir, `eval-${session}.json`), "utf-8")));
-    } catch {
-      continue;
-    }
-    for (const a of arr(doc["accounts"])) {
-      const p = rec(rec(a)["portfolio"]);
-      const bands = rec(p["bands"]);
-      if (Object.keys(bands).length === 0) continue;
-      const account = accountName(rec(a)) ?? "account";
-      const row: ManageBandsSession = {
+/** One stored evaluation's bands, per account, kept against the file's stamp. The history walks every
+ *  evaluation on each poll; only today's changes, so an old one is read once and its summary kept (the
+ *  summary, not the megabyte document). */
+const bandsBySession = new Map<string, { stamp: string; rows: { account: string; row: ManageBandsSession }[] }>();
+
+function bandsOf(file: string, session: string): { account: string; row: ManageBandsSession }[] | null {
+  const stamp = evalStamp(file);
+  if (stamp === null) {
+    bandsBySession.delete(file);
+    return null;
+  }
+  const hit = bandsBySession.get(file);
+  if (hit !== undefined && hit.stamp === stamp) return hit.rows;
+  const doc = parseEvalDoc(file);
+  if (doc === null) {
+    bandsBySession.delete(file);
+    return null;
+  }
+  const rows: { account: string; row: ManageBandsSession }[] = [];
+  for (const a of arr(doc["accounts"])) {
+    const p = rec(rec(a)["portfolio"]);
+    const bands = rec(p["bands"]);
+    if (Object.keys(bands).length === 0) continue;
+    rows.push({
+      account: accountName(rec(a)) ?? "account",
+      row: {
         session,
         netLiq: num(p["net_liq"]),
         theta: num(p["theta_ex_front"]) ?? num(p["theta"]),
         delta: bands["delta"] ? band(bands["delta"]) : null,
         thetaPct: bands["theta"] ? band(bands["theta"]) : null,
         buyingPower: bands["buying_power"] ? band(bands["buying_power"]) : null,
-      };
-      byAccount.set(account, [...(byAccount.get(account) ?? []), row]);
-    }
+      },
+    });
+  }
+  bandsBySession.set(file, { stamp, rows });
+  return rows;
+}
+
+export function readManageBandsHistory(config: ConsoleConfig): ManageBandsHistoryPayload {
+  const byAccount = new Map<string, ManageBandsSession[]>();
+  for (const session of listSessions(config)) {
+    const rows = bandsOf(evalFile(config.paths.manageDir, session), session);
+    if (rows === null) continue;
+    for (const { account, row } of rows) byAccount.set(account, [...(byAccount.get(account) ?? []), row]);
   }
   return { accounts: [...byAccount].map(([account, sessions]) => ({ account, sessions })) };
 }
@@ -1711,10 +1729,8 @@ export function readManage(config: ConsoleConfig, session?: string): ManagePaylo
     early: null,
   };
   if (!wanted) return empty;
-  let doc: Record<string, unknown>;
-  try {
-    doc = rec(JSON.parse(fs.readFileSync(path.join(config.paths.manageDir, `eval-${wanted}.json`), "utf-8")));
-  } catch {
+  const doc = readEvalDoc(config.paths.manageDir, wanted);
+  if (doc === null) {
     return { ...empty, session: wanted, error: `eval-${wanted}.json is unreadable` };
   }
   return {

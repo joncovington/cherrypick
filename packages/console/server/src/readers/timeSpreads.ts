@@ -16,13 +16,10 @@ import type {
 } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
 import { accountName } from "./accountName.js";
-import { num, str } from "./db.js";
+import { num, str, obj as rec } from "./db.js";
+import { readEvalDoc } from "./evalDoc.js";
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
-
-function rec(v: unknown): Record<string, unknown> {
-  return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
-}
 
 function arr(v: unknown): unknown[] {
   return Array.isArray(v) ? v : [];
@@ -150,10 +147,8 @@ export function readAccountTimeSpreads(
   config: ConsoleConfig,
   day: string,
 ): { account: ManageTimeSpreads | null; accountNote: string | null; accountName?: string | null } {
-  let doc: Record<string, unknown>;
-  try {
-    doc = rec(JSON.parse(fs.readFileSync(path.join(config.paths.manageDir, `eval-${day}.json`), "utf-8")));
-  } catch {
+  const doc = readEvalDoc(config.paths.manageDir, day);
+  if (doc === null) {
     return { account: null, accountNote: `no manage evaluation for ${day}, so nothing is sized to the account` };
   }
   const carrying = arr(doc["accounts"])

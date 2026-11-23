@@ -18,14 +18,10 @@ import type {
   EarningsRecordTrade,
 } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
-import { num, str } from "./db.js";
+import { num, str, obj as rec } from "./db.js";
 import { earningsCalendarDir } from "./earningsCalendar.js";
 
 const EDGES = new Set<string>(["sb", "bn", "bp", "bi", "mx", "br", "bd", "brn", "sbe"]);
-
-function rec(v: unknown): Record<string, unknown> {
-  return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
-}
 
 function bool(v: unknown): boolean | null {
   return typeof v === "boolean" ? v : null;

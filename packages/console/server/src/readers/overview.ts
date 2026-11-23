@@ -50,14 +50,10 @@ import type {
   TechnicalsMover,
 } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
-import { num, str } from "./db.js";
+import { num, str, obj as rec } from "./db.js";
 
 function bool(v: unknown): boolean | null {
   return typeof v === "boolean" ? v : null;
-}
-
-function rec(v: unknown): Record<string, unknown> {
-  return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
 }
 
 function readPack(dir: string, session: string): Record<string, unknown> | null {

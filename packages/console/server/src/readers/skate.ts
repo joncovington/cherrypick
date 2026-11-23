@@ -27,7 +27,7 @@ import type {
   SkateRow,
 } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
-import { num, str } from "./db.js";
+import { num, str, obj as rec } from "./db.js";
 import { marketReportDir } from "./marketReport.js";
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
@@ -36,10 +36,6 @@ const RUN = /^(\d{4})\.json$/;
 
 /** The file's band names against ours. */
 const FILE_BAND: Record<SkateBand, string> = { fixed: "fixed", byExpiry: "by_expiry" };
-
-function rec(v: unknown): Record<string, unknown> {
-  return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
-}
 
 export function skateDir(config: ConsoleConfig): string {
   return path.join(marketReportDir(config), "screener-greeks", "skate");

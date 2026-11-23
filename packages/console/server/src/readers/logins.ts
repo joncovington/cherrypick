@@ -1,10 +1,6 @@
 import path from "node:path";
 import type { ConsoleConfig } from "../config.js";
-import { readJson } from "./db.js";
-
-function rec(v: unknown): Record<string, unknown> {
-  return typeof v === "object" && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
-}
+import { readJson, obj as rec } from "./db.js";
 
 /** The further broker logins the suite reads (`broker.logins` in the orchestrator config), main
  *  never listed: the names only, never a secret. */

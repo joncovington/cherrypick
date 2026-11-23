@@ -16,23 +16,11 @@ import type {
   ValuationState,
 } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
-import { num, str } from "./db.js";
+import { num, str, obj as rec, readJsonObject as readJson } from "./db.js";
 import { pmccSymbols } from "./pmcc.js";
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const STATES: readonly ValuationState[] = ["valued", "not-applicable", "no-statements", "refused"];
-
-function rec(v: unknown): Record<string, unknown> {
-  return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
-}
-
-function readJson(file: string): Record<string, unknown> | null {
-  try {
-    return rec(JSON.parse(fs.readFileSync(file, "utf-8")));
-  } catch {
-    return null;
-  }
-}
 
 function days(dir: string): string[] {
   try {

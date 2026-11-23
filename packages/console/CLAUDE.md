@@ -76,6 +76,9 @@ alone):
   Handles are pooled per path and recycled on the file's stamp (`readers/db.ts`), so a module's write
   (a migration included) is seen on the next request; idle handles hold an open file, never an open
   read transaction, so they cannot starve WAL checkpointing.
+- **manage's `eval-<session>.json` is read through `readers/evalDoc.ts`**, never with a private
+  `readFileSync`: one parse per change (mtime and size), shared and deep-frozen, so a reader copies
+  what it keeps and never edits it. A parse that fails is not cached.
 - **A reader that states a total and its breakdown reads one snapshot** (`withReadSnapshot`). Each
   statement is otherwise its own transaction, so a total from one query and rows from another can
   straddle a module's write, and a summary's hero would stop equalling the sum of its arms
