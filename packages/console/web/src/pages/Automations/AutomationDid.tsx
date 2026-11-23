@@ -2,7 +2,7 @@ import type { AutomationReading, AutomationsLine, ReadingExit } from "@console/s
 import { Card, DataCard, PnlCell } from "../../components/DataTable";
 import { HelpSection, type CardHelpContent } from "../../components/CardHelp";
 import { useAutomationReading } from "../../lib/api";
-import { fmtCash, fmtMoney } from "../../lib/format";
+import { fmtCash, fmtMoney, fmtFrac } from "../../lib/format";
 import { howEnded } from "./automationsModels";
 
 /**
@@ -33,8 +33,6 @@ const HELP: CardHelpContent = {
   ),
 };
 
-const pct = (v: number | null): string => (v === null ? "—" : `${String(Math.round(v * 100))}%`);
-
 export function ExitsCard({ exits }: { exits: ReadingExit[] }) {
   const trades = exits.reduce((s, e) => s + e.trades, 0);
   return (
@@ -53,8 +51,8 @@ export function ExitsCard({ exits }: { exits: ReadingExit[] }) {
         <tr key={e.kind}>
           <td>{howEnded(e.kind)}</td>
           <td>{e.trades}</td>
-          <td>{pct(e.share)}</td>
-          <td>{pct(e.run_share)}</td>
+          <td>{fmtFrac(e.share, 0)}</td>
+          <td>{fmtFrac(e.run_share, 0)}</td>
           <td>{e.trades === 0 ? "—" : <PnlCell v={e.net} />}</td>
         </tr>
       ))}

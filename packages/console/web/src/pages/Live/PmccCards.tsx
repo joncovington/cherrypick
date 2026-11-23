@@ -13,7 +13,7 @@ import { BoxButton, BoxButtons, PortfolioBoxContext } from "./portfolioBoxContex
 import { useLiveMarks } from "./LiveMarks";
 import { livePmccs } from "./liveLegs";
 import { Cells, HeadRow, useColumns, type Column } from "../../components/columns";
-import { fmtCash, fmtMoney, fmtPrice } from "../../lib/format";
+import { fmtCash, fmtMoney, fmtPrice, fmtFrac } from "../../lib/format";
 import {
   ACTION_LABEL,
   ActionChip,
@@ -65,10 +65,6 @@ export function noPmccText(rc: ManagePmccRecognize | null | undefined): string {
     `the ruleset), has one shorter-dated call of the same size sold against it${short}, at or above the ` +
     "long's strike, and no shares on the name"
   );
-}
-
-function pct(v: number | null, digits = 0): string {
-  return v === null ? "—" : `${(v * 100).toFixed(digits)}%`;
 }
 
 function delta(v: number | null): string {
@@ -191,7 +187,7 @@ function LongCard({ p }: { p: ManagePmccPosition }) {
           ["delta today", l.delta === null ? "unknown" : delta(l.delta)],
           ["mid", share(l.mid)],
           ["intrinsic", share(l.intrinsic)],
-          ["extrinsic", `${share(l.extrinsic)} (${pct(l.extrinsicShare)} of its price)`],
+          ["extrinsic", `${share(l.extrinsic)} (${fmtFrac(l.extrinsicShare, 0)} of its price)`],
           ["days left", l.dte === null ? "—" : String(l.dte)],
           ["roll", roll.row],
         ]}
@@ -226,7 +222,7 @@ function WidthCard({ p }: { p: ManagePmccPosition }) {
           ["long's net cost after premiums", `${fmtMoney(w.netCost)} (${share(w.netCostPerShare)})`],
           ...(w.costShare === null
             ? []
-            : ([["cost as a share of the width", `${pct(w.costShare)}${w.warnShare === null ? "" : ` (thin over ${pct(w.warnShare)})`}`]] as [string, string][])),
+            : ([["cost as a share of the width", `${fmtFrac(w.costShare, 0)}${w.warnShare === null ? "" : ` (thin over ${fmtFrac(w.warnShare, 0)})`}`]] as [string, string][])),
           ["P&L if assigned, gross", <Money key="g" v={w.pnlIfAssigned} />],
           ["P&L if assigned, net of fees", w.pnlIfAssignedNet === null ? (openLegs ? "n/r: the orders do not reconcile" : "—") : <Money key="n" v={w.pnlIfAssignedNet} />],
           ["cost from", openLegs ? "the open legs' prices (earlier shorts not counted)" : (w.basis ?? "—")],
@@ -409,7 +405,7 @@ function ShortCheck({ p }: { p: ManagePmccPosition }) {
         </td>
       ),
     },
-    { key: "nd2", label: "N(d2)", detailOnly: true, td: () => <td>{pct(s.probItm)}</td> },
+    { key: "nd2", label: "N(d2)", detailOnly: true, td: () => <td>{fmtFrac(s.probItm, 0)}</td> },
     { key: "earnings", label: "earnings", td: () => <td style={{ whiteSpace: "normal" }}>{earnings}</td> },
   ]);
   return (
@@ -773,7 +769,7 @@ export function PmccCard({ p, trades, floor = null }: { p: ManagePmccPosition; t
         </div>
         <div className="pf-dside">
           <span className="pf-lab">
-            width check · {share === null ? "no cost to judge" : `cost ${pct(share)} of the width`} <WidthChip passes={w.passes} thin={w.thin} />
+            width check · {share === null ? "no cost to judge" : `cost ${fmtFrac(share, 0)} of the width`} <WidthChip passes={w.passes} thin={w.thin} />
           </span>
           <div className="pf-meter" title="the long's net cost as a share of the strike width">
             <span className={w.passes === false || w.thin ? "is-warn" : ""} style={{ width: `${Math.min(100, Math.max(0, (share ?? 0) * 100))}%` }} />
@@ -944,7 +940,7 @@ function pmccRow(p: ManagePmccPosition, trades: ManageTrade[], floor: number | n
     symbol: p.underlying,
     shape: `${k.kind} · ${p.long.leg} / ${p.short.leg}`,
     cash: pnl,
-    label: `width ${w.passes === null ? "—" : w.passes ? "holds" : "fails"}${w.costShare === null ? "" : ` · cost ${pct(w.costShare)} of it`}`,
+    label: `width ${w.passes === null ? "—" : w.passes ? "holds" : "fails"}${w.costShare === null ? "" : ` · cost ${fmtFrac(w.costShare, 0)} of it`}`,
     after: `long ${p.long.delta === null ? "—" : delta(p.long.delta)} delta · short ${p.short.dte ?? "—"} dte`,
     chips: <span className={k.chipClass}>{k.kind}</span>,
     card: <PmccCard p={p} trades={trades} floor={floor} />,

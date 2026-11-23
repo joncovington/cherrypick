@@ -13,6 +13,7 @@ import { SkateRecordSection } from "./SkateRecord";
 import { beatsMonthly, otherBand, skateCounts, skateViews, type SkateView } from "./skateRows";
 import { GuideLink } from "../../components/GuideLink";
 import { chartHref } from "../Chart/chartRoute";
+import { fmtFrac } from "../../lib/format";
 
 /**
  * The Skate tab: covered calls above a name's recent range
@@ -39,10 +40,6 @@ const BAND_LABEL: Record<SkateBand, string> = { fixed: "fixed", byExpiry: "by ex
 const PAGE_SIZES = [24, 48, 96, 192] as const;
 
 const DASH = "—";
-
-function pct(v: number | null, digits = 1): string {
-  return v === null ? DASH : `${(v * 100).toFixed(digits)}%`;
-}
 
 /** A rate difference in points: +4.2 pts. */
 function points(v: number | null): string {
@@ -104,8 +101,8 @@ function softLine(c: SkateConfig | null): string {
   if (c === null) return "the skate rate over the name's full history and the last 3 years, and skate yield";
   const s = c.soft;
   return (
-    `skate rate ${pct(s.skate, 0)} or more over the name's full history (from 2015, as little as a year for a young name) ` +
-    `and ${pct(s.skateRecent, 0)} over the last 3 years, gross skate yield on the bid ${pct(s.yield, 0)} or more`
+    `skate rate ${fmtFrac(s.skate, 0)} or more over the name's full history (from 2015, as little as a year for a young name) ` +
+    `and ${fmtFrac(s.skateRecent, 0)} over the last 3 years, gross skate yield on the bid ${fmtFrac(s.yield, 0)} or more`
   );
 }
 
@@ -118,9 +115,9 @@ function years(windows: number | null): string | null {
 function softMisses(v: SkateView, c: SkateConfig | null): string {
   const s = v.pick.soft;
   return [
-    s.skate ? null : `full-history skate rate under ${pct(c?.soft.skate ?? null, 0)}`,
-    s.skateRecent ? null : `3-year skate rate under ${pct(c?.soft.skateRecent ?? null, 0)}`,
-    s.yield ? null : `gross skate yield under ${pct(c?.soft.yield ?? null, 0)}`,
+    s.skate ? null : `full-history skate rate under ${fmtFrac(c?.soft.skate ?? null, 0)}`,
+    s.skateRecent ? null : `3-year skate rate under ${fmtFrac(c?.soft.skateRecent ?? null, 0)}`,
+    s.yield ? null : `gross skate yield under ${fmtFrac(c?.soft.yield ?? null, 0)}`,
   ]
     .filter((x): x is string => x !== null)
     .join("; ");
@@ -184,17 +181,17 @@ export function skateModel(v: SkateView, c: SkateConfig | null): TradeCardModel 
     cash,
     side: [
       net ? `net of the ${dollars(p.feeOpen)} fee` : "gross: this run predates the fee figures",
-      `${net ? "net " : ""}yield ${pct(net ? p.netYieldBid : p.yieldBid)}`,
+      `${net ? "net " : ""}yield ${fmtFrac(net ? p.netYieldBid : p.yieldBid, 1)}`,
     ],
     bar: p.skate === null ? null : p.skate * 100,
-    barTitle: `the share of past days the band held at this strike's offset, over ${years(p.historyWindows) ?? "the name's history"}; the model's odds are ${pct(p.impliedSkate)}`,
-    label: `skated ${pct(p.skate, 0)} of past days · ${pct(p.impliedSkate, 0)} implied · ${points(p.gap)}${p.historyWindows === null ? "" : ` · ${years(p.historyWindows)} of history`}`,
+    barTitle: `the share of past days the band held at this strike's offset, over ${years(p.historyWindows) ?? "the name's history"}; the model's odds are ${fmtFrac(p.impliedSkate, 1)}`,
+    label: `skated ${fmtFrac(p.skate, 0)} of past days · ${fmtFrac(p.impliedSkate, 0)} implied · ${points(p.gap)}${p.historyWindows === null ? "" : ` · ${years(p.historyWindows)} of history`}`,
     open: { date: "proposed", price: bid === null ? DASH : `${bid.toFixed(2)} bid` },
     legs: [{ buy: false, text: `1 ${v.best.expiry} ${p.strike}${right}${bid === null ? "" : ` @ ${bid.toFixed(2)}`}`, quote: q || null }],
     after: [
       `${p.delta === null ? "Δ —" : `Δ ${Math.abs(p.delta).toFixed(2)}`} · OI ${p.quote.openInterest === null ? DASH : p.quote.openInterest.toLocaleString("en-US")}`,
       `${d === null ? DASH : `${d > 0 ? "+" : d < 0 ? "−" : ""}${Math.abs(d * 100).toFixed(1)}%`} to the strike`,
-      `through ${pct(p.testedPerMonth, 0)} a month`,
+      `through ${fmtFrac(p.testedPerMonth, 0)} a month`,
     ],
     foot: [
       `${BAND_LABEL[v.band]} band${v.best.vsMonthly === null ? "" : ` · ${v.best.vsMonthly.toFixed(2)}× the monthly${beatsMonthly(v.best) ? ", more a day" : ""}`} · ${otherLine(v)}`,

@@ -1,4 +1,5 @@
 import type { ReviewArm, ReviewModule } from "@console/shared";
+import { fmtGrouped } from "../../lib/format";
 
 /**
  * The suite review's layout helpers: what needs attention, which modules get a row in the summary
@@ -12,10 +13,6 @@ export interface Flag {
   module: string | null;
   /** The sentence after the module's name. */
   text: string;
-}
-
-function money(v: number | null): string {
-  return v === null ? "—" : v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 /** What a reader needs before anything else. An empty list is a real and good answer. */
@@ -51,7 +48,7 @@ export function attention(modules: ReviewModule[], status: string | null): Flag[
       out.push({
         level: "warn",
         module: m.module,
-        text: `carried ${String(m.carriedPositions)} position(s) overnight, ${money(m.carriedCapital)} at risk${unknown}; provisional — its realised P&L lands next session`,
+        text: `carried ${String(m.carriedPositions)} position(s) overnight, ${fmtGrouped(m.carriedCapital)} at risk${unknown}; provisional — its realised P&L lands next session`,
       });
     }
   }

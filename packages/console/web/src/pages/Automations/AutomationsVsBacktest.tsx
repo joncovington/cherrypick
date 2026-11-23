@@ -4,7 +4,7 @@ import { DataCard } from "../../components/DataTable";
 import { HelpSection, type CardHelpContent } from "../../components/CardHelp";
 import { Section } from "../../components/Section";
 import { useAutomationsReadings } from "../../lib/api";
-import { fmtMoney } from "../../lib/format";
+import { fmtMoney, fmtFrac } from "../../lib/format";
 import { automationHref } from "./automationsModels";
 import { PLACE_CHIP, STATE_WORDS } from "./AutomationWorking";
 
@@ -38,8 +38,6 @@ const HELP: CardHelpContent = {
     </>
   ),
 };
-
-const pct = (v: number | null | undefined): string => (v === null || v === undefined ? "—" : `${String(Math.round(v * 100))}%`);
 
 /** The chip a reading earns: its state in words, toned by where the running net sits. */
 export function readingChip(r: AutomationReadingRow): { cls: string; words: string } {
@@ -99,8 +97,8 @@ export function VsBacktestTable({ data }: { data: AutomationsReadings | undefine
             <td>{c === null ? "—" : `${String(c.inside)} · ${String(c.below)} · ${String(c.above)}`}</td>
             <td>{p?.mean === null || p?.mean === undefined ? "—" : fmtMoney(p.mean)}</td>
             <td>{r.reference?.mean === null || r.reference?.mean === undefined ? "—" : fmtMoney(r.reference.mean)}</td>
-            <td>{pct(p?.entry_rate)}</td>
-            <td>{pct(r.reference?.entry_rate)}</td>
+            <td>{fmtFrac(p?.entry_rate, 0)}</td>
+            <td>{fmtFrac(r.reference?.entry_rate, 0)}</td>
           </tr>
         );
       })}

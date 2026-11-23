@@ -22,6 +22,7 @@ import { ScreenerLayout } from "./ScreenerParts";
 import { Section } from "../../components/Section";
 import { GuideLink } from "../../components/GuideLink";
 import { chartHref } from "../Chart/chartRoute";
+import { fmtFrac } from "../../lib/format";
 
 /**
  * The earnings calendar's forward record (2026-10-17; docs/history/earnings-screener-plan.md (tag archive/docs-2026-11), step 5): every
@@ -43,10 +44,6 @@ function money(v: number | null | undefined): string {
   return `${v < 0 ? "−" : v > 0 ? "+" : ""}$${s}`;
 }
 
-function pct(v: number | null | undefined, digits = 0): string {
-  return v === null || v === undefined ? "—" : `${(100 * v).toFixed(digits)}%`;
-}
-
 function shortDate(iso: string): string {
   return new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
 }
@@ -64,7 +61,7 @@ function Tile({ label, value, foot, cls, title }: { label: string; value: string
 }
 
 function totalsFoot(t: EarningsRecordTotals): string {
-  return `${t.n} spreads · won ${pct(t.won)} · RoR ${pct(t.returnOnRisk, 1)}`;
+  return `${t.n} spreads · won ${fmtFrac(t.won, 0)} · RoR ${fmtFrac(t.returnOnRisk, 1)}`;
 }
 
 export const recordHelp: CardHelpContent = {
@@ -188,9 +185,9 @@ export function EarningsRecordTab() {
           <Card title="forward check" help={recordHelp} flag="no edge in history" controls={data?.asOf ? <span className="card-asof">as of {data.asOf}</span> : null}>
             <TileGrid count={6}>
               <Tile label="measured" value={`${s.measuredMoves ?? "—"}`} foot={`of ${s.announcements} announcements`} />
-              <Tile label="inside the move" value={pct(s.insideEm)} foot={`of ${s.compared} with an expected move`} />
+              <Tile label="inside the move" value={fmtFrac(s.insideEm, 0)} foot={`of ${s.compared} with an expected move`} />
               <Tile label="median |move| / EM" value={s.medianMoveOverEm?.toFixed(2) ?? "—"} foot="above 1 is outside it" />
-              <Tile label="direction called" value={pct(s.directionRight)} foot={`of ${s.strongReads} strong reads`} />
+              <Tile label="direction called" value={fmtFrac(s.directionRight, 0)} foot={`of ${s.strongReads} strong reads`} />
               <Tile label="net, reaction day" value={money(s.react.net)} cls={tone(s.react.net)} foot={totalsFoot(s.react)} />
               <Tile label="net, day 2" value={money(s.day2.net)} cls={tone(s.day2.net)} foot={totalsFoot(s.day2)} />
             </TileGrid>
@@ -198,7 +195,7 @@ export function EarningsRecordTab() {
               <div style={{ marginTop: 8 }}>
                 <TileGrid count={3}>
                   <Tile label={`priced within ${s.earningsWeek.maxDays} days`} value={`${s.earningsWeek.n}`} foot="an earnings move, not a month's" />
-                  <Tile label="inside the move" value={pct(s.earningsWeek.insideEm)} />
+                  <Tile label="inside the move" value={fmtFrac(s.earningsWeek.insideEm, 0)} />
                   <Tile label="median |move| / EM" value={s.earningsWeek.medianMoveOverEm?.toFixed(2) ?? "—"} />
                 </TileGrid>
               </div>

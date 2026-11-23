@@ -15,6 +15,7 @@ import { isAdvisorPaused, isModuleVisible } from "../../lib/visibility";
 import { otherFields, paramRows, scalar } from "./proposalPayload";
 import { TabStrip } from "../../components/ScopeBar";
 import { SortTh, sortRows, useSort } from "../../components/DataTable";
+import { fmtFrac, fmtGrouped } from "../../lib/format";
 import { pushToast } from "../../lib/toast";
 import { gateDistance, lastCounted, readingSessions } from "../../components/advisor/experimentStats";
 import { PairedRead } from "../../components/advisor/PairedRead";
@@ -44,13 +45,11 @@ function count(v: number | null | undefined): string {
 }
 
 function money(v: unknown): string {
-  return typeof v === "number" && Number.isFinite(v)
-    ? v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-    : "—";
+  return typeof v === "number" && Number.isFinite(v) ? fmtGrouped(v) : "—";
 }
 
 function pct(v: unknown): string {
-  return typeof v === "number" && Number.isFinite(v) ? `${(v * 100).toFixed(1)}%` : "—";
+  return typeof v === "number" && Number.isFinite(v) ? fmtFrac(v, 1) : "—";
 }
 
 function pnlClass(v: unknown): string {

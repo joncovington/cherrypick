@@ -12,6 +12,7 @@ import { TradeCards, dayMonth, type TradeCardModel } from "../Live/TradeCard";
 import { ScreenerCard, ScreenerLayout, SessionSelect, SymbolSearch, Tabs, useParamState } from "./ScreenerParts";
 import { Section } from "../../components/Section";
 import { GuideLink } from "../../components/GuideLink";
+import { fmtFrac, fmtGrouped } from "../../lib/format";
 
 /**
  * Our own short-put and covered-call lists (2026-10-19): one row a name from the suite's universe,
@@ -46,14 +47,6 @@ const NOTE: Record<IncomeList, string> = {
 
 const HEAD: Record<IncomeList, string> = { "short-puts": "No tested edge", "covered-calls": "Not refuted, not an edge" };
 const FLAG: Record<IncomeList, string> = { "short-puts": "no tested edge", "covered-calls": "not refuted, not an edge" };
-
-function money(v: number | null): string {
-  return v === null ? "—" : v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
-function pct(v: number | null, digits = 1): string {
-  return v === null ? "—" : `${(v * 100).toFixed(digits)}%`;
-}
 
 function signedPct(v: number): string {
   return `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(v * 100).toFixed(1)}%`;
@@ -115,13 +108,13 @@ function exDividendText(r: IncomeListRow): string {
 export function incomeModel(r: IncomeListRow, calls: boolean, farthest: number): TradeCardModel {
   const right = calls ? "C" : "P";
   const dist = Math.abs(r.distanceFraction);
-  const price = r.working === null ? "—" : `${money(r.working)} cr`;
-  const q = [r.bid === null && r.ask === null ? "" : `${r.bid === null ? "—" : money(r.bid)} / ${r.ask === null ? "—" : money(r.ask)}`, `Δ ${Math.abs(r.delta).toFixed(2)}`, r.openInterest === null ? "" : `OI ${r.openInterest.toLocaleString("en-US")}`].filter(Boolean).join(" · ");
+  const price = r.working === null ? "—" : `${fmtGrouped(r.working)} cr`;
+  const q = [r.bid === null && r.ask === null ? "" : `${r.bid === null ? "—" : fmtGrouped(r.bid)} / ${r.ask === null ? "—" : fmtGrouped(r.ask)}`, `Δ ${Math.abs(r.delta).toFixed(2)}`, r.openInterest === null ? "" : `OI ${r.openInterest.toLocaleString("en-US")}`].filter(Boolean).join(" · ");
   const fund = r.type !== null && r.type !== "Stock";
   return {
     key: r.symbol,
     symbol: r.symbol,
-    spot: money(r.spot),
+    spot: fmtGrouped(r.spot),
     shape: `${calls ? "covered call" : "short put"} ${r.strike}${right} · Δ ${Math.abs(r.delta).toFixed(2)} · ${r.dte} d · ${dayMonth(r.expiry)}${fund ? ` · ${r.type === "Exchange Traded Fund" ? "fund" : r.type === "Depository Receipt" ? "ADR" : r.type}` : ""}`,
     chips: (
       <>
@@ -155,8 +148,8 @@ export function incomeModel(r: IncomeListRow, calls: boolean, farthest: number):
     barTitle: "how far the strike sits from the share price, against the farthest on this list",
     label: `distance ${signedPct(r.distanceFraction)} to the strike`,
     open: { date: "proposed", price },
-    legs: [{ buy: false, text: `1 ${r.expiry} ${r.strike}${right}${r.working === null ? "" : ` @ ${money(r.working)}`}`, quote: q || null }],
-    after: [`annual ${pct(r.annualFraction)}`, `IV ${pct(r.iv, 0)}`, `return ${pct(r.returnFraction, 2)}`],
+    legs: [{ buy: false, text: `1 ${r.expiry} ${r.strike}${right}${r.working === null ? "" : ` @ ${fmtGrouped(r.working)}`}`, quote: q || null }],
+    after: [`annual ${fmtFrac(r.annualFraction, 1)}`, `IV ${fmtFrac(r.iv, 0)}`, `return ${fmtFrac(r.returnFraction, 2)}`],
     foot: [calls ? `${earningsText(r)} · ${exDividendText(r)}` : earningsText(r), fairText(r.fair)],
   };
 }
@@ -373,7 +366,7 @@ export function OwnListTab({ list, tabs }: { list: IncomeList; tabs?: ReactNode 
                       description={
                         calls
                           ? "Hide a call the account holds no uncovered 100-share lot for (shares already written against are spoken for)."
-                          : `Hide a put whose buying power is more than the ${money(data.fitBasis.availableBp)} the account has (manage's ${data.fitBasis.session} evaluation, ${data.fitBasis.basis === "cash" ? "cash-secured" : "Reg T"}).`
+                          : `Hide a put whose buying power is more than the ${fmtGrouped(data.fitBasis.availableBp)} the account has (manage's ${data.fitBasis.session} evaluation, ${data.fitBasis.basis === "cash" ? "cash-secured" : "Reg T"}).`
                       }
                       on={!allFit}
                       onChange={(on) => set("fit", on ? null : "all")}

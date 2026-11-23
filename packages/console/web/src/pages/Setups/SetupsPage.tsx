@@ -3,6 +3,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import type { SetupRead, SetupReadLevel, TechnicalsWatchlistRow } from "@console/shared";
 import { useSetupsWatchlist } from "../../lib/api";
 import { chartHref } from "../Chart/chartRoute";
+import { fmtGrouped } from "../../lib/format";
 
 /**
  * The setups watchlist: every entry and exit the technicals chart setups made lately, long and
@@ -53,12 +54,6 @@ interface Line {
   price: number | null;
 }
 
-function money(v: number | null | undefined): string {
-  return v === null || v === undefined
-    ? "—"
-    : v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
 function pct(v: number | null | undefined, digits = 1): string {
   if (v === null || v === undefined) return "—";
   return `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(v).toFixed(digits)}%`;
@@ -101,7 +96,7 @@ function LevelCell({ near }: { near: TechnicalsWatchlistRow["support"] }) {
   if (near === null) return <td className="muted">—</td>;
   return (
     <td className="num">
-      {money(near.value)} <span className="muted">({pct(near.pct)})</span>
+      {fmtGrouped(near.value)} <span className="muted">({pct(near.pct)})</span>
     </td>
   );
 }
@@ -152,7 +147,7 @@ function levelText(l: SetupReadLevel | null): ReactNode {
   if (l === null) return <span className="muted">—</span>;
   return (
     <>
-      {money(l.value)} <span className="muted">({pct(l.pct)} · {signed(l.atr, 1)} ATR · {signed(l.sigma, 2)}σ)</span>
+      {fmtGrouped(l.value)} <span className="muted">({pct(l.pct)} · {signed(l.atr, 1)} ATR · {signed(l.sigma, 2)}σ)</span>
     </>
   );
 }
@@ -244,7 +239,7 @@ export function ReadDetail({ r }: { r: TechnicalsWatchlistRow }) {
               ["implied / 30d historical", `${num(v.iv)}% / ${num(v.hv30)}%${v.ivHv === null ? "" : ` (×${num(v.ivHv, 2)})`}`],
               ["IV rank / percentile", `${num(v.ivRank, 0)} / ${num(v.ivPct, 0)}`],
               ["cycle monthly", v.cycle === null ? "—" : `${v.cycle.expiry} (${v.cycle.days} days)`],
-              ["expected move", v.expectedMove === null ? "—" : `±${money(v.expectedMove.dollars)} (±${num(v.expectedMove.pct)}%)`],
+              ["expected move", v.expectedMove === null ? "—" : `±${fmtGrouped(v.expectedMove.dollars)} (±${num(v.expectedMove.pct)}%)`],
               [
                 "earnings",
                 v.earnings === null ? (
@@ -260,7 +255,7 @@ export function ReadDetail({ r }: { r: TechnicalsWatchlistRow }) {
             ]}
           />
         </Card>
-        <Card title="levels" aside={<span className="muted">ATR {rd.levels.atr14 === null ? "—" : money(rd.levels.atr14)}</span>}>
+        <Card title="levels" aside={<span className="muted">ATR {rd.levels.atr14 === null ? "—" : fmtGrouped(rd.levels.atr14)}</span>}>
           <Kv
             rows={[
               ["resistance", levelText(rd.levels.resistance)],
@@ -688,9 +683,9 @@ export function SetupsPage() {
                           </thead>
                           <tbody>
                             <tr>
-                              <td className="num">{money(l.price)}</td>
-                              <td className="num">{money(r.lastClose)}</td>
-                              {view === "open" ? <td className="num">{money(r.target)}</td> : <td className="muted">{r.status}</td>}
+                              <td className="num">{fmtGrouped(l.price)}</td>
+                              <td className="num">{fmtGrouped(r.lastClose)}</td>
+                              {view === "open" ? <td className="num">{fmtGrouped(r.target)}</td> : <td className="muted">{r.status}</td>}
                               <TrendCell label={r.trend6mLabel} score={r.trend6m} />
                               <td className={`num ${tone(r.vsSpy1m)}`}>
                                 {r.vsSpy1m === null ? "—" : `${r.vsSpy1m > 0 ? "+" : r.vsSpy1m < 0 ? "−" : ""}${Math.abs(r.vsSpy1m).toFixed(1)} pts`}

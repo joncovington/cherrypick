@@ -1,7 +1,7 @@
 import { createContext, useContext } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { ManageLiveAccount, ManageLivePayload, ManageLiveTrade } from "@console/shared";
-import { fmtCash, fmtMoney } from "../../lib/format";
+import { fmtCash, fmtMoney, fmtFrac } from "../../lib/format";
 import { ageText, tone } from "./manageParts";
 import { getJson } from "../../lib/api";
 
@@ -37,10 +37,6 @@ export function useLiveMarks(): LiveMarks | null {
 
 export function liveMarks(payload: ManageLivePayload | undefined): LiveMarks | null {
   return payload ? { payload, trades: new Map(payload.trades.map((t) => [t.tradeId, t])) } : null;
-}
-
-function pct(v: number | null): string {
-  return v === null ? "—" : `${(v * 100).toFixed(0)}%`;
 }
 
 /** Why a trade has no live figure, for its hover. */
@@ -84,7 +80,7 @@ export function LiveCaptureCell({ id }: { id: string }) {
   }
   return (
     <td className={tone(t.capture)} style={{ textAlign: "right" }}>
-      {pct(t.capture)}
+      {fmtFrac(t.capture, 0)}
       {t.atTakeProfit ? (
         <>
           {" "}

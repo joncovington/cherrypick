@@ -23,6 +23,7 @@ import { ScreenerLayout } from "./ScreenerParts";
 import { Section } from "../../components/Section";
 import { GuideLink } from "../../components/GuideLink";
 import { chartHref } from "../Chart/chartRoute";
+import { fmtGrouped } from "../../lib/format";
 
 /**
  * The earnings calendar (2026-10-17; docs/history/earnings-screener-plan.md (tag archive/docs-2026-11)): every announcement in the
@@ -51,10 +52,6 @@ const STRONG_BULL = "sb";
 const STRONG_BEAR = "sbe";
 const DEFAULT_DIRS = [STRONG_BULL, STRONG_BEAR];
 const LIST = "earnings-calendar";
-
-function money(v: number | null | undefined): string {
-  return v === null || v === undefined ? "—" : v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
 
 /** "2026-10-20" -> "Tuesday, Oct 20". */
 function dayHeading(iso: string): string {
@@ -126,7 +123,7 @@ function dateFlags(r: EarningsCalendarRow): ReactNode[] {
 }
 
 function legQuote(l: EarningsTradeLeg): string {
-  const q = l.bid === null && l.ask === null ? "unquoted" : `${money(l.bid)} / ${money(l.ask)}`;
+  const q = l.bid === null && l.ask === null ? "unquoted" : `${fmtGrouped(l.bid)} / ${fmtGrouped(l.ask)}`;
   return `${q} · OI ${l.openInterest === null ? "—" : l.openInterest.toLocaleString()} · vol ${l.volume === null ? "—" : l.volume.toLocaleString()}${l.passes === false ? " · fails" : ""}`;
 }
 
@@ -170,8 +167,8 @@ export function earningsModel(r: EarningsCalendarRow): TradeCardModel {
   } else if (s !== null) {
     const order = credit ? [s.short, s.long] : [s.long, s.short];
     const buys = credit ? [false, true] : [true, false];
-    strikes = `≈${money(order[0])}/≈${money(order[1])}`;
-    legs = order.map((k, i) => ({ buy: buys[i] ?? false, text: `1 ≈ ${money(k)}${right} (target)`, quote: null }));
+    strikes = `≈${fmtGrouped(order[0])}/≈${fmtGrouped(order[1])}`;
+    legs = order.map((k, i) => ({ buy: buys[i] ?? false, text: `1 ≈ ${fmtGrouped(k)}${right} (target)`, quote: null }));
     price = "target prices, not strikes";
   }
   const moveWord =
@@ -183,7 +180,7 @@ export function earningsModel(r: EarningsCalendarRow): TradeCardModel {
   const sideMove =
     moveWord === null
       ? "no implied vol held for the event expiry"
-      : `move ${moveWord} (±$${money(r.emMove)})${r.eventExpiry ? ` to the ${dayMonth(r.eventExpiry)} expiry${r.eventExpiryDays === null ? "" : ` +${r.eventExpiryDays}d`}` : ""} · 0.85 × straddle${longMove ? " · a longer move than the announcement's" : ""}`;
+      : `move ${moveWord} (±$${fmtGrouped(r.emMove)})${r.eventExpiry ? ` to the ${dayMonth(r.eventExpiry)} expiry${r.eventExpiryDays === null ? "" : ` +${r.eventExpiryDays}d`}` : ""} · 0.85 × straddle${longMove ? " · a longer move than the announcement's" : ""}`;
   const entry = r.entrySession ? `enter by the ${shortDate(r.entrySession)} close · reacts ${shortDate(r.reactionDay)}` : null;
   const liquid =
     t === null
@@ -199,7 +196,7 @@ export function earningsModel(r: EarningsCalendarRow): TradeCardModel {
   if (t !== null && t.afterReport === true) after.push("read after the report: not an entry price");
   else if (expiry !== null && r.reactionDay) after.push(`expires ${dayMonth(expiry)}`);
   const width = t !== null && t.shareOfWidth !== null ? `${(100 * t.shareOfWidth).toFixed(0)}% of width` : null;
-  const maxLoss = t !== null && t.maxLoss !== null ? `max loss $${money(t.maxLoss)}` : null;
+  const maxLoss = t !== null && t.maxLoss !== null ? `max loss $${fmtGrouped(t.maxLoss)}` : null;
   return {
     key: `${r.date}-${r.symbol}`,
     symbol: r.symbol,
@@ -222,7 +219,7 @@ export function earningsModel(r: EarningsCalendarRow): TradeCardModel {
     ),
     cash,
     side: [
-      `IV rank ${r.ivRank === null ? "—" : `${Math.round(r.ivRank)}%`} · close ${r.price === null ? "—" : `$${money(r.price)}`}`,
+      `IV rank ${r.ivRank === null ? "—" : `${Math.round(r.ivRank)}%`} · close ${r.price === null ? "—" : `$${fmtGrouped(r.price)}`}`,
       sideMove,
       ...(entry ? [entry] : []),
     ],

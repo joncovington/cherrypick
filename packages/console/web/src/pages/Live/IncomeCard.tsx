@@ -16,7 +16,7 @@ import {
 } from "../../components/FilterSort";
 import { writePref } from "../../lib/prefs";
 import { ListViewContext, ViewSwitch, useViewChoice } from "../../components/ViewSwitch";
-import { fmtMoney } from "../../lib/format";
+import { fmtMoney, fmtFrac } from "../../lib/format";
 import { TimeSpreadsBody, timeSpreadsHelp } from "./TimeSpreadsCard";
 import { HelpSection, HelpWarn, type CardHelpContent } from "../../components/CardHelp";
 import { TradeCards, candidateModel } from "./TradeCard";
@@ -159,10 +159,6 @@ function FitCards({ rows, capDollars }: { rows: ManageCandidate[]; capDollars: n
   );
 }
 
-function pct(v: number | null, digits = 0): string {
-  return v === null ? "—" : `${(v * 100).toFixed(digits)}%`;
-}
-
 const BP_CHIP: Record<ManageBpLevel, string> = { ok: "chip chip-ok", over: "chip chip-warn", far_over: "chip chip-bad" };
 
 const BP_WORD: Record<ManageBpLevel, string> = { ok: "under the cap", over: "over the cap", far_over: "far over the cap" };
@@ -171,14 +167,14 @@ const BP_WORD: Record<ManageBpLevel, string> = { ok: "under the cap", over: "ove
  *  taking one TODAY would leave buying power against the VIX-scaled cap, graded by the package. */
 function WaitingCards({ c, capDollars }: { c: ManageCandidates; capDollars: number | null }) {
   if (c.waiting.length === 0) return null;
-  const warn = c.bpWarnOver === null ? "" : ` (amber within ${pct(c.bpWarnOver)} of it, red past that)`;
+  const warn = c.bpWarnOver === null ? "" : ` (amber within ${fmtFrac(c.bpWarnOver, 0)} of it, red past that)`;
   return (
     <>
       <div className="card-subhead">
         waiting for room: {c.waitingTotal} stopped only by buying power, the theta ceiling or the expiry's concentration
       </div>
       <p className="muted pf-caption" style={{ marginTop: 0 }}>
-        buying power used {pct(c.bpUsedPct)} · cap {pct(c.bpCapPct)} at today's VIX{warn}. Each is sized as if the book had room;
+        buying power used {fmtFrac(c.bpUsedPct, 0)} · cap {fmtFrac(c.bpCapPct, 0)} at today's VIX{warn}. Each is sized as if the book had room;
         the chip is where taking it today would leave you. Close positions to make the room, or take one knowing it runs
         the book past its cap.
       </p>
@@ -192,13 +188,13 @@ function WaitingCards({ c, capDollars }: { c: ManageCandidates; capDollars: numb
             <>
               {level ? (
                 <span className={BP_CHIP[level]} title={`buying power after taking it today: ${BP_WORD[level]}`}>
-                  BP after {pct(room?.bpAfterPct ?? null)}
+                  BP after {fmtFrac(room?.bpAfterPct ?? null, 0)}
                 </span>
               ) : null}
               {room?.thetaOver ? (
                 <span
                   className="chip chip-warn"
-                  title={`book theta after it ${pct(room.thetaAfterPct, 2)} of net liq, over the ${pct(room.thetaCeilingPct, 1)} ceiling`}
+                  title={`book theta after it ${fmtFrac(room.thetaAfterPct, 2)} of net liq, over the ${fmtFrac(room.thetaCeilingPct, 1)} ceiling`}
                 >
                   θ over
                 </span>

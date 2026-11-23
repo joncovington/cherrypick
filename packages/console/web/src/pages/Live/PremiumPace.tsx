@@ -1,7 +1,7 @@
 import type { ManageBand, ManagePremium } from "@console/shared";
 import { Card } from "../../components/DataTable";
 import { Bullet } from "../../components/grid/Bullet";
-import { fmtMoney } from "../../lib/format";
+import { fmtMoney, fmtFrac } from "../../lib/format";
 import { Money } from "./manageParts";
 
 /**
@@ -21,10 +21,6 @@ function monthLabel(m: string): string {
   const [y, mo] = m.split("-");
   const names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   return `${names[Number(mo) - 1] ?? mo} ${y?.slice(2) ?? ""}`;
-}
-
-function pct(v: number | null, digits = 2): string {
-  return v === null ? "—" : `${(v * 100).toFixed(digits)}%`;
 }
 
 export function PremiumPaceCard({ premium, thetaBand }: { premium: ManagePremium | null; thetaBand: ManageBand | null }) {
@@ -51,10 +47,10 @@ export function PremiumPaceBody({ premium, thetaBand }: { premium: ManagePremium
           value={thetaBand?.value ?? null}
           band={thetaBand && thetaBand.low !== null && thetaBand.high !== null ? [thetaBand.low, thetaBand.high] : null}
           marker={target.pctNlv}
-          label={`theta ${pct(thetaBand?.value ?? null)} of net liq per day against a target of ${pct(target.pctNlv)}`}
+          label={`theta ${fmtFrac(thetaBand?.value ?? null, 2)} of net liq per day against a target of ${fmtFrac(target.pctNlv, 2)}`}
         />
         <p className="pp-line">
-          theta {fmtMoney(target.theta)} per day against a target of {fmtMoney(target.dollars)} ({pct(target.pctNlv)} of net
+          theta {fmtMoney(target.theta)} per day against a target of {fmtMoney(target.dollars)} ({fmtFrac(target.pctNlv, 2)} of net
           liq)
           {target.ratio !== null && <span className="muted"> · {(target.ratio * 100).toFixed(0)}% of target</span>}
         </p>

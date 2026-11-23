@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { HelpSection, type CardHelpContent } from "../../components/CardHelp";
 import { Section } from "../../components/Section";
 import { Card, SortTh, sortRows, useSort } from "../../components/DataTable";
-import { fmtMoney, fmtNum, fmtPct } from "../../lib/format";
+import { fmtMoney, fmtNum, fmtFrac } from "../../lib/format";
 import { useArmsRisk } from "../../lib/api";
 import { useMode } from "../../lib/useMode";
 import { useFeatures } from "../../lib/useFeatures";
@@ -18,10 +18,6 @@ import { isModuleVisible } from "../../lib/visibility";
  *
  * Tone comes only from a number's sign. A drawdown is shown as the loss it is. A null is an em dash.
  */
-
-function pct(v: number | null): string {
-  return fmtPct(v === null ? null : v * 100, 1);
-}
 
 function tone(v: number | null): string | undefined {
   return v === null ? undefined : v >= 0 ? "pnl-pos" : "pnl-neg";
@@ -100,9 +96,9 @@ export function RiskTable({ data, visible }: { data: ArmsRiskResult; visible: (m
                 <td>{String(r.sessions)}</td>
                 <td className={tone(r.net)}>{fmtMoney(r.net)}</td>
                 <td>{fmtMoney(r.peakRisk)}</td>
-                <td className={tone(r.netOverLargestPeak)}>{pct(r.netOverLargestPeak)}</td>
+                <td className={tone(r.netOverLargestPeak)}>{fmtFrac(r.netOverLargestPeak, 1)}</td>
                 <td className={r.maxDrawdown ? "pnl-neg" : undefined}>{fmtMoney(loss(r.maxDrawdown))}</td>
-                <td>{pct(r.drawdownOverPeak)}</td>
+                <td>{fmtFrac(r.drawdownOverPeak, 1)}</td>
                 <td title={r.stressWithheld ?? undefined}>{fmtMoney(loss(r.stressBlocks))}</td>
                 <td className={tone(r.withoutTop10)}>
                   {fmtMoney(r.withoutTop10)}

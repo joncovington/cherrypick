@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { ManageModelResult, ManagePayoff, ManagePayoffName } from "@console/shared";
 import { Card } from "../../components/DataTable";
 import { HelpSection } from "../../components/CardHelp";
-import { fmtCash } from "../../lib/format";
+import { fmtCash, fmtFrac } from "../../lib/format";
 import { CardLightbox, LightboxFrame, useOpenParam } from "../Backtest/CardLightbox";
 import { useLiveMarks } from "./LiveMarks";
 
@@ -111,10 +111,6 @@ export function legText(d: DraftLeg): string | null {
   const price = d.price.trim() === "" ? null : Number(d.price);
   if (price !== null && !(price >= 0)) return null;
   return `${d.side === "sell" ? "-" : "+"}${qty} ${d.expiry} ${strike}${d.right}${price === null ? "" : ` @ ${price}`}`;
-}
-
-function pct(v: number | null, digits = 1): string {
-  return v === null ? "—" : `${(v * 100).toFixed(digits)}%`;
 }
 
 /** The model a trade tab: legs to add, manage's model of them on the name (`/api/manage/model`). */
@@ -228,7 +224,7 @@ function ModelResult({ r }: { r: ManageModelResult }) {
         <div className="ldg-tile">
           <span className="ldg-tile-label">implied vs 30-day realised</span>
           <span className="ldg-tile-value">
-            {pct(r.ivIndex)} vs {pct(r.hv30Day)}
+            {fmtFrac(r.ivIndex, 1)} vs {fmtFrac(r.hv30Day, 1)}
           </span>
         </div>
       </div>
@@ -251,7 +247,7 @@ function ModelResult({ r }: { r: ManageModelResult }) {
                 <td>{l.leg}</td>
                 <td className="num">{l.price.toFixed(2)}</td>
                 <td>{l.priceSource}</td>
-                <td className="num">{pct(l.iv)}</td>
+                <td className="num">{fmtFrac(l.iv, 1)}</td>
                 <td className="num">{l.delta === null ? "—" : l.delta.toFixed(2)}</td>
                 <td className="num">{l.thetaDay === null ? "—" : fmtCash(l.thetaDay)}</td>
               </tr>
@@ -267,7 +263,7 @@ function ModelResult({ r }: { r: ManageModelResult }) {
               <span style={{ width: `${Math.min(100, c.value === null || !c.cap ? 0 : (c.value / c.cap) * 100)}%` }} />
             </span>
             <span className="mdl-num">
-              {pct(c.value)} of {pct(c.cap, 1)}
+              {fmtFrac(c.value, 1)} of {fmtFrac(c.cap, 1)}
               {c.over ? " · over" : ""}
             </span>
           </li>
