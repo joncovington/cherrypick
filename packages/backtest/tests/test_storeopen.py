@@ -8,10 +8,10 @@ import sqlite3
 import sys
 
 import pytest
+from cherrypick.core.db import connect_ro
 
 from cherrypick.backtest import addonfetch, chainfetch, flowfetch, oifetch, settings, storeopen
 from cherrypick.backtest import intradayfetch as ix
-from cherrypick.core.db import connect_ro
 
 
 def _settings(tmp_path):
@@ -20,11 +20,16 @@ def _settings(tmp_path):
 
 def test_open_store_waits_long_runs_the_schema_and_is_in_wal(tmp_path):
     path = tmp_path / "s.db"
-    conn = storeopen.open_store(path, "CREATE TABLE IF NOT EXISTS t (x);", "CREATE TABLE IF NOT EXISTS u (y);")
+    conn = storeopen.open_store(
+        path, "CREATE TABLE IF NOT EXISTS t (x);", "CREATE TABLE IF NOT EXISTS u (y);"
+    )
     try:
         assert conn.execute("PRAGMA busy_timeout").fetchone()[0] == storeopen.LOCK_WAIT_S * 1000
         assert conn.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
-        assert {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")} == {"t", "u"}
+        assert {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")} == {
+            "t",
+            "u",
+        }
     finally:
         conn.close()
     storeopen.open_store(path, "CREATE TABLE IF NOT EXISTS t (x);").close()  # reopening is harmless
