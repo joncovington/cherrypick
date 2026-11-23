@@ -43,9 +43,9 @@ session: Cboe close ratio vs the loop's recorded ratio, classification and hook 
 option model against every recorded entry (modelled vs recorded credit, short delta, costs).
 
 Usage:
-    python scripts/curve_replay.py                         # every section
-    python scripts/curve_replay.py --section hook --iv-scale 0.8 1.0 1.25
-    python scripts/curve_replay.py --validate
+    python scripts/archive/curve_replay.py                         # every section
+    python scripts/archive/curve_replay.py --section hook --iv-scale 0.8 1.0 1.25
+    python scripts/archive/curve_replay.py --validate
 """
 
 from __future__ import annotations

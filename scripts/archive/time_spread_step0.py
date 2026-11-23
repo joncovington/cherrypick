@@ -1,6 +1,6 @@
 """Step 0 of docs/time-spread-screen-plan.md: did the retired paper calendars lose at low coverage?
 
-    python scripts/time_spread_step0.py [--lookback 12] [--json FILE]
+    python scripts/archive/time_spread_step0.py [--lookback 12] [--json FILE]
 
 Every `strat_test:atm_calendar` and `strat_test:double_calendar` row in the earnings paper ledger,
 scored at entry by `cherrypick.earnings.time_spread` and set against the net P&L it recorded. The

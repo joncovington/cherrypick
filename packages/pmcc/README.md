@@ -58,7 +58,7 @@ python run.py tracker --position SLV:shield:2026-10-05   # one position, week by
 python run.py weekly [--era ALL]                   # the arms' weekly A/B
 python run.py equity [--era ALL]                   # each arm's daily marked equity and tear sheet
 python run.py exposure                             # the early-assignment-exposure telemetry
-python ../../scripts/pmcc_leap_probe.py            # what each symbol lists ~1 year out (network, read-only)
+python ../../scripts/archive/pmcc_leap_probe.py            # what each symbol lists ~1 year out (network, read-only)
 python ../../scripts/pmcc_shield_replay.py         # the 2011- replay behind the shield arms, put benchmark included
 python ../../scripts/pmcc_shield_replay.py --skew-check   # the model against the sampled skew
 python -m pytest                                   # temp CHERRYPICK_HOME; no broker, no streamer needed

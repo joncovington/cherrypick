@@ -15,7 +15,7 @@ Read-only: one chain listing per symbol through the shared credential, the unive
 It reaches the network, so it is a script and never on a loop path; it reads no ledger and writes
 nothing. The spot for the deep-band count comes from the local stream cache when it holds one.
 
-    python scripts/pmcc_leap_probe.py [--symbols XSP QQQ GLD IWM SLV] [--json]
+    python scripts/archive/pmcc_leap_probe.py [--symbols XSP QQQ GLD IWM SLV] [--json]
 """
 
 from __future__ import annotations

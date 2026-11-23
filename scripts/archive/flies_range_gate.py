@@ -26,10 +26,10 @@ disagreement means the study measured a different range from the one the arm act
 control totals are also reconciled with the ledger's own sum.
 
 Usage:
-    python scripts/flies_range_gate.py                        # control, paper, all sessions
-    python scripts/flies_range_gate.py control paper --until 2026-10-09   # the 10-09 study as run
-    python scripts/flies_range_gate.py control live
-    python scripts/flies_range_gate.py --validate
+    python scripts/archive/flies_range_gate.py                        # control, paper, all sessions
+    python scripts/archive/flies_range_gate.py control paper --until 2026-10-09   # the 10-09 study as run
+    python scripts/archive/flies_range_gate.py control live
+    python scripts/archive/flies_range_gate.py --validate
 """
 
 from __future__ import annotations

@@ -27,8 +27,8 @@ the move to 1e-12, and the sessions only the module holds are the ones this test
 stuck or gappy RV grid (counted).
 
 Usage:
-    python scripts/flies_close_scaling.py [--clip 0.333,3] [--until 2026-10-08]
-    python scripts/flies_close_scaling.py --validate
+    python scripts/archive/flies_close_scaling.py [--clip 0.333,3] [--until 2026-10-08]
+    python scripts/archive/flies_close_scaling.py --validate
 """
 
 from __future__ import annotations
