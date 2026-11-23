@@ -42,6 +42,7 @@ from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from cherrypick.core import progress
+from cherrypick.core.jsonio import write_json_atomic
 from cherrypick.technicals import paths
 
 DAYS = 30
@@ -176,11 +177,8 @@ def main(argv=None) -> int:
     path = None
     if doc["dates"]:
         folder = paths.earnings_times_dir()
-        folder.mkdir(parents=True, exist_ok=True)
         path = folder / f"{today.isoformat()}.json"
-        tmp = path.with_name(f"{path.name}.tmp")
-        tmp.write_text(json.dumps(doc, separators=(",", ":")), encoding="utf-8")
-        tmp.replace(path)
+        write_json_atomic(path, doc, indent=None, default=None, separators=(",", ":"))
     timed = sum(1 for rows in doc["dates"].values() for t in rows.values() if t)
     listed = sum(len(rows) for rows in doc["dates"].values())
     complete = len(doc["dates"]) == len(wanted)

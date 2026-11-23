@@ -42,6 +42,7 @@ from typing import Any
 
 from cherrypick.core import calendar as cal
 from cherrypick.core import fees as _fees
+from cherrypick.core.jsonio import write_json_atomic
 
 from . import adjust, earnings_calendar, liquidity, paths, securities, store
 
@@ -362,10 +363,7 @@ def build(
         "names": names,
     }
     out = (out_dir or skate_dir()) / f"{day}.json"
-    out.parent.mkdir(parents=True, exist_ok=True)
-    tmp = out.with_suffix(".tmp")
-    tmp.write_text(json.dumps(doc, separators=(",", ":")), encoding="utf-8")
-    tmp.replace(out)
+    write_json_atomic(out, doc, indent=None, default=None, separators=(",", ":"))
     return {
         "ok": True,
         "day": day,

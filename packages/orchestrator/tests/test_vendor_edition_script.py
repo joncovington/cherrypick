@@ -13,6 +13,7 @@ to the technicals package (packages/technicals/docs/reference.md).
 from __future__ import annotations
 
 import importlib.util
+import os
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
@@ -132,6 +133,15 @@ def test_a_passing_edition_is_saved_under_its_date(tmp_path):
     saved, problems = fve.save_edition(edition(), DAY, tmp_path)
     assert saved and problems == []
     assert (tmp_path / "2026-09-25.html").exists()
+
+
+def test_an_edition_is_written_as_utf8_text_with_nothing_left_beside_it(tmp_path):
+    page = "<p>line one é</p>\n<p>line two</p>"
+    saved, _ = fve.save_edition(page, DAY, tmp_path / "editions")
+    assert not saved  # not an edition, so it lands beside the good ones as `.rejected.html`
+    written = tmp_path / "editions" / "2026-09-25.rejected.html"
+    assert written.read_bytes() == page.encode("utf-8").replace(b"\n", os.linesep.encode())
+    assert sorted(p.name for p in written.parent.iterdir()) == ["2026-09-25.rejected.html"]
 
 
 REAL = Path.home() / ".cherrypick" / "data" / "market-report" / "vendor-editions"

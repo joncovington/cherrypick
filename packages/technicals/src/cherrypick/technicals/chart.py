@@ -27,6 +27,8 @@ from datetime import UTC, datetime
 from statistics import median
 from typing import Any
 
+from cherrypick.core.jsonio import write_json_atomic
+
 from . import (
     hypotheses,
     indicators,
@@ -369,10 +371,8 @@ def charts_dir():
 
 
 def _write(path, doc) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f"{path.name}.tmp")
-    tmp.write_text(json.dumps(doc, separators=(",", ":")), encoding="utf-8")
-    tmp.replace(path)  # write-then-rename: a reader never sees half a chart
+    # Atomic, so a reader never sees half a chart.
+    write_json_atomic(path, doc, indent=None, default=None, separators=(",", ":"))
 
 
 def write_all(session: str | None = None, conn=None) -> dict:

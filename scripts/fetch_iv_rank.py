@@ -36,6 +36,7 @@ from zoneinfo import ZoneInfo
 
 from cherrypick.core import progress
 from cherrypick.core.auth import SHARED_SERVICE, CredentialStore, SessionManager
+from cherrypick.core.jsonio import write_json_atomic
 from cherrypick.technicals import paths, symbols
 
 BATCH = 50
@@ -52,10 +53,7 @@ def load() -> dict:
 
 def save(doc: dict) -> None:
     path = paths.tastytrade_iv_rank()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f"{path.name}.tmp")
-    tmp.write_text(json.dumps(doc, separators=(",", ":")), encoding="utf-8")
-    tmp.replace(path)  # write-then-rename: a reader never sees half a file
+    write_json_atomic(path, doc, indent=None, default=None, separators=(",", ":"))
 
 
 def _pct(v) -> float | None:
@@ -180,9 +178,7 @@ def save_expiry_ivs(day: str, names: dict[str, dict]) -> None:
         doc = {"session": day, "names": {}}
     doc["names"].update(names)
     doc["updated_at"] = datetime.now(UTC).isoformat()
-    tmp = path.with_name(f"{path.name}.tmp")
-    tmp.write_text(json.dumps(doc, separators=(",", ":")), encoding="utf-8")
-    tmp.replace(path)
+    write_json_atomic(path, doc, indent=None, default=None, separators=(",", ":"))
 
 
 def _real_date(value) -> str | None:

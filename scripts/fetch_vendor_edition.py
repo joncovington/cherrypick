@@ -63,6 +63,7 @@ if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
 import _common  # noqa: E402
 from cherrypick.core import progress  # noqa: E402
+from cherrypick.core.jsonio import write_text_atomic  # noqa: E402
 
 KEYRING_SERVICE = "cherrypick-vendor-report"
 USERNAME, PASSWORD = "username", "password"
@@ -721,9 +722,7 @@ def save_edition(page_html: str, when: date, out_dir: Path) -> tuple[bool, list[
         return False, [f"{target.name} already exists; not overwritten"]
     problems = validate_edition(page_html, when)
     dest = out_dir / f"{when.isoformat()}.rejected.html" if problems else target
-    tmp = dest.with_suffix(".tmp")
-    tmp.write_text(page_html, encoding="utf-8")
-    tmp.replace(dest)
+    write_text_atomic(dest, page_html)
     return not problems, problems
 
 

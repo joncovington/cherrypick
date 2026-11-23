@@ -53,6 +53,7 @@ from datetime import time as dt_time
 from pathlib import Path
 
 from cherrypick.core import progress
+from cherrypick.core.jsonio import write_text_atomic
 from cherrypick.overview import files, occ
 
 # scripts/_common.py, beside this file (a test loading this script by path has no scripts/ on sys.path).
@@ -98,10 +99,7 @@ def _pause(pause_range: tuple[float, float] = PAUSE_RANGE_S) -> None:
 
 
 def _write(path: Path, text: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f"{path.name}.tmp")
-    tmp.write_text(text, encoding="utf-8")
-    tmp.replace(path)  # write-then-rename: a reader never sees half a file
+    write_text_atomic(path, text)
 
 
 def _replace_history(path: Path, text: str, parse) -> str | None:
