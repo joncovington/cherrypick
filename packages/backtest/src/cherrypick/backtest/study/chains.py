@@ -45,14 +45,20 @@ class Chain:
             r = "C" if str(r).upper() in ("C", "CALL") else "P"
             self.by[r][float(k)] = {"strike": float(k), "right": r, "bid": b, "ask": a}
         self.forward = parity_forward(self.by["C"], self.by["P"])
+        self._iv: dict[tuple, float | None] = {}
 
     def iv(self, q: dict) -> float | None:
         """The leg's Black-76 implied volatility at r = 0 off its mid, or None (no forward, a
-        one-sided quote, or a mid below `MIN_IV`)."""
+        one-sided quote, or a mid below `MIN_IV`). Solved once per quote and kept, since `nearest`
+        asks for the same strikes again on every call. The key is the forward, strike, right and both
+        prices, so a changed quote never reads a stale value."""
         if not self.forward or not legbars.two_sided(q):
             return None
-        iv = bs.implied_vol(self.forward, q["strike"], self.years, _mid(q), q["right"], 0.0)
-        return iv if iv and iv > MIN_IV else None
+        key = (self.forward, q["strike"], q["right"], q["bid"], q["ask"])
+        if key not in self._iv:
+            iv = bs.implied_vol(self.forward, q["strike"], self.years, _mid(q), q["right"], 0.0)
+            self._iv[key] = iv if iv and iv > MIN_IV else None
+        return self._iv[key]
 
     def delta(self, q: dict) -> float | None:
         iv = self.iv(q)
