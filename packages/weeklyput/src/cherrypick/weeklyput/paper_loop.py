@@ -22,16 +22,13 @@ from __future__ import annotations
 
 import argparse
 import json
-import logging
 import os
 import time
 from datetime import date, datetime
 
 from cherrypick.core import calendar as _cal
 from cherrypick.core import config as _cfg
-from cherrypick.core import home as _home
-from cherrypick.core import logs as _logs
-from cherrypick.core import looplock
+from cherrypick.core import paperloop as _paperloop
 from cherrypick.core.clock import minutes_since as _minutes_since
 
 from cherrypick.weeklyput import cli as climod
@@ -47,32 +44,32 @@ DEFAULTS = {
     "settle_alert_sessions": 2,
 }
 
-_logger = logging.getLogger("weeklyput_paper_loop")
+_loop = _paperloop.PaperLoop("weeklyput", lambda: os.path.dirname(db.resolve_path()))
+_logger = _loop.logger
 
 
 def log_file():
-    return _home.logs_dir("weeklyput") / "weeklyput_paper.log"
+    return _loop.log_file()
 
 
 def _log(message: str) -> None:
-    _logs.configure(_logger, log_file())
-    _logger.info(message)
+    _loop.log(message)
 
 
 def _loop_lock_path() -> str:
-    return os.path.join(os.path.dirname(db.resolve_path()), "paper_loop.lock")
+    return _loop.lock_path()
 
 
 def _acquire_loop_lock(stale_seconds: int = 180) -> bool:
-    return looplock.acquire(_loop_lock_path(), stale_seconds, alive=looplock.pid_alive)
+    return _loop.acquire(stale_seconds)
 
 
 def _release_loop_lock() -> None:
-    looplock.release(_loop_lock_path())
+    _loop.release()
 
 
 def _beat() -> None:
-    _home.beat("weeklyput")
+    _loop.beat()
 
 
 # --------------------------------------------------------------------------- config
@@ -547,32 +544,30 @@ def main(argv=None) -> int:
         return 0
     if not (args.once or args.interval):
         ap.error("choose one of --once, --interval, --status, --settle")
-    if not _acquire_loop_lock():
-        print(json.dumps({"ok": True, "skipped": "another paper loop is already running"}))
-        return 0
-    try:
-        if args.once:
-            print(
-                json.dumps(
-                    run_once(config, conn, cache_path=cache_path, force=args.force), indent=2, default=str
-                )
-            )
-            return 0
-        _log(f"loop starting, interval {args.interval}s, cache {cache_path}")
-        while True:
-            now = clock.now_et()
-            if not args.force and clock.minute_of_day(now) >= clock.close_min(now.date()):
-                break
-            try:
-                run_once(config, conn, cache_path=cache_path, force=args.force)
-                stream_request.register(config, conn, db_path, cache_path=cache_path)
-            except Exception as exc:  # noqa: BLE001
-                _log(f"iteration error (continuing): {type(exc).__name__}: {exc}")
-            time.sleep(args.interval)
-        _log("session closed")
-        return 0
-    finally:
-        _release_loop_lock()
+    if args.once:
+        return _paperloop.run_once_locked(
+            lambda: run_once(config, conn, cache_path=cache_path, force=args.force),
+            acquire=_acquire_loop_lock,
+            release=_release_loop_lock,
+        )
+
+    def _tick() -> None:
+        run_once(config, conn, cache_path=cache_path, force=args.force)
+        stream_request.register(config, conn, db_path, cache_path=cache_path)
+
+    def _keep_going() -> bool:
+        now = clock.now_et()
+        return args.force or clock.minute_of_day(now) < clock.close_min(now.date())
+
+    return _paperloop.run_resident(
+        args.interval,
+        tick=_tick,
+        keep_going=_keep_going,
+        acquire=_acquire_loop_lock,
+        release=_release_loop_lock,
+        log=_log,
+        cache_path=cache_path,
+    )
 
 
 if __name__ == "__main__":

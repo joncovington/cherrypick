@@ -28,7 +28,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import logging
 import os
 import time
 from datetime import date, datetime
@@ -39,9 +38,8 @@ from cherrypick.core import calendar as _cal
 from cherrypick.core import config as _cfg
 from cherrypick.core import db as _core_db
 from cherrypick.core import home as _home
-from cherrypick.core import logs as _logs
 from cherrypick.core import looplock
-from cherrypick.core import streamcache as _streamcache
+from cherrypick.core import paperloop as _paperloop
 
 from cherrypick.pmcc import analytics, clock, db, engine, management, provider, skew, stream_request
 from cherrypick.pmcc import book as bookmod
@@ -51,24 +49,20 @@ RTH_OPEN_MIN = 9 * 60 + 30
 RTH_CLOSE_MIN = 16 * 60
 DEFAULT_SETTLE_MIN = 16 * 60 + 20
 
-_logger = logging.getLogger("pmcc_paper_loop")
+_loop = _paperloop.PaperLoop("pmcc", lambda: _paper_data_dir())
+_logger = _loop.logger
 
 
 def stream_cache_path(config: dict) -> str:
-    """The suite's canonical shared stream cache, read-only here. Config first, then the managed
-    home — portable paths only."""
-    return str(_streamcache.cache_path(config))
+    return _loop.stream_cache_path(config)
 
 
 def log_file():
-    """Resolved on every call, never at import — a module-level constant would capture the real
-    home before any test could redirect it (the flies lesson)."""
-    return _home.logs_dir("pmcc") / "pmcc_paper.log"
+    return _loop.log_file()
 
 
 def _log(message: str) -> None:
-    _logs.configure(_logger, log_file())
-    _logger.info(message)
+    _loop.log(message)
 
 
 def in_session(now_min: int, day: date | None = None) -> bool:
@@ -99,23 +93,18 @@ def _paper_data_dir() -> str:
 
 
 def _loop_lock_path() -> str:
-    return os.path.join(_paper_data_dir(), "paper_loop.lock")
+    return _loop.lock_path()
 
 
 _pid_alive = looplock.pid_alive  # noqa: F401  (re-exported: tests monkeypatch this name)
 
 
 def _acquire_loop_lock(stale_seconds: int = 180) -> bool:
-    """Single-instance guard shared by `--interval` and `--once`, so the supervised resident loop
-    and an off-session/manual `--once` can never iterate the same arm concurrently.
-
-    `cherrypick.core.looplock` holds the semantics (a live holder is never stolen, whatever its
-    age); `_pid_alive` is passed explicitly so a test monkeypatching that name still steers it."""
-    return looplock.acquire(_loop_lock_path(), stale_seconds, alive=_pid_alive)
+    return _loop.acquire(stale_seconds, alive=_pid_alive)
 
 
 def _release_loop_lock() -> None:
-    looplock.release(_loop_lock_path())
+    _loop.release()
 
 
 def _note_cadence_change(conn, interval_seconds: int) -> None:
@@ -1225,15 +1214,7 @@ def run_status(config: dict, conn, *, cache_path: str) -> dict:
 
 
 def _beat() -> None:
-    """Publish liveness: this loop reached the top of a tick.
-
-    Same contract as the calendars loop, learned from the same incident (107 restarts on
-    2026-08-17): every line this loop logs is event-driven, and the ledger only moves when a mark
-    or an entry lands, so a quiet-but-healthy tick writes nothing anyone can see — on 2026-08-21
-    the watchdog's freshness check WARNed mid-session over a 17-minute gap between mark writes.
-    Touched at the TOP of the tick, before any branch; failure is swallowed (a heartbeat that
-    costs a tick would be worse than the problem it solves)."""
-    _home.beat("pmcc")
+    _loop.beat()
 
 
 def main(argv=None) -> int:
@@ -1272,12 +1253,8 @@ def main(argv=None) -> int:
         )
         return 0
     if args.interval:
-        if not _acquire_loop_lock():
-            _log("another paper loop holds the lock — exiting")
-            print(json.dumps({"ok": True, "skipped": "another paper loop is already running"}))
-            return 0
-        try:
-            _log(f"loop starting, interval {args.interval}s, cache {cache_path}")
+
+        def _after_start() -> None:
             _note_cadence_change(conn, args.interval)
             drift = db.stale_writer_columns(conn)
             if drift:
@@ -1286,29 +1263,24 @@ def main(argv=None) -> int:
                     f"{', '.join(drift)}. The running code is older than the database schema. "
                     "Check the branch."
                 )
-            while args.force or in_session(clock.minute_of_day(clock.now_et())):
-                try:
-                    run_once(config, conn, cache_path=cache_path, force=args.force)
-                except Exception as exc:  # noqa: BLE001 — a transient failure costs one tick, not the session
-                    _log(f"iteration error (continuing): {type(exc).__name__}: {exc}")
-                time.sleep(args.interval)
-            _log("session closed")
-            return 0
-        finally:
-            _release_loop_lock()
+
+        return _paperloop.run_resident(
+            args.interval,
+            tick=lambda: run_once(config, conn, cache_path=cache_path, force=args.force),
+            keep_going=lambda: args.force or in_session(clock.minute_of_day(clock.now_et())),
+            acquire=_acquire_loop_lock,
+            release=_release_loop_lock,
+            log=_log,
+            cache_path=cache_path,
+            on_lock_miss="another paper loop holds the lock — exiting",
+            after_start=_after_start,
+        )
     if args.once:
-        if not _acquire_loop_lock():
-            print(json.dumps({"ok": True, "skipped": "another paper loop is already running"}))
-            return 0
-        try:
-            print(
-                json.dumps(
-                    run_once(config, conn, cache_path=cache_path, force=args.force), indent=2, default=str
-                )
-            )
-            return 0
-        finally:
-            _release_loop_lock()
+        return _paperloop.run_once_locked(
+            lambda: run_once(config, conn, cache_path=cache_path, force=args.force),
+            acquire=_acquire_loop_lock,
+            release=_release_loop_lock,
+        )
 
     ap.error("choose one of --once, --interval, --settle, --status")
     return 2
