@@ -43,6 +43,7 @@ from pathlib import Path
 from typing import Any
 
 from cherrypick.core import broker as _broker
+from cherrypick.core import jsonio as _jsonio
 
 
 class AccountNotDesignated(RuntimeError):
@@ -227,10 +228,7 @@ class Broker:
             h["last_error_at"] = now.isoformat()
             h["last_error"] = f"{type(error).__name__}: {error}"[:300]
         try:
-            self._health_path.parent.mkdir(parents=True, exist_ok=True)
-            tmp = self._health_path.with_suffix(".tmp")
-            tmp.write_text(json.dumps(h), encoding="utf-8")
-            tmp.replace(self._health_path)
+            _jsonio.write_json_atomic(self._health_path, h, indent=None, default=None)
             self._health_written = now.timestamp()
         except OSError:
             pass  # a health note must never break a broker call
@@ -316,13 +314,12 @@ class Broker:
         if not self._unresolved and not self._unrecorded:
             self._hold_path.unlink(missing_ok=True)
             return
-        self._hold_path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = self._hold_path.with_suffix(".tmp")
-        tmp.write_text(
-            json.dumps({"unresolved": self._unresolved, "unrecorded": self._unrecorded}, default=str),
-            encoding="utf-8",
+        _jsonio.write_json_atomic(
+            self._hold_path,
+            {"unresolved": self._unresolved, "unrecorded": self._unrecorded},
+            indent=None,
+            default=str,
         )
-        tmp.replace(self._hold_path)
 
     @property
     def session(self):
@@ -717,11 +714,10 @@ def publish_known_orders(module: str, order_ids: Iterable[Any], *, now_iso: str)
     a false orphan -- which blocks their entries, the safe direction -- never a missed one."""
     try:
         target = _known_orders_dir() / f"{module}.json"
-        target.parent.mkdir(parents=True, exist_ok=True)
-        tmp = target.with_suffix(".tmp")
         ids = sorted({str(i) for i in order_ids if i is not None})
-        tmp.write_text(json.dumps({"module": module, "at": now_iso, "order_ids": ids}), encoding="utf-8")
-        tmp.replace(target)
+        _jsonio.write_json_atomic(
+            target, {"module": module, "at": now_iso, "order_ids": ids}, indent=None, default=None
+        )
     except OSError:
         pass
 

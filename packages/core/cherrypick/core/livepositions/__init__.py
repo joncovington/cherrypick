@@ -19,7 +19,9 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import Any
 
-Key = tuple[str, str, str, float]
+from cherrypick.core import jsonio as _jsonio
+
+Key =tuple[str, str, str, float]
 
 
 def parse_occ(symbol: str) -> tuple[str, str, str, float] | None:
@@ -161,18 +163,15 @@ def publish_open_legs(module: str, legs: Iterable[dict[str, Any]], *, now_iso: s
     """Write `module`'s held and working legs (``{underlying, expiry, right, strike, qty}``) for the
     other live loops to read. Best-effort: a failed write leaves the previous file, which can only
     make the others refuse more."""
-    import json
-
     try:
         target = _open_legs_dir() / f"{module}.json"
-        target.parent.mkdir(parents=True, exist_ok=True)
-        tmp = target.with_suffix(".tmp")
         rows = [
             {"underlying": k[0], "expiry": k[1], "right": k[2], "strike": k[3], "qty": q}
             for k, q in sorted(expected_legs(legs).items())
         ]
-        tmp.write_text(json.dumps({"module": module, "at": now_iso, "legs": rows}), encoding="utf-8")
-        tmp.replace(target)
+        _jsonio.write_json_atomic(
+            target, {"module": module, "at": now_iso, "legs": rows}, indent=None, default=None
+        )
     except OSError:
         pass
 

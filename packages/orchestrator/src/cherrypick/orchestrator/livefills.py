@@ -28,6 +28,7 @@ from typing import Any
 
 from cherrypick.core import execution as _execution
 from cherrypick.core import home as _home
+from cherrypick.core import jsonio as _jsonio
 from cherrypick.core.live import account_alerts as _account
 
 from cherrypick.notify import Notifier
@@ -55,11 +56,7 @@ def _load_state() -> dict[str, Any]:
 
 
 def _save_state(state: dict[str, Any]) -> None:
-    path = state_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(state), encoding="utf-8")
-    tmp.replace(path)
+    _jsonio.write_json_atomic(state_path(), state, indent=None, default=None)
 
 
 def _owners() -> dict[str, str]:

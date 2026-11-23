@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from cherrypick.core import home as _home
+from cherrypick.core import jsonio as _jsonio
 from cherrypick.core import vendor as _vendor
 
 from .util import read_json
@@ -171,10 +172,7 @@ def _remember_good(raw: str) -> None:
     try:
         lg = last_good_path()
         if not lg.exists() or lg.read_text(encoding="utf-8") != raw:
-            lg.parent.mkdir(parents=True, exist_ok=True)
-            tmp = lg.with_suffix(".tmp")
-            tmp.write_text(raw, encoding="utf-8")
-            tmp.replace(lg)
+            _jsonio.write_text_atomic(lg, raw)
         broken_marker_path().unlink(missing_ok=True)
     except OSError:
         pass  # keeping a copy is insurance; failing to must never fail a load

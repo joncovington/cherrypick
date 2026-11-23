@@ -46,6 +46,8 @@ def write_json_atomic(
     *,
     indent: int | None = 2,
     default: Callable[[Any], Any] | None = str,
+    separators: tuple[str, str] | None = None,
+    sort_keys: bool = False,
 ) -> Path:
     """Write `payload` as JSON to `path` via `<name>.tmp` beside it and `os.replace`, creating the
     directory if needed. Returns the target path.
@@ -55,10 +57,20 @@ def write_json_atomic(
     on read, where a silently stringified value would be a worse failure than a refused write.
     The text is encoded in full before the tmp file is opened, so a refused payload leaves nothing
     behind. Text mode, UTF-8, `ensure_ascii` left on: the bytes match every copy this replaced.
-    The replace is retried on a Windows PermissionError (`replace_with_retry`)."""
+    `separators` and `sort_keys` pass straight to `json.dumps` for the writers whose on-disk form
+    is compact or ordered. The replace is retried on a Windows PermissionError
+    (`replace_with_retry`)."""
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    text = json.dumps(payload, indent=indent, default=default, separators=separators, sort_keys=sort_keys)
+    return write_text_atomic(path, text)
+
+
+def write_text_atomic(path: Path | str, text: str) -> Path:
+    """Write `text` to `path` via `<name>.tmp` beside it and `os.replace`, creating the directory
+    if needed. Returns the target path. UTF-8 in text mode, like `write_json_atomic`, which is
+    built on it; the replace is retried on a Windows PermissionError (`replace_with_retry`)."""
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
-    text = json.dumps(payload, indent=indent, default=default)
     tmp = target.with_name(target.name + ".tmp")
     with open(tmp, "w", encoding="utf-8") as handle:
         handle.write(text)
@@ -66,4 +78,4 @@ def write_json_atomic(
     return target
 
 
-__all__ = ["replace_with_retry", "write_json_atomic"]
+__all__ = ["replace_with_retry", "write_json_atomic", "write_text_atomic"]

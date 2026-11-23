@@ -24,6 +24,7 @@ from typing import Any
 
 from cherrypick.core import external_report as _report
 from cherrypick.core import home as _home
+from cherrypick.core import jsonio as _jsonio
 
 JOB_PREFIX = "external-"
 ID_PATTERN = re.compile(r"^[a-z0-9-]+$")
@@ -205,11 +206,7 @@ def _posted() -> dict[str, str]:
 def _remember(report_id: str, as_of: str) -> None:
     state = _posted()
     state[report_id] = as_of
-    path = posted_state_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(state, indent=2), encoding="utf-8")
-    tmp.replace(path)
+    _jsonio.write_json_atomic(posted_state_path(), state, indent=2, default=None)
 
 
 def post_if_new(entry: dict[str, Any], sender=None, webhook=None) -> dict[str, Any]:

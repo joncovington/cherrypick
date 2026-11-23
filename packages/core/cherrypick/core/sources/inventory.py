@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import csv
 import json
-import os
 import sqlite3
 import time
 from collections.abc import Callable, Iterable
@@ -31,6 +30,7 @@ from pathlib import Path
 from typing import Any
 
 from cherrypick.core import home as _home
+from cherrypick.core import jsonio as _jsonio
 
 from . import IGNORED, SOURCES, Source, sparse_years
 
@@ -56,12 +56,7 @@ def load(where: Path | None = None) -> dict:
 
 
 def write(doc: dict, where: Path | None = None) -> Path:
-    p = where or path()
-    p.parent.mkdir(parents=True, exist_ok=True)
-    tmp = p.with_name(p.name + ".tmp")
-    tmp.write_text(json.dumps(doc, indent=1, sort_keys=True), encoding="utf-8")
-    os.replace(tmp, p)
-    return p
+    return _jsonio.write_json_atomic(where or path(), doc, indent=1, default=None, sort_keys=True)
 
 
 def _span(first, last, sessions) -> dict:
