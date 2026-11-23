@@ -20,13 +20,13 @@ is complete for, kept in one local file so a loop or a backtest reads them witho
 from __future__ import annotations
 
 import json
-import os
 import sqlite3
 from collections.abc import Callable, Iterable
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 from cherrypick.core import home as _home
+from cherrypick.core import jsonio as _jsonio
 
 LABELS = ("Earnings", "ExDividend")
 
@@ -150,11 +150,7 @@ def write(
     dividends, spans = _dividend_inputs(wanted) if wanted else ([], {})
     earnings, span = _earnings_inputs(wanted, connect) if wanted else ([], None)
     doc = build(wanted, earnings=earnings, earnings_span=span, dividends=dividends, bar_spans=spans)
-    target = out or path()
-    target.parent.mkdir(parents=True, exist_ok=True)
-    tmp = target.with_suffix(".tmp")
-    tmp.write_text(json.dumps(doc, separators=(",", ":")), encoding="utf-8")
-    os.replace(tmp, target)
+    _jsonio.write_json_atomic(out or path(), doc, indent=None, default=None, separators=(",", ":"))
     return doc
 
 

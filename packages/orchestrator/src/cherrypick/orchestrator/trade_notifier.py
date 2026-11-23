@@ -40,6 +40,8 @@ from datetime import datetime, timezone
 from datetime import time as dtime
 from typing import Any
 
+from cherrypick.core import jsonio as _jsonio
+
 from cherrypick.notify import Notifier
 
 from . import config as cfgmod
@@ -128,9 +130,7 @@ def _save_state(state: dict, *, unchanged_from: str | None = None) -> bool:
             return False
         except OSError:
             pass  # fall through to a full write rather than let the watchdog read a dead notifier
-    tmp = _STATE.with_suffix(".json.tmp")
-    tmp.write_text(text, encoding="utf-8")
-    os.replace(tmp, _STATE)
+    _jsonio.write_text_atomic(_STATE, text)
     return True
 
 

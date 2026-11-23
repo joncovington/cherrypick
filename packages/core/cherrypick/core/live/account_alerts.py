@@ -30,6 +30,7 @@ from datetime import datetime
 from typing import Any
 
 from cherrypick.core import home as _home
+from cherrypick.core import jsonio as _jsonio
 
 PACKAGE = "account-alerts"
 INBOX_FILENAME = "account_alerts.db"
@@ -256,11 +257,7 @@ def run(
 def _write_status(fields: dict, login: str | None = None) -> None:
     try:
         os.makedirs(data_dir(), exist_ok=True)
-        path = status_path(login)
-        tmp = path + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(fields, f)
-        os.replace(tmp, path)
+        _jsonio.write_json_atomic(status_path(login), fields, indent=None, default=None)
     except OSError:
         pass
 

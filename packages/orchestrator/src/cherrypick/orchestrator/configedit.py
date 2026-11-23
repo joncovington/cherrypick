@@ -16,13 +16,13 @@ this surface can never arm or de-risk live trading. Pure file logic only: no HTT
 from __future__ import annotations
 
 import json
-import os
 import shutil
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from cherrypick.core import home as _home
+from cherrypick.core import jsonio as _jsonio
 
 from . import config as cfgmod
 from . import init as initmod
@@ -462,7 +462,7 @@ def backup_dir() -> Path:
 
 def backup_and_write(path: Path, new_text: str, target_id: str) -> dict[str, Any]:
     """Back the current file up (timestamped, under state/config-backups) then write atomically:
-    tmp in the same directory + os.replace, the same idiom as the dashboard renderer."""
+    tmp in the same directory + os.replace (`jsonio.write_text_atomic`)."""
     bdir = backup_dir()
     bdir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -472,9 +472,7 @@ def backup_and_write(path: Path, new_text: str, target_id: str) -> dict[str, Any
         backup = bdir / f"{target_id}.{stamp}-{n}.json"
         n += 1
     shutil.copy2(path, backup)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(new_text, encoding="utf-8")
-    os.replace(tmp, path)
+    _jsonio.write_text_atomic(path, new_text)
     return {"backup": cfgmod.portable_path(backup), "path": cfgmod.portable_path(path)}
 
 
