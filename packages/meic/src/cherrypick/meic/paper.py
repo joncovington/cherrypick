@@ -282,7 +282,19 @@ def _merged_params(base_config: dict, profile: dict) -> dict:
     via cherrypick.core.profiles.
 
     A profile marked `follows_live: true` is merged onto what live trades (`live_params`) instead
-    of onto the top level, so a shadow of live stays live's twin when the `live` block changes."""
+    of onto the top level, so a shadow of live stays live's twin when the `live` block changes.
+
+    A profile with `shadow_of: "<arm>"` is merged onto what live WOULD trade if `live.arm` named that
+    arm, so the twin of one arm stays that arm's paper measurement whichever arm live runs today:
+    switching `live.arm` moves `follows_live` arms with it, and leaves every `shadow_of` arm where it
+    was (the live block's own overrides -- the pinned symbol, caps, widths, window -- still apply)."""
+    pinned = profile.get(SHADOW_OF_KEY)
+    if pinned:
+        base, problem = _live_resolution(base_config, None, arm=str(pinned))
+        if problem and problem not in _WARNED:
+            _WARNED.add(problem)
+            logging.getLogger(__name__).warning("shadow_of arm: %s; using the top level", problem)
+        return _profiles.merge_profile(base, profile)
     if profile.get(FOLLOWS_LIVE_KEY):
         base, problem = _live_resolution(base_config, None)
         if problem and problem not in _WARNED:  # merged once per arm per symbol per tick: say it once
@@ -316,27 +328,39 @@ LIVE_OVERRIDE_KEYS = (
     "entry_window_end",
 )
 FOLLOWS_LIVE_KEY = "follows_live"
+# A per-arm twin (2026-11-24): `shadow_of: "<arm>"` pins a paper arm to that one registry arm plus the
+# live block's overrides, where `follows_live` follows whatever `live.arm` names today.
+SHADOW_OF_KEY = "shadow_of"
+_META_PROFILE_KEYS = {"enabled", FOLLOWS_LIVE_KEY, SHADOW_OF_KEY}
 
 
 def live_arm_name(config: dict) -> str | None:
     return str((config.get("live") or {}).get("arm") or "").strip() or None
 
 
-def _live_resolution(config: dict, registry: dict | None) -> tuple[dict, str | None]:
+def _live_resolution(config: dict, registry: dict | None, arm: str | None = None) -> tuple[dict, str | None]:
     """(what live trades, the reason `live.arm` cannot be resolved or None). On a problem the params
     are the top level with the live overrides -- readiness refuses live on the same problem, so the
-    fallback only ever reaches a paper shadow, which logs it."""
+    fallback only ever reaches a paper shadow, which logs it.
+
+    `arm` resolves as if `live.arm` named it (a `shadow_of` twin's pin); left out, `live.arm` decides."""
     live = config.get("live") or {}
-    arm = live_arm_name(config)
+    pinned = arm is not None
+    arm = (str(arm).strip() or None) if pinned else live_arm_name(config)
+    which = "shadow_of" if pinned else "live.arm"
     profile: dict = {}
     problem = None
     if arm:
         registry = load_profiles() if registry is None else registry
         found = registry.get(arm)
         if not isinstance(found, dict) or arm.startswith("_"):
-            problem = f"live.arm {arm!r} is not a configured arm"
+            problem = f"{which} {arm!r} is not a configured arm"
         elif found.get(FOLLOWS_LIVE_KEY):
-            problem = f"live.arm {arm!r} follows live itself -- live would trade its own shadow"
+            problem = f"{which} {arm!r} follows live itself -- live would trade its own shadow"
+        elif found.get(SHADOW_OF_KEY):
+            problem = (
+                f"{which} {arm!r} is itself a shadow of {found.get(SHADOW_OF_KEY)!r}, not an arm live can run"
+            )
         else:
             profile = found
     params = _profiles.merge_profile(config, profile)
@@ -388,6 +412,55 @@ def live_arm_problem(config: dict, registry: dict | None = None) -> str | None:
     return _live_resolution(config, registry)[1]
 
 
+def _override_keys(profile: dict) -> list[str]:
+    """The keys of a profile that change a setting: everything but the markers and `_` notes."""
+    return [k for k in profile if not k.startswith("_") and k not in _META_PROFILE_KEYS]
+
+
+def twin_for(arm: str, registry: dict) -> str | None:
+    """The enabled plain twin of `arm` -- a `shadow_of: arm` profile with no override -- or None. Plain
+    means it IS the arm as live would run it; a twin with one override is an experiment beside it."""
+    names = sorted(
+        n
+        for n, p in registry.items()
+        if not n.startswith("_")
+        and isinstance(p, dict)
+        and p.get(SHADOW_OF_KEY) == arm
+        and p.get("enabled", True)
+        and not _override_keys(p)
+    )
+    return names[0] if names else None
+
+
+def shadow_problems(registry: dict) -> list[str]:
+    """What is wrong with the registry's per-arm twins, one sentence each. A twin that names no real
+    arm, names a follower or another twin, also follows live, or shares its arm with a second plain
+    twin is measuring nothing it says it measures."""
+    out = []
+    plain: dict[str, list[str]] = {}
+    for name, p in registry.items():
+        if name.startswith("_") or not isinstance(p, dict) or not p.get(SHADOW_OF_KEY):
+            continue
+        target = str(p[SHADOW_OF_KEY])
+        found = registry.get(target)
+        if target == name:
+            out.append(f"{name}.shadow_of names itself")
+        elif not isinstance(found, dict) or target.startswith("_"):
+            out.append(f"{name}.shadow_of {target!r} is not a configured arm")
+        elif found.get(FOLLOWS_LIVE_KEY) or found.get(SHADOW_OF_KEY):
+            out.append(f"{name}.shadow_of {target!r} is a follower or a twin, not an arm live can run")
+        if p.get(FOLLOWS_LIVE_KEY):
+            out.append(f"{name} has both follows_live and shadow_of: it cannot follow live and be pinned")
+        if p.get("enabled", True) and not _override_keys(p):
+            plain.setdefault(target, []).append(name)
+    for target, names in sorted(plain.items()):
+        if len(names) > 1:
+            out.append(
+                f"{target!r} has {len(names)} plain twins ({', '.join(sorted(names))}): one measurement, counted twice"
+            )
+    return out
+
+
 def live_config_warnings(config: dict, registry: dict, example: dict) -> list[str]:
     """What a person should hear about the live seam, every tick, until they fix it. Two cases a
     config file cannot make loud by itself:
@@ -415,8 +488,20 @@ def live_config_warnings(config: dict, registry: dict, example: dict) -> list[st
         and p.get(FOLLOWS_LIVE_KEY)
         and p.get("enabled", True)
     ]
-    if shapes_live and not followers:
+    live_arm = live_arm_name(config)
+    twinned = live_arm is not None and twin_for(live_arm, registry) is not None
+    if shapes_live and not followers and not twinned:
         out.append("the `live` block shapes what live trades but no enabled arm has follows_live: true")
+    # Once any arm has a twin, an arm live runs without one has no paper measurement: its live results
+    # would be read against nothing. Said only then, so a registry that has not adopted twins stays quiet.
+    has_twins = any(
+        isinstance(p, dict) and p.get(SHADOW_OF_KEY) for n, p in registry.items() if not n.startswith("_")
+    )
+    if live_arm and has_twins and not twinned:
+        out.append(
+            f"live.arm {live_arm!r} has no enabled twin (a profile with shadow_of: {live_arm!r}): its live results have no paper measurement"
+        )
+    out.extend(shadow_problems(registry))
     problem = live_arm_problem(config, registry)
     if problem:
         out.append(problem)

@@ -157,6 +157,22 @@ journaled in `measurement_breaks`. How arms are designed and read is in
   negative-GEX block, OTM floors, the VIX / VIX1D-ratio / ATR pauses, per-side stops, an earlier entry
   end, `overlap_scope: shorts`, late-entry bias), so its attempts show which of those gates keeps live
   dark; gates are checked in order (`paper.evaluate_entry`), so an earlier gate masks a later one.
+- **A per-arm twin** (`shadow_of: "<arm>"`) is live's paper measurement for ONE arm. `follows_live`
+  resolves to whatever `live.arm` names today, so switching `live.arm` moves `live-shadow` and every
+  follower with it and pools two arms' paper results under one name. A twin resolves to
+  `paper.live_params` computed as if `live.arm` named its arm (`paper._live_resolution(..., arm=)`), so
+  it is that arm plus the live block's own overrides (the pinned symbol, caps, widths, window) and does
+  not move when `live.arm` does. The convention is the name `live-shadow-<arm>`, but code finds a twin
+  by the field, never by the name (`paper.twin_for`). A plain twin carries no override and is the arm
+  live would run; a twin with one override is that arm with one change. Only the arm is pinned: the live
+  block still moves every twin, as it moves live. The symbol is not part of a twin's identity (the twin
+  trades the live block's pinned symbol, and rows carry `symbol`), so results read by arm and symbol.
+  `paper.shadow_problems` names a twin that shadows an unknown arm, a follower or another twin, also
+  follows live, or shares its arm with a second plain twin, and `live_config_warnings` repeats it every
+  live tick; once any twin exists it also says when `live.arm` has none. `live.arm` cannot name a twin.
+  `tests/test_shadow_of.py` pins that a twin equals what live trades on its arm and does not move when
+  `live.arm` changes (shown to fail by dropping the pin). Which twins exist is the machine registry's
+  business; `scripts/boundary_2026_11_24.py` adds them and retires the unpinned `live-shadow`.
 - **`bp-5k` / `bp-10k` / `bp-25k`** — control's gates and hold-to-expiry exits under live-account limits:
   `max_open_bp_dollars` (open ICs' (width − credit) × 100 plus the candidate's must fit, checked per
   candidate so a too-wide candidate falls to a narrower one — `paper.ic_buying_power`),
