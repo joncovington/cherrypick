@@ -259,6 +259,15 @@ async function meicReadout(res: SpawnedJson, disclaimer: string | null): Promise
   const facts: LiveArmFact[] = [
     { label: "account", value: account ?? "designated account not readable here" },
     { label: "symbol · arm", value: `${symbol ?? "no symbol pinned"} · ${armName ?? "the top-level settings (no live.arm)"}` },
+    {
+      label: "new entries",
+      value:
+        d["dry_run"] === false
+          ? "LIVE: real condor orders are sent"
+          : d["dry_run"] === true
+            ? "DRY RUN (live.dry_run): each entry is preflighted against the account and none is sent; a held book is still managed"
+            : "not reported by this build of the loop",
+    },
     { label: "entry window", value: window[0] && window[1] ? `${window[0]} to ${window[1]} ET` : "not set" },
     { label: "max new condors a day", value: cap === null ? "no count cap (sized by buying power alone)" : cap === undefined ? "1" : String(cap) },
     { label: "open buying power cap", value: usd(d["max_open_bp_dollars"]) },

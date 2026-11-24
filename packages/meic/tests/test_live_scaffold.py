@@ -262,6 +262,7 @@ def _config(tmp_path=None, **live_over):
         "gate0_confirmed": "owner 2026-08-01",
         "daily_loss_halt_dollars": 200,
         "kill": KILL,
+        "dry_run": False,  # these tests place entries; the shipped value is true
         **live_over,
     }
     return cfg

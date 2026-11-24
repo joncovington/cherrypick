@@ -305,6 +305,17 @@ describe("the readout is the module's own, with the disclaimer verbatim", () => 
     expect(f["halt flag"]).toBe("clear");
   });
 
+  it("says whether new entries are a dry run, from the status and never by assumption", async () => {
+    const entries = async (): Promise<string> =>
+      (await readout("meic")).facts.find((x) => x.label === "new entries")!.value;
+    meic = { dry_run: true };
+    expect(await entries()).toMatch(/^DRY RUN .*none is sent/);
+    meic = { dry_run: false };
+    expect(await entries()).toMatch(/^LIVE: real condor orders are sent/);
+    meic = {};
+    expect(await entries()).toMatch(/^not reported/);
+  });
+
   it("says plainly when stops are off and when no breaker is set", async () => {
     meic = { per_side_stop_management: false, daily_loss_halt_dollars: null, max_structures_per_day: null };
     const f = Object.fromEntries((await readout("meic")).facts.map((x) => [x.label, x.value]));

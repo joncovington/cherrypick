@@ -36,6 +36,7 @@ GUARDED: dict[str, dict[str, str]] = {
     # (the flies/bwb posture). The same lesson as theirs: a surface that cannot arm the loop must not
     # be able to widen it once armed. Timing (entry window, disarm_time) stays editable, as for bwb.
     "meic": {
+        "/live/dry_run": "whether MEIC sends real entries — hand-edit deliberately, never from here",
         "/enable_live_trading": "hand-edit after the live-trading plan's gates; never from this surface",
         "/account_deploy_limit_pct": "live risk cap — hand-edit deliberately, not from this surface",
         "/live/symbol": "which underlying trades live money — hand-edit deliberately, never from here",

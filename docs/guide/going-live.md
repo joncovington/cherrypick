@@ -40,6 +40,13 @@ Live trading is behind several separate locks. All of them must be open at once.
    **today**. The arm lasts one trading day.
 6. **The halt flag.** While it is up, no new live entry is placed, whatever else is open.
 
+**`live.dry_run` is a lock of its own, and it ships closed.** With it `true`, which is also what a
+missing key means, an armed day builds each new condor and preflights it against your real account, and
+sends none: nothing is placed and the live ledger is untouched. Only the literal `false` sends entries.
+It governs new entries alone. A book the loop already holds is still confirmed, stopped, force-closed
+and settled live, because a close must always get through. Each further login has its own key.
+The arming readout says when it is `true`.
+
 The settings editor and the console's Config page cannot change the guarded live fields (the master
 switch, `live.symbol`, `live.gate0_confirmed`, the caps and the breakers). You edit them by
 hand in the file, on purpose: they should not move by accident.
@@ -71,8 +78,8 @@ condors. Three things follow.
 
 Once armed, inside the entry window the loop looks for a condor that clears the live gates (IV rank,
 GEX, distance from the money, VIX and ATR pauses). If one fits under the buying-power cap with
-what is already open, it places a four-leg limit order on `live.symbol`. A fill is recorded only when the
-broker confirms it.
+what is already open, it places a four-leg limit order on `live.symbol` (with `live.dry_run` true it
+preflights that order and sends nothing). A fill is recorded only when the broker confirms it.
 
 ### What runs when you are not armed
 
