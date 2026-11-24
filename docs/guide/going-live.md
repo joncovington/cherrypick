@@ -49,7 +49,7 @@ has its own guarded operation (`set_live_arm`, MEIC's main login only), which ch
 nothing else, and only when you type `CHANGE ARM`, the arm is in the registry and has a paper twin, and
 the loop is flat and settled: not armed today, no open condor, no working order, nothing unsettled.
 The change is journaled in the arm journal and takes effect at the next arming; it arms nothing. The
-console does not offer it yet, so for now `live.arm` is still edited by hand.
+console offers it on Config's `live` tab; the ladder's arm and another login's are still edited by hand.
 
 Other limits sit inside the live block. `live.max_structures_per_day` caps new condors a day (1 if you
 set nothing). `live.max_open_bp_dollars` caps the buying power the open condors may use.
