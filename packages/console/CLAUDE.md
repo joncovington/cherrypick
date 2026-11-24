@@ -298,7 +298,7 @@ alone):
   "not scored yet"; only a dropped artifact gets a warning chip. The apply banner compares like with
   like — what is queued for the next session, and whether THIS session's artifact landed — with the
   failure count on the collapsed head; keep the signal on the head.
-- **The ladder's Live tab reads the live path and nothing else.** It shows `live_loop --status` through
+- **The ladder's Live mode (the header's Paper/Live selector, paper by default) reads the live path and nothing else.** It shows `live_loop --status` through
   `services/ladderLiveBridge.ts` (the gates, mode, arm, halt flag, held submissions and the last tick's
   checks are the module's own; no gate is re-derived) and `live_trades.db` through `readers/ladderLive.ts`
   (open and sold lots, orders, the journal). It has no write path of any kind: the bridge's one verb is

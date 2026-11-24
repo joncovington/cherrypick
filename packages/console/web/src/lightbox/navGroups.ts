@@ -254,15 +254,16 @@ export type WeeklyputSlideId = (typeof WEEKLYPUT_SLIDES)[number]["id"];
 
 /**
  * ladder's tabs: the share dip ladder on leveraged index funds. `summary` (today) is each fund's
- * previous close and every arm's next buy level; `live` the live loop's gates, mode and own ledger
- * (read only; the other tabs are the paper book); `positions` the lots held, the old ones flagged as
+ * previous close and every arm's next buy level; `positions` the lots held, the old ones flagged as
  * the group's "hospital"; `history` the sold lots as the trades they were; `arms` each arm's lots,
  * net and open lots in the group's terms; `performance` and `costs` the shared reads of its sold lots.
- * No advisor or regime tab: the module declares no advice bounds and keeps no daily series.
+ * The frame's paper/live selector (`?mode=live`) swaps `summary`, `positions` and `history` for the live
+ * loop's gates, mode and own ledger (read only); the other tabs have no live read and say so. The old
+ * `live` tab is `summary` in live mode (the lightbox redirects it). No advisor or regime tab: the module
+ * declares no advice bounds and keeps no daily series.
  */
 export const LADDER_SLIDES = [
   { id: "summary", label: "today" },
-  { id: "live", label: "live" },
   { id: "positions", label: "open lots" },
   { id: "history", label: "history" },
   { id: "arms", label: "arms" },
@@ -612,15 +613,15 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
   },
   ladder: {
     slides: LADDER_SLIDES,
-    simple: ["summary", "live", "arms", "positions", "history", "changes", "guide"],
+    simple: ["summary", "arms", "positions", "history", "changes", "guide"],
     groups: [
-      { label: "today", ids: ["summary", "live"] },
+      { label: "today", ids: ["summary"] },
       { label: "tables", ids: ["positions", "history"] },
       { label: "evidence", ids: ["arms", "decisions"] },
       { label: "study", ids: ["performance", "costs", "changes"] },
       { label: "help", ids: ["guide"] },
     ],
-    legacy: { session: "summary" },
+    legacy: { session: "summary", live: "summary" },
   },
   automations: {
     slides: AUTOMATIONS_SLIDES,

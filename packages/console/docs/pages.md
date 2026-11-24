@@ -31,7 +31,7 @@ A page the suite has switched off is not shown (see *What is off is not shown* b
 | BWB | `/bwb` | today, positions, history, decisions, arms, entry vol, live vs paper, performance, analysis, advisor, help | Retired; ships off. |
 | Earnings | `/earnings` | today, positions, history, decisions, screening, strategies, advisor | Active; paper only. |
 | Automations | `/automations` | today, builder, groups, positions, history, decisions, entries, vs backtest, performance, analysis, costs, changes, help (13 tabs) | Paper only. The automations are whatever the ledger names; the Builder writes them, and `groups` (every group › one group › one automation, staged in the save bar) switches, budgets and groups them; an automation's own page retires it. |
-| Ladder | `/ladder` | today, live, open lots, history, arms, decisions, performance, costs, changes, help (10 tabs) | Experimental. Every tab but `live` is the paper book. `live` only reads the live path, which ships in dry-run and off. Not a tested edge; the help tab says so. |
+| Ladder | `/ladder` | today, open lots, history, arms, decisions, performance, costs, changes, help (9 tabs) | Experimental. Paper by default; the header's Paper/Live selector (`?mode=live`) swaps today, open lots and history for the live path's read, which only reads and ships in dry-run and off. Not a tested edge; the help tab says so. |
 | Experiments | `/experiments` | experiments | The comparison page for the paper-only experiments and the retired modules below. |
 | PMCC | `/pmcc` | today, by arm, positions, tracker, history, decisions, arms, performance, analysis, costs, advisor, help | Retired; ships off. |
 | Calendars | `/calendars` | today, plan, positions, history, decisions, arms, policies, performance, analysis, advisor, help | Retired; ships off. |
@@ -912,28 +912,39 @@ on this tab only since no other ladder tab takes an arm): a picked arm is drawn 
 own scale, and the shared slide is narrowed to it through its `arm` prop. Pinned by
 `server/test/ladder-bridge.test.ts` and `web/test/ladderEquity.test.tsx`.
 
-**The ladder's `live` tab** (`pages/Ladder/LadderLive.tsx` over `GET /api/ladder/live` →
-`readers/ladderLive.ts` and `GET /api/ladder/live/status` → `services/ladderLiveBridge.ts`) is the live
-path's readout and nothing else: no control, no POST, no arm, disarm, halt or config. Arming stays the
-`/live-ladder-start` command. The frame's badge on this tab is `LIVE` only when the module's status says
-`live.dry_run` is exactly false, `DRY-RUN` otherwise and `MODE ?` when the status cannot be read; every
-other tab keeps the `PAPER` badge, and the loop pill follows the tab (the live loop's own last tick).
-Top to bottom: a sentence naming the mode, tiles (mode, ready, armed today, halt flag, held submissions,
-orphans, the masked account, the last tick); the nine gates, each with its reason and what a failure
-stops (all gates in `live_loop --status`, bridged and memoised 10 s: the page decides none of them, and a
-status it cannot read is neither ready nor not ready); the last tick's checks (the positions cross-check
-against the ledger, declared splits and their problems, what is stopping a fund's buys) and the standing
-dry-run intents; then, from `live_trades.db`, the open live lots (cost, target, age and the 18-day flag,
-the sell resting at the broker, the buy's fee and where it came from), the sold lots in the trade table
-standard (entry + exit = gross, fees, settlement and slippage each their own column, net last, with a
-`fees from` column: `modeled` is the schedule's and `broker` the broker's own rows; the totals chip
-covers every sold lot and the rows the newest 200), the orders (working first, then the 50 most recent
-ended), and the decision journal (alerts, refusals, blocked buys, splits, dry-run intents), newest first.
-The ledger is absent on a machine that never ran the live loop, and then the tab says so and shows only
-the gates and checks; a ledger that cannot be read says that. Accounts pass a masking step in the reader
-whatever the ledger holds. Pinned by `server/test/ladder-live-reader.test.ts`, `ladder-live-bridge.test.ts`
-(the last test runs the module's own `--status`), `ladder-live-no-write.test.ts` and
-`web/test/ladderLive.test.tsx`.
+**The ladder's Live mode** (the header's Paper/Live selector, `?mode=live`, as on MEIC, BWB and flies; paper
+is the default, and the old `/ladder/live` URL redirects to `/ladder/summary?mode=live`) shows the live
+path's readout and nothing else: `pages/Ladder/LadderLive.tsx` and `LadderLiveHistory.tsx` over
+`GET /api/ladder/live` -> `readers/ladderLive.ts` and `GET /api/ladder/live/status` ->
+`services/ladderLiveBridge.ts`. No control, no POST, no arm, disarm, halt or config: the one control the
+frame gained is the selector, which changes what is shown and nothing else, and arming stays on the Live
+page ("Arm it for today from the Live page. Nothing here arms."). The frame's badge is `LIVE` only when
+the module's status says `live.dry_run` is exactly false, `DRY-RUN` otherwise and `MODE ?` when the status
+cannot be read, whatever the selector says; paper wears `PAPER`. The loop pill follows the selector (the
+live loop's own last tick under Live). Three tabs have a live read, and a card with no data is left out
+rather than drawn empty:
+
+- **today**: a sentence naming the mode; tiles (mode, ready, armed today, halt flag, held submissions,
+  orphans, the masked account, the last tick); the nine gates, each with its reason and what a failure
+  stops (all from `live_loop --status`, bridged and memoised 10 s: the page decides none of them, and a
+  status it cannot read is neither ready nor not ready); the last tick's checks (the positions
+  cross-check against the ledger, what is stopping a fund's buys, the standing dry-run intents); then the
+  decision journal and the orders (working first, then the 50 most recent ended) side by side.
+- **open lots**: the live book's held lots (arm, fund, bought, shares and price, cost, target, age and
+  the 18-day flag, the sell resting at the broker, the buy's fee). No bid or value column: the live
+  ledger keeps no mark on a held lot. With nothing held the tab is one line, "No live lot is held.".
+- **history**: the sold live lots in the paper history's own columns and the same expandable trade card
+  (entry + exit = gross, fees, settlement and slippage each their own column, net last; the footer's
+  totals cover every sold lot, the rows the newest 200, and it counts the fees by source: `modeled` is
+  the schedule's, `broker` the broker's own rows). Nothing sold is one line.
+
+Every other tab (arms, decisions, performance, costs, changes) shows one line, "No live read for this
+tab.", with a link to today, never the paper book's figures under a live label; help is the same in
+either mode. The ledger is absent on a machine that never ran the live loop, and then the tabs say "No
+live ledger on this machine yet."; a ledger that cannot be read says that. Accounts pass a masking step
+in the reader whatever the ledger holds. Pinned by `server/test/ladder-live-reader.test.ts`,
+`ladder-live-bridge.test.ts` (the last test runs the module's own `--status`),
+`ladder-live-no-write.test.ts` and `web/test/ladderLive.test.tsx`.
 
 **The Live page's `today` tab** (`pages/Live/LiveTodayPage.tsx` over `GET /api/live/today` →
 `readers/liveToday.ts`) opens `/live`. It is a mosaic: two summary cards and a card per live loop. The loops card
