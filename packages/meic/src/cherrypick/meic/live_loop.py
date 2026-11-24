@@ -283,6 +283,15 @@ def _live_cfg(config: dict) -> dict:
     return config.get("live") or {}
 
 
+def live_dry_run(config: dict) -> bool:
+    """Whether NEW entries are preflighted and not sent (`live.dry_run`). True unless the key is the
+    literal `false`: a missing, null or mistyped value is a dry run, so a config that never heard of
+    the key cannot place an entry. It governs entries only. Fill confirmation, resting stops, stops,
+    force-closes and settlement of a book the loop already holds always run live: a close must get
+    through. A further login's block is its own, so its key is read from its own entry."""
+    return _live_cfg(config).get("dry_run") is not False
+
+
 def _data_dir() -> str:
     return os.path.dirname(str(_paths.live_db_path()))
 
@@ -445,6 +454,10 @@ def arm_verdict(status: dict) -> dict:
     if (status.get("quantity") or 1) > MAX_LIVE_QUANTITY:
         blockers.append(
             f"live quantity {status['quantity']} is over {MAX_LIVE_QUANTITY}: partial fills are not modelled"
+        )
+    if status.get("dry_run"):
+        warnings.append(
+            "live.dry_run is true: new entries are preflighted and none is sent (a held book is still managed)"
         )
     if status.get("halt_flag"):
         warnings.append("halt flag set: arming with a YES clears it")
@@ -807,6 +820,7 @@ def run_status(config: dict, *, designated: str | None) -> dict:
         "armed_for": arm_stamp_date(),
         "disarm_time": live.get("disarm_time") or DEFAULT_DISARM,
         "enable_live_trading": bool(config.get("enable_live_trading")),
+        "dry_run": live_dry_run(config),
         "unmet_gates": readiness(config, designated=designated),
         "symbol": symbol,
         "arm": paper.live_arm_name(config),
@@ -1947,8 +1961,17 @@ def run_once(
     ) >= cap:
         entry = {"entry": "skipped", "reason": "max_structures_per_day_reached"}
     else:
+        # `live.dry_run`: the entry is built and preflighted against the real account, nothing is sent
+        # and the ledger is untouched. Everything above and below this branch stays live.
         entry = _manage_entry(
-            symbol, snapshot, params, db_path, broker, live=live, log=log, live_arm=_live_arm_or_none(config)
+            symbol,
+            snapshot,
+            params,
+            db_path,
+            broker,
+            live=live and not live_dry_run(config),
+            log=log,
+            live_arm=_live_arm_or_none(config),
         )
         if entry.get("entry") == "placed":
             # The working order, now, not at the next tick: the other loops check against it from here.

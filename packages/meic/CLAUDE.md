@@ -105,6 +105,12 @@ decisions per symbol, one shared account-wide risk budget.
   secrets_set` / `tt secrets_status`.
 - **`enable_live_trading: true` in `config.json` is the master switch.** There is no environment
   fallback: an env var is outside the orchestrator's guarded config table and carries no attestation.
+- **`live.dry_run` ships true and gates new entries only.** `live_dry_run(config)` is true unless the key
+  is the literal `false`, so a missing, null or mistyped value is a dry run. An armed tick then builds and
+  preflights each entry (`broker.place(spec, live=False)`) and sends none, with the live ledger untouched;
+  fill confirmation, resting stops, stops, force-closes and settlement of a held book run live regardless,
+  since a close must always get through. A further login reads its own entry's key. `--status` reports
+  `dry_run` and `arm_ready` warns while it is true. The key is in `configedit.GUARDED`.
 - **The live loop is armed one day at a time (the flies/bwb posture).** `/live-meic-start`
   writes the arm record (`--install-task`, the agent path that prompts for nothing because the
   slash command already asked; a person arms with `--arm --confirm YES`, which prints `DISCLAIMER.md`

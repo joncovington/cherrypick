@@ -26,6 +26,13 @@ beyond the latest release.
 
 ### What's new
 
+- **MEIC's live loop ships in dry run.** `live.dry_run` is `true` unless it is the literal `false`, and a
+  missing key means `true`. An armed tick then preflights each new entry against the real account and
+  sends none, writing nothing to the live ledger. It governs entries only: a held book is still
+  confirmed, stopped, force-closed and settled live. Each further login reads its own key; `--status`
+  reports it, the arming readout warns while it is on, and the Config page cannot change it. **Upgrading:**
+  a live config that never named the key now runs in dry run; set `live.dry_run` to `false` by hand to
+  send entries again.
 - **A live MEIC trade records the arm live ran.** `ic_trades.live_arm` holds the registry arm (`pm-200`)
   at entry, so live results read per arm no longer depend on joining the trade to its entry attempt. The
   console reads the column first and the attempt second; older rows keep working, and
