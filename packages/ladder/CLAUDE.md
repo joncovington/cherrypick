@@ -107,7 +107,11 @@ import (`orders.py` may import the one pure id reader). The `live` block in the 
 - **Arm:** `live_loop --arm --confirm YES` prints `DISCLAIMER.md` and writes the day's record only on
   exactly `YES` while the first three gates hold; `--install-task` is the same without the prompt
   (`/live-ladder-start`). Both need a running supervisor, as every module's arm does. `--disarm` removes
-  the record. The record is good for its date; `live.disarm_at` (20:00 ET) ends the day.
+  the record. The record is good for its date; `live.disarm_at` (20:00 ET) ends the day. Every arm and
+  every disarm that removes a record is a row in `data/live/arm_events.jsonl` (`core.live.arm_events`),
+  with the time and the actor: `live-ladder-start` for an arm, `live-loop-disarm` for `--disarm`,
+  `ladder-tick` with a reason (`past_disarm_at`, `past_disarm_at_gates_unmet`, `record_not_today`) for
+  the tick's own.
 - **`--status`** is one JSON object: every gate, the masked account, whether it is armed today, `mode`
   (`dry-run` or `live`), `held` (what an uncertain submit is holding) and `checks` (the last tick's
   positions cross-check, declared splits and dry-run intents). It makes no broker call and

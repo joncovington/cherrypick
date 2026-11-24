@@ -520,12 +520,24 @@ def test_at_disarm_at_the_buys_are_cancelled_while_armed_then_the_loop_disarms(w
     tick(world, cfg, "09:00")  # a buy rests
     events = world.broker.calls
     real = live_loop.uninstall_task
-    monkeypatch.setattr(live_loop, "uninstall_task", lambda: (events.append(("disarm",)), real())[1])
+    monkeypatch.setattr(live_loop, "uninstall_task", lambda **kw: (events.append(("disarm",)), real(**kw))[1])
     events.clear()
     out = tick(world, cfg, "20:00")
     assert events[0] == ("cancel", BUY1) and events[-1] == ("disarm",)
     assert out["disarmed"] is True and live_loop.arm_stamp_date() is None
     assert out["passes"] == 2 and live_db.order(world.conn, BUY1)["state"] == "cancelled"
+
+
+def test_the_tick_journals_its_own_disarm_and_a_stale_record_removal(world):
+    cfg = live_config()
+    tick(world, cfg, "20:00")
+    rows = [r for r in _live.arm_events("ladder") if r["event"] == "disarm"]
+    assert [(r["actor"], r["reason"]) for r in rows] == [("ladder-tick", "past_disarm_at")]
+    arm("2026-11-20")  # a record dated another day
+    tick(world, cfg, "09:00")
+    rows = [r for r in _live.arm_events("ladder") if r["event"] == "disarm"]
+    assert rows[-1]["actor"] == "ladder-tick" and rows[-1]["reason"] == "record_not_today"
+    assert rows[-1]["record_date"] == "2026-11-20"
 
 
 def test_disarm_never_cancels_a_sell(world):

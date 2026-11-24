@@ -872,7 +872,7 @@ def run_once(
     armed_for = live_loop.arm_stamp_date()
     if armed_for is not None and armed_for != day:
         log(f"self-disarm: arm stamp is {armed_for!r}, today is {day}")
-        live_loop.uninstall_task()
+        live_loop.uninstall_task(actor="ladder-tick", reason="record_not_today")
         armed_for = None
 
     # 1. the gates that block everything (the arm is read below)
@@ -886,7 +886,7 @@ def run_once(
         # supervisor's watchdog as a failed self-disarm, and it sets the suite-wide halt flag.
         if armed_for == day and now_min >= live_gates.disarm_minute(config):
             log(f"disarm: past disarm_at ({live.get('disarm_at')}) with gates unmet; nothing was read")
-            live_loop.uninstall_task()
+            live_loop.uninstall_task(actor="ladder-tick", reason="past_disarm_at_gates_unmet")
             out["disarmed"] = True
         return out
 
@@ -972,7 +972,7 @@ def _tick(
     summary["passes"] = len(passes)
     if disarm_tick:
         log(f"disarm: past disarm_at ({live.get('disarm_at')}); buys cancelled, disarming")
-        live_loop.uninstall_task()
+        live_loop.uninstall_task(actor="ladder-tick", reason="past_disarm_at")
         summary["disarmed"] = True
     phase = "dry_run" if dry and in_window else "live" if in_window else "reconcile"
     live_db.record_iteration(
