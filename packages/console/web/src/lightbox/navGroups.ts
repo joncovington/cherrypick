@@ -498,6 +498,8 @@ export const HELP_SLIDES = [
 ] as const satisfies readonly NavSlide[];
 
 export const CONFIG_SLIDES: readonly NavSlide[] = [
+  // The live loops: which arm each runs. First, beside the halt flag that rides every tab.
+  { id: "live", label: "live" },
   ...SECTIONS.map((s) => ({ id: s.id, label: s.title.toLowerCase() })),
   { id: "prefs", label: "prefs" },
 ];

@@ -1,5 +1,12 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import type { ConfigModelPayload, ConfigSavePayload, ConfigTargetId, LockStatusPayload } from "@console/shared";
+import type {
+  ConfigModelPayload,
+  ConfigSavePayload,
+  ConfigTargetId,
+  LiveArmChangePayload,
+  LiveArmPayload,
+  LockStatusPayload,
+} from "@console/shared";
 import { csrfFetch, getJson } from "../../lib/api";
 import { FEATURES_KEY } from "../../lib/useFeatures";
 
@@ -67,6 +74,29 @@ export function useSetLock() {
       void qc.invalidateQueries({ queryKey: ["system"] });
       void qc.invalidateQueries({ queryKey: ["overview"] });
       void qc.invalidateQueries({ queryKey: FEATURES_KEY });
+    },
+  });
+}
+
+/** Which arm each live loop runs (the Config page's live tab). Each read is a subprocess on the server, so it is not polled. */
+export function useLiveArm() {
+  return useQuery<LiveArmPayload>({
+    queryKey: ["config-live-arm"],
+    queryFn: () => getJson<LiveArmPayload>("/api/config/live-arm"),
+    refetchOnWindowFocus: true,
+    staleTime: 10_000,
+  });
+}
+
+/** Change the arm MEIC's live loop runs. The server answers with the page's own read, which replaces the cached one. */
+export function useSetLiveArm() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { arm: string; confirm: string }) => postConfig<LiveArmChangePayload>("/api/config/live-arm", vars),
+    onSuccess: (done) => {
+      qc.setQueryData(["config-live-arm"], done.payload);
+      // The Live page's loop cards name the arm too.
+      void qc.invalidateQueries({ queryKey: ["live-today"] });
     },
   });
 }
