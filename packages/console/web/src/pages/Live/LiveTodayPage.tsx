@@ -13,7 +13,7 @@ import { useManage } from "./ManagePage";
 import { tone } from "./manageParts";
 import { BrokerSummaryCard } from "./WhatToDo";
 import { AttentionChip, kindWords } from "./AttentionChip";
-import { HandCard, handHasTrades } from "./HandToday";
+import { HandCard, handHasContent, handHasTrades } from "./HandToday";
 import { LoopOrders } from "./LiveTodayOrders";
 import { Section } from "../../components/Section";
 import { Meter, StateLine } from "./liveParts";
@@ -28,7 +28,8 @@ import { GuideLink } from "../../components/GuideLink";
  * and the broker positions' counts, the first three to act on and a way into Positions,
  * `WhatToDo.tsx`), how each loop is doing (a parent card per loop with its breaker as a meter, which opens a
  * lightbox with the loop's orders today as chains, `LiveTodayOrders.tsx`, and every field the old table's
- * detail view carried), and what was traded by hand (trade cards). The net's method sits behind the
+ * detail view carried), and what was traded by hand (trade cards, only where there is something to say).
+ * A module that is off and holds nothing has no card and no line. The net's method sits behind the
  * card's ?. There is no button here that touches an order.
  *
  * Money follows the one layout: "net" is net, costs sit in their own columns, settlement never
@@ -516,7 +517,8 @@ export function LiveTodayView({ data: d, manage }: { data: LiveTodayPayload; man
   const s = d.suite;
   const lightbox = useOpenParam("loop");
   const active = d.loops.filter((l) => !l.retired);
-  const retired = d.loops.filter((l) => l.retired);
+  const allHands = [...(d.hand !== undefined ? [d.hand] : []), ...(d.handOthers ?? [])];
+  const handsShown = allHands.filter(handHasContent);
   const index = active.findIndex((l) => l.loop === lightbox.open);
   const showWorking = anyWorking(d.loops);
   // The attention list's "Go to": scroll to the loop's card and outline it for a moment.
@@ -584,23 +586,19 @@ export function LiveTodayView({ data: d, manage }: { data: LiveTodayPayload; man
           />
         ))}
       </Section>
-      {retired.map((l) => (
-        // A disabled module holding nothing folds to one line; anything open, working, held,
-        // orphaned or overdue (or an arm record for today) brings its card back.
-        <p key={l.loop} className="muted lt-retired" title="modules.<name>.enabled is false in the orchestrator config">
-          <Link to={l.to}>{l.loop}</Link> off — module disabled, nothing open or working
-        </p>
-      ))}
-      {d.hand !== undefined && (
+      {/* A disabled module holding nothing has no card and no line; anything open, working, held, orphaned
+          or overdue (or an arm record for today) brings its card back. The by-hand section shows only the
+          accounts that have something to say: trades, a warning, or a view that could not be read. */}
+      {handsShown.length > 0 && (
         <Section concept="add" question="What was traded by hand?">
-          <HandCard
-            hand={d.hand}
-            session={d.session}
-            note={handHasTrades(d.hand) ? undefined : handNote(d)}
-            showAccount={(d.handOthers ?? []).length > 0}
-          />
-          {(d.handOthers ?? []).map((h) => (
-            <HandCard key={h.account ?? "?"} hand={h} session={d.session} showAccount />
+          {handsShown.map((h, i) => (
+            <HandCard
+              key={h.account ?? `main-${String(i)}`}
+              hand={h}
+              session={d.session}
+              note={handHasTrades(h) ? undefined : handNote(d)}
+              showAccount={allHands.length > 1}
+            />
           ))}
         </Section>
       )}

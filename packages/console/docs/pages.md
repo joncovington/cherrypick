@@ -954,8 +954,10 @@ live payload and its history for the session; the ladder's `/api/ladder/live`, e
 sell resting at the broker, then the lots sold today; entry, a stopped side or the add-on, then how it ended
 or "now"), and *detail*, every field the old table's detail view carried plus what on the loop needs
 attention. A losing loop's card has a red edge, a tripped breaker or failed read a red border. The hand
-trades are a card of their own beside the loops (never in the total) with their orders card below; a
-retired loop folds to one line. Header badge: `2 armed · HALTED`. It **composes** the
+trades are a card of their own beside the loops (never in the total) with their orders card below, shown
+only for an account that has something to say (`handHasContent`: trades, a warning, or a view that could
+not be read; an empty day has no section); a retired loop (module off, holding nothing) has no card and
+no line. Header badge: `2 armed · HALTED`. It **composes** the
 per-loop readers (`fliesLive`/`flies`, `readMeicLive`, `readBwb`/`readBwbHistory` in live mode,
 `liveBooks`' bwb read for absent-vs-failed, `readLadderLive` for the ladder) and adds only each loop's own `daily_loss_tripped` and
 flies' `overdue_settlement` queries, mirrored and named. Attention: orphaned orders, held
@@ -968,7 +970,7 @@ tab) with three honest differences: shares have no stop, so its worst case is th
 open; its breaker is a drawdown on the open lots' mark that stops new buys, not a daily-loss limit, so
 the card says "no limit" and the module's own gates sit on its tab; and its live ledger keeps no mark on
 a held lot, so its mark is n/r while it holds one and the suite's open-at-mark total is n/r with it.
-Its card is folded to one line while `modules.ladder.enabled` is off and it holds nothing. `/live/today`
+Its card is left out while `modules.ladder.enabled` is off and it holds nothing. `/live/today`
 is this tab now, not an alias for flies. Pinned by `server/test/live-today.test.ts`.
 **The hand row** (`readers/liveHand.ts`, `pages/Live/HandToday.tsx`) sits under the loops:
 today's 0DTE trades placed by hand on the names manage leaves to the loops, which no loop manages,

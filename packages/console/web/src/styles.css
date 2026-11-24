@@ -7487,11 +7487,6 @@ select.text-input {
   border-bottom: none;
 }
 
-.lt-retired {
-  margin: 0;
-  font-size: 13px;
-}
-
 .lt-detail {
   display: flex;
   flex-direction: column;

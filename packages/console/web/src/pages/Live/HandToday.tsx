@@ -70,6 +70,15 @@ export function handHasTrades(h: LiveTodayHand): boolean {
   return h.status === "ok" && (h.orders.length > 0 || h.openLegs.length > 0);
 }
 
+/**
+ * True when a hand card has something to say: trades, or a warning a person should see (a position the
+ * fills do not explain, a fill that may be a loop's, an expired leg still listed) or a hand view that
+ * could not be read. A day with none of these shows no card at all.
+ */
+export function handHasContent(h: LiveTodayHand): boolean {
+  return handHasTrades(h) || h.status === "unread" || h.unreconciled.length > 0 || h.afterPublish.length > 0 || h.expiredHeld.length > 0;
+}
+
 /** `STO` / `BTC` ... from the fill's action ("Sell to Open"); null when the action names no side or no open/close. */
 function legTag(action: string): string | null {
   const side = action.startsWith("Sell") ? "ST" : action.startsWith("Buy") ? "BT" : null;
