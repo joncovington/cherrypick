@@ -42,10 +42,12 @@ import json
 import sys
 from datetime import date, timedelta
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from cherrypick.core import progress as core_progress
 
-from cherrypick.backtest.study.inputs import Inputs
+if TYPE_CHECKING:  # the weeklyput tests load this script without the backtest package installed
+    from cherrypick.backtest.study.inputs import Inputs
 
 _spec = importlib.util.spec_from_file_location(
     "variance_premium_item46", Path(__file__).with_name("variance_premium_item46.py")
@@ -516,6 +518,8 @@ def cmd_plan(args) -> int:
 
 
 def cmd_coverage(args) -> int:
+    from cherrypick.backtest.study.inputs import Inputs
+
     if not i46._chain_store_path().exists():
         print("no chain store: run the item57/fetch-chain-paths row first", file=sys.stderr)
         return 2
@@ -528,6 +532,8 @@ def cmd_coverage(args) -> int:
 
 
 def cmd_study(args) -> int:
+    from cherrypick.backtest.study.inputs import Inputs
+
     if not i46._chain_store_path().exists():
         print("no chain store: run the item57/fetch-chain-paths row first", file=sys.stderr)
         return 2
