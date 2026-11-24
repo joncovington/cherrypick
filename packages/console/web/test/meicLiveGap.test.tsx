@@ -25,6 +25,7 @@ const side = (over: Partial<MeicLiveGapSide>): MeicLiveGapSide => ({
 
 const payload = (over: Partial<MeicLiveGapPayload> = {}): MeicLiveGapPayload => ({
   twin: "live-shadow",
+  unmirrored: [],
   ledger: "ok",
   since: "2026-10-20",
   rows: [
@@ -65,6 +66,11 @@ describe("MeicLiveGapView", () => {
     expect(html).toMatch(/data-session="2026-10-21"[^>]*>|class="muted" data-session="2026-10-21"/);
     expect(html).toContain("not traded");
     expect(html).toContain("SPX 7600/7650 @ 1.62 · expired");
+  });
+
+  it("names a session whose arm has no paper twin, and shows nothing when there is none", () => {
+    expect(render(payload({ unmirrored: ["2026-11-25"] }))).toContain("no paper twin for the arm live ran on 2026-11-25");
+    expect(render(payload())).not.toContain("no paper twin");
   });
 
   it("says so when there is no live ledger or no live trade", () => {
