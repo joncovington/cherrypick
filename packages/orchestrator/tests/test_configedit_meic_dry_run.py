@@ -1,4 +1,4 @@
-"""The Config page cannot flip MEIC's `live.dry_run`: it is the switch from preflighting entries to sending them."""
+"""The Config page cannot flip MEIC's `live.dry_run`: it decides whether entries are sent."""
 
 from __future__ import annotations
 
