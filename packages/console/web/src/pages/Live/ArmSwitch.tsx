@@ -81,8 +81,8 @@ export function ArmStrip({
   };
   return (
     <>
-      <div className={`arm-strip${m.on ? " is-on" : ""}${locked ? " is-locked" : ""}`} data-arm-state={m.state}>
-        <div className="arm-strip-text">
+      <div className={`live-arm-strip${m.on ? " is-on" : ""}${locked ? " is-locked" : ""}`} data-arm-state={m.state}>
+        <div className="live-arm-strip-text">
           <b>{m.title}</b>
           <span>{m.sub}</span>
         </div>
@@ -102,17 +102,17 @@ export function ArmStrip({
                   : `Arm ${l.loop} for today`
           }
           title={m.lockedReason ?? undefined}
-          className="arm-switch-btn"
+          className="live-arm-switch-btn"
           onClick={onClick}
         >
-          <span className={`arm-switch${m.on ? " on" : ""}${locked ? " locked" : ""}`}>
+          <span className={`live-arm-switch${m.on ? " on" : ""}${locked ? " locked" : ""}`}>
             <i />
           </span>
         </button>
       </div>
       {m.state === "pending" && attempt !== null ? <ArmProgress a={attempt} /> : null}
       {failed !== null ? (
-        <div className="arm-failed" role="alert">
+        <div className="live-arm-failed" role="alert">
           <b>Arming did not finish cleanly</b>
           <span>{failed.message}</span>
           {failed.detail.map((d, i) => (
@@ -131,20 +131,20 @@ export function ArmStrip({
 function ArmProgress({ a }: { a: ArmAttempt }) {
   const waiting = a.step === "waiting";
   return (
-    <div className="arm-progress" aria-live="polite">
+    <div className="live-arm-progress" aria-live="polite">
       <span>
         <b className="pnl-pos">✓</b> You typed YES and accepted the disclaimer
       </span>
       <span>
-        <b className={a.recordWritten ? "pnl-pos" : "arm-amber"}>{a.recordWritten ? "✓" : "…"}</b> {a.recordWritten ? `Arm record written for ${a.session}` : "Writing the arm record"}
+        <b className={a.recordWritten ? "pnl-pos" : "live-arm-amber"}>{a.recordWritten ? "✓" : "…"}</b> {a.recordWritten ? `Arm record written for ${a.session}` : "Writing the arm record"}
       </span>
       {a.needsSupervisor ? (
         <span>
-          <b className="arm-amber">…</b> {waiting || !a.recordWritten ? "Waiting for the supervisor (up to a minute)" : "Checking the loop"}
+          <b className="live-arm-amber">…</b> {waiting || !a.recordWritten ? "Waiting for the supervisor (up to a minute)" : "Checking the loop"}
         </span>
       ) : (
         <span>
-          <b className="arm-amber">…</b> Checking the loop
+          <b className="live-arm-amber">…</b> Checking the loop
         </span>
       )}
       <span className="muted">It runs on the server. An amber dot stays on Live in the rail until it finishes; a notice appears on any page.</span>
@@ -173,16 +173,16 @@ function Sheet({ title, kick, sub, onClose, children, foot }: { title: string; k
     };
   }, [onClose]);
   const sheet = (
-    <div className="arm-wrap">
-      <button type="button" className="arm-scrim" aria-label="Close" tabIndex={-1} onClick={onClose} />
-      <div ref={box} className="arm-box" role="dialog" aria-modal="true" aria-labelledby={labelId} tabIndex={-1}>
-        <div className="arm-head">
-          <span className="arm-kick">{kick}</span>
+    <div className="live-arm-wrap">
+      <button type="button" className="live-arm-scrim" aria-label="Close" tabIndex={-1} onClick={onClose} />
+      <div ref={box} className="live-arm-box" role="dialog" aria-modal="true" aria-labelledby={labelId} tabIndex={-1}>
+        <div className="live-arm-head">
+          <span className="live-arm-kick">{kick}</span>
           <h2 id={labelId}>{title}</h2>
           {sub !== undefined ? <span className="muted">{sub}</span> : null}
         </div>
-        <div className="arm-body">{children}</div>
-        <div className="arm-foot">{foot}</div>
+        <div className="live-arm-body">{children}</div>
+        <div className="live-arm-foot">{foot}</div>
       </div>
     </div>
   );
@@ -215,14 +215,14 @@ export function ArmDialog({ loop, onClose }: { loop: string; onClose: () => void
 
   if (load.kind === "loading") {
     return (
-      <Sheet kick="Reading the loop" title={`Arm ${loop} for today`} onClose={onClose} foot={<button type="button" className="arm-btn" onClick={onClose}>Close</button>}>
+      <Sheet kick="Reading the loop" title={`Arm ${loop} for today`} onClose={onClose} foot={<button type="button" className="live-arm-btn" onClick={onClose}>Close</button>}>
         <p className="muted">Asking the loop's own readiness check. It reads files and the ledger, never the broker.</p>
       </Sheet>
     );
   }
   if (load.kind === "error") {
     return (
-      <Sheet kick="Nothing to confirm" title={`${loop} could not be read`} onClose={onClose} foot={<button type="button" className="arm-btn" onClick={onClose}>Close</button>}>
+      <Sheet kick="Nothing to confirm" title={`${loop} could not be read`} onClose={onClose} foot={<button type="button" className="live-arm-btn" onClick={onClose}>Close</button>}>
         <p className="pnl-neg">{load.message}</p>
         <p className="muted">Nothing was armed.</p>
       </Sheet>
@@ -263,22 +263,22 @@ export function RefusedDialog({ r, onClose }: { r: LiveArmReadout; onClose: () =
       title={`${r.title} cannot arm today`}
       sub="The loop's own readiness check says no. There is no disclaimer to accept and no way around it from here."
       onClose={onClose}
-      foot={<button type="button" className="arm-btn" onClick={onClose}>Close</button>}
+      foot={<button type="button" className="live-arm-btn" onClick={onClose}>Close</button>}
     >
       <Chip tone="bad">
         <span className="dot" /> not ready{blockers.length > 0 ? ` · ${String(blockers.length)} blocker${blockers.length === 1 ? "" : "s"}` : ""}
       </Chip>
       {blockers.map((b, i) => (
-        <div key={i} className="arm-blocker">
+        <div key={i} className="live-arm-blocker">
           {b}
         </div>
       ))}
       {why.map((w, i) => (
-        <div key={`w${String(i)}`} className="arm-blocker">
+        <div key={`w${String(i)}`} className="live-arm-blocker">
           {w}
         </div>
       ))}
-      <span className="muted arm-fine">Each blocker is the loop's own wording, shown as it came back. The console re-derives none of them.</span>
+      <span className="muted live-arm-fine">Each blocker is the loop's own wording, shown as it came back. The console re-derives none of them.</span>
     </Sheet>
   );
 }
@@ -335,21 +335,21 @@ export function ConfirmDialog({
       onClose={onClose}
       foot={
         <>
-          <button type="button" className="arm-btn" onClick={onClose}>
+          <button type="button" className="live-arm-btn" onClick={onClose}>
             No, cancel
           </button>
-          <button type="button" className="arm-btn arm-btn-go" disabled={!exact || busy} onClick={() => void go()}>
+          <button type="button" className="live-arm-btn live-arm-btn-go" disabled={!exact || busy} onClick={() => void go()}>
             {busy ? "Arming…" : "YES — I accept the disclaimer; arm for today"}
           </button>
         </>
       }
     >
       {note !== null ? (
-        <div className="arm-blocker" role="alert">
+        <div className="live-arm-blocker" role="alert">
           <b>Read it again.</b> {note}
         </div>
       ) : null}
-      <div className="arm-chips">
+      <div className="live-arm-chips">
         <Chip tone="ok">
           <span className="dot" /> ready to arm
         </Chip>
@@ -357,7 +357,7 @@ export function ConfirmDialog({
         <Chip tone="ok">halt flag clear</Chip>
         {r.mode !== null ? <Chip tone={r.mode === "live" ? "bad" : "warn"}>{r.mode === "live" ? "LIVE: places real orders" : "dry-run: places nothing"}</Chip> : null}
       </div>
-      <dl className="arm-facts">
+      <dl className="live-arm-facts">
         {r.facts.map((f) => (
           <div key={f.label}>
             <dt>{f.label}</dt>
@@ -366,21 +366,21 @@ export function ConfirmDialog({
         ))}
       </dl>
       {r.warnings.length > 0 ? (
-        <ul className="arm-warnings" aria-label="warnings">
+        <ul className="live-arm-warnings" aria-label="warnings">
           {r.warnings.map((w, i) => (
             <li key={i}>{w}</li>
           ))}
         </ul>
       ) : null}
-      {r.mode === "dry-run" && r.modeNote !== null ? <p className="muted arm-fine">{r.modeNote}</p> : null}
-      <div className="arm-disclaimer">
+      {r.mode === "dry-run" && r.modeNote !== null ? <p className="muted live-arm-fine">{r.modeNote}</p> : null}
+      <div className="live-arm-disclaimer">
         <pre tabIndex={0} aria-label="the disclaimer, in full">
           {r.disclaimer}
         </pre>
       </div>
-      <div className="arm-type">
+      <div className="live-arm-type">
         <label htmlFor={inputId}>
-          Type <span className="arm-yes">YES</span> in capitals to accept the disclaimer
+          Type <span className="live-arm-yes">YES</span> in capitals to accept the disclaimer
         </label>
         <input
           ref={input}
@@ -397,8 +397,8 @@ export function ConfirmDialog({
             if (e.key === "Enter") void go();
           }}
         />
-        <span className="muted arm-fine">The box starts empty every time and is checked again on the server. Anything but YES does nothing.</span>
-        <span className="arm-fine">After you accept, arming runs on the server. You can leave this page; a notice tells you when it is done.</span>
+        <span className="muted live-arm-fine">The box starts empty every time and is checked again on the server. Anything but YES does nothing.</span>
+        <span className="live-arm-fine">After you accept, arming runs on the server. You can leave this page; a notice tells you when it is done.</span>
         {error !== null ? (
           <span className="pnl-neg" role="alert">
             {error}
@@ -442,20 +442,20 @@ export function DisarmDialog({ loop, onClose }: { loop: string; onClose: () => v
       onClose={onClose}
       foot={
         <>
-          <button type="button" className="arm-btn" onClick={onClose}>
+          <button type="button" className="live-arm-btn" onClick={onClose}>
             No, keep it armed
           </button>
-          <button type="button" className="arm-btn arm-btn-stop" disabled={busy} onClick={() => void go()}>
+          <button type="button" className="live-arm-btn live-arm-btn-stop" disabled={busy} onClick={() => void go()}>
             {busy ? "Switching off…" : "Yes, switch it off"}
           </button>
         </>
       }
     >
-      <p className="arm-fine">
+      <p className="live-arm-fine">
         Open positions stay managed: fills are confirmed, resting stops are watched and the loop settles what it holds, until its own disarm cutoff. A resting entry order is not cancelled; a fill on it is
         still managed, or cancel it at the broker.
       </p>
-      <p className="muted arm-fine">Arming again today needs a fresh confirmation.</p>
+      <p className="muted live-arm-fine">Arming again today needs a fresh confirmation.</p>
       {error !== null ? (
         <span className="pnl-neg" role="alert">
           {error}

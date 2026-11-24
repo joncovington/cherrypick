@@ -115,9 +115,9 @@ describe("the strip's model", () => {
 describe("guard: the switches are absent when live_arming is off", () => {
   const d = payload([loop("meic"), loop("ladder")]);
   it("the cards are exactly as before with no arming state, or with it off", () => {
-    expect(html(d)).not.toContain("arm-strip");
-    expect(html(d, { enabled: false, switches: [], attempts: [] })).not.toContain("arm-strip");
-    expect(html(d, { enabled: false, switches: ON.switches, attempts: [] })).not.toContain("arm-strip");
+    expect(html(d)).not.toContain("live-arm-strip");
+    expect(html(d, { enabled: false, switches: [], attempts: [] })).not.toContain("live-arm-strip");
+    expect(html(d, { enabled: false, switches: ON.switches, attempts: [] })).not.toContain("live-arm-strip");
     expect(armFor(loop("meic"), d, undefined)).toBeUndefined();
     expect(armFor(loop("meic"), d, { enabled: false, switches: ON.switches, attempts: [] })).toBeUndefined();
   });
@@ -125,14 +125,14 @@ describe("guard: the switches are absent when live_arming is off", () => {
     const flies = loop("flies");
     const bwb = loop("bwb");
     const out = html(payload([loop("meic"), loop("ladder"), flies, bwb]), ON);
-    expect(out.match(/arm-strip"|arm-strip /g)?.length).toBe(2);
+    expect(out.match(/live-arm-strip"|live-arm-strip /g)?.length).toBe(2);
     expect(armFor(flies, d, ON)).toBeUndefined();
     expect(armFor(bwb, d, ON)).toBeUndefined();
     expect(armFor(loop("meic", { retired: true }), d, ON)).toBeUndefined();
   });
   it("shows a second login's switch locked, with its blocker, and no way to arm", () => {
     const out = html(payload([loop("meic.margin")]), ON);
-    expect(out).toContain("arm-switch locked");
+    expect(out).toContain("live-arm-switch locked");
     expect(out).toContain("kill criteria not written for this arm");
     expect(out).toContain('aria-disabled="true"');
   });
@@ -190,7 +190,7 @@ describe("the dialog", () => {
 
   it("starts with the confirm button disabled, whatever the last dialog held", () => {
     const out = render(READOUT);
-    expect(out).toMatch(/<button[^>]*class="arm-btn arm-btn-go"[^>]*disabled/);
+    expect(out).toMatch(/<button[^>]*class="live-arm-btn live-arm-btn-go"[^>]*disabled/);
   });
 
   it("holds no disclaimer text of its own", () => {
@@ -223,7 +223,7 @@ describe("guard: a not-ready loop is shown its blockers and no confirmation", ()
     expect(out).toContain("live gate unmet: live.gate0_confirmed");
     expect(out).toContain("not ready · 2 blockers");
     expect(out).not.toContain("<input");
-    expect(out).not.toContain("arm-btn-go");
+    expect(out).not.toContain("live-arm-btn-go");
     expect(out).not.toContain("accept the disclaimer");
   });
 
