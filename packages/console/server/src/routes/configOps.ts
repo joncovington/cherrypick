@@ -6,6 +6,7 @@ import { backtestResultsOn, getFeatures, invalidateFeatures } from "../services/
 import { invalidateAutomationsBuilder } from "../services/automationsBuilderBridge.js";
 import { invalidateAutomationGroups } from "../services/automationsGroupsBridge.js";
 import { readGroupBudgetFor } from "../readers/groupBudget.js";
+import { readLiveArm } from "../readers/liveArm.js";
 import { getPrefs, setPref } from "../store/consoleDb.js";
 
 /**
@@ -22,6 +23,12 @@ import { getPrefs, setPref } from "../store/consoleDb.js";
  *    typed confirmation below — the same shape as the suite's other live rituals, where the
  *    de-risking direction is always the cheap one.
  *
+ *  - **The live arm** (Config > live) is the one guarded live pointer a click may change, through its
+ *    own orchestrator operation (`livearm.py`'s `set_live_arm`), never through the general save, which
+ *    still refuses it. The typed `CHANGE ARM` is checked here and again there; the arm must have a paper
+ *    twin, the loop must be flat and settled, and the change is journaled before the file is touched.
+ *    This package holds none of those rules and arms nothing: a change takes effect at the next arming.
+ *
  * Gating is the mutating-surface posture from `security.ts` (loopback Host, CSRF, JSON) — the same
  * bar the orchestrator's settings server sets. Notably NOT the broker credential scope: that
  * describes what a token may do at the broker, and a config file is not the broker.
@@ -29,6 +36,12 @@ import { getPrefs, setPref } from "../store/consoleDb.js";
 
 /** The literal that must be typed to clear the halt. Checked server-side, not just in the UI. */
 export const RESUME_CONFIRMATION = "RESUME LIVE";
+
+/** The literal that must be typed to change the arm MEIC's live loop runs. Checked here and again by the orchestrator. */
+export const CHANGE_ARM_CONFIRMATION = "CHANGE ARM";
+
+/** An arm's name as the registry spells one; checked by shape here, judged by the orchestrator. */
+export const ARM_NAME = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$/;
 
 const MAX_PREF_KEY_CHARS = 64;
 const MAX_PREF_VALUE_CHARS = 16_384;
@@ -48,6 +61,7 @@ function sendBridgeFailure(reply: FastifyReply, result: BridgeResult): BridgeOk 
     code: result.code,
     ...(result.pointer !== undefined ? { pointer: result.pointer } : {}),
     ...(result.issues !== undefined ? { issues: result.issues } : {}),
+    ...(result.blockers !== undefined ? { blockers: result.blockers } : {}),
   });
   return null;
 }
@@ -129,6 +143,37 @@ export function registerConfigRoutes(app: FastifyInstance, config: ConsoleConfig
     invalidateFeatures();
     app.log.info(`halt flag ${present ? "set" : "cleared"} from the console config page`);
     return readLockStatus(config);
+  });
+
+  /** Which arm each live loop runs, and what may change it (readers/liveArm.ts). A subprocess call, so not polled. */
+  app.get("/api/config/live-arm", async () => readLiveArm(config));
+
+  /**
+   * Change the arm MEIC's live loop runs. The orchestrator's `set_live_arm` judges everything (the typed
+   * phrase, an arm with a paper twin, flat and settled, the journal, only that key changing); this route
+   * checks the shapes and the literal phrase, passes the refusal through with its meaning, and answers
+   * with the page's own read after the change.
+   */
+  app.post("/api/config/live-arm", async (req, reply) => {
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const arm = body["arm"];
+    if (typeof arm !== "string" || !ARM_NAME.test(arm)) {
+      return reply.code(400).send({ error: "arm (an arm's name) required", code: "bad_request" });
+    }
+    if (body["confirm"] !== CHANGE_ARM_CONFIRMATION) {
+      return reply.code(400).send({ error: `changing the live arm needs confirm: "${CHANGE_ARM_CONFIRMATION}"`, code: "confirm_required" });
+    }
+    const result = sendBridgeFailure(reply, await callConfigCli({ op: "set_live_arm", module: "meic", arm, confirm: CHANGE_ARM_CONFIRMATION }));
+    if (result === null) return reply;
+    app.log.info(`live arm ${typeof result["changed"] === "boolean" && result["changed"] ? "changed" : "unchanged"}: ${arm}, from the console config page`);
+    return {
+      ok: true,
+      changed: result["changed"] === true,
+      from: typeof result["from"] === "string" ? result["from"] : null,
+      arm,
+      note: typeof result["note"] === "string" ? result["note"] : null,
+      payload: await readLiveArm(config),
+    };
   });
 
   /**

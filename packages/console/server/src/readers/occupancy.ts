@@ -1,7 +1,7 @@
 import path from "node:path";
 import type { TradingMode } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
-import { withReadOnlyDb, num, str, armColumnOf } from "./db.js";
+import { withReadOnlyDb, num, str, icArm } from "./db.js";
 import { NO_ATTEMPTS_SCOPE, type AttemptsScope } from "./attempts.js";
 
 /**
@@ -103,7 +103,7 @@ export function readOccupancy(
         : db.prepare<[], { d: string }>("SELECT MAX(trade_date) AS d FROM ic_trades").get();
       const tradeDate = dayRow?.d ?? null;
       if (tradeDate === null) return empty;
-      const armColumn = armColumnOf(db, "ic_trades"); // `risk_profile` until meic's column moves
+      const armColumn = icArm(db); // the registry arm on the live ledger, `arm` or `risk_profile` on paper
       // The page's arm/symbol narrowing, so the map shows what the scoped arm actually holds.
       const clauses = ["trade_date = ?", "status = 'open'"];
       const params: string[] = [tradeDate];

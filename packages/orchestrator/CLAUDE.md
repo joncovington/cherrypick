@@ -7,8 +7,8 @@ Guidance for Claude Code when working in the orchestrator package.
 The **orchestrator** drives the module packages and the standalone streamer (`../streamer`) **in
 place**, by subprocess with paths from config, for unattended **paper** data collection, with a
 watchdog and notifications so a walk-away user is told (or at least has it logged) whenever something
-stalls. It never edits a module's internals and **never places live trades** — its sole live-config
-action is onboarding (`connect`/`account`, below). It does run a module's OWN live loop as a job while
+stalls. It never edits a module's internals and **never places live trades** — its live-config
+actions are onboarding (`connect`/`account`, below) and choosing the arm MEIC's live loop runs (`livearm.py`, below). It does run a module's OWN live loop as a job while
 a human has armed that module for the day, and a few live safeguards (see *Paper ↔ live isolation*).
 
 Suite-wide human docs start at the root [documentation index](../../docs/README.md).
@@ -399,7 +399,21 @@ filename; override with `paper.sla_state_prefix`.
   new vendor work, and showing the vendor's results until the purge date) and `live`, each module's live master
   switch read as `liveops` reads it. An unreadable switch is omitted, never `false`, so the console
   fails open.
-- **Onboarding (`connect`/`account`) is the one live-config action.** `orchestrator/connect.py` and
+- **Choosing the live arm (`livearm.py`) is the one exception to the guarded pointers, for `/live/arm`
+  alone.** `configedit.GUARDED` refuses `/live/arm` in both directions in the general save, and still
+  does. `configcli`'s `set_live_arm` (and the read-only `live_arm_options`) is its own door: the typed
+  phrase `CHANGE ARM`, checked here; an arm that is in the machine's registry, is not a follower or a
+  twin and has a plain paper twin (`shadow_of`), since live is read per arm and an arm with no twin is
+  measured against nothing; only when the module's own `live_loop --status` says flat and settled (not
+  armed today, no position, no working order, settled, nothing overdue, held or orphaned, ledger
+  readable; a status it cannot read refuses); journaled first through `core.live.record_event`, a
+  journal that cannot be written stopping it; and only that key changes (the new text must parse to the
+  old document with that one value moved, or nothing is written). It takes effect at the next arming and
+  arms nothing. MEIC's main login only: another login's arm sits under the guarded `/live_accounts`,
+  and the ladder's status does not say whether it holds lots. `tests/test_livearm.py` shows each refusal
+  leaves the file byte-identical, and the only-that-key check was shown to fire. Widening it (another
+  module, login or pointer) is a reviewed change, never a flag.
+- **Onboarding (`connect`/`account`) is the other live-config action.** `orchestrator/connect.py` and
   `accounts.py` run the module's *own* hidden-input credential tool (the orchestrator never sees
   `client_secret`/`refresh_token`) and **select the live account**, writing `ACCOUNT_NUMBER` to the
   module's keyring via `cherrypick.core.auth.CredentialStore` (service from `keyring_service`). It

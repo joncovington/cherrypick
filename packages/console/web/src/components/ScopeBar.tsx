@@ -13,7 +13,8 @@ export function ScopeSelect({
   value: string | null;
   options: string[] | undefined;
   onChange: (v: string | null) => void;
-  allLabel?: string;
+  /** null drops the all option: the page then always reads one value (live MEIC, read per arm and symbol). */
+  allLabel?: string | null;
 }) {
   return (
     <select
@@ -23,7 +24,7 @@ export function ScopeSelect({
       aria-label={label}
       title={label}
     >
-      <option value="">{allLabel}</option>
+      {allLabel !== null && <option value="">{allLabel}</option>}
       {options?.map((o) => (
         <option key={o} value={o}>
           {o}

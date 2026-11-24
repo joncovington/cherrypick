@@ -397,6 +397,11 @@ def meic_twins(registry: Path | None = None) -> dict[str, str]:
         profiles = json.loads(path.read_text(encoding="utf-8")).get("profiles") or {}
     except (OSError, ValueError, AttributeError):
         return {}
+    return twins_of(profiles)
+
+
+def twins_of(profiles: dict[str, Any]) -> dict[str, str]:
+    """`meic_twins` over profiles already in hand: {arm: twin}, plain `shadow_of` profiles only."""
     out: dict[str, str] = {}
     for name, p in profiles.items():
         if name.startswith("_") or not isinstance(p, dict) or not p.get("shadow_of"):

@@ -22,11 +22,11 @@ Packages: `packages/orchestrator`, `packages/meic`, `packages/earnings`, `packag
 - **orchestrator** drives modules by subprocess, never by import. It places no order and never flips
   a live gate. It runs a module's live loop only while that day's human-written arm record is valid
   (MEIC's also runs unarmed, to manage what its book holds; only entries need the arm), settles
-  overdue live sessions through the module's own command, and its one live-config action is
-  onboarding/account selection.
+  overdue live sessions through the module's own command, and its live-config actions are two: onboarding/account selection and choosing which arm MEIC's live loop runs (`livearm.py`, only when flat and settled, with a typed phrase).
+  Neither arms anything or changes a gate.
 - **streamer** is the only writer of the stream cache. Modules declare symbols in
   `state/stream_requests/`.
-- **console** holds no path that touches an order. Its writes are the Config page and the Builder's
+- **console** holds no path that touches an order. Its writes are the Config page (its halt toggle, its settings, and the arm each live loop runs through its own orchestrator operation) and the Builder's
   save of one automation (always off), both through the orchestrator's config editor, and the
   Builder's backtest: one explore run of one saved automation, queued on the research queue by
   the orchestrator, only where our data covers it (our own stores first, the vendor's only while

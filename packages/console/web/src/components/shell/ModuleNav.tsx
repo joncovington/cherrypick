@@ -10,6 +10,7 @@ import { useLiveLoopsInUse } from "../../lib/useLiveToday";
 import { useArmingPending } from "../../lib/liveArming";
 import { ExperimentalChip } from "../ExperimentalChip";
 import { useDirtyCount } from "../../pages/Config/stagedStore";
+import { useLockStatus } from "../../pages/Config/useConfigModel";
 import { RAIL_PREF, useCloseRailOnNavigate, useRailExpanded } from "./railState";
 import { NavIcon } from "./navIcons";
 
@@ -18,6 +19,13 @@ export { RAIL_PREF };
 /** The amber mark on the Live link while an arm is in progress. */
 function ArmingDot() {
   return <span className="nav-dot nav-dot-arming" role="img" aria-label="arming in progress" title="arming in progress" />;
+}
+
+/** The red dot on the Live link while the suite halt flag is up, so a halt shows from every page. It is
+ *  named (live entries halted) because the colour alone says nothing to a screen reader. */
+export function HaltDot({ halted }: { halted: boolean }) {
+  if (!halted) return null;
+  return <span className="nav-halt-dot" role="img" aria-label="live entries halted" title="live entries halted" />;
 }
 
 /** A rail link's tooltip with its keyboard shortcut (`lib/keyboardNav.ts`): `g` then the key for a
@@ -65,6 +73,8 @@ export function ModuleNav({ module, slide }: { module: ModuleId | null; slide: s
   // An arm the server is still running (Live's switches): an amber dot on the Live link, which stays
   // until it finishes. Its own element, so it sits beside any other state mark the link carries.
   const arming = useArmingPending();
+  // The halt flag, from the Config page's own lock query (same key, so one poller serves both).
+  const halted = useLockStatus().data?.halted === true;
   // An off module, the advisor and its tabs, and the technicals chart leave the rail when the suite has
   // turned them off (`visibility.ts`); Config keeps every toggle, so it is never filtered.
   const features = useFeatures();
@@ -109,6 +119,7 @@ export function ModuleNav({ module, slide }: { module: ModuleId | null; slide: s
         <ExperimentalChip id={l.to.slice(1)} />
         {l.to === "/live" && arming ? <ArmingDot /> : null}
         {extra}
+        {l.to === "/live" && <HaltDot halted={halted} />}
       </>
     );
     if (module === null || l.to.slice(1) !== module) {
@@ -216,6 +227,7 @@ export function ModuleNav({ module, slide }: { module: ModuleId | null; slide: s
             <NavIcon to={l.to} />
             {l.to === "/config" && dirty > 0 && <span className="nav-dot" />}
             {l.to === "/live" && arming && <ArmingDot />}
+            {l.to === "/live" && <HaltDot halted={halted} />}
             {isExperimental(l.to.slice(1)) && <span className="mf-nav-ic-exp" />}
             {l.to.slice(1) === module && <span className="mf-nav-ic-on" />}
           </NavLink>

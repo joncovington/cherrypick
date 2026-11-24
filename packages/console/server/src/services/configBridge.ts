@@ -16,7 +16,21 @@ import { pythonArgv } from "./moduleCli.js";
  * Python side and Node asks it rather than reproducing it.
  */
 
-export type BridgeCode = "guarded" | "conflict" | "invalid" | "not_found" | "bad_request" | "unavailable";
+export type BridgeCode =
+  | "guarded"
+  | "conflict"
+  | "invalid"
+  | "not_found"
+  | "bad_request"
+  | "unavailable"
+  // `set_live_arm`'s own refusals (orchestrator `livearm.py`): each says a different thing to a person.
+  | "confirm_required"
+  | "unsupported"
+  | "unknown_arm"
+  | "no_twin"
+  | "not_flat"
+  | "status_unreadable"
+  | "journal_unwritable";
 
 export interface BridgeFailure {
   ok: false;
@@ -25,6 +39,8 @@ export interface BridgeFailure {
   /** Present on a guarded/not-found refusal: the pointer that was refused. */
   pointer?: string;
   issues?: Array<[string, string]>;
+  /** Present on `not_flat`: why the loop cannot change its arm now, in words. */
+  blockers?: string[];
 }
 
 export type BridgeOk = { ok: true } & Record<string, unknown>;
@@ -36,6 +52,8 @@ export type BridgeRequest =
   | { op: "save"; target: string; expected_mtime?: number | null; edits: Array<{ pointer: string; value: unknown }> }
   | { op: "halt_status" }
   | { op: "set_halt"; present: boolean }
+  | { op: "live_arm_options" }
+  | { op: "set_live_arm"; module: "meic"; arm: string; confirm: string }
   | { op: "features" }
   | { op: "automation_backtest"; name: string; window?: string }
   | { op: "automation_runs"; name: string }
@@ -139,6 +157,15 @@ export function statusForCode(code: BridgeCode): number {
       return 404;
     case "unavailable":
       return 502;
+    case "not_flat":
+      return 409;
+    case "unknown_arm":
+    case "no_twin":
+      return 422;
+    case "status_unreadable":
+      return 503;
+    case "journal_unwritable":
+      return 500;
     default:
       return 400;
   }

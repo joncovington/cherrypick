@@ -41,8 +41,15 @@ Live trading is behind several separate locks. All of them must be open at once.
 6. **The halt flag.** While it is up, no new live entry is placed, whatever else is open.
 
 The settings editor and the console's Config page cannot change the guarded live fields (the master
-switch, `live.symbol`, `live.gate0_confirmed`, `live.arm`, the caps and the breakers). You edit them by
+switch, `live.symbol`, `live.gate0_confirmed`, the caps and the breakers). You edit them by
 hand in the file, on purpose: they should not move by accident.
+
+The one exception is `live.arm`, the arm MEIC's live loop runs. The general editor still refuses it. It
+has its own guarded operation (`set_live_arm`, MEIC's main login only), which changes that one key and
+nothing else, and only when you type `CHANGE ARM`, the arm is in the registry and has a paper twin, and
+the loop is flat and settled: not armed today, no open condor, no working order, nothing unsettled.
+The change is journaled in the arm journal and takes effect at the next arming; it arms nothing. The
+console offers it on Config's `live` tab; the ladder's arm and another login's are still edited by hand.
 
 Other limits sit inside the live block. `live.max_structures_per_day` caps new condors a day (1 if you
 set nothing). `live.max_open_bp_dollars` caps the buying power the open condors may use.

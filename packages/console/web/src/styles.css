@@ -2282,6 +2282,24 @@ select.text-input {
   flex-shrink: 0;
 }
 
+/* The Live link's halted dot: the design's 8px red with a soft ring. Pushed to the row's end when the
+   rail is open, a badge on the icon's corner on the collapsed strip. */
+.nav-halt-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-left: auto;
+  flex-shrink: 0;
+  background: var(--accent-live);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-live) 22%, transparent);
+}
+.mf-nav-ic-wrap .nav-halt-dot {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  margin: 0;
+}
+
 .lock-hero {
   border: 1px solid var(--border);
   border-left: 3px solid var(--pos);
@@ -2385,6 +2403,118 @@ select.text-input {
   margin: 0.6rem 0 0;
   color: var(--neg);
   font-size: 12px;
+}
+
+/* Config > live: one row per live loop, the arm it runs and the choice. Rows wrap, so a phone stacks them. */
+.la-rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.la-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 12px 20px;
+  padding: 14px 0;
+  border-top: 1px solid var(--border);
+}
+
+.la-row:first-child {
+  border-top: none;
+}
+
+.la-name {
+  flex: 1 1 170px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.la-sub {
+  font-size: 12px;
+}
+
+.la-pick {
+  flex: 2 1 280px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.la-select {
+  min-height: 44px;
+  max-width: 340px;
+  width: 100%;
+}
+
+.la-note {
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.la-state {
+  flex: 1 1 190px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.la-blockers {
+  margin: 0;
+  padding-left: 1.1rem;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.la-confirm {
+  flex: 1 1 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  border-radius: 8px;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+}
+
+.la-confirm p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  max-width: 720px;
+}
+
+.la-changes {
+  margin: 0;
+  padding-left: 1.1rem;
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.la-confirm-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.la-confirm-row .fine-label {
+  flex: 1 1 100%;
+}
+
+.la-phrase {
+  min-height: 44px;
+  width: 240px;
+  max-width: 100%;
+  font-family: var(--num-face);
+}
+
+.la-confirm-row .btn {
+  min-height: 44px;
 }
 
 .lock-gates {

@@ -185,8 +185,10 @@ the rail once its module's live switch is off and nothing is open, working or ow
   own measure and is never added up across loops.
 - **The loss breaker** compares the day's loss to a limit; a tripped breaker stops new entries. `no
   limit` means none is configured, which is not the same as clear. MEIC's figure is gross.
-- **The halt flag** is suite-wide. When it is up the header says `HALTED`, in red. It blocks new
-  entries on every loop; open positions are still managed and closed. Clearing it arms nothing.
+- **The halt flag** is suite-wide. When it is up the header says `HALTED`, in red, and the rail shows a
+  small red dot on the Live link (on the collapsed icon strip too), so a halt is visible from every
+  page. It blocks new entries on every loop; open positions are still managed and closed. Clearing it
+  arms nothing.
 - **The alert-daemon chip** is the flies order-alert daemon's health: `alert daemon ok`, `stale`,
   `down` or `off`. Amber means fills are noticed later, by the loop's own poll, not that anything is
   lost. `off` is normal when nothing is armed, and with flies retired it is the usual state.

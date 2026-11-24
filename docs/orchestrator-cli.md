@@ -3,7 +3,7 @@
 Every command the orchestrator exposes. Run them from `packages/orchestrator` as `python run.py <cmd>`;
 a pip install (`pip install -e ".[dev]"`) also exposes them as `cherrypick <cmd>` / `python -m cherrypick`.
 
-All commands are **read-only or paper-only** except the narrow onboarding pair (`connect`/`account`) and
+All commands are **read-only or paper-only** except the narrow onboarding pair (`connect`/`account`), the one live-arm choice (`configcli`'s `set_live_arm`, MEIC only, never arming) and
 `settings`, which write *configuration* (never an order). See
 [guardrails-and-modes.md](guardrails-and-modes.md).
 (The modules' own live-trading loops are separate programs, armed per day with `/live-meic-start`,

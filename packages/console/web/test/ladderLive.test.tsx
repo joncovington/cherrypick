@@ -12,12 +12,26 @@ vi.mock("../src/lib/prefs", () => ({
   getPref: () => undefined,
 }));
 
-const { LadderLive, LiveModeBadge, modeWords } = await import("../src/pages/Ladder/LadderLive");
+const { LadderLiveToday, LadderLiveLots, LadderNoLiveRead, LiveModeBadge, modeWords } = await import("../src/pages/Ladder/LadderLive");
+const { LadderLiveHistory } = await import("../src/pages/Ladder/LadderLiveHistory");
+const { LadderLightbox, liveModeSlides } = await import("../src/lightbox/manifests/LadderLightbox");
+const { Navigate } = await import("react-router-dom");
 const { ladderChains } = await import("../src/pages/Live/LiveTodayOrders");
-const { LADDER_SLIDES, NAV_DECL } = await import("../src/lightbox/navGroups");
+const { LADDER_SLIDES, NAV_DECL, resolveSlide } = await import("../src/lightbox/navGroups");
+
+/** The three tabs that have a live read, one after another. */
+function LadderLive({ live, status }: { live: LadderLivePayload | undefined; status: LadderLiveStatus | undefined }) {
+  return (
+    <>
+      <LadderLiveToday live={live} status={status} />
+      <LadderLiveLots live={live} status={status} />
+      <LadderLiveHistory live={live} status={status} />
+    </>
+  );
+}
 
 /**
- * The ladder's Live tab. What is pinned: LIVE and dry-run are told apart and never merged; an absent
+ * The ladder's Live mode (today, open lots, history). What is pinned: LIVE and dry-run are told apart and never merged; an absent
  * ledger is an honest empty state; a dead status is not a "ready" or a "not ready"; the money of a sold
  * lot adds up with its fee source beside it; and no account shows unmasked. Every number is invented.
  */
@@ -127,9 +141,9 @@ describe("LIVE and dry-run are told apart", () => {
     expect(out.toLowerCase()).not.toContain("paper");
   });
 
-  it("names the one command that arms, and carries no control", () => {
+  it("says where arming is done, and carries no control", () => {
     const out = html(<LadderLive live={payload()} status={status()} />);
-    expect(out).toContain("/live-ladder-start");
+    expect(out).toContain("Arm it for today from the Live page. Nothing here arms.");
     // The only buttons are the page chrome every card has: collapse, the help "?", the columns menu, a sort header.
     const chrome = ["btn btn-quiet collapse-toggle collapse-toggle-open", "btn btn-quiet collapse-toggle", "help-q", "mode-btn", "th-sort"];
     const classes = [...out.matchAll(/<button[^>]*class="([^"]*)"/g)].map((m) => m[1]!.trim());
@@ -176,10 +190,12 @@ describe("the state, the gates and the checks", () => {
 describe("the live ledger", () => {
   it("is an honest empty state, not an error, where there is none", () => {
     const out = html(<LadderLive live={payload({ ledger: "absent", openLots: [], closedLots: [], orders: [], journal: [], lastIteration: null })} status={status()} />);
-    expect(out).toContain("no live ledger");
-    expect(out).toContain("live_trades.db");
+    expect(out).toContain("No live ledger on this machine yet.");
     expect(out).not.toContain("could not be read");
     expect(out).not.toContain("open live lots");
+    expect(out).not.toContain("sold live lots");
+    expect(out).not.toContain("<h2>journal</h2>");
+    expect(out).not.toContain("<h2>orders</h2>");
   });
 
   it("says when the ledger could not be read", () => {
@@ -189,9 +205,12 @@ describe("the live ledger", () => {
 
   it("shows a dry-run machine's empty book as empty", () => {
     const out = html(<LadderLive live={payload({ openLots: [], closedLots: [], orders: [] })} status={status()} />);
-    expect(out).toContain("no live lot is held");
-    expect(out).toContain("no live lot has sold yet");
-    expect(out).toContain("no order recorded");
+    expect(out).toContain("No live lot is held.");
+    expect(out).toContain("No live lot has sold yet.");
+    // A card with nothing in it is left out, not drawn empty.
+    expect(out).not.toContain("open live lots");
+    expect(out).not.toContain("sold live lots");
+    expect(out).not.toContain("no order recorded");
   });
 
   it("shows open lots with cost, target, age, the hospital flag, the resting sell and its fee source", () => {
@@ -202,6 +221,9 @@ describe("the live ledger", () => {
     expect(out).toContain("past 18 d");
     expect(out).toContain("working · 52.00 · GTC_EXT");
     expect(out).toContain("modeled (the schedule)");
+    // The live ledger keeps no mark on a held lot: no bid, no value.
+    expect(out).not.toContain("value at the bid");
+    expect(out).not.toMatch(/<th[^>]*>bid/);
   });
 
   it("shows a sold lot adding up, with its fees' source in their own column", () => {
@@ -211,8 +233,7 @@ describe("the live ledger", () => {
     expect(out).toContain("$38.40"); // gross
     expect(out).toContain("$0.07"); // fees
     expect(out).toContain("$38.33"); // net
-    expect(out).toContain("fees from");
-    expect(out).toContain(">broker<");
+    expect(out).not.toContain("fees from"); // the paper history's own columns, with the source counted in the footer
     expect(out).toContain("fees: 0 modeled, 1 from the broker"); // the footer counts the sources
   });
 
@@ -224,12 +245,22 @@ describe("the live ledger", () => {
 });
 
 describe("the ladder's place on the Live page and in the tabs", () => {
-  it("has a live tab in the nav, beside today", () => {
-    expect(LADDER_SLIDES.map((s) => s.id)).toContain("live");
+  it("has no live tab in the nav: live is a mode of the other tabs", () => {
+    expect(LADDER_SLIDES.map((s) => s.id)).not.toContain("live");
     const g = NAV_DECL["ladder"];
-    expect(g.groups.find((x) => x.label === "today")!.ids).toEqual(["summary", "live"]);
+    expect(g.groups.find((x) => x.label === "today")!.ids).toEqual(["summary"]);
+    expect(g.simple).not.toContain("live");
     const grouped = g.groups.flatMap((x) => x.ids);
     expect(new Set(grouped)).toEqual(new Set(LADDER_SLIDES.map((s) => s.id)));
+  });
+
+  it("sends /ladder/live to today in live mode", () => {
+    const el = LadderLightbox({ slide: "live" }) as React.ReactElement<{ to: string; replace?: boolean }>;
+    expect(el.type).toBe(Navigate);
+    expect(el.props.to).toBe("/ladder/summary?mode=live");
+    expect(el.props.replace).toBe(true);
+    // A bare old id with no query still resolves to today, as every renamed tab does.
+    expect(resolveSlide("ladder", "live", LADDER_SLIDES)).toBe("summary");
   });
 
   it("draws the loop's day as chains: a held lot with its resting sell, a sold lot with its net", () => {
@@ -242,5 +273,51 @@ describe("the ladder's place on the Live page and in the tabs", () => {
     expect(chains[0]!.steps.map((s) => s.role)).toEqual(["open", "working"]);
     expect(chains[2]!.steps.map((s) => s.cash)).toEqual([-960, 998.4]);
     expect(chains[0]!.netLabel).toBe("held, unmarked");
+  });
+});
+
+describe("the tabs with no live read", () => {
+  const tab = (id: string) => ({ id, label: id, render: () => <p>PAPER FIGURES</p> });
+  const slides = ["summary", "positions", "history", "arms", "decisions", "performance", "costs", "changes", "guide"].map(tab);
+
+  it("shows one line and a link to today, never the paper figures", () => {
+    const shown = liveModeSlides(slides);
+    for (const id of ["arms", "decisions", "performance", "costs", "changes"]) {
+      const out = html(shown.find((s) => s.id === id)!.render());
+      expect(out, id).toContain("No live read for this tab.");
+      expect(out, id).toContain('href="/ladder/summary?mode=live"');
+      expect(out, id).not.toContain("PAPER FIGURES");
+    }
+  });
+
+  it("leaves the tabs that have a live read, and help, as they are", () => {
+    const shown = liveModeSlides(slides);
+    for (const id of ["summary", "positions", "history", "guide"]) expect(html(shown.find((s) => s.id === id)!.render()), id).toContain("PAPER FIGURES");
+  });
+
+  it("is one line", () => {
+    const out = html(<LadderNoLiveRead />);
+    expect(out).toContain("No live read for this tab.");
+    expect(out).not.toContain("<table");
+  });
+});
+
+describe("a card with no data is left out", () => {
+  it("draws no gates, checks, journal or orders card when the module reports none", () => {
+    const bare = status({ gates: [], checks: null });
+    const out = html(<LadderLiveToday live={payload({ journal: [], orders: [] })} status={bare} />);
+    expect(out).not.toContain("the nine gates");
+    expect(out).not.toContain("positions against the ledger");
+    expect(out).not.toContain("standing dry-run intents");
+    expect(out).not.toContain("<h2>journal</h2>");
+    expect(out).not.toContain("<h2>orders</h2>");
+    expect(out).toContain("the loop");
+  });
+
+  it("puts the journal and the orders side by side when both have rows", () => {
+    const out = html(<LadderLiveToday live={payload()} status={status()} />);
+    expect(out).toContain("<h2>journal</h2>");
+    expect(out).toContain("<h2>orders</h2>");
+    expect(out.match(/lv-6/g)!.length).toBeGreaterThanOrEqual(2);
   });
 });

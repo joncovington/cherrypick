@@ -23,7 +23,17 @@ import json
 import sys
 from typing import Any
 
-from . import automationedit, automationrun, configedit, fullsetadd, gridqueue, groupedit, ideaqueue, liveops
+from . import (
+    automationedit,
+    automationrun,
+    configedit,
+    fullsetadd,
+    gridqueue,
+    groupedit,
+    ideaqueue,
+    livearm,
+    liveops,
+)
 from . import config as cfgmod
 
 
@@ -197,6 +207,14 @@ def handle(req: dict[str, Any]) -> dict[str, Any]:
     if op == "automation_grid_holdout":
         # A declared setting's one held-out test, logged on its result. No config write.
         return gridqueue.holdout(cfg, req)
+    if op == "live_arm_options":
+        # Which arm MEIC's live loop runs, the arms it may run (each with its paper twin) and why a change
+        # is refused right now. Read-only: the module's own `--status`, files only.
+        return livearm.options(cfg)
+    if op == "set_live_arm":
+        # The one door to `live.arm` (the general save refuses it): typed phrase, an arm with a paper twin,
+        # only when flat and settled, journaled first, only that key changes. Arms nothing.
+        return livearm.set_live_arm(cfg, req)
     return _err(f"unknown op: {op!r}")
 
 
