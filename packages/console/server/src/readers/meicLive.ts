@@ -230,6 +230,27 @@ function col(db: Database.Database, name: string): string {
   return hasColumn(db, "ic_trades", name) ? name : "NULL";
 }
 
+/**
+ * The registry arm a live IC was entered under, as a SQL expression over `ic_trades`.
+ *
+ * The live ledger tags every trade `arm = 'live'` (the account), not the strategy arm, so reading that
+ * column would name every trade "live". The strategy arm (`live.arm`, e.g. `pm-200`) is on the trade's
+ * FILLED entry attempt, joined by order id. NULL where the ledger has no attempts table or no such
+ * column (an older ledger), or the trade has no filled attempt (it predates attempts being journaled):
+ * that trade's arm is not recorded, and the page says so rather than guessing.
+ */
+export function registryArm(db: Database.Database): string {
+  const ok =
+    hasTable(db, "entry_attempts") &&
+    hasColumn(db, "entry_attempts", "ic_order_id") &&
+    hasColumn(db, "entry_attempts", "arm") &&
+    hasColumn(db, "entry_attempts", "outcome") &&
+    hasColumn(db, "ic_trades", "ic_order_id");
+  return ok
+    ? "(SELECT a.arm FROM entry_attempts a WHERE a.ic_order_id = ic_trades.ic_order_id AND a.outcome = 'filled' ORDER BY a.id LIMIT 1)"
+    : "NULL";
+}
+
 function inList(values: readonly string[]): string {
   return values.map((v) => `'${v}'`).join(", ");
 }
@@ -259,7 +280,7 @@ function readLedger(db: Database.Database, session: string): Ledger {
 
   const open = db
     .prepare<[], Record<string, unknown>>(
-      `SELECT id, trade_date, entry_time, symbol, ${col(db, "arm")} AS arm, status,
+      `SELECT id, trade_date, entry_time, symbol, ${registryArm(db)} AS arm, status,
               put_strike, call_strike, wing_width, quantity, net_credit, put_credit, call_credit,
               pnl, fees, exit_reason, put_stop_cost, call_stop_cost,
               ${col(db, "put_stop_fill_status")} AS put_stop_fill_status,
@@ -308,7 +329,7 @@ function readLedger(db: Database.Database, session: string): Ledger {
 
   const history = db
     .prepare<[], Record<string, unknown>>(
-      `SELECT id, trade_date, entry_time, symbol, ${col(db, "arm")} AS arm, put_strike, call_strike, wing_width,
+      `SELECT id, trade_date, entry_time, symbol, ${registryArm(db)} AS arm, put_strike, call_strike, wing_width,
               net_credit, put_credit, call_credit, quantity, status, pnl, fees, exit_reason, iv_rank_at_entry,
               put_stop_cost, call_stop_cost, ${money}
          FROM ic_trades WHERE status IN (${inList(RESOLVED_STATUSES)}) ORDER BY trade_date DESC, id DESC`,

@@ -262,7 +262,7 @@ describe("the loop cards and their detail", () => {
       ],
     });
     const html = render(payload({ loops: [meic], hand: undefined })).replace(/<!-- -->/g, "");
-    expect(html).toContain("top level · XSP");
+    expect(html).toContain("arm not recorded · XSP");
     expect(html).toContain("pm-200 · XSP");
     expect(html).toContain("pm-200 · SPX");
     // A pair with unrecorded fees reads n/r, never a partial figure; one with nothing resolved reads a dash.

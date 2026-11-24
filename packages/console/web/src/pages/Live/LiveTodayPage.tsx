@@ -278,9 +278,9 @@ function LoopFields({ l, cols }: { l: LiveTodayLoop; cols: Column<LiveTodayLoop>
   );
 }
 
-/** An arm as the page names it: the registry arm, or the top level where the loop's `live.arm` is unset. */
+/** An arm as the page names it: the registry arm, or "arm not recorded" where the ledger has none. */
 export function armName(arm: string | null): string {
-  return arm ?? "top level";
+  return arm ?? "arm not recorded";
 }
 
 /** A pair's net today: n/r where any of its rows never recorded fees, never a partial sum. */
