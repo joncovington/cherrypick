@@ -13,6 +13,8 @@ from pathlib import Path
 
 import pytest
 
+from cherrypick.backtest.study.inputs import Undeclared
+
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 _spec = importlib.util.spec_from_file_location(
     "index_put_weekly_item57", SCRIPTS / "index_put_weekly_item57.py"
@@ -303,3 +305,82 @@ def test_a_weekly_is_a_cycle_in_its_own_right():
     per_name = {"SPXW": {"2026-10-02": 4.0}, "SPY": {"2026-10-02": 6.0, "2026-10-09": 1.0}}
     assert i46.group_cycle_means(per_name, s57.MEMBERS) == {"2026-10-02": 5.0, "2026-10-09": 1.0}
     assert timedelta(days=7) == date(2026, 10, 9) - date(2026, 10, 2)
+
+
+# ------------------------------------------------------------------------------------------------
+# The declared inputs (#1439): a synthetic store built from the fetch's own DDL.
+
+
+def _store(held: dict[str, list[str]], expiry: date):
+    import sqlite3
+
+    from cherrypick.backtest import chainfetch
+
+    conn = sqlite3.connect(":memory:")
+    conn.executescript(chainfetch.SCHEMA)
+    for sym, sessions in held.items():
+        for s in sessions:
+            conn.executemany(
+                "INSERT INTO eod_chain_quotes (symbol, session, expiration, strike, right, bid, ask) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                [(sym, s, expiry.isoformat(), 100.0, "CALL", 2.0, 2.2),
+                 (sym, s, expiry.isoformat(), 100.0, "PUT", 2.0, 2.2)],
+            )  # fmt: skip
+        req = s57.path_request(sym, expiry)
+        conn.execute(
+            "INSERT INTO eod_chain_paths VALUES (?, ?, ?, ?, 'complete', ?, ?, NULL, 0)",
+            (sym, req["expiration"], req["start"], req["through"], len(sessions), 2 * len(sessions)),
+        )
+    return conn
+
+
+def _inputs(tmp_path, expiry: date, names=None):
+    import json
+
+    from cherrypick.backtest.study.inputs import Inputs
+
+    reqs = [s57.path_request(n, expiry) for n in (names if names is not None else s57.MEMBERS)]
+    p = tmp_path / "path_requests.json"
+    p.write_text(json.dumps({"requests": reqs}), encoding="utf-8")
+    return Inputs(p)
+
+
+def test_the_study_reads_only_the_declared_sessions_and_fingerprints_them(tmp_path):
+    e = date(2026, 10, 9)
+    # 2026-09-01 is before the requested start (10 days before the expiry): another study's session.
+    conn = _store({"SPY": ["2026-09-01", "2026-10-02", "2026-10-09"]}, e)
+    inputs = _inputs(tmp_path, e)
+    sessions, fwds = s57._sessions_for(inputs, conn, "SPY", e)
+    assert sorted(sessions) == [date(2026, 10, 2), date(2026, 10, 9)]
+    assert fwds[date(2026, 10, 2)] == 100.0
+    read = inputs.fingerprint(conn)
+    assert read["paths"] == len(s57.MEMBERS) and read["requests"] == "path_requests.json"
+    assert read["complete"] == 1 and read["sessions"] == 3  # the stored path record, not the rows read
+    conn.execute("UPDATE eod_chain_paths SET sessions = 9")
+    assert inputs.fingerprint(conn)["sha256"] != read["sha256"]
+
+
+def test_collect_returns_the_fingerprint_for_the_result(tmp_path, monkeypatch):
+    e = date(2026, 10, 9)
+    conn = _store({"SPY": ["2026-10-02", "2026-10-09"]}, e)
+    monkeypatch.setattr(i46, "_chain_store", lambda: conn)
+    inputs = _inputs(tmp_path, e)
+    _, _, read = s57.collect(inputs, [e], (s57.LEG,))
+    assert read["paths"] == len(s57.MEMBERS) and read["sessions"] == 2 and read["complete"] == 1
+
+
+def test_an_undeclared_path_is_refused_not_read(tmp_path):
+    e = date(2026, 10, 9)
+    conn = _store({"SPY": ["2026-10-02", "2026-10-09"]}, e)
+    inputs = _inputs(tmp_path, e, names=["QQQ"])
+    # The invariant broken on purpose: SPY is complete in the store but the file does not name it.
+    with pytest.raises(Undeclared):
+        s57._sessions_for(inputs, conn, "SPY", e)
+
+
+def test_a_forward_expiry_past_the_requests_file_is_not_read(tmp_path):
+    e = date(2026, 10, 9)
+    late = date(2026, 11, 20)  # after LAST_EXPIRY, never requested
+    conn = _store({"SPY": ["2026-10-02", "2026-10-09"]}, e)
+    inputs = _inputs(tmp_path, e)
+    assert s57._sessions_for(inputs, conn, "SPY", late) is None

@@ -228,14 +228,81 @@ def test_a_trade_carries_the_dividends_ex_inside_it():
 # --- the requests ---------------------------------------------------------------------------------
 
 
-def test_requests_name_each_listed_names_monthlies_once_and_skip_held_paths():
+def test_requests_name_each_listed_names_monthlies_once_stored_or_not():
     screens = {"design": {"days": {"2025-09-02": {"list": ["KO", "VZ"]}}, "bill": {}}}
     exps = dv.entry_expiries(date(2025, 9, 2))
     assert all(dv.is_monthly(e) for e in exps) and date(2025, 10, 17) in exps
-    reqs = dv.path_requests({("KO", "2025-10-17")}, screens)
+    reqs = dv.path_requests(screens)
     keys = {(r["symbol"], r["expiration"]) for r in reqs}
-    assert ("KO", "2025-10-17") not in keys and ("VZ", "2025-10-17") in keys
+    assert ("KO", "2025-10-17") in keys and ("VZ", "2025-10-17") in keys
     assert len(keys) == len(reqs)
+
+
+# --- the declared inputs --------------------------------------------------------------------------
+
+
+def _store_with(rows):
+    import sqlite3
+
+    from cherrypick.backtest import chainfetch
+
+    conn = sqlite3.connect(":memory:")
+    conn.executescript(chainfetch.SCHEMA)
+    conn.executemany(
+        "INSERT INTO eod_chain_quotes (symbol, session, expiration, strike, right, bid, ask) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        rows,
+    )
+    return conn
+
+
+def _declared(tmp_path, *reqs):
+    import json
+
+    from cherrypick.backtest.study.inputs import Inputs
+
+    keys = ("symbol", "expiration", "start", "through")
+    p = tmp_path / "path_requests.json"
+    p.write_text(json.dumps({"requests": [dict(zip(keys, r, strict=True)) for r in reqs]}))
+    return Inputs(p)
+
+
+W0, END = date(2025, 9, 1), date(2025, 12, 31)
+
+
+def test_load_chains_reads_declared_paths_in_the_study_row_shape_and_drops_one_sided_quotes(tmp_path):
+    conn = _store_with(
+        [
+            ("KO", "2025-09-02", "2025-10-17", 50.0, "CALL", 1.0, 1.2),
+            ("KO", "2025-09-02", "2025-10-17", 50.0, "PUT", 1.0, 1.2),
+            ("KO", "2025-09-02", "2025-10-17", 55.0, "PUT", None, 0.1),
+        ]
+    )
+    inputs = _declared(tmp_path, ("KO", "2025-10-17", "2025-08-12", "2025-10-17"))
+    got = dv.load_chains(inputs, conn, "KO", W0, END)
+    assert got == {"2025-09-02": {"2025-10-17": [[50.0, "C", 1.0, 1.2], [50.0, "P", 1.0, 1.2]]}}
+
+
+def test_a_stored_but_undeclared_path_and_undeclared_sessions_are_not_read(tmp_path):
+    conn = _store_with(
+        [
+            ("KO", "2025-09-02", "2025-10-17", 50.0, "PUT", 1.0, 1.2),
+            ("KO", "2025-09-02", "2025-11-21", 50.0, "PUT", 1.0, 1.2),  # stored, never declared
+            ("KO", "2025-12-01", "2025-10-17", 50.0, "PUT", 1.0, 1.2),  # outside the declared dates
+        ]
+    )
+    inputs = _declared(tmp_path, ("KO", "2025-10-17", "2025-08-12", "2025-10-17"))
+    got = dv.load_chains(inputs, conn, "KO", W0, END)
+    assert got == {"2025-09-02": {"2025-10-17": [[50.0, "P", 1.0, 1.2]]}}
+    assert dv.load_chains(inputs, conn, "VZ", W0, END) == {}
+
+
+def test_an_undeclared_path_is_refused_by_the_inputs_it_reads_through(tmp_path):
+    from cherrypick.backtest.study.inputs import Undeclared
+
+    inputs = _declared(tmp_path, ("KO", "2025-10-17", "2025-08-12", "2025-10-17"))
+    with pytest.raises(Undeclared):
+        inputs.chain(_store_with([]), "KO", "2025-09-02", "2025-11-21")
 
 
 # --- the verdict ----------------------------------------------------------------------------------

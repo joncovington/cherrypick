@@ -42,8 +42,12 @@ import json
 import sys
 from datetime import date, timedelta
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from cherrypick.core import progress as core_progress
+
+if TYPE_CHECKING:  # the weeklyput tests load this script without the backtest package installed
+    from cherrypick.backtest.study.inputs import Inputs
 
 _spec = importlib.util.spec_from_file_location(
     "variance_premium_item46", Path(__file__).with_name("variance_premium_item46.py")
@@ -230,15 +234,35 @@ def _out_dir() -> Path:
     return d
 
 
-def _sessions_for(conn, sym: str, expiry: date):
+def _requests_path() -> Path:
+    """The requests file the plan step writes: the paths the study declares it reads."""
+    return _out_dir() / "path_requests.json"
+
+
+def _chain_rows(chain) -> list[tuple]:
+    """A kit `Chain`'s quotes as item 46's (strike, C or P, bid, ask) rows."""
+    return [(k, r, q["bid"], q["ask"]) for r in ("C", "P") for k, q in sorted(chain.by[r].items())]
+
+
+def _sessions_for(inputs: Inputs, conn, sym: str, expiry: date):
+    """One path's sessions and forwards, read through `inputs`: a path the requests file does not name
+    is refused (a forward expiry past the file's `--through` is not read: it was never requested), and
+    a session outside its requested dates is not read."""
     req = path_request(sym, expiry)
-    if i46._path_status(conn, req) != "complete":
+    if (sym, req["expiration"], req["start"], req["through"]) not in inputs.keys and expiry > LAST_EXPIRY:
         return None
-    sessions = i46._path_sessions(conn, req)
+    if i46._path_status(conn, req) != "complete":
+        inputs.sessions(conn, sym, req["expiration"])  # an undeclared path raises here
+        return None
+    sessions = {}
+    for d in inputs.sessions(conn, sym, req["expiration"]):
+        chain = inputs.chain(conn, sym, d, req["expiration"])
+        if chain is not None:
+            sessions[date.fromisoformat(d)] = _chain_rows(chain)
     return sessions, {d: i46.forward(ch) for d, ch in sessions.items()}
 
 
-def coverage(reporter=None) -> dict:
+def coverage(inputs: Inputs, reporter=None) -> dict:
     """Entry quotes and forwards only, never an option's exit. The MDE reads the per-cycle realised
     variance term of the 10-delta put at 7 days, as item 46's coverage does."""
     expiries = weekly_expiries()
@@ -254,7 +278,7 @@ def coverage(reporter=None) -> dict:
             for e in _counted(expiries, reporter, "paths", sym):
                 st = i46._path_status(conn, path_request(sym, e))
                 status_n[st] = status_n.get(st, 0) + 1
-                got = _sessions_for(conn, sym, e)
+                got = _sessions_for(inputs, conn, sym, e)
                 if got is None:
                     continue
                 sessions, fwds = got
@@ -282,6 +306,7 @@ def coverage(reporter=None) -> dict:
                 else:
                     values.setdefault(sym, {})[e.isoformat()] = v
             names[sym] = {"paths": status_n, "first_complete_cycle": first, "drops": drops}
+        read = inputs.fingerprint(conn)
     finally:
         conn.close()
     from cherrypick.core.robustness import planned_mde
@@ -296,6 +321,7 @@ def coverage(reporter=None) -> dict:
         "item": "item57",
         "step": "coverage",
         "store": str(i46._chain_store_path()),
+        "inputs": read,
         "window": [FIRST_EXPIRY.isoformat(), LAST_EXPIRY.isoformat()],
         "weekly_expiries": len(expiries),
         "overlaps_with_monthly_trades": disjoint_from_monthly(expiries),
@@ -321,8 +347,10 @@ def _counted(items, reporter, phase: str, key: str):
             reporter.advance(phase, key=key, current=item)
 
 
-def collect(expiries: list[date], legs, log=None, reporter=None, phase: str = "paths") -> tuple[dict, dict]:
-    """{arm: {(name, leg): {cycle: trade}}} and drop counts per name."""
+def collect(
+    inputs: Inputs, expiries: list[date], legs, log=None, reporter=None, phase: str = "paths"
+) -> tuple[dict, dict]:
+    """{arm: {(name, leg): {cycle: trade}}}, drop counts per name, and what the declared paths held."""
     conn = i46._chain_store()
     trades: dict[str, dict] = {arm: {} for arm in ARMS}
     drops: dict[str, dict[str, int]] = {n: {} for n in MEMBERS}
@@ -331,7 +359,7 @@ def collect(expiries: list[date], legs, log=None, reporter=None, phase: str = "p
     try:
         for sym in MEMBERS:
             for e in _counted(expiries, reporter, phase, sym):
-                got = _sessions_for(conn, sym, e)
+                got = _sessions_for(inputs, conn, sym, e)
                 if got is None:
                     continue
                 sessions, fwds = got
@@ -352,9 +380,10 @@ def collect(expiries: list[date], legs, log=None, reporter=None, phase: str = "p
                         trades[arm].setdefault((sym, leg), {})[e.isoformat()] = tr[arm]
             if log:
                 log(f"{sym}: done")
+        read = inputs.fingerprint(conn)
     finally:
         conn.close()
-    return trades, drops
+    return trades, drops, read
 
 
 def cells_for(trades: dict, leg: str) -> dict[str, dict]:
@@ -395,10 +424,10 @@ def beside(arm: str, cell: dict, neighbours: dict, trades: dict, account: float)
     return out
 
 
-def forward_read(today: date, log=None, reporter=None) -> dict:
+def forward_read(inputs: Inputs, today: date, log=None, reporter=None) -> dict:
     """Monthly and weekly cycles expiring after `FORWARD_AFTER`, both arms: reported, never judged."""
     expiries = forward_expiries(today)
-    trades, _ = collect(expiries, (LEG,), log, reporter, "forward-paths")
+    trades, _, _ = collect(inputs, expiries, (LEG,), log, reporter, "forward-paths")
     out = {"after": FORWARD_AFTER.isoformat(), "judged": False}
     for arm in ARMS:
         by_kind = {}
@@ -419,10 +448,12 @@ def forward_read(today: date, log=None, reporter=None) -> dict:
     return out
 
 
-def study(account: float = i46.ACCOUNT, today: date | None = None, log=None, reporter=None) -> dict:
+def study(
+    inputs: Inputs, account: float = i46.ACCOUNT, today: date | None = None, log=None, reporter=None
+) -> dict:
     expiries = weekly_expiries()
     legs = tuple(NEIGHBOUR_LEGS.values())
-    trades, drops = collect(expiries, legs, log, reporter, "weekly-paths")
+    trades, drops, read = collect(inputs, expiries, legs, log, reporter, "weekly-paths")
     cells = cells_for(trades, LEG)
     words = judge_arms(cells)
     neighbours = {leg: cells_for(trades, leg) for leg in legs if leg != LEG}
@@ -443,7 +474,8 @@ def study(account: float = i46.ACCOUNT, today: date | None = None, log=None, rep
         "neighbour_legs": {
             leg: {arm: _slim(c) for arm, c in by_arm.items()} for leg, by_arm in neighbours.items()
         },
-        "forward": forward_read(today or date.today(), log, reporter),
+        "forward": forward_read(inputs, today or date.today(), log, reporter),
+        "inputs": read,
         "drops": drops,
         "costs": {
             "option": "core.fees: slippage 0.125 of spread, ic_open_fee per contract",
@@ -469,7 +501,7 @@ def cmd_plan(args) -> int:
     through = date.fromisoformat(args.through) if args.through else LAST_EXPIRY
     expiries = weekly_expiries(FIRST_EXPIRY, min(through, LAST_EXPIRY)) + forward_expiries(through)
     reqs = build_requests(MEMBERS, expiries)
-    path = Path(args.out) if args.out else _out_dir() / "path_requests.json"
+    path = Path(args.out) if args.out else _requests_path()
     path.write_text(json.dumps({"requests": reqs}, indent=0), encoding="utf-8")
     print(
         json.dumps(
@@ -486,11 +518,13 @@ def cmd_plan(args) -> int:
 
 
 def cmd_coverage(args) -> int:
+    from cherrypick.backtest.study.inputs import Inputs
+
     if not i46._chain_store_path().exists():
         print("no chain store: run the item57/fetch-chain-paths row first", file=sys.stderr)
         return 2
     with core_progress.Reporter("index_put_weekly_item57-coverage") as rep:
-        doc = coverage(rep)
+        doc = coverage(Inputs(args.requests or _requests_path()), rep)
     path = Path(args.out) if args.out else _out_dir() / "coverage.json"
     path.write_text(json.dumps(doc, indent=1), encoding="utf-8")
     print(json.dumps({"cycles": doc["cell"]["cycles"], "enough": doc["cell"]["enough"], "file": str(path)}))
@@ -498,11 +532,18 @@ def cmd_coverage(args) -> int:
 
 
 def cmd_study(args) -> int:
+    from cherrypick.backtest.study.inputs import Inputs
+
     if not i46._chain_store_path().exists():
         print("no chain store: run the item57/fetch-chain-paths row first", file=sys.stderr)
         return 2
     with core_progress.Reporter("index_put_weekly_item57-study") as rep:
-        doc = study(args.account, log=lambda m: print(m, file=sys.stderr), reporter=rep)
+        doc = study(
+            Inputs(args.requests or _requests_path()),
+            args.account,
+            log=lambda m: print(m, file=sys.stderr),
+            reporter=rep,
+        )
     path = Path(args.out) if args.out else _out_dir() / "results.json"
     path.write_text(json.dumps(doc, indent=1, default=str), encoding="utf-8")
     print(json.dumps({"written": str(path), "verdict": doc["verdict"]}))
@@ -518,10 +559,12 @@ def main(argv: list[str] | None = None) -> int:
     p.set_defaults(fn=cmd_plan)
     p = sub.add_parser("coverage")
     p.add_argument("--out", default=None)
+    p.add_argument("--requests", default=None, help="the requests file (default: the plan's output)")
     p.set_defaults(fn=cmd_coverage)
     p = sub.add_parser("study")
     p.add_argument("--account", type=float, default=i46.ACCOUNT)
     p.add_argument("--out", default=None)
+    p.add_argument("--requests", default=None, help="the requests file (default: the plan's output)")
     p.set_defaults(fn=cmd_study)
     args = ap.parse_args(argv)
     return args.fn(args)

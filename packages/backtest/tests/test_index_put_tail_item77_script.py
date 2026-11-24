@@ -86,3 +86,21 @@ def test_each_arm_is_judged_on_its_own_three_bars():
     )
     assert out["cash"]["verdict"] == ck.FAIL and out["cash"]["failed"] == ["capital"]
     assert out["margin"]["verdict"] == ck.PASS
+
+
+def test_the_study_refuses_a_requests_file_that_does_not_cover_item_57s_paths(tmp_path, monkeypatch):
+    import json
+    import sqlite3
+
+    import pytest
+
+    from cherrypick.backtest import chainfetch
+    from cherrypick.backtest.study.inputs import Inputs, Undeclared
+
+    p = tmp_path / "path_requests.json"
+    p.write_text(json.dumps({"requests": [m.i57.path_request("SPY", date(2026, 10, 9))]}), encoding="utf-8")
+    conn = sqlite3.connect(":memory:")
+    conn.executescript(chainfetch.SCHEMA)
+    monkeypatch.setattr(m.i46, "_chain_store", lambda: conn)  # the real store is never opened
+    with pytest.raises(Undeclared):
+        m.study(Inputs(p), rate=lambda s: 0.04)

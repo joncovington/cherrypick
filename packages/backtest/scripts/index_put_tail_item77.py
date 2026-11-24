@@ -42,6 +42,7 @@ from cherrypick.core import bs, treasury
 from cherrypick.core import progress as core_progress
 
 from cherrypick.backtest.study import checks as ck
+from cherrypick.backtest.study.inputs import Inputs
 
 _HERE = Path(__file__).resolve().parent
 
@@ -198,7 +199,7 @@ def reported(rows: list[dict], arm: str) -> dict:
     }
 
 
-def study(rate=None, log=None, reporter: core_progress.Reporter | None = None) -> dict:
+def study(inputs: Inputs, rate=None, log=None, reporter: core_progress.Reporter | None = None) -> dict:
     rate = rate or _rate_reader()
     conn = i46._chain_store()
     rows = []
@@ -208,7 +209,7 @@ def study(rate=None, log=None, reporter: core_progress.Reporter | None = None) -
             reporter.split("paths", [sym for sym in i57.MEMBERS for _ in expiries], unit="paths")
         for sym in i57.MEMBERS:
             for e in expiries:
-                got = i57._sessions_for(conn, sym, e)
+                got = i57._sessions_for(inputs, conn, sym, e)
                 if got is not None:
                     row = trade_row(sym, e, *got, rate)
                     if row:
@@ -217,6 +218,7 @@ def study(rate=None, log=None, reporter: core_progress.Reporter | None = None) -
                     reporter.advance("paths", key=sym, current=e)
             if log:
                 log(f"{sym}: done")
+        read = inputs.fingerprint(conn)
     finally:
         conn.close()
     judged = [r for r in rows if r["expiry"] <= i57.LAST_EXPIRY.isoformat()]
@@ -230,6 +232,7 @@ def study(rate=None, log=None, reporter: core_progress.Reporter | None = None) -
         "verdict": {arm: b["verdict"] for arm, b in blocks.items()},
         "arms": {arm: {**blocks[arm], "reported": reported(rows, arm)} for arm in ARMS},
         "trades": len(judged),
+        "inputs": read,
     }
 
 
@@ -260,7 +263,11 @@ def cmd_study(args) -> int:
         print("no chain store: item 57's chain paths are needed", file=sys.stderr)
         return 2
     with core_progress.Reporter("index_put_tail_item77-study") as rep:
-        doc = study(log=lambda m: print(m, file=sys.stderr), reporter=rep)
+        doc = study(
+            Inputs(args.requests or i57._requests_path()),
+            log=lambda m: print(m, file=sys.stderr),
+            reporter=rep,
+        )
     path = Path(args.out) if args.out else _out_dir() / "results.json"
     path.write_text(json.dumps(doc, indent=1, default=str), encoding="utf-8")
     print(json.dumps({"written": str(path), "verdict": doc["verdict"]}))
@@ -272,6 +279,7 @@ def main(argv: list[str] | None = None) -> int:
     sub = ap.add_subparsers(dest="step", required=True)
     p = sub.add_parser("study")
     p.add_argument("--out", default=None)
+    p.add_argument("--requests", default=None, help="item 57's requests file (default: its plan's output)")
     p.set_defaults(fn=cmd_study)
     args = ap.parse_args(argv)
     return args.fn(args)

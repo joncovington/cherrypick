@@ -230,3 +230,67 @@ def test_a_flat_smile_has_no_skew():
 def test_a_chain_with_no_parity_forward_has_no_skew():
     puts = [(float(k), "PUT", 1.0, 1.1) for k in range(60, 100)]
     assert m.skew(ic.Chain(puts, ENTRY, F)) is None
+
+
+# ---- the chain store is read only through the study's requests file (#1439) ----
+
+
+def _store(sessions):
+    import sqlite3
+
+    from cherrypick.backtest import chainfetch
+
+    conn = sqlite3.connect(":memory:")
+    conn.executescript(chainfetch.SCHEMA)
+    for s in sessions:
+        for e in (F, B):
+            conn.executemany(
+                "INSERT INTO eod_chain_quotes (symbol, session, expiration, strike, right, bid, ask) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                [("XYZ", s, e, k, r, b, a) for k, r, b, a in rows(100.0, ic.days_between(s, e))],
+            )
+    return conn
+
+
+def _inputs(tmp_path, reqs):
+    import json
+
+    from cherrypick.backtest.study.inputs import Inputs
+
+    p = tmp_path / "requests-paths.json"
+    p.write_text(json.dumps({"requests": reqs}), encoding="utf-8")
+    return Inputs(p)
+
+
+def _req(exp, start="2023-12-06", through="2024-03-15"):
+    return {"symbol": "XYZ", "expiration": exp, "start": start, "through": through}
+
+
+def _trades(monkeypatch, inputs, conn):
+    monkeypatch.setattr(m, "NAMES", ("XYZ",))
+    monkeypatch.setattr(m, "LAST_FRONT", date(2024, 3, 15))
+    return m.trades(inputs, conn, ENTRY, ENTRY, lambda s: 0.05)
+
+
+SESSIONS = (ENTRY, "2024-02-13", "2024-02-20", "2024-03-01", "2024-03-13")
+
+
+def test_a_declared_study_runs_on_the_requested_paths(monkeypatch, tmp_path):
+    inputs = _inputs(tmp_path, [_req(F), _req(B, "2023-12-31", B)])
+    rows_, _ = _trades(monkeypatch, inputs, _store(SESSIONS))
+    assert {r["arm"] for r in rows_} == {"A35", "B35"} and {r["entry"] for r in rows_} == {ENTRY}
+
+
+def test_a_path_the_requests_file_lacks_is_refused(monkeypatch, tmp_path):
+    from cherrypick.backtest.study.inputs import Undeclared
+
+    inputs = _inputs(tmp_path, [_req(F)])  # no B month
+    with pytest.raises(Undeclared):
+        _trades(monkeypatch, inputs, _store(SESSIONS))
+
+
+def test_a_session_before_the_requested_dates_is_not_read(monkeypatch, tmp_path):
+    # The store holds the exact 35-day session, but the request starts after it: the entry is the next one.
+    inputs = _inputs(tmp_path, [_req(F, "2024-02-12"), _req(B, "2024-02-12", B)])
+    rows_, _ = _trades(monkeypatch, inputs, _store(SESSIONS))
+    assert rows_ and {r["entry"] for r in rows_} == {"2024-02-13"}
