@@ -229,20 +229,22 @@ export function findArmColumn(db: Database.Database, table: string): string | nu
  *
  * The live ledger tags every trade `arm = 'live'` (the account), not the strategy arm, so reading that
  * column would name every trade "live". The strategy arm (`live.arm`, e.g. `pm-200`) is on the trade's
- * FILLED entry attempt, joined by order id. NULL where the ledger has no attempts table or no such
- * column (an older ledger), or the trade has no filled attempt (it predates attempts being journaled):
- * that trade's arm is not recorded, and the page says so rather than guessing.
+ * own `live_arm` column, written at entry. A trade without it (it predates the column, or `live.arm`
+ * was unset) falls back to its FILLED entry attempt, joined by order id. NULL where neither is there
+ * (an older ledger, or a trade that predates attempts being journaled): that trade's arm is not
+ * recorded, and the page says so rather than guessing.
  */
 export function registryArm(db: Database.Database): string {
-  const ok =
+  const joinOk =
     hasTable(db, "entry_attempts") &&
     hasColumn(db, "entry_attempts", "ic_order_id") &&
     hasColumn(db, "entry_attempts", "arm") &&
     hasColumn(db, "entry_attempts", "outcome") &&
     hasColumn(db, "ic_trades", "ic_order_id");
-  return ok
+  const join = joinOk
     ? "(SELECT a.arm FROM entry_attempts a WHERE a.ic_order_id = ic_trades.ic_order_id AND a.outcome = 'filled' ORDER BY a.id LIMIT 1)"
     : "NULL";
+  return hasColumn(db, "ic_trades", "live_arm") ? `COALESCE(ic_trades.live_arm, ${join})` : join;
 }
 
 /**

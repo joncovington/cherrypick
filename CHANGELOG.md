@@ -26,6 +26,11 @@ beyond the latest release.
 
 ### What's new
 
+- **A live MEIC trade records the arm live ran.** `ic_trades.live_arm` holds the registry arm (`pm-200`)
+  at entry, so live results read per arm no longer depend on joining the trade to its entry attempt. The
+  console reads the column first and the attempt second; older rows keep working, and
+  `python -m cherrypick.meic.live_arm_backfill` (a dry run until `--apply`, backed up first) fills them
+  where an attempt names the arm.
 - **MEIC's live arm has its own guarded operation.** `live.arm` is still refused by the general config
   save. `configcli`'s `set_live_arm` (with `live_arm_options` to read) changes that one key and nothing
   else, and only when you type `CHANGE ARM`, the arm has a paper twin and the loop is flat and settled
