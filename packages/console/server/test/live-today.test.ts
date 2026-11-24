@@ -159,7 +159,7 @@ afterEach(() => {
 });
 
 describe("readLiveToday", () => {
-  it("on a machine with no live ledgers: every loop absent, nothing needs a person, an empty total", () => {
+  it("on a machine with no live ledgers: every loop absent, nothing needs attention, an empty total", () => {
     const p = readLiveToday(config, NOON);
     expect(p.session).toBe(DAY);
     expect(p.loops.map((l) => [l.loop, l.ledger])).toEqual([

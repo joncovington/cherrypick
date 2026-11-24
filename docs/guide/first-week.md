@@ -63,7 +63,7 @@ It takes about five minutes. You can skip days.
    producer is working. `watchdog OK` is the one to look for.
 2. **Open Reports → morning** (`g r`). Read the phase and, if it is not GREEN, the gate that blocked
    it. The phase is a summary of conditions, not an order. See [reports.md](reports.md).
-3. **If you use the account pages,** open Live → today (`g l`) for the list of what needs a person.
+3. **If you use the account pages,** open Live → today (`g l`) for the list of what needs attention.
    See [live.md](live.md).
 
 ### Each evening, after 16:30

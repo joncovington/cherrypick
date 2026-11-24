@@ -936,16 +936,24 @@ whatever the ledger holds. Pinned by `server/test/ladder-live-reader.test.ts`, `
 `web/test/ladderLive.test.tsx`.
 
 **The Live page's `today` tab** (`pages/Live/LiveTodayPage.tsx` over `GET /api/live/today` →
-`readers/liveToday.ts`) opens `/live`. It is a mosaic: a large card
-(the suite's net and its parts, armed, the halt flag, needs a person, and what to do today; a click on
-it opens Live → positions) and a card per live loop with the simple view's fields (arm, state, open,
+`readers/liveToday.ts`) opens `/live`. It is a mosaic: two summary cards and a card per live loop. The loops card
+(the suite's net and its parts, what is open at mark, armed, the halt flag and a `needs attention` chip)
+is the loops' report; with attention items the chip is a button that opens their list in place, over the
+cards below (`AttentionChip.tsx`): each item is the loop, the condition and the module's own sentence, in
+the order the reader gave them, with a link that scrolls to and outlines that loop's card, or goes to the
+loop's own page when the module is off and has no card. A loop's card carries its own count as a badge.
+The broker positions card (`WhatToDo.tsx`) summarizes the position evaluation: counts of the trades it
+says to act on, of held shorts expiring within a week and of reports before expiry (and the income
+trades that fit, to Portfolio), each opening Live → positions; the first three to act on in manage's own
+urgency order with its reason and net P&L, and "All N on Positions". It re-ranks nothing and says so
+when the evaluation has not been read. A card per live loop has the simple view's fields (arm, state, open,
 worst case, mark, net, loss breaker, working when any is). A loop's card opens the shared lightbox
 (`?loop=`): *orders*, the loop's positions today as chains from its own live read
 (`pages/Live/LiveTodayOrders.tsx`: MEIC's `/api/live/meic` open rows and today's resolved rows; bwb's
 live payload and its history for the session; the ladder's `/api/ladder/live`, each held lot with the
 sell resting at the broker, then the lots sold today; entry, a stopped side or the add-on, then how it ended
-or "now"), and *detail*, every field the old table's detail view carried plus what on the loop needs a
-person. A losing loop's card has a red edge, a tripped breaker or failed read a red border. The hand
+or "now"), and *detail*, every field the old table's detail view carried plus what on the loop needs
+attention. A losing loop's card has a red edge, a tripped breaker or failed read a red border. The hand
 trades are a card of their own beside the loops (never in the total) with their orders card below; a
 retired loop folds to one line. Header badge: `2 armed · HALTED`. It **composes** the
 per-loop readers (`fliesLive`/`flies`, `readMeicLive`, `readBwb`/`readBwbHistory` in live mode,
