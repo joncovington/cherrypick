@@ -62,7 +62,7 @@ export interface LiveTodayOverdue {
  * neither. The pairs are today's resolved rows grouped, plus the pair's open positions.
  */
 export interface LiveTodayPair {
-  /** The registry arm; null = the top level (the loop's `live.arm` unset) or a ledger that records none. */
+  /** The registry arm the rows ran under; null = not recorded (an older ledger, or a trade that predates it). */
   arm: string | null;
   symbol: string;
   /** Positions of this pair holding risk now, any session. */

@@ -163,7 +163,7 @@ function moneyOf(
  * Today by (arm, symbol): live results are read per arm and per symbol, never pooled, because a loop
  * may run a different arm from one day to the next and a figure over two arms describes neither.
  * `resolved` are the rows resolved today; `open` the positions holding risk now. A pair with only an
- * open position still appears (zero trades). Pairs sort the top level (no arm) first, then by arm and
+ * open position still appears (zero trades). Pairs sort the rows with no recorded arm first, then by arm and
  * symbol, so the order never depends on which row the ledger happened to return first.
  */
 export function pairsOf(

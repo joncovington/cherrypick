@@ -99,7 +99,7 @@ export interface LiveMeicOpenRow {
 
 /** A resolved live row with the arm that traded it: live results are read per arm and per symbol. */
 export interface LiveMeicHistoryRow extends MeicTradeRow {
-  /** The registry arm the row was entered under; null for the top level (`live.arm` unset) or an older ledger. */
+  /** The registry arm the row was entered under (its filled entry attempt's, NOT the ledger's own `arm` tag, which is the constant "live"); null where not recorded. */
   arm: string | null;
 }
 
