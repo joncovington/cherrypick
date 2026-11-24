@@ -4,7 +4,7 @@ import { MemoryRouter } from "react-router-dom";
 import type { LiveMeicPayload, LiveTodayHand, LiveTodayLoop, LiveTodayPayload } from "@console/shared";
 import { LiveTodayView, LoopDetail, openAtMark, suiteBadgeText, unrealisedTitle } from "../src/pages/Live/LiveTodayPage";
 import { DayChains, bwbChains, meicChains } from "../src/pages/Live/LiveTodayOrders";
-import { expiredWords, handModel } from "../src/pages/Live/HandToday";
+import { expiredWords, handHasContent, handModel } from "../src/pages/Live/HandToday";
 import { inView } from "./viewTables";
 
 /**
@@ -135,11 +135,13 @@ describe("LiveTodayView", () => {
     expect(html).toContain('href="/live/meic"');
   });
 
-  it("folds a retired loop to one line and keeps its link", () => {
+  it("leaves a retired loop out entirely: no card, no line", () => {
     const html = render(payload({ loops: [loop("flies", { moduleEnabled: false, retired: true }), loop("meic")] }));
-    expect(html).toContain("off — module disabled, nothing open or working");
-    expect(html).toContain('href="/live/flies"');
-    expect(html.match(/not armed/g)?.length).toBe(1); // only meic's full row
+    expect(html).not.toContain("module disabled");
+    expect(html).not.toContain('href="/live/flies"');
+    expect(html).not.toContain("loop-card-flies");
+    expect(html).toContain("loop-card-meic");
+    expect(html.match(/not armed/g)?.length).toBe(1); // only meic's card
   });
 
   it("opens an attention item from the chip, and marks its loop's card", () => {
@@ -369,11 +371,42 @@ describe("the hand row", () => {
     expect(expiredWords([])).toBeNull();
   });
 
-  it("says why there is nothing to show before today's evaluation, and draws no card", () => {
+  it("draws no by-hand section on a day with nothing by hand, whatever its general notes say", () => {
     const html = render(payload());
-    expect(html).toContain("no position evaluation today yet (newest 2026-10-14)");
-    expect(html).toContain("No 0DTE trade by hand today.");
+    expect(html).not.toContain("What was traded by hand?");
+    expect(html).not.toContain("by hand ·");
     expect(html).not.toContain("tc-card");
+    const noted = render(payload({ hand: hand({ caveats: ["the account history holds nothing older than today"] }) }));
+    expect(noted).not.toContain("What was traded by hand?");
+  });
+
+  it("shows a hand view that could not be read, since silence would read as no trades", () => {
+    const html = render(payload({ hand: hand({ status: "unread", reason: "the account history failed" }) }));
+    expect(html).toContain("What was traded by hand?");
+    expect(html).toContain("not read: the account history failed");
+  });
+
+  it("shows only the accounts with something by hand, and names the account when several carry a hand view", () => {
+    const html = render(
+      payload({
+        hand: hand({ status: "none", account: "****2375" }),
+        handOthers: [hand({ ...HAND_IC, account: "margin ****4222" }), hand({ status: "none", account: "margin ****8569" })],
+      }),
+    );
+    expect(html).toContain("What was traded by hand?");
+    expect(html).toContain("margin ****4222");
+    expect(html).not.toContain("****2375 ·");
+    expect(html).not.toContain("****8569");
+    expect(html.match(/What was traded by hand\?/g)).toHaveLength(1);
+  });
+
+  it("says what has something to show", () => {
+    expect(handHasContent(hand({ status: "none" }))).toBe(false);
+    expect(handHasContent(hand({ caveats: ["x"] }))).toBe(false);
+    expect(handHasContent(hand(HAND_IC))).toBe(true);
+    expect(handHasContent(hand({ status: "unread" }))).toBe(true);
+    expect(handHasContent(hand({ afterPublish: ["SPXW  261015P04980000"] }))).toBe(true);
+    expect(handHasContent(hand({ expiredHeld: [{ symbol: "SPXW  261014P04950000", expiry: "2026-10-14", quantity: -1 }] }))).toBe(true);
   });
 
   it("leads the open line with the loops' unrealised total, then each loop's part; the hand trades beside it, never in it", () => {
