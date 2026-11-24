@@ -26,6 +26,11 @@ beyond the latest release.
 
 ### What's new
 
+- **`execution`'s paper-live gap follows the arm live ran.** MEIC's mirror was one fixed paper arm,
+  `live-shadow`. Once `live-shadow` retires (its `arm_retired` break in the paper ledger) each session is
+  set against the twin (`shadow_of`) of the arm live ran that session, read from the live ledger's entry
+  attempts; a session whose arm has no twin is left out of the gap and listed, never matched to another
+  arm's twin. Until then nothing changes.
 - **Calendars and contango are retired.** Research item 38 (calendars) and item 39 (contango) failed every
   arm at real quotes and prices. Both modules ship off, with a retired date on each arm; calendars'
   open positions run to their own exits and the module goes off once flat. The same change switched off
