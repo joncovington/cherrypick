@@ -41,11 +41,13 @@ describe("the ladder's live surface has no write path", () => {
     }
   });
 
-  it("is the only place in the console that runs the ladder's live loop", () => {
+  it("is the only place, bar the arm switches' bridge, that runs the ladder's live loop", () => {
     const offenders = allTs(SRC)
       .filter((f) => code(read(f)).includes("ladder.live_loop"))
       .map((f) => path.relative(SRC, f).replace(/\\/g, "/"));
-    expect(offenders).toEqual(["services/ladderLiveBridge.ts"]);
+    // The Live page's arm switches (`services/liveArmingBridge.ts`) run it too, for its status and its two arming
+    // verbs; `live-arming-surface.test.ts` holds that file to its own line.
+    expect(offenders).toEqual(["services/ladderLiveBridge.ts", "services/liveArmingBridge.ts"]);
   });
 
   it("opens the live ledger read only and issues no statement that changes it", () => {

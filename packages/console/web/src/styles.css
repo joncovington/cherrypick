@@ -14328,3 +14328,343 @@ span.b-start {
   font-size: 0.7rem;
   font-weight: 400;
 }
+
+/* ----------------------------------------------------------------------------------------------
+   The Live page's arm-for-today strip and its dialogs (ArmSwitch.tsx). Shown only while live_arming is
+   on. The strip sits at the top of a live loop's card; the dialogs are portalled to <body>. At 560px and
+   under the dialog is a full-width sheet; every control is at least 44px. */
+.arm-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+}
+.arm-strip.is-on {
+  border-color: color-mix(in srgb, var(--accent-live) 55%, var(--border));
+  background: color-mix(in srgb, var(--accent-live) 8%, var(--surface-sunken));
+}
+.arm-strip-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.arm-strip-text b {
+  font-size: 13px;
+}
+.arm-strip-text span {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+.arm-switch-btn {
+  flex: none;
+  min-width: 56px;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+.arm-switch-btn[aria-disabled="true"] {
+  cursor: not-allowed;
+}
+.arm-switch-btn[aria-busy="true"] {
+  cursor: progress;
+}
+.arm-switch {
+  position: relative;
+  display: block;
+  width: 52px;
+  height: 30px;
+  border-radius: 999px;
+  border: 1px solid var(--chart-grid-strong);
+  background: var(--surface-hover);
+}
+.arm-switch i {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+.arm-switch.on {
+  background: var(--accent-live);
+  border-color: var(--accent-live);
+}
+.arm-switch.on i {
+  left: 25px;
+  background: #fff;
+}
+.arm-switch.locked {
+  opacity: 0.4;
+}
+.arm-switch-btn:focus-visible .arm-switch {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.arm-progress,
+.arm-failed {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.arm-failed {
+  border-color: color-mix(in srgb, var(--neg) 55%, var(--border));
+}
+.arm-failed b {
+  color: var(--neg);
+}
+.arm-amber {
+  color: var(--warn);
+}
+
+.arm-wrap {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+}
+.arm-scrim {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: rgb(3 4 6 / 0.72);
+  cursor: default;
+}
+.arm-box {
+  position: relative;
+  width: min(760px, 100%);
+  max-height: calc(100dvh - 40px);
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  box-shadow: 0 24px 60px rgb(0 0 0 / 0.5);
+  overflow: hidden;
+  outline: none;
+}
+.arm-head {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--border);
+}
+.arm-head h2 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: normal;
+}
+.arm-head .muted {
+  font-size: 13px;
+}
+.arm-kick {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.arm-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 18px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.arm-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 14px 24px;
+  background: var(--surface-raised);
+  border-top: 1px solid var(--border);
+}
+.arm-btn {
+  min-height: 46px;
+  padding: 0 20px;
+  border-radius: 8px;
+  border: 1px solid var(--chart-grid-strong);
+  background: transparent;
+  color: var(--text);
+  font-size: 14px;
+  cursor: pointer;
+}
+.arm-btn-go,
+.arm-btn-stop {
+  font-weight: 600;
+  background: var(--accent-live);
+  border-color: var(--accent-live);
+  color: #fff;
+}
+.arm-btn:disabled {
+  cursor: not-allowed;
+  background: color-mix(in srgb, var(--accent-live) 25%, var(--surface));
+  border-color: color-mix(in srgb, var(--accent-live) 25%, var(--border));
+  color: var(--text-muted);
+}
+.arm-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.arm-facts {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px 20px;
+  padding: 16px;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.arm-facts dt {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.arm-facts dd {
+  margin: 2px 0 0;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.arm-warnings {
+  margin: 0;
+  padding: 10px 14px 10px 30px;
+  border: 1px solid color-mix(in srgb, var(--warn) 40%, var(--border));
+  border-radius: 8px;
+  color: var(--warn);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.arm-disclaimer {
+  border: 1px solid color-mix(in srgb, var(--warn) 45%, var(--border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--warn) 8%, var(--surface));
+}
+.arm-disclaimer pre {
+  margin: 0;
+  padding: 14px 16px;
+  max-height: 260px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.55;
+}
+.arm-type {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.arm-type label {
+  font-size: 14px;
+  font-weight: 600;
+}
+.arm-yes {
+  font-family: var(--num-face, ui-monospace, monospace);
+  color: var(--warn);
+}
+.arm-type input {
+  height: 46px;
+  box-sizing: border-box;
+  width: 220px;
+  max-width: 100%;
+  padding: 0 14px;
+  border-radius: 8px;
+  border: 1px solid var(--chart-grid-strong);
+  background: var(--surface-sunken);
+  color: var(--text);
+  font-size: 16px;
+  font-family: var(--num-face, ui-monospace, monospace);
+  letter-spacing: 0.1em;
+}
+.arm-fine {
+  font-size: 12px;
+  line-height: 1.5;
+}
+.arm-blocker {
+  padding: 14px 16px;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 14px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.arm-chips .dot {
+  background: currentColor;
+  width: 7px;
+  height: 7px;
+}
+.nav-dot-arming {
+  width: 8px;
+  height: 8px;
+  margin-left: auto;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--warn) 22%, transparent);
+}
+
+@media (max-width: 1000px) {
+  .arm-facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 560px) {
+  .arm-wrap {
+    padding: 0;
+    place-items: end stretch;
+  }
+  .arm-box {
+    width: 100%;
+    max-height: 100dvh;
+    height: 100dvh;
+    border-radius: 0;
+    border-left: 0;
+    border-right: 0;
+  }
+  .arm-head {
+    padding: 16px 16px 14px;
+  }
+  .arm-body {
+    padding: 14px 16px;
+  }
+  .arm-facts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .arm-foot {
+    flex-direction: column-reverse;
+    align-items: stretch;
+    padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+  }
+  .arm-btn {
+    width: 100%;
+  }
+  .arm-type input {
+    width: 100%;
+  }
+}

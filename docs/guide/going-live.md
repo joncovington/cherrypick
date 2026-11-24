@@ -158,10 +158,10 @@ fewer than `pdt_reserve_day_trades` (default 2) day trades remain, since stoppin
 IC can take two; a frozen, closing-only or margin-call account opens nothing. Arming warns when the
 main account trades the same index (SPX beside XSP is one directional bet in two accounts).
 
-## Two ways to arm
+## Ways to arm
 
-Both write the same arm record and run the same checks. Neither is easier to get wrong than the other.
-Both start by asking the loop whether it is ready.
+All of them write the same arm record and run the same checks. None is easier to get wrong than another.
+Each starts by asking the loop whether it is ready.
 
 ### With Claude Code: `/live-meic-start`
 
@@ -235,6 +235,45 @@ Its presence is the signal; its contents are ignored. Every live loop checks it 
   when you did not raise it, find out why before clearing it.
 
 When in doubt, halt first. Halting is free and reversible.
+
+### From the console: the Live page's switches
+
+A third way to the same record, **off by default**. Set `"live_arming": true` in
+`~/.cherrypick/config/console.json` and restart the console. Each live loop's card on the Live page's
+`today` tab then has an "Armed for today / Not armed today" strip with a switch, for MEIC's main account
+and the ladder. A second broker login's MEIC account shows a locked switch with the reason it cannot arm
+(arm it from the command line); flies and bwb show none. With the setting off or absent, the cards are
+exactly as they were and the console cannot arm anything.
+
+This is the one place the Live page writes. It does not arm by itself: it runs the same
+`python -m cherrypick.meic.live_loop --arm --confirm YES` (or the ladder's) that you would type, so the
+module's own checks and refusals apply unchanged.
+
+1. **Switch on.** The switch does not move on a click. A dialog opens and first asks the loop's own
+   readiness, the way `--status` does. If it is not ready you see only its blockers, in its own words,
+   and nothing to confirm. If it is ready you see what the loop will trade (the account, `****1234`, the
+   symbol and arm, the entry window, the condor cap, the buying-power cap, whether per-side stops are on,
+   when it self-disarms, the daily-loss breaker, today's open and pending counts, whether the supervisor
+   is running), then `DISCLAIMER.md` in full, read by the server and never shortened, then a box for the
+   word `YES` in capitals. The box starts empty every time, and the server checks the word again. For the
+   ladder the dialog says whether it is in dry-run (it places nothing) or live.
+2. **It runs on the server.** After the YES the console answers at once and finishes the arm in the
+   background: the arm record is written, the supervisor gets up to a minute to enable the job, and the
+   loop is checked the way the slash command checks it (armed for today, `meic-live` enabled with a
+   future next run). You can leave the page. An amber dot stays on Live in the rail until it finishes,
+   and a notice appears on whichever page you are on. A failure says what the loop reports. If the record
+   was written but the supervisor never started the job, it says the loop **is armed** and nothing is
+   ticking yet; switch it off, or fix the supervisor.
+3. **Switch off.** A plain confirmation, then `--disarm`. It stops new entries and places no order; what
+   the loop holds stays managed.
+
+Rules that differ from the slash command on purpose: **the console never clears the halt flag.** While
+it is up the switches are locked ("Clear the halt first. Arming never undoes a halt.") and the server
+refuses an arm, but an armed loop can still be switched off. If anything the dialog showed changes
+before you confirm (a new open order, the halt raised, readiness lost), the server refuses and shows the
+fresh readout. Every confirmation is used once and expires after ten minutes. The arm journal records the
+module's own actors (`live-meic-start` for an arm, `live-loop-disarm` for a disarm), because neither
+command takes an actor argument.
 
 ## How to check you are armed
 

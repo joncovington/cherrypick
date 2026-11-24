@@ -63,7 +63,7 @@ login and are not hardened against attack. They listen only on `127.0.0.1`, so o
 can open them, and they must stay that way: **never expose either to your local network or the
 internet** — no port forwarding, reverse proxy, tunnel or remote-access sharing. Anyone who can
 reach the console can read your positions, account figures and results, and use its Config page,
-including the live-trading halt switch.
+including the live-trading halt switch and, where you have turned it on, the Live page's switches that arm a live loop for the day.
 
 ## AI features
 

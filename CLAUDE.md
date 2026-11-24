@@ -44,7 +44,13 @@ Packages: `packages/orchestrator`, `packages/meic`, `packages/earnings`, `packag
   and shares, which group each automation is in, and each automation's own switch, switched on from
   the next session; once a group has run, a budget change is dated from the next session), through
   the same editor after the automations module's own check. An automation's page retires or
-  reinstates it (its `retired` and `enabled` false, nothing else) the same way. Paper only.
+  reinstates it (its `retired` and `enabled` false, nothing else) the same way. Those writes are paper only.
+  **The Live page is no longer read-only for one switch:** with `live_arming` true in console.json
+  (it ships false), each live loop's card on Live › today has an arm-for-today switch for MEIC's main
+  account and the ladder. It writes or deletes today's arm record by running the module's own
+  `live_loop --arm --confirm YES` or `--disarm`, behind the module's readiness, the disclaimer read from
+  `DISCLAIMER.md` and a typed `YES` the server checks again. The console holds no arming logic, never
+  clears the halt flag (while it is up, arming is refused), and still places no order.
 - **backtest**: the licence outranks everything. Vendor data and anything derived from it stay under
   `~/.cherrypick`, never in this repo, a PR, an issue or a published artifact.
 

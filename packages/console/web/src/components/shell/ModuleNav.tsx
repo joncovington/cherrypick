@@ -7,12 +7,18 @@ import { CONFIG_LINK, railHalves, suiteLinksFor, tabShortcut, visibleNavLinks, t
 import { useFeatures } from "../../lib/useFeatures";
 import { isAdvisorPaused, isSlideVisible } from "../../lib/visibility";
 import { useLiveLoopsInUse } from "../../lib/useLiveToday";
+import { useArmingPending } from "../../lib/liveArming";
 import { ExperimentalChip } from "../ExperimentalChip";
 import { useDirtyCount } from "../../pages/Config/stagedStore";
 import { RAIL_PREF, useCloseRailOnNavigate, useRailExpanded } from "./railState";
 import { NavIcon } from "./navIcons";
 
 export { RAIL_PREF };
+
+/** The amber mark on the Live link while an arm is in progress. */
+function ArmingDot() {
+  return <span className="nav-dot nav-dot-arming" role="img" aria-label="arming in progress" title="arming in progress" />;
+}
 
 /** A rail link's tooltip with its keyboard shortcut (`lib/keyboardNav.ts`): `g` then the key for a
  *  suite page, the bare digit for a module. The rail is the only place the hints are shown. */
@@ -56,6 +62,9 @@ export function ModuleNav({ module, slide }: { module: ModuleId | null; slide: s
   const qs = params.toString();
   const withQs = (path: string) => (qs ? `${path}?${qs}` : path);
   const dirty = useDirtyCount();
+  // An arm the server is still running (Live's switches): an amber dot on the Live link, which stays
+  // until it finishes. Its own element, so it sits beside any other state mark the link carries.
+  const arming = useArmingPending();
   // An off module, the advisor and its tabs, and the technicals chart leave the rail when the suite has
   // turned them off (`visibility.ts`); Config keeps every toggle, so it is never filtered.
   const features = useFeatures();
@@ -98,6 +107,7 @@ export function ModuleNav({ module, slide }: { module: ModuleId | null; slide: s
     const trailing = (
       <>
         <ExperimentalChip id={l.to.slice(1)} />
+        {l.to === "/live" && arming ? <ArmingDot /> : null}
         {extra}
       </>
     );
@@ -205,6 +215,7 @@ export function ModuleNav({ module, slide }: { module: ModuleId | null; slide: s
           >
             <NavIcon to={l.to} />
             {l.to === "/config" && dirty > 0 && <span className="nav-dot" />}
+            {l.to === "/live" && arming && <ArmingDot />}
             {isExperimental(l.to.slice(1)) && <span className="mf-nav-ic-exp" />}
             {l.to.slice(1) === module && <span className="mf-nav-ic-on" />}
           </NavLink>

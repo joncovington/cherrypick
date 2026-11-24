@@ -9,6 +9,7 @@ import { isModuleId, type ModuleId } from "../../lightbox/moduleOrder";
 import { useEffect } from "react";
 import { useBoolPref, usePrefsSync, usePrefsVersion, getPref, prefWritesSettled } from "../../lib/prefs";
 import { useTradeNotifications } from "../../lib/useTradeNotifications";
+import { useArmingNotices } from "../../lib/liveArming";
 import { useKeyboardNav } from "../../lib/useKeyboardNav";
 
 /** A page that lives under a tab without being one marks that tab on the rail: one automation's page
@@ -61,6 +62,8 @@ export function Shell() {
   }, [theme]);
   // Mounted once here (not per-page) so trade toasts fire regardless of which page is open.
   useTradeNotifications();
+  // And the arm switches' notice: an arm the server finishes is announced on whichever page this is.
+  useArmingNotices();
   // Likewise: the chords (`g o`, `1`–`9`, `j`/`k`) work from every page.
   useKeyboardNav();
   return (
