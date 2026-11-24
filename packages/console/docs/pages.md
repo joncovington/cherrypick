@@ -951,8 +951,8 @@ worst case, mark, net, loss breaker, working when any is). **Live results are re
 symbol, never pooled** (a loop may run a different arm from day to day, and one figure over two arms
 describes neither): each loop read carries `pairs` (`LiveTodayPair`, built by `pairsOf` in
 `readers/liveToday.ts`): today's resolved rows grouped by (arm, symbol) in the loop's own money layout,
-with each pair's open positions, the top level (no arm) first. MEIC takes the arm from the live ledger's
-`arm` column (`readMeicLive`'s history rows carry it) and the ladder from its lots; flies and bwb report
+with each pair's open positions, rows with no recorded arm first. MEIC takes the arm from the live ledger's
+filled entry attempt, joined by order id (`registryArm` in `readers/meicLive.ts`): the ledger's own `arm` column is the constant `live`, not the strategy arm, so a trade with no filled attempt (before attempts were journaled) has no recorded arm. The ladder takes it from its lots; flies and bwb report
 none. The card shows one line per pair (`PairLines`) and the detail a table (`PairTable`); a loop with no
 pair shows neither. The pairs add back up to the loop's day, so the loop's net stays the day's figure and
 the split loses nothing. A loop's card opens the shared lightbox

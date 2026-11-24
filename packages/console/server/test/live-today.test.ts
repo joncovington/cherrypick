@@ -110,7 +110,7 @@ const MEIC_COLUMNS = [
   "put_strike REAL", "call_strike REAL", "wing_width REAL", "quantity INTEGER", "net_credit REAL", "put_credit REAL",
   "call_credit REAL", "put_stop_cost REAL", "call_stop_cost REAL", "put_stop_fill_status TEXT", "call_stop_fill_status TEXT",
   "fill_confirmed_at TEXT", "pnl REAL", "fees REAL", "settlement_fees REAL", "exit_reason TEXT", "iv_rank_at_entry REAL",
-  "dollar_multiplier REAL", "slippage_dollars REAL", "put_settle_value REAL", "call_settle_value REAL",
+  "dollar_multiplier REAL", "slippage_dollars REAL", "put_settle_value REAL", "call_settle_value REAL", "ic_order_id TEXT",
 ];
 
 const IC = { symbol: "XSP", arm: "live", put_strike: 660, call_strike: 672, wing_width: 2, quantity: 1, dollar_multiplier: 100 };
@@ -118,7 +118,15 @@ const IC = { symbol: "XSP", arm: "live", put_strike: 660, call_strike: 672, wing
 function meicLedger(): Database.Database {
   const db = new Database(path.join(root, "meic", "meic_trades.db"));
   db.exec(`CREATE TABLE ic_trades (${MEIC_COLUMNS.join(", ")})`);
+  // The live ledger tags every trade `arm = 'live'` (the account); the registry arm a trade ran is on its
+  // filled entry attempt, joined by order id.
+  db.exec("CREATE TABLE entry_attempts (id INTEGER PRIMARY KEY, trade_date TEXT, arm TEXT, symbol TEXT, outcome TEXT, ic_order_id TEXT)");
   return db;
+}
+
+/** A filled entry attempt: the registry arm the trade with this order id ran under. */
+function attempt(db: Database.Database, orderId: string, arm: string, symbol = "XSP"): void {
+  insert(db, "entry_attempts", { trade_date: DAY, arm, symbol, outcome: "filled", ic_order_id: orderId });
 }
 
 // --------------------------------------------------------------------------- bwb
@@ -201,15 +209,17 @@ describe("readLiveToday", () => {
 
     const m = meicLedger();
     // Resolved today, settlement recorded: gross 25, fees 2.6, settlement 5, net 17.4.
-    insert(m, "ic_trades", { ...IC, id: 1, trade_date: DAY, status: "expired", net_credit: 0.25, put_credit: 0.1, call_credit: 0.15,
+    insert(m, "ic_trades", { ...IC, id: 1, ic_order_id: "O1", trade_date: DAY, status: "expired", net_credit: 0.25, put_credit: 0.1, call_credit: 0.15,
       pnl: 25, fees: 7.6, settlement_fees: 5, exit_reason: "expired", put_settle_value: 0.4 });
     // Resolved yesterday: not today's.
     insert(m, "ic_trades", { ...IC, id: 2, trade_date: "2026-10-14", status: "stopped", net_credit: 0.35, put_credit: 0.14,
       call_credit: 0.21, pnl: -40, fees: 6.5, settlement_fees: 0, exit_reason: "stop_triggered" });
     // Open today, call side closing; and a working entry.
-    insert(m, "ic_trades", { ...IC, id: 3, trade_date: DAY, status: "open", net_credit: 0.3, put_credit: 0.1, call_credit: 0.2,
+    insert(m, "ic_trades", { ...IC, id: 3, ic_order_id: "O3", trade_date: DAY, status: "open", net_credit: 0.3, put_credit: 0.1, call_credit: 0.2,
       call_stop_fill_status: "pending" });
     insert(m, "ic_trades", { ...IC, id: 4, trade_date: DAY, status: "pending", net_credit: 0.31 });
+    attempt(m, "O1", "pm-200");
+    attempt(m, "O3", "pm-200");
     m.close();
 
     const b = bwbLedger();
@@ -241,7 +251,7 @@ describe("readLiveToday", () => {
     expect(meic!.breaker).toMatchObject({ limit: null, tripped: null });
     // Read per arm and per symbol: one pair, `live` on XSP, with the day's one resolved IC and the open one.
     expect(meic!.pairs).toHaveLength(1);
-    expect(meic!.pairs[0]).toMatchObject({ arm: "live", symbol: "XSP", open: 1, today: { trades: 1, gross: 25, fees: 2.6, net: 17.4 } });
+    expect(meic!.pairs[0]).toMatchObject({ arm: "pm-200", symbol: "XSP", open: 1, today: { trades: 1, gross: 25, fees: 2.6, net: 17.4 } });
     // flies' and bwb's ledgers keep no per-arm rows in this payload: nothing is drawn for them.
     expect(flies!.pairs).toEqual([]);
     expect(bwb!.pairs).toEqual([]);
@@ -301,20 +311,26 @@ describe("readLiveToday", () => {
     expect(ladder.pairs.length).toBeGreaterThan(0);
   });
 
-  it("reads MEIC's day per arm and per symbol: two arms and a top-level row are three lines, never one figure", () => {
+  it("reads MEIC's day per arm and per symbol, the arm from the filled attempt, never the ledger's 'live' tag", () => {
     writeJson("config/meic.json", { enable_live_trading: true, live: { symbol: "XSP", arm: "pm-200" } });
     const m = meicLedger();
     const resolved = { trade_date: DAY, status: "expired", net_credit: 0.25, put_credit: 0.1, call_credit: 0.15, settlement_fees: 1, exit_reason: "expired" };
-    insert(m, "ic_trades", { ...IC, ...resolved, id: 1, arm: "pm-200", symbol: "XSP", pnl: 30, fees: 3 });
-    insert(m, "ic_trades", { ...IC, ...resolved, id: 2, arm: "control", symbol: "XSP", pnl: -20, fees: 3 });
-    insert(m, "ic_trades", { ...IC, ...resolved, id: 3, arm: "pm-200", symbol: "SPX", pnl: 10, fees: 3 });
-    insert(m, "ic_trades", { ...IC, ...resolved, id: 4, arm: null, symbol: "XSP", pnl: 5, fees: 3 });
+    insert(m, "ic_trades", { ...IC, ...resolved, id: 1, ic_order_id: "O1", symbol: "XSP", pnl: 30, fees: 3 });
+    insert(m, "ic_trades", { ...IC, ...resolved, id: 2, ic_order_id: "O2", symbol: "XSP", pnl: -20, fees: 3 });
+    insert(m, "ic_trades", { ...IC, ...resolved, id: 3, ic_order_id: "O3", symbol: "SPX", pnl: 10, fees: 3 });
+    insert(m, "ic_trades", { ...IC, ...resolved, id: 4, symbol: "XSP", pnl: 5, fees: 3 });
     // A pair with only an open position still appears, with no resolved trade.
-    insert(m, "ic_trades", { ...IC, id: 5, trade_date: DAY, status: "open", arm: "bp-5k", symbol: "XSP", net_credit: 0.3, put_credit: 0.1, call_credit: 0.2 });
+    insert(m, "ic_trades", { ...IC, id: 5, trade_date: DAY, status: "open", ic_order_id: "O5", symbol: "XSP", net_credit: 0.3, put_credit: 0.1, call_credit: 0.2 });
+    // The ledger's own `arm` is 'live' on every row above; the arm each ran is its filled attempt's. Row 4 has none
+    // (an older ledger, before attempts were journaled), so its arm is not recorded.
+    attempt(m, "O1", "pm-200");
+    attempt(m, "O2", "control");
+    attempt(m, "O3", "pm-200", "SPX");
+    attempt(m, "O5", "bp-5k");
     m.close();
 
     const meic = readLiveToday(config, NOON).loops.find((l) => l.loop === "meic")!;
-    // The top level (no arm) first, then arm then symbol: stable whatever order the ledger returns.
+    // No arm recorded first, then arm then symbol: stable whatever order the ledger returns.
     expect(meic.pairs.map((x) => `${x.arm ?? "top"}/${x.symbol}`)).toEqual(["top/XSP", "bp-5k/XSP", "control/XSP", "pm-200/SPX", "pm-200/XSP"]);
     const by = (arm: string | null, symbol: string) => meic.pairs.find((x) => x.arm === arm && x.symbol === symbol)!;
     expect(by("pm-200", "XSP").today).toMatchObject({ trades: 1, gross: 30, net: 27 });

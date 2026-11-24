@@ -54,6 +54,7 @@ EXEMPT: dict[str, str] = {
     "arm_column_preflight.py": "a one-off migration check",
     "boundary_2026_10_19.py": "a one-off boundary record",
     "boundary_2026_11_03.py": "a one-off boundary record",
+    "boundary_2026_11_24.py": "a one-off boundary record",
     "ci_changed_packages.py": "CI tooling",
     "demo_console.py": "a demo home",
     "demo_home.py": "a demo home",
