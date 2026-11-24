@@ -235,7 +235,7 @@ describe("readLiveToday", () => {
     // The loop's breaker input is settled pnl, voided rows included -- its own query, mirrored.
     expect(flies!.breaker).toMatchObject({ limit: 500, figure: 557, tripped: false });
 
-    expect(meic).toMatchObject({ loop: "meic", ledger: "ok", to: "/live/meic", open: 1, working: 2, entriesToday: 2, worstCase: null });
+    expect(meic).toMatchObject({ loop: "meic", ledger: "ok", to: "/meic", open: 1, working: 2, entriesToday: 2, worstCase: null });
     expect(meic!.arm).toMatchObject({ armed: true, disarmTime: "16:30", pastDisarm: false, liveEnabled: true, symbol: "XSP" });
     expect(meic!.today).toMatchObject({ trades: 1, gross: 25, fees: 2.6, settlementFees: 5, net: 17.4 });
     expect(meic!.breaker).toMatchObject({ limit: null, tripped: null });

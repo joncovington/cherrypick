@@ -343,7 +343,7 @@ function readMeicToday(config: ConsoleConfig, now: Date, login: string | null = 
   const limit = num(live["daily_loss_halt_dollars"]);
   return {
     loop: extra ? `meic.${extra}` : "meic",
-    to: extra ? `/live/meic?login=${encodeURIComponent(extra)}` : "/live/meic",
+    to: "/meic",
     ledger: p.ledger,
     ledgerError: p.ledgerError,
     arm,

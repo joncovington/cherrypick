@@ -1,6 +1,5 @@
 import { LivePage, useLiveFlies } from "../../pages/Live/LivePage";
 import { PmccPage, PortfolioPage, PositionsPage, WheelPage } from "../../pages/Live/ManagePage";
-import { MeicLivePage, useLiveMeic } from "../../pages/Live/MeicLivePage";
 import { LiveTodayPage, suiteBadgeText, useLiveToday } from "../../pages/Live/LiveTodayPage";
 import { LoopPill } from "../../components/ScopeBar";
 import { AlertDaemonChip } from "../../components/AlertDaemonChip";
@@ -44,8 +43,6 @@ export const slides: SlideDef[] = [
   // pmcc module's page: this is the real account, read from the evaluation.
   { id: "pmcc", label: "pmcc", render: () => <PmccPage /> },
   { id: "flies", label: "flies", render: () => <LivePage /> },
-  // MEIC's live loop: arming, halt, orphans, held submissions, open ICs and resolved history.
-  { id: "meic", label: "meic", render: () => <MeicLivePage /> },
 ];
 
 
@@ -69,22 +66,6 @@ function ArmBadge() {
       title={`modules.flies.enabled ${data.moduleEnabled === null ? "not set" : String(data.moduleEnabled)}; live.enabled ${a.liveEnabled === null ? "unknown" : String(a.liveEnabled)}; arm record ${a.date ?? "none"}; halt flag ${a.halted ? "present" : "absent"}`}
     >
       {fliesBadgeText(data)}
-    </span>
-  );
-}
-
-function MeicArmBadge() {
-  const { data } = useLiveMeic();
-  if (!data) return null;
-  const a = data.arm;
-  const label = a.halted ? "HALTED" : a.armed ? (a.pastDisarm ? "past disarm" : "ARMED") : a.stale ? "stale arm" : "not armed";
-  const cls = a.halted ? "pnl-neg" : a.armed && !a.pastDisarm ? "pnl-pos" : "muted";
-  return (
-    <span
-      className={`chip ${cls}`}
-      title={`enable_live_trading ${a.liveEnabled === null ? "unknown" : String(a.liveEnabled)}; arm record ${a.date ?? "none"}; disarm ${a.disarmTime} ET; halt flag ${a.halted ? "present" : "absent"}`}
-    >
-      meic · {label} · {a.symbol ?? "?"}
     </span>
   );
 }
@@ -124,7 +105,6 @@ function LivePill() {
 }
 
 export function LiveLightbox({ slide }: { slide: string }) {
-  const meic = slide === "meic";
   // The tabs that read the whole account, not one loop, wear the suite's badge: the set the
   // visibility rule always shows (`LIVE_ACCOUNT_WIDE`), so the two cannot drift apart.
   const today = LIVE_ACCOUNT_WIDE.has(slide);
@@ -134,8 +114,8 @@ export function LiveLightbox({ slide }: { slide: string }) {
       slide={slide}
       slides={slides}
       session={null}
-      badge={today ? <SuiteBadge /> : meic ? <MeicArmBadge /> : <ArmBadge />}
-      loopPill={meic || today ? undefined : <LivePill />}
+      badge={today ? <SuiteBadge /> : <ArmBadge />}
+      loopPill={today ? undefined : <LivePill />}
       headerControls={<AlertDaemonChip />}
     />
   );

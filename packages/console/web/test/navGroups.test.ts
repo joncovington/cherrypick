@@ -59,11 +59,12 @@ describe("the live nav declaration", () => {
     // 2026-10-20: the wheel joins them, the third view of the same evaluation.
     // 2026-10-20: then the PMCCs, the fourth view.
     // 2026-10-24: execution (B10) was a tab of its own; 2026-11-06 it became a card on meic's tab.
-    expect(navSlideIds("live")).toEqual(["today", "positions", "portfolio", "wheel", "pmcc", "flies", "meic"]);
+    expect(navSlideIds("live")).toEqual(["today", "positions", "portfolio", "wheel", "pmcc", "flies"]);
   });
 
-  it("sends the old execution tab to meic, where its card now sits", () => {
-    expect(resolveSlide("live", "execution", decl.slides)).toBe("meic");
+  it("sends the old execution and meic tabs to today, which lists MEIC's orders", () => {
+    expect(resolveSlide("live", "execution", decl.slides)).toBe("today");
+    expect(resolveSlide("live", "meic", decl.slides)).toBe("today");
   });
 
   it("sends the old manage tab to positions, so a bookmark still lands on the actions", () => {
