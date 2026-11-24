@@ -52,6 +52,20 @@ def test_a_live_tick_without_an_arm_never_reaches_the_broker(monkeypatch, capsys
     assert "disarmed" in json.loads(capsys.readouterr().out)
 
 
+def test_a_tick_that_removes_a_stale_record_journals_it_as_the_meic_tick(monkeypatch, capsys):
+    _pin_config(monkeypatch)
+    _empty_live_ledger()
+    key = live_loop._paths.live_key()
+    _live.write_arm_record(key, date="2000-01-03", at="t", armed_by="live-meic-start")
+    monkeypatch.setattr(live_loop, "make_broker", lambda *a, **k: pytest.fail("built a broker"))
+    assert live_loop.main(["--once", "--live"]) == 0
+    assert "disarmed" in json.loads(capsys.readouterr().out)
+    rows = [r for r in _live.arm_events(key) if r["event"] == "disarm"]
+    assert [(r["actor"], r["reason"], r["record_date"]) for r in rows] == [
+        ("meic-tick", "record_not_today", "2000-01-03")
+    ]
+
+
 def _empty_live_ledger():
     """The managed home's live ledger with its schema and nothing in it."""
     from cherrypick.meic import paths

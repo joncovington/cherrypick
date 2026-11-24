@@ -88,6 +88,17 @@ def test_every_arm_and_removing_disarm_is_journaled_with_its_actor_and_reason():
     assert len(live.arm_events("ladder", date="2026-11-23")) == 4 and not live.arm_events(date="1999-01-01")
 
 
+def test_disarm_slug_names_both_should_disarm_reasons():
+    stale = live.should_disarm(
+        "2026-11-20", today="2026-11-23", now_min=600, disarm_min=1200, disarm_label="20:00"
+    )
+    late = live.should_disarm(
+        "2026-11-23", today="2026-11-23", now_min=1200, disarm_min=1200, disarm_label="20:00"
+    )
+    assert live.disarm_slug(stale) == "record_not_today"
+    assert live.disarm_slug(late) == "past_disarm_time"
+
+
 def test_a_refused_arm_is_not_journaled_and_an_unwritable_journal_never_stops_an_arm():
     assert not live.arm("bwb", date="2026-09-18", at="t", armed_by="x")["ok"]  # no supervisor
     assert live.arm_events() == []

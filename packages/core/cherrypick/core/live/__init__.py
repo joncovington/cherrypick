@@ -30,6 +30,7 @@ __all__ = [
     "write_arm_record",
     "arm_record_date",
     "should_disarm",
+    "disarm_slug",
     "supervisor_heartbeat_fresh",
     "arm",
     "disarm",
@@ -139,6 +140,12 @@ def should_disarm(
     if now_min >= disarm_min:
         return f"past disarm time ({disarm_label})"
     return None
+
+
+def disarm_slug(reason: str) -> str:
+    """``should_disarm``'s reason as the journal's slug: ``record_not_today`` or ``past_disarm_time``.
+    One spelling, so a query over ``arm_events`` finds every module's self-disarm of a kind."""
+    return "record_not_today" if reason.startswith("arm stamp is") else "past_disarm_time"
 
 
 def supervisor_heartbeat_fresh(max_age_seconds: int = 90) -> bool:

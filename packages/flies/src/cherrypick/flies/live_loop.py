@@ -2081,11 +2081,14 @@ def install_task(config: dict | None = None) -> dict:
     return out
 
 
-def uninstall_task() -> dict:
+def uninstall_task(*, actor: str = "live-loop-disarm", reason: str | None = None) -> dict:
     """Disarm: delete the arm record, which disables the supervisor's `flies-live` job within one
     pass. A legacy scheduled task still registered on an old box is the orchestrator's to remove
-    (`run.py install` deletes every legacy task; `doctor` reports one)."""
-    removed = _live.disarm("flies", legacy_paths=[_legacy_arm_stamp_path()])["arm_record_removed"]
+    (`run.py install` deletes every legacy task; `doctor` reports one). `core.live.arm_events`
+    records the actor: the command by default, the tick names itself."""
+    removed = _live.disarm("flies", legacy_paths=[_legacy_arm_stamp_path()], actor=actor, reason=reason)[
+        "arm_record_removed"
+    ]
     return {
         "ok": removed,
         "arm_record_removed": removed,
@@ -2512,7 +2515,7 @@ def main() -> int:
             if live:
                 reason = should_disarm(config, now_min, day)
                 if reason:
-                    out = uninstall_task()
+                    out = uninstall_task(actor="flies-tick", reason=_live.disarm_slug(reason))
                     _log(f"live loop DISARMED ({reason}) — re-arm with /live-flies-start")
                     print(json.dumps({"ok": True, "disarmed": reason, **out}))
                     return 0
