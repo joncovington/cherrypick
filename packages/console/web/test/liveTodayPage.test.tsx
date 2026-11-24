@@ -8,7 +8,7 @@ import { expiredWords, handModel } from "../src/pages/Live/HandToday";
 import { inView } from "./viewTables";
 
 /**
- * The Live page's `today` tab. Pinned: a quiet day says plainly that nothing needs a person; an
+ * The Live page's `today` tab. Pinned: a quiet day says plainly that nothing needs attention; an
  * attention item is listed with its loop; settlement never recorded reads n/r, never $0.00; a suite
  * total that could not be summed reads n/r; and the header badge says how many loops are armed and
  * whether the halt flag is up.
@@ -126,9 +126,11 @@ const detailOf = (l: LiveTodayLoop) =>
   );
 
 describe("LiveTodayView", () => {
-  it("says plainly when nothing needs a person", () => {
+  it("says plainly when nothing needs attention", () => {
     const html = render(payload());
-    expect(html).toContain("Nothing needs a person");
+    expect(html).toContain("needs attention · 0");
+    expect(html).not.toContain("att-chip"); // a plain label, not a button
+    expect(html).not.toContain("needs attention</span>"); // and no loop card carries a badge
     expect(html).toContain('href="/live/flies"');
     expect(html).toContain('href="/live/meic"');
   });
@@ -140,13 +142,22 @@ describe("LiveTodayView", () => {
     expect(html.match(/not armed/g)?.length).toBe(1); // only meic's full row
   });
 
-  it("lists an attention item under its loop", () => {
+  it("opens an attention item from the chip, and marks its loop's card", () => {
     const html = render(
       payload({ attention: [{ loop: "meic", kind: "orphaned_orders", detail: "1 working broker order no live ledger knows", to: "/live/meic" }] }),
-    );
-    expect(html).not.toContain("Nothing needs a person");
-    expect(html).toContain("orphaned orders");
-    expect(html).toContain("1 working broker order no live ledger knows");
+    ).replace(/<!-- -->/g, "");
+    expect(html).toContain("att-chip"); // the chip is a button when there is something to open
+    expect(html).toContain("needs attention · 1");
+    expect(html).toContain('id="loop-card-meic"'); // where the list's "Go to meic" scrolls
+    expect(html).toContain("1 needs attention</span>"); // the loop's own card carries the count
+    expect(html.match(/needs attention<\/span>/g)).toHaveLength(1); // flies and bwb carry none
+  });
+
+  it("says 'need' on a loop card with more than one item", () => {
+    const item = (kind: "orphaned_orders" | "held_submission") => ({ loop: "meic" as const, kind, detail: "x", to: "/live/meic" });
+    const html = render(payload({ attention: [item("orphaned_orders"), item("held_submission")] })).replace(/<!-- -->/g, "");
+    expect(html).toContain("2 need attention</span>");
+    expect(html).not.toContain("2 needs attention");
   });
 
   it("shows settlement never recorded as n/r, and an unsummed suite total as n/r", () => {
@@ -231,13 +242,13 @@ describe("the loop cards and their detail", () => {
     expect(tileLabels(render(d))).toContain("working");
   });
 
-  it("the big card links to Live → positions, and a loop card to its own page", () => {
+  it("the broker positions card links to Live → positions, and a loop card to its own page", () => {
     const html = render(payload());
     expect(html).toContain('href="/live/positions"');
     expect(html).toContain('href="/live/meic"');
   });
 
-  it("marks a losing loop's card red, and names what needs a person in its detail", () => {
+  it("marks a losing loop's card red, and names what needs attention in its detail", () => {
     const meic = loop("meic", { today: { trades: 1, gross: -50, fees: 2, settlementFees: 0, settlementRecorded: 0, settlementTrades: 1, net: -52, feesTrades: 1, netRecorded: -52, basis: "" } });
     expect(render(payload({ loops: [meic] }))).toContain("lt-loop is-neg");
     const detail = renderToString(

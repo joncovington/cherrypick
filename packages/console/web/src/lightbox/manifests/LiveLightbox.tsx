@@ -31,7 +31,7 @@ import type { LiveFliesPayload } from "@console/shared";
  * the fourth (each PMCC on the account).
  */
 export const slides: SlideDef[] = [
-  // Every live loop on one page: what is armed, open and settled, and what needs a person.
+  // Every live loop on one page: what is armed, open and settled, and what needs attention.
   { id: "today", label: "today", render: () => <LiveTodayPage /> },
   // The daily position evaluation (packages/manage): every live trade against the ruleset.
   { id: "positions", label: "positions", render: () => <PositionsPage /> },
@@ -81,11 +81,11 @@ function SuiteBadge() {
       className={`chip ${cls}`}
       title={
         `armed now: ${n > 0 ? data.suite.armed.join(", ") : "none"} of ${data.suite.loops} live loops; ` +
-        `halt flag ${data.halted ? "present" : "absent"}; ${attention} item${attention === 1 ? "" : "s"} needing a person`
+        `halt flag ${data.halted ? "present" : "absent"}; ${attention} item${attention === 1 ? "" : "s"} needing attention`
       }
     >
       {suiteBadgeText(data)}
-      {attention > 0 ? ` · ${attention} need${attention === 1 ? "s" : ""} a person` : ""}
+      {attention > 0 ? ` · ${attention} need${attention === 1 ? "s" : ""} attention` : ""}
     </span>
   );
 }

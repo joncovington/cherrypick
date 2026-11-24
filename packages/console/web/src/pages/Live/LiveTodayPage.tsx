@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import type { LiveTodayLoop, LiveTodayPayload, ManagePayload } from "@console/shared";
 import { Card, PnlCell, fmtNum } from "../../components/DataTable";
@@ -11,7 +11,8 @@ import { Tile } from "../Flies/PerformanceTab";
 import { CardLightbox, LightboxFrame, useOpenParam, type LightboxTab } from "../Backtest/CardLightbox";
 import { useManage } from "./ManagePage";
 import { tone } from "./manageParts";
-import { WhatToDoList, todoList } from "./WhatToDo";
+import { BrokerSummaryCard } from "./WhatToDo";
+import { AttentionChip, kindWords } from "./AttentionChip";
 import { HandCard, handHasTrades } from "./HandToday";
 import { LoopOrders } from "./LiveTodayOrders";
 import { Section } from "../../components/Section";
@@ -20,10 +21,12 @@ import { GuideLink } from "../../components/GuideLink";
 
 /**
  * The Live page's `today` tab (2026-10-15): every live loop's day on one page -- what is armed,
- * what is open, what settled, and anything that needs a person -- over `GET /api/live/today`
+ * what is open, what settled, and anything that needs attention -- over `GET /api/live/today`
  * (`readers/liveToday.ts`, composed from the per-loop readers). Since 2026-11-06 it follows the
- * portfolio tab's layout, in three sections by question: what needs a person (the suite's net, what to
- * do today), how each loop is doing (a parent card per loop with its breaker as a meter, which opens a
+ * portfolio tab's layout, in three sections by question: what needs attention (two summary cards: the
+ * live loops' net, open book and attention chip, whose list opens in place and leads to each loop's card;
+ * and the broker positions' counts, the first three to act on and a way into Positions,
+ * `WhatToDo.tsx`), how each loop is doing (a parent card per loop with its breaker as a meter, which opens a
  * lightbox with the loop's orders today as chains, `LiveTodayOrders.tsx`, and every field the old table's
  * detail view carried), and what was traded by hand (trade cards). The net's method sits behind the
  * card's ?. There is no button here that touches an order.
@@ -274,7 +277,7 @@ function LoopFields({ l, cols }: { l: LiveTodayLoop; cols: Column<LiveTodayLoop>
   );
 }
 
-/** Every field the loops table's detail view carried, plus what needs a person on this loop. */
+/** Every field the loops table's detail view carried, plus what needs attention on this loop. */
 export function LoopDetail({ l, attention }: { l: LiveTodayLoop; attention: LiveTodayPayload["attention"] }) {
   const mine = attention.filter((a) => a.loop === l.loop);
   return (
@@ -284,12 +287,12 @@ export function LoopDetail({ l, attention }: { l: LiveTodayLoop; attention: Live
         <ul className="lt-attention">
           {mine.map((a, i) => (
             <li key={i} className="pnl-neg">
-              {a.kind.replace(/_/g, " ")}: {a.detail}
+              {kindWords(a.kind)}: {a.detail}
             </li>
           ))}
         </ul>
       ) : (
-        <p className="muted">Nothing on this loop needs a person.</p>
+        <p className="muted">Nothing on this loop needs attention.</p>
       )}
       <p className="muted" style={{ margin: 0 }}>
         <Link to={l.to}>the loop's own page</Link> holds the rest.
@@ -403,9 +406,26 @@ export function breakerShare(b: LiveTodayLoop["breaker"]): number | null {
   return (Math.max(0, -b.figure) / Math.abs(b.limit)) * 100;
 }
 
+/** The loop card's element id, where the attention list's "Go to" scrolls. A loop id may hold a dot (`meic.<login>`). */
+export const loopCardId = (loop: string) => `loop-card-${loop}`;
+
 /** A loop's parent card: its net today, what is open and what it can lose, the breaker as a meter, and
  *  a button to its orders and detail. */
-function LoopParentCard({ l, showWorking, onOpen }: { l: LiveTodayLoop; showWorking: boolean; onOpen: () => void }) {
+function LoopParentCard({
+  l,
+  showWorking,
+  attention,
+  found,
+  onOpen,
+}: {
+  l: LiveTodayLoop;
+  showWorking: boolean;
+  /** What needs attention on this loop, from the same list the chip opens. */
+  attention: number;
+  /** The chip's list just led here: outline the card for a moment. */
+  found: boolean;
+  onOpen: () => void;
+}) {
   const arm = armWords(l);
   const t = l.today;
   const net = t?.net ?? null;
@@ -420,11 +440,17 @@ function LoopParentCard({ l, showWorking, onOpen }: { l: LiveTodayLoop; showWork
   ];
   return (
     <Card
+      id={loopCardId(l.loop)}
       title={<Link to={l.to}>{l.loop}</Link>}
       collapseKey={`${l.loop} loop`}
-      className={["lv-4", "pf-cq", "lt-loop", losing ? "is-neg" : "", flagged ? "is-flagged" : ""].filter(Boolean).join(" ")}
+      className={["lv-4", "pf-cq", "lt-loop", losing ? "is-neg" : "", flagged ? "is-flagged" : "", found ? "is-found" : ""].filter(Boolean).join(" ")}
       help={LOOP_HELP}
-      controls={<span className={`chip ${l.arm.armed && !l.arm.pastDisarm ? "chip-ok" : ""}`}>{arm.text}</span>}
+      controls={
+        <>
+          {attention > 0 && <span className="chip chip-bad">{attention} need{attention === 1 ? "s" : ""} attention</span>}
+          <span className={`chip ${l.arm.armed && !l.arm.pastDisarm ? "chip-ok" : ""}`}>{arm.text}</span>
+        </>
+      }
     >
       <div className={`pf-hero ${t !== null && net === null ? "muted" : tone(net)}`} title={netTitleOf(l)}>
         {t !== null && net === null ? "n/r" : fmtMoney(net)}
@@ -493,6 +519,18 @@ export function LiveTodayView({ data: d, manage }: { data: LiveTodayPayload; man
   const retired = d.loops.filter((l) => l.retired);
   const index = active.findIndex((l) => l.loop === lightbox.open);
   const showWorking = anyWorking(d.loops);
+  // The attention list's "Go to": scroll to the loop's card and outline it for a moment.
+  const [found, setFound] = useState<string | null>(null);
+  useEffect(() => {
+    if (found === null) return;
+    const t = setTimeout(() => setFound(null), 2500);
+    return () => clearTimeout(t);
+  }, [found]);
+  const goToLoop = (loop: string) => {
+    const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    document.getElementById(loopCardId(loop))?.scrollIntoView({ behavior: still ? "auto" : "smooth", block: "center" });
+    setFound(loop);
+  };
   const netTitle =
     `${handNote(d)} ` +
     (s.net === null
@@ -503,18 +541,13 @@ export function LiveTodayView({ data: d, manage }: { data: LiveTodayPayload; man
         (s.excluded.length > 0 ? ` Left out: ${s.excluded.map((e) => `${e.loop} (${e.reason})`).join(", ")}.` : ""));
   return (
     <div className="pf-layout">
-      <Section concept="stand" question="What needs a person?">
+      <Section concept="stand" question="What needs attention?">
         <Card
           title="net today · all loops"
           collapseKey="today-net"
-          className="lv-8"
+          className="lv-4 lt-summary"
           help={NET_HELP}
           flag="realised, not marked"
-          controls={
-            <Link to="/live/positions" className="lt-hero-link">
-              Live positions →
-            </Link>
-          }
         >
           <div className={`pf-hero ${s.net === null ? "muted" : tone(s.net)}`} title={netTitle}>
             {s.net === null ? "n/r" : fmtMoney(s.net)}
@@ -534,15 +567,21 @@ export function LiveTodayView({ data: d, manage }: { data: LiveTodayPayload; man
             <span className={`chip ${d.halted ? "chip-bad" : ""}`} title="state/halt-live.flag, suite-wide: blocks new entries on every loop.">
               halt flag {d.halted ? "HALTED" : "clear"}
             </span>
-            <span className={`chip ${d.attention.length > 0 ? "chip-bad" : ""}`}>needs a person · {d.attention.length}</span>
+            <AttentionChip items={d.attention} hasCard={(loop) => active.some((l) => l.loop === loop)} onGo={goToLoop} />
           </span>
         </Card>
-        {/* "needs a person" is the first part of what to do today (2026-10-30). */}
-        <WhatToDoList className="lv-4" items={todoList(d, manage)} evaluated={manage?.session ?? null} />
+        <BrokerSummaryCard className="lv-8 lt-summary" manage={manage} />
       </Section>
       <Section concept="income" question="How is each loop doing?">
         {active.map((l) => (
-          <LoopParentCard key={l.loop} l={l} showWorking={showWorking} onOpen={() => lightbox.show(l.loop)} />
+          <LoopParentCard
+            key={l.loop}
+            l={l}
+            showWorking={showWorking}
+            attention={d.attention.filter((a) => a.loop === l.loop).length}
+            found={found === l.loop}
+            onOpen={() => lightbox.show(l.loop)}
+          />
         ))}
       </Section>
       {retired.map((l) => (

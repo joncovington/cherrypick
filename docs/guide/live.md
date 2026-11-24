@@ -18,7 +18,7 @@ The tabs answer two different questions, and the difference matters.
   `manage.at` (10:00 ET) and at any further times in `manage.also_at`, and again when the account
   changes. The console only reads that file. The verdicts, the
   levels and the prices are the evaluation's; the page shows them. `today` also reads it, for its
-  "what to do today" list. Held legs are re-priced from live quotes between evaluations where every
+  broker positions card. Held legs are re-priced from live quotes between evaluations where every
   leg has a fresh one; the verdicts and levels are never re-judged, and with no fresh quote the
   evaluation's figure stands.
 - **More than one account.** If you have connected a second broker login, the four account tabs show
@@ -35,18 +35,22 @@ Nothing on the other pages is real money unless a module is live and armed.
 ### The header
 
 Under the page name, a chip sums up trading status. On the account tabs and `today` it reads
-`none armed` or, say, `1 armed`, with `HALTED` added when the halt flag is up, and `needs a person`
+`none armed` or, say, `1 armed`, with `HALTED` added when the halt flag is up, and `needs attention`
 when something wants you. On `meic` it is that module's own arm record: `meic · not armed · SPX`.
 On `flies` it is the pilot's. Hover for the detail. Each live loop is armed separately, which is why
 one chip does not cover both. On the right sits the alert-daemon chip.
 
-![Live today: the suite's net, what to do today, and a card for each live loop](../images/live-today.png)
+![Live today: the loops' net, the broker positions, and a card for each live loop](../images/live-today.png)
 
 ### today
 
-Three questions, in order. **What needs a person?** is the net for today over all loops, with what is
-still open at mark beneath it, chips for what is armed and whether the halt flag is clear, and the
-"what to do today" list drawn from the evaluation. **How is each loop doing?** is a card per loop: its
+Three questions, in order. **What needs attention?** has two cards. The first is the loops' report: the
+net for today over all loops, with what is still open at mark beneath it, and chips for what is armed,
+whether the halt flag is clear and how many items need attention. When there are some, that chip opens
+their list over the page, each with the loop, what is wrong and a link that scrolls to the loop's card.
+The second is your broker positions: how many trades the evaluation says to act on, how many shorts
+expire this week and how many report before they do, the first three to act on in the evaluation's own
+order with their net P&L, and a link to every one on the `positions` tab. **How is each loop doing?** is a card per loop: its
 net today, open count, worst case, mark, and a loss-breaker meter, with a button to its orders and
 every detail. A loop that is switched off is listed in one line. **What was traded by hand?** shows
 your own 0DTE trades, stated beside the total and never in it. In the demo above, nothing is armed,
@@ -175,7 +179,7 @@ the rail once its module's live switch is off and nothing is open, working or ow
 
 ## What to do
 
-- **Most days, nothing.** If `today` says `none armed` and nothing needs a person, you are done.
+- **Most days, nothing.** If `today` says `none armed` and nothing needs attention, you are done.
 - **When a trade is marked `take profit`, `roll for credit` or `review`,** open its card, read the
   explanation and the rule that fired, and decide. The suite will not do it for you.
 - **If the snapshot is old,** check the status bar's watchdog and manage chips before trusting any

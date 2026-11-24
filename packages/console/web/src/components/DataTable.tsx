@@ -161,6 +161,8 @@ interface CardProps {
   updatedAt?: number;
   isError?: boolean;
   controls?: ReactNode;
+  /** The outer section's id, where something on the page links to the card. */
+  id?: string;
   /** Extra class on the outer section — e.g. "view-fade" for a tab body that should fade in. */
   className?: string;
   /** Collapsed the first time this key is seen (e.g. the guide/help slide, read once then
@@ -176,12 +178,13 @@ interface CardProps {
 }
 
 /** Card shell with the house header: collapse caret, title, its help, controls, freshness stamp. */
-export function Card({ title, collapseKey, updatedAt, isError = false, controls, className, defaultCollapsed, onHoverChange, help, flag, children }: CardProps) {
+export function Card({ id, title, collapseKey, updatedAt, isError = false, controls, className, defaultCollapsed, onHoverChange, help, flag, children }: CardProps) {
   const key = collapseKey ?? (typeof title === "string" ? title : "card");
   const [collapsed, toggle] = useCollapsed(key, defaultCollapsed);
   const asOf = asOfLabel(updatedAt);
   return (
     <section
+      id={id}
       className={`card ${className ?? ""} ${isError ? "card-stale" : ""}`}
       onMouseEnter={onHoverChange !== undefined ? () => onHoverChange(true) : undefined}
       onMouseLeave={onHoverChange !== undefined ? () => onHoverChange(false) : undefined}
