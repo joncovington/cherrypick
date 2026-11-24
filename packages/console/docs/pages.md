@@ -892,7 +892,7 @@ broker's). Cancelled rows are in neither table. No curve or feed: the live loop 
 no `loop_log`, so there is no loop pill either. Pinned by `server/test/meic-live-reader.test.ts`.
 **Live vs paper** (`pages/Live/MeicLiveGap.tsx` over `GET /api/live/meic/gap` →
 `readers/meicLiveGap.ts`) follows the history: each live condor beside the paper arm `live-shadow`
-(`follows_live`, so it trades what the `live` block trades) from the first live session on, paired
+(`follows_live`, so it trades what the `live` block trades) from the first live session on, until `live-shadow` retires (its `arm_retired` break in the paper ledger); from then each session is set against the twin (`shadow_of`, found in the machine registry by `meicTwins`) of the arm live ran that session, read from the live ledger's entry attempts (`mirrorRows`), and a session whose arm has no twin is listed (`unmirrored`) and shows its live condors with no paper side, never another arm's twin. Paired
 per session with the same strikes first, then entry order. The gap is live net less paper net, + in
 live's favour; paired totals are the sums of their rows, and paper condors on days live sat out are
 counted on their own line. Pinned by `server/test/meic-live-gap.test.ts`. The **execution by week** card

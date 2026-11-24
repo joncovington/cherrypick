@@ -4,7 +4,8 @@ import os from "node:os";
 import path from "node:path";
 import Database from "better-sqlite3";
 import type { ConsoleConfig } from "../src/config.js";
-import { readMeicLiveGap } from "../src/readers/meicLiveGap.js";
+import type { MeicLiveGapSide } from "@console/shared";
+import { meicTwins, mirrorRows, readMeicLiveGap } from "../src/readers/meicLiveGap.js";
 
 /**
  * MEIC live against paper. The guards: a live condor pairs with
@@ -91,5 +92,102 @@ describe("readMeicLiveGap", () => {
   it("is absent, not a thrown route, without a live ledger", () => {
     fs.rmSync(path.join(tmp, "meic_trades.db"));
     expect(readMeicLiveGap(config)).toMatchObject({ ledger: "absent", rows: [], since: null });
+  });
+
+  it("keeps live-shadow as the mirror and lists nothing until it retires", () => {
+    const g = readMeicLiveGap(config);
+    expect(g.twin).toBe("live-shadow");
+    expect(g.unmirrored).toEqual([]);
+  });
+});
+
+/** The mirror follows the arm live ran: `live-shadow` until it retires, then each session's twin. */
+describe("the mirror per arm", () => {
+  const side = (entry: string): MeicLiveGapSide => ({ entry, symbol: "SPX", putStrike: 7600, callStrike: 7650, width: 10, credit: 1.6, status: "expired", gross: 10, fees: 1, net: 9 });
+  const twins = new Map([["pm-200", "live-shadow-pm-200"], ["pm-1400", "live-shadow-pm-1400"]]);
+  const day = (arms: Record<string, string[]>) => new Map(Object.entries(arms).map(([a, e]) => [a, e.map(side)]));
+
+  it("uses live-shadow for every session before it retired, whatever twins exist", () => {
+    const byArm = new Map([["2026-11-20", day({ "live-shadow": ["a"], "live-shadow-pm-200": ["b"] })]]);
+    const out = mirrorRows(byArm, new Map([["2026-11-20", new Set(["pm-200"])]]), twins, null);
+    expect(out.paper.get("2026-11-20")?.map((s) => s.entry)).toEqual(["a"]);
+    expect(out.unmirrored).toEqual([]);
+  });
+
+  it("from the retirement uses the twin of the arm live ran that session, and no other", () => {
+    const byArm = new Map([
+      ["2026-11-23", day({ "live-shadow": ["old"] })],
+      ["2026-11-24", day({ "live-shadow-pm-200": ["a"], "live-shadow-pm-1400": ["b"] })],
+      ["2026-11-25", day({ "live-shadow-pm-200": ["c"], "live-shadow-pm-1400": ["d"] })],
+    ]);
+    const liveArms = new Map([["2026-11-24", new Set(["pm-200"])], ["2026-11-25", new Set(["pm-1400"])]]);
+    const out = mirrorRows(byArm, liveArms, twins, "2026-11-24");
+    expect(out.paper.get("2026-11-23")?.map((s) => s.entry)).toEqual(["old"]);
+    expect(out.paper.get("2026-11-24")?.map((s) => s.entry)).toEqual(["a"]);
+    expect(out.paper.get("2026-11-25")?.map((s) => s.entry)).toEqual(["d"]);
+  });
+
+  it("gives a session whose arm has no twin no mirror, and says so, never borrowing another arm's twin", () => {
+    const byArm = new Map([["2026-11-24", day({ "live-shadow-pm-200": ["a"], "live-shadow": ["x"] })]]);
+    const out = mirrorRows(byArm, new Map([["2026-11-24", new Set(["control"])]]), twins, "2026-11-24");
+    expect(out.paper.has("2026-11-24")).toBe(false);
+    expect(out.unmirrored).toEqual(["2026-11-24"]);
+  });
+
+  it("reads it end to end: registry twins, the live ledger's attempts, the paper ledger's break", () => {
+    for (const f of ["meic_trades.db", "paper_trades.db"]) fs.rmSync(path.join(tmp, f));
+    ledger("meic_trades.db", [
+      ["2026-11-24", "2026-11-24 14:00", 7600, 7650, 1.6, "expired", 160, 7, "live"],
+      ["2026-11-25", "2026-11-25 14:00", 7600, 7650, 1.6, "expired", 160, 7, "live"],
+    ]);
+    ledger("paper_trades.db", [
+      ["2026-11-24", "2026-11-24 14:01", 7600, 7650, 1.62, "expired", 162, 5, "live-shadow-pm-200"],
+      ["2026-11-24", "2026-11-24 14:02", 7600, 7650, 1.7, "expired", 999, 5, "live-shadow-pm-1400"],
+      ["2026-11-25", "2026-11-25 14:01", 7600, 7650, 1.62, "expired", 162, 5, "live-shadow-pm-200"],
+    ]);
+    const live = new Database(path.join(tmp, "meic_trades.db"));
+    live.exec("CREATE TABLE entry_attempts (id INTEGER PRIMARY KEY, trade_date TEXT, arm TEXT, outcome TEXT)");
+    live.exec("INSERT INTO entry_attempts (trade_date, arm, outcome) VALUES ('2026-11-24', 'pm-200', 'filled'), ('2026-11-25', 'control', 'filled')");
+    live.close();
+    const paper = new Database(path.join(tmp, "paper_trades.db"));
+    paper.exec("CREATE TABLE measurement_breaks (id INTEGER PRIMARY KEY, break_date TEXT, scope TEXT, kind TEXT)");
+    paper.exec("INSERT INTO measurement_breaks (break_date, scope, kind) VALUES ('2026-11-24', 'live-shadow', 'arm_retired')");
+    paper.close();
+    const registry = path.join(tmp, "meic.risk.json");
+    fs.writeFileSync(
+      registry,
+      JSON.stringify({ profiles: { "live-shadow-pm-200": { enabled: true, shadow_of: "pm-200" }, "live-shadow-pm-1400": { enabled: true, shadow_of: "pm-1400" } } }),
+    );
+    const g = readMeicLiveGap({ paths: { meicDir: tmp, meicRiskConfig: registry } } as unknown as ConsoleConfig);
+    expect(g.twin).toBe("live-shadow before 2026-11-24, then each session's arm twin");
+    expect(g.unmirrored).toEqual(["2026-11-25"]);
+    // 11-24: live 160 − 7 against pm-200's twin 162 − 5, not pm-1400's 999; 11-25: no twin for control, so live alone.
+    const [d25, d24] = g.rows;
+    expect(d24!.paper?.net).toBe(157);
+    expect(d24!.gap).toBe(-4);
+    expect(d25!.paper).toBeNull();
+    expect(g.totals.liveOnly).toBe(1);
+  });
+
+  it("reads no twins from an absent or unreadable registry", () => {
+    expect(meicTwins({ paths: { meicRiskConfig: path.join(tmp, "nope.json") } } as unknown as ConsoleConfig).size).toBe(0);
+    fs.writeFileSync(path.join(tmp, "bad.json"), "{not json");
+    expect(meicTwins({ paths: { meicRiskConfig: path.join(tmp, "bad.json") } } as unknown as ConsoleConfig).size).toBe(0);
+    expect(meicTwins({ paths: {} } as unknown as ConsoleConfig).size).toBe(0);
+  });
+
+  it("takes only plain twins from the registry: an override makes it an experiment beside the arm", () => {
+    const registry = path.join(tmp, "r.json");
+    fs.writeFileSync(
+      registry,
+      JSON.stringify({
+        profiles: {
+          "t-plain": { enabled: false, shadow_of: "a", _note: "retired" },
+          "t-plus": { enabled: true, shadow_of: "b", min_iv_rank: 0 },
+          "live-shadow": { enabled: true, follows_live: true },
+        },
+      }),
+    );
+    expect([...meicTwins({ paths: { meicRiskConfig: registry } } as unknown as ConsoleConfig)]).toEqual([["a", "t-plain"]]);
   });
 });

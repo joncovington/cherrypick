@@ -112,6 +112,11 @@ export function MeicLiveGapView({ d, className }: { d: MeicLiveGapPayload; class
           )}
         </p>
       )}
+      {d.unmirrored.length > 0 && (
+        <p className="muted pp-line">
+          no paper twin for the arm live ran on {d.unmirrored.join(", ")}: its condors have no paper side
+        </p>
+      )}
       <BoxButtons>
         <BoxButton id="execution">execution by week</BoxButton>
         <BoxButton id="pairs">pair by pair</BoxButton>

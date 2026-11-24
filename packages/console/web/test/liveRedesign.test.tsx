@@ -67,6 +67,7 @@ function meicPayload(over: Partial<LiveMeicPayload> = {}): LiveMeicPayload {
 
 const gapPayload: MeicLiveGapPayload = {
   twin: "live-shadow",
+  unmirrored: [],
   ledger: "ok",
   since: "2026-11-01",
   rows: [],

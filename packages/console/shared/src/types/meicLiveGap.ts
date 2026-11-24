@@ -40,8 +40,12 @@ export interface MeicLiveGapTotals {
 }
 
 export interface MeicLiveGapPayload {
-  /** The paper arm compared against. */
+  /** The paper arm compared against: `live-shadow`, or once it has retired, that and then each
+   *  session's arm twin. */
   twin: string;
+  /** Sessions whose arm has no paper twin: their live condors are shown as having none and they are
+   *  left out of nothing else. Empty until `live-shadow` retires. */
+  unmirrored: string[];
   /** "absent" when either ledger is missing on this machine. */
   ledger: "ok" | "absent";
   /** The first live session: paper is read from here on. */
