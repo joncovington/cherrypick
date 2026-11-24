@@ -141,7 +141,7 @@ describe("the Live rail", () => {
   it("leaves the flies tab out of the simple view and keeps it in detail", () => {
     const slides = NAV_DECL.live.slides;
     expect(viewSlides("live", slides, "simple").map((s) => s.id)).not.toContain("flies");
-    expect(viewSlides("live", slides, "simple").map((s) => s.id)).toEqual(["today", "positions", "portfolio", "wheel", "pmcc", "meic"]);
+    expect(viewSlides("live", slides, "simple").map((s) => s.id)).toEqual(["today", "positions", "portfolio", "wheel", "pmcc"]);
     expect(viewSlides("live", slides, "detail").map((s) => s.id)).toContain("flies");
   });
 });

@@ -11,7 +11,7 @@ A page the suite has switched off is not shown (see *What is off is not shown* b
 
 | Page | Route | Tabs | What it is |
 |---|---|---|---|
-| Live | `/live` | today, positions, portfolio, wheel, pmcc, flies, meic | Real money first: what is open at the broker, the book as a whole, the wheel, and one tab per live loop (flies and meic only while their live switch is on or the loop still holds something). `/` redirects here. |
+| Live | `/live` | today, positions, portfolio, wheel, pmcc, flies | Real money first: what is open at the broker, the book as a whole, the wheel, and a tab for flies (only while its live switch is on or the loop still holds something). MEIC's live orders are on `today`. `/` redirects here. |
 | Reports | `/reports` | morning, eod, external | The morning pack, the end-of-day review, and **External reports**: the tabs people add with a script of their own (`/reports/external/<id>`). |
 | Charts | `/charts` | chart, setups | One chart for every symbol (live intraday candles with the recorded sessions' Market Profiles under them, or the technicals daily chart), and the setups the technicals package finds. |
 | GEX | `/gex` | gex, iv skew | Dealer gamma by strike for the recorded day, and the IV skew. Reads the market; trades nothing. |
@@ -152,7 +152,7 @@ toggle; `GET /api/features`), never from reading the config here — `enabled` a
 capabilities like Dolt and Claude Code. Every web rule is in `lib/visibility.ts`; the desk
 rows and the default log sources are filtered on the server with the same answer. **Fail open:**
 loading, `{ok: false}` or an id the reply does not name all show the thing, with a status-bar chip on
-failure. A Live tab named for a module (flies, meic) follows that module's live master switch,
+failure. A Live tab named for a module (flies) follows that module's live master switch,
 which the same reply carries as `live`, but only once that loop is idle: it hides on an
 explicit `false` AND a read Live Today payload reporting nothing for the loop (no open position,
 working or held order, orphan, overdue settlement or attention item; `liveLoopsInUse`). A switch
@@ -825,14 +825,12 @@ of the last evening pass, tomorrow's artifact, the queue and the last concluded.
 experiments tab opens with the cross-module roll-up. Module slides are read-only; kill/dismiss stay on
 the Advisor page only.
 
-**Live** (`/live`, `lightbox/manifests/LiveLightbox.tsx`, `pages/Live/`) — seven tabs: `today` (where
-`/live` lands), the account-wide `positions`, `portfolio`, `wheel` and `pmcc`, and one per live loop with a page of its
-own (`flies`, `meic`; each hidden when that module's live switch is off and the loop is idle, see *What is off*). The
+**Live** (`/live`, `lightbox/manifests/LiveLightbox.tsx`, `pages/Live/`) — six tabs: `today` (where
+`/live` lands), the account-wide `positions`, `portfolio`, `wheel` and `pmcc`, and `flies`, the one live loop with a page of its
+own (hidden when that module's live switch is off and the loop is idle, see *What is off*). The
 account-wide set is `LIVE_ACCOUNT_WIDE` in `lib/visibility.ts`, the one copy: those tabs are always shown and wear the
 suite badge. When the evaluation holds more than one account, a select in their header picks the one they draw
-(`?acct=`, which rides along between the tabs): the first, the main login's, by default, or `all accounts`. The simple view lists `today`, the four account views and `meic` (flies is retired and off by default). The execution record
-(B10, below) is a card on its arm's own tab (MEIC's, the
-only live ledger it reads), and `/live/execution` lands on `meic`. `test/manifestSlides.test.ts` holds every manifest's tabs equal to its `navGroups.ts` declaration. The
+(`?acct=`, which rides along between the tabs): the first, the main login's, by default, or `all accounts`. The simple view lists `today`, and the four account views (flies is retired and off by default). `/live/meic` and `/live/execution` land on `today`. `test/manifestSlides.test.ts` holds every manifest's tabs equal to its `navGroups.ts` declaration. The
 `flies` tab is the pilot's day over `GET /api/live/flies` (`routes/live.ts` → `readers/fliesLive.ts`), composing existing readers
 (`services/liveLock`, `readFliesLoopStatus`, `readFliesJournal`, `readFliesAnalytics`) plus settled
 net per period, the intraday series and the broker account. Rules, stated on the page:
@@ -883,7 +881,7 @@ net per period, the intraday series and the broker account. Rules, stated on the
   (`core.metrics` over `live_trades.db`, rendered by `MetricTiles`). Their two max drawdowns differ on
   purpose — daily against per trade — and the page labels which is which.
 
-**The Live page's `meic` tab** (`pages/Live/MeicLivePage.tsx` over `GET /api/live/meic` →
+**MEIC's live read** (`GET /api/live/meic`, behind `pages/Live/MeicLivePage.tsx`'s hook and tables; the page itself has no tab since the Live meic tab was removed, and Live Today's orders read it) →
 `readers/meicLive.ts`) is MEIC's live loop from files alone: the arm record (armed =
 dated today; past `live.disarm_time` is said), the halt flag, the orphan / hold / broker-health files
 beside `meic_trades.db` (read as `core.execution` reads them: an unreadable hold file is held), open
@@ -898,7 +896,7 @@ no `loop_log`, so there is no loop pill either. Pinned by `server/test/meic-live
 per session with the same strikes first, then entry order. The gap is live net less paper net, + in
 live's favour; paired totals are the sums of their rows, and paper condors on days live sat out are
 counted on their own line. Pinned by `server/test/meic-live-gap.test.ts`. The **execution by week** card
-(B10, below) closes the tab. Its gap is against the same paper arm but over every session live was
+(B10, below) is on no tab now. Its gap is against the same paper arm but over every session live was
 working, so it also counts the entries live missed; each card says which sessions it counts.
 
 **The ladder's `performance` tab** opens with **realized and marked, by session**
@@ -1380,7 +1378,7 @@ several chances to disagree about which base a book shadows.
 
 ## Book-review read surfaces
 
-**The book-review read surfaces.** Live → `meic`'s *execution by week* card (B10; `pages/Live/LiveExecution.tsx`) renders the orchestrator's
+**The book-review read surfaces.** The *execution by week* card (no tab mounts it now) (B10; `pages/Live/LiveExecution.tsx`) renders the orchestrator's
 `execution --json` through `services/executionBridge.ts`: each live arm's week, fill rate, slippage
 against the mid at submit, overrides, and the gap to its paper mirror. A closed trade with no recorded
 net is out of its week's net and said beside the count (`unpriced`, "1 + 1 no net"), never counted as zero. Compare → `slices` (B5;

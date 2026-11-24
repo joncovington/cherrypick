@@ -393,7 +393,6 @@ export const LIVE_SLIDES = [
   { id: "wheel", label: "wheel" },
   { id: "pmcc", label: "pmcc" },
   { id: "flies", label: "flies" },
-  { id: "meic", label: "meic" },
 ] as const satisfies readonly NavSlide[];
 
 // `external` (2026-11-08): the reports a person's own scripts write to data/external
@@ -663,7 +662,7 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
   gex: { slides: GEX_SLIDES, legacy: { volume: "skew", history: "gex" } },
   gexpanel: { slides: GEX_PANEL_SLIDES },
   // Simple leaves out flies (2026-10-21): the module is retired, and its live tab is its history.
-  live: { slides: LIVE_SLIDES, simple: ["today", "positions", "portfolio", "wheel", "pmcc", "meic"], legacy: { manage: "positions", execution: "meic" } },
+  live: { slides: LIVE_SLIDES, simple: ["today", "positions", "portfolio", "wheel", "pmcc"], legacy: { manage: "positions", execution: "today", meic: "today" } },
   charts: { slides: CHARTS_SLIDES },
   screeners: {
     slides: SCREENERS_SLIDES,
