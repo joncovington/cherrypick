@@ -56,6 +56,21 @@ export interface LiveTodayOverdue {
   pendingEntries: number;
 }
 
+/**
+ * One (arm, symbol) pair's day on a loop. Live results are read per arm and per symbol, never pooled:
+ * a loop can run a different arm from one day to the next, and a figure over two arms describes
+ * neither. The pairs are today's resolved rows grouped, plus the pair's open positions.
+ */
+export interface LiveTodayPair {
+  /** The registry arm; null = the top level (the loop's `live.arm` unset) or a ledger that records none. */
+  arm: string | null;
+  symbol: string;
+  /** Positions of this pair holding risk now, any session. */
+  open: number;
+  /** This pair's rows resolved today, in the same money layout as the loop's. */
+  today: LiveTodayMoney;
+}
+
 export interface LiveTodayLoop {
   loop: LiveLoopId;
   /** The loop's own Live tab, or its module page where it has none. */
@@ -80,6 +95,9 @@ export interface LiveTodayLoop {
   entriesToday: number;
   /** null when the ledger could not be read. */
   today: LiveTodayMoney | null;
+  /** Today by (arm, symbol), one entry per pair that resolved a row today or holds a position; empty
+   *  where the loop's ledger names no arm (flies, bwb) or nothing traded. Hidden on the page when empty. */
+  pairs: LiveTodayPair[];
   /** The loop's mark over what it holds, unrealised NET of fees to date on every loop (flies' `mark_pnl`,
    *  bwb's unrealised net, MEIC's condors at mid less fees), so the suite totals them (`suite.unrealised`). */
   mark: { value: number | null; at: string | null; basis: string } | null;

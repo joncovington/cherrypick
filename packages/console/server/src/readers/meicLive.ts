@@ -36,6 +36,7 @@ import type {
   LiveMeicArm,
   LiveMeicBrokerHealth,
   LiveMeicHeld,
+  LiveMeicHistoryRow,
   LiveMeicOpenRow,
   LiveMeicOrphan,
   LiveMeicPayload,
@@ -242,7 +243,7 @@ interface MarkLegs {
 
 interface Ledger {
   open: LiveMeicOpenRow[];
-  history: MeicTradeRow[];
+  history: LiveMeicHistoryRow[];
   totals: LiveMeicTotals;
   legs: Map<number, MarkLegs>;
 }
@@ -307,19 +308,20 @@ function readLedger(db: Database.Database, session: string): Ledger {
 
   const history = db
     .prepare<[], Record<string, unknown>>(
-      `SELECT id, trade_date, entry_time, symbol, put_strike, call_strike, wing_width,
+      `SELECT id, trade_date, entry_time, symbol, ${col(db, "arm")} AS arm, put_strike, call_strike, wing_width,
               net_credit, put_credit, call_credit, quantity, status, pnl, fees, exit_reason, iv_rank_at_entry,
               put_stop_cost, call_stop_cost, ${money}
          FROM ic_trades WHERE status IN (${inList(RESOLVED_STATUSES)}) ORDER BY trade_date DESC, id DESC`,
     )
     .all()
     .map(
-      (r): MeicTradeRow => ({
+      (r): LiveMeicHistoryRow => ({
         mode: "live",
         id: num(r["id"]) ?? 0,
         tradeDate: str(r["trade_date"]) ?? "",
         entryTime: str(r["entry_time"]),
         symbol: str(r["symbol"]) ?? "",
+        arm: str(r["arm"]),
         putStrike: num(r["put_strike"]),
         callStrike: num(r["call_strike"]),
         wingWidth: num(r["wing_width"]),
