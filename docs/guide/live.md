@@ -1,7 +1,7 @@
 # Live
 
-The Live page is where real money is shown, and it is read-only: nothing on it can place, change or
-cancel an order. It has seven tabs: `/live/today`, `/live/positions`, `/live/portfolio`, `/live/wheel`,
+The Live page is where real money is shown, and it places, changes and cancels no order. Its one write,
+off unless you turn it on, is the arm-for-today switch on a loop's card (see [today](#today)). It has seven tabs: `/live/today`, `/live/positions`, `/live/portfolio`, `/live/wheel`,
 `/live/pmcc`, `/live/flies` and `/live/meic`. Opening the console lands you on `/live`, which shows
 the first tab. Older bookmarks still work: `/live/manage` goes to positions and `/live/execution` goes
 to meic.
@@ -57,7 +57,17 @@ symbol the loop traded or holds today is its own line with its own net, and the 
 full. A day that ran one arm shows one line; a loop with nothing resolved or held shows none. A loop
 that is switched off and holds nothing is not shown. **What was traded by hand?**
 shows your own 0DTE trades, stated beside the total and never in it, and only on a day you made some
-(or when something about them needs a look). In the demo above, nothing is armed,
+(or when something about them needs a look).
+
+**The arm switch** is on a loop's card only while `live_arming` is `true` in `console.json`; it ships
+off and the cards are then as described above. With it on, MEIC's main account and the ladder show an
+"Armed for today / Not armed today" strip with a switch. Switching on opens a dialog that shows the
+loop's own readiness, then the disclaimer in full, then asks you to type `YES`; arming then runs on the
+server and you can leave the page (an amber dot on Live in the rail and a notice tell you when it is
+done). Switching off asks a plain question and stops new entries without placing an order. While the
+halt flag is up the switches are locked, and arming never clears the halt. A second login's account
+shows a locked switch with its blocker. How it works, and what it will not do, is in
+[going-live.md](going-live.md#from-the-console-the-live-pages-switches). In the demo above, nothing is armed,
 the net reads `n/r` and the MEIC card says `no ledger`, because no live session has been recorded.
 
 ### positions

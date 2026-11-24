@@ -142,6 +142,13 @@ what it may write. The package's own CLAUDE.md holds the detail.
   check; a switch turned on starts at the next session (the module sets it), and once a group has
   run a budget change is dated from the next session. An automation's page adds the last: retiring
   or reinstating it (`retired` and `enabled` false), after the module's check. Paper only.
+  **One live exception, off by default:** with `live_arming` true in `config/console.json`, the Live
+  page's today tab has an arm-for-today switch on each live loop's card (MEIC's main account and the
+  ladder; a second login's account shows a locked switch, flies and bwb none). Switching on shows the
+  module's own readiness and `DISCLAIMER.md`, then needs a typed `YES` that the server checks again
+  against a one-use token for what was shown; it then runs the module's `live_loop --arm --confirm YES`
+  in the background. Switching off runs `live_loop --disarm`. The console writes no arm record itself,
+  never clears the halt flag (arming is refused while it is up) and places no order.
 - **packages/review** — the cross-module end-of-day review: one versioned fact set per session, read
   via `cherrypick.core.ledgers` (the single home for per-schema net/risk rules), written only to its own
   store. No credentials, no network, no AI — the narrative is written outside by a scheduled agent.
