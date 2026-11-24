@@ -172,9 +172,9 @@ def arm_events_path() -> Path:
     return _home.data_dir("live") / ARM_EVENTS_FILE
 
 
-def _record_event(module: str, event: str, **fields: object) -> None:
-    """Append one event. Best effort by design: a journal that cannot be written must never stop an
-    arm or a disarm, so a failure here is swallowed."""
+def record_event(module: str, event: str, **fields: object) -> bool:
+    """Append one event to the arm journal; True when it was written. A caller that must not proceed
+    without the record (a change of the arm live runs) checks the answer; `_record_event` ignores it."""
     from cherrypick.core.clock import now_iso
 
     row = {"at": now_iso(), "module": module, "event": event, **fields}
@@ -184,7 +184,14 @@ def _record_event(module: str, event: str, **fields: object) -> None:
         with open(path, "a", encoding="utf-8") as f:
             f.write(json.dumps(row) + "\n")
     except OSError:
-        pass
+        return False
+    return True
+
+
+def _record_event(module: str, event: str, **fields: object) -> None:
+    """Append one event. Best effort by design: a journal that cannot be written must never stop an
+    arm or a disarm, so a failure here is swallowed."""
+    record_event(module, event, **fields)
 
 
 def arm_events(module: str | None = None, *, date: str | None = None) -> list[dict]:
