@@ -1130,7 +1130,7 @@ def run_once(
         reason = should_disarm(config, now_min, day)
         if reason:
             log(f"self-disarm: {reason}")
-            uninstall_task()
+            uninstall_task(actor="bwb-tick", reason=_live.disarm_slug(reason))
             return {**summary, "disarmed": reason}
 
     # 1. broker truth against ledger belief
@@ -1352,8 +1352,9 @@ def install_task() -> dict:
     )
 
 
-def uninstall_task() -> dict:
-    return _live.disarm("bwb")
+def uninstall_task(*, actor: str = "live-loop-disarm", reason: str | None = None) -> dict:
+    """Disarm. `core.live.arm_events` records the actor: the command by default, the tick names itself."""
+    return _live.disarm("bwb", actor=actor, reason=reason)
 
 
 # --------------------------------------------------------------------------- status
@@ -1554,7 +1555,7 @@ def main(argv=None) -> int:
                 config, clock.minute_of_day(clock.now_et()), clock.now_et().date().isoformat()
             )
             if reason:
-                uninstall_task()
+                uninstall_task(actor="bwb-tick", reason=_live.disarm_slug(reason))
                 return out({"ok": True, "disarmed": reason})
         if not looplock.acquire(_once_lock_path(), 180, alive=looplock.pid_alive):
             return out({"ok": True, "skipped": "another live tick is running"})

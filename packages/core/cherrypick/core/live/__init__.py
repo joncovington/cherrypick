@@ -30,9 +30,12 @@ __all__ = [
     "write_arm_record",
     "arm_record_date",
     "should_disarm",
+    "disarm_slug",
     "supervisor_heartbeat_fresh",
     "arm",
     "disarm",
+    "arm_events_path",
+    "arm_events",
     "arm_from_cli",
     "suite_module_enabled",
     "disclaimer_text",
@@ -139,6 +142,12 @@ def should_disarm(
     return None
 
 
+def disarm_slug(reason: str) -> str:
+    """``should_disarm``'s reason as the journal's slug: ``record_not_today`` or ``past_disarm_time``.
+    One spelling, so a query over ``arm_events`` finds every module's self-disarm of a kind."""
+    return "record_not_today" if reason.startswith("arm stamp is") else "past_disarm_time"
+
+
 def supervisor_heartbeat_fresh(max_age_seconds: int = 90) -> bool:
     """Is the orchestrator's supervisor daemon driving this box? A file read, never an import.
     Fresh means arming is a record write and the supervisor fires the ticks."""
@@ -151,6 +160,54 @@ def supervisor_heartbeat_fresh(max_age_seconds: int = 90) -> bool:
         return (datetime.now(UTC) - then).total_seconds() <= max_age_seconds
     except (OSError, ValueError, TypeError):
         return False
+
+
+ARM_EVENTS_FILE = "arm_events.jsonl"
+
+
+def arm_events_path() -> Path:
+    """The suite's arm journal: ``data/live/arm_events.jsonl``, one JSON object a line, append-only.
+    The arm record is overwritten by every arm and deleted by every disarm, so on its own it cannot
+    say when a loop was armed or stopped earlier in the day; this can."""
+    return _home.data_dir("live") / ARM_EVENTS_FILE
+
+
+def _record_event(module: str, event: str, **fields: object) -> None:
+    """Append one event. Best effort by design: a journal that cannot be written must never stop an
+    arm or a disarm, so a failure here is swallowed."""
+    from cherrypick.core.clock import now_iso
+
+    row = {"at": now_iso(), "module": module, "event": event, **fields}
+    try:
+        path = arm_events_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(row) + "\n")
+    except OSError:
+        pass
+
+
+def arm_events(module: str | None = None, *, date: str | None = None) -> list[dict]:
+    """The journal's rows, oldest first, optionally one module's and one session's (``armed_for``
+    for an arm, ``record_date`` for a disarm). A missing file is an empty list; a line that does not
+    parse is skipped."""
+    rows: list[dict] = []
+    try:
+        with open(arm_events_path(), encoding="utf-8") as f:
+            for line in f:
+                try:
+                    row = json.loads(line)
+                except ValueError:
+                    continue
+                if isinstance(row, dict):
+                    rows.append(row)
+    except OSError:
+        return []
+    if module is not None:
+        rows = [r for r in rows if r.get("module") == module]
+    if date is not None:
+        rows = [r for r in rows if date in (r.get("armed_for"), r.get("record_date"))]
+    return rows
 
 
 def arm(
@@ -174,6 +231,7 @@ def arm(
             "error": "no supervisor running -- the arm record only arms when the supervisor derives the job",
         }
     path = write_arm_record(module, date=date, at=at, armed_by=armed_by, companions=companions)
+    _record_event(module, "arm", armed_for=date, actor=armed_by)
     if spawn_first_tick is not None:
         try:
             spawn_first_tick()
@@ -194,16 +252,28 @@ def arm(
     return out
 
 
-def disarm(module: str, *, legacy_paths: Iterable[str | Path] = ()) -> dict:
+def disarm(
+    module: str,
+    *,
+    legacy_paths: Iterable[str | Path] = (),
+    actor: str = "unspecified",
+    reason: str | None = None,
+) -> dict:
     """Delete the arm record (and any legacy-location copy). The authoritative act: the
-    supervisor disables the job within one pass. Honest about nothing having been armed."""
+    supervisor disables the job within one pass. Honest about nothing having been armed.
+
+    A removal is journaled (``arm_events``) with ``actor`` (who asked: a command or a loop's
+    self-disarm names itself, else ``unspecified``) and ``reason``. Nothing removed, nothing journaled."""
     removed = False
+    record_date = arm_record_date(module, legacy_paths=legacy_paths)
     for path in (arm_record_path(module), *legacy_paths):
         try:
             os.unlink(path)
             removed = True
         except OSError:
             pass
+    if removed:
+        _record_event(module, "disarm", record_date=record_date, actor=actor, reason=reason)
     return {
         "ok": removed,
         "arm_record_removed": removed,

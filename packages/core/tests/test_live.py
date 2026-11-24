@@ -67,6 +67,48 @@ def test_disarm_removes_the_record_and_any_legacy_copy_and_is_honest_when_nothin
     assert not again["ok"] and "nothing was armed" in again["detail"]
 
 
+def test_every_arm_and_removing_disarm_is_journaled_with_its_actor_and_reason():
+    _fresh_heartbeat()
+    live.arm("ladder", date="2026-11-23", at="t1", armed_by="live-ladder-start")
+    live.disarm("ladder", actor="disarm-command")
+    live.arm("ladder", date="2026-11-23", at="t2", armed_by="live-ladder-start")
+    live.disarm("ladder", actor="ladder-tick", reason="past_disarm_at")
+    live.disarm("ladder")  # nothing armed: not an event
+    live.arm("meic", date="2026-11-24", at="t3", armed_by="live-meic-start")
+    rows = live.arm_events("ladder")
+    assert [(r["event"], r["actor"]) for r in rows] == [
+        ("arm", "live-ladder-start"),
+        ("disarm", "disarm-command"),
+        ("arm", "live-ladder-start"),
+        ("disarm", "ladder-tick"),
+    ]
+    assert rows[1]["record_date"] == "2026-11-23" and rows[3]["reason"] == "past_disarm_at"
+    assert all(r["at"] and r["module"] == "ladder" for r in rows)
+    assert [r["module"] for r in live.arm_events()] == ["ladder"] * 4 + ["meic"]
+    assert len(live.arm_events("ladder", date="2026-11-23")) == 4 and not live.arm_events(date="1999-01-01")
+
+
+def test_disarm_slug_names_both_should_disarm_reasons():
+    stale = live.should_disarm(
+        "2026-11-20", today="2026-11-23", now_min=600, disarm_min=1200, disarm_label="20:00"
+    )
+    late = live.should_disarm(
+        "2026-11-23", today="2026-11-23", now_min=1200, disarm_min=1200, disarm_label="20:00"
+    )
+    assert live.disarm_slug(stale) == "record_not_today"
+    assert live.disarm_slug(late) == "past_disarm_time"
+
+
+def test_a_refused_arm_is_not_journaled_and_an_unwritable_journal_never_stops_an_arm():
+    assert not live.arm("bwb", date="2026-09-18", at="t", armed_by="x")["ok"]  # no supervisor
+    assert live.arm_events() == []
+    _fresh_heartbeat()
+    live.arm_events_path().mkdir(parents=True)  # a directory where the file belongs: the append fails
+    assert live.arm_events() == []
+    assert live.arm("bwb", date="2026-09-18", at="t", armed_by="x")["ok"]
+    assert live.disarm("bwb")["ok"]
+
+
 def test_arm_record_date_reads_a_legacy_location_read_only(tmp_path):
     legacy = tmp_path / "live_armed.json"
     legacy.write_text(json.dumps({"date": "2026-08-07"}), encoding="utf-8")

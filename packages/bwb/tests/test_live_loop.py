@@ -842,6 +842,11 @@ def test_the_dead_man_disarms_before_any_broker_read(live_config, conn, cache, p
     assert "disarmed" not in out and out["entry"]["entry"] == "placed"
     out = _tick(live_config, conn, broker, cache, when=datetime(2026, 9, 16, 17, 0))
     assert "past disarm" in out["disarmed"] and not os.path.exists(live_loop.arm_record_path())
+    rows = [r for r in _live.arm_events("bwb") if r["event"] == "disarm"]
+    assert [(r["actor"], r["reason"]) for r in rows] == [
+        ("bwb-tick", "record_not_today"),
+        ("bwb-tick", "past_disarm_time"),
+    ]
     # a dry run is never gated on the arm record: it places nothing
     out = _tick(live_config, conn, broker, cache, live=False, armed=False)
     assert "disarmed" not in out

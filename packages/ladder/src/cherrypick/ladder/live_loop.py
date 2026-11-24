@@ -142,8 +142,10 @@ def install_task(config: dict | None = None) -> dict:
     return out
 
 
-def uninstall_task() -> dict:
-    return _live.disarm(MODULE)
+def uninstall_task(*, actor: str = "live-loop-disarm", reason: str | None = None) -> dict:
+    """Disarm. The arm journal (`core.live.arm_events`) records who did it: `live-loop-disarm` is the
+    command, the tick names itself (`ladder-tick`) and says why."""
+    return _live.disarm(MODULE, actor=actor, reason=reason)
 
 
 def run_once(config: dict, **kwargs) -> dict:

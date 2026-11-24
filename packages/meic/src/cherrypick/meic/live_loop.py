@@ -489,8 +489,9 @@ def install_task(config: dict | None = None) -> dict:
     )
 
 
-def uninstall_task() -> dict:
-    return _live.disarm(_paths.live_key())
+def uninstall_task(*, actor: str = "live-loop-disarm", reason: str | None = None) -> dict:
+    """Disarm. `core.live.arm_events` records the actor: the command by default, the tick names itself."""
+    return _live.disarm(_paths.live_key(), actor=actor, reason=reason)
 
 
 # --------------------------------------------------------------------------- caps and sweep
@@ -2258,7 +2259,7 @@ def main(argv=None) -> int:
         not_armed = should_disarm(cfg, _now_min(now), today)
         if not_armed:
             if arm_stamp_date() is not None:
-                uninstall_task()
+                uninstall_task(actor="meic-tick", reason=_live.disarm_slug(not_armed))
             try:
                 held = holds_today(str(_paths.live_db_path()), today)
             except LedgerUnreadable:

@@ -112,6 +112,26 @@ def test_disarm_removes_record_and_legacy_stamp(fresh_supervisor_heartbeat, monk
     assert ll.arm_stamp_date() is None
 
 
+def test_a_live_tick_that_removes_a_stale_record_journals_it_as_the_flies_tick(
+    managed_home, monkeypatch, capsys
+):
+    from cherrypick.core import live as _live
+
+    from cherrypick.flies import credentials as creds
+
+    _live.write_arm_record("flies", date="2000-01-03", at="t", armed_by="live-flies-start")
+    monkeypatch.setattr(ll, "load_config", lambda *_a, **_k: {})
+    monkeypatch.setattr(creds, "designated_account", lambda: None)
+    monkeypatch.setattr(ll, "readiness", lambda *_a, **_k: [])
+    monkeypatch.setattr("sys.argv", ["live_loop", "--once", "--live"])
+    assert ll.main() == 0
+    assert "disarmed" in json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+    rows = [r for r in _live.arm_events("flies") if r["event"] == "disarm"]
+    assert [(r["actor"], r["reason"], r["record_date"]) for r in rows] == [
+        ("flies-tick", "record_not_today", "2000-01-03")
+    ]
+
+
 def test_disarm_with_nothing_armed_is_honest(managed_home, monkeypatch):
     out = ll.uninstall_task()
     assert not out["arm_record_removed"] and "nothing was armed" in out["detail"]
