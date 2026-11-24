@@ -1,33 +1,31 @@
 import {
   LADDER_HOSPITAL_DAYS,
-  type LadderLiveClosedLot,
   type LadderLiveGate,
   type LadderLiveOrder,
   type LadderLivePayload,
   type LadderLiveStatus,
 } from "@console/shared";
+import { Link } from "react-router-dom";
 import { Card, DataCard } from "../../components/DataTable";
 import { HelpSection, HelpWarn, type CardHelpContent } from "../../components/CardHelp";
 import { Section } from "../../components/Section";
-import { TradeTotalsChip } from "../../components/TradeMoney";
-import { HistoryTable } from "../../components/table/HistoryTable";
-import type { ColumnDef } from "../../components/table/columns";
 import { FliesTile } from "../Flies/FliesSession";
 import { ageLabel, fmtCash, fmtMoney } from "../../lib/format";
-import { MONEY_COLUMNS } from "./LadderPages";
-import { pctOfCost, price, targetText, whenEt } from "./ladderModels";
+import { price, targetText, whenEt } from "./ladderModels";
 
 /**
- * The ladder's Live view (issue #1337): the live loop's state and its own ledger, READ ONLY. The gates,
- * the mode, the arm, the halt flag and the standing dry-run intents are the module's own
- * (`live_loop --status`); the lots, orders and journal are `live_trades.db`. The page computes no gate,
- * no fee and no P&L, and has no control: arming is `/live-ladder-start`, and nothing here can arm,
- * disarm, halt or place an order.
+ * The ladder's pages under the frame's Live mode (issue #1337): the live loop's state and its own
+ * ledger, READ ONLY. The gates, the mode, the arm, the halt flag and the standing dry-run intents are
+ * the module's own (`live_loop --status`); the lots, orders and journal are `live_trades.db`. Three
+ * tabs have a live read (today, open lots, history); every other tab says so in one line. The page
+ * computes no gate, no fee and no P&L, and has no control: arming stays on the suite-wide Live page,
+ * and nothing here can arm, disarm, halt or place an order.
  *
  * **LIVE and dry-run are told apart at the top and never merged.** The module ships in dry-run: the
  * loop reads the broker and journals the orders it would send, and sends none until `live.dry_run` is
  * false by hand. A ledger on this page holds real broker records only, so a dry-run machine shows
- * intents and journal rows, never a lot it did not buy. Nothing on this page is paper.
+ * intents and journal rows, never a lot it did not buy. Nothing on these pages is paper, and a card
+ * with nothing to show is left out rather than drawn empty.
  */
 
 export function modeWords(status: LadderLiveStatus | undefined): { label: string; tone: "live" | "dry" | "unknown"; text: string } {
@@ -159,7 +157,8 @@ function StateTiles({ live, status }: { live: LadderLivePayload | undefined; sta
   );
 }
 
-function ChecksCards({ status }: { status: LadderLiveStatus | undefined }) {
+/** What the last tick's checks have to show: each card is drawn only when it has rows. */
+function checksShown(status: LadderLiveStatus | undefined) {
   const checks = status?.checks ?? null;
   const funds = checks?.funds ?? [];
   const intents = checks?.intents ?? [];
@@ -168,8 +167,14 @@ function ChecksCards({ status }: { status: LadderLiveStatus | undefined }) {
     ...(checks?.positionsReadable === false ? ["the broker's positions could not be read: no fund bought"] : []),
     ...(checks?.blocked ?? []).map((b) => `${b.fund}: ${b.reason}`),
   ];
+  return { checks, funds, intents, problems };
+}
+
+function ChecksCards({ status }: { status: LadderLiveStatus | undefined }) {
+  const { checks, funds, intents, problems } = checksShown(status);
   return (
     <>
+      {funds.length > 0 && (
       <DataCard
         title="positions against the ledger"
         className="lv-6"
@@ -207,10 +212,9 @@ function ChecksCards({ status }: { status: LadderLiveStatus | undefined }) {
           </tr>
         ))}
       </DataCard>
-      <Card title="what is stopping buys" className="lv-6" collapseKey="ladder-live-problems">
-        {problems.length === 0 ? (
-          <p className="muted">{checks === null ? "No tick has recorded its checks yet." : "Nothing on the last tick stopped a fund's buys."}</p>
-        ) : (
+      )}
+      {problems.length > 0 && (
+        <Card title="what is stopping buys" className="lv-6" collapseKey="ladder-live-problems">
           <ul className="pmcc-rules">
             {problems.map((p) => (
               <li key={p} className="pnl-neg">
@@ -218,8 +222,9 @@ function ChecksCards({ status }: { status: LadderLiveStatus | undefined }) {
               </li>
             ))}
           </ul>
-        )}
-      </Card>
+        </Card>
+      )}
+      {intents.length > 0 && (
       <DataCard
         title="standing dry-run intents"
         className="lv-12"
@@ -248,6 +253,7 @@ function ChecksCards({ status }: { status: LadderLiveStatus | undefined }) {
           </tr>
         ))}
       </DataCard>
+      )}
     </>
   );
 }
@@ -262,12 +268,12 @@ function OpenLots({ live }: { live: LadderLivePayload | undefined }) {
     <DataCard
       title="open live lots"
       className="lv-12"
-      headers={["fund", "lot", "shares × price", "cost", "target", "held", "sell at the broker", "fees so far", "account"]}
+      headers={["arm", "fund", "bought (ET)", "lot", "cost", "target", "held", "sell at the broker", "fees so far"]}
       loading={live === undefined}
       isError={live?.ledger === "failed"}
       rowCount={lots.length}
-      numFrom={2}
-      empty={live?.ledger === "absent" ? "no live ledger on this machine" : "no live lot is held"}
+      numFrom={3}
+      empty={ledgerLine(live, "No live lot is held.")}
       help={{
         title: "Open live lots",
         body: (
@@ -289,12 +295,11 @@ function OpenLots({ live }: { live: LadderLivePayload | undefined }) {
       }}
     >
       {lots.map((l) => (
-        <tr key={l.positionId}>
+        <tr key={l.positionId} title={l.account === null ? undefined : `account ${l.account}`}>
+          <td>{l.arm}</td>
           <td>{l.symbol}</td>
-          <td className="mono" title={`${l.arm} arm · bought ${whenEt(l.buySession, l.buyTime)} ET`}>
-            {l.positionId}
-          </td>
-          <td>
+          <td>{whenEt(l.buySession, l.buyTime)}</td>
+          <td className="mono" title={l.positionId}>
             {String(l.quantity)} × {price(l.buyPrice)}
           </td>
           <td>{fmtCash(l.entryValue)}</td>
@@ -312,90 +317,9 @@ function OpenLots({ live }: { live: LadderLivePayload | undefined }) {
           </td>
           <td>{l.sell === null ? "—" : `${l.sell.state}${l.sell.final ? " (ended)" : ""} · ${price(l.sell.limit)}${l.sell.tif ? ` · ${l.sell.tif}` : ""}`}</td>
           <td title={feeSource(l.feesSource)}>{l.buyFees === null ? "n/r" : fmtMoney(l.buyFees)}</td>
-          <td className="muted">{l.account ?? "—"}</td>
         </tr>
       ))}
     </DataCard>
-  );
-}
-
-const FEES_FROM: ColumnDef<LadderLiveClosedLot> = {
-  id: "feesfrom",
-  header: "fees from",
-  title: "where the fees came from: modeled is the schedule's, broker is the broker's own transaction rows",
-  kind: "describe",
-  className: "muted",
-  render: (r) => (r.feesSource === null ? "n/r" : r.feesSource),
-  sortValue: (r) => r.feesSource,
-};
-
-const CLOSED_DEFS: ColumnDef<LadderLiveClosedLot>[] = [
-  { id: "symbol", header: "fund", kind: "describe", render: (r) => r.symbol, sortValue: (r) => r.symbol },
-  { id: "bought", header: "bought (ET)", kind: "describe", render: (r) => whenEt(r.buySession, r.buyTime), sortValue: (r) => r.buyTime },
-  { id: "sold", header: "sold (ET)", kind: "describe", render: (r) => whenEt(r.sellSession, r.sellTime), sortValue: (r) => r.sellTime },
-  { id: "qty", header: "shares", kind: "describe", numeric: true, render: (r) => r.quantity ?? "—", sortValue: (r) => r.quantity },
-  {
-    id: "prices",
-    header: "buy → sell",
-    title: "per share: the price paid, and the price sold at (the fills, not the limits)",
-    kind: "describe",
-    numeric: true,
-    render: (r) => `${price(r.buyPrice)} → ${price(r.sellPrice)}`,
-    sortValue: (r) => r.buyPrice,
-  },
-  {
-    id: "pct",
-    header: "net %",
-    title: "net over the cost of the lot",
-    kind: "describe",
-    numeric: true,
-    render: (r) => pctOfCost(r.netPct),
-    sortValue: (r) => r.netPct,
-  },
-  FEES_FROM,
-  { id: "account", header: "account", kind: "describe", className: "muted", render: (r) => r.account ?? "—", sortValue: (r) => r.account },
-  ...MONEY_COLUMNS,
-];
-
-function ClosedLots({ live }: { live: LadderLivePayload | undefined }) {
-  const rows = live?.closedLots ?? [];
-  const src = live?.feesBySource;
-  return (
-    <HistoryTable
-      table="ladder-live-closed"
-      title="sold live lots"
-      className="view-fade lv-12"
-      defs={CLOSED_DEFS}
-      clientSort
-      dateRange={false}
-      rows={rows}
-      rowKey={(r) => r.positionId}
-      loading={live === undefined}
-      isError={live?.ledger === "failed"}
-      empty={live?.ledger === "absent" ? "no live ledger on this machine" : "no live lot has sold yet"}
-      footer={
-        live !== undefined && (
-          <>
-            <TradeTotalsChip totals={live.closedTotals} noun="lots" />
-            {src !== undefined && src.modeled + src.broker + src.unrecorded > 0 && (
-              <span className="muted">
-                {" "}
-                · fees: {String(src.modeled)} modeled, {String(src.broker)} from the broker
-                {src.unrecorded > 0 ? `, ${String(src.unrecorded)} not recorded` : ""}
-              </span>
-            )}
-            {live.closedLots.length < live.closedTotals.positions && (
-              <span className="muted"> · the newest {String(live.closedLots.length)} rows; the totals cover every sold lot</span>
-            )}
-          </>
-        )
-      }
-      help={note(
-        "Sold live lots",
-        "Reading a row",
-        "Entry is the purchase (negative) and exit the sale (positive), at the broker's fills; they add up to gross. Gross less fees, settlement and slippage is net. Fees are the buy's and the sale's together, with their source beside them: modeled is the tastytrade schedule, broker is the broker's own transaction rows. Settlement and slippage are zero for shares filled at a resting limit.",
-      )}
-    />
   );
 }
 
@@ -408,13 +332,13 @@ function Orders({ live }: { live: LadderLivePayload | undefined }) {
   return (
     <DataCard
       title="orders"
-      className="lv-12"
+      className="lv-6"
       headers={["side", "fund", "shares", "limit", "tif", "state", "fill", "fees", "placed", "account"]}
       loading={live === undefined}
       isError={live?.ledger === "failed"}
       rowCount={orders.length}
       numFrom={2}
-      empty={live?.ledger === "absent" ? "no live ledger on this machine" : "no order recorded"}
+      empty="no order recorded"
       help={note(
         "Orders",
         "How to read it",
@@ -457,12 +381,12 @@ function Journal({ live }: { live: LadderLivePayload | undefined }) {
   return (
     <DataCard
       title="journal"
-      className="lv-12"
+      className="lv-6"
       headers={["day", "kind", "fund", "what", "times"]}
       loading={live === undefined}
       isError={live?.ledger === "failed"}
       rowCount={rows.length}
-      empty={live?.ledger === "absent" ? "no live ledger on this machine" : "the journal is empty"}
+      empty="the journal is empty"
       help={note(
         "Journal",
         "How to read it",
@@ -484,49 +408,89 @@ function Journal({ live }: { live: LadderLivePayload | undefined }) {
   );
 }
 
-export function LadderLive({ live, status }: { live: LadderLivePayload | undefined; status: LadderLiveStatus | undefined }) {
+/** What every Live tab opens with: whether the loop sends orders (told apart from live, never merged), and a ledger or status that could not be read. */
+export function LiveLedgerNotes({ live, status }: { live: LadderLivePayload | undefined; status: LadderLiveStatus | undefined }) {
   const mode = modeWords(status);
   return (
-    <div className="pf-layout">
+    <>
       <p className="ts-muted ts-status" role="note">
-        <strong>{mode.tone === "live" ? "Live." : mode.tone === "dry" ? "Dry-run, not live." : "Mode unknown."}</strong> {mode.text} This page only reads: arming is
-        the <span className="mono">/live-ladder-start</span> command, and nothing here can arm, disarm, halt or place an order.
+        <strong>{mode.tone === "live" ? "Live." : mode.tone === "dry" ? "Dry-run, not live." : "Mode unknown."}</strong> {mode.text}
       </p>
       {status !== undefined && !status.ok && <p className="integrity-warn">{status.error}</p>}
       {live?.ledger === "failed" && <p className="integrity-warn">The live ledger could not be read: {live.ledgerError ?? "unknown error"}</p>}
+    </>
+  );
+}
+
+/** The one line a Live tab shows in place of a table with nothing in it. */
+export function ledgerLine(live: LadderLivePayload | undefined, whenEmpty: string): string {
+  return live?.ledger === "absent" ? "No live ledger on this machine yet." : whenEmpty;
+}
+
+/** The open lots tab under Live: the live book's held lots, with no bid or value (the live ledger keeps no mark on a held lot). */
+export function LadderLiveLots({ live, status }: { live: LadderLivePayload | undefined; status: LadderLiveStatus | undefined }) {
+  const notes = <LiveLedgerNotes live={live} status={status} />;
+  if (live !== undefined && live.openLots.length === 0) {
+    return (
+      <div className="pf-layout">
+        {notes}
+        <p className="muted" role="note">
+          {ledgerLine(live, "No live lot is held.")}
+        </p>
+      </div>
+    );
+  }
+  return (
+    <div className="pf-layout">
+      {notes}
+      <Section concept="stand" tag="the book" question="Which live lots are held?">
+        <OpenLots live={live} />
+      </Section>
+    </div>
+  );
+}
+
+/** Any tab with no live read yet: one line and a way back to today, never the paper book's figures under a live label. */
+export function LadderNoLiveRead() {
+  return (
+    <div className="pf-layout">
+      <p className="muted" role="note">
+        No live read for this tab. <Link to="/ladder/summary?mode=live">Back to today</Link>
+      </p>
+    </div>
+  );
+}
+
+/** The today tab under Live: the live loop's own cards. Read only: arming stays on the Live page. */
+export function LadderLiveToday({ live, status }: { live: LadderLivePayload | undefined; status: LadderLiveStatus | undefined }) {
+  const checks = status?.checks ?? null;
+  const gates = status?.gates ?? [];
+  const showJournal = live === undefined || (live.ledger !== "absent" && live.journal.length > 0);
+  const showOrders = live === undefined || (live.ledger !== "absent" && live.orders.length > 0);
+  return (
+    <div className="pf-layout">
+      <LiveLedgerNotes live={live} status={status} />
       <Section concept="stand" tag="the loop" question="Is the live loop ready, and is it sending orders?">
         <StateTiles live={live} status={status} />
       </Section>
-      <Section concept="add" tag="the gates" question="Which gates hold?">
-        <GateCard status={status} />
-      </Section>
-      <Section concept="add" tag="the checks" question="What did the last tick find?">
-        <ChecksCards status={status} />
-      </Section>
-      {live?.ledger === "absent" ? (
-        <Section concept="stand" tag="not started" question="Has the live loop traded on this machine?">
-          <Card title="no live ledger" collapseKey="ladder-live-absent" className="lv-12">
-            <p className="muted">
-              The live loop has not run here: there is no live store at <span className="mono">~/.cherrypick/data/ladder/live_trades.db</span> yet. It appears when the live
-              loop first ticks. Until then the gates and the checks above are the module&apos;s own readout, and there are no lots, orders or journal rows to show.
-            </p>
-          </Card>
+      <p className="ts-muted ts-status" role="note">
+        Arm it for today from the Live page. Nothing here arms.
+      </p>
+      {(status === undefined || gates.length > 0) && (
+        <Section concept="add" tag="the gates" question="Which gates hold?">
+          <GateCard status={status} />
         </Section>
-      ) : (
-        <>
-          <Section concept="stand" tag="the book" question="Which live lots are held?">
-            <OpenLots live={live} />
-          </Section>
-          <Section concept="hist" tag="the record" question="How did each sold live lot end?">
-            <ClosedLots live={live} />
-          </Section>
-          <Section concept="add" tag="the orders" question="What is resting at the broker?">
-            <Orders live={live} />
-          </Section>
-          <Section concept="dir" tag="the journal" question="What did the loop decide, refuse or alert?">
-            <Journal live={live} />
-          </Section>
-        </>
+      )}
+      {(status === undefined || checks !== null) && (
+        <Section concept="add" tag="the checks" question="What did the last tick find?">
+          <ChecksCards status={status} />
+        </Section>
+      )}
+      {(showJournal || showOrders) && (
+        <Section concept="dir" tag="the journal" question="What did the loop decide, refuse or alert, and what is resting at the broker?">
+          {showJournal && <Journal live={live} />}
+          {showOrders && <Orders live={live} />}
+        </Section>
       )}
     </div>
   );

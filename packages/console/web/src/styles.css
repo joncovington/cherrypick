@@ -2282,6 +2282,24 @@ select.text-input {
   flex-shrink: 0;
 }
 
+/* The Live link's halted dot: the design's 8px red with a soft ring. Pushed to the row's end when the
+   rail is open, a badge on the icon's corner on the collapsed strip. */
+.nav-halt-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-left: auto;
+  flex-shrink: 0;
+  background: var(--accent-live);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-live) 22%, transparent);
+}
+.mf-nav-ic-wrap .nav-halt-dot {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  margin: 0;
+}
+
 .lock-hero {
   border: 1px solid var(--border);
   border-left: 3px solid var(--pos);
@@ -2385,6 +2403,118 @@ select.text-input {
   margin: 0.6rem 0 0;
   color: var(--neg);
   font-size: 12px;
+}
+
+/* Config > live: one row per live loop, the arm it runs and the choice. Rows wrap, so a phone stacks them. */
+.la-rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.la-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 12px 20px;
+  padding: 14px 0;
+  border-top: 1px solid var(--border);
+}
+
+.la-row:first-child {
+  border-top: none;
+}
+
+.la-name {
+  flex: 1 1 170px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.la-sub {
+  font-size: 12px;
+}
+
+.la-pick {
+  flex: 2 1 280px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.la-select {
+  min-height: 44px;
+  max-width: 340px;
+  width: 100%;
+}
+
+.la-note {
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.la-state {
+  flex: 1 1 190px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.la-blockers {
+  margin: 0;
+  padding-left: 1.1rem;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.la-confirm {
+  flex: 1 1 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  border-radius: 8px;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+}
+
+.la-confirm p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  max-width: 720px;
+}
+
+.la-changes {
+  margin: 0;
+  padding-left: 1.1rem;
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.la-confirm-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.la-confirm-row .fine-label {
+  flex: 1 1 100%;
+}
+
+.la-phrase {
+  min-height: 44px;
+  width: 240px;
+  max-width: 100%;
+  font-family: var(--num-face);
+}
+
+.la-confirm-row .btn {
+  min-height: 44px;
 }
 
 .lock-gates {
@@ -14327,4 +14457,359 @@ span.b-start {
   color: var(--pos);
   font-size: 0.7rem;
   font-weight: 400;
+}
+
+/* ----------------------------------------------------------------------------------------------
+   The Live page's arm-for-today strip and its dialogs (ArmSwitch.tsx). Shown only while live_arming is
+   on. The strip sits at the top of a live loop's card; the dialogs are portalled to <body>. At 560px and
+   under the dialog is a full-width sheet; every control is at least 44px. */
+.live-arm-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+}
+.live-arm-strip.is-on {
+  border-color: color-mix(in srgb, var(--accent-live) 55%, var(--border));
+  background: color-mix(in srgb, var(--accent-live) 8%, var(--surface-sunken));
+}
+.live-arm-strip-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.live-arm-strip-text b {
+  font-size: 13px;
+}
+.live-arm-strip-text span {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+.live-arm-switch-btn {
+  flex: none;
+  min-width: 56px;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+.live-arm-switch-btn[aria-disabled="true"] {
+  cursor: not-allowed;
+}
+.live-arm-switch-btn[aria-busy="true"] {
+  cursor: progress;
+}
+.live-arm-switch {
+  position: relative;
+  display: block;
+  width: 52px;
+  height: 30px;
+  border-radius: 999px;
+  border: 1px solid var(--chart-grid-strong);
+  background: var(--surface-hover);
+}
+.live-arm-switch i {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+.live-arm-switch.on {
+  background: var(--accent-live);
+  border-color: var(--accent-live);
+}
+.live-arm-switch.on i {
+  left: 25px;
+  background: #fff;
+}
+.live-arm-switch.locked {
+  opacity: 0.4;
+}
+.live-arm-switch-btn:focus-visible .live-arm-switch {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.live-arm-progress,
+.live-arm-failed {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.live-arm-failed {
+  border-color: color-mix(in srgb, var(--neg) 55%, var(--border));
+}
+.live-arm-failed b {
+  color: var(--neg);
+}
+.live-arm-amber {
+  color: var(--warn);
+}
+
+.live-arm-wrap {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+}
+.live-arm-scrim {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: rgb(3 4 6 / 0.72);
+  cursor: default;
+}
+.live-arm-box {
+  position: relative;
+  width: min(760px, 100%);
+  max-height: calc(100dvh - 40px);
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  box-shadow: 0 24px 60px rgb(0 0 0 / 0.5);
+  overflow: hidden;
+  outline: none;
+}
+.live-arm-head {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--border);
+}
+.live-arm-box {
+  text-align: left;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  font-size: 14px;
+}
+.live-arm-head h2 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--text);
+  text-transform: none;
+  letter-spacing: normal;
+}
+.live-arm-facts dt,
+.live-arm-facts dd {
+  font-family: inherit;
+  text-transform: none;
+  letter-spacing: normal;
+}
+.live-arm-head .muted {
+  font-size: 13px;
+}
+.live-arm-kick {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.live-arm-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 18px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.live-arm-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 14px 24px;
+  background: var(--surface-raised);
+  border-top: 1px solid var(--border);
+}
+.live-arm-btn {
+  min-height: 46px;
+  padding: 0 20px;
+  border-radius: 8px;
+  border: 1px solid var(--chart-grid-strong);
+  background: transparent;
+  color: var(--text);
+  font-size: 14px;
+  cursor: pointer;
+}
+.live-arm-btn-go,
+.live-arm-btn-stop {
+  font-weight: 600;
+  background: var(--accent-live);
+  border-color: var(--accent-live);
+  color: #fff;
+}
+.live-arm-btn:disabled {
+  cursor: not-allowed;
+  background: color-mix(in srgb, var(--accent-live) 25%, var(--surface));
+  border-color: color-mix(in srgb, var(--accent-live) 25%, var(--border));
+  color: var(--text-muted);
+}
+.live-arm-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.live-arm-facts {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px 20px;
+  padding: 16px;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.live-arm-facts dt {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.live-arm-facts dd {
+  margin: 2px 0 0;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.live-arm-warnings {
+  margin: 0;
+  padding: 10px 14px 10px 30px;
+  border: 1px solid color-mix(in srgb, var(--warn) 40%, var(--border));
+  border-radius: 8px;
+  color: var(--warn);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.live-arm-disclaimer {
+  border: 1px solid color-mix(in srgb, var(--warn) 45%, var(--border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--warn) 8%, var(--surface));
+}
+.live-arm-disclaimer pre {
+  margin: 0;
+  padding: 14px 16px;
+  max-height: 260px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.55;
+}
+.live-arm-type {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.live-arm-type label {
+  font-size: 14px;
+  font-weight: 600;
+}
+.live-arm-yes {
+  font-family: var(--num-face, ui-monospace, monospace);
+  color: var(--warn);
+}
+.live-arm-type input {
+  height: 46px;
+  box-sizing: border-box;
+  width: 220px;
+  max-width: 100%;
+  padding: 0 14px;
+  border-radius: 8px;
+  border: 1px solid var(--chart-grid-strong);
+  background: var(--surface-sunken);
+  color: var(--text);
+  font-size: 16px;
+  font-family: var(--num-face, ui-monospace, monospace);
+  letter-spacing: 0.1em;
+}
+.live-arm-body p {
+  margin: 0;
+}
+.live-arm-fine {
+  font-size: 12px;
+  line-height: 1.5;
+}
+.live-arm-blocker {
+  padding: 14px 16px;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 14px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.live-arm-body .dot {
+  background: currentColor;
+  width: 7px;
+  height: 7px;
+}
+.nav-dot-arming {
+  width: 8px;
+  height: 8px;
+  margin-left: auto;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--warn) 22%, transparent);
+}
+
+@media (max-width: 1000px) {
+  .live-arm-facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 560px) {
+  .live-arm-wrap {
+    padding: 0;
+    place-items: end stretch;
+  }
+  .live-arm-box {
+    width: 100%;
+    max-height: 100dvh;
+    height: 100dvh;
+    border-radius: 0;
+    border-left: 0;
+    border-right: 0;
+  }
+  .live-arm-head {
+    padding: 16px 16px 14px;
+  }
+  .live-arm-body {
+    padding: 14px 16px;
+  }
+  .live-arm-facts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .live-arm-foot {
+    flex-direction: column-reverse;
+    align-items: stretch;
+    padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+  }
+  .live-arm-btn {
+    width: 100%;
+  }
+  .live-arm-type input {
+    width: 100%;
+  }
 }

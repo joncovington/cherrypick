@@ -99,7 +99,7 @@ what it may write. The package's own CLAUDE.md holds the detail.
   dry-run it journals what it would send and sends nothing. Real orders need `live.dry_run: false`
   and every gate, re-checked on each placement. Its live lots and alarms are announced by the
   orchestrator's trade notifier, never by the package; its orders by `live-fill-alerts`. Only `ldr.` client ids are its own: it never touches
-  another module's or a hand order. The console shows it on the ladder's Live tab and the suite-wide Live
+  another module's or a hand order. The console shows it under the ladder page's Live selector and on the suite-wide Live
   page, read only: `--status` and `live_trades.db`, with no way to arm, halt or place from there. Reads the keyring for the designated account and the broker
   session; the account is shown masked.
 - **packages/bwb** — **Retired 2026-11-08; off by default; may be reinstated** (the owner switched
@@ -130,7 +130,7 @@ what it may write. The package's own CLAUDE.md holds the detail.
   suite's **only** read surface. **Holds no path that touches an order.** Kept alive by the supervisor
   (restarted on death and on a stale `state/console.heartbeat`). Read-only over every other package
   (own store `~/.cherrypick/data/console/`); reads the shared credential, never writes one. The one
-  bounded exception is the **Config page**: the live-trading halt toggle and a short allow-list of
+  bounded exception is the **Config page**: the live-trading halt toggle, the arm each live loop runs (its own orchestrator operation, MEIC only, typed phrase, flat and settled) and a short allow-list of
   settings, applied through the orchestrator's config editor as a subprocess, so the guarded
   live-trading fields stay unreachable. The Builder adds four more, each through the orchestrator:
   saving one automation (always off), queueing its explore backtest, adding an underlying to the
@@ -142,6 +142,13 @@ what it may write. The package's own CLAUDE.md holds the detail.
   check; a switch turned on starts at the next session (the module sets it), and once a group has
   run a budget change is dated from the next session. An automation's page adds the last: retiring
   or reinstating it (`retired` and `enabled` false), after the module's check. Paper only.
+  **One live exception, off by default:** with `live_arming` true in `config/console.json`, the Live
+  page's today tab has an arm-for-today switch on each live loop's card (MEIC's main account and the
+  ladder; a second login's account shows a locked switch, flies and bwb none). Switching on shows the
+  module's own readiness and `DISCLAIMER.md`, then needs a typed `YES` that the server checks again
+  against a one-use token for what was shown; it then runs the module's `live_loop --arm --confirm YES`
+  in the background. Switching off runs `live_loop --disarm`. The console writes no arm record itself,
+  never clears the halt flag (arming is refused while it is up) and places no order.
 - **packages/review** — the cross-module end-of-day review: one versioned fact set per session, read
   via `cherrypick.core.ledgers` (the single home for per-schema net/risk rules), written only to its own
   store. No credentials, no network, no AI — the narrative is written outside by a scheduled agent.

@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import type { LiveTodayLoop, LiveTodayPair, LiveTodayPayload, ManagePayload } from "@console/shared";
+import type { ArmAttempt, LiveArmingState, LiveLoopSwitch, LiveTodayLoop, LiveTodayPair, LiveTodayPayload, ManagePayload } from "@console/shared";
+import { latestAttempt, useLiveArming } from "../../lib/liveArming";
+import { ArmStrip } from "./ArmSwitch";
 import { Card, PnlCell, fmtNum } from "../../components/DataTable";
 import { HelpSection, HelpWarn, type CardHelpContent } from "../../components/CardHelp";
 import { type Column } from "../../components/columns";
@@ -30,7 +32,10 @@ import { GuideLink } from "../../components/GuideLink";
  * lightbox with the loop's orders today as chains, `LiveTodayOrders.tsx`, and every field the old table's
  * detail view carried), and what was traded by hand (trade cards, only where there is something to say).
  * A module that is off and holds nothing has no card and no line. The net's method sits behind the
- * card's ?. There is no button here that touches an order.
+ * card's ?. There is no button here that touches an order. The one control is the arm-for-today strip
+ * on a MEIC (main account) or ladder card (`ArmSwitch.tsx`), drawn only while the server says
+ * `live_arming` is on (it ships off); it asks the module's own command to write or delete the day's
+ * arm record, and never clears the halt flag.
  *
  * Money follows the one layout: "net" is net, costs sit in their own columns, settlement never
  * recorded apart reads n/r. The suite totals today's realised net and, beside it, what the loops hold
@@ -455,7 +460,7 @@ const NET_HELP: CardHelpContent = {
         </p>
       </HelpSection>
       <HelpSection title="Armed and halt">
-        <p>A loop is armed when its arm record is dated today and the disarm time has not passed. The halt flag is suite-wide and blocks new entries on every loop; clearing it arms nothing.</p>
+        <p>A loop is armed when its arm record is dated today and the disarm time has not passed. The halt flag is suite-wide and blocks new entries on every loop; clearing it arms nothing. Where the console&apos;s arm switches are turned on (<code>live_arming</code>), a loop&apos;s card has one; arming is refused while the halt is up.</p>
       </HelpSection>
       <GuideLink to="/help/live#today" />
     </>
@@ -500,6 +505,7 @@ function LoopParentCard({
   attention,
   found,
   onOpen,
+  armSwitch,
 }: {
   l: LiveTodayLoop;
   showWorking: boolean;
@@ -508,6 +514,8 @@ function LoopParentCard({
   /** The chip's list just led here: outline the card for a moment. */
   found: boolean;
   onOpen: () => void;
+  /** The arm-for-today strip's inputs: present only while `live_arming` is on and the loop has a switch. */
+  armSwitch?: { sw: LiveLoopSwitch; attempt: ArmAttempt | null; halted: boolean };
 }) {
   const arm = armWords(l);
   const t = l.today;
@@ -535,6 +543,7 @@ function LoopParentCard({
         </>
       }
     >
+      {armSwitch !== undefined ? <ArmStrip l={l} sw={armSwitch.sw} attempt={armSwitch.attempt} halted={armSwitch.halted} /> : null}
       <div className={`pf-hero ${t !== null && net === null ? "muted" : tone(net)}`} title={netTitleOf(l)}>
         {t !== null && net === null ? "n/r" : fmtMoney(net)}
         <span className="pf-unit"> net today</span>
@@ -596,7 +605,16 @@ function OpenLine({ items, total }: { items: OpenAtMark[]; total: LiveTodayPaylo
   );
 }
 
-export function LiveTodayView({ data: d, manage }: { data: LiveTodayPayload; manage?: ManagePayload }) {
+/** A loop's arm strip, or nothing: the switches are drawn only while `live_arming` is on, and only for a
+ *  loop the server gave a switch (flies and bwb have none). */
+export function armFor(l: LiveTodayLoop, d: LiveTodayPayload, arming: LiveArmingState | undefined): { sw: LiveLoopSwitch; attempt: ArmAttempt | null; halted: boolean } | undefined {
+  if (arming === undefined || !arming.enabled || l.retired) return undefined;
+  const sw = arming.switches.find((s) => s.loop === l.loop);
+  if (sw === undefined) return undefined;
+  return { sw, attempt: latestAttempt(arming.attempts, l.loop), halted: d.halted };
+}
+
+export function LiveTodayView({ data: d, manage, arming }: { data: LiveTodayPayload; manage?: ManagePayload; arming?: LiveArmingState }) {
   const s = d.suite;
   const lightbox = useOpenParam("loop");
   const active = d.loops.filter((l) => !l.retired);
@@ -666,6 +684,7 @@ export function LiveTodayView({ data: d, manage }: { data: LiveTodayPayload; man
             attention={d.attention.filter((a) => a.loop === l.loop).length}
             found={found === l.loop}
             onOpen={() => lightbox.show(l.loop)}
+            armSwitch={armFor(l, d, arming)}
           />
         ))}
       </Section>
@@ -695,7 +714,8 @@ export function LiveTodayView({ data: d, manage }: { data: LiveTodayPayload; man
 export function LiveTodayPage() {
   const { data, isLoading, isError } = useLiveToday();
   const manage = useManage(undefined);
+  const arming = useLiveArming();
   if (isError) return <p className="pnl-neg">The live loops could not be read.</p>;
   if (isLoading || data === undefined) return <p className="muted">loading the live loops…</p>;
-  return <LiveTodayView data={data} manage={manage.data} />;
+  return <LiveTodayView data={data} manage={manage.data} arming={arming.data} />;
 }

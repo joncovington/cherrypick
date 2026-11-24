@@ -146,7 +146,7 @@ function parseArgs(argv) {
 }
 
 /**
- * Click the first visible control whose trimmed text matches — the tabs are plain buttons carrying
+ * Click the first visible control whose trimmed text (or, for an icon-only control such as a switch, its aria-label) matches — the tabs are plain buttons carrying
  * component state, so there is no URL to navigate to and no stable id to select on.
  */
 async function clickByText(page, text) {
@@ -159,7 +159,7 @@ async function clickByText(page, text) {
     const inNav = (el) => el.closest('nav, .nav, [role="navigation"]') !== null;
     for (const selector of ['[role="tab"]', ".mode-btn", "button", "a"]) {
       const nodes = [...document.querySelectorAll(selector)].filter((n) => !inNav(n));
-      const label = (n) => (n.textContent ?? "").trim().toLowerCase();
+      const label = (n) => ((n.textContent ?? "").trim() || n.getAttribute("aria-label") || "").toLowerCase();
       const hit = nodes.find((n) => label(n) === want) ?? nodes.find((n) => label(n).includes(want));
       if (hit !== undefined) {
         hit.click();

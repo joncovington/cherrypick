@@ -115,6 +115,42 @@ alone):
   `_note`/`_header` and key order, the timestamped backup and the atomic write all stay in
   `configedit.py`. **Never port any of that here** — a second copy of a live-safety rule is free to
   drift.
+  - **The Live page's arm switch is the one write that is not paper, and it ships off.** `live_arming`
+    must be a literal `true` in `config/console.json` (unreadable is off), checked on every route
+    (`routes/liveArming.ts`), not only by hiding the switch. The loops with a working switch are `meic`
+    (main account) and `ladder`; anything else, flies and bwb included, is refused before a process
+    starts, and a second login's account (`meic.<login>`) shows a locked switch with its blocker.
+    `services/liveArmingBridge.ts` is the one file that names the arm verbs: it reads the module's own
+    `--status` fresh (never the memoised card readouts), and runs `live_loop --arm --confirm YES`, the
+    person's command, never `--install-task`, which prompts for nothing because a slash command stands
+    behind it. **No arming logic lives here**: the module decides readiness, refuses, and writes the
+    arm record. Rules the route adds, each pinned by `live-arming.test.ts` (and shown to fail):
+    the body's `confirm` is the literal `YES` (strict equality, no trimming or folding), the arm needs
+    the one-use `dialogId` issued with a readout (spent before anything else is looked at, ten minutes
+    at most), the loop must be ready and NOT halted when the confirm arrives (the module itself only
+    warns about a halt, and the ladder's arm does not check it), and the readout must hash the same as
+    the one the person read (a new open order, a halt, lost readiness is a 409 with the fresh readout).
+    **The console never clears the halt flag**: nothing in the arm route, bridge or attempts touches
+    `halt-live.flag` or the config editor, and `live-arming-surface.test.ts` scans for it. An arm runs
+    in the background (`services/liveArmAttempts.ts`, state in `data/console/live-arming.json`) so the
+    person may leave the page: the module's command, then the slash command's own check (the loop reads
+    armed today, and for MEIC the supervisor's `meic-live` job is enabled with a future `next_run`).
+    A failure reports what a fresh status says, never an assumption: a record that is written but whose
+    job never starts says the loop IS armed and nothing is ticking. A console that restarts mid-arm
+    resolves the attempt from the status and never runs the command again. The journal records the
+    module's own actors (`live-meic-start`, `live-loop-disarm`): neither CLI takes an actor argument.
+    `dry-run-only.test.ts` still holds: no order SDK call exists here.
+  - **The live tab is the one place `/live/arm` can change, through its own operation.** The general save
+    still refuses it. `GET /api/config/live-arm` (`readers/liveArm.ts`) composes the orchestrator's
+    `live_arm_options` (the arm MEIC's live loop runs, the arms with a paper twin, and why a change is
+    refused right now) with files for the loops it cannot change (another login, the ladder: marked "edited by
+    hand", with the reason); `POST /api/config/live-arm` sends `set_live_arm` (the typed `CHANGE ARM`, checked
+    here and again in Python) and passes each refusal through with its own status (`not_flat` 409 with the
+    blockers, `no_twin`/`unknown_arm` 422, `status_unreadable` 503, `journal_unwritable` 500). Everything is
+    the orchestrator's (`livearm.py`): the twin requirement, flat and settled, the journal, only that key
+    changing. This package writes no config, arms nothing and never judges flat itself;
+    `server/test/config-live-arm.test.ts` and `web/test/configLiveArm.test.tsx` pin it (each guard was shown
+    to fail). The ladder tabs stay read-only; the Live page's one write is the arm switch described above.
   - **The Builder's save is the same path for one automation** (`/api/automations/builder/draft` and
     `/save`, configcli `automation_draft` / `automation_save`). The route sends a name and an
     automation and nothing else; the orchestrator runs the module's own check and writes the entry it
@@ -298,7 +334,7 @@ alone):
   "not scored yet"; only a dropped artifact gets a warning chip. The apply banner compares like with
   like — what is queued for the next session, and whether THIS session's artifact landed — with the
   failure count on the collapsed head; keep the signal on the head.
-- **The ladder's Live tab reads the live path and nothing else.** It shows `live_loop --status` through
+- **The ladder's Live mode (the header's Paper/Live selector, paper by default) reads the live path and nothing else.** It shows `live_loop --status` through
   `services/ladderLiveBridge.ts` (the gates, mode, arm, halt flag, held submissions and the last tick's
   checks are the module's own; no gate is re-derived) and `live_trades.db` through `readers/ladderLive.ts`
   (open and sold lots, orders, the journal). It has no write path of any kind: the bridge's one verb is

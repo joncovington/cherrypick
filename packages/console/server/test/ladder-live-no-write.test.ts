@@ -6,7 +6,7 @@ import path from "node:path";
  * The ladder's live view reads and never acts. Arming is `/live-ladder-start` (a human's YES in a
  * terminal), so nothing the console serves for the live ladder may arm, disarm, halt, place or change
  * anything: the one process it spawns is `live_loop --status`, the one store it opens is read only, the
- * routes are GETs, and the page has no control. `dry-run-only.test.ts` holds the SDK order calls out of
+ * routes are GETs, and the pages have no control. `dry-run-only.test.ts` holds the SDK order calls out of
  * the whole package; this holds the ladder's live surface to its own narrower line.
  */
 
@@ -18,6 +18,8 @@ const read = (p: string) => fs.readFileSync(p, "utf-8");
 const READER = read(path.join(SRC, "readers", "ladderLive.ts"));
 const BRIDGE = read(path.join(SRC, "services", "ladderLiveBridge.ts"));
 const PAGE = read(path.join(WEB, "pages", "Ladder", "LadderLive.tsx"));
+const HISTORY_PAGE = read(path.join(WEB, "pages", "Ladder", "LadderLiveHistory.tsx"));
+const LIGHTBOX = read(path.join(WEB, "lightbox", "manifests", "LadderLightbox.tsx"));
 const ROUTES = read(path.join(SRC, "routes", "modules.ts"));
 
 function allTs(dir: string): string[] {
@@ -41,11 +43,13 @@ describe("the ladder's live surface has no write path", () => {
     }
   });
 
-  it("is the only place in the console that runs the ladder's live loop", () => {
+  it("is the only place, bar the arm switches' bridge, that runs the ladder's live loop", () => {
     const offenders = allTs(SRC)
       .filter((f) => code(read(f)).includes("ladder.live_loop"))
       .map((f) => path.relative(SRC, f).replace(/\\/g, "/"));
-    expect(offenders).toEqual(["services/ladderLiveBridge.ts"]);
+    // The Live page's arm switches (`services/liveArmingBridge.ts`) run it too, for its status and its two arming
+    // verbs; `live-arming-surface.test.ts` holds that file to its own line.
+    expect(offenders).toEqual(["services/ladderLiveBridge.ts", "services/liveArmingBridge.ts"]);
   });
 
   it("opens the live ledger read only and issues no statement that changes it", () => {
@@ -64,14 +68,29 @@ describe("the ladder's live surface has no write path", () => {
     }
   });
 
-  it("gives the page no control: no button, form, input, fetch, mutation or handler", () => {
+  it("gives the live pages no control: no button, form, input, fetch, mutation or handler", () => {
     for (const bad of [/<button/i, /<form/i, /<input/i, /<select/i, /<textarea/i, /\bfetch\(/, /useMutation/, /postJson|putJson|deleteJson|sendJson/, /\bonClick\b/, /\bonSubmit\b/, /\bonChange\b/, /method:\s*["'](POST|PUT|PATCH|DELETE)/i]) {
       expect(bad.test(code(PAGE)), `the live page matches ${String(bad)}`).toBe(false);
     }
   });
 
-  it("names arming only to say where it is done", () => {
-    expect(PAGE).toContain("/live-ladder-start");
+  it("holds the live history to the same line, with the row's expand toggle as its one handler", () => {
+    // The sold-lot table opens a row into the lot's trade card: a page-local toggle that sends nothing.
+    const src = code(HISTORY_PAGE).replace(/onClick:\s*\(\)\s*=>\s*setOpen\(open === r\.positionId \? null : r\.positionId\)/, "");
+    for (const bad of [/<button/i, /<form/i, /<input/i, /<select/i, /<textarea/i, /\bfetch\(/, /useMutation/, /postJson|putJson|deleteJson|sendJson/, /\bonClick\b/, /\bonSubmit\b/, /\bonChange\b/, /method:\s*["'](POST|PUT|PATCH|DELETE)/i]) {
+      expect(bad.test(src), `the live history matches ${String(bad)}`).toBe(false);
+    }
+  });
+
+  it("adds nothing to the frame but the mode selector: no fetch, mutation or write call", () => {
+    for (const bad of [/\bfetch\(/, /useMutation/, /postJson|putJson|deleteJson|sendJson/, /method:\s*["'](POST|PUT|PATCH|DELETE)/i, /<form/i, /<input/i, /<textarea/i, /<button/i]) {
+      expect(bad.test(code(LIGHTBOX)), `the ladder frame matches ${String(bad)}`).toBe(false);
+    }
+    expect(LIGHTBOX).toContain("<ModeToggle");
+  });
+
+  it("says where arming is done and never offers it", () => {
+    expect(PAGE).toContain("Arm it for today from the Live page. Nothing here arms.");
     for (const bad of [/\barm(ing)?\s*=/, /setHalt|clearHalt|RESUME LIVE/, /enable_live_trading/]) {
       expect(bad.test(code(PAGE)), String(bad)).toBe(false);
     }

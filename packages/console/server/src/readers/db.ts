@@ -1,3 +1,4 @@
+import path from "node:path";
 import fs from "node:fs";
 import Database from "better-sqlite3";
 
@@ -221,6 +222,49 @@ export function armColumnOf(db: Database.Database, table: string): string {
 export function findArmColumn(db: Database.Database, table: string): string | null {
   for (const name of ARM_COLUMNS) if (hasColumn(db, table, name)) return name;
   return null;
+}
+
+/**
+ * The registry arm a live IC was entered under, as a SQL expression over `ic_trades`.
+ *
+ * The live ledger tags every trade `arm = 'live'` (the account), not the strategy arm, so reading that
+ * column would name every trade "live". The strategy arm (`live.arm`, e.g. `pm-200`) is on the trade's
+ * own `live_arm` column, written at entry. A trade without it (it predates the column, or `live.arm`
+ * was unset) falls back to its FILLED entry attempt, joined by order id. NULL where neither is there
+ * (an older ledger, or a trade that predates attempts being journaled): that trade's arm is not
+ * recorded, and the page says so rather than guessing.
+ */
+export function registryArm(db: Database.Database): string {
+  const joinOk =
+    hasTable(db, "entry_attempts") &&
+    hasColumn(db, "entry_attempts", "ic_order_id") &&
+    hasColumn(db, "entry_attempts", "arm") &&
+    hasColumn(db, "entry_attempts", "outcome") &&
+    hasColumn(db, "ic_trades", "ic_order_id");
+  const join = joinOk
+    ? "(SELECT a.arm FROM entry_attempts a WHERE a.ic_order_id = ic_trades.ic_order_id AND a.outcome = 'filled' ORDER BY a.id LIMIT 1)"
+    : "NULL";
+  return hasColumn(db, "ic_trades", "live_arm") ? `COALESCE(ic_trades.live_arm, ${join})` : join;
+}
+
+/**
+ * The arm expression for MEIC's `ic_trades` in whichever ledger `db` is. The paper ledger tags rows with
+ * the strategy arm; the live ledger's tag is the constant `live` (the account), so there the arm is the
+ * registry arm joined from the filled entry attempt (`registryArm`). Every live scope, filter and group-by
+ * reads this, so live results are per arm and never pooled under one name. Null where the ledger has no
+ * arm to read (an untagged old paper ledger).
+ */
+export function icArmOrNull(db: Database.Database): string | null {
+  if (path.basename(db.name) === "meic_trades.db") {
+    const joined = registryArm(db);
+    if (joined !== "NULL") return joined; // an older live ledger has no attempts to join: its own column is all there is
+  }
+  return findArmColumn(db, "ic_trades");
+}
+
+/** `icArmOrNull` for a reader that requires an arm (throws like `armColumnOf`). */
+export function icArm(db: Database.Database): string {
+  return icArmOrNull(db) ?? armColumnOf(db, "ic_trades");
 }
 
 /**

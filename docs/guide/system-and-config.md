@@ -40,6 +40,7 @@ At the top of every Config tab, above the settings, is the halt control: a banne
 
 Below that are the settings for the tab you are on.
 
+- `live`: which arm each live loop runs. MEIC's main login has a picker; another login's arm and the ladder's are shown with the arm they run and are edited by hand. See "The live arm" below.
 - `arms`: which arms run each session, one switch each. Every enabled arm is evaluated every tick, and this switch, not any "active" name, decides what runs.
 - `modules`: which modules the supervisor drives, and the symbols each trades. Off means the supervisor stops driving that module entirely: no loop and no scheduled jobs.
 - `timing`: entry windows and loop pacing. A change lands on the supervisor's next pass; no reinstall.
@@ -52,6 +53,14 @@ Below that are the settings for the tab you are on.
 The halt flag stops **new live entries** everywhere. Every live loop checks the same flag file within a tick. Positions that are already open keep following their normal exit rules, so halting does not close anything. It is one click, because a stop that takes two steps arrives late. It does not go through the config editor; it writes a flag file, so it still works if the config model cannot be read.
 
 Clearing the halt takes more: choose "Resume live entries...", then type `RESUME LIVE` exactly and press "Clear the halt". The friction is deliberate, since this is the direction that lets money move. Clearing it arms nothing on its own. Each module's live gate and its per-day arm still decide whether it trades, and you arm a live loop from its own start command. Config cannot arm live trading, in either direction.
+
+### The live arm
+
+An arm is one configured variant of a module, and a live loop runs one of them whenever it is armed for the day. The `live` tab shows each live loop and the arm it runs. For MEIC's main login you can pick a different arm: choose it, read what changes, type `CHANGE ARM` exactly and press "Save the arm". Arming itself stays on the Live page; choosing an arm arms nothing, and the change takes effect at the next arming.
+
+The picker is locked, and says why in words, unless the loop is flat and settled: not armed today, no open position, no working order, nothing unsettled. That is a before-the-open or after-settlement change, never a mid-session one. It offers only arms that have a paper twin, because live results are read per arm and an arm with no twin would be measured against nothing. The change is journaled in the arm journal before the config is touched, and only the one `live.arm` value changes.
+
+The live kill criteria are written for one arm and symbol, so after a change check the loop's status for the new arm before arming. The margin login's arm and the ladder's are shown but not changeable here.
 
 ### Saving, and how edits are made
 

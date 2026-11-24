@@ -1,7 +1,7 @@
 # Live
 
-The Live page is where real money is shown, and it is read-only: nothing on it can place, change or
-cancel an order. It has seven tabs: `/live/today`, `/live/positions`, `/live/portfolio`, `/live/wheel`,
+The Live page is where real money is shown, and it places, changes and cancels no order. Its one write,
+off unless you turn it on, is the arm-for-today switch on a loop's card (see [today](#today)). It has seven tabs: `/live/today`, `/live/positions`, `/live/portfolio`, `/live/wheel`,
 `/live/pmcc`, `/live/flies` and `/live/meic`. Opening the console lands you on `/live`, which shows
 the first tab. Older bookmarks still work: `/live/manage` goes to positions and `/live/execution` goes
 to meic.
@@ -57,7 +57,17 @@ symbol the loop traded or holds today is its own line with its own net, and the 
 full. A day that ran one arm shows one line; a loop with nothing resolved or held shows none. A loop
 that is switched off and holds nothing is not shown. **What was traded by hand?**
 shows your own 0DTE trades, stated beside the total and never in it, and only on a day you made some
-(or when something about them needs a look). In the demo above, nothing is armed,
+(or when something about them needs a look).
+
+**The arm switch** is on a loop's card only while `live_arming` is `true` in `console.json`; it ships
+off and the cards are then as described above. With it on, MEIC's main account and the ladder show an
+"Armed for today / Not armed today" strip with a switch. Switching on opens a dialog that shows the
+loop's own readiness, then the disclaimer in full, then asks you to type `YES`; arming then runs on the
+server and you can leave the page (an amber dot on Live in the rail and a notice tell you when it is
+done). Switching off asks a plain question and stops new entries without placing an order. While the
+halt flag is up the switches are locked, and arming never clears the halt. A second login's account
+shows a locked switch with its blocker. How it works, and what it will not do, is in
+[going-live.md](going-live.md#from-the-console-the-live-pages-switches). In the demo above, nothing is armed,
 the net reads `n/r` and the MEIC card says `no ledger`, because no live session has been recorded.
 
 ### positions
@@ -175,8 +185,10 @@ the rail once its module's live switch is off and nothing is open, working or ow
   own measure and is never added up across loops.
 - **The loss breaker** compares the day's loss to a limit; a tripped breaker stops new entries. `no
   limit` means none is configured, which is not the same as clear. MEIC's figure is gross.
-- **The halt flag** is suite-wide. When it is up the header says `HALTED`, in red. It blocks new
-  entries on every loop; open positions are still managed and closed. Clearing it arms nothing.
+- **The halt flag** is suite-wide. When it is up the header says `HALTED`, in red, and the rail shows a
+  small red dot on the Live link (on the collapsed icon strip too), so a halt is visible from every
+  page. It blocks new entries on every loop; open positions are still managed and closed. Clearing it
+  arms nothing.
 - **The alert-daemon chip** is the flies order-alert daemon's health: `alert daemon ok`, `stale`,
   `down` or `off`. Amber means fills are noticed later, by the loop's own poll, not that anything is
   lost. `off` is normal when nothing is armed, and with flies retired it is the usual state.
