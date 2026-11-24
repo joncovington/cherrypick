@@ -29,6 +29,7 @@ function loop(id: LiveTodayLoop["loop"], over: Partial<LiveTodayLoop> = {}): Liv
     worstCaseBasis: "",
     entriesToday: 0,
     today: { trades: 0, gross: 0, fees: 0, settlementFees: 0, settlementRecorded: 0, settlementTrades: 0, net: 0, feesTrades: 0, netRecorded: 0, basis: "" },
+    pairs: [],
     mark: null,
     breaker: { limit: null, figure: null, figureKind: "net", tripped: null, basis: "" },
     orphans: { at: null, count: 0 },
@@ -248,6 +249,31 @@ describe("the loop cards and their detail", () => {
     const html = render(payload());
     expect(html).toContain('href="/live/positions"');
     expect(html).toContain('href="/live/meic"');
+  });
+
+  it("draws a loop's day by arm and symbol, one line each, and nothing where there is no pair", () => {
+    const money = (net: number | null, trades: number): LiveTodayLoop["today"] =>
+      ({ trades, gross: 10, fees: net === null ? null : 2, settlementFees: 0, settlementRecorded: 0, settlementTrades: trades, net, feesTrades: trades, netRecorded: 0, basis: "" });
+    const meic = loop("meic", {
+      pairs: [
+        { arm: null, symbol: "XSP", open: 0, today: money(8, 1) },
+        { arm: "pm-200", symbol: "XSP", open: 1, today: money(null, 1) },
+        { arm: "pm-200", symbol: "SPX", open: 0, today: money(0, 0) },
+      ],
+    });
+    const html = render(payload({ loops: [meic], hand: undefined })).replace(/<!-- -->/g, "");
+    expect(html).toContain("top level · XSP");
+    expect(html).toContain("pm-200 · XSP");
+    expect(html).toContain("pm-200 · SPX");
+    // A pair with unrecorded fees reads n/r, never a partial figure; one with nothing resolved reads a dash.
+    expect(html).toMatch(/pm-200 · XSP<\/span><span class="lt-pair-net muted">n\/r<\/span>/);
+    expect(html).toMatch(/pm-200 · SPX<\/span><span class="lt-pair-net muted">—<\/span>/);
+    expect(html).toContain("1 resolved · 1 open");
+    const detail = renderToString(<MemoryRouter><LoopDetail l={meic} attention={[]} /></MemoryRouter>).replace(/<!-- -->/g, "");
+    expect(detail).toContain("today by arm and symbol");
+    // No pair, no list: a section with no data is hidden.
+    expect(render(payload({ loops: [loop("meic")], hand: undefined }))).not.toContain("lt-pairs");
+    expect(renderToString(<MemoryRouter><LoopDetail l={loop("meic")} attention={[]} /></MemoryRouter>)).not.toContain("today by arm and symbol");
   });
 
   it("marks a losing loop's card red, and names what needs attention in its detail", () => {

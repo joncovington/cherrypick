@@ -7,7 +7,7 @@ import Fastify from "fastify";
 import type { ConsoleConfig } from "../src/config.js";
 import { registerSecurity } from "../src/security.js";
 import { registerLiveRoutes } from "../src/routes/live.js";
-import { readLiveToday } from "../src/readers/liveToday.js";
+import { pairsOf, readLiveToday } from "../src/readers/liveToday.js";
 import { closePooledDbs } from "../src/readers/db.js";
 import { populatedLiveLedger } from "./ladderLiveFixture.js";
 
@@ -239,6 +239,12 @@ describe("readLiveToday", () => {
     expect(meic!.arm).toMatchObject({ armed: true, disarmTime: "16:30", pastDisarm: false, liveEnabled: true, symbol: "XSP" });
     expect(meic!.today).toMatchObject({ trades: 1, gross: 25, fees: 2.6, settlementFees: 5, net: 17.4 });
     expect(meic!.breaker).toMatchObject({ limit: null, tripped: null });
+    // Read per arm and per symbol: one pair, `live` on XSP, with the day's one resolved IC and the open one.
+    expect(meic!.pairs).toHaveLength(1);
+    expect(meic!.pairs[0]).toMatchObject({ arm: "live", symbol: "XSP", open: 1, today: { trades: 1, gross: 25, fees: 2.6, net: 17.4 } });
+    // flies' and bwb's ledgers keep no per-arm rows in this payload: nothing is drawn for them.
+    expect(flies!.pairs).toEqual([]);
+    expect(bwb!.pairs).toEqual([]);
 
     expect(bwb).toMatchObject({ loop: "bwb", ledger: "ok", open: 1, working: 0, entriesToday: 1, worstCase: -920 });
     expect(bwb!.arm).toMatchObject({ armed: false, stale: true, liveEnabled: false, arm: "bounce", symbol: "SPX" });
@@ -289,6 +295,50 @@ describe("readLiveToday", () => {
     expect(p.suite.summed).toEqual(["ladder"]);
     expect(p.suite.net).toBe(38.33);
     expect(p.suite.armed).toEqual(["ladder"]);
+    // The pairs add back up to the loop: every open lot and every lot sold today sits in exactly one.
+    expect(ladder.pairs.reduce((s, x) => s + x.open, 0)).toBe(ladder.open);
+    expect(ladder.pairs.reduce((s, x) => s + x.today.trades, 0)).toBe(ladder.today!.trades);
+    expect(ladder.pairs.length).toBeGreaterThan(0);
+  });
+
+  it("reads MEIC's day per arm and per symbol: two arms and a top-level row are three lines, never one figure", () => {
+    writeJson("config/meic.json", { enable_live_trading: true, live: { symbol: "XSP", arm: "pm-200" } });
+    const m = meicLedger();
+    const resolved = { trade_date: DAY, status: "expired", net_credit: 0.25, put_credit: 0.1, call_credit: 0.15, settlement_fees: 1, exit_reason: "expired" };
+    insert(m, "ic_trades", { ...IC, ...resolved, id: 1, arm: "pm-200", symbol: "XSP", pnl: 30, fees: 3 });
+    insert(m, "ic_trades", { ...IC, ...resolved, id: 2, arm: "control", symbol: "XSP", pnl: -20, fees: 3 });
+    insert(m, "ic_trades", { ...IC, ...resolved, id: 3, arm: "pm-200", symbol: "SPX", pnl: 10, fees: 3 });
+    insert(m, "ic_trades", { ...IC, ...resolved, id: 4, arm: null, symbol: "XSP", pnl: 5, fees: 3 });
+    // A pair with only an open position still appears, with no resolved trade.
+    insert(m, "ic_trades", { ...IC, id: 5, trade_date: DAY, status: "open", arm: "bp-5k", symbol: "XSP", net_credit: 0.3, put_credit: 0.1, call_credit: 0.2 });
+    m.close();
+
+    const meic = readLiveToday(config, NOON).loops.find((l) => l.loop === "meic")!;
+    // The top level (no arm) first, then arm then symbol: stable whatever order the ledger returns.
+    expect(meic.pairs.map((x) => `${x.arm ?? "top"}/${x.symbol}`)).toEqual(["top/XSP", "bp-5k/XSP", "control/XSP", "pm-200/SPX", "pm-200/XSP"]);
+    const by = (arm: string | null, symbol: string) => meic.pairs.find((x) => x.arm === arm && x.symbol === symbol)!;
+    expect(by("pm-200", "XSP").today).toMatchObject({ trades: 1, gross: 30, net: 27 });
+    expect(by("control", "XSP").today.net).toBe(-23);
+    expect(by("bp-5k", "XSP")).toMatchObject({ open: 1, today: { trades: 0, net: 0 } });
+    // The loop's day is the pairs added up, and no more: nothing is lost in the split.
+    const net = meic.pairs.reduce((s, x) => s + (x.today.net ?? 0), 0);
+    expect(Math.round(net * 100) / 100).toBe(meic.today!.net);
+    expect(meic.pairs.reduce((s, x) => s + x.today.trades, 0)).toBe(meic.today!.trades);
+  });
+
+  it("pairsOf makes a pair's net n/r when one of its rows never recorded fees, and leaves other pairs alone", () => {
+    const pairs = pairsOf(
+      [
+        { arm: "a", symbol: "SPX", gross: 10, fees: 2, settlementFees: 0 },
+        { arm: "a", symbol: "SPX", gross: 5, fees: null, settlementFees: null },
+        { arm: "b", symbol: "SPX", gross: 7, fees: 1, settlementFees: 0 },
+      ],
+      [],
+      "basis",
+    );
+    expect(pairs.find((x) => x.arm === "a")!.today).toMatchObject({ trades: 2, fees: null, net: null, feesTrades: 1 });
+    expect(pairs.find((x) => x.arm === "b")!.today).toMatchObject({ trades: 1, fees: 1, net: 6 });
+    expect(pairsOf([], [], "basis")).toEqual([]);
   });
 
   it("raises every attention item from its own file or ledger state", () => {

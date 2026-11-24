@@ -947,7 +947,15 @@ says to act on, of held shorts expiring within a week and of reports before expi
 trades that fit, to Portfolio), each opening Live → positions; the first three to act on in manage's own
 urgency order with its reason and net P&L, and "All N on Positions". It re-ranks nothing and says so
 when the evaluation has not been read. A card per live loop has the simple view's fields (arm, state, open,
-worst case, mark, net, loss breaker, working when any is). A loop's card opens the shared lightbox
+worst case, mark, net, loss breaker, working when any is). **Live results are read per arm and per
+symbol, never pooled** (a loop may run a different arm from day to day, and one figure over two arms
+describes neither): each loop read carries `pairs` (`LiveTodayPair`, built by `pairsOf` in
+`readers/liveToday.ts`): today's resolved rows grouped by (arm, symbol) in the loop's own money layout,
+with each pair's open positions, the top level (no arm) first. MEIC takes the arm from the live ledger's
+`arm` column (`readMeicLive`'s history rows carry it) and the ladder from its lots; flies and bwb report
+none. The card shows one line per pair (`PairLines`) and the detail a table (`PairTable`); a loop with no
+pair shows neither. The pairs add back up to the loop's day, so the loop's net stays the day's figure and
+the split loses nothing. A loop's card opens the shared lightbox
 (`?loop=`): *orders*, the loop's positions today as chains from its own live read
 (`pages/Live/LiveTodayOrders.tsx`: MEIC's `/api/live/meic` open rows and today's resolved rows; bwb's
 live payload and its history for the session; the ladder's `/api/ladder/live`, each held lot with the

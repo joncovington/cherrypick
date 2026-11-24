@@ -52,7 +52,10 @@ The second is your broker positions: how many trades the evaluation says to act 
 expire this week and how many report before they do, the first three to act on in the evaluation's own
 order with their net P&L, and a link to every one on the `positions` tab. **How is each loop doing?** is a card per loop: its
 net today, open count, worst case, mark, and a loss-breaker meter, with a button to its orders and
-every detail. A loop that is switched off and holds nothing is not shown. **What was traded by hand?**
+every detail. Live results are read per arm and per symbol, never pooled: under the net, each arm and
+symbol the loop traded or holds today is its own line with its own net, and the detail lists them in
+full. A day that ran one arm shows one line; a loop with nothing resolved or held shows none. A loop
+that is switched off and holds nothing is not shown. **What was traded by hand?**
 shows your own 0DTE trades, stated beside the total and never in it, and only on a day you made some
 (or when something about them needs a look). In the demo above, nothing is armed,
 the net reads `n/r` and the MEIC card says `no ledger`, because no live session has been recorded.

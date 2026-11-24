@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import type { LiveTodayLoop, LiveTodayPayload, ManagePayload } from "@console/shared";
+import type { LiveTodayLoop, LiveTodayPair, LiveTodayPayload, ManagePayload } from "@console/shared";
 import { Card, PnlCell, fmtNum } from "../../components/DataTable";
 import { HelpSection, HelpWarn, type CardHelpContent } from "../../components/CardHelp";
 import { type Column } from "../../components/columns";
@@ -278,11 +278,93 @@ function LoopFields({ l, cols }: { l: LiveTodayLoop; cols: Column<LiveTodayLoop>
   );
 }
 
+/** An arm as the page names it: the registry arm, or the top level where the loop's `live.arm` is unset. */
+export function armName(arm: string | null): string {
+  return arm ?? "top level";
+}
+
+/** A pair's net today: n/r where any of its rows never recorded fees, never a partial sum. */
+function pairNet(p: LiveTodayPair): { text: string; cls: string } {
+  if (p.today.trades === 0) return { text: "—", cls: "muted" };
+  return p.today.net === null ? { text: "n/r", cls: "muted" } : { text: fmtMoney(p.today.net), cls: tone(p.today.net) };
+}
+
+/**
+ * Today by (arm, symbol), on the loop's card. Live results are read per arm and per symbol, never
+ * pooled, so a day that ran two arms (or two symbols) shows two lines, each with its own net. Nothing
+ * is drawn where the loop reports no pair: a section with no data is hidden, not an empty box.
+ */
+export function PairLines({ pairs }: { pairs: LiveTodayPair[] }) {
+  if (pairs.length === 0) return null;
+  return (
+    <ul className="lt-pairs" aria-label="today by arm and symbol">
+      {pairs.map((p) => {
+        const net = pairNet(p);
+        return (
+          <li key={`${p.arm ?? ""}|${p.symbol}`} title={p.today.basis}>
+            <span className="lt-pair-name">
+              {armName(p.arm)} · {p.symbol}
+            </span>
+            <span className={`lt-pair-net ${net.cls}`}>{net.text}</span>
+            <span className="muted lt-pair-count">
+              {p.today.trades} resolved{p.open > 0 ? ` · ${p.open} open` : ""}
+            </span>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+/** The detail tab's by-arm table: every pair in the money layout (gross − fees − settlement = net). */
+function PairTable({ pairs }: { pairs: LiveTodayPair[] }) {
+  if (pairs.length === 0) return null;
+  return (
+    <div className="table-scroll">
+      <table className="data-table num-from-2">
+        <caption className="muted" style={{ textAlign: "left", paddingBottom: 6 }}>
+          today by arm and symbol
+        </caption>
+        <thead>
+          <tr>
+            <th>arm</th>
+            <th>symbol</th>
+            <th className="num">resolved</th>
+            <th className="num">open</th>
+            <th className="num lt-money">gross</th>
+            <th className="num lt-money">fees</th>
+            <th className="num lt-money">settlement</th>
+            <th className="num">net</th>
+          </tr>
+        </thead>
+        <tbody>
+          {pairs.map((p) => {
+            const t = p.today;
+            return (
+              <tr key={`${p.arm ?? ""}|${p.symbol}`}>
+                <td>{armName(p.arm)}</td>
+                <td>{p.symbol}</td>
+                <td className="num">{t.trades}</td>
+                <td className="num">{p.open}</td>
+                <td className="num lt-money">{t.trades === 0 ? "—" : fmtMoney(t.gross)}</td>
+                <td className="num lt-money">{t.trades === 0 ? "—" : t.fees === null ? `n/r (${t.feesTrades} of ${t.trades})` : fmtMoney(t.fees)}</td>
+                <td className="num lt-money">{t.trades === 0 ? "—" : settlementWords(t.settlementFees, t.settlementTrades, t.trades)}</td>
+                <td className={`num ${pairNet(p).cls}`}>{pairNet(p).text}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 /** Every field the loops table's detail view carried, plus what needs attention on this loop. */
 export function LoopDetail({ l, attention }: { l: LiveTodayLoop; attention: LiveTodayPayload["attention"] }) {
   const mine = attention.filter((a) => a.loop === l.loop);
   return (
     <div className="lt-detail">
+      <PairTable pairs={l.pairs} />
       <LoopFields l={l} cols={loopColumns(true)} />
       {mine.length > 0 ? (
         <ul className="lt-attention">
@@ -462,6 +544,7 @@ function LoopParentCard({
           {l.ledger === "absent" ? "no ledger" : "read failed"}
         </StateLine>
       ) : null}
+      <PairLines pairs={l.pairs} />
       <div className={`pf-tiles pf-tiles-${tiles.length > 3 ? 4 : 3}`}>
         {tiles.map((x) => (
           <Tile key={x.label} label={x.label} value={x.value} title={x.title} />

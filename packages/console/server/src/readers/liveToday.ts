@@ -46,6 +46,7 @@ import type {
   LiveTodayLoop,
   LiveTodayMoney,
   LiveTodayOverdue,
+  LiveTodayPair,
   LiveTodayPayload,
   LiveTodaySuite,
 } from "@console/shared";
@@ -158,6 +159,36 @@ function moneyOf(
   };
 }
 
+/**
+ * Today by (arm, symbol): live results are read per arm and per symbol, never pooled, because a loop
+ * may run a different arm from one day to the next and a figure over two arms describes neither.
+ * `resolved` are the rows resolved today; `open` the positions holding risk now. A pair with only an
+ * open position still appears (zero trades). Pairs sort the top level (no arm) first, then by arm and
+ * symbol, so the order never depends on which row the ledger happened to return first.
+ */
+export function pairsOf(
+  resolved: Array<{ arm: string | null; symbol: string; gross: number | null; fees: number | null; settlementFees: number | null }>,
+  open: Array<{ arm: string | null; symbol: string }>,
+  basis: string,
+): LiveTodayPair[] {
+  type Group = { arm: string | null; symbol: string; rows: typeof resolved; open: number };
+  const groups = new Map<string, Group>();
+  const slot = (arm: string | null, symbol: string): Group => {
+    const key = `${arm ?? ""}\u0000${symbol}`;
+    let g = groups.get(key);
+    if (g === undefined) {
+      g = { arm, symbol, rows: [], open: 0 };
+      groups.set(key, g);
+    }
+    return g;
+  };
+  for (const r of resolved) slot(r.arm, r.symbol).rows.push(r);
+  for (const r of open) slot(r.arm, r.symbol).open += 1;
+  return [...groups.values()]
+    .sort((a, b) => (a.arm ?? "").localeCompare(b.arm ?? "") || a.symbol.localeCompare(b.symbol))
+    .map((g) => ({ arm: g.arm, symbol: g.symbol, open: g.open, today: moneyOf(g.rows, basis) }));
+}
+
 function breakerOf(
   limit: number | null,
   figure: number | null,
@@ -235,6 +266,7 @@ function readFliesToday(config: ConsoleConfig, session: string, minute: number):
       open: 0,
       working: 0,
       worstCase: null,
+      pairs: [],
       entriesToday: 0,
       today: null,
       mark: null,
@@ -267,6 +299,7 @@ function readFliesToday(config: ConsoleConfig, session: string, minute: number):
     open: openNow,
     working,
     worstCase: round2(analytics.today.maxPossibleLoss),
+    pairs: [],
     entriesToday: Math.max(0, analytics.today.positions - pendingEntries),
     // A day of more fills than one page holds cannot be summed off the page; say so rather than undercount.
     today: log.total > log.rows.length ? null : money,
@@ -356,6 +389,14 @@ function readMeicToday(config: ConsoleConfig, now: Date, login: string | null = 
     entriesToday:
       p.open.filter((r) => r.tradeDate === session && !r.working).length + todays.length,
     today,
+    pairs:
+      p.ledger === "ok"
+        ? pairsOf(
+            todays,
+            p.open.filter((r) => !r.working),
+            "iron condors of this arm and symbol resolved today (stopped, expired, force-closed)",
+          )
+        : [],
     mark: meicOpenMark(p.open),
     breaker: breakerOf(
       limit,
@@ -407,6 +448,7 @@ function readBwbToday(config: ConsoleConfig, session: string, minute: number): L
       open: 0,
       working: 0,
       worstCase: null,
+      pairs: [],
       entriesToday: 0,
       today: null,
       mark: null,
@@ -454,6 +496,7 @@ function readBwbToday(config: ConsoleConfig, session: string, minute: number): L
     open: held.length,
     working: pending.length,
     worstCase: held.length === 0 ? 0 : worstParts.some((w) => w === null) ? null : -round2(worstParts.reduce<number>((s, w) => s + (w ?? 0), 0)),
+    pairs: [],
     entriesToday:
       held.filter((p) => p.entrySession === session).length + hist.rows.filter((r) => r.entrySession === session).length,
     today: hist.total > hist.rows.length ? null : money,
@@ -515,7 +558,7 @@ function readLadderToday(config: ConsoleConfig, now: Date, session: string, minu
     overdue: [],
   };
   if (p.ledger !== "ok") {
-    return { ...base, loopState: null, open: 0, working: 0, worstCase: null, entriesToday: 0, today: null, mark: null };
+    return { ...base, loopState: null, open: 0, working: 0, worstCase: null, entriesToday: 0, today: null, pairs: [], mark: null };
   }
   const todays = p.closedLots.filter((r) => r.sellSession === session);
   const money = moneyOf(
@@ -538,6 +581,11 @@ function readLadderToday(config: ConsoleConfig, now: Date, session: string, minu
     worstCase: p.openLots.length === 0 ? 0 : round2(p.openLots.reduce((s, l) => s + l.entryValue, 0)),
     entriesToday: p.openLots.filter((l) => l.buySession === session).length + p.closedLots.filter((r) => r.buySession === session).length,
     today: money,
+    pairs: pairsOf(
+      todays.map((r) => ({ arm: r.arm, symbol: r.symbol, gross: r.grossPnl, fees: r.fees, settlementFees: r.settlementFees })),
+      p.openLots,
+      "lots of this arm and fund sold today (by sale session), gross − fees",
+    ),
     mark: { value: null, at: null, basis: "the live ledger keeps no mark on a held lot, so what the ladder holds is unmarked" },
   };
 }

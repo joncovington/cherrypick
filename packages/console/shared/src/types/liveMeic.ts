@@ -97,6 +97,12 @@ export interface LiveMeicOpenRow {
   feesToDate: number | null;
 }
 
+/** A resolved live row with the arm that traded it: live results are read per arm and per symbol. */
+export interface LiveMeicHistoryRow extends MeicTradeRow {
+  /** The registry arm the row was entered under; null for the top level (`live.arm` unset) or an older ledger. */
+  arm: string | null;
+}
+
 /** Totals over every resolved live row, in the standard's identities. */
 export interface LiveMeicTotals {
   trades: number;
@@ -136,7 +142,7 @@ export interface LiveMeicPayload {
   brokerHealth: LiveMeicBrokerHealth | null;
   open: LiveMeicOpenRow[];
   /** Resolved rows (stopped / expired / force_closed), newest first, in the trade table standard. */
-  history: MeicTradeRow[];
+  history: LiveMeicHistoryRow[];
   totals: LiveMeicTotals;
   /** The module's own arm verdict (`services/meicStatusBridge.ts`); a failed bridge is `ok: false`. */
   readiness?: LiveMeicReadiness;
