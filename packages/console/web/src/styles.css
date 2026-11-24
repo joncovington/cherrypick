@@ -2282,6 +2282,24 @@ select.text-input {
   flex-shrink: 0;
 }
 
+/* The Live link's halted dot: the design's 8px red with a soft ring. Pushed to the row's end when the
+   rail is open, a badge on the icon's corner on the collapsed strip. */
+.nav-halt-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-left: auto;
+  flex-shrink: 0;
+  background: var(--accent-live);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-live) 22%, transparent);
+}
+.mf-nav-ic-wrap .nav-halt-dot {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  margin: 0;
+}
+
 .lock-hero {
   border: 1px solid var(--border);
   border-left: 3px solid var(--pos);

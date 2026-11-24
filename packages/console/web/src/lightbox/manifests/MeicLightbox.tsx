@@ -45,6 +45,10 @@ interface MeicAnalytics {
 interface MeicScopeData {
   symbols: string[];
   arms: string[];
+  liveArm: string | null;
+  liveSymbol: string | null;
+  armStats: Array<{ arm: string; trades: number; sessions: number }>;
+  symbolStats: Array<{ symbol: string; trades: number; sessions: number }>;
   eras: Array<{ era: string; trades: number }>;
   currentEra: string;
 }
@@ -57,6 +61,41 @@ interface LoopStatus {
   ivRank: number | null;
   underlyingPrice: number | null;
   sessionQuality: string | null;
+}
+
+/** The live arm and symbol the page opens on: the configured ones where the ledger has them, else the
+ *  busiest. Pure so the rule is pinned without a DOM. */
+export function liveScopeDefaults(
+  scope: Pick<MeicScopeData, "arms" | "symbols" | "liveArm" | "liveSymbol" | "armStats" | "symbolStats"> | undefined,
+): { arm: string | null; symbol: string | null } {
+  if (scope === undefined) return { arm: null, symbol: null };
+  const pick = (cfg: string | null, all: string[], busiest: string | undefined) =>
+    cfg !== null && all.includes(cfg) ? cfg : (busiest ?? all[0] ?? null);
+  return {
+    arm: pick(scope.liveArm, scope.arms, scope.armStats[0]?.arm),
+    symbol: pick(scope.liveSymbol, scope.symbols, scope.symbolStats[0]?.symbol),
+  };
+}
+
+/** Below this many sessions a live arm's figures are thin. */
+const FEW_SESSIONS = 20;
+
+function LiveScopeCounts({ scope, arm, symbol }: { scope: MeicScopeData | undefined; arm: string | null; symbol: string | null }) {
+  const a = scope?.armStats.find((s) => s.arm === arm);
+  const s = scope?.symbolStats.find((t) => t.symbol === symbol);
+  if (a === undefined && s === undefined) return null;
+  const text = (n: { trades: number; sessions: number }) => `${String(n.trades)} trades, ${String(n.sessions)} sessions`;
+  return (
+    <>
+      {a !== undefined && (
+        <span className="chip" title={`${arm ?? ""}: live trades and sessions in this era`}>
+          {text(a)}
+          {a.sessions < FEW_SESSIONS ? " (few sessions)" : ""}
+        </span>
+      )}
+      {s !== undefined && a === undefined && <span className="chip">{text(s)}</span>}
+    </>
+  );
 }
 
 const MEIC_LABEL = Object.fromEntries(MEIC_SLIDES.map((s) => [s.id, s.label])) as Record<MeicSlideId, string>;
@@ -87,8 +126,8 @@ function useMeicAnalytics(mode: TradingMode, symbol: string | null, profile: str
  */
 export function MeicLightbox({ slide }: { slide: string }) {
   const [mode, setMode] = useMode();
-  const [symbol, setSymbol] = useState<string | null>(null);
-  const [profile, setProfile] = useState<string | null>(null);
+  const [symbolSel, setSymbol] = useState<string | null>(null);
+  const [profileSel, setProfile] = useState<string | null>(null);
   const [era, setEra] = useState<string | null>(null);
   const [day, setDay] = useState<string | null>(null);
   // `/meic/arm/<name>`: the arms tab is that arm's page.
@@ -104,9 +143,14 @@ export function MeicLightbox({ slide }: { slide: string }) {
   useEffect(() => {
     const data = scope.data;
     if (data === undefined) return;
-    if (symbol !== null && !data.symbols.includes(symbol)) setSymbol(null);
-    if (profile !== null && !data.arms.includes(profile)) setProfile(null);
-  }, [scope.data, symbol, profile]);
+    if (symbolSel !== null && !data.symbols.includes(symbolSel)) setSymbol(null);
+    if (profileSel !== null && !data.arms.includes(profileSel)) setProfile(null);
+  }, [scope.data, symbolSel, profileSel]);
+  // Live results are read per arm and per symbol, never pooled: the pick defaults to the configured live
+  // arm and symbol (else the one with most trades), and there is no all option to widen it.
+  const liveDefaults = mode === "live" ? liveScopeDefaults(scope.data) : null;
+  const symbol = symbolSel ?? liveDefaults?.symbol ?? null;
+  const profile = profileSel ?? liveDefaults?.arm ?? null;
 
   const loop = useQuery<LoopStatus>({
     queryKey: ["meic-loop", mode, symbol],
@@ -405,15 +449,17 @@ export function MeicLightbox({ slide }: { slide: string }) {
               ))}
             </select>
           )}
-          <ScopeSelect label="symbol" value={symbol} options={scope.data?.symbols} onChange={setSymbol} allLabel="all symbols" />
+          <ScopeSelect label="symbol" value={symbol} options={scope.data?.symbols} onChange={setSymbol} allLabel={mode === "live" ? null : "all symbols"} />
           <ArmSelect
             module="meic"
             label="arm"
             value={armPage ?? profile}
             options={scope.data?.arms}
+            allLabel={mode === "live" ? null : "all arms"}
             // On an arm's page the picker moves between arms' pages; elsewhere it narrows the tab.
             onChange={(v) => (armPage !== null ? navigate(v === null ? "/meic/arms" : meicArmHref(v)) : setProfile(v))}
           />
+          {mode === "live" && <LiveScopeCounts scope={scope.data} arm={profile} symbol={symbol} />}
           <EraSelect value={era} eras={scope.data?.eras} currentEra={scope.data?.currentEra} onChange={setEra} />
           {l?.ivRank != null && <span className="chip">IV rank {fmtIvr(l.ivRank)}</span>}
           {l?.underlyingPrice != null && <span className="chip">{l.underlyingPrice.toFixed(2)}</span>}

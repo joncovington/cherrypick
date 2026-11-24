@@ -185,7 +185,18 @@ an `experimental` chip, listed once in `moduleOrder.ts`'s `EXPERIMENTAL_MODULES`
     `backtest-routes.test.ts`).
 
 **Module frame.** Every page renders a left rail and a content pane inside the shell. The rail
-starts collapsed to its toggle; open or shut is the `navExpanded` console preference.
+starts collapsed to its toggle; open or shut is the `navExpanded` console preference. While the suite
+halt flag is up the Live link carries a small red dot (named "live entries halted"), on the open rail and
+on the collapsed icon strip; it reads `GET /api/config/lock` through the Config page's own query, so one
+poll serves both.
+
+**MEIC page, live mode.** Live results are read per arm and per symbol, never pooled. The ledger's `arm`
+column is the account tag `live`, so the arm is the registry arm on the trade's filled entry attempt
+(`registryArm`, `icArm` in `readers/db.ts`), and the arm list, the arm filter and every group-by read it
+there. In live mode the arm and symbol selects open on the configured `live.arm` and `live.symbol`
+(else the busiest), the "all arms" and "all symbols" options are gone, and a chip beside them states
+the arm's trades and sessions, marked "few sessions" under 20. Paper keeps its arm column and its
+all options.
 `registry.ts`'s `MODULE_FRAMES` and `navGroups.ts`'s `NAV_DECL` are full `Record`s over `ModuleId`, so
 a page added to `moduleOrder.ts` without both does not compile. Advisor stays one page with its own
 four tabs, because its write actions are wired through page-spanning state (`navGroups.ts` says why).

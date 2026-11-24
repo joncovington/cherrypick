@@ -47,7 +47,7 @@ export function ArmSelect({
   options: string[] | undefined;
   onChange: (v: string | null) => void;
   label?: string;
-  allLabel?: string;
+  allLabel?: string | null;
 }) {
   const showRetired = useBoolPref(SHOW_RETIRED_ARMS_PREF);
   const retired = useRetiredArms().data?.retired[module] ?? [];
