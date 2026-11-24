@@ -244,7 +244,7 @@ describe("the suite surfaces are on the frame", () => {
     ["/system", "System / health"],
     ["/system/supervisor", "System / supervisor"],
     ["/config/prefs", "Config / prefs"],
-    ["/config", "Config / arms"], // "arms & profiles": the ampersand is escaped in markup
+    ["/config", "Config / live"], // the live loops first; "arms & profiles" is the next tab
   ];
   for (const [route, crumb] of cases) {
     it(`${route} renders the rail and opens on ${crumb}`, () => {

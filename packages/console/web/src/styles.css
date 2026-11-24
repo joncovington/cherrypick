@@ -2387,6 +2387,118 @@ select.text-input {
   font-size: 12px;
 }
 
+/* Config > live: one row per live loop, the arm it runs and the choice. Rows wrap, so a phone stacks them. */
+.la-rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.la-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 12px 20px;
+  padding: 14px 0;
+  border-top: 1px solid var(--border);
+}
+
+.la-row:first-child {
+  border-top: none;
+}
+
+.la-name {
+  flex: 1 1 170px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.la-sub {
+  font-size: 12px;
+}
+
+.la-pick {
+  flex: 2 1 280px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.la-select {
+  min-height: 44px;
+  max-width: 340px;
+  width: 100%;
+}
+
+.la-note {
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.la-state {
+  flex: 1 1 190px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.la-blockers {
+  margin: 0;
+  padding-left: 1.1rem;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.la-confirm {
+  flex: 1 1 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  border-radius: 8px;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+}
+
+.la-confirm p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  max-width: 720px;
+}
+
+.la-changes {
+  margin: 0;
+  padding-left: 1.1rem;
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.la-confirm-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.la-confirm-row .fine-label {
+  flex: 1 1 100%;
+}
+
+.la-phrase {
+  min-height: 44px;
+  width: 240px;
+  max-width: 100%;
+  font-family: var(--num-face);
+}
+
+.la-confirm-row .btn {
+  min-height: 44px;
+}
+
 .lock-gates {
   display: flex;
   align-items: center;

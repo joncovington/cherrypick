@@ -21,7 +21,7 @@ A page the suite has switched off is not shown (see *What is off is not shown* b
 | Backtest | `/backtest` | studies, queue, runs, data | Research studies and the queue. Fails closed: hidden unless the suite says the backtest feature is on (licensed data). Left off the rail in the simple view. |
 | Advisor | `/advisor` | advisor | The advisor's experiments roll-up. Paused. Left off the rail in the simple view. |
 | System | `/system` | health, supervisor, data, environment, logs | The suite's own health, read-only. Left off the rail in the simple view. |
-| Config | `/config` | arms, modules & symbols, timing & cadence, alerts, position rules, then prefs | The one place configuration is edited, through the orchestrator's config editor. Always lists every toggle. |
+| Config | `/config` | live, arms, modules & symbols, timing & cadence, alerts, position rules, then prefs | The one place configuration is edited, through the orchestrator's config editor. Always lists every toggle. |
 
 **Module pages** (the rail's Modules section, then the Experiments page)
 

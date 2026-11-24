@@ -130,7 +130,7 @@ what it may write. The package's own CLAUDE.md holds the detail.
   suite's **only** read surface. **Holds no path that touches an order.** Kept alive by the supervisor
   (restarted on death and on a stale `state/console.heartbeat`). Read-only over every other package
   (own store `~/.cherrypick/data/console/`); reads the shared credential, never writes one. The one
-  bounded exception is the **Config page**: the live-trading halt toggle and a short allow-list of
+  bounded exception is the **Config page**: the live-trading halt toggle, the arm each live loop runs (its own orchestrator operation, MEIC only, typed phrase, flat and settled) and a short allow-list of
   settings, applied through the orchestrator's config editor as a subprocess, so the guarded
   live-trading fields stay unreachable. The Builder adds four more, each through the orchestrator:
   saving one automation (always off), queueing its explore backtest, adding an underlying to the

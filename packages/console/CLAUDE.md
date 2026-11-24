@@ -115,6 +115,17 @@ alone):
   `_note`/`_header` and key order, the timestamped backup and the atomic write all stay in
   `configedit.py`. **Never port any of that here** — a second copy of a live-safety rule is free to
   drift.
+  - **The live tab is the one place `/live/arm` can change, through its own operation.** The general save
+    still refuses it. `GET /api/config/live-arm` (`readers/liveArm.ts`) composes the orchestrator's
+    `live_arm_options` (the arm MEIC's live loop runs, the arms with a paper twin, and why a change is
+    refused right now) with files for the loops it cannot change (another login, the ladder: marked "edited by
+    hand", with the reason); `POST /api/config/live-arm` sends `set_live_arm` (the typed `CHANGE ARM`, checked
+    here and again in Python) and passes each refusal through with its own status (`not_flat` 409 with the
+    blockers, `no_twin`/`unknown_arm` 422, `status_unreadable` 503, `journal_unwritable` 500). Everything is
+    the orchestrator's (`livearm.py`): the twin requirement, flat and settled, the journal, only that key
+    changing. This package writes no config, arms nothing and never judges flat itself;
+    `server/test/config-live-arm.test.ts` and `web/test/configLiveArm.test.tsx` pin it (each guard was shown
+    to fail). The Live page and the ladder tabs stay read-only.
   - **The Builder's save is the same path for one automation** (`/api/automations/builder/draft` and
     `/save`, configcli `automation_draft` / `automation_save`). The route sends a name and an
     automation and nothing else; the orchestrator runs the module's own check and writes the entry it

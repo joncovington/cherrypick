@@ -2,6 +2,7 @@ import { Card } from "../../components/DataTable";
 import { HelpSection } from "../../components/CardHelp";
 import { Section } from "../../components/Section";
 import { LockHero } from "../../pages/Config/LockHero";
+import { LiveArmCard } from "../../pages/Config/LiveArm";
 import { ConfigSection } from "../../pages/Config/ConfigSection";
 import { IntentsCard } from "../../pages/Config/IntentsCard";
 import { SECTIONS } from "../../pages/Config/fieldMeta";
@@ -87,6 +88,17 @@ export function ConfigLightbox({ slide }: { slide: string }) {
   const failed = Object.entries(model.data?.targets ?? {}).filter(([, t]) => t.error !== undefined);
 
   const slides: SlideDef[] = [
+    {
+      id: "live",
+      label: "live",
+      render: () => (
+        <div className="pf-layout">
+          <Section concept="live" tag="live" question="Which arm does each live loop run?">
+            <LiveArmCard />
+          </Section>
+        </div>
+      ),
+    },
     ...SECTIONS.map((s) => ({
       id: s.id,
       label: s.title.toLowerCase(),
@@ -170,7 +182,8 @@ export function ConfigLightbox({ slide }: { slide: string }) {
           )}
           <p className="fine-label muted cfg-footnote">
             Edits go through the orchestrator's own config editor, which backs up each file before writing and
-            refuses the guarded live-trading fields in either direction. Arming live trading is not something this
+            refuses the guarded live-trading fields in either direction. The one exception is the arm a live loop
+            runs (the live tab), which has its own guarded operation. Arming live trading is not something this
             page can do.
           </p>
         </div>
