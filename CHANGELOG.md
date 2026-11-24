@@ -26,6 +26,13 @@ beyond the latest release.
 
 ### What's new
 
+- **MEIC can measure live per arm: a paper twin for each arm live may run.** `follows_live` arms (and
+  `live-shadow`) resolve to whatever `live.arm` names today, so a switch of live's arm would pool two arms'
+  paper results under one name. A profile with `shadow_of: "<arm>"` is pinned to one arm plus the live
+  block's overrides and does not move when `live.arm` does. The registry check names a twin that shadows an
+  unknown arm, a follower or another twin, and `live.arm` cannot name a twin. Nothing changes until a
+  machine's registry adds twins: `scripts/boundary_2026_11_24.py --arms ...` does that, retires the unpinned
+  `live-shadow` and journals the break (dry run by default).
 - **Calendars and contango are retired.** Research item 38 (calendars) and item 39 (contango) failed every
   arm at real quotes and prices. Both modules ship off, with a retired date on each arm; calendars'
   open positions run to their own exits and the module goes off once flat. The same change switched off

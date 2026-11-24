@@ -87,7 +87,8 @@ An arm is a partial overlay merged onto the base config. Beyond the base keys it
 | `wing_widths_by_symbol` | This arm's own wing shortlist per symbol. `paper_loop` builds each symbol's candidate menu from the union of every arm's widths; each arm picks from its own subset. |
 | `wing_selection` | How to pick among clearing candidates: `widest` (default, fee-drag bias), `narrowest`, or `fixed` (the shortlist's own order). |
 | `stagger_entries` | Opt-in. Enforces the entry window, a hard daily cap and spacing (`min_minutes_between_entries`). |
-| `follows_live` | A follower resolves to the live parameters plus its one override (see [reference.md](reference.md)). |
+| `follows_live` | A follower resolves to the live parameters plus its one override (see [reference.md](reference.md)). It moves with `live.arm`. |
+| `shadow_of` | A per-arm twin: the named arm as live would run it, plus the live block's overrides, plus at most one override of its own. It does not move with `live.arm` (see [reference.md](reference.md)). |
 
 QQQ and IWM are physically settled, so they exercise the engine's early force-close with modelled
 friction and the pin-risk penalty (see [paper-trading.md](paper-trading.md)); a force-closed trade that
