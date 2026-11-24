@@ -5,7 +5,7 @@ import path from "node:path";
 import type { LiveTodayLoop, MeicDivergence, MeicPayload, MeicTradeRow, MeicTradeTotals, MeicSummaryRow, MeicSummarySlice, Paged, TradingMode } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
 import type { DatabaseHandle } from "./db.js";
-import { memoReadOnlyDb, readJson, readOnlyDb, withReadOnlyDb, hasColumn, hasTable, num, str, armColumnOf, findArmColumn } from "./db.js";
+import { memoReadOnlyDb, readJson, readOnlyDb, withReadOnlyDb, hasColumn, hasTable, num, str, armColumnOf, findArmColumn, icArm, icArmOrNull } from "./db.js";
 import { readMeasurementBreaks, readSchemaDrift } from "./integrity.js";
 import { emptyPage, pagedQuery, FIRST_PAGE, type PageRequest, type SortAccessors } from "./paging.js";
 import { payoffAt, type Leg } from "../analytics/payoff.js";
@@ -78,7 +78,7 @@ function scopeSql(db: DatabaseHandle, scope: MeicScopeFilter): { and: string; pa
     params.push(scope.symbol);
   }
   if (scope.profile !== null) {
-    clauses.push(`${armColumnOf(db, "ic_trades")} = ?`);
+    clauses.push(`${icArm(db)} = ?`);
     params.push(scope.profile);
   }
   return { and: clauses.length > 0 ? ` AND ${clauses.join(" AND ")}` : "", params };
@@ -495,7 +495,7 @@ export function readMeic(config: ConsoleConfig, mode: TradingMode, query: MeicTr
         .get(...f.params) ?? {};
     const byArm = db
       .prepare<string[], Record<string, unknown>>(
-        `SELECT ${armColumnOf(db, "ic_trades")} AS arm, ${sums} FROM ic_trades
+        `SELECT ${icArm(db)} AS arm, ${sums} FROM ic_trades
           WHERE ${f.where} AND pnl IS NOT NULL GROUP BY 1`,
       )
       .all(...f.params)
@@ -570,6 +570,14 @@ export interface MeicScope {
   /** Every era present, with its row count, so the page can say what a filter costs. */
   eras: Array<{ era: string; trades: number }>;
   currentEra: string;
+  /** Live only (null on paper): the configured live arm and symbol (`live.arm`, `live.symbol`), the
+   *  page's defaults. Live results are read per arm and per symbol, never pooled. */
+  liveArm: string | null;
+  liveSymbol: string | null;
+  /** Live only: each arm's (registry arm, not the ledger's `live` tag) trades and sessions in the era. */
+  armStats: Array<{ arm: string; trades: number; sessions: number }>;
+  /** Live only: the same per symbol. */
+  symbolStats: Array<{ symbol: string; trades: number; sessions: number }>;
 }
 
 /**
@@ -594,12 +602,37 @@ export function readMeicScope(
 ): MeicScope {
   const file = mode === "live" ? "meic_trades.db" : "paper_trades.db";
   const dbPath = path.join(config.paths.meicDir, file);
-  const empty: MeicScope = { symbols: [], arms: [], eras: [], currentEra: CURRENT_ERA };
-  return memoReadOnlyDb<MeicScope>(dbPath, `meic-scope:${dbPath}:${etToday()}:${era ?? ""}`, empty, (db) => {
+  const empty: MeicScope = { symbols: [], arms: [], eras: [], currentEra: CURRENT_ERA, liveArm: null, liveSymbol: null, armStats: [], symbolStats: [] };
+  const liveCfg = mode === "live" ? readJson(path.join(config.paths.cherrypick, "config", "meic.json")) : null;
+  const liveBlock = liveCfg?.["live"];
+  const liveObj = typeof liveBlock === "object" && liveBlock !== null && !Array.isArray(liveBlock) ? (liveBlock as Record<string, unknown>) : {};
+  const liveArm = str(liveObj["arm"]);
+  const liveSymbol = str(liveObj["symbol"]);
+  return memoReadOnlyDb<MeicScope>(dbPath, `meic-scope:${dbPath}:${etToday()}:${era ?? ""}:${liveArm ?? ""}:${liveSymbol ?? ""}`, empty, (db) => {
     const scoped = era !== "ALL" && hasColumn(db, "ic_trades", "era");
     const and = scoped ? " AND era = ?" : "";
     const params: string[] = scoped ? [era ?? CURRENT_ERA] : [];
+    // Live: the arm is the registry arm joined from the filled entry attempt, counted over RESOLVED
+    // trades, so an arm's option says how much it has behind it.
+    const live = mode === "live";
+    const armExpr = icArmOrNull(db);
+    const statsOf = (expr: string | null, key: string): Array<Record<string, string | number>> =>
+      expr === null
+        ? []
+        : db
+            .prepare<string[], Record<string, string | number>>(
+              `SELECT ${expr} AS k, COUNT(*) AS trades, COUNT(DISTINCT trade_date) AS sessions FROM ic_trades
+                WHERE ${RESOLVED} AND ${expr} IS NOT NULL${and} GROUP BY k ORDER BY trades DESC, k`,
+            )
+            .all(...params)
+            .map((r) => ({ [key]: r["k"] as string, trades: Number(r["trades"]), sessions: Number(r["sessions"]) }));
+    const armStats = live ? (statsOf(armExpr, "arm") as MeicScope["armStats"]) : [];
+    const symbolStats = live ? (statsOf("symbol", "symbol") as MeicScope["symbolStats"]) : [];
     return {
+      liveArm: live ? liveArm : null,
+      liveSymbol: live ? liveSymbol : null,
+      armStats,
+      symbolStats,
       eras: hasColumn(db, "ic_trades", "era")
         ? db
             .prepare<[], { era: string; trades: number }>(
@@ -617,8 +650,8 @@ export function readMeicScope(
         .map((r) => r.s),
       arms: db
         .prepare<string[], { p: string }>(
-          `SELECT DISTINCT ${armColumnOf(db, "ic_trades")} AS p FROM ic_trades
-            WHERE ${armColumnOf(db, "ic_trades")} IS NOT NULL${and} ORDER BY p`,
+          `SELECT DISTINCT ${icArm(db)} AS p FROM ic_trades
+            WHERE ${icArm(db)} IS NOT NULL${and} ORDER BY p`,
         )
         .all(...params)
         .map((r) => r.p),
@@ -815,7 +848,7 @@ export function readMeicPerformance(
   const key = `meic-performance:${dbPath}:${etToday()}:${granularity}:${scopeKey({ symbol, profile, era })}`;
   return memoReadOnlyDb<MeicPerformance>(dbPath, key, empty, (db) => {
     // `risk_profile` until meic's column moves; an old live ledger has neither, and reads untagged.
-    const armColumn = findArmColumn(db, "ic_trades");
+    const armColumn = icArmOrNull(db);
     const hasProfile = armColumn !== null;
     // Era narrows every figure on the page, including the cross-profile and
     // cross-arm comparisons — comparing a profile's book-era rows against
@@ -1284,7 +1317,7 @@ export function readMeicAnalytics(
     // reader already carries a note about.
     const armRows = db
       .prepare<string[], Record<string, unknown>>(
-        `SELECT ${armColumnOf(db, "ic_trades")} AS profile, ${SETTLED} AS trades,
+        `SELECT ${icArm(db)} AS profile, ${SETTLED} AS trades,
                 ${NET} AS net, ${WINS} AS wins, ${LOSSES} AS losses,
                 COALESCE(SUM(CASE WHEN pnl - COALESCE(fees, 0) > 0 THEN pnl - COALESCE(fees, 0) ELSE 0 END), 0) AS won,
                 COALESCE(SUM(CASE WHEN pnl - COALESCE(fees, 0) < 0 THEN COALESCE(fees, 0) - pnl ELSE 0 END), 0) AS lost
@@ -1331,7 +1364,7 @@ export function readMeicAnalytics(
     };
     const armFeeDrag = db
       .prepare<string[], Record<string, unknown>>(
-        `SELECT ${armColumnOf(db, "ic_trades")} AS profile, ${DRAG_SUMS}
+        `SELECT ${icArm(db)} AS profile, ${DRAG_SUMS}
            FROM ic_trades WHERE ${RESOLVED} AND pnl IS NOT NULL AND trade_date = ?${sc.and}
           GROUP BY profile ORDER BY profile`,
       )
@@ -1621,7 +1654,7 @@ export function readMeicForest(
 
     const allRows = db
       .prepare<string[], Record<string, unknown>>(
-        `SELECT ic_order_id, ${armColumnOf(db, "ic_trades")} AS arm, symbol, put_strike, call_strike, wing_width,
+        `SELECT ic_order_id, ${icArm(db)} AS arm, symbol, put_strike, call_strike, wing_width,
                 ${hasColumn(db, "ic_trades", "put_wing") ? "put_wing" : "NULL AS put_wing"},
                 ${hasColumn(db, "ic_trades", "call_wing") ? "call_wing" : "NULL AS call_wing"},
                 ${["put_credit", "call_credit", "put_stop_cost", "call_stop_cost"]
@@ -1887,7 +1920,7 @@ export function readMeicCosts(config: ConsoleConfig, mode: TradingMode, era: str
     const mult = `COALESCE(${meicCol(db, "dollar_multiplier")}, 100) * COALESCE(quantity, 1)`;
     const rows = db
       .prepare<string[], Record<string, unknown>>(
-        `SELECT ${armColumnOf(db, "ic_trades")} AS arm, pnl AS gross, fees AS fees_total,
+        `SELECT ${icArm(db)} AS arm, pnl AS gross, fees AS fees_total,
                 ${meicCol(db, "settlement_fees")} AS settlement_fees,
                 ${meicCol(db, "slippage_dollars")} AS slippage_dollars,
                 net_credit * ${mult} AS premium, trade_date
@@ -1999,7 +2032,7 @@ export function readMeicSummary(
     const mult = `COALESCE(${meicCol(db, "dollar_multiplier")}, 100) * COALESCE(quantity, 1)`;
     const settleCol = meicCol(db, "settlement_fees");
     const slipCol = meicCol(db, "slippage_dollars");
-    const armCol = armColumnOf(db, "ic_trades");
+    const armCol = icArm(db);
     // Same settled-row denominators the analytics read defines (line ~1096): trades that contribute
     // to a money figure, and the fee-adjusted net they sum to.
     const NET = "COALESCE(SUM(pnl - COALESCE(fees, 0)), 0)";
