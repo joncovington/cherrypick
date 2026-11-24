@@ -26,6 +26,11 @@ beyond the latest release.
 
 ### What's new
 
+- **`execution`'s paper-live gap follows the arm live ran.** MEIC's mirror was one fixed paper arm,
+  `live-shadow`. Once `live-shadow` retires (its `arm_retired` break in the paper ledger) each session is
+  set against the twin (`shadow_of`) of the arm live ran that session, read from the live ledger's entry
+  attempts; a session whose arm has no twin is left out of the gap and listed, never matched to another
+  arm's twin. Until then nothing changes.
 - **MEIC can measure live per arm: a paper twin for each arm live may run.** `follows_live` arms (and
   `live-shadow`) resolve to whatever `live.arm` names today, so a switch of live's arm would pool two arms'
   paper results under one name. A profile with `shadow_of: "<arm>"` is pinned to one arm plus the live

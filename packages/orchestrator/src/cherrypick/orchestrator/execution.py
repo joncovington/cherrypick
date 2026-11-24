@@ -10,9 +10,11 @@ ledgers already record -- files only, no broker, nothing written.
 - **Overrides,** flagged per week: a kill-criteria block cleared by hand (`state/kill/history.jsonl`),
   a module config committed during a session (the config-backup history, so at its cadence), and a
   manual close.
-- **The paper-live gap:** live net against the paper arm that mirrors it (meic `live-shadow`, bwb its
+- **The paper-live gap:** live net against the paper arm that mirrors it (meic `live-shadow` until it
+  retires, then, per session, the twin (`shadow_of`) of the arm live ran that session; bwb its
   `live.arm`; a meic live account on another login, its own arm on its own symbol) since the first
-  live order, split into missed entries, fill, costs and the rest, with the largest named.
+  live order, split into missed entries, fill, costs and the rest, with the largest named. A session
+  whose arm has no twin has no mirror and is listed apart, never matched to another arm's twin.
 
 Each live account is its own record: the module's name for the main login's, `meic.<login>` for each
 of meic's further live accounts.
@@ -382,10 +384,94 @@ def _records(path: Path | None, schema: str) -> list[dict]:
         conn.close()
 
 
-def _one(name: str, key: str, live_path: Path | None, paper_path: Path, mirror, symbol=None) -> dict:
+_TWIN_META_KEYS = {"enabled", "follows_live", "shadow_of"}
+
+
+def meic_twins(registry: Path | None = None) -> dict[str, str]:
+    """{arm: twin} from the machine's MEIC arm registry: each `shadow_of` profile with no override of
+    its own, enabled or not (a retired twin still holds its rows). A twin with an override is an
+    experiment beside the arm, not its mirror. Empty when the registry holds none or cannot be read.
+    The registry is read as a file, never imported: the orchestrator drives modules, it never imports them."""
+    path = registry if registry is not None else core_home.config_dir() / "meic.risk.json"
+    try:
+        profiles = json.loads(path.read_text(encoding="utf-8")).get("profiles") or {}
+    except (OSError, ValueError, AttributeError):
+        return {}
+    out: dict[str, str] = {}
+    for name, p in profiles.items():
+        if name.startswith("_") or not isinstance(p, dict) or not p.get("shadow_of"):
+            continue
+        if any(not k.startswith("_") and k not in _TWIN_META_KEYS for k in p):
+            continue
+        out.setdefault(str(p["shadow_of"]), name)
+    return out
+
+
+def shadow_retired_on(paper_path: Path) -> str | None:
+    """The date the unpinned `live-shadow` retired (its `arm_retired` break in the paper ledger), or None
+    while it still measures live. From that date each live arm's own twin is the mirror."""
+    if not paper_path.exists():
+        return None
+    conn = _ro(paper_path)
+    try:
+        if not _cols(conn, "measurement_breaks"):
+            return None
+        row = conn.execute(
+            "SELECT MIN(break_date) FROM measurement_breaks WHERE scope = ? AND kind = 'arm_retired'",
+            (MEIC_MIRROR,),
+        ).fetchone()
+        return row[0] if row and row[0] else None
+    except sqlite3.Error:
+        return None
+    finally:
+        conn.close()
+
+
+def meic_live_arms(conn) -> dict[str, set[str]]:
+    """{session: registry arms live ran or tried}, from the live ledger's entry attempts. The live
+    `ic_trades.arm` is the constant 'live' (the account), so the strategy arm (`live.arm`, `pm-200`) is
+    only on the attempts; a trade's own arm is its filled attempt's."""
+    if not {"trade_date", "arm"} <= _cols(conn, "entry_attempts"):
+        return {}
+    out: dict[str, set[str]] = defaultdict(set)
+    for r in conn.execute("SELECT DISTINCT trade_date, arm FROM entry_attempts WHERE arm IS NOT NULL"):
+        if r[0]:
+            out[str(r[0])[:10]].add(str(r[1]))
+    return dict(out)
+
+
+def per_arm_paper(
+    paper: list[dict], arms_by_session: dict[str, set[str]], twins: dict[str, str], retired_on: str | None
+) -> tuple[list[dict], list[str]]:
+    """(the paper rows that mirror live, the sessions with no mirror).
+
+    Until `live-shadow` retired (`retired_on`) its rows are the mirror, as they always were: it followed
+    live, which then ran one arm. From that date each session's mirror is the twin of the arm live ran
+    THAT session, so a switch of live's arm moves the comparison with it. A session whose arm has no twin
+    has no mirror, and is reported apart: it is never matched to another arm's twin or to `live-shadow`."""
+    rows = []
+    for r in paper:
+        session = (r.get("session") or "")[:10]
+        if retired_on is None or session < retired_on:
+            if r.get("arm") == MEIC_MIRROR:
+                rows.append(r)
+        elif r.get("arm") in {twins[a] for a in arms_by_session.get(session, ()) if a in twins}:
+            rows.append(r)
+    unmirrored = sorted(
+        s
+        for s, arms in arms_by_session.items()
+        if retired_on is not None and s >= retired_on and any(a not in twins for a in arms)
+    )
+    return rows, unmirrored
+
+
+def _one(
+    name: str, key: str, live_path: Path | None, paper_path: Path, mirror, symbol=None, twins=None
+) -> dict:
     """One live account's record. `key` is its live key (`meic`, `meic.<login>`), which its kill
     history is filed under; the module's config commits count for every account it trades. `symbol`
-    narrows the paper mirror to the account's own instrument."""
+    narrows the paper mirror to the account's own instrument. `twins` ({arm: twin}, MEIC's main account
+    only) makes the mirror per arm once `live-shadow` has retired; None keeps one fixed mirror arm."""
     if live_path is None or not live_path.exists():
         return {"ok": False, "reason": "no live ledger"}
     conn = _ro(live_path)
@@ -393,21 +479,35 @@ def _one(name: str, key: str, live_path: Path | None, paper_path: Path, mirror, 
         orders = ORDER_READERS[name](conn)
         closes = manual_closes(conn) if name == "meic" else []
         working = working_sessions(conn, orders)
+        arms_by_session = meic_live_arms(conn) if twins is not None else {}
     finally:
         conn.close()
     live = _records(live_path, SCHEMA[name])
-    paper = [
+    candidates = [
         r
         for r in _records(paper_path, SCHEMA[name])
-        if r.get("arm") == mirror and (symbol is None or str(r.get("symbol") or "").upper() == symbol)
+        if symbol is None or str(r.get("symbol") or "").upper() == symbol
     ]
+    unmirrored: list[str] = []
+    label = mirror
+    if twins is None:
+        paper = [r for r in candidates if r.get("arm") == mirror]
+        gap_live, gap_working = live, working
+    else:
+        retired_on = shadow_retired_on(paper_path)
+        paper, unmirrored = per_arm_paper(candidates, arms_by_session, twins, retired_on)
+        gap_live = [r for r in live if (r.get("session") or "")[:10] not in unmirrored]
+        gap_working = working - set(unmirrored)
+        if retired_on is not None:
+            label = f"{MEIC_MIRROR} before {retired_on}, then the twin of each session's arm"
     overrides = kill_clears(key) + config_commits(name) + closes
     return {
         "ok": True,
-        "mirror": mirror,
+        "mirror": label,
         "weeks": weekly(orders, overrides, live),
-        "gap": gap(live, paper, working),
-        "window": window_trigger(live, paper),
+        "gap": gap(gap_live, paper, gap_working),
+        "window": window_trigger(gap_live, paper),
+        "unmirrored": unmirrored,
     }
 
 
@@ -425,7 +525,8 @@ def run(cfg: dict) -> dict:
             mod_cfg = {}
         paper_path = cfgmod.paper_db_path(mcfg, name)
         mirror = MEIC_MIRROR if name == "meic" else (mod_cfg.get("live") or {}).get("arm")
-        out[name] = _one(name, name, cfgmod.live_db_path(mcfg, name), paper_path, mirror)
+        twins = meic_twins() if name == "meic" else None
+        out[name] = _one(name, name, cfgmod.live_db_path(mcfg, name), paper_path, mirror, twins=twins)
         if name != "meic":
             continue
         accounts = mod_cfg.get("live_accounts") if isinstance(mod_cfg.get("live_accounts"), dict) else {}
@@ -461,6 +562,10 @@ def format_report(result: dict) -> str:
             parts = "  ".join(f"{k} {v:+.2f}" for k, v in g["parts"].items())
             lines.append(
                 f"  live - paper since {g['since']}: {g['total']:+.2f}  ({parts}); largest: {g['largest']}"
+            )
+        if m.get("unmirrored"):
+            lines.append(
+                f"  no paper twin for the arm live ran on {', '.join(m['unmirrored'])}: left out of the gap"
             )
         wt = m.get("window") or {}
         if wt.get("would") == "too_few":
