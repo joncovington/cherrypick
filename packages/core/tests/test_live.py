@@ -109,6 +109,21 @@ def test_a_refused_arm_is_not_journaled_and_an_unwritable_journal_never_stops_an
     assert live.disarm("bwb")["ok"]
 
 
+def test_record_event_says_whether_it_was_written():
+    """`record_event` is the journal's public writer: a caller that must not proceed without the record
+    (a change of the arm live runs) checks the answer, where an arm or a disarm ignores it."""
+    assert live.record_event("meic", "live_arm_changed", actor="config", from_arm="a", to_arm="b") is True
+    rows = live.arm_events("meic")
+    assert (
+        rows[-1]["event"] == "live_arm_changed"
+        and rows[-1]["to_arm"] == "b"
+        and rows[-1]["actor"] == "config"
+    )
+    live.arm_events_path().unlink()
+    live.arm_events_path().mkdir()  # a directory where the file belongs: the append fails
+    assert live.record_event("meic", "live_arm_changed") is False
+
+
 def test_arm_record_date_reads_a_legacy_location_read_only(tmp_path):
     legacy = tmp_path / "live_armed.json"
     legacy.write_text(json.dumps({"date": "2026-08-07"}), encoding="utf-8")

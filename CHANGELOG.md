@@ -31,6 +31,11 @@ beyond the latest release.
   console reads the column first and the attempt second; older rows keep working, and
   `python -m cherrypick.meic.live_arm_backfill` (a dry run until `--apply`, backed up first) fills them
   where an attempt names the arm.
+- **MEIC's live arm has its own guarded operation.** `live.arm` is still refused by the general config
+  save. `configcli`'s `set_live_arm` (with `live_arm_options` to read) changes that one key and nothing
+  else, and only when you type `CHANGE ARM`, the arm has a paper twin and the loop is flat and settled
+  (not armed today, no open condor, no working order, nothing unsettled). It is journaled in the arm
+  journal, takes effect at the next arming and arms nothing. No console page offers it yet.
 - **`execution`'s paper-live gap follows the arm live ran.** MEIC's mirror was one fixed paper arm,
   `live-shadow`. Once `live-shadow` retires (its `arm_retired` break in the paper ledger) each session is
   set against the twin (`shadow_of`) of the arm live ran that session, read from the live ledger's entry
