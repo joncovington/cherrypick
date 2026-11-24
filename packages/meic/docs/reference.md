@@ -239,6 +239,16 @@ opportunity per (arm × symbol) per tick — outcome, binding gate, regime state
 outcome. Written best-effort with every exception swallowed, after the decision and fill are persisted,
 so a failure costs a telemetry row, never a tick.
 
+**A live row records the arm live ran.** A live `ic_trades` row's `arm` is the constant `live` (the
+account). Its `live_arm` column holds the registry arm `live.arm` named (`pm-200`) when the entry was
+drafted, before the order goes out, so an entry recovered from the write-ahead intent carries it too; it is
+NULL when `live.arm` was unset. It is bookkeeping: a failure to read the arm records NULL and never blocks an
+entry. A row from before the column has no `live_arm`; readers then fall back to the trade's filled entry
+attempt (`entry_attempts.ic_order_id`, outcome `filled`). `python -m cherrypick.meic.live_arm_backfill
+[--db PATH]` shows which old rows that join would fill, and `--apply` fills them (the ledger is backed up
+beside itself first, only NULL rows are written, a row with no filled attempt stays NULL, a second run
+changes nothing). Run it with the live loop stopped.
+
 **Paper portfolio model**: one portfolio per **(arm × symbol)**, each with its own
 `max_concurrent_ics` and daily budget (a shared budget starved whichever symbol ran last — IWM once
 went 1,313 iterations without a fill). `daily_ic_trade_target` is soft: past it the credit floor scales

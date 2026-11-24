@@ -395,6 +395,11 @@ CREATE INDEX IF NOT EXISTS idx_entry_attempts_outcome ON entry_attempts (trade_d
 # _ADDED_POSITION_COLUMNS — single source of truth for both _migrate below and
 # stale_writer_columns' comparison against what regime.classify_regime actually writes.
 _ADDED_TRADE_COLUMNS = {
+    # The registry arm a LIVE entry ran (`live.arm`, e.g. pm-200), written when the row is drafted.
+    # A live row's own `arm` is the constant 'live' (the account); before this column the strategy arm
+    # was only recoverable through the filled entry attempt. NULL: live.arm unset, or a row from
+    # before the column (`live_arm_backfill` fills those where a filled attempt names the arm).
+    "live_arm": "TEXT",
     "long_put_delta_at_entry": "REAL",
     "long_call_delta_at_entry": "REAL",
     "iv_skew_signal": "TEXT",

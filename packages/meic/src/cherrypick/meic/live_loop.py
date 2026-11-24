@@ -1328,8 +1328,25 @@ def _manage_open_trades(
     return counts
 
 
+def _live_arm_or_none(config: dict | None) -> str | None:
+    """The registry arm live runs, for the row's `live_arm`. Bookkeeping only: any failure to read it
+    records NULL and never blocks an entry."""
+    try:
+        return paper.live_arm_name(config or {})
+    except Exception:  # noqa: BLE001 -- the arm is a label on the row, never a reason not to enter
+        return None
+
+
 def _manage_entry(
-    symbol: str, snapshot: dict, params: dict, db_path: str, broker, *, live: bool, log
+    symbol: str,
+    snapshot: dict,
+    params: dict,
+    db_path: str,
+    broker,
+    *,
+    live: bool,
+    log,
+    live_arm: str | None = None,
 ) -> dict:
     """Evaluate and, if admitted, submit one new IC entry for `symbol`. Reuses
     `paper.evaluate_entry` (the exact function paper_loop calls); on a real fill, builds the
@@ -1396,6 +1413,9 @@ def _manage_entry(
     )
     row["status"] = "pending"
     row["fill_confirmed_at"] = None
+    # The strategy arm, on the trade itself (the row's own `arm` is the account's 'live'). Set before
+    # the write-ahead intent copies the row, so a recovered entry carries it too.
+    row["live_arm"] = live_arm
 
     # Write-ahead (2026-11-02): the row this entry will need, under the identifier the order is sent
     # with, BEFORE the order goes out. A process that dies between the submit and the save leaves
@@ -1927,7 +1947,9 @@ def run_once(
     ) >= cap:
         entry = {"entry": "skipped", "reason": "max_structures_per_day_reached"}
     else:
-        entry = _manage_entry(symbol, snapshot, params, db_path, broker, live=live, log=log)
+        entry = _manage_entry(
+            symbol, snapshot, params, db_path, broker, live=live, log=log, live_arm=_live_arm_or_none(config)
+        )
         if entry.get("entry") == "placed":
             # The working order, now, not at the next tick: the other loops check against it from here.
             _livepos.publish_open_legs(

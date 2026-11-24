@@ -26,6 +26,11 @@ beyond the latest release.
 
 ### What's new
 
+- **A live MEIC trade records the arm live ran.** `ic_trades.live_arm` holds the registry arm (`pm-200`)
+  at entry, so live results read per arm no longer depend on joining the trade to its entry attempt. The
+  console reads the column first and the attempt second; older rows keep working, and
+  `python -m cherrypick.meic.live_arm_backfill` (a dry run until `--apply`, backed up first) fills them
+  where an attempt names the arm.
 - **`execution`'s paper-live gap follows the arm live ran.** MEIC's mirror was one fixed paper arm,
   `live-shadow`. Once `live-shadow` retires (its `arm_retired` break in the paper ledger) each session is
   set against the twin (`shadow_of`) of the arm live ran that session, read from the live ledger's entry
