@@ -233,8 +233,8 @@ def test_options_offer_the_arms_and_say_why_a_change_is_refused_now(home):
     assert livearm.options({}, lambda cfg: None)["can_change"] is False
 
 
-def test_the_console_bridge_reaches_the_op_and_its_refusals_are_data(home):
-    (home / "config.json").write_text(json.dumps({"modules": {"meic": {}}}), encoding="utf-8")
+def test_the_console_bridge_reaches_the_op_and_its_refusals_are_data(home, monkeypatch):
+    monkeypatch.setattr(configcli.cfgmod, "load_config", lambda: {"modules": {"meic": {}}})
     out = configcli.handle({"op": "set_live_arm", "module": "meic", "arm": "pm-1400"})
     assert out["ok"] is False and out["code"] == "confirm_required"
     assert _text(home) == MEIC
