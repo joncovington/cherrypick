@@ -166,7 +166,12 @@ alone):
     suggestion and why, all manage's. A tap saves, the strip says the answer is read at the next
     evaluation, and Undo writes back the replaced value (none for a free label the route would refuse). A
     put whose ID is still provisional, answered on its name, gets no write there and points to Config.
-    `web/test/intentStrip.test.tsx` pins it.
+    The opened trade's Intent tab (`IntentTab`) is the same question with each answer beside the verdict it
+    would get, the answer held now (a held answer is not offered again) and the config key it is written
+    to. It shares the strip's saved state (`intentAnswers`, keyed by the trade and the ask as manage last
+    read it), so an answer given in one shows in the other and a stale one drops once manage re-evaluates.
+    A trade manage does not ask has no such tab. `web/test/intentStrip.test.tsx` and
+    `web/test/intentTab.test.tsx` pin them.
   - **The Builder's save is the same path for one automation** (`/api/automations/builder/draft` and
     `/save`, configcli `automation_draft` / `automation_save`). The route sends a name and an
     automation and nothing else; the orchestrator runs the module's own check and writes the entry it

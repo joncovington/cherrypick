@@ -7028,6 +7028,18 @@ select.text-input {
   flex-basis: 100%;
   color: var(--neg);
 }
+.int-tab {
+  display: grid;
+  gap: 10px;
+}
+.int-tab-q {
+  margin: 0;
+  font-weight: 600;
+}
+.int-col.is-held {
+  border-color: var(--accent);
+}
+
 .int-strip.is-saved {
   justify-content: space-between;
   border-style: solid;
