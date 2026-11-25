@@ -42,9 +42,6 @@ promote/retain verdict from tag readings. Deciding whether a variant earned anyt
 the same question from different evidence and different thresholds. `compare_profiles`, `qualify_readings` and `QUALIFICATION_RULE` all stayed —
 the advisor reads through exactly that chain.
 
-(This is the second model retired from that surface. The original fixed-ladder "promote to the next
-rung" went in 2026-08-01, because it produced a real, reproducible, meaningless recommendation the
-moment a module's tags were parallel arms rather than a risk sequence.)
 `logrotate` (`archive`) sweeps finished months into `logs/archive/`.
 
 ## `report` — unified paper P&L

@@ -120,8 +120,7 @@ also supported: one arm, one symbol, a worst-case buying-power cap, armed fresh 
 One net-credit SPX put broken-wing butterfly a session at the expected move, ~7 DTE, held to expiry, so
 several ride at once. Its books trade the identical base structure and differ only in whether and when
 a reversal-triggered put credit spread add-on fires (never / delta touch / confirmed bounce / gamma-flip
-reclaim). SPX cash-settles, so there is no assignment machinery. Paper by default (`bwb-paper`); since
-2026-09-18 a narrow live path in the flies posture — one arm, armed per day by `/live-bwb-start` (or `live_loop --arm --confirm YES`), a
+reclaim). SPX cash-settles, so there is no assignment machinery. Paper by default (`bwb-paper`); a narrow live path in the flies posture — one arm, armed per day by `/live-bwb-start` (or `live_loop --arm --confirm YES`), a
 worst-case margin cap, a cost-derived credit floor, no closing orders.
 
 → Depth: [`bwb/README.md`](../packages/bwb/README.md), [`bwb/CLAUDE.md`](../packages/bwb/CLAUDE.md).

@@ -93,7 +93,7 @@ Everything hangs off one config file per package. The orchestrator's `config.jso
 (`orchestrator/config.py`) splits into two halves:
 
 - **Write side — the reliability guarantee.** The **supervisor daemon** (`orchestrator/supervisor.py`,
-  kept alive by the single `cherrypick-supervisor` OS task since the 2026-08-09 cutover) derives every
+  kept alive by the single `cherrypick-supervisor` OS task) derives every
   recurring job from config each pass (`orchestrator/jobspec.py`, ET/DST-correct) and spawns them as
   short-lived headless ticks; `orchestrator/watchdog.py` runs as its 10-minute job, checks each
   module's paper pipeline (job present, data fresh in-session, streamer alive, earnings SLA met) plus
@@ -104,7 +104,7 @@ Everything hangs off one config file per package. The orchestrator's `config.jso
   load-bearing.)
 - **Read side — look whenever you want.** `report.py` (cross-module paper P&L), `calibrate.py` (per-profile
   promotion advisor) and `logrotate.py` (monthly archive), over the shared per-schema ledger readers in
-  `cherrypick.core.ledgers`. End-of-day reporting moved out to **`packages/review`** on 2026-08-13 —
+  `cherrypick.core.ledgers`. End-of-day reporting lives in **`packages/review`** —
   one versioned fact set per session across every module, which every surface renders rather than
   re-deriving. The page that composes them is the console.
   These are **read-only and file-only** — they read paper DBs (SQLite read-only), watchdog state, logs,
