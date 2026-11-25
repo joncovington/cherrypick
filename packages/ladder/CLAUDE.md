@@ -117,7 +117,7 @@ import (`orders.py` may import the one pure id reader). The `live` block in the 
   positions cross-check, declared splits and dry-run intents). It makes no broker call and
   `ready` reflects the gates only. **`--once`** runs one tick (below).
 - There is no `live.task_name`, so the supervisor derives no `ladder-live` job and a tick is run by
-  hand. The supervisor job comes with a later step.
+  hand.
 - **Dry-run (`live.dry_run`, guarded)** is true unless it is exactly `false`. The tick still reads the
   broker, but the executor logs the orders it would place or cancel into the decisions journal
   (`mode = dry_run`, the order's client id in the reason, the shares, limit and time in force in the

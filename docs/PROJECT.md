@@ -118,7 +118,7 @@ python run.py connect
 ```
 
 There is exactly **one** shared login the whole suite reads, so there is a single place to rotate it.
-The **console** only ever reads: at start-up it probes the token's scope, and a read-only token (the
+The **console** places no order: at start-up it probes the token's scope, and a read-only token (the
 right choice for paper mode) disables its write-oriented functions.
 
 **3. Strategy details.** The fine-grained rules — symbols, target deltas, credit floors, entry

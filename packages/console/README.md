@@ -38,7 +38,7 @@ is exactly **one path for setting them**, the suite onboarding CLI:
 python -m cherrypick.core.auth setup      # THE single setting path (hidden input)
 ```
 
-The console only reads. At boot it probes the credential's scope live (scope rides on the refresh
+The console places no order. At boot it probes the credential's scope live (scope rides on the refresh
 token): a read-only token gets a warning and a status-bar chip. The console has no order path, so
 nothing else changes until a trade-scoped token is rotated in. Inspection commands:
 
