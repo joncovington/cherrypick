@@ -405,8 +405,9 @@ filename; override with `paper.sla_state_prefix`.
   phrase `CHANGE ARM`, checked here; an arm that is in the machine's registry, is not a follower or a
   twin and has a plain paper twin (`shadow_of`), since live is read per arm and an arm with no twin is
   measured against nothing; only when the module's own `live_loop --status` says flat and settled (not
-  armed today, no position, no working order, settled, nothing overdue, held or orphaned, ledger
-  readable; a status it cannot read refuses); journaled first through `core.live.record_event`, a
+  armed today, no position, no working order, settled, nothing overdue, held or orphaned, no entry
+  sent and unreconciled, ledger readable; a status it cannot read refuses, and so does a config that
+  changed while it was read); journaled first through `core.live.record_event`, a
   journal that cannot be written stopping it; and only that key changes (the new text must parse to the
   old document with that one value moved, or nothing is written). It takes effect at the next arming and
   arms nothing. MEIC's main login only: another login's arm sits under the guarded `/live_accounts`,

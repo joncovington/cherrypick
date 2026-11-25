@@ -74,7 +74,7 @@ def test_every_declared_live_gate_is_guarded(module: str, rel: str):
 
 def test_guarded_names_only_modules_that_exist():
     """A stale entry is harmless but misleading: it reads as a protection that guards nothing."""
-    unknown = set(GUARDED) - set(MODULE_CONFIGS)
+    unknown = set(GUARDED) - set(MODULE_CONFIGS) - _EXCLUDED
     assert not unknown, f"GUARDED names modules with no config here: {sorted(unknown)}"
 
 
@@ -107,7 +107,9 @@ def test_every_guarded_pointer_still_names_a_real_key(module: str):
     Verified to fail by renaming `/live/arm` to `/live/book` in bwb's config example: this test
     went red naming the pointer, and every other test in the file stayed green.
     """
-    rel = MODULE_CONFIGS.get(module)
+    rel = MODULE_CONFIGS.get(module) or (
+        "packages/orchestrator/config.example.json" if module == "orchestrator" else None
+    )
     assert rel is not None, f"{module} is guarded but has no config example"
     doc = json.loads((REPO / rel).read_text(encoding="utf-8"))
 
@@ -287,3 +289,17 @@ def test_ladder_guards_the_dry_run_switch_with_the_rest_of_its_live_block():
     base = {"live": {"dry_run": True}}
     assert guard_violations("ladder", base, {"live": {"dry_run": False}}) == ["/live/dry_run"]
     assert guard_violations("ladder", base, base) == []
+
+
+def test_the_retired_modules_switches_are_guarded_in_the_orchestrator_config():
+    """flies and bwb refuse to arm while their module switch is off, so the Config page must not be able
+    to turn either on (or off) from here."""
+    from cherrypick.orchestrator.configedit import guard_violations
+
+    assert {"/modules/flies/enabled", "/modules/bwb/enabled"} <= set(GUARDED["orchestrator"])
+    for name in ("flies", "bwb"):
+        old = {"modules": {name: {"enabled": False}}}
+        new = {"modules": {name: {"enabled": True}}}
+        assert guard_violations("orchestrator", old, new) == [f"/modules/{name}/enabled"]
+    old = {"modules": {"pmcc": {"enabled": True}}}
+    assert guard_violations("orchestrator", old, {"modules": {"pmcc": {"enabled": False}}}) == []
