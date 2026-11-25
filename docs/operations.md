@@ -17,7 +17,7 @@ tasks). Daily "startup" is therefore **verification**, not launching — the che
 
 ## Inventory — the anchor task and the supervisor's jobs
 
-Since the **2026-08-09 supervisor cutover**, the OS scheduler holds exactly ONE cherrypick entry — a
+The OS scheduler holds exactly ONE cherrypick entry — a
 Windows scheduled task, or on macOS and Linux a tagged line in the user's crontab (that backend is
 newer and less proven on a real host than the Windows one):
 
@@ -64,7 +64,7 @@ shows and which is healthy. "Default" means what `config.example.json` ships.
 | `bwb-paper` | every **60 s** | `-m cherrypick.bwb.paper_loop --once` | off (retired 2026-11-08; derived only while `modules.bwb.enabled`) | the daily ladder: one entry a session, every open position marked each tick |
 | `bwb-fee-reconcile` | daily **09:20**, trading days | `-m cherrypick.bwb.fee_reconcile --symbol SPX` | off (retired 2026-11-08; derived only while `modules.bwb.enabled`) | as flies' |
 | `bwb-live` | every 60 s — **enabled only while the arm record is valid for today** | `-m cherrypick.bwb.live_loop --once --live` | off (retired; derived only while `modules.bwb.enabled`, and enabled only when armed) | armed by `/live-bwb-start` (or the loop's `--arm --confirm YES`) writing `state/bwb-live-arm.json`; the same self-disarm and watchdog backstop as flies, through `cherrypick.core.live`. Each tick confirms fills, walks resting orders, settles on an official print when due, and makes one entry attempt in the window |
-| `earnings-paper` | every **60 s** | `-m cherrypick.earnings.paper_loop once` | on with `dolt` | the managed loop since 2026-08-12: the phase comes from the clock (forward scan ~06:30, marking from the open, management in the execution window, the forced-sampling entry scan from 15:35, the EOD write) |
+| `earnings-paper` | every **60 s** | `-m cherrypick.earnings.paper_loop once` | on with `dolt` | the managed loop: the phase comes from the clock (forward scan ~06:30, marking from the open, management in the execution window, the forced-sampling entry scan from 15:35, the EOD write) |
 | `earnings-dolt` | every **5 min** | `run.py ensure-dolt` | on with `dolt` | keep-alive: starts `dolt sql-server` only when 3306 is down and `dolt-server` is not held |
 | `earnings-dolt-pull` | daily **05:30** | `scripts/refresh_dolt_data.py` | on with `dolt` | pulls the `earnings`/`options`/`stocks` clones up to date |
 | `calendars-paper` | **resident** `--interval 30`, 09:30–16:00, trading days | `-m cherrypick.calendars.paper_loop --interval 30` | **off** (retired) | weekly SPY double calendars: entry self-gates to the entry day (Monday, or Tuesday after a Monday holiday) and every open leg is marked each tick — the exit study's substrate, so a cadence change is a journaled measurement break |
@@ -150,7 +150,7 @@ newer run is the one that fires. The page shows the last run as `fired MM-DD@HH:
 Missed-fire policy after sleep/hibernate: interval jobs fire once immediately and resume cadence
 (never a burst); daily/monthly jobs fire inside their catchup window, else record `missed` and skip.
 
-**End-of-day reporting is two ordinary supervisor jobs** since 2026-08-13: `review-provisional`
+**End-of-day reporting is two ordinary supervisor jobs**: `review-provisional`
 (16:30 ET) and `review-final` (10:15 the next morning), trading days only. They run the review
 package through `run.py review`, which reads every module's ledger read-only and writes only into
 `~/.cherrypick/data/review`. The provisional pass captures the 0DTE modules complete with earnings
@@ -167,7 +167,7 @@ control — and the deep slot's final step re-issues tomorrow's advice artifact 
 experiment. That step runs **unconditionally**, after a timeout, a parse failure or a missing
 `claude`: an AI outage must never truncate an active A/B sample. Failures are WARNING, never
 CRITICAL, and name the manual re-run command. Nothing here can reach a live account. The console's
-Advisor page is the read surface. Since 2026-09-15 a model `kill` verdict is actioned on admission
+Advisor page is the read surface. A model `kill` verdict is actioned on admission
 (`advisor.kill_on_verdict`); the console button is for stopping one the model has not.
 
 ## Inventory — daemons (not tasks)
@@ -177,7 +177,7 @@ policed by the watchdog:
 
 | Daemon | What | Supervision | Contract |
 |---|---|---|---|
-| **streamer** (`packages/streamer`, top-level `streamer` config block) | The suite's single producer: writes `~/.cherrypick/data/marketdata/stream_cache.db`, streaming the **union** of every `state/stream_requests/<module>.json` | Session-gated **09:15–16:00 ET**; restarted on *silence*, not just death (`stale_restart_seconds: 240` — the 2026-07-20 stall was a live-but-quiet socket) | `status_argv`/`start_argv`/`stop_argv` = `run.py --status` / `run.py` / `run.py --stop`. **`run.py uninstall` deliberately leaves it running** (`cli.py`); `run.py stop --all` stops it |
+| **streamer** (`packages/streamer`, top-level `streamer` config block) | The suite's single producer: writes `~/.cherrypick/data/marketdata/stream_cache.db`, streaming the **union** of every `state/stream_requests/<module>.json` | Session-gated **09:15–16:00 ET**; restarted on *silence*, not just death (`stale_restart_seconds: 240` — a live-but-quiet socket is a stall) | `status_argv`/`start_argv`/`stop_argv` = `run.py --status` / `run.py` / `run.py --stop`. **`run.py uninstall` deliberately leaves it running** (`cli.py`); `run.py stop --all` stops it |
 | **services** (top-level `services` block) — `gex-recorder`, on by default | The GEX spot-trail recorder: samples every symbol's spot ~15 s so the trail has no gaps whether or not anyone is looking at it, and records the GEX and market-regime history | Every watchdog tick (not session-gated) | Same argv contract; `status_argv` must print `{"running": bool}`. `uninstall` **stops** services (they are the orchestrator's own daemons) |
 
 **Both are also recycled when their config changes.** A daemon reads config once, at launch, so
@@ -203,8 +203,8 @@ recycling it again is how a restart loop starts. Producers stamp under their wat
 streamer keep separate stamps instead of recycling each other every tick.
 
 Every module that consumes the stream declares its needs in `~/.cherrypick/state/stream_requests/`:
-flies and gex have always regenerated their files on every run, and MEIC gained its writer on
-2026-07-29 (`meic/src/cherrypick/meic/stream_request.py` — symbols plus a `leg_sources` query against the paper
+flies and gex regenerate their files on every run, and MEIC writes its own
+(`meic/src/cherrypick/meic/stream_request.py` — symbols plus a `leg_sources` query against the paper
 ledger, so open positions' option legs stay subscribed after spot walks the ATM window away).
 
 ## Inventory — ports
@@ -219,9 +219,8 @@ directions).
 | 8804 | **Settings editor** — `run.py settings` (`settings_serve.py`); the suite's only config-writing surface, foreground-only and never scheduled |
 | 3306 | Dolt SQL server (earnings data; the `earnings-dolt` supervisor job keeps it alive) |
 
-Two servers, one read and one write. Until 2026-08-12 there were seven: a suite dashboard on 8787,
-per-module dashboards on 5050/5051, 5052 and 5055 (+5056), scout on 5057, and three iframe embed
-ports at 8801–8803. All deleted — the console covers them, and anything still wanted from them is in
+Two servers, one read and one write. The old per-module dashboards, the suite dashboard, scout and
+the iframe embed ports are gone: the console covers them, and anything still wanted from them is in
 the `pre-console-only` tag.
 
 ## Pipelines
@@ -271,7 +270,7 @@ Time constants, each with its source:
 | 09:30 | `MARKET_OPEN` | `orchestrator/timeutil.py` |
 | 09:30–09:35 | ORB window — streamer must be up throughout | `streamer/src/cherrypick/streamer/orb.py` |
 | 09:30–16:05 | MEIC loop acts (the +5 min runs the 16:00 settlement pass) | `meic/src/cherrypick/meic/paper_loop.py` |
-| 10:00–14:30 | MEIC paper IC entries (`entry_window_start/_end`; the 09:30 paper override was removed 2026-07-29 — 10:00 is the intended start) | `~/.cherrypick/config/meic.json` |
+| 10:00–14:30 | MEIC paper IC entries (`entry_window_start/_end`; 10:00 is the intended start; there is no 09:30 paper override) | `~/.cherrypick/config/meic.json` |
 | 09:30–16:00 | flies loop RTH; hard `no_entry_before: 10:00`; settle 16:20 | `flies/src/cherrypick/flies/paper_loop.py`, flies config |
 | 08:30 | morning fact pack (`morning-factpack`) | `morning.factpack_at` |
 | 15:35 | earnings forced-sampling entry scan starts (`entry_scan_at`); the watchdog's entry SLA (`entry_time` 15:45 + `entry_sla_grace_minutes` 35) goes CRITICAL if no entry ran by 16:20 | earnings config + orchestrator config + watchdog |
@@ -295,7 +294,7 @@ Five commands; what "good" looks like is quoted from real runs.
    down — `run.py ensure-supervisor` starts it (the anchor task does the same within 2 min).
 3. **`python packages/streamer/run.py --status`** — require **both** `"running": true **and** a small
    `oldest_event_age_s`** during market hours. Liveness alone is insufficient — the whole lesson of
-   the 2026-07-01 34-hour stall is a socket that is connected and silent. Caveat: right after a restart the status row can still show the *previous* run's `connected_since` /
+   a 34-hour stall is a socket that is connected and silent. Caveat: right after a restart the status row can still show the *previous* run's `connected_since` /
    `last_event_at` until the new connection populates, so read it a minute after any restart.
 4. **Dolt** (only with the `dolt` capability): reachable on 3306 *and serving* `earnings`, `options`,
    `stocks` — `doctor` checks the databases, not just the port (a server rooted at the wrong data dir
@@ -335,7 +334,7 @@ Expected — do not chase:
 - Freshness "not checked" and streamer WARNs **outside** 09:15–16:00 ET: supervision is
   session-gated; an overnight streamer with `stale_warning: true` and a huge event age is idle, not
   broken.
-- **The pre-open stale WARN, ~09:15–09:32** — *confirmed in `watchdog.log`* (2026-07-23, -24, -27):
+- **The pre-open stale WARN, ~09:15–09:32** — *confirmed in `watchdog.log`*:
   freshness checking goes live at 09:15 but the paper loops first write after 09:30, so a tick landing
   ~09:24 raises "MEIC/Flies paper data is stale — no paper write in ~1039 min," which self-recovers on
   the first post-09:30 tick. Noise, unless it persists past ~09:35.
@@ -345,8 +344,8 @@ Expected — do not chase:
 Real — act:
 
 - A streamer stale WARN **during** market hours that repeats across ticks (auto-restart should clear
-  one; repeated restarts mean the feed or auth is broken — check `logs/streamer/streamer.log`; on
-  2026-07-29 the signature `Missing credentials: client_secret, refresh_token` meant a keyring
+  one; repeated restarts mean the feed or auth is broken — check `logs/streamer/streamer.log`; the
+  signature `Missing credentials: client_secret, refresh_token` means a keyring
   service-chain gap).
 - `earnings entry SLA` CRITICAL after 16:20: the day's entries did not run.
 - `watchdog.last.json` older than ~20 min: the watchdog job is not firing — check
@@ -365,8 +364,8 @@ Each open gap below is tracked as an issue — the entry here is the operator-fa
   and intraday-range return unavailable and their gates silently deactivate (`meic/GATES.md`;
   `meic/src/cherrypick/meic/tt.py`). It keeps trading with safety gates off, and the ATR gate needs **5
   complete prior sessions** of `stream_summary`, so a multi-day outage disarms it for a further week
-  after the streamer is healthy again. **The fail-open behaviour is unchanged and deliberate** — blocking
-  every entry on a missing feed would be its own outage. What changed on 2026-08-06 is that it is no
-  longer invisible: `python -m cherrypick.meic.gate_health` reports which gates are armed, which have
+  after the streamer is healthy again. **The fail-open behaviour is deliberate** — blocking
+  every entry on a missing feed would be its own outage. It is not invisible:
+  `python -m cherrypick.meic.gate_health` reports which gates are armed, which have
   stood down and why, and how many sessions ATR is still missing. Read-only and file-only.
   **Remaining:** it is a command, not a console page, so it still has to be asked.

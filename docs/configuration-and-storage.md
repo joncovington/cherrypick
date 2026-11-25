@@ -146,7 +146,7 @@ setting.
 
 ### Orchestrator scheduling knobs
 
-Since the 2026-08-09 supervisor cutover the OS scheduler holds **exactly one** cherrypick entry
+The OS scheduler holds **exactly one** cherrypick entry
 (`cherrypick-supervisor`). Everything below is a **supervisor job**, re-derived from this config on
 every supervisor pass by `orchestrator/jobspec.py` — so changing a cadence is a config edit that takes
 effect on the next pass, with no `install` step and no scheduled task to register. The job ids are what
@@ -162,14 +162,14 @@ effect on the next pass, with no `install` step and no scheduled task to registe
 | module `paper`, `tick_interval_seconds` ≥ 60 | on | `<module>-paper` (short-lived tick) |
 | module `paper`, `tick_interval_seconds` < 60 | on | `<module>-paper` (the module's own resident `--interval` loop, in-session only, restarted on death and on `silence_seconds` of log silence) plus `<module>-paper-offsession` (60 s ticks outside the session, so settlement and retries keep their shape) |
 | module `paper` (kind `cherrypick_scheduled`) | legacy shape, entry 15:45 / exit 09:45 ET | `<module>-entry`, `<module>-exit` |
-| module `paper` (kind `self_healing`) | on, every `tick_interval_seconds` | `<module>-paper` (earnings uses this since 2026-08-12) |
+| module `paper` (kind `self_healing`) | on, every `tick_interval_seconds` | `<module>-paper` (earnings uses this) |
 | `paper.dolt_service` | on with the `dolt` capability | `<module>-dolt` (keep-alive), plus `earnings-dolt-pull` (05:30 ET, refreshes the clones) |
 | module `live` | **off** until armed | `<module>-live` |
 | module `paper.regime_cuts_at` | on (flies, MEIC) | `<module>-regime-cuts` 16:40 ET |
 | `console` | **on** | `console` (resident) |
 | `review` | **on** | `review-provisional` 16:30 ET, `review-final` 10:15 next morning, trading days only; `review-narrative` **off** (needs `claude`) |
 | `morning` | **on** | `morning-factpack` 08:30 ET, the market files (`market-files`, `earnings-moves`, `fetch-headlines`); `morning-narrative` **off** (needs `claude`) |
-| `technicals` | on in config; the jobs reading the Dolt clones need `dolt` (not the earnings module, from 2026-10-19), and `technicals-dollar-volume`, `-securities`, `-liquidity` and `-iv-rank` need only the block's switch | `technicals-land`, `technicals-report`, `technicals-dividends`, `technicals-index-bars`, `technicals-iv-rank`, `technicals-dollar-volume` |
+| `technicals` | on in config; the jobs reading the Dolt clones need `dolt` (not the earnings module), and `technicals-dollar-volume`, `-securities`, `-liquidity` and `-iv-rank` need only the block's switch | `technicals-land`, `technicals-report`, `technicals-dividends`, `technicals-index-bars`, `technicals-iv-rank`, `technicals-dollar-volume` |
 | `external_reports` | **empty** (a list of entries: `id`, `script`, `at_et`, `trading_days_only`, `post`, `enabled`, and for a script that does its own work `args`, `timeout_minutes`, `writes_report`, `retries`, `retry_delay_minutes`) | one `external-<id>` job per entry, at its `at_et`; a script outside the suite home is refused (the job is listed off, with the reason). See [the guide](guide/external-reports.md). A `quikoptions` block left in config.json is ignored (removed in v0.12.0; `doctor` warns) |
 | `market_report` | **off** (`collector`, `universe`) | `report-edition`, `report-edition-retry`, `report-charts`, `universe-*` |
 | `advisor` | **off twice** (suite + per-module `advice` bounds), and needs `claude` | `advisor-deep` (17:00 ET) |
@@ -295,6 +295,6 @@ keyring entry, every login's included, is re-entered by hand after a restore on 
 `connect --login <name>`). Slack/Discord webhooks and Telegram's bot token and chat ID live under the orchestrator's
 `cherrypick-notify` service (`secrets-set`). See [guardrails-and-modes.md](guardrails-and-modes.md).
 
-> **Moved out (2026-08-21):** the tastylive Follow Feed and Lossdog VIP feed notifiers live in a
-> separate repository and are no longer part of this suite. Nothing here polls either feed any more;
+> **Not part of this suite:** the tastylive Follow Feed and Lossdog VIP feed notifiers live in a
+> separate repository and are not part of this suite. Nothing here polls either feed;
 > their keyring entries happen to share the `cherrypick-notify` service name.
