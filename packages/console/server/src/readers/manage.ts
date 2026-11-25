@@ -10,6 +10,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type {
+  ManageIntentAsk,
   ManageAccount,
   ManageBand,
   ManageBandsHistoryPayload,
@@ -231,6 +232,7 @@ function trade(v: unknown): ManageTrade {
     kind,
     shape: str(t["shape"]),
     intent: str(t["intent"]),
+    intentAsk: intentAsk(t["intent_ask"]),
     note: str(t["note"]),
     cost: num(t["cost"]),
     value: num(t["value"]),
@@ -720,6 +722,27 @@ function wheel(v: unknown): ManageWheel | null {
     bandsMissing: str(w["bands_missing"]),
     intentCandidates: arr(w["intent_candidates"]).map(intentCandidate),
     error: str(w["error"]),
+  };
+}
+
+/** A trade's question about its intent, passed through (manage's `intent_ask`); null when it has none. */
+function intentAsk(v: unknown): ManageIntentAsk | null {
+  const a = rec(v);
+  const kind = a["kind"] === "wheel" || a["kind"] === "pmcc" ? a["kind"] : null;
+  const scope = a["scope"] === "trade" || a["scope"] === "name" || a["scope"] === "contract" ? a["scope"] : null;
+  if (kind === null || scope === null) return null;
+  const verdicts = rec(a["verdicts"]);
+  return {
+    kind,
+    asked: flag(a["asked"]) === true,
+    current: str(a["current"]),
+    options: strs(a["options"]),
+    verdicts: Object.fromEntries(Object.keys(verdicts).map((k) => [k, verdictBrief(verdicts[k])])),
+    suggested: str(a["suggested"]),
+    evidence: strs(a["evidence"]),
+    note: str(a["note"]),
+    key: str(a["key"]) ?? "",
+    scope,
   };
 }
 

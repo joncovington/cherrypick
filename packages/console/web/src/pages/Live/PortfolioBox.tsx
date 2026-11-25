@@ -5,7 +5,7 @@ import { CardLightbox, LightboxFrame, useOpenParam, type LightboxTab } from "../
 import { BandsOverTime } from "./BandsHistory";
 import { LimitsBody } from "./LimitsCard";
 import { BrokerCheckBody, ContributionBars, DeltaIdeasBody, HedgeBody, deltaIdeasFirst } from "./PortfolioCards";
-import { PositionCard } from "./PositionCards";
+import { PositionItem } from "./PositionCards";
 import { PremiumPaceBody } from "./PremiumPace";
 import { RiskGraphBody } from "./ScenarioCards";
 import { dayMonth } from "./TradeCard";
@@ -102,7 +102,7 @@ function boxesFor(a: ManageAccount, rules: Record<string, unknown> | null | unde
           </p>
           <div className="pos-cards">
             {trades.map((t) => (
-              <PositionCard key={t.tradeId} t={t} onOpen={() => openTrade(t.tradeId)} />
+              <PositionItem key={t.tradeId} t={t} onOpen={() => openTrade(t.tradeId)} />
             ))}
           </div>
         </>

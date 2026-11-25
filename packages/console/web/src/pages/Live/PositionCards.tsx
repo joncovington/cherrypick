@@ -9,6 +9,7 @@ import { fmtCash, fmtMoney } from "../../lib/format";
 import { CardLightbox, LightboxFrame, useOpenParam, type LightboxTab } from "../Backtest/CardLightbox";
 import { ACTION_LABEL, ActionChip, Kv, Money, tone } from "./manageParts";
 import { useLiveMarks } from "./LiveMarks";
+import { IntentStrip } from "./IntentStrip";
 import { useQuote } from "../../lib/useQuote";
 import { liveTrade } from "./liveLegs";
 import { shapeOrder } from "../../lib/legShape";
@@ -356,6 +357,18 @@ export function PositionCard({ t: evaluated, onOpen, inSession = true }: { t: Ma
   );
 }
 
+/** A position's card with the question it is asked about its intent beside it (a sibling, as the card
+ * is itself one button). Nothing shows under a card that has no open question. */
+// The wrapper is always there, so a card keeps its place in the tree (and its state) when a question opens or closes.
+export function PositionItem({ t, inSession = true, onOpen }: { t: ManageTrade; inSession?: boolean; onOpen: () => void }) {
+  return (
+    <div className="pos-card-wrap">
+      <PositionCard t={t} inSession={inSession} onOpen={onOpen} />
+      <IntentStrip t={t} />
+    </div>
+  );
+}
+
 function ChainTab({ t: evaluated }: { t: ManageTrade }) {
   // The same live marks as the card: the rows below still add up (close at mid less the cost is the
   // gross, less the fees the net), all live or all the evaluation's.
@@ -485,7 +498,7 @@ function PositionRows({ trades, inSession, onOpen }: { trades: ManageTrade[]; in
             </button>
             {open.has(t.tradeId) ? (
               <div className="tr-open">
-                <PositionCard t={t} inSession={inSession} onOpen={() => onOpen(t.tradeId)} />
+                <PositionItem t={t} inSession={inSession} onOpen={() => onOpen(t.tradeId)} />
               </div>
             ) : null}
           </div>
@@ -600,7 +613,7 @@ export function PositionCards({
       ) : (
         <div className="pos-cards">
           {shown.map((t) => (
-            <PositionCard key={t.tradeId} t={t} inSession={inSession} onOpen={() => lightbox.show(t.tradeId)} />
+            <PositionItem key={t.tradeId} t={t} inSession={inSession} onOpen={() => lightbox.show(t.tradeId)} />
           ))}
         </div>
       )}
