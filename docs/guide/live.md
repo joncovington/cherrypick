@@ -1,10 +1,10 @@
 # Live
 
 The Live page is where real money is shown, and it places, changes and cancels no order. Its one write,
-off unless you turn it on, is the arm-for-today switch on a loop's card (see [today](#today)). It has seven tabs: `/live/today`, `/live/positions`, `/live/portfolio`, `/live/wheel`,
-`/live/pmcc`, `/live/flies` and `/live/meic`. Opening the console lands you on `/live`, which shows
-the first tab. Older bookmarks still work: `/live/manage` goes to positions and `/live/execution` goes
-to meic.
+off unless you turn it on, is the arm-for-today switch on a loop's card (see [today](#today)). It has six tabs: `/live/today`, `/live/positions`, `/live/portfolio`, `/live/wheel`,
+`/live/pmcc` and `/live/flies` (the last only in the detail view, since flies is retired). Opening the
+console lands you on `/live`, which shows the first tab. Older bookmarks still work: `/live/manage` goes
+to positions, and `/live/execution` and `/live/meic` go to today, where MEIC has its card.
 
 ## What you see
 
@@ -25,9 +25,10 @@ The tabs answer two different questions, and the difference matters.
   an account select in the header: the first (main) login's account by default, another by name, or
   all accounts. The choice is `?acct=` in the address and holds as you move between the tabs. With
   one account there is no select.
-- **The suite's own live loops.** `meic` (and the retired `flies`) show one module's live loop: whether
-  it is armed for today, what it has open and what it has settled. These are trades the suite placed
-  itself, on a day you armed it. `today` adds up all the loops on one page.
+- **The suite's own live loops.** `today` has a card for each loop (MEIC, and the ladder when it is
+  on): whether it is armed for today, what it has open and what it has settled, with the day's net over
+  all of them on top. These are trades the suite placed itself, on a day you armed it. The retired
+  `flies` keeps a tab of its own, its history.
 
 The `pmcc` tab here is not the paper PMCC experiment: it reads the PMCCs in your real account.
 Nothing on the other pages is real money unless a module is live and armed.
@@ -36,9 +37,9 @@ Nothing on the other pages is real money unless a module is live and armed.
 
 Under the page name, a chip sums up trading status. On the account tabs and `today` it reads
 `none armed` or, say, `1 armed`, with `HALTED` added when the halt flag is up, and `needs attention`
-when something wants you. On `meic` it is that module's own arm record: `meic · not armed · SPX`.
+when something wants you. On a loop's card it is that loop's own arm record, such as `not armed`.
 On `flies` it is the pilot's. Hover for the detail. Each live loop is armed separately, which is why
-one chip does not cover both. On the right sits the alert-daemon chip.
+one chip does not cover all of them. On the right sits the alert-daemon chip.
 
 ![Live today: the loops' net, the broker positions, and a card for each live loop](../images/live-today.png)
 
