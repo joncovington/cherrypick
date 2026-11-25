@@ -39,7 +39,7 @@ open."
 
 ### The eod tab
 
-![The end-of-day review: needs attention, then one card a module](../images/reports-eod.png)
+![The end-of-day review: needs attention, then one row a module](../images/reports-eod.png)
 
 The page is titled **Suite review**. Chips beside the title say whether the review is `provisional` or
 `final`, that it covers `paper` trading, and the session date.
@@ -49,10 +49,11 @@ The page is titled **Suite review**. Chips beside the title say whether the revi
   trade count that looks like a regime change nobody journaled. A green `clear` chip with "Every module
   ticked, none errored, and no unjournaled regime change" is a good answer. (On the demo, the retired
   modules have no ledger, so they are listed as could not be read.)
-- **By module** has one card each. Its tiles are Net, Return on risk, Closed, Won / lost and Capital at
-  risk. A module with several arms gets a **By arm** table with a bar on each arm's net. **Expected vs
-  observed** compares what a model expected with what happened, when a model was recorded. A module that
-  could not be read shows an `unreadable` chip and the reason.
+- **By module** has one row each. Its columns are Net, Return on risk, Capital at risk, Closed, Won / lost
+  and Expected vs observed with any flags. Open a row to see its detail. A module with several arms gets a
+  **By arm** table with a bar on each arm's net. **Expected vs observed** compares what a model expected
+  with what happened, when a model was recorded. A module that could not be read shows an `unreadable`
+  chip and the reason.
 - **Note** is the written reading, when there is one.
 - At the foot, **This era** (or **All time**) adds up each module's net over every built session, with a
   small line for the running total. A module with one session gets no line.
