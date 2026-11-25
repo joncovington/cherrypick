@@ -159,7 +159,7 @@ send.
 
 ## The console
 
-The suite's **one read surface**: `packages/console`, a Node + TypeScript server and a React SPA on
+The suite's **one web surface**: `packages/console`, a Node + TypeScript server and a React SPA on
 **127.0.0.1:5070**, composing every module's read models (the Live page, each module, GEX, Compare, Reports)
 plus the research and screening surfaces. It reads module SQLite stores with `readonly: true` and their
 JSON state as files; its only writable store is `~/.cherrypick/data/console/`.

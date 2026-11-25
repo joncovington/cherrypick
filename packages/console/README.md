@@ -1,6 +1,6 @@
 # cherrypick console
 
-The cherrypick suite's one read surface: every module's read models plus the research and
+The cherrypick suite's one web surface: every module's read models plus the research and
 interactive tooling, in one app on `http://127.0.0.1:5070/`.
 
 > **⚠️ The console is not hardened. Keep it on this computer.** It has no login and was not built

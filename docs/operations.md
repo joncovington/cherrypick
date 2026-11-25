@@ -215,7 +215,7 @@ directions).
 
 | Port | Surface |
 |---|---|
-| 5070 | **Console** — the suite's one read surface (`packages/console/server/src/config.ts`, overridable via `config/console.json`). Kept up by the supervisor as an always-on resident job |
+| 5070 | **Console** — the suite's one web surface (it places no order) (`packages/console/server/src/config.ts`, overridable via `config/console.json`). Kept up by the supervisor as an always-on resident job |
 | 8804 | **Settings editor** — `run.py settings` (`settings_serve.py`); the suite's only config-writing surface, foreground-only and never scheduled |
 | 3306 | Dolt SQL server (earnings data; the `earnings-dolt` supervisor job keeps it alive) |
 

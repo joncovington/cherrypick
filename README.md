@@ -168,7 +168,7 @@ with an *experimental* chip.
 > forwarding, reverse proxy, tunnel (ngrok and the like) or remote-access sharing of the page.
 > The settings editor (`run.py settings`, port 8804) is under the same rule.
 
-- **The console** (`packages/console`, `127.0.0.1:5070`) — the suite's one read surface: every engine's
+- **The console** (`packages/console`, `127.0.0.1:5070`) — the suite's one web surface: every engine's
   read models plus interactive screening, the watchlist, and a strategy builder in one app. It reads every other package's data and
   writes only its Config page, its Builder and Groups saves and, with `live_arming` on, the Live page's arm
   switch, each through the orchestrator; it places no order. The supervisor keeps it running rather than
@@ -241,7 +241,7 @@ read them.
 |---|---|
 | [packages/orchestrator](packages/orchestrator) | The supervisor, watchdog, notifications, and the read side (report / calibrate / EOD). Drives the engines by subprocess. |
 | [packages/core](packages/core) | The shared `cherrypick.core` library — calendar, fees, profiles, GEX math, broker, auth. Install it first. |
-| [packages/meic](packages/meic) · [packages/earnings](packages/earnings) · [packages/flies](packages/flies) · [packages/calendars](packages/calendars) · [packages/pmcc](packages/pmcc) · [packages/curve](packages/curve) · [packages/contango](packages/contango) · [packages/weeklyput](packages/weeklyput) · [packages/bwb](packages/bwb) | The strategy engines. MEIC runs by default; earnings is paper-only and needs the optional Dolt data; weeklyput is EXPERIMENTAL, paper-only and off by default; flies, bwb, pmcc, curve, calendars and contango are retired and ship off (kept so each can be reinstated; flies and bwb keep their narrow live paths behind the same gates, and refuse to arm while off). |
+| [packages/meic](packages/meic) · [packages/earnings](packages/earnings) · [packages/flies](packages/flies) · [packages/calendars](packages/calendars) · [packages/pmcc](packages/pmcc) · [packages/curve](packages/curve) · [packages/contango](packages/contango) · [packages/weeklyput](packages/weeklyput) · [packages/automations](packages/automations) · [packages/ladder](packages/ladder) · [packages/bwb](packages/bwb) | The strategy engines. MEIC runs by default; earnings is paper-only and needs the optional Dolt data; weeklyput is EXPERIMENTAL, paper-only and off by default; automations (rules-engine option arms and their groups, built in the console's Builder) is EXPERIMENTAL, paper-only and ships off; ladder (a share dip ladder on leveraged index funds) is EXPERIMENTAL and off by default, with a live path that ships in dry-run and off; flies, bwb, pmcc, curve, calendars and contango are retired and ship off (kept so each can be reinstated; flies and bwb keep their narrow live paths behind the same gates, and refuse to arm while off). |
 | [packages/streamer](packages/streamer) | The single market-data producer. Everything else reads the cache it writes; nothing else writes it. |
 | [packages/gex](packages/gex) | The GEX engine and spot-trail recorder; the console renders it. |
 | [packages/console](packages/console) | The unified web console (`127.0.0.1:5070`) — every module's read models plus research and screening, in one app. Its writes are the Config page, the Builder and Groups saves and, with `live_arming` on, the Live page's arm switch; it places no order. |
@@ -259,7 +259,7 @@ read them.
 |---|---|
 | A [tastytrade](https://tastytrade.com) account | Supplies the live market data the paper engines fill against (and your real account, if you ever choose to trade live). A read-only API grant is enough for paper mode. |
 | **Python 3.11+** | Every package except the console is Python. |
-| **[Node.js](https://nodejs.org) 22+** | The console — the suite's one read surface — is a Node/TypeScript package. The installer adds **pnpm 11** for you. |
+| **[Node.js](https://nodejs.org) 22+** | The console — the suite's one web surface, which reads every module and places no order — is a Node/TypeScript package. The installer adds **pnpm 11** for you. |
 | A computer that stays awake during market hours | cherrypick runs on your machine, so it has to be on to capture a session. **Windows is recommended** — the scheduler and self-healing are most proven there; the macOS/Linux crontab backend is newer and less proven. |
 | **[Dolt](https://github.com/dolthub/dolt)** *(optional)* | The **earnings** module and the **technicals** report read three public DoltHub datasets from a local `dolt sql-server` (`stocks` about 3 GB, `earnings` about 1.35 GB, `options` larger still). Without it, both are switched off and hidden. |
 | **[Claude Code](https://docs.claude.com/en/docs/claude-code)** *(optional)* | Anthropic's agentic CLI. The AI advisor, the agent-written end-of-day and morning narratives, and the repo's slash commands (`/meic-start`, `/console`, …) need it. Without it, those features are switched off and hidden; the paper automation runs on its own. |

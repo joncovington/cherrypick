@@ -127,7 +127,7 @@ what it may write. The package's own CLAUDE.md holds the detail.
   technicals, for its indicator functions), and technicals reads it back by file only. A description, never a selector:
   tested 2018-26 with no edge.
 - **packages/console** — the reactive web UI (Node + TypeScript, React SPA on 127.0.0.1:5070), the
-  suite's **only** read surface. **Holds no path that touches an order.** Kept alive by the supervisor
+  suite's **one** web surface. **Holds no path that touches an order.** Kept alive by the supervisor
   (restarted on death and on a stale `state/console.heartbeat`). Read-only over every other package
   (own store `~/.cherrypick/data/console/`); reads the shared credential, never writes one. The one
   bounded exception is the **Config page**: the live-trading halt toggle, the arm each live loop runs (its own orchestrator operation, MEIC only, typed phrase, flat and settled) and a short allow-list of
