@@ -25,7 +25,9 @@ pack, the stream cache and the GEX tables), and builds the ledgers from the sche
 fixtures pin.
 
 `--out` is emptied first and gets a `.demo-home` marker, which the launcher looks for. The script
-refuses a directory called `.cherrypick`. The same seed, day and day count always write the same
+refuses the real home wherever it lives (the default folder or the one `CHERRYPICK_HOME` names), any
+folder above or inside it, and any folder that has files and no marker; `--keepalive` needs the marker
+too. The same seed, day and day count always write the same
 files. `--day` is the latest session and must be a trading day; everything else is dated relative to it.
 Generating on a trading day, with `--day` set to that day, makes the Live "today" tabs current.
 

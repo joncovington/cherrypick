@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import sqlite3
 import subprocess
@@ -307,3 +308,49 @@ def test_it_will_not_write_over_a_real_home(tmp_path):
         cwd=ROOT,
     )
     assert done.returncode != 0 and "refusing" in done.stderr
+
+
+def _refused(out: Path, *extra: str, env_home: Path | None = None) -> subprocess.CompletedProcess:
+    env = {**os.environ}
+    if env_home is not None:
+        env["CHERRYPICK_HOME"] = str(env_home)
+    return subprocess.run(
+        [sys.executable, str(SCRIPT), "--out", str(out), *ARGS, *extra],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        cwd=ROOT,
+        env=env,
+    )
+
+
+def test_it_will_not_empty_a_folder_that_is_not_a_demo_home(tmp_path):
+    """A folder that holds files and has no demo marker is not this script's to empty, whatever its name."""
+    target = tmp_path / "notes"
+    target.mkdir()
+    keep = target / "keep.txt"
+    keep.write_text("mine", encoding="utf-8")
+    done = _refused(target)
+    assert done.returncode != 0 and "marker" in done.stderr
+    assert keep.read_text(encoding="utf-8") == "mine"
+
+
+def test_it_will_not_touch_a_relocated_real_home_or_the_folder_above_it(tmp_path):
+    """The real home may live anywhere CHERRYPICK_HOME says: it, and any folder containing it, is refused."""
+    real = tmp_path / "work" / "suite-data"
+    real.mkdir(parents=True)
+    sentinel = real / "config.json"
+    sentinel.write_text("{}", encoding="utf-8")
+    for out in (real, real.parent):
+        done = _refused(out, env_home=real)
+        assert done.returncode != 0 and "real home" in done.stderr, out
+    assert sentinel.read_text(encoding="utf-8") == "{}"
+
+
+def test_keepalive_needs_a_marked_demo_home(tmp_path):
+    """`--keepalive` rewrites the supervisor's state files, so it needs a folder it built."""
+    target = tmp_path / "real-looking"
+    (target / "state").mkdir(parents=True)
+    done = _refused(target, "--keepalive")
+    assert done.returncode != 0 and "marker" in done.stderr
+    assert not any((target / "state").iterdir())

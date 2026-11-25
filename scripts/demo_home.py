@@ -3263,7 +3263,49 @@ def check_no_leaks(root: Path) -> None:
         raise SystemExit(f"generation failed: the real repo path or username appears in {bad[:8]}")
 
 
+class Refused(Exception):
+    """The target directory is not one this script may empty or write into."""
+
+
+def _real_homes(real: Path | None = None, env_home: str | None = None) -> list[Path]:
+    """Every folder that is, or may be, the machine's real home: the default, and where CHERRYPICK_HOME
+    pointed when this process started (a relocated install). A folder carrying the demo marker is a demo
+    home, whatever named it: `demo_console --keepalive` runs this script with CHERRYPICK_HOME set to one."""
+    homes = [(real if real is not None else Path.home() / ".cherrypick").resolve()]
+    env = os.environ.get("CHERRYPICK_HOME") if env_home is None else env_home
+    if env:
+        homes.append(Path(env).expanduser().resolve())
+    return [h for h in homes if not (h / MARKER).is_file()]
+
+
+def check_out(
+    out: Path, *, keepalive: bool = False, real: Path | None = None, env_home: str | None = None
+) -> None:
+    """Raise Refused unless `out` is safe to write: not a real home, not inside or above one, and either
+    absent or empty (a new demo home) or already carrying this script's marker. `build` empties the
+    directory, and `--keepalive` rewrites the supervisor's state files, so neither may reach a folder
+    that is not a demo home, whatever it is called or wherever the real home was moved to."""
+    out = out.resolve()
+    for home in _real_homes(real, env_home):
+        if out == home or home in out.parents or out in home.parents:
+            raise Refused(f"refusing: {out} is, contains, or sits inside the real home")
+    if out.name == ".cherrypick":
+        raise Refused("refusing to write over a real home")
+    if out.parent == out or out == Path.home().resolve() or out == REPO or out in REPO.parents:
+        raise Refused(f"refusing: {out} is not a place for a demo home")
+    marked = (out / MARKER).is_file()
+    if keepalive:
+        if not marked:
+            raise Refused(f"refusing: {out} has no {MARKER} marker; build it first")
+    elif out.exists() and not marked and any(out.iterdir()):
+        raise Refused(f"refusing: {out} is not empty and has no {MARKER} marker, so it is not a demo home")
+
+
 def build(out: Path, seed: int, day: date, days: int, second_login: bool = False) -> Ctx:
+    try:
+        check_out(out)
+    except Refused as exc:
+        raise SystemExit(str(exc)) from exc
     os.environ["CHERRYPICK_HOME"] = str(out)
     if out.exists():
         for child in out.iterdir():
@@ -3318,8 +3360,10 @@ def main(argv: list[str] | None = None) -> int:
     if day.weekday() >= 5 or day in HOLIDAYS:
         ap.error("--day must be a trading day")
     out = Path(args.out).resolve()
-    if out == Path.home() / ".cherrypick" or out.name == ".cherrypick":
-        ap.error("refusing to write over a real home")
+    try:
+        check_out(out, keepalive=args.keepalive)
+    except Refused as exc:
+        ap.error(str(exc))
     if args.keepalive:
         from datetime import timezone
 
