@@ -289,8 +289,8 @@ def test_an_added_entry_that_would_change_more_than_the_one_intent_is_refused(ho
 
 
 # --------------------------------------------------------------------------- the console's door
-def test_the_console_bridge_reaches_the_op_and_its_refusals_are_data(home):
-    (home / "config.json").write_text(json.dumps(copy.deepcopy(CFG)), encoding="utf-8")
+def test_the_console_bridge_reaches_the_op_and_its_refusals_are_data(home, monkeypatch):
+    monkeypatch.setattr(configcli.cfgmod, "load_config", lambda: copy.deepcopy(CFG))
     put(home, OLD)
     out = configcli.handle(req())
     assert out["ok"] is True and out["trade"] == ID and out["intent"] == "wheel"
