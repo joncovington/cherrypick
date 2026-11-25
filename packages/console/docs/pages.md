@@ -1120,7 +1120,12 @@ all, each with manage's count, and an amber unreconciled choice only while one e
 lists manage's PMCCs and its undecided candidates (`splitPmccs`: every position whose `recognition` is
 not `diagonal`); a decided non-PMCC is a time spread, judged by the time-spread rules, so it is one
 line (`TimeSpreadStrip`, named by manage's `structure`, calendar or diagonal) that opens the positions
-board's time spreads, and the lightbox steps through the listed PMCCs only. Both tabs carry the
+board's time spreads, and the lightbox steps through the listed PMCCs only. Above them a needs-a-look
+section (`pages/Live/IntentLook.tsx`, `DiagonalIntentLook`) lists the call diagonals manage still asks whether
+they are a PMCC (`attention.intent`, one item per open `intent_ask`; the wheel's puts are on Live -> wheel),
+each with its legs, manage's suggestion and why, and a link to the trade's Intent tab on positions that
+carries the account. It shows with or without a recognised PMCC and is left out when nothing is asked
+(`web/test/intentLook.test.tsx`, `web/test/pmccCards.test.tsx`). Both tabs carry the
 cards/rows switch (`view.wheel`, `view.pmcc`); a row (`CardRows`, in the trade rows' classes) opens its
 full card in place. A section's controls, rows and one-line notes span its whole grid row.
 

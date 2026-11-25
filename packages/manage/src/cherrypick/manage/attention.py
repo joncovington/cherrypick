@@ -18,6 +18,12 @@ evaluation leaves them out):
 
 **Expiring** lists every option leg held, long or short, with `expiring_days` or fewer left (7).
 
+**Intent** lists one item per trade manage still asks what it is for (`intent_items`): a naked short put
+not yet marked a wheel or not, a call diagonal not yet marked a PMCC or not. Each says which trade, its
+legs, what it is asked and manage's suggestion with the evidence. It is a reading of the evaluation's own
+`intent_ask`, judges nothing, and is not posted as an alert: the orchestrator's needs-a-look alerts read
+`items` only.
+
 The thresholds are the ruleset's `attention` block (user, 2026-11-04). It judges nothing and fires no
 rule: it is the list a person reads, and the orchestrator posts a name the first time it appears in a
 day. `None` is never zero: an unpriced leg or a missing spot leaves its figures null and the leg is
@@ -45,6 +51,38 @@ def _label(leg: dict[str, Any]) -> str:
     k = _f(leg.get("strike"))
     ks = "?" if k is None else f"{k:g}"
     return f"{leg.get('expiration') or '?'} {ks}{leg.get('right') or '?'}"
+
+
+def intent_items(trades: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """One item per trade whose intent question is open (`trade["intent_ask"]["asked"]`), in a stable order:
+    puts before diagonals, then by name and trade. `scope` says where an answer is written, and `suggested`
+    and `evidence` are the ask's own, never applied."""
+    out = []
+    for t in trades:
+        ask = t.get("intent_ask")
+        if not ask or not ask.get("asked"):
+            continue
+        legs = []
+        for leg in t.get("legs") or []:
+            if leg.get("right") not in ("C", "P"):
+                continue  # shares and the like are not options to label
+            qty = _f(leg.get("quantity")) or 0.0
+            legs.append(f"{'-' if qty < 0 else '+'}{abs(qty):g} {_label(leg)}")
+        out.append(
+            {
+                "trade_id": t.get("trade_id"),
+                "underlying": t.get("underlying"),
+                "kind": ask["kind"],
+                "shape": t.get("shape"),
+                "legs": legs,
+                "scope": ask["scope"],
+                "suggested": ask.get("suggested"),
+                "evidence": list(ask.get("evidence") or []),
+                "note": ask.get("note"),
+            }
+        )
+    out.sort(key=lambda i: (i["kind"] != "wheel", str(i["underlying"]), str(i["trade_id"])))
+    return out
 
 
 def reading(

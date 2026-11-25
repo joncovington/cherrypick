@@ -162,7 +162,9 @@ call was bought deep enough (the entry delta in your ruleset, 0.70 by default); 
 is not known yet is listed as `PMCC? not yet decided` until it is. A call calendar or diagonal that is
 not a PMCC is judged as a time spread, not by the PMCC rules, so it is not drawn here: a line names it
 and opens the positions tab's `time spreads` filter. The two icons switch the PMCCs between cards and
-rows.
+rows. Above them, a `needs a look` section lists each call diagonal still asked whether it is a PMCC,
+with the evaluation's suggestion and a link to the trade's `intent` tab on positions, where it is
+answered.
 
 ### meic and flies
 

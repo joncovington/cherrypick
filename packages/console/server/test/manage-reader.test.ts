@@ -242,6 +242,39 @@ describe("readManage", () => {
     expect(readManage(config).accounts[0]!.attention).toBeNull();
   });
 
+  it("passes the trades still asked what they are for through, and none before it existed", () => {
+    const doc = evalDoc("2026-11-25");
+    const [account] = doc["accounts"] as Array<Record<string, unknown>>;
+    account!["attention"] = {
+      near_pct: 0.03,
+      expiring_days: 7,
+      items: [],
+      expiring: [],
+      intent: [
+        {
+          trade_id: "XYZ-261001-1", underlying: "XYZ", kind: "wheel", shape: "naked put", legs: ["-1 2026-11-20 50P"],
+          scope: "trade", suggested: "wheel", evidence: ["2 completed wheel cycles on XYZ"], note: null,
+        },
+        { trade_id: null, underlying: "ABC", kind: "pmcc", shape: "diagonal", legs: [], scope: "contract", suggested: null, evidence: [], note: null },
+        { trade_id: "BAD-1", underlying: "BAD", kind: "other", scope: "trade" }, // not a question manage asks
+        { trade_id: "BAD-2", underlying: "BAD", kind: "pmcc", scope: "name" }, // a pairing manage never writes
+        { trade_id: "BAD-3", underlying: "BAD", kind: "wheel", scope: "contract" },
+      ],
+    };
+    fs.writeFileSync(path.join(tmp, "manage", "eval-2026-11-25.json"), JSON.stringify(doc));
+    const got = readManage(config).accounts[0]!.attention!.intent!;
+    expect(got).toHaveLength(2);
+    expect(got[0]).toEqual({
+      tradeId: "XYZ-261001-1", underlying: "XYZ", kind: "wheel", shape: "naked put", legs: ["-1 2026-11-20 50P"],
+      scope: "trade", suggested: "wheel", evidence: ["2 completed wheel cycles on XYZ"], note: null,
+    });
+    expect(got[1]).toMatchObject({ tradeId: null, kind: "pmcc", scope: "contract", suggested: null });
+    // An evaluation written before it carries none.
+    delete (account!["attention"] as Record<string, unknown>)["intent"];
+    fs.writeFileSync(path.join(tmp, "manage", "eval-2026-11-25.json"), JSON.stringify(doc));
+    expect(readManage(config).accounts[0]!.attention!.intent).toEqual([]);
+  });
+
   it("passes the cost-strike call through, and reads a status manage did not write as no quote", () => {
     const doc = evalDoc("2026-11-21");
     const [account] = doc["accounts"] as Array<Record<string, unknown>>;

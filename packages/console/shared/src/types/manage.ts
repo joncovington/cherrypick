@@ -1211,6 +1211,23 @@ export interface ManageCostCall {
   takenAt: string | null;
 }
 
+/**
+ * A trade manage still asks what it is for (`attention.intent`, one per open `intent_ask`): which trade,
+ * its legs, what it is asked and where an answer is written, with manage's suggestion and why. The console
+ * lists it and links to the position that answers it; it judges and applies nothing.
+ */
+export interface ManageAttentionIntent {
+  tradeId: string | null;
+  underlying: string;
+  kind: "wheel" | "pmcc";
+  shape: string | null;
+  legs: string[];
+  scope: "trade" | "name" | "contract";
+  suggested: string | null;
+  evidence: string[];
+  note: string | null;
+}
+
 export interface ManageAttention {
   nearPct: number | null;
   expiringDays: number | null;
@@ -1218,6 +1235,8 @@ export interface ManageAttention {
   expiring: ManageAttentionLeg[];
   /** The cost-strike call per wheel cycle holding shares with no call written; absent before it. */
   costCall?: ManageCostCall | null;
+  /** The trades still asked what they are for; absent before it. */
+  intent?: ManageAttentionIntent[];
 }
 
 /** The ledger's windows, counted back from the session by the closing day. */
