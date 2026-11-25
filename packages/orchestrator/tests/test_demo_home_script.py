@@ -81,7 +81,7 @@ def test_another_seed_writes_other_numbers(homes):
 def test_the_shipped_modules_are_on_and_the_retired_ones_off(homes):
     cfg = json.loads((homes[0] / "config.json").read_text(encoding="utf-8"))
     on = {k for k, v in cfg["modules"].items() if v["enabled"]}
-    assert on == {"meic", "earnings", "calendars", "contango", "weeklyput"}
+    assert on == {"meic", "earnings", "weeklyput"}
     assert (
         json.loads((homes[0] / "config" / "console.json").read_text(encoding="utf-8"))["serve"]["port"]
         != 5070
@@ -100,8 +100,6 @@ def test_no_forbidden_account_or_trade_ticker(homes):
     for db_path, table, column in (
         ("meic", "ic_trades", "symbol"),
         ("earnings", "trades", "symbol"),
-        ("calendars", "dc_positions", "symbol"),
-        ("contango", "contango_positions", "symbol"),
         ("weeklyput", "weeklyput_positions", "symbol"),
     ):
         con = sqlite3.connect(home / "data" / db_path / "paper_trades.db")
