@@ -90,8 +90,9 @@ def diagonal_ask(view: dict[str, Any]) -> dict[str, Any] | None:
     """The question for a call diagonal, from the PMCC view's entry for it. A calendar is not asked. The
     suggestion is the view's own reading (entered at a delta over or under the floor); where the delta at
     entry cannot be solved there is none, and the evidence says why. Only the operator's `pmcc` or
-    `diagonal` answers it: a delta decided it, and a name's `wheel` is for a put."""
-    if view.get("structure") != "diagonal":
+    `diagonal` answers it: a delta decided it, and a name's `wheel` is for a put. A view with no long
+    contract to write an answer under is not asked."""
+    if view.get("structure") != "diagonal" or not view.get("intent_key"):
         return None
     intent = view.get("intent")
     current = intent if intent in PMCC_OPTIONS else None

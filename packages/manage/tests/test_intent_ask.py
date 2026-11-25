@@ -105,13 +105,13 @@ def near_snap(**kw):
     )
 
 
-def diagonal_ask(snap, overrides=None):
+def ask_of(snap, overrides=None):
     a = pm.evaluate(snap, overrides)
     return pm.view_of(a), pm.trade_of(a, pm.SHORT)["intent_ask"]
 
 
 def test_a_diagonal_the_delta_decided_is_asked_with_its_reading_as_the_suggestion():
-    v, ask = diagonal_ask(near_snap())
+    v, ask = ask_of(near_snap())
     assert ask["kind"] == "pmcc" and ask["asked"] is True and ask["current"] is None
     assert ask["options"] == ["pmcc", "diagonal"] and ask["verdicts"] == {}
     assert ask["suggested"] == "diagonal" and "under 0.70" in ask["evidence"][0]
@@ -119,32 +119,56 @@ def test_a_diagonal_the_delta_decided_is_asked_with_its_reading_as_the_suggestio
 
 
 def test_a_pmcc_the_delta_recognised_is_asked_too():
-    v, ask = diagonal_ask(pm.snapshot(pm.history(), pm.legs()))
+    v, ask = ask_of(pm.snapshot(pm.history(), pm.legs()))
     assert v["recognition"] == "pmcc" and v["intent"] is None
     assert ask["asked"] is True and ask["suggested"] == "pmcc" and ask["evidence"][0].startswith("entered at")
 
 
 def test_a_diagonal_whose_delta_cannot_be_solved_is_asked_with_no_suggestion():
-    _, ask = diagonal_ask(pm.snapshot(pm.history(), pm.legs(), hist=None))
+    _, ask = ask_of(pm.snapshot(pm.history(), pm.legs(), hist=None))
     assert ask["asked"] is True and ask["suggested"] is None
     assert "unknown" in ask["evidence"][0]
 
 
 def test_an_intent_on_the_long_contract_answers_it():
     snap = near_snap()
-    v, _ = diagonal_ask(snap)
+    v, _ = ask_of(snap)
     for intent in ("pmcc", "diagonal"):
-        _, ask = diagonal_ask(snap, {"trades": {v["intent_key"]: {"intent": intent}}})
+        _, ask = ask_of(snap, {"trades": {v["intent_key"]: {"intent": intent}}})
         assert ask["asked"] is False and ask["current"] == intent
         assert ask["suggested"] is None and ask["evidence"] == []
 
 
 def test_a_names_pmcc_or_diagonal_answers_it_but_its_wheel_does_not():
     snap = near_snap()
-    _, ask = diagonal_ask(snap, {"positions": {"XYZ": {"intent": "pmcc"}}})
+    _, ask = ask_of(snap, {"positions": {"XYZ": {"intent": "pmcc"}}})
     assert ask["asked"] is False and ask["current"] == "pmcc"
-    _, ask = diagonal_ask(snap, {"positions": {"XYZ": {"intent": "wheel"}}})
+    _, ask = ask_of(snap, {"positions": {"XYZ": {"intent": "wheel"}}})
     assert ask["asked"] is True and ask["current"] is None
+
+
+def test_the_question_stands_when_the_pmcc_rules_fail(monkeypatch):
+    # The question is a fact of the view, not of its rules: a failing rule costs the verdict, not the ask.
+    def boom(*args, **kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(ev, "_pmcc_rules", boom)
+    t = pm.trade_of(pm.evaluate(near_snap()), pm.SHORT)
+    assert "error" in t["pmcc"]
+    assert t["intent_ask"]["asked"] is True and t["intent_ask"]["kind"] == "pmcc"
+
+
+def test_a_view_with_no_long_contract_to_write_under_is_not_asked():
+    from cherrypick.manage import intentask
+
+    view = {
+        "structure": "diagonal",
+        "intent": None,
+        "recognition": "pmcc",
+        "recognized_by": "entered at 0.82",
+    }
+    assert intentask.diagonal_ask(view) is None
+    assert intentask.diagonal_ask({**view, "intent_key": "XYZ 280121C00040000"})["asked"] is True
 
 
 def test_a_calendar_is_not_asked():
