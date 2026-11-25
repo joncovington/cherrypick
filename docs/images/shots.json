@@ -99,13 +99,6 @@
       ]
     },
     {
-      "file": "contango-regime.png",
-      "route": "contango/regime",
-      "card": null,
-      "viewport": "1500x1000",
-      "sources": ["packages/console/web/src/pages/Contango/ContangoPages.tsx", "packages/console/web/src/lightbox/manifests/ContangoLightbox.tsx"]
-    },
-    {
       "file": "compare-arms.png",
       "route": "compare/arms",
       "card": null,

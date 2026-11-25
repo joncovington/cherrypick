@@ -262,7 +262,7 @@ def _absolutise(node: object) -> object:
 def write_configs(ctx: Ctx) -> None:
     cfg = _absolutise(read_json(PACKAGES / "orchestrator" / "config.example.json"))
     assert isinstance(cfg, dict)
-    shipped_on = {"meic", "earnings", "calendars", "contango", "weeklyput"}
+    shipped_on = {"meic", "earnings", "weeklyput"}
     for name, mod in cfg["modules"].items():
         mod["enabled"] = name in shipped_on
     cfg["capabilities"] = {"claude": False, "dolt": True}
@@ -301,10 +301,6 @@ def write_configs(ctx: Ctx) -> None:
     earnings = example("earnings/config", "config.example.json")
     earnings["correlation_block_list"] = [list(SINGLE_NAMES)]  # the shipped list names real companies
     write_json(ctx.p("config", "earnings.json"), earnings)
-    write_json(ctx.p("config", "calendars.json"), example("calendars"))
-    contango = example("contango")
-    patch(contango, {"defaults.risk_symbol": "QQQ", "defaults.cash_symbol": "IWM"})
-    write_json(ctx.p("config", "contango.json"), contango)
     weeklyput = example("weeklyput")
     weeklyput["names"] = {k: v for k, v in weeklyput["names"].items() if k != "QQQ"}
     write_json(ctx.p("config", "weeklyput.json"), weeklyput)
@@ -882,330 +878,6 @@ def _write_earnings_controls(ctx: Ctx, mk: Market, con: sqlite3.Connection, take
                     "exit_slippage": slip_x,
                 },
             )
-
-
-# ------------------------------------------------------------------------------ calendars
-def _weeks(ctx: Ctx) -> list[list[date]]:
-    """The window's sessions grouped by calendar week, in order."""
-    weeks: dict[date, list[date]] = {}
-    for d in ctx.sessions:
-        weeks.setdefault(d - timedelta(days=d.weekday()), []).append(d)
-    return [weeks[k] for k in sorted(weeks)]
-
-
-def write_calendars(ctx: Ctx, mk: Market) -> None:
-    """Weekly SPY long calendars, one put side and one call side a week, closed in Friday's window."""
-    rng = ctx.rng("calendars")
-    con = make_db(ctx.p("data", "calendars", "paper_trades.db"), "calendars-ledger-schema.sql")
-    for wk in _weeks(ctx):
-        entry = wk[0]
-        week_of = (entry - timedelta(days=entry.weekday())).isoformat()
-        fri = _friday_on_or_after(entry)
-        back = fri + timedelta(days=7)
-        spot = round(mk.close["SPX"][mk.prev(entry)] / 10.03, 2)
-        em = round(spot * 0.0125, 2)
-        for side, right, sign in (("put", "P", -1), ("call", "C", 1)):
-            strike = round(spot + sign * em)
-            debit = round(rng.uniform(1.05, 1.65), 2)
-            pid = f"C{entry.strftime('%y%m%d')}-{side[0].upper()}"
-            closed = fri <= ctx.day
-            s_t = mk.close["SPX"][fri] / 10.03 if closed else spot
-            value = (
-                round(debit * (0.30 + 1.55 * math.exp(-(((s_t - strike) / (em * 0.55)) ** 2))), 2)
-                if closed
-                else None
-            )
-            fee_e, fee_x = 1.3, 1.3
-            slip_e = round(rng.uniform(2.0, 4.0), 2)
-            slip_x = round(rng.uniform(2.0, 4.0), 2)
-            row = {
-                "position_id": pid,
-                "week_of": week_of,
-                "entry_session": entry.isoformat(),
-                "arm": "control",
-                "side": side,
-                "symbol": "SPY",
-                "structure": "calendar",
-                "front_expiration": fri.isoformat(),
-                "back_expiration": back.isoformat(),
-                "strike": float(strike),
-                "quantity": 1,
-                "entry_time": ctx.iso(entry, "10:05", 12),
-                "entry_debit": debit,
-                "entry_cost": money(fee_e + slip_e),
-                "entry_slippage": slip_e,
-                "entry_spot": spot,
-                "entry_em": em,
-                "entry_em_pct": 1.25,
-                "entry_front_iv": round(rng.uniform(0.12, 0.17), 4),
-                "entry_back_iv": round(rng.uniform(0.13, 0.18), 4),
-                "entry_term_structure": round(rng.uniform(0.02, 0.09), 4),
-                "status": "closed" if closed else "open",
-                "created_at": ctx.iso(entry, "10:05"),
-                "updated_at": ctx.iso(fri if closed else ctx.day, "15:55"),
-            }
-            if closed:
-                gross = money((value - debit) * 100)
-                row.update(
-                    {
-                        "exit_reason": "fri_close",
-                        "closed_at": ctx.iso(fri, "15:50", 20),
-                        "closed_session": fri.isoformat(),
-                        "exit_value": value,
-                        "exit_cost": money(fee_x + slip_x),
-                        "exit_slippage": slip_x,
-                        "settlement_spot": round(s_t, 2),
-                        "itm_settlements": 0,
-                        "gross_pnl": gross,
-                        "fees": money(fee_e + slip_e + fee_x + slip_x),
-                        "settlement_fees": 0.0,
-                    }
-                )
-            insert(con, "dc_positions", row)
-            for which, exp_, act in (("front", fri, "STO"), ("back", back, "BTO")):
-                mid = round(debit * (0.45 if which == "front" else 1.45), 2)
-                insert(
-                    con,
-                    "dc_legs",
-                    {
-                        "position_id": pid,
-                        "leg_role": f"{which}_{side}",
-                        "occ_symbol": occ("SPY", exp_, right, strike),
-                        "streamer_symbol": f".SPY{exp_.strftime('%y%m%d')}{right}{strike}",
-                        "expiration": exp_.isoformat(),
-                        "strike": float(strike),
-                        "option_type": right,
-                        "action": act,
-                        "quantity": 1,
-                        "entry_bid": round(mid - 0.02, 2),
-                        "entry_ask": round(mid + 0.02, 2),
-                        "entry_mid": mid,
-                        "entry_iv": round(rng.uniform(0.12, 0.18), 4),
-                        "entry_delta": round(sign * rng.uniform(0.3, 0.4), 3),
-                        "status": "closed" if closed else "open",
-                        "created_at": ctx.iso(entry, "10:05"),
-                        "updated_at": ctx.iso(entry, "10:05"),
-                    },
-                )
-        insert(
-            con,
-            "dc_entry_attempts",
-            {
-                "ts": ctx.iso(entry, "10:05", 10),
-                "trade_date": entry.isoformat(),
-                "week_of": week_of,
-                "symbol": "SPY",
-                "outcome": "filled",
-                "spot": spot,
-                "em": em,
-                "put_target": round(spot - em, 2),
-                "call_target": round(spot + em, 2),
-                "put_strike": round(spot - em),
-                "call_strike": round(spot + em),
-                "put_debit": 1.2,
-                "call_debit": 1.3,
-            },
-        )
-    insert(
-        con,
-        "dc_loop_iterations",
-        {
-            "ran_at": ctx.epoch(ctx.day, "15:59"),
-            "session_date": ctx.day.isoformat(),
-            "phase": "marks",
-            "status": "ok",
-            "open_positions": 0,
-            "marks_written": 0,
-            "actions_taken": 0,
-        },
-    )
-    con.commit()
-    con.close()
-
-
-# ------------------------------------------------------------------------------ contango
-def write_contango(ctx: Ctx, mk: Market) -> None:
-    """The VIX/VIX3M switch, two arms, each holding the risk fund below its threshold and the cash fund otherwise."""
-    rng = ctx.rng("contango")
-    con = make_db(ctx.p("data", "contango", "paper_trades.db"), "contango-ledger-schema.sql")
-    risk, cash_sym = "QQQ", "IWM"
-    ratio = 0.93
-    ratios: dict[date, float] = {}
-    for d in ctx.sessions:
-        ratio = max(0.82, min(1.08, ratio + rng.gauss(0, 0.022) + 0.004 * (mk.vix[d] - 17.5) / 3))
-        ratios[d] = round(ratio, 4)
-        insert(
-            con,
-            "contango_regime",
-            {
-                "trade_date": d.isoformat(),
-                "tick": ctx.iso(d, "15:50"),
-                "ratio": ratios[d],
-                "vix": mk.vix[d],
-                "vix3m": round(mk.vix[d] / ratios[d], 2),
-                "vix_age_s": 4.0,
-                "vix3m_age_s": 5.0,
-                "usable": 1,
-            },
-        )
-    arms = {"control": (0.97, 0.97), "flipexit": (0.97, 1.0)}
-    for arm, (enter_below, exit_at) in arms.items():
-        capital = 10000.0
-        cash = capital
-        holding: dict | None = None
-        insert(
-            con,
-            "contango_accounts",
-            {
-                "arm": arm,
-                "starting_capital": capital,
-                "cash": capital,
-                "opened_session": ctx.start.isoformat(),
-            },
-        )
-        n = 0
-        in_risk = False
-        for d in ctx.sessions:
-            r = ratios[d]
-            before = "risk" if holding and holding["role"] == "risk" else "cash"
-            want_risk = (r < enter_below) if not in_risk else (r < exit_at)
-            action = "hold"
-            if holding is None or (want_risk != in_risk):
-                # leave the old holding, then buy the new one
-                if holding is not None:
-                    px = mk.close[holding["sym"]][d]
-                    exit_value = round(holding["shares"] * px, 2)
-                    slip = round(holding["shares"] * 0.01, 2)
-                    gross = round(exit_value - holding["entry_value"], 2)
-                    net = round(gross - holding["entry_slip"] - slip, 2)
-                    con.execute(
-                        "UPDATE contango_positions SET status='closed', exit_session=?, exit_time=?, exit_bid=?, exit_ask=?, exit_mid=?, exit_value=?, exit_fees=0, exit_slippage=?, exit_ratio=?, exit_reason=?, gross_pnl=?, fees=0, slippage=?, net_pnl=? WHERE position_id=?",
-                        (
-                            d.isoformat(),
-                            ctx.iso(d, "15:51"),
-                            round(px - 0.01, 2),
-                            round(px + 0.01, 2),
-                            px,
-                            exit_value,
-                            slip,
-                            r,
-                            "ratio_above_exit" if holding["role"] == "risk" else "ratio_below_entry",
-                            gross,
-                            round(holding["entry_slip"] + slip, 2),
-                            net,
-                            holding["pid"],
-                        ),
-                    )
-                    cash = round(cash + exit_value - 0.0, 2) if holding else cash
-                    cash = round(cash + (net - gross), 2)
-                in_risk = want_risk
-                sym = risk if in_risk else cash_sym
-                px = mk.close[sym][d]
-                shares = int(cash // px)
-                value = round(shares * px, 2)
-                n += 1
-                pid = f"K-{arm}-{n}"
-                slip = round(shares * 0.01, 2)
-                insert(
-                    con,
-                    "contango_positions",
-                    {
-                        "position_id": pid,
-                        "arm": arm,
-                        "symbol": sym,
-                        "role": "risk" if in_risk else "cash",
-                        "shares": shares,
-                        "entry_session": d.isoformat(),
-                        "entry_time": ctx.iso(d, "15:51"),
-                        "entry_bid": round(px - 0.01, 2),
-                        "entry_ask": round(px + 0.01, 2),
-                        "entry_mid": px,
-                        "entry_value": value,
-                        "entry_fees": 0.0,
-                        "entry_slippage": slip,
-                        "entry_ratio": r,
-                        "status": "open",
-                        "created_at": ctx.iso(d, "15:51"),
-                        "updated_at": ctx.iso(d, "15:51"),
-                    },
-                )
-                holding = {
-                    "pid": pid,
-                    "sym": sym,
-                    "role": "risk" if in_risk else "cash",
-                    "shares": shares,
-                    "entry_value": value,
-                    "entry_slip": slip,
-                }
-                cash = round(cash - value, 2)
-                action = "enter" if before == "cash" and in_risk else "exit" if not in_risk else "enter"
-            px_now = mk.close[holding["sym"]][d]
-            nav = round(cash + holding["shares"] * px_now, 2)
-            insert(
-                con,
-                "contango_sessions",
-                {
-                    "trade_date": d.isoformat(),
-                    "arm": arm,
-                    "decided_at": ctx.iso(d, "15:50", 30),
-                    "ratio": r,
-                    "state_before": before,
-                    "state_after": "risk" if in_risk else "cash",
-                    "action": action,
-                    "holding_symbol": holding["sym"],
-                    "shares": holding["shares"],
-                    "mark": px_now,
-                    "cash": cash,
-                    "nav": nav,
-                    "created_at": ctx.iso(d, "15:50"),
-                    "updated_at": ctx.iso(d, "15:50"),
-                },
-            )
-            insert(
-                con,
-                "contango_decisions",
-                {
-                    "trade_date": d.isoformat(),
-                    "arm": arm,
-                    "symbol": holding["sym"],
-                    "mode": "paper",
-                    "reason": "switch" if action != "hold" else "no_change",
-                    "accepted": 1 if action != "hold" else 0,
-                    "first_ts": ctx.iso(d, "15:50"),
-                    "last_ts": ctx.iso(d, "15:50"),
-                },
-            )
-        con.execute("UPDATE contango_accounts SET cash=? WHERE arm=?", (cash, arm))
-    for d in ctx.sessions[-3:]:
-        for sym in (risk, cash_sym):
-            px = mk.close[sym][d]
-            insert(
-                con,
-                "contango_marks",
-                {
-                    "trade_date": d.isoformat(),
-                    "symbol": sym,
-                    "bid": round(px - 0.01, 2),
-                    "ask": round(px + 0.01, 2),
-                    "mid": px,
-                    "age_s": 3.0,
-                },
-            )
-    insert(
-        con,
-        "contango_loop_iterations",
-        {
-            "ran_at": ctx.epoch(ctx.day, "15:59"),
-            "session_date": ctx.day.isoformat(),
-            "phase": "decision",
-            "status": "ok",
-            "open_positions": 2,
-            "marks_written": 2,
-            "actions_taken": 0,
-        },
-    )
-    con.commit()
-    con.close()
 
 
 # ------------------------------------------------------------------------------ weeklyput
@@ -1907,8 +1579,6 @@ JOBS = {
     "console": ("resident", "always on"),
     "meic-paper": ("interval", "every 60 s"),
     "earnings-paper": ("interval", "every 60 s"),
-    "calendars-paper": ("interval", "every 60 s"),
-    "contango-paper": ("interval", "every 60 s"),
     "weeklyput-paper": ("interval", "every 60 s"),
     "review-provisional": ("fixed", "16:30 ET"),
     "review-final": ("fixed", "10:15 ET"),
@@ -1987,7 +1657,7 @@ def refresh_live(out: Path, day: date, now: datetime | None, pid: int) -> None:
             "message": "registered, last probe passed",
         },
     ]
-    for m in ("meic", "earnings", "calendars", "contango", "weeklyput"):
+    for m in ("meic", "earnings", "weeklyput"):
         findings.append(
             {
                 "key": f"{m}.heartbeat",
@@ -2006,7 +1676,7 @@ def refresh_live(out: Path, day: date, now: datetime | None, pid: int) -> None:
         )
     write_json(state / "watchdog.last.json", {"ts": iso, "overall": "OK", "findings": findings})
     write_json(state / "watchdog_state.json", {})
-    for name in ("console", *("meic", "earnings", "calendars", "contango", "weeklyput")):
+    for name in ("console", *("meic", "earnings", "weeklyput")):
         (state / f"{name}.heartbeat" if name != "console" else state / "console.heartbeat").write_text(
             iso + "\n", encoding="utf-8"
         )
@@ -2029,8 +1699,6 @@ def refresh_live(out: Path, day: date, now: datetime | None, pid: int) -> None:
         for table, col, value, db_name in (
             ("loop_log", "loop_time", et, "meic"),
             ("loop_iterations", "ran_at", epoch, "earnings"),
-            ("dc_loop_iterations", "ran_at", epoch, "calendars"),
-            ("contango_loop_iterations", "ran_at", epoch, "contango"),
             ("weeklyput_loop_iterations", "ran_at", epoch, "weeklyput"),
         ):
             db = out / "data" / db_name / "paper_trades.db"
@@ -2053,9 +1721,9 @@ def refresh_live(out: Path, day: date, now: datetime | None, pid: int) -> None:
 def write_logs(ctx: Ctx) -> None:
     """A few plausible log lines, so System's log tabs show something quiet and healthy."""
     lines = {
-        "supervisor.log": "supervisor started, 22 jobs derived\nwatchdog: OK, 0 of 13 not OK\n",
+        "supervisor.log": "supervisor started, 20 jobs derived\nwatchdog: OK, 0 of 9 not OK\n",
         "watchdog.log": "all checks OK\n",
-        "notify.log": "[log] earnings: closed one position\n[log] contango: held, ratio below the threshold\n",
+        "notify.log": "[log] earnings: closed one position\n",
         "meic/paper_loop.log": "tick: 5 condors held to settlement, none open\n",
         "streamer/streamer.log": "connected, 9 symbols subscribed\n",
         "gex/recorder.log": "sampled 3 symbols\n",
@@ -3275,8 +2943,6 @@ def build(out: Path, seed: int, day: date, days: int, second_login: bool = False
     write_configs(ctx)
     write_meic(ctx, mk)
     taken = write_earnings(ctx, mk)
-    write_calendars(ctx, mk)
-    write_contango(ctx, mk)
     write_weeklyput(ctx, mk)
     write_manage(ctx, mk)
     write_stream_cache(ctx, mk)
