@@ -22,14 +22,16 @@ ships in dry run and off, and the Live page was reorganized around two summary c
 contango and four automations were retired after research items 38, 39 and 75 failed them. manage leaves
 a far out-of-the-money time-spread short to expire, reads the cost-strike call and the dispersion of the
 book, and evaluates on Sunday evenings. This is an ordinary upgrade from v0.13.0 with one thing to
-decide: a live MEIC config that never named `live.dry_run` now sends no entries.
+decide: a live MEIC config that never named `live.dry_run` now sends no entries. One data migration
+moves a home set up under the `ensemble` name to `automations`.
 
 ### Upgrading
 
 - **From v0.13.0:** `python packages/orchestrator/run.py upgrade` (or `upgrade.cmd` / `./upgrade.sh`).
   It refuses while a live loop is armed or holds a position, as every upgrade does. Afterwards run
   `python run.py supervise --restart` (the research queue has a second job and manage a Sunday one), restart
-  any resident job, and restart the console to load its new server code. No data migrates.
+  any resident job, and restart the console to load its new server code. One data migration runs
+  (`v0.14.0-01-automations-rename`, below); `upgrade` runs it after its backup.
 - **MEIC's live loop is in dry run until you say otherwise.** `live.dry_run` is `true` unless it is the
   literal `false`, and a missing key means `true`. A live config that never named the key now preflights
   each new entry and sends none. Set `live.dry_run` to `false` by hand, deliberately, to send entries
@@ -40,12 +42,19 @@ decide: a live MEIC config that never named `live.dry_run` now sends no entries.
   that file takes) and restart the console; see
   [going-live](docs/guide/going-live.md#from-the-console-the-live-pages-switches). The slash commands and
   `live_loop --arm` work as before.
-- **`packages/ensemble` is now `packages/automations`** (`cherrypick-automations`). A checkout updated
-  by hand needs its packages reinstalled (`scripts/dev-install.ps1` or `.sh`; `upgrade` does it), or
-  the paper loop cannot import. Nothing else is required: the old names keep resolving. A suite
-  config's `modules.ensemble` reads as `modules.automations`, `config/ensemble.json` and
-  `data/ensemble/` are read while only they exist, and `cherrypick.ensemble` still imports. Rename
-  them when you like; the ledger's tables keep their names.
+- **`packages/ensemble` is now `packages/automations`, everywhere** (`cherrypick-automations`). The
+  upgrade's migration moves `config/ensemble.json` to `config/automations.json` and `data/ensemble/` to
+  `data/automations/`, renames the ledger's `ensemble_` tables to `automations_`, rewrites
+  `modules.ensemble` and the trade schema `ensemble_trade` (now `automations_trade`) in `config.json`,
+  renames the `ensemble` group in `automations.json` to `default`, and updates the schema in your
+  research register. Nothing reads the old names any more: `cherrypick.ensemble` no longer imports, the
+  `ENSEMBLE_CONFIG` and `ENSEMBLE_DB_PATH` variables are not read (set `AUTOMATIONS_CONFIG` and
+  `AUTOMATIONS_DB_PATH` instead), `/ensemble` no longer opens the page, and the loop refuses a ledger that
+  still has `ensemble_` tables. A checkout updated by hand (a `git pull`, not `upgrade`) must stop the
+  suite, reinstall its packages (`scripts/dev-install.ps1` or `.sh`) and run
+  `python packages/orchestrator/run.py migrations --apply` before starting again. The migration stops,
+  changing nothing it cannot judge, if `config.json` holds both module blocks, `automations.json` already
+  has a `default` group, or both table sets hold rows.
 - **Calendars, contango and four automations are retired** (2026-11-21). Both modules ship off with a
   retired date on each arm. A machine that had calendars on keeps its open positions running to their own
   exits; switch the module off once it is flat. `iron-fly-1000`, `iron-fly-1dte-1330`,
@@ -454,19 +463,23 @@ decide: a live MEIC config that never named `live.dry_run` now sends no entries.
   can set an allocation, a cap on its members' open risk and each member's share; an entry the cap has
   no room for is refused and says so. The shipped automations size as before.
 - **Ensemble is now automations.** The package, its import, its config file, data folder, log,
-  heartbeat and stream request, and its suite-config key are named `automations`; trade
-  notifications say "Automation paper".
-- **Automation groups.** The eight former ensemble arms are the `ensemble` automation group, each
+  heartbeat and stream request, its suite-config key, the ledger's tables (`automations_*`) and its trade
+  schema (`automations_trade`) are named `automations`; trade notifications say "Automation paper". The
+  migration `v0.14.0-01-automations-rename` moves a home set up under the old name (config files edited
+  by exact replacement and checked to parse to the intended document; a second run finds nothing), and
+  `automations.db.connect` refuses a ledger it has not reached. The finished research scripts keep their
+  file names (`ensemble_item75.py`, `ensemble_bars_item85.py`) and import `cherrypick.automations`.
+- **Automation groups.** The eight former ensemble arms are the `default` automation group, each
   labelled with research item 75's verdict (two passed, four failed, two no verdict). Switch the whole
-  group off with `"groups": {"ensemble": {"enabled": false}}` in `automations.json`: no new entries,
+  group off with `"groups": {"default": {"enabled": false}}` in `automations.json`: no new entries,
   while anything open is still managed and settled.
-- **The console's Ensemble page is Automations** (`/automations`; `/ensemble` and its tabs redirect).
+- **The console's Ensemble page is Automations** (`/automations`).
   Its summary ends with the automation groups: each group's switch, and each automation with its
   research verdict.
 - **`automations.json` names its block `automations`.** The block each automation is configured in
   was `arms`; that spelling still resolves, and a file holding both is read by `automations`.
 - **Automation backtests through the engine paper runs.** `packages/backtest/scripts/automation_backtest.py`
-  replays ensemble arms over a stored history with `cherrypick.ensemble.driver`: the same decisions,
+  replays automations over a stored history with `cherrypick.automations.driver`: the same decisions,
   exits, gates and fills as the paper loop (a test holds one day to the same trade, to the cent), so
   every signal, exit and gate added since v0.13.0 can be backtested. It reads our own SPX 0DTE recordings,
   or the vendor's stores while the licence allows, chosen by the source registry. An automation held
@@ -491,32 +504,32 @@ decide: a live MEIC config that never named `live.dry_run` now sends no entries.
   that reads volume refuses bars without it. An automation's volume signal names whose volume weighs
   its bars (SPY for SPX): paper records it each minute, and the backtest reads the recorded one-minute
   bars, refusing dates they do not cover.
-- **Ensemble arms state their safeguards.** `limits.max_open` and `limits.per_day` are required in every
-  arm, with no default in the engine: an arm in `~/.cherrypick/config/ensemble.json` that replaces
+- **Automations state their safeguards.** `limits.max_open` and `limits.per_day` are required in every
+  automation, with no default in the engine: an entry in `~/.cherrypick/config/automations.json` that replaces
   `limits` must name both. The shipped arms already ran one entry a day; they now say so.
-- **IV gates on the vol index.** The ensemble's `vol_index_rank`, `vol_index_percentile` and
+- **IV gates on the vol index.** The automations' `vol_index_rank`, `vol_index_percentile` and
   `vol_index_minus_rv` gates read the underlying's Cboe vol index (VIX for SPX, GVZ for GLD, RVX for
   IWM): its previous close against its own history, or against realized vol. The `market-files` job
   now also keeps RVX, GVZ, VXSLV and OVX.
-- **Ensemble: three more exits, and signal exits in paper.** `stop_credit_multiple` closes a credit
+- **Automations: three more exits, and signal exits in paper.** `stop_credit_multiple` closes a credit
   position when its loss reaches m times the credit, `delta_limit` when the structure's delta reaches a
   limit, `close_at_dte` a set number of days before expiry. Paper's position snapshot now carries the
   recorded trail, earlier sessions, daily bars, the event calendar and leg deltas: without them a signal
   exit could never fire in paper, though it fired in the backtest.
-- **One firing rule for intraday signals.** In the ensemble's engine an intraday signal now reads the
+- **One firing rule for intraday signals.** In the automations' engine an intraday signal now reads the
   previous five sessions as well as today's, as a signal study does, so a seeded indicator is warm at
   the open and a gap or prior-session signal has the prior session. A test holds that the study,
   core's trigger and the engine (ticking as paper does) fire on the same minute.
 - **Daily signals.** A trigger with `"daily": true` reads completed daily bars only and acts today on
   a firing at the previous session's close (a daily RSI or MACD cross, a close above a moving average).
   Today's still-forming bar is never read, and bars that stop before yesterday are refused as stale.
-  The ensemble's entries and signal exits can use it.
-- **Ensemble: exits on a signal, entries on event dates.** An arm's `exit.signal` closes a position
+  The automations' entries and signal exits can use it.
+- **Automations: exits on a signal, entries on event dates.** An arm's `exit.signal` closes a position
   when a `core.signals` signal fires on its underlying (the entry trigger's shape), checked after the
   touch and the profit target; the backtest and paper both run it. An entry trigger may now be an event
   signal, such as FOMC day at 13:45 or the session before CPI: the dates come from the event calendar,
   and a stretch the calendar cannot answer is refused by name, never read as quiet.
-- **Ensemble, in paper.** Eight short-dated SPX and GLD option arms (0DTE and 1DTE flies, a condor and
+- **Automations, in paper.** Eight short-dated SPX and GLD option arms (0DTE and 1DTE flies, a condor and
   put spreads, an opening-range put spread, a long put and two GLD call spreads) now trade in paper
   through one decision function, the same one their backtest uses. Experimental and off by default: turn
   on `modules.automations.enabled` after copying `packages/automations/config.example.json` to

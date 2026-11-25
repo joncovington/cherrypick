@@ -192,10 +192,10 @@
     },
     "v0.14.0": {
       "upgrading": [
-        "An ordinary upgrade from v0.13.0: run `python run.py upgrade`, then `python run.py supervise --restart` (the research queue has a second job and manage a Sunday one), restart any resident job and restart the console. No data migrates.",
+        "An ordinary upgrade from v0.13.0: run `python run.py upgrade`, then `python run.py supervise --restart` (the research queue has a second job and manage a Sunday one), restart any resident job and restart the console. One data migration runs: v0.14.0-01-automations-rename, after the upgrade's backup.",
         "MEIC's live loop ships in dry run. `live.dry_run` is true unless it is the literal false, and a missing key means true: an armed tick preflights each new entry against the real account and sends none. Set `live.dry_run` to false by hand, deliberately, to send entries again; the Config page cannot change it. A held book is still confirmed, stopped, force-closed and settled live.",
         "The console can arm a live loop for the day (MEIC's main account and the ladder) from the Live page. It ships off: nothing changes until `live_arming` is true in console.json and the console is restarted. The slash commands and `live_loop --arm` work as before.",
-        "`packages/ensemble` is now `packages/automations`. A checkout updated by hand needs its packages reinstalled (`upgrade` does it). The old names keep resolving: `modules.ensemble`, `config/ensemble.json`, `data/ensemble/` and `cherrypick.ensemble`.",
+        "`packages/ensemble` is now `packages/automations`, everywhere. The migration moves config/ensemble.json and data/ensemble/ to their new names, renames the ledger's ensemble_ tables to automations_, rewrites modules.ensemble and the trade schema ensemble_trade (now automations_trade) in config.json, renames the ensemble group in automations.json to default, and updates the schema in the research register. The old names are no longer read: cherrypick.ensemble does not import, ENSEMBLE_CONFIG and ENSEMBLE_DB_PATH are ignored (use AUTOMATIONS_CONFIG and AUTOMATIONS_DB_PATH), and the loop refuses an unmigrated ledger.",
         "Calendars, contango and four automations (`iron-fly-1000`, `iron-fly-1dte-1330`, `gld-call-spread-20d`, `orb-put-spread`) are retired as of 2026-11-21 and ship off. Calendars' open positions run to their own exits; switch the module off once it is flat.",
         "The research queue runs two lanes: the `research-queue-vendor` job replaces `research-queue`, and `research-queue-local` is new. The register of studies and each Result now live under ~/.cherrypick/data/research/, not in the repo.",
         "manage gained a Sunday evaluation (`manage.sunday_at`, 18:15 ET), the cost-strike call and dispersion readings, and leaves a far out-of-the-money time-spread short to expire (`expiry.time_spread_hold_max_delta` 0.10, our own number). All have defaults that apply when the key is absent.",
@@ -206,7 +206,9 @@
         "Run `python run.py supervise --restart`, then restart any resident job (a job reads its config only when it starts) and restart the console.",
         "If your live MEIC config should send entries, set `live.dry_run` to false in meic.json by hand. Left alone, it sends none.",
         "Optional: set `live_arming` to true in console.json to get the Live page's arm switches, then restart the console.",
-        "If you had calendars on, switch the module off once its positions are flat."
+        "If you had calendars on, switch the module off once its positions are flat.",
+        "If you update by hand (git pull) rather than with upgrade: stop the suite, reinstall the packages (scripts/dev-install), and run `python packages/orchestrator/run.py migrations --apply` before starting it.",
+        "If you set ENSEMBLE_CONFIG or ENSEMBLE_DB_PATH, rename them AUTOMATIONS_CONFIG and AUTOMATIONS_DB_PATH."
       ],
       "config_changes": [
         {
@@ -247,7 +249,7 @@
         {
           "file": "config.json",
           "key": "modules.automations",
-          "note": "New block (ensemble renamed), off by default: the paper loop of the automations package. A config's modules.ensemble still reads as it."
+          "note": "New block (ensemble renamed), off by default: the paper loop of the automations package, trade schema automations_trade. The migration renames a config's modules.ensemble block; nothing reads the old key any more."
         },
         {
           "file": "config.json",
@@ -262,7 +264,7 @@
         {
           "file": "automations.json",
           "key": "groups, automations",
-          "note": "The block holding each automation is named automations (arms still resolves); groups are new (the eight former arms are the ensemble group) and take enabled, start, allocation, max_risk and shares."
+          "note": "The block holding each automation is named automations (arms still resolves); groups are new (the eight former arms are the default group) and take enabled, start, allocation, max_risk and shares. The migration renames a file's ensemble group to default."
         },
         {
           "file": "config.json",
@@ -283,6 +285,16 @@
           "file": "calendars.json",
           "key": "live",
           "note": "Removed from the example with pmcc.json and curve.json: the placeholder live gate of a module with no live loop. A copy that still has it is harmless."
+        },
+        {
+          "file": "config.json",
+          "key": "modules.automations.paper.trade_schema",
+          "note": "ensemble_trade is now automations_trade (the ledger's tables are automations_*); the migration rewrites it."
+        },
+        {
+          "file": "automations.json",
+          "key": "groups.default",
+          "note": "Was groups.ensemble, and each automation's group ensemble is default; the migration renames both."
         }
       ],
       "measurement_boundaries": [
@@ -296,7 +308,9 @@
         "2026-11-24, MEIC: the paper twins and the retirement of live-shadow take effect on a machine when it runs scripts/boundary_2026_11_24.py --apply; the paper-live gap then follows the arm live ran.",
         "2026-11-27, MEIC: no new entries on a half day, paper and live."
       ],
-      "migrations": []
+      "migrations": [
+        "v0.14.0-01-automations-rename"
+      ]
     }
   }
 }
