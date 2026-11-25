@@ -95,6 +95,12 @@ describe("the strip", () => {
     expect(h).toContain('href="/config/rules"');
   });
 
+  it("does not send a put to Config while the name's intent is for another trade on it", () => {
+    const h = html({ ...PUT, scope: "name", key: "positions.XYZ.intent", note: "the name's intent 'pmcc' is for another trade on XYZ, not this put" });
+    expect(h).not.toContain("/config/rules");
+    expect(text(h)).toContain("wait for a stable ID");
+  });
+
   it("is a group beside the card, never a button inside it", () => {
     expect(html(PUT)).toMatch(/^<div class="int-strip" role="group"/);
   });

@@ -1155,17 +1155,17 @@ ruleset's days. The level is manage's, never worked out from the distance beside
 (`web/test/attentionCard.test.tsx`). A short put with no intent of its own (manage's
 `wheel.intent_candidates`; a name's intent counts only for the trades it describes, so a name marked `pmcc`
 for its diagonal does not answer for a put on the same name) carries a dashed `no intent` chip on its row,
-opening manage's verdict today beside the one it would get marked as a wheel, with *Not a wheel* and
-*Wheel it*, manage's suggestion with its evidence when a wheel cycle on the name reconciles ("Looks like
-a wheel: ..."; never applied for you), and manage's note when the name's own intent is for another trade;
-the puts no row shows sit in a `no intent yet` card
-(`pages/Live/IntentChoice.tsx`). A choice is only staged, against the trade itself (the candidate's `key`:
-`trades.<ID>.intent`, or the name's `positions.<SYMBOL>.intent` while the trade's ID is provisional, except
-where the name's own intent is for another trade, when the choice waits for a stable ID rather than replace
-it), as the whole `trades` (or `positions`) object of manage.json with every other entry kept; it is saved on Config ›
-Position rules (`pages/Config/IntentsCard.tsx`), which lists every name's and every trade's intent, a PMCC's
-by its long contract, in one save bar. A manage.json written before the `trades` block existed gets it on
-the first save (the orchestrator adds a top-level block its shipped example has). A `cost-strike calls`
+and the puts no row shows sit in a `no intent yet` card (`pages/Live/IntentChoice.tsx`). Neither asks the
+question: each is a link to where it is answered, the trade's Intent tab on Live › positions (the verdict
+under each answer, manage's suggestion and evidence, its note when the name's own intent is for another
+trade, one-tap save; the link carries the account), or Config for a put whose ID is still provisional,
+answered on its name. While the name's own intent is for another trade and the ID is still provisional, an
+answer on the name would replace that intent, so it says it waits for a stable ID and links nowhere. Nothing on
+this tab stages or saves an intent. Config › Position rules
+(`pages/Config/IntentsCard.tsx`) lists every name's intent, which is edited there in the save bar (the
+whole `positions` object of manage.json, every other entry kept), and every trade's intent, a PMCC's by its
+long contract, each with a link to the position that changes it and a *clear* that removes the entry (through the
+same narrow save, so an entry a closed trade left behind can go). A `cost-strike calls`
 card (`CostCallCard`) sits beside them: manage's
 `attention.cost_call` rows, one per cycle holding assigned shares with no call written, each with the call's
 strike, expiry, bid, the bid as a share of the price, the whole-position credit and whose quote it is. A bid

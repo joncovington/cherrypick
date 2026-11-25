@@ -36,6 +36,9 @@ export type PnlOrder = "desc" | "asc";
 type Filter = "all" | "act" | "rolled" | "spreads";
 type Tab = "chain" | "evaluation" | "intent";
 
+/** The tab a trade opens on: only the Intent tab is asked for by name (`?tab=intent`, as the wheel tab's links do). */
+export const initialTradeTab = (raw: string | null): Tab => (raw === "intent" ? "intent" : "chain");
+
 const PASSIVE = new Set(["HOLD", "SETTLES"]);
 
 /** A time spread, by manage's shape name: calls or puts, a calendar or a diagonal (PMCCs included). */
@@ -420,16 +423,19 @@ function TradeDialog({
   trades,
   index,
   detail,
+  initialTab,
   onStep,
   onClose,
 }: {
   trades: ManageTrade[];
   index: number;
   detail: (t: ManageTrade) => ReactNode;
+  /** The tab it opens on: `?tab=intent` in the URL, as the wheel tab's links ask. */
+  initialTab: Tab;
   onStep: (to: number) => void;
   onClose: () => void;
 }) {
-  const [tab, setTab] = useState<Tab>("chain");
+  const [tab, setTab] = useState<Tab>(initialTab);
   const t = trades[index];
   if (t === undefined) return null;
   const tabs: LightboxTab<Tab>[] = [
@@ -580,6 +586,14 @@ export function PositionCards({
   };
   const reset = () => setSort({ id: "pnl", reversed: false });
   const index = stepTrades.findIndex((t) => t.tradeId === lightbox.open);
+  // A link that asked for a tab (`?tab=intent`) is read once, as the dialog opens on it, and leaves the URL, so
+  // the tab the person then picks is not reset and the next card opens on its own first tab.
+  useEffect(() => {
+    if (index < 0 || !params.has("tab")) return;
+    const next = new URLSearchParams(params);
+    next.delete("tab");
+    setParams(next, { replace: true });
+  }, [index, params, setParams]);
   const chip = (on: boolean) => (on ? "chip chip-ok" : "chip");
   if (loading && trades.length === 0) return <p className="muted">Loading the evaluation…</p>;
   if (trades.length === 0) return <p className="muted">No trades in this account.</p>;
@@ -626,7 +640,14 @@ export function PositionCards({
         </div>
       )}
       {index >= 0 ? (
-        <TradeDialog trades={stepTrades} index={index} detail={detail} onStep={(to) => lightbox.step(stepTrades[to]?.tradeId ?? "")} onClose={lightbox.close} />
+        <TradeDialog
+          trades={stepTrades}
+          index={index}
+          detail={detail}
+          initialTab={initialTradeTab(params.get("tab"))}
+          onStep={(to) => lightbox.step(stepTrades[to]?.tradeId ?? "")}
+          onClose={lightbox.close}
+        />
       ) : null}
     </section>
   );

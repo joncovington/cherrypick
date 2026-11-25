@@ -10324,9 +10324,12 @@ button.chip[aria-pressed][data-hue="special"],
   flex: none;
 }
 
-/* Live → wheel's "is this a wheel?" (2026-11-12): a dashed amber chip on a short put with no intent,
-   opening today's verdict beside the wheel's. Amber is the suite's provisional colour: undecided. */
+/* Live → wheel: a dashed amber chip on a short put with no intent, linking to where it is answered.
+   Amber is the suite's provisional colour: undecided. */
 .int-chip {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
   justify-self: start;
   font: inherit;
   font-size: 11.5px;
@@ -10339,6 +10342,9 @@ button.chip[aria-pressed][data-hue="special"],
   min-height: 28px;
   cursor: pointer;
   white-space: nowrap;
+}
+.int-chip.is-static {
+  cursor: default;
 }
 .int-chip:focus-visible {
   outline: 2px solid var(--accent);
@@ -10358,29 +10364,12 @@ button.chip[aria-pressed][data-hue="special"],
   border-radius: 8px;
   background: var(--surface);
 }
-.int-col.is-wheel {
-  border-color: var(--pf-income);
-}
 .int-col .btn {
   margin-top: 4px;
   min-height: 36px;
 }
 .int-verdict {
   font-size: 12.5px;
-}
-.int-note {
-  grid-column: 1 / -1;
-  margin: 0;
-}
-.int-chosen {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-.int-chip-wheel {
-  color: var(--pf-income);
-  border-color: var(--pf-income);
 }
 .int-undo {
   padding: 2px 8px;

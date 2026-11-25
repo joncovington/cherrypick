@@ -1,21 +1,16 @@
-import { useState } from "react";
 import { Link } from "react-router-dom";
-import type { ConfigModelPayload, ManageAttentionLeg, ManageIntentCandidate, ManageVerdictBrief } from "@console/shared";
+import type { ManageAttentionLeg, ManageIntentCandidate } from "@console/shared";
 import { Card } from "../../components/DataTable";
 import { HelpSection } from "../../components/CardHelp";
-import { candidateIntentOf, intentWords, stageCandidateIntent } from "../Config/intents";
-import { useStagedVersion } from "../Config/stagedStore";
-import { useConfigModel } from "../Config/useConfigModel";
-import { ACTION_LABEL } from "./manageParts";
+import { ACCOUNT_PARAM } from "./accountParam";
 
 /**
- * Live → wheel's "is this a wheel?" (2026-11-12): manage lists each short put with no intent of its own
- * (`wheel.intentCandidates`) with today's verdict and the one it would get marked as a wheel, and says
- * when a wheel cycle on the name suggests one. A row already in the needs-a-look cards gets a chip (the
- * choice matters most there); the rest sit in a card of their own. A choice is only staged, against the
- * trade itself (`trades.<ID>.intent`, so it never touches another trade on the name): it is saved on
- * Config › Position rules, the console's one write path, and the evaluation reads it next run. Nothing
- * here judges a trade, and a suggestion is never applied.
+ * Live → wheel's "no intent yet": manage lists each short put with no intent of its own
+ * (`wheel.intentCandidates`). The question itself is asked on the position (Live › positions: under the
+ * trade's card, and on its Intent tab, with the verdict under each answer), so this tab only says which puts
+ * wait and where to answer: a needs-a-look row gets a chip, the rest sit in a card of their own. Each is a
+ * link to the trade's Intent tab; a put whose ID is still provisional is answered on its name, in Config.
+ * Nothing here stages or saves an intent, and nothing judges a trade.
  */
 
 const money = (v: number | null) => (v === null ? "—" : `$${Math.round(v).toLocaleString("en-US")}`);
@@ -26,126 +21,69 @@ export function candidateFor(cands: ManageIntentCandidate[], leg: ManageAttentio
   return cands.find((c) => c.underlying === leg.underlying && c.expiration === leg.expiration && c.strikes.includes(leg.strike!)) ?? null;
 }
 
-function Verdict({ v }: { v: ManageVerdictBrief }) {
-  return (
-    <span className="int-verdict" title={v.reason ?? undefined}>
-      {v.action === null ? "—" : ACTION_LABEL[v.action] ?? v.action.toLowerCase()}
-      {v.rule !== null && <span className="muted"> · {v.rule}</span>}
-    </span>
-  );
+/** Where a candidate is answered: its Intent tab once its trade ID is stable (manage keys the answer to the
+ *  trade; the account rides along so the trade is found on a multi-account page), else Config, where its
+ *  name's intent is set. Null while the name's own intent is for another trade (manage's `note`) and the
+ *  trade has no stable ID: an answer on the name would replace that intent, so it waits for the ID. */
+function answerAt(c: ManageIntentCandidate, account: string | null): { to: string; where: string } | null {
+  if (c.tradeId !== null && c.key === `trades.${c.tradeId}.intent`) {
+    const acct = account === null ? "" : `&${ACCOUNT_PARAM}=${encodeURIComponent(account)}`;
+    return { to: `/live/positions?trade=${encodeURIComponent(c.tradeId)}&tab=intent${acct}`, where: "answer on positions" };
+  }
+  return c.note !== null ? null : { to: "/config/rules", where: "answer on Config" };
 }
 
-/** The two outcomes side by side, with the buttons that stage each. */
-export function Choice({ c, model, onDone }: { c: ManageIntentCandidate; model: ConfigModelPayload | undefined; onDone?: () => void }) {
-  const [why, setWhy] = useState<string | null>(null);
-  const pick = (intent: string) => {
-    const err = stageCandidateIntent(model, c, intent);
-    setWhy(err);
-    if (err === null) onDone?.();
-  };
-  return (
-    <div className="int-panel">
-      <div className="int-col">
-        <span className="lk-sub">as it stands</span>
-        <Verdict v={c.now} />
-        {/* A full button like its neighbour: the quiet style read as plain text on the page. */}
-        <button type="button" className="btn" onClick={() => pick("no_wheel")}>
-          Not a wheel
-        </button>
-      </div>
-      <div className="int-col is-wheel">
-        <span className="lk-sub">as a wheel</span>
-        <Verdict v={c.asWheel} />
-        <span className="lk-sub">
-          {c.contracts !== null ? `${c.contracts * 100} sh` : "shares"}
-          {c.netIfAssigned !== null ? ` at ${c.netIfAssigned.toFixed(2)} net` : ""} · {money(c.cashSecured)} already set aside
-        </span>
-        <button type="button" className="btn" onClick={() => pick("wheel")}>
-          Wheel it
-        </button>
-      </div>
-      {c.suggested === "wheel" && c.evidence.length > 0 && (
-        <p className="lk-sub int-note">Looks like a wheel: {c.evidence.join("; ")}.</p>
-      )}
-      {c.note !== null && (
-        <p className="lk-sub int-note">
-          {c.note.charAt(0).toUpperCase()}
-          {c.note.slice(1)}.
-        </p>
-      )}
-      {!c.wheelPath && <p className="lk-sub int-note">No reconciled cycle holds this put yet, so marking it changes nothing today.</p>}
-      {c.earnings !== null && <p className="lk-sub int-note">Earnings {c.earnings} fall inside the put; a wheel put is held through them.</p>}
-      {why !== null && <p className="cfg-save-error int-note">{why}</p>}
-    </div>
-  );
-}
+const WAITS = "waits for a stable trade ID: the name's intent is for another trade";
 
-/** What a staged or saved choice reads as, with the way to save it. */
-function Chosen({ c, model }: { c: ManageIntentCandidate; model: ConfigModelPayload | undefined }) {
-  const { intent, unsaved } = candidateIntentOf(model, c);
-  if (intent === null) return null;
+/** The chip on a needs-a-look row: "no intent", linking to where it is answered. */
+export function IntentChip({ c, account = null }: { c: ManageIntentCandidate; account?: string | null }) {
+  const at = answerAt(c, account);
+  if (at === null)
+    return (
+      <span className="int-chip is-static" title={WAITS}>
+        no intent · waits for an ID
+      </span>
+    );
   return (
-    <span className="int-chosen">
-      <span className={intent === "wheel" ? "chip int-chip-wheel" : "chip"}>{intentWords(intent)}</span>
-      {unsaved && (
-        <>
-          <span className="lk-sub">unsaved · </span>
-          <Link to="/config/rules" className="lk-sub">
-            save in Config
-          </Link>
-          <button type="button" className="btn btn-quiet int-undo" onClick={() => stageCandidateIntent(model, c, null)}>
-            undo
-          </button>
-        </>
-      )}
-    </span>
-  );
-}
-
-/** The chip on a needs-a-look row: "no intent", opening the two outcomes. It reads the config model
- *  itself, so the tab asks for it only when a short put waits on an intent. */
-export function IntentChip({ c }: { c: ManageIntentCandidate }) {
-  useStagedVersion();
-  const model = useConfigModel().data;
-  const [open, setOpen] = useState(false);
-  if (candidateIntentOf(model, c).intent !== null) return <Chosen c={c} model={model} />;
-  return (
-    <>
-      <button type="button" className="int-chip" aria-expanded={open} onClick={() => setOpen(!open)}>
-        no intent {open ? "▾" : "▸"}
-      </button>
-      {open && <Choice c={c} model={model} onDone={() => setOpen(false)} />}
-    </>
+    <Link to={at.to} className="int-chip" title={at.where}>
+      no intent ›
+    </Link>
   );
 }
 
 /** The candidates no needs-a-look row shows. Hidden when there are none. */
-export function NoIntentCard({ cands, shown }: { cands: ManageIntentCandidate[]; shown: ReadonlySet<string> }) {
-  useStagedVersion();
-  const model = useConfigModel().data;
+export function NoIntentCard({
+  cands,
+  shown,
+  account = null,
+}: {
+  cands: ManageIntentCandidate[];
+  shown: ReadonlySet<string>;
+  account?: string | null;
+}) {
   const rest = cands.filter((c) => !shown.has(candidateKey(c)));
   if (rest.length === 0) return null;
-  const waiting = rest.filter((c) => candidateIntentOf(model, c).intent === null).length;
   return (
     <Card
       title="no intent yet"
-      className={`wh-half${waiting > 0 ? " int-card-waiting" : ""}`}
+      className="wh-half int-card-waiting"
       help={{
         title: "No intent yet",
         body: (
           <>
             <HelpSection title="Which trades">
               <p>
-                Short puts alone, with no intent of their own, that are not near their strike or expiring. A name's intent counts only for
-                the trades it describes: a name marked pmcc for its diagonal does not answer for a put on the same name. Until you choose, a
-                put keeps its stop and its breached-strike close.
+                Short puts alone, with no intent of their own, that are not near their strike or expiring. A name&apos;s intent counts only for the
+                trades it describes: a name marked pmcc for its diagonal does not answer for a put on the same name. Until you choose, a put keeps its
+                stop and its breached-strike close.
               </p>
             </HelpSection>
             <HelpSection title="What a choice does">
               <p>
-                Wheel it: a tested put may be assigned instead of stopped. Not a wheel: it keeps its stop and leaves this list. Either is
-                saved, for this trade alone, on Config › Position rules, and the evaluation reads it next run. A suggestion is manage&apos;s
-                reading of the name&apos;s wheel history and is never applied for you.
+                Wheel it: a tested put may be assigned instead of stopped. Not a wheel: it keeps its stop and leaves this list. Each link opens the
+                trade&apos;s intent tab on Live › positions, which shows the verdict under each answer and saves the one you pick, for this trade
+                alone; the evaluation reads it next run. A suggestion is manage&apos;s reading of the name&apos;s wheel history and is never applied
+                for you.
               </p>
             </HelpSection>
           </>
@@ -153,37 +91,32 @@ export function NoIntentCard({ cands, shown }: { cands: ManageIntentCandidate[];
       }}
     >
       <ul className="lk-list">
-        {rest.map((c) => (
-          <NoIntentRow key={`${c.underlying}-${c.legs.join("|")}`} c={c} model={model} />
-        ))}
+        {rest.map((c) => {
+          const at = answerAt(c, account);
+          return (
+            <li key={`${c.underlying}-${c.legs.join("|")}`} className="lk-li">
+              <div className="lk-li-top">
+                <span className="lk-leg">
+                  {c.underlying} {c.legs.join(", ")}
+                </span>
+                {at === null ? (
+                  <span className="lk-sub">{WAITS}</span>
+                ) : (
+                  <Link to={at.to} className="int-chip">
+                    {at.where} ›
+                  </Link>
+                )}
+              </div>
+              <span className="lk-sub">
+                {money(c.cashSecured)} cash secured
+                {c.dte !== null ? ` · ${c.dte} DTE` : ""}
+                {c.history.cyclesComplete > 0 ? ` · ${c.history.cyclesComplete} cycle${c.history.cyclesComplete === 1 ? "" : "s"} done` : ""}
+              </span>
+            </li>
+          );
+        })}
       </ul>
     </Card>
-  );
-}
-
-function NoIntentRow({ c, model }: { c: ManageIntentCandidate; model: ConfigModelPayload | undefined }) {
-  const [open, setOpen] = useState(false);
-  const chosen = candidateIntentOf(model, c).intent !== null;
-  return (
-    <li className="lk-li">
-      <div className="lk-li-top">
-        <span className="lk-leg">
-          {c.underlying} {c.legs.join(", ")}
-        </span>
-        {chosen ? (
-          <Chosen c={c} model={model} />
-        ) : (
-          <button type="button" className="int-chip" aria-expanded={open} onClick={() => setOpen(!open)}>
-            is it a wheel? {open ? "▾" : "▸"}
-          </button>
-        )}
-      </div>
-      <span className="lk-sub">
-        {money(c.cashSecured)} cash secured{c.dte !== null ? ` · ${c.dte} DTE` : ""}
-        {c.history.cyclesComplete > 0 ? ` · ${c.history.cyclesComplete} cycle${c.history.cyclesComplete === 1 ? "" : "s"} done` : ""}
-      </span>
-      {open && !chosen && <Choice c={c} model={model} onDone={() => setOpen(false)} />}
-    </li>
   );
 }
 

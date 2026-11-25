@@ -2,7 +2,7 @@ import { Link } from "react-router-dom";
 import type { ManageIntentAsk, ManageTrade } from "@console/shared";
 import { ACTION_LABEL } from "./manageParts";
 import { useIntentAnswer } from "./intentAnswers";
-import { QUESTION, answerTrade, intentLabel, restoreTo } from "./stripAnswer";
+import { HELD_FOR_ID, QUESTION, answerTrade, intentLabel, restoreTo } from "./stripAnswer";
 
 /**
  * The question a position asks about its intent: shown only while manage asks it (`intentAsk.asked`), one
@@ -119,11 +119,17 @@ function WaitingStrip({ ask }: { ask: ManageIntentAsk }) {
     <div className="int-strip is-waiting">
       <span className="int-strip-q">{QUESTION[ask.kind]}</span>
       <span className="lk-sub">
-        Its ID changes once its orders are known, so answer for the name on{" "}
-        <Link to="/config/rules" className="lk-sub">
-          Config
-        </Link>
-        .
+        {ask.note !== null ? (
+          HELD_FOR_ID
+        ) : (
+          <>
+            Its ID changes once its orders are known, so answer for the name on{" "}
+            <Link to="/config/rules" className="lk-sub">
+              Config
+            </Link>
+            .
+          </>
+        )}
       </span>
     </div>
   );

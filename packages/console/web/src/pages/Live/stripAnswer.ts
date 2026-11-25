@@ -13,6 +13,10 @@ export const INTENT_LABEL: Record<string, string> = {
   diagonal: "Just a diagonal",
 };
 
+/** Why a put with no stable ID, whose name's intent is for another trade on it, is not answered on the name:
+ * that answer would replace the name's intent. */
+export const HELD_FOR_ID = "Its ID changes once its orders are known, and the name's intent is for another trade on it, so an answer on the name would replace that intent: wait for a stable ID.";
+
 export const intentLabel = (intent: string): string =>
   INTENT_LABEL[intent] ?? intent;
 

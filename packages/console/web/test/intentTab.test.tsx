@@ -105,6 +105,12 @@ describe("the Intent tab", () => {
     expect(h).toContain('href="/config/rules"');
   });
 
+  it("does not send a put to Config while the name's intent is for another trade on it", () => {
+    const h = html({ ...PUT, scope: "name", key: "positions.XYZ.intent", note: "the name's intent 'pmcc' is for another trade on XYZ, not this put" });
+    expect(h).not.toContain("/config/rules");
+    expect(text(h)).toContain("wait for a stable ID");
+  });
+
   it("offers no write where the key cannot be written, and does not send the person to Config for it", () => {
     const h = html({ ...PUT, key: "" });
     expect(buttons(h)).toBe(0);
