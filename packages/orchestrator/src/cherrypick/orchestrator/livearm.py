@@ -15,8 +15,10 @@ its own refusals, rather than a hole in the guard:
   live arm with no paper twin is measured against nothing.
 - **Only when flat and settled.** The module's own `live_loop --status` is asked, and the change is
   refused unless the loop is not armed today, holds no position and no working order, the day is
-  settled, nothing is overdue, held or orphaned, and the ledger is readable. A status that cannot be read
-  refuses: unknown is not flat. This is a pre-open or after-settlement change, never a mid-session one.
+  settled, nothing is overdue, held or orphaned, no entry is sent but not yet reconciled, and the ledger is
+  readable. A status that cannot be read refuses: unknown is not flat. This is a pre-open or
+  after-settlement change, never a mid-session one. The file is re-read just before the write and the
+  change refused (`changed`) if it is no longer as it was read: a hand edit is never overwritten.
 - **Journaled first.** The change is appended to the arm journal (`core.live.record_event`) before the
   config is touched; a journal that cannot be written stops it. The journal is the audit trail.
 - **It takes effect at the next arming** (the live loop reads its config each tick, and nothing runs
@@ -93,6 +95,8 @@ def not_flat(status: dict[str, Any]) -> list[str]:
         out.append("today's session is not settled")
     if status.get("overdue_settlement"):
         out.append("a past session is still unsettled")
+    if status.get("entry_intents"):
+        out.append("an entry was sent and is not yet reconciled with the broker")
     held = status.get("broker_held") or {}
     if held.get("unresolved") or held.get("unrecorded"):
         out.append("a broker submission is unresolved or unrecorded")
@@ -151,6 +155,14 @@ def options(cfg: dict[str, Any], status_fn: StatusFn = run_module_status) -> dic
         "blockers": blockers,
         "can_change": not blockers,
     }
+
+
+def _unchanged(path: Path, text: str) -> bool:
+    """Whether the file still holds exactly `text`; one that cannot be read counts as changed."""
+    try:
+        return path.read_text(encoding="utf-8") == text
+    except OSError:
+        return False
 
 
 def set_live_arm(
@@ -222,6 +234,10 @@ def set_live_arm(
     except ValueError:
         return _refuse("invalid", "the edit does not parse; nothing was written")
 
+    # The module's status read can take up to a minute. A hand edit made meanwhile is not ours to
+    # overwrite (the new text was built from the old read), so the file must still be as it was read.
+    if not _unchanged(path, old_text):
+        return _refuse("changed", "the config changed while the loop's status was read; nothing was written")
     if not _live.record_event(MODULE, "live_arm_changed", actor="config", from_arm=before, to_arm=arm):
         return _refuse("journal_unwritable", "the arm journal cannot be written, so the change was not made")
     written = configedit.backup_and_write(Path(path), new_text, MODULE)

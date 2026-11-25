@@ -32,6 +32,12 @@ from . import init as initmod
 # gate0 attestation, hand-edited enable_live_trading) keep their single deliberate path. Values are
 # the hint shown beside the locked field.
 GUARDED: dict[str, dict[str, str]] = {
+    # The orchestrator holds no live gate, but a retired module's switch here is what lifts "retired,
+    # refuses to arm while off" for flies and bwb, so reinstating one is a deliberate hand edit.
+    "orchestrator": {
+        "/modules/flies/enabled": "flies is retired; reinstating it is a hand edit, never from this surface",
+        "/modules/bwb/enabled": "bwb is retired; reinstating it is a hand edit, never from this surface",
+    },
     # meic's live block grew an arm selector, a sizing seam and a per-day budget on 2026-10-14/15
     # (the flies/bwb posture). The same lesson as theirs: a surface that cannot arm the loop must not
     # be able to widen it once armed. Timing (entry window, disarm_time) stays editable, as for bwb.

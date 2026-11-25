@@ -154,6 +154,7 @@ def test_a_refusal_changes_nothing(home, req, code):
         {"broker_held": {"unresolved": [], "unrecorded": [{"ext": "x"}]}},
         {"orphaned_orders": [{"order_id": 7}]},
         {"ledger_unreadable": "database is locked"},
+        {"entry_intents": {"meic-1": {"symbol": "SPX"}}},
     ],
 )
 def test_it_is_refused_unless_the_loop_is_flat_and_settled(home, over):
@@ -195,6 +196,21 @@ def test_a_journal_that_cannot_be_written_stops_the_change(home, monkeypatch):
     assert out["ok"] is False and out["code"] == "journal_unwritable"
     assert _text(home) == MEIC
     assert not (home / "state" / "config-backups").exists()
+
+
+def test_a_hand_edit_made_while_the_status_was_read_is_not_overwritten(home):
+    """The status read takes up to a minute; the new text was built from the file as it was before it."""
+    edited = MEIC.replace('"max_open_bp_dollars": 3000', '"max_open_bp_dollars": 9000')
+
+    def status(cfg):
+        (home / "config" / "meic.json").write_text(edited, encoding="utf-8")
+        return dict(FLAT)
+
+    out = livearm.set_live_arm({}, _req(), status)
+    assert out["ok"] is False and out["code"] == "changed"
+    assert _text(home) == edited
+    assert not (home / "state" / "config-backups").exists()
+    assert not [r for r in _live.arm_events("meic") if r.get("event") == "live_arm_changed"]
 
 
 def test_an_edit_that_would_change_more_than_live_arm_is_refused(home, monkeypatch):
