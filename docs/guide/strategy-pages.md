@@ -75,8 +75,6 @@ A weekly SPY double calendar, paper-only. Retired 2026-11-21 and off by default.
 
 Holds a short-volatility fund while the VIX to VIX3M ratio says contango, and T-bills when it does not, deciding once a session ten minutes before the close. Paper-only. Retired 2026-11-21 and off by default. Its arms differ only in where they get out. Tabs: `summary` ("today"), `regime`, `positions`, `history`, `decisions`, `arms`, `performance`, `analysis`, `costs`, `changes` and `guide` ("help").
 
-![Contango regime tab: the VIX to VIX3M ratio chart with its two thresholds, and a table of what each arm did on each reading](../images/contango-regime.png)
-
 The chart is the ratio, session by session, against the two thresholds. Below it, each row is a session: the ratio, the two index levels, and what each arm did, such as `hold -> risk`. `enter` and `exit` rows are where an arm changed what it holds.
 
 ## Weekly put (`/weeklyput`)

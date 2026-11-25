@@ -32,8 +32,8 @@ Generating on a trading day, with `--day` set to that day, makes the Live "today
 Generation fails if the checkout's real path or your OS username appears in any file it wrote. The
 configs name the checkout as `/opt/cherrypick`.
 
-What you get: configs for the modules the release ships (MEIC, earnings, calendars, contango and weekly
-put on; flies, curve, PMCC and BWB off), thirty sessions of paper ledgers for each, a manage evaluation
+What you get: configs for the modules the release ships (MEIC, earnings and weekly
+put on; the retired modules off), thirty sessions of paper ledgers for each, a manage evaluation
 for the Live tabs (one wheel cycle with a put assigned into shares and a covered call suggested, one
 PMCC, and a few ordinary positions), skate, put, call and credit-spread screener files, the signal
 board, the end-of-day reviews and a morning pack, GEX history with a one-expiry chain, a stream cache,
