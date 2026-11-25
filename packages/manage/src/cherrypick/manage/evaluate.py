@@ -339,7 +339,8 @@ def evaluate_trade(
         "spot": spot,
         "intent": intent,
         # What the trade is asked about its intent (intentask.py): set for a naked short put by `evaluate()`
-        # (it judges the outcomes) and for a call diagonal by the PMCC rules; None for any other shape.
+        # (it judges the outcomes) and for a call diagonal from its PMCC view, ahead of the PMCC rules so
+        # that a failing rule does not take it; None for any other shape.
         "intent_ask": None,
         "note": override.get("note"),
         "legs": legs,
@@ -1206,7 +1207,7 @@ def evaluate_trade(
     # ---- a recognised PMCC's width, assignment exposure and long (pmcc.py): ranked by action too
     if pmcc_ctx:
         # The question is a fact of the view, not of its rules: it stands when the rules below fail.
-        trade["intent_ask"] = _intentask.diagonal_ask(pmcc_ctx["views"][-1])
+        trade["intent_ask"] = _intentask.diagonal_asks(pmcc_ctx["views"])
         try:
             fired += _pmcc_rules(trade, legs, pmcc_ctx, session, net_liq, metrics, rules, off, broker_greeks)
         except Exception as exc:  # noqa: BLE001 -- the PMCC view is a reading; the evaluation is the product
@@ -2925,13 +2926,18 @@ def _put_outcomes(
 ) -> dict[str, dict[str, Any]]:
     """A naked short put judged under each answer (`intentask.WHEEL_OPTIONS`): the trade itself for the one
     it holds, the same trade judged again for each other, so a surface shows what an answer changes and
-    never guesses."""
-    return {
-        opt: trade
-        if trade["intent"] == opt
-        else evaluate_trade(rules=_with_trade_intent(rules, args["trade_id"], opt), **args)
-        for opt in _intentask.WHEEL_OPTIONS
-    }
+    never guesses. The verdicts are display: one that cannot be judged is left out, and the evaluation
+    stands."""
+    outcomes = {}
+    for opt in _intentask.WHEEL_OPTIONS:
+        if trade["intent"] == opt:
+            outcomes[opt] = trade
+            continue
+        try:
+            outcomes[opt] = evaluate_trade(rules=_with_trade_intent(rules, args["trade_id"], opt), **args)
+        except Exception:  # noqa: BLE001 -- the outcome is a reading; the evaluation is the product
+            continue
+    return outcomes
 
 
 def _intent_candidate(
@@ -3180,7 +3186,7 @@ def evaluate(
                         stable=not ident["provisional"],
                         named=_rules.name_intent(rules, u["underlying"]),
                     )
-                    if ask["asked"]:
+                    if ask["asked"] and "wheel" in outcomes:
                         intent_candidates.append(_intent_candidate(trade, ask, outcomes["wheel"], wheel_view))
                 trade["trade_id"] = ident["trade_id"]
                 trade["trade_id_provisional"] = ident["provisional"]

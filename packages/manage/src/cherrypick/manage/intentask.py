@@ -86,6 +86,13 @@ def wheel_ask(
     }
 
 
+def diagonal_asks(views: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """The one question a trade carries when it holds more than one PMCC view: the first still open, else
+    the first there is, so a diagonal that needs an answer is never hidden behind one that has it."""
+    asks = [ask for ask in map(diagonal_ask, views) if ask]
+    return next((ask for ask in asks if ask["asked"]), asks[0] if asks else None)
+
+
 def diagonal_ask(view: dict[str, Any]) -> dict[str, Any] | None:
     """The question for a call diagonal, from the PMCC view's entry for it. A calendar is not asked. The
     suggestion is the view's own reading (entered at a delta over or under the floor); where the delta at

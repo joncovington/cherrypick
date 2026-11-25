@@ -9,6 +9,7 @@ from test_wheel_put import TESTED
 from test_wheel_rules import INCOME, OPENED, PUT
 
 from cherrypick.manage import evaluate as ev
+from cherrypick.manage import intentask
 
 TRADE = "XYZ-261001-1"  # the put OPENED sells
 
@@ -158,9 +159,41 @@ def test_the_question_stands_when_the_pmcc_rules_fail(monkeypatch):
     assert t["intent_ask"]["asked"] is True and t["intent_ask"]["kind"] == "pmcc"
 
 
-def test_a_view_with_no_long_contract_to_write_under_is_not_asked():
-    from cherrypick.manage import intentask
+def test_a_trade_holding_two_diagonals_carries_the_one_still_open():
+    def view(key, intent):
+        return {
+            "structure": "diagonal",
+            "intent": intent,
+            "recognition": "pmcc",
+            "recognized_by": "x",
+            "intent_key": key,
+        }
 
+    answered, open_ = view("XYZ 280121C00040000", "pmcc"), view("XYZ 280121C00045000", None)
+    assert intentask.diagonal_asks([answered, open_])["key"] == "trades.XYZ 280121C00045000.intent"
+    assert intentask.diagonal_asks([open_, answered])["key"] == "trades.XYZ 280121C00045000.intent"
+    # None open: the first there is. None at all: no question.
+    assert intentask.diagonal_asks([answered, view("XYZ 280121C00045000", "diagonal")])["current"] == "pmcc"
+    assert intentask.diagonal_asks([{"structure": "calendar"}]) is None
+    assert intentask.diagonal_asks([]) is None
+
+
+def test_a_put_outcome_that_cannot_be_judged_costs_the_verdict_not_the_evaluation(monkeypatch):
+    real = ev.evaluate_trade
+
+    def flaky(*args, **kwargs):
+        if kwargs["rules"].get("trades"):  # only the re-judging under an answer sets a trade's own intent
+            raise RuntimeError("boom")
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(ev, "evaluate_trade", flaky)
+    acct = wr.evaluate(OPENED, TESTED, 47.0, income=INCOME)
+    t = wr.trade_of(acct, PUT)
+    assert t["intent_ask"]["asked"] is True and t["intent_ask"]["verdicts"] == {}
+    assert acct["wheel"]["intent_candidates"] == []  # no wheel verdict to list it with
+
+
+def test_a_view_with_no_long_contract_to_write_under_is_not_asked():
     view = {
         "structure": "diagonal",
         "intent": None,
