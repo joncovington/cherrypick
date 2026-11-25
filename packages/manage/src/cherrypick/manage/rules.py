@@ -625,7 +625,9 @@ DEFAULT_RULES: dict[str, Any] = {
         },
     },
     # Per-underlying overrides: {"SPY": {"intent": "hedge", "disable": ["debit.stop"], "note": "..."}}.
-    # `intent: "pmcc"` recognises a call diagonal as a PMCC; `"diagonal"` keeps it out (pmcc.py).
+    # `intent: "pmcc"` recognises a call diagonal as a PMCC; `"diagonal"` keeps it out (pmcc.py). A name's
+    # intent applies only to the trades it can describe (`intent_fits`): `wheel` and `no_wheel` a naked
+    # short put, `pmcc` and `diagonal` a trade with a call; any other value is a label for any trade.
     "positions": {},
     # Per-trade overrides, keyed two ways. By a trade's stable ID (tradeids.py), as `positions.<SYM>`
     # takes for a name but for that trade alone: {"XYZ-260401-1": {"intent": "hedge", "disable":
@@ -896,6 +898,33 @@ def override(rules: dict[str, Any], underlying: str, trade_id: str | None = None
     out = {**name, **{k: v for k, v in own.items() if not k.startswith("_")}}
     out["disable"] = list(dict.fromkeys([*(name.get("disable") or []), *(own.get("disable") or [])]))
     return out
+
+
+def intent_fits(intent: str, legs: list[dict[str, Any]]) -> bool:
+    """Whether a name's intent can describe a trade of these legs. `wheel` and `no_wheel` are about a naked
+    short put (every leg a short put); `pmcc` and `diagonal` about a trade with a call in it. Any other
+    intent is a free label (`hedge`, `income`), shown on the trade, and describes any trade."""
+    if intent in ("wheel", "no_wheel"):
+        return bool(legs) and all(leg["right"] == "P" and leg["quantity"] < 0 for leg in legs)
+    if intent in ("pmcc", "diagonal"):
+        return any(leg["right"] == "C" for leg in legs)
+    return True
+
+
+def trade_intent(
+    rules: dict[str, Any], underlying: str, trade_id: str | None, legs: list[dict[str, Any]]
+) -> tuple[str | None, str | None]:
+    """A trade's intent and where it came from. The trade's own (`trades.<ID>.intent`) is the answer. A
+    name's (`positions.<SYM>.intent`) is one only for a trade it can describe: a name marked `pmcc` for its
+    call diagonal says nothing about a naked put on the same name, which stays undecided and is asked."""
+    own = ((rules.get("trades") or {}).get(trade_id) or {}) if trade_id else {}
+    if isinstance(own, dict) and isinstance(own.get("intent"), str):
+        return own["intent"], "trade"
+    name = (rules.get("positions") or {}).get(underlying) or {}
+    intent = name.get("intent") if isinstance(name, dict) else None
+    if isinstance(intent, str) and intent_fits(intent, legs):
+        return intent, "name"
+    return None, None
 
 
 def disabled(rules: dict[str, Any], underlying: str, rule_id: str, trade_id: str | None = None) -> bool:

@@ -339,7 +339,12 @@ filename; override with `paper.sla_state_prefix`.
 - **`configcli.py`** is the same two modules for non-Python callers (the console): one JSON request on
   stdin, one response on stdout. Dispatch only — every guarantee above is inherited, `secretsops` is
   deliberately NOT wired in, and a refusal is data (`ok: false` plus a `code`) on exit 0 so a caller
-  can tell "the config said no" from "the bridge is broken". Keep new ops thin. `automation_draft`
+  can tell "the config said no" from "the bridge is broken". Keep new ops thin. A `save` edit at a
+  pointer the file does not have is refused (`not_found`), with one exception: a single top-level key
+  the target's shipped example has and the person's older copy lacks is added at the end
+  (`configedit.insert_block_from_example`, e.g. manage's `trades`, which the console's intents save
+  writes). A key the example does not have, and any key inside an absent block, stay refused
+  (`tests/test_configcli.py`, each limit shown to fail). `automation_draft`
   and `automation_save` (`automationedit.py`) are the Builder's: the automations module's `cli draft`
   by subprocess (its own check; this package never imports it), then the one entry that check
   returned, refused unless it is off, replaced or added (`configedit.insert_key`) at

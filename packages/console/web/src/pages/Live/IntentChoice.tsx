@@ -3,17 +3,19 @@ import { Link } from "react-router-dom";
 import type { ConfigModelPayload, ManageAttentionLeg, ManageIntentCandidate, ManageVerdictBrief } from "@console/shared";
 import { Card } from "../../components/DataTable";
 import { HelpSection } from "../../components/CardHelp";
-import { intentOf, intentWords, stageIntent } from "../Config/intents";
+import { candidateIntentOf, intentWords, stageCandidateIntent } from "../Config/intents";
 import { useStagedVersion } from "../Config/stagedStore";
 import { useConfigModel } from "../Config/useConfigModel";
 import { ACTION_LABEL } from "./manageParts";
 
 /**
- * Live → wheel's "is this a wheel?" (2026-11-12): manage lists each short put on a name with no intent
- * (`wheel.intentCandidates`) with today's verdict and the one it would get marked as a wheel. A row
- * already in the needs-a-look cards gets a chip (the choice matters most there); the rest sit in a
- * card of their own. A choice is only staged: it is saved on Config › Position rules, the console's
- * one write path, and the evaluation reads it next run. Nothing here judges a trade.
+ * Live → wheel's "is this a wheel?" (2026-11-12): manage lists each short put with no intent of its own
+ * (`wheel.intentCandidates`) with today's verdict and the one it would get marked as a wheel, and says
+ * when a wheel cycle on the name suggests one. A row already in the needs-a-look cards gets a chip (the
+ * choice matters most there); the rest sit in a card of their own. A choice is only staged, against the
+ * trade itself (`trades.<ID>.intent`, so it never touches another trade on the name): it is saved on
+ * Config › Position rules, the console's one write path, and the evaluation reads it next run. Nothing
+ * here judges a trade, and a suggestion is never applied.
  */
 
 const money = (v: number | null) => (v === null ? "—" : `$${Math.round(v).toLocaleString("en-US")}`);
@@ -34,10 +36,10 @@ function Verdict({ v }: { v: ManageVerdictBrief }) {
 }
 
 /** The two outcomes side by side, with the buttons that stage each. */
-function Choice({ c, model, onDone }: { c: ManageIntentCandidate; model: ConfigModelPayload | undefined; onDone?: () => void }) {
+export function Choice({ c, model, onDone }: { c: ManageIntentCandidate; model: ConfigModelPayload | undefined; onDone?: () => void }) {
   const [why, setWhy] = useState<string | null>(null);
   const pick = (intent: string) => {
-    const err = stageIntent(model, c.underlying, intent);
+    const err = stageCandidateIntent(model, c, intent);
     setWhy(err);
     if (err === null) onDone?.();
   };
@@ -62,6 +64,11 @@ function Choice({ c, model, onDone }: { c: ManageIntentCandidate; model: ConfigM
           Wheel it
         </button>
       </div>
+      {c.evidence.map((why, i) => (
+        <p key={why} className="lk-sub int-note">
+          {i === 0 && c.suggested === "wheel" ? `Looks like a wheel: ${why}.` : `${why.charAt(0).toUpperCase()}${why.slice(1)}.`}
+        </p>
+      ))}
       {!c.wheelPath && <p className="lk-sub int-note">No reconciled cycle holds this put yet, so marking it changes nothing today.</p>}
       {c.earnings !== null && <p className="lk-sub int-note">Earnings {c.earnings} fall inside the put; a wheel put is held through them.</p>}
       {why !== null && <p className="cfg-save-error int-note">{why}</p>}
@@ -71,7 +78,7 @@ function Choice({ c, model, onDone }: { c: ManageIntentCandidate; model: ConfigM
 
 /** What a staged or saved choice reads as, with the way to save it. */
 function Chosen({ c, model }: { c: ManageIntentCandidate; model: ConfigModelPayload | undefined }) {
-  const { intent, unsaved } = intentOf(model, c.underlying);
+  const { intent, unsaved } = candidateIntentOf(model, c);
   if (intent === null) return null;
   return (
     <span className="int-chosen">
@@ -82,7 +89,7 @@ function Chosen({ c, model }: { c: ManageIntentCandidate; model: ConfigModelPayl
           <Link to="/config/rules" className="lk-sub">
             save in Config
           </Link>
-          <button type="button" className="btn btn-quiet int-undo" onClick={() => stageIntent(model, c.underlying, null)}>
+          <button type="button" className="btn btn-quiet int-undo" onClick={() => stageCandidateIntent(model, c, null)}>
             undo
           </button>
         </>
@@ -97,7 +104,7 @@ export function IntentChip({ c }: { c: ManageIntentCandidate }) {
   useStagedVersion();
   const model = useConfigModel().data;
   const [open, setOpen] = useState(false);
-  if (intentOf(model, c.underlying).intent !== null) return <Chosen c={c} model={model} />;
+  if (candidateIntentOf(model, c).intent !== null) return <Chosen c={c} model={model} />;
   return (
     <>
       <button type="button" className="int-chip" aria-expanded={open} onClick={() => setOpen(!open)}>
@@ -114,7 +121,7 @@ export function NoIntentCard({ cands, shown }: { cands: ManageIntentCandidate[];
   const model = useConfigModel().data;
   const rest = cands.filter((c) => !shown.has(candidateKey(c)));
   if (rest.length === 0) return null;
-  const waiting = rest.filter((c) => intentOf(model, c.underlying).intent === null).length;
+  const waiting = rest.filter((c) => candidateIntentOf(model, c).intent === null).length;
   return (
     <Card
       title="no intent yet"
@@ -125,14 +132,16 @@ export function NoIntentCard({ cands, shown }: { cands: ManageIntentCandidate[];
           <>
             <HelpSection title="Which trades">
               <p>
-                Short puts alone, on a name with no intent, that are not near their strike or expiring. Until you choose, a put keeps its
-                stop and its breached-strike close.
+                Short puts alone, with no intent of their own, that are not near their strike or expiring. A name's intent counts only for
+                the trades it describes: a name marked pmcc for its diagonal does not answer for a put on the same name. Until you choose, a
+                put keeps its stop and its breached-strike close.
               </p>
             </HelpSection>
             <HelpSection title="What a choice does">
               <p>
-                Wheel it: a tested put may be assigned instead of stopped. Not a wheel: it keeps its stop and leaves this list. Either is saved on
-                Config › Position rules, and the evaluation reads it next run.
+                Wheel it: a tested put may be assigned instead of stopped. Not a wheel: it keeps its stop and leaves this list. Either is
+                saved, for this trade alone, on Config › Position rules, and the evaluation reads it next run. A suggestion is manage&apos;s
+                reading of the name&apos;s wheel history and is never applied for you.
               </p>
             </HelpSection>
           </>
@@ -150,7 +159,7 @@ export function NoIntentCard({ cands, shown }: { cands: ManageIntentCandidate[];
 
 function NoIntentRow({ c, model }: { c: ManageIntentCandidate; model: ConfigModelPayload | undefined }) {
   const [open, setOpen] = useState(false);
-  const chosen = intentOf(model, c.underlying).intent !== null;
+  const chosen = candidateIntentOf(model, c).intent !== null;
   return (
     <li className="lk-li">
       <div className="lk-li-top">

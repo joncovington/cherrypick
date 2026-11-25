@@ -748,6 +748,8 @@ function intentCandidate(v: unknown): ManageIntentCandidate {
     now: verdictBrief(c["now"]),
     asWheel: verdictBrief(c["as_wheel"]),
     changes: flag(c["changes"]) === true,
+    suggested: str(c["suggested"]),
+    evidence: strs(c["evidence"]),
     key: str(c["key"]) ?? "",
   };
 }

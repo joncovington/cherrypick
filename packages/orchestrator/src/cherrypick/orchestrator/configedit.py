@@ -285,6 +285,26 @@ def insert_key(text: str, pointer: str, key: str, value: Any) -> str:
     return text[: last + 1] + "," + sep + encoded + text[last + 1 :]
 
 
+def insert_block_from_example(
+    cfg: dict[str, Any], target_id: str, text: str, pointer: str, value: Any
+) -> str | None:
+    """`text` with one top-level key added, when `pointer` names a key the target's shipped example has and
+    this copy lacks (a block added since the copy was written, such as manage's `trades`). It goes in as the
+    object's last entry and nothing else moves. None for anything else: a pointer that is not one top-level
+    key, a key the example does not have (config the module never reads), or no example to ask."""
+    tokens = _pointer_tokens(pointer)
+    if len(tokens) != 1:
+        return None
+    example = _example_path(cfg, target_id)
+    if example is None or not example.exists():
+        return None
+    try:
+        in_example = tokens[0] in {e["key"] for e in top_level_entries(example.read_text(encoding="utf-8"))}
+        return insert_key(text, "", tokens[0], value) if in_example else None
+    except (OSError, KeyError, ValueError):
+        return None
+
+
 def top_level_entries(text: str) -> list[dict[str, Any]]:
     """The top-level object's entries in file order: [{key, key_text, value_text}]. Spans come from the
     original text, so a value's own formatting (multi-line objects, spacing) survives re-emission."""
