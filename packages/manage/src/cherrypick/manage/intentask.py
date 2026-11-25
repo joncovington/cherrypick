@@ -16,6 +16,10 @@ a person and write the answer, so none of them works out a shape rule, an option
   `positions.<SYM>.intent` while the ID is still provisional (scope "name"); a diagonal's
   `trades.<long contract>.intent` (scope "contract"), which is how the PMCC view reads it.
 
+A trade still asked is judged without an answer, and `unanswered_note` words that for its verdict line: a
+put as a plain short put (said only where marking it a wheel would change the verdict), a diagonal by the
+delta its long was entered at.
+
 Pure: values in, a dict out. The verdicts are judged by the caller, which holds the evaluation.
 """
 
@@ -27,6 +31,14 @@ from cherrypick.manage import rules as _rules
 
 WHEEL_OPTIONS = ("wheel", "no_wheel")
 PMCC_OPTIONS = ("pmcc", "diagonal")
+
+#: The rules the PMCC-or-diagonal reading decides: a verdict from any other (a stop, the expiry, a hold) is
+#: the same whichever way the diagonal is read, so it needs no word about the missing intent.
+DIAGONAL_READING_RULES = ("debit.diagonal_width", "roll.diagonal_short")
+
+
+def _reading_rule(rule: Any) -> bool:
+    return str(rule).startswith("pmcc.") or rule in DIAGONAL_READING_RULES
 
 
 def answer_key(trade_id: str | None, underlying: str, stable: bool) -> tuple[str, str]:
@@ -84,6 +96,45 @@ def wheel_ask(
         "key": key,
         "scope": scope,
     }
+
+
+def _words(action: Any) -> str:
+    return str(action).lower().replace("_", " ")
+
+
+def unanswered_note(
+    ask: dict[str, Any] | None, now: dict[str, Any] | None, wheeled: dict[str, Any] | None
+) -> tuple[str, str] | None:
+    """What a trade's verdict says about having no intent: a short clause for its reason line and a sentence
+    for its explanation, or None when nothing is unanswered or the answer would change nothing.
+
+    A put is judged as a plain short put until it is marked a wheel; the note is made only when the verdict
+    it would get as a wheel (`wheeled`) differs from today's (`now`), since otherwise the answer is moot. A
+    diagonal is read by the delta its long was entered at (`ask["suggested"]`, the PMCC view's own reading),
+    said only where the verdict came from a rule that reading decides (`DIAGONAL_READING_RULES`, or a
+    `pmcc.` rule), and worded as how it is read, not as how it was judged: a PMCC whose orders do not
+    reconcile, or whose rules failed, is read as one without any PMCC rule having judged it."""
+    if not ask or not ask.get("asked"):
+        return None
+    if ask["kind"] == "wheel":
+        if not now or not wheeled or (now["action"], now["rule"]) == (wheeled["action"], wheeled["rule"]):
+            return None
+        words = _words(wheeled["action"])
+        return (
+            f"judged as a plain short put: no intent set (marked a wheel: {words})",
+            "No intent is set, so this put is judged as a plain short put. "
+            f"If you mark it a wheel the verdict would be {words}, by {wheeled['rule']}.",
+        )
+    if ask["kind"] != "pmcc" or not now or not _reading_rule(now["rule"]):
+        return None
+    read = {
+        "pmcc": "a PMCC by the delta its long was entered at",
+        "diagonal": "a plain diagonal by the delta its long was entered at",
+    }.get(ask.get("suggested") or "", "a plain diagonal, the delta its long was entered at being unknown")
+    return (
+        f"read as {read}: no intent set",
+        f"No intent is set, so this diagonal is read as {read}. Say whether it is a PMCC to settle it.",
+    )
 
 
 def diagonal_asks(views: list[dict[str, Any]]) -> dict[str, Any] | None:

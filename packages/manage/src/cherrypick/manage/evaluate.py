@@ -3188,6 +3188,14 @@ def evaluate(
                     )
                     if ask["asked"] and "wheel" in outcomes:
                         intent_candidates.append(_intent_candidate(trade, ask, outcomes["wheel"], wheel_view))
+                    wheeled = _verdict(outcomes["wheel"]) if "wheel" in outcomes else None
+                else:
+                    wheeled = None
+                # A trade still asked is judged without an answer; its verdict line says so.
+                note = _intentask.unanswered_note(trade.get("intent_ask"), _verdict(trade), wheeled)
+                if note:
+                    trade["recommendation"]["reason"] += f"; {note[0]}"
+                    trade["explanation"] += f" {note[1]}"
                 trade["trade_id"] = ident["trade_id"]
                 trade["trade_id_provisional"] = ident["provisional"]
                 trade["merged_ids"] = ident["merged"]

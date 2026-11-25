@@ -374,6 +374,19 @@ list or a config key:
   `positions.<SYMBOL>.intent` (`"name"`) while its ID is still provisional; a diagonal's
   `trades.<LONG CONTRACT>.intent` (`"contract"`), which is how the PMCC view reads it.
 
+While a trade is asked, its verdict line says it is judged without an answer (`intentask.unanswered_note`):
+a clause on the trade's `reason` and a sentence on its `explanation`. A put is said to be judged as a plain
+short put, with what marking it a wheel would make of it ("; judged as a plain short put: no intent set
+(marked a wheel: roll or close)"), and only where that differs from today's verdict, since otherwise the
+answer is moot. A diagonal is said to be read as a PMCC, or as a plain diagonal, by the delta its long was
+entered at ("; read as a PMCC by the delta its long was entered at: no intent set"), or as a plain diagonal
+where that delta is unknown, and only where its verdict came from a rule that reading decides
+(`pmcc.width`, `pmcc.assignment`, `pmcc.roll_long`, `debit.diagonal_width`, `roll.diagonal_short`): a hold,
+a stop or an expiry close is the same either way. It says "read as", not "judged as": a PMCC whose orders do
+not reconcile is read as one without any PMCC rule having judged it. The words are not part of the verdicts
+compared in `verdicts` or of the wheel tab's candidate, and an answered trade carries none. Nothing about the
+verdict itself changes.
+
 `wheel.intent_candidates` above is the put's part of this, with the display fields the wheel tab lists.
 
 **Rolls are priced on the snapshot's quoted chains.** Since snapshot v14 the orchestrator reads, for
