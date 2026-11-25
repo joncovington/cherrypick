@@ -1,9 +1,11 @@
 # cherrypick-ladder
 
-> **EXPERIMENTAL, paper-only and off by default.** To turn it on, copy `config.example.json` to
-> `~/.cherrypick/config/ladder.json` and set `modules.ladder.enabled` in the suite's config; the
-> orchestrator then runs the paper loop as the `ladder-paper` job. Or run it by hand with the
-> commands below.
+> **EXPERIMENTAL and off by default.** The paper loop is the module's normal mode. It also has a live
+> path (gates, a daily arm and an order path) that ships in dry-run and off: with `live.dry_run` true,
+> the shipped value, it reads the broker and journals the orders it would send, and places nothing. To
+> turn the paper loop on, copy `config.example.json` to `~/.cherrypick/config/ladder.json` and set
+> `modules.ladder.enabled` in the suite's config; the orchestrator then runs it as the `ladder-paper`
+> job. Or run it by hand with the commands below.
 
 ladder buys a leveraged index fund in lots when it falls 7% and sells each lot on its own at +4% of
 what it paid. It starts with TQQQ and four arms: `session` (the Discord group's rule: each session
@@ -23,6 +25,16 @@ python -m pytest
 
 Config: the machine's copy is `~/.cherrypick/config/ladder.json`. Without it, the module runs off
 `config.example.json`, whose `_note` keys document every setting.
+
+## Live
+
+Off until you set `live.enabled` and write the `live.gate0_confirmed` attestation by hand, and sending
+nothing until you also set `live.dry_run` to `false`. `live_loop --status` lists every gate with its
+verdict (no broker call). Arming is one day at a time: `live_loop --arm --confirm YES`, the
+`/live-ladder-start` command, or, with `live_arming` on in `console.json`, the switch on the Live page.
+There is no supervisor job for the live tick; `live_loop --once` is run by hand. The ladder buys only
+with settled cash in a cash account. The Config page cannot change `live.enabled`, `live.dry_run`, the
+attestation, the arm or any limit. [CLAUDE.md](CLAUDE.md) has the gates, limits, tick order and ledger.
 
 ## Commands
 

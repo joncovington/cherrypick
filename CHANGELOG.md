@@ -12,7 +12,7 @@ beyond the latest release.
 ## [Unreleased]
 
 ## v0.14.0 — 2026-11-24 — automations and the live arm
-About 350 pull requests since v0.13.0. Three changes lead. The console can now arm a live loop for the
+Three changes lead. The console can now arm a live loop for the
 day from the Live page, behind the module's own checks and a typed `YES`; it ships off
 (`live_arming` in `console.json`). MEIC's live loop ships in dry run: an armed tick preflights each new
 entry against the real account and sends none until you set `live.dry_run` to `false`. And v0.13.0's
@@ -36,7 +36,8 @@ decide: a live MEIC config that never named `live.dry_run` now sends no entries.
   again; the Config page cannot change it. A held book is still confirmed, stopped, force-closed and
   settled live either way.
 - **The console's arm switches are off.** Nothing about arming changes until you set `"live_arming":
-  true` in `~/.cherrypick/config/console.json` and restart the console; see
+  true` in `~/.cherrypick/config/console.json` (new `packages/console/config.example.json` lists every key
+  that file takes) and restart the console; see
   [going-live](docs/guide/going-live.md#from-the-console-the-live-pages-switches). The slash commands and
   `live_loop --arm` work as before.
 - **`packages/ensemble` is now `packages/automations`** (`cherrypick-automations`). A checkout updated
@@ -220,9 +221,9 @@ decide: a live MEIC config that never named `live.dry_run` now sends no entries.
 - Passed items can declare `retest_forward`; the monthly forward retests (`research_queue.forward_retests`)
   ship off. A study is declared in one PR with its register row in a fenced `register-row` block in its
   plan section, and `research/hypotheses.json` in the repo is refused by `check_docs` and the pre-commit hook.
-- Studies declared since v0.13.0: items 77 to 109 (the market-profile entry readings, signal and
-  trend studies, the ladder's rules on minute bars, the portfolio caps, open-interest and gap-fill studies);
-  each result and verdict stays under `~/.cherrypick/data/research/`.
+- Studies declared since v0.13.0 include the market-profile entry readings, signal and trend studies,
+  the ladder's rules on minute bars, the portfolio caps, and open-interest and gap-fill studies; each
+  result and verdict stays under `~/.cherrypick/data/research/`.
 
 **Core and shared code.**
 

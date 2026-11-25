@@ -1,0 +1,14 @@
+{
+  "_comment": "Copy to ~/.cherrypick/config/console.json. Every key is optional: a missing file, or a missing key, means the default shown here. The console reads this file at start, so restart it after an edit.",
+
+  "serve": {
+    "_note": "The port the console listens on (it binds 127.0.0.1 only). The default is not 5060 or 5061, which Chrome blocks. An invalid number means the default.",
+    "port": 5070
+  },
+
+  "update_check": true,
+  "_update_check_note": "Anything but a literal false means on: the console asks GitHub for the latest release about every six hours, for the status bar's version chip. false stops the request.",
+
+  "live_arming": false,
+  "_live_arming_note": "Off unless this is the literal true. When true, MEIC's main account and the ladder get an arm-for-today switch on the Live page's today tab, behind the module's own readiness, the disclaimer and a typed YES. The console never clears the halt flag and places no order. The slash commands and live_loop --arm work either way."
+}
