@@ -1,5 +1,5 @@
-"""`v0.14.0-01-automations-rename` on a home shaped as v0.13.0 left it: the module under its old name in
-every place the old shims read. Dry run, apply, a second apply that finds nothing, and the shapes it
+"""`v0.14.0-01-automations-rename` on a home that ran `main` before the rename was finished: the module
+under its old name in every place the old shims read. Dry run, apply, a second apply that finds nothing, and the shapes it
 refuses to guess about, each leaving the home as it was."""
 
 from __future__ import annotations

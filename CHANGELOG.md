@@ -22,16 +22,15 @@ ships in dry run and off, and the Live page was reorganized around two summary c
 contango and four automations were retired after research items 38, 39 and 75 failed them. manage leaves
 a far out-of-the-money time-spread short to expire, reads the cost-strike call and the dispersion of the
 book, and evaluates on Sunday evenings. This is an ordinary upgrade from v0.13.0 with one thing to
-decide: a live MEIC config that never named `live.dry_run` now sends no entries. One data migration
-moves a home set up under the `ensemble` name to `automations`.
+decide: a live MEIC config that never named `live.dry_run` now sends no entries.
 
 ### Upgrading
 
 - **From v0.13.0:** `python packages/orchestrator/run.py upgrade` (or `upgrade.cmd` / `./upgrade.sh`).
   It refuses while a live loop is armed or holds a position, as every upgrade does. Afterwards run
   `python run.py supervise --restart` (the research queue has a second job and manage a Sunday one), restart
-  any resident job, and restart the console to load its new server code. One data migration runs
-  (`v0.14.0-01-automations-rename`, below); `upgrade` runs it after its backup.
+  any resident job, and restart the console to load its new server code. Its one data migration finds
+  nothing to do on a v0.13.0 home (below).
 - **MEIC's live loop is in dry run until you say otherwise.** `live.dry_run` is `true` unless it is the
   literal `false`, and a missing key means `true`. A live config that never named the key now preflights
   each new entry and sends none. Set `live.dry_run` to `false` by hand, deliberately, to send entries
@@ -42,19 +41,21 @@ moves a home set up under the `ensemble` name to `automations`.
   that file takes) and restart the console; see
   [going-live](docs/guide/going-live.md#from-the-console-the-live-pages-switches). The slash commands and
   `live_loop --arm` work as before.
-- **`packages/ensemble` is now `packages/automations`, everywhere** (`cherrypick-automations`). The
-  upgrade's migration moves `config/ensemble.json` to `config/automations.json` and `data/ensemble/` to
-  `data/automations/`, renames the ledger's `ensemble_` tables to `automations_`, rewrites
-  `modules.ensemble` and the trade schema `ensemble_trade` (now `automations_trade`) in `config.json`,
-  renames the `ensemble` group in `automations.json` to `default`, and updates the schema in your
-  research register. Nothing reads the old names any more: `cherrypick.ensemble` no longer imports, the
-  `ENSEMBLE_CONFIG` and `ENSEMBLE_DB_PATH` variables are not read (set `AUTOMATIONS_CONFIG` and
-  `AUTOMATIONS_DB_PATH` instead), `/ensemble` no longer opens the page, and the loop refuses a ledger that
-  still has `ensemble_` tables. A checkout updated by hand (a `git pull`, not `upgrade`) must stop the
-  suite, reinstall its packages (`scripts/dev-install.ps1` or `.sh`) and run
-  `python packages/orchestrator/run.py migrations --apply` before starting again. The migration stops,
-  changing nothing it cannot judge, if `config.json` holds both module blocks, `automations.json` already
-  has a `default` group, or both table sets hold rows.
+- **`packages/ensemble` is now `packages/automations`** (`cherrypick-automations`, import
+  `cherrypick.automations`). v0.13.0 shipped the engine alone under the old name, with nothing switched
+  on, so an install of v0.13.0 has no data under it. `cherrypick.ensemble` no longer imports: a script of
+  your own that imported it needs the new name. A checkout updated by hand needs its packages reinstalled
+  (`scripts/dev-install.ps1` or `.sh`; `upgrade` does it).
+- **A checkout that ran `main` between the releases** may hold automations data under the old name
+  (`config/ensemble.json`, `data/ensemble/`, `ensemble_` tables, `modules.ensemble`, the trade schema
+  `ensemble_trade` and the `ensemble` group). Nothing reads those names any more, and the paper loop
+  refuses a ledger that still has `ensemble_` tables. Stop the suite and run `python
+  packages/orchestrator/run.py migrations --apply` before starting it again; `upgrade` runs it for you.
+  The migration (`v0.14.0-01-automations-rename`) moves the file and the folder, renames the tables, the
+  module block and the schema, renames the `ensemble` group to `default` and updates the schema in your
+  research register. It stops, changing nothing, if `config.json` holds both module blocks,
+  `automations.json` already has a `default` group, or both table sets hold rows. `ENSEMBLE_CONFIG` and
+  `ENSEMBLE_DB_PATH` are no longer read; use `AUTOMATIONS_CONFIG` and `AUTOMATIONS_DB_PATH`.
 - **Calendars, contango and four automations are retired** (2026-11-21). Both modules ship off with a
   retired date on each arm. A machine that had calendars on keeps its open positions running to their own
   exits; switch the module off once it is flat. `iron-fly-1000`, `iron-fly-1dte-1330`,

@@ -1,8 +1,10 @@
 """`v0.14.0-01-automations-rename`: the automations module's data under its own name.
 
-The module was `ensemble` until v0.13.0, and v0.13.0's code read its old file, folder, config block and
-import name through shims. v0.14.0 drops the shims, so a home set up before the rename is moved here, once,
-with the suite stopped (`run.py upgrade` runs it after its backup; a rollback restores that backup):
+The module was `ensemble`. v0.13.0 shipped its engine alone, with nothing switched on, so a v0.13.0 home has
+nothing under the old name and this finds nothing there. A checkout that ran `main` between the releases
+may: its paper loop ran as `ensemble`, and the rename kept the old file, folder, config block and import name
+resolving through shims until v0.14.0 dropped them. Such a home is moved here, once, with the suite stopped
+(`run.py upgrade` runs it after its backup; a rollback restores that backup):
 
 - `config/ensemble.json` becomes `config/automations.json` and `data/ensemble/` becomes `data/automations/`,
   each only when the new one does not exist yet (where both exist, the new one was the one in use, and the
