@@ -160,15 +160,25 @@ export function candidateTradeKey(c: Pick<ManageIntentCandidate, "key" | "tradeI
   return c.tradeId !== null && c.key === `trades.${c.tradeId}.intent` ? c.tradeId : null;
 }
 
-/** A candidate's answer, staged or saved. A trade keyed to itself is answered only by its own entry: a
- *  name's intent is for another trade on the name (manage lists the put because of it). */
+/** A candidate keyed to its name while the name's own intent is for another trade (manage's `note`): the
+ *  one place a name-level write would replace that intent, so it waits for a stable trade ID. */
+const heldForId = (c: ManageIntentCandidate): boolean => candidateTradeKey(c) === null && c.note !== null;
+
+const HELD_FOR_ID =
+  "this trade has no stable ID yet, and the name's own intent is for another trade on it, so a name-level choice would replace that intent: choose once the next evaluation gives the trade an ID";
+
+/** A candidate's answer, staged or saved. A trade keyed to itself is answered only by its own entry, and
+ *  so is one held for an ID: the name's intent is for another trade on the name (manage lists the put
+ *  because of it). */
 export function candidateIntentOf(model: ConfigModelPayload | undefined, c: ManageIntentCandidate): { intent: string | null; unsaved: boolean } {
   const key = candidateTradeKey(c);
+  if (heldForId(c)) return { intent: null, unsaved: false };
   return key !== null ? tradeIntentOf(model, key) : intentOf(model, c.underlying);
 }
 
-/** Stage a candidate's answer where manage keys it. */
+/** Stage a candidate's answer where manage keys it. Returns why it cannot. */
 export function stageCandidateIntent(model: ConfigModelPayload | undefined, c: ManageIntentCandidate, intent: string | null): string | null {
+  if (heldForId(c)) return HELD_FOR_ID;
   const key = candidateTradeKey(c);
   return key !== null ? stageTradeIntent(model, key, intent) : stageIntent(model, c.underlying, intent);
 }

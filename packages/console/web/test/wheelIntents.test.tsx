@@ -237,6 +237,20 @@ describe("where a candidate's choice is written", () => {
     expect(candidateIntentOf(m, cand({ key: "positions.XYZ.intent", tradeId: "XYZ-open-ceda13" })).intent).toBe("pmcc");
   });
 
+  it("holds a name-keyed choice while the name's own intent is for another trade, and never overwrites it", () => {
+    // A provisional ID has only the name to write to, and the name already holds a pmcc for its diagonal.
+    const m = model({ XYZ: { intent: "pmcc" } });
+    const held = cand({
+      key: "positions.XYZ.intent",
+      tradeId: "XYZ-open-ceda13",
+      note: "the name's intent 'pmcc' is for another trade on XYZ, not this put",
+    });
+    expect(candidateIntentOf(m, held)).toEqual({ intent: null, unsaved: false });
+    expect(stageCandidateIntent(m, held, "wheel")).toContain("stable ID");
+    expect(stageCandidateIntent(m, held, null)).toContain("stable ID");
+    expect(getStaged("manage", POSITIONS).has).toBe(false);
+  });
+
   it("reads a trade's own saved or staged intent as its answer", () => {
     const m = model({ XYZ: { intent: "pmcc" } }, { "XYZ-261001-1": { intent: "wheel" } });
     expect(candidateIntentOf(m, cand())).toEqual({ intent: "wheel", unsaved: false });

@@ -1160,8 +1160,9 @@ opening manage's verdict today beside the one it would get marked as a wheel, wi
 a wheel: ..."; never applied for you), and manage's note when the name's own intent is for another trade;
 the puts no row shows sit in a `no intent yet` card
 (`pages/Live/IntentChoice.tsx`). A choice is only staged, against the trade itself (the candidate's `key`:
-`trades.<ID>.intent`, or the name's `positions.<SYMBOL>.intent` while the trade's ID is provisional), as the
-whole `trades` (or `positions`) object of manage.json with every other entry kept; it is saved on Config ›
+`trades.<ID>.intent`, or the name's `positions.<SYMBOL>.intent` while the trade's ID is provisional, except
+where the name's own intent is for another trade, when the choice waits for a stable ID rather than replace
+it), as the whole `trades` (or `positions`) object of manage.json with every other entry kept; it is saved on Config ›
 Position rules (`pages/Config/IntentsCard.tsx`), which lists every name's and every trade's intent, a PMCC's
 by its long contract, in one save bar. A manage.json written before the `trades` block existed gets it on
 the first save (the orchestrator adds a top-level block its shipped example has). A `cost-strike calls`
