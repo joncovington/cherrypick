@@ -2081,6 +2081,85 @@ def _roll_text(kind: str, r: dict[str, Any] | None, why: str | None) -> str:
     return f"{kind}: {'; '.join(r['legs'])}, {r['net']:+.2f} a share, check-roll {verdict}"
 
 
+def _tested_put_can_wait(trade: dict[str, Any], row: dict[str, Any], cfg: dict[str, Any]) -> bool:
+    """A tested short put on a name the operator wheels, with more than `review_beyond_days` left and at
+    least `review_min_extrinsic` a share of extrinsic value: there is no roll to price this far out (the
+    snapshot reads roll-out chains inside that horizon only) and the assignment is unlikely while time value
+    remains. An unknown extrinsic is not time value: the short is then rolled or closed as before."""
+    extrinsic = row.get("extrinsic")
+    return bool(
+        row["right"] == "P"
+        and trade.get("wheel_put")
+        and row.get("dte") is not None
+        and row["dte"] > cfg["review_beyond_days"]
+        and extrinsic is not None
+        and extrinsic >= cfg["review_min_extrinsic"] - 1e-9
+    )
+
+
+def _watch_text(
+    trade: dict[str, Any],
+    cycle: dict[str, Any],
+    rows: list[tuple[dict[str, Any], dict[str, Any]]],
+    cfg: dict[str, Any],
+) -> str:
+    """Why a trade whose tested shorts are all wheel puts with time left is watched: for each, how far through
+    the strike it is and its extrinsic value and days; then, for the trade, what holding every short put to
+    expiry at today's price makes on the trade's own order credits (before fees), and, where the cycle holds
+    no
+    shares, the assignment against the wheel breakeven (put strike less the cycle's net cash). Each figure is
+    named for its basis (they differ). The numbers are the trade's own."""
+
+    def usd(v: float) -> str:
+        v = round(v)
+        return f"{'-' if v < 0 else ''}${abs(v):,.0f}"
+
+    parts = []
+    for leg, row in rows:
+        spot, strike = row["spot"], leg["strike"]
+        shares = -leg["quantity"] * pricing.MULTIPLIER
+        through = max(strike - spot, 0.0)
+        parts.append(
+            f"the {row['leg']} is tested ({spot:g} at or through the strike, {through:.2f} a share or "
+            f"{through / strike:.1%} of it) but has {row['dte']} days left and "
+            f"{row['extrinsic']:.2f} a share "
+            f"of extrinsic value ({usd(row['extrinsic'] * shares)})"
+        )
+    text = " | ".join(parts) + (
+        f": assignment is unlikely while time value remains, and no roll is priced beyond "
+        f"{cfg['review_beyond_days']} days. "
+    )
+    cost = trade.get("cost")
+    spot = rows[0][1]["spot"]
+    if cost is not None and spot is not None:
+        credits = -cost
+        owed = sum(
+            max(leg["strike"] - spot, 0.0) * -leg["quantity"] * pricing.MULTIPLIER
+            for leg in trade["legs"]
+            if leg["quantity"] < 0 and leg.get("right") == "P"
+        )
+        text += (
+            f"Held to expiry at today's price it would make {usd(credits - owed)} on this trade's order "
+            f"credits of {usd(credits)} (before fees), after the {usd(owed)} its puts would then owe. "
+        )
+    breakeven = cycle.get("breakeven") or {}
+    be = breakeven.get("price")
+    if be is not None and breakeven.get("basis") == "put strike less net cash":
+        for leg, row in rows:
+            shares = -leg["quantity"] * pricing.MULTIPLIER
+            text += (
+                f"Assigned on the {leg['strike']:g}, you would hold {shares:g} shares at {leg['strike']:g}, "
+                f"{usd((row['spot'] - be) * shares)} against the wheel breakeven of {be:.2f} "
+                "(put strike less "
+                f"the cycle's net cash) at {row['spot']:g}. "
+            )
+    text += (
+        f"It is a roll, close or assignment inside {cfg['review_beyond_days']} days, or under "
+        f"{cfg['review_min_extrinsic']:.2f} of extrinsic value."
+    )
+    return text
+
+
 def _wheel_rules(
     trade: dict[str, Any],
     legs: list[dict[str, Any]],
@@ -2125,7 +2204,7 @@ def _wheel_rules(
             )
             continue
         note.update(take_profit=[], rolls=[], next_leg=None)
-        taking, tested = [], []
+        taking, tested, tested_rows = [], [], []
         for row in item["today"]:
             leg = by_symbol.get(row["symbol"])
             if leg is None or leg["quantity"] >= 0:
@@ -2149,6 +2228,18 @@ def _wheel_rules(
             # A covered call at or over the basis is the cycle working: covered_call.assigned reviews
             # it, and the wheel's repair roll does not apply.
             if row["tested"] and not called_away_gains and not off("wheel.tested"):
+                tested_rows.append((leg, row))
+        # The tested shorts are watched only when every one of them can wait (`_tested_put_can_wait`): a
+        # trade with one that cannot is rolled or closed as a whole, so no tested short goes unmentioned.
+        watching = bool(tested_rows) and all(
+            _tested_put_can_wait(trade, r, wr["tested"]) for _, r in tested_rows
+        )
+        if watching:
+            note["watching"] = [
+                {"leg": r["leg"], "dte": r["dte"], "extrinsic": r["extrinsic"]} for _, r in tested_rows
+            ]
+        else:
+            for leg, row in tested_rows:
                 cands = _wheel.roll_candidates(
                     row,
                     ctx.get("income"),
@@ -2231,6 +2322,17 @@ def _wheel_rules(
                 )
             )
             trade.setdefault("leg_orders", {})["wheel.tested"] = _order([leg for leg, *_ in tested])
+        elif watching:
+            # Every tested short is a wheel put with time to run: a review, with no order to send.
+            fired.append(
+                _fire(
+                    "wheel.tested",
+                    REVIEW,
+                    wr["tested"]["evidence"],
+                    _watch_text(trade, cycle, tested_rows, wr["tested"]),
+                    [leg["label"] for leg, _ in tested_rows],
+                )
+            )
         if item["holds_shares"] and cycle["assignments"] >= 1 and not off("wheel.next_leg"):
             written = sum(
                 -o["quantity"]
