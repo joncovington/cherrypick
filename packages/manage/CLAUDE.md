@@ -91,6 +91,11 @@ of that day, not today's.
   same one), else solved from the fill and that day's close, dividend yield carried either way. A delta
   that cannot be solved is unknown and recognises nothing; a PMCC whose linked orders do not replay to
   today's legs gets a review only.
+- **A question about intent is manage's, not a surface's** (`intentask.py`). Each trade a person can
+  answer for (a naked short put, a call diagonal) carries `intent_ask`: the options its shape allows, the
+  verdict under each, a suggestion with its evidence, and the config key an answer is written at. A surface
+  shows it and writes the key; it never re-derives a shape rule, an option list or a key. A suggestion is
+  never applied.
 - **P&L is a mark.** Gross always; net of the chain's recorded fees where a chain reconciled, and null (never gross relabelled) where it did not.
 - **The ruleset is data.** Thresholds and evidence grades live in `rules.DEFAULT_RULES` and the operator's
   `~/.cherrypick/config/manage.json`; an override key the default lacks is reported, never applied.
