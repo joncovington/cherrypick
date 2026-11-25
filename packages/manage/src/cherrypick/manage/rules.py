@@ -288,6 +288,10 @@ DEFAULT_RULES: dict[str, Any] = {
         # Legs all opened inside that window (read off the order chain) close on their expiry day,
         # before its close, instead of at the first evaluation.
         "wait_if_entered_inside": True,
+        # A calendar's or diagonal's expiring short at or under this delta, with a long of the same
+        # right outliving it at or beyond its strike, is left to expire instead of closed. The delta
+        # is ours: brokers' guides say only "well out of the money".
+        "time_spread_hold_max_delta": 0.10,
         "cash_settled_roots": [
             "SPX",
             "SPXW",

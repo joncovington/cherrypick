@@ -259,6 +259,17 @@ expiry close is due on the expiry day itself, before its close, not at the first
 guards against (pin and post-close exercise) comes at that close. Until then the trade's other rules
 judge it, a stop included. Without a chain the close at three days stands.
 
+**A calendar's or diagonal's far out-of-the-money short is left to expire**
+(`expiry.time_spread_hold_max_delta`, 0.10). An expiring short at or under that delta, with a long of the
+same right that outlives it at or beyond its strike, is not closed at three days: lapsing is how the
+spread earns, and the pin and post-close exercise risk belongs to a short at or near the money. Brokers'
+guides say to let an out-of-the-money calendar run and close an in-the-money one. The long is a
+conservative guard, not a promise that an assignment would be met: how it would be depends on the broker.
+Such a short is not bought back or rolled for being 80% captured either (`legs.short_take_profit`, the
+roll that follows it): a few dollars of premium left on a short far from its strike is not worth a roll.
+Nearer the money the expiry close, the capture buy-back and the roll stand. The 0.10 delta is ours; the guides say only "well out of the
+money" and give no number.
+
 **A trade opened inside its own time exit skips it** (`skip_if_entered_inside`). When
 the order chain shows the legs on the exit's clock were opened that many days or fewer before their expiry
 (a credit trade's short at 21 DTE or fewer, a debit spread at 21, a long option at 14; a roll counts from

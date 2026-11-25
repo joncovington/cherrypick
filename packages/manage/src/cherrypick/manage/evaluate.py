@@ -514,6 +514,14 @@ def evaluate_trade(
             # the shares go, never of a position the account cannot meet.
             trade["covered"]["held_into_expiry"] = True
             expiring = []
+        if expiring and trade["shape"] in TIME_SPREADS:
+            held = _held_otm_shorts(expiring, options, float(ex["time_spread_hold_max_delta"]))
+            if held:
+                trade["expiry_held"] = {
+                    "max_delta": float(ex["time_spread_hold_max_delta"]),
+                    "legs": [_label(x) for x in held],
+                }
+                expiring = [leg for leg in expiring if not any(leg is h for h in held)]
         if expiring:
             expiring_on = min(_date(leg["expiration"]) for leg in expiring)
             due = _expiry_close_due(trade, chain, expiring, expiring_on, session, ex)
@@ -877,8 +885,15 @@ def evaluate_trade(
     # ---- short legs that have given up most of their premium
     lt = rules["legs"]["short_take_profit"]
     if not off("legs.short_take_profit"):
+        # A time spread's far out-of-the-money short inside the expiry window is left to expire (see the
+        # expiry rule), so being nearly captured does not buy it back or roll it either.
+        held = set((trade.get("expiry_held") or {}).get("legs") or [])
         done = [
-            leg for leg in shorts if leg["capture"] is not None and leg["capture"] >= float(lt["capture"])
+            leg
+            for leg in shorts
+            if leg["capture"] is not None
+            and leg["capture"] >= float(lt["capture"])
+            and _label(leg) not in held
         ]
         if done and len(done) < len(options):
             wings = [
@@ -1825,6 +1840,34 @@ def _covered_call_assigned(
         f"${-dollars:,.0f} under it. Roll up and out for a net credit, or buy it back",
         labels,
     )
+
+
+def _held_otm_shorts(
+    expiring: list[dict[str, Any]], options: list[dict[str, Any]], max_delta: float
+) -> list[dict[str, Any]]:
+    """The expiring shorts of a time spread that are left to expire: out of the money (delta at most
+    `max_delta` either side) and backed by a long of the same right that outlives them, at or beyond
+    their strike, for at least their quantity. Letting such a short lapse is how a calendar earns; the
+    pin and post-close exercise risk the close guards against belongs to a short at or near the money,
+    and a short this far out is unlikely to be assigned at all. The long is a conservative guard, not a
+    promise that an assignment would be met: how it would be depends on the broker. A short with no
+    delta is never held."""
+    held = []
+    for short in expiring:
+        if short["quantity"] >= 0 or short.get("delta") is None or abs(short["delta"]) > max_delta:
+            continue
+        put = short["right"] == "P"
+        covering = sum(
+            leg["quantity"]
+            for leg in options
+            if leg["quantity"] > 0
+            and leg["right"] == short["right"]
+            and leg["expiration"] > short["expiration"]
+            and (leg["strike"] >= short["strike"] if put else leg["strike"] <= short["strike"])
+        )
+        if covering >= -short["quantity"]:
+            held.append(short)
+    return held
 
 
 def _expiry_close_due(
