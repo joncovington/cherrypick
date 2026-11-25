@@ -855,7 +855,7 @@ def _check_trades(rules: dict[str, Any], warnings: list[str]) -> None:
         for field in entry:
             if not field.startswith("_") and field not in TRADE_KEYS:
                 warnings.append(f"trades.{key}.{field}: unknown key, ignored")
-        if "intent" in entry and entry["intent"] not in TRADE_INTENTS:
+        if entry.get("intent") is not None and entry["intent"] not in TRADE_INTENTS:
             warnings.append(f"trades.{key}.intent: '{entry['intent']}' is not pmcc or diagonal, ignored")
 
 
