@@ -1,5 +1,5 @@
 import type { ConfigModelPayload, ManageIntentCandidate } from "@console/shared";
-import { getStaged, sameValue, stageEdit, unstageEdit } from "./stagedStore";
+import { clearStaged, getStaged, sameValue, stageEdit, unstageEdit } from "./stagedStore";
 
 /**
  * An intent, staged for Config like any other edit (2026-11-12). It is a fact about one trade: manage's
@@ -33,6 +33,12 @@ function isObject(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
+/** The intent a block (`positions` or `trades`) holds for one key, or null. */
+const intentIn = (block: Positions | null, key: string): string | null => {
+  const v = block?.[key]?.["intent"];
+  return typeof v === "string" ? v : null;
+};
+
 /** `positions` as the manage config file has it; null when the file or the block is missing. */
 export function savedPositions(model: ConfigModelPayload | undefined): Positions | null {
   const doc = model?.targets.manage?.doc;
@@ -50,14 +56,8 @@ export function effectivePositions(model: ConfigModelPayload | undefined): Posit
 
 /** A name's intent, staged or saved, and whether the staged one is unsaved. */
 export function intentOf(model: ConfigModelPayload | undefined, symbol: string): { intent: string | null; unsaved: boolean } {
-  const saved = savedPositions(model);
-  const eff = effectivePositions(model);
-  const read = (p: Positions | null) => {
-    const v = p?.[symbol]?.["intent"];
-    return typeof v === "string" ? v : null;
-  };
-  const now = read(eff);
-  return { intent: now, unsaved: now !== read(saved) };
+  const now = intentIn(effectivePositions(model), symbol);
+  return { intent: now, unsaved: now !== intentIn(savedPositions(model), symbol) };
 }
 
 /** Stage a name's intent (null clears it). Returns why it cannot, when the file has no `positions`. */
@@ -83,8 +83,8 @@ export function pendingIntents(model: ConfigModelPayload | undefined): Array<{ s
   const names = new Set([...Object.keys(saved), ...Object.keys(eff)]);
   const out: Array<{ symbol: string; from: string | null; to: string | null }> = [];
   for (const s of [...names].sort()) {
-    const from = typeof saved[s]?.["intent"] === "string" ? (saved[s]!["intent"] as string) : null;
-    const to = typeof eff[s]?.["intent"] === "string" ? (eff[s]!["intent"] as string) : null;
+    const from = intentIn(saved, s);
+    const to = intentIn(eff, s);
     if (from !== to) out.push({ symbol: s, from, to });
   }
   return out;
@@ -98,7 +98,7 @@ export function intentWords(intent: string | null): string {
 
 // --- a trade's own intent (`trades`) ---------------------------------------------------------------
 
-type Trades = Record<string, Record<string, unknown>>;
+type Trades = Positions;
 
 /** `trades` as the manage config file has it; `{}` when the file has none (an older copy: a save adds the
  *  block), null when there is no file to write. */
@@ -115,11 +115,6 @@ export function effectiveTrades(model: ConfigModelPayload | undefined): Trades |
   const staged = getStaged("manage", TRADES);
   return staged.has && isObject(staged.value) ? (staged.value as Trades) : saved;
 }
-
-const intentIn = (t: Trades | null, key: string): string | null => {
-  const v = t?.[key]?.["intent"];
-  return typeof v === "string" ? v : null;
-};
 
 /** A trade's own intent, staged or saved, and whether the staged one is unsaved. `key` is its trade ID. */
 export function tradeIntentOf(model: ConfigModelPayload | undefined, key: string): { intent: string | null; unsaved: boolean } {
@@ -176,6 +171,14 @@ export function candidateIntentOf(model: ConfigModelPayload | undefined, c: Mana
 export function stageCandidateIntent(model: ConfigModelPayload | undefined, c: ManageIntentCandidate, intent: string | null): string | null {
   const key = candidateTradeKey(c);
   return key !== null ? stageTradeIntent(model, key, intent) : stageIntent(model, c.underlying, intent);
+}
+
+/** Drop every staged intent, names' and trades'. */
+export function discardIntents(): void {
+  clearStaged([
+    { target: "manage", pointer: POSITIONS },
+    { target: "manage", pointer: TRADES },
+  ]);
 }
 
 /** What a save writes: each staged block whole, and nothing that was not staged. */

@@ -78,16 +78,8 @@ def _op_save(cfg: dict[str, Any], req: dict[str, Any]) -> dict[str, Any]:
     text = path.read_text(encoding="utf-8")
     for edit in edits:
         try:
-            text = configedit.splice_value(text, edit["pointer"], edit.get("value"))
-        except KeyError as exc:
-            # Absent: a block the shipped example has and this older copy lacks is added, else refused.
-            added = configedit.insert_block_from_example(
-                cfg, target, text, edit["pointer"], edit.get("value")
-            )
-            if added is None:
-                return _err(str(exc), "not_found", pointer=edit["pointer"])
-            text = added
-        except ValueError as exc:
+            text = configedit.splice_or_add(cfg, target, text, edit["pointer"], edit.get("value"))
+        except (KeyError, ValueError) as exc:
             return _err(str(exc), "not_found", pointer=edit["pointer"])
 
     expected = req.get("expected_mtime")

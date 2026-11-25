@@ -1156,8 +1156,9 @@ ruleset's days. The level is manage's, never worked out from the distance beside
 `wheel.intent_candidates`; a name's intent counts only for the trades it describes, so a name marked `pmcc`
 for its diagonal does not answer for a put on the same name) carries a dashed `no intent` chip on its row,
 opening manage's verdict today beside the one it would get marked as a wheel, with *Not a wheel* and
-*Wheel it*, and manage's suggestion with its evidence when a wheel cycle on the name reconciles ("Looks like
-a wheel: ..."; never applied for you); the puts no row shows sit in a `no intent yet` card
+*Wheel it*, manage's suggestion with its evidence when a wheel cycle on the name reconciles ("Looks like
+a wheel: ..."; never applied for you), and manage's note when the name's own intent is for another trade;
+the puts no row shows sit in a `no intent yet` card
 (`pages/Live/IntentChoice.tsx`). A choice is only staged, against the trade itself (the candidate's `key`:
 `trades.<ID>.intent`, or the name's `positions.<SYMBOL>.intent` while the trade's ID is provisional), as the
 whole `trades` (or `positions`) object of manage.json with every other entry kept; it is saved on Config ›

@@ -5,9 +5,7 @@ import { HelpSection } from "../../components/CardHelp";
 import { pushToast } from "../../lib/toast";
 import {
   INTENTS,
-  INTENT_WORDS,
-  POSITIONS,
-  TRADES,
+  discardIntents,
   effectivePositions,
   effectiveTrades,
   intentEdits,
@@ -19,7 +17,7 @@ import {
   stageIntent,
   stageTradeIntent,
 } from "./intents";
-import { clearStaged, useStagedVersion } from "./stagedStore";
+import { useStagedVersion } from "./stagedStore";
 import { ConfigError, useSaveSection } from "./useConfigModel";
 
 /**
@@ -31,13 +29,56 @@ import { ConfigError, useSaveSection } from "./useConfigModel";
  * `positions` and/or `trades` object.
  */
 
-/** A PMCC's long contract, as `trades` is keyed for the PMCC view (spaces ignored). */
-const isContract = (key: string) => /\d{6}[CP]\d{8}$/.test(key.replace(/\s+/g, "").toUpperCase());
+/** A PMCC's long call contract, as `trades` is keyed for the PMCC view (spaces ignored): the same test as
+ *  manage's `_is_call_contract`, which the console cannot call. */
+const isContract = (key: string) => /\d{6}C\d{8}$/.test(key.replace(/\s+/g, "").toUpperCase());
 
 /** The intents a select offers, with a saved value outside them (a label such as hedge) kept so a
  *  re-render never silently shows it as none. */
 function optionsFor(current: string, base: readonly string[]): string[] {
   return current !== "" && !base.includes(current) ? [...base, current] : [...base];
+}
+
+/** One row: what the intent is for, and the select that sets it. A name's and a trade's differ only in
+ *  the words, the intents offered and where the choice is staged. */
+function IntentRow({
+  id,
+  label,
+  help,
+  current,
+  base,
+  unsaved,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  help: string;
+  current: string;
+  base: readonly string[];
+  unsaved: boolean;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div className="cfg-row">
+      <div className="cfg-row-label">
+        <label htmlFor={id}>
+          <span className="num">{label}</span>
+          {unsaved && <span className="chip chip-warn"> unsaved</span>}
+        </label>
+        <p className="cfg-help">{help}</p>
+      </div>
+      <div className="cfg-row-control">
+        <select id={id} value={current} onChange={(e) => onChange(e.target.value)}>
+          <option value="">none</option>
+          {optionsFor(current, base).map((i) => (
+            <option key={i} value={i}>
+              {intentWords(i)}
+            </option>
+          ))}
+        </select>
+      </div>
+    </div>
+  );
 }
 
 export function IntentsCard({ model, updatedAt }: { model: ConfigModelPayload | undefined; updatedAt?: number }) {
@@ -81,7 +122,6 @@ export function IntentsCard({ model, updatedAt }: { model: ConfigModelPayload | 
   const chooseTrade = (key: string, value: string) => {
     setWhy(stageTradeIntent(model, key, value === "" ? null : value));
   };
-  const discard = () => clearStaged([{ target: "manage", pointer: POSITIONS }, { target: "manage", pointer: TRADES }]);
 
   return (
     <Card
@@ -126,51 +166,29 @@ export function IntentsCard({ model, updatedAt }: { model: ConfigModelPayload | 
             {rows.length === 0 && tradeRows.length === 0 && <p className="muted">No name or trade has an intent yet.</p>}
             {saved === null && <p className="muted">manage.json has no positions block, so a name&apos;s intent cannot be added from here.</p>}
             {rows.map((sym) => (
-              <div className="cfg-row" key={sym}>
-                <div className="cfg-row-label">
-                  <label htmlFor={`intent-${sym}`}>
-                    <span className="num">{sym}</span>
-                    {pendingFor.has(sym) && <span className="chip chip-warn"> unsaved</span>}
-                  </label>
-                  <p className="cfg-help">every trade on the name it describes</p>
-                </div>
-                <div className="cfg-row-control">
-                  <select id={`intent-${sym}`} value={String(eff?.[sym]?.["intent"] ?? "")} onChange={(e) => choose(sym, e.target.value)}>
-                    <option value="">none</option>
-                    {optionsFor(String(eff?.[sym]?.["intent"] ?? ""), INTENTS).map((i) => (
-                      <option key={i} value={i}>
-                        {(INTENT_WORDS as Record<string, string>)[i] ?? i}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
+              <IntentRow
+                key={sym}
+                id={`intent-${sym}`}
+                label={sym}
+                help="every trade on the name it describes"
+                current={String(eff?.[sym]?.["intent"] ?? "")}
+                base={INTENTS}
+                unsaved={pendingFor.has(sym)}
+                onChange={(value) => choose(sym, value)}
+              />
             ))}
-            {tradeRows.map((key) => {
-              const current = String(effT?.[key]?.["intent"] ?? "");
-              const base = isContract(key) ? INTENTS.filter((i) => i === "pmcc" || i === "diagonal") : INTENTS;
-              return (
-                <div className="cfg-row" key={key}>
-                  <div className="cfg-row-label">
-                    <label htmlFor={`intent-trade-${key}`}>
-                      <span className="num">{key}</span>
-                      {pendingTFor.has(key) && <span className="chip chip-warn"> unsaved</span>}
-                    </label>
-                    <p className="cfg-help">{isContract(key) ? "this PMCC's long only" : "this trade only"}</p>
-                  </div>
-                  <div className="cfg-row-control">
-                    <select id={`intent-trade-${key}`} value={current} onChange={(e) => chooseTrade(key, e.target.value)}>
-                      <option value="">none</option>
-                      {optionsFor(current, base).map((i) => (
-                        <option key={i} value={i}>
-                          {(INTENT_WORDS as Record<string, string>)[i] ?? i}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-              );
-            })}
+            {tradeRows.map((key) => (
+              <IntentRow
+                key={key}
+                id={`intent-trade-${key}`}
+                label={key}
+                help={isContract(key) ? "this PMCC's long only" : "this trade only"}
+                current={String(effT?.[key]?.["intent"] ?? "")}
+                base={isContract(key) ? INTENTS.filter((i) => i === "pmcc" || i === "diagonal") : INTENTS}
+                unsaved={pendingTFor.has(key)}
+                onChange={(value) => chooseTrade(key, value)}
+              />
+            ))}
             {saved !== null && (
               <div className="cfg-row">
                 <div className="cfg-row-label">
@@ -227,7 +245,7 @@ export function IntentsCard({ model, updatedAt }: { model: ConfigModelPayload | 
                 )}
               </div>
               <div className="cfg-savebar-actions">
-                <button type="button" className="btn btn-quiet" onClick={discard}>
+                <button type="button" className="btn btn-quiet" onClick={discardIntents}>
                   Discard
                 </button>
                 <button
@@ -239,7 +257,7 @@ export function IntentsCard({ model, updatedAt }: { model: ConfigModelPayload | 
                       { target: "manage", expectedMtime: model.targets.manage?.mtime ?? null, edits: intentEdits(model) },
                       {
                         onSuccess: (res) => {
-                          discard();
+                          discardIntents();
                           const note = res.backup !== null ? `Saved. Previous version backed up to ${res.backup}` : "Saved.";
                           pushToast({ tone: "exit", title: "Intents saved", message: note });
                         },

@@ -578,8 +578,10 @@ export interface ManageIntentCandidate {
   /** "wheel" when a wheel cycle on the name reconciles to the account: manage's suggestion, never
    * applied. Null when it has none, and on an evaluation written before the field. */
   suggested: string | null;
-  /** Why manage suggests it, or what it noticed (the name's own intent is for another trade). */
+  /** Why manage suggests it: the name's wheel cycles. Empty when it suggests nothing. */
   evidence: string[];
+  /** Set when the name's own intent is for another trade on the name (so this put is asked about). */
+  note: string | null;
   /** The config key a choice sets: the trade's own ("trades.XYZ-261001-1.intent"), or the name's
    * ("positions.XYZ.intent") while the trade's ID is still provisional, and on an older evaluation. */
   key: string;

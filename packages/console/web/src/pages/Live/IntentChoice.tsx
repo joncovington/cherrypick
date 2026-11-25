@@ -64,11 +64,15 @@ export function Choice({ c, model, onDone }: { c: ManageIntentCandidate; model: 
           Wheel it
         </button>
       </div>
-      {c.evidence.map((why, i) => (
-        <p key={why} className="lk-sub int-note">
-          {i === 0 && c.suggested === "wheel" ? `Looks like a wheel: ${why}.` : `${why.charAt(0).toUpperCase()}${why.slice(1)}.`}
+      {c.suggested === "wheel" && c.evidence.length > 0 && (
+        <p className="lk-sub int-note">Looks like a wheel: {c.evidence.join("; ")}.</p>
+      )}
+      {c.note !== null && (
+        <p className="lk-sub int-note">
+          {c.note.charAt(0).toUpperCase()}
+          {c.note.slice(1)}.
         </p>
-      ))}
+      )}
       {!c.wheelPath && <p className="lk-sub int-note">No reconciled cycle holds this put yet, so marking it changes nothing today.</p>}
       {c.earnings !== null && <p className="lk-sub int-note">Earnings {c.earnings} fall inside the put; a wheel put is held through them.</p>}
       {why !== null && <p className="cfg-save-error int-note">{why}</p>}

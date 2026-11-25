@@ -66,6 +66,7 @@ function cand(over: Partial<ManageIntentCandidate> = {}): ManageIntentCandidate 
     changes: true,
     suggested: null,
     evidence: [],
+    note: null,
     key: "trades.XYZ-261001-1.intent",
     ...over,
   };
@@ -257,15 +258,23 @@ describe("the choice panel", () => {
   const html = (c: ManageIntentCandidate) =>
     text(renderToString(<Choice c={c} model={model({}, {})} />));
 
-  it("says why a wheel is suggested, and never applies it", () => {
-    const out = html(cand({ suggested: "wheel", evidence: ["2 completed wheel cycles on XYZ"] }));
-    expect(out).toContain("Looks like a wheel");
-    expect(out).toContain("2 completed wheel cycles on XYZ");
+  it("says why a wheel is suggested, in one line, and never applies it", () => {
+    const out = html(cand({ suggested: "wheel", evidence: ["2 completed wheel cycles on XYZ", "an open wheel cycle on XYZ reconciles"] }));
+    expect(out).toContain("Looks like a wheel: 2 completed wheel cycles on XYZ; an open wheel cycle on XYZ reconciles.");
     expect(getStaged("manage", TRADES).has).toBe(false);
   });
 
-  it("shows the evidence it has when it suggests nothing, and says nothing when it has none", () => {
-    expect(html(cand({ evidence: ["the name's intent 'pmcc' is for another trade on XYZ, not this put"] }))).toContain("for another trade");
+  it("says when the name's intent is for another trade, apart from any suggestion", () => {
+    const note = "the name's intent 'pmcc' is for another trade on XYZ, not this put";
+    const out = html(cand({ note }));
+    expect(out).toContain("The name's intent 'pmcc' is for another trade on XYZ, not this put.");
+    expect(out).not.toContain("Looks like a wheel");
+    const both = html(cand({ note, suggested: "wheel", evidence: ["2 completed wheel cycles on XYZ"] }));
+    expect(both).toContain("Looks like a wheel: 2 completed wheel cycles on XYZ.");
+    expect(both).toContain("for another trade");
+  });
+
+  it("says nothing extra when manage has nothing to say", () => {
     const none = html(cand());
     expect(none).not.toContain("Looks like a wheel");
     expect(none).not.toContain("for another trade");
@@ -286,6 +295,12 @@ describe("Config › Intents", () => {
     const out = card(model({ XYZ: { intent: "pmcc" } }, { "XYZ-261001-1": { intent: "wheel" }, "XYZ 270319C00013000": { intent: "pmcc" } }));
     expect(out).toContain("XYZ-261001-1");
     expect(out).toContain("XYZ 270319C00013000");
+  });
+
+  it("words a call contract as a PMCC's long and any other key as a trade, as manage keys them", () => {
+    const out = card(model({}, { "XYZ 270319C00013000": { intent: "pmcc" }, "XYZ 270319P00013000": { intent: "wheel" } }));
+    expect(out.match(/this PMCC's long only/g)).toHaveLength(1);
+    expect(out.match(/this trade only/g)).toHaveLength(1);
   });
 
   it("still offers trade intents when the file has no positions block", () => {

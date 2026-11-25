@@ -807,6 +807,7 @@ describe("readManage", () => {
           now: { action: "CLOSE", rule: "credit.breached", reason: "short strike in the money" },
           as_wheel: { action: "ROLL_OR_CLOSE", rule: "wheel.tested", reason: "roll, close or take the assignment" },
           changes: true, suggested: "wheel", evidence: ["2 completed wheel cycles on XYZ"],
+          note: "the name's intent 'pmcc' is for another trade on XYZ, not this put",
           key: "trades.XYZ-261001-1.intent",
         },
       ],
@@ -820,6 +821,7 @@ describe("readManage", () => {
       now: { action: "CLOSE", rule: "credit.breached", reason: "short strike in the money" },
       asWheel: { action: "ROLL_OR_CLOSE", rule: "wheel.tested", reason: "roll, close or take the assignment" },
       changes: true, suggested: "wheel", evidence: ["2 completed wheel cycles on XYZ"],
+      note: "the name's intent 'pmcc' is for another trade on XYZ, not this put",
       key: "trades.XYZ-261001-1.intent",
     });
   });
@@ -840,7 +842,7 @@ describe("readManage", () => {
     };
     fs.writeFileSync(path.join(tmp, "manage", "eval-2026-10-20.json"), JSON.stringify(doc));
     const [c] = readManage(config).accounts[0]!.wheel!.intentCandidates;
-    expect(c).toMatchObject({ suggested: null, evidence: [], key: "positions.XYZ.intent" });
+    expect(c).toMatchObject({ suggested: null, evidence: [], note: null, key: "positions.XYZ.intent" });
   });
 
   it("an evaluation from before the list reads as none, never as missing", () => {

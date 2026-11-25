@@ -886,45 +886,58 @@ def load(path: Path | None = None) -> tuple[dict[str, Any], list[str], str | Non
     return rules, warnings, str(target)
 
 
+def _entries(
+    rules: dict[str, Any], underlying: str, trade_id: str | None
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """A name's override entry (`positions.<SYM>`) and a trade's own (`trades.<ID>`), each {} when absent or
+    not an object."""
+    name = (rules.get("positions") or {}).get(underlying) or {}
+    own = ((rules.get("trades") or {}).get(trade_id) or {}) if trade_id else {}
+    return (name if isinstance(name, dict) else {}), (own if isinstance(own, dict) else {})
+
+
 def override(rules: dict[str, Any], underlying: str, trade_id: str | None = None) -> dict[str, Any]:
     """The overrides that apply to one trade: the name's (`positions.<SYM>`) with the trade's own
     (`trades.<ID>`) over them, field by field; `disable` lists add up."""
-    name = (rules.get("positions") or {}).get(underlying) or {}
-    own = ((rules.get("trades") or {}).get(trade_id) or {}) if trade_id else {}
-    if not isinstance(name, dict):
-        name = {}
-    if not isinstance(own, dict):
-        own = {}
+    name, own = _entries(rules, underlying, trade_id)
     out = {**name, **{k: v for k, v in own.items() if not k.startswith("_")}}
     out["disable"] = list(dict.fromkeys([*(name.get("disable") or []), *(own.get("disable") or [])]))
     return out
 
 
+def name_intent(rules: dict[str, Any], underlying: str) -> str | None:
+    """The intent set on a name (`positions.<SYM>.intent`), whatever trades it describes."""
+    intent = _entries(rules, underlying, None)[0].get("intent")
+    return intent if isinstance(intent, str) else None
+
+
+def is_naked_short_puts(legs: list[dict[str, Any]]) -> bool:
+    """Whether every leg is a short put (and there is one): the trade a wheel is about."""
+    return bool(legs) and all(leg.get("right") == "P" and (leg.get("quantity") or 0) < 0 for leg in legs)
+
+
 def intent_fits(intent: str, legs: list[dict[str, Any]]) -> bool:
     """Whether a name's intent can describe a trade of these legs. `wheel` and `no_wheel` are about a naked
-    short put (every leg a short put); `pmcc` and `diagonal` about a trade with a call in it. Any other
-    intent is a free label (`hedge`, `income`), shown on the trade, and describes any trade."""
+    short put; `pmcc` and `diagonal` about a trade with a call in it. Any other intent is a free label
+    (`hedge`, `income`), shown on the trade, and describes any trade."""
     if intent in ("wheel", "no_wheel"):
-        return bool(legs) and all(leg["right"] == "P" and leg["quantity"] < 0 for leg in legs)
+        return is_naked_short_puts(legs)
     if intent in ("pmcc", "diagonal"):
-        return any(leg["right"] == "C" for leg in legs)
+        return any(leg.get("right") == "C" for leg in legs)
     return True
 
 
 def trade_intent(
     rules: dict[str, Any], underlying: str, trade_id: str | None, legs: list[dict[str, Any]]
-) -> tuple[str | None, str | None]:
-    """A trade's intent and where it came from. The trade's own (`trades.<ID>.intent`) is the answer. A
-    name's (`positions.<SYM>.intent`) is one only for a trade it can describe: a name marked `pmcc` for its
-    call diagonal says nothing about a naked put on the same name, which stays undecided and is asked."""
-    own = ((rules.get("trades") or {}).get(trade_id) or {}) if trade_id else {}
-    if isinstance(own, dict) and isinstance(own.get("intent"), str):
-        return own["intent"], "trade"
-    name = (rules.get("positions") or {}).get(underlying) or {}
-    intent = name.get("intent") if isinstance(name, dict) else None
-    if isinstance(intent, str) and intent_fits(intent, legs):
-        return intent, "name"
-    return None, None
+) -> str | None:
+    """A trade's intent. Its own (`trades.<ID>.intent`) is the answer. A name's (`positions.<SYM>.intent`)
+    is one only for a trade it can describe: a name marked `pmcc` for its call diagonal says nothing about
+    a naked put on the same name, which stays undecided and is asked."""
+    own = _entries(rules, underlying, trade_id)[1].get("intent")
+    if isinstance(own, str):
+        return own
+    intent = name_intent(rules, underlying)
+    return intent if intent is not None and intent_fits(intent, legs) else None
 
 
 def disabled(rules: dict[str, Any], underlying: str, rule_id: str, trade_id: str | None = None) -> bool:

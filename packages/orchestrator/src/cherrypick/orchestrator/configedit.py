@@ -285,24 +285,25 @@ def insert_key(text: str, pointer: str, key: str, value: Any) -> str:
     return text[: last + 1] + "," + sep + encoded + text[last + 1 :]
 
 
-def insert_block_from_example(
-    cfg: dict[str, Any], target_id: str, text: str, pointer: str, value: Any
-) -> str | None:
-    """`text` with one top-level key added, when `pointer` names a key the target's shipped example has and
-    this copy lacks (a block added since the copy was written, such as manage's `trades`). It goes in as the
-    object's last entry and nothing else moves. None for anything else: a pointer that is not one top-level
-    key, a key the example does not have (config the module never reads), or no example to ask."""
-    tokens = _pointer_tokens(pointer)
-    if len(tokens) != 1:
-        return None
-    example = _example_path(cfg, target_id)
-    if example is None or not example.exists():
-        return None
+def splice_or_add(cfg: dict[str, Any], target_id: str, text: str, pointer: str, value: Any) -> str:
+    """`splice_value`, except that a pointer naming one top-level key the target's shipped example has and
+    this copy lacks (a block added since the copy was written, such as manage's `trades`) is added as the
+    object's last entry, nothing else moving. Any other absent pointer raises KeyError as `splice_value`
+    does: a key the example does not have (config the module never reads), or one inside an absent block."""
     try:
-        in_example = tokens[0] in {e["key"] for e in top_level_entries(example.read_text(encoding="utf-8"))}
-        return insert_key(text, "", tokens[0], value) if in_example else None
-    except (OSError, KeyError, ValueError):
-        return None
+        return splice_value(text, pointer, value)
+    except KeyError:
+        tokens = _pointer_tokens(pointer)
+        example = _example_path(cfg, target_id)
+        if len(tokens) != 1 or example is None or not example.exists():
+            raise
+        try:
+            keys = {e["key"] for e in top_level_entries(example.read_text(encoding="utf-8"))}
+        except (OSError, ValueError):
+            raise KeyError(f"pointer not found: {pointer}") from None
+        if tokens[0] not in keys:
+            raise
+        return insert_key(text, "", tokens[0], value)
 
 
 def top_level_entries(text: str) -> list[dict[str, Any]]:

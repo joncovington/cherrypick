@@ -41,7 +41,7 @@ cards show, what `check-roll --trade` takes (a bare name still works for a name'
 `trades.<ID>` key in the overrides: `intent`, `note` and `disable` for that trade alone, read over the
 name's `positions.<SYMBOL>`. An intent is a fact about one trade, so a name's applies only to a trade it
 can describe: `wheel` and `no_wheel` to a naked short put, `pmcc` and `diagonal` to a trade with a call in
-it, and a label such as `hedge` to any. A name marked `pmcc` for its call diagonal says nothing about a
+it, and a label such as `hedge` to any. The trade's `intent` is the result. A name marked `pmcc` for its call diagonal says nothing about a
 short put on the same name, which stays undecided (shown as no intent, and asked) until the trade's own
 `trades.<ID>.intent` says what it is. Any other value (`hedge`, `income`) is a free label: shown on the
 trade, describing any of them, and never validated.
@@ -344,8 +344,9 @@ inside it, the name's completed cycles and assignments, and two verdicts, today'
 get marked as a wheel. The second is the same trade judged again as a wheel, so it is never guessed;
 `wheel_path` is false while no reconciled cycle holds the put, and marking it then changes nothing yet.
 `suggested` is `"wheel"` when a wheel cycle on the name reconciles to the account, with `evidence`
-saying why (completed cycles, an open one, or that the name's own intent is for another trade); it is a
-suggestion and is never applied. `key` is the config key an answer is written at: the trade's own
+saying why (completed cycles, an open one); it is a suggestion and is never applied. `note` says when
+the name's own intent is for another trade on the name, which is why this put is asked about. `key` is
+the config key an answer is written at: the trade's own
 (`trades.<ID>.intent`), or the name's (`positions.<SYMBOL>.intent`) while the trade's ID is still
 provisional. Any intent takes a trade off the list: `"no_wheel"` says it is not a wheel and keeps its
 stop. The list judges nothing and sets nothing; the console stages the intent for Config.
