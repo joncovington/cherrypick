@@ -120,8 +120,6 @@ export function logSources(config: ConsoleConfig): Array<{ id: string; path: str
     ["contango", "contango/contango_paper.log"],
     ["weeklyput", "weeklyput/weeklyput_paper.log"],
     ["automations", "automations/automations_paper.log"],
-    // Its log under the old name, written before the rename.
-    ["ensemble", "ensemble/ensemble_paper.log"],
     ["ladder", "ladder/ladder_paper.log"],
     ["bwb", "bwb/bwb_paper.log"],
     ["meic-live", "meic/meic_live.log"],

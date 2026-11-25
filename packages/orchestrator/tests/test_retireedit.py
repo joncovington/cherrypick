@@ -13,7 +13,7 @@ from cherrypick.orchestrator import retireedit
 FILE = (
     "{\r\n"
     '  "_header": "automations: kept as written",\r\n'
-    '  "groups": {"ensemble": {"enabled": false}},\r\n'
+    '  "groups": {"default": {"enabled": false}},\r\n'
     '  "automations": {"iron-fly-1000": {"enabled": true, "note": "kept"}}\r\n'
     "}\r\n"
 )
@@ -51,7 +51,7 @@ def test_retiring_sets_the_two_keys_and_leaves_the_rest_as_written(cfgfile):
     assert seen == [{"name": "iron-fly-1000", "retired": True}]
     d = doc(cfgfile)
     assert d["automations"]["iron-fly-1000"] == {"enabled": False, "note": "kept", "retired": "2026-11-21"}
-    assert d["_header"] == "automations: kept as written" and d["groups"] == {"ensemble": {"enabled": False}}
+    assert d["_header"] == "automations: kept as written" and d["groups"] == {"default": {"enabled": False}}
 
 
 def test_a_shipped_automation_the_file_does_not_name_gets_an_entry(cfgfile):

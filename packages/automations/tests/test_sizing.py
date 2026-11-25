@@ -114,7 +114,7 @@ def test_the_engine_reads_the_arms_own_results_for_its_progression():
 
 # --- a group's allocation and caps ------------------------------------------------------------------
 def with_groups(spec):
-    return config_mod.load_arms({"groups": {"ensemble": {"enabled": True, **spec}}})
+    return config_mod.load_arms({"groups": {"default": {"enabled": True, **spec}}})
 
 
 def test_a_group_shares_its_allocation_and_caps_among_its_members():
@@ -126,7 +126,7 @@ def test_a_group_shares_its_allocation_and_caps_among_its_members():
         }
     )
     assert loaded["iron-fly-1000"]["budget"] == {
-        "group": "ensemble",
+        "group": "default",
         "members": sorted(A),
         "allocation": 25000.0,
         "group_max_risk": 2000.0,
@@ -137,8 +137,8 @@ def test_a_group_shares_its_allocation_and_caps_among_its_members():
     assert "member_max_risk" not in loaded["iron-condor-1345"]["budget"]
     # A group with no allocation or cap leaves its members as they were.
     assert all("budget" not in a for a in with_groups({}).values())
-    status = config_mod.group_status(loaded, {"groups": {"ensemble": {"enabled": True, "max_risk": 2000}}})
-    assert status["ensemble"]["max_risk"] == 2000.0
+    status = config_mod.group_status(loaded, {"groups": {"default": {"enabled": True, "max_risk": 2000}}})
+    assert status["default"]["max_risk"] == 2000.0
 
 
 @pytest.mark.parametrize(
@@ -163,7 +163,7 @@ def test_an_allocation_size_needs_an_allocation_from_somewhere():
     with pytest.raises(ValueError, match="no allocation"):
         config_mod.load_arms({"automations": change})
     got = config_mod.load_arms(
-        {"automations": change, "groups": {"ensemble": {"enabled": True, "allocation": 1e5}}}
+        {"automations": change, "groups": {"default": {"enabled": True, "allocation": 1e5}}}
     )
     assert got["iron-fly-1000"]["budget"]["allocation"] == 1e5
     # A budget is the group's to set, never the arm's own.
@@ -178,7 +178,7 @@ def test_the_group_cap_cuts_the_count_to_fit_and_then_refuses():
     arm = config_mod.load_arms(
         {
             "automations": {"iron-fly-1000": {"size": {"contracts": 5}}},
-            "groups": {"ensemble": {"enabled": True, "max_risk": 1000 + room_for_two}},
+            "groups": {"default": {"enabled": True, "max_risk": 1000 + room_for_two}},
         }
     )["iron-fly-1000"]
     held = [OpenPosition("put-spread-1300", "2026-11-13", "2026-11-20", 1000.0)]
@@ -203,7 +203,7 @@ def test_a_members_share_caps_its_own_open_risk():
             "automations": {
                 "iron-fly-1000": {"size": {"contracts": 3}, "limits": {"max_open": 5, "per_day": 1}}
             },
-            "groups": {"ensemble": {"enabled": True, "max_risk": 100000, "shares": {"iron-fly-1000": 1}}},
+            "groups": {"default": {"enabled": True, "max_risk": 100000, "shares": {"iron-fly-1000": 1}}},
         }
     )["iron-fly-1000"]
     assert arm["budget"]["member_max_risk"] == 1000.0
@@ -222,7 +222,7 @@ def test_arms_deciding_on_one_tick_see_each_others_risk():
                 "iron-fly-1000": {"size": {"contracts": 1}},
                 "iron-fly-copy": {**A["iron-fly-1000"], "name": "iron-fly-copy", "size": {"contracts": 1}},
             },
-            "groups": {"ensemble": {"enabled": True, "max_risk": per * 1.5}},
+            "groups": {"default": {"enabled": True, "max_risk": per * 1.5}},
         }
     )
     both = {n: loaded[n] for n in ("iron-fly-1000", "iron-fly-copy")}
@@ -271,7 +271,7 @@ def test_the_paper_ledger_gives_the_same_risk_and_results():
     ]
     for pid, arm, status, xs, xm, net, cap, exp in rows:
         conn.execute(
-            "INSERT INTO ensemble_positions (position_id, arm, symbol, entry_session, expiration,"
+            "INSERT INTO automations_positions (position_id, arm, symbol, entry_session, expiration,"
             " entry_value, entry_json, status, exit_session, exit_minute, net_pnl, capital)"
             " VALUES (?, ?, 'SPX', '2026-11-11', ?, 0, '{}', ?, ?, ?, ?, ?)",
             (pid, arm, exp, status, xs, xm, net, cap),
@@ -288,7 +288,7 @@ PROGRESSIVE = {"size": {"contracts": 1, "progression": STEP_UP}}
 
 def a_losing_trade(conn, arm="iron-fly-1000"):
     conn.execute(
-        "INSERT INTO ensemble_positions (position_id, arm, symbol, entry_session, expiration, entry_value,"
+        "INSERT INTO automations_positions (position_id, arm, symbol, entry_session, expiration, entry_value,"
         " entry_json, status, exit_session, exit_minute, net_pnl, capital)"
         " VALUES ('old', ?, 'SPX', '2026-11-13', '2026-11-13', 0, '{}', 'closed',"
         " '2026-11-13', NULL, -80.0, 300)",

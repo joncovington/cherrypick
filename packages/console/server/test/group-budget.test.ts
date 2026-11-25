@@ -17,7 +17,7 @@ function bridge(results: boolean) {
   invalidateFeatures();
   setBridgeCaller((req) => {
     if (req.op === "automation_groups") {
-      return { ok: true, groups: [{ name: "ensemble", enabled: false, members: [member("iron-condor-1345"), member("long-put-1030"), member("iron-fly-1000", "2026-11-21")] }], ungrouped: [] } as unknown as BridgeResult;
+      return { ok: true, groups: [{ name: "default", enabled: false, members: [member("iron-condor-1345"), member("long-put-1030"), member("iron-fly-1000", "2026-11-21")] }], ungrouped: [] } as unknown as BridgeResult;
     }
     return { ok: true, capabilities: {}, modules: {}, services: {}, features: { backtest_results: results } } as unknown as BridgeResult;
   });
@@ -56,7 +56,7 @@ describe("a group's budget from its backtests", () => {
     bridge(true);
     builder({ "iron-condor-1345": IC, "long-put-1030": null, "iron-fly-1000": null });
     backtest(false);
-    const out = await readGroupBudgetFor("ensemble");
+    const out = await readGroupBudgetFor("default");
     expect(out.missing).toEqual(["long-put-1030"]); // the retired one is not asked for
     expect(out.reading).toBeNull();
     expect(spawned).toEqual([]);
@@ -66,7 +66,7 @@ describe("a group's budget from its backtests", () => {
     bridge(true);
     builder({ "iron-condor-1345": IC, "long-put-1030": LP, "iron-fly-1000": null });
     backtest(false);
-    const out = await readGroupBudgetFor("ensemble");
+    const out = await readGroupBudgetFor("default");
     expect(spawned).toEqual([{ kind: "groupBudget", pairs: [`iron-condor-1345=${IC}`, `long-put-1030=${LP}`] }]);
     expect(out.reading?.max_risk).toBe(1300);
     expect(out.withheld).toBe(false);
@@ -76,7 +76,7 @@ describe("a group's budget from its backtests", () => {
     bridge(false);
     builder({ "iron-condor-1345": IC, "long-put-1030": LP });
     backtest(true);
-    const out = await readGroupBudgetFor("ensemble");
+    const out = await readGroupBudgetFor("default");
     expect(out.withheld).toBe(true);
     expect(out.reading).toBeNull();
   });
@@ -85,6 +85,6 @@ describe("a group's budget from its backtests", () => {
     bridge(true);
     builder({ "iron-condor-1345": LP, "long-put-1030": LP });
     backtest(false);
-    expect((await readGroupBudgetFor("ensemble")).missing).toEqual(["iron-condor-1345"]);
+    expect((await readGroupBudgetFor("default")).missing).toEqual(["iron-condor-1345"]);
   });
 });

@@ -68,8 +68,8 @@ function entryLegs(entryJson: string | null): AutomationsLeg[] {
 
 function legsByPosition(db: DatabaseHandle): Map<string, AutomationsLeg[]> {
   const out = new Map<string, AutomationsLeg[]>();
-  if (!hasTable(db, "ensemble_legs")) return out;
-  for (const r of rows(db, "SELECT * FROM ensemble_legs ORDER BY id")) {
+  if (!hasTable(db, "automations_legs")) return out;
+  for (const r of rows(db, "SELECT * FROM automations_legs ORDER BY id")) {
     const id = str(r["position_id"]) ?? "";
     const list = out.get(id) ?? [];
     list.push({ role: str(r["leg_role"]) ?? "", right: str(r["right"]) ?? "", side: num(r["side"]) ?? 0, strike: num(r["strike"]) ?? 0 });
@@ -83,11 +83,11 @@ function legsByPosition(db: DatabaseHandle): Map<string, AutomationsLeg[]> {
 /** The latest usable mark of each open position. */
 function latestMarks(db: DatabaseHandle): Map<string, AutomationsMark> {
   const out = new Map<string, AutomationsMark>();
-  if (!hasTable(db, "ensemble_marks")) return out;
+  if (!hasTable(db, "automations_marks")) return out;
   for (const r of rows(
     db,
-    `SELECT m.* FROM ensemble_marks m
-       JOIN (SELECT position_id, MAX(ts) AS ts FROM ensemble_marks WHERE usable = 1 GROUP BY position_id) last
+    `SELECT m.* FROM automations_marks m
+       JOIN (SELECT position_id, MAX(ts) AS ts FROM automations_marks WHERE usable = 1 GROUP BY position_id) last
          ON last.position_id = m.position_id AND last.ts = m.ts
       WHERE m.usable = 1`,
   )) {
@@ -99,11 +99,11 @@ function latestMarks(db: DatabaseHandle): Map<string, AutomationsMark> {
 /** The newest spot any mark recorded, usable or not: a refused quote still carries one. */
 function latestSpots(db: DatabaseHandle): Map<string, number> {
   const out = new Map<string, number>();
-  if (!hasTable(db, "ensemble_marks")) return out;
+  if (!hasTable(db, "automations_marks")) return out;
   for (const r of rows(
     db,
-    `SELECT m.position_id, m.spot FROM ensemble_marks m
-       JOIN (SELECT position_id, MAX(ts) AS ts FROM ensemble_marks WHERE spot IS NOT NULL GROUP BY position_id) last
+    `SELECT m.position_id, m.spot FROM automations_marks m
+       JOIN (SELECT position_id, MAX(ts) AS ts FROM automations_marks WHERE spot IS NOT NULL GROUP BY position_id) last
          ON last.position_id = m.position_id AND last.ts = m.ts`,
   )) {
     const spot = num(r["spot"]);
@@ -182,10 +182,10 @@ function parseDetail(text: string | null): { check: string | null; value: string
 /** How many ticks each arm's refusal reason has been given in a session, from the journal. */
 function refusalCounts(db: DatabaseHandle, session: string): Map<string, { occurrences: number; detail: string | null }> {
   const out = new Map<string, { occurrences: number; detail: string | null }>();
-  if (!hasTable(db, "ensemble_decisions")) return out;
+  if (!hasTable(db, "automations_decisions")) return out;
   for (const r of rows(
     db,
-    "SELECT * FROM ensemble_decisions WHERE trade_date = ? AND mode = 'entry' AND accepted = 0 ORDER BY last_ts, id",
+    "SELECT * FROM automations_decisions WHERE trade_date = ? AND mode = 'entry' AND accepted = 0 ORDER BY last_ts, id",
     session,
   )) {
     out.set(`${str(r["arm"]) ?? ""}\u0000${str(r["reason"]) ?? ""}`, {
@@ -220,12 +220,12 @@ function entryRow(r: Record<string, unknown>, counts: Map<string, { occurrences:
 }
 
 function sessionOf(db: DatabaseHandle): string | null {
-  if (hasTable(db, "ensemble_loop_iterations")) {
-    const d = db.prepare<[], { d: string | null }>("SELECT MAX(session_date) AS d FROM ensemble_loop_iterations").get()?.d;
+  if (hasTable(db, "automations_loop_iterations")) {
+    const d = db.prepare<[], { d: string | null }>("SELECT MAX(session_date) AS d FROM automations_loop_iterations").get()?.d;
     if (d != null) return d;
   }
-  if (hasTable(db, "ensemble_entries")) {
-    return db.prepare<[], { d: string | null }>("SELECT MAX(entry_session) AS d FROM ensemble_entries").get()?.d ?? null;
+  if (hasTable(db, "automations_entries")) {
+    return db.prepare<[], { d: string | null }>("SELECT MAX(entry_session) AS d FROM automations_entries").get()?.d ?? null;
   }
   return null;
 }
@@ -233,7 +233,7 @@ function sessionOf(db: DatabaseHandle): string | null {
 /** Every arm the ledger names, in any table that carries one. */
 function armsOf(db: DatabaseHandle): string[] {
   const names = new Set<string>();
-  for (const table of ["ensemble_positions", "ensemble_entries", "ensemble_decisions"]) {
+  for (const table of ["automations_positions", "automations_entries", "automations_decisions"]) {
     if (!hasTable(db, table)) continue;
     for (const r of rows(db, `SELECT DISTINCT arm FROM ${table}`)) {
       const a = str(r["arm"]);
@@ -253,16 +253,16 @@ export function readAutomations(config: ConsoleConfig): AutomationsPayload {
     const legs = legsByPosition(db);
     const marks = latestMarks(db);
     const spots = latestSpots(db);
-    const positions = hasTable(db, "ensemble_positions")
-      ? rows(db, "SELECT * FROM ensemble_positions ORDER BY status = 'open' DESC, entry_session DESC, arm").map((r) => position(r, legs, marks, spots))
+    const positions = hasTable(db, "automations_positions")
+      ? rows(db, "SELECT * FROM automations_positions ORDER BY status = 'open' DESC, entry_session DESC, arm").map((r) => position(r, legs, marks, spots))
       : [];
     const counts = session === null ? new Map() : refusalCounts(db, session);
     const today =
-      session !== null && hasTable(db, "ensemble_entries")
-        ? rows(db, "SELECT * FROM ensemble_entries WHERE entry_session = ? ORDER BY arm, symbol", session).map((r) => entryRow(r, counts))
+      session !== null && hasTable(db, "automations_entries")
+        ? rows(db, "SELECT * FROM automations_entries WHERE entry_session = ? ORDER BY arm, symbol", session).map((r) => entryRow(r, counts))
         : [];
-    const iteration = hasTable(db, "ensemble_loop_iterations")
-      ? db.prepare<[], Record<string, unknown>>("SELECT ran_at, phase, status FROM ensemble_loop_iterations ORDER BY ran_at DESC LIMIT 1").get()
+    const iteration = hasTable(db, "automations_loop_iterations")
+      ? db.prepare<[], Record<string, unknown>>("SELECT ran_at, phase, status FROM automations_loop_iterations ORDER BY ran_at DESC LIMIT 1").get()
       : undefined;
     const ranAt = iteration === undefined ? null : num(iteration["ran_at"]);
     return {
@@ -355,11 +355,11 @@ export function readAutomationsHistory(config: ConsoleConfig, filter: Automation
   clauses.push(...range.clauses);
   params.push(...range.params);
   return withReadOnlyDb<AutomationsHistory>(dbPath(config), { rows: [], totals: EMPTY_TRADE_TOTALS }, (db) => {
-    if (!hasTable(db, "ensemble_positions")) return { rows: [], totals: EMPTY_TRADE_TOTALS };
+    if (!hasTable(db, "automations_positions")) return { rows: [], totals: EMPTY_TRADE_TOTALS };
     const legs = legsByPosition(db);
     const out = rows(
       db,
-      `SELECT * FROM ensemble_positions WHERE ${clauses.join(" AND ")} ORDER BY COALESCE(exit_session, expiration) DESC, entry_session DESC, arm`,
+      `SELECT * FROM automations_positions WHERE ${clauses.join(" AND ")} ORDER BY COALESCE(exit_session, expiration) DESC, entry_session DESC, arm`,
       ...params,
     ).map((r) => automationsTradeCash(r, legs.get(str(r["position_id"]) ?? "") ?? entryLegs(str(r["entry_json"]))));
     return { rows: out, totals: tradeTotals(out) };
@@ -426,8 +426,8 @@ export function lineOf(closed: readonly ClosedRow[]): AutomationsLine {
 export function readAutomationsPerformance(config: ConsoleConfig): AutomationsPerformance {
   const empty: AutomationsPerformance = { dbPresent: false, arms: {}, combined: lineOf([]) };
   return withReadOnlyDb<AutomationsPerformance>(dbPath(config), empty, (db) => {
-    if (!hasTable(db, "ensemble_positions")) return { ...empty, dbPresent: true };
-    const closed: ClosedRow[] = rows(db, "SELECT * FROM ensemble_positions WHERE status = 'closed' AND net_pnl IS NOT NULL").map((r) => ({
+    if (!hasTable(db, "automations_positions")) return { ...empty, dbPresent: true };
+    const closed: ClosedRow[] = rows(db, "SELECT * FROM automations_positions WHERE status = 'closed' AND net_pnl IS NOT NULL").map((r) => ({
       arm: str(r["arm"]) ?? "",
       entrySession: str(r["entry_session"]) ?? "",
       exitSession: str(r["exit_session"]) ?? "",

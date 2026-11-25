@@ -37,7 +37,7 @@ Arms live in each module's own config file under `~/.cherrypick/config/`. On Win
 | Calendars | `calendars.json` | `books` | `control` on, `path` off |
 | Contango | `contango.json` | `arms` | `control`, `flipexit` |
 | Weeklyput | `weeklyput.json` | `arms` | `unhedged` |
-| Ensemble | `ensemble.json` | `arms` | the eight of research item 75 |
+| Automations | `automations.json` | `automations` | the eight of research item 75 |
 | Ladder | `ladder.json` | `arms` | `chain`, `once`, `decay`, `session` |
 
 MEIC keeps its arms in a second file, apart from its base settings. If it has no `meic.risk.json` it

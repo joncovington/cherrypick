@@ -77,7 +77,7 @@ what it may write. The package's own CLAUDE.md holds the detail.
   `engine.decide` is one pure decision over a `Snapshot`, called by the backtest driver
   (`packages/backtest/scripts/ensemble_item75.py`) and by its paper loop, which takes any arm
   `arms.load_arms` returns. **Paper-only, credential-free, no live path**: a position is a row in
-  `~/.cherrypick/data/automations/paper_trades.db` (trade schema `ensemble_trade`), never an order; it reads
+  `~/.cherrypick/data/automations/paper_trades.db` (trade schema `automations_trade`), never an order; it reads
   the stream cache and never writes it, and writes a local replay record of every decision tick. Off by
   default in the example. Reads the
   technicals package's pure indicator functions (`sma`, `ema`, `rsi`) and nothing else of it:

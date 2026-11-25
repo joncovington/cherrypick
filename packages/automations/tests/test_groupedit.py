@@ -11,15 +11,15 @@ from cherrypick.automations import config as config_mod
 SHIPPED = sorted(arms.ARMS)
 
 
-def _ensemble_on() -> dict:
+def _automations_on() -> dict:
     return {"enabled": True}
 
 
 def test_the_view_lists_every_group_with_each_members_own_switch():
-    cfg = {"groups": {"ensemble": {"enabled": False}}, "automations": {"iron-fly-1000": {"enabled": False}}}
+    cfg = {"groups": {"default": {"enabled": False}}, "automations": {"iron-fly-1000": {"enabled": False}}}
     v = groupedit.view(cfg)
     (g,) = v["groups"]
-    assert g["name"] == "ensemble" and g["enabled"] is False
+    assert g["name"] == "default" and g["enabled"] is False
     assert [m["name"] for m in g["members"]] == SHIPPED
     own = {m["name"]: m["enabled"] for m in g["members"]}
     # The group being off does not show as each member off: the member's own switch is what is listed.
@@ -34,18 +34,18 @@ def test_a_group_not_named_in_the_file_shows_on_as_the_loop_reads_it():
 
 
 def test_a_valid_change_returns_the_block_and_the_moves_to_write():
-    cfg = {"groups": {"_note": "kept", "ensemble": {"enabled": False, "_why": "kept too"}}}  # not yet run
+    cfg = {"groups": {"_note": "kept", "default": {"enabled": False, "_why": "kept too"}}}  # not yet run
     r = groupedit.check(
         cfg,
         {
-            "groups": {"ensemble": {"enabled": False, "max_risk": 2000}, "gold": {"enabled": False}},
+            "groups": {"default": {"enabled": False, "max_risk": 2000}, "gold": {"enabled": False}},
             "members": {"gld-call-spread-1dte": "gold"},
         },
     )
     assert r["problems"] == []
     assert r["block"] == {
         "_note": "kept",
-        "ensemble": {"_why": "kept too", "enabled": False, "max_risk": 2000},
+        "default": {"_why": "kept too", "enabled": False, "max_risk": 2000},
         "gold": {"enabled": False},
     }
     assert r["moves"] == {"gld-call-spread-1dte": "gold"}
@@ -60,7 +60,7 @@ def test_a_valid_change_returns_the_block_and_the_moves_to_write():
 
 def test_an_automation_taken_out_of_every_group_is_written_as_null():
     r = groupedit.check(
-        {}, {"groups": {"ensemble": _ensemble_on()}, "members": {"gld-call-spread-1dte": None}}
+        {}, {"groups": {"default": _automations_on()}, "members": {"gld-call-spread-1dte": None}}
     )
     assert r["problems"] == [] and r["moves"] == {"gld-call-spread-1dte": None}
     after = config_mod.load_arms({"automations": {"gld-call-spread-1dte": {"group": None}}})
@@ -74,7 +74,7 @@ def test_an_automation_taken_out_of_every_group_is_written_as_null():
 def test_a_group_emptied_of_members_is_dropped_from_the_block():
     moves = {n: "rest" for n in SHIPPED}
     r = groupedit.check(
-        {"groups": {"ensemble": {"enabled": True}}}, {"groups": {"rest": _ensemble_on()}, "members": moves}
+        {"groups": {"default": {"enabled": True}}}, {"groups": {"rest": _automations_on()}, "members": moves}
     )
     assert r["problems"] == [] and set(r["block"]) == {"rest"}
 
@@ -84,7 +84,7 @@ def test_the_loops_own_rules_refuse_a_bad_change():
         {},
         {
             "groups": {
-                "ensemble": {
+                "default": {
                     "enabled": True,
                     "allocation": 1000,
                     "shares": {"iron-fly-1000": 60, "iron-condor-1345": 60},
@@ -97,31 +97,29 @@ def test_the_loops_own_rules_refuse_a_bad_change():
     outsider = groupedit.check(
         {"automations": {"gld-call-spread-1dte": {"group": None}}},
         {
-            "groups": {
-                "ensemble": {"enabled": True, "max_risk": 500, "shares": {"gld-call-spread-1dte": 10}}
-            },
+            "groups": {"default": {"enabled": True, "max_risk": 500, "shares": {"gld-call-spread-1dte": 10}}},
             "members": {},
         },
     )
     assert any("not a member" in p for p in outsider["problems"])
     nothing = groupedit.check(
-        {}, {"groups": {"ensemble": {"enabled": True, "shares": {"iron-fly-1000": 10}}}, "members": {}}
+        {}, {"groups": {"default": {"enabled": True, "shares": {"iron-fly-1000": 10}}}, "members": {}}
     )
     assert any("share of nothing" in p for p in nothing["problems"])
 
 
 def test_a_group_with_members_must_say_whether_it_is_on_and_names_are_checked():
     r = groupedit.check({}, {"groups": {}, "members": {}})
-    assert r["problems"] == ["groups.ensemble: has members, so say whether it is on"]
-    r = groupedit.check({}, {"groups": {"ensemble": {"enabled": "yes"}}, "members": {}})
+    assert r["problems"] == ["groups.default: has members, so say whether it is on"]
+    r = groupedit.check({}, {"groups": {"default": {"enabled": "yes"}}, "members": {}})
     assert any("enabled: true or false" in p for p in r["problems"])
     r = groupedit.check(
-        {}, {"groups": {"ensemble": _ensemble_on()}, "members": {"nope": "x", "iron-fly-1000": " pad"}}
+        {}, {"groups": {"default": _automations_on()}, "members": {"nope": "x", "iron-fly-1000": " pad"}}
     )
     assert "members.nope: no such automation" in r["problems"]
     assert "members.iron-fly-1000: a group name, or null for none" in r["problems"]
-    r = groupedit.check({}, {"groups": {"ensemble": {"enabled": True, "colour": "red"}}, "members": {}})
-    assert r["problems"] == ["groups.ensemble: unknown key 'colour'"]
+    r = groupedit.check({}, {"groups": {"default": {"enabled": True, "colour": "red"}}, "members": {}})
+    assert r["problems"] == ["groups.default: unknown key 'colour'"]
 
 
 WED = date(2026, 11, 18)
@@ -129,7 +127,7 @@ WED = date(2026, 11, 18)
 
 def test_each_automation_is_named_with_the_one_thing_that_stops_it():
     cfg = {
-        "groups": {"ensemble": {"enabled": False}},
+        "groups": {"default": {"enabled": False}},
         "automations": {
             "iron-fly-1000": {"enabled": False},
             "gld-call-spread-1dte": {"group": None, "start": "2026-11-20"},
@@ -152,28 +150,31 @@ def test_each_automation_is_named_with_the_one_thing_that_stops_it():
 
 def test_a_group_switched_on_starts_at_the_next_session():
     r = groupedit.check(
-        {"groups": {"ensemble": {"enabled": False}}}, {"groups": {"ensemble": {"enabled": True}}}, WED
+        {"groups": {"default": {"enabled": False}}}, {"groups": {"default": {"enabled": True}}}, WED
     )
-    assert r["problems"] == [] and r["block"] == {"ensemble": {"enabled": True, "start": "2026-11-19"}}
-    assert r["notes"] == ["ensemble switches on from 2026-11-19, the next session"]
+    assert r["problems"] == [] and r["block"] == {"default": {"enabled": True, "start": "2026-11-19"}}
+    assert r["notes"] == ["default switches on from 2026-11-19, the next session"]
     states = {m["state"] for m in r["after"]["groups"][0]["members"]}
     assert states == {"waiting"}
     # A later start the page gives is kept; a group already on is left as it is.
     r = groupedit.check(
-        {"groups": {"ensemble": {"enabled": False}}},
-        {"groups": {"ensemble": {"enabled": True, "start": "2026-12-01"}}},
+        {"groups": {"default": {"enabled": False}}},
+        {"groups": {"default": {"enabled": True, "start": "2026-12-01"}}},
         WED,
     )
-    assert r["block"]["ensemble"]["start"] == "2026-12-01"
-    r = groupedit.check({}, {"groups": {"ensemble": {"enabled": True}}}, WED)
-    assert "start" not in r["block"]["ensemble"]
+    assert r["block"]["default"]["start"] == "2026-12-01"
+    r = groupedit.check({}, {"groups": {"default": {"enabled": True}}}, WED)
+    assert "start" not in r["block"]["default"]
 
 
 def test_an_automation_switched_on_starts_at_the_next_session_and_off_is_written_as_is():
     cfg = {"automations": {"iron-fly-1000": {"enabled": False}}}
     r = groupedit.check(
         cfg,
-        {"groups": {"ensemble": _ensemble_on()}, "switches": {"iron-fly-1000": True, "long-put-1030": False}},
+        {
+            "groups": {"default": _automations_on()},
+            "switches": {"iron-fly-1000": True, "long-put-1030": False},
+        },
         WED,
     )
     assert r["problems"] == []
@@ -186,7 +187,7 @@ def test_an_automation_switched_on_starts_at_the_next_session_and_off_is_written
     assert rows["long-put-1030"]["state"] == "off_own"
     # A switch to what it already is, is no switch.
     r = groupedit.check(
-        cfg, {"groups": {"ensemble": _ensemble_on()}, "switches": {"long-put-1030": True}}, WED
+        cfg, {"groups": {"default": _automations_on()}, "switches": {"long-put-1030": True}}, WED
     )
     assert r["switches"] == {}
 
@@ -201,7 +202,7 @@ def test_a_switch_with_a_forward_rule_keeps_the_start_its_rule_reads_from(monkey
     monkeypatch.setattr(groupedit, "_own_arms", lambda config: {**arms.ARMS, "iron-fly-1000": arm})
     monkeypatch.setattr(config_mod, "load_arms", lambda config, **kw: {**arms.ARMS, "iron-fly-1000": arm})
     r = groupedit.check(
-        {}, {"groups": {"ensemble": _ensemble_on()}, "switches": {"iron-fly-1000": True}}, WED
+        {}, {"groups": {"default": _automations_on()}, "switches": {"iron-fly-1000": True}}, WED
     )
     assert r["switches"] == {"iron-fly-1000": {"enabled": True}}
     assert r["notes"] == ["iron-fly-1000 keeps its start 2026-10-01: its forward rule reads from it"]
@@ -209,7 +210,7 @@ def test_a_switch_with_a_forward_rule_keeps_the_start_its_rule_reads_from(monkey
 
 def test_a_bad_switch_is_refused():
     r = groupedit.check(
-        {}, {"groups": {"ensemble": _ensemble_on()}, "switches": {"nope": True, "iron-fly-1000": "on"}}, WED
+        {}, {"groups": {"default": _automations_on()}, "switches": {"nope": True, "iron-fly-1000": "on"}}, WED
     )
     assert "switches.nope: no such automation" in r["problems"]
     assert "switches.iron-fly-1000: true or false" in r["problems"]
@@ -218,6 +219,6 @@ def test_a_bad_switch_is_refused():
 
 def test_an_unchanged_member_is_not_a_move():
     r = groupedit.check(
-        {}, {"groups": {"ensemble": _ensemble_on()}, "members": {"iron-fly-1000": "ensemble"}}
+        {}, {"groups": {"default": _automations_on()}, "members": {"iron-fly-1000": "default"}}
     )
     assert r["problems"] == [] and r["moves"] == {}

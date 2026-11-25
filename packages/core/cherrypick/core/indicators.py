@@ -293,7 +293,7 @@ def stochastic(
 ) -> tuple[list[float | None], list[float | None]]:
     """(%K, %D): the slow stochastic. Raw %K is where the close sits in the last `k_period` bars' range
     (a flat range reads 50); %K is its simple mean over `k_smooth` and %D the simple mean of %K over
-    `d_smooth`. Ensemble's last-value `stochastic` is this series' final pair."""
+    `d_smooth`. The automations' last-value `stochastic` is this series' final pair."""
     size = len(closes)
     raw: list[float | None] = [None] * size
     for i in range(k_period - 1, size):

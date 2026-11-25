@@ -43,7 +43,7 @@ def closed(conn) -> list[dict]:
     return [
         dict(r)
         for r in conn.execute(
-            "SELECT * FROM ensemble_positions WHERE status = 'closed' AND net_pnl IS NOT NULL "
+            "SELECT * FROM automations_positions WHERE status = 'closed' AND net_pnl IS NOT NULL "
             "ORDER BY exit_session, entry_session, arm"
         )
     ]

@@ -457,7 +457,6 @@ IGNORED: dict[str, str] = {
             "contango",
             "curve",
             "automations",
-            "ensemble",
             "external",
             "flies",
             "ladder",

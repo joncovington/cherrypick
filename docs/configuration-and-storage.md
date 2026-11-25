@@ -46,7 +46,7 @@ wholesale with **`$CHERRYPICK_HOME`**. Nothing runtime lands in a source checkou
   data/curve/paper_trades.db      # Curve paper ledger (curve_positions)
   data/contango/paper_trades.db   # Contango paper ledger (contango_positions / contango_sessions)
   data/weeklyput/paper_trades.db  # Weeklyput paper ledger (weeklyput_positions / weeklyput_entries)
-  data/automations/paper_trades.db   # Ensemble paper ledger (ensemble_positions / ensemble_legs / ensemble_entries)
+  data/automations/paper_trades.db   # Automations paper ledger (automations_positions / automations_legs / automations_entries)
   data/automations/replay/           # Automations replay record: one JSON line per decision tick, with its snapshot
   data/ladder/paper_trades.db     # Ladder paper ledger (ladder_positions: one row per lot)
   data/manage/                    # eval-<day>.json evaluations of the real account

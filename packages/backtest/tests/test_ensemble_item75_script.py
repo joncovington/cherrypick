@@ -12,8 +12,8 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pytest
+from cherrypick.automations.events import EventCalendar
 from cherrypick.core import bs
-from cherrypick.ensemble.events import EventCalendar
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "ensemble_item75.py"
 ET = ZoneInfo("America/New_York")

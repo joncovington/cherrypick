@@ -39,7 +39,7 @@ def test_an_open_positions_expiry_and_legs_stay_requested(tmp_path):
         w.config, w.arms, w.conn, str(tmp_path / "paper.db"), cache_path=w.cache_path, when=at(14, 0)
     )
     request = json.loads(path.read_text(encoding="utf-8"))
-    assert request["leg_sources"][0]["query"].endswith("FROM ensemble_legs WHERE status = 'open'")
+    assert request["leg_sources"][0]["query"].endswith("FROM automations_legs WHERE status = 'open'")
     assert request["symbols"] == ["SPX"] and request["nearest_window"] == {"SPX": False}
     assert (
         streamrequests.legs_from_source(request["leg_sources"][0])

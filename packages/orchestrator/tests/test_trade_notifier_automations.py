@@ -1,5 +1,5 @@
-"""ensemble's two notifiable moments: a structure is entered, and it ends (a touch, a profit target, a time
-exit, or the expiry's posted close).
+"""The automations' two notifiable moments: a structure is entered, and it ends (a touch, a profit
+target, a time exit, or the expiry's posted close).
 
 The exit card prints the module's stored net (gross less fees, settlement and slippage, each its own
 column), never a figure re-derived from gross. Any arm is covered: the card names the arm and the legs.
@@ -15,7 +15,7 @@ from cherrypick.orchestrator import trade_notifier as tn
 pytestmark = pytest.mark.unit
 
 _DDL = (
-    "CREATE TABLE ensemble_positions (position_id TEXT, arm TEXT, symbol TEXT, expiration TEXT, "
+    "CREATE TABLE automations_positions (position_id TEXT, arm TEXT, symbol TEXT, expiration TEXT, "
     "quantity INTEGER, entry_session TEXT, entry_mid REAL, entry_value REAL, capital REAL, entry_json TEXT, "
     "status TEXT, exit_reason TEXT, gross_pnl REAL, fees REAL, settlement REAL, slippage REAL, net_pnl REAL)"
 )
@@ -42,7 +42,7 @@ def _position(conn, pid, status="open", **over):
     }  # fmt: skip
     row.update(over)
     conn.execute(
-        f"INSERT INTO ensemble_positions ({', '.join(row)}) VALUES ({', '.join('?' * len(row))})",
+        f"INSERT INTO automations_positions ({', '.join(row)}) VALUES ({', '.join('?' * len(row))})",
         tuple(row.values()),
     )
 
@@ -56,32 +56,32 @@ class _Rec:
 
 
 def test_schema_is_registered_with_seed_and_process():
-    assert "ensemble_trade" in tn._SCHEMAS
+    assert "automations_trade" in tn._SCHEMAS
 
 
 def test_an_entry_and_a_close_each_notify_once():
     conn = _conn()
-    seed_fn, process_fn = tn._SCHEMAS["ensemble_trade"]
+    seed_fn, process_fn = tn._SCHEMAS["automations_trade"]
     state = seed_fn(conn)
     notifier = _Rec()
     _position(conn, "put-spread-1300:2026-11-16")
-    process_fn(conn, state, notifier, "ensemble")
+    process_fn(conn, state, notifier, "automations")
     assert len(notifier.sent) == 1
     body = notifier.sent[0][1]
     assert "ENTRY" in body and "2 x SPX 2026-11-16 -6000P +5990P" in body and "1.25 cr" in body
     assert "[put-spread-1300]" in body
     conn.execute(
-        "UPDATE ensemble_positions SET status='closed', exit_reason='touch', gross_pnl=-300.0, fees=2.5, "
+        "UPDATE automations_positions SET status='closed', exit_reason='touch', gross_pnl=-300.0, fees=2.5, "
         "settlement=0.0, slippage=4.0, net_pnl=-306.5"
     )
-    process_fn(conn, state, notifier, "ensemble")
+    process_fn(conn, state, notifier, "automations")
     assert len(notifier.sent) == 2
     assert (
         "CLOSED" in notifier.sent[1][1]
         and "net $-306.50" in notifier.sent[1][1]
         and "(touch)" in notifier.sent[1][1]
     )
-    process_fn(conn, state, notifier, "ensemble")  # nothing new
+    process_fn(conn, state, notifier, "automations")  # nothing new
     assert len(notifier.sent) == 2
 
 
@@ -92,9 +92,9 @@ def test_the_exit_card_splits_every_cost_and_reads_a_missing_net_as_not_recorded
         slippage=3.0, net_pnl=114.0,
     )  # fmt: skip
     _position(conn, "b", status="closed", exit_reason="time", gross_pnl=50.0, net_pnl=None)
-    rows = {r["position_id"]: r for r in conn.execute("SELECT * FROM ensemble_positions")}
-    card = tn._embed_ensemble_exit(rows["a"])
+    rows = {r["position_id"]: r for r in conn.execute("SELECT * FROM automations_positions")}
+    card = tn._embed_automations_exit(rows["a"])
     text = json.dumps(card)
     assert "net $+114.00" in text and "fees $2.00" in text and "settlement $1.00" in text
     assert "slippage $3.00" in text
-    assert "n/r" in tn._fmt_ensemble_exit(rows["b"])
+    assert "n/r" in tn._fmt_automations_exit(rows["b"])

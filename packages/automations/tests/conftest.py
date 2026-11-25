@@ -7,7 +7,7 @@ import pytest
 def managed_home(tmp_path, monkeypatch):
     home = tmp_path / "cherrypick-home"
     monkeypatch.setenv("CHERRYPICK_HOME", str(home))
-    for var in ("AUTOMATIONS_DB_PATH", "ENSEMBLE_DB_PATH", "AUTOMATIONS_CONFIG", "ENSEMBLE_CONFIG"):
+    for var in ("AUTOMATIONS_DB_PATH", "AUTOMATIONS_CONFIG"):
         monkeypatch.delenv(var, raising=False)
     return home
 

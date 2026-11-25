@@ -7,7 +7,7 @@ that defaulted silently would change what is measured):
 
     name, symbol, enabled
     group         the automation group it belongs to (a set of like automations, switched as one:
-                  `config.groups`), or null for none; the shipped eight are the `ensemble` group
+                  `config.groups`), or null for none; the shipped eight are the `default` group
     register      {"item": N, "verdict": "passed"|"failed"|"no_verdict", "blocks": {block: hash}}: the
                   research register's verdict on it, a label read from the register, never from a
                   result file; `blocks` records each block as the study ran it (`enrolment`)
@@ -408,7 +408,7 @@ def _leg(name, right, side, **strike):
 ARMS: dict[str, dict] = {
     "iron-fly-1000": {
         "name": "iron-fly-1000",
-        "group": "ensemble",
+        "group": "default",
         "register": {
             "item": 75,
             "verdict": "failed",
@@ -445,7 +445,7 @@ ARMS: dict[str, dict] = {
     },
     "iron-condor-1345": {
         "name": "iron-condor-1345",
-        "group": "ensemble",
+        "group": "default",
         "register": {
             "item": 75,
             "verdict": "passed",
@@ -481,7 +481,7 @@ ARMS: dict[str, dict] = {
     },
     "put-spread-1300": {
         "name": "put-spread-1300",
-        "group": "ensemble",
+        "group": "default",
         "register": {
             "item": 75,
             "verdict": "no_verdict",
@@ -518,7 +518,7 @@ ARMS: dict[str, dict] = {
     },
     "iron-fly-1dte-1330": {
         "name": "iron-fly-1dte-1330",
-        "group": "ensemble",
+        "group": "default",
         "register": {
             "item": 75,
             "verdict": "failed",
@@ -563,7 +563,7 @@ ARMS: dict[str, dict] = {
     },
     "gld-call-spread-20d": {
         "name": "gld-call-spread-20d",
-        "group": "ensemble",
+        "group": "default",
         "register": {
             "item": 75,
             "verdict": "failed",
@@ -593,7 +593,7 @@ ARMS: dict[str, dict] = {
     },
     "long-put-1030": {
         "name": "long-put-1030",
-        "group": "ensemble",
+        "group": "default",
         "register": {
             "item": 75,
             "verdict": "passed",
@@ -623,7 +623,7 @@ ARMS: dict[str, dict] = {
     },
     "gld-call-spread-1dte": {
         "name": "gld-call-spread-1dte",
-        "group": "ensemble",
+        "group": "default",
         "register": {
             "item": 75,
             "verdict": "no_verdict",
@@ -656,7 +656,7 @@ ARMS: dict[str, dict] = {
     },
     "orb-put-spread": {
         "name": "orb-put-spread",
-        "group": "ensemble",
+        "group": "default",
         "register": {
             "item": 75,
             "verdict": "failed",

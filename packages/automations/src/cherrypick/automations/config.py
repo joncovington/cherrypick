@@ -1,8 +1,7 @@
 """The module's config: where it is read, the loop's defaults, the arms and the symbols they trade.
 
-The file is `~/.cherrypick/config/automations.json` (`ensemble.json`, its old name, while only that
-exists), copied from `config.example.json`, which is what a checkout without one reads. Three blocks
-matter:
+The file is `~/.cherrypick/config/automations.json`, copied from `config.example.json`, which is what a
+checkout without one reads. Three blocks matter:
 
 - `automations`: changes laid over the shipped automations (`arms.load_arms`):
   `{"iron-fly-1000": {"enabled": false}}` switches one off, a whole entry under a new name adds one. A
@@ -20,7 +19,6 @@ Resident loops read config at start (the orchestrator ticks `--once`, so each ti
 
 from __future__ import annotations
 
-import os
 import pathlib
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
@@ -58,13 +56,8 @@ DEFAULT_ROOTS = {"SPX": "SPXW", "NDX": "NDXP", "RUT": "RUTW", "XSP": "XSP"}
 DEFAULT_WINDOW_STRIKES = 60
 
 
-def _old_env_config() -> str | None:
-    """`ENSEMBLE_CONFIG`, the override's old name, read only when `AUTOMATIONS_CONFIG` is unset."""
-    return None if os.environ.get("AUTOMATIONS_CONFIG") else os.environ.get("ENSEMBLE_CONFIG")
-
-
 def load_config(path: str | None = None) -> dict:
-    return _home.load_module_config("automations", _PKG_ROOT, path or _old_env_config())
+    return _home.load_module_config("automations", _PKG_ROOT, path)
 
 
 def defaults(config: dict) -> dict:
@@ -240,7 +233,7 @@ def apply_groups(arms: dict[str, dict], config: dict) -> dict[str, dict]:
     """Each arm whose group is switched off, switched off with it: no new entries, while what it holds
     is still managed and settled. A group no arm belongs to may be kept, switched off (one being set up),
     and is refused switched on; it is refused too while an arm names a group the block does not, the
-    misspelling that would leave that arm trading: `"ensembel": off` beside arms in `ensemble`. So is a
+    misspelling that would leave that arm trading: `"defualt": off` beside arms in `default`. So is a
     share for an arm outside the group. Each member
     of a group with an allocation or cap carries its `budget` (`budget`), which `sizing` reads; an
     `allocation_pct` size with neither its own allocation nor a group's is refused."""

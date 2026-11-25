@@ -444,14 +444,15 @@ _READERS = {
 # (once a week, per name) and when an expiry's close posts, so a per-session evaluation count would
 # read every other day as "not evaluating". A cycle it missed is a `weeklyput_entries` row with the
 # refusal, and the review's health reader counts due against entered.
-# ensemble is weeklyput's case: it ticks every minute but acts only inside an arm's entry window, on an open
-# position and when a close posts, and an arm-day it could not trade is an `ensemble_entries` row.
+# The automations are weeklyput's case: they tick every minute but act only inside an arm's entry window,
+# on an open position and when a close posts, and an arm-day they could not trade is an
+# `automations_entries` row.
 # ladder is the same: it ticks every minute in its hours but acts only when a fund's price reaches a level (a
 # buy limit or a lot's target), so most ticks and most sessions rightly do nothing and an evaluation count
 # would read them as not evaluating. A tick that could not look (no quote, no posted close) is a
 # `ladder_snapshots` row with its status and a `ladder_decisions` row.
 NOT_APPLICABLE = frozenset(
-    {"earnings", "dc_week", "contango_etf", "weeklyput_put", "ensemble_trade", "ladder_lot"}
+    {"earnings", "dc_week", "contango_etf", "weeklyput_put", "automations_trade", "ladder_lot"}
 )
 
 

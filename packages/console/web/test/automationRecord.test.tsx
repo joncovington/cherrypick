@@ -25,7 +25,7 @@ const VIEW: GroupsEditView = {
   today: "2026-11-20",
   next_session: "2026-11-23",
   counts: { on: 0, waiting: 0, off_group: 1, off_own: 1 },
-  groups: [{ name: "ensemble", enabled: false, members: [m("iron-condor-1345", { verdict: "passed" })] }],
+  groups: [{ name: "default", enabled: false, members: [m("iron-condor-1345", { verdict: "passed" })] }],
   ungrouped: [m("par-a1-fly-1000", { enabled: false, state: "off_own", verdict: null })],
 };
 
@@ -70,14 +70,14 @@ describe("one automation's page", () => {
   });
 
   it("finds the automation and its group, or none", () => {
-    expect(findAutomation(VIEW, "iron-condor-1345")).toMatchObject({ group: "ensemble", m: { verdict: "passed" } });
+    expect(findAutomation(VIEW, "iron-condor-1345")).toMatchObject({ group: "default", m: { verdict: "passed" } });
     expect(findAutomation(VIEW, "par-a1-fly-1000")).toMatchObject({ group: null });
     expect(findAutomation(VIEW, "nope")).toBeUndefined();
   });
 
   it("reads the rule, the record and the decisions, in that order, and changes nothing", () => {
     const out = html(<AutomationRecordPage name="iron-condor-1345" />, client(VIEW, { "iron-condor-1345": line({ trades: 9, wins: 7, net: 128, drawdown: 388 }) }));
-    expect(out).toContain('<a href="/automations/groups">groups</a> / <a href="/automations/groups?group=ensemble">ensemble</a> / <b>iron-condor-1345</b>');
+    expect(out).toContain('<a href="/automations/groups">groups</a> / <a href="/automations/groups?group=default">default</a> / <b>iron-condor-1345</b>');
     const rule = out.indexOf('id="automation-rule"');
     const record = out.indexOf('id="automation-record"');
     const decisions = out.indexOf('id="automation-decisions"');
@@ -94,7 +94,7 @@ describe("one automation's page", () => {
     expect(out).toContain('href="#automation-entries"');
     expect(out).toContain('href="/automations/analysis?an-arm=iron-condor-1345"');
     expect(out).toContain("off · its group");
-    expect(out).toContain('href="/automations/groups?group=ensemble&amp;automation=iron-condor-1345"');
+    expect(out).toContain('href="/automations/groups?group=default&amp;automation=iron-condor-1345"');
     expect(out).toContain('href="/automations/builder?automation=iron-condor-1345"');
     expect(out).toContain("$128.00");
     expect(out).toContain("7 with a net above zero");

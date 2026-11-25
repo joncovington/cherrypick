@@ -1,7 +1,7 @@
 """The migration runner: order, idempotence, dry run, what is recorded, and skipping a release.
 
-The real registry is empty in v0.12.0; these tests run the runner over a small registry of their own,
-and a last test keeps the real registry and the release manifest saying the same thing."""
+These tests run the runner over a small registry of their own, and a last test keeps the real registry
+and the release manifest saying the same thing. The real migrations have tests of their own."""
 
 from __future__ import annotations
 
@@ -56,10 +56,11 @@ def read(home: Path, name: str) -> dict:
     return json.loads((home / name).read_text(encoding="utf-8"))
 
 
-def test_the_shipped_registry_is_empty_and_valid():
-    assert migrations.MIGRATIONS == ()
+def test_the_shipped_registry_is_valid_and_finds_nothing_on_a_fresh_home(home):
+    assert [m.id for m in migrations.MIGRATIONS] == ["v0.14.0-01-automations-rename"]
     migrations.validate(migrations.MIGRATIONS)
-    assert migrations.run_pending()["results"] == []
+    out = migrations.run_pending(home=home)
+    assert out["ok"] and [r["detail"] for r in out["results"]] == ["nothing to rename"]
 
 
 def test_they_run_in_registry_order_and_each_is_recorded(home):

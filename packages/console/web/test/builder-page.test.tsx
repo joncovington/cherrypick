@@ -15,7 +15,7 @@ const html = (el: React.ReactElement) =>
 
 const BASE: BuilderAutomation = {
   name: "mine",
-  group: "ensemble",
+  group: "default",
   symbol: "SPX",
   enabled: false,
   note: null,
@@ -72,7 +72,7 @@ describe("the workspace", () => {
     const out = html(<Workspace a={BASE} schema={SCHEMA} mode={{ kind: "saved", name: "mine" }} onSaved={() => {}} />);
     expect(out).toContain('value="mine"');
     expect(out).toContain('class="chip">off</span>');
-    expect(out).toContain("group ensemble");
+    expect(out).toContain("group default");
     expect(out).toContain("start not set");
     expect(out).toContain("item 75: no verdict");
     expect(out).toContain(">View as JSON</button>");

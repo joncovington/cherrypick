@@ -25,7 +25,7 @@ SCHEMAS = (
     "bwb_132",
     "contango_etf",
     "weeklyput_put",
-    "ensemble_trade",
+    "automations_trade",
     "ladder_lot",
 )
 

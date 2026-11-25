@@ -13,14 +13,14 @@ from cherrypick.orchestrator import configcli, groupedit
 FILE = (
     "{\r\n"
     '  "_header": "automations: kept as written",\r\n'
-    '  "groups": {"ensemble": {"enabled": false}},\r\n'
+    '  "groups": {"default": {"enabled": false}},\r\n'
     '  "automations": {\r\n'
     '    "iron-fly-1000": {"enabled": true},\r\n'
-    '    "long-put-1030": {"enabled": true, "group": "ensemble"}\r\n'
+    '    "long-put-1030": {"enabled": true, "group": "default"}\r\n'
     "  }\r\n"
     "}\r\n"
 )
-BLOCK = {"ensemble": {"enabled": True, "max_risk": 2000}, "gold": {"enabled": False}}
+BLOCK = {"default": {"enabled": True, "max_risk": 2000}, "gold": {"enabled": False}}
 
 
 @pytest.fixture
@@ -53,7 +53,7 @@ REQ = {"groups": BLOCK, "members": {}}
 def test_the_block_is_replaced_and_each_move_written_where_it_belongs(cfgfile):
     moves = {"iron-fly-1000": "gold", "long-put-1030": None, "gld-call-spread-1dte": "gold"}
     out = groupedit.save({}, REQ, module(moves=moves))
-    assert out["ok"] is True and out["moved"] == sorted(moves) and out["groups"] == ["ensemble", "gold"]
+    assert out["ok"] is True and out["moved"] == sorted(moves) and out["groups"] == ["default", "gold"]
     d = doc(cfgfile)
     assert d["groups"] == BLOCK
     # Added to an entry without one, set in one that had it, and a one-key entry for a shipped automation.
@@ -66,7 +66,7 @@ def test_the_block_is_replaced_and_each_move_written_where_it_belongs(cfgfile):
 def test_a_problem_the_module_names_writes_nothing(cfgfile):
     before = cfgfile.read_bytes()
     out = groupedit.save(
-        {}, REQ, module(problems=["groups.ensemble.shares: 120 percent in all, more than 100"])
+        {}, REQ, module(problems=["groups.default.shares: 120 percent in all, more than 100"])
     )
     assert out["ok"] is False and out["code"] == "invalid" and "more than 100" in out["error"]
     assert cfgfile.read_bytes() == before
@@ -105,7 +105,7 @@ def test_each_switch_is_written_with_the_start_the_module_gave_it(cfgfile):
     d = doc(cfgfile)
     # Set in an entry that had it, added to one, and a new entry for a shipped automation.
     assert d["automations"]["iron-fly-1000"] == {"enabled": False}
-    assert d["automations"]["long-put-1030"] == {"enabled": True, "group": "ensemble", "start": "2026-11-19"}
+    assert d["automations"]["long-put-1030"] == {"enabled": True, "group": "default", "start": "2026-11-19"}
     assert d["automations"]["orb-put-spread"] == {"enabled": True, "start": "2026-11-19"}
 
 

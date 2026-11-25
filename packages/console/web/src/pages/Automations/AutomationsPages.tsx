@@ -117,7 +117,7 @@ export function GroupsCard({ result, loading }: { result: AutomationGroupsResult
       help={oneNote(
         "Automation groups",
         "Group switch",
-        "A group is a set of like automations switched as one, in the groups block of automations.json. A group that is off enters nothing; what its automations hold is still managed and settled. The verdict is the research register's on that automation (the ensemble group is item 75), a label, not a result read from a file.",
+        "A group is a set of like automations switched as one, in the groups block of automations.json. A group that is off enters nothing; what its automations hold is still managed and settled. The verdict is the research register's on that automation (the default group is item 75), a label, not a result read from a file.",
       )}
     >
       {rows.map(({ group, a }) => (

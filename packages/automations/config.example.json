@@ -27,9 +27,9 @@
     "GLD": {"root": "GLD", "window_strikes": 40}
   },
   "groups_header": "===== automation groups =====",
-  "_groups_note": "An automation group is a set of like automations switched as one. Set a group's enabled to false and none of its automations enters; what they hold is still managed and settled. The shipped eight are the ensemble group (research item 75; each carries its register verdict). A group no automation belongs to is refused. A group may also set allocation (dollars: what an automation sized by allocation_pct reads), max_risk (dollars: a cap on its members' open maximum loss at once) and shares ({automation: percent} of both, at most 100 in all); an entry the cap leaves no room for is refused. A group's start (YYYY-MM-DD) is the first session its members may enter on paper.",
+  "_groups_note": "An automation group is a set of like automations switched as one. Set a group's enabled to false and none of its automations enters; what they hold is still managed and settled. The shipped eight are the default group (research item 75; each carries its register verdict). A group no automation belongs to is refused. A group may also set allocation (dollars: what an automation sized by allocation_pct reads), max_risk (dollars: a cap on its members' open maximum loss at once) and shares ({automation: percent} of both, at most 100 in all); an entry the cap leaves no room for is refused. A group's start (YYYY-MM-DD) is the first session its members may enter on paper.",
   "groups": {
-    "ensemble": {"enabled": true}
+    "default": {"enabled": true}
   },
   "automations_header": "===== the automations =====",
   "_automations_note": "The shipped automations are in cherrypick.automations.arms; an entry here is laid over the one of the same name (top-level keys replaced), and an entry under a new name is a new automation. A misspelt key is refused with its path and the loop does not start. Set enabled to false to switch one off. Names are the suite's own. The block's old name, arms, still resolves.",

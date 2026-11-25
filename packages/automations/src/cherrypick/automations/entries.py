@@ -1,6 +1,6 @@
 """How often each automation enters, and where the sessions it did not enter stopped.
 
-Pure. The session register (`ensemble_entries`) holds one row per arm-day the automation was due:
+Pure. The session register (`automations_entries`) holds one row per arm-day the automation was due:
 `entered`, `missed` with the last reason a tick in its window gave, or `pending` while the window is
 open. Each reason belongs to the step of `engine.decide` that gave it, and the steps run in order, so a
 session that stopped at one step passed every step before it on that last try. The funnel counts, for

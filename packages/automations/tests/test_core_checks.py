@@ -1,4 +1,4 @@
-"""Ensemble on core.entrychecks: every gate gives through core exactly what its own function gives, the
+"""Automations on core.entrychecks: every gate gives through core exactly what its own function gives, the
 gates validate through core, and a `trigger` entry fires through core's entry_due."""
 
 from __future__ import annotations
@@ -63,7 +63,7 @@ def test_core_validation_refuses_a_misspelt_gate_parameter_at_load():
     assert any("needs 'min'" in p for p in arms.validate(missing))
 
 
-def test_the_shared_registry_is_not_changed_by_ensembles():
+def test_the_shared_registry_is_not_changed_by_automations():
     assert "sd_change" in gates_mod.CONDITIONS.names()
     assert "sd_change" not in ec.CORE.names()
 

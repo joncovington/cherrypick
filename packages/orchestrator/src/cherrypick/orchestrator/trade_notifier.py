@@ -1715,15 +1715,15 @@ def _weeklyput_process(conn, st: dict, notifier: Notifier, name: str) -> dict:
 # session, with two notifiable moments: it is entered and it ends (a touch, a profit target, a time
 # exit, or the expiry's posted close). Any arm the module is configured with is covered: the card
 # names the arm and prints the legs held.
-def _ensemble_seed(conn) -> dict:
-    rows = conn.execute("SELECT position_id, status FROM ensemble_positions").fetchall()
+def _automations_seed(conn) -> dict:
+    rows = conn.execute("SELECT position_id, status FROM automations_positions").fetchall()
     return {
         "notified_entry_ids": [r["position_id"] for r in rows],
         "notified_exit_ids": [r["position_id"] for r in rows if r["status"] == "closed"],
     }
 
 
-def _ensemble_legs(r) -> str:
+def _automations_legs(r) -> str:
     try:
         legs = json.loads(r["entry_json"])["legs"]
     except (KeyError, TypeError, ValueError):
@@ -1731,62 +1731,62 @@ def _ensemble_legs(r) -> str:
     return " ".join(f"{'+' if g['side'] > 0 else '-'}{g['strike']:g}{g['right']}" for g in legs)
 
 
-def _ensemble_what(r) -> str:
-    return f"{r['quantity']} x {r['symbol']} {r['expiration']} {_ensemble_legs(r)}".strip()
+def _automations_what(r) -> str:
+    return f"{r['quantity']} x {r['symbol']} {r['expiration']} {_automations_legs(r)}".strip()
 
 
-def _ensemble_price(r) -> str:
+def _automations_price(r) -> str:
     mid = r["entry_mid"]
     if mid is None:
         return ""
     return f"{abs(mid):.2f} {'cr' if mid > 0 else 'db'}"
 
 
-def _fmt_ensemble_entry(r) -> str:
+def _fmt_automations_entry(r) -> str:
     return (
-        f"🟢 Automation paper ENTRY — {_ensemble_what(r)} @ {_ensemble_price(r)} "
+        f"🟢 Automation paper ENTRY — {_automations_what(r)} @ {_automations_price(r)} "
         f"(${r['entry_value']:+,.2f}) [{_arm(r)}]"
     )
 
 
-def _embed_ensemble_entry(r) -> dict:
-    details = f"{_ensemble_price(r)} · ${r['entry_value']:+,.2f} · max loss ${r['capital'] or 0:,.2f}"
-    return _embed(COLOR_ENTRY, f"ENTRY · {_ensemble_what(r)}"[:256], details, footer=_arm(r))
+def _embed_automations_entry(r) -> dict:
+    details = f"{_automations_price(r)} · ${r['entry_value']:+,.2f} · max loss ${r['capital'] or 0:,.2f}"
+    return _embed(COLOR_ENTRY, f"ENTRY · {_automations_what(r)}"[:256], details, footer=_arm(r))
 
 
-def _fmt_ensemble_exit(r) -> str:
+def _fmt_automations_exit(r) -> str:
     return (
-        f"🏁 Automation paper CLOSED — {_ensemble_what(r)} ({r['exit_reason']}), "
-        f"net {_signed(_net('ensemble_trade', r))} [{_arm(r)}]"
+        f"🏁 Automation paper CLOSED — {_automations_what(r)} ({r['exit_reason']}), "
+        f"net {_signed(_net('automations_trade', r))} [{_arm(r)}]"
     )
 
 
-def _embed_ensemble_exit(r) -> dict:
+def _embed_automations_exit(r) -> dict:
     details = (
-        f"net {_signed(_net('ensemble_trade', r))} (gross {_signed(r['gross_pnl'])}, "
+        f"net {_signed(_net('automations_trade', r))} (gross {_signed(r['gross_pnl'])}, "
         f"fees ${r['fees'] or 0:.2f}, settlement ${r['settlement'] or 0:.2f}, "
         f"slippage ${r['slippage'] or 0:.2f}) · {r['exit_reason']} · entered {r['entry_session']}"
     )
-    return _embed(COLOR_EXIT, f"CLOSED · {_ensemble_what(r)}"[:256], details, footer=_arm(r))
+    return _embed(COLOR_EXIT, f"CLOSED · {_automations_what(r)}"[:256], details, footer=_arm(r))
 
 
-def _ensemble_process(conn, st: dict, notifier: Notifier, name: str) -> dict:
+def _automations_process(conn, st: dict, notifier: Notifier, name: str) -> dict:
     stages = [
         (
             "notified_exit_ids",
             "exit",
             "Paper closed",
-            _fmt_ensemble_exit,
-            _embed_ensemble_exit,
-            "SELECT * FROM ensemble_positions WHERE status = 'closed'",
+            _fmt_automations_exit,
+            _embed_automations_exit,
+            "SELECT * FROM automations_positions WHERE status = 'closed'",
         ),
         (
             "notified_entry_ids",
             "entry",
             "Paper entry",
-            _fmt_ensemble_entry,
-            _embed_ensemble_entry,
-            "SELECT * FROM ensemble_positions",
+            _fmt_automations_entry,
+            _embed_automations_entry,
+            "SELECT * FROM automations_positions",
         ),
     ]
     return _run_stages(conn, st, notifier, name, stages)
@@ -2180,7 +2180,7 @@ _SCHEMAS = {
     "bwb_132": (_bwb_seed, _bwb_process),
     "contango_etf": (_contango_seed, _contango_process),
     "weeklyput_put": (_weeklyput_seed, _weeklyput_process),
-    "ensemble_trade": (_ensemble_seed, _ensemble_process),
+    "automations_trade": (_automations_seed, _automations_process),
     "ladder_lot": (_ladder_seed, _ladder_process),
 }
 

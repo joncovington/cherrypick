@@ -39,11 +39,8 @@ from . import config as config_mod
 from . import db, enrolment, feed, provider
 
 _MODULE = "automations"
-#: The request file under the module's old name, removed on each write so the streamer never unions a
-#: stale one.
-_OLD_MODULE = "ensemble"
 _log = logging.getLogger("automations_paper_loop")
-_OPEN_LEGS = "SELECT streamer_symbol FROM ensemble_legs WHERE status = 'open'"
+_OPEN_LEGS = "SELECT streamer_symbol FROM automations_legs WHERE status = 'open'"
 
 
 def active_arms(arms: dict[str, dict], today: date) -> dict[str, dict]:
@@ -166,7 +163,6 @@ def write(
     payload, report = fit(config, arms, conn, cache_path=cache_path, when=when or now_et(), db_path=db_path)
     if report["shed"] or report.get("widened"):
         _log.warning("stream request over the subscription budget; entry chains shed: %s", report)
-    _sr.request_path(_OLD_MODULE).unlink(missing_ok=True)
     return _sr.write_payload(_MODULE, payload)
 
 

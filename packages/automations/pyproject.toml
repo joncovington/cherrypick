@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "cherrypick-automations"
 version = "0.1.0"
-description = "Automations: one decision engine for the backtest and the paper loop (formerly cherrypick-ensemble)"
+description = "Automations: one decision engine for the backtest and the paper loop"
 requires-python = ">=3.11"
 license = "MIT"
 # cherrypick-core is a sibling in-repo package (packages/core), installed editable alongside this one.

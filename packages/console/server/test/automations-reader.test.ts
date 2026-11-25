@@ -80,13 +80,13 @@ beforeAll(() => {
   db.exec(SCHEMA);
 
   const pos = db.prepare(
-    `INSERT INTO ensemble_positions (position_id, arm, symbol, entry_session, expiration, quantity, entry_spot, entry_mid, capital,
+    `INSERT INTO automations_positions (position_id, arm, symbol, entry_session, expiration, quantity, entry_spot, entry_mid, capital,
        entry_value, entry_fees, entry_slippage, entry_json, status, exit_reason, exit_session, exit_value, gross_pnl, fees, settlement,
        slippage, net_pnl, net_stress, net_mid)
      VALUES (@id, @arm, @symbol, @entry, @exp, 1, 6000, 1.5, 850, @entryValue, 1.3, 2.5, @entryJson, @status, @reason, @exit,
        @exitValue, @gross, @fees, @settlement, @slippage, @net, @stress, @mid)`,
   );
-  const leg = db.prepare("INSERT INTO ensemble_legs (position_id, leg_role, right, side, strike, status) VALUES (?,?,?,?,?,?)");
+  const leg = db.prepare("INSERT INTO automations_legs (position_id, leg_role, right, side, strike, status) VALUES (?,?,?,?,?,?)");
   for (const p of CLOSED) {
     pos.run({
       id: p.id, arm: p.arm, symbol: p.symbol, entry: p.entry, exp: p.exit, entryValue: p.entryValue, entryJson: JSON.stringify({ legs: p.legs }),
@@ -105,13 +105,13 @@ beforeAll(() => {
   for (const l of IC) leg.run(`alpha:${TODAY}`, l.name, l.right, l.side, l.strike, "open");
   open(`${ZZ}:${TODAY}`, ZZ, "GLD", -190, SPREAD);
 
-  const mark = db.prepare("INSERT INTO ensemble_marks (position_id, ts, session_date, usable, refusal, spot, mark_value) VALUES (?,?,?,?,?,?,?)");
+  const mark = db.prepare("INSERT INTO automations_marks (position_id, ts, session_date, usable, refusal, spot, mark_value) VALUES (?,?,?,?,?,?,?)");
   mark.run(`alpha:${TODAY}`, "2026-11-13T10:00:00", TODAY, 1, null, 6010, -60);
   mark.run(`alpha:${TODAY}`, "2026-11-13T10:30:00", TODAY, 1, null, 6020, -85);
   // A later refused mark carries a spot too, but the usable mark's own spot goes with its value.
   mark.run(`alpha:${TODAY}`, "2026-11-13T11:00:00", TODAY, 0, "no_fresh_quote", 6030, null);
 
-  const ent = db.prepare("INSERT INTO ensemble_entries (arm, symbol, entry_session, outcome, refusal, detail, position_id) VALUES (?,?,?,?,?,?,?)");
+  const ent = db.prepare("INSERT INTO automations_entries (arm, symbol, entry_session, outcome, refusal, detail, position_id) VALUES (?,?,?,?,?,?,?)");
   ent.run("alpha", "SPX", TODAY, "entered", null, null, `alpha:${TODAY}`);
   ent.run(ZZ, "GLD", TODAY, "missed", "gate:sd_change", JSON.stringify({ check: "sd_change", value: 0.31 }), null);
   // The register kept the reason but not its detail: the journal's row for that reason supplies it.
@@ -119,12 +119,12 @@ beforeAll(() => {
   ent.run("alpha", "SPX", "2026-11-12", "missed", "no_tick_in_window", null, null);
 
   const dec = db.prepare(
-    "INSERT INTO ensemble_decisions (trade_date, arm, symbol, mode, reason, accepted, occurrences, first_ts, last_ts, detail) VALUES (?,?,?,?,?,?,?,?,?,?)",
+    "INSERT INTO automations_decisions (trade_date, arm, symbol, mode, reason, accepted, occurrences, first_ts, last_ts, detail) VALUES (?,?,?,?,?,?,?,?,?,?)",
   );
   dec.run(TODAY, "alpha", "SPX", "entry", "enter", 1, 1, "2026-11-13T09:45:00", "2026-11-13T09:45:00", JSON.stringify({ legs: "-5900P", quantity: 1 }));
   dec.run(TODAY, ZZ, "GLD", "entry", "gate:sd_change", 0, 4, "2026-11-13T09:40:00", "2026-11-13T09:44:00", JSON.stringify({ check: "sd_change", value: 0.31 }));
   dec.run(TODAY, "beta", "SPX", "entry", "gate:gex_ratio", 0, 7, "2026-11-13T09:40:00", "2026-11-13T09:46:00", JSON.stringify({ check: "gex_ratio", value: 1.8 }));
-  db.prepare("INSERT INTO ensemble_loop_iterations (ran_at, session_date, phase, status) VALUES (?,?,?,?)").run(1_794_000_000, TODAY, "entry", "ok");
+  db.prepare("INSERT INTO automations_loop_iterations (ran_at, session_date, phase, status) VALUES (?,?,?,?)").run(1_794_000_000, TODAY, "entry", "ok");
   db.close();
   config = { paths: { automationsDir: dir } } as unknown as ConsoleConfig;
 });

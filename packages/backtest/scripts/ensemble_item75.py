@@ -1,5 +1,5 @@
 """Item 75 (research/edge-hypotheses-plan.md): a third-party portfolio of eight short-dated option rules,
-read over all stored history in one pass. The rules are `cherrypick.ensemble`'s arms; this is the driver
+read over all stored history in one pass. The rules are `cherrypick.automations`'s arms; this is the driver
 that builds a snapshot from the vendor stores for each session and minute and hands it to the engine.
 
     python packages/backtest/scripts/ensemble_item75.py requests [--out DIR]       # fetch request files
@@ -35,13 +35,13 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from cherrypick.automations import arms as arm_mod
+from cherrypick.automations import engine, pricing, snapshot
+from cherrypick.automations.events import EventCalendar
+from cherrypick.automations.model import OpenPosition
 from cherrypick.core import calendar as cal
 from cherrypick.core import home, killcriteria, progress
 from cherrypick.core import stats as core_stats
-from cherrypick.ensemble import arms as arm_mod
-from cherrypick.ensemble import engine, pricing, snapshot
-from cherrypick.ensemble.events import EventCalendar
-from cherrypick.ensemble.model import OpenPosition
 
 from cherrypick.backtest import greeks, paths
 from cherrypick.backtest import settings as _settings

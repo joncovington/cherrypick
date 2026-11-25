@@ -9,7 +9,7 @@ from cherrypick.orchestrator import forwardcheck as fc
 
 BLOCK = {
     "module": "automations",
-    "schema": "ensemble_trade",
+    "schema": "automations_trade",
     "arm": "mine",
     "measure": "cycle_mean",
     "field": "net_bp",

@@ -1,4 +1,4 @@
-"""The suite's normalised readers (`cherrypick.core.ledgers`, schema `ensemble_trade`) against a ledger the
+"""The suite's normalised readers (`cherrypick.core.ledgers`, schema `automations_trade`) against a ledger the
 loop itself wrote: a position entered, closed by a touch and another held to the posted close."""
 
 from __future__ import annotations
@@ -13,14 +13,14 @@ from cherrypick.automations import db, paper_loop
 def test_an_open_position_is_read_with_its_capital(tmp_path):
     w = world(tmp_path)
     tick(w, at(10, 0))
-    held = ledgers.OPEN_READERS["ensemble_trade"](w.conn)
+    held = ledgers.OPEN_READERS["automations_trade"](w.conn)
     assert [(h["arm"], h["symbol"], h["strategy"], h["session"]) for h in held] == [
-        ("iron-fly-1000", "SPX", "ensemble_trade", DAY)
+        ("iron-fly-1000", "SPX", "automations_trade", DAY)
     ]
     pos = db.position(w.conn, f"iron-fly-1000:{DAY}")
     assert held[0]["capital"] == pos["capital"] > 0
-    assert ledgers.HELD_READERS["ensemble_trade"](w.conn) == held
-    assert ledgers.READERS["ensemble_trade"](w.conn) == []
+    assert ledgers.HELD_READERS["automations_trade"](w.conn) == held
+    assert ledgers.READERS["automations_trade"](w.conn) == []
 
 
 def test_a_settled_position_reads_with_every_cost_in_its_own_column(tmp_path):
@@ -29,7 +29,7 @@ def test_a_settled_position_reads_with_every_cost_in_its_own_column(tmp_path):
     w.cache.summary("SPX", NEXT, prev_close=6003.0)
     paper_loop.run_settlements(w.config, w.conn, cache_path=w.cache_path, when=at(9, 31, NEXT))
     pos = db.position(w.conn, f"iron-fly-1000:{DAY}")
-    closed = ledgers.READERS["ensemble_trade"](w.conn)
+    closed = ledgers.READERS["automations_trade"](w.conn)
     assert len(closed) == 1
     r = closed[0]
     assert r["net_pnl"] == pos["net_pnl"] and r["gross_pnl"] == pos["gross_pnl"]
@@ -44,11 +44,11 @@ def test_a_settled_position_reads_with_every_cost_in_its_own_column(tmp_path):
     assert r["exit_spot"] == 6003.0 and r["entry_spot"] == pos["entry_spot"]
     assert r["max_profit"] == pytest.approx(pos["max_profit"] * 100 * pos["quantity"], abs=0.01)
     assert r["r_multiple"] == pytest.approx(r["net_pnl"] / r["capital"], abs=1e-4)
-    assert ledgers.READERS["ensemble_trade"](w.conn, DAY, DAY) and not ledgers.READERS["ensemble_trade"](
-        w.conn, NEXT, NEXT
-    )
-    assert ledgers.OPEN_READERS["ensemble_trade"](w.conn) == []
-    assert ledgers.ROW_NET["ensemble_trade"](db.position(w.conn, f"iron-fly-1000:{DAY}")) == pytest.approx(
+    assert ledgers.READERS["automations_trade"](w.conn, DAY, DAY) and not ledgers.READERS[
+        "automations_trade"
+    ](w.conn, NEXT, NEXT)
+    assert ledgers.OPEN_READERS["automations_trade"](w.conn) == []
+    assert ledgers.ROW_NET["automations_trade"](db.position(w.conn, f"iron-fly-1000:{DAY}")) == pytest.approx(
         pos["net_pnl"]
     )
 
@@ -61,7 +61,7 @@ def test_the_mark_path_ends_at_the_recorded_gross(tmp_path):
     tick(w, at(10, 40))
     pos = db.position(w.conn, f"iron-fly-1000:{DAY}")
     assert pos["exit_reason"] == "touch"
-    out = excursions.excursion(w.conn, "ensemble_trade", pos["position_id"])
+    out = excursions.excursion(w.conn, "automations_trade", pos["position_id"])
     assert out["recorded"] is True and out["basis"] == "gross_at_mid"
     assert out["path"][0][1] == 0.0
     assert out["endpoint"] == pytest.approx(pos["gross_pnl"])

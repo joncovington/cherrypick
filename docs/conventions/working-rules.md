@@ -34,7 +34,7 @@ name is chosen in the older modules.**
 
 **New work says `automation`.** A strategy built once and run forward in paper or replayed in a
 backtest (`packages/automations`) is an **automation**; a set of like automations switched as one is
-an **automation group** (the shipped eight are the `ensemble` group). The automations package keeps
+an **automation group** (the shipped eight are the `default` group). The automations package keeps
 `arm` as its config key and in its code, where it was the word first; the older modules keep `arm`
 until the plan that replaces them.
 

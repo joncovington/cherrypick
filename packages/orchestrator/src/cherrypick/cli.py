@@ -2491,7 +2491,7 @@ def _forward_check_rows(cfg) -> list[dict]:
     modules = cfg.get("modules") or {}
 
     def trades_for(module: str, schema: str) -> list[dict]:
-        module, mcfg = cfgmod.module_block(modules, module)
+        mcfg = modules.get(module)
         reader = ledgers.READERS.get(schema)
         if not mcfg or reader is None:
             return []

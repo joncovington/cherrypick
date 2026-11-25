@@ -83,7 +83,7 @@ MODULE_SCHEMAS: dict[str, str] = {
     "earnings": "earnings",
     "contango": "contango_etf",
     "weeklyput": "weeklyput_put",
-    "automations": "ensemble_trade",
+    "automations": "automations_trade",
     "ladder": "ladder_lot",
 }
 
@@ -103,7 +103,7 @@ SEED = _stats.DEFAULT_SEED
 COSTS_NOTE = (
     "costs = every modelled cost the module's ledger subtracts from gross: trading fees, settlement, "
     "and slippage where the module charges it as a cost (bwb, calendars, pmcc, curve, earnings, "
-    "contango, weeklyput, ensemble, ladder). flies and MEIC concede slippage inside the fill, so it is "
+    "contango, weeklyput, automations, ladder). flies and MEIC concede slippage inside the fill, so it is "
     "inside gross there."
 )
 
