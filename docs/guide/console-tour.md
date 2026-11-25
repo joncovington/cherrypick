@@ -12,7 +12,7 @@ status bar, and the Help page at `/help`, with its FAQ at `/help/faq`. Opening t
 ### The left rail
 
 The rail lists every page, in this order: Live and the market reads (Reports, Charts, GEX, GEX panel,
-Screeners), then a Modules section (MEIC, BWB, Earnings, Experiments), then Research (Compare,
+Screeners), then a Modules section (MEIC, BWB, Earnings, Experiments, Automations, Ladder), then Research (Compare,
 Backtest, Advisor), then a Suite section (System, Help) with Config last. A page that is switched off
 for your install drops off the list.
 
@@ -28,7 +28,7 @@ for your install drops off the list.
     Screeners, `g m` Compare, `g b` Backtest, `g a` Advisor, `g s` System, `g h` Help, `g o` Config, and
     `g u` the Builder (a tab of Automations).
     Press the second key within a second of the first.
-  - A digit goes to a module: `1` MEIC, `2` BWB, `3` Earnings, `4` Experiments, `5` Automations. A module that is off
+  - A digit goes to a module: `1` MEIC, `2` BWB, `3` Earnings, `4` Experiments, `5` Automations, `6` Ladder. A module that is off
     leaves its digit unused; the others keep theirs.
   - `j` and `k` step to the next and previous tab of the page you are on, and stop at the ends.
   - Nothing fires while you are typing in a box.
@@ -81,7 +81,7 @@ bare address opens its first tab.
 ### The experimental chip
 
 A small `experimental` chip beside a page's name means it is a paper-only design still being shaped:
-the paper pages under Experiments (such as Weeklyput and Ladder) and the GEX panel carry it. It never
+the paper pages under Experiments (such as Weeklyput) and the GEX panel carry it. It never
 places an order, and its results are a reason to look, not a reason to trust.
 
 ## What to do

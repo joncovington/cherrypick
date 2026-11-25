@@ -54,7 +54,7 @@
       "enabled": true
     }
   },
-  "live_header": "===== the live path: gates and the daily arm only, NO order path yet (issue #1337), shipped OFF =====",
+  "live_header": "===== the live path: gates, the daily arm and an order path that ships in dry-run, shipped OFF =====",
   "_live_note": "The order path ships in dry-run: with live.dry_run true the tick reads the broker and journals the orders it would send, and sends none. This block holds the gates and limits the live loop runs under, and `python -m cherrypick.ladder.live_loop --status` shows each gate with its verdict. Live needs ALL of: live.enabled true, live.gate0_confirmed a human attestation, modules.ladder.enabled in the suite config, a valid arm record for today (`/live-ladder-start`, or `live_loop --arm --confirm YES`, which prints DISCLAIMER.md and arms nothing without an exact YES), a designated account, live.arm naming an enabled paper arm, live.symbols inside the fund list, and valid limits. The halt flag blocks new buys only. enabled and gate0_confirmed are guarded: the Config page cannot write them.",
   "live": {
     "enabled": false,
@@ -99,6 +99,6 @@
     "_hospital_alert_days_note": "A lot open longer than this many days raises an alert. It is never acted on automatically; there is no stop.",
     "splits": [],
     "_splits_note": "The split source: write one entry by hand when a held fund splits, before or on its ex-date, as {\"fund\": \"TQQQ\", \"ex_date\": \"2026-12-01\", \"to\": 2, \"for\": 1} (`to` new shares for `for` old ones; a 1-for-10 reverse split is to 1, for 10). The next tick restates every lot of that fund bought before the ex-date, once, and re-prices its resting sell. The tick also compares the broker's shares with the ledger's each minute: a mismatch whose ratio is a whole-number split is reported as a suspected split and stops that fund's new buys, but nothing is restated until an entry is written here. An entry the tick cannot read stops every fund's new buys until it is fixed.",
-    "_task_name_note": "No live.task_name yet, on purpose: the supervisor derives a <module>-live job from that key, and the job is installed in a later step. Until then `live_loop --once` is run by hand."
+    "_task_name_note": "No live.task_name, so the supervisor derives no ladder-live job: `live_loop --once` is run by hand."
   }
 }

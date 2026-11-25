@@ -38,7 +38,7 @@ or *book*; those spellings keep working.)
 Because each arm changes one lever against a shared control, you can measure the isolated effect of a
 single idea rather than confounding several at once. **A base install runs only the `control` arm in
 MEIC and earnings**; flies, bwb, curve, PMCC, calendars and contango are retired and ship with every arm off (see their status lines),
-weeklyput runs its one, `unhedged`, automations four of its eight (the four item 75 failed ship off), and ladder its three (`chain`, `once`, `decay`). Any further arms are your own machine's configuration under
+weeklyput runs its one, `unhedged`, automations four of its eight (the four item 75 failed ship off), and ladder its four (`chain`, `once`, `decay`, `session`). Any further arms are your own machine's configuration under
 `~/.cherrypick/config/` (MEIC's in `meic.risk.json`). BWB, calendars and curve also build comparison
 books into the module (bwb's add-on triggers, calendars' `path`, curve's `noflip` and `near`); their shipped examples switch
 each one off with `enabled: false`, and you switch one on in your own config. With Claude Code
@@ -132,7 +132,7 @@ suite once collected $4.00 of credit against $4.96 of fees.
   not a standard monthly and held to expiry, unhedged. The paper run measures whether a
   close-of-session fill tracks the study's replay (item 69). Paper-only and credential-free. See
   [packages/weeklyput](packages/weeklyput).
-- **Ensemble** — ⚠️ **EXPERIMENTAL, off by default.** Research item 75's eight SPX and GLD short-dated option arms
+- **Automations** — ⚠️ **EXPERIMENTAL, off by default.** Research item 75's eight SPX and GLD short-dated option arms
   in paper, the four it failed shipped off: an arm is configuration (an arm added in config trades with no code change), and one
   deterministic decision serves both the backtest and the paper loop. Paper-only and credential-free: a
   position is a ledger row, never an order. See [packages/automations](packages/automations).
@@ -169,8 +169,10 @@ with an *experimental* chip.
 > The settings editor (`run.py settings`, port 8804) is under the same rule.
 
 - **The console** (`packages/console`, `127.0.0.1:5070`) — the suite's one read surface: every engine's
-  read models plus interactive screening, the watchlist, and a strategy builder in one app. Read-only over
-  every other package's data, and kept running by the supervisor rather than started by hand. A module or
+  read models plus interactive screening, the watchlist, and a strategy builder in one app. It reads every other package's data and
+  writes only its Config page, its Builder and Groups saves and, with `live_arming` on, the Live page's arm
+  switch, each through the orchestrator; it places no order. The supervisor keeps it running rather than
+  starting it by hand. A module or
   feature that is switched off, or needs a capability this machine lacks, is hidden. It is the
   one dashboard: there is no suite or per-module dashboard beside it.
 - **Your own reports (optional)** — write a small script that saves a JSON report under `~/.cherrypick`,
@@ -242,7 +244,7 @@ read them.
 | [packages/meic](packages/meic) · [packages/earnings](packages/earnings) · [packages/flies](packages/flies) · [packages/calendars](packages/calendars) · [packages/pmcc](packages/pmcc) · [packages/curve](packages/curve) · [packages/contango](packages/contango) · [packages/weeklyput](packages/weeklyput) · [packages/bwb](packages/bwb) | The strategy engines. MEIC runs by default; earnings is paper-only and needs the optional Dolt data; weeklyput is EXPERIMENTAL, paper-only and off by default; flies, bwb, pmcc, curve, calendars and contango are retired and ship off (kept so each can be reinstated; flies and bwb keep their narrow live paths behind the same gates, and refuse to arm while off). |
 | [packages/streamer](packages/streamer) | The single market-data producer. Everything else reads the cache it writes; nothing else writes it. |
 | [packages/gex](packages/gex) | The GEX engine and spot-trail recorder; the console renders it. |
-| [packages/console](packages/console) | The unified web console (`127.0.0.1:5070`) — every module's read models plus research and screening, in one app. Read-only. |
+| [packages/console](packages/console) | The unified web console (`127.0.0.1:5070`) — every module's read models plus research and screening, in one app. Its writes are the Config page, the Builder and Groups saves and, with `live_arming` on, the Live page's arm switch; it places no order. |
 | [packages/overview](packages/overview) | The pre-open morning market overview: one deterministic fact pack per session with a mechanical GREEN/YELLOW/RED phase. Read-only over everything it touches. |
 | [packages/fundamentals](packages/fundamentals) | Company fundamentals and the fair-value file: SEC filings, Dolt's statements and consensus, and Damodaran's cost-of-capital data, for the Screeners fair-value tab (needs the optional Dolt data). |
 | [packages/technicals](packages/technicals) | The market report's end-of-day store and technical engines: adjusted daily bars and IV for the universe and rotation ETFs, from the local Dolt clones (needs the optional Dolt data). |
@@ -343,7 +345,7 @@ python run.py secrets-set --channel telegram   # prompts for the bot token, then
 python run.py secrets-status                   # which channels are configured (prints no secrets)
 ```
 
-The **console** only reads, and probes the token's scope at boot — a read-only token disables its
+The **console** places no order, and probes the token's scope at boot — a read-only token disables its
 write-oriented functions.
 
 ### 4. Check, start and stop

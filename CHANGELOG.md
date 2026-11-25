@@ -77,12 +77,12 @@ beyond the latest release.
   sales of the day; a buy that does not fit waits (`settled_cash_short`), and a read that fails stops
   new buys. A margin account is not limited. The rule is shared (`cherrypick.core.live.cash`), so any
   live path can use it.
-- **The ladder's console page has a Live tab.** It shows the live loop's nine gates with the module's
+- **The ladder's console page has a Live mode** (a Paper/Live selector). It shows the live loop's nine gates with the module's
   own reason for each, whether it is in dry-run or live, whether it is armed today, the halt flag, held
   submissions and orphans, the last tick's positions check and the standing dry-run intents, and, once the
   loop has a ledger, the lots held, the lots sold (fees in their own column, with whether they are the
-  schedule's or the broker's), the orders and the journal. It reads only: arming stays the
-  `/live-ladder-start` command. The suite-wide Live page lists the ladder as a loop too. Issue #1337.
+  schedule's or the broker's), the orders and the journal. It reads only: arming is the
+  `/live-ladder-start` command, or the Live page's switch while `live_arming` is on. The suite-wide Live page lists the ladder as a loop too. Issue #1337.
 - **The ladder has a console page.** `/ladder` (on the rail, key 6) shows each fund's previous close and
   every arm's next buy level, the open lots with the group's 18-day "hospital" flagged, the sold lots as
   trades, and each arm's realised and unrealised result. Its help tab says the rule is not a tested edge.

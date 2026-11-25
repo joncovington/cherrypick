@@ -182,7 +182,7 @@ and no per-module dashboard. Two consequences worth knowing:
 - The watchdog renders nothing on its tick, which takes that work off the reliability path
   for good.
 - There is no **live ops card**, because it would touch the broker; its parts are spread out: the halt flag is the Config page's headline control and shows on
-  Live → today, each live loop has its own Live tab (hidden while its live switch is off), and
+  Live → today, each live loop has a card there (with its arm-for-today switch while `live_arming` is on), and
   `cherrypick reconcile` still runs on demand and as its daily job.
 
 ## End-of-month log/report rotation
