@@ -311,3 +311,133 @@ def test_an_items_legs_are_the_options_only():
     }
     (item,) = attention.intent_items([t])
     assert item["legs"] == ["+1 2028-01-21 40C", "-1 2026-12-18 55C"]
+
+
+# --------------------------------------------------------------------------- the verdict line says so
+def test_a_put_judged_as_a_plain_short_put_says_what_marking_it_a_wheel_would_change():
+    t, ask = put_ask()
+    wheeled = ask["verdicts"]["wheel"]
+    assert (
+        wheeled["action"] != t["recommendation"]["action"] or wheeled["rule"] != t["recommendation"]["rule"]
+    )
+    words = wheeled["action"].lower().replace("_", " ")
+    assert t["recommendation"]["reason"].endswith(
+        f"; judged as a plain short put: no intent set (marked a wheel: {words})"
+    )
+    assert t["explanation"].endswith(f"the verdict would be {words}, by {wheeled['rule']}.")
+    assert "No intent is set, so this put is judged as a plain short put." in t["explanation"]
+
+
+def test_the_note_is_only_in_the_trades_own_lines_not_in_the_verdict_it_compares():
+    t, ask = put_ask()
+    assert "no intent set" not in ask["verdicts"]["wheel"]["reason"]
+    assert "no intent set" not in ask["verdicts"]["no_wheel"]["reason"]
+
+
+def test_an_answered_put_says_nothing():
+    for answer in ("wheel", "no_wheel"):
+        t, _ = put_ask(overrides={"trades": {TRADE: {"intent": answer}}})
+        assert "no intent set" not in t["recommendation"]["reason"]
+        assert "No intent is set" not in t["explanation"]
+
+
+def test_a_put_whose_verdict_the_answer_would_not_change_says_nothing():
+    # Well out of the money the plain and the wheel readings agree, so there is nothing to say.
+    calm = [{**TESTED[0], "mid": 0.30, "value": -30.0, "open_pl": 70.0}]
+    acct = wr.evaluate(OPENED, calm, 56.0, income=INCOME)
+    t = wr.trade_of(acct, PUT)
+    ask = t["intent_ask"]
+    assert ask["asked"] is True
+    assert (ask["verdicts"]["wheel"]["action"], ask["verdicts"]["wheel"]["rule"]) == (
+        t["recommendation"]["action"],
+        t["recommendation"]["rule"],
+    )
+    assert "no intent set" not in t["recommendation"]["reason"]
+    assert "No intent is set" not in t["explanation"]
+
+
+def test_an_unanswered_diagonal_whose_verdict_the_reading_decides_says_how_it_was_read():
+    t = pm.trade_of(pm.evaluate(pm.narrow()), pm.NARROW)
+    assert t["recommendation"]["rule"] == "pmcc.width" and t["intent_ask"]["asked"] is True
+    assert t["recommendation"]["reason"].endswith(
+        "; read as a PMCC by the delta its long was entered at: no intent set"
+    )
+    assert "this diagonal is read as a PMCC by the delta its long was entered at" in t["explanation"]
+
+
+def test_a_diagonal_whose_verdict_the_reading_does_not_decide_says_nothing():
+    # No rule fired: a hold is a hold whichever way the diagonal is read.
+    t = pm.trade_of(pm.evaluate(near_snap()), pm.SHORT)
+    assert t["intent_ask"]["asked"] is True and t["recommendation"]["rule"] == "hold"
+    assert "no intent set" not in t["recommendation"]["reason"]
+    assert "No intent is set" not in t["explanation"]
+
+
+def test_each_reading_is_worded_as_a_reading_never_as_a_judgment():
+    now = {"action": "ROLL_OR_CLOSE", "rule": "pmcc.width", "reason": "x"}
+    ask = {"asked": True, "kind": "pmcc"}
+    clause = lambda suggested: intentask.unanswered_note({**ask, "suggested": suggested}, now, None)[0]  # noqa: E731
+    assert clause("pmcc") == "read as a PMCC by the delta its long was entered at: no intent set"
+    assert (
+        clause("diagonal") == "read as a plain diagonal by the delta its long was entered at: no intent set"
+    )
+    assert "being unknown" in clause(None)
+    for note in (clause("pmcc"), clause("diagonal"), clause(None)):
+        assert "judged" not in note
+
+
+def test_only_the_rules_the_reading_decides_are_worded():
+    ask = {"asked": True, "kind": "pmcc", "suggested": "pmcc"}
+    for rule in (
+        "pmcc.width",
+        "pmcc.assignment",
+        "pmcc.roll_long",
+        "debit.diagonal_width",
+        "roll.diagonal_short",
+    ):
+        assert intentask.unanswered_note(ask, {"action": "REVIEW", "rule": rule, "reason": "x"}, None)
+    for rule in ("hold", "debit.stop", "expiry.close", "pmcc_data", "data"):
+        assert intentask.unanswered_note(ask, {"action": "REVIEW", "rule": rule, "reason": "x"}, None) is None
+    assert intentask.unanswered_note(ask, None, None) is None
+
+
+def test_an_unknown_kind_is_not_described_as_either():
+    assert (
+        intentask.unanswered_note(
+            {"asked": True, "kind": "collar"}, {"action": "X", "rule": "pmcc.width"}, None
+        )
+        is None
+    )
+
+
+def test_the_note_changes_the_words_and_nothing_else(monkeypatch):
+    # The same asked put and diagonal, with the note switched off: only the two lines differ.
+    def lines(t):
+        rec = dict(t["recommendation"])
+        return {k: v for k, v in rec.items() if k != "reason"}, t["order"], t["fired"], t["intent_ask"]
+
+    put_with = put_ask()[0]
+    dia_with = pm.trade_of(pm.evaluate(pm.narrow()), pm.NARROW)
+    monkeypatch.setattr(intentask, "unanswered_note", lambda *a, **k: None)
+    put_without = put_ask()[0]
+    dia_without = pm.trade_of(pm.evaluate(pm.narrow()), pm.NARROW)
+    for with_, without in ((put_with, put_without), (dia_with, dia_without)):
+        assert lines(with_) == lines(without)
+        assert with_["recommendation"]["reason"] != without["recommendation"]["reason"]
+        assert with_["recommendation"]["reason"].startswith(without["recommendation"]["reason"])
+        assert with_["explanation"].startswith(without["explanation"])
+
+
+def test_an_answered_diagonal_says_nothing():
+    long = pm.view_of(pm.evaluate(near_snap()))["intent_key"]
+    t = pm.trade_of(pm.evaluate(near_snap(), {"trades": {long: {"intent": "diagonal"}}}), pm.SHORT)
+    assert "no intent set" not in t["recommendation"]["reason"]
+    assert "No intent is set" not in t["explanation"]
+
+
+def test_a_trade_that_is_not_asked_says_nothing():
+    assert intentask.unanswered_note(None, None, None) is None
+    assert intentask.unanswered_note({"asked": False, "kind": "wheel"}, None, None) is None
+    same = {"action": "HOLD", "rule": "hold", "reason": "x"}
+    assert intentask.unanswered_note({"asked": True, "kind": "wheel"}, same, dict(same)) is None
+    assert intentask.unanswered_note({"asked": True, "kind": "wheel"}, same, None) is None
