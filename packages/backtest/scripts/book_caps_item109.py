@@ -47,7 +47,8 @@ REPLAY_CORRECTIONS = (
         "instead of dividing by it.",
         "why": "The study crashed with a division by zero before writing any result, "
         "so no arm or outcome was read.",
-        "decided": "user",
+        "decided": "user asked for the fix; leaving the part out follows how the script reads a book "
+        "with no risk",
         "before_read": True,
     },
 )
