@@ -138,13 +138,14 @@ so is one whose `--after` chain comes back on itself (a cycle: A after B and B a
 waiting on a chain that loops), which no finish could release. `queue-add` refuses a row naming itself
 or closing a cycle; one that forms anyway is held with a `cycle` reason, so cancel a row in it. A held
 row raises one WARNING notification when it is first held (`held_at` records it, so the 300 s job
-does not repeat it); `queue-list` and the console show the reason. To release a held row, **re-queue
+does not repeat it), and another each day it stays held (`nudged_at` records the last); `queue-list`
+and the console show the reason. To release a held row, **re-queue
 the prerequisite**: the new row is the newest of that name, so the held row waits for it and runs once
 it is done. There is no need to cancel and re-queue the held row itself.
 
 **A row that did nothing is not done.** Exit 0 is not enough. A session fetch that reports a symbol
 other than its row's `dataset` has failed, and so has a fetch that had requests to work through and
-fetched none of them. A fetch with nothing left to do (a resume over a complete store) is done, and so is a repeat pass whose every request the vendor refused again with the fixed answer it gave before (`settled` in the report: `stream_removed` or `permission_denied`, the same reason as last time), with a warning, since nothing is left it will serve. A
+fetched none of them. A fetch with nothing left to do (a resume over a complete store) is done, and so is a repeat pass whose every request the vendor refused again with the fixed answer it gave before (`settled` in the report: `stream_removed`, `permission_denied` or `corrupt_data`, the same reason as last time), with a warning, since nothing is left it will serve. A
 fetch done with half or more of its requests empty or refused is done too, with that share in its
 note and a WARNING notification in place of the INFO one. A script that prints a report with a
 `refused` key has failed, whatever its exit code, and so has one whose declared output is a study kit

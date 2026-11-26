@@ -217,6 +217,19 @@ def test_a_row_still_held_a_day_later_is_reminded_then_once_a_day_and_not_before
     assert row["held_at"] is None and row["nudged_at"] is None
 
 
+def test_a_row_with_an_unreadable_hold_stamp_does_not_stop_the_pass(runner):
+    db = runner
+    rq.add("item17", "script", {}, step="fetch-chains", path=db)
+    rq.add("item17", "script", {}, step="study", after="item17/fetch-chains", path=db)
+    _set(db, "fetch-chains", "failed")
+    sent, spawned = [], []
+    _run(db, sent, spawned)
+    with rq.connect(db) as conn:
+        conn.execute("UPDATE tasks SET held_at = 'yesterday' WHERE step = 'study'")
+    assert _run(db, sent, spawned)["ran"] is None  # no error, and no second notice
+    assert len(sent) == 1
+
+
 def test_queue_list_shows_a_done_prerequisite_as_ready_and_a_cycle_as_held(db, monkeypatch, capsys):
     from cherrypick import cli
 

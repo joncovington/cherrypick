@@ -988,26 +988,37 @@ NUDGE_HOURS = 24
 
 def remind_held(conn: sqlite3.Connection, now: datetime) -> list[tuple[dict, str]]:
     """Rows held for `NUDGE_HOURS` since they were notified or last reminded, each with how long and
-    why, stamped so the next reminder is a day on. `mark_held` notifies a hold once; a person who
-    missed that one would otherwise find the queue idle behind it days later (2026-11-24, a repeat
-    pass failed and held the full-set fetch for two days)."""
+    why, stamped so the next reminder is a day on. `mark_held` notifies a hold once, and a person who
+    missed that one would otherwise find the queue idle behind it days later. The stamp is a
+    conditional update, so two lanes running at once send one reminder between them; a row whose
+    timestamps do not parse is left alone rather than stopping the pass."""
     here = now.astimezone(ET).replace(tzinfo=None)
     out = []
     for r in conn.execute(
         "SELECT * FROM tasks WHERE status = 'queued' AND after IS NOT NULL AND held_at IS NOT NULL"
     ).fetchall():
         row = dict(r)
-        since = datetime.fromisoformat(row["nudged_at"] or row["held_at"])
+        try:
+            since = datetime.fromisoformat(row["nudged_at"] or row["held_at"])
+            held_for = here - datetime.fromisoformat(row["held_at"])
+        except ValueError:
+            continue
         if here - since < timedelta(hours=NUDGE_HOURS):
             continue
         why = after_reason(row, prereq_status(conn, row["after"], row["id"]))
         if not (why and why.startswith(HELD)):
             continue
-        hours = (here - datetime.fromisoformat(row["held_at"])).total_seconds() / 3600
-        conn.execute(
-            "UPDATE tasks SET nudged_at = ? WHERE id = ?", (here.strftime("%Y-%m-%dT%H:%M:%S"), row["id"])
-        )
-        out.append((row, f"held for {hours / 24:.1f} days: {why.removeprefix(HELD).strip()}"))
+        stamped = conn.execute(
+            "UPDATE tasks SET nudged_at = ? WHERE id = ? AND nudged_at IS ?",
+            (here.strftime("%Y-%m-%dT%H:%M:%S"), row["id"], row["nudged_at"]),
+        ).rowcount
+        if stamped:
+            out.append(
+                (
+                    row,
+                    f"held for {held_for.total_seconds() / 86400:.1f} days: {why.removeprefix(HELD).strip()}",
+                )
+            )
     return out
 
 
