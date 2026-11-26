@@ -79,7 +79,8 @@ REPLAY_CORRECTIONS = (
      "Inputs.sessions leaves out the rest): the store holds a Saturday (2019-02-02) and, for SPXW, holiday "
      "sessions, which were read as sessions",
      "why": "a stored day with no market was marked and exited on; each arm's verdict is unchanged on "
-     "the re-run, and the hedged arm's cost-stress read moved",
+     "the re-run, and the hedged arm's cost-stress read went from not surviving to surviving "
+     "(its verdict stays fail)",
      "decided": "user asked for the kit change; reproduce read before it merged", "before_read": False},
 )  # fmt: skip
 

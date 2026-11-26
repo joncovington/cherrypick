@@ -20,8 +20,8 @@ beyond the latest release.
   skips those sessions. Nothing to do.
 - **The study kit's `Inputs.sessions` returns trading days only.** A stored non-trading day (the
   Saturday placeholder under every name, holiday sessions under SPXW) is no longer a session to a study
-  on the kit. Items 57, 74 and 77 read such days and carry a correction entry; items 59, 63, 64 and 70
-  reproduce identically. Nothing to do.
+  on the kit, and `chain` reads such a day as none. Items 57, 74, 77 and 78 read such days and carry a
+  correction entry; items 59, 63, 64, 70, 86 and 101 reproduce identically. Nothing to do.
 
 ## v0.14.1 — 2026-11-26 — held queue rows and corrupt windows
 Fixes to v0.14.0: one that stopped the research queue behind a fetch that could never finish, one

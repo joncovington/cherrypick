@@ -74,9 +74,12 @@ class Inputs:
         return sorted(s for s in out if _trading_day(s))
 
     def chain(self, conn: sqlite3.Connection, symbol: str, session: str, expiry: str) -> Chain | None:
-        """One session's chain of a declared path, or None when the store holds none for it."""
+        """One session's chain of a declared path, or None when the store holds none for it, or the day
+        is not a trading day (the stored row is the vendor's placeholder, never a market)."""
         if not any(start <= session <= through for start, through in self._window(symbol, expiry)):
             raise Undeclared(f"{symbol} {expiry} on {session} is outside the dates the study requested")
+        if not _trading_day(session):
+            return None
         rows = conn.execute(
             "SELECT strike, right, bid, ask FROM eod_chain_quotes "
             "WHERE symbol = ? AND session = ? AND expiration = ?",
@@ -86,7 +89,8 @@ class Inputs:
 
     def fingerprint(self, conn: sqlite3.Connection) -> dict:
         """What the declared paths hold now: per path its recorded status, sessions and rows (from
-        `eod_chain_paths`), summed, and a hash of the per-path tuples. Counts only."""
+        `eod_chain_paths`), summed, and a hash of the per-path tuples. Counts only. These are the
+        fetch's own counts: a stored non-trading day is counted here though `sessions` leaves it out."""
         per = []
         for sym, exp, start, through in self.keys:
             r = conn.execute(
