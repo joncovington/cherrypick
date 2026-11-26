@@ -45,6 +45,25 @@ def test_the_eod_report_counts_sessions_chains_strikes_and_quote_shapes(eod):
     assert doc["requests"]["eod_chain_paths"] == {}
 
 
+def test_the_eod_report_lists_a_stored_session_that_is_not_a_trading_day(tmp_path):
+    # The vendor's placeholder market for a day it has none read as a session in a study, and ruined it.
+    p = tmp_path / "eod_chains.db"
+    conn = sqlite3.connect(p)
+    conn.executescript(chainfetch.SCHEMA)
+    conn.executemany(
+        "INSERT INTO eod_chain_quotes (symbol, session, expiration, strike, right, bid, ask) "
+        "VALUES (?,?,?,?,?,?,?)",
+        [
+            ("AAA", "2024-02-02", "2024-03-15", 100.0, "CALL", 1.0, 1.1),  # a Friday
+            ("AAA", "2024-02-03", "2024-03-15", 100.0, "CALL", 0.05, 99.0),  # a Saturday
+            ("BBB", "2024-02-02", "2024-03-15", 100.0, "CALL", 1.0, 1.1),
+        ],
+    )
+    conn.commit()
+    conn.close()
+    assert sq.report(p, "eod_chains.db")["off_calendar"] == {"AAA": ["2024-02-03"]}
+
+
 def test_the_intraday_report_counts_missing_greeks(tmp_path):
     p = tmp_path / "intraday_chains.db"
     conn = sqlite3.connect(p)

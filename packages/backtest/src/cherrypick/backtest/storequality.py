@@ -8,6 +8,8 @@ once and reports, per symbol and year:
 - `two_sided`: the share of quotes with a bid above zero and an ask at or above it (the kit's
   `legbars.two_sided`), `zero_bid` and `crossed` (an ask under its bid) shares;
 - for the intraday store, the share of quotes missing `delta` and missing `iv`;
+- `off_calendar`: per symbol, the stored sessions that are not trading days (the vendor's placeholder
+  market for a day it has none, which a study would read as a session);
 
 and per symbol the store's request (or path, or name-day) outcomes: complete, empty, refused.
 
@@ -19,8 +21,10 @@ floor against it: a declaration names the coverage it needs, and a study refuses
 from __future__ import annotations
 
 import sqlite3
+from datetime import date
 from pathlib import Path
 
+from cherrypick.core import calendar as cal
 from cherrypick.core.db import connect_ro
 
 #: Per store: the quotes table, the request tables with their symbol column, and extra null checks.
@@ -73,6 +77,19 @@ def quotes_by_year(conn: sqlite3.Connection, table: str, nulls: tuple[str, ...])
     return out
 
 
+def off_calendar(conn: sqlite3.Connection, table: str) -> dict[str, list[str]]:
+    """Per symbol, the stored sessions that are not exchange trading days. The vendor answers such a
+    day with a placeholder market (every option bid 0.05, ask 99.00), which a study reads as a session
+    unless it checks; a symbol with none is left out."""
+    out: dict[str, list[str]] = {}
+    for sym, session in conn.execute(
+        f"SELECT DISTINCT symbol, session FROM {table} ORDER BY symbol, session"
+    ):
+        if not cal.is_trading_day(date.fromisoformat(session[:10])):
+            out.setdefault(sym, []).append(session)
+    return out
+
+
 def outcomes(conn: sqlite3.Connection, table: str) -> dict[str, dict[str, int]]:
     """Per symbol, how the store's requests (or paths, or name-days) ended."""
     out: dict[str, dict[str, int]] = {}
@@ -92,6 +109,7 @@ def report(path: Path, store: str) -> dict:
         doc: dict = {"store": store}
         if spec["quotes"] and spec["quotes"] in tables:
             doc["quotes"] = quotes_by_year(conn, spec["quotes"], spec["nulls"])
+            doc["off_calendar"] = off_calendar(conn, spec["quotes"])
         doc["requests"] = {t: outcomes(conn, t) for t in spec["requests"] if t in tables}
         return doc
     finally:

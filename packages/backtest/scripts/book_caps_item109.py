@@ -51,6 +51,17 @@ REPLAY_CORRECTIONS = (
         "with no risk",
         "before_read": True,
     },
+    {
+        "on": "2026-11-26",
+        "what": "A candidate's sessions are the stored ones that are trading days. The store holds one "
+        "Saturday (2019-02-02) for every name, a placeholder market the vendor returns for a day it "
+        "has none; it was read as a session and condors exited on it at a loss far past their "
+        "max loss.",
+        "why": "The first full run ended every book below zero net liq in 2019 and traded nothing "
+        "after it, so the holdout was empty and the verdicts reflected that day alone.",
+        "decided": "user asked for the fix after the cause was shown",
+        "before_read": False,
+    },
 )
 
 #: The pass rule as data, fixed by the declaration before any run. Not the kit's three bars (this
@@ -237,6 +248,12 @@ def path_requests(names: list[str], expiries: list[str]) -> list[dict]:
         start = (date.fromisoformat(e) - timedelta(days=SPEC["path_days"])).isoformat()
         out += [{"symbol": s, "expiration": e, "start": start, "through": e} for s in names]
     return out
+
+
+def trading_sessions(sessions: list[str]) -> list[str]:
+    """The stored sessions that are exchange trading days. A stored Saturday is the vendor's
+    placeholder market (every option bid 0.05, ask 99.00), never a session to mark or exit on."""
+    return [s for s in sessions if cal.is_trading_day(date.fromisoformat(s))]
 
 
 def entry_session(sessions: list[str], expiry: str) -> str | None:
@@ -809,7 +826,7 @@ def candidates(
     for sym, exp in keys:
         if rep is not None:
             rep.advance("paths", key=sym, current=exp)
-        sessions = inputs.sessions(conn, sym, exp)
+        sessions = trading_sessions(inputs.sessions(conn, sym, exp))
         day = entry_session(sessions, exp)
         if day is None:
             skips["no entry session"] += 1

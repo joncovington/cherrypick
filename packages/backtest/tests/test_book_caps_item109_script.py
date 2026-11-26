@@ -78,6 +78,13 @@ def test_coverage_counts_a_monthly_only_when_every_session_45_to_20_days_out_is_
     assert m.universe({"AAA": 0.95, "BBB": 0.5, "TQQQ": 1.0}) == ["AAA"]
 
 
+def test_a_stored_saturday_is_not_a_session():
+    # The store holds the vendor's placeholder market for 2019-02-02 under every name; read as a
+    # session, condors marked at a zero cost "hit" their target there and lost far past max loss.
+    stored = ["2019-01-31", "2019-02-01", "2019-02-02", "2019-02-04"]
+    assert m.trading_sessions(stored) == ["2019-01-31", "2019-02-01", "2019-02-04"]
+
+
 def test_the_entry_is_the_first_session_at_45_days_and_none_when_the_path_starts_late():
     s = sessions_between("2024-06-01", EXPIRY)
     entry = m.entry_session(s, EXPIRY)
