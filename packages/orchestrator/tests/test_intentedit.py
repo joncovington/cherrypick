@@ -112,6 +112,18 @@ def test_the_manage_example_is_found_beside_the_code_not_only_under_the_home(hom
     assert found == (MANAGE_PKG / "config.example.json").resolve()
 
 
+def test_a_stray_file_beside_the_home_is_not_taken_for_the_shipped_example(home, tmp_path, monkeypatch):
+    # Under a relocated home the anchor's `..` is a sibling of the home: a file there is no example.
+    relocated = tmp_path / "h"
+    relocated.mkdir()
+    stray = tmp_path / "manage"
+    stray.mkdir()
+    (stray / "config.example.json").write_text('{"positions": {}}\n', encoding="utf-8")
+    monkeypatch.setattr(configedit.cfgmod, "ROOT", relocated)
+    found = configedit._example_path({"modules": {}}, "manage")
+    assert found == (MANAGE_PKG / "config.example.json").resolve()
+
+
 def test_a_changed_answer_moves_one_value_and_returns_the_one_it_replaced(home):
     put(home, WITH_TRADES)
     out = intentedit.save(CFG, req(intent="no_wheel"))

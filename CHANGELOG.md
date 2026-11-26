@@ -14,10 +14,8 @@ beyond the latest release.
 ### What's new
 
 - **A first intent answer works on an older `manage.json` under a relocated home.** An answer on a
-  `manage.json` written before the `trades` block existed adds the block from manage's shipped example, which
-  is found beside the code. With `CHERRYPICK_HOME` set, the example was looked for under the home and not
-  found, so that first answer was refused ("pointer not found: /trades"). A config with the block, or a
-  home that is not relocated, was never affected. Nothing to do.
+  `manage.json` that has no `trades` block adds the block from manage's shipped example, which is found
+  beside the code whatever `CHERRYPICK_HOME` says. Nothing to do.
 
 ## v0.14.0 — 2026-11-26 — automations and the live arm
 Three changes lead. The console can now arm a live loop for the
@@ -259,8 +257,7 @@ decide: a live MEIC config that never named `live.dry_run` now sends no entries.
   not a call diagonal, and `wheel` and `no_wheel` apply only to a naked short put. An unanswered trade is
   judged by the stricter rules and its reason line says so; it raises one needs-a-look item
   (`attention.intent`). `wheel.tested` gained `review_beyond_days` (60) and `review_min_extrinsic` (0.10).
-  `manage.json`'s `trades` block is not new (v0.13.0's example already carried it, empty, and the engine read
-  it); what is new is that the console writes it.
+  `manage.json`'s `trades` block ships empty in the example and the engine reads it; the console now writes it.
 
 **Console.**
 
