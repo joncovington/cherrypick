@@ -11,6 +11,14 @@ beyond the latest release.
 
 ## [Unreleased]
 
+### What's new
+
+- **A chain fetch no longer asks the vendor for a day that is not a trading session, and the store's
+  quality report lists any such day it holds.** The vendor answers a Saturday with a placeholder market
+  (every option bid 0.05, ask 99.00), which a study read as a session. `fetch-chains` counts these
+  requests as `not_trading` and sends none; the report gains `off_calendar` per symbol. Item 109's study
+  skips those sessions. Nothing to do.
+
 ## v0.14.1 — 2026-11-26 — held queue rows and corrupt windows
 Fixes to v0.14.0: one that stopped the research queue behind a fetch that could never finish, one
 that made a first intent answer work on an older config, and a reminder so a held row is not missed.

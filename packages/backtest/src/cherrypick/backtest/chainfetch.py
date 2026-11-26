@@ -93,6 +93,15 @@ def vendor_root(symbol: str) -> str:
     return symbol.replace(".", "").replace("/", "")
 
 
+def on_calendar(session: str) -> bool:
+    """Whether `session` (an ISO date) is an exchange trading day. A string that is not a date is
+    left to the vendor to refuse, as it always was, rather than stopping the whole fetch."""
+    try:
+        return cal.is_trading_day(date.fromisoformat(session[:10]))
+    except ValueError:
+        return True
+
+
 def read_requests(path: Path) -> list[tuple[str, str, str]]:
     """(SYMBOL, session, expiration) in file order, each once."""
     doc = json.loads(Path(path).read_text(encoding="utf-8"))
@@ -191,7 +200,14 @@ def fetch_chains(
 ) -> dict[str, Any]:
     """Fetch every request not already complete or empty (all of them with `refetch`). `stop`, if
     given, is asked before each new request: once it says so, nothing more is started, the requests
-    in flight finish and are kept, and the report says `stopped` -- a re-run resumes from there."""
+    in flight finish and are kept, and the report says `stopped` -- a re-run resumes from there.
+
+    A request for a day that is not a trading session is never sent: the vendor answers it with a
+    placeholder market (every option quoted bid 0.05, ask 99.00), and a store holding one reads as a
+    session. The report counts them as `not_trading`; they are no part of `asked`."""
+    requests = list(requests)
+    off = [k for k in requests if not on_calendar(k[1])]
+    requests = [k for k in requests if on_calendar(k[1])]
     conn = connect(settings)
     try:
         done = set() if refetch else _done(conn)
@@ -209,6 +225,7 @@ def fetch_chains(
             "settled": 0,
             "rows": 0,
             "stopped": False,
+            "not_trading": len(off),
         }
         started = time.monotonic()
         # Answered of the whole request list, as `progress` below counts it: a resumed fetch starts
@@ -567,7 +584,8 @@ def progress(
     import time
 
     now = time.time() if now is None else now
-    wanted = set(requests)
+    # A request for a non-trading day is never sent (`fetch_chains`), so it is no part of the total.
+    wanted = {k for k in requests if on_calendar(k[1])}
     out: dict[str, Any] = {"total": len(wanted), "answered": 0, "by_status": {}, "rate_per_min": None,
                            "eta_minutes": None, "last_answer_age_s": None}  # fmt: skip
     path = db_path(settings)

@@ -61,7 +61,11 @@ expunged within 30 days of termination** (§8(e)). Two consequences shape the wh
   chain, the two-sided, zero-bid and crossed shares, the intraday store's missing delta and iv,
   and each store's request outcomes, written to `results/quality/` (local: derived from licensed
   data). A declaration names the coverage it needs, and its study checks it with
-  `storequality.meets` before judging anything.
+  `storequality.meets` before judging anything. It also lists `off_calendar`, per symbol, any stored
+  session that is not a trading day: the vendor answers such a day with a placeholder market (every
+  option bid 0.05, ask 99.00), and a study that reads it as a session marks and exits on it at a
+  ruinous loss. `Inputs.sessions` does not filter them, so a study keeps only trading days itself
+  and reads this list before it trusts a store.
 - **The data must stay purgeable.** It lives in one directory carrying a marker file
   (`paths.LICENSED_MARKER`); `purge` removes only marked directories (dry run by default), and the
   nightly backup skips any marked directory (`orchestrator/backup.py` spells the same name; a test
@@ -261,7 +265,9 @@ holdout once (a marker is written before the read).
   no whole-market daily file, and answers about a request a second, so a full crawl would take weeks.
 - **What each request becomes:** complete, empty or refused (with why). A re-run skips the first two
   and retries refusals; a fatal refusal stops the run. Workers share the one session, and every
-  write is on the main thread.
+  write is on the main thread. `fetch-chains` never sends a request for a day that is not a trading
+  session (the report's `not_trading`); the path fetch asks trading days by construction
+  (`path_days`), and the intraday fetch takes its sessions from its request file unchecked.
 - Its first user is edge-hypotheses item 14.
 - **Daily paths** (`fetch-chain-paths`): a request names an expiry and a date range, and
   every session's close in that range lands as its own complete session-chain, so a replay can mark
