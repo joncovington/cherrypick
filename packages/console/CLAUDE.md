@@ -151,6 +151,17 @@ alone):
     changing. This package writes no config, arms nothing and never judges flat itself;
     `server/test/config-live-arm.test.ts` and `web/test/configLiveArm.test.tsx` pin it (each guard was shown
     to fail). The ladder tabs stay read-only; the Live page's one write is the arm switch described above.
+  - **A trade's intent is answered on the position, through its own narrow route** (`POST
+    /api/config/intent`, configcli `intent_set`, `orchestrator.intentedit`), not the general save. The
+    route sends a trade key and an intent (`wheel`, `no_wheel`, `pmcc`, `diagonal`, or null to clear) and
+    nothing the body adds, checked by shape here (`INTENT_TRADE`: a stable trade ID, or a call's long
+    contract; a provisional ID, a put contract and anything path-like are refused before the bridge). The
+    orchestrator holds the rules: a trade ID takes `wheel` or `no_wheel` and a long contract `pmcc` or
+    `diagonal`, the write is `trades.<key>.intent` and no other byte of the file, a contract held under
+    another spelling is reused, and the reply carries the value it replaced so the page can Undo. Advice
+    only: manage reads it on its next evaluation. It touches no order, no live gate and not the halt flag.
+    `server/test/intent-set.test.ts` and the orchestrator's `tests/test_intentedit.py` pin it (each guard
+    was shown to fail).
   - **The Builder's save is the same path for one automation** (`/api/automations/builder/draft` and
     `/save`, configcli `automation_draft` / `automation_save`). The route sends a name and an
     automation and nothing else; the orchestrator runs the module's own check and writes the entry it

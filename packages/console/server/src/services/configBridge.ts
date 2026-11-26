@@ -79,6 +79,7 @@ export type BridgeRequest =
   | { op: "automation_groups_save"; groups: Record<string, unknown>; members: Record<string, string | null>; switches: Record<string, boolean> }
   | { op: "automation_reference"; name: string; run: string | null }
   | { op: "automation_retire"; name: string; retired: boolean }
+  | { op: "intent_set"; trade: string; intent: string | null; expected_mtime?: number }
   | { op: "fullset_plan"; symbol: string; from?: string }
   | { op: "fullset_add"; symbol: string; from?: string; run?: string };
 

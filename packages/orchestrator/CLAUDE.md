@@ -344,8 +344,14 @@ filename; override with `paper.sla_state_prefix`.
   the target's shipped example has and the person's older copy lacks is added at the end
   (`configedit.splice_or_add`, e.g. manage's `trades`, which the console's intents save
   writes). A key the example does not have, and any key inside an absent block, stay refused
-  (`tests/test_configcli.py`, each limit shown to fail). `automation_draft`
-  and `automation_save` (`automationedit.py`) are the Builder's: the automations module's `cli draft`
+  (`tests/test_configcli.py`, each limit shown to fail). `intent_set` (`intentedit.py`) is a trade's
+  intent answered on the position: `trades.<key>.intent` in manage.json and no other byte, the key a stable
+  trade ID (`wheel` or `no_wheel`) or a call's long contract (`pmcc` or `diagonal`) checked by shape (a
+  provisional ID, a put contract and anything path-like refuse), a contract already held under another
+  spelling reused, the result proven to parse to exactly the intended document before one `apply_raw_save`,
+  and the replaced value returned so the page can undo (`tests/test_intentedit.py`, each guard shown to
+  fail). It is advice config: no module is asked, nothing is journaled, no order or live gate is reachable.
+  `automation_draft` and `automation_save` (`automationedit.py`) are the Builder's: the automations module's `cli draft`
   by subprocess (its own check; this package never imports it), then the one entry that check
   returned, refused unless it is off, replaced or added (`configedit.insert_key`) at
   `/automations/<name>` and written through `apply_raw_save`. `automation_groups`,
