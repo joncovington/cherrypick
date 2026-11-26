@@ -239,7 +239,18 @@ DEFAULT_RULES: dict[str, Any] = {
         # A short at or through its strike: roll or close, with the net-zero and premium-gambit rolls
         # out in time priced on the snapshot's quoted chain and each judged by check-roll. Repair, which
         # this ruleset otherwise avoids, so it never outranks a close.
-        "tested": {"enabled": True, "evidence": "practice"},
+        # A tested wheel PUT with more than `review_beyond_days` left (the horizon the snapshot reads
+        # roll-out chains inside, the orchestrator's `roll_out.max_short_days`) and at least
+        # `review_min_extrinsic` a share of extrinsic value is a review, not a roll or a close: with no roll
+        # to price and time value left the assignment is unlikely, and the wheel's next step is taking it
+        # anyway. Inside the horizon, or under the floor, it is the roll, close or assignment above. The
+        # floor is a broker's rule of thumb for when early exercise becomes likely: practice, untested.
+        "tested": {
+            "enabled": True,
+            "evidence": "practice",
+            "review_beyond_days": 60,
+            "review_min_extrinsic": 0.10,
+        },
         # Shares delivered by an assignment and not yet written against: name the covered call at the
         # skate call band (`band`: "fixed" or "by_expiry"). Never a strike without the band.
         "next_leg": {"enabled": True, "band": "fixed", "evidence": "practice"},

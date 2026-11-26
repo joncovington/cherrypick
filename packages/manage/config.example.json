@@ -181,9 +181,11 @@
       "evidence": "mechanics"
     },
     "tested": {
-      "_comment": "A short at or through its strike: roll or close. The net-zero and premium-gambit rolls out in time are priced on the snapshot's quoted chain and each judged by check-roll.",
+      "_comment": "A short at or through its strike: roll or close. The net-zero and premium-gambit rolls out in time are priced on the snapshot's quoted chain and each judged by check-roll. A tested wheel PUT with more than review_beyond_days left (the horizon the snapshot reads roll-out chains inside, the orchestrator's roll_out.max_short_days) and at least review_min_extrinsic a share of extrinsic value is a review instead: with no roll to price and time value left, assignment is unlikely and is the wheel's next step anyway. The floor is a broker's rule of thumb for when early exercise becomes likely: practice, untested.",
       "enabled": true,
-      "evidence": "practice"
+      "evidence": "practice",
+      "review_beyond_days": 60,
+      "review_min_extrinsic": 0.10
     },
     "next_leg": {
       "_comment": "Shares an assignment delivered and not yet written against: name the covered call at the skate call band (band: fixed or by_expiry). No strike without the band.",

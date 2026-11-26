@@ -26,6 +26,17 @@ beyond the latest release.
 
 ### What's new
 
+- **A tested wheel put with time left is a review, not a roll or a close. Measurement boundary, 2026-11-25.**
+  `wheel.tested` on a short put you wheel (`intent: "wheel"`) that is at or through its strike, has more
+  than 60 days left (`wheel.tested.review_beyond_days`, the horizon the snapshot reads roll-out chains
+  inside) and at least 0.10 a share of extrinsic value (`review_min_extrinsic`, a broker's rule of thumb for
+  when early exercise becomes likely: practice, untested) now says REVIEW. There is no roll to price that far
+  out and assignment is unlikely while time value remains. Its reason line gives how far through the strike
+  it is, its extrinsic value and days, what holding to expiry at today's price makes on the trade's net
+  credits, and the assignment against the wheel breakeven, each figure named for its basis. Inside 60 days,
+  or under the floor, it is the roll, close or assignment it was, so a deep put is never left unwatched;
+  `risk.oversize` still fires on its own. Nothing to do. The change moves when a rule fires, so wheel-put
+  verdicts from this date are not comparable with earlier ones.
 - **MEIC's live loop ships in dry run.** `live.dry_run` is `true` unless it is the literal `false`, and a
   missing key means `true`. An armed tick then preflights each new entry against the real account and
   sends none, writing nothing to the live ledger. It governs entries only: a held book is still
