@@ -179,8 +179,12 @@ alone):
     whose name's intent is for another trade is linked nowhere: an answer on the name would replace that
     intent. `web/test/wheelIntents.test.tsx` pins it. Every control on the intent surfaces is 44px on a
     tablet or phone (`max-width: 820px` or a coarse pointer): a link inside a sentence keeps its line and
-    gets the hit area from an `::after`, the answers stack at full width under 560px, and the Intent tab's
-    buttons line up whatever the verdict above them says. It is one block in `styles.css`, and
+    gets the hit area from an `::after`, the answers stack at full width whenever the strip is under 520px
+    wide (a container query, so a desktop card in a four-column grid stacks them too) or the page under
+    560px, an unanswered strip is drawn in the warning amber and an answered one neutral, and the Intent
+    tab's buttons line up whatever the verdict above them says. The table view's collapsed row carries an
+    `intent?` marker while its trade has a question (`RowIntentChip`), since the strip lives in the opened
+    row. It is one block in `styles.css`, and
     `web/test/intentTouchTargets.test.ts` pins what it covers: a new control on these surfaces belongs in it.
   - **The Builder's save is the same path for one automation** (`/api/automations/builder/draft` and
     `/save`, configcli `automation_draft` / `automation_save`). The route sends a name and an

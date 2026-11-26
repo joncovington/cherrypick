@@ -64,6 +64,22 @@ describe("the intent surfaces' touch targets", () => {
     expect(phone).toMatch(/\.int-strip-opt\s*\{[^}]*width:\s*100%/);
   });
 
+  it("stacks the answers whenever the strip itself is narrow, so a desktop card in a four-column grid does not wrap them raggedly", () => {
+    expect(block(/^\.int-strip \{/m)).toMatch(/container-type:\s*inline-size\s*;/);
+    const narrow = block(/@container \(max-width: 520px\)\s*\{/);
+    expect(decl(narrow, "flex-direction", "column")).toBe(true);
+    expect(narrow).toMatch(/\.int-strip-opt\s*\{[^}]*width:\s*100%/);
+  });
+
+  it("draws an unanswered strip in the warning amber and an answered one neutral", () => {
+    const open = block(/^\.int-strip \{/m);
+    expect(open).toMatch(/border:\s*1px dashed var\(--warn\)/);
+    expect(open).toMatch(/background:\s*color-mix\(in srgb, var\(--warn\)/);
+    const saved = block(/^\.int-strip\.is-saved \{/m);
+    expect(saved).toMatch(/border-color:\s*var\(--border\)/);
+    expect(saved).toMatch(/background:\s*var\(--surface\)/);
+  });
+
   it("is not applied on a desktop with a mouse: the 44px rule lives only under the touch media query", () => {
     const outside = css.replace(touch, "");
     for (const s of [".int-strip-opt", ".int-tab .btn", ".pmcc-intent .btn", ".cfg-intents .btn"]) {
@@ -75,6 +91,11 @@ describe("the intent surfaces' touch targets", () => {
   it("reads the verdict under an answer as an outcome, empty to a screen reader, and lines up the Intent tab's buttons", () => {
     expect(css).toMatch(/\.int-strip-verdict::before\s*\{[^}]*content:\s*"→ " \/ ""/);
     expect(css).toMatch(/\.int-tab \.int-col > \.btn\s*\{\s*margin-top:\s*auto;/);
+  });
+
+  it("caps an opened row's card at 560px on the wrapper that now holds the card and its strip", () => {
+    expect(block(/^\.tr-open > \.pos-card-wrap \{/m)).toMatch(/max-width:\s*560px/);
+    expect(css).not.toMatch(/\.tr-open > \.pos-card \{/);
   });
 
   it("is hung on a class the Config card carries", () => {

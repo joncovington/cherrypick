@@ -6998,10 +6998,11 @@ select.text-input {
   align-items: center;
   gap: 8px 10px;
   padding: 10px 14px;
-  border: 1px dashed var(--border);
+  border: 1px dashed var(--warn);
   border-radius: 12px;
-  background: var(--surface);
+  background: color-mix(in srgb, var(--warn) 8%, var(--surface));
   font-size: 13px;
+  container-type: inline-size;
 }
 .int-strip-q {
   font-weight: 600;
@@ -7043,6 +7044,8 @@ select.text-input {
 .int-strip.is-saved {
   justify-content: space-between;
   border-style: solid;
+  border-color: var(--border);
+  background: var(--surface);
 }
 
 .pos-card {
@@ -10003,7 +10006,7 @@ button.chip[aria-pressed][data-hue="special"],
   border-top: 1px solid var(--border);
   background: color-mix(in srgb, var(--surface-sunken) 55%, var(--surface));
 }
-.tr-open > .pos-card {
+.tr-open > .pos-card-wrap {
   max-width: 560px;
 }
 @media (prefers-reduced-motion: reduce) {
@@ -10422,6 +10425,18 @@ button.chip[aria-pressed][data-hue="special"],
     content: "";
     position: absolute;
     inset: -15px 0;
+  }
+}
+/* The answers stack at full width whenever the strip is narrow, whatever the page: a desktop card in a
+   four-column grid is as narrow as a phone, and two long answers would wrap into ragged boxes there. */
+@container (max-width: 520px) {
+  .int-strip-opts {
+    flex-direction: column;
+    width: 100%;
+  }
+  .int-strip-opt {
+    width: 100%;
+    justify-content: flex-start;
   }
 }
 @media (max-width: 560px) {
