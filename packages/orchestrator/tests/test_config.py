@@ -63,6 +63,16 @@ def test_source_root_uses_repo_root_in_source_checkout(monkeypatch):
     assert (root / "run.py").exists() or (root / "pyproject.toml").exists()
 
 
+def test_the_checkout_is_found_whatever_the_home_says(monkeypatch, tmp_path):
+    # The home moves the runtime files and the source anchor; it says nothing about where the code is,
+    # and a config file's shipped example sits beside the code.
+    monkeypatch.setenv("CHERRYPICK_HOME", str(tmp_path))
+    assert c._source_root() == tmp_path
+    root = c._checkout_root()
+    assert root is not None and (root / "run.py").exists()
+    assert c.CHECKOUT_ROOT is not None and (c.CHECKOUT_ROOT / "run.py").exists()
+
+
 @pytest.mark.real_state  # this test asserts where the real paths land, so it opts out of the isolation
 def test_runtime_paths_resolve_under_home_not_repo():
     # config.json, state/, and logs/ live under ~/.cherrypick — never inside the checkout. ROOT is only

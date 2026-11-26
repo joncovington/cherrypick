@@ -26,19 +26,25 @@ from .util import read_json
 _USER_HOME = Path.home() / ".cherrypick"
 
 
-def _source_root() -> Path:
-    """The **source anchor** for resolving a module's relative `path` in config (e.g. `../meic`) — the
-    orchestrator checkout dir (this file sits at <root>/src/cherrypick/orchestrator/config.py, so it is
-    3 parents up). This stays tied to the checkout even though runtime files (config/state/dashboard/
-    logs) now live under the per-user home, so an in-place `path: ../meic` keeps resolving into the repo
-    regardless of where config.json physically lives. CHERRYPICK_HOME overrides it for an installed copy
-    (where modules come from MODULES_HOME, not a relative checkout)."""
-    if os.environ.get("CHERRYPICK_HOME"):
-        return _home.home()  # expands ~ and $VARS, as every other package's resolver does
+def _checkout_root() -> Path | None:
+    """The orchestrator checkout this code runs from (this file sits at
+    <root>/src/cherrypick/orchestrator/config.py, so it is 3 parents up), or None when it is not one.
+    Independent of CHERRYPICK_HOME: where the runtime files live says nothing about where the code is."""
     repo_root = Path(__file__).resolve().parents[3]
     if (repo_root / "run.py").exists() or (repo_root / "pyproject.toml").exists():
         return repo_root
-    return _USER_HOME
+    return None
+
+
+def _source_root() -> Path:
+    """The **source anchor** for resolving a module's relative `path` in config (e.g. `../meic`) — the
+    orchestrator checkout dir. This stays tied to the checkout even though runtime files
+    (config/state/dashboard/logs) now live under the per-user home, so an in-place `path: ../meic` keeps
+    resolving into the repo regardless of where config.json physically lives. CHERRYPICK_HOME overrides
+    it for an installed copy (where modules come from MODULES_HOME, not a relative checkout)."""
+    if os.environ.get("CHERRYPICK_HOME"):
+        return _home.home()  # expands ~ and $VARS, as every other package's resolver does
+    return _checkout_root() or _USER_HOME
 
 
 def _logs_home() -> Path:
@@ -53,6 +59,9 @@ def _logs_home() -> Path:
 # — config.json, state/, dashboard.html, logs/ — all live under the per-user home now, so nothing runtime
 # is written into the checkout.
 ROOT = _source_root()
+# The checkout the code runs from, whatever CHERRYPICK_HOME says (None when it is not a checkout). A config
+# file's shipped example lives there, beside the code, never under the home.
+CHECKOUT_ROOT = _checkout_root()
 CONFIG_PATH = _home.config_path()
 LOGS_DIR = _logs_home()
 STATE_DIR = _home.state_dir()

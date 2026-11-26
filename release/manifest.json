@@ -299,7 +299,7 @@
         {
           "file": "manage.json",
           "key": "trades",
-          "note": "New top-level block, in the shipped example: one entry per trade, `trades.<trade ID>.intent` (wheel or no_wheel for a naked short put) or `trades.<long contract>.intent` (pmcc or diagonal for a call diagonal). The console's answer writes it, and adds the block on a first answer to a config that lacks it. Advice config: nothing is placed."
+          "note": "Not new: v0.13.0's example already carried an empty `trades` block and the engine read it. What is new is that the console writes it: one entry per trade, `trades.<trade ID>.intent` (wheel or no_wheel for a naked short put) or `trades.<long contract>.intent` (pmcc or diagonal for a call diagonal). The console's answer writes it, and adds the block on a first answer to a config that lacks it. Advice config: nothing is placed."
         },
         {
           "file": "manage.json",

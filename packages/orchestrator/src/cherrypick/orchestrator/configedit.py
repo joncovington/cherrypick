@@ -360,6 +360,11 @@ def _example_path(cfg: dict[str, Any], target_id: str) -> Path | None:
             candidate = cfgmod.module_root(mcfg, target_id) / "config" / Path(rel).name
         if candidate.exists():
             return candidate
+    # manage (no `modules` entry of its own) and any module with no path: the example sits beside the
+    # code. ROOT is the home under CHERRYPICK_HOME, where nothing ships, so the checkout is tried too.
+    for anchor in (cfgmod.ROOT, cfgmod.CHECKOUT_ROOT):
+        if anchor is not None and (anchor / rel).resolve().exists():
+            return (anchor / rel).resolve()
     return (cfgmod.ROOT / rel).resolve()
 
 
