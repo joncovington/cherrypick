@@ -17,11 +17,23 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+from datetime import date
 from pathlib import Path
+
+from cherrypick.core import calendar as cal
 
 from cherrypick.backtest.chainfetch import read_path_requests
 
 from .chains import Chain
+
+
+def _trading_day(session: str) -> bool:
+    """Whether a stored session is an exchange trading day; one that is not a date is kept, so a
+    malformed row shows up downstream rather than vanishing here."""
+    try:
+        return cal.is_trading_day(date.fromisoformat(session[:10]))
+    except ValueError:
+        return True
 
 
 class Undeclared(KeyError):
@@ -46,7 +58,9 @@ class Inputs:
         return w
 
     def sessions(self, conn: sqlite3.Connection, symbol: str, expiry: str) -> list[str]:
-        """The stored sessions of a declared path, inside its requested dates, in order."""
+        """The stored sessions of a declared path, inside its requested dates, in order. Only exchange
+        trading days: the vendor answers a day it has none for (a Saturday, a holiday) with a stored
+        row of its own, which a study would read as a session and mark a position on."""
         out: set[str] = set()
         for start, through in self._window(symbol, expiry):
             out.update(
@@ -57,7 +71,7 @@ class Inputs:
                     (symbol.upper(), expiry[:10], start, through),
                 )
             )
-        return sorted(out)
+        return sorted(s for s in out if _trading_day(s))
 
     def chain(self, conn: sqlite3.Connection, symbol: str, session: str, expiry: str) -> Chain | None:
         """One session's chain of a declared path, or None when the store holds none for it."""

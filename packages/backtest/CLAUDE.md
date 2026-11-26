@@ -64,8 +64,9 @@ expunged within 30 days of termination** (§8(e)). Two consequences shape the wh
   `storequality.meets` before judging anything. It also lists `off_calendar`, per symbol, any stored
   session that is not a trading day: the vendor answers such a day with a placeholder market (every
   option bid 0.05, ask 99.00), and a study that reads it as a session marks and exits on it at a
-  ruinous loss. `Inputs.sessions` does not filter them, so a study keeps only trading days itself
-  and reads this list before it trusts a store.
+  ruinous loss. `Inputs.sessions` returns only trading days, so a study on the kit never reads one;
+  a study that reads the store another way keeps only trading days itself, and reads this list before
+  it trusts a store.
 - **The data must stay purgeable.** It lives in one directory carrying a marker file
   (`paths.LICENSED_MARKER`); `purge` removes only marked directories (dry run by default), and the
   nightly backup skips any marked directory (`orchestrator/backup.py` spells the same name; a test

@@ -50,6 +50,17 @@ def test_only_the_declared_path_and_its_dates_are_read(store, inputs):
         inputs.chain(store, "AAA", "2024-03-01", "2024-03-15")
 
 
+def test_a_stored_weekend_or_holiday_is_not_a_session(store, inputs):
+    # The vendor stores a row for a day it has no market for (a Saturday; Presidents' Day).
+    for day in ("2024-02-03", "2024-02-19"):
+        store.execute(
+            "INSERT INTO eod_chain_quotes (symbol, session, expiration, strike, right, bid, ask) "
+            "VALUES ('AAA', ?, '2024-03-15', 100.0, 'CALL', 0.05, 99.0)",
+            (day,),
+        )
+    assert inputs.sessions(store, "AAA", "2024-03-15") == ["2024-02-01", "2024-02-02"]
+
+
 def test_a_declared_session_the_store_lacks_is_none(store, inputs):
     assert inputs.chain(store, "AAA", "2024-02-05", "2024-03-15") is None
 

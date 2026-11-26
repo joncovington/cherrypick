@@ -73,8 +73,15 @@ PATH_DAYS = 10
 ALPHA = i46.ALPHA
 MIN_CYCLES = i46.MIN_CYCLES
 
-#: Replay corrections to this study (docs/conventions/working-rules.md). None yet.
-REPLAY_CORRECTIONS: list[dict] = []
+#: Replay corrections to this study (docs/conventions/working-rules.md), oldest first.
+REPLAY_CORRECTIONS = (
+    {"on": "2026-11-26", "what": "a path's sessions are the stored ones that are trading days (the kit's "
+     "Inputs.sessions leaves out the rest): the store holds a Saturday (2019-02-02) and, for SPXW, holiday "
+     "sessions, which were read as sessions",
+     "why": "a stored day with no market was marked and exited on; each arm's verdict is unchanged on "
+     "the re-run, and the hedged arm's cost-stress read moved",
+     "decided": "user asked for the kit change; reproduce read before it merged", "before_read": False},
+)  # fmt: skip
 
 
 # ------------------------------------------------------------------------------------------------

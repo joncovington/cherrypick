@@ -78,6 +78,12 @@ REPLAY_CORRECTIONS = (
      "why": "killcriteria rounds a drawdown to the cent, so on returns on buying power the first run "
      "recorded it to the nearest whole percent; neither model's tail verdict was near the bar",
      "decided": "suite rule: a number recorded wrong is fixed at once", "before_read": False},
+    {"on": "2026-11-26", "what": "a path's sessions are the stored ones that are trading days (the kit's "
+     "Inputs.sessions leaves out the rest): the store holds a Saturday (2019-02-02) and, for SPXW, holiday "
+     "sessions, which were read as sessions",
+     "why": "a stored day with no market was marked and exited on; every arm's and model's verdict is "
+     "unchanged on the re-run",
+     "decided": "user asked for the kit change; reproduce read before it merged", "before_read": False},
 )  # fmt: skip
 
 
