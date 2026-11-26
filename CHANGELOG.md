@@ -11,6 +11,12 @@ beyond the latest release.
 
 ## [Unreleased]
 
+### What's new
+
+- **A first intent answer works on an older `manage.json` under a relocated home.** An answer on a
+  `manage.json` that has no `trades` block adds the block from manage's shipped example, which is found
+  beside the code whatever `CHERRYPICK_HOME` says. Nothing to do.
+
 ## v0.14.0 — 2026-11-26 — automations and the live arm
 Three changes lead. The console can now arm a live loop for the
 day from the Live page, behind the module's own checks and a typed `YES`; it ships off
@@ -250,8 +256,8 @@ decide: a live MEIC config that never named `live.dry_run` now sends no entries.
   asks PMCC or diagonal. A name's `pmcc` or `diagonal` no longer sets or hides the intent of a trade that is
   not a call diagonal, and `wheel` and `no_wheel` apply only to a naked short put. An unanswered trade is
   judged by the stricter rules and its reason line says so; it raises one needs-a-look item
-  (`attention.intent`). `wheel.tested` gained `review_beyond_days` (60) and `review_min_extrinsic` (0.10), and
-  `trades` is a top-level block of `manage.json` (in the shipped example).
+  (`attention.intent`). `wheel.tested` gained `review_beyond_days` (60) and `review_min_extrinsic` (0.10).
+  `manage.json`'s `trades` block ships empty in the example and the engine reads it; the console now writes it.
 
 **Console.**
 
