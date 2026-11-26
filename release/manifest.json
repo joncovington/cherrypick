@@ -328,6 +328,17 @@
       "migrations": [
         "v0.14.0-01-automations-rename"
       ]
+    },
+    "v0.14.1": {
+      "upgrading": [
+        "An ordinary upgrade from v0.14.0: run `python run.py upgrade`. Nothing to do by hand and no data migration.",
+        "The research queue's table gains a `nudged_at` column the first time it is opened; an older queue is changed in place. A fetch row the vendor serves corrupt windows for now finishes done with a warning, and a row held behind another is reminded each day. If you re-queued a failed repeat pass by hand, one more re-queue releases the held rows.",
+        "A first intent answer on a `manage.json` without a `trades` block works under a relocated `CHERRYPICK_HOME`."
+      ],
+      "manual_steps": [],
+      "config_changes": [],
+      "measurement_boundaries": [],
+      "migrations": []
     }
   }
 }
