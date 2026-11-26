@@ -2,7 +2,13 @@ import { Link } from "react-router-dom";
 import type { ManageIntentAsk, ManageTrade } from "@console/shared";
 import { ACTION_LABEL } from "./manageParts";
 import { useIntentAnswer } from "./intentAnswers";
-import { HELD_FOR_ID, QUESTION, answerTrade, intentLabel, restoreTo } from "./stripAnswer";
+import {
+  HELD_FOR_ID,
+  QUESTION,
+  answerTrade,
+  intentLabel,
+  restoreTo,
+} from "./stripAnswer";
 
 /**
  * The question a position asks about its intent: shown only while manage asks it (`intentAsk.asked`), one
@@ -14,15 +20,45 @@ import { HELD_FOR_ID, QUESTION, answerTrade, intentLabel, restoreTo } from "./st
  * suggestion is never applied.
  */
 
+/** Whether the trade has a question to put: asked, with answers, and (unless it waits for its ID) a key
+ * the save route can take. A key it could not take is a fault in the evaluation, not a question. */
+export function asksIntent(t: ManageTrade): boolean {
+  const ask = t.intentAsk;
+  if (!ask || !ask.asked || ask.options.length === 0) return false;
+  return ask.scope === "name" || answerTrade(ask) !== null;
+}
+
 export function IntentStrip({ t }: { t: ManageTrade }) {
   const ask = t.intentAsk;
-  // No open question, or nothing to answer it with: nothing to show.
-  if (!ask || !ask.asked || ask.options.length === 0) return null;
+  if (!ask || !asksIntent(t)) return null;
   if (ask.scope === "name") return <WaitingStrip ask={ask} />;
   const trade = answerTrade(ask);
-  // A key the save route could not take is a fault in the evaluation, not a question to put.
   return trade === null ? null : <AnswerStrip t={t} ask={ask} trade={trade} />;
 }
+
+/** The marker a collapsed row carries while its trade has a question, so the table view does not hide it
+ * behind a click. It reads as answered once the console has saved one, until manage reads it. */
+export function RowIntentChip({ t }: { t: ManageTrade }) {
+  const ask = t.intentAsk;
+  const trade = ask ? answerTrade(ask) : null;
+  const [state] = useIntentAnswer(trade ?? "", ask ?? NO_ASK);
+  if (!ask || !asksIntent(t)) return null;
+  if (state.saved) return <span className="chip">intent answered</span>;
+  return <span className="chip chip-warn">intent?</span>;
+}
+
+const NO_ASK: ManageIntentAsk = {
+  kind: "wheel",
+  asked: false,
+  current: null,
+  options: [],
+  verdicts: {},
+  suggested: null,
+  evidence: [],
+  note: null,
+  key: "",
+  scope: "trade",
+};
 
 /** The question with its answers. Its state (saved, with Undo) lasts until manage re-evaluates: the ask
  * still reads open on the next poll, and once the answer is read the question is gone. Nothing refetches

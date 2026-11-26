@@ -9,7 +9,7 @@ import { fmtCash, fmtMoney } from "../../lib/format";
 import { CardLightbox, LightboxFrame, useOpenParam, type LightboxTab } from "../Backtest/CardLightbox";
 import { ACTION_LABEL, ActionChip, Kv, Money, tone } from "./manageParts";
 import { useLiveMarks } from "./LiveMarks";
-import { IntentStrip } from "./IntentStrip";
+import { IntentStrip, RowIntentChip } from "./IntentStrip";
 import { IntentTab } from "./IntentTab";
 import { pruneIntentAnswers } from "./intentAnswers";
 import { useQuote } from "../../lib/useQuote";
@@ -476,7 +476,7 @@ function TradeDialog({
 
 /** One line a trade (2026-11-06): ID, shape, net P&L, capture as its bar, days to the nearest short,
  *  manage's action. A row opens the trade's card in place; the card opens the lightbox as it always has. */
-function PositionRows({ trades, inSession, onOpen }: { trades: ManageTrade[]; inSession: boolean; onOpen: (id: string) => void }) {
+export function PositionRows({ trades, inSession, onOpen }: { trades: ManageTrade[]; inSession: boolean; onOpen: (id: string) => void }) {
   const [open, setOpen] = useState<Set<string>>(new Set());
   const toggle = (k: string) => {
     const next = new Set(open);
@@ -505,6 +505,7 @@ function PositionRows({ trades, inSession, onOpen }: { trades: ManageTrade[]; in
               </span>
               <span className="tr-after">{dteText(t) ?? "—"}</span>
               <span className="tr-chips">
+                <RowIntentChip t={t} />
                 <ActionChip action={t.action} />
               </span>
             </button>
