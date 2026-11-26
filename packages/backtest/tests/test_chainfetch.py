@@ -94,6 +94,14 @@ def test_a_request_for_a_day_that_is_not_a_trading_session_is_never_sent(tmp_pat
         assert [r[0] for r in c.execute("SELECT DISTINCT session FROM eod_chain_quotes")] == ["2024-02-02"]
 
 
+def test_progress_does_not_count_a_request_that_is_never_sent(tmp_path):
+    s = _settings(tmp_path)
+    reqs = [("AAPL", "2024-02-02", "2024-03-15"), ("AAPL", "2024-02-03", "2024-03-15")]  # Friday, Saturday
+    chainfetch.fetch_chains(s, FakeChains(), reqs, log=lambda m: None)
+    p = chainfetch.progress(s, reqs)
+    assert (p["total"], p["answered"]) == (1, 1)  # done, not 1 of 2
+
+
 def test_the_calendar_check_takes_a_one_shot_iterable_and_leaves_a_malformed_date_to_the_vendor(tmp_path):
     client = FakeChains()
     keys = iter([("AAPL", "2024-02-02", "2024-03-15"), ("AAPL", "not-a-date", "2024-03-15")])

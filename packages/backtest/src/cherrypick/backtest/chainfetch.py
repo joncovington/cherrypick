@@ -584,7 +584,8 @@ def progress(
     import time
 
     now = time.time() if now is None else now
-    wanted = set(requests)
+    # A request for a non-trading day is never sent (`fetch_chains`), so it is no part of the total.
+    wanted = {k for k in requests if on_calendar(k[1])}
     out: dict[str, Any] = {"total": len(wanted), "answered": 0, "by_status": {}, "rate_per_min": None,
                            "eta_minutes": None, "last_answer_age_s": None}  # fmt: skip
     path = db_path(settings)

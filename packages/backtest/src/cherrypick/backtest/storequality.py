@@ -86,7 +86,11 @@ def off_calendar(conn: sqlite3.Connection, table: str) -> dict[str, list[str]]:
     for sym, session in conn.execute(
         f"SELECT DISTINCT symbol, session FROM {table} WHERE status = 'complete' ORDER BY symbol, session"
     ):
-        if not cal.is_trading_day(date.fromisoformat(session[:10])):
+        try:
+            off = not cal.is_trading_day(date.fromisoformat(session[:10]))
+        except ValueError:
+            continue  # not a date: no session to flag
+        if off:
             out.setdefault(sym, []).append(session)
     return out
 
