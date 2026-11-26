@@ -6,11 +6,11 @@
 
 Every image in docs/images/shots.json is shot again: a fresh demo home is built with the manifest's
 seed (scripts/demo_home.py), served through the demo launcher's own guards (scripts/demo_console.py:
-never port 5070, never a real home, keyring off on both sides), and each entry's route (and card) is
-captured with the console's ui-check. A shot is compressed to a palette PNG (Pillow) so it stays under
-the guide's 150 KB limit, and replaces the committed image only when it differs by more than the
-threshold (the share of pixels that changed). The table at the end lists what changed, so a person
-can look at those before committing.
+never port 5070, never a real home, keyring off on both sides), and each entry's route (its card, and the
+controls it clicks first, when it names them) is captured with the console's ui-check. A shot is
+compressed to a palette PNG (Pillow) so it stays under the guide's 150 KB limit, and replaces the
+committed image only when it differs by more than the threshold (the share of pixels that changed).
+The table at the end lists what changed, so a person can look at those before committing.
 
 A step of docs/releasing.md before each release. The console must be built first (pnpm build in
 packages/console). `--use-running` shoots a demo console already serving on the demo port instead
@@ -120,6 +120,8 @@ def shoot(entry: dict, home: Path, out: Path) -> None:
     cmd = ["node", "tools/ui-check.mjs", "--route", route, "--viewport", entry.get("viewport", "1500x1000")]
     if entry.get("card"):
         cmd += ["--card", entry["card"]]
+    for text in entry.get("clicks", []):
+        cmd += ["--click", text]
     cmd += ["--shot", str(out)]
     env = {**os.environ, "CHERRYPICK_HOME": str(home), "MSYS_NO_PATHCONV": "1"}
     r = subprocess.run(cmd, cwd=CONSOLE, env=env, capture_output=True, text=True, timeout=180)

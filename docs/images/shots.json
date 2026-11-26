@@ -1,5 +1,5 @@
 {
-  "_note": "Every image in docs/images. `shots` are console screenshots: scripts/reshoot.py takes each again from a demo home built with `demo` (route and optional card, as ui-check takes them), and CI warns when a PR changes one of its `sources` without the image. `manual` images are not console screenshots and are taken by hand. tools/check_guide.py (rule 9) keeps this list and the folder in step.",
+  "_note": "Every image in docs/images. `shots` are console screenshots: scripts/reshoot.py takes each again from a demo home built with `demo` (route, optional card and optional `clicks`, the controls it clicks first, as ui-check takes them), and CI warns when a PR changes one of its `sources` without the image. `manual` images are not console screenshots and are taken by hand. tools/check_guide.py (rule 9) keeps this list and the folder in step.",
   "demo": { "seed": 7, "days": 30 },
   "shots": [
     {
@@ -21,6 +21,14 @@
       "card": null,
       "viewport": "1500x1000",
       "sources": ["packages/console/web/src/pages/Live/ManagePage.tsx", "packages/console/web/src/pages/Live/PositionCards.tsx"]
+    },
+    {
+      "file": "live-intent.png",
+      "route": "live/positions",
+      "card": null,
+      "clicks": ["naked put", "intent"],
+      "viewport": "1500x1000",
+      "sources": ["packages/console/web/src/pages/Live/IntentTab.tsx", "packages/console/web/src/pages/Live/IntentStrip.tsx", "packages/console/web/src/pages/Live/PositionCards.tsx"]
     },
     {
       "file": "live-portfolio.png",
