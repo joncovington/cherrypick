@@ -164,7 +164,8 @@ not a PMCC is judged as a time spread, not by the PMCC rules, so it is not drawn
 and opens the positions tab's `time spreads` filter. The two icons switch the PMCCs between cards and
 rows. Above them, a `needs a look` section lists each call diagonal still asked whether it is a PMCC,
 with the evaluation's suggestion and a link to the trade's `intent` tab on positions, where it is
-answered.
+answered. A PMCC's own card has the same choice in its `recognised` tab, on the `intent` row, while the
+evaluation still asks; once answered the row says what is set and links to change it.
 
 ### meic and flies
 

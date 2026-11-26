@@ -1,5 +1,5 @@
 import { EvidenceTag } from "../../components/EvidenceTag";
-import { useContext, useState, type ReactNode } from "react";
+import { useContext, useEffect, useState, type ReactNode } from "react";
 import type { ManageAccount, ManageBand, ManageFired, ManagePmccPosition, ManagePmccRecognize, ManagePmccRoll, ManageTrade } from "@console/shared";
 import { Card } from "../../components/DataTable";
 import { HelpSection, HelpWarn, type CardHelpContent } from "../../components/CardHelp";
@@ -10,6 +10,8 @@ import { BandDial } from "./PortfolioCards";
 import { chainLegs } from "./PositionCards";
 import { Section } from "../../components/Section";
 import { DiagonalIntentLook, diagonalsAsked } from "./IntentLook";
+import { PmccAccount, PmccIntentChoice, askFor } from "./PmccIntent";
+import { pruneIntentAnswers } from "./intentAnswers";
 import { BoxButton, BoxButtons, PortfolioBoxContext } from "./portfolioBoxContext";
 import { useLiveMarks } from "./LiveMarks";
 import { livePmccs } from "./liveLegs";
@@ -113,13 +115,16 @@ export function kindOf(p: ManagePmccPosition): { kind: string; chipClass: string
  * `trades.<long contract>.intent`), so it can be copied into the config as it stands. */
 export function intentWords(p: ManagePmccPosition): string {
   const key = p.intentKey ? `trades key "${p.intentKey}"` : null;
-  const set =
-    p.intent && p.intentSource === "contract"
-      ? `${p.intent}, set on this long`
-      : p.intent && p.intentSource === "symbol"
-        ? `${p.intent}, set on ${p.underlying} (every PMCC on the name)`
-        : "none set";
-  return key ? `${set} · ${key}` : set;
+  return key ? `${intentSet(p)} · ${key}` : intentSet(p);
+}
+
+/** What is set, and where, without the key: the row beside the choice, which writes the key itself. */
+function intentSet(p: ManagePmccPosition): string {
+  return p.intent && p.intentSource === "contract"
+    ? `${p.intent}, set on this long`
+    : p.intent && p.intentSource === "symbol"
+      ? `${p.intent}, set on ${p.underlying} (every PMCC on the name)`
+      : "none set";
 }
 
 /** Where the chain's money runs from: this long alone, or back through the longs it was rolled from. */
@@ -129,14 +134,18 @@ export function chainWords(p: ManagePmccPosition): string {
   return `since ${p.chainSince}, through its rolls${stitched}`;
 }
 
-function PositionFacts({ p }: { p: ManagePmccPosition }) {
+function PositionFacts({ p, trades }: { p: ManagePmccPosition; trades: ManageTrade[] }) {
+  const asked = askFor(p, trades);
   return (
     <DetailCard title="position" aside={<StatusChip status={status(p)} />}>
       <Kv
         rows={[
           ["recognised", kindOf(p).recognised],
           ["because", p.recognizedBy ?? "—"],
-          ["intent", intentWords(p)],
+          [
+            "intent",
+            asked ? <PmccIntentChoice key="intent" found={asked} words={intentSet(p)} fallback={intentWords(p)} /> : intentWords(p),
+          ],
           ["underlying", px(p.spot)],
           ["long bought", p.long.opened ?? "before the history"],
           ["chain", chainWords(p)],
@@ -646,7 +655,7 @@ export function PmccBody({ p, trades, tab }: { p: ManagePmccPosition; trades: Ma
   if (tab === "recognised") {
     return (
       <div className="md-cards">
-        <PositionFacts p={p} />
+        <PositionFacts p={p} trades={trades} />
       </div>
     );
   }
@@ -859,6 +868,8 @@ export function longDeltaFloor(rules: Record<string, unknown> | null | undefined
 export function PmccCards({ a: evaluated, rules = null }: { a: ManageAccount; rules?: Record<string, unknown> | null }) {
   // The spot and both legs' mids on live quotes where they are fresh (liveLegs.ts); the evaluation's otherwise.
   const a = livePmccs(evaluated, useLiveMarks()?.payload ?? null);
+  // An answer manage has since read is dropped, so it cannot come back if the question reopens.
+  useEffect(() => pruneIntentAnswers(a.trades), [a.trades]);
   const v = a.pmcc;
   if (v === null) {
     return (
@@ -896,7 +907,11 @@ export function PmccCards({ a: evaluated, rules = null }: { a: ManageAccount; ru
       </>
     );
   }
-  return <PmccLayout a={a} pmccs={pmccs} spreads={spreads} floor={longDeltaFloor(rules)} notes={notes} look={look} />;
+  return (
+    <PmccAccount.Provider value={a.account}>
+      <PmccLayout a={a} pmccs={pmccs} spreads={spreads} floor={longDeltaFloor(rules)} notes={notes} look={look} />
+    </PmccAccount.Provider>
+  );
 }
 
 /**

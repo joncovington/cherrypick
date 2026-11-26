@@ -1125,7 +1125,13 @@ section (`pages/Live/IntentLook.tsx`, `DiagonalIntentLook`) lists the call diago
 they are a PMCC (`attention.intent`, one item per open `intent_ask`; the wheel's puts are on Live -> wheel),
 each with its legs, manage's suggestion and why, and a link to the trade's Intent tab on positions that
 carries the account. It shows with or without a recognised PMCC and is left out when nothing is asked
-(`web/test/intentLook.test.tsx`, `web/test/pmccCards.test.tsx`). Both tabs carry the
+(`web/test/intentLook.test.tsx`, `web/test/pmccCards.test.tsx`). A listed PMCC's lightbox `recognised` tab
+has an intent row (`pages/Live/PmccIntent.tsx`): where manage still asks the PMCC's long (the ask under
+`trades.<long contract>.intent` on a trade the PMCC holds, `askFor`) it offers the choice there, one tap with
+manage's suggestion and evidence and the same save, Undo and saved state as the position's strip and Intent
+tab; once answered it shows what is set and links to change it on positions (the account carried through
+`PmccAccount`); with no ask it keeps the words and the key to copy by hand
+(`web/test/pmccIntent.test.tsx`). Both tabs carry the
 cards/rows switch (`view.wheel`, `view.pmcc`); a row (`CardRows`, in the trade rows' classes) opens its
 full card in place. A section's controls, rows and one-line notes span its whole grid row.
 
