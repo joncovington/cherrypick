@@ -216,6 +216,24 @@ def test_a_book_with_a_smaller_tail_per_risk_reads_under_one():
     assert m.compare(arm, base, m.RULE, resamples=50)["tail_ratio"] < 1.0
 
 
+def _part(risk: float) -> dict:
+    return {"return": 0.10, "es5": -0.05, "mean_risk": risk}
+
+
+def test_a_part_where_none_held_no_risk_is_left_out_of_the_scaled_table_not_divided_by():
+    # The queue's first run of the study crashed here with a division by zero.
+    table = {a: {"design": _part(0.2), "holdout": _part(0.2)} for a in m.JUDGED}
+    table["none"] = {"design": _part(0.4), "holdout": _part(0.0)}
+    out = m.none_scaled(table)
+    for a in m.JUDGED:
+        assert set(out[a]) == {"design"}
+        assert out[a]["design"]["scale"] == pytest.approx(0.5)
+        assert out[a]["design"]["es5"] == pytest.approx(-0.025)
+    # A part either book has no weeks for is still left out, as before.
+    table["none"] = {"design": _part(0.4), "holdout": {}}
+    assert all(set(v) == {"design"} for v in m.none_scaled(table).values())
+
+
 def test_holm_adjusts_upward_and_keeps_order():
     adj = m.holm({"a": 0.01, "b": 0.02, "c": 0.5})
     assert adj["a"] == pytest.approx(0.03) and adj["b"] == pytest.approx(0.04) and adj["c"] == 0.5
