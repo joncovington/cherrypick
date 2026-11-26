@@ -107,6 +107,8 @@ beside the verdict the trade would get under it, the answer held now, and the co
 to. An answer given there shows on the card, and a trade can be changed from it later as well as asked
 the first time.
 
+![A naked put's intent tab: the question, each answer with its verdict, and the key it is written to](../images/live-intent.png)
+
 ### portfolio
 
 ![Live portfolio: the account tiles, portfolio guidance, and the income dial](../images/live-portfolio.png)
