@@ -5,8 +5,22 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ConfigModelPayload, ManageAccount, ManageAttentionItem, ManageIntentCandidate, ManageWheel } from "@console/shared";
 import { WheelCards } from "../src/pages/Live/WheelCards";
 import { ExpiringCard, NearStrikeCard } from "../src/pages/Live/AttentionCard";
-import { IntentChip, candidateFor } from "../src/pages/Live/IntentChoice";
-import { POSITIONS, intentOf, pendingIntents, stageIntent } from "../src/pages/Config/intents";
+import { Choice, IntentChip, candidateFor } from "../src/pages/Live/IntentChoice";
+import { IntentsCard } from "../src/pages/Config/IntentsCard";
+import {
+  POSITIONS,
+  TRADES,
+  candidateIntentOf,
+  candidateTradeKey,
+  intentEdits,
+  intentOf,
+  pendingIntents,
+  pendingTradeIntents,
+  stageCandidateIntent,
+  stageIntent,
+  stageTradeIntent,
+  tradeIntentOf,
+} from "../src/pages/Config/intents";
 import { clearAllStaged, getStaged, sameValue } from "../src/pages/Config/stagedStore";
 
 /**
@@ -22,13 +36,16 @@ function text(html: string): string {
   return html.replace(/<!-- -->/g, "").replace(/<[^>]+>/g, " ").replace(/&#x27;/g, "'").replace(/\s+/g, " ").trim();
 }
 
-function model(positions: unknown): ConfigModelPayload {
+function model(positions: unknown, trades?: unknown): ConfigModelPayload {
   return {
     targets: {
-      manage: { exists: true, doc: { positions }, mtime: 1, guarded: [], issues: [] },
+      manage: { exists: true, doc: { positions, ...(trades === undefined ? {} : { trades }) }, mtime: 1, guarded: [], issues: [] },
     },
   } as unknown as ConfigModelPayload;
 }
+
+/** A model with no manage file at all. */
+const noManageFile = { targets: { manage: { exists: false } } } as unknown as ConfigModelPayload;
 
 function cand(over: Partial<ManageIntentCandidate> = {}): ManageIntentCandidate {
   return {
@@ -47,7 +64,10 @@ function cand(over: Partial<ManageIntentCandidate> = {}): ManageIntentCandidate 
     now: { action: "CLOSE", rule: "credit.breached", reason: "short strike in the money" },
     asWheel: { action: "ROLL_OR_CLOSE", rule: "wheel.tested", reason: "roll, close or take the assignment" },
     changes: true,
-    key: "positions.XYZ.intent",
+    suggested: null,
+    evidence: [],
+    note: null,
+    key: "trades.XYZ-261001-1.intent",
     ...over,
   };
 }
@@ -140,6 +160,172 @@ describe("staging an intent", () => {
   it("compares the override objects by value, not by key order", () => {
     expect(sameValue({ a: { intent: "wheel", note: "x" } }, { a: { note: "x", intent: "wheel" } })).toBe(true);
     expect(sameValue({ a: { intent: "wheel" } }, { a: { intent: "pmcc" } })).toBe(false);
+  });
+});
+
+describe("staging a trade's intent", () => {
+  const ID = "XYZ-261001-1";
+
+  it("stages the whole trades object, every other entry kept, and the name's positions untouched", () => {
+    const m = model({ XYZ: { intent: "pmcc" } }, { "XYZ 270319C00013000": { intent: "pmcc" }, "AAA-261001-1": { note: "hand" } });
+    expect(stageTradeIntent(m, ID, "wheel")).toBeNull();
+    expect(getStaged("manage", TRADES).value).toEqual({
+      "XYZ 270319C00013000": { intent: "pmcc" },
+      "AAA-261001-1": { note: "hand" },
+      [ID]: { intent: "wheel" },
+    });
+    expect(getStaged("manage", POSITIONS).has).toBe(false);
+    expect(tradeIntentOf(m, ID)).toEqual({ intent: "wheel", unsaved: true });
+    expect(pendingTradeIntents(m)).toEqual([{ key: ID, from: null, to: "wheel" }]);
+  });
+
+  it("stages into a file with no trades block (an older copy): a save adds the block", () => {
+    const m = model({});
+    expect(stageTradeIntent(m, ID, "wheel")).toBeNull();
+    expect(getStaged("manage", TRADES).value).toEqual({ [ID]: { intent: "wheel" } });
+  });
+
+  it("staging back to the file's value clears the change, an absent block included", () => {
+    const saved = model({}, { [ID]: { intent: "wheel" } });
+    stageTradeIntent(saved, ID, "no_wheel");
+    expect(getStaged("manage", TRADES).has).toBe(true);
+    stageTradeIntent(saved, ID, "wheel");
+    expect(getStaged("manage", TRADES).has).toBe(false);
+
+    const absent = model({});
+    stageTradeIntent(absent, ID, "wheel");
+    stageTradeIntent(absent, ID, null);
+    expect(getStaged("manage", TRADES).has).toBe(false);
+  });
+
+  it("clearing a trade's only override removes its entry, and keeps a note", () => {
+    stageTradeIntent(model({}, { [ID]: { intent: "wheel" } }), ID, null);
+    expect(getStaged("manage", TRADES).value).toEqual({});
+    clearAllStaged();
+    stageTradeIntent(model({}, { [ID]: { intent: "wheel", note: "keep" } }), ID, null);
+    expect(getStaged("manage", TRADES).value).toEqual({ [ID]: { note: "keep" } });
+  });
+
+  it("says why when there is no manage file, and stages nothing", () => {
+    expect(stageTradeIntent(noManageFile, ID, "wheel")).toContain("no manage.json");
+    expect(getStaged("manage", TRADES).has).toBe(false);
+  });
+});
+
+describe("where a candidate's choice is written", () => {
+  it("is its own trade's entry when its ID is stable, the name's while it is provisional", () => {
+    expect(candidateTradeKey(cand())).toBe("XYZ-261001-1");
+    expect(candidateTradeKey(cand({ key: "positions.XYZ.intent", tradeId: "XYZ-open-ceda13" }))).toBeNull();
+    expect(candidateTradeKey(cand({ tradeId: null }))).toBeNull();
+  });
+
+  it("stages a stable trade into trades and a provisional one into positions", () => {
+    const m = model({}, {});
+    expect(stageCandidateIntent(m, cand(), "wheel")).toBeNull();
+    expect(getStaged("manage", TRADES).value).toEqual({ "XYZ-261001-1": { intent: "wheel" } });
+    expect(getStaged("manage", POSITIONS).has).toBe(false);
+    clearAllStaged();
+    expect(stageCandidateIntent(m, cand({ key: "positions.XYZ.intent", tradeId: "XYZ-open-ceda13" }), "wheel")).toBeNull();
+    expect(getStaged("manage", POSITIONS).value).toEqual({ XYZ: { intent: "wheel" } });
+    expect(getStaged("manage", TRADES).has).toBe(false);
+  });
+
+  it("is not answered by a name's pmcc, which is for another trade on the name", () => {
+    const m = model({ XYZ: { intent: "pmcc" } });
+    expect(candidateIntentOf(m, cand())).toEqual({ intent: null, unsaved: false });
+    // A provisional trade is keyed to its name, so the name's intent is its answer.
+    expect(candidateIntentOf(m, cand({ key: "positions.XYZ.intent", tradeId: "XYZ-open-ceda13" })).intent).toBe("pmcc");
+  });
+
+  it("holds a name-keyed choice while the name's own intent is for another trade, and never overwrites it", () => {
+    // A provisional ID has only the name to write to, and the name already holds a pmcc for its diagonal.
+    const m = model({ XYZ: { intent: "pmcc" } });
+    const held = cand({
+      key: "positions.XYZ.intent",
+      tradeId: "XYZ-open-ceda13",
+      note: "the name's intent 'pmcc' is for another trade on XYZ, not this put",
+    });
+    expect(candidateIntentOf(m, held)).toEqual({ intent: null, unsaved: false });
+    expect(stageCandidateIntent(m, held, "wheel")).toContain("stable ID");
+    expect(stageCandidateIntent(m, held, null)).toContain("stable ID");
+    expect(getStaged("manage", POSITIONS).has).toBe(false);
+  });
+
+  it("reads a trade's own saved or staged intent as its answer", () => {
+    const m = model({ XYZ: { intent: "pmcc" } }, { "XYZ-261001-1": { intent: "wheel" } });
+    expect(candidateIntentOf(m, cand())).toEqual({ intent: "wheel", unsaved: false });
+  });
+});
+
+describe("what a save writes", () => {
+  it("is each staged block whole, and nothing that was not staged", () => {
+    const m = model({ XYZ: { intent: "pmcc" } }, {});
+    expect(intentEdits(m)).toEqual([]);
+    stageTradeIntent(m, "XYZ-261001-1", "wheel");
+    expect(intentEdits(m)).toEqual([{ pointer: TRADES, value: { "XYZ-261001-1": { intent: "wheel" } } }]);
+    stageIntent(m, "AAA", "wheel");
+    expect(intentEdits(m).map((e) => e.pointer).sort()).toEqual([POSITIONS, TRADES]);
+  });
+});
+
+describe("the choice panel", () => {
+  const html = (c: ManageIntentCandidate) =>
+    text(renderToString(<Choice c={c} model={model({}, {})} />));
+
+  it("says why a wheel is suggested, in one line, and never applies it", () => {
+    const out = html(cand({ suggested: "wheel", evidence: ["2 completed wheel cycles on XYZ", "an open wheel cycle on XYZ reconciles"] }));
+    expect(out).toContain("Looks like a wheel: 2 completed wheel cycles on XYZ; an open wheel cycle on XYZ reconciles.");
+    expect(getStaged("manage", TRADES).has).toBe(false);
+  });
+
+  it("says when the name's intent is for another trade, apart from any suggestion", () => {
+    const note = "the name's intent 'pmcc' is for another trade on XYZ, not this put";
+    const out = html(cand({ note }));
+    expect(out).toContain("The name's intent 'pmcc' is for another trade on XYZ, not this put.");
+    expect(out).not.toContain("Looks like a wheel");
+    const both = html(cand({ note, suggested: "wheel", evidence: ["2 completed wheel cycles on XYZ"] }));
+    expect(both).toContain("Looks like a wheel: 2 completed wheel cycles on XYZ.");
+    expect(both).toContain("for another trade");
+  });
+
+  it("says nothing extra when manage has nothing to say", () => {
+    const none = html(cand());
+    expect(none).not.toContain("Looks like a wheel");
+    expect(none).not.toContain("for another trade");
+  });
+});
+
+describe("Config › Intents", () => {
+  const card = (m: ConfigModelPayload) =>
+    text(
+      renderToString(
+        <QueryClientProvider client={new QueryClient()}>
+          <IntentsCard model={m} />
+        </QueryClientProvider>,
+      ),
+    );
+
+  it("lists a trade's own intent beside the names', and a pmcc on a long's contract", () => {
+    const out = card(model({ XYZ: { intent: "pmcc" } }, { "XYZ-261001-1": { intent: "wheel" }, "XYZ 270319C00013000": { intent: "pmcc" } }));
+    expect(out).toContain("XYZ-261001-1");
+    expect(out).toContain("XYZ 270319C00013000");
+  });
+
+  it("words a call contract as a PMCC's long and any other key as a trade, as manage keys them", () => {
+    const out = card(model({}, { "XYZ 270319C00013000": { intent: "pmcc" }, "XYZ 270319P00013000": { intent: "wheel" } }));
+    expect(out.match(/this PMCC's long only/g)).toHaveLength(1);
+    expect(out.match(/this trade only/g)).toHaveLength(1);
+  });
+
+  it("still offers trade intents when the file has no positions block", () => {
+    const m = { targets: { manage: { exists: true, doc: { trades: { "XYZ-261001-1": { intent: "wheel" } } }, mtime: 1, guarded: [], issues: [] } } } as unknown as ConfigModelPayload;
+    expect(card(m)).toContain("XYZ-261001-1");
+  });
+
+  it("names the key a staged trade intent will be written at", () => {
+    const m = model({}, {});
+    stageTradeIntent(m, "XYZ-261001-1", "wheel");
+    expect(card(m)).toContain("trades.XYZ-261001-1.intent");
   });
 });
 

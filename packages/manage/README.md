@@ -39,7 +39,12 @@ neither a chain nor a match gets a provisional `<NAME>-open-<hash>` until its or
 snapshot carries the IDs, so a re-run and the minute's re-marks give the same ones. The ID is what the
 cards show, what `check-roll --trade` takes (a bare name still works for a name's only trade), and a
 `trades.<ID>` key in the overrides: `intent`, `note` and `disable` for that trade alone, read over the
-name's `positions.<SYMBOL>`.
+name's `positions.<SYMBOL>`. An intent is a fact about one trade, so a name's applies only to a trade it
+can describe: `wheel` and `no_wheel` to a naked short put, `pmcc` and `diagonal` to a trade with a call in
+it, and a label such as `hedge` to any. The trade's `intent` is the result. A name marked `pmcc` for its call diagonal says nothing about a
+short put on the same name, which stays undecided (shown as no intent, and asked) until the trade's own
+`trades.<ID>.intent` says what it is. Any other value (`hedge`, `income`) is a free label: shown on the
+trade, describing any of them, and never validated.
 
 A chain is used only when its own orders, replayed, leave exactly the quantities held today. When the
 history is missing, starts after the position did, or the broker moved a leg without an order, the
@@ -332,14 +337,19 @@ assignment, naming the shares the cash already secures and the wheel breakeven. 
 as the guard. Published tests of stops on short premium (tastylive, Option Alpha, our own strangle
 and condor studies) found they cut the tail and cost return; Cboe's put-write index holds to expiry.
 
-**Possible wheel trades** (`wheel.intent_candidates`). Every trade of short puts alone whose name and
-trade carry no intent is listed for the wheel tab to ask about: its legs, the cash it ties up, the
-price a share an assignment would cost once the premium kept is counted, a report inside it, the
-name's completed cycles and assignments, and two verdicts, today's and the one it would get marked as
-a wheel. The second is the same trade judged again with `positions.<SYMBOL>.intent: "wheel"`, so it
-is never guessed; `wheel_path` is false while no reconciled cycle holds the put, and marking it then
-changes nothing yet. Any intent takes a name off the list: `"no_wheel"` says it is not a wheel and
-keeps its stop. The list judges nothing and sets nothing; the console stages the intent for Config.
+**Possible wheel trades** (`wheel.intent_candidates`). Every trade of short puts alone that carries no
+intent (its own, or a name's that describes it) is listed for the wheel tab to ask about: its legs, the
+cash it ties up, the price a share an assignment would cost once the premium kept is counted, a report
+inside it, the name's completed cycles and assignments, and two verdicts, today's and the one it would
+get marked as a wheel. The second is the same trade judged again as a wheel, so it is never guessed;
+`wheel_path` is false while no reconciled cycle holds the put, and marking it then changes nothing yet.
+`suggested` is `"wheel"` when a wheel cycle on the name reconciles to the account, with `evidence`
+saying why (completed cycles, an open one); it is a suggestion and is never applied. `note` says when
+the name's own intent is for another trade on the name, which is why this put is asked about. `key` is
+the config key an answer is written at: the trade's own
+(`trades.<ID>.intent`), or the name's (`positions.<SYMBOL>.intent`) while the trade's ID is still
+provisional. Any intent takes a trade off the list: `"no_wheel"` says it is not a wheel and keeps its
+stop. The list judges nothing and sets nothing; the console stages the intent for Config.
 
 **Rolls are priced on the snapshot's quoted chains.** Since snapshot v14 the orchestrator reads, for
 each short a roll out in time starts from (a covered call, a PMCC's short, and a short put on a name

@@ -216,6 +216,89 @@ def test_one_bad_edit_rejects_the_whole_batch(home):
     assert (home / "config" / "flies.json").read_text(encoding="utf-8") == before
 
 
+# A block the shipped example has and a person's older copy lacks (manage's `trades`, added after many
+# copies were written) is added by a save at its own top-level pointer, and nothing else is.
+MANAGE_OLD = """{
+  "_comment": "an older copy, written before the trades block",
+  "positions": {
+    "XYZ": {
+      "intent": "pmcc"
+    }
+  }
+}
+"""
+
+
+@pytest.fixture
+def manage_home(home):
+    """A home whose orchestrator config names the manage package, as an install's does: that is where the
+    shipped example is found."""
+    (home / "config" / "manage.json").write_text(MANAGE_OLD, encoding="utf-8")
+    manage = {"enabled": True, "path": str(_SRC.parent.parent / "manage")}
+    cfg = {**ORCHESTRATOR_LIKE, "modules": {**ORCHESTRATOR_LIKE["modules"], "manage": manage}}
+    (home / "config.json").write_text(json.dumps(cfg, indent=2), encoding="utf-8")
+    return home
+
+
+def test_a_top_level_block_the_example_has_is_added_by_a_save(manage_home):
+    path = manage_home / "config" / "manage.json"
+    value = {"XYZ-261001-1": {"intent": "wheel"}}
+    status, body, _ = call(
+        manage_home,
+        {
+            "op": "save",
+            "target": "manage",
+            "expected_mtime": path.stat().st_mtime_ns,
+            "edits": [{"pointer": "/trades", "value": value}],
+        },
+    )
+    assert status == 0 and body["ok"] is True, body
+    text = path.read_text(encoding="utf-8")
+    assert json.loads(text) == {**json.loads(MANAGE_OLD), "trades": value}
+    assert '"_comment": "an older copy, written before the trades block"' in text  # the rest is untouched
+    assert len(list((manage_home / "state" / "config-backups").glob("manage.*.json"))) == 1
+
+
+def test_a_top_level_key_the_example_lacks_is_still_not_found(manage_home):
+    before = (manage_home / "config" / "manage.json").read_text(encoding="utf-8")
+    status, body, _ = call(
+        manage_home, {"op": "save", "target": "manage", "edits": [{"pointer": "/nope", "value": {}}]}
+    )
+    assert status == 0 and body["ok"] is False and body["code"] == "not_found"
+    assert (manage_home / "config" / "manage.json").read_text(encoding="utf-8") == before
+
+
+def test_only_a_top_level_key_is_added_never_one_inside_an_absent_block(manage_home):
+    before = (manage_home / "config" / "manage.json").read_text(encoding="utf-8")
+    status, body, _ = call(
+        manage_home,
+        {
+            "op": "save",
+            "target": "manage",
+            "edits": [{"pointer": "/trades/XYZ-261001-1/intent", "value": "wheel"}],
+        },
+    )
+    assert status == 0 and body["ok"] is False and body["code"] == "not_found"
+    assert (manage_home / "config" / "manage.json").read_text(encoding="utf-8") == before
+
+
+def test_an_added_block_is_refused_with_the_rest_of_a_batch_that_is_refused(manage_home):
+    before = (manage_home / "config" / "manage.json").read_text(encoding="utf-8")
+    status, body, _ = call(
+        manage_home,
+        {
+            "op": "save",
+            "target": "manage",
+            "edits": [
+                {"pointer": "/trades", "value": {}},
+                {"pointer": "/positions/XYZ/nope/deeper", "value": 1},
+            ],
+        },
+    )
+    assert status == 0 and body["ok"] is False and body["code"] == "not_found"
+    assert (manage_home / "config" / "manage.json").read_text(encoding="utf-8") == before
+
+
 # --- halt ----------------------------------------------------------------------------------------
 
 

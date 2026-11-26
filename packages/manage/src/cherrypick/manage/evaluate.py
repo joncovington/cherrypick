@@ -315,15 +315,16 @@ def evaluate_trade(
     rate = float(pr["rate"])
     legs = _legs(raw_legs, session, spot, rate, broker_greeks, div_yield)
     override = _rules.override(rules, underlying, trade_id)
+    # The trade's own intent, else its name's where the name's can describe it (rules.trade_intent).
+    intent = _rules.trade_intent(rules, underlying, trade_id, legs)
     is_covered = bool(covered and legs and all(leg["right"] == "C" and leg["quantity"] < 0 for leg in legs))
-    # A short put on a name the operator wheels (intent "wheel", the name's or the trade's own), held
+    # A short put the operator wheels (intent "wheel", the trade's own or its name's), held
     # by a cycle that reconciles: assignment is the wheel's next step, so the stop and the breached
-    # close give way to wheel.tested's roll, close or take the assignment (user, 2026-11-12: opt in
-    # per name, so a put the operator would not take shares on keeps them).
+    # close give way to wheel.tested's roll, close or take the assignment (user, 2026-11-12: opt in,
+    # so a put the operator would not take shares on keeps them).
     is_wheel_put = bool(
-        override.get("intent") == "wheel"
-        and legs
-        and all(leg["right"] == "P" and leg["quantity"] < 0 for leg in legs)
+        intent == "wheel"
+        and _rules.is_naked_short_puts(legs)
         and any(item["cycle"]["reconciled"] for item in (wheel_ctx or {}).get("cycles") or [])
     )
     skips = COVERED_SKIPS if is_covered else WHEEL_PUT_SKIPS if is_wheel_put else frozenset()
@@ -335,7 +336,7 @@ def evaluate_trade(
         "trade_id": trade_id,
         "underlying": underlying,
         "spot": spot,
-        "intent": override.get("intent"),
+        "intent": intent,
         "note": override.get("note"),
         "legs": legs,
         "kind": None,
@@ -2895,16 +2896,12 @@ NO_WHEEL = "no_wheel"
 def _is_intent_candidate(trade: dict[str, Any]) -> bool:
     """A trade the wheel could hold whose name (and the trade itself) has no intent yet: short puts
     alone, nothing else. A spread, a condor or anything with a long option is never a wheel."""
-    legs = trade.get("legs") or []
-    return bool(
-        trade.get("intent") is None
-        and legs
-        and all(leg.get("right") == "P" and (leg.get("quantity") or 0) < 0 for leg in legs)
-    )
+    return trade.get("intent") is None and _rules.is_naked_short_puts(trade.get("legs") or [])
 
 
 def _with_intent(rules: dict[str, Any], underlying: str, intent: str) -> dict[str, Any]:
-    """The ruleset with one name's intent set, everything else as it was."""
+    """The ruleset with one name's intent set, everything else as it was. Only the one trade is judged
+    with it, so the name's intent is enough to show what marking that trade would change."""
     out = dict(rules)
     positions = dict(rules.get("positions") or {})
     positions[underlying] = {**(positions.get(underlying) or {}), "intent": intent}
@@ -2918,11 +2915,19 @@ def _verdict(trade: dict[str, Any]) -> dict[str, Any]:
 
 
 def _intent_candidate(
-    trade: dict[str, Any], as_wheel: dict[str, Any], wheel_view: dict[str, Any], trade_id: str | None
+    trade: dict[str, Any],
+    as_wheel: dict[str, Any],
+    wheel_view: dict[str, Any],
+    trade_id: str | None,
+    stable: bool,
+    named: str | None,
 ) -> dict[str, Any]:
     """One row of the wheel tab's "no intent yet": the put, the cash it ties up, what an assignment
     would cost a share, any report inside it, the name's wheel history, and the verdict today beside
-    the verdict marked as a wheel. Nothing here sets an intent; the console stages it for Config."""
+    the verdict marked as a wheel. `suggested` is "wheel" when a wheel cycle on the name reconciles to
+    the account, with `evidence` saying why; it is a suggestion, never applied. `note` says when the
+    name's own intent (`named`) is for another trade, which is why this put is asked about. Nothing here
+    sets an intent; the console stages it for Config, against the trade's own ID once `stable`."""
     legs = trade["legs"]
     underlying = trade["underlying"]
     contracts = sum(-leg["quantity"] for leg in legs)
@@ -2933,6 +2938,16 @@ def _intent_candidate(
     er = trade.get("earnings") or {}
     cycles = [c for c in wheel_view.get("cycles") or [] if c.get("underlying") == underlying]
     now, wheeled = _verdict(trade), _verdict(as_wheel)
+    done = sum(1 for c in cycles if c.get("status") == "complete" and c.get("reconciled"))
+    running = any(c.get("status") != "complete" and c.get("reconciled") for c in cycles)
+    evidence = []
+    if done:
+        evidence.append(f"{done} completed wheel cycle{'s' if done != 1 else ''} on {underlying}")
+    if running:
+        evidence.append(f"an open wheel cycle on {underlying} reconciles to the account's legs")
+    note = None
+    if named and not _rules.intent_fits(named, legs):
+        note = f"the name's intent '{named}' is for another trade on {underlying}, not this put"
     return {
         "trade_id": trade_id,
         "underlying": underlying,
@@ -2953,7 +2968,10 @@ def _intent_candidate(
         "now": now,
         "as_wheel": wheeled,
         "changes": (now["action"], now["rule"]) != (wheeled["action"], wheeled["rule"]),
-        "key": f"positions.{underlying}.intent",
+        "suggested": "wheel" if done or running else None,
+        "evidence": evidence,
+        "note": note,
+        "key": f"trades.{trade_id}.intent" if stable else f"positions.{underlying}.intent",
     }
 
 
@@ -3148,11 +3166,18 @@ def evaluate(
                 }
                 trade = evaluate_trade(rules=rules, **args)
                 if _is_intent_candidate(trade):
-                    # What marking the name as a wheel would change today: the same trade judged
+                    # What marking this trade as a wheel would change today: the same trade judged
                     # again with the intent, so the console shows both verdicts and never guesses.
                     as_wheel = evaluate_trade(rules=_with_intent(rules, u["underlying"], "wheel"), **args)
                     intent_candidates.append(
-                        _intent_candidate(trade, as_wheel, wheel_view, ident["trade_id"])
+                        _intent_candidate(
+                            trade,
+                            as_wheel,
+                            wheel_view,
+                            ident["trade_id"],
+                            not ident["provisional"],
+                            _rules.name_intent(rules, u["underlying"]),
+                        )
                     )
                 trade["trade_id"] = ident["trade_id"]
                 trade["trade_id_provisional"] = ident["provisional"]
