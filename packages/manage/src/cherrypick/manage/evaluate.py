@@ -3253,6 +3253,8 @@ def evaluate(
         )
         # Every short option held against its strike, and what expires soon (`attention.py`).
         attention = _attention.reading(account.get("underlyings"), metrics, session, rules)
+        # One item per trade still asked what it is for (a put: wheel or not; a diagonal: PMCC or not).
+        attention["intent"] = _attention.intent_items(trades)
         # One more reason beside them: a wheel cycle's cost-strike call bidding enough to rest an order on.
         attention["cost_call"] = _costcall.reading(
             wheel_view.get("cycles"), metrics, snapshot.get("cost_call"), session, rules

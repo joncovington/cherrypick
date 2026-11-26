@@ -62,6 +62,7 @@ import type {
   ManageLedgerBucket,
   ManageLedgerWindow,
   ManageAttention,
+  ManageAttentionIntent,
   ManageAttentionLeg,
   ManageCostCall,
   ManageCostCallRow,
@@ -1500,7 +1501,31 @@ function attention(v: unknown): ManageAttention | null {
     }),
     expiring: arr(a["expiring"]).map(attentionLeg),
     costCall: costCall(a["cost_call"]),
+    intent: arr(a["intent"]).flatMap(attentionIntent),
   };
+}
+
+/** One trade asked what it is for, passed through; an item with no known kind or scope is left out. */
+function attentionIntent(v: unknown): ManageAttentionIntent[] {
+  const x = rec(v);
+  const kind = x["kind"] === "wheel" || x["kind"] === "pmcc" ? x["kind"] : null;
+  const scope = x["scope"] === "trade" || x["scope"] === "name" || x["scope"] === "contract" ? x["scope"] : null;
+  // A put is answered on its trade or its name, a diagonal on its long's contract: a pairing manage never writes
+  // otherwise is not a question this page can put.
+  if (kind === null || scope === null || (kind === "pmcc") !== (scope === "contract")) return [];
+  return [
+    {
+      tradeId: str(x["trade_id"]),
+      underlying: str(x["underlying"]) ?? "?",
+      kind,
+      shape: str(x["shape"]),
+      legs: strs(x["legs"]),
+      scope,
+      suggested: str(x["suggested"]),
+      evidence: strs(x["evidence"]),
+      note: str(x["note"]),
+    },
+  ];
 }
 
 const COST_CALL_STATUS: readonly ManageCostCallRow["status"][] = ["pays", "below", "no quote"];

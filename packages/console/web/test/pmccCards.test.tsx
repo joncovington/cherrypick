@@ -237,6 +237,27 @@ function render(a: ManageAccount): string {
 }
 
 describe("the pmcc tab", () => {
+  it("puts the diagonals manage still asks about above the PMCCs it has recognised", () => {
+    const asked = {
+      tradeId: "XYZ-261001-1",
+      underlying: "XYZ",
+      kind: "pmcc" as const,
+      shape: "diagonal",
+      legs: ["+1 2028-01-21 40C", "-1 2026-12-18 55C"],
+      scope: "contract" as const,
+      suggested: null,
+      evidence: [],
+      note: null,
+    };
+    const a = { ...account(view({ positions: [position()] })), attention: { nearPct: 0.03, expiringDays: 7, items: [], expiring: [], intent: [asked] } };
+    const out = render(a);
+    expect(out).toContain("Which diagonals ask if they are a PMCC?");
+    const below = out.search(/Which PMCC needs action\?|Is each PMCC healthy\?/);
+    expect(below).toBeGreaterThan(-1);
+    expect(out.indexOf("Which diagonals ask")).toBeLessThan(below);
+    expect(render(account(view({ positions: [position()] })))).not.toContain("Which diagonals ask");
+  });
+
   it("says how a PMCC is recognised when there is none, and why when the view has an error", () => {
     const empty = render(account(view({ positions: [] })));
     expect(empty).toContain(NO_PMCC);

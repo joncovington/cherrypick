@@ -8,8 +8,8 @@ import test_wheel_rules as wr
 from test_wheel_put import TESTED
 from test_wheel_rules import INCOME, OPENED, PUT
 
+from cherrypick.manage import attention, intentask
 from cherrypick.manage import evaluate as ev
-from cherrypick.manage import intentask
 
 TRADE = "XYZ-261001-1"  # the put OPENED sells
 
@@ -214,3 +214,100 @@ def test_a_calendar_is_not_asked():
     )
     assert pm.view_of(a)["structure"] == "calendar"
     assert pm.trade_of(a, pm.SHORT)["intent_ask"] is None
+
+
+# --------------------------------------------------------------------------- the needs-a-look item
+def look_items(acct):
+    return acct["attention"]["intent"]
+
+
+def test_an_unanswered_put_raises_one_needs_a_look_item():
+    acct = wr.evaluate(OPENED, TESTED, 47.0, income=INCOME)
+    (item,) = look_items(acct)
+    ask = wr.trade_of(acct, PUT)["intent_ask"]
+    assert item["trade_id"] == TRADE and item["underlying"] == "XYZ" and item["kind"] == "wheel"
+    assert item["scope"] == "trade" and item["legs"] and item["legs"][0].startswith("-1 ")
+    # The suggestion and its evidence are the ask's own, passed on and never applied.
+    assert item["suggested"] == ask["suggested"] == "wheel"
+    assert item["evidence"] == ask["evidence"] and item["note"] is None
+
+
+def test_an_answered_put_raises_none():
+    acct = wr.evaluate(
+        OPENED, TESTED, 47.0, income=INCOME, overrides={"trades": {TRADE: {"intent": "no_wheel"}}}
+    )
+    assert look_items(acct) == []
+
+
+def test_a_put_answered_by_a_free_label_raises_none():
+    acct = wr.evaluate(
+        OPENED, TESTED, 47.0, income=INCOME, overrides={"trades": {TRADE: {"intent": "income"}}}
+    )
+    assert look_items(acct) == []
+
+
+def test_a_provisional_put_is_an_item_keyed_to_its_name():
+    (item,) = look_items(wr.evaluate([], TESTED, 47.0, income=INCOME))
+    assert item["scope"] == "name"
+
+
+def test_an_unanswered_diagonal_raises_one_item_and_an_answered_one_none():
+    (item,) = look_items(pm.evaluate(near_snap()))
+    assert item["kind"] == "pmcc" and item["scope"] == "contract" and item["suggested"] == "diagonal"
+    long = pm.view_of(pm.evaluate(near_snap()))["intent_key"]
+    answered = pm.evaluate(near_snap(), {"trades": {long: {"intent": "diagonal"}}})
+    assert look_items(answered) == []
+
+
+def test_a_trade_that_is_not_asked_raises_none():
+    same = pm.occ(pm.LONG_EXP, "C", 55)
+    price = pm.fill(55, 0.30)
+    calendar = pm.evaluate(
+        pm.snapshot(
+            pm.history(long=same, long_price=price), pm.legs(long=same, long_price=price, long_mid=6.0)
+        )
+    )
+    assert look_items(calendar) == []
+
+
+def test_the_items_come_puts_first_then_by_name_and_trade():
+    def item(kind, name, trade):
+        return {
+            "intent_ask": {"asked": True, "kind": kind, "scope": "trade"},
+            "underlying": name,
+            "trade_id": trade,
+        }
+
+    got = attention.intent_items(
+        [
+            item("pmcc", "AAA", "AAA-1"),
+            item("wheel", "ZZZ", "ZZZ-1"),
+            item("wheel", "BBB", "BBB-2"),
+            item("wheel", "BBB", "BBB-1"),
+        ]
+    )
+    assert [i["trade_id"] for i in got] == ["BBB-1", "BBB-2", "ZZZ-1", "AAA-1"]
+
+
+def test_a_trade_with_no_ask_or_a_closed_one_is_skipped():
+    assert (
+        attention.intent_items(
+            [{"underlying": "X"}, {"intent_ask": None}, {"intent_ask": {"asked": False, "kind": "wheel"}}]
+        )
+        == []
+    )
+
+
+def test_an_items_legs_are_the_options_only():
+    t = {
+        "underlying": "X",
+        "trade_id": "X-1",
+        "intent_ask": {"asked": True, "kind": "pmcc", "scope": "contract"},
+        "legs": [
+            {"right": None, "quantity": 100, "strike": None, "expiration": None},  # shares
+            {"right": "C", "quantity": 1, "strike": 40.0, "expiration": "2028-01-21"},
+            {"right": "C", "quantity": -1, "strike": 55.0, "expiration": "2026-12-18"},
+        ],
+    }
+    (item,) = attention.intent_items([t])
+    assert item["legs"] == ["+1 2028-01-21 40C", "-1 2026-12-18 55C"]

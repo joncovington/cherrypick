@@ -57,6 +57,27 @@ def test_a_name_posts_once_a_session_with_all_its_legs(tmp_path):
     assert json.loads(state.read_text())["names"] == ["AAA", "BBB", "CCC"]
 
 
+def test_a_trade_asked_about_its_intent_is_shown_never_posted(tmp_path):
+    # `attention.intent` lists every trade still asked what it is for; the alerts read `items` only.
+    doc = {
+        "session": "2026-11-04",
+        "accounts": [
+            {
+                "attention": {
+                    "items": [],
+                    "intent": [
+                        {"underlying": "XYZ", "trade_id": "XYZ-261001-1", "kind": "wheel", "scope": "trade"}
+                    ],
+                }
+            }
+        ],
+    }
+    p = tmp_path / "eval-2026-11-04.json"
+    p.write_text(json.dumps(doc), encoding="utf-8")
+    state, n = tmp_path / "alerts.json", FakeNotifier()
+    assert managealert.run(str(p), "2026-11-04", state, n) == [] and n.sent == []
+
+
 def test_the_next_session_starts_empty(tmp_path):
     state, n = tmp_path / "alerts.json", FakeNotifier()
     managealert.run(evaluation(tmp_path, "2026-11-04", [item("AAA", "x")]), "2026-11-04", state, n)

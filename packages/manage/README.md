@@ -784,6 +784,13 @@ index), `in the money`, or `near` (within `attention.near_pct`, 3%), worst first
 A reading, not a rule: it fires nothing. The orchestrator posts each listed name once a session
 (`managealert.py`), from the full runs and the minute re-marks; the console draws it on Live -> wheel.
 
+**Trades asked about their intent** are one more list beside them (`attention.intent`, `intent_items`): one
+item per trade whose `intent_ask` is still open, naked short puts first, then call diagonals, each by name
+and trade. An item names the trade (`trade_id`, `underlying`, `shape`, its `legs`), what it is asked
+(`kind`), where an answer is written (`scope`: `trade`, `contract`, or `name` while a put's ID is still
+provisional), and the ask's own `suggested`, `evidence` and `note`, never applied. It is read from the ask
+and judges nothing; the alerts read `items` only, so an unanswered trade is shown and never posted.
+
 **The cost-strike call** is one more reason beside them (`costcall.py`, `attention.cost_call`). For each
 running, reconciled cycle that holds assigned shares with no call written, it takes the lowest listed
 call at or above the cycle's effective cost (the wheel basis: the assignment strike less the premiums

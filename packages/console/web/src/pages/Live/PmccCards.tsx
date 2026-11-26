@@ -9,6 +9,7 @@ import { Tile } from "../Flies/PerformanceTab";
 import { BandDial } from "./PortfolioCards";
 import { chainLegs } from "./PositionCards";
 import { Section } from "../../components/Section";
+import { DiagonalIntentLook, diagonalsAsked } from "./IntentLook";
 import { BoxButton, BoxButtons, PortfolioBoxContext } from "./portfolioBoxContext";
 import { useLiveMarks } from "./LiveMarks";
 import { livePmccs } from "./liveLegs";
@@ -873,9 +874,13 @@ export function PmccCards({ a: evaluated, rules = null }: { a: ManageAccount; ru
     v.bandsMissing ? `skate bands: ${v.bandsMissing}` : null,
   ].filter((x): x is string => x !== null);
   const { pmccs, spreads } = splitPmccs(v.positions);
+  // The diagonals manage still asks about (a PMCC or not), above whatever else the tab shows.
+  const look = <DiagonalIntentLook a={a} />;
   if (pmccs.length === 0) {
     return (
       <>
+        {/* Where no PMCC was recognised the tab has no layout of its own: the section brings the one it needs. */}
+        {diagonalsAsked(a).length > 0 ? <div className="pf-layout">{look}</div> : null}
         <Card title={`pmcc · ${accountTitle(a)}`}>
           <p className="muted" style={{ margin: 0 }}>
             {noPmccText(v.recognize)}
@@ -891,7 +896,7 @@ export function PmccCards({ a: evaluated, rules = null }: { a: ManageAccount; ru
       </>
     );
   }
-  return <PmccLayout a={a} pmccs={pmccs} spreads={spreads} floor={longDeltaFloor(rules)} notes={notes} />;
+  return <PmccLayout a={a} pmccs={pmccs} spreads={spreads} floor={longDeltaFloor(rules)} notes={notes} look={look} />;
 }
 
 /**
@@ -953,12 +958,14 @@ function PmccLayout({
   spreads,
   floor,
   notes,
+  look,
 }: {
   a: ManageAccount;
   pmccs: ManagePmccPosition[];
   spreads: ManagePmccPosition[];
   floor: number | null;
   notes: string[];
+  look: ReactNode;
 }) {
   const held = useContext(VerdictsHeld);
   const [view, setView] = useViewChoice("pmcc");
@@ -967,6 +974,7 @@ function PmccLayout({
   return (
     <PmccBoxes a={a}>
       <div className="pf-layout">
+        {look}
         {needs.length > 0 ? (
           <Section concept="risk" tag="needs action" question="Which PMCC needs action?">
             {needs.map((p) => (
