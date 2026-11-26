@@ -11,7 +11,7 @@ beyond the latest release.
 
 ## [Unreleased]
 
-## v0.14.0 — 2026-11-24 — automations and the live arm
+## v0.14.0 — 2026-11-26 — automations and the live arm
 Three changes lead. The console can now arm a live loop for the
 day from the Live page, behind the module's own checks and a typed `YES`; it ships off
 (`live_arming` in `console.json`). MEIC's live loop ships in dry run: an armed tick preflights each new

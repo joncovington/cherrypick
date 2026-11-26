@@ -199,6 +199,7 @@
         "Calendars, contango and four automations (`iron-fly-1000`, `iron-fly-1dte-1330`, `gld-call-spread-20d`, `orb-put-spread`) are retired as of 2026-11-21 and ship off. Calendars' open positions run to their own exits; switch the module off once it is flat.",
         "The research queue runs two lanes: the `research-queue-vendor` job replaces `research-queue`, and `research-queue-local` is new. The register of studies and each Result now live under ~/.cherrypick/data/research/, not in the repo.",
         "manage gained a Sunday evaluation (`manage.sunday_at`, 18:15 ET), the cost-strike call and dispersion readings, and leaves a far out-of-the-money time-spread short to expire (`expiry.time_spread_hold_max_delta` 0.10, our own number). All have defaults that apply when the key is absent.",
+        "A trade's intent is now per trade. Nothing is required: until you answer a naked short put or a call diagonal that manage asks about, it is judged by the stricter rules and its reason line says so. Answer on Live > positions (the card's strip, or the opened trade's Intent tab); the answer is saved at `trades.<ID>.intent` in manage.json (a config with no `trades` block gets one on the first answer) and read at the next evaluation. A name's intent stays readable and is offered as the suggestion. The supervisor restart loads the new `intent_set` operation and the console restart the pages.",
         "A developer checkout runs a pre-commit check: rerun scripts/dev-install to set `core.hooksPath`.",
         "Known issues from a second security pass are tracked in issue #1465."
       ],
@@ -294,6 +295,21 @@
           "file": "automations.json",
           "key": "groups.default",
           "note": "Was groups.ensemble, and each automation's group ensemble is default; the migration renames both."
+        },
+        {
+          "file": "manage.json",
+          "key": "trades",
+          "note": "New top-level block, in the shipped example: one entry per trade, `trades.<trade ID>.intent` (wheel or no_wheel for a naked short put) or `trades.<long contract>.intent` (pmcc or diagonal for a call diagonal). The console's answer writes it, and adds the block on a first answer to a config that lacks it. Advice config: nothing is placed."
+        },
+        {
+          "file": "manage.json",
+          "key": "wheel.tested.review_beyond_days",
+          "note": "New, 60 (the orchestrator's roll_out.max_short_days, whose chains the snapshot reads): a tested wheel put with more days left than this, and at least review_min_extrinsic of extrinsic value, is a REVIEW, not a roll, close or assignment."
+        },
+        {
+          "file": "manage.json",
+          "key": "wheel.tested.review_min_extrinsic",
+          "note": "New, 0.10 a share (a broker's rule of thumb for when early exercise becomes likely: practice, untested). Under it the put is the roll, close or assignment it was."
         }
       ],
       "measurement_boundaries": [
@@ -305,6 +321,8 @@
         "2026-11-24, manage: a far out-of-the-money time-spread short is left to expire (0.10 delta, ours).",
         "2026-11-24, MEIC live: live.dry_run ships true, so an armed tick sends no entry until it is set false.",
         "2026-11-24, MEIC: the paper twins and the retirement of live-shadow take effect on a machine when it runs scripts/boundary_2026_11_24.py --apply; the paper-live gap then follows the arm live ran.",
+        "2026-11-25, manage: a tested wheel put with more than 60 days left and at least 0.10 a share of extrinsic value is a REVIEW, not a roll, close or assignment. Wheel-put verdicts from this date are not comparable with earlier ones.",
+        "2026-11-25, manage: a trade's intent is per trade. A name's pmcc no longer marks or hides a naked put (it is asked, and judged by the stricter rules until answered), and an answered wheel put takes the wheel rules (no stop, no breached close). Nothing changes for a trade until you answer it.",
         "2026-11-27, MEIC: no new entries on a half day, paper and live."
       ],
       "migrations": [
