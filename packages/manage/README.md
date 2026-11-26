@@ -351,6 +351,31 @@ the config key an answer is written at: the trade's own
 provisional. Any intent takes a trade off the list: `"no_wheel"` says it is not a wheel and keeps its
 stop. The list judges nothing and sets nothing; the console stages the intent for Config.
 
+**What each trade is asked about its intent** (`trade.intent_ask`, `intentask.py`). An intent is the
+operator's word on what a trade is for, and manage asks only where the legs cannot say: a naked short put
+(`kind: "wheel"`, options `wheel` and `no_wheel`) and a call diagonal (`kind: "pmcc"`, options `pmcc` and
+`diagonal`; a calendar is not asked). Every other trade has `intent_ask: null`. The block is everything a
+surface needs to put the question and write the answer, so none of them works out a shape rule, an option
+list or a config key:
+
+- `asked` is true while no operator intent applies, and `current` is the one that does: the trade's own, or
+  a name's that can describe it. For a diagonal only `pmcc` or `diagonal` answers it, since a delta decided
+  its recognition and a name's `wheel` is for a put. A free label on a put (`hedge`, `income`) is an answer,
+  not an option.
+- `verdicts`, for a put: the verdict the trade would get under each option, each judged by evaluating it
+  again with that option set on the trade itself (a trade's own intent beats its name's, so this holds
+  whatever either already says). The option it already holds is its own verdict. Empty for a diagonal.
+- `suggested`, `evidence` and `note`, only while the trade is asked, and never applied. For a put: `"wheel"`
+  when a wheel cycle on the name reconciles to the account, the cycles as evidence, and a note when the
+  name's own intent is for another trade. For a diagonal: the PMCC view's own reading (`pmcc`, or `diagonal`
+  when the long was entered under the floor), its `recognized_by` as the evidence, and no suggestion while
+  the delta at entry cannot be solved.
+- `key` and `scope`: where an answer is written. A put's own `trades.<ID>.intent` (`"trade"`), or its name's
+  `positions.<SYMBOL>.intent` (`"name"`) while its ID is still provisional; a diagonal's
+  `trades.<LONG CONTRACT>.intent` (`"contract"`), which is how the PMCC view reads it.
+
+`wheel.intent_candidates` above is the put's part of this, with the display fields the wheel tab lists.
+
 **Rolls are priced on the snapshot's quoted chains.** Since snapshot v14 the orchestrator reads, for
 each short a roll out in time starts from (a covered call, a PMCC's short, and a short put on a name
 holding no long put, each within 60 days of expiry), the next five listed expiries after it: before
