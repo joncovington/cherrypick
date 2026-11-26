@@ -321,6 +321,13 @@ def test_rule9_missing_or_absent_sources(tmp_path):
     assert "source `web/src/pages/Live/LiveTodayPage.tsx` does not exist" in out
 
 
+def test_rule9_clicks_are_a_list_of_strings(tmp_path):
+    assert cg.check(with_shot(tmp_path, shot(clicks=["naked put", "intent"]))) == []
+    for bad in ("intent", [""], [3], [None]):
+        out = rules(cg.check(with_shot(tmp_path, shot(clicks=bad))))
+        assert "clicks must be a list of non-empty strings" in out, bad
+
+
 def test_rule9_unreadable_manifest(tmp_path):
     root = with_shot(tmp_path, shot(), {"docs/images/shots.json": "{not json"})
     assert "rule 9: unreadable manifest" in rules(cg.check(root))

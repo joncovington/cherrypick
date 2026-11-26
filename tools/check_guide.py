@@ -420,6 +420,9 @@ def check_shots(root: Path) -> list[str]:
                 for s in sources
                 if not (root / str(s)).is_file()
             ]
+        clicks = e.get("clicks", [])
+        if not isinstance(clicks, list) or not all(isinstance(c, str) and c.strip() for c in clicks):
+            findings.append(f"{SHOTS}:1: rule 9: `{f}`'s clicks must be a list of non-empty strings")
     return findings
 
 
