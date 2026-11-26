@@ -50,6 +50,43 @@ def test_only_the_declared_path_and_its_dates_are_read(store, inputs):
         inputs.chain(store, "AAA", "2024-03-01", "2024-03-15")
 
 
+def test_a_stored_weekend_or_holiday_is_not_a_session(store, inputs):
+    # The vendor stores a row for a day it has no market for (a Saturday; Presidents' Day).
+    for day in ("2024-02-03", "2024-02-19"):
+        store.execute(
+            "INSERT INTO eod_chain_quotes (symbol, session, expiration, strike, right, bid, ask) "
+            "VALUES ('AAA', ?, '2024-03-15', 100.0, 'CALL', 0.05, 99.0)",
+            (day,),
+        )
+    assert inputs.sessions(store, "AAA", "2024-03-15") == ["2024-02-01", "2024-02-02"]
+
+
+def test_a_stored_non_trading_day_reads_as_no_chain(store, inputs):
+    store.execute(
+        "INSERT INTO eod_chain_quotes (symbol, session, expiration, strike, right, bid, ask) "
+        "VALUES ('AAA', '2024-02-03', '2024-03-15', 100.0, 'CALL', 0.05, 99.0)"
+    )
+    assert inputs.chain(store, "AAA", "2024-02-03", "2024-03-15") is None
+    assert inputs.chain(store, "AAA", "2024-02-02", "2024-03-15") is not None
+
+
+def test_a_half_day_and_a_closure_are_told_apart_and_a_malformed_session_is_kept(tmp_path):
+    # 2024-11-29 is a half day (a session); 2025-01-09 was a closure (the market shut for a funeral).
+    conn = sqlite3.connect(":memory:")
+    conn.executescript(chainfetch.SCHEMA)
+    for day in ("2024-11-29", "2025-01-09", "2024-12-xx"):
+        conn.execute(
+            "INSERT INTO eod_chain_quotes (symbol, session, expiration, strike, right, bid, ask) "
+            "VALUES ('AAA', ?, '2025-02-21', 100.0, 'CALL', 2.0, 2.2)",
+            (day,),
+        )
+    p = tmp_path / "r.json"
+    req = {"symbol": "AAA", "expiration": "2025-02-21", "start": "2024-11-01", "through": "2025-02-21"}
+    p.write_text(json.dumps({"requests": [req]}), encoding="utf-8")
+    # The closure drops; the half day stays; a row that is not a date is kept for the study to meet.
+    assert Inputs(p).sessions(conn, "AAA", "2025-02-21") == ["2024-11-29", "2024-12-xx"]
+
+
 def test_a_declared_session_the_store_lacks_is_none(store, inputs):
     assert inputs.chain(store, "AAA", "2024-02-05", "2024-03-15") is None
 

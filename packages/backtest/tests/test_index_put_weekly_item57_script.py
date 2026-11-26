@@ -131,8 +131,15 @@ def test_the_forward_read_starts_after_the_thirtieth_and_includes_the_monthlies(
     assert s57.is_monthly(date(2026, 11, 20)) and not s57.is_monthly(date(2026, 11, 13))
 
 
-def test_no_replay_corrections_are_recorded_yet():
-    assert s57.REPLAY_CORRECTIONS == []
+def test_the_replay_corrections_are_a_literal_log_the_version_reader_parses():
+    import ast
+
+    tree = ast.parse(Path(s57.__file__).read_text(encoding="utf-8"))
+    node = next(
+        n for n in tree.body if isinstance(n, ast.Assign) and n.targets[0].id == "REPLAY_CORRECTIONS"
+    )  # a plain assignment of a literal, as the version reader needs
+    assert ast.literal_eval(node.value) == s57.REPLAY_CORRECTIONS
+    assert len(s57.REPLAY_CORRECTIONS) == 1 and s57.REPLAY_CORRECTIONS[0]["before_read"] is False
 
 
 # ------------------------------------------------------------------------------------------------

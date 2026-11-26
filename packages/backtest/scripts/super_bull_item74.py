@@ -69,6 +69,21 @@ from cherrypick.backtest import paths
 from cherrypick.backtest import settings as _settings
 from cherrypick.backtest.study.inputs import Inputs
 
+#: The correction log: one entry per fix to this replay, oldest first (orchestrator/studyversion.py).
+REPLAY_CORRECTIONS = (
+    {
+        "on": "2026-11-26",
+        "what": "A path's sessions are the stored ones that are trading days (the kit's Inputs.sessions "
+        "now leaves out the rest). The store holds one Saturday (2019-02-02) for 22 of the 23 names, a "
+        "placeholder market the vendor returns for a day it has none; it was read as a session, and 26 "
+        "trades exited on it at a market of every bid 0.05 and ask 99.00.",
+        "why": "The recorded verdict (fail on all four arms, design window) rested on trades marked and "
+        "exited on a day with no market.",
+        "decided": "user asked for the change to the kit and the re-run after the cause was shown",
+        "before_read": False,
+    },
+)
+
 _ITEM59 = Path(__file__).resolve().parent / "iwm_condor_item59.py"
 
 

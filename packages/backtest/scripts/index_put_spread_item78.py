@@ -41,7 +41,18 @@ from cherrypick.backtest.study import rule as kit_rule
 from cherrypick.backtest.study.inputs import Inputs
 
 #: The correction log: one entry per fix to this replay, oldest first (orchestrator/studyversion.py).
-REPLAY_CORRECTIONS = ()
+REPLAY_CORRECTIONS = (
+    {
+        "on": "2026-11-26",
+        "what": "a path's sessions are the stored ones that are trading days (the kit's "
+        "Inputs.sessions leaves out the rest): the store holds a Saturday (2019-02-02) and, for SPXW, "
+        "holiday sessions, which were read as sessions",
+        "why": "a stored day with no market was marked and exited on; every arm's verdict is unchanged "
+        "on the re-run",
+        "decided": "user asked for the kit change; reproduce read before it merged",
+        "before_read": False,
+    },
+)
 
 RULE = {
     "t_bar": 2.0,

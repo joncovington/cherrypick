@@ -18,6 +18,10 @@ beyond the latest release.
   (every option bid 0.05, ask 99.00), which a study read as a session. `fetch-chains` counts these
   requests as `not_trading` and sends none; the report gains `off_calendar` per symbol. Item 109's study
   skips those sessions. Nothing to do.
+- **The study kit's `Inputs.sessions` returns trading days only.** A stored non-trading day (the
+  Saturday placeholder under every name, holiday sessions under SPXW) is no longer a session to a study
+  on the kit, and `chain` reads such a day as none. Items 57, 74, 77 and 78 read such days and carry a
+  correction entry; items 59, 63, 64, 70, 86 and 101 reproduce identically. Nothing to do.
 
 ## v0.14.1 — 2026-11-26 — held queue rows and corrupt windows
 Fixes to v0.14.0: one that stopped the research queue behind a fetch that could never finish, one
