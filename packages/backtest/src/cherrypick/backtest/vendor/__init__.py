@@ -35,6 +35,17 @@ from __future__ import annotations
 #: recording every remaining session as refused.
 FATAL = ("unauthenticated",)
 
+#: What the vendor's own error says when it holds a request's data but cannot serve it whole: the
+#: reply is cut off or its rows are the wrong width. It does this for the same few requests every
+#: time (2026-11: six XSP windows), so the reason `corrupt_data` is a fixed answer, not a failure to
+#: retry. Read from the error text in `thetadata._classify` and from a recorded `vendor_error`
+#: detail in `chainfetch.prior_refusals`, so a request refused before the reason existed counts.
+CORRUPT_MARKERS = ("Corrupt FIT data", "Wrong number of data fields")
+
+
+def is_corrupt(text: str) -> bool:
+    return any(m in text for m in CORRUPT_MARKERS)
+
 
 class VendorRefusal(Exception):
     """The vendor said no, or there is nothing to ask with. `reason` is stable and short; `detail`

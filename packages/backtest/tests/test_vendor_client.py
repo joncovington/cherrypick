@@ -44,6 +44,11 @@ def test_refusals_map_to_stable_reasons():
     )
     assert reason("Stream removed (End of TCP stream)") == "stream_removed"
     assert reason("something else") == "vendor_error"
+    # The two answers the vendor gives for the same few windows every time (2026-11, XSP).
+    assert (
+        reason('details = "Corrupt FIT data: record has more fields than the tick width"') == "corrupt_data"
+    )
+    assert reason('details = "Wrong number of data fields, expecting 11, got 8"') == "corrupt_data"
 
 
 def test_only_transient_pushback_is_retried():

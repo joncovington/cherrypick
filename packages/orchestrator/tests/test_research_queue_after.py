@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
@@ -177,6 +177,57 @@ def test_a_held_row_notifies_once_and_is_released_by_re_queuing_its_prerequisite
     assert rq.rows(db)[-2]["held_at"] is None
     assert _run(db, sent, spawned)["ran"] == 2
     assert len(spawned) == 2 and not any("held" in title for _, title, _ in sent[1:])
+
+
+def _stamp(db, column, when):
+    with rq.connect(db) as conn:
+        conn.execute(
+            f"UPDATE tasks SET {column} = ? WHERE step = 'study'", (when.strftime("%Y-%m-%dT%H:%M:%S"),)
+        )
+
+
+def test_a_row_still_held_a_day_later_is_reminded_then_once_a_day_and_not_before(runner):
+    # 2026-11-24: a repeat pass failed and held the full-set fetch; the one notice was missed and the
+    # queue sat idle for two days.
+    db = runner
+    rq.add("item17", "script", {}, step="fetch-chains", path=db)
+    rq.add("item17", "script", {}, step="study", after="item17/fetch-chains", path=db)
+    _set(db, "fetch-chains", "failed")
+    sent, spawned = [], []
+    _run(db, sent, spawned)  # the first notice
+    titles = lambda: [t for _, t, _ in sent]  # noqa: E731
+    assert titles() == ["Research task held: item17/study"]
+    _stamp(db, "held_at", NOW.replace(tzinfo=None) - timedelta(hours=23))
+    _run(db, sent, spawned)
+    assert len(sent) == 1  # not yet a day
+    _stamp(db, "held_at", NOW.replace(tzinfo=None) - timedelta(hours=49))
+    _run(db, sent, spawned)
+    assert titles()[1:] == ["Research task still held: item17/study"]
+    assert "held for 2.0 days" in sent[1][2] and "re-queue it" in sent[1][2]
+    _run(db, sent, spawned)
+    _run(db, sent, spawned)
+    assert len(sent) == 2  # reminded: quiet for a day more
+    _stamp(db, "nudged_at", NOW.replace(tzinfo=None) - timedelta(hours=25))
+    _run(db, sent, spawned)
+    assert len(sent) == 3 and spawned == []
+    # Released by re-queuing the prerequisite, the reminder clock goes with the hold.
+    rq.add("item17", "script", {}, step="fetch-chains", path=db)
+    _run(db, sent, spawned)
+    row = [r for r in rq.rows(db) if r["step"] == "study"][0]
+    assert row["held_at"] is None and row["nudged_at"] is None
+
+
+def test_a_row_with_an_unreadable_hold_stamp_does_not_stop_the_pass(runner):
+    db = runner
+    rq.add("item17", "script", {}, step="fetch-chains", path=db)
+    rq.add("item17", "script", {}, step="study", after="item17/fetch-chains", path=db)
+    _set(db, "fetch-chains", "failed")
+    sent, spawned = [], []
+    _run(db, sent, spawned)
+    with rq.connect(db) as conn:
+        conn.execute("UPDATE tasks SET held_at = 'yesterday' WHERE step = 'study'")
+    assert _run(db, sent, spawned)["ran"] is None  # no error, and no second notice
+    assert len(sent) == 1
 
 
 def test_queue_list_shows_a_done_prerequisite_as_ready_and_a_cycle_as_held(db, monkeypatch, capsys):

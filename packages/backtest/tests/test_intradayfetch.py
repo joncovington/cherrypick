@@ -331,3 +331,35 @@ def test_a_fixed_refusal_repeated_is_settled_and_a_first_or_passing_one_is_not(t
         s, Refusing({"SPXW": "permission_denied", "MSFT": "vendor_error"}), reqs, log=lambda m: None
     )
     assert changed["settled"] == 0
+
+
+class RefusingWith(Refusing):
+    """Refuses each root in `reasons` with its reason and the vendor's own error text."""
+
+    def __init__(self, reasons, detail):
+        super().__init__(reasons)
+        self.detail = detail
+
+    def chain_window(self, root, day, expiration, start, end, *, interval="5m", strike_range=None):
+        if root in self.reasons:
+            raise VendorRefusal(self.reasons[root], self.detail)
+        return _rows()
+
+
+def test_a_window_the_vendor_serves_corrupt_every_time_is_settled_even_from_an_older_record(tmp_path):
+    # The full set's mid-xsp-2 (2026-11-24): six XSP windows the vendor answers with cut-off or
+    # wrong-width data on every request. Recorded then as `vendor_error`, so the repeat pass read
+    # them as a failed fetch and held the chain behind it.
+    s = _settings(tmp_path)
+    reqs = [_key("XSP"), _key("MSFT")]
+    corrupt = "Corrupt FIT data: record has more fields than the established tick width (1)"
+    older = RefusingWith({"XSP": "vendor_error", "MSFT": "vendor_error"}, corrupt)
+    first = ix.fetch_windows(s, older, reqs, log=lambda m: None)
+    assert (first["refused"], first["settled"]) == (2, 0)
+    now = RefusingWith({"XSP": "corrupt_data", "MSFT": "vendor_error"}, corrupt)
+    again = ix.fetch_windows(s, now, reqs, log=lambda m: None)
+    assert (again["refused"], again["settled"]) == (2, 1)  # XSP settles; a plain vendor_error does not
+    # A refusal whose recorded text is not the vendor's corrupt-data text is no prior for it.
+    plain = RefusingWith({"XSP": "vendor_error"}, "Timeout")
+    ix.fetch_windows(s, plain, [_key("XSP")], log=lambda m: None)
+    assert ix.fetch_windows(s, now, [_key("XSP")], log=lambda m: None)["settled"] == 0
