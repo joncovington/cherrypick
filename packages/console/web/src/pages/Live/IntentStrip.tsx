@@ -1,19 +1,8 @@
-import { useState } from "react";
 import { Link } from "react-router-dom";
 import type { ManageIntentAsk, ManageTrade } from "@console/shared";
-import { mutateJson } from "../../lib/api";
 import { ACTION_LABEL } from "./manageParts";
-import {
-  IDLE,
-  QUESTION,
-  answerTrade,
-  finished,
-  intentLabel,
-  restoreTo,
-  saveIntent,
-  starting,
-  type StripState,
-} from "./stripAnswer";
+import { useIntentAnswer } from "./intentAnswers";
+import { QUESTION, answerTrade, intentLabel, restoreTo } from "./stripAnswer";
 
 /**
  * The question a position asks about its intent: shown only while manage asks it (`intentAsk.asked`), one
@@ -47,13 +36,7 @@ function AnswerStrip({
   ask: ManageIntentAsk;
   trade: string;
 }) {
-  const [state, setState] = useState<StripState>(IDLE);
-
-  const send = async (intent: string | null) => {
-    setState((s) => starting(s));
-    const r = await saveIntent(trade, intent, mutateJson);
-    setState((s) => finished(s, r));
-  };
+  const [state, send] = useIntentAnswer(trade, ask);
 
   const failed = state.why ? (
     <span className="int-strip-err" role="alert">

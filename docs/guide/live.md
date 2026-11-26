@@ -102,6 +102,11 @@ one (a wheel cycle on the name). One tap saves the answer for that trade alone; 
 evaluation, so the card does not change until then, and `Undo` puts the old value back. A put that has
 no order chain yet has no stable ID to answer for, so its question points to Config.
 
+A naked short put or a call diagonal has an `intent` tab when its card is opened (marked `?` while the question is open): the same question with each answer
+beside the verdict the trade would get under it, the answer held now, and the config key it is written
+to. An answer given there shows on the card, and a trade can be changed from it later as well as asked
+the first time.
+
 ### portfolio
 
 ![Live portfolio: the account tiles, portfolio guidance, and the income dial](../images/live-portfolio.png)
