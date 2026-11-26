@@ -149,7 +149,7 @@ export function IntentsCard({ model, updatedAt }: { model: ConfigModelPayload | 
   return (
     <Card
       title="Intents"
-      className="lv-12"
+      className="lv-12 cfg-intents"
       collapseKey="config-intents"
       updatedAt={updatedAt}
       help={{

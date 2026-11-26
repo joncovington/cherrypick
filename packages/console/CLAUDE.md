@@ -177,7 +177,11 @@ alone):
     and a clear (the narrow save with null, which is how an entry a closed trade left is removed); a name's
     intent is still edited there, staged and saved as the whole `positions` object. A put with no stable ID
     whose name's intent is for another trade is linked nowhere: an answer on the name would replace that
-    intent. `web/test/wheelIntents.test.tsx` pins it.
+    intent. `web/test/wheelIntents.test.tsx` pins it. Every control on the intent surfaces is 44px on a
+    tablet or phone (`max-width: 820px` or a coarse pointer): a link inside a sentence keeps its line and
+    gets the hit area from an `::after`, the answers stack at full width under 560px, and the Intent tab's
+    buttons line up whatever the verdict above them says. It is one block in `styles.css`, and
+    `web/test/intentTouchTargets.test.ts` pins what it covers: a new control on these surfaces belongs in it.
   - **The Builder's save is the same path for one automation** (`/api/automations/builder/draft` and
     `/save`, configcli `automation_draft` / `automation_save`). The route sends a name and an
     automation and nothing else; the orchestrator runs the module's own check and writes the entry it

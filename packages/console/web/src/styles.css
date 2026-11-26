@@ -10376,6 +10376,68 @@ button.chip[aria-pressed][data-hue="special"],
   min-height: 0;
   font-size: 11.5px;
 }
+/* The intent surfaces. At every width the verdict under an answer reads as an outcome (the arrow is
+   decoration, empty to a screen reader), the Intent tab's answers sit side by side with their buttons lined
+   up whatever the verdict above says, and a row's chip drops under a long leg label. */
+.int-strip-verdict::before {
+  content: "→ ";
+  content: "→ " / "";
+}
+.int-tab .int-col {
+  display: flex;
+  flex-direction: column;
+}
+.int-tab .int-col > .btn {
+  margin-top: auto;
+}
+.int-card-waiting .lk-li-top {
+  flex-wrap: wrap;
+  gap: 6px 10px;
+}
+/* On a tablet or a phone (and under any coarse pointer) every control a finger meets is 44px. */
+@media (max-width: 820px), (pointer: coarse) {
+  .int-strip-opt,
+  .int-col .btn,
+  .int-tab .btn,
+  .pmcc-intent .btn,
+  .int-strip .btn,
+  .int-chip:not(.is-static),
+  .cfg-intents .btn,
+  .cfg-intents input,
+  .cfg-intents select {
+    min-height: 44px;
+  }
+  /* A link inside a sentence keeps its line; its hit area reaches 44px above and below it, never sideways
+     over a neighbouring control. */
+  .int-strip a.lk-sub,
+  .int-tab a.lk-sub,
+  .pmcc-intent a.lk-sub,
+  .cfg-intents a.lk-sub {
+    position: relative;
+  }
+  .int-strip a.lk-sub::after,
+  .int-tab a.lk-sub::after,
+  .pmcc-intent a.lk-sub::after,
+  .cfg-intents a.lk-sub::after {
+    content: "";
+    position: absolute;
+    inset: -15px 0;
+  }
+}
+@media (max-width: 560px) {
+  .int-strip-opts {
+    flex-direction: column;
+    width: 100%;
+  }
+  .int-strip-opt {
+    width: 100%;
+    justify-content: flex-start;
+  }
+  .pmcc-intent .int-strip-opts {
+    align-items: stretch;
+  }
+}
+
 .card.int-card-waiting {
   border-color: var(--warn);
 }
