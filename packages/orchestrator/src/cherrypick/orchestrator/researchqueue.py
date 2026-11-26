@@ -140,6 +140,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     stop_by TEXT,
     after TEXT,
     held_at TEXT,
+    nudged_at TEXT,
     priority INTEGER NOT NULL DEFAULT 0,
     status TEXT NOT NULL DEFAULT 'queued',
     created_at TEXT NOT NULL,
@@ -704,8 +705,14 @@ def connect(path: Path | None = None) -> sqlite3.Connection:
 
 # Columns added after the table first shipped, each added to an older queue on connect: `after`
 # (2026-10-25), a row that waits for another row's success; `held_at`, when a held row was notified;
-# `priority` (2026-11-03), the order the queue is run in.
-ADDED_COLUMNS = (("after", "TEXT"), ("held_at", "TEXT"), ("priority", "INTEGER NOT NULL DEFAULT 0"))
+# `priority` (2026-11-03), the order the queue is run in; `nudged_at`, when a row still held was last
+# reminded of.
+ADDED_COLUMNS = (
+    ("after", "TEXT"),
+    ("held_at", "TEXT"),
+    ("priority", "INTEGER NOT NULL DEFAULT 0"),
+    ("nudged_at", "TEXT"),
+)
 
 
 def _columns(conn: sqlite3.Connection) -> set[str]:
@@ -971,7 +978,36 @@ def mark_held(conn: sqlite3.Connection) -> list[tuple[dict, str]]:
                 conn.execute("UPDATE tasks SET held_at = ? WHERE id = ?", (_now_iso(), row["id"]))
                 out.append((row, why))
         elif row["held_at"]:
-            conn.execute("UPDATE tasks SET held_at = NULL WHERE id = ?", (row["id"],))
+            conn.execute("UPDATE tasks SET held_at = NULL, nudged_at = NULL WHERE id = ?", (row["id"],))
+    return out
+
+
+#: How long a row stays held before the first reminder, and between the ones after it.
+NUDGE_HOURS = 24
+
+
+def remind_held(conn: sqlite3.Connection, now: datetime) -> list[tuple[dict, str]]:
+    """Rows held for `NUDGE_HOURS` since they were notified or last reminded, each with how long and
+    why, stamped so the next reminder is a day on. `mark_held` notifies a hold once; a person who
+    missed that one would otherwise find the queue idle behind it days later (2026-11-24, a repeat
+    pass failed and held the full-set fetch for two days)."""
+    here = now.astimezone(ET).replace(tzinfo=None)
+    out = []
+    for r in conn.execute(
+        "SELECT * FROM tasks WHERE status = 'queued' AND after IS NOT NULL AND held_at IS NOT NULL"
+    ).fetchall():
+        row = dict(r)
+        since = datetime.fromisoformat(row["nudged_at"] or row["held_at"])
+        if here - since < timedelta(hours=NUDGE_HOURS):
+            continue
+        why = after_reason(row, prereq_status(conn, row["after"], row["id"]))
+        if not (why and why.startswith(HELD)):
+            continue
+        hours = (here - datetime.fromisoformat(row["held_at"])).total_seconds() / 3600
+        conn.execute(
+            "UPDATE tasks SET nudged_at = ? WHERE id = ?", (here.strftime("%Y-%m-%dT%H:%M:%S"), row["id"])
+        )
+        out.append((row, f"held for {hours / 24:.1f} days: {why.removeprefix(HELD).strip()}"))
     return out
 
 
@@ -1042,10 +1078,14 @@ def run_next(
         with conn:
             recovered = recover(conn)
             newly_held = mark_held(conn)
+            still_held = remind_held(conn, now())
         # Each newly held row is one notification, sent after its mark is committed: never repeated
         # every pass, and a row released (its prerequisite re-queued) and held again notifies again.
+        # One still held a day later is reminded, and then once a day more.
         for row, why in newly_held:
             notify("WARNING", f"Research task held: {name(row)}", why.removeprefix(HELD).strip())
+        for row, why in still_held:
+            notify("WARNING", f"Research task still held: {name(row)}", why)
         cancelled = cancel_lapsed(conn, licence or _vendor_licence)
         if cancelled:
             notify(

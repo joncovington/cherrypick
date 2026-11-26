@@ -5,7 +5,8 @@ from the keyring (`credential.read_key`) and is handed to the client explicitly,
 reads it from the environment or a `.env` file of its own accord.
 
 Refusals map to stable reasons: `permission_denied` (the subscription does not cover it),
-`no_data` (nothing for that request), `vendor_error` (anything else). Transient pushback (rate or
+`no_data` (nothing for that request), `corrupt_data` (the vendor holds it but serves it cut off or
+the wrong width, every time), `vendor_error` (anything else). Transient pushback (rate or
 availability) is retried with backoff before it becomes a refusal.
 """
 
@@ -28,7 +29,7 @@ from cherrypick.core import home as _home
 
 from .. import credential
 from .. import settings as _settings
-from . import VendorRefusal
+from . import VendorRefusal, is_corrupt
 
 #: The account allows ONE session: a second login with the key ends the first, and every later call
 #: of the first fails UNAUTHENTICATED (2026-10-17). So a process takes this lock before it logs in
@@ -155,6 +156,8 @@ def _classify(exc: Exception) -> tuple[str, str]:
             "stream_removed",
             "the vendor dropped the request at 60 s (sub-minute history is not served for this date)",
         )
+    if is_corrupt(text):
+        return "corrupt_data", text[:240]
     return "vendor_error", f"{type(exc).__name__}: {text[:240]}"
 
 

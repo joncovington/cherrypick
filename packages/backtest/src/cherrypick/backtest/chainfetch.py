@@ -20,9 +20,11 @@ taken by another login) stops the run instead of marking every remaining request
 
 **Settled refusals.** Some refusals are the vendor's fixed answer, the same on every retry
 (`SETTLED`: `stream_removed`, which it gives every time for history it does not serve, and
-`permission_denied`, the account's tier). A request refused again with the same settled reason it
-was refused with before is counted `settled` in the report, so the research queue can tell a pass
-with nothing left the vendor will serve from one that fetched nothing it could have.
+`permission_denied`, the account's tier, and `corrupt_data`, a window it holds but serves cut off or
+the wrong width: a `vendor_error` whose text says so reads as it). A request refused again with the
+same settled reason it was refused with before is counted `settled` in the report, so the research
+queue can tell a pass with nothing left the vendor will serve from one that fetched nothing it could
+have.
 
 **Workers** share the one client (the account allows one session); every database write happens on
 this thread, so a request is either wholly written or not written at all.
@@ -44,14 +46,14 @@ from cherrypick.core.db import connect_ro
 from . import paths
 from .fetchpool import ABORT, OK, run_pool
 from .storeopen import WAL_SWITCH_WAIT_MS, open_store, prefer_wal  # noqa: F401  (re-exported)
-from .vendor import FATAL, VendorRefusal
+from .vendor import FATAL, VendorRefusal, is_corrupt
 
 DB_NAME = "eod_chains.db"
 #: The vendor's way of saying it holds nothing for a request: an empty chain, not a refusal to retry.
 NO_DATA = "no_data"
 COMPLETE, EMPTY, REFUSED = "complete", "empty", "refused"
 #: Refusals the vendor repeats on every retry (see the module docstring): retrying cannot change them.
-SETTLED = frozenset({"stream_removed", "permission_denied"})
+SETTLED = frozenset({"stream_removed", "permission_denied", "corrupt_data"})
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS eod_chain_quotes (
@@ -113,8 +115,12 @@ def _done(conn: sqlite3.Connection) -> set[tuple[str, str, str]]:
 
 
 def _reason(detail: str | None) -> str | None:
-    """A recorded refusal's reason: the text before its first colon."""
-    return detail.split(":", 1)[0].strip() if detail else None
+    """A recorded refusal's reason: the text before its first colon. A `vendor_error` recorded before
+    `corrupt_data` existed reads as it, so a request refused that way once is already a prior."""
+    if not detail:
+        return None
+    reason = detail.split(":", 1)[0].strip()
+    return "corrupt_data" if reason == "vendor_error" and is_corrupt(detail) else reason
 
 
 def prior_refusals(conn: sqlite3.Connection, table: str, keys: list[tuple]) -> dict[tuple, str]:
