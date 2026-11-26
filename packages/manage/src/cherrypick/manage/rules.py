@@ -239,7 +239,18 @@ DEFAULT_RULES: dict[str, Any] = {
         # A short at or through its strike: roll or close, with the net-zero and premium-gambit rolls
         # out in time priced on the snapshot's quoted chain and each judged by check-roll. Repair, which
         # this ruleset otherwise avoids, so it never outranks a close.
-        "tested": {"enabled": True, "evidence": "practice"},
+        # A tested wheel PUT with more than `review_beyond_days` left (the horizon the snapshot reads
+        # roll-out chains inside, the orchestrator's `roll_out.max_short_days`) and at least
+        # `review_min_extrinsic` a share of extrinsic value is a review, not a roll or a close: with no roll
+        # to price and time value left the assignment is unlikely, and the wheel's next step is taking it
+        # anyway. Inside the horizon, or under the floor, it is the roll, close or assignment above. The
+        # floor is a broker's rule of thumb for when early exercise becomes likely: practice, untested.
+        "tested": {
+            "enabled": True,
+            "evidence": "practice",
+            "review_beyond_days": 60,
+            "review_min_extrinsic": 0.10,
+        },
         # Shares delivered by an assignment and not yet written against: name the covered call at the
         # skate call band (`band`: "fixed" or "by_expiry"). Never a strike without the band.
         "next_leg": {"enabled": True, "band": "fixed", "evidence": "practice"},
@@ -625,7 +636,9 @@ DEFAULT_RULES: dict[str, Any] = {
         },
     },
     # Per-underlying overrides: {"SPY": {"intent": "hedge", "disable": ["debit.stop"], "note": "..."}}.
-    # `intent: "pmcc"` recognises a call diagonal as a PMCC; `"diagonal"` keeps it out (pmcc.py).
+    # `intent: "pmcc"` recognises a call diagonal as a PMCC; `"diagonal"` keeps it out (pmcc.py). A name's
+    # intent applies only to the trades it can describe (`intent_fits`): `wheel` and `no_wheel` a naked
+    # short put, `pmcc` and `diagonal` a trade with a call; any other value is a label for any trade.
     "positions": {},
     # Per-trade overrides, keyed two ways. By a trade's stable ID (tradeids.py), as `positions.<SYM>`
     # takes for a name but for that trade alone: {"XYZ-260401-1": {"intent": "hedge", "disable":
@@ -853,7 +866,7 @@ def _check_trades(rules: dict[str, Any], warnings: list[str]) -> None:
         for field in entry:
             if not field.startswith("_") and field not in TRADE_KEYS:
                 warnings.append(f"trades.{key}.{field}: unknown key, ignored")
-        if "intent" in entry and entry["intent"] not in TRADE_INTENTS:
+        if entry.get("intent") is not None and entry["intent"] not in TRADE_INTENTS:
             warnings.append(f"trades.{key}.intent: '{entry['intent']}' is not pmcc or diagonal, ignored")
 
 
@@ -884,18 +897,58 @@ def load(path: Path | None = None) -> tuple[dict[str, Any], list[str], str | Non
     return rules, warnings, str(target)
 
 
+def _entries(
+    rules: dict[str, Any], underlying: str, trade_id: str | None
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """A name's override entry (`positions.<SYM>`) and a trade's own (`trades.<ID>`), each {} when absent or
+    not an object."""
+    name = (rules.get("positions") or {}).get(underlying) or {}
+    own = ((rules.get("trades") or {}).get(trade_id) or {}) if trade_id else {}
+    return (name if isinstance(name, dict) else {}), (own if isinstance(own, dict) else {})
+
+
 def override(rules: dict[str, Any], underlying: str, trade_id: str | None = None) -> dict[str, Any]:
     """The overrides that apply to one trade: the name's (`positions.<SYM>`) with the trade's own
     (`trades.<ID>`) over them, field by field; `disable` lists add up."""
-    name = (rules.get("positions") or {}).get(underlying) or {}
-    own = ((rules.get("trades") or {}).get(trade_id) or {}) if trade_id else {}
-    if not isinstance(name, dict):
-        name = {}
-    if not isinstance(own, dict):
-        own = {}
+    name, own = _entries(rules, underlying, trade_id)
     out = {**name, **{k: v for k, v in own.items() if not k.startswith("_")}}
     out["disable"] = list(dict.fromkeys([*(name.get("disable") or []), *(own.get("disable") or [])]))
     return out
+
+
+def name_intent(rules: dict[str, Any], underlying: str) -> str | None:
+    """The intent set on a name (`positions.<SYM>.intent`), whatever trades it describes."""
+    intent = _entries(rules, underlying, None)[0].get("intent")
+    return intent if isinstance(intent, str) else None
+
+
+def is_naked_short_puts(legs: list[dict[str, Any]]) -> bool:
+    """Whether every leg is a short put (and there is one): the trade a wheel is about."""
+    return bool(legs) and all(leg.get("right") == "P" and (leg.get("quantity") or 0) < 0 for leg in legs)
+
+
+def intent_fits(intent: str, legs: list[dict[str, Any]]) -> bool:
+    """Whether a name's intent can describe a trade of these legs. `wheel` and `no_wheel` are about a naked
+    short put; `pmcc` and `diagonal` about a trade with a call in it. Any other intent is a free label
+    (`hedge`, `income`), shown on the trade, and describes any trade."""
+    if intent in ("wheel", "no_wheel"):
+        return is_naked_short_puts(legs)
+    if intent in ("pmcc", "diagonal"):
+        return any(leg.get("right") == "C" for leg in legs)
+    return True
+
+
+def trade_intent(
+    rules: dict[str, Any], underlying: str, trade_id: str | None, legs: list[dict[str, Any]]
+) -> str | None:
+    """A trade's intent. Its own (`trades.<ID>.intent`) is the answer. A name's (`positions.<SYM>.intent`)
+    is one only for a trade it can describe: a name marked `pmcc` for its call diagonal says nothing about
+    a naked put on the same name, which stays undecided and is asked."""
+    own = _entries(rules, underlying, trade_id)[1].get("intent")
+    if isinstance(own, str):
+        return own
+    intent = name_intent(rules, underlying)
+    return intent if intent is not None and intent_fits(intent, legs) else None
 
 
 def disabled(rules: dict[str, Any], underlying: str, rule_id: str, trade_id: str | None = None) -> bool:

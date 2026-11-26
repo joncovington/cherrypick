@@ -3,7 +3,7 @@ import { renderToString } from "react-dom/server";
 import type { ManageTrade } from "@console/shared";
 import { MemoryRouter } from "react-router-dom";
 import { TradeDetail } from "../src/pages/Live/ManagePage";
-import { PositionCard, PositionCards, SpotLine, chainLegs, chainSteps, idChips, sessionClose, sortByPnl } from "../src/pages/Live/PositionCards";
+import { PositionCard, PositionCards, SpotLine, chainLegs, chainSteps, idChips, initialTradeTab, sessionClose, sortByPnl } from "../src/pages/Live/PositionCards";
 
 /**
  * The held-for-call chip and "waits for call" are packages/manage's `earnings_trade` verdict, read and
@@ -222,6 +222,13 @@ describe("the positions cards", () => {
     const d = trade({ tradeId: "D", pnlNet: 120 });
     expect(sortByPnl([a, b, c, d], "desc").map((t) => t.tradeId)).toEqual(["D", "A", "B", "C"]);
     expect(sortByPnl([a, b, c, d], "asc").map((t) => t.tradeId)).toEqual(["B", "A", "D", "C"]);
+  });
+
+  it("opens a trade on its Intent tab only when the link asks for it by name", () => {
+    expect(initialTradeTab("intent")).toBe("intent");
+    expect(initialTradeTab(null)).toBe("chain");
+    expect(initialTradeTab("evaluation")).toBe("chain");
+    expect(initialTradeTab("")).toBe("chain");
   });
 
   it("the board counts what needs action and what rolled, and orders by the URL's choice", () => {

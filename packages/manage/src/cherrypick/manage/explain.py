@@ -536,7 +536,7 @@ PLAIN = {
     "roll.fly_off": "broken-wing fly-off",
     "roll.untested_side": "untested-side roll",
     "wheel.take_profit": "wheel buy-to-close",
-    "wheel.tested": "wheel tested-strike roll",
+    "wheel.tested": "wheel tested-strike rule",
     "wheel.next_leg": "wheel next-leg review",
     "wheel_data": "wheel reconciliation check",
     "covered_call.assigned": "covered-call call-away review",

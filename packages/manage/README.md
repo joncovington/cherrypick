@@ -39,7 +39,12 @@ neither a chain nor a match gets a provisional `<NAME>-open-<hash>` until its or
 snapshot carries the IDs, so a re-run and the minute's re-marks give the same ones. The ID is what the
 cards show, what `check-roll --trade` takes (a bare name still works for a name's only trade), and a
 `trades.<ID>` key in the overrides: `intent`, `note` and `disable` for that trade alone, read over the
-name's `positions.<SYMBOL>`.
+name's `positions.<SYMBOL>`. An intent is a fact about one trade, so a name's applies only to a trade it
+can describe: `wheel` and `no_wheel` to a naked short put, `pmcc` and `diagonal` to a trade with a call in
+it, and a label such as `hedge` to any. The trade's `intent` is the result. A name marked `pmcc` for its call diagonal says nothing about a
+short put on the same name, which stays undecided (shown as no intent, and asked) until the trade's own
+`trades.<ID>.intent` says what it is. Any other value (`hedge`, `income`) is a free label: shown on the
+trade, describing any of them, and never validated.
 
 A chain is used only when its own orders, replayed, leave exactly the quantities held today. When the
 history is missing, starts after the position did, or the broker moved a leg without an order, the
@@ -194,7 +199,7 @@ presenter who cuts losers rather than the one who repairs them, and checked agai
 | `roll.fly_off` | a broken-wing butterfly opened for a net credit: buy the wing that makes it a plain butterfly, sell the wide one, when that costs no more than the credit; not inside the expiry window | review | practice | the strategy guide: "our initial goal with BWBs is to remove risk by rolling into a symmetrical butterfly … for a debit less than the initial credit received" | No outside test. The new wing is modelled at an IV read between the body's and the old wing's, so the debit is an estimate: re-quote, and check the strike is listed |
 | `roll.untested_side` | **off by default** (the same local study; `"roll": {"untested_side": {"enabled": true}}` turns it on). A short strangle or straddle tested (one short at 0.40 delta or more, the other under 0.30): roll the untested short toward the money, same expiry, to the listed strike nearest 0.30 delta, for at least 0.10 a share at the quoted mids. It never passes the tested strike (a strangle may become a straddle, no more): **an inverted strangle always ranks below closing or rolling out in time without the inversion** (your rule), so an inverting roll, which is every in-expiry roll of a straddle's untested side, is never proposed. It is recorded as `untested_roll.inversion`, ranked last | review; roll for credit in place of the short-leg buy-back when that names the untested leg | contested | the strategy guide: "we can roll the other untested side closer to the tested side to pick up additional credit and reduce the delta" | No outside test. It is repair, which this ruleset otherwise avoids, so it never replaces a stop or a close. Strikes and mids are the snapshot's `roll_chains` (v11): one quoted chain read per expiry holding a short put and call. On a naked strangle the risk-budget review (60) heads the recommendation and the roll is named beside it |
 | `wheel.take_profit` | a wheel cycle's short marked at or under its buy-to-close: the resting order's price, else $0.03 ($0.05 on a wide market). Buys back the short alone, never the shares | take profit | mechanics | the skate method (an options educator's covered-call process): a GTC buy-to-close at $0.03, $0.05 if illiquid, placed right after the fill | None tested; mechanically there is nothing left to earn at a few cents, as with `legs.short_take_profit` |
-| `wheel.tested` | a wheel cycle's short at or through its strike: roll out in time or close (a covered call at or over the wheel basis is `covered_call.assigned`'s instead: its call-away completes the cycle). Priced: the **net-zero** roll (buy back at the mid, sell on the quoted monthly the strike furthest out whose mid pays for it; a put's strike capped at old strike + original premium − buy-back) and the **premium gambit** (the buy-back rests at the original sale price, the same strike sold on the monthly). Each judged by `check-roll`; neither moves toward the money | roll or close | practice | the skate method: losers are rolled "99% of the time"; the strike cap is thetagang's | No baseline: the broker's study counted fewer losing trades after rolling tested short puts, but never compared rolling with not rolling; repairing defined-risk spreads did not help. Repair, which this ruleset otherwise avoids, so a close outranks it |
+| `wheel.tested` | a wheel cycle's short at or through its strike: roll out in time or close (a wheel put with more than 60 days left and at least 0.10 a share of extrinsic value is a review instead, see "A name you wheel keeps its puts to assignment"; a covered call at or over the wheel basis is `covered_call.assigned`'s instead: its call-away completes the cycle). Priced: the **net-zero** roll (buy back at the mid, sell on the quoted monthly the strike furthest out whose mid pays for it; a put's strike capped at old strike + original premium − buy-back) and the **premium gambit** (the buy-back rests at the original sale price, the same strike sold on the monthly). Each judged by `check-roll`; neither moves toward the money | roll or close | practice | the skate method: losers are rolled "99% of the time"; the strike cap is thetagang's | No baseline: the broker's study counted fewer losing trades after rolling tested short puts, but never compared rolling with not rolling; repairing defined-risk spreads did not help. Repair, which this ruleset otherwise avoids, so a close outranks it |
 | `wheel.next_leg` | shares delivered by an assignment and not yet written against: the covered call at the skate call band (`band`: fixed or by_expiry) moved to today's price, on the quoted monthly, the first quoted strike at or above it; flagged when under the wheel basis. Without bands in the snapshot it names no strike and says so | review | practice | the skate method: calls at or above the upper band | The study: the band matches delta on average and does not beat it |
 | `covered_call.assigned` | a covered call (short calls the name's shares cover) in the money: at or over the wheel basis (else the shares' chain cost) a review to let them be called away or roll up and out for a credit; under it roll or close; no basis known, a review. Its stop, breached close, oversize review and expiry close never apply, and a loser's time exit does not buy it back | review, or roll or close | mechanics | option mechanics; the wheel's own aim (a call-away at or over the basis completes the cycle) | Confirmed by the OCC's exercise rules: an assignment delivers shares the account holds. Whether to roll a covered call to avoid assignment is untested anywhere |
 | `pmcc.width` | a recognised PMCC whose short strike less its long strike does not exceed the long's net cost per share after every premium collected. Shows the P&L if assigned in dollars, and the short's roll candidates: one per quoted expiry after the short and before the long (the next five the snapshot quotes: snapshot v14's `roll_out_chains` reads them that session, below), the most premium at 0.40 delta or less, a roll costing no more than $0.10 a share, keeping the width; each judged by `check-roll` | roll or close | mechanics | the PMCC method's own entry check, kept while held; candidates as an open-source PMCC advisor chooses them (docs/strategy-sources.md) | Option arithmetic: assigned with the long exercised, the trade is worth the width, so a net cost past it loses. Selling the long instead keeps its time value, which softens it; the check assumes none is left. Our pmcc study found the short calls' edge rests on the IV assumption, so rolling is routine, not a rescue |
@@ -328,18 +333,73 @@ so the stop stays the default. Mark a name you would take shares on with `positi
 "wheel"` (or one trade with `trades.<ID>.intent`), and a short put on it, held by a cycle that
 reconciles, is never judged by the credit stop or the breached-strike close: a stop would buy back at a
 loss a put meant to be assigned. Tested, `wheel.tested` offers the roll for a credit, the close, or the
-assignment, naming the shares the cash already secures and the wheel breakeven. The sizing review stays
+assignment, naming the shares the cash already secures and the wheel breakeven. Tested with more than
+`wheel.tested.review_beyond_days` (60) left and at least `review_min_extrinsic` (0.10) a share of extrinsic
+value, it is a REVIEW instead: the snapshot reads roll-out chains inside
+that horizon only, so there is no roll to price, and assignment is unlikely while time value remains. The
+reason line states, for each tested put, how far through the strike it is and its extrinsic value and days;
+then what holding every short put to expiry at today's price makes on the trade's order credits (before
+fees), and, for a cycle holding no shares, the assignment against the wheel breakeven (put strike less the
+cycle's net cash), each figure named for its basis (they differ). A trade with any tested short that
+cannot wait (a put inside the horizon, under the floor or with no extrinsic figure, or a call) is rolled or
+closed as a whole, so none goes unmentioned. Inside the horizon, or under the floor (a broker's rule of
+thumb for when early exercise becomes likely: practice, untested), it is the roll, close or assignment
+above, so a deep put is never left unwatched. Only a short put on a wheeled name is watched this way; a
+tested wheel call keeps the roll or close. The sizing review stays
 as the guard. Published tests of stops on short premium (tastylive, Option Alpha, our own strangle
 and condor studies) found they cut the tail and cost return; Cboe's put-write index holds to expiry.
 
-**Possible wheel trades** (`wheel.intent_candidates`). Every trade of short puts alone whose name and
-trade carry no intent is listed for the wheel tab to ask about: its legs, the cash it ties up, the
-price a share an assignment would cost once the premium kept is counted, a report inside it, the
-name's completed cycles and assignments, and two verdicts, today's and the one it would get marked as
-a wheel. The second is the same trade judged again with `positions.<SYMBOL>.intent: "wheel"`, so it
-is never guessed; `wheel_path` is false while no reconciled cycle holds the put, and marking it then
-changes nothing yet. Any intent takes a name off the list: `"no_wheel"` says it is not a wheel and
-keeps its stop. The list judges nothing and sets nothing; the console stages the intent for Config.
+**Possible wheel trades** (`wheel.intent_candidates`). Every trade of short puts alone that carries no
+intent (its own, or a name's that describes it) is listed for the wheel tab to ask about: its legs, the
+cash it ties up, the price a share an assignment would cost once the premium kept is counted, a report
+inside it, the name's completed cycles and assignments, and two verdicts, today's and the one it would
+get marked as a wheel. The second is the same trade judged again as a wheel, so it is never guessed;
+`wheel_path` is false while no reconciled cycle holds the put, and marking it then changes nothing yet.
+`suggested` is `"wheel"` when a wheel cycle on the name reconciles to the account, with `evidence`
+saying why (completed cycles, an open one); it is a suggestion and is never applied. `note` says when
+the name's own intent is for another trade on the name, which is why this put is asked about. `key` is
+the config key an answer is written at: the trade's own
+(`trades.<ID>.intent`), or the name's (`positions.<SYMBOL>.intent`) while the trade's ID is still
+provisional. Any intent takes a trade off the list: `"no_wheel"` says it is not a wheel and keeps its
+stop. The list judges nothing and sets nothing; the console stages the intent for Config.
+
+**What each trade is asked about its intent** (`trade.intent_ask`, `intentask.py`). An intent is the
+operator's word on what a trade is for, and manage asks only where the legs cannot say: a naked short put
+(`kind: "wheel"`, options `wheel` and `no_wheel`) and a call diagonal (`kind: "pmcc"`, options `pmcc` and
+`diagonal`; a calendar is not asked). Every other trade has `intent_ask: null`. The block is everything a
+surface needs to put the question and write the answer, so none of them works out a shape rule, an option
+list or a config key:
+
+- `asked` is true while no operator intent applies, and `current` is the one that does: the trade's own, or
+  a name's that can describe it. For a diagonal only `pmcc` or `diagonal` answers it, since a delta decided
+  its recognition and a name's `wheel` is for a put. A free label on a put (`hedge`, `income`) is an answer,
+  not an option.
+- `verdicts`, for a put: the verdict the trade would get under each option, each judged by evaluating it
+  again with that option set on the trade itself (a trade's own intent beats its name's, so this holds
+  whatever either already says). The option it already holds is its own verdict. Empty for a diagonal.
+- `suggested`, `evidence` and `note`, only while the trade is asked, and never applied. For a put: `"wheel"`
+  when a wheel cycle on the name reconciles to the account, the cycles as evidence, and a note when the
+  name's own intent is for another trade. For a diagonal: the PMCC view's own reading (`pmcc`, or `diagonal`
+  when the long was entered under the floor), its `recognized_by` as the evidence, and no suggestion while
+  the delta at entry cannot be solved.
+- `key` and `scope`: where an answer is written. A put's own `trades.<ID>.intent` (`"trade"`), or its name's
+  `positions.<SYMBOL>.intent` (`"name"`) while its ID is still provisional; a diagonal's
+  `trades.<LONG CONTRACT>.intent` (`"contract"`), which is how the PMCC view reads it.
+
+While a trade is asked, its verdict line says it is judged without an answer (`intentask.unanswered_note`):
+a clause on the trade's `reason` and a sentence on its `explanation`. A put is said to be judged as a plain
+short put, with what marking it a wheel would make of it ("; judged as a plain short put: no intent set
+(marked a wheel: roll or close)"), and only where that differs from today's verdict, since otherwise the
+answer is moot. A diagonal is said to be read as a PMCC, or as a plain diagonal, by the delta its long was
+entered at ("; read as a PMCC by the delta its long was entered at: no intent set"), or as a plain diagonal
+where that delta is unknown, and only where its verdict came from a rule that reading decides
+(`pmcc.width`, `pmcc.assignment`, `pmcc.roll_long`, `debit.diagonal_width`, `roll.diagonal_short`): a hold,
+a stop or an expiry close is the same either way. It says "read as", not "judged as": a PMCC whose orders do
+not reconcile is read as one without any PMCC rule having judged it. The words are not part of the verdicts
+compared in `verdicts` or of the wheel tab's candidate, and an answered trade carries none. Nothing about the
+verdict itself changes.
+
+`wheel.intent_candidates` above is the put's part of this, with the display fields the wheel tab lists.
 
 **Rolls are priced on the snapshot's quoted chains.** Since snapshot v14 the orchestrator reads, for
 each short a roll out in time starts from (a covered call, a PMCC's short, and a short put on a name
@@ -748,6 +808,13 @@ index), `in the money`, or `near` (within `attention.near_pct`, 3%), worst first
 `attention.expiring_days` (7) or fewer left is listed apart. 0DTE legs on `exclude.zero_dte_underlyings` are left out (a loop or the hand manages those).
 A reading, not a rule: it fires nothing. The orchestrator posts each listed name once a session
 (`managealert.py`), from the full runs and the minute re-marks; the console draws it on Live -> wheel.
+
+**Trades asked about their intent** are one more list beside them (`attention.intent`, `intent_items`): one
+item per trade whose `intent_ask` is still open, naked short puts first, then call diagonals, each by name
+and trade. An item names the trade (`trade_id`, `underlying`, `shape`, its `legs`), what it is asked
+(`kind`), where an answer is written (`scope`: `trade`, `contract`, or `name` while a put's ID is still
+provisional), and the ask's own `suggested`, `evidence` and `note`, never applied. It is read from the ask
+and judges nothing; the alerts read `items` only, so an unanswered trade is shown and never posted.
 
 **The cost-strike call** is one more reason beside them (`costcall.py`, `attention.cost_call`). For each
 running, reconciled cycle that holds assigned shares with no call written, it takes the lowest listed

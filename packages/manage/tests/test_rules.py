@@ -56,6 +56,11 @@ def test_a_trades_entry_that_does_nothing_says_so():
     ]
 
 
+def test_a_cleared_intent_on_a_long_contract_is_not_a_warning():
+    _, warnings = _rules.effective({"trades": {"XYZ 280121C00040000": {"intent": None}}})
+    assert warnings == []
+
+
 def test_a_trade_id_entry_takes_intent_disable_and_note():
     rules, warnings = _rules.effective(
         {

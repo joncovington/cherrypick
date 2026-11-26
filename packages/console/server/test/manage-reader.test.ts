@@ -125,6 +125,41 @@ describe("readManage", () => {
     expect(other).toMatchObject({ tradeIdProvisional: false, mergedIds: [] });
   });
 
+  it("passes a trade's intent question through, a verdict under each option, and null where it has none", () => {
+    const doc = evalDoc("2026-10-30") as { accounts: Array<{ trades: Array<Record<string, unknown>> }> };
+    doc.accounts[0]!.trades[0]!["intent_ask"] = {
+      kind: "wheel",
+      asked: true,
+      current: null,
+      options: ["wheel", "no_wheel"],
+      verdicts: { wheel: { action: "HOLD", rule: null, reason: null }, no_wheel: { action: "ROLL", rule: "roll.naked_put", reason: "tested" } },
+      suggested: "wheel",
+      evidence: ["2 completed wheel cycles on KO"],
+      note: null,
+      key: "trades.KO-260101-1.intent",
+      scope: "trade",
+    };
+    doc.accounts[0]!.trades[1]!["intent_ask"] = { kind: "other", scope: "trade" }; // not a question manage asks
+    fs.writeFileSync(path.join(tmp, "manage", "eval-2026-10-30.json"), JSON.stringify(doc));
+    const [ko, other] = readManage(config).accounts[0]!.trades;
+    expect(ko!.intentAsk).toEqual({
+      kind: "wheel",
+      asked: true,
+      current: null,
+      options: ["wheel", "no_wheel"],
+      verdicts: {
+        wheel: { action: "HOLD", rule: null, reason: null },
+        no_wheel: { action: "ROLL", rule: "roll.naked_put", reason: "tested" },
+      },
+      suggested: "wheel",
+      evidence: ["2 completed wheel cycles on KO"],
+      note: null,
+      key: "trades.KO-260101-1.intent",
+      scope: "trade",
+    });
+    expect(other!.intentAsk).toBeNull();
+  });
+
   it("passes the ledger through in the page's names, and null before it existed", () => {
     const doc = evalDoc("2026-11-04");
     const [account] = doc["accounts"] as Array<Record<string, unknown>>;
@@ -205,6 +240,39 @@ describe("readManage", () => {
     expect(a.expiring[0]).toMatchObject({ spot: null, distance: null, extrinsic: null, mid: 0.9 });
     fs.writeFileSync(path.join(tmp, "manage", "eval-2026-11-04.json"), JSON.stringify(evalDoc("2026-11-04")));
     expect(readManage(config).accounts[0]!.attention).toBeNull();
+  });
+
+  it("passes the trades still asked what they are for through, and none before it existed", () => {
+    const doc = evalDoc("2026-11-25");
+    const [account] = doc["accounts"] as Array<Record<string, unknown>>;
+    account!["attention"] = {
+      near_pct: 0.03,
+      expiring_days: 7,
+      items: [],
+      expiring: [],
+      intent: [
+        {
+          trade_id: "XYZ-261001-1", underlying: "XYZ", kind: "wheel", shape: "naked put", legs: ["-1 2026-11-20 50P"],
+          scope: "trade", suggested: "wheel", evidence: ["2 completed wheel cycles on XYZ"], note: null,
+        },
+        { trade_id: null, underlying: "ABC", kind: "pmcc", shape: "diagonal", legs: [], scope: "contract", suggested: null, evidence: [], note: null },
+        { trade_id: "BAD-1", underlying: "BAD", kind: "other", scope: "trade" }, // not a question manage asks
+        { trade_id: "BAD-2", underlying: "BAD", kind: "pmcc", scope: "name" }, // a pairing manage never writes
+        { trade_id: "BAD-3", underlying: "BAD", kind: "wheel", scope: "contract" },
+      ],
+    };
+    fs.writeFileSync(path.join(tmp, "manage", "eval-2026-11-25.json"), JSON.stringify(doc));
+    const got = readManage(config).accounts[0]!.attention!.intent!;
+    expect(got).toHaveLength(2);
+    expect(got[0]).toEqual({
+      tradeId: "XYZ-261001-1", underlying: "XYZ", kind: "wheel", shape: "naked put", legs: ["-1 2026-11-20 50P"],
+      scope: "trade", suggested: "wheel", evidence: ["2 completed wheel cycles on XYZ"], note: null,
+    });
+    expect(got[1]).toMatchObject({ tradeId: null, kind: "pmcc", scope: "contract", suggested: null });
+    // An evaluation written before it carries none.
+    delete (account!["attention"] as Record<string, unknown>)["intent"];
+    fs.writeFileSync(path.join(tmp, "manage", "eval-2026-11-25.json"), JSON.stringify(doc));
+    expect(readManage(config).accounts[0]!.attention!.intent).toEqual([]);
   });
 
   it("passes the cost-strike call through, and reads a status manage did not write as no quote", () => {
@@ -806,7 +874,9 @@ describe("readManage", () => {
           history: { cycles_complete: 2, assignments: 0 }, wheel_path: true,
           now: { action: "CLOSE", rule: "credit.breached", reason: "short strike in the money" },
           as_wheel: { action: "ROLL_OR_CLOSE", rule: "wheel.tested", reason: "roll, close or take the assignment" },
-          changes: true, key: "positions.XYZ.intent",
+          changes: true, suggested: "wheel", evidence: ["2 completed wheel cycles on XYZ"],
+          note: "the name's intent 'pmcc' is for another trade on XYZ, not this put",
+          key: "trades.XYZ-261001-1.intent",
         },
       ],
     };
@@ -818,8 +888,29 @@ describe("readManage", () => {
       history: { cyclesComplete: 2, assignments: 0 }, wheelPath: true,
       now: { action: "CLOSE", rule: "credit.breached", reason: "short strike in the money" },
       asWheel: { action: "ROLL_OR_CLOSE", rule: "wheel.tested", reason: "roll, close or take the assignment" },
-      changes: true, key: "positions.XYZ.intent",
+      changes: true, suggested: "wheel", evidence: ["2 completed wheel cycles on XYZ"],
+      note: "the name's intent 'pmcc' is for another trade on XYZ, not this put",
+      key: "trades.XYZ-261001-1.intent",
     });
+  });
+
+  it("a candidate from before the suggestion reads as none and no evidence, keyed to its name", () => {
+    const doc = evalDoc("2026-10-20");
+    const acct = (doc["accounts"] as Array<Record<string, unknown>>)[0]!;
+    acct["wheel"] = {
+      cycles: [], flagged: [], outside: {}, left_out: [], error: null,
+      intent_candidates: [
+        {
+          trade_id: "XYZ-261001-1", underlying: "XYZ", legs: ["-1 2026-11-20 50P"], contracts: 1, strikes: [50.0],
+          history: { cycles_complete: 0, assignments: 0 }, wheel_path: false,
+          now: { action: null, rule: null, reason: null }, as_wheel: { action: null, rule: null, reason: null },
+          changes: false, key: "positions.XYZ.intent",
+        },
+      ],
+    };
+    fs.writeFileSync(path.join(tmp, "manage", "eval-2026-10-20.json"), JSON.stringify(doc));
+    const [c] = readManage(config).accounts[0]!.wheel!.intentCandidates;
+    expect(c).toMatchObject({ suggested: null, evidence: [], note: null, key: "positions.XYZ.intent" });
   });
 
   it("an evaluation from before the list reads as none, never as missing", () => {

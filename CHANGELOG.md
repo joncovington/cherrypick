@@ -21,7 +21,8 @@ group them, and a nightly check of paper against the backtest. The ladder gained
 ships in dry run and off, and the Live page was reorganized around two summary cards. Calendars,
 contango and four automations were retired after research items 38, 39 and 75 failed them. manage leaves
 a far out-of-the-money time-spread short to expire, reads the cost-strike call and the dispersion of the
-book, and evaluates on Sunday evenings. This is an ordinary upgrade from v0.13.0 with one thing to
+book, and evaluates on Sunday evenings. A trade's intent (a put a wheel or not, a diagonal a PMCC or not)
+is now asked and answered per trade, on the position. This is an ordinary upgrade from v0.13.0 with one thing to
 decide: a live MEIC config that never named `live.dry_run` now sends no entries.
 
 ### Upgrading
@@ -68,6 +69,13 @@ decide: a live MEIC config that never named `live.dry_run` now sends no entries.
   apply when a key is absent: `expiry.time_spread_hold_max_delta` (0.10), `attention.cost_call`,
   `portfolio.dispersion`, and a Sunday run at `manage.sunday_at` (18:15 ET; `null` turns it off alone).
   Its verdicts for a calendar or diagonal near expiry can differ (below).
+- **A trade's intent is now per trade.** Nothing is required: until you answer a put or a diagonal that
+  manage asks about, it is judged by the stricter rules and says so. Answer on Live › positions (the card's
+  strip, or the opened trade's Intent tab); the answer is saved at `trades.<ID>.intent` in `manage.json`
+  (a config without a `trades` block gets one on the first answer) and read at the next evaluation. A name's
+  intent stays readable and is offered as the suggestion. `wheel.tested` has two optional keys,
+  `review_beyond_days` (60) and `review_min_extrinsic` (0.10). The supervisor restart above loads the new
+  `intent_set` operation; the console restart loads the pages.
 - **A developer checkout runs a pre-commit check.** `scripts/dev-install.ps1` or `.sh` now sets
   `git config core.hooksPath tools/hooks`, whose pre-commit hook runs `tools/check_personal.py
   --staged`: a commit that holds a home directory, a path mangled from one, or this machine's user
@@ -119,6 +127,24 @@ decide: a live MEIC config that never named `live.dry_run` now sends no entries.
 - **Leverage as times the account, and a dispersion line:** the delta band reads the same at any account
   size, and every name moved against its own position at once is a REVIEW over 10% of net liquidating value.
 - **A Sunday evaluation** (`manage-eval-sunday`, 18:15 ET) reads Monday's list the night before.
+- **A trade's intent is per trade, and it is asked on the position.** A naked short put is a wheel or not; a
+  call diagonal the PMCC view cannot decide is a PMCC or just a diagonal. manage detects the shape from the
+  legs and asks only where the legs cannot say, with a suggestion and why (the name's completed wheel cycles,
+  the entry delta), never applied without your answer. Until you answer, the trade is judged by the
+  stricter rules and its reason line says "no intent set"; each unanswered trade is one needs-a-look item.
+  A name's `pmcc` no longer shows as the intent of a put or hides it from the question.
+  **A wheel put keeps no stop and no breached close, so an answer is not assumed.** Measurement boundary,
+  2026-11-25.
+- **A tested wheel put with time left is a review, not a roll or a close. Measurement boundary, 2026-11-25.**
+  `wheel.tested` on a short put you wheel that is at or through its strike, has more than 60 days left
+  (`wheel.tested.review_beyond_days`, the horizon the snapshot reads roll-out chains inside) and at least
+  0.10 a share of extrinsic value (`review_min_extrinsic`, a broker's rule of thumb for when early exercise
+  becomes likely: practice, untested) now says REVIEW. There is no roll to price that far out and assignment
+  is unlikely while time value remains. Its reason line gives how far through the strike it is, its extrinsic
+  value and days, what holding to expiry at today's price makes on the trade's net credits, and the
+  assignment against the wheel breakeven, each figure named for its basis. Inside 60 days, or under the
+  floor, it is the roll, close or assignment it was, so a deep put is never left unwatched;
+  `risk.oversize` still fires on its own. Nothing to do.
 
 **Automations and the Builder**
 
@@ -137,6 +163,12 @@ decide: a live MEIC config that never named `live.dry_run` now sends no entries.
 
 **Console**
 
+- **Answer a trade's intent where the trade is.** An undecided put or call diagonal carries an amber
+  question on its card (one tap, with Undo), and a collapsed row in the table view carries an `intent?`
+  marker; the opened trade's **Intent** tab shows both verdicts side by side to change an answer later;
+  the PMCC card has the same choice on its intent row, and the pmcc page lists what still needs an answer.
+  Config › Intents is now an audit list: names stay editable there, trades link to their position and can be
+  cleared. One new write, narrow (below); the console still places no order.
 - **The scorecard on Compare,** one row per arm and automation with its research verdict, its forward
   check and the first thing worth a look; a **changes** tab where a modification is decided; and
   backtest arms and the risk held at once on the portfolio tab.
@@ -175,6 +207,8 @@ decide: a live MEIC config that never named `live.dry_run` now sends no entries.
 | Calendars, contango, automations | 2026-11-21 | Calendars and contango retired (items 38 and 39); `iron-fly-1000`, `iron-fly-1dte-1330`, `gld-call-spread-20d` and `orb-put-spread` switched off (item 75). |
 | manage | 2026-11-21 | The cost-strike call reading (`attention.cost_call`) joins the needs-a-look list. A reading; nothing is placed or posted for it. |
 | manage | 2026-11-22 | `portfolio.dispersion` can raise a REVIEW (over 10% of net liquidating value on a two-sigma one-day move of every name against its position; graded ours), and beta-weighted delta is stated in times the account. A Sunday evaluation runs on Friday's quotes. |
+| manage | 2026-11-25 | A tested wheel put (at or through its strike) with more than 60 days left and at least 0.10 a share of extrinsic value is a REVIEW, not a roll, close or assignment (`wheel.tested.review_beyond_days`, `review_min_extrinsic`; the 0.10 is a broker's rule of thumb, practice, untested). Wheel-put verdicts from this date are not comparable with earlier ones. |
+| manage | 2026-11-25 | A trade's intent is per trade. A name's `pmcc` no longer marks or hides a naked put (it is asked, and judged by the stricter rules until answered), and an answered wheel put takes the wheel rules (no stop, no breached close). Nothing changes for a trade until you answer it; from your answer its verdicts are not comparable with before. |
 | manage | 2026-11-24 | A calendar's or diagonal's expiring short at or under 0.10 delta, with a long of the same right outliving it at or beyond its strike, is left to expire, not closed at three days, bought back at 80% captured or rolled. The 0.10 delta is ours; broker guides say only "well out of the money". |
 | MEIC live | 2026-11-24 | `live.dry_run` ships true: an armed tick sends no entry. Live results from here on come only after it is set false. |
 | MEIC | 2026-11-24 | The paper twins and the live-shadow retirement: a machine that runs `scripts/boundary_2026_11_24.py --apply` journals `arm_added` for each twin and `arm_retired` for `live-shadow`; from then the paper-live gap follows the arm live ran. Nothing changes until it runs. |
@@ -209,8 +243,25 @@ decide: a live MEIC config that never named `live.dry_run` now sends no entries.
   `portfolio.dispersion`, `manage.sunday_at`, `manage.cost_call`.
 - The README cites what a literature pass found for each portfolio band and names the research items that
   test them (108, 109).
+- A trade carries one `intent_ask` block (the intents its shape allows, whether it is asked, manage's
+  suggestion with its evidence, the verdict each answer would give, and the config key an answer is
+  written at). The kind is decided from the legs: a naked short put asks wheel or not, a call diagonal the
+  PMCC view cannot decide (entry delta under the floor or unknown, nothing set on the long's contract)
+  asks PMCC or diagonal. A name's `pmcc` or `diagonal` no longer sets or hides the intent of a trade that is
+  not a call diagonal, and `wheel` and `no_wheel` apply only to a naked short put. An unanswered trade is
+  judged by the stricter rules and its reason line says so; it raises one needs-a-look item
+  (`attention.intent`). `wheel.tested` gained `review_beyond_days` (60) and `review_min_extrinsic` (0.10), and
+  `trades` is a top-level block of `manage.json` (in the shipped example).
 
 **Console.**
+
+- The intent surfaces: the strip on a position (card or table row), the Intent tab in an opened trade, the
+  PMCC card's intent row and the pmcc needs-a-look section all write through one narrow route,
+  `POST /api/config/intent`, to the orchestrator's `intent_set` operation: `trades.<key>.intent` in
+  `manage.json` and no other byte, through the config editor with its backup, the key checked by shape
+  (a stable trade ID, or a call's long contract), the replaced value returned for Undo. It is advice
+  config: it places no order and touches no live gate. Every control on these surfaces is 44px on a tablet
+  or phone, and the strip's answers stack whenever the strip is narrow.
 
 - The scorecard (`run.py scorecard`) joins the research verdict, forward check, change against control,
   sample, net and drawdown; a forward state against a licensed reference is withheld while the results

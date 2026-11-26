@@ -20,7 +20,7 @@ def test_a_tested_put_with_no_intent_is_listed_with_both_verdicts():
     assert abs(c["net_if_assigned"] - 49.0) < 0.05  # the 50 strike less the 1.00 kept
     assert c["now"]["action"] == ev.CLOSE and c["now"]["rule"] in ("credit.stop", "credit.breached")
     assert c["as_wheel"]["rule"] in ("wheel.tested", "roll.naked_put") and c["changes"] is True
-    assert c["wheel_path"] is True and c["key"] == "positions.XYZ.intent"
+    assert c["wheel_path"] is True and c["key"] == "trades.XYZ-261001-1.intent"
 
 
 def test_the_listed_trade_itself_is_judged_without_the_intent():

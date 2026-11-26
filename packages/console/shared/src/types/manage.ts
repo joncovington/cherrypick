@@ -96,6 +96,8 @@ export interface ManageTrade {
   /** The trade's shape, named by packages/manage (super bear, jade lizard, diagonal, ...). */
   shape: string | null;
   intent: string | null;
+  /** The question this trade is asked about its intent, or null where it has none. */
+  intentAsk: ManageIntentAsk | null;
   note: string | null;
   cost: number | null;
   value: number | null;
@@ -544,6 +546,28 @@ export interface ManageWheel {
   error: string | null;
 }
 
+/**
+ * What a trade is asked about its intent (manage's `intent_ask`), everything a surface needs to put the
+ * question and write the answer: the options, the verdict under each (a put only), manage's suggestion
+ * and why, and where an answer is written. `scope` says how: "trade" and "contract" are answered on the
+ * position (the console's one narrow write); "name" is a put whose ID is still provisional, answered on
+ * its name in Config. The console works out none of it.
+ */
+export interface ManageIntentAsk {
+  kind: "wheel" | "pmcc";
+  /** No operator intent applies yet. */
+  asked: boolean;
+  current: string | null;
+  options: string[];
+  verdicts: Record<string, ManageVerdictBrief>;
+  suggested: string | null;
+  evidence: string[];
+  note: string | null;
+  /** The config key an answer is written at, e.g. "trades.XYZ-261001-1.intent". */
+  key: string;
+  scope: "trade" | "name" | "contract";
+}
+
 /** A verdict as manage stated it. */
 export interface ManageVerdictBrief {
   action: string | null;
@@ -552,9 +576,9 @@ export interface ManageVerdictBrief {
 }
 
 /**
- * One "is this a wheel?" row: a trade of short puts alone on a name with no intent. `asWheel` is the
- * same trade judged again with `positions.<SYM>.intent: "wheel"`, so the console shows both verdicts
- * and works out neither.
+ * One "is this a wheel?" row: a trade of short puts alone that carries no intent (its own, or a name's
+ * that describes it). `asWheel` is the same trade judged again as a wheel, so the console shows both
+ * verdicts and works out neither.
  */
 export interface ManageIntentCandidate {
   tradeId: string | null;
@@ -575,7 +599,15 @@ export interface ManageIntentCandidate {
   now: ManageVerdictBrief;
   asWheel: ManageVerdictBrief;
   changes: boolean;
-  /** The config key a choice sets, e.g. "positions.XYZ.intent". */
+  /** "wheel" when a wheel cycle on the name reconciles to the account: manage's suggestion, never
+   * applied. Null when it has none, and on an evaluation written before the field. */
+  suggested: string | null;
+  /** Why manage suggests it: the name's wheel cycles. Empty when it suggests nothing. */
+  evidence: string[];
+  /** Set when the name's own intent is for another trade on the name (so this put is asked about). */
+  note: string | null;
+  /** The config key a choice sets: the trade's own ("trades.XYZ-261001-1.intent"), or the name's
+   * ("positions.XYZ.intent") while the trade's ID is still provisional, and on an older evaluation. */
   key: string;
 }
 
@@ -1179,6 +1211,23 @@ export interface ManageCostCall {
   takenAt: string | null;
 }
 
+/**
+ * A trade manage still asks what it is for (`attention.intent`, one per open `intent_ask`): which trade,
+ * its legs, what it is asked and where an answer is written, with manage's suggestion and why. The console
+ * lists it and links to the position that answers it; it judges and applies nothing.
+ */
+export interface ManageAttentionIntent {
+  tradeId: string | null;
+  underlying: string;
+  kind: "wheel" | "pmcc";
+  shape: string | null;
+  legs: string[];
+  scope: "trade" | "name" | "contract";
+  suggested: string | null;
+  evidence: string[];
+  note: string | null;
+}
+
 export interface ManageAttention {
   nearPct: number | null;
   expiringDays: number | null;
@@ -1186,6 +1235,8 @@ export interface ManageAttention {
   expiring: ManageAttentionLeg[];
   /** The cost-strike call per wheel cycle holding shares with no call written; absent before it. */
   costCall?: ManageCostCall | null;
+  /** The trades still asked what they are for; absent before it. */
+  intent?: ManageAttentionIntent[];
 }
 
 /** The ledger's windows, counted back from the session by the closing day. */

@@ -78,7 +78,7 @@ def _op_save(cfg: dict[str, Any], req: dict[str, Any]) -> dict[str, Any]:
     text = path.read_text(encoding="utf-8")
     for edit in edits:
         try:
-            text = configedit.splice_value(text, edit["pointer"], edit.get("value"))
+            text = configedit.splice_or_add(cfg, target, text, edit["pointer"], edit.get("value"))
         except (KeyError, ValueError) as exc:
             return _err(str(exc), "not_found", pointer=edit["pointer"])
 
@@ -152,6 +152,12 @@ def handle(req: dict[str, Any]) -> dict[str, Any]:
         from . import retireedit
 
         return retireedit.save(cfg, req, retireedit.run_module_check)
+    if op == "intent_set":
+        # A trade's intent, answered on the position: `trades.<trade ID or long contract>.intent` in
+        # manage.json, that one value and nothing else, through the raw-save path.
+        from . import intentedit
+
+        return intentedit.save(cfg, req)
     if op == "automation_reference":
         # The Builder's pin of one Builder run as an automation's backtest reference: the module's check,
         # the backtest package's word that the run exists, then the `references` block it returned.

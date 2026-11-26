@@ -6986,6 +6986,68 @@ select.text-input {
   align-items: start;
 }
 
+.pos-card-wrap {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.int-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  padding: 10px 14px;
+  border: 1px dashed var(--warn);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--warn) 8%, var(--surface));
+  font-size: 13px;
+  container-type: inline-size;
+}
+.int-strip-q {
+  font-weight: 600;
+}
+.int-strip-opts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.int-strip-opt {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+}
+.int-strip-verdict {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.int-strip-why {
+  flex-basis: 100%;
+}
+.int-strip-err {
+  flex-basis: 100%;
+  color: var(--neg);
+}
+.int-tab {
+  display: grid;
+  gap: 10px;
+}
+.int-tab-q {
+  margin: 0;
+  font-weight: 600;
+}
+.int-col.is-held {
+  border-color: var(--accent);
+}
+
+.int-strip.is-saved {
+  justify-content: space-between;
+  border-style: solid;
+  border-color: var(--border);
+  background: var(--surface);
+}
+
 .pos-card {
   display: flex;
   flex-direction: column;
@@ -9944,7 +10006,7 @@ button.chip[aria-pressed][data-hue="special"],
   border-top: 1px solid var(--border);
   background: color-mix(in srgb, var(--surface-sunken) 55%, var(--surface));
 }
-.tr-open > .pos-card {
+.tr-open > .pos-card-wrap {
   max-width: 560px;
 }
 @media (prefers-reduced-motion: reduce) {
@@ -10265,9 +10327,12 @@ button.chip[aria-pressed][data-hue="special"],
   flex: none;
 }
 
-/* Live → wheel's "is this a wheel?" (2026-11-12): a dashed amber chip on a short put with no intent,
-   opening today's verdict beside the wheel's. Amber is the suite's provisional colour: undecided. */
+/* Live → wheel: a dashed amber chip on a short put with no intent, linking to where it is answered.
+   Amber is the suite's provisional colour: undecided. */
 .int-chip {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
   justify-self: start;
   font: inherit;
   font-size: 11.5px;
@@ -10280,6 +10345,9 @@ button.chip[aria-pressed][data-hue="special"],
   min-height: 28px;
   cursor: pointer;
   white-space: nowrap;
+}
+.int-chip.is-static {
+  cursor: default;
 }
 .int-chip:focus-visible {
   outline: 2px solid var(--accent);
@@ -10299,9 +10367,6 @@ button.chip[aria-pressed][data-hue="special"],
   border-radius: 8px;
   background: var(--surface);
 }
-.int-col.is-wheel {
-  border-color: var(--pf-income);
-}
 .int-col .btn {
   margin-top: 4px;
   min-height: 36px;
@@ -10309,25 +10374,85 @@ button.chip[aria-pressed][data-hue="special"],
 .int-verdict {
   font-size: 12.5px;
 }
-.int-note {
-  grid-column: 1 / -1;
-  margin: 0;
-}
-.int-chosen {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-.int-chip-wheel {
-  color: var(--pf-income);
-  border-color: var(--pf-income);
-}
 .int-undo {
   padding: 2px 8px;
   min-height: 0;
   font-size: 11.5px;
 }
+/* The intent surfaces. At every width the verdict under an answer reads as an outcome (the arrow is
+   decoration, empty to a screen reader), the Intent tab's answers sit side by side with their buttons lined
+   up whatever the verdict above says, and a row's chip drops under a long leg label. */
+.int-strip-verdict::before {
+  content: "→ ";
+  content: "→ " / "";
+}
+.int-tab .int-col {
+  display: flex;
+  flex-direction: column;
+}
+.int-tab .int-col > .btn {
+  margin-top: auto;
+}
+.int-card-waiting .lk-li-top {
+  flex-wrap: wrap;
+  gap: 6px 10px;
+}
+/* On a tablet or a phone (and under any coarse pointer) every control a finger meets is 44px. */
+@media (max-width: 820px), (pointer: coarse) {
+  .int-strip-opt,
+  .int-col .btn,
+  .int-tab .btn,
+  .pmcc-intent .btn,
+  .int-strip .btn,
+  .int-chip:not(.is-static),
+  .cfg-intents .btn,
+  .cfg-intents input,
+  .cfg-intents select {
+    min-height: 44px;
+  }
+  /* A link inside a sentence keeps its line; its hit area reaches 44px above and below it, never sideways
+     over a neighbouring control. */
+  .int-strip a.lk-sub,
+  .int-tab a.lk-sub,
+  .pmcc-intent a.lk-sub,
+  .cfg-intents a.lk-sub {
+    position: relative;
+  }
+  .int-strip a.lk-sub::after,
+  .int-tab a.lk-sub::after,
+  .pmcc-intent a.lk-sub::after,
+  .cfg-intents a.lk-sub::after {
+    content: "";
+    position: absolute;
+    inset: -15px 0;
+  }
+}
+/* The answers stack at full width whenever the strip is narrow, whatever the page: a desktop card in a
+   four-column grid is as narrow as a phone, and two long answers would wrap into ragged boxes there. */
+@container (max-width: 520px) {
+  .int-strip-opts {
+    flex-direction: column;
+    width: 100%;
+  }
+  .int-strip-opt {
+    width: 100%;
+    justify-content: flex-start;
+  }
+}
+@media (max-width: 560px) {
+  .int-strip-opts {
+    flex-direction: column;
+    width: 100%;
+  }
+  .int-strip-opt {
+    width: 100%;
+    justify-content: flex-start;
+  }
+  .pmcc-intent .int-strip-opts {
+    align-items: stretch;
+  }
+}
+
 .card.int-card-waiting {
   border-color: var(--warn);
 }

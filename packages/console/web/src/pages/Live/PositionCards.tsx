@@ -1,5 +1,5 @@
 import { evidenceText } from "../../components/EvidenceTag";
-import { useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ViewSwitch, useViewChoice } from "../../components/ViewSwitch";
 import { FilterSortButton, FilterSortPanel, FilterSummary, SortSection, sortRows, type SortChoice, type SortOption } from "../../components/FilterSort";
 import { useSearchParams } from "react-router-dom";
@@ -9,6 +9,9 @@ import { fmtCash, fmtMoney } from "../../lib/format";
 import { CardLightbox, LightboxFrame, useOpenParam, type LightboxTab } from "../Backtest/CardLightbox";
 import { ACTION_LABEL, ActionChip, Kv, Money, tone } from "./manageParts";
 import { useLiveMarks } from "./LiveMarks";
+import { IntentStrip, RowIntentChip } from "./IntentStrip";
+import { IntentTab } from "./IntentTab";
+import { pruneIntentAnswers } from "./intentAnswers";
 import { useQuote } from "../../lib/useQuote";
 import { liveTrade } from "./liveLegs";
 import { shapeOrder } from "../../lib/legShape";
@@ -31,7 +34,10 @@ import { chipState, formatChange, formatPct, formatPrice } from "../../component
 
 export type PnlOrder = "desc" | "asc";
 type Filter = "all" | "act" | "rolled" | "spreads";
-type Tab = "chain" | "evaluation";
+type Tab = "chain" | "evaluation" | "intent";
+
+/** The tab a trade opens on: only the Intent tab is asked for by name (`?tab=intent`, as the wheel tab's links do). */
+export const initialTradeTab = (raw: string | null): Tab => (raw === "intent" ? "intent" : "chain");
 
 const PASSIVE = new Set(["HOLD", "SETTLES"]);
 
@@ -356,6 +362,18 @@ export function PositionCard({ t: evaluated, onOpen, inSession = true }: { t: Ma
   );
 }
 
+/** A position's card with the question it is asked about its intent beside it (a sibling, as the card
+ * is itself one button). Nothing shows under a card that has no open question. */
+// The wrapper is always there, so a card keeps its place in the tree (and its state) when a question opens or closes.
+export function PositionItem({ t, inSession = true, onOpen }: { t: ManageTrade; inSession?: boolean; onOpen: () => void }) {
+  return (
+    <div className="pos-card-wrap">
+      <PositionCard t={t} inSession={inSession} onOpen={onOpen} />
+      <IntentStrip t={t} />
+    </div>
+  );
+}
+
 function ChainTab({ t: evaluated }: { t: ManageTrade }) {
   // The same live marks as the card: the rows below still add up (close at mid less the cost is the
   // gross, less the fees the net), all live or all the evaluation's.
@@ -405,22 +423,29 @@ function TradeDialog({
   trades,
   index,
   detail,
+  initialTab,
   onStep,
   onClose,
 }: {
   trades: ManageTrade[];
   index: number;
   detail: (t: ManageTrade) => ReactNode;
+  /** The tab it opens on: `?tab=intent` in the URL, as the wheel tab's links ask. */
+  initialTab: Tab;
   onStep: (to: number) => void;
   onClose: () => void;
 }) {
-  const [tab, setTab] = useState<Tab>("chain");
+  const [tab, setTab] = useState<Tab>(initialTab);
   const t = trades[index];
   if (t === undefined) return null;
   const tabs: LightboxTab<Tab>[] = [
     { id: "chain", label: "order chain", badge: rolls(t) > 0 ? `${rolls(t)} roll${rolls(t) === 1 ? "" : "s"}` : null },
     { id: "evaluation", label: "evaluation" },
+    // Only a naked short put and a call diagonal are asked; any other trade has no intent to give.
+    ...(t.intentAsk ? [{ id: "intent" as const, label: "intent", badge: t.intentAsk.asked ? "?" : null }] : []),
   ];
+  // Stepping to a trade with no question leaves the Intent tab behind.
+  const shown: Tab = tab === "intent" && !t.intentAsk ? "chain" : tab;
   return (
     <CardLightbox count={trades.length} index={index} onStep={onStep} onClose={onClose}>
       {(nav) => (
@@ -435,14 +460,14 @@ function TradeDialog({
             </>
           }
           tabs={tabs}
-          tab={tab}
+          tab={shown}
           onTab={setTab}
           position={nav.position}
           onPrev={nav.prev}
           onNext={nav.next}
           onClose={onClose}
         >
-          {tab === "chain" ? <ChainTab t={t} /> : detail(t)}
+          {shown === "chain" ? <ChainTab t={t} /> : shown === "intent" ? <IntentTab t={t} /> : detail(t)}
         </LightboxFrame>
       )}
     </CardLightbox>
@@ -451,7 +476,7 @@ function TradeDialog({
 
 /** One line a trade (2026-11-06): ID, shape, net P&L, capture as its bar, days to the nearest short,
  *  manage's action. A row opens the trade's card in place; the card opens the lightbox as it always has. */
-function PositionRows({ trades, inSession, onOpen }: { trades: ManageTrade[]; inSession: boolean; onOpen: (id: string) => void }) {
+export function PositionRows({ trades, inSession, onOpen }: { trades: ManageTrade[]; inSession: boolean; onOpen: (id: string) => void }) {
   const [open, setOpen] = useState<Set<string>>(new Set());
   const toggle = (k: string) => {
     const next = new Set(open);
@@ -480,12 +505,13 @@ function PositionRows({ trades, inSession, onOpen }: { trades: ManageTrade[]; in
               </span>
               <span className="tr-after">{dteText(t) ?? "—"}</span>
               <span className="tr-chips">
+                <RowIntentChip t={t} />
                 <ActionChip action={t.action} />
               </span>
             </button>
             {open.has(t.tradeId) ? (
               <div className="tr-open">
-                <PositionCard t={t} inSession={inSession} onOpen={() => onOpen(t.tradeId)} />
+                <PositionItem t={t} inSession={inSession} onOpen={() => onOpen(t.tradeId)} />
               </div>
             ) : null}
           </div>
@@ -524,6 +550,8 @@ export function PositionCards({
 }) {
   const [params, setParams] = useSearchParams();
   const lightbox = useOpenParam("trade");
+  // An answer manage has since read is dropped, so it cannot come back if the question reopens.
+  useEffect(() => pruneIntentAnswers(trades), [trades]);
   // The sort is in the URL (`?sort=<id>&rev=1`), so a link keeps it; an older link's `pnl=asc` is P&L reversed.
   const legacyAsc = params.get("pnl") === "asc";
   const sortId = POSITION_SORTS.some((s) => s.id === params.get("sort")) ? params.get("sort")! : "pnl";
@@ -559,6 +587,14 @@ export function PositionCards({
   };
   const reset = () => setSort({ id: "pnl", reversed: false });
   const index = stepTrades.findIndex((t) => t.tradeId === lightbox.open);
+  // A link that asked for a tab (`?tab=intent`) is read once, as the dialog opens on it, and leaves the URL, so
+  // the tab the person then picks is not reset and the next card opens on its own first tab.
+  useEffect(() => {
+    if (index < 0 || !params.has("tab")) return;
+    const next = new URLSearchParams(params);
+    next.delete("tab");
+    setParams(next, { replace: true });
+  }, [index, params, setParams]);
   const chip = (on: boolean) => (on ? "chip chip-ok" : "chip");
   if (loading && trades.length === 0) return <p className="muted">Loading the evaluation…</p>;
   if (trades.length === 0) return <p className="muted">No trades in this account.</p>;
@@ -600,12 +636,19 @@ export function PositionCards({
       ) : (
         <div className="pos-cards">
           {shown.map((t) => (
-            <PositionCard key={t.tradeId} t={t} inSession={inSession} onOpen={() => lightbox.show(t.tradeId)} />
+            <PositionItem key={t.tradeId} t={t} inSession={inSession} onOpen={() => lightbox.show(t.tradeId)} />
           ))}
         </div>
       )}
       {index >= 0 ? (
-        <TradeDialog trades={stepTrades} index={index} detail={detail} onStep={(to) => lightbox.step(stepTrades[to]?.tradeId ?? "")} onClose={lightbox.close} />
+        <TradeDialog
+          trades={stepTrades}
+          index={index}
+          detail={detail}
+          initialTab={initialTradeTab(params.get("tab"))}
+          onStep={(to) => lightbox.step(stepTrades[to]?.tradeId ?? "")}
+          onClose={lightbox.close}
+        />
       ) : null}
     </section>
   );

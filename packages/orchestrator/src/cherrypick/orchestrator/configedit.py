@@ -285,6 +285,27 @@ def insert_key(text: str, pointer: str, key: str, value: Any) -> str:
     return text[: last + 1] + "," + sep + encoded + text[last + 1 :]
 
 
+def splice_or_add(cfg: dict[str, Any], target_id: str, text: str, pointer: str, value: Any) -> str:
+    """`splice_value`, except that a pointer naming one top-level key the target's shipped example has and
+    this copy lacks (a block added since the copy was written, such as manage's `trades`) is added as the
+    object's last entry, nothing else moving. Any other absent pointer raises KeyError as `splice_value`
+    does: a key the example does not have (config the module never reads), or one inside an absent block."""
+    try:
+        return splice_value(text, pointer, value)
+    except KeyError:
+        tokens = _pointer_tokens(pointer)
+        example = _example_path(cfg, target_id)
+        if len(tokens) != 1 or example is None or not example.exists():
+            raise
+        try:
+            keys = {e["key"] for e in top_level_entries(example.read_text(encoding="utf-8"))}
+        except (OSError, ValueError):
+            raise KeyError(f"pointer not found: {pointer}") from None
+        if tokens[0] not in keys:
+            raise
+        return insert_key(text, "", tokens[0], value)
+
+
 def top_level_entries(text: str) -> list[dict[str, Any]]:
     """The top-level object's entries in file order: [{key, key_text, value_text}]. Spans come from the
     original text, so a value's own formatting (multi-line objects, spacing) survives re-emission."""

@@ -151,6 +151,41 @@ alone):
     changing. This package writes no config, arms nothing and never judges flat itself;
     `server/test/config-live-arm.test.ts` and `web/test/configLiveArm.test.tsx` pin it (each guard was shown
     to fail). The ladder tabs stay read-only; the Live page's one write is the arm switch described above.
+  - **A trade's intent is answered on the position, through its own narrow route** (`POST
+    /api/config/intent`, configcli `intent_set`, `orchestrator.intentedit`), not the general save. The
+    route sends a trade key and an intent (`wheel`, `no_wheel`, `pmcc`, `diagonal`, or null to clear) and
+    nothing the body adds, checked by shape here (`INTENT_TRADE`: a stable trade ID, or a call's long
+    contract; a provisional ID, a put contract and anything path-like are refused before the bridge). The
+    orchestrator holds the rules: a trade ID takes `wheel` or `no_wheel` and a long contract `pmcc` or
+    `diagonal`, the write is `trades.<key>.intent` and no other byte of the file, a contract held under
+    another spelling is reused, and the reply carries the value it replaced so the page can Undo. Advice
+    only: manage reads it on its next evaluation. It touches no order, no live gate and not the halt flag.
+    `server/test/intent-set.test.ts` and the orchestrator's `tests/test_intentedit.py` pin it (each guard
+    was shown to fail). Live › positions puts the question on the card (`IntentStrip`, beside the card, never
+    inside its button) while manage's `intent_ask` is open: its options, the verdict under each, its
+    suggestion and why, all manage's. A tap saves, the strip says the answer is read at the next
+    evaluation, and Undo writes back the replaced value (none for a free label the route would refuse). A
+    put whose ID is still provisional, answered on its name, gets no write there and points to Config.
+    The opened trade's Intent tab (`IntentTab`) is the same question with each answer beside the verdict it
+    would get, the answer held now (a held answer is not offered again) and the config key it is written
+    to. It shares the strip's saved state (`intentAnswers`, keyed by the trade and the ask as manage last
+    read it), so an answer given in one shows in the other and a stale one drops once manage re-evaluates.
+    A trade manage does not ask has no such tab. `web/test/intentStrip.test.tsx` and
+    `web/test/intentTab.test.tsx` pin them. Nothing else stages a trade's intent: the wheel tab's chip and
+    its "no intent yet" card only link to the position (`?trade=<ID>&tab=intent&acct=<account>` opens its
+    Intent tab, read once and then dropped from the URL), and Config › Intents lists the trades with a link
+    and a clear (the narrow save with null, which is how an entry a closed trade left is removed); a name's
+    intent is still edited there, staged and saved as the whole `positions` object. A put with no stable ID
+    whose name's intent is for another trade is linked nowhere: an answer on the name would replace that
+    intent. `web/test/wheelIntents.test.tsx` pins it. Every control on the intent surfaces is 44px on a
+    tablet or phone (`max-width: 820px` or a coarse pointer): a link inside a sentence keeps its line and
+    gets the hit area from an `::after`, the answers stack at full width whenever the strip is under 520px
+    wide (a container query, so a desktop card in a four-column grid stacks them too) or the page under
+    560px, an unanswered strip is drawn in the warning amber and an answered one neutral, and the Intent
+    tab's buttons line up whatever the verdict above them says. The table view's collapsed row carries an
+    `intent?` marker while its trade has a question (`RowIntentChip`), since the strip lives in the opened
+    row. It is one block in `styles.css`, and
+    `web/test/intentTouchTargets.test.ts` pins what it covers: a new control on these surfaces belongs in it.
   - **The Builder's save is the same path for one automation** (`/api/automations/builder/draft` and
     `/save`, configcli `automation_draft` / `automation_save`). The route sends a name and an
     automation and nothing else; the orchestrator runs the module's own check and writes the entry it

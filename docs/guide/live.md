@@ -95,6 +95,18 @@ same action, a fixed order decides: safety, sizing, stops, targets, time, then r
 include P&L, days to the nearest short and needs action first. A `ruleset` button opens the settings
 the evaluation used.
 
+Where a trade's legs cannot say what it is for, its card has a question under it: a naked short put
+is asked "Is this put a wheel?" and a call diagonal "Is this diagonal a PMCC?". Each answer shows the
+verdict the trade would get under it, and a suggestion is marked when the evaluation has evidence for
+one (a wheel cycle on the name). One tap saves the answer for that trade alone; it is read at the next
+evaluation, so the card does not change until then, and `Undo` puts the old value back. A put that has
+no order chain yet has no stable ID to answer for, so its question points to Config.
+
+A naked short put or a call diagonal has an `intent` tab when its card is opened (marked `?` while the question is open): the same question with each answer
+beside the verdict the trade would get under it, the answer held now, and the config key it is written
+to. An answer given there shows on the card, and a trade can be changed from it later as well as asked
+the first time.
+
 ### portfolio
 
 ![Live portfolio: the account tiles, portfolio guidance, and the income dial](../images/live-portfolio.png)
@@ -131,7 +143,7 @@ re-check them before you trade; nothing here places an order.
 
 Each wheel cycle on the account (puts sold, shares assigned, calls sold against them). The questions
 are what needs a look (shorts near their strike, anything expiring within 7 days, the call at the cost strike where assigned shares have none written, and any short put
-whose name has no intent yet), how much the
+whose name has no intent yet, each a link to the trade's `intent` tab on positions where it is answered), how much the
 wheel has made (a ledger of puts, calls, shares and dividends), how each cycle stands (a card per name
 with its net, breakeven, days, shares and the short it holds now) and what a trade would do. In the
 demo the ledger reads `$0.00` because no cycle has closed; the three cards below show the open ones.
@@ -150,7 +162,10 @@ call was bought deep enough (the entry delta in your ruleset, 0.70 by default); 
 is not known yet is listed as `PMCC? not yet decided` until it is. A call calendar or diagonal that is
 not a PMCC is judged as a time spread, not by the PMCC rules, so it is not drawn here: a line names it
 and opens the positions tab's `time spreads` filter. The two icons switch the PMCCs between cards and
-rows.
+rows. Above them, a `needs a look` section lists each call diagonal still asked whether it is a PMCC,
+with the evaluation's suggestion and a link to the trade's `intent` tab on positions, where it is
+answered. A PMCC's own card has the same choice in its `recognised` tab, on the `intent` row, while the
+evaluation still asks; once answered the row says what is set and links to change it.
 
 ### meic and flies
 

@@ -88,6 +88,11 @@ export const IDEA_ID = /^[A-Za-z_:-]+:(bin|below|above):\d(&[A-Za-z_:-]+:(bin|be
 /** A settings grid's result name, and one setting's id in it (`axis=value`, `width=x1.5`, `axis=off`). */
 export const GRID = /^grid-[a-z0-9][a-z0-9-]{1,47}-\d{10}$/;
 export const SETTING_ID = /^[a-z_]+=(off|x?\d+(\.\d+)?)$/;
+/** A trade a person may answer for, as the orchestrator's `intentedit` takes one: a stable trade ID
+ *  (`XYZ-261001-1`) or a call's long contract (`XYZ 280121C00040000`). Checked by shape here, judged there. */
+export const INTENT_TRADE = /^[A-Z][A-Z0-9]{0,9}(?:[./][A-Z0-9]{1,3})?(?:-\d{6}-\d{1,4}| *\d{6}C\d{8})$/;
+/** The intents an answer may carry; which of them a given trade takes is the orchestrator's to say. */
+const ANSWERS = ["wheel", "no_wheel", "pmcc", "diagonal"];
 
 export function registerConfigRoutes(app: FastifyInstance, config: ConsoleConfig): void {
   /**
@@ -557,6 +562,43 @@ export function registerConfigRoutes(app: FastifyInstance, config: ConsoleConfig
     invalidateAutomationsBuilder();
     app.log.info(`automation ${retired ? "retired" : "reinstated"} from the console: ${name}`);
     return { ok: true, name, retired: result["retired"] ?? retired, notes: result["notes"] ?? [], backup: result["backup"] ?? null };
+  });
+
+  /**
+   * A trade's intent, answered on the position, through the orchestrator's editor like every config write
+   * here (configcli `intent_set`, `orchestrator.intentedit`): `trades.<trade ID or long contract>.intent` in
+   * manage.json, that one value and nothing else, with the value it replaced so the page can undo. The route
+   * sends a trade key and an intent (or null to clear) and nothing the body adds; which intents a trade takes,
+   * the file's notes and every other entry are the editor's. Advice only: manage reads it on its next
+   * evaluation. Not the general save, which the page's Config sections use.
+   */
+  app.post("/api/config/intent", async (req, reply) => {
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const trade = body["trade"];
+    const intent = body["intent"];
+    const expected = body["expectedMtime"] ?? undefined;
+    if (typeof trade !== "string" || trade.length > 40 || !INTENT_TRADE.test(trade)) {
+      return reply.code(400).send({ error: "trade: a stable trade ID or a call's long contract" });
+    }
+    if (intent !== null && (typeof intent !== "string" || !ANSWERS.includes(intent))) {
+      return reply.code(400).send({ error: `intent: ${ANSWERS.join(", ")}, or null to clear` });
+    }
+    if (expected !== undefined && (typeof expected !== "number" || !Number.isFinite(expected))) {
+      return reply.code(400).send({ error: "expectedMtime: a number" });
+    }
+    const result = await callConfigCli({ op: "intent_set", trade, intent, ...(expected === undefined ? {} : { expected_mtime: expected }) });
+    const done = sendBridgeFailure(reply, result);
+    if (!done) return reply;
+    app.log.info(`intent ${intent === null ? "cleared" : `set to ${intent}`} from the console: ${trade}`);
+    return {
+      ok: true,
+      changed: done["changed"] ?? true,
+      trade: done["trade"] ?? trade,
+      intent: done["intent"] ?? intent,
+      previous: done["previous"] ?? null,
+      backup: done["backup"] ?? null,
+      mtime: done["mtime"] ?? null,
+    };
   });
 
   app.get("/api/automations/builder/runs", async (req, reply) => {

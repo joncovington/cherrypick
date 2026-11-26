@@ -1120,7 +1120,18 @@ all, each with manage's count, and an amber unreconciled choice only while one e
 lists manage's PMCCs and its undecided candidates (`splitPmccs`: every position whose `recognition` is
 not `diagonal`); a decided non-PMCC is a time spread, judged by the time-spread rules, so it is one
 line (`TimeSpreadStrip`, named by manage's `structure`, calendar or diagonal) that opens the positions
-board's time spreads, and the lightbox steps through the listed PMCCs only. Both tabs carry the
+board's time spreads, and the lightbox steps through the listed PMCCs only. Above them a needs-a-look
+section (`pages/Live/IntentLook.tsx`, `DiagonalIntentLook`) lists the call diagonals manage still asks whether
+they are a PMCC (`attention.intent`, one item per open `intent_ask`; the wheel's puts are on Live -> wheel),
+each with its legs, manage's suggestion and why, and a link to the trade's Intent tab on positions that
+carries the account. It shows with or without a recognised PMCC and is left out when nothing is asked
+(`web/test/intentLook.test.tsx`, `web/test/pmccCards.test.tsx`). A listed PMCC's lightbox `recognised` tab
+has an intent row (`pages/Live/PmccIntent.tsx`): where manage still asks the PMCC's long (the ask under
+`trades.<long contract>.intent` on a trade the PMCC holds, `askFor`) it offers the choice there, one tap with
+manage's suggestion and evidence and the same save, Undo and saved state as the position's strip and Intent
+tab; once answered it shows what is set and links to change it on positions (the account carried through
+`PmccAccount`); with no ask it keeps the words and the key to copy by hand
+(`web/test/pmccIntent.test.tsx`). Both tabs carry the
 cards/rows switch (`view.wheel`, `view.pmcc`); a row (`CardRows`, in the trade rows' classes) opens its
 full card in place. A section's controls, rows and one-line notes span its whole grid row.
 
@@ -1152,12 +1163,21 @@ It prices a hypothesis; nothing is sent, and the console still has no order path
 `attention` items worst first, each with its level and why, a meter of its distance against the alert
 threshold (full at the strike or through it), spot and time value; and every leg expiring within the
 ruleset's days. The level is manage's, never worked out from the distance beside it
-(`web/test/attentionCard.test.tsx`). A short put on a name with no intent (manage's
-`wheel.intent_candidates`) carries a dashed `no intent` chip on its row, opening manage's verdict today
-beside the one it would get marked as a wheel, with *Not a wheel* and *Wheel it*; the puts no row shows
-sit in a `no intent yet` card (`pages/Live/IntentChoice.tsx`). A choice is only staged, as the whole
-`positions` object of manage.json; it is saved on Config › Position rules (`pages/Config/IntentsCard.tsx`),
-which lists every name's intent. A `cost-strike calls` card (`CostCallCard`) sits beside them: manage's
+(`web/test/attentionCard.test.tsx`). A short put with no intent of its own (manage's
+`wheel.intent_candidates`; a name's intent counts only for the trades it describes, so a name marked `pmcc`
+for its diagonal does not answer for a put on the same name) carries a dashed `no intent` chip on its row,
+and the puts no row shows sit in a `no intent yet` card (`pages/Live/IntentChoice.tsx`). Neither asks the
+question: each is a link to where it is answered, the trade's Intent tab on Live › positions (the verdict
+under each answer, manage's suggestion and evidence, its note when the name's own intent is for another
+trade, one-tap save; the link carries the account), or Config for a put whose ID is still provisional,
+answered on its name. While the name's own intent is for another trade and the ID is still provisional, an
+answer on the name would replace that intent, so it says it waits for a stable ID and links nowhere. Nothing on
+this tab stages or saves an intent. Config › Position rules
+(`pages/Config/IntentsCard.tsx`) lists every name's intent, which is edited there in the save bar (the
+whole `positions` object of manage.json, every other entry kept), and every trade's intent, a PMCC's by its
+long contract, each with a link to the position that changes it and a *clear* that removes the entry (through the
+same narrow save, so an entry a closed trade left behind can go). A `cost-strike calls`
+card (`CostCallCard`) sits beside them: manage's
 `attention.cost_call` rows, one per cycle holding assigned shares with no call written, each with the call's
 strike, expiry, bid, the bid as a share of the price, the whole-position credit and whose quote it is. A bid
 at the ruleset's bar reads `bids 2.3%`, one under it `below`, and a missing quote `no quote` with why, never
