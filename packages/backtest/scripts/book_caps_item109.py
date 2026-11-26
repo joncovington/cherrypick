@@ -57,8 +57,8 @@ REPLAY_CORRECTIONS = (
         "Saturday (2019-02-02) for every name, a placeholder market the vendor returns for a day it "
         "has none; it was read as a session and condors exited on it at a loss far past their "
         "max loss.",
-        "why": "The first full run ended every book below zero net liq in 2019 and traded nothing "
-        "after it, so the holdout was empty and the verdicts reflected that day alone.",
+        "why": "A full run read that stored non-trading day as a session, so its marks and exits there "
+        "were not a market.",
         "decided": "user asked for the fix after the cause was shown",
         "before_read": False,
     },

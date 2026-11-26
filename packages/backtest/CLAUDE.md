@@ -265,8 +265,9 @@ holdout once (a marker is written before the read).
   no whole-market daily file, and answers about a request a second, so a full crawl would take weeks.
 - **What each request becomes:** complete, empty or refused (with why). A re-run skips the first two
   and retries refusals; a fatal refusal stops the run. Workers share the one session, and every
-  write is on the main thread. A request for a day that is not a trading session is never sent
-  (the report's `not_trading`).
+  write is on the main thread. `fetch-chains` never sends a request for a day that is not a trading
+  session (the report's `not_trading`); the path fetch asks trading days by construction
+  (`path_days`), and the intraday fetch takes its sessions from its request file unchecked.
 - Its first user is edge-hypotheses item 14.
 - **Daily paths** (`fetch-chain-paths`): a request names an expiry and a date range, and
   every session's close in that range lands as its own complete session-chain, so a replay can mark

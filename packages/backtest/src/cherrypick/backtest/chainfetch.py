@@ -94,8 +94,12 @@ def vendor_root(symbol: str) -> str:
 
 
 def on_calendar(session: str) -> bool:
-    """Whether `session` (an ISO date) is an exchange trading day."""
-    return cal.is_trading_day(date.fromisoformat(session[:10]))
+    """Whether `session` (an ISO date) is an exchange trading day. A string that is not a date is
+    left to the vendor to refuse, as it always was, rather than stopping the whole fetch."""
+    try:
+        return cal.is_trading_day(date.fromisoformat(session[:10]))
+    except ValueError:
+        return True
 
 
 def read_requests(path: Path) -> list[tuple[str, str, str]]:
@@ -201,6 +205,7 @@ def fetch_chains(
     A request for a day that is not a trading session is never sent: the vendor answers it with a
     placeholder market (every option quoted bid 0.05, ask 99.00), and a store holding one reads as a
     session. The report counts them as `not_trading`; they are no part of `asked`."""
+    requests = list(requests)
     off = [k for k in requests if not on_calendar(k[1])]
     requests = [k for k in requests if on_calendar(k[1])]
     conn = connect(settings)
