@@ -6986,6 +6986,53 @@ select.text-input {
   align-items: start;
 }
 
+.pos-card-wrap {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.int-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  padding: 10px 14px;
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  font-size: 13px;
+}
+.int-strip-q {
+  font-weight: 600;
+}
+.int-strip-opts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.int-strip-opt {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+}
+.int-strip-verdict {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.int-strip-why {
+  flex-basis: 100%;
+}
+.int-strip-err {
+  flex-basis: 100%;
+  color: var(--neg);
+}
+.int-strip.is-saved {
+  justify-content: space-between;
+  border-style: solid;
+}
+
 .pos-card {
   display: flex;
   flex-direction: column;

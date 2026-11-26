@@ -125,6 +125,41 @@ describe("readManage", () => {
     expect(other).toMatchObject({ tradeIdProvisional: false, mergedIds: [] });
   });
 
+  it("passes a trade's intent question through, a verdict under each option, and null where it has none", () => {
+    const doc = evalDoc("2026-10-30") as { accounts: Array<{ trades: Array<Record<string, unknown>> }> };
+    doc.accounts[0]!.trades[0]!["intent_ask"] = {
+      kind: "wheel",
+      asked: true,
+      current: null,
+      options: ["wheel", "no_wheel"],
+      verdicts: { wheel: { action: "HOLD", rule: null, reason: null }, no_wheel: { action: "ROLL", rule: "roll.naked_put", reason: "tested" } },
+      suggested: "wheel",
+      evidence: ["2 completed wheel cycles on KO"],
+      note: null,
+      key: "trades.KO-260101-1.intent",
+      scope: "trade",
+    };
+    doc.accounts[0]!.trades[1]!["intent_ask"] = { kind: "other", scope: "trade" }; // not a question manage asks
+    fs.writeFileSync(path.join(tmp, "manage", "eval-2026-10-30.json"), JSON.stringify(doc));
+    const [ko, other] = readManage(config).accounts[0]!.trades;
+    expect(ko!.intentAsk).toEqual({
+      kind: "wheel",
+      asked: true,
+      current: null,
+      options: ["wheel", "no_wheel"],
+      verdicts: {
+        wheel: { action: "HOLD", rule: null, reason: null },
+        no_wheel: { action: "ROLL", rule: "roll.naked_put", reason: "tested" },
+      },
+      suggested: "wheel",
+      evidence: ["2 completed wheel cycles on KO"],
+      note: null,
+      key: "trades.KO-260101-1.intent",
+      scope: "trade",
+    });
+    expect(other!.intentAsk).toBeNull();
+  });
+
   it("passes the ledger through in the page's names, and null before it existed", () => {
     const doc = evalDoc("2026-11-04");
     const [account] = doc["accounts"] as Array<Record<string, unknown>>;

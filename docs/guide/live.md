@@ -95,6 +95,13 @@ same action, a fixed order decides: safety, sizing, stops, targets, time, then r
 include P&L, days to the nearest short and needs action first. A `ruleset` button opens the settings
 the evaluation used.
 
+Where a trade's legs cannot say what it is for, its card has a question under it: a naked short put
+is asked "Is this put a wheel?" and a call diagonal "Is this diagonal a PMCC?". Each answer shows the
+verdict the trade would get under it, and a suggestion is marked when the evaluation has evidence for
+one (a wheel cycle on the name). One tap saves the answer for that trade alone; it is read at the next
+evaluation, so the card does not change until then, and `Undo` puts the old value back. A put that has
+no order chain yet has no stable ID to answer for, so its question points to Config.
+
 ### portfolio
 
 ![Live portfolio: the account tiles, portfolio guidance, and the income dial](../images/live-portfolio.png)

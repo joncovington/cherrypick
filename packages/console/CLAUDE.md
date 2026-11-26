@@ -161,7 +161,12 @@ alone):
     another spelling is reused, and the reply carries the value it replaced so the page can Undo. Advice
     only: manage reads it on its next evaluation. It touches no order, no live gate and not the halt flag.
     `server/test/intent-set.test.ts` and the orchestrator's `tests/test_intentedit.py` pin it (each guard
-    was shown to fail).
+    was shown to fail). Live › positions puts the question on the card (`IntentStrip`, beside the card, never
+    inside its button) while manage's `intent_ask` is open: its options, the verdict under each, its
+    suggestion and why, all manage's. A tap saves, the strip says the answer is read at the next
+    evaluation, and Undo writes back the replaced value (none for a free label the route would refuse). A
+    put whose ID is still provisional, answered on its name, gets no write there and points to Config.
+    `web/test/intentStrip.test.tsx` pins it.
   - **The Builder's save is the same path for one automation** (`/api/automations/builder/draft` and
     `/save`, configcli `automation_draft` / `automation_save`). The route sends a name and an
     automation and nothing else; the orchestrator runs the module's own check and writes the entry it

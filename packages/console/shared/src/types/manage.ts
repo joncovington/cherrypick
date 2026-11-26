@@ -96,6 +96,8 @@ export interface ManageTrade {
   /** The trade's shape, named by packages/manage (super bear, jade lizard, diagonal, ...). */
   shape: string | null;
   intent: string | null;
+  /** The question this trade is asked about its intent, or null where it has none. */
+  intentAsk: ManageIntentAsk | null;
   note: string | null;
   cost: number | null;
   value: number | null;
@@ -542,6 +544,28 @@ export interface ManageWheel {
   intentCandidates: ManageIntentCandidate[];
   /** Why the account has no view (not the designated account, no history, the view failed). */
   error: string | null;
+}
+
+/**
+ * What a trade is asked about its intent (manage's `intent_ask`), everything a surface needs to put the
+ * question and write the answer: the options, the verdict under each (a put only), manage's suggestion
+ * and why, and where an answer is written. `scope` says how: "trade" and "contract" are answered on the
+ * position (the console's one narrow write); "name" is a put whose ID is still provisional, answered on
+ * its name in Config. The console works out none of it.
+ */
+export interface ManageIntentAsk {
+  kind: "wheel" | "pmcc";
+  /** No operator intent applies yet. */
+  asked: boolean;
+  current: string | null;
+  options: string[];
+  verdicts: Record<string, ManageVerdictBrief>;
+  suggested: string | null;
+  evidence: string[];
+  note: string | null;
+  /** The config key an answer is written at, e.g. "trades.XYZ-261001-1.intent". */
+  key: string;
+  scope: "trade" | "name" | "contract";
 }
 
 /** A verdict as manage stated it. */
