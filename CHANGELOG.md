@@ -11,11 +11,26 @@ beyond the latest release.
 
 ## [Unreleased]
 
-### What's new
+## v0.14.1 — 2026-11-26 — held queue rows and corrupt windows
+Fixes to v0.14.0: one that stopped the research queue behind a fetch that could never finish, one
+that made a first intent answer work on an older config, and a reminder so a held row is not missed.
+Nothing to do by hand.
 
-- **A first intent answer works on an older `manage.json` under a relocated home.** An answer on a
-  `manage.json` that has no `trades` block adds the block from manage's shipped example, which is found
-  beside the code whatever `CHERRYPICK_HOME` says. Nothing to do.
+- **Fixed: a repeat fetch over windows the vendor serves corrupt held the research queue.** For a
+  few windows the vendor answers every request with a cut-off or wrong-width reply. They were
+  recorded as a plain `vendor_error`, so a repeat pass over them read as "nothing fetched", failed,
+  and held every row after it. Re-queuing it failed the same way, and nothing said so after the
+  first notice.
+  Those two errors are now their own settled reason, `corrupt_data`: the repeat pass finishes done,
+  with the warning that nothing is left the vendor will serve. A `vendor_error` already recorded with
+  that text counts as it, so no store needs refetching.
+- **Added: a held research row reminds you each day.** The first notice is unchanged. A row still
+  held a day later gets "Research task still held", with how long and why, and another each day until
+  the prerequisite is re-queued. The older queue gains a `nudged_at` column on its own.
+- **Fixed: a first intent answer works on an older `manage.json` under a relocated home.** An answer
+  on a `manage.json` that has no `trades` block adds the block from manage's shipped example, which is
+  found beside the code whatever `CHERRYPICK_HOME` says.
+- **Added: the guide shows a trade's Intent tab** (an image of the unanswered tab).
 
 ## v0.14.0 — 2026-11-26 — automations and the live arm
 Three changes lead. The console can now arm a live loop for the
