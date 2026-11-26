@@ -693,7 +693,7 @@ export function WheelCards({ a: evaluated }: { a: ManageAccount }) {
   }
   const chip: RowExtra = (leg) => {
     const c = candidateFor(cands, leg);
-    return c === null ? null : <IntentChip c={c} />;
+    return c === null ? null : <IntentChip c={c} account={a.account} />;
   };
   // A card with nothing to show is left out, and a section whose cards are all left out goes too
   // (2026-11-12).
@@ -715,7 +715,7 @@ export function WheelCards({ a: evaluated }: { a: ManageAccount }) {
                 <CostCallCard a={a.attention} scope={scope} hideEmpty />
               </>
             ) : null}
-            {cands.some((c) => !onRows.has(candidateKey(c))) ? <NoIntentCard cands={cands} shown={onRows} /> : null}
+            {cands.some((c) => !onRows.has(candidateKey(c))) ? <NoIntentCard cands={cands} shown={onRows} account={a.account} /> : null}
           </Section>
         ) : null}
         {showLedger ? (

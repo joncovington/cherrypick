@@ -171,7 +171,13 @@ alone):
     to. It shares the strip's saved state (`intentAnswers`, keyed by the trade and the ask as manage last
     read it), so an answer given in one shows in the other and a stale one drops once manage re-evaluates.
     A trade manage does not ask has no such tab. `web/test/intentStrip.test.tsx` and
-    `web/test/intentTab.test.tsx` pin them.
+    `web/test/intentTab.test.tsx` pin them. Nothing else stages a trade's intent: the wheel tab's chip and
+    its "no intent yet" card only link to the position (`?trade=<ID>&tab=intent&acct=<account>` opens its
+    Intent tab, read once and then dropped from the URL), and Config › Intents lists the trades with a link
+    and a clear (the narrow save with null, which is how an entry a closed trade left is removed); a name's
+    intent is still edited there, staged and saved as the whole `positions` object. A put with no stable ID
+    whose name's intent is for another trade is linked nowhere: an answer on the name would replace that
+    intent. `web/test/wheelIntents.test.tsx` pins it.
   - **The Builder's save is the same path for one automation** (`/api/automations/builder/draft` and
     `/save`, configcli `automation_draft` / `automation_save`). The route sends a name and an
     automation and nothing else; the orchestrator runs the module's own check and writes the entry it

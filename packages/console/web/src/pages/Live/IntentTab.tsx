@@ -2,7 +2,7 @@ import { Link } from "react-router-dom";
 import type { ManageIntentAsk, ManageTrade } from "@console/shared";
 import { ACTION_LABEL } from "./manageParts";
 import { useIntentAnswer } from "./intentAnswers";
-import { QUESTION, answerTrade, intentLabel, restoreTo } from "./stripAnswer";
+import { HELD_FOR_ID, QUESTION, answerTrade, intentLabel, restoreTo } from "./stripAnswer";
 
 /**
  * The opened trade's Intent tab: what manage asks about the trade's intent, what it holds now, and each
@@ -97,11 +97,17 @@ export function IntentTab({ t }: { t: ManageTrade }) {
       {trade === null ? (
         ask.scope === "name" ? (
           <p className="lk-sub">
-            Its ID changes once its orders are known, so answer for the name on{" "}
-            <Link to="/config/rules" className="lk-sub">
-              Config
-            </Link>
-            .
+            {ask.note !== null ? (
+              HELD_FOR_ID
+            ) : (
+              <>
+                Its ID changes once its orders are known, so answer for the name on{" "}
+                <Link to="/config/rules" className="lk-sub">
+                  Config
+                </Link>
+                .
+              </>
+            )}
           </p>
         ) : null
       ) : (

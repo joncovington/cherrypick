@@ -1,3 +1,4 @@
+import { ACCOUNT_PARAM } from "./accountParam";
 import { EvidenceTag } from "../../components/EvidenceTag";
 import { useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -644,9 +645,7 @@ export function rulesetBox(ruleset: string | null | undefined, rules: Record<str
   };
 }
 
-/** The query key the account select writes. It rides along on every tab link, so the choice holds
- *  from positions to portfolio, wheel and pmcc. */
-export const ACCOUNT_PARAM = "acct";
+export { ACCOUNT_PARAM };
 export const ALL_ACCOUNTS = "all";
 
 const accountKey = (a: Pick<ManageAccount, "account">) => a.account ?? "?";

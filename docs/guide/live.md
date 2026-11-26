@@ -143,7 +143,7 @@ re-check them before you trade; nothing here places an order.
 
 Each wheel cycle on the account (puts sold, shares assigned, calls sold against them). The questions
 are what needs a look (shorts near their strike, anything expiring within 7 days, the call at the cost strike where assigned shares have none written, and any short put
-whose name has no intent yet), how much the
+whose name has no intent yet, each a link to the trade's `intent` tab on positions where it is answered), how much the
 wheel has made (a ledger of puts, calls, shares and dividends), how each cycle stands (a card per name
 with its net, breakeven, days, shares and the short it holds now) and what a trade would do. In the
 demo the ledger reads `$0.00` because no cycle has closed; the three cards below show the open ones.

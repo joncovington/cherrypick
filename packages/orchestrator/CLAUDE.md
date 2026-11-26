@@ -342,8 +342,7 @@ filename; override with `paper.sla_state_prefix`.
   can tell "the config said no" from "the bridge is broken". Keep new ops thin. A `save` edit at a
   pointer the file does not have is refused (`not_found`), with one exception: a single top-level key
   the target's shipped example has and the person's older copy lacks is added at the end
-  (`configedit.splice_or_add`, e.g. manage's `trades`, which the console's intents save
-  writes). A key the example does not have, and any key inside an absent block, stay refused
+  (`configedit.splice_or_add`, e.g. manage's `trades`, which `intent_set` adds on a first answer). A key the example does not have, and any key inside an absent block, stay refused
   (`tests/test_configcli.py`, each limit shown to fail). `intent_set` (`intentedit.py`) is a trade's
   intent answered on the position: `trades.<key>.intent` in manage.json and no other byte, the key a stable
   trade ID (`wheel` or `no_wheel`) or a call's long contract (`pmcc` or `diagonal`) checked by shape (a
