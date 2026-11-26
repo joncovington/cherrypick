@@ -178,7 +178,7 @@ the ETF puts is measured, never modelled. Paper-only and credential-free.
 
 → Depth: [`weeklyput/README.md`](../packages/weeklyput/README.md), [`weeklyput/CLAUDE.md`](../packages/weeklyput/CLAUDE.md).
 
-## Ensemble — research item 75's eight arms, in paper (EXPERIMENTAL, off by default)
+## Automations — research item 75's eight arms, in paper (EXPERIMENTAL, off by default)
 
 Eight short-dated SPX and GLD arms, each one configured variant of a single decision function that the
 backtest and the paper loop both call: 0DTE iron fly, iron condor and put spread, a 1DTE iron fly on the

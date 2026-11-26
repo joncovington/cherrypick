@@ -49,7 +49,7 @@ def test_the_view_names_a_retired_automation_retired_and_counts_it():
 def test_the_groups_check_refuses_to_switch_a_retired_one_on():
     cfg = {"automations": {"iron-fly-1000": {"retired": "2026-11-21", "enabled": False}}}
     r = groupedit.check(
-        cfg, {"groups": {"ensemble": {"enabled": True}}, "switches": {"iron-fly-1000": True}}, SAT
+        cfg, {"groups": {"default": {"enabled": True}}, "switches": {"iron-fly-1000": True}}, SAT
     )
     assert r["problems"] == ["switches.iron-fly-1000: retired; reinstate it on its own page first"]
     assert r["block"] is None
@@ -147,13 +147,13 @@ def test_the_view_gives_each_group_its_suggestion_and_each_member_its_shape():
 
 
 def _ran(**budget):
-    return {"groups": {"ensemble": {"enabled": True, "start": "2026-11-16", **budget}}}
+    return {"groups": {"default": {"enabled": True, "start": "2026-11-16", **budget}}}
 
 
 def test_a_change_takes_its_budget_from_its_date():
     cfg = _ran(allocation=10000, budget_changes=[{"from": NEXT, "allocation": 20000}])
-    assert config_mod.groups(cfg, date(2026, 11, 20))["ensemble"]["allocation"] == 10000
-    assert config_mod.groups(cfg, date(2026, 11, 23))["ensemble"]["allocation"] == 20000
+    assert config_mod.groups(cfg, date(2026, 11, 20))["default"]["allocation"] == 10000
+    assert config_mod.groups(cfg, date(2026, 11, 23))["default"]["allocation"] == 20000
 
 
 def test_changes_must_rise_and_carry_only_a_budget():
@@ -166,20 +166,20 @@ def test_changes_must_rise_and_carry_only_a_budget():
 def test_a_group_that_has_run_gets_a_dated_change_never_a_rewrite():
     cfg = _ran(allocation=10000)
     r = groupedit.check(
-        cfg, {"groups": {"ensemble": {"enabled": True, "start": "2026-11-16", "allocation": 20000}}}, SAT
+        cfg, {"groups": {"default": {"enabled": True, "start": "2026-11-16", "allocation": 20000}}}, SAT
     )
     assert r["problems"] == []
-    assert r["block"]["ensemble"]["allocation"] == 10000
-    assert r["block"]["ensemble"]["budget_changes"] == [{"from": NEXT, "allocation": 20000.0}]
+    assert r["block"]["default"]["allocation"] == 10000
+    assert r["block"]["default"]["budget_changes"] == [{"from": NEXT, "allocation": 20000.0}]
     assert any("changes from 2026-11-23" in n for n in r["notes"])
 
 
 def test_sending_the_budget_back_drops_the_change_waiting():
     cfg = _ran(allocation=10000, budget_changes=[{"from": NEXT, "allocation": 20000}])
     r = groupedit.check(
-        cfg, {"groups": {"ensemble": {"enabled": True, "start": "2026-11-16", "allocation": 10000}}}, SAT
+        cfg, {"groups": {"default": {"enabled": True, "start": "2026-11-16", "allocation": 10000}}}, SAT
     )
-    assert "budget_changes" not in r["block"]["ensemble"]
+    assert "budget_changes" not in r["block"]["default"]
 
 
 def test_an_unrelated_save_keeps_the_change_waiting():
@@ -190,15 +190,15 @@ def test_an_unrelated_save_keeps_the_change_waiting():
     assert g["allocation"] == 20000 and g["budget"]["today"] == {"allocation": 10000.0}
     assert g["budget"]["pending"] == {"from": NEXT, "allocation": 20000.0} and g["budget"]["dated"] is True
     r = groupedit.check(
-        cfg, {"groups": {"ensemble": {"enabled": True, "start": "2026-11-16", "allocation": 20000}}}, SAT
+        cfg, {"groups": {"default": {"enabled": True, "start": "2026-11-16", "allocation": 20000}}}, SAT
     )
-    assert r["block"]["ensemble"]["budget_changes"] == [{"from": NEXT, "allocation": 20000.0}]
+    assert r["block"]["default"]["budget_changes"] == [{"from": NEXT, "allocation": 20000.0}]
 
 
 def test_a_group_that_has_not_run_takes_the_budget_as_given():
-    cfg = {"groups": {"ensemble": {"enabled": False}}}
-    r = groupedit.check(cfg, {"groups": {"ensemble": {"enabled": False, "allocation": 5000}}}, SAT)
-    assert r["block"]["ensemble"] == {"enabled": False, "allocation": 5000}
+    cfg = {"groups": {"default": {"enabled": False}}}
+    r = groupedit.check(cfg, {"groups": {"default": {"enabled": False, "allocation": 5000}}}, SAT)
+    assert r["block"]["default"] == {"enabled": False, "allocation": 5000}
 
 
 def _closed(arm, session, net):
@@ -223,7 +223,7 @@ def test_the_record_reads_each_trade_against_the_allocation_its_session_carried(
         _ran(allocation=10000, budget_changes=[{"from": "2026-11-03", "allocation": 20000}])
     )
     pos = [_closed("a", "2026-11-02", 300), _closed("a", "2026-11-03", -500)]
-    g = groupread.read({"a": {"group": "ensemble"}}, spec, pos, [])["groups"][0]
+    g = groupread.read({"a": {"group": "default"}}, spec, pos, [])["groups"][0]
     # 300 of 10,000, then -500 of 20,000: never the whole net over either.
     assert g["against_allocation"] == {
         "net": 0.005,

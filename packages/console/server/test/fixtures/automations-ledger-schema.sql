@@ -1,6 +1,6 @@
 -- automations' ledger schema, as its own db.connect builds it. GENERATED -- do not edit by hand.
 -- Same recipe as weeklyput-ledger-schema.sql: the _SCHEMA of packages/automations db.py, as sqlite stores it.
-CREATE TABLE ensemble_decisions (
+CREATE TABLE automations_decisions (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     trade_date  TEXT NOT NULL,
     arm         TEXT NOT NULL,
@@ -13,7 +13,7 @@ CREATE TABLE ensemble_decisions (
     last_ts     TEXT,
     detail      TEXT
 );
-CREATE TABLE ensemble_entries (
+CREATE TABLE automations_entries (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
     arm            TEXT NOT NULL,
     symbol         TEXT NOT NULL,
@@ -27,7 +27,7 @@ CREATE TABLE ensemble_entries (
     updated_at     TEXT,
     UNIQUE(arm, symbol, entry_session)
 );
-CREATE TABLE ensemble_legs (
+CREATE TABLE automations_legs (
     id               INTEGER PRIMARY KEY AUTOINCREMENT,
     position_id      TEXT NOT NULL,
     leg_role         TEXT NOT NULL,
@@ -41,7 +41,7 @@ CREATE TABLE ensemble_legs (
     updated_at       TEXT,
     UNIQUE(position_id, leg_role)
 );
-CREATE TABLE ensemble_loop_iterations (
+CREATE TABLE automations_loop_iterations (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
     ran_at         REAL NOT NULL,
     session_date   TEXT NOT NULL,
@@ -52,7 +52,7 @@ CREATE TABLE ensemble_loop_iterations (
     actions_taken  INTEGER,
     note           TEXT
 );
-CREATE TABLE ensemble_marks (
+CREATE TABLE automations_marks (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
     position_id    TEXT NOT NULL,
     ts             TEXT NOT NULL,
@@ -62,7 +62,7 @@ CREATE TABLE ensemble_marks (
     spot           REAL,
     mark_value     REAL
 );
-CREATE TABLE ensemble_positions (
+CREATE TABLE automations_positions (
     id                  INTEGER PRIMARY KEY AUTOINCREMENT,
     position_id         TEXT NOT NULL UNIQUE,
     arm                 TEXT NOT NULL,
@@ -108,7 +108,7 @@ CREATE TABLE ensemble_positions (
     created_at          TEXT,
     updated_at          TEXT
 );
-CREATE TABLE ensemble_snapshots (
+CREATE TABLE automations_snapshots (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     ts            TEXT NOT NULL,
     trade_date    TEXT NOT NULL,
@@ -119,7 +119,7 @@ CREATE TABLE ensemble_snapshots (
     quotes_stale  INTEGER,
     spot          REAL
 );
-CREATE TABLE ensemble_trail (
+CREATE TABLE automations_trail (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     symbol      TEXT NOT NULL,
     trade_date  TEXT NOT NULL,
@@ -137,11 +137,11 @@ CREATE TABLE measurement_breaks (
     recorded_at REAL,
     UNIQUE(break_date, key)
 );
-CREATE INDEX idx_ensemble_decisions_date ON ensemble_decisions(trade_date);
-CREATE INDEX idx_ensemble_iterations_session
-    ON ensemble_loop_iterations(session_date, ran_at);
-CREATE INDEX idx_ensemble_legs_status ON ensemble_legs(status);
-CREATE INDEX idx_ensemble_marks_position ON ensemble_marks(position_id, ts);
-CREATE INDEX idx_ensemble_positions_arm ON ensemble_positions(arm, entry_session);
-CREATE INDEX idx_ensemble_positions_status ON ensemble_positions(status);
-CREATE INDEX idx_ensemble_snapshots_date ON ensemble_snapshots(trade_date);
+CREATE INDEX idx_automations_decisions_date ON automations_decisions(trade_date);
+CREATE INDEX idx_automations_iterations_session
+    ON automations_loop_iterations(session_date, ran_at);
+CREATE INDEX idx_automations_legs_status ON automations_legs(status);
+CREATE INDEX idx_automations_marks_position ON automations_marks(position_id, ts);
+CREATE INDEX idx_automations_positions_arm ON automations_positions(arm, entry_session);
+CREATE INDEX idx_automations_positions_status ON automations_positions(status);
+CREATE INDEX idx_automations_snapshots_date ON automations_snapshots(trade_date);

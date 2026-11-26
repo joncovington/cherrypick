@@ -72,17 +72,17 @@ def test_paper_enters_only_from_the_start():
 
 
 def test_a_group_member_joins_at_the_groups_boundary():
-    loaded = config_mod.load_arms({"groups": {"ensemble": {"enabled": True, "start": "2026-12-01"}}})
+    loaded = config_mod.load_arms({"groups": {"default": {"enabled": True, "start": "2026-12-01"}}})
     assert {a["start"] for a in loaded.values()} == {"2026-12-01"}
     later = config_mod.load_arms(
         {
             "automations": {"iron-fly-1000": {"start": "2026-12-15"}},
-            "groups": {"ensemble": {"enabled": True, "start": "2026-12-01"}},
+            "groups": {"default": {"enabled": True, "start": "2026-12-01"}},
         }
     )
     assert later["iron-fly-1000"]["start"] == "2026-12-15"  # its own, later start stands
-    with pytest.raises(ValueError, match="groups.ensemble.start"):
-        config_mod.load_arms({"groups": {"ensemble": {"enabled": True, "start": "12/01/2026"}}})
+    with pytest.raises(ValueError, match="groups.default.start"):
+        config_mod.load_arms({"groups": {"default": {"enabled": True, "start": "12/01/2026"}}})
 
 
 @pytest.mark.parametrize(
@@ -115,7 +115,7 @@ def test_the_forward_rule_becomes_a_register_shaped_row():
     block = row["forward"]
     assert block == {
         "module": "automations",
-        "schema": "ensemble_trade",
+        "schema": "automations_trade",
         "arm": "mine",
         "since": "2026-11-18",
         "reference": None,

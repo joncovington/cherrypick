@@ -103,7 +103,7 @@ describe("performance db path resolution", () => {
     expect(MODULE_SCHEMA.curve).toBe("curve_vx");
     expect(MODULE_SCHEMA.bwb).toBe("bwb_132");
     expect(MODULE_SCHEMA.contango).toBe("contango_etf");
-    expect(MODULE_SCHEMA.automations).toBe("ensemble_trade");
+    expect(MODULE_SCHEMA.automations).toBe("automations_trade");
     expect(MODULE_SCHEMA.weeklyput).toBe("weeklyput_put");
     expect(MODULE_SCHEMA.ladder).toBe("ladder_lot");
   });

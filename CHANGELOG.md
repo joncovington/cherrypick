@@ -11,32 +11,295 @@ beyond the latest release.
 
 ## [Unreleased]
 
+## v0.14.0 — 2026-11-26 — automations and the live arm
+Three changes lead. The console can now arm a live loop for the
+day from the Live page, behind the module's own checks and a typed `YES`; it ships off
+(`live_arming` in `console.json`). MEIC's live loop ships in dry run: an armed tick preflights each new
+entry against the real account and sends none until you set `live.dry_run` to `false`. And v0.13.0's
+`ensemble` became `automations`, a package with its own console page, a Builder to design, backtest and
+group them, and a nightly check of paper against the backtest. The ladder gained a live path that also
+ships in dry run and off, and the Live page was reorganized around two summary cards. Calendars,
+contango and four automations were retired after research items 38, 39 and 75 failed them. manage leaves
+a far out-of-the-money time-spread short to expire, reads the cost-strike call and the dispersion of the
+book, and evaluates on Sunday evenings. A trade's intent (a put a wheel or not, a diagonal a PMCC or not)
+is now asked and answered per trade, on the position. This is an ordinary upgrade from v0.13.0 with one thing to
+decide: a live MEIC config that never named `live.dry_run` now sends no entries.
+
 ### Upgrading
 
-- **`packages/ensemble` is now `packages/automations`** (`cherrypick-automations`). A checkout updated
-  by hand needs its packages reinstalled (`scripts/dev-install.ps1` or `.sh`; `upgrade` does it), or
-  the paper loop cannot import. Nothing else is required: the old names keep resolving. A suite
-  config's `modules.ensemble` reads as `modules.automations`, `config/ensemble.json` and
-  `data/ensemble/` are read while only they exist, and `cherrypick.ensemble` still imports. Rename
-  them when you like; the ledger's tables keep their names.
+- **From v0.13.0:** `python packages/orchestrator/run.py upgrade` (or `upgrade.cmd` / `./upgrade.sh`).
+  It refuses while a live loop is armed or holds a position, as every upgrade does. Afterwards run
+  `python run.py supervise --restart` (the research queue has a second job and manage a Sunday one), restart
+  any resident job, and restart the console to load its new server code. Its one data migration finds
+  nothing to do on a v0.13.0 home (below).
+- **MEIC's live loop is in dry run until you say otherwise.** `live.dry_run` is `true` unless it is the
+  literal `false`, and a missing key means `true`. A live config that never named the key now preflights
+  each new entry and sends none. Set `live.dry_run` to `false` by hand, deliberately, to send entries
+  again; the Config page cannot change it. A held book is still confirmed, stopped, force-closed and
+  settled live either way.
+- **The console's arm switches are off.** Nothing about arming changes until you set `"live_arming":
+  true` in `~/.cherrypick/config/console.json` (new `packages/console/config.example.json` lists every key
+  that file takes) and restart the console; see
+  [going-live](docs/guide/going-live.md#from-the-console-the-live-pages-switches). The slash commands and
+  `live_loop --arm` work as before.
+- **`packages/ensemble` is now `packages/automations`** (`cherrypick-automations`, import
+  `cherrypick.automations`). v0.13.0 shipped the engine alone under the old name, with nothing switched
+  on, so an install of v0.13.0 has no data under it. `cherrypick.ensemble` no longer imports: a script of
+  your own that imported it needs the new name. A checkout updated by hand needs its packages reinstalled
+  (`scripts/dev-install.ps1` or `.sh`; `upgrade` does it).
+- **A checkout that ran `main` between the releases** may hold automations data under the old name
+  (`config/ensemble.json`, `data/ensemble/`, `ensemble_` tables, `modules.ensemble`, the trade schema
+  `ensemble_trade` and the `ensemble` group). Nothing reads those names any more, and the paper loop
+  refuses a ledger that still has `ensemble_` tables. Stop the suite and run `python
+  packages/orchestrator/run.py migrations --apply` before starting it again; `upgrade` runs it for you.
+  The migration (`v0.14.0-01-automations-rename`) moves the file and the folder, renames the tables, the
+  module block and the schema, renames the `ensemble` group to `default` and updates the schema in your
+  research register. It stops, changing nothing, if `config.json` holds both module blocks,
+  `automations.json` already has a `default` group, or both table sets hold rows. `ENSEMBLE_CONFIG` and
+  `ENSEMBLE_DB_PATH` are no longer read; use `AUTOMATIONS_CONFIG` and `AUTOMATIONS_DB_PATH`.
+- **Calendars, contango and four automations are retired** (2026-11-21). Both modules ship off with a
+  retired date on each arm. A machine that had calendars on keeps its open positions running to their own
+  exits; switch the module off once it is flat. `iron-fly-1000`, `iron-fly-1dte-1330`,
+  `gld-call-spread-20d` and `orb-put-spread` are switched off in the shipped config; a config of your own
+  keeps what it says.
+- **The research queue runs two lanes.** The `research-queue-vendor` job replaces `research-queue` and
+  `research-queue-local` is new; the supervisor restart above starts both. The register of studies and
+  each Result now live under `~/.cherrypick/data/research/`, not in the repo.
+- **manage has new readings and one changed rule,** all with optional config keys and defaults that
+  apply when a key is absent: `expiry.time_spread_hold_max_delta` (0.10), `attention.cost_call`,
+  `portfolio.dispersion`, and a Sunday run at `manage.sunday_at` (18:15 ET; `null` turns it off alone).
+  Its verdicts for a calendar or diagonal near expiry can differ (below).
+- **A trade's intent is now per trade.** Nothing is required: until you answer a put or a diagonal that
+  manage asks about, it is judged by the stricter rules and says so. Answer on Live › positions (the card's
+  strip, or the opened trade's Intent tab); the answer is saved at `trades.<ID>.intent` in `manage.json`
+  (a config without a `trades` block gets one on the first answer) and read at the next evaluation. A name's
+  intent stays readable and is offered as the suggestion. `wheel.tested` has two optional keys,
+  `review_beyond_days` (60) and `review_min_extrinsic` (0.10). The supervisor restart above loads the new
+  `intent_set` operation; the console restart loads the pages.
 - **A developer checkout runs a pre-commit check.** `scripts/dev-install.ps1` or `.sh` now sets
   `git config core.hooksPath tools/hooks`, whose pre-commit hook runs `tools/check_personal.py
   --staged`: a commit that holds a home directory, a path mangled from one, or this machine's user
   name is refused. Rerun dev-install, or set that one config line, to get it.
+- **Measurement boundaries** moved between 2026-11-18 and 2026-11-27 (table in the detail). Do not pool
+  a series across them.
+- **Known issues:** a second security pass left follow-ups, tracked in issue #1465.
 
 ### What's new
 
+**Live trading and arming**
+
+- **Arm a live loop from the Live page.** With `live_arming` on, MEIC's main account and the ladder get an
+  arm-for-today switch: the module's own readiness, the disclaimer in full and a typed `YES`, then the
+  module's own `--arm`. The console never clears the halt flag and still places no order.
+- **Every live arm and disarm is journaled** (`arm_events`), with who asked and why, for MEIC, flies, bwb
+  and the ladder; a loop's own self-disarm names itself.
+- **Choose MEIC's live arm on Config.** A `live` tab offers the arm each live loop runs; for MEIC's main
+  login the change is its own guarded operation, typed `CHANGE ARM`, only when the loop is flat and settled.
+- **MEIC's live loop ships in dry run** (`live.dry_run`), and **a live trade records the arm live ran**
+  (`ic_trades.live_arm`).
+- **A paper twin for each arm live may run** (`shadow_of`), so live can be measured per arm, and the
+  execution page's paper-live gap follows the arm live ran.
+- **The ladder has live gates, a daily arm and an order path that ships in dry run and off,** buys only with
+  settled cash in a cash account, and its page has a Paper/Live selector.
+- **A halted dot on the rail** shows beside Live while the halt flag is up.
+
+**The Live page**
+
+- **Live today is two summary cards:** the loops' day, with an attention chip that opens a list and links to
+  each loop, and the broker positions' action items. A disabled loop with nothing open and an empty by-hand
+  card no longer take a line. The Live meic tab is gone; Live today lists its orders and the MEIC page holds
+  the rest. Each loop's day is read by arm and symbol, and a live condor names the arm it ran from its
+  filled attempt.
+
+**MEIC**
+
+- **No new entries on a half day** (an NYSE 13:00 close), paper and live; the next is 2026-11-27.
+- **A page for each arm** (`/meic/arm/<name>`), a table comparing arms on the performance tab, the sessions
+  ahead and today's conditions in an arm's regime record, and an arm against its backtest.
+
+**manage**
+
+- **A far out-of-the-money short of a calendar or diagonal is left to expire** (delta 0.10 or less, with a
+  longer long of the same right at or beyond its strike), and the 80% capture buy-back and the roll that
+  follows it skip it.
+- **The cost-strike call:** a wheel cycle holding assigned shares with no call written is flagged when the
+  call at its effective cost bids 2% of the stock's price or more. Shown, never placed.
+- **Leverage as times the account, and a dispersion line:** the delta band reads the same at any account
+  size, and every name moved against its own position at once is a REVIEW over 10% of net liquidating value.
+- **A Sunday evaluation** (`manage-eval-sunday`, 18:15 ET) reads Monday's list the night before.
+- **A trade's intent is per trade, and it is asked on the position.** A naked short put is a wheel or not; a
+  call diagonal the PMCC view cannot decide is a PMCC or just a diagonal. manage detects the shape from the
+  legs and asks only where the legs cannot say, with a suggestion and why (the name's completed wheel cycles,
+  the entry delta), never applied without your answer. Until you answer, the trade is judged by the
+  stricter rules and its reason line says "no intent set"; each unanswered trade is one needs-a-look item.
+  A name's `pmcc` no longer shows as the intent of a put or hides it from the question.
+  **A wheel put keeps no stop and no breached close, so an answer is not assumed.** Measurement boundary,
+  2026-11-25.
 - **A tested wheel put with time left is a review, not a roll or a close. Measurement boundary, 2026-11-25.**
-  `wheel.tested` on a short put you wheel (`intent: "wheel"`) that is at or through its strike, has more
-  than 60 days left (`wheel.tested.review_beyond_days`, the horizon the snapshot reads roll-out chains
-  inside) and at least 0.10 a share of extrinsic value (`review_min_extrinsic`, a broker's rule of thumb for
-  when early exercise becomes likely: practice, untested) now says REVIEW. There is no roll to price that far
-  out and assignment is unlikely while time value remains. Its reason line gives how far through the strike
-  it is, its extrinsic value and days, what holding to expiry at today's price makes on the trade's net
-  credits, and the assignment against the wheel breakeven, each figure named for its basis. Inside 60 days,
-  or under the floor, it is the roll, close or assignment it was, so a deep put is never left unwatched;
-  `risk.oversize` still fires on its own. Nothing to do. The change moves when a rule fires, so wheel-put
-  verdicts from this date are not comparable with earlier ones.
+  `wheel.tested` on a short put you wheel that is at or through its strike, has more than 60 days left
+  (`wheel.tested.review_beyond_days`, the horizon the snapshot reads roll-out chains inside) and at least
+  0.10 a share of extrinsic value (`review_min_extrinsic`, a broker's rule of thumb for when early exercise
+  becomes likely: practice, untested) now says REVIEW. There is no roll to price that far out and assignment
+  is unlikely while time value remains. Its reason line gives how far through the strike it is, its extrinsic
+  value and days, what holding to expiry at today's price makes on the trade's net credits, and the
+  assignment against the wheel breakeven, each figure named for its basis. Inside 60 days, or under the
+  floor, it is the roll, close or assignment it was, so a deep put is never left unwatched;
+  `risk.oversize` still fires on its own. Nothing to do.
+
+**Automations and the Builder**
+
+- **The Builder** designs an automation in a form or a wizard, checks it, saves it off, runs a backtest on our
+  own data first, and reads how the run holds up; **Find ideas** and **Try settings** search a run for entry
+  filters and exit settings and test each survivor once on held-out sessions. An underlying can be added to
+  the full set from the page.
+- **Automations have pages, groups and a reference backtest:** each automation's own page, the groups tab
+  (switch, start, allocation, cap, shares), a pinned Builder run as an automation's backtest reference,
+  and a read of whether it is working against that backtest.
+- **A nightly replay checks paper against the backtest,** and automations ignore a quote that puts a
+  structure's price outside what it can be worth.
+- **More to build with:** signals (VWAP, relative volume, trend, levels, a developing daily bar), event
+  labels, strikes by premium or GEX, more exits, sizing by allocation and streak, and a versioned signal
+  library.
+
+**Console**
+
+- **Answer a trade's intent where the trade is.** An undecided put or call diagonal carries an amber
+  question on its card (one tap, with Undo), and a collapsed row in the table view carries an `intent?`
+  marker; the opened trade's **Intent** tab shows both verdicts side by side to change an answer later;
+  the PMCC card has the same choice on its intent row, and the pmcc page lists what still needs an answer.
+  Config › Intents is now an audit list: names stay editable there, trades link to their position and can be
+  cleared. One new write, narrow (below); the console still places no order.
+- **The scorecard on Compare,** one row per arm and automation with its research verdict, its forward
+  check and the first thing worth a look; a **changes** tab where a modification is decided; and
+  backtest arms and the risk held at once on the portfolio tab.
+- **The ladder has a page and the rail is in reading order;** the console hides what cannot support a
+  decision yet and shows plain card titles.
+- **Charts:** Market Profile on the intraday chart, a profile view across sessions, and the prior session's
+  profile levels in the morning pack.
+
+**Research, backtest and data**
+
+- **The research queue runs fetches and scripts in two lanes,** and a finished study records its own verdict
+  on this machine in one command (`tools/record_verdict.py`).
+- **The backtest fetch runs on the vendor's Options Value tier,** a full set of seven underlyings was
+  scripted, and at the licence's end the results are kept through its 30 days, reviewed once in the last week, then deleted.
+- **A source registry** declares every data store with its span and says which covers a request.
+- **The morning pack's SPX risk reversal comes from the broker** now that the Cboe chain refuses scripts.
+- **New recordings:** one-minute profile bars (`profile-bars`) and gold bars (`gold-bars`).
+- **`core.quotes` and `core.preflight`** price an idea by hand from the stream cache and the broker's dry
+  run instead of a scratch script.
+
+**Retired**
+
+- **Calendars, contango and four automations** (above). Flies, bwb, pmcc and curve stay retired and off;
+  the placeholder `live` gate is gone from the calendars, pmcc and curve example configs, and the
+  retired flies and bwb switches (`/modules/flies/enabled`, `/modules/bwb/enabled`) cannot be flipped from
+  the Config page.
+
+### In detail
+
+**Measurement boundaries.** A series breaks at each of these dates.
+
+| Area | Date | What it splits |
+|---|---|---|
+| Automations (paper and backtest) | 2026-11-18 | A quote that puts a structure's mid outside what it can be worth is no longer taken (`unrealistic_price`), and a wing beyond the recorded strikes is read as a range, not as unpriced. Earlier runs that closed on such a mark overstated their result; backtests with intraday exits change, mostly on trending days. |
+| Morning pack | 2026-11-19 | The 30-day 25-delta SPX risk reversal is read from the broker's SPXW greeks, not Cboe's chain. The two IVs were never compared on one session, so read a step across 11-19 with that in mind. |
+| Calendars, contango, automations | 2026-11-21 | Calendars and contango retired (items 38 and 39); `iron-fly-1000`, `iron-fly-1dte-1330`, `gld-call-spread-20d` and `orb-put-spread` switched off (item 75). |
+| manage | 2026-11-21 | The cost-strike call reading (`attention.cost_call`) joins the needs-a-look list. A reading; nothing is placed or posted for it. |
+| manage | 2026-11-22 | `portfolio.dispersion` can raise a REVIEW (over 10% of net liquidating value on a two-sigma one-day move of every name against its position; graded ours), and beta-weighted delta is stated in times the account. A Sunday evaluation runs on Friday's quotes. |
+| manage | 2026-11-25 | A tested wheel put (at or through its strike) with more than 60 days left and at least 0.10 a share of extrinsic value is a REVIEW, not a roll, close or assignment (`wheel.tested.review_beyond_days`, `review_min_extrinsic`; the 0.10 is a broker's rule of thumb, practice, untested). Wheel-put verdicts from this date are not comparable with earlier ones. |
+| manage | 2026-11-25 | A trade's intent is per trade. A name's `pmcc` no longer marks or hides a naked put (it is asked, and judged by the stricter rules until answered), and an answered wheel put takes the wheel rules (no stop, no breached close). Nothing changes for a trade until you answer it; from your answer its verdicts are not comparable with before. |
+| manage | 2026-11-24 | A calendar's or diagonal's expiring short at or under 0.10 delta, with a long of the same right outliving it at or beyond its strike, is left to expire, not closed at three days, bought back at 80% captured or rolled. The 0.10 delta is ours; broker guides say only "well out of the money". |
+| MEIC live | 2026-11-24 | `live.dry_run` ships true: an armed tick sends no entry. Live results from here on come only after it is set false. |
+| MEIC | 2026-11-24 | The paper twins and the live-shadow retirement: a machine that runs `scripts/boundary_2026_11_24.py --apply` journals `arm_added` for each twin and `arm_retired` for `live-shadow`; from then the paper-live gap follows the arm live ran. Nothing changes until it runs. |
+| MEIC | 2026-11-27 | No new entries on a half day, paper and live. The current era from 2026-11-03 held no half day, so no session on either side was traded under the other rule and no break was journaled. |
+
+**Live arming, the arm journal and Config.**
+
+- The console's switch runs the module's own `live_loop --arm --confirm YES` (or `--disarm`), never
+  `--install-task`. The server refuses an arm unless the loop is ready and not halted when the `YES`
+  arrives, and when anything the dialog showed has changed; each confirmation is used once and expires
+  after ten minutes. A second broker login's MEIC account shows a locked switch with its blocker; flies and
+  bwb show none.
+- `arm_events` is `data/live/arm_events.jsonl`, append-only, with the actor and a reason slug
+  (`record_not_today`, `past_disarm_time`). A ladder disarm past `disarm_at` happens even when a gate is
+  unmet.
+- `set_live_arm` re-reads the config just before it writes and refuses with code `changed` if it is not as
+  it was read, so a hand edit made while the status was read is never reverted by stale text. `not_flat`
+  counts a leftover entry intent: an entry sent but not yet reconciled means an order may be at the broker.
+- The orchestrator's `configedit.GUARDED` now covers `/modules/flies/enabled` and `/modules/bwb/enabled`.
+  Those switches lift the "retired, refuses to arm while off" check.
+- `scripts/demo_home.py` refuses a folder that is not a demo home: the real home wherever it is
+  (including `CHERRYPICK_HOME`), anything inside or above it, the user's home, the repo and a drive root.
+  The demo home no longer includes calendars and contango.
+- The guide's console images were retaken for this release, and dated history notes were taken out of the
+  docs, which describe the current version only.
+
+**manage.**
+
+- The snapshot gained the cost call's monthlies (`cost_call` in the orchestrator's manage block caps the
+  calls and seconds) and the Sunday run is its own job because its day gate differs from the trading-day
+  one (`JobSpec.weekdays`). Config keys: `expiry.time_spread_hold_max_delta`, `attention.cost_call`,
+  `portfolio.dispersion`, `manage.sunday_at`, `manage.cost_call`.
+- The README cites what a literature pass found for each portfolio band and names the research items that
+  test them (108, 109).
+- A trade carries one `intent_ask` block (the intents its shape allows, whether it is asked, manage's
+  suggestion with its evidence, the verdict each answer would give, and the config key an answer is
+  written at). The kind is decided from the legs: a naked short put asks wheel or not, a call diagonal the
+  PMCC view cannot decide (entry delta under the floor or unknown, nothing set on the long's contract)
+  asks PMCC or diagonal. A name's `pmcc` or `diagonal` no longer sets or hides the intent of a trade that is
+  not a call diagonal, and `wheel` and `no_wheel` apply only to a naked short put. An unanswered trade is
+  judged by the stricter rules and its reason line says so; it raises one needs-a-look item
+  (`attention.intent`). `wheel.tested` gained `review_beyond_days` (60) and `review_min_extrinsic` (0.10), and
+  `trades` is a top-level block of `manage.json` (in the shipped example).
+
+**Console.**
+
+- The intent surfaces: the strip on a position (card or table row), the Intent tab in an opened trade, the
+  PMCC card's intent row and the pmcc needs-a-look section all write through one narrow route,
+  `POST /api/config/intent`, to the orchestrator's `intent_set` operation: `trades.<key>.intent` in
+  `manage.json` and no other byte, through the config editor with its backup, the key checked by shape
+  (a stable trade ID, or a call's long contract), the replaced value returned for Undo. It is advice
+  config: it places no order and touches no live gate. Every control on these surfaces is 44px on a tablet
+  or phone, and the strip's answers stack whenever the strip is narrow.
+
+- The scorecard (`run.py scorecard`) joins the research verdict, forward check, change against control,
+  sample, net and drawdown; a forward state against a licensed reference is withheld while the results
+  gate is closed.
+- `core.changes` lists every modification under test in one module, each with its gap and interval; a
+  variant that enters more is not read as better for its size, and is "too early" under ten paired sessions.
+- Regime cuts read only for arms with enough sessions in them and name how many more each needs; a stale CSRF
+  token is retried once; an empty group is saved off and cannot be on; a move between groups starts at
+  the next session and says what it carries; a group's budget can be drawn from its members' backtests.
+- Charts, the EOD review and the morning report were rearranged (candle history reaches the sessions asked
+  for; the intraday and technicals tabs are one chart; the morning report is a one-screen Brief and tabs).
+
+**Orchestrator and research.**
+
+- `run.py draft-verdict` drafts a study's Result in words only, with a check that refuses any number other
+  than the item's own. `queue-chain` queues a study's declared chain whole, `study-times` shows each stage's
+  dates, a row that did nothing fails, and a result is stale when code it ran on has changed.
+- Passed items can declare `retest_forward`; the monthly forward retests (`research_queue.forward_retests`)
+  ship off. A study is declared in one PR with its register row in a fenced `register-row` block in its
+  plan section, and `research/hypotheses.json` in the repo is refused by `check_docs` and the pre-commit hook.
+- Studies declared since v0.13.0 include the market-profile entry readings, signal and trend studies,
+  the ladder's rules on minute bars, the portfolio caps, and open-interest and gap-fill studies; each
+  result and verdict stays under `~/.cherrypick/data/research/`.
+
+**Core and shared code.**
+
+- `core.jsonio` is the one atomic JSON writer, `core.paperloop` holds the paper loops' shared scaffolding,
+  `core.clock.ET` is the one Eastern zone, and `core.quotes` falls back to REST for option legs the stream
+  has not cached. `core.implied_vol` is about 3.7 times faster and returns the same floats.
+- `technicals` drops Dolt splits the prices never made and reads a rounded stock dividend as one event.
+- A paced PMCC arm asks the streamer for the deep window only where it will enter.
+- The five studies that read chain paths read only those they declared; a chain with no parity forward
+  offers no strike.
+
+**The rest of the release, by area.**
+
+**MEIC and live trading.**
+
 - **MEIC's live loop ships in dry run.** `live.dry_run` is `true` unless it is the literal `false`, and a
   missing key means `true`. An armed tick then preflights each new entry against the real account and
   sends none, writing nothing to the live ledger. It governs entries only: a held book is still
@@ -66,15 +329,9 @@ beyond the latest release.
   unknown arm, a follower or another twin, and `live.arm` cannot name a twin. Nothing changes until a
   machine's registry adds twins: `scripts/boundary_2026_11_24.py --arms ...` does that, retires the unpinned
   `live-shadow` and journals the break (dry run by default).
-- **Calendars and contango are retired.** Research item 38 (calendars) and item 39 (contango) failed every
-  arm at real quotes and prices. Both modules ship off, with a retired date on each arm; calendars'
-  open positions run to their own exits and the module goes off once flat. The same change switched off
-  the four automations item 75 failed (`iron-fly-1000`, `iron-fly-1dte-1330`, `gld-call-spread-20d` and
-  `orb-put-spread`); the two that passed and the two with no verdict stay on. The docs, the Help page
-  and the install guide now say so.
-- **A filter on the move since the open.** The Builder's "Move since the open" (`open_change_pct`) reads
-  the price against today's open, in percent, beside the opening gap and the move since the previous
-  close.
+
+**Ladder.**
+
 - **The ladder has live gates, a daily arm and an order path that ships in dry-run.** Its config gains
   a `live` block, shipped off, and `python -m cherrypick.ladder.live_loop` gains `--status` (every
   gate with its verdict, the account masked, dry-run or live), `--arm --confirm YES`, `--install-task`
@@ -97,19 +354,28 @@ beyond the latest release.
 - **The ladder has a console page.** `/ladder` (on the rail, key 6) shows each fund's previous close and
   every arm's next buy level, the open lots with the group's 18-day "hospital" flagged, the sold lots as
   trades, and each arm's realised and unrealised result. Its help tab says the rule is not a tested edge.
-- **The morning pack's SPX risk reversal comes from the broker.** Cboe's delayed SPX chain moved
-  behind a host that refuses scripts on 2026-11-19, so every market-files run warned and the row
-  stopped. The 30-day 25-delta risk reversal is now read from the broker's SPXW greeks by the
-  evening run, between the close and 20:15 ET (when SPX options' overnight session opens); a morning
-  retry reports a missing session rather than take overnight values. Rows keep a `source`, and the
-  Cboe and broker IVs were never compared on one session, so read a step across 11-19 with that in
-  mind.
-- **Backtested exits no longer go blind when a wing leaves the recorded strikes.** The same-day
-  stores hold a band of strikes around the spot, so on a day the market ran, a condor's far wing
-  could drop out of it and the position had no price for the rest of the day: its stop or target
-  never fired and it rode to settlement. Such a wing is now read as worth anywhere from 0 to the
-  farthest recorded strike's ask, an exit fires when it fires across that whole range, and the
-  close fills at the costly end. Backtests with intraday exits change, mostly on trending days.
+- **Ladder, a share dip ladder in paper.** A new package, `ladder`, buys a leveraged index fund (TQQQ to
+  start) in lots when it falls 7% and sells each lot on its own at +4%, with three arms: `chain` (each
+  further lot 7% under the last), `once` (one lot a session) and `decay` (the target falls to breakeven
+  after a month). Its rule failed research item 26, so this is for watching it at real quotes, not a
+  claim of an edge. Experimental, paper-only and off by default: turn it on with `modules.ladder.enabled` after
+  copying `packages/ladder/config.example.json` to `~/.cherrypick/config/ladder.json`. The suite reads
+  its lots like any other module's trades, so they land in the report, the compare and the review.
+
+**Retirements.**
+
+- **Calendars and contango are retired.** Research item 38 (calendars) and item 39 (contango) failed every
+  arm at real quotes and prices. Both modules ship off, with a retired date on each arm; calendars'
+  open positions run to their own exits and the module goes off once flat. The same change switched off
+  the four automations item 75 failed (`iron-fly-1000`, `iron-fly-1dte-1330`, `gld-call-spread-20d` and
+  `orb-put-spread`); the two that passed and the two with no verdict stay on. The docs, the Help page
+  and the install guide now say so.
+
+**Automations and the Builder.**
+
+- **A filter on the move since the open.** The Builder's "Move since the open" (`open_change_pct`) reads
+  the price against today's open, in percent, beside the opening gap and the move since the previous
+  close.
 - **Automations ignore impossible prices.** A quote that puts a structure's mid outside what it can
   be worth (a $10 fly entered for an $11 credit, or closed past its width) is no longer taken: the
   entry is skipped as `unrealistic_price`, no exit fires on such a mark, and a close waits for the
@@ -133,26 +399,6 @@ beyond the latest release.
 - **How a Builder run holds up.** The run card gains the reads a study gets, from the same trades
   and never a verdict: what the 5 best days carry, P&L per trade with costs at 1.5x and 2x, the
   drawdown range with the trades reshuffled, and how many quarters were profitable.
-- **Backtests on Compare's portfolio tab.** Beside one paper arm per module, add any number of
-  backtest arms: each Builder automation's newest run and the arms of a study result (item 75's eight,
-  for one). Correlation, effective arms, the drawdown saving and contributions read them as they read
-  paper, each backtest arm counted from its run's first session and labelled backtest. A licensed
-  result is offered only while the results gate is open, and the reading says it holds one.
-  `core.portfolio`'s manifest takes a `backtest` entry (a result file and an arm), and
-  `backtest read portfolio-sources` lists what can be chosen.
-- **Risk held at once, on the portfolio tab.** For the chosen arms, each session's peak of the max
-  loss open at the same time, the median, 95th percentile and worst of those peaks, and the worst
-  sessions with each arm's part. A trade with no recorded max loss is named and the card says it is
-  a floor. An automation's closed trades now record `risk`, their max loss, so Builder runs and
-  studies from here on are measured; older runs read as unmeasured.
-- **Add an underlying to the full set from the Builder.** Where our data does not cover an
-  automation on an underlying outside the full set's seven, the Builder offers to add it: the plan
-  first (requests and sessions, a year back by default), then one click queues its fetches on the
-  vendor's queue and the automation's explore run after them. Up to 300 sessions a click, only while
-  the licence allows new work; the data and the result are licensed. Additions are recorded on this
-  machine only and share three stores (`added-60s.db`, `added-near-1m.db`, `added-mid-5m.db`), keyed
-  by symbol, which the source registry reads per symbol. `fetch_full_set.py add SYM` adds a longer
-  span by hand, and `plan` keeps every addition current.
 - **The Builder builds an automation in a form.** One automation at a time, opened, new or copied.
   It is built in five sections with each block's backtest label: underlying and data, the entry
   signal in plain English, the market and chain gates, the legs and their price gates, and exits,
@@ -161,27 +407,12 @@ beyond the latest release.
   Declare and Promote to paper shown disabled. Beside it, **Today, live** decides the automation
   now as paper would, on a read-only snapshot (`cli builder-today`): every check, and the legs it
   would take or the check that stops it. The explore runs and run cards sit beside it too.
-- **A fetch run in steps estimates the step under way.** A job counted in steps (the SPX session
-  fetch, then its VIX pass) shows the time left in the running step at that step's own pace, and
-  how many steps follow ("about 48 min left in this step, then 1 more step"), on the queue card and
-  in the progress line. Before, the light VIX step counted as half the job and the estimate ran
-  hours long.
 - **Multi-day automations replayed through the session.** An automation that enters inside the
   session on an expiry after it (a 10:30 entry on a monthly) is backtested from the full set's
   intraday chain stores: expiries 1-7 days out at one minute and 8-90 at five, each read no older
   than its interval. Where the same-day store has no spot that session, the nearest expiry's parity
   forward stands for it, a declared limit. Before, such a run counted `needs_intraday` every session.
   The Builder's coverage counts those stores as they fill.
-- **A finished study's verdict, recorded in one command.** The queue's finish notice names each arm's
-  verdict and the command that records it. `python tools/record_verdict.py itemNN` sets the register
-  row's status and a words-only outcome from the study kit's verdict block, checks the register and
-  opens the docs PR from a fresh worktree; a result without the kit's block is refused.
-- **The research queue runs in two lanes.** Fetches run one at a time on the vendor's session (the
-  `research-queue-vendor` job, which replaces `research-queue`), and scripts run one at a time beside
-  them (the `research-queue-local` job), so a day-long study no longer holds up a fetch. A chain's order holds across the lanes. The
-  queue tab shows each lane's running task and its own up-next list, and lists rows in the runner's
-  order, priority included. Needs a supervisor restart (`supervise --restart`) to start the second
-  job.
 - **A daily signal on the developing bar.** A daily trigger takes `"developing": true` (with `within`
   null) to read today's bar as it stands each minute: the session's open, its high and low so far
   and the price now. It is due at any minute in the window when the signal fires on that bar. A
@@ -246,12 +477,6 @@ beyond the latest release.
   licensed. **Runs** shows the card's queued runs and each result's sessions,
   trades and P&L per arm, a licensed result only while licensed results may be shown. Backtest
   `read automation-runs --name` is the read behind it.
-- **The backtest fetch runs on the vendor's Options Value tier.** `vendor.subscription` picks the path.
-  On a tier without greeks, every intraday fetch asks for quotes and computes delta and IV from each
-  instant's chain (`core.chaindelta.computed_greeks`), with the underlying taken from the vendor when a
-  row carries it and from put-call parity on a 0DTE expiry. VIX minutes without the vendor's own price,
-  and option prints, are refused `not_on_tier`. The client never has more requests in flight than the
-  tier allows (Value 2, Standard 4), and `backtest status` shows what the tier can still add.
 - **An automation's chain request never takes the feed past its budget.** Enrolling an automation
   asks the streamer for its symbol and, around its entry window, the one expiry it trades. That request
   is now priced against the subscription budget before it is written. If it would go over, that day's
@@ -290,22 +515,25 @@ beyond the latest release.
   can set an allocation, a cap on its members' open risk and each member's share; an entry the cap has
   no room for is refused and says so. The shipped automations size as before.
 - **Ensemble is now automations.** The package, its import, its config file, data folder, log,
-  heartbeat and stream request, and its suite-config key are named `automations`; trade
-  notifications say "Automation paper".
-- **Automation groups.** The eight former ensemble arms are the `ensemble` automation group, each
+  heartbeat and stream request, its suite-config key, the ledger's tables (`automations_*`) and its trade
+  schema (`automations_trade`) are named `automations`; trade notifications say "Automation paper". The
+  migration `v0.14.0-01-automations-rename` moves a home set up under the old name (config files edited
+  by exact replacement and checked to parse to the intended document; a second run finds nothing), and
+  `automations.db.connect` refuses a ledger it has not reached. The finished research scripts keep their
+  file names (`ensemble_item75.py`, `ensemble_bars_item85.py`) and import `cherrypick.automations`.
+- **Automation groups.** The eight former ensemble arms are the `default` automation group, each
   labelled with research item 75's verdict (two passed, four failed, two no verdict). Switch the whole
-  group off with `"groups": {"ensemble": {"enabled": false}}` in `automations.json`: no new entries,
+  group off with `"groups": {"default": {"enabled": false}}` in `automations.json`: no new entries,
   while anything open is still managed and settled.
-- **The console's Ensemble page is Automations** (`/automations`; `/ensemble` and its tabs redirect).
+- **The console's Ensemble page is Automations** (`/automations`).
   Its summary ends with the automation groups: each group's switch, and each automation with its
   research verdict.
 - **`automations.json` names its block `automations`.** The block each automation is configured in
   was `arms`; that spelling still resolves, and a file holding both is read by `automations`.
-
 - **Automation backtests through the engine paper runs.** `packages/backtest/scripts/automation_backtest.py`
-  replays ensemble arms over a stored history with `cherrypick.ensemble.driver`: the same decisions,
+  replays automations over a stored history with `cherrypick.automations.driver`: the same decisions,
   exits, gates and fills as the paper loop (a test holds one day to the same trade, to the cent), so
-  every signal, exit and gate added this week can be backtested. It reads our own SPX 0DTE recordings,
+  every signal, exit and gate added since v0.13.0 can be backtested. It reads our own SPX 0DTE recordings,
   or the vendor's stores while the licence allows, chosen by the source registry. An automation held
   across sessions reads end-of-day chains (Dolt, or the vendor's while licensed) at one tick a session,
   15:59; an entry at another time is counted as needing intraday data, never moved to the close.
@@ -328,31 +556,91 @@ beyond the latest release.
   that reads volume refuses bars without it. An automation's volume signal names whose volume weighs
   its bars (SPY for SPX): paper records it each minute, and the backtest reads the recorded one-minute
   bars, refusing dates they do not cover.
-- **Ensemble arms state their safeguards.** `limits.max_open` and `limits.per_day` are required in every
-  arm, with no default in the engine: an arm in `~/.cherrypick/config/ensemble.json` that replaces
+- **Automations state their safeguards.** `limits.max_open` and `limits.per_day` are required in every
+  automation, with no default in the engine: an entry in `~/.cherrypick/config/automations.json` that replaces
   `limits` must name both. The shipped arms already ran one entry a day; they now say so.
-- **IV gates on the vol index.** The ensemble's `vol_index_rank`, `vol_index_percentile` and
+- **IV gates on the vol index.** The automations' `vol_index_rank`, `vol_index_percentile` and
   `vol_index_minus_rv` gates read the underlying's Cboe vol index (VIX for SPX, GVZ for GLD, RVX for
   IWM): its previous close against its own history, or against realized vol. The `market-files` job
   now also keeps RVX, GVZ, VXSLV and OVX.
-- **Ensemble: three more exits, and signal exits in paper.** `stop_credit_multiple` closes a credit
+- **Automations: three more exits, and signal exits in paper.** `stop_credit_multiple` closes a credit
   position when its loss reaches m times the credit, `delta_limit` when the structure's delta reaches a
   limit, `close_at_dte` a set number of days before expiry. Paper's position snapshot now carries the
   recorded trail, earlier sessions, daily bars, the event calendar and leg deltas: without them a signal
   exit could never fire in paper, though it fired in the backtest.
-- **One firing rule for intraday signals.** In the ensemble's engine an intraday signal now reads the
+- **One firing rule for intraday signals.** In the automations' engine an intraday signal now reads the
   previous five sessions as well as today's, as a signal study does, so a seeded indicator is warm at
   the open and a gap or prior-session signal has the prior session. A test holds that the study,
   core's trigger and the engine (ticking as paper does) fire on the same minute.
 - **Daily signals.** A trigger with `"daily": true` reads completed daily bars only and acts today on
   a firing at the previous session's close (a daily RSI or MACD cross, a close above a moving average).
   Today's still-forming bar is never read, and bars that stop before yesterday are refused as stale.
-  The ensemble's entries and signal exits can use it.
-- **Ensemble: exits on a signal, entries on event dates.** An arm's `exit.signal` closes a position
+  The automations' entries and signal exits can use it.
+- **Automations: exits on a signal, entries on event dates.** An arm's `exit.signal` closes a position
   when a `core.signals` signal fires on its underlying (the entry trigger's shape), checked after the
   touch and the profit target; the backtest and paper both run it. An entry trigger may now be an event
   signal, such as FOMC day at 13:45 or the session before CPI: the dates come from the event calendar,
   and a stretch the calendar cannot answer is refused by name, never read as quiet.
+- **Automations, in paper.** Eight short-dated SPX and GLD option arms (0DTE and 1DTE flies, a condor and
+  put spreads, an opening-range put spread, a long put and two GLD call spreads) now trade in paper
+  through one decision function, the same one their backtest uses. Experimental and off by default: turn
+  on `modules.automations.enabled` after copying `packages/automations/config.example.json` to
+  `~/.cherrypick/config/automations.json`. An arm added in that file trades with no code change. Every
+  decision, taken or refused, is kept with the gate that decided it and the snapshot it saw, so paper can
+  be replayed against the backtest. A position is a ledger row, never an order. An arm can enter on a
+  signal (a cross, a breakout, a gap and the like, on bars of the minutes it names) with a `trigger`
+  entry, and a misspelt gate setting in the file is refused when the arms load instead of at the first
+  decision.
+
+**Backtest, data and research.**
+
+- **Backtested exits no longer go blind when a wing leaves the recorded strikes.** The same-day
+  stores hold a band of strikes around the spot, so on a day the market ran, a condor's far wing
+  could drop out of it and the position had no price for the rest of the day: its stop or target
+  never fired and it rode to settlement. Such a wing is now read as worth anywhere from 0 to the
+  farthest recorded strike's ask, an exit fires when it fires across that whole range, and the
+  close fills at the costly end. Backtests with intraday exits change, mostly on trending days.
+- **Backtests on Compare's portfolio tab.** Beside one paper arm per module, add any number of
+  backtest arms: each Builder automation's newest run and the arms of a study result (item 75's eight,
+  for one). Correlation, effective arms, the drawdown saving and contributions read them as they read
+  paper, each backtest arm counted from its run's first session and labelled backtest. A licensed
+  result is offered only while the results gate is open, and the reading says it holds one.
+  `core.portfolio`'s manifest takes a `backtest` entry (a result file and an arm), and
+  `backtest read portfolio-sources` lists what can be chosen.
+- **Risk held at once, on the portfolio tab.** For the chosen arms, each session's peak of the max
+  loss open at the same time, the median, 95th percentile and worst of those peaks, and the worst
+  sessions with each arm's part. A trade with no recorded max loss is named and the card says it is
+  a floor. An automation's closed trades now record `risk`, their max loss, so Builder runs and
+  studies from here on are measured; older runs read as unmeasured.
+- **Add an underlying to the full set from the Builder.** Where our data does not cover an
+  automation on an underlying outside the full set's seven, the Builder offers to add it: the plan
+  first (requests and sessions, a year back by default), then one click queues its fetches on the
+  vendor's queue and the automation's explore run after them. Up to 300 sessions a click, only while
+  the licence allows new work; the data and the result are licensed. Additions are recorded on this
+  machine only and share three stores (`added-60s.db`, `added-near-1m.db`, `added-mid-5m.db`), keyed
+  by symbol, which the source registry reads per symbol. `fetch_full_set.py add SYM` adds a longer
+  span by hand, and `plan` keeps every addition current.
+- **A fetch run in steps estimates the step under way.** A job counted in steps (the SPX session
+  fetch, then its VIX pass) shows the time left in the running step at that step's own pace, and
+  how many steps follow ("about 48 min left in this step, then 1 more step"), on the queue card and
+  in the progress line. Before, the light VIX step counted as half the job and the estimate ran
+  hours long.
+- **A finished study's verdict, recorded in one command.** The queue's finish notice names each arm's
+  verdict and the command that records it. `python tools/record_verdict.py itemNN` sets the register
+  row's status and a words-only outcome from the study kit's verdict block, checks the register and
+  opens the docs PR from a fresh worktree; a result without the kit's block is refused.
+- **The research queue runs in two lanes.** Fetches run one at a time on the vendor's session (the
+  `research-queue-vendor` job, which replaces `research-queue`), and scripts run one at a time beside
+  them (the `research-queue-local` job), so a day-long study no longer holds up a fetch. A chain's order holds across the lanes. The
+  queue tab shows each lane's running task and its own up-next list, and lists rows in the runner's
+  order, priority included. Needs a supervisor restart (`supervise --restart`) to start the second
+  job.
+- **The backtest fetch runs on the vendor's Options Value tier.** `vendor.subscription` picks the path.
+  On a tier without greeks, every intraday fetch asks for quotes and computes delta and IV from each
+  instant's chain (`core.chaindelta.computed_greeks`), with the underlying taken from the vendor when a
+  row carries it and from put-call parity on a 0DTE expiry. VIX minutes without the vendor's own price,
+  and option prints, are refused `not_on_tier`. The client never has more requests in flight than the
+  tier allows (Value 2, Standard 4), and `backtest status` shows what the tier can still add.
 - **Every data source in one list.** `python -m cherrypick.core.sources` declares each store the suite
   holds, ours and the vendor's: what it holds, its cadence, the expiries a chain carries and whether it
   is licensed. `inventory` reads each one's span per symbol, read-only, into
@@ -362,16 +650,6 @@ beyond the latest release.
   `sources-inventory` job reads it every morning at 09:00, and the Backtest page's **sources** tab lists
   every source with its span and answers the coverage question. A store not on the machine is listed
   as absent, not a failure.
-- **Ensemble, in paper.** Eight short-dated SPX and GLD option arms (0DTE and 1DTE flies, a condor and
-  put spreads, an opening-range put spread, a long put and two GLD call spreads) now trade in paper
-  through one decision function, the same one their backtest uses. Experimental and off by default: turn
-  on `modules.ensemble.enabled` after copying `packages/ensemble/config.example.json` to
-  `~/.cherrypick/config/ensemble.json`. An arm added in that file trades with no code change. Every
-  decision, taken or refused, is kept with the gate that decided it and the snapshot it saw, so paper can
-  be replayed against the backtest. A position is a ledger row, never an order. An arm can enter on a
-  signal (a cross, a breakout, a gap and the like, on bars of the minutes it names) with a `trigger`
-  entry, and a misspelt gate setting in the file is refused when the arms load instead of at the first
-  decision.
 - **Signal studies on the underlying.** `packages/backtest/scripts/signal_study.py` takes any signal
   (a cross, a gap, an opening-range break and the like) and shows what the price did after each firing:
   the move to the close and to N sessions, the range against the expected move, and how often a
@@ -392,13 +670,16 @@ beyond the latest release.
   so: an earlier study read the same data, or its holdout was small. The data tab's validation panel is
   gone, and `validate` is no longer a command or a research-queue kind. `--provisional` and
   `--unvalidated-holdout` are still accepted and do nothing.
-- **Ladder, a share dip ladder in paper.** A new package, `ladder`, buys a leveraged index fund (TQQQ to
-  start) in lots when it falls 7% and sells each lot on its own at +4%, with three arms: `chain` (each
-  further lot 7% under the last), `once` (one lot a session) and `decay` (the target falls to breakeven
-  after a month). Its rule failed research item 26, so this is for watching it at real quotes, not a
-  claim of an edge. Experimental, paper-only and off by default: turn it on with `modules.ladder.enabled` after
-  copying `packages/ladder/config.example.json` to `~/.cherrypick/config/ladder.json`. The suite reads
-  its lots like any other module's trades, so they land in the report, the compare and the review.
+
+**Morning pack, charts and data jobs.**
+
+- **The morning pack's SPX risk reversal comes from the broker.** Cboe's delayed SPX chain moved
+  behind a host that refuses scripts on 2026-11-19, so every market-files run warned and the row
+  stopped. The 30-day 25-delta risk reversal is now read from the broker's SPXW greeks by the
+  evening run, between the close and 20:15 ET (when SPX options' overnight session opens); a morning
+  retry reports a missing session rather than take overnight values. Rows keep a `source`, and the
+  Cboe and broker IVs were never compared on one session, so read a step across 11-19 with that in
+  mind.
 - **Market Profile on the intraday chart.** Charts → intraday now also draws SPX, SPY, NDX and QQQ
   beside the futures. By default it overlays the session's Market Profile: time spent at each price as a
   shaded histogram, plus lines for the point of control, the value area (70% of the time), the first

@@ -111,17 +111,11 @@ def commit(root: Path) -> str | None:
 SCRIPT_NAME = re.compile(r"^[A-Za-z0-9_]{1,80}(\.py)?$")
 
 
-#: A package's old import name -> its new one.
-RENAMED_IMPORTS = {"ensemble": "automations"}
-
-
 def _module_file(module: str, root: Path) -> Path | None:
-    """The repo file a `cherrypick.*` module lives in (a package's src layout, or core's). A module's
-    old name (`cherrypick.ensemble.*`, which still imports) is the file under its new one."""
+    """The repo file a `cherrypick.*` module lives in (a package's src layout, or core's)."""
     parts = module.split(".")
     if parts[0] != "cherrypick" or len(parts) < 2:
         return None
-    parts[1] = RENAMED_IMPORTS.get(parts[1], parts[1])
     rel = Path(*parts)
     bases = [root / "packages" / "core"] + sorted((root / "packages").glob("*/src"))
     for base in bases:

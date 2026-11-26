@@ -16,7 +16,7 @@ export const PERFORMANCE_MODULE_SCHEMA = {
   curve: "curve_vx",
   bwb: "bwb_132",
   contango: "contango_etf",
-  automations: "ensemble_trade",
+  automations: "automations_trade",
   weeklyput: "weeklyput_put",
   ladder: "ladder_lot",
 } as const;

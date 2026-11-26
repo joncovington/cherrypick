@@ -332,7 +332,7 @@
       }
     },
     "automations": {
-      "_comment": "EXPERIMENTAL, off by default: switch on with modules.automations.enabled once you have read its package README and copied packages/automations/config.example.json to ~/.cherrypick/config/automations.json. automations (formerly ensemble): research item 75's eight SPX and GLD arms in paper (packages/automations), each one configured variant decided by the same engine the backtest uses; arms added in that config trade with no code change. Paper-only and credential-free: no keyring_service, no broker_tool, no live block, and a position is a ledger row, never an order. It reads the stream cache only; its stream request widens an arm's window for the entry minutes alone, so the producer picks it up on its next poll without a restart. It acts only in each arm's entry window, on open positions and when a close posts, so it has no eval-activity reader (eval_activity.NOT_APPLICABLE); an arm-day it could not trade is a row in ensemble_entries and in the review.",
+      "_comment": "EXPERIMENTAL, off by default: switch on with modules.automations.enabled once you have read its package README and copied packages/automations/config.example.json to ~/.cherrypick/config/automations.json. automations: research item 75's eight SPX and GLD arms in paper (packages/automations), each one configured variant decided by the same engine the backtest uses; arms added in that config trade with no code change. Paper-only and credential-free: no keyring_service, no broker_tool, no live block, and a position is a ledger row, never an order. It reads the stream cache only; its stream request widens an arm's window for the entry minutes alone, so the producer picks it up on its next poll without a restart. It acts only in each arm's entry window, on open positions and when a close posts, so it has no eval-activity reader (eval_activity.NOT_APPLICABLE); an arm-day it could not trade is a row in automations_entries and in the review.",
       "enabled": false,
       "path": "../automations",
       "paper": {
@@ -353,7 +353,7 @@
         ],
         "paper_db": "~/.cherrypick/data/automations/paper_trades.db",
         "notify_trades": true,
-        "trade_schema": "ensemble_trade",
+        "trade_schema": "automations_trade",
         "log": "automations_paper.log",
         "freshness_minutes": 10
       }

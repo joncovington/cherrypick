@@ -58,10 +58,10 @@ const END_ORDER = ["spot touch", "profit target", "time exit", "held to the post
 export function readAutomationsSummary(config: ConsoleConfig, q: SummaryQuery): ModuleSummarySlice {
   const dbFile = path.join(config.paths.automationsDir, "paper_trades.db");
   const openEntries = withReadOnlyDb<string[] | null>(dbFile, null, (db) => {
-    if (!hasTable(db, "ensemble_positions")) return null;
+    if (!hasTable(db, "automations_positions")) return null;
     const scope = scopeClauses(q, { arm: "arm", symbol: "symbol" });
     return db
-      .prepare<string[], { s: string | null }>(`SELECT entry_session AS s FROM ensemble_positions WHERE status = 'open'${scope.sql}`)
+      .prepare<string[], { s: string | null }>(`SELECT entry_session AS s FROM automations_positions WHERE status = 'open'${scope.sql}`)
       .all(...scope.params)
       .map((r) => (r.s ?? "").slice(0, 10));
   });

@@ -14,7 +14,7 @@ from cherrypick.orchestrator import configcli, referenceedit
 FILE = (
     "{\r\n"
     '  "_header": "automations: kept as written",\r\n'
-    '  "groups": {"ensemble": {"enabled": false}},\r\n'
+    '  "groups": {"default": {"enabled": false}},\r\n'
     '  "automations": {"iron-fly-1000": {"enabled": true}}\r\n'
     "}\r\n"
 )
@@ -62,7 +62,7 @@ def test_a_pin_adds_the_block_and_leaves_the_rest_as_written(cfgfile):
     d = doc(cfgfile)
     assert d["references"] == {"iron-condor-1345": RUN}
     assert d["automations"] == {"iron-fly-1000": {"enabled": True}} and d["groups"] == {
-        "ensemble": {"enabled": False}
+        "default": {"enabled": False}
     }
     assert '"_header": "automations: kept as written"' in cfgfile.read_text(encoding="utf-8")
 

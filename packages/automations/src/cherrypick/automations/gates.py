@@ -288,7 +288,7 @@ def _any(_v: object) -> bool:
 
 def _condition(name: str, fn) -> ec.Condition:
     """A gate as a core condition: its parameters are its function's (those with a default are
-    optional), it reads the engine's `Ctx` from the context's `ensemble` entry, and it takes no bound
+    optional), it reads the engine's `Ctx` from the context's `automations` entry, and it takes no bound
     it does not name."""
     sig = list(inspect.signature(fn).parameters.values())[1:]
     required = {p.name: _any for p in sig if p.default is inspect.Parameter.empty}
@@ -296,8 +296,8 @@ def _condition(name: str, fn) -> ec.Condition:
     return ec.Condition(
         name,
         CORE_STAGE[name],
-        lambda c, p, _fn=fn: _fn(c.extra["ensemble"], **p),
-        lambda _p: {"ensemble"},
+        lambda c, p, _fn=fn: _fn(c.extra["automations"], **p),
+        lambda _p: {"automations"},
         required,
         optional,
     )
@@ -315,7 +315,7 @@ def check_of(gate: dict) -> dict:
 def run(gate: dict, ctx: Ctx):
     """The gate's (ok, value), evaluated by `core.entrychecks` over this engine's context."""
     verdict = ec.evaluate(
-        [check_of(gate)], ec.Context(extra={"ensemble": ctx}), stages=ec.STAGES, registry=CONDITIONS
+        [check_of(gate)], ec.Context(extra={"automations": ctx}), stages=ec.STAGES, registry=CONDITIONS
     )
     check = verdict.checks[0]
     return check.passed, check.value

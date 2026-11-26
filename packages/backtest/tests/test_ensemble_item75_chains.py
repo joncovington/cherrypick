@@ -6,8 +6,8 @@ from __future__ import annotations
 import sqlite3
 
 import pytest
+from cherrypick.automations.events import EventCalendar
 from cherrypick.core import bs
-from cherrypick.ensemble.events import EventCalendar
 from test_ensemble_item75_script import QUIET, ctx, m, spx
 
 from cherrypick.backtest import intradayfetch, oifetch

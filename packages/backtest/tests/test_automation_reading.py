@@ -136,7 +136,7 @@ def test_a_run_with_too_few_trades_gives_no_reading():
 def _ledger(path) -> None:
     conn = sqlite3.connect(path)
     conn.execute(
-        "CREATE TABLE ensemble_positions (position_id TEXT, arm TEXT, symbol TEXT, quantity INTEGER, "
+        "CREATE TABLE automations_positions (position_id TEXT, arm TEXT, symbol TEXT, quantity INTEGER, "
         "entry_value REAL, max_profit REAL, capital REAL, gross_pnl REAL, fees REAL, settlement REAL, "
         "slippage REAL, net_pnl REAL, exit_reason TEXT, exit_session TEXT, entry_session TEXT, status TEXT, "
         "entry_time TEXT, exit_time TEXT, entry_spot REAL, exit_spot REAL)"
@@ -148,12 +148,12 @@ def _ledger(path) -> None:
         ("d", NAME, None, None, "open", None),
     ]:
         conn.execute(
-            "INSERT INTO ensemble_positions (position_id, arm, symbol, quantity, net_pnl, gross_pnl, fees, "
-            "settlement, slippage, exit_session, entry_session, status, exit_reason) "
+            "INSERT INTO automations_positions (position_id, arm, symbol, quantity, net_pnl, gross_pnl, "
+            "fees, settlement, slippage, exit_session, entry_session, status, exit_reason) "
             "VALUES (?, ?, 'SPX', 1, ?, ?, 0, 0, 0, ?, ?, ?, ?)",
             (pid, arm, net, net, day, day, status, reason),
         )
-    conn.execute("CREATE TABLE ensemble_entries (arm TEXT, symbol TEXT, entry_session TEXT, outcome TEXT)")
+    conn.execute("CREATE TABLE automations_entries (arm TEXT, symbol TEXT, entry_session TEXT, outcome TEXT)")
     for arm, outcome in [
         (NAME, "entered"),
         (NAME, "entered"),
@@ -161,7 +161,7 @@ def _ledger(path) -> None:
         (NAME, "pending"),
         ("other", "missed"),
     ]:
-        conn.execute("INSERT INTO ensemble_entries VALUES (?, 'SPX', '2026-11-10', ?)", (arm, outcome))
+        conn.execute("INSERT INTO automations_entries VALUES (?, 'SPX', '2026-11-10', ?)", (arm, outcome))
     conn.commit()
     conn.close()
 

@@ -1,4 +1,4 @@
-"""Automation groups: the shipped eight are the ensemble group, each labelled with item 75's register
+"""Automation groups: the shipped eight are the default group, each labelled with item 75's register
 verdict; switching the group off switches its automations off for new entries; a misspelt group is
 refused."""
 
@@ -12,8 +12,8 @@ from cherrypick.automations import arms, stream_request
 from cherrypick.automations import config as config_mod
 
 
-def test_the_shipped_eight_are_the_ensemble_group_with_item_75s_verdicts():
-    assert {a["group"] for a in arms.ARMS.values()} == {"ensemble"}
+def test_the_shipped_eight_are_the_default_group_with_item_75s_verdicts():
+    assert {a["group"] for a in arms.ARMS.values()} == {"default"}
     assert all(a["register"]["item"] == 75 for a in arms.ARMS.values())
     # Item 75's passing arms (its register row, on the machine that ran it, reads these two forward).
     passed = {n for n, a in arms.ARMS.items() if a["register"]["verdict"] == "passed"}
@@ -29,18 +29,18 @@ def test_a_group_switched_off_switches_its_automations_off():
     assert all(a["enabled"] for a in on.values())
     # A note beside the groups and one inside a group are both read past.
     off = config_mod.load_arms(
-        {"groups": {"_note": "paused for the rename", "ensemble": {"enabled": False, "_note": "paused"}}}
+        {"groups": {"_note": "paused for the rename", "default": {"enabled": False, "_note": "paused"}}}
     )
     assert not any(a["enabled"] for a in off.values())
     assert config_mod.enabled(off) == {}
     assert stream_request.active_arms(off, __import__("datetime").date(2026, 11, 16)) == {}
-    status = config_mod.group_status(off, {"groups": {"ensemble": {"enabled": False}}})
-    assert status["ensemble"]["enabled"] is False and len(status["ensemble"]["arms"]) == 8
-    assert {r["name"]: r["verdict"] for r in status["ensemble"]["arms"]}["long-put-1030"] == "passed"
+    status = config_mod.group_status(off, {"groups": {"default": {"enabled": False}}})
+    assert status["default"]["enabled"] is False and len(status["default"]["arms"]) == 8
+    assert {r["name"]: r["verdict"] for r in status["default"]["arms"]}["long-put-1030"] == "passed"
     # An arm outside any group, or in a group left on, is untouched.
     own = {**arms.ARMS["long-put-1030"], "name": "mine"}
     own.pop("group")
-    mixed = config_mod.load_arms({"groups": {"ensemble": {"enabled": False}}, "arms": {"mine": own}})
+    mixed = config_mod.load_arms({"groups": {"default": {"enabled": False}}, "arms": {"mine": own}})
     assert mixed["mine"]["enabled"] and not mixed["long-put-1030"]["enabled"]
 
 
@@ -48,10 +48,10 @@ def test_a_group_switched_off_switches_its_automations_off():
     ("groups", "match"),
     [
         ({"ensembel": {"enabled": False}}, "a misspelling"),
-        ({"ensemble": {"enabled": "no"}}, "true or false"),
-        ({"ensemble": {"enabled": False, "until": "x"}}, "unknown key"),
-        ({"ensemble": False}, "an object"),
-        (["ensemble"], "an object of"),
+        ({"default": {"enabled": "no"}}, "true or false"),
+        ({"default": {"enabled": False, "until": "x"}}, "unknown key"),
+        ({"default": False}, "an object"),
+        (["default"], "an object of"),
     ],
 )
 def test_a_malformed_groups_block_is_refused(groups, match):
@@ -63,7 +63,7 @@ def test_validation_refuses_a_bad_group_or_register():
     import copy
 
     a = copy.deepcopy(arms.ARMS["iron-fly-1000"])
-    a["group"] = " ensemble"
+    a["group"] = " default"
     a["register"] = {"item": 75, "verdict": "pass"}
     problems = arms.validate(a)
     assert any(".group" in p for p in problems) and any(".register" in p for p in problems)
@@ -74,6 +74,6 @@ def test_the_cli_prints_each_group_for_the_console(capsys, managed_home):
 
     assert cli.main(["groups"]) == 0
     out = json.loads(capsys.readouterr().out)
-    ens = out["groups"]["ensemble"]
+    ens = out["groups"]["default"]
     assert ens["enabled"] is True and len(ens["arms"]) == 8
     assert {a["name"]: a["verdict"] for a in ens["arms"]}["iron-condor-1345"] == "passed"

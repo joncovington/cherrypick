@@ -8,7 +8,7 @@ import json
 from datetime import date
 from pathlib import Path
 
-from cherrypick.ensemble.events import EventCalendar
+from cherrypick.automations.events import EventCalendar
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "event_history_item75.py"
 

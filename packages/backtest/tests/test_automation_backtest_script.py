@@ -1,6 +1,6 @@
 """The automation backtest script (packages/backtest/scripts/automation_backtest.py): which store a run reads,
 that the vendor's is refused once its licence ends, and where a result goes. The replay itself is
-`cherrypick.ensemble.driver`, held to the paper loop by ensemble's own tests."""
+`cherrypick.automations.driver`, held to the paper loop by the automations package's own tests."""
 
 from __future__ import annotations
 

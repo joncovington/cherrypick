@@ -13,7 +13,7 @@ from cherrypick.orchestrator import automationedit, configcli, configedit
 FILE = (
     "{\r\n"
     '  "_header": "automations: kept as written",\r\n'
-    '  "groups": {"ensemble": {"enabled": false}},\r\n'
+    '  "groups": {"default": {"enabled": false}},\r\n'
     '  "automations": {\r\n'
     '    "iron-fly-1000": {"enabled": true},\r\n'
     '    "long-put-1030": {"enabled": true}\r\n'

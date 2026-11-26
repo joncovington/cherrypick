@@ -13,15 +13,15 @@ MON = "2026-11-23"
 MOVER = "gld-call-spread-1dte"
 
 
-def _config(gold_on: bool, ensemble: dict) -> dict:
+def _config(gold_on: bool, default: dict) -> dict:
     return {
-        "groups": {"ensemble": ensemble, "gold": {"enabled": gold_on}},
+        "groups": {"default": default, "gold": {"enabled": gold_on}},
         "automations": {MOVER: {"group": "gold"}, "long-put-1030": {"group": "gold"}},
     }
 
 
-def _move(gold_on: bool, ensemble: dict) -> dict:
-    return {"groups": {"ensemble": ensemble, "gold": {"enabled": gold_on}}, "members": {MOVER: "ensemble"}}
+def _move(gold_on: bool, default: dict) -> dict:
+    return {"groups": {"default": default, "gold": {"enabled": gold_on}}, "members": {MOVER: "default"}}
 
 
 RUNNING = {"enabled": True, "start": "2026-11-02"}
@@ -31,7 +31,7 @@ def test_a_move_from_an_off_group_into_a_running_one_starts_at_the_next_session(
     r = groupedit.check(_config(False, RUNNING), _move(False, RUNNING), SAT)
     assert r["problems"] == []
     assert r["switches"] == {MOVER: {"enabled": True, "start": MON}}
-    assert f"{MOVER} trades in ensemble from {MON}, the next session" in r["notes"]
+    assert f"{MOVER} trades in default from {MON}, the next session" in r["notes"]
 
 
 def test_a_move_between_two_running_groups_keeps_trading_as_it_was():
@@ -53,7 +53,7 @@ def test_a_move_out_of_an_off_group_into_none_starts_at_the_next_session():
 def test_every_move_says_its_record_goes_with_it():
     r = groupedit.check(_config(True, RUNNING), _move(True, RUNNING), SAT)
     assert r["cautions"] == [
-        f"{MOVER}'s record moves with it: gold and ensemble are read over their members now,"
+        f"{MOVER}'s record moves with it: gold and default are read over their members now,"
         " so both groups' figures change, past sessions included"
     ]
 
@@ -62,6 +62,6 @@ def test_a_move_into_a_group_with_a_budget_names_the_cap_and_the_budget():
     budgeted = {**RUNNING, "allocation": 5000, "max_risk": 2000}
     r = groupedit.check(_config(True, budgeted), _move(True, budgeted), SAT)
     cautions = r["cautions"]
-    assert f"Any position {MOVER} holds counts against ensemble's cap from the save" in cautions
-    budget = [c for c in cautions if c.startswith("ensemble's budget was not sized for")]
+    assert f"Any position {MOVER} holds counts against default's cap from the save" in cautions
+    budget = [c for c in cautions if c.startswith("default's budget was not sized for")]
     assert len(budget) == 1 and "it has no share there, only the group's cap" in budget[0]

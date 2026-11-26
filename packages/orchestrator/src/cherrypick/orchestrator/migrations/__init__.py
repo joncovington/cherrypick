@@ -27,7 +27,7 @@ from v0.12 straight to v0.14 has v0.13's migrations pending as well and runs the
 `run.py migrations` lists applied and pending ones; `--dry-run` previews and `--apply` runs them.
 `run.py upgrade` calls both against the TARGET release's code.
 
-v0.12.0 ships with an empty registry.
+v0.14.0 ships the first: the automations module's data under its own name (`automations_rename`).
 """
 
 from __future__ import annotations
@@ -44,6 +44,7 @@ from cherrypick.core.jsonio import write_json_atomic
 
 from .. import config as cfgmod
 from ..util import read_json
+from . import automations_rename as _automations_rename
 
 FILE = "migrations.json"
 _ID = re.compile(r"^v\d+\.\d+\.\d+-\d{2}-[a-z0-9][a-z0-9-]*$")
@@ -57,7 +58,9 @@ class Migration:
 
 
 # Every migration a release has ever shipped, oldest first. Append; never reorder or remove.
-MIGRATIONS: tuple[Migration, ...] = ()
+MIGRATIONS: tuple[Migration, ...] = (
+    Migration(_automations_rename.ID, _automations_rename.DESCRIPTION, _automations_rename.apply),
+)
 
 
 class MigrationError(Exception):

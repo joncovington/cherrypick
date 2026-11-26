@@ -381,7 +381,7 @@ checkout fetches the tag; a ZIP install unzips into a new folder next to the old
 runs the new release's installer, migrates the data, starts everything and checks it. It refuses while
 a live loop is armed or a live position is open, and outside the quiet window after the close
 (`--force-window` waives the window only). `upgrade.cmd --rollback` puts the old release and the
-pre-upgrade backup back. `--to v0.13.0` names a release; `--dry-run` checks everything and changes
+pre-upgrade backup back. `--to v0.14.0` names a release; `--dry-run` checks everything and changes
 nothing. [docs/guide/upgrading.md](docs/guide/upgrading.md) has the whole page.
 
 The release's notes are on the [Releases page](https://github.com/joncovington/cherrypick/releases):

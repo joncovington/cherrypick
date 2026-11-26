@@ -50,7 +50,7 @@ POSITIONS = {
     "earnings": ("trades", "order_id"),
     "contango_etf": ("contango_positions", "position_id"),
     "weeklyput_put": ("weeklyput_positions", "position_id"),
-    "ensemble_trade": ("ensemble_positions", "position_id"),
+    "automations_trade": ("automations_positions", "position_id"),
     "ladder_lot": ("ladder_positions", "position_id"),
 }
 

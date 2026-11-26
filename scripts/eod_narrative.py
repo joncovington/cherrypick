@@ -122,7 +122,7 @@ Things about this data that will mislead you if you do not know them:
   `concentration.largest` names the arm under `arm` from v8 and `profile` below it.
 - `expected_vs_observed` is each module's OWN model, and its `basis` says what it measures. There
   are eleven trading modules (meic, flies, earnings, calendars, pmcc, bwb, curve, contango, weeklyput,
-  ensemble, ladder) and their bases are not comparable with each other.
+  automations, ladder) and their bases are not comparable with each other.
 - "P&L" and `net` are always net of costs. From `fact_version` 10 the costs in `results` (and each
   `by_arm` row) are separate: `fees` (trading fees), `settlement` (exercise / assignment /
   delivery; null with `settlement_unrecorded` counting the rows when it was not recorded, in which

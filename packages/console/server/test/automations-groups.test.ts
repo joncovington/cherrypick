@@ -4,7 +4,7 @@ import { readAutomationGroups, setAutomationsGroupsCaller, shapeGroups } from ".
 const CLI = {
   ok: true,
   groups: {
-    ensemble: {
+    default: {
       enabled: false,
       arms: [
         { name: "iron-condor-1345", enabled: false, verdict: "passed" },
@@ -22,7 +22,7 @@ afterEach(() => setAutomationsGroupsCaller());
 describe("automation groups", () => {
   it("shapes the package's groups, sorted, with only known verdicts", () => {
     const groups = shapeGroups(CLI);
-    expect(groups.map((g) => g.name)).toEqual(["alpha", "ensemble"]);
+    expect(groups.map((g) => g.name)).toEqual(["alpha", "default"]);
     const ens = groups[1]!;
     expect(ens.enabled).toBe(false);
     expect(ens.automations.map((a) => a.verdict)).toEqual(["passed", "failed", "no_verdict", null]);

@@ -316,7 +316,7 @@ def _cal_close_minute(today: date) -> int:
 
 
 def by_expiry(pos: dict, legs: list[dict], rows: list[dict]) -> list[dict] | dict[str, list[dict]]:
-    """A position's leg quote rows (in its legs' order) grouped by each leg's expiry (`ensemble_legs.
+    """A position's leg quote rows (in its legs' order) grouped by each leg's expiry (`automations_legs.
     expiration`, the position's when null): the rows as they are when every leg is on one, so a
     calendar's two legs at one strike each sit on their own chain."""
     own = [g.get("expiration") or pos["expiration"] for g in legs]

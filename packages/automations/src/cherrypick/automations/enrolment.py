@@ -52,7 +52,7 @@ BACKTESTED, CHANGED, NOT_BACKTESTED = "backtested", "changed", "not_backtested"
 FORWARD_KEYS = frozenset({"measure", "field", "per", "min_obs", "kill_z", "drift_z", "reference", "beside"})
 FORWARD_NEEDED = ("measure", "field", "min_obs", "kill_z", "drift_z")
 MEASURES = ("cycle_mean", "session_sum")
-MODULE, SCHEMA = "automations", "ensemble_trade"
+MODULE, SCHEMA = "automations", "automations_trade"
 
 
 def block_hash(arm: dict, block: str) -> str:

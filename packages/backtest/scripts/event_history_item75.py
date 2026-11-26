@@ -1,5 +1,5 @@
-"""Item 75's event dates (research/edge-hypotheses-plan.md): the history `cherrypick.ensemble.events` cannot
-compute, written to one file the study reads.
+"""Item 75's event dates (research/edge-hypotheses-plan.md): the history
+`cherrypick.automations.events` cannot compute, written to one file the study reads.
 
     python packages/backtest/scripts/event_history_item75.py [--out PATH]
 

@@ -18,7 +18,7 @@ in the script (`run.py upgrade`); the slash command only explains and calls it.
 
 ## What it does
 
-1. **Checks first.** It shows the installed and the target version (`--to v0.13.0` names one; the
+1. **Checks first.** It shows the installed and the target version (`--to v0.14.0` names one; the
    default is the latest release), then lists every reason it will not start. Nothing has changed yet.
 2. **Shows the notes.** The release's *Upgrading* notes, anything you have to do by hand, the config
    keys it changed and the data migrations it will run. If you are skipping releases, you get the notes

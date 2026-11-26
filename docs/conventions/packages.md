@@ -77,7 +77,7 @@ what it may write. The package's own CLAUDE.md holds the detail.
   `engine.decide` is one pure decision over a `Snapshot`, called by the backtest driver
   (`packages/backtest/scripts/ensemble_item75.py`) and by its paper loop, which takes any arm
   `arms.load_arms` returns. **Paper-only, credential-free, no live path**: a position is a row in
-  `~/.cherrypick/data/automations/paper_trades.db` (trade schema `ensemble_trade`), never an order; it reads
+  `~/.cherrypick/data/automations/paper_trades.db` (trade schema `automations_trade`), never an order; it reads
   the stream cache and never writes it, and writes a local replay record of every decision tick. Off by
   default in the example. Reads the
   technicals package's pure indicator functions (`sma`, `ema`, `rsi`) and nothing else of it:
@@ -127,7 +127,7 @@ what it may write. The package's own CLAUDE.md holds the detail.
   technicals, for its indicator functions), and technicals reads it back by file only. A description, never a selector:
   tested 2018-26 with no edge.
 - **packages/console** — the reactive web UI (Node + TypeScript, React SPA on 127.0.0.1:5070), the
-  suite's **only** read surface. **Holds no path that touches an order.** Kept alive by the supervisor
+  suite's **one** web surface. **Holds no path that touches an order.** Kept alive by the supervisor
   (restarted on death and on a stale `state/console.heartbeat`). Read-only over every other package
   (own store `~/.cherrypick/data/console/`); reads the shared credential, never writes one. The one
   bounded exception is the **Config page**: the live-trading halt toggle, the arm each live loop runs (its own orchestrator operation, MEIC only, typed phrase, flat and settled) and a short allow-list of

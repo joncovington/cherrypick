@@ -68,7 +68,7 @@ const SPECS: Record<DecisionsModule, Spec> = {
   },
   automations: {
     dir: (c) => c.paths.automationsDir,
-    table: "ensemble_decisions",
+    table: "automations_decisions",
     resolveSession: resolveAutomationsSession,
   },
   weeklyput: {

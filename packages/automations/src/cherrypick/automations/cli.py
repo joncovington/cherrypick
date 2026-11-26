@@ -90,7 +90,7 @@ def cmd_decisions(args) -> int:
     from . import db
 
     conn = db.connect_ro(args.db)
-    sql, params = "SELECT * FROM ensemble_decisions", []
+    sql, params = "SELECT * FROM automations_decisions", []
     if args.date:
         sql += " WHERE trade_date = ?"
         params.append(args.date)
@@ -132,7 +132,7 @@ def cmd_groups_read(args) -> int:
     arms = config_mod.load_arms(config)
     if Path(db.resolve_path(args.db)).exists():
         conn = db.connect_ro(args.db)
-        positions = [dict(r) for r in conn.execute("SELECT * FROM ensemble_positions")]
+        positions = [dict(r) for r in conn.execute("SELECT * FROM automations_positions")]
         register = db.entries(conn)
     else:
         positions, register = [], []
@@ -262,7 +262,7 @@ def cmd_conditions(args) -> int:
     if Path(db.resolve_path(args.db)).exists():
         conn = db.connect_ro(args.db)
         try:
-            trades = [r for r in core_ledgers.READERS["ensemble_trade"](conn) if r.get("arm") == args.name]
+            trades = [r for r in core_ledgers.READERS["automations_trade"](conn) if r.get("arm") == args.name]
         finally:
             conn.close()
     symbol = arms[args.name].get("symbol")

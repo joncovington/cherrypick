@@ -46,7 +46,7 @@ wholesale with **`$CHERRYPICK_HOME`**. Nothing runtime lands in a source checkou
   data/curve/paper_trades.db      # Curve paper ledger (curve_positions)
   data/contango/paper_trades.db   # Contango paper ledger (contango_positions / contango_sessions)
   data/weeklyput/paper_trades.db  # Weeklyput paper ledger (weeklyput_positions / weeklyput_entries)
-  data/automations/paper_trades.db   # Ensemble paper ledger (ensemble_positions / ensemble_legs / ensemble_entries)
+  data/automations/paper_trades.db   # Automations paper ledger (automations_positions / automations_legs / automations_entries)
   data/automations/replay/           # Automations replay record: one JSON line per decision tick, with its snapshot
   data/ladder/paper_trades.db     # Ladder paper ledger (ladder_positions: one row per lot)
   data/manage/                    # eval-<day>.json evaluations of the real account
@@ -104,7 +104,7 @@ configure their own engine and nothing else:
 | `~/.cherrypick/config/gex.json` | GEX | `symbols`, the shared stream-cache source path, serve host/port, history DB path. |
 | *(orchestrator `morning`, `technicals` blocks)* | Overview, Technicals | Neither has a config file of its own: the orchestrator's `morning` block schedules the overview's fact pack (and its optional narrative), and `technicals` schedules the end-of-day landing and report. Technicals reads the Dolt clones the earnings module's `paper.dolt_service` serves. |
 | `~/.cherrypick/config/streamer.json` | Streamer | Broker session settings and the stream-cache path it writes; the symbol set is not configured here — it is the union of every module's `state/stream_requests/` file. |
-| `~/.cherrypick/config/console.json` | Console | Serve host/port (`127.0.0.1:5070`), which modules' read models to surface, and `update_check` (default on; `false` stops the six-hourly request to GitHub for the latest release that the status bar's version chip shows), and `live_arming` (default **off**; only a literal `true` shows the arm-for-today switches on the Live page's today tab and answers their routes, see [going-live.md](guide/going-live.md#from-the-console-the-live-pages-switches)). No credential of its own — it reads the shared suite entry and never writes one. |
+| `~/.cherrypick/config/console.json` | Console | `serve.port` (the console binds `127.0.0.1` only; default 5070), and `update_check` (default on; `false` stops the six-hourly request to GitHub for the latest release that the status bar's version chip shows), and `live_arming` (default **off**; only a literal `true` shows the arm-for-today switches on the Live page's today tab and answers their routes, see [going-live.md](guide/going-live.md#from-the-console-the-live-pages-switches)). No credential of its own — it reads the shared suite entry and never writes one. Every key is optional; `packages/console/config.example.json` lists them with their defaults. |
 
 **Resolution rules:**
 - A module `path` in the orchestrator config is resolved **relative to the config file's directory** /

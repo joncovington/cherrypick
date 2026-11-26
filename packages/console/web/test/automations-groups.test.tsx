@@ -13,7 +13,6 @@ vi.mock("../src/lib/prefs", () => ({
 }));
 
 const { GroupsCard } = await import("../src/pages/Automations/AutomationsPages");
-const { renamedTarget } = await import("../src/App");
 
 const html = (el: React.ReactElement, at = "/") =>
   renderToString(
@@ -26,7 +25,7 @@ const RESULT: AutomationGroupsResult = {
   error: null,
   groups: [
     {
-      name: "ensemble",
+      name: "default",
       enabled: false,
       automations: [
         { name: "iron-condor-1345", enabled: false, verdict: "passed" },
@@ -40,7 +39,7 @@ const RESULT: AutomationGroupsResult = {
 describe("the automation groups card", () => {
   it("shows each group's switch and each automation's verdict", () => {
     const out = html(<GroupsCard result={RESULT} loading={false} />);
-    expect(out).toContain("ensemble");
+    expect(out).toContain("default");
     expect(out).toContain("iron-condor-1345");
     expect(out).toContain(">passed<");
     expect(out).toContain(">failed<");
@@ -59,12 +58,5 @@ describe("the automation groups card", () => {
     expect(html(<GroupsCard result={{ groups: [], error: "automation groups unavailable" }} loading={false} />)).toContain(
       "automation groups unavailable",
     );
-  });
-});
-
-describe("the ensemble page's old address", () => {
-  it("follows the page to automations with its tab and query", () => {
-    expect(renamedTarget("/automations", undefined, "")).toBe("/automations");
-    expect(renamedTarget("/automations", "positions", "?arm=x")).toBe("/automations/positions?arm=x");
   });
 });

@@ -79,7 +79,7 @@ describe("readModuleAnalysis", () => {
     expect(seen).toEqual([path.join(config.paths.fliesDir, "paper_trades.db"), path.join(config.paths.fliesDir, "live_trades.db")]);
   });
 
-  it("reads the automations ledger as ensemble_trade, each automation its own arm", async () => {
+  it("reads the automations ledger as automations_trade, each automation its own arm", async () => {
     const seen: Array<[string, string, string | null]> = [];
     setAnalysisCaller((db, schema, _start, _end, _era, module) => {
       seen.push([db, schema, module ?? null]);
@@ -87,7 +87,7 @@ describe("readModuleAnalysis", () => {
     });
     const config = fakeConfig(null);
     await readModuleAnalysis(config, "automations");
-    expect(seen).toEqual([[path.join(config.paths.automationsDir, "paper_trades.db"), "ensemble_trade", "automations"]]);
+    expect(seen).toEqual([[path.join(config.paths.automationsDir, "paper_trades.db"), "automations_trade", "automations"]]);
     // Paper only: it has no live ledger, so a live read is refused.
     expect((await readModuleAnalysis(config, "automations", "current", "live")).ok).toBe(false);
   });

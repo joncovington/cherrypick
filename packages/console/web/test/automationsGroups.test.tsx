@@ -33,7 +33,7 @@ const VIEW: GroupsEditView = {
   counts: { on: 0, waiting: 0, off_group: 2, off_own: 1, retired: 0 },
   groups: [
     {
-      name: "ensemble",
+      name: "default",
       enabled: false,
       max_risk: 2000,
       shares: { "iron-condor-1345": 50 },
@@ -55,35 +55,35 @@ describe("states in words", () => {
 describe("the draft", () => {
   it("starts from the groups as they are, nothing moved or switched", () => {
     const d = startDraft(VIEW);
-    expect(d).toEqual({ groups: { ensemble: { enabled: false, max_risk: 2000, shares: { "iron-condor-1345": 50 } } }, members: {}, switches: {} });
+    expect(d).toEqual({ groups: { default: { enabled: false, max_risk: 2000, shares: { "iron-condor-1345": 50 } } }, members: {}, switches: {} });
     expect(changeItems(VIEW, d)).toEqual([]);
   });
 
   it("lists each change in words, and sends only what changes", () => {
     const d = startDraft(VIEW);
     const draft = {
-      groups: { ...d.groups, ensemble: { ...d.groups["ensemble"]!, enabled: true } },
-      members: { "par-a1-fly-1000": "ensemble" },
+      groups: { ...d.groups, default: { ...d.groups["default"]!, enabled: true } },
+      members: { "par-a1-fly-1000": "default" },
       switches: { "par-a1-fly-1000": true, "iron-fly-1000": false },
     };
     const items = changeItems(VIEW, draft).map((c) => [c.where, c.what, c.was, c.becomes]);
     expect(items).toEqual([
-      ["ensemble", "group switch", "off", "on from 2026-11-19"],
+      ["default", "group switch", "off", "on from 2026-11-19"],
       ["iron-fly-1000", "its own switch", "on", "off"],
-      ["par-a1-fly-1000", "group", "no group", "ensemble"],
+      ["par-a1-fly-1000", "group", "no group", "default"],
       ["par-a1-fly-1000", "its own switch", "off", "on from 2026-11-19"],
     ]);
     expect(changeToSend(VIEW, draft)).toEqual({
-      groups: { ensemble: draft.groups.ensemble },
-      members: { "par-a1-fly-1000": "ensemble" },
+      groups: { default: draft.groups.default },
+      members: { "par-a1-fly-1000": "default" },
       switches: { "iron-fly-1000": false, "par-a1-fly-1000": true },
     });
-    expect(placement(VIEW, draft).find((r) => r.m.name === "par-a1-fly-1000")).toMatchObject({ was: null, now: "ensemble", on: true });
+    expect(placement(VIEW, draft).find((r) => r.m.name === "par-a1-fly-1000")).toMatchObject({ was: null, now: "default", on: true });
   });
 
   it("undoes one change alone", () => {
     const d = startDraft(VIEW);
-    const draft = { ...d, members: { "par-a1-fly-1000": "ensemble" }, switches: { "iron-fly-1000": false } };
+    const draft = { ...d, members: { "par-a1-fly-1000": "default" }, switches: { "iron-fly-1000": false } };
     const items = changeItems(VIEW, draft);
     const undone = items.find((c) => c.what === "its own switch")!.undo(draft);
     expect(undone).toEqual({ ...draft, switches: {} });
@@ -109,20 +109,20 @@ describe("the three levels", () => {
     const out = html(<GroupsFlow view={VIEW} />);
     expect(out).toContain("What is trading now, and what stops the rest?");
     expect(out).toContain("off by its group");
-    expect(out).toContain('href="/automations/groups?group=ensemble"');
+    expect(out).toContain('href="/automations/groups?group=default"');
     expect(out).toContain('href="/automations/groups?group=_none"');
     // The group's switch is a toggle in its row: no separate Switch on button, and nothing staged to save.
-    expect(out).toContain('role="switch" aria-checked="false" aria-label="ensemble: group switch"');
+    expect(out).toContain('role="switch" aria-checked="false" aria-label="default: group switch"');
     expect(out).not.toContain(">Switch on</button>");
     expect(out).toContain("it waits here until you save");
     expect(out).not.toContain(">Save</button>");
   });
 
   it("one group: its switch and budget, each member's own switch and the state it is in", () => {
-    const out = html(<GroupsFlow view={VIEW} />, "/automations/groups?group=ensemble");
+    const out = html(<GroupsFlow view={VIEW} />, "/automations/groups?group=default");
     expect(out).toContain('<nav class="grp-crumbs" aria-label="Where you are"><a href="/automations/groups"');
-    expect(out).toContain(">groups</a> / <b>ensemble</b></nav>");
-    expect(out).toContain('aria-label="ensemble: group switch"');
+    expect(out).toContain(">groups</a> / <b>default</b></nav>");
+    expect(out).toContain('aria-label="default: group switch"');
     expect(out).toContain('aria-label="iron-condor-1345: its own switch"');
     expect(out).toContain('role="switch" aria-checked="true" aria-label="iron-condor-1345: its own switch"');
     expect(out).toContain("Held: its group is off");
@@ -131,12 +131,12 @@ describe("the three levels", () => {
     expect(out).toContain("+ Add automations");
     // The add button sits under the members, not in the card head.
     expect(out.indexOf("+ Add automations")).toBeGreaterThan(out.indexOf("</table>"));
-    expect(out).toContain('href="/automations/groups?group=ensemble&amp;automation=iron-condor-1345"');
+    expect(out).toContain('href="/automations/groups?group=default&amp;automation=iron-condor-1345"');
     expect(out).toContain('href="/automations/automation/iron-condor-1345"');
   });
 
   it("one automation: the three things it needs, and where it sits", () => {
-    const out = html(<GroupsFlow view={VIEW} />, "/automations/groups?group=ensemble&automation=iron-condor-1345");
+    const out = html(<GroupsFlow view={VIEW} />, "/automations/groups?group=default&automation=iron-condor-1345");
     expect(out).toContain("<b>iron-condor-1345</b>");
     expect(out).toContain("Will it trade, and if not, what stops it?");
     expect(out).toMatch(/grp-check is-no.*Its group/);
@@ -149,7 +149,7 @@ describe("the three levels", () => {
       ...VIEW,
       groups: [{ ...VIEW.groups[0]!, members: [m("iron-condor-1345"), m("iron-fly-1000", { verdict: "failed", enabled: false, state: "retired", retired: "2026-11-21" })] }],
     };
-    const out = html(<GroupsFlow view={view} />, "/automations/groups?group=ensemble");
+    const out = html(<GroupsFlow view={view} />, "/automations/groups?group=default");
     expect(out).toContain("Retired (1)");
     expect(out).toContain('<span class="tgl-locked"');
     expect(out).not.toContain('aria-label="iron-fly-1000: its own switch"');
@@ -172,11 +172,11 @@ describe("the three levels", () => {
         },
       ],
     };
-    const out = html(<GroupsFlow view={view} />, "/automations/groups?group=ensemble");
+    const out = html(<GroupsFlow view={view} />, "/automations/groups?group=default");
     expect(out).toContain("allocation $10,000");
     expect(out).toContain("Changes to allocation $12,000 from 2026-11-19.");
     expect(out).toContain(">Change from next session</button>");
-    expect(out).not.toContain('id="grp-ensemble-allocation"');
+    expect(out).not.toContain('id="grp-default-allocation"');
     expect(out).toContain("Suggested allocation $9,300");
   });
 
@@ -185,8 +185,8 @@ describe("the three levels", () => {
       ...VIEW,
       groups: [{ ...VIEW.groups[0]!, budget: { today: {}, pending: null, dated: false, history: [] }, suggested: { allocation: null, members: [{ name: "iron-fly-1000", risk: null, why: "a wing is placed by delta or percent" }] } }],
     };
-    const out = html(<GroupsFlow view={view} />, "/automations/groups?group=ensemble");
-    expect(out).toContain('id="grp-ensemble-allocation"');
+    const out = html(<GroupsFlow view={view} />, "/automations/groups?group=default");
+    expect(out).toContain('id="grp-default-allocation"');
     expect(out).toContain("No suggested allocation: iron-fly-1000 (a wing is placed by delta or percent).");
   });
 
@@ -219,7 +219,7 @@ describe("the retired switch at the foot of an automation's page", () => {
 
 describe("the budget's help and its backtest suggestion", () => {
   it("puts a ? beside allocation, max risk and share, each explaining itself", () => {
-    const out = html(<GroupsFlow view={VIEW} />, "/automations/groups?group=ensemble");
+    const out = html(<GroupsFlow view={VIEW} />, "/automations/groups?group=default");
     expect(out).toContain('aria-label="What is the allocation?"');
     expect(out).toContain('aria-label="What is the max risk?"');
     expect(out).toContain('aria-label="What is a share?"');
@@ -229,14 +229,14 @@ describe("the budget's help and its backtest suggestion", () => {
 
   it("asks the members' backtests for the max risk and shares", () => {
     const view: GroupsEditView = { ...VIEW, groups: [{ ...VIEW.groups[0]!, budget: { today: {}, pending: null, dated: false, history: [] } }] };
-    expect(html(<GroupsFlow view={view} />, "/automations/groups?group=ensemble")).toContain("Reading the members&#x27; backtests…");
+    expect(html(<GroupsFlow view={view} />, "/automations/groups?group=default")).toContain("Reading the members&#x27; backtests…");
   });
 });
 
 describe("removing an automation from its group", () => {
   it("each member has Remove and no move-to menu", () => {
-    const out = html(<GroupsFlow view={VIEW} />, "/automations/groups?group=ensemble");
-    expect(out).toContain('aria-label="Remove iron-condor-1345 from ensemble"');
+    const out = html(<GroupsFlow view={VIEW} />, "/automations/groups?group=default");
+    expect(out).toContain('aria-label="Remove iron-condor-1345 from default"');
     expect(out).not.toContain('aria-label="Move iron-condor-1345"');
     expect(out).not.toContain(">move to<");
   });
@@ -248,7 +248,7 @@ describe("removing an automation from its group", () => {
     expect(after.members).toEqual({ "iron-condor-1345": null });
     expect(after.switches).toEqual({ "iron-condor-1345": false });
     expect(changeItems(VIEW, after).map((c) => [c.where, c.what, c.becomes])).toEqual([
-      ["ensemble", "shares", "none"],
+      ["default", "shares", "none"],
       ["iron-condor-1345", "group", "no group"],
       ["iron-condor-1345", "its own switch", "off"],
     ]);
@@ -269,7 +269,7 @@ describe("the add list", () => {
       ungrouped: [m("iron-fly-1000", { enabled: false, state: "retired", retired: "2026-11-21" }), m("orb-put-spread", { state: "off_own", enabled: false })],
     };
     const rows = placement(view, startDraft(view));
-    expect(addable(rows, "ensemble").map((r) => r.m.name)).toEqual(["orb-put-spread"]);
+    expect(addable(rows, "default").map((r) => r.m.name)).toEqual(["orb-put-spread"]);
   });
 });
 
@@ -278,8 +278,8 @@ describe("a share leaves with its automation", () => {
 
   it("is dropped from the group it leaves, as its own line in the save bar", () => {
     const d = startDraft(shared);
-    const after = moveTo(d, "iron-condor-1345", "ensemble", "ensemble", null);
-    expect(after.groups.ensemble!.shares).toEqual({ "put-spread-1300": 30 });
+    const after = moveTo(d, "iron-condor-1345", "default", "default", null);
+    expect(after.groups.default!.shares).toEqual({ "put-spread-1300": 30 });
     expect(changeItems(shared, after).map((c) => c.what)).toEqual(["shares", "group"]);
   });
 
@@ -287,12 +287,12 @@ describe("a share leaves with its automation", () => {
     const one: GroupsEditView = { ...shared, groups: [{ ...shared.groups[0]!, shares: { "iron-condor-1345": 40 } }] };
     const d = startDraft(one);
     const r = placement(one, d).find((x) => x.m.name === "iron-condor-1345")!;
-    expect(removeFromGroup(d, r).groups.ensemble!.shares).toBeUndefined();
+    expect(removeFromGroup(d, r).groups.default!.shares).toBeUndefined();
   });
 
   it("is left alone when the automation stays where it is", () => {
     const d = startDraft(shared);
-    expect(moveTo(d, "iron-condor-1345", "ensemble", "ensemble", "ensemble")).toEqual(d);
+    expect(moveTo(d, "iron-condor-1345", "default", "default", "default")).toEqual(d);
   });
 });
 
@@ -317,7 +317,7 @@ describe("a group with no automation", () => {
     expect(out).toMatch(/aria-label="testing: group switch"[^>]*disabled=""/);
     expect(out).toContain('aria-label="Delete testing"');
     const d = startDraft(view);
-    const gone = { ...d, groups: { ensemble: d.groups["ensemble"]! } };
+    const gone = { ...d, groups: { default: d.groups["default"]! } };
     expect(changeItems(view, gone).map((c) => [c.where, c.becomes])).toEqual([["testing", "deleted"]]);
     expect(changeToSend(view, gone).groups).not.toHaveProperty("testing");
   });

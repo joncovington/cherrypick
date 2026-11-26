@@ -77,7 +77,7 @@ def test_an_arm_enters_records_everything_and_settles(tmp_path):
     legs = db.legs(w.conn, pos["position_id"])
     assert len(legs) == 4 and all(g["streamer_symbol"].startswith(".SPXW") for g in legs)
     assert db.entry(w.conn, "iron-fly-1000", "SPX", DAY)["outcome"] == "entered"
-    decision = w.conn.execute("SELECT * FROM ensemble_decisions WHERE reason = 'enter'").fetchone()
+    decision = w.conn.execute("SELECT * FROM automations_decisions WHERE reason = 'enter'").fetchone()
     assert decision["accepted"] == 1
     # an arm that has entered is not decided again in its window
     assert tick(w, at(10, 1))["entries"] == {} and len(db.positions(w.conn)) == 1
@@ -107,13 +107,15 @@ def test_a_refused_arm_records_the_gate_that_blocked_it(tmp_path):
     w = world(tmp_path, spot=6100.0)  # 1.65 standard deviations up: past the arm's +/-1.1
     out = tick(w, at(10, 0))
     assert out["entries"] == {"iron-fly-1000": "gate:sd_change"}
-    row = w.conn.execute("SELECT * FROM ensemble_decisions WHERE arm = 'iron-fly-1000'").fetchone()
+    row = w.conn.execute("SELECT * FROM automations_decisions WHERE arm = 'iron-fly-1000'").fetchone()
     assert row["reason"] == "gate:sd_change" and row["accepted"] == 0
     assert json.loads(row["detail"])["check"] == "gate:sd_change"
     assert db.open_position_count(w.conn) == 0
     # a second tick in the window counts, it does not add a row
     tick(w, at(10, 1))
-    row = w.conn.execute("SELECT occurrences FROM ensemble_decisions WHERE arm = 'iron-fly-1000'").fetchone()
+    row = w.conn.execute(
+        "SELECT occurrences FROM automations_decisions WHERE arm = 'iron-fly-1000'"
+    ).fetchone()
     assert row["occurrences"] == 2
     # the window closes unentered: a missed row with the last reason
     out = tick(w, at(10, 5))

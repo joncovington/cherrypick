@@ -111,7 +111,7 @@ def test_an_unsaved_edit_resolves_and_a_bad_one_names_its_problems():
 
 
 def _counts(conn):
-    tables = ("ensemble_decisions", "ensemble_entries", "ensemble_positions")
+    tables = ("automations_decisions", "automations_entries", "automations_positions")
     return {t: conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0] for t in tables}
 
 

@@ -1,9 +1,9 @@
 ---
-description: Open the console — the suite's one read surface (127.0.0.1:5070); --status / --restart / --logs
+description: Open the console — the suite's one web surface (127.0.0.1:5070); --status / --restart / --logs
 argument-hint: [--status] | [--restart] | [--logs] | [--stop] | [--no-browser]
 ---
 
-Open the **console** (`packages/console`), the suite's single read surface: every module's read
+Open the **console** (`packages/console`), the suite's one web surface: every module's read
 models (Live, MEIC, earnings, GEX and the rest, plus the retired flies, bwb, pmcc and curve while they are switched on) plus research and screening, in one app
 on **127.0.0.1:5070**. Read-only over every other package's data, loopback-only.
 

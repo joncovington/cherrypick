@@ -20,7 +20,7 @@ function line(net: number, drawdown = 0): AutomationsLine {
 }
 
 const UNIT: AutomationsGroupUnit = {
-  name: "ensemble",
+  name: "default",
   enabled: true,
   allocation: 10000,
   max_risk: 2000,
@@ -70,9 +70,9 @@ describe("a group as a unit", () => {
 
   it("lists each group's line and the automations in none, each name leading to Groups", () => {
     const read: AutomationsGroupsRead = { groups: [UNIT], ungrouped: { members: ["c"], line: line(999) }, error: null };
-    expect(groupRows(read).map(([n]) => n)).toEqual(["ensemble", NO_GROUP_LABEL]);
-    expect(groupRows({ ...read, ungrouped: { members: [], line: line(0) } }).map(([n]) => n)).toEqual(["ensemble"]);
-    expect(groupHref("ensemble")).toBe("/automations/groups?group=ensemble");
+    expect(groupRows(read).map(([n]) => n)).toEqual(["default", NO_GROUP_LABEL]);
+    expect(groupRows({ ...read, ungrouped: { members: [], line: line(0) } }).map(([n]) => n)).toEqual(["default"]);
+    expect(groupHref("default")).toBe("/automations/groups?group=default");
     expect(groupHref(NO_GROUP_LABEL)).toBe("/automations/groups?group=_none");
   });
 });

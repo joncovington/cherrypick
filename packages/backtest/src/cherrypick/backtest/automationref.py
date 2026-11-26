@@ -297,7 +297,7 @@ def paper_record(db_path: str, name: str) -> tuple[list[dict], dict[str, int]]:
     conn = connect_ro(db_path, row_factory=None)
     conn.row_factory = sqlite3.Row
     try:
-        rows = [r for r in core_ledgers.READERS["ensemble_trade"](conn) if r.get("arm") == name]
+        rows = [r for r in core_ledgers.READERS["automations_trade"](conn) if r.get("arm") == name]
         rows.sort(key=lambda r: (str(r.get("session") or ""), str(r.get("exit_time") or "")))
         paper = [
             {"session": r.get("session"), "net": r.get("net_pnl"), "exit": r.get("outcome")} for r in rows
@@ -305,7 +305,8 @@ def paper_record(db_path: str, name: str) -> tuple[list[dict], dict[str, int]]:
         try:
             counts = dict(
                 conn.execute(
-                    "SELECT outcome, COUNT(*) FROM ensemble_entries WHERE arm = ? GROUP BY outcome", (name,)
+                    "SELECT outcome, COUNT(*) FROM automations_entries WHERE arm = ? GROUP BY outcome",
+                    (name,),
                 ).fetchall()
             )
         except sqlite3.OperationalError:
@@ -322,8 +323,4 @@ def paper_db_path() -> str:
 
     from cherrypick.core import home
 
-    return (
-        os.environ.get("AUTOMATIONS_DB_PATH")
-        or os.environ.get("ENSEMBLE_DB_PATH")
-        or str(home.data_dir("automations") / "paper_trades.db")
-    )
+    return os.environ.get("AUTOMATIONS_DB_PATH") or str(home.data_dir("automations") / "paper_trades.db")
