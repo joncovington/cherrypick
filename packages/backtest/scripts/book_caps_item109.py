@@ -40,7 +40,17 @@ from cherrypick.backtest.study import calendars as kc
 from cherrypick.backtest.study.inputs import Inputs
 
 #: The correction log: one entry per fix to this replay, oldest first (orchestrator/studyversion.py).
-REPLAY_CORRECTIONS = ()
+REPLAY_CORRECTIONS = (
+    {
+        "on": "2026-11-26",
+        "what": "The none-scaled table leaves out a part where the none book held no risk, "
+        "instead of dividing by it.",
+        "why": "The study crashed with a division by zero before writing any result, "
+        "so no arm or outcome was read.",
+        "decided": "user",
+        "before_read": True,
+    },
+)
 
 #: The pass rule as data, fixed by the declaration before any run. Not the kit's three bars (this
 #: judges books, not trades), so the queue leaves its verdict to be recorded by hand.
@@ -816,6 +826,25 @@ def candidates(
     return out, dict(skips)
 
 
+def none_scaled(table: dict) -> dict:
+    """Per judged arm and part, `none`'s tail and return put on the arm's mean risk. A part is left
+    out where either book has no weeks or `none` held no risk in it: there is nothing to scale by,
+    as `tail_per_risk` and `return_per_risk` read a book with no risk as no figure."""
+    out = {}
+    for a in JUDGED:
+        ra, rn = table[a], table["none"]
+        out[a] = {
+            p: {
+                "scale": ra[p]["mean_risk"] / rn[p]["mean_risk"],
+                "es5": rn[p]["es5"] * ra[p]["mean_risk"] / rn[p]["mean_risk"],
+                "return_per_risk_none": rn[p]["return"] / rn[p]["mean_risk"],
+            }
+            for p in ("design", "holdout")
+            if ra.get(p) and rn.get(p) and rn[p]["mean_risk"] > 0
+        }
+    return out
+
+
 def study(cands: list[dict], m: dict, reports: dict, *, resamples: int | None = None) -> dict:
     split = RULE["splits"][0]
     runs = {a: book(cands, caps, m) for a, caps in ARMS.items()}
@@ -841,18 +870,7 @@ def study(cands: list[dict], m: dict, reports: dict, *, resamples: int | None = 
         for a, base in [*((r, "none") for r in REPORTED), ("earnings10", "none-2020")]
     }
     table = {a: calibration(r, split) for a, r in runs.items()}
-    scaled = {}
-    for a in JUDGED:
-        ra, rn = table[a], table["none"]
-        scaled[a] = {
-            p: {
-                "scale": ra[p]["mean_risk"] / rn[p]["mean_risk"],
-                "es5": rn[p]["es5"] * ra[p]["mean_risk"] / rn[p]["mean_risk"],
-                "return_per_risk_none": rn[p]["return"] / rn[p]["mean_risk"],
-            }
-            for p in ("design", "holdout")
-            if ra.get(p) and rn.get(p)
-        }
+    scaled = none_scaled(table)
     return {
         "rule": RULE,
         **block,
