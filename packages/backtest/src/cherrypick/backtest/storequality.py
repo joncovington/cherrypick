@@ -80,10 +80,11 @@ def quotes_by_year(conn: sqlite3.Connection, table: str, nulls: tuple[str, ...])
 def off_calendar(conn: sqlite3.Connection, table: str) -> dict[str, list[str]]:
     """Per symbol, the stored sessions that are not exchange trading days. The vendor answers such a
     day with a placeholder market (every option bid 0.05, ask 99.00), which a study reads as a session
-    unless it checks; a symbol with none is left out."""
+    unless it checks; a symbol with none is left out. Read from the store's request table (a request
+    and its quotes are written together), since the quotes table is far larger."""
     out: dict[str, list[str]] = {}
     for sym, session in conn.execute(
-        f"SELECT DISTINCT symbol, session FROM {table} ORDER BY symbol, session"
+        f"SELECT DISTINCT symbol, session FROM {table} WHERE status = 'complete' ORDER BY symbol, session"
     ):
         if not cal.is_trading_day(date.fromisoformat(session[:10])):
             out.setdefault(sym, []).append(session)
@@ -109,7 +110,8 @@ def report(path: Path, store: str) -> dict:
         doc: dict = {"store": store}
         if spec["quotes"] and spec["quotes"] in tables:
             doc["quotes"] = quotes_by_year(conn, spec["quotes"], spec["nulls"])
-            doc["off_calendar"] = off_calendar(conn, spec["quotes"])
+            first = spec["requests"][0]
+            doc["off_calendar"] = off_calendar(conn, first) if first in tables else {}
         doc["requests"] = {t: outcomes(conn, t) for t in spec["requests"] if t in tables}
         return doc
     finally:

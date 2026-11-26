@@ -59,6 +59,16 @@ def test_the_eod_report_lists_a_stored_session_that_is_not_a_trading_day(tmp_pat
             ("BBB", "2024-02-02", "2024-03-15", 100.0, "CALL", 1.0, 1.1),
         ],
     )
+    # A request is recorded with its quotes; a refused one stores none, so it is no session.
+    conn.executemany(
+        "INSERT INTO eod_chain_requests VALUES (?, ?, ?, ?, 0, NULL, 0)",
+        [
+            ("AAA", "2024-02-02", "2024-03-15", "complete"),
+            ("AAA", "2024-02-03", "2024-03-15", "complete"),
+            ("BBB", "2024-02-02", "2024-03-15", "complete"),
+            ("BBB", "2024-02-10", "2024-03-15", "refused"),
+        ],
+    )
     conn.commit()
     conn.close()
     assert sq.report(p, "eod_chains.db")["off_calendar"] == {"AAA": ["2024-02-03"]}
