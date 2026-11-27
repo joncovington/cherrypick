@@ -2278,7 +2278,7 @@ def run_status(config: dict, conn) -> dict:
     return {
         "ok": True,
         "date": today,
-        "in_session": _pl.in_session(provider.minute_of_day(when)),
+        "in_session": _pl.in_session(provider.minute_of_day(when), when.date()),
         "armed_for": arm_stamp_date(),
         "module_enabled": _live.suite_module_enabled("flies"),
         "arm": arm,

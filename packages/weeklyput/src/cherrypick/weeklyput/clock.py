@@ -126,6 +126,7 @@ def years_to(session: date, expiry: date) -> float:
 def decision_window(day: date, params: dict | None = None) -> tuple[int, int]:
     """(first, last) minute of day in which an entry may be taken. The study entered at the entry
     session's end-of-day quotes; the paper arm enters in the last minutes before the close, 15:45 to
-    15:55 by default (12:45 to 12:55 on an early close). A tick inside the window that cannot act
-    retries on the next tick; a window that closes unacted records a miss, never a late fill."""
+    15:55 by default (12:45 to 12:55 on an early close, where the paper loop never uses it: a half
+    day is not traded). A tick inside the window that cannot act retries on the next tick; a window
+    that closes unacted records a miss, never a late fill."""
     return _clock.decision_window(day, params, WINDOW_DEFAULTS)
