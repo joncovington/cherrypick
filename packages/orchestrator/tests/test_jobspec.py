@@ -1284,6 +1284,19 @@ def test_the_shipped_ladder_config_derives_a_live_job_that_runs_only_while_armed
     assert _ladder_live(cfg, et(2026, 11, 20, 20, 31), armed=True).enabled is False  # past the grace
 
 
+def test_the_two_shipped_ladder_examples_agree_on_the_disarm_time():
+    """The job stays valid until the suite config's `disarm_time` plus its grace, and the ladder's own
+    20:00 pass is `live.disarm_at` in its config: two files holding one time. If the job's ended
+    first, the pass that cancels the resting buys would never run."""
+    import json
+    from pathlib import Path
+
+    packages = Path(__file__).resolve().parents[2]
+    suite = json.loads((packages / "orchestrator" / "config.example.json").read_text(encoding="utf-8"))
+    ladder = json.loads((packages / "ladder" / "config.example.json").read_text(encoding="utf-8"))
+    assert suite["modules"]["ladder"]["live"]["disarm_time"] == ladder["live"]["disarm_at"] == "20:00"
+
+
 def test_a_ladder_live_block_without_a_task_name_derives_no_job():
     cfg = _shipped_ladder()
     del cfg["modules"]["ladder"]["live"]["task_name"]

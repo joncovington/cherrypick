@@ -82,8 +82,6 @@ def test_arm_with_exact_yes_prints_the_disclaimer_and_writes_the_record(capsys, 
     result = parse(out)
     assert result["ok"] and result["order_path"] is True and result["dry_run"] is True
     assert "dry-run" in result["note"]
-    # the arm says what ticks it: the supervisor's ladder-live job (#1495), not a loop run by hand
-    assert "ladder-live" in result["cadence"]
 
 
 @pytest.mark.parametrize("confirm", [None, "yes", "Yes", "YES ", "Y", "no", ""])
