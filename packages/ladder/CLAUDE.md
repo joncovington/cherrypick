@@ -101,8 +101,8 @@ import (`orders.py` may import the one pure id reader). The `live` block in the 
 
 - **Gates:** `live.enabled`; `live.gate0_confirmed` (a human attestation, who and when); the suite's
   `modules.ladder.enabled`; a valid arm record for today; a designated account; `live.arm` naming an
-  enabled paper arm; `live.symbols` non-empty and inside `names`; valid limits. The halt flag is
-  reported but blocks new buys only.
+  enabled paper arm; `live.symbols` non-empty and inside `names`; valid limits. The halt flag and an
+  early-close session (`session.half_day`) are reported but block new buys only.
 - **Limits** (validated by the `live.limits` gate, enforced by the order layer): `lot_dollars`,
   `max_open_lots` per fund, `max_open_lots_total`, `max_open_lots_per_group` over `correlated_groups` (the
   shipped group is `nasdaq-semis`), `max_open_dollars` (open lots plus resting buys), `drawdown_breaker_frac`
@@ -186,8 +186,8 @@ import (`orders.py` may import the one pure id reader). The `live` block in the 
   - **The adapter (`BrokerAdapter`)** is `core.execution.Broker` with the ladder's credentials, the
     designated account and the gates injected, and a hold file (`live_held.json`) that outlives the
     process, so an uncertain submit blocks the next minute's tick too. It re-reads the gates on every
-    placement: a gate that blocks everything stops any order, the halt flag stops one that opens a
-    position, and a gate flipped mid-tick bites on the next order.
+    placement: a gate that blocks everything stops any order, the halt flag or an early-close session
+    stops one that opens a position, and a gate flipped mid-tick bites on the next order.
 - **The live ledger (`live_trades.db`)** is a separate file from paper's and is never resolved from
   `LADDER_DB_PATH`. It has paper's tables, so every ladder reader reads it, plus `ladder_orders` (one
   row per order: client id, broker order id, side, fund, lot, shares, limit, state, fill, fees, whether

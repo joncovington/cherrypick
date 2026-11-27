@@ -126,6 +126,15 @@ def disarm_minute(config: dict) -> int:
     return hhmm_to_min(live_block(config).get("disarm_at") or DEFAULT_DISARM_AT, 20 * 60)
 
 
+def _early_close(today: str) -> bool:
+    """Whether `today` (an ISO date) is an NYSE early close. A date that does not parse is no early close,
+    so a stub or an odd status call cannot stop the gates from being reported."""
+    try:
+        return _cal.is_early_close(date.fromisoformat(today))
+    except (TypeError, ValueError):
+        return False
+
+
 def _add(gates: list[Gate], name: str, ok: bool, ok_reason: str, bad_reason: str, blocks: str = "all"):
     gates.append(Gate(name, bool(ok), ok_reason if ok else bad_reason, blocks))
 
@@ -199,7 +208,7 @@ def evaluate(
     )
     add(
         "session.half_day",
-        not _cal.is_early_close(date.fromisoformat(today)),
+        not _early_close(today),
         "an ordinary session",
         "an early-close session: half days are not tradeable, so no new buy; "
         "held lots keep their resting sells",
