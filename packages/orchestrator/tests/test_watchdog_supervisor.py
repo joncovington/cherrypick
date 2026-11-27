@@ -68,7 +68,7 @@ def test_a_stale_loop_that_exits_nonzero_names_its_exit_and_its_last_error(no_sc
     only finding said "Is the task running?". It now says what the last run exited with, and why."""
     fresh = _stale_fresh_finding(
         monkeypatch,
-        {"last_exit_code": 2, "last_error": '{"ok": false, "error": "arms: groups.ensemble: no automation belongs"}'},
+        {"last_exit_code": 2, "last_error": '{"ok": false, "error": "arms: groups.ensemble: no member"}'},
     )
     assert fresh.status == watchdog.WARN and "stale" in fresh.title
     assert "exited 2" in fresh.message and "groups.ensemble" in fresh.message
