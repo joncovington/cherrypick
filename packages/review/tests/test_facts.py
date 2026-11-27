@@ -403,6 +403,43 @@ def test_a_rebuild_keeps_what_the_session_carried(store, tmp_path, monkeypatch):
     assert "carried_overnight_kept_from" in module
 
 
+def test_a_rebuild_that_would_lose_a_module_is_refused_and_the_stored_set_stays(store, tmp_path, monkeypatch):
+    """A ledger locked or mid-migration at 10:15 reads as an unreadable module; writing that over a
+    good final set would drop the module's figures, and the comparison with them."""
+    db = _earnings_closed_trade(tmp_path, monkeypatch)
+    _write_final_earnings_set()
+    before = facts.read("2026-10-23")
+    _correct_the_ledger(db, exit_cost=9.0)
+    # The check still reads the corrected ledger; the build, a moment later, cannot open it.
+    monkeypatch.setattr(
+        reconcile, "_independent_totals", lambda m, s: {"closed": 1, "gross": 100.0, "cost": 14.0}
+    )
+    monkeypatch.setattr(
+        facts._paths, "module_db", lambda module, filename="paper_trades.db": tmp_path / "locked-or-gone.db"
+    )
+    got = reconcile.run(today="2026-10-30", rebuild=True)
+    assert got["rebuilt"][0]["ok"] is False and "earnings unreadable now" in got["rebuilt"][0]["error"]
+    assert facts.read("2026-10-23") == before
+
+
+def test_a_rebuild_whose_render_raises_is_checked_again_against_what_was_written(
+    store, tmp_path, monkeypatch
+):
+    """The facts are written before the render. If the render then raises, the set on disk already
+    matches the ledger, so the old mismatch must not be reported for it."""
+    db = _earnings_closed_trade(tmp_path, monkeypatch)
+    _write_final_earnings_set()
+    _correct_the_ledger(db, exit_cost=9.0)
+
+    def broken(session):
+        raise RuntimeError("template")
+
+    monkeypatch.setattr(render, "write", broken)
+    got = reconcile.run(today="2026-10-30", rebuild=True)
+    assert got["rebuilt"][0]["ok"] is False
+    assert got["ok"] is True and got["failures"] == []
+
+
 def test_a_provisional_set_is_never_rebuilt_by_reconcile(store, tmp_path, monkeypatch):
     db = _earnings_closed_trade(tmp_path, monkeypatch)
     facts.write(facts.build("2026-10-23", status=facts.STATUS_PROVISIONAL, modules=["earnings"]))
@@ -452,7 +489,7 @@ def test_a_pass_rebuilds_no_more_than_the_limit(store, tmp_path, monkeypatch):
     monkeypatch.setattr(reconcile, "REBUILD_LIMIT", 1)
     monkeypatch.setattr(reconcile, "rebuild_session", lambda session: None)
     got = reconcile.run(today="2026-10-30", rebuild=True)
-    assert [r["session"] for r in got["rebuilt"]] == ["2026-10-21"]
+    assert [r["session"] for r in got["rebuilt"]] == ["2026-10-23"]  # the most recent, not the oldest
 
 
 # --------------------------------------------------------------------------- rebuilding a final set (#1042)

@@ -897,7 +897,7 @@ def _run_review(cfg, *, final: bool) -> None:
                 [cfgmod.python_exe(), "-m", "cherrypick.review", "reconcile", "--rebuild"],
                 capture_output=True,
                 text=True,
-                timeout=900,
+                timeout=1800,  # up to 30 rebuilds (each a full build and render) beside the checks
                 creationflags=CREATE_NO_WINDOW,
             )
             reconciled = json.loads(rr.stdout or "{}")
@@ -923,14 +923,18 @@ def _run_review(cfg, *, final: bool) -> None:
     elif reconciled and reconciled.get("ok") is False:
         # The fact set built, but it does not agree with the ledgers it claims to summarise. That is
         # a data-integrity finding, not a cosmetic one -- every surface reads this artifact.
-        rebuilt = [r for r in reconciled.get("rebuilt") or [] if r.get("ok")]
-        notifier.notify(
-            "WARNING",
-            "review",
-            "Suite review reconciliation mismatch",
-            f"{len(reconciled.get('failures') or [])} session(s) disagree with their ledgers"
-            + (f" after rebuilding {len(rebuilt)}" if rebuilt else ""),
-        )
+        attempts = reconciled.get("rebuilt") or []
+        if reconciled.get("error"):
+            # The check itself did not finish (a timeout, unreadable output): say that, not "0 disagree".
+            body = f"the reconciliation did not finish: {reconciled['error']}"
+        else:
+            body = f"{len(reconciled.get('failures') or [])} session(s) disagree with their ledgers"
+            if attempts:
+                failed = sum(1 for r in attempts if not r.get("ok"))
+                body += f" after rebuilding {len(attempts) - failed}" + (
+                    f" ({failed} rebuild(s) failed)" if failed else ""
+                )
+        notifier.notify("WARNING", "review", "Suite review reconciliation mismatch", body)
     _emit(rec)
 
 

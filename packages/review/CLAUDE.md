@@ -108,8 +108,11 @@ provisional set through the day; every closed session is checked.
 session leaves its final set disagreeing, so each final set that fails is rebuilt (`build --session
 <day> --final`, with its render) and checked again; only what still disagrees afterwards is a failure,
 and each rebuild is listed in `rebuilt` (with its error when it raised). A provisional set is never
-rebuilt there, at most 30 are rebuilt in one pass, and the narrative notes are not touched: they are
-written once, so a rebuilt set can move under a note written from the old one.
+rebuilt there, and at most the 30 most recent are rebuilt in one pass. A rebuild that would leave a
+module unreadable which the stored set had read (a ledger locked at 10:15) is refused and the stored
+set stays. The stored `carried_overnight` is kept, so a correction that changed what was carried is
+not absorbed. The narrative notes are not touched: they are written once, so a rebuilt set can move
+under a note written from the old one.
 
 Package guardrail, on top of the root's:
 
