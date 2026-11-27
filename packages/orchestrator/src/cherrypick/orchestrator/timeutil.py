@@ -89,23 +89,41 @@ def is_trading_day(dt: datetime | None = None, holidays: set[str] | None = None)
     return True
 
 
+def session_close(dt: datetime | None = None) -> dtime:
+    """The regular-hours close of `dt`'s day by the suite's calendar (`core.calendar`): 13:00 on an NYSE
+    early close, 16:00 otherwise. A calendar that cannot be read gives `MARKET_CLOSE`, the old fixed
+    answer, so a hiccup keeps the watchdog's gates where they were instead of failing a tick. `dt` is a
+    market-time (ET) datetime, as `now_et` gives and every caller passes, like the rest of this module."""
+    dt = dt or now_et()
+    try:
+        from cherrypick.core import calendar as _cal
+
+        hh, mm = (int(x) for x in _cal.session_close_hhmm(dt.date()).split(":"))
+        return dtime(hh, mm)
+    except Exception:
+        return MARKET_CLOSE
+
+
 def is_market_hours(dt: datetime | None = None, holidays: set[str] | None = None) -> bool:
     dt = dt or now_et()
     if not is_trading_day(dt, holidays):
         return False
-    return MARKET_OPEN <= dt.time() <= MARKET_CLOSE
+    return MARKET_OPEN <= dt.time() <= session_close(dt)
 
 
 def is_session_window(
     dt: datetime | None = None, holidays: set[str] | None = None, start: dtime | None = None
 ) -> bool:
-    """True from just before the open through the close on a trading day (for service liveness).
-    `start` moves the beginning for one caller (the streamer's own `session_start`) without moving
-    every other session-gated check with it."""
+    """True from just before the open through the day's own close (13:00 on an early close) on a
+    trading day (for service liveness). `start` moves the beginning for one caller (the streamer's own
+    `session_start`) without moving every other session-gated check with it.
+
+    The close is the session's: a fixed 16:00 kept every `in_session` check live for three hours after
+    a 13:00 close, and on 2026-11-27 the earnings loop's stopped writes read as a stale loop."""
     dt = dt or now_et()
     if not is_trading_day(dt, holidays):
         return False
-    return (start or NEAR_OPEN) <= dt.time() <= MARKET_CLOSE
+    return (start or NEAR_OPEN) <= dt.time() <= session_close(dt)
 
 
 def parse_hhmm(value: Any, default: dtime) -> dtime:
