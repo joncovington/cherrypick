@@ -62,20 +62,24 @@ def _session_date() -> str:
 
 
 def _in_rth_clock(now_utc: float) -> bool:
-    """Weekday 09:35-15:55 ET, clock-only. Holidays are the CALLER'S problem by design: the
-    watchdog asks through a holiday-aware session gate (`timeutil.is_session_window`), and this
-    daemon deliberately holds no holiday calendar of its own."""
+    """A trading day, 09:35 ET to five minutes before that session's close (15:55, or 12:55 on an
+    early close), by the suite's calendar (`core.calendar`). The close is the session's own: a fixed
+    15:55 judged the spot silent after a 13:00 close and had the watchdog restart the producer every
+    sixteen minutes (2026-11-27)."""
     try:
         from datetime import UTC, datetime
         from zoneinfo import ZoneInfo
 
+        from cherrypick.core import calendar as _calendar
+
         et = datetime.fromtimestamp(now_utc, tz=UTC).astimezone(ZoneInfo("America/New_York"))
+        if not _calendar.is_trading_day(et.date()):
+            return False
+        close_h, close_m = (int(x) for x in _calendar.session_close_hhmm(et.date()).split(":"))
     except Exception:
         return False
-    if et.weekday() >= 5:
-        return False
     minutes = et.hour * 60 + et.minute
-    return 9 * 60 + 35 <= minutes <= 15 * 60 + 55
+    return 9 * 60 + 35 <= minutes <= close_h * 60 + close_m - 5
 
 
 def credential_store(instance: str | None = None) -> CredentialStore:
