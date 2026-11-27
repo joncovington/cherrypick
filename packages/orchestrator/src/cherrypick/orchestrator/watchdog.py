@@ -1226,7 +1226,7 @@ def _check_meic(name: str, mcfg: dict[str, Any], in_session: bool) -> list[Findi
             if job is not None and _tick_failed(job):
                 message = (
                     f"No paper write in {min(ages):.0f} min (limit {fresh_limit}). "
-                    f"The loop's last run exited {job.get('last_exit_code')}"
+                    f"The loop's last recorded exit was {job.get('last_exit_code')}"
                 )
                 said = _last_error_line(job)
                 message += f": {said}" if said else "; logs/jobs has its stderr."

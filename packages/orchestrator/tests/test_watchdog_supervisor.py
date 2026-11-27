@@ -71,18 +71,31 @@ def test_a_stale_loop_that_exits_nonzero_names_its_exit_and_its_last_error(no_sc
         {"last_exit_code": 2, "last_error": '{"ok": false, "error": "arms: groups.ensemble: no member"}'},
     )
     assert fresh.status == watchdog.WARN and "stale" in fresh.title
-    assert "exited 2" in fresh.message and "groups.ensemble" in fresh.message
+    assert "exit was 2" in fresh.message and "groups.ensemble" in fresh.message
     assert "Is the task running?" not in fresh.message
 
 
 def test_a_stale_loop_with_no_stored_error_points_to_its_stderr_log(no_schtasks, monkeypatch):
     fresh = _stale_fresh_finding(monkeypatch, {"last_exit_code": 2, "last_error": None})
-    assert "exited 2" in fresh.message and "logs/jobs" in fresh.message
+    assert "exit was 2" in fresh.message and "logs/jobs" in fresh.message
 
 
 def test_a_stale_loop_that_exited_clean_keeps_the_old_message(no_schtasks, monkeypatch):
     fresh = _stale_fresh_finding(monkeypatch, {"last_exit_code": 0})
-    assert "Is the task running?" in fresh.message and "exited" not in fresh.message
+    assert "Is the task running?" in fresh.message and "exit was" not in fresh.message
+
+
+def test_a_stale_loop_with_no_supervisor_keeps_the_old_message(monkeypatch):
+    """Pre-cutover (no supervisor heartbeat) the registry is not read, so a registry row that says
+    the loop failed must not reach the finding."""
+    write_jobs({"automations-paper": {"enabled": True, "last_exit_code": 2, "last_error": "boom"}})
+    monkeypatch.setattr(watchdog.tasks, "exists", lambda name: True)
+    monkeypatch.setattr(watchdog, "_file_age_minutes", lambda path: 99.0)
+    cfg = {"path": ".", "paper": {"kind": "self_healing", "freshness_minutes": 20}}
+    fresh = next(
+        f for f in watchdog._check_meic("automations", cfg, in_session=True) if f.key == "automations.fresh"
+    )
+    assert "Is the task running?" in fresh.message and "boom" not in fresh.message
 
 
 def test_a_stale_loop_stopped_on_request_is_not_a_failure(no_schtasks, monkeypatch):
