@@ -7,7 +7,6 @@ schema change upstream fails here instead of silently producing empty snapshots 
 import json
 import sqlite3
 import time
-from datetime import datetime
 
 import pytest
 from cherrypick.core.streamcache import DDL
@@ -26,7 +25,7 @@ def cache(tmp_path):
     return path
 
 
-TODAY = datetime.now(provider._ET).date().isoformat()
+TODAY = provider.now_et().date().isoformat()  # the provider's own today (conftest pins it off an early close)
 
 
 _DEFAULT_STRIKES = tuple(range(5980, 6021, 5))
