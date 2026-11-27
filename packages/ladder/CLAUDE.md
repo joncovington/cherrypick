@@ -77,11 +77,9 @@ chain is read. A fund removed from the config stays requested until its last lot
 `rules.py` (levels, targets, size, money, pure), `provider.py` (read-only cache views), `db.py`
 (ledger), `paper_loop.py` (the tick), `stream_request.py`, `analytics.py` (the forward read,
 and `equity`: each arm by session, realized and marked at the session's last bid), `cli.py` (status,
-lots, summary, equity, shadow), `shadow.py` (the shadow report, read-only over both ledgers: each armed
-day's live dry-run buys against `live.arm`'s paper lots in `live.symbols`, each `agree`, `resting` (paper
-never reached the level) or `capped` (a live block covers the paper lot's minute) when consistent, and
-`differs`, `live_only`, `paper_only` or `live_not_ticking` when not; intents are read from the journal's
-own detail, numbered in level order, so the module stays outside the order layer), `live_gates.py`, `live_loop.py` and `credentials.py` (the live gates,
+lots, summary, equity, shadow), `shadow.py` (the shadow report: each armed day's live dry-run buys
+paired by level with `live.arm`'s paper lots in `live.symbols`, read-only over both ledgers and outside
+the order layer; its docstring has the verdicts), `live_gates.py`, `live_loop.py` and `credentials.py` (the live gates,
 the arm and the commands; none imports anything that trades), `orders.py` (the pure order planner and
 the executor over an injected broker), `live_db.py` (the live ledger), `live_tick.py` (the broker
 adapter, the reconcile and the tick: the only module that imports the broker seam), `live_checks.py` (pure: the

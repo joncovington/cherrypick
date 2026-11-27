@@ -67,13 +67,28 @@ def cmd_shadow(args) -> int:
     block = live_gates.live_block(load_config(args.config))
     arm = args.arm or str(block.get("arm") or "").strip() or live_gates.DEFAULT_ARM
     funds = block.get("symbols") if isinstance(block.get("symbols"), list) else []
-    live = live_db.connect_ro(args.live_db)
-    paper = db.connect_ro(args.db)
+    live_path = args.live_db or live_db.live_db_path()
+    if not pathlib.Path(live_path).exists():
+        # The live ledger exists only once the live loop has ticked: nothing to compare is an answer.
+        return _print({"ok": False, "error": f"no live ledger at {live_path}: the live loop has not ticked"})
+    live = live_db.connect_ro(live_path)
     try:
-        return _print(shadow.report(live, paper, arm=arm, funds=funds, since=args.since))
+        paper = db.connect_ro(args.db)
+        try:
+            return _print(shadow.report(live, paper, arm=arm, funds=funds, since=args.since))
+        finally:
+            paper.close()
     finally:
         live.close()
-        paper.close()
+
+
+def _iso_day(text: str) -> str:
+    import datetime as _dt
+
+    try:
+        return _dt.date.fromisoformat(text).isoformat()
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{text!r} is not a YYYY-MM-DD date") from None
 
 
 def main(argv=None) -> int:
@@ -97,7 +112,7 @@ def main(argv=None) -> int:
     p.set_defaults(fn=cmd_equity)
     p = sub.add_parser("shadow")
     p.add_argument("--arm", help="the paper arm to compare (default: live.arm)")
-    p.add_argument("--since", help="first day, YYYY-MM-DD")
+    p.add_argument("--since", type=_iso_day, help="first day, YYYY-MM-DD")
     p.add_argument("--live-db", dest="live_db", help="the live ledger (default: live_trades.db)")
     p.set_defaults(fn=cmd_shadow)
     args = ap.parse_args(argv)
