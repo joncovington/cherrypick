@@ -62,7 +62,9 @@ def wanted(conn, config: dict, cache_path: str, today: date) -> dict:
     dates: set[str] = set(db.open_expirations(conn))
     legs: list[str] = []
     cycle = clock.next_cycle(today)
-    if cycle is not None:
+    # A cycle whose entry session is an early close is never sold (the module refuses a half day), so
+    # nothing of it is asked for: not the warm chain the day before, and not the puts on the day.
+    if cycle is not None and not _cal.is_early_close(clock.entry_session(cycle)):
         entry = clock.entry_session(cycle)
         if _cal.previous_trading_day(entry) <= today <= entry:
             dates.add(cycle.isoformat())

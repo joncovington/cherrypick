@@ -157,8 +157,15 @@ def _beat() -> None:
     _home.beat("flies")
 
 
-def in_session(now_min: int) -> bool:
-    return RTH_OPEN_MIN <= now_min < RTH_CLOSE_MIN
+def in_session(now_min: int, day=None) -> bool:
+    """Whether `now_min` is inside the regular session. With a `day` the close is that day's own
+    (13:00 on an NYSE early close), which the status reports use; the loops pass none and keep the
+    fixed 16:00 they were written against (the entry gate refuses an early close outright)."""
+    close = RTH_CLOSE_MIN
+    if day is not None:
+        h, m = _cal.session_close_hhmm(day).split(":")
+        close = int(h) * 60 + int(m)
+    return RTH_OPEN_MIN <= now_min < close
 
 
 # --------------------------------------------------------------------------- loop lock + cadence
@@ -1126,7 +1133,7 @@ def run_status(config: dict, conn, *, cache_path: str) -> dict:
     return {
         "ok": True,
         "date": today,
-        "in_session": in_session(provider.minute_of_day(when)),
+        "in_session": in_session(provider.minute_of_day(when), when.date()),
         # The orchestrator's watchdog reads this to tell "the loop is registered and quiet" from
         # "nothing is scheduled at all" — which look identical in an empty paper DB.
         "session_settled": session_already_settled(conn, today),

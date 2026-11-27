@@ -35,6 +35,7 @@ from cherrypick.weeklyput import cli as climod
 from cherrypick.weeklyput import clock, db, engine, provider, stream_request
 
 RTH_OPEN_MIN = 9 * 60 + 30
+HALF_DAY_REASON = "half_day_no_entries"
 STYLES = (engine.CASH, engine.PHYSICAL)
 DEFAULTS = {
     "quantity": 1,
@@ -464,7 +465,7 @@ def run_once(
             # up on another session, which would be a different rule from the one item 57 judged.
             phase = "half_day"
             outcome = record_misses(
-                config, conn, cycle=cycle, day=today, cache_path=cache_path, reason="half_day_no_entries"
+                config, conn, cycle=cycle, day=today, cache_path=cache_path, reason=HALF_DAY_REASON
             )
         elif in_window:
             phase = "entry"
@@ -513,11 +514,17 @@ def run_status(config: dict, conn, *, cache_path: str) -> dict:
         p["position_id"] for p in db.open_positions(conn) if date.fromisoformat(p["expiration"]) < today
     ]
     entering = clock.cycle_entering(today)
+    # A half day is not traded: no window and no entry, whichever session the cycle's entry falls on.
+    half_day = _cal.is_early_close(today)
     return {
         "ok": True,
         "date": today.isoformat(),
-        "decision_window": f"{start // 60:02d}:{start % 60:02d}-{end // 60:02d}:{end % 60:02d} ET",
-        "entry_today": entering.isoformat() if entering else None,
+        "half_day": half_day,
+        "decision_window": (
+            None if half_day else f"{start // 60:02d}:{start % 60:02d}-{end // 60:02d}:{end % 60:02d} ET"
+        ),
+        "entry_today": entering.isoformat() if entering and not half_day else None,
+        "entry_refused": HALF_DAY_REASON if entering and half_day else None,
         "next_cycle": cycle.isoformat() if cycle else None,
         "next_entry_session": clock.entry_session(cycle).isoformat() if cycle else None,
         "arms": enabled_arms(config),
