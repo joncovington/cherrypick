@@ -80,7 +80,7 @@ def cmd_render(args) -> dict:
 
 
 def cmd_reconcile(args) -> dict:
-    return _reconcile.run(since=args.since)
+    return _reconcile.run(since=args.since, rebuild=args.rebuild)
 
 
 def main() -> None:
@@ -105,6 +105,11 @@ def main() -> None:
 
     p_rec = sub.add_parser("reconcile")
     p_rec.add_argument("--since", type=_iso_date, default=None)
+    p_rec.add_argument(
+        "--rebuild",
+        action="store_true",
+        help="rebuild each final set that disagrees with its ledger, then check it again",
+    )
 
     p_render = sub.add_parser("render")
     p_render.add_argument("--session", type=_iso_date, default=None)

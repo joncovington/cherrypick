@@ -6,7 +6,7 @@ import sqlite3
 import pytest
 from cherrypick.core import ledgers as _ledgers
 
-from cherrypick.review import facts, reconcile
+from cherrypick.review import facts, reconcile, render
 
 
 @pytest.fixture
@@ -337,6 +337,122 @@ def test_a_voided_flies_row_is_out_of_the_fact_set_and_the_reconcile_alike(
     facts.write(facts.build("2026-10-08", modules=["flies"]))
     assert facts.read("2026-10-08")["modules"]["flies"]["results"]["closed"] == 1
     assert reconcile.check_session("2026-10-08") == {"session": "2026-10-08", "ok": True, "mismatches": []}
+
+
+# --------------------------------------------------------------------------- reconcile --rebuild (#1343)
+
+
+def _earnings_closed_trade(tmp_path, monkeypatch, exit_cost=5.0):
+    """An earnings ledger with one trade closed in 2026-10-23, and the store pointed at it."""
+    db = tmp_path / "paper_trades.db"
+    closed = _epoch("2026-10-23T12:00:00")
+    row = ("CSCO", "p", "iron_fly", 100.0, 5.0, exit_cost, closed, closed - 3600, 351.0, None, None, None)
+    _earnings_db(db, [row])
+    absent = tmp_path / "no-such-ledger.db"  # every other module reads as "ledger not found"
+    monkeypatch.setattr(
+        facts._paths,
+        "module_db",
+        lambda module, filename="paper_trades.db": db if module == "earnings" else absent,
+    )
+    monkeypatch.setattr(render, "write", lambda session: None)  # the markdown is not under test here
+    return db
+
+
+def _write_final_earnings_set(session="2026-10-23"):
+    facts.write(facts.build(session, status=facts.STATUS_FINAL, modules=["earnings"]))
+
+
+def _correct_the_ledger(db, exit_cost):
+    conn = sqlite3.connect(db)
+    conn.execute("UPDATE trades SET exit_cost = ?", (exit_cost,))
+    conn.commit()
+    conn.close()
+
+
+def test_a_ledger_correction_to_a_final_set_is_rebuilt_and_no_longer_a_failure(store, tmp_path, monkeypatch):
+    """2026-11-20: a fee rewrite after the sets were final made every morning's reconcile warn until
+    someone rebuilt each session by hand. With `rebuild` the disagreeing final set is rebuilt, checked
+    again, and only what still disagrees is a failure."""
+    db = _earnings_closed_trade(tmp_path, monkeypatch)
+    _write_final_earnings_set()
+    assert reconcile.run(today="2026-10-30")["ok"] is True
+
+    _correct_the_ledger(db, exit_cost=9.0)
+    stale = reconcile.run(today="2026-10-30")
+    assert stale["ok"] is False and [f["session"] for f in stale["failures"]] == ["2026-10-23"]
+    assert "rebuilt" not in stale  # without the flag nothing is rewritten
+
+    got = reconcile.run(today="2026-10-30", rebuild=True)
+    assert got["ok"] is True and got["failures"] == []
+    assert got["rebuilt"] == [{"session": "2026-10-23", "ok": True}]
+    assert facts.read("2026-10-23")["modules"]["earnings"]["results"]["cost"] == pytest.approx(14.0)
+
+
+def test_a_rebuild_keeps_what_the_session_carried(store, tmp_path, monkeypatch):
+    """The rebuild is the one #1042 stopped from wiping `carried_overnight`."""
+    db = _earnings_closed_trade(tmp_path, monkeypatch)
+    _write_final_earnings_set()
+    stored = facts.read("2026-10-23")
+    stored["modules"]["earnings"]["carried_overnight"] = {"positions": 3, "capital_at_risk": 900.0}
+    facts.write(stored)
+
+    _correct_the_ledger(db, exit_cost=9.0)
+    reconcile.run(today="2026-10-30", rebuild=True)
+    module = facts.read("2026-10-23")["modules"]["earnings"]
+    assert module["carried_overnight"] == {"positions": 3, "capital_at_risk": 900.0}
+    assert "carried_overnight_kept_from" in module
+
+
+def test_a_provisional_set_is_never_rebuilt_by_reconcile(store, tmp_path, monkeypatch):
+    db = _earnings_closed_trade(tmp_path, monkeypatch)
+    facts.write(facts.build("2026-10-23", status=facts.STATUS_PROVISIONAL, modules=["earnings"]))
+    _correct_the_ledger(db, exit_cost=9.0)
+    got = reconcile.run(today="2026-10-30", rebuild=True)
+    assert got["ok"] is False and got["rebuilt"] == []
+    assert facts.read("2026-10-23")["status"] == facts.STATUS_PROVISIONAL
+
+
+def test_a_rebuild_that_raises_is_listed_and_the_rest_go_on(store, tmp_path, monkeypatch):
+    db = _earnings_closed_trade(tmp_path, monkeypatch)
+    for session in ("2026-10-22", "2026-10-23"):
+        facts.write(
+            {
+                "session": session,
+                "status": "final",
+                "modules": {"earnings": {"ok": True, "results": {"closed": 9}}},
+            }
+        )
+    _correct_the_ledger(db, exit_cost=9.0)
+
+    real = reconcile.rebuild_session
+
+    def flaky(session):
+        if session == "2026-10-22":
+            raise RuntimeError("boom")
+        real(session)
+
+    monkeypatch.setattr(reconcile, "rebuild_session", flaky)
+    got = reconcile.run(today="2026-10-30", rebuild=True)
+    by_session = {r["session"]: r for r in got["rebuilt"]}
+    assert by_session["2026-10-22"] == {"session": "2026-10-22", "ok": False, "error": "RuntimeError: boom"}
+    assert by_session["2026-10-23"]["ok"] is True
+    assert [f["session"] for f in got["failures"]] == ["2026-10-22"]
+
+
+def test_a_pass_rebuilds_no_more_than_the_limit(store, tmp_path, monkeypatch):
+    _earnings_closed_trade(tmp_path, monkeypatch)
+    for session in ("2026-10-21", "2026-10-22", "2026-10-23"):
+        facts.write(
+            {
+                "session": session,
+                "status": "final",
+                "modules": {"earnings": {"ok": True, "results": {"closed": 9}}},
+            }
+        )
+    monkeypatch.setattr(reconcile, "REBUILD_LIMIT", 1)
+    monkeypatch.setattr(reconcile, "rebuild_session", lambda session: None)
+    got = reconcile.run(today="2026-10-30", rebuild=True)
+    assert [r["session"] for r in got["rebuilt"]] == ["2026-10-21"]
 
 
 # --------------------------------------------------------------------------- rebuilding a final set (#1042)

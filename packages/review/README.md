@@ -31,7 +31,7 @@ The console's Reports page (EOD tab) reads the same JSON. Logs go to `~/.cherryp
 python -m cherrypick.review build [--session YYYY-MM-DD] [--final]   # build + render one session
 python -m cherrypick.review backfill [--since YYYY-MM-DD]            # every session with activity (final)
 python -m cherrypick.review render [--session YYYY-MM-DD]            # re-render one session's markdown
-python -m cherrypick.review reconcile [--since YYYY-MM-DD]           # re-count totals with independent SQL
+python -m cherrypick.review reconcile [--since YYYY-MM-DD] [--rebuild]  # re-count totals with independent SQL; --rebuild redoes a final set that disagrees
 ```
 
 `build` defaults to today and writes a `provisional` set; `build --final` defaults to the prior trading
