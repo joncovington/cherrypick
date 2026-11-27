@@ -4,6 +4,8 @@
     lots       every lot with its money laid out to add up (--arm, --open, --closed)
     summary    each arm's forward read: lots, net, holds, what is still open
     equity     each arm by session: realized net, and realized plus open lots marked at the bid
+    shadow     each armed day's live dry-run buys against paper's arm that day (--arm, --since,
+               --live-db); both ledgers read only
 
 The paper loop's own argv (`python -m cherrypick.ladder.paper_loop --once|--interval|--status`) is
 what the orchestrator drives. Keep these JSON shapes stable: the console will read them.
@@ -59,6 +61,21 @@ def cmd_equity(args) -> int:
     return _print({"ok": True, **analytics.equity(conn, args.arm), "breaks": db.measurement_breaks(conn)})
 
 
+def cmd_shadow(args) -> int:
+    from cherrypick.ladder import db, live_db, live_gates, shadow
+
+    block = live_gates.live_block(load_config(args.config))
+    arm = args.arm or str(block.get("arm") or "").strip() or live_gates.DEFAULT_ARM
+    funds = block.get("symbols") if isinstance(block.get("symbols"), list) else []
+    live = live_db.connect_ro(args.live_db)
+    paper = db.connect_ro(args.db)
+    try:
+        return _print(shadow.report(live, paper, arm=arm, funds=funds, since=args.since))
+    finally:
+        live.close()
+        paper.close()
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="ladder", description="cherrypick-ladder read side")
     ap.add_argument("--config")
@@ -78,6 +95,11 @@ def main(argv=None) -> int:
     p = sub.add_parser("equity")
     p.add_argument("--arm")
     p.set_defaults(fn=cmd_equity)
+    p = sub.add_parser("shadow")
+    p.add_argument("--arm", help="the paper arm to compare (default: live.arm)")
+    p.add_argument("--since", help="first day, YYYY-MM-DD")
+    p.add_argument("--live-db", dest="live_db", help="the live ledger (default: live_trades.db)")
+    p.set_defaults(fn=cmd_shadow)
     args = ap.parse_args(argv)
     return args.fn(args)
 
