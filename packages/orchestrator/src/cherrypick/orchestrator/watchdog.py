@@ -1218,14 +1218,16 @@ def _check_meic(name: str, mcfg: dict[str, Any], in_session: bool) -> list[Findi
                 )
             )
         elif min(ages) > fresh_limit:
-            findings.append(
-                Finding(
-                    f"{name}.fresh",
-                    WARN,
-                    f"{label} paper data is stale",
-                    f"No paper write in {min(ages):.0f} min (limit {fresh_limit}). Is the task running?",
-                )
-            )
+            message = f"No paper write in {min(ages):.0f} min (limit {fresh_limit}). Is the task running?"
+            # A loop that exits nonzero every tick is not "not running": say what it last exited with
+            # and, when the supervisor kept it, why (a config refusal at start looked like a silent
+            # loop until someone ran the module by hand, 2026-11-27).
+            job = _supervisor_job(f"{name}-paper") if _supervisor_driving() else None
+            if job is not None and _tick_failed(job):
+                message = f"No paper write in {min(ages):.0f} min (limit {fresh_limit}). The loop's last run exited {job.get('last_exit_code')}"
+                said = _last_error_line(job)
+                message += f": {said}" if said else "; logs/jobs has its stderr."
+            findings.append(Finding(f"{name}.fresh", WARN, f"{label} paper data is stale", message))
         else:
             findings.append(Finding(f"{name}.fresh", OK, f"{label} paper fresh", f"{min(ages):.0f} min old"))
     else:
