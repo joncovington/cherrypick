@@ -42,6 +42,17 @@ def test_an_arm_whose_window_is_after_the_close_is_missed_while_the_loop_runs(tm
     assert row["outcome"] == "missed" and row["refusal"] == "half_day_no_entries"
 
 
+def test_a_window_that_straddles_the_close_is_missed_too(tmp_path, half_day):
+    """A 12:58 entry with a 5-minute window runs to 13:02, past the last tick (12:59), so only the
+    day-over rule can end it. Tighten the test to `window start >= close` and it stays pending."""
+    entry = {"kind": "time", "at": "12:58", "window": 5}
+    w = base.world(tmp_path, overrides={"iron-fly-1000": {"entry": entry}})
+    out = base.tick(w, base.at(12, 59, HALF))
+    assert out["missed"] == {"iron-fly-1000": "missed"}
+    row = db.entry(w.conn, "iron-fly-1000", "SPX", HALF)
+    assert row["outcome"] == "missed" and row["refusal"] == "half_day_no_entries"
+
+
 def test_the_refusal_is_filed_as_a_limit_after_the_trigger():
     """The funnel counts the trigger before the limits: `half_day_no_entries` is a limit, and the engine
     checks it after `entry_not_due`, so an arm not yet due still says so."""

@@ -423,6 +423,16 @@ def record_misses(
     out = {}
     for row in db.entries(conn):
         if row["expiration"] == cycle.isoformat() and row["outcome"] == "pending":
+            if reason:  # a by-rule refusal reaches the decision journal as a tick's own would
+                db.record_decision(
+                    conn,
+                    trade_date=day.isoformat(),
+                    arm=row["arm"],
+                    symbol=row["symbol"],
+                    mode="entry",
+                    reason=reason,
+                    accepted=False,
+                )
             out[f"{row['arm']}:{row['symbol']}"] = _miss(conn, row["arm"], row["symbol"], cycle, reason)
     return out
 

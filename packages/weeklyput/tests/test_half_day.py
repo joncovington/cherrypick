@@ -37,6 +37,12 @@ def test_the_entry_session_on_a_half_day_sells_nothing_and_says_why(config, conn
     assert set(out["entries"].values()) == {"missed"}
     assert db.open_position_count(conn) == 0
     assert {e["refusal"] for e in db.entries(conn)} == {"half_day_no_entries"}
+    # the decision journal says it too, one row per name, so it and the entries table agree
+    rows = conn.execute("SELECT symbol, reason, accepted FROM weeklyput_decisions").fetchall()
+    assert {(r["symbol"], r["reason"], r["accepted"]) for r in rows} == {
+        ("SPX", "half_day_no_entries", 0),
+        ("SPY", "half_day_no_entries", 0),
+    }
 
 
 def test_the_refusal_stands_for_the_whole_session_and_is_not_made_up_later(config, conn, stocked):

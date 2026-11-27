@@ -498,16 +498,17 @@ def record_misses(
     conn, todays: dict[str, dict], day: date, minute: int, *, day_over: str | None = None
 ) -> dict[str, str]:
     """Every arm still pending after its window is missed, with the last reason a tick gave. With
-    `day_over` (why the day cannot be traded: a half day) an arm whose window opens at or after the
-    close is missed now, with that reason: the loop stops at the close, so it would stay pending. An
-    arm whose window is before the close goes through its window as on any day, and a half day's
-    reason wins over an earlier refusal."""
+    `day_over` (why the day cannot be traded: a half day) an arm whose window is not over by the
+    loop's last tick (the minute before the close) is missed now, with that reason: the loop stops
+    at the close, so it would stay pending. An arm whose window ends sooner goes through it as on any
+    day, and a half day's reason wins over an earlier refusal."""
     out = {}
     for arm in todays.values():
         row = db.entry(conn, arm["name"], arm["symbol"], day.isoformat())
         if not row or row["outcome"] != "pending":
             continue
-        never_runs = day_over is not None and feed.entry_window(arm)[0] >= close_minute(day)
+        # The loop's last tick is the minute before the close: a window not over by then never ends.
+        never_runs = day_over is not None and feed.entry_window(arm)[1] >= close_minute(day) - 1
         if not never_runs and minute <= feed.entry_window(arm)[1]:
             continue
         reason = (
