@@ -1977,8 +1977,20 @@ def cmd_queue_list(cfg, args) -> None:
         r["lane"] = rq.lane_of(r)
         if r["status"] == "queued":
             r["position"] = places[r["id"]]
+            # Where its wait really ends, when past its prerequisite. Whole queue only: a --study
+            # view holds some of the chain's rows and would end it early.
+            r["behind"] = None if args.study else rq.behind(r, out)
     by_hand = [v for stem, v in views.items() if not (stem.startswith("q") and stem[1:].isdigit())]
-    _emit({"ok": True, "session_held": held, "blackout": list(window), "tasks": out, "by_hand": by_hand})
+    _emit(
+        {
+            "ok": True,
+            "session_held": held,
+            "blackout": list(window),
+            "lanes": None if args.study else rq.lane_report(out),
+            "tasks": out,
+            "by_hand": by_hand,
+        }
+    )
 
 
 def cmd_queue_cancel(args) -> None:

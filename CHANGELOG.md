@@ -18,6 +18,10 @@ beyond the latest release.
   (every option bid 0.05, ask 99.00), which a study read as a session. `fetch-chains` counts these
   requests as `not_trading` and sends none; the report gains `off_calendar` per symbol. Item 109's study
   skips those sessions. Nothing to do.
+- **`queue-list` says why a lane is idle.** It reports each lane's running row and, when nothing runs,
+  what the rest wait behind. The local lane counts only rows that are not waiting on a queued fetch, so
+  "idle" there means no local work exists. A queued row also names where its chain of `after` rows ends.
+  Nothing to do.
 - **The study kit's `Inputs.sessions` returns trading days only.** A stored non-trading day (the
   Saturday placeholder under every name, holiday sessions under SPXW) is no longer a session to a study
   on the kit, and `chain` reads such a day as none. Items 57, 74, 77 and 78 read such days and carry a
