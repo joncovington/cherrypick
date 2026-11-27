@@ -49,7 +49,10 @@ Nothing here says the rule has an edge.
    live account's would. Item 26's daily replay allowed neither; the group's own fills do both.
 3. **Hours are tastytrade's equity day, 08:15 to 20:00 ET**, but the stream cache only holds quotes
    while the streamer runs (08:45 to about 20:00). Nothing fills overnight, even on a fund the broker
-   trades overnight.
+   trades overnight. **On an NYSE early close (13:00 ET) the ladder takes no new lot, all day,
+   extended hours included**: paper records `half_day_no_entries` for each arm and fund, and the live
+   planner places no buy and cancels the resting ones (a `new_buys` gate, `session.half_day`). Held lots
+   are still marked and sold, and their resting sells stay. `force` trades a half day for testing.
 4. **The group's 18-day "trade hospital"** is counted, never acted on: `summary` reports lots sold
    within 18 days and open lots older than 18. The group writes covered calls on those; at lot sizes
    under 100 shares that is not possible, and nothing here does it.

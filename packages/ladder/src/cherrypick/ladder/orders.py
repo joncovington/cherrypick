@@ -48,6 +48,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from datetime import datetime
 
+from cherrypick.core import calendar as _cal
 from cherrypick.core.clock import ET, hhmm_to_min, minute_of_day
 from cherrypick.core.execution import order_id_of
 
@@ -313,6 +314,9 @@ def plan(
     stop = None
     if halted:
         stop = "halted"
+    elif _cal.is_early_close(today):
+        # Half days are not tradeable: no new buy, and the resting ones are cancelled, as for the halt.
+        stop = "half_day_no_entries"
     elif out.breaker["tripped"]:
         stop = "drawdown_breaker"
     elif now_min >= end_min:
