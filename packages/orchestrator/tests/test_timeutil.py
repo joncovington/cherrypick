@@ -62,6 +62,45 @@ def test_an_unreadable_start_keeps_the_default():
     assert timeutil.parse_hhmm("25:00", timeutil.NEAR_OPEN) == timeutil.NEAR_OPEN
 
 
+# --------------------------------------------------------------------------- the day's own close
+@pytest.mark.parametrize(
+    ("when", "close"),
+    [
+        ((2026, 11, 20, 10, 0), (16, 0)),  # an ordinary Friday
+        ((2026, 11, 27, 10, 0), (13, 0)),  # the day after Thanksgiving
+        ((2026, 12, 24, 10, 0), (13, 0)),  # Christmas Eve
+    ],
+)
+def test_the_close_is_the_days_own(when, close):
+    assert timeutil.session_close(_et(*when)) == timeutil.dtime(*close)
+
+
+@pytest.mark.parametrize(
+    ("when", "in_window", "in_hours"),
+    [
+        ((2026, 11, 27, 12, 59), True, True),  # an early close, a minute before it
+        ((2026, 11, 27, 13, 0), True, True),  # the close edge
+        ((2026, 11, 27, 13, 1), False, False),  # after a 13:00 close
+        ((2026, 11, 27, 15, 0), False, False),  # where a fixed 16:00 still said "in session"
+        ((2026, 11, 20, 15, 0), True, True),  # an ordinary day, the same hour: still in session
+        ((2026, 11, 20, 16, 1), False, False),
+    ],
+)
+def test_the_session_ends_at_the_days_own_close(when, in_window, in_hours):
+    dt = _et(*when)
+    assert timeutil.is_session_window(dt) is in_window
+    assert timeutil.is_market_hours(dt) is in_hours
+
+
+def test_an_unreadable_calendar_keeps_the_regular_close(monkeypatch):
+    """A hiccup must leave the gates where they were (16:00), not fail a watchdog tick."""
+    import cherrypick.core.calendar as cal
+
+    monkeypatch.setattr(cal, "session_close_hhmm", lambda d: (_ for _ in ()).throw(RuntimeError("boom")))
+    assert timeutil.session_close(_et(2026, 11, 27, 10, 0)) == timeutil.MARKET_CLOSE
+    assert timeutil.is_session_window(_et(2026, 11, 27, 15, 0)) is True
+
+
 # --------------------------------------------------------------------------- the holiday source
 def test_load_holidays_returns_real_dates():
     """The regression this exists for: `load_holidays` used to scan MEIC's config for

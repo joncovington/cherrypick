@@ -15,7 +15,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from cherrypick.orchestrator import doctor, supersnap, supervisor, watchdog
+from cherrypick.orchestrator import doctor, supersnap, supervisor, timeutil, watchdog
 
 
 def write_heartbeat(age_seconds: float = 0.0, pid: int | None = None):
@@ -101,6 +101,30 @@ def test_a_stale_loop_with_no_supervisor_keeps_the_old_message(monkeypatch):
 def test_a_stale_loop_stopped_on_request_is_not_a_failure(no_schtasks, monkeypatch):
     fresh = _stale_fresh_finding(monkeypatch, {"last_exit_code": 1, "last_exit_requested": True})
     assert "Is the task running?" in fresh.message
+
+
+@pytest.mark.parametrize(
+    ("when", "stale"),
+    [
+        ((2026, 11, 27, 12, 30), True),  # an early close, still before it: silence is a stale loop
+        ((2026, 11, 27, 13, 30), False),  # after the 13:00 close the loop has rightly stopped
+        ((2026, 11, 20, 13, 30), True),  # an ordinary day, the same hour: still in session
+        ((2026, 11, 20, 16, 30), False),
+    ],
+)
+def test_the_freshness_check_stops_at_the_days_own_close(no_schtasks, monkeypatch, when, stale):
+    """2026-11-27: the earnings loop stopped writing at the 13:00 close, and `earnings.fresh` warned 13
+    times until 15:55 because `in_session` ran to a fixed 16:00."""
+    write_heartbeat()
+    write_jobs({"earnings-paper": {"enabled": True}})
+    monkeypatch.setattr(watchdog, "_file_age_minutes", lambda path: 99.0)
+    cfg = {"path": ".", "paper": {"kind": "self_healing", "freshness_minutes": 20}}
+    dt = datetime(*when, tzinfo=timeutil._tz("America/New_York"))
+    in_session = timeutil.is_session_window(dt)
+    fresh = next(
+        f for f in watchdog._check_meic("earnings", cfg, in_session=in_session) if f.key == "earnings.fresh"
+    )
+    assert (fresh.status == watchdog.WARN) is stale
 
 
 # --------------------------------------------------------------------- supervisor-driven reads
