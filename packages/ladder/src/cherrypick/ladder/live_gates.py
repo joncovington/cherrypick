@@ -8,7 +8,7 @@ Two kinds of gate, told apart by `blocks`:
 
 - `all`: while it fails the loop may do nothing on the account.
 - `new_buys`: while it fails the loop may place no new buy but still manages what is held (the halt
-  flag). Held lots keep their resting sells either way.
+  flag, and an early-close session). Held lots keep their resting sells either way.
 
 The first three gates (`CONFIG_GATES`) are the ones `--arm` checks before it writes the day's record.
 """
@@ -16,7 +16,9 @@ The first three gates (`CONFIG_GATES`) are the ones `--arm` checks before it wri
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+from datetime import date
 
+from cherrypick.core import calendar as _cal
 from cherrypick.core import live as _live
 from cherrypick.core.clock import hhmm_to_min
 from cherrypick.core.redact import mask_account
@@ -124,6 +126,15 @@ def disarm_minute(config: dict) -> int:
     return hhmm_to_min(live_block(config).get("disarm_at") or DEFAULT_DISARM_AT, 20 * 60)
 
 
+def _early_close(today: str) -> bool:
+    """Whether `today` (an ISO date) is an NYSE early close. A date that does not parse is no early close,
+    so a stub or an odd status call cannot stop the gates from being reported."""
+    try:
+        return _cal.is_early_close(date.fromisoformat(today))
+    except (TypeError, ValueError):
+        return False
+
+
 def _add(gates: list[Gate], name: str, ok: bool, ok_reason: str, bad_reason: str, blocks: str = "all"):
     gates.append(Gate(name, bool(ok), ok_reason if ok else bad_reason, blocks))
 
@@ -193,6 +204,14 @@ def evaluate(
         not halted,
         "no halt flag",
         "the halt flag is set: no new buy; held lots keep their resting sells",
+        blocks="new_buys",
+    )
+    add(
+        "session.half_day",
+        not _early_close(today),
+        "an ordinary session",
+        "an early-close session: half days are not tradeable, so no new buy; "
+        "held lots keep their resting sells",
         blocks="new_buys",
     )
     arm = str(live.get("arm") or "").strip()

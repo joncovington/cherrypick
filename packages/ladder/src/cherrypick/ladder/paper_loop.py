@@ -49,6 +49,10 @@ DEFAULTS = {
     "session_end": "20:00",
 }
 
+#: Why an arm takes no new lot on an early close; the same word meic, earnings, weeklyput and
+#: automations record.
+HALF_DAY_REASON = "half_day_no_entries"
+
 _logger = logging.getLogger("ladder_paper_loop")
 
 
@@ -338,7 +342,13 @@ def run_once(
                 continue
             marks += db.open_count(conn, arm)
             sold = run_sells(conn, p, symbol, q, today=today, stamp=stamp)
-            bought = run_buys(conn, p, symbol, q, ref, today=today, stamp=stamp)
+            if not force and _cal.is_early_close(today):
+                # Half days (an NYSE early close) are not tradeable, by rule: no new lot, all day,
+                # extended hours included. What the arm already holds is still marked and sold.
+                _refuse(conn, p, symbol, today, HALF_DAY_REASON)
+                bought = 0
+            else:
+                bought = run_buys(conn, p, symbol, q, ref, today=today, stamp=stamp)
             actions += sold + bought
             out[f"{arm}:{symbol}"] = {"sold": sold, "bought": bought}
     db.record_iteration(

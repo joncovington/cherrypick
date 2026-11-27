@@ -1,8 +1,10 @@
 """The arm, disarm, status and once commands, and the fence that keeps orders out of this path."""
 
 import ast
+import datetime as _dt
 import json
 import pathlib
+from zoneinfo import ZoneInfo
 
 import pytest
 from cherrypick.core import home as _home
@@ -51,6 +53,10 @@ def seams(monkeypatch):
     """A supervisor heartbeat, a designated account, and no real keyring."""
     monkeypatch.setattr(_live, "supervisor_heartbeat_fresh", lambda max_age_seconds=90: True)
     monkeypatch.setattr(live_loop, "_designated", lambda: ACCOUNT)
+    # Not the real today: on an NYSE early close the half-day gate would be unmet and the status
+    # assertions below would read it (the lesson of 2026-11-27's red CI).
+    ordinary = _dt.datetime(2026, 11, 20, 10, 0, tzinfo=ZoneInfo("America/New_York"))
+    monkeypatch.setattr(live_loop, "now_et", lambda: ordinary)
 
 
 def armed_file() -> pathlib.Path:
@@ -159,6 +165,7 @@ def test_status_masks_the_account_and_makes_no_broker_call(capsys, suite, write_
         "arm.record",
         "account.designated",
         "halt.flag",
+        "session.half_day",
         "live.arm",
         "live.symbols",
         "live.limits",
