@@ -397,7 +397,7 @@ def run_entries(config: dict, conn, *, cycle: date, day: date, cache_path: str, 
 
 def _miss(conn, arm: str, sym: str, cycle: date, reason: str | None = None) -> str:
     row = db.entry(conn, arm, sym, cycle.isoformat()) or {}
-    reason = reason or row.get("refusal") or "no_tick_in_window"
+    reason = reason or row.get("refusal") or "no_tick_in_window"  # a by-rule reason wins over a tick's
     db.save_entry(
         conn,
         {

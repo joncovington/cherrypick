@@ -36,7 +36,7 @@ and the **unhedged** arm passed every check (Holm across the two arms, both time
 ## What paper adds, and says
 
 1. **The entry is a close-of-session fill, not an end-of-day quote.** The window opens 15 minutes
-   before the close (15:45) and stays open 10. A name not entered by its
+   before the close (15:45, or 12:45 on an early close, where it is never used: see below) and stays open 10. A name not entered by its
    end is `missed` for that cycle; **nothing fills after the window** (guard mutant
    `weeklyput-no-fill-after-window`). Item 69's `scripts/weeklyput_item69.py track` reads the gap
    against item 57's replay of the same trades.

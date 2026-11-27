@@ -25,6 +25,8 @@ def test_an_arm_in_its_window_on_a_half_day_does_not_enter(tmp_path, half_day):
     out = base.tick(w, base.at(10, 0, HALF))
     assert out["entries"] == {"iron-fly-1000": "half_day_no_entries"}
     assert db.open_position_count(w.conn) == 0
+    out = base.tick(w, base.at(10, 5, HALF))  # the window closes unentered
+    assert out["missed"] == {"iron-fly-1000": "missed"}
     entry = db.entry(w.conn, "iron-fly-1000", "SPX", HALF)
     assert entry["outcome"] == "missed" and entry["refusal"] == "half_day_no_entries"
 
