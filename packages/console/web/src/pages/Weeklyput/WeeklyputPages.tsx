@@ -594,7 +594,7 @@ export function WeeklyputDecisions() {
 }
 
 export function WeeklyputHelp({ status }: { status: WeeklyputStatus | undefined }) {
-  const window = status?.decisionWindow ?? "15:45–15:55 ET (12:45–12:55 on an early close)";
+  const window = status?.decisionWindow ?? "15:45–15:55 ET (none on an early close: a half day is not traded)";
   return (
     <div className="pf-layout">
       <GuideLink to="/help/strategy-pages#weekly-put-weeklyput" />
