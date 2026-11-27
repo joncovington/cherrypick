@@ -224,6 +224,10 @@ def decide(arm: dict, snap: Snapshot, *, costs: dict | None = None) -> Decision:
     if not due:
         return fail("entry_not_due", v)
     ok("entry_due", v)
+    # Half days (an NYSE early close) are not tradeable, by rule: no entry, in paper or in a backtest.
+    # After the trigger, where the funnel files it (a limit), so the trigger's counts are unchanged.
+    if cal.is_early_close(snap.session_date):
+        return fail("half_day_no_entries", snap.session)
 
     lim = arm["limits"]  # validated: max_open and per_day stated, no default here
     mine = snap.entries.get(arm["name"], [])

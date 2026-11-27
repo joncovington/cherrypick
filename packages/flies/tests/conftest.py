@@ -24,6 +24,35 @@ def managed_home(tmp_path, monkeypatch):
     return home
 
 
+def _pin_today_off_early_closes() -> None:
+    """The live tests date their fixtures to the real today (`DAY` in test_live_scaffold, and
+    run_watch and run_settle_live resolve "today" themselves through `provider.now_et`), and the entry
+    gate refuses an NYSE early close outright. So on a real half day (2026-11-27) every live test
+    opened nothing and failed, and so did each guard mutant whose clean run uses them. When the real
+    today is an early close, "today" is the trading day before it, for the whole run. This runs when
+    the conftest is imported, before a test module reads `DAY`; a test that dates its snapshot to an
+    early close on purpose still meets the gate exactly, since the gate is not touched."""
+    from cherrypick.core import calendar as cal
+
+    from cherrypick.flies import provider
+
+    real = provider.now_et
+    if not cal.is_early_close(real().date()):
+        return
+
+    def now_et():
+        now = real()
+        day = now.date()
+        while cal.is_early_close(day):
+            day = cal.previous_trading_day(day)
+        return now.replace(year=day.year, month=day.month, day=day.day)
+
+    provider.now_et = now_et
+
+
+_pin_today_off_early_closes()
+
+
 @pytest.fixture(autouse=True)
 def todays_date_is_not_a_quarter_end(monkeypatch):
     """The live tests date their fixtures to the real today (run_watch and run_settle_live resolve

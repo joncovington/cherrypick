@@ -494,15 +494,28 @@ def run_entries(
     return out
 
 
-def record_misses(conn, todays: dict[str, dict], day: date, minute: int) -> dict[str, str]:
-    """Every arm still pending after its window is missed, with the last reason a tick gave."""
+def record_misses(
+    conn, todays: dict[str, dict], day: date, minute: int, *, day_over: str | None = None
+) -> dict[str, str]:
+    """Every arm still pending after its window is missed, with the last reason a tick gave. With
+    `day_over` (why the day cannot be traded: a half day) an arm whose window is not over by the
+    loop's last tick (the minute before the close) is missed now, with that reason: the loop stops
+    at the close, so it would stay pending. An arm whose window ends sooner goes through it as on any
+    day, and a half day's reason wins over an earlier refusal."""
     out = {}
     for arm in todays.values():
         row = db.entry(conn, arm["name"], arm["symbol"], day.isoformat())
-        if not row or row["outcome"] != "pending" or minute <= feed.entry_window(arm)[1]:
+        if not row or row["outcome"] != "pending":
             continue
-        reason = row.get("refusal") or (
-            "no_breakout" if arm["entry"]["kind"] == "orb" else "no_tick_in_window"
+        # The loop's last tick is the minute before the close: a window not over by then never ends.
+        never_runs = day_over is not None and feed.entry_window(arm)[1] >= close_minute(day) - 1
+        if not never_runs and minute <= feed.entry_window(arm)[1]:
+            continue
+        reason = (
+            day_over
+            if day_over
+            else row.get("refusal")
+            or ("no_breakout" if arm["entry"]["kind"] == "orb" else "no_tick_in_window")
         )
         db.save_entry(
             conn,
@@ -548,7 +561,9 @@ def run_once(
     entered = run_entries(
         config, arms, conn, cache_path=cache_path, when=when, evts=evts, replay_to=replay_to
     )
-    missed = record_misses(conn, stream_request.active_arms(arms, today), today, now_min)
+    # The resident loop stops at the close, so a half day's later windows are closed here, while it runs.
+    half_day = "half_day_no_entries" if _cal.is_early_close(today) else None
+    missed = record_misses(conn, stream_request.active_arms(arms, today), today, now_min, day_over=half_day)
     db.prune_trail(conn, (today - timedelta(days=db.TRAIL_KEEP_DAYS)).isoformat())
     actions = sum(1 for v in entered.values() if v == "entered") + managed["closed"] + settled
     db.record_iteration(

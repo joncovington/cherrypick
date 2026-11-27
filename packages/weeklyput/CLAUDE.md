@@ -36,10 +36,15 @@ and the **unhedged** arm passed every check (Holm across the two arms, both time
 ## What paper adds, and says
 
 1. **The entry is a close-of-session fill, not an end-of-day quote.** The window opens 15 minutes
-   before the close (15:45, or 12:45 on an early close) and stays open 10. A name not entered by its
+   before the close (15:45, or 12:45 on an early close, where it is never used: see below) and stays open 10. A name not entered by its
    end is `missed` for that cycle; **nothing fills after the window** (guard mutant
    `weeklyput-no-fill-after-window`). Item 69's `scripts/weeklyput_item69.py track` reads the gap
    against item 57's replay of the same trades.
+
+   **A half day is not traded.** When the entry session is an NYSE early close the window is never
+   used (`clock.decision_window` still gives 12:45 to 12:55, and the stream request and `run_status`
+   still show it): each name of the cycle is `missed` with `half_day_no_entries` from the first tick,
+   and the entry is not made up on another session, which would be a different rule from item 57's.
 2. **A 10-delta that is not bracketed is refused** (`delta_not_bracketed`). The study's chains held
    every strike; the stream cache holds what was subscribed. The nearest quoted put is a different
    trade when the window stops short of the true 10-delta strike.

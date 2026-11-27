@@ -78,6 +78,9 @@ def test_entry_to_close_round_trip_prices_the_bwb_ratio_correctly(tmp_path, monk
     # Likewise the liquidity gate (from 2026-10-28, universe.py): this test home holds no verdict, so
     # from that session XYZ would be refused. The gate has its own tests (test_entry_universe.py).
     monkeypatch.setattr(runner.universe, "refusal", lambda *a: None)
+    # And the half-day refusal (`_past_entry_window`): the entry scan reads today's date, and on an NYSE
+    # early close nothing opens, so on a real half day (2026-11-27) this test opened nothing and failed.
+    monkeypatch.setattr(runner, "_past_entry_window", lambda config: False)
 
     config = {
         "close_quote_retries": 0,
