@@ -92,7 +92,8 @@ def is_trading_day(dt: datetime | None = None, holidays: set[str] | None = None)
 def session_close(dt: datetime | None = None) -> dtime:
     """The regular-hours close of `dt`'s day by the suite's calendar (`core.calendar`): 13:00 on an NYSE
     early close, 16:00 otherwise. A calendar that cannot be read gives `MARKET_CLOSE`, the old fixed
-    answer, so a hiccup keeps the watchdog's gates where they were instead of failing a tick."""
+    answer, so a hiccup keeps the watchdog's gates where they were instead of failing a tick. `dt` is a
+    market-time (ET) datetime, as `now_et` gives and every caller passes, like the rest of this module."""
     dt = dt or now_et()
     try:
         from cherrypick.core import calendar as _cal
