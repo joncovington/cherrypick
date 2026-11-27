@@ -516,24 +516,32 @@ def wait_chain(row: dict, rows: list[dict]) -> list[dict]:
 def behind(row: dict, rows: list[dict]) -> str | None:
     """Where a queued row's wait really ends, when that is further than its own prerequisite:
     `study/step (status)` of the last row in its chain, else None."""
-    chain = wait_chain(row, rows)
+    chain = _open_chain(row, rows)
     if len(chain) < 2:
         return None
     return f"{name(chain[-1])} ({chain[-1]['status']})"
 
 
+def _open_chain(row: dict, rows: list[dict]) -> list[dict]:
+    """`wait_chain` without a finished row at its end: a `done` prerequisite holds nothing back, so
+    what a row waits for is the last row still queued or running (or one that failed or is gone)."""
+    chain = wait_chain(row, rows)
+    return chain[:-1] if chain and chain[-1]["status"] == "done" else chain
+
+
+def _held(row: dict) -> bool:
+    return str(row.get("waits") or "").startswith(HELD)
+
+
 def waits_on_fetch(row: dict, rows: list[dict]) -> bool:
     """Whether a queued row sits behind a fetch that is running or will run, anywhere in its chain.
-    Such a row is no local work to do: it starts when the vendor lane has delivered. A held fetch
-    (its own prerequisite failed) delivers nothing, so a row behind it is held, not waiting."""
-    return any(
-        lane_of(r) == "vendor"
-        and (
-            r["status"] == "running"
-            or (r["status"] == "queued" and not str(r.get("waits") or "").startswith(HELD))
-        )
-        for r in wait_chain(row, rows)
-    )
+    Such a row is no local work to do: it starts when the vendor lane has delivered. A chain with a
+    held row in it (a prerequisite failed, was cancelled or is missing) delivers nothing, so a row
+    behind it is held, not waiting, however many fetches sit between."""
+    chain = wait_chain(row, rows)
+    if _held(row) or any(_held(r) for r in chain):
+        return False
+    return any(r["status"] in ("running", "queued") and lane_of(r) == "vendor" for r in chain)
 
 
 def lane_report(rows: list[dict]) -> dict[str, dict]:
@@ -552,7 +560,7 @@ def lane_report(rows: list[dict]) -> dict[str, dict]:
         ready_now = [r for r in own if r.get("waits") == "ready"]
         idle = None
         if not running and not ready_now:
-            roots = sorted({n for r in own + on_fetch if (n := behind(r, rows) or _first_wait(r, rows))})
+            roots = sorted({n for r in own if (n := behind(r, rows) or _first_wait(r, rows))})
             if not queued:
                 idle = "nothing queued"
             elif not own:
@@ -575,7 +583,7 @@ def lane_report(rows: list[dict]) -> dict[str, dict]:
 
 
 def _first_wait(row: dict, rows: list[dict]) -> str | None:
-    chain = wait_chain(row, rows)
+    chain = _open_chain(row, rows)
     return f"{name(chain[-1])} ({chain[-1]['status']})" if chain else None
 
 

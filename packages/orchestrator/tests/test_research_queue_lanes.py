@@ -79,6 +79,28 @@ def test_a_fetch_behind_a_cancelled_row_is_held_as_the_queue_words_it():
     assert lane["waiting_on_fetch"] == 0 and "behind itemD/plan (cancelled)" in lane["idle"]
 
 
+def test_a_fetch_queued_behind_a_held_fetch_does_not_make_a_study_fetch_bound():
+    rows = [
+        row(1, "itemF", "smoke", "script", "failed"),
+        row(2, "itemF", "fetch-a", "fetch-chain-paths", "queued", "itemF/smoke", HELD),
+        row(3, "itemF", "fetch-b", "fetch-chain-paths", "queued", "itemF/fetch-a", WAIT),
+        row(4, "itemF", "study", "script", "queued", "itemF/fetch-b", WAIT),
+    ]
+    lane = rq.lane_report(rows)["local"]
+    assert lane["waiting_on_fetch"] == 0 and "behind itemF/smoke (failed)" in lane["idle"]
+
+
+def test_a_finished_prerequisite_is_not_what_a_row_is_behind():
+    rows = [
+        row(1, "itemG", "plan", "script", "done"),
+        row(2, "itemG", "smoke", "script", "queued", "itemG/plan", "inside the blackout window"),
+        row(3, "itemG", "study", "script", "queued", "itemG/smoke", WAIT),
+    ]
+    by_id = {r["id"]: r for r in rows}
+    assert rq.behind(by_id[3], rows) is None  # one open step: the smoke, its direct prerequisite
+    assert "(done)" not in (rq.lane_report(rows)["local"]["idle"] or "")
+
+
 def test_a_lane_blocked_by_a_time_says_so_in_the_rows_own_words():
     rows = [row(1, "itemE", "fetch", "fetch-chain-paths", "queued", None, "inside the blackout window")]
     assert "inside the blackout window" in rq.lane_report(rows)["vendor"]["idle"]
