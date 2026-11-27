@@ -87,7 +87,7 @@ removed in v0.12.0; your own scheduled reports are the `external-<id>` jobs belo
 | Job | Schedule (ET) | Runs | Default | Notes |
 |---|---|---|---|---|
 | `review-provisional` | daily **16:30**, trading days | `run.py review --provisional` | on | see below |
-| `review-final` | daily **10:15**, trading days | `run.py review --final` | on | finalises the prior session and re-runs reconciliation |
+| `review-final` | daily **10:15**, trading days | `run.py review --final` | on | finalises the prior session and re-runs reconciliation, rebuilding any final set a ledger correction left disagreeing |
 | `review-narrative` | daily **10:45**, trading days | `scripts/eod_narrative.py` | off, needs `claude` | the agent-written note, beside the facts, never inside them |
 | `market-files` | daily **07:45**, trading days (the retry before the pack; the evening fetch is a step of `evening-data`) | `scripts/fetch_market_files.py fetch` | on | the files the morning pack reads, OCC's option volume included |
 | `morning-data` | daily at its first step (**05:30**), every day; each step keeps its own trading-day gate; catches up for its longest step (720 min); retried from the failed step, twice | `run.py pipeline morning-data` | on with `dolt` (a step that is off is skipped) | the morning's fetches and landings in order: the Dolt pull, index bars, the SEC and Damodaran fetches, then `technicals-land`, `-history`, `-fundamentals`, `fundamentals-land` (a failure of these stops the run), then the readers of the store: `technicals-report`, `-stage-lists`, `fundamentals-valuation`, `technicals-screeners`, `-board`, `-skate`, `-earnings-record`, `-adjust-check`. See [Pipelines](#pipelines) |

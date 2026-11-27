@@ -104,6 +104,16 @@ Every reviewed schema has its own independent query, bwb, curve, contango, weekl
 still trading is left out and named in `skipped`, because the status digest refreshes today's
 provisional set through the day; every closed session is checked.
 
+**`reconcile --rebuild`** is what the 10:15 `review-final` pass runs. A ledger correction to a past
+session leaves its final set disagreeing, so each final set that fails is rebuilt (`build --session
+<day> --final`, with its render) and checked again; only what still disagrees afterwards is a failure,
+and each rebuild is listed in `rebuilt` (with its error when it raised). A provisional set is never
+rebuilt there, and at most the 30 most recent are rebuilt in one pass. A rebuild that would leave a
+module unreadable which the stored set had read (a ledger locked at 10:15) is refused and the stored
+set stays. The stored `carried_overnight` is kept, so a correction that changed what was carried is
+not absorbed. The narrative notes are not touched: they are written once, so a rebuilt set can move
+under a note written from the old one.
+
 Package guardrail, on top of the root's:
 
 - **The fact set is deterministic; the narrative is not, and is fenced accordingly.** Every figure is
@@ -117,7 +127,7 @@ Package guardrail, on top of the root's:
 | `python -m cherrypick.review build [--session YYYY-MM-DD] [--final]` | Build and write one session's fact set. Defaults to today, `provisional` unless `--final`. |
 | `python -m cherrypick.review backfill [--since YYYY-MM-DD]` | Build every session any module has a closed trade for. Backfilled sessions are `final` by definition. |
 | `python -m cherrypick.review render [--session YYYY-MM-DD]` | Re-render one session's markdown. `build` and `backfill` render automatically. |
-| `python -m cherrypick.review reconcile [--since YYYY-MM-DD]` | Check every written fact set against independently computed ledger totals; reports the delta per module and field. |
+| `python -m cherrypick.review reconcile [--since YYYY-MM-DD] [--rebuild]` | Check every written fact set against independently computed ledger totals; reports the delta per module and field. `--rebuild` rebuilds each final set that disagrees and checks it again. |
 
 ## Where the shared rules live
 

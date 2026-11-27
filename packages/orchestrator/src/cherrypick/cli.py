@@ -854,7 +854,9 @@ def _run_review(cfg, *, final: bool) -> None:
     0DTE modules complete with earnings still carrying overnight, and the final pass the next
     morning closes that session out. `--final` also re-runs the reconciliation, which re-counts each
     module with independent SQL -- a scope difference between the fact set and a ledger is worth
-    knowing about the morning it appears, not whenever someone next looks.
+    knowing about the morning it appears, not whenever someone next looks. It runs with `--rebuild`:
+    review rebuilds each final set that a ledger correction left disagreeing and checks it again, so
+    only what still disagrees afterwards is a warning, and the rebuilt sessions ride in the record.
 
     WHICH session the final pass closes out is review's own contract, not this scheduler's, so no
     `--session` is passed: `cherrypick.review build --final` resolves the prior trading day itself
@@ -892,10 +894,10 @@ def _run_review(cfg, *, final: bool) -> None:
     if ok and final:
         try:
             rr = subprocess.run(
-                [cfgmod.python_exe(), "-m", "cherrypick.review", "reconcile"],
+                [cfgmod.python_exe(), "-m", "cherrypick.review", "reconcile", "--rebuild"],
                 capture_output=True,
                 text=True,
-                timeout=900,
+                timeout=1800,  # up to 30 rebuilds (each a full build and render) beside the checks
                 creationflags=CREATE_NO_WINDOW,
             )
             reconciled = json.loads(rr.stdout or "{}")
@@ -921,12 +923,18 @@ def _run_review(cfg, *, final: bool) -> None:
     elif reconciled and reconciled.get("ok") is False:
         # The fact set built, but it does not agree with the ledgers it claims to summarise. That is
         # a data-integrity finding, not a cosmetic one -- every surface reads this artifact.
-        notifier.notify(
-            "WARNING",
-            "review",
-            "Suite review reconciliation mismatch",
-            f"{len(reconciled.get('failures') or [])} session(s) disagree with their ledgers",
-        )
+        attempts = reconciled.get("rebuilt") or []
+        if reconciled.get("error"):
+            # The check itself did not finish (a timeout, unreadable output): say that, not "0 disagree".
+            body = f"the reconciliation did not finish: {reconciled['error']}"
+        else:
+            body = f"{len(reconciled.get('failures') or [])} session(s) disagree with their ledgers"
+            if attempts:
+                failed = sum(1 for r in attempts if not r.get("ok"))
+                body += f" after rebuilding {len(attempts) - failed}" + (
+                    f" ({failed} rebuild(s) failed)" if failed else ""
+                )
+        notifier.notify("WARNING", "review", "Suite review reconciliation mismatch", body)
     _emit(rec)
 
 

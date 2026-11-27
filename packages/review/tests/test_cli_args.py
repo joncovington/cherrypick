@@ -18,6 +18,17 @@ def test_iso_date_refuses_anything_else(bad):
         cli._iso_date(bad)
 
 
+@pytest.mark.parametrize(("flags", "rebuild"), [([], False), (["--rebuild"], True)])
+def test_reconcile_rebuilds_only_when_asked(flags, rebuild, monkeypatch, capsys):
+    seen = {}
+    monkeypatch.setattr(
+        cli._reconcile, "run", lambda since=None, rebuild=False: seen.update(rebuild=rebuild) or {}
+    )
+    monkeypatch.setattr(sys, "argv", ["review", "reconcile", *flags])
+    cli.main()
+    assert seen == {"rebuild": rebuild}
+
+
 @pytest.mark.parametrize("command", ["build", "render"])
 def test_main_refuses_a_path_as_a_session_before_building_anything(command, monkeypatch, capsys):
     monkeypatch.setattr(sys, "argv", ["review", command, "--session", "../outside"])

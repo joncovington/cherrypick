@@ -140,13 +140,50 @@ def check_session(session: str, facts: dict | None = None) -> dict:
     return {"session": session, "ok": not mismatches, "mismatches": mismatches}
 
 
-def run(since: str | None = None, today: str | None = None) -> dict:
+#: The most sets one pass rebuilds. A real correction touches a few sessions; a count past this is a
+#: scope bug in the check or the fact set, which a rewrite of every file cannot fix.
+REBUILD_LIMIT = 30
+
+
+def rebuild_session(session: str) -> None:
+    """Rebuild one session's final set and its render, as `build --session <day> --final` does. The
+    stored `carried_overnight` is kept (`facts._keep_carried_overnight`), so a rebuild cannot wipe it.
+
+    A rebuild that would leave a module unreadable which the stored set had read is refused and the
+    stored set stays: a ledger locked or mid-migration at 10:15 must not replace a good set with one
+    that has lost that module's figures."""
+    from cherrypick.review import render as _render
+
+    built = _facts.build(session, status=_facts.STATUS_FINAL)
+    stored = (_facts.read(session) or {}).get("modules") or {}
+    lost = sorted(
+        name
+        for name, module in (built.get("modules") or {}).items()
+        if not module.get("ok") and isinstance(stored.get(name), dict) and stored[name].get("ok")
+    )
+    if lost:
+        raise RuntimeError(f"{', '.join(lost)} unreadable now; the stored set was kept")
+    _facts.write(built)
+    _render.write(session)
+
+
+def run(since: str | None = None, today: str | None = None, rebuild: bool = False) -> dict:
     """Reconcile every written fact set. Returns the mismatches, not just a verdict.
 
     A session still trading is left out and named in `skipped`. Its provisional fact set is a
     snapshot (the status digest refreshes it hourly from 10:00 ET) and the ledger keeps moving, so
     the two disagree whenever a trade closes between the snapshot and the 10:15 final pass -- on
     2026-10-14 two earnings closes did, and the suite was told its review was wrong.
+
+    With `rebuild`, a FINAL set that disagrees is rebuilt and checked again, so a ledger correction to
+    a past session (the 11-19 ladder backfill, the 11-20 fee rewrite) is absorbed instead of warning
+    every morning until someone rebuilds it by hand. Only what still disagrees afterwards is a
+    failure; each rebuild is listed in `rebuilt`, with its error when it raised. A rebuild keeps the
+    stored carried block (see `rebuild_session`), so a correction that changed what was carried is not
+    absorbed. A provisional set is never rebuilt here (it is a snapshot, and stamping it final would
+    be a claim about its session), nor are more than the `REBUILD_LIMIT` most recent in one pass. The
+    notes (`eod-<day>.note.md`) are written once and stay as they were: a rebuilt set can move under a
+    note that was written from the old one.
     """
     store = _paths.data_dir()
     if not store.exists():
@@ -159,11 +196,34 @@ def run(since: str | None = None, today: str | None = None) -> dict:
     sessions = [s for s in sessions if s < today]
 
     results = [check_session(s) for s in sessions]
+    rebuilt: list[dict] = []
+    if rebuild:
+        todo = [
+            r["session"]
+            for r in results
+            if not r["ok"] and (_facts.read(r["session"]) or {}).get("status") == _facts.STATUS_FINAL
+        ]
+        # The most recent first: a correction most plausibly touched a recent session, and a
+        # standing mismatch in old ones must not fill every pass's slots.
+        for session in todo[-REBUILD_LIMIT:]:
+            try:
+                rebuild_session(session)
+                rebuilt.append({"session": session, "ok": True})
+            except Exception as exc:  # noqa: BLE001 -- one bad session must not stop the rest
+                rebuilt.append({"session": session, "ok": False, "error": f"{type(exc).__name__}: {exc}"})
+        # Every attempt is checked again, a failed one too: the facts may have been written before a
+        # later step (the render) raised, and the old mismatch would then be reported for a file that
+        # no longer has it.
+        again = {r["session"]: check_session(r["session"]) for r in rebuilt}
+        results = [again.get(r["session"], r) for r in results]
     failures = [r for r in results if not r["ok"]]
-    return {
+    out = {
         "ok": not failures,
         "sessions_checked": len(results),
         "sessions_matching": len(results) - len(failures),
         "skipped": skipped,
         "failures": failures,
     }
+    if rebuild:
+        out["rebuilt"] = rebuilt
+    return out
