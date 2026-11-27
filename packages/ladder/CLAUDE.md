@@ -119,8 +119,12 @@ import (`orders.py` may import the one pure id reader). The `live` block in the 
   (`dry-run` or `live`), `held` (what an uncertain submit is holding) and `checks` (the last tick's
   positions cross-check, declared splits and dry-run intents). It makes no broker call and
   `ready` reflects the gates only. **`--once`** runs one tick (below).
-- There is no `live.task_name`, so the supervisor derives no `ladder-live` job and a tick is run by
-  hand.
+- **The tick is a supervisor job.** The shipped suite config's `modules.ladder.live` has `task_name`,
+  `tick_argv` (`live_loop --once`) and a 60-second interval, so the supervisor derives `ladder-live`:
+  off until today's arm record is valid, then one tick a minute. Its `disarm_time` (20:00) must match
+  the ladder's own `live.disarm_at`: the job stays valid until `disarm_time` plus `disarm_grace_minutes`,
+  and the 17:00 default would drop it before the 20:00 pass that cancels the resting buys. Without
+  `task_name` in a config, arming ticks nothing.
 - **Dry-run (`live.dry_run`, guarded)** is true unless it is exactly `false`. The tick still reads the
   broker, but the executor logs the orders it would place or cancel into the decisions journal
   (`mode = dry_run`, the order's client id in the reason, the shares, limit and time in force in the

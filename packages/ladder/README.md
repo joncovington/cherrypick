@@ -32,7 +32,8 @@ Off until you set `live.enabled` and write the `live.gate0_confirmed` attestatio
 nothing until you also set `live.dry_run` to `false`. `live_loop --status` lists every gate with its
 verdict (no broker call). Arming is one day at a time: `live_loop --arm --confirm YES`, the
 `/live-ladder-start` command, or, with `live_arming` on in `console.json`, the switch on the Live page.
-There is no supervisor job for the live tick; `live_loop --once` is run by hand. The ladder buys only
+The supervisor's `ladder-live` job (from the suite config's `modules.ladder.live`) runs `live_loop --once`
+every minute while today's arm record is valid, and not otherwise. The ladder buys only
 with settled cash in a cash account. The Config page cannot change `live.enabled`, `live.dry_run`, the
 attestation, the arm or any limit. [CLAUDE.md](CLAUDE.md) has the gates, limits, tick order and ledger.
 

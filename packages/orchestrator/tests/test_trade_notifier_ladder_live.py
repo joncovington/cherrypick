@@ -357,6 +357,11 @@ def test_the_shipped_config_watches_the_live_ledger():
     root = pathlib.Path(__file__).resolve().parents[1]
     cfg = json.loads((root / "config.example.json").read_text(encoding="utf-8"))
     ladder = cfg["modules"]["ladder"]
-    assert ladder["live"] == {"notify_trades": True}
+    assert ladder["live"]["notify_trades"] is True
     assert ladder["live_db"].endswith("data/ladder/live_trades.db")
-    assert "task_name" not in ladder["live"]  # wiring for notices only: no live job is derived
+    # The live job is derived from this block (#1495): without a task_name, arming ticks nothing.
+    assert ladder["live"]["task_name"] and ladder["live"]["tick_argv"][:2] == [
+        "-m",
+        "cherrypick.ladder.live_loop",
+    ]
+    assert ladder["live"]["disarm_time"] == "20:00"  # the ladder's own live.disarm_at, not the 17:00 default

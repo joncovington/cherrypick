@@ -6,8 +6,10 @@ argument-hint: [--stop]
 Arm the ladder's live gate for today. **The ladder has an order path (issue #1337) that ships in
 dry-run and off.** Arming writes the arm record. While `live.dry_run` is true (the shipped value) a
 tick reads the broker and journals the orders it would send, and places and cancels nothing. Real
-orders need `live.dry_run: false` set by hand, with every gate held. No supervisor job runs the tick
-yet: it is `live_loop --once`, run by hand.
+orders need `live.dry_run: false` set by hand, with every gate held. Today's arm record starts the
+supervisor's `ladder-live` job (from the suite config's `modules.ladder.live`): one `live_loop --once`
+tick a minute until `disarm_at` plus its grace, and no job without an arm record. A suite config
+with no `live.task_name` for the ladder derives no job, and arming then ticks nothing.
 
 The arm record is `~/.cherrypick/state/ladder-live-arm.json`. It is good for its date only; the live
 config's `disarm_at` (default 20:00 ET) ends the day, and tomorrow needs a fresh run of this command.

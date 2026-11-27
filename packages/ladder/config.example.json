@@ -99,6 +99,6 @@
     "_hospital_alert_days_note": "A lot open longer than this many days raises an alert. It is never acted on automatically; there is no stop.",
     "splits": [],
     "_splits_note": "The split source: write one entry by hand when a held fund splits, before or on its ex-date, as {\"fund\": \"TQQQ\", \"ex_date\": \"2026-12-01\", \"to\": 2, \"for\": 1} (`to` new shares for `for` old ones; a 1-for-10 reverse split is to 1, for 10). The next tick restates every lot of that fund bought before the ex-date, once, and re-prices its resting sell. The tick also compares the broker's shares with the ledger's each minute: a mismatch whose ratio is a whole-number split is reported as a suspected split and stops that fund's new buys, but nothing is restated until an entry is written here. An entry the tick cannot read stops every fund's new buys until it is fixed.",
-    "_task_name_note": "No live.task_name, so the supervisor derives no ladder-live job: `live_loop --once` is run by hand."
+    "_task_name_note": "The suite config's modules.ladder.live.task_name (shipped in the orchestrator's config.example.json) makes the supervisor derive the ladder-live job: one `live_loop --once` tick a minute, enabled only while today's arm record is valid, so an armed day ticks with nothing run by hand."
   }
 }
