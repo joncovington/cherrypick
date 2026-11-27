@@ -494,15 +494,21 @@ def run_entries(
     return out
 
 
-def record_misses(conn, todays: dict[str, dict], day: date, minute: int) -> dict[str, str]:
-    """Every arm still pending after its window is missed, with the last reason a tick gave."""
+def record_misses(
+    conn, todays: dict[str, dict], day: date, minute: int, *, day_over: str | None = None
+) -> dict[str, str]:
+    """Every arm still pending after its window is missed, with the last reason a tick gave. With
+    `day_over` (why the session ended early) every pending arm is missed, whatever its window: the
+    loop stops at the close, so a window that opens at or after it would stay pending for good."""
     out = {}
     for arm in todays.values():
         row = db.entry(conn, arm["name"], arm["symbol"], day.isoformat())
-        if not row or row["outcome"] != "pending" or minute <= feed.entry_window(arm)[1]:
+        if not row or row["outcome"] != "pending":
+            continue
+        if day_over is None and minute <= feed.entry_window(arm)[1]:
             continue
         reason = row.get("refusal") or (
-            "no_breakout" if arm["entry"]["kind"] == "orb" else "no_tick_in_window"
+            day_over or ("no_breakout" if arm["entry"]["kind"] == "orb" else "no_tick_in_window")
         )
         db.save_entry(
             conn,
@@ -540,7 +546,13 @@ def run_once(
         return {"ok": True, "skipped": "not_a_trading_day", "settled": settled}
     now_min = minute_of_day(when)
     if not force and not (RTH_OPEN_MIN <= now_min < close_minute(today)):
-        return {"ok": True, "skipped": "outside_rth", "now_min": now_min, "settled": settled}
+        out = {"ok": True, "skipped": "outside_rth", "now_min": now_min, "settled": settled}
+        if now_min >= close_minute(today) and _cal.is_early_close(today):
+            # An early close ends the day before an arm's later window: none of them can enter now.
+            out["missed"] = record_misses(
+                conn, stream_request.active_arms(arms, today), today, now_min, day_over="half_day_no_entries"
+            )
+        return out
 
     evts = evts if evts is not None else events.load_calendar((config.get("events") or {}).get("path"))
     record_spots(config, arms, conn, cache_path=cache_path, when=when)

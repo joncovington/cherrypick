@@ -395,9 +395,9 @@ def run_entries(config: dict, conn, *, cycle: date, day: date, cache_path: str, 
     return out
 
 
-def _miss(conn, arm: str, sym: str, cycle: date) -> str:
+def _miss(conn, arm: str, sym: str, cycle: date, reason: str | None = None) -> str:
     row = db.entry(conn, arm, sym, cycle.isoformat()) or {}
-    reason = row.get("refusal") or "no_tick_in_window"
+    reason = reason or row.get("refusal") or "no_tick_in_window"
     db.save_entry(
         conn,
         {
@@ -413,14 +413,17 @@ def _miss(conn, arm: str, sym: str, cycle: date) -> str:
     return "missed"
 
 
-def record_misses(config: dict, conn, *, cycle: date, day: date, cache_path: str) -> dict:
+def record_misses(
+    config: dict, conn, *, cycle: date, day: date, cache_path: str, reason: str | None = None
+) -> dict:
     """After the window: every name still pending is missed. It never trades here: a fill after the
     window would be a different rule from the one item 57 judged (guard mutant
-    `weeklyput-no-fill-after-window`; `config`, `day` and `cache_path` are its seam)."""
+    `weeklyput-no-fill-after-window`; `config`, `day` and `cache_path` are its seam). `reason` names why
+    the whole session is refused (a half day), over any refusal a tick gave."""
     out = {}
     for row in db.entries(conn):
         if row["expiration"] == cycle.isoformat() and row["outcome"] == "pending":
-            out[f"{row['arm']}:{row['symbol']}"] = _miss(conn, row["arm"], row["symbol"], cycle)
+            out[f"{row['arm']}:{row['symbol']}"] = _miss(conn, row["arm"], row["symbol"], cycle, reason)
     return out
 
 
@@ -446,7 +449,14 @@ def run_once(
     phase, outcome = "mark", {}
     if cycle is not None:
         _ensure_pending(conn, config, cycle, today)
-        if in_window:
+        if not force and _cal.is_early_close(today):
+            # Half days (an NYSE early close) are not tradeable, by rule: the week's entry is not made
+            # up on another session, which would be a different rule from the one item 57 judged.
+            phase = "half_day"
+            outcome = record_misses(
+                config, conn, cycle=cycle, day=today, cache_path=cache_path, reason="half_day_no_entries"
+            )
+        elif in_window:
             phase = "entry"
             outcome = run_entries(
                 config,

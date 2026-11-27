@@ -323,7 +323,10 @@ an arm, only for what an arm reads (`feed.reads`).
   so a later arm sees an earlier arm's entry (`no_position_today`), as the backtest stacks them. Each
   decision is a journal row (`automations_decisions`, the engine's first failing check and the value it read)
   and each arm-day a register row (`automations_entries`: entered, pending, or missed with the last reason).
-  **Nothing fills after the entry window.**
+  **Nothing fills after the entry window.** **A half day is not traded** (an NYSE early close, by rule):
+  `engine.decide` refuses every arm with `half_day_no_entries`, in paper and in the backtest driver alike,
+  and the first tick past the early close marks an arm whose window opens after it `missed` with that
+  reason, so no arm-day is left `pending`.
 - **The replay record.** Every decision tick writes one line to
   `~/.cherrypick/data/automations/replay/<session>.jsonl`: the compact snapshot, the arms as they stood and the
   decisions. `python run.py replay <file>` runs them again through `paper.replay` and lists where the

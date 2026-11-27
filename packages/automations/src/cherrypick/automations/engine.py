@@ -220,6 +220,9 @@ def decide(arm: dict, snap: Snapshot, *, costs: dict | None = None) -> Decision:
     if snap.session_date.weekday() not in arm["weekdays"]:
         return fail("weekday", snap.session_date.weekday())
     ok("weekday", snap.session_date.weekday())
+    # Half days (an NYSE early close) are not tradeable, by rule: no entry, in paper or in a backtest.
+    if cal.is_early_close(snap.session_date):
+        return fail("half_day_no_entries", snap.session)
     due, v = entry_due(arm, snap)
     if not due:
         return fail("entry_not_due", v)

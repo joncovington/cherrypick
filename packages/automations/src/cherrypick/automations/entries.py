@@ -53,7 +53,15 @@ DATA = frozenset(
 )
 TRIGGER = frozenset({"symbol", "weekday", "entry_not_due", "no_breakout"})
 LIMITS = frozenset(
-    {"entered_today", "max_open", "every_days", "no_expiry", "no_far_expiry", "one_per_expiry"}
+    {
+        "half_day_no_entries",
+        "entered_today",
+        "max_open",
+        "every_days",
+        "no_expiry",
+        "no_far_expiry",
+        "one_per_expiry",
+    }
 )
 STRUCTURE = frozenset({"unpriced", "unrealistic_price", "undefined_risk"})
 SIZE = frozenset({"size", "group_risk"})
