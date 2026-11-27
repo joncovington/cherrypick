@@ -1060,14 +1060,18 @@ def _keep_carried_overnight(per_module: dict, session: str) -> None:
     correction turned pmcc's 2 positions and $17,215 at risk into 0 and null (2026-11-13, #1042). A
     final set recorded what was held at that session's close, and a rebuild has no way to read that
     again, so the stored block stands. The cost: a correction that itself changes what was carried
-    (a backfill adding lots held past the close) leaves this block stale until an as-of reader
-    replaces the stopgap. A provisional set is not kept: its session may be the one still open,
+    (a backfill adding lots held past the close) leaves this block stale, and a block already wrong
+    stays wrong; deleting the session's `eod-<session>.json` before the rebuild recomputes it from
+    the book as it stands. A provisional set is not kept: its session may be the one still open,
     where the book as it stands is the right answer."""
     prior = read(session)
-    if not prior or prior.get("status") != STATUS_FINAL:
+    if not isinstance(prior, dict) or prior.get("status") != STATUS_FINAL:
+        return
+    stored_modules = prior.get("modules")
+    if not isinstance(stored_modules, dict):
         return
     for name, built in per_module.items():
-        stored = (prior.get("modules") or {}).get(name)
+        stored = stored_modules.get(name)
         if not built.get("ok") or not isinstance(stored, dict) or not stored.get("ok"):
             continue
         carried = stored.get("carried_overnight")
@@ -1075,8 +1079,9 @@ def _keep_carried_overnight(per_module: dict, session: str) -> None:
             continue
         built["carried_overnight"] = carried
         # A block already kept keeps its own origin, so a second rebuild does not look like a first.
-        built["carried_overnight_kept_from"] = stored.get("carried_overnight_kept_from") or prior.get(
-            "generated_at"
+        # A stored set with no `generated_at` still says it was kept.
+        built["carried_overnight_kept_from"] = (
+            stored.get("carried_overnight_kept_from") or prior.get("generated_at") or "unknown"
         )
 
 

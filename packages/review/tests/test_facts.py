@@ -425,6 +425,30 @@ def test_the_carried_block_is_only_kept_from_a_final_set_that_has_one(store, mon
     assert "carried_overnight_kept_from" not in module
 
 
+@pytest.mark.parametrize("stored", ["[]", "null", '{"status": "final", "modules": []}'])
+def test_an_unreadable_stored_set_cannot_stop_a_build(store, monkeypatch, stored):
+    built = {"ok": True, "results": NOTHING_CLOSED, "carried_overnight": {"positions": 1}}
+    monkeypatch.setattr(facts, "build_module_facts", lambda m, s, db_path=None: built)
+    (store / "eod-2026-10-23.json").write_text(stored, encoding="utf-8")
+    module = facts.build("2026-10-23", status=facts.STATUS_FINAL, modules=["earnings"])["modules"]["earnings"]
+    assert module["carried_overnight"] == {"positions": 1}
+
+
+def test_a_kept_block_from_a_set_with_no_generated_at_still_says_it_was_kept(store, monkeypatch):
+    built = {"ok": True, "results": NOTHING_CLOSED, "carried_overnight": {"positions": 0}}
+    monkeypatch.setattr(facts, "build_module_facts", lambda m, s, db_path=None: built)
+    facts.write(
+        {
+            "session": "2026-10-23",
+            "status": facts.STATUS_FINAL,
+            "modules": {"earnings": {"ok": True, "carried_overnight": {"positions": 2}}},
+        }
+    )
+    module = facts.build("2026-10-23", status=facts.STATUS_FINAL, modules=["earnings"])["modules"]["earnings"]
+    assert module["carried_overnight"] == {"positions": 2}
+    assert module["carried_overnight_kept_from"] == "unknown"
+
+
 def test_reconcile_says_so_when_there_is_no_fact_set(store):
     assert reconcile.check_session("1999-01-01")["ok"] is False
 

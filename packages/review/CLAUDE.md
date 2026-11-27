@@ -38,7 +38,8 @@ they cannot disagree.
   stands now, so a past session's carried positions, closed since, would drop out and the rebuild would
   write 0 and null. `build` keeps each module's stored block and stamps `carried_overnight_kept_from`
   (the stored set's `generated_at`). A ledger correction that itself changes what was carried leaves the
-  block stale until an as-of reader per schema in `core.ledgers` replaces this (#1042).
+  block stale, and a block already wrong stays wrong: delete the session's `eod-<session>.json` before the
+  rebuild to recompute it from the book as it stands.
 - **Every module with a `core.ledgers` reader is reviewed.** A module with no results reports as such;
   being absent is a different, wrong statement. `tests/test_module_coverage.py` drives off `READERS`
   and fails on a reader with no `MODULES` entry, on a reviewed module naming a nonexistent schema, and
