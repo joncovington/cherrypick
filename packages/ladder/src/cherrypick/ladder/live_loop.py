@@ -138,7 +138,6 @@ def install_task(config: dict | None = None) -> dict:
         out["order_path"] = True
         out["dry_run"] = live_tick.dry_run(config)
         out["note"] = DRY_RUN_NOTE if out["dry_run"] else LIVE_NOTE
-        out.pop("cadence", None)  # there is no ladder-live supervisor job to tick yet
     return out
 
 

@@ -1248,6 +1248,48 @@ def test_fee_reconcile_is_declared_per_module_not_hardcoded_for_flies():
     assert all(by_id[k].enabled is True for k in ("meic-fee-reconcile", "flies-fee-reconcile"))
 
 
+def _shipped_ladder(**live):
+    import json
+    from pathlib import Path
+
+    example = json.loads(
+        (Path(__file__).resolve().parents[1] / "config.example.json").read_text(encoding="utf-8")
+    )
+    ladder = {**example["modules"]["ladder"], "enabled": True}
+    ladder["live"] = {**ladder["live"], **live}
+    cfg = suite_cfg()
+    cfg["modules"]["ladder"] = ladder
+    return cfg
+
+
+def _ladder_live(cfg, now, armed):
+    records = {"ladder": {"date": now.strftime("%Y-%m-%d")}} if armed else {}
+    jobs, errors = derive(cfg, now=now, arm_records=records)
+    assert errors == {}
+    return {j.id: j for j in jobs}.get("ladder-live")
+
+
+def test_the_shipped_ladder_config_derives_a_live_job_that_runs_only_while_armed():
+    """#1495: the shipped example had no `live.task_name`, so someone who armed the ladder on a default
+    config got an arm that succeeded and a loop that never ran. The job is derived, off until armed,
+    and valid through the ladder's own 20:00 disarm pass (its default 17:00 would have dropped it
+    first, leaving the resting buys uncancelled)."""
+    cfg = _shipped_ladder()
+    off = _ladder_live(cfg, et(2026, 11, 20, 10, 0), armed=False)
+    assert off is not None and off.enabled is False and "not armed" in off.enabled_reason
+    on = _ladder_live(cfg, et(2026, 11, 20, 10, 0), armed=True)
+    assert on.enabled is True and on.kind == jobspec.KIND_INTERVAL and on.interval_seconds == 60
+    assert on.argv == ("pythonw", "-m", "cherrypick.ladder.live_loop", "--once")
+    assert _ladder_live(cfg, et(2026, 11, 20, 20, 0), armed=True).enabled is True  # the 20:00 pass
+    assert _ladder_live(cfg, et(2026, 11, 20, 20, 31), armed=True).enabled is False  # past the grace
+
+
+def test_a_ladder_live_block_without_a_task_name_derives_no_job():
+    cfg = _shipped_ladder()
+    del cfg["modules"]["ladder"]["live"]["task_name"]
+    assert _ladder_live(cfg, et(2026, 11, 20, 10, 0), armed=True) is None
+
+
 def test_every_module_with_a_live_ledger_declares_the_reconcile_job():
     """Driven off the shipped example rather than a hand-kept list: every module that declares a
     `live` block places live orders, and reconciliation must not depend on it being armed -- a
@@ -1260,10 +1302,13 @@ def test_every_module_with_a_live_ledger_declares_the_reconcile_job():
     example = json.loads(
         (Path(__file__).resolve().parents[1] / "config.example.json").read_text(encoding="utf-8")
     )
-    # A live block with no `task_name` derives no live job and is notification wiring only (the
-    # ladder's `live.notify_trades`; its tick refines fees itself): no loop for a reconcile to follow.
+    # A live block with no `task_name` derives no live job and is notification wiring only: no loop
+    # for a reconcile to follow. The ladder has a `task_name` but is the one module whose live tick
+    # refines fees itself (its live ledger takes the broker's fee rows), so it declares no reconcile.
     live_modules = sorted(
-        name for name, mod in example["modules"].items() if (mod.get("live") or {}).get("task_name")
+        name
+        for name, mod in example["modules"].items()
+        if (mod.get("live") or {}).get("task_name") and name != "ladder"
     )
     assert {"flies", "bwb", "meic"} <= set(live_modules), live_modules
     for module in live_modules:
