@@ -67,6 +67,23 @@ def test_a_row_behind_a_held_fetch_is_held_work_not_waiting_on_a_fetch():
     assert "behind itemC/smoke (failed)" in lane["idle"]
 
 
+def test_a_fetch_behind_a_cancelled_row_is_held_as_the_queue_words_it():
+    held = rq.after_reason({"after": "itemD/plan"}, "cancelled")
+    assert held.startswith(rq.HELD)  # what the queue reports for a cancelled prerequisite
+    rows = [
+        row(1, "itemD", "plan", "script", "cancelled"),
+        row(2, "itemD", "fetch", "fetch-chain-paths", "queued", "itemD/plan", held),
+        row(3, "itemD", "study", "script", "queued", "itemD/fetch", WAIT),
+    ]
+    lane = rq.lane_report(rows)["local"]
+    assert lane["waiting_on_fetch"] == 0 and "behind itemD/plan (cancelled)" in lane["idle"]
+
+
+def test_a_lane_blocked_by_a_time_says_so_in_the_rows_own_words():
+    rows = [row(1, "itemE", "fetch", "fetch-chain-paths", "queued", None, "inside the blackout window")]
+    assert "inside the blackout window" in rq.lane_report(rows)["vendor"]["idle"]
+
+
 def test_behind_names_the_end_of_a_chain_only_when_it_is_past_the_prerequisite():
     rows = fixture()
     by_id = {r["id"]: r for r in rows}

@@ -547,7 +547,8 @@ def lane_report(rows: list[dict]) -> dict[str, dict]:
         running = [r for r in mine if r["status"] == "running"]
         queued = [r for r in mine if r["status"] == "queued"]
         on_fetch = [r for r in queued if lane == "local" and waits_on_fetch(r, rows)]
-        own = [r for r in queued if r not in on_fetch]
+        fetch_ids = {r["id"] for r in on_fetch}
+        own = [r for r in queued if r["id"] not in fetch_ids]
         ready_now = [r for r in own if r.get("waits") == "ready"]
         idle = None
         if not running and not ready_now:
@@ -559,7 +560,10 @@ def lane_report(rows: list[dict]) -> dict[str, dict]:
                     f"nothing to run that is not waiting on a fetch ({len(on_fetch)} wait on a queued fetch)"
                 )
             else:
-                idle = f"{len(own)} queued, none ready: behind {', '.join(roots) or 'a held or timed row'}"
+                own_reasons = sorted({str(r.get("waits") or "unknown") for r in own})[:2]
+                idle = f"{len(own)} queued, none ready: " + (
+                    f"behind {', '.join(roots)}" if roots else "; ".join(own_reasons)
+                )
         out[lane] = {
             "running": name(running[0]) if running else None,
             "ready": len(ready_now),
