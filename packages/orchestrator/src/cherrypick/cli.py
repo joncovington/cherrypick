@@ -1950,21 +1950,25 @@ def cmd_queue_list(cfg, args) -> None:
     held = rq.session_held()
     window = rq.blackout(cfg)
     out = []
-    tasks = rq.rows(study=args.study)
+    # The whole table is read so a chain of `after` rows is followed past the 200 the list shows; the
+    # list itself keeps its 200 newest, or one study's.
+    universe = rq.rows(limit=1_000_000)
+    tasks = [r for r in universe if not args.study or r["study"] == args.study][:200]
     with rq.connect() as conn:
         # Per row, not per prerequisite name: whether a chain is a cycle depends on where it starts.
         status_of = {
             r["id"]: rq.prereq_status(conn, r["after"], r["id"])
-            for r in tasks
+            for r in universe
             if r["status"] == "queued" and r.get("after")
         }
     # Every job's progress file, read once (core.progress): a queued task's is `q<id>`; anything else
     # is a run started by hand, shown beside the queue while it runs and for 30 days after.
     _progress.prune()
     views = {v["file"]: v for v in _progress.read_all()}
-    for r in tasks:
+    for r in universe:
         if r["status"] == "queued":
             r["waits"] = rq.ready(r, now, cal.is_trading_day, held, window, status_of.get(r["id"])) or "ready"
+    for r in tasks:
         r["name"] = rq.name(r)
         r["progress"] = views.get(f"q{r['id']}")
         r["args"] = json.loads(r["args"])
@@ -1977,8 +1981,18 @@ def cmd_queue_list(cfg, args) -> None:
         r["lane"] = rq.lane_of(r)
         if r["status"] == "queued":
             r["position"] = places[r["id"]]
+            r["behind"] = rq.behind(r, universe)  # where its wait really ends, past its prerequisite
     by_hand = [v for stem, v in views.items() if not (stem.startswith("q") and stem[1:].isdigit())]
-    _emit({"ok": True, "session_held": held, "blackout": list(window), "tasks": out, "by_hand": by_hand})
+    _emit(
+        {
+            "ok": True,
+            "session_held": held,
+            "blackout": list(window),
+            "lanes": rq.lane_report(universe),
+            "tasks": out,
+            "by_hand": by_hand,
+        }
+    )
 
 
 def cmd_queue_cancel(args) -> None:
