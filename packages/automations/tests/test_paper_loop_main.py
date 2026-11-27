@@ -88,6 +88,21 @@ def test_no_mode_is_a_usage_error(run):
     assert stop.value.code == 2
 
 
+def test_a_config_refusal_reaches_stderr_and_exits_2(run, capsys):
+    """The supervisor starts the loop headless, so stdout goes nowhere: the refusal has to be on
+    stderr for the job's stderr log and the registry's `last_error` to carry it (2026-11-27)."""
+
+    def refuse(config):
+        raise ValueError("groups.ensemble: no automation belongs to this group, so it cannot be on")
+
+    run.monkeypatch.setattr(pl.config_mod, "load_arms", refuse)
+    assert run("--once") == 2
+    seen = capsys.readouterr()
+    for stream in (seen.out, seen.err):
+        refusal = json.loads(stream)
+        assert refusal["ok"] is False and "groups.ensemble" in refusal["error"]
+
+
 def test_an_unknown_flag_is_a_usage_error():
     with pytest.raises(SystemExit) as stop:
         pl.main(["--no-such-flag"])

@@ -53,6 +53,56 @@ def test_no_heartbeat_means_legacy_reads_and_no_new_findings(monkeypatch):
     assert watchdog._check_supervisor({}) == []  # skips itself entirely
 
 
+# --------------------------------------------------------------------- a stale loop says why
+def _stale_fresh_finding(monkeypatch, job: dict):
+    write_heartbeat()
+    write_jobs({"automations-paper": {"enabled": True, **job}})
+    monkeypatch.setattr(watchdog, "_file_age_minutes", lambda path: 99.0)
+    cfg = {"path": ".", "paper": {"kind": "self_healing", "freshness_minutes": 20}}
+    findings = watchdog._check_meic("automations", cfg, in_session=True)
+    return next(f for f in findings if f.key == "automations.fresh")
+
+
+def test_a_stale_loop_that_exits_nonzero_names_its_exit_and_its_last_error(no_schtasks, monkeypatch):
+    """2026-11-27: the automations loop refused its config and exited 2 every tick for two days; the
+    only finding said "Is the task running?". It now says what the last run exited with, and why."""
+    fresh = _stale_fresh_finding(
+        monkeypatch,
+        {"last_exit_code": 2, "last_error": '{"ok": false, "error": "arms: groups.ensemble: no member"}'},
+    )
+    assert fresh.status == watchdog.WARN and "stale" in fresh.title
+    assert "exit was 2" in fresh.message and "groups.ensemble" in fresh.message
+    assert "Is the task running?" not in fresh.message
+
+
+def test_a_stale_loop_with_no_stored_error_points_to_its_stderr_log(no_schtasks, monkeypatch):
+    fresh = _stale_fresh_finding(monkeypatch, {"last_exit_code": 2, "last_error": None})
+    assert "exit was 2" in fresh.message and "logs/jobs" in fresh.message
+
+
+def test_a_stale_loop_that_exited_clean_keeps_the_old_message(no_schtasks, monkeypatch):
+    fresh = _stale_fresh_finding(monkeypatch, {"last_exit_code": 0})
+    assert "Is the task running?" in fresh.message and "exit was" not in fresh.message
+
+
+def test_a_stale_loop_with_no_supervisor_keeps_the_old_message(monkeypatch):
+    """Pre-cutover (no supervisor heartbeat) the registry is not read, so a registry row that says
+    the loop failed must not reach the finding."""
+    write_jobs({"automations-paper": {"enabled": True, "last_exit_code": 2, "last_error": "boom"}})
+    monkeypatch.setattr(watchdog.tasks, "exists", lambda name: True)
+    monkeypatch.setattr(watchdog, "_file_age_minutes", lambda path: 99.0)
+    cfg = {"path": ".", "paper": {"kind": "self_healing", "freshness_minutes": 20}}
+    fresh = next(
+        f for f in watchdog._check_meic("automations", cfg, in_session=True) if f.key == "automations.fresh"
+    )
+    assert "Is the task running?" in fresh.message and "boom" not in fresh.message
+
+
+def test_a_stale_loop_stopped_on_request_is_not_a_failure(no_schtasks, monkeypatch):
+    fresh = _stale_fresh_finding(monkeypatch, {"last_exit_code": 1, "last_exit_requested": True})
+    assert "Is the task running?" in fresh.message
+
+
 # --------------------------------------------------------------------- supervisor-driven reads
 def test_meic_task_reads_job_registry_not_schtasks(no_schtasks):
     write_heartbeat()

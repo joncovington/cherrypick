@@ -26,6 +26,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
 import time
 from datetime import date, datetime, timedelta
 
@@ -667,7 +668,12 @@ def main(argv=None) -> int:
     try:
         arms = config_mod.load_arms(config)
     except ValueError as exc:
-        print(json.dumps({"ok": False, "error": f"arms: {exc}"}))
+        refusal = {"ok": False, "error": f"arms: {exc}"}
+        print(json.dumps(refusal))
+        # stderr as well: the supervisor runs this headless, so stdout goes nowhere, while the job's
+        # stderr log and the registry's `last_error` are where a person and the watchdog look
+        # (2026-11-27: a stale group name refused every tick for two days and said nothing).
+        print(json.dumps(refusal), file=sys.stderr)
         return 2
     cache_path = args.stream_cache or provider.stream_cache_path(config)
     db_path = db.resolve_path(args.db)
